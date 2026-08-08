@@ -141,20 +141,18 @@ why. They are candidates to fold back into the docs.
    does not carry. Rather than run an unbounded `COUNT(*)` per row on a list
    path, the columns are present and blank until counters exist.
 
-5. **The frame leg's encoder exists on the worker; the query path has not been
-   pointed at it yet.** index-schema §4.5 says `:q_img_vec` is "the *text*
-   query run through SigLIP's text tower — same shared embedding space, which
-   is the entire point of using SigLIP over a captioning pass". That route now
-   exists: `worker/openapi.json` carries **`POST /v1/embeddings/frame-query`**,
-   `{"input": str | [str], "model"?}` answering with the usual
-   `EmbeddingsResponse`, and `pipeline/worker_client.py::embed_frame_query`
-   speaks it.
-
-   `tools/base.py::embed_query(space="frame")` still asks `/v1/embeddings` for
-   `config['frame_embed.model']`, sees the wrong dimension come back, and
-   prints a `note:` naming the gap — `all` still means all, and a skipped leg
-   is still announced. Switching it to `embed_frame_query` is the one-line
-   change that lights up `search content_type=frame`.
+5. **The frame leg is live** (resolved in commit `81440e4`). index-schema
+   §4.5's `:q_img_vec` is "the *text* query run through SigLIP's text tower —
+   same shared embedding space, which is the entire point of using SigLIP over
+   a captioning pass". `worker/openapi.json` carries
+   **`POST /v1/embeddings/frame-query`**, `{"input": str | [str], "model"?}`
+   answering with the usual `EmbeddingsResponse`;
+   `pipeline/worker_client.py::embed_frame_query` speaks it for indexing and
+   `tools/base.py::embed_query(space="frame")` speaks it for search. A worker
+   that predates the endpoint 404s → `FrameQueryUnsupported`, latched until
+   restart with a `note:` in every affected search; transient outages are
+   noted but never latched. `all` still means all — a skipped leg is always
+   announced.
 
    A sibling **path** rather than a `space=frame` **field** on `/v1/embeddings`
    is the right shape for one reason worth keeping: point `WORKER_URL` at a
