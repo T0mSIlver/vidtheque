@@ -55,6 +55,9 @@ class Database:
     path: Path
     read_pool_size: int = 4
     query_budget_s: float = 30.0
+    # Mirrors jobs.store.DEFAULT_STALE_CLAIM_S — imported lazily, because
+    # `jobs` imports `db` and the cycle is not worth a constants module.
+    stale_claim_s: int = 300
 
     config: dict[str, str] = field(default_factory=dict)
     vectors: VectorState = field(default_factory=VectorState)
@@ -120,31 +123,19 @@ class Database:
     def _recover_crashed_jobs(self, conn: sqlite3.Connection) -> None:
         """Crash recovery at boot (index-schema §1.9).
 
-        Any `running` job whose heartbeat is older than 3x the interval goes
-        back to `queued`, its running items with it, `attempts` already
-        incremented so a job that reliably kills the process retires after
-        `max_attempts` instead of looping forever.
+        Boot is the *first* sweep, not the only one — that was the bug behind
+        the zombie ``job_5ac6f2ee2b29``: a process killed mid-`keyframe` and
+        restarted inside the staleness window left a claim that boot was too
+        early to see and that nothing ever looked at again. The runner sweeps
+        before every claim now (``PipelineRunner.reclaim_stale``); this one
+        still runs, because a build with the pipeline disabled must not leave
+        `running` rows lying around either.
         """
+        from ..jobs import store as jobs_store
+
         conn.execute("BEGIN IMMEDIATE")
         try:
-            stale = conn.execute(
-                "SELECT id FROM jobs WHERE state = 'running' "
-                "AND (heartbeat_at IS NULL OR heartbeat_at < unixepoch() - 90)"
-            ).fetchall()
-            for row in stale:
-                conn.execute(
-                    "UPDATE job_items SET state = 'queued', attempts = attempts + 1, "
-                    "stage_pct = 0.0 WHERE job_id = ? AND state = 'running'",
-                    (row["id"],),
-                )
-                conn.execute(
-                    "UPDATE jobs SET state = 'queued', heartbeat_at = NULL WHERE id = ?",
-                    (row["id"],),
-                )
-                conn.execute(
-                    "INSERT INTO job_events (job_id, level, message) VALUES (?, 'warn', ?)",
-                    (row["id"], "requeued at boot: heartbeat was stale"),
-                )
+            jobs_store.reclaim_stale(conn, int(self.stale_claim_s))
         except BaseException:
             conn.execute("ROLLBACK")
             raise

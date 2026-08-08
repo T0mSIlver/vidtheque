@@ -97,6 +97,10 @@ class Settings:
     deeplink_lead_s: int = 2
     count_probe_headroom: int = 30
 
+    # Crash recovery (index-schema §1.9). A claim quieter than this belonged to
+    # a process that is gone; the runner requeues it and resumes per stage.
+    stale_claim_s: int = 300
+
     # Admission control and cancellation (index-schema §5.3, §5.4).
     query_timeout_s: float = 30.0
     max_concurrent_searches: int = 2
@@ -192,6 +196,7 @@ class Settings:
             response_max_chars=_int_env("VIDTHEQUE_RESPONSE_MAX_CHARS", 60_000),
             candidate_cap=_int_env("VIDTHEQUE_CANDIDATE_CAP", 5_000),
             deeplink_lead_s=_int_env("VIDTHEQUE_DEEPLINK_LEAD", 2),
+            stale_claim_s=_int_env("VIDTHEQUE_STALE_CLAIM_S", 300),
             query_timeout_s=float(_int_env("VIDTHEQUE_QUERY_TIMEOUT_S", 30)),
             max_concurrent_searches=_int_env("VIDTHEQUE_MAX_CONCURRENT_SEARCHES", 2),
             read_pool_size=_int_env("VIDTHEQUE_READ_POOL_SIZE", 4),

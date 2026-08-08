@@ -38,6 +38,11 @@ WIRE_STAGES: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 TERMINAL = {"done", "failed", "skipped", "cancelled"}
 
+# How long a claim may go without a heartbeat before another pass reclaims it.
+# The runner heartbeats every ``HEARTBEAT_INTERVAL_S`` (30 s) *and* on every
+# progress report, so a live job is never this quiet; a killed process is.
+DEFAULT_STALE_CLAIM_S = 300
+
 
 def new_job_id() -> str:
     return "job_" + secrets.token_hex(6)
@@ -148,6 +153,137 @@ def requeue_item(conn: sqlite3.Connection, item_id: int) -> None:
     )
 
 
+def cancel_item(conn: sqlite3.Connection, item_id: int, reason: str) -> None:
+    """Terminate one item without touching the rest of its job.
+
+    Used when `force_reindex` supersedes a claim nobody is holding: the item is
+    over, it produced nothing, and the row says which job took the video.
+    """
+    conn.execute(
+        "UPDATE job_items SET state = 'cancelled', error_code = 'E_SUPERSEDED', "
+        "error_message = ?, finished_at = unixepoch() WHERE id = ?",
+        (reason, item_id),
+    )
+
+
+# ------------------------------------------------------------- crash recovery
+
+
+def stale_claims(
+    conn: sqlite3.Connection, older_than_s: int, exclude: Sequence[int] = ()
+) -> list[int]:
+    """Ids of `running` jobs whose claim has gone quiet. Read-only.
+
+    ``exclude`` is what this process is holding right now: an event loop that
+    is blocked on a 30-minute transcription is alive, not crashed, and must
+    never reclaim its own work.
+    """
+    placeholders = ",".join("?" for _ in exclude)
+    clause = f" AND id NOT IN ({placeholders})" if exclude else ""
+    rows = conn.execute(
+        "SELECT id FROM jobs WHERE state = 'running' AND "
+        "COALESCE(heartbeat_at, started_at, created_at) < unixepoch() - ?" + clause,
+        (int(older_than_s), *exclude),
+    ).fetchall()
+    return [int(row["id"]) for row in rows]
+
+
+def reclaim_stale(
+    conn: sqlite3.Connection, older_than_s: int, exclude: Sequence[int] = ()
+) -> list[str]:
+    """Give a dead process's claims back to the queue. Returns the job ids.
+
+    A killed runner leaves three lies behind: a `running` job nobody is
+    driving, a `running` item nobody is executing, and — because the pipeline
+    marks a stage before it starts — a `running` stage on a video whose
+    `index_state` still says `indexing`. All three are reset here, to the state
+    a *resume* reads correctly: the finished stages stay finished (that is
+    `_should_run`'s job), only the interrupted one goes back to `pending`.
+
+    ``attempts`` is not incremented: ``claim_item`` already counted this
+    attempt when it handed the item out, so a job that reliably kills the
+    process still retires after ``max_attempts`` instead of looping forever.
+    """
+    reclaimed: list[str] = []
+    for job_id in stale_claims(conn, older_than_s, exclude):
+        items = conn.execute(
+            "SELECT id, video_id, attempts, max_attempts FROM job_items "
+            "WHERE job_id = ? AND state = 'running'",
+            (job_id,),
+        ).fetchall()
+        for item in items:
+            if item["video_id"] is not None:
+                _reset_video(conn, int(item["video_id"]))
+            if int(item["attempts"]) >= int(item["max_attempts"]):
+                finish_item(
+                    conn,
+                    int(item["id"]),
+                    "failed",
+                    "E_CRASHED",
+                    f"the indexing process died on this item {item['attempts']} time(s); "
+                    "it will not be retried automatically.",
+                )
+                continue
+            requeue_item(conn, int(item["id"]))
+        conn.execute(
+            "UPDATE jobs SET state = 'queued', heartbeat_at = NULL WHERE id = ?", (job_id,)
+        )
+        log(
+            conn,
+            job_id,
+            f"requeued: no heartbeat for over {older_than_s}s, the process that "
+            f"claimed it is gone ({len(items)} item(s) reset)",
+            "warn",
+        )
+        row = conn.execute("SELECT public_id FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        if row is not None:
+            reclaimed.append(str(row["public_id"]))
+    return reclaimed
+
+
+def _reset_video(conn: sqlite3.Connection, video_id: int) -> None:
+    conn.execute(
+        "UPDATE video_stages SET state = 'pending', error = ? "
+        "WHERE video_id = ? AND state = 'running'",
+        ("interrupted: the indexing process was killed mid-stage", video_id),
+    )
+    # `stale` is the schema's word for "indexed, just not with the current
+    # pipeline" — it stays searchable, which is right for a video whose
+    # *reindex* died. A first index that died has nothing to search yet.
+    conn.execute(
+        "UPDATE videos SET index_state = "
+        "CASE WHEN indexed_at IS NULL THEN 'pending' ELSE 'stale' END, "
+        "updated_at = unixepoch() WHERE id = ? AND index_state = 'indexing'",
+        (video_id,),
+    )
+
+
+def inflight_claim(conn: sqlite3.Connection, video_id: int) -> sqlite3.Row | None:
+    """The queued/running job item that owns this video, if there is one.
+
+    ``live`` is the difference between "somebody is indexing this right now"
+    and "a claim nobody is holding": it is what tells `force_reindex` whether
+    it may supersede. Call this *after* a stale sweep, and it is simply
+    ``state = 'running'`` — a crashed claim has been requeued by then, and
+    anything still running is either progressing or being driven by a process
+    whose own sweep deliberately left it alone. Superseding on a stale
+    heartbeat instead would let a slow stage have its item cancelled underneath
+    it.
+    """
+    return conn.execute(
+        """
+        SELECT i.id AS item_id, i.state AS item_state, j.id AS job_id,
+               j.public_id, j.state AS job_state, j.heartbeat_at,
+               unixepoch() - COALESCE(j.heartbeat_at, j.started_at, j.created_at) AS quiet_s,
+               (j.state = 'running') AS live
+        FROM job_items i JOIN jobs j ON j.id = i.job_id
+        WHERE i.video_id = ? AND i.state IN ('queued','running')
+        LIMIT 1
+        """,
+        (video_id,),
+    ).fetchone()
+
+
 def finish_job(
     conn: sqlite3.Connection,
     job_id: int,
@@ -189,14 +325,39 @@ def log(
 
 # ------------------------------------------------------------------ reading
 
-_JOB_SQL = """
-SELECT j.id, j.public_id, j.state, j.kind, j.n_items, j.n_done, j.n_failed,
+# One item's share of the job, as a fraction it can only ever climb: the stages
+# it has finished plus how far it is into the one it is on. `stage_pct` alone
+# was the bug — it restarts at 0 on every stage, so the overall figure printed
+# 0.5 during `fetch` and 0.05 a second later during `stt`.
+_STAGE_ORDINAL = "CASE i.stage " + " ".join(
+    f"WHEN '{stage}' THEN {index}" for index, stage in enumerate(STAGES)
+) + " ELSE 0 END"
+_ITEM_FRACTION = f"(({_STAGE_ORDINAL}) + i.stage_pct) / {float(len(STAGES))}"
+
+
+def _count(state: str) -> str:
+    return (
+        f"(SELECT COUNT(*) FROM job_items i WHERE i.job_id = j.id AND i.state = '{state}')"
+    )
+
+
+# `n_done`/`n_failed` are read back off the items rather than off the trigger
+# rollup, so the four terminal counts and `n_items` always add up in the
+# payload — a job that reads `done` with nothing done has to say so in numbers.
+_JOB_SQL = f"""
+SELECT j.id, j.public_id, j.state, j.kind, j.n_items,
        j.cancel_requested, j.error_code, j.error_message,
-       j.created_at, j.started_at, j.finished_at,
-       ROUND((j.n_done
-              + COALESCE((SELECT SUM(stage_pct) FROM job_items i
-                           WHERE i.job_id = j.id AND i.state = 'running'), 0))
-             * 1.0 / MAX(j.n_items, 1), 3) AS progress
+       j.created_at, j.started_at, j.finished_at, j.heartbeat_at,
+       {_count('done')} AS n_done,
+       {_count('failed')} AS n_failed,
+       {_count('skipped')} AS n_skipped,
+       {_count('cancelled')} AS n_cancelled,
+       ROUND(MIN(1.0,
+             ((SELECT COUNT(*) FROM job_items i WHERE i.job_id = j.id
+                AND i.state IN ('done','failed','skipped','cancelled'))
+              + COALESCE((SELECT SUM({_ITEM_FRACTION}) FROM job_items i
+                           WHERE i.job_id = j.id AND i.state = 'running'), 0.0)
+             ) * 1.0 / MAX(j.n_items, 1)), 3) AS progress
 FROM jobs j
 """
 
@@ -237,6 +398,32 @@ def job_items(conn: sqlite3.Connection, job_id: int, limit: int = 20) -> list[sq
         """,
         (job_id, limit),
     ).fetchall()
+
+
+def item_counts(conn: sqlite3.Connection, job_id: int) -> dict[str, int]:
+    """Items by state. The aggregation reads these, never the trigger rollup."""
+    rows = conn.execute(
+        "SELECT state, COUNT(*) AS n FROM job_items WHERE job_id = ? GROUP BY state",
+        (job_id,),
+    ).fetchall()
+    return {str(row["state"]): int(row["n"]) for row in rows}
+
+
+def nonproductive_reasons(
+    conn: sqlite3.Connection, job_id: int, limit: int = 3
+) -> list[str]:
+    """Why the items that produced nothing produced nothing, in seq order."""
+    rows = conn.execute(
+        "SELECT source_url, error_message FROM job_items WHERE job_id = ? "
+        "AND state IN ('skipped','cancelled') ORDER BY seq LIMIT ?",
+        (job_id, limit),
+    ).fetchall()
+    return [
+        f"{row['source_url']}: {row['error_message']}"
+        if row["error_message"]
+        else str(row["source_url"])
+        for row in rows
+    ]
 
 
 def item_stages(conn: sqlite3.Connection, video_id: int) -> dict[str, sqlite3.Row]:

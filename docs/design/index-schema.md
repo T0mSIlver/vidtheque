@@ -646,26 +646,73 @@ BEGIN
 END;
 ```
 
-and the fractional figure blends completed items with the running item's stage:
+and the fractional figure blends **finished items** with how far the running one
+has come through the stage list. `stage_pct` alone was a bug, found live: it
+restarts at 0 on every stage, so the overall figure printed 0.5 during `fetch`
+and 0.05 a second later during `stt`. An item's share is the stages behind it
+plus the one it is on, over `len(STAGES)`, and every terminal state counts as a
+whole item — a failed or skipped item is *finished* work, and dropping it out of
+the numerator made the figure fall as the job progressed:
 
 ```sql
 SELECT j.public_id, j.state,
-       ROUND((j.n_done
-              + COALESCE((SELECT SUM(stage_pct) FROM job_items i
-                           WHERE i.job_id = j.id AND i.state = 'running'), 0))
-             * 1.0 / MAX(j.n_items, 1), 3) AS progress
+       ROUND(MIN(1.0,
+             ((SELECT COUNT(*) FROM job_items i WHERE i.job_id = j.id
+                AND i.state IN ('done','failed','skipped','cancelled'))
+              + COALESCE((SELECT SUM(((CASE i.stage WHEN 'fetch' THEN 0 … 
+                                       WHEN 'frame_embed' THEN 6 ELSE 0 END)
+                                      + i.stage_pct) / 7.0)
+                            FROM job_items i
+                           WHERE i.job_id = j.id AND i.state = 'running'), 0.0)
+             ) * 1.0 / MAX(j.n_items, 1)), 3) AS progress
 FROM jobs j WHERE j.public_id = :job_id;
 ```
+
+The CASE arm is generated from `STAGES` in `jobs/store.py`, so the stage list has
+one definition. The figure only ever climbs for a given item set; expansion is
+the one exception, because fan-out genuinely discovers work that did not exist
+when the job started.
+
+The same query reads `n_done`/`n_failed` — and `n_skipped`/`n_cancelled` — back
+off `job_items` rather than off the trigger rollup, so the four terminal counts
+and `n_items` **add up** in the payload. That is what makes "done with nothing
+indexed" visible in the numbers.
+
+**Aggregation is honest about doing nothing.** All items terminal → `done`, all
+failed → `failed`, and — the third branch, added after a job whose only item was
+skipped reported plain `done` and `job-status` promised "everything from this
+job" — no item `done` at all → still `done` (the wire vocabulary does not grow a
+sixth state), but with `error_code = 'E_NOTHING_INDEXED'` and an `error_message`
+naming what was skipped and why. `job-status` prints that instead of a promise.
 
 **Cancellation is cooperative and its own column.** `cancel_requested` is set by the
 API; the pipeline checks it at every stage boundary and inside the per-chunk loops.
 It is not a state, because a running job that has been asked to stop is still
 running until it stops, and `job-status` should say so.
 
-**Crash recovery** runs at boot: any `running` job whose `heartbeat_at` is older
-than 3× the heartbeat interval goes back to `queued`, its running items with it,
-`attempts` already incremented so a job that reliably kills the process retires
-after `max_attempts` instead of looping forever.
+**Crash recovery runs at boot _and_ before every claim.** Boot-only was the bug
+behind zombie `job_5ac6f2ee2b29` (2026-08-08): the process was killed
+mid-`keyframe` and restarted *inside* the staleness window, so boot saw a fresh
+heartbeat, and nothing ever looked again — the job stayed `running` for good and
+its claim on the video blocked every later `index-video`. `PipelineRunner`
+sweeps before it claims (a cheap indexed read first; the write only when there
+is something to reclaim), excluding the jobs *this* process is driving, because
+an event loop blocked on a 30-minute transcription is alive, not crashed.
+
+A stale claim is one whose `heartbeat_at` is older than `VIDTHEQUE_STALE_CLAIM_S`
+(default 300 s). The runner heartbeats on a 30 s tick as well as on every
+progress report, so a live job is never that quiet. Reclaiming resets all three
+lies a killed process leaves behind:
+
+- the job → `queued`, `heartbeat_at = NULL`;
+- its `running` items → `queued`, stage cleared. `attempts` is **not**
+  incremented — `claim_item` already counted the attempt when it handed the item
+  out — and an item already at `max_attempts` is failed with `E_CRASHED` rather
+  than handed out again;
+- the video it was working on: `video_stages` rows still `running` → `pending`
+  (the finished ones stay finished, which is what makes resume per-stage), and
+  `videos.index_state` `indexing` → `stale` if it was indexed before, `pending`
+  if it was not.
 
 `job_events` is the append-only log behind `job-status`'s error display. It is the
 one table with no retention pressure and no query on the hot path — capped by a

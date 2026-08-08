@@ -59,7 +59,15 @@ class ItemCancelled(Exception):
 class ItemSkipped(Exception):
     """The item was not a video to index — it expanded into other items, or it
     duplicated one already in this job. `skipped` is a terminal state that
-    counts towards neither `n_done` nor `n_failed`."""
+    counts towards neither `n_done` nor `n_failed`.
+
+    It carries a code and lands on the row, because "skipped" with no reason is
+    how a job that did nothing came to read as a job that did everything.
+    """
+
+    def __init__(self, message: str, code: str = "E_SKIPPED") -> None:
+        super().__init__(message)
+        self.code = code
 
 
 class Pipeline(Protocol):
@@ -86,9 +94,9 @@ class ItemContext:
     video_id: int | None
 
     async def record(self, stage: str, pct: float) -> None:
-        # The heartbeat rides along with progress. A stage can legitimately run
-        # for half an hour, and a job that reports progress but no heartbeat
-        # would be requeued as crashed at the next boot.
+        # The heartbeat rides along with progress, and `PipelineRunner._beat`
+        # ticks it on a clock besides: a stage can legitimately run for half an
+        # hour, and either alone would let a live job look crashed.
         await self.db.write(lambda c: _record(c, self.job_id, self.item_id, stage, pct))
 
     async def cancelled(self) -> bool:
@@ -117,14 +125,26 @@ class NotImplementedPipeline:
 class PipelineRunner:
     """Claims jobs, drives their items through a `Pipeline`, keeps the rollups."""
 
-    def __init__(self, db: Database, pipeline: Pipeline | None = None) -> None:
+    def __init__(
+        self,
+        db: Database,
+        pipeline: Pipeline | None = None,
+        stale_after_s: int = store.DEFAULT_STALE_CLAIM_S,
+    ) -> None:
         self.db = db
         self.pipeline: Pipeline = pipeline or NotImplementedPipeline()
+        self.stale_after_s = stale_after_s
         self._task: asyncio.Task[None] | None = None
         self._stop = asyncio.Event()
+        # What this process is holding. A blocked event loop is alive, not
+        # crashed: its own jobs are never candidates for its own sweep.
+        self._active: set[int] = set()
 
     async def start(self) -> None:
         self._stop.clear()
+        # Startup sweep: whatever the previous process was holding when it died
+        # is nobody's work until it goes back on the queue.
+        await self.reclaim_stale()
         self._task = asyncio.create_task(self._loop(), name="vidtheque-pipeline")
 
     async def stop(self) -> None:
@@ -134,6 +154,26 @@ class PipelineRunner:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
             self._task = None
+
+    async def reclaim_stale(self) -> list[str]:
+        """Requeue every claim whose heartbeat has gone quiet. Returns job ids.
+
+        The read comes first on purpose: this runs before every claim, and an
+        idle server should not take a write lock every poll to learn there is
+        nothing to reclaim.
+        """
+        held = tuple(self._active)
+        stale = await self.db.read(
+            lambda c: store.stale_claims(c, self.stale_after_s, held)
+        )
+        if not stale:
+            return []
+        reclaimed = await self.db.write(
+            lambda c: store.reclaim_stale(c, self.stale_after_s, held)
+        )
+        if reclaimed:
+            logger.warning("reclaimed stale job(s): %s", ", ".join(reclaimed))
+        return reclaimed
 
     async def _loop(self) -> None:
         while not self._stop.is_set():
@@ -148,16 +188,34 @@ class PipelineRunner:
 
     async def run_once(self) -> bool:
         """Claim at most one job and run it to completion. Returns True if it did."""
+        await self.reclaim_stale()
         job = await self.db.write(store.claim_next)
         if job is None:
             return False
         job_id = int(job["id"])
+        self._active.add(job_id)
         await self.db.write(lambda c: store.log(c, job_id, "job claimed"))
+        beat = asyncio.create_task(self._beat(job_id), name=f"vidtheque-heartbeat-{job_id}")
         try:
             await self._drive(job_id, str(job["public_id"]))
         finally:
+            beat.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await beat
+            self._active.discard(job_id)
             await self.db.write(lambda c: _settle(c, job_id))
         return True
+
+    async def _beat(self, job_id: int) -> None:
+        """Say "still here" on a clock, not only when a stage reports progress.
+
+        A single whisperX call on an hour of audio is minutes of silence
+        between two ``record()`` calls, and a job that only heartbeats through
+        progress would be reclaimed out from under itself.
+        """
+        while True:
+            await asyncio.sleep(HEARTBEAT_INTERVAL_S)
+            await self.db.write(lambda c: store.heartbeat(c, job_id))
 
     async def _drive(self, job_id: int, job_public_id: str) -> None:
         while True:
@@ -184,8 +242,10 @@ class PipelineRunner:
                 item_id = ctx.item_id
                 await self.db.write(lambda c: store.finish_item(c, item_id, "cancelled"))
             except ItemSkipped as skipped:
-                item_id, message = ctx.item_id, str(skipped)
-                await self.db.write(lambda c: store.finish_item(c, item_id, "skipped"))
+                item_id, message, code = ctx.item_id, str(skipped), skipped.code
+                await self.db.write(
+                    lambda c: store.finish_item(c, item_id, "skipped", code, message)
+                )
                 await self.db.write(lambda c: store.log(c, job_id, message, "info", item_id))
             except Exception as exc:  # pragma: no cover - unexpected
                 logger.exception("pipeline item crashed")
@@ -239,20 +299,21 @@ def _cancel_remaining(conn: sqlite3.Connection, job_id: int) -> None:
 
 
 def _settle(conn: sqlite3.Connection, job_id: int) -> None:
-    """All items terminal -> done, all failed -> failed."""
-    row = conn.execute("SELECT state, n_items, n_done, n_failed FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    """All items terminal -> done, all failed -> failed, none productive -> said so.
+
+    The counts come off ``job_items``, not off the trigger rollup, and the
+    third branch is the one this grew: a job whose every item was *skipped* is
+    terminal with nothing indexed, and calling that plain `done` is how
+    ``job-status`` came to promise a video that was never fetched.
+    """
+    row = conn.execute("SELECT state FROM jobs WHERE id = ?", (job_id,)).fetchone()
     if row is None or row["state"] not in {"running", "queued"}:
         return
-    outstanding = int(
-        conn.execute(
-            "SELECT COUNT(*) FROM job_items WHERE job_id = ? AND state NOT IN "
-            "('done','failed','skipped','cancelled')",
-            (job_id,),
-        ).fetchone()[0]
-    )
-    if outstanding:
+    counts = store.item_counts(conn, job_id)
+    if sum(n for state, n in counts.items() if state not in store.TERMINAL):
         return
-    if int(row["n_failed"]) and not int(row["n_done"]):
+    done, failed = counts.get("done", 0), counts.get("failed", 0)
+    if failed and not done:
         first = conn.execute(
             "SELECT error_code, error_message FROM job_items WHERE job_id = ? "
             "AND state = 'failed' ORDER BY seq LIMIT 1",
@@ -265,5 +326,16 @@ def _settle(conn: sqlite3.Connection, job_id: int) -> None:
             first["error_code"] if first else None,
             first["error_message"] if first else None,
         )
-    else:
+        return
+    if done:
         store.finish_job(conn, job_id, "done")
+        return
+    reasons = store.nonproductive_reasons(conn, job_id)
+    detail = "; ".join(reasons) or "the job had no items to run"
+    store.finish_job(
+        conn,
+        job_id,
+        "done",
+        "E_NOTHING_INDEXED",
+        f"no video was indexed: every item was skipped or superseded — {detail}",
+    )

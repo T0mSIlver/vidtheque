@@ -82,6 +82,7 @@ def assemble(
         path=settings.db_path,
         read_pool_size=settings.read_pool_size,
         query_budget_s=settings.query_timeout_s,
+        stale_claim_s=settings.stale_claim_s,
     )
     auth = build_auth(settings)
     # No default model: each leg names the encoder it needs from `config`, so
@@ -101,6 +102,7 @@ def assemble(
             worker=client if isinstance(client, WorkerAPI) else None,
             pipeline_settings=pipeline_settings,
         ),
+        stale_after_s=settings.stale_claim_s,
     )
     deps = Deps(
         settings=settings,
