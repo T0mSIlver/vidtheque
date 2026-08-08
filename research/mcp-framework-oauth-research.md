@@ -667,3 +667,60 @@ Config sanity checks at boot (these are the failures that eat an afternoon):
 - claude-ai-mcp#402 (no authless option in org connector UI, closed not-planned) — https://github.com/anthropics/claude-ai-mcp/issues/402
 - copilot-cli#1305 (CIMD support request) — https://github.com/github/copilot-cli/issues/1305
 - Cursor MCP auth — https://www.truefoundry.com/blog/mcp-authentication-in-cursor-oauth-api-keys-and-secure-configuration
+
+---
+
+## Implementation notes (2026-08-08)
+
+Appended after building the auth layer. Three things the research above did not
+predict, all confirmed against the shipped code in `mcp/src/vidtheque_mcp/auth/`.
+
+**1. The SDK's 401 challenge omits `scope`, which the spec SHOULDs.** RFC 6750 §3
+and the 2026-07-28 authorization spec both say the `WWW-Authenticate: Bearer`
+challenge SHOULD carry a `scope` parameter naming what the resource wants, so a
+client can ask for the right thing on the first round trip instead of guessing.
+`RequireAuthMiddleware` emits `error`, `error_description` and `resource_metadata`
+only. Our own `/frames/<id>.jpg` 401 — our route, our handler — does include
+`scope="vidtheque:read"`. So the two 401s a client can meet from this server are
+not identical, and the MCP one is the weaker of the two.
+
+In practice claude.ai does not need it: it reads the PRM from `resource_metadata`
+and takes `scopes_supported` from there, which is why this has not bitten. The fix,
+if it ever matters, is to wrap the SDK's middleware rather than patch it — intercept
+the 401 on the way out and rewrite the header — which keeps us off a fork. Worth
+doing only for a client that reads the challenge and not the PRM.
+
+**2. Access-token revocation is best-effort, and that is inherent to stateless
+JWTs.** `/revoke` works and is wired to the SDK's handler, but the two token types
+revoke differently:
+
+- **Refresh tokens** are hashed rows in `auth.db`, so revoking one is a real
+  `UPDATE … SET revoked_at`. Revoking by client kills every outstanding refresh
+  token that client holds. This is what actually ends a session.
+- **Access tokens** are HS256 JWTs we do not store — verification is signature plus
+  `exp`, no database read on the hot path, which is the entire reason they are JWTs.
+  There is no row to mark. An access token issued a minute before a revoke stays
+  valid until it expires.
+
+So the exposure window is one access-token TTL, currently **1 hour**
+(`VIDTHEQUE_ACCESS_TOKEN_TTL`, default `3600`), and shortening it is the only lever
+short of a denylist. A denylist buys back true immediate revocation at the cost of a
+database read per request and a table that has to be swept — the wrong trade for a
+single-owner server, worth revisiting only if this ever becomes multi-tenant.
+Documented rather than fixed.
+
+**3. The SDK's AS metadata omits the CIMD flags, confirmed — so we serve our own.**
+The research above recommended CIMD-first with DCR retained; the blocker is that
+Claude selects CIMD only when the authorization-server metadata advertises **both**
+`client_id_metadata_document_supported: true` and `"none"` in
+`token_endpoint_auth_methods_supported`. The SDK's metadata builder sets neither:
+the field exists on the model and is never populated, and the auth-methods list
+never includes `"none"`. Confirmed in implementation.
+
+The resolution costs one route. We mount the SDK's `/authorize`, `/token`,
+`/register` and `/revoke` handlers — battle-tested PKCE, form parsing, RFC 9207
+`iss`, error shapes, all the parts worth not rewriting — and filter its
+`/.well-known/oauth-authorization-server` route out of the list, serving our own
+document in its place with both flags set. Everything else in that document is the
+SDK's values; only the advertisement changes. `offline_access` goes in it and stays
+out of the PRM, or there is no refresh token at all.

@@ -4,6 +4,11 @@ The database contract. `tool-surface.md` says what the MCP server exposes; this
 says what backs it. Implementation follows this document; if implementation needs
 to diverge, this document changes in the same commit.
 
+**Reconciled with the shipped schema and pipeline on 2026-08-08.** Where the two
+disagreed, the reviewed implementation won and the text below was changed to match;
+`docs/design/DECISIONS.md` still outranks both, and `mcp/README.md` keeps the
+running list of deviations with the reasoning behind each.
+
 **Everything here was executed.** The DDL, the triggers and every query in §4 were
 run against SQLite 3.46.1 with `sqlite-vec` 0.1.9 and CPython 3.13, on a synthetic
 fixture at the target scale — 500 videos × 20 min: 150,000 cues, 18,500 chunks,
@@ -71,7 +76,7 @@ Seeded at first migration; **read at boot, never at query time**:
 | `text_embed.model` | `qwen3-embedding-0.6b` | The vectors in the file were produced by *this*. Env can change; the file cannot retroactively agree. |
 | `text_embed.dim` | `1024` | Must equal the `vec_chunks` declared dimension. Asserted at boot. |
 | `text_embed.normalized` | `1` | Written L2-normalized, so cosine ≡ dot. |
-| `text_embed.query_prefix` | `query: ` | Asymmetric models need the same prefix at query time that indexing assumed. A classic silent-drift source. |
+| `text_embed.query_prefix` | `query: ` | The record of what indexing assumed. Asymmetric models need the same prefix at query time — a classic silent-drift source. *Applied by the worker, not here* (note below). |
 | `frame_embed.model` | `siglip2-so400m-patch16-naflex` | |
 | `frame_embed.dim` | `1152` | Must equal `vec_frames`. |
 | `frame_embed.storage` | `float32` | `float32` or `int8` (§3.4). |
@@ -80,6 +85,14 @@ Seeded at first migration; **read at boot, never at query time**:
 | `diarization.enabled` | `0` | Backs `E_FEATURE_DISABLED` for `search speaker=` (tool-surface §4.1). |
 | `chunk.target_seconds` / `chunk.overlap_seconds` | `45` / `15` | Changing these invalidates every chunk vector. |
 | `pipeline.version` | `1` | Bumped when pipeline *semantics* change; see §1.10. |
+
+**The query prefix is the worker's to apply, not the query layer's.** `POST
+/v1/embeddings` takes `input_type=document|query` and the worker applies the
+checkpoint's own instruction prefix itself, so the query layer sends the switch
+(`input_type="query"`) and never prepends `config['text_embed.query_prefix']` —
+doing both applies it twice, which is exactly the silent drift this table exists
+to prevent. The key stays because it records what *indexing* assumed; nothing on
+the read path reads it to build a string.
 
 **Boot assertion** (runs before the server accepts a request):
 
@@ -175,6 +188,14 @@ CREATE TABLE video_stages (
   PRIMARY KEY (video_id, stage)
 ) WITHOUT ROWID, STRICT;
 ```
+
+**`fetch` is one stage covering both halves of acquisition** — the metadata probe
+(info dict, chapters, subtitle inventory, heatmap) *and* the media download (audio,
+plus video at the height cap when frames are wanted). It was drafted as two,
+`fetch_metadata` and `fetch_media`; splitting them buys a finer resume boundary for
+the cheaper half — the probe is one request, the download is hundreds of megabytes —
+so the CHECK keeps its seven values and the runner reports progress *inside* the
+stage instead (0.0 → 0.25 once the info dict is in → 1.0).
 
 `model_key` records the `config` value in force when the stage ran. The reindex
 planner is one query:
@@ -360,6 +381,16 @@ CREATE INDEX keyframes_live ON keyframes(video_id, t_s) WHERE dup_of IS NULL;
   `random.getrandbits(64)` overflows. Convert on both sides:
   `struct.unpack('<q', struct.pack('<Q', h))[0]`. Getting this wrong is an
   `OverflowError` at insert, which is at least loud.
+- **The column is 64-bit; the dedup that runs at index time is not.**
+  `phash(hash_size=8)` is 64 bits off the top-left 8×8 of the DCT, and research
+  §4.4 is emphatic that this is too narrow for slide decks — two distinct slides
+  frequently hash identically at that width, so clustering there silently drops
+  content. The pipeline therefore computes both: a `hash_size=16` (256-bit) hash
+  clusters near-duplicates in memory during the keyframe stage
+  (`VIDTHEQUE_PHASH_THRESHOLD`, default 24 bits of Hamming distance), and the
+  64-bit one is what lands in this INTEGER column, for the "find frames that look
+  like this one" query over an already-capped candidate set. Widening the column
+  would be a schema change for a query nobody issues yet.
 - Hamming distance has no SQLite builtin. Register a Python UDF
   (`conn.create_function("phash_hamming", 2, ..., deterministic=True)`) and only
   ever apply it to an already-capped candidate set — never as a table-scan
@@ -402,8 +433,14 @@ are never updated afterwards because a keyframe's video and timestamp never chan
 
 RapidOCR returns a 4-point polygon. The axis-aligned normalized box (`x0..y1`,
 0–1) is what any consumer actually uses — layout reasoning, "is this the title
-line", drawing a box on a thumbnail. `poly_json` holds the original quad for
-rotated text and is NULL for the overwhelming majority of lines.
+line", drawing a box on a thumbnail. Normalization to 0–1 happens on this side, at
+insert, from the keyframe's own width and height — stored normalized, the row
+survives a re-encode at another resolution.
+
+`poly_json` holds the original quad for rotated text. **In v1 it is always NULL:**
+the worker's `OCRItemOut` answers with an axis-aligned `bbox` only, so there is no
+quad to carry across the HTTP seam. The column stays for the day the worker returns
+one; nothing reads it meanwhile.
 
 ### 1.8 Tags and collections
 
@@ -636,15 +673,27 @@ PRAGMA user_version;        -- current schema version
 PRAGMA user_version = 7;    -- set inside the migration transaction
 ```
 
-`migrations` (§1.9's neighbour, DDL above) is the **audit trail**, not the source of
-truth: version, name, checksum of the applied SQL, timestamp. If `user_version` and
-the max applied row disagree, that is a hard boot error — someone edited the file
-by hand.
+`schema_migrations` (§1.9's neighbour, DDL above) is the **audit trail**, not the
+source of truth: version, name, checksum of the applied SQL, timestamp. If
+`user_version` and the max applied row disagree, that is a hard boot error — someone
+edited the file by hand.
 
 The runner:
 
-1. Migrations are numbered files, `mcp/migrations/0007_add_video_links.sql`, applied
-   in order, **one transaction each**, no runtime branching.
+1. Migrations are numbered files,
+   `mcp/src/vidtheque_mcp/db/migrations/0007_add_video_links.sql`, applied in order,
+   **one transaction each**, no runtime branching.
+
+   **`BEGIN IMMEDIATE` has to live inside the script.** A migration is multi-statement,
+   so it runs through `sqlite3.Connection.executescript()` — and `executescript()`
+   *commits any pending transaction before it starts*. A `BEGIN` issued from Python
+   around the call is therefore silently closed, every statement in the file
+   autocommits, and a migration that fails halfway leaves the file half-migrated with
+   `user_version` still on the old number. The runner prepends the statement to the
+   script text (`conn.executescript("BEGIN IMMEDIATE;\n" + sql)`) and issues the
+   matching `COMMIT`/`ROLLBACK` afterwards, which keeps "one transaction each" true.
+   Every migration file is written on that assumption: none of them opens or closes a
+   transaction of its own.
 2. `PRAGMA foreign_keys=OFF` for the duration of any migration that rebuilds a table
    (SQLite's documented 12-step ALTER procedure), then `PRAGMA foreign_key_check`
    before commit. FK enforcement is per-connection, so this is scoped to the
@@ -789,12 +838,21 @@ Three things that are easy to get wrong:
   different conditions (old non-empty for the delete, new non-empty for the insert).
   Hence `INSERT … SELECT … WHERE`.
 - **`ON DELETE CASCADE` does fire these triggers.** Verified on the fixture:
-  deleting one `videos` row cascaded to 300 cues and left `cues` and `cues_fts` at
-  identical counts. This is the load-bearing fact behind the whole delete story — if
-  it were false, every cascade would leave orphaned postings.
+  deleting one `videos` row cascaded to 300 cues and left `cues` and
+  `cues_fts_docsize` at identical counts. This is the load-bearing fact behind the
+  whole delete story — if it were false, every cascade would leave orphaned postings.
 
-`INSERT INTO cues_fts(cues_fts) VALUES('integrity-check')` runs in the test suite
-after every destructive-path test.
+**Count the shadow table, not the index.** `SELECT COUNT(*) FROM cues_fts` reads
+straight through to `cues` — that is what `content='cues'` *means*, and it is the
+same number whether the index is in sync, empty, or rotted, so it asserts nothing.
+The index's own row count lives in `cues_fts_docsize`, and that is the one to
+compare against the content table. It is also the count that shows the `WHEN
+new.text <> ''` guard working: a corpus with one empty cue has one more row in
+`cues` than in `cues_fts_docsize`, on purpose. (`ocr_fts_docsize` and
+`videos_fts_docsize` likewise.)
+
+`INSERT INTO cues_fts(cues_fts) VALUES('integrity-check')` — which does inspect the
+index proper — runs in the test suite after every destructive-path test.
 
 ### 2.4 Maintenance
 
@@ -1227,6 +1285,25 @@ LIMIT :limit + 1;
 embedding space, which is the entire point of using SigLIP over a captioning pass.
 `frame_id` is assembled here so no caller ever constructs it by hand.
 
+**Where `:q_img_vec` comes from: `POST /v1/embeddings/frame-query`.** Both towers of
+`google/siglip2-so400m-patch16-naflex` are served from one worker lifecycle slot —
+`POST /v1/embeddings/image` indexes keyframes, and this sibling path runs the text
+tower so the query reaches the same 1152-d space. A sibling **path**, not a
+`space=frame` **field** on `/v1/embeddings`, and that shape is load-bearing: point
+`WORKER_URL` at a hosted OpenAI-compatible provider and an unknown *field* is
+ignored — you ask for frame space, get text space at some other width, and compare
+it against the frame index. An unknown *path* 404s, which is a failure you can
+detect. It takes no `input_type`: the asymmetric prefix of §1.1 belongs to the text
+embedding model, and this tower is trained to 64 tokens — queries only, never prose.
+
+Degradation is explicit, per the "`all` means all, and a skipped leg says so" rule.
+A worker that predates the endpoint 404s; the query layer remembers that (it is a
+property of the worker build, not weather), prints a `note:` naming the missing
+text→frame encoder, and stops asking until restart. Same latch if the vectors come
+back at the wrong dimension. A *transient* failure — worker unreachable, timeout —
+prints its own `note:` and is deliberately **not** cached, so the leg comes back on
+its own.
+
 Note the `k` inflation to feed the diversity cap: with `max_per_video=3`, asking for
 `k = limit` returns too few distinct videos, so `k_frames = limit × max_per_video × 4`,
 clamped, and bounded independently of `limit` (tool-surface §4.1 token discipline).
@@ -1490,8 +1567,9 @@ VACUUM INTO '/backups/vidtheque-2026-08-08.db';   -- 32 ms; compacted, consisten
 
 `VACUUM INTO` (3.27+) is one statement, takes a read transaction so writers are not
 blocked in WAL mode, and produces a compacted file that opens cleanly with vec and
-FTS intact (verified: the snapshot's `vec_chunks` and `cues_fts` counts matched the
-source). It is the scheduled-snapshot path.
+FTS intact (verified: the snapshot's `vec_chunks` and `cues_fts_docsize` counts
+matched the source — `cues_fts` itself would have matched either way, see §2.3). It
+is the scheduled-snapshot path.
 
 `Connection.backup(target, pages=200, sleep=0.1)` — the online backup API, copying
 incrementally and restarting if the source is written mid-copy. Use it when a
@@ -1499,7 +1577,8 @@ snapshot must be taken under sustained write load, e.g. during indexing.
 
 Then `restic`/`rsync` the snapshot plus `keyframes/` and `audio/`. Restore is: put
 the two directories back, `PRAGMA integrity_check`, `INSERT INTO
-cues_fts(cues_fts) VALUES('integrity-check')`, and the §3.3 vector drift query.
+cues_fts(cues_fts) VALUES('integrity-check')`, a `cues` vs `cues_fts_docsize` count
+comparison, and the §3.3 vector drift query.
 
 **The disaster-recovery escape hatch** is `GET /videos/<id>/export.md` (tool-surface
 §6): human-readable Markdown per video, transcript and OCR included. Not a backup
@@ -1544,6 +1623,23 @@ Filename choices that matter:
 - `derived/` is disposable by definition; `rm -rf derived/` is always safe and is
   the first thing to delete when a disk fills.
 
+Two media choices the pipeline makes, both env-overridable:
+
+- **The extracted audio is opus, not the 16 kHz WAV whisperX nominally wants**
+  (`VIDTHEQUE_AUDIO_CODEC=opus|wav|flac`, default `opus` at 24 kbps mono). The two
+  halves of this system talk over HTTP, and that WAV is a ~256 MB upload per
+  two-hour lecture against ~20 MB of opus — the worker re-decodes with ffmpeg
+  either way, so it is a retention-and-transfer choice, not a quality one. §6.1
+  sizes `audio/` on opus. `VIDTHEQUE_AUDIO_CODEC=wav` gets the uncompressed
+  16 kHz PCM back.
+- **Video for frame extraction is capped at 1080p, not 720p**
+  (`VIDTHEQUE_INDEX_MAX_HEIGHT`, default `1080`). The OCR leg exists to read code
+  and terminal text in screencasts, and 720p is where a 14 px editor font falls
+  under 10 px and PP-OCR recall goes with it (research §5.3). Above 1080p the
+  keyframe pipeline downsamples to `KEYFRAME_MAX_WIDTH` anyway, so the extra pixels
+  are paid for and discarded; drop the cap to 720 for a talking-head corpus and
+  halve the transfer.
+
 ### 6.1 Space at 500 videos (measured DB, estimated media)
 
 | path | size | basis |
@@ -1552,10 +1648,12 @@ Filename choices that matter:
 | `keyframes/` | **~3.9 GB** | 40,000 × ~98 KB (1280×720, q78) |
 | `derived/` | ≤ 500 MB | capped LRU cache, ~15 KB per 512 px variant |
 | `audio/` | **~1.8 GB** | 24 kbps opus × 1,200 s × 500 |
-| `media/` (if kept) | **75–125 GB** | 150–250 MB per 20 min at 720p |
+| `media/` (if kept) | **150–250 GB** | estimated: 300–500 MB per 20 min at the 1080p cap, ~2× the 720p arithmetic this row used to carry |
 
-**Without source media: ~6 GB. With it: ~130 GB.** That ratio is the retention
-argument, and question 1 in §7.
+**Without source media: ~6 GB. With it: ~250 GB.** That ratio is the retention
+argument, and question 1 in §7 — and it got worse, not better, when the download cap
+moved to 1080p for OCR legibility (§6). It is also why the default is to delete:
+this row is the only line in the table that is not the product.
 
 Levers, all env-overridable: `KEYFRAME_MAX_WIDTH=960` roughly halves `keyframes/`;
 `frame_embed.storage=int8` takes the DB from 420 MB to 283 MB; `KEEP_WORD_TIMINGS=0`
@@ -1568,7 +1666,7 @@ an env var without an entry there is a bug).
 
 | what | default | rationale |
 |---|---|---|
-| `KEEP_SOURCE_MEDIA` | **`0`** — delete after all stages succeed | 75–125 GB to keep 6 GB of index. The corpus is the index; the MP4 is scaffolding. Deleted only after the last stage reports `done`, so a failure never destroys the input to a retry. |
+| `KEEP_SOURCE_MEDIA` | **`0`** — delete after all stages succeed | 150–250 GB at the 1080p cap (§6.1) to keep 6 GB of index. The corpus is the index; the MP4 is scaffolding. Deleted only after the last stage reports `done`, so a failure never destroys the input to a retry. |
 | `KEEP_AUDIO` | **`1`** — keep opus | 1.8 GB, and it is the expensive-to-reproduce input: re-running STT with a better model needs no re-download, no re-extract, and works for videos since taken down. Best value per byte in the system. |
 | `KEEP_KEYFRAMES` | `1` | They are a query product served over HTTP, not a cache. |
 | `DERIVED_CACHE_MB` | `512` | LRU; `derived/` is disposable. |
@@ -1590,7 +1688,8 @@ sweep, and harmless — rather than rows pointing at files that are gone.
 Real forks. Everything else above is a decision.
 
 1. **Delete source video files after indexing?** Default `KEEP_SOURCE_MEDIA=0`
-   above: 75–125 GB versus 6 GB at 500 videos, and the index is the product. But
+   above: 150–250 GB versus 6 GB at 500 videos (§6.1, at the 1080p cap), and the
+   index is the product. But
    it makes `get-clip` (deferred, tool-surface §6) require a re-download, which
    fails for anything taken down — and it makes vidtheque explicitly *not* an
    archival tool. Keeping originals makes it one, at ~20× the disk. There is a

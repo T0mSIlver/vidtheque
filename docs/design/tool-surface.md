@@ -1,8 +1,18 @@
 # vidtheque MCP tool surface — v1
 
-Status: **design contract, not yet implemented.** This is the surface the `mcp/`
-server implements; the HTTP API underneath it is an implementation detail and may
-carry extra knobs, but anything reachable from a model is specified here.
+Status: **implemented as of the current commits.** All nine tools and all three
+resources ship; `index-video` queues real jobs and the seven-stage pipeline behind
+it writes what `search` reads back. This is the surface the `mcp/` server
+implements; the HTTP API underneath it is an implementation detail and may carry
+extra knobs, but anything reachable from a model is specified here.
+
+Two things to read alongside it. `docs/design/DECISIONS.md` **wins** wherever it
+disagrees with this file — most visibly on the intra-video time axis, which is
+`t_start`/`t_end` in the shipped tools everywhere this document still writes
+`offset_start`/`offset_end`, and on the description budget (§4 note below).
+`mcp/README.md` carries the running list of deviations with the reasoning for each;
+the ones that change what a *caller* sees are annotated inline below as **Status:**
+notes.
 
 Sources for the decisions below: `research/HANDOFF-2026-08-08.md`,
 `research/screenpipe-tool-surface-deep-dive.md` (28-tool surface at 20k stars, with
@@ -306,7 +316,18 @@ learn where a hit came from): `[transcript]`, `[ocr]`, `[frame]`, `[transcript+o
 
 ## 4. Tools
 
-### 4.1 `search`
+**Status — "ships verbatim" no longer holds, by decision.** Every description block
+below is headed *"ships verbatim"*, and they run 120–190 words each because each one
+restates the same shared rules: the two time axes, case-insensitive substring
+matching, ordering, never fabricate an id. DECISIONS.md caps tool descriptions at
+**~120 words** and puts the shared rules in the `vidtheque://guide` resource (§5.3)
+instead of repeating them nine times; DECISIONS wins, and a test asserts the budget.
+
+So the blocks below are the **specification of what each description must convey** —
+purpose, USE WHEN, DO NOT USE, the starting `limit` — not the literal shipped
+strings. The shipped ones say the tool-specific part and point at the guide for the
+rest. The blocks are left as written: they are still where the wording was argued
+out, and trimming them here would lose the argument without gaining a contract.
 
 **Purpose:** cross-video search over transcripts, on-screen text and frame imagery,
 returning timestamped deep links.
@@ -411,6 +432,27 @@ A leg-skip note looks like this, on the line under `Legs:`:
 note: speaker= applies to the transcript leg only — ocr and frame legs were not queried for this call.
 ```
 
+**Status — the frame leg, and how it degrades.** The frame leg needs the query in
+the *frame* embedding space, which means the query text through SigLIP's text tower.
+That is a dedicated worker endpoint, `POST /v1/embeddings/frame-query` — a sibling
+path rather than a `space=` field on `/v1/embeddings`, because an unknown *field* is
+ignored by a hosted OpenAI-compatible worker (you get text-space vectors at some
+other width and compare them against the frame index) where an unknown *path* 404s.
+Two consequences a caller can observe:
+
+- A worker that predates the endpoint answers 404. That is a property of the worker
+  build, not weather, so the result is **latched for the process lifetime**: one
+  `note:` naming the missing text→frame encoder, the frame leg skipped, and no
+  further calls until the server restarts. Same latch if the vectors come back at
+  the wrong dimension. A worker that gains the encoder is picked up on the next
+  restart, not mid-run.
+- A **transient** failure — worker unreachable, timeout — prints its own `note:` and
+  is deliberately *not* cached, so the leg recovers on the next search by itself.
+
+Either way `content_type=all` still queries transcript and OCR and still says in the
+payload that the frame leg did not run. `all` means all; a skipped leg is announced,
+never silently dropped.
+
 Empty result set (no bare "no results"; screenpipe's `guidance.next_best_query`
 principle applied to search):
 
@@ -507,6 +549,16 @@ next: video-summary video_id="kCc8FmEb1nY" for chapters and key texts.
 columnar shapes); titles truncated at 120 chars per cell; response cap applies.
 Bounded independently of `limit`: the coverage rollup is read from denormalized
 per-video counters, not computed by joining cue/frame tables per row.
+
+**Status — the `cues` and `frames` columns are blank.** Those two opt-in `fields`
+are fed by the per-video counters above, and the schema does not carry them
+(index-schema §1.2 has no such columns). The alternative — a `COUNT(*)` over `cues`
+and `keyframes` per row, on a list path that returns up to 100 rows — is exactly the
+unbounded-per-row work rule 6 exists to forbid, so the columns are emitted **present
+and empty** rather than either dropped or paid for. `coverage` (t/o/f) is the
+cheap boolean answer and it is populated. Ask for `cues,frames` today and you get
+the headers with nothing under them; adding the counters is a migration plus a
+trigger, and it changes no wire shape.
 
 **Errors:** `E_BAD_TIME_FORMAT`, `E_BAD_PARAM`, `E_ORDER_SCOPE` (`order=relevance`
 without `q`), `E_TIMEOUT`, `E_BUSY`.
@@ -704,10 +756,21 @@ next: get-segment-context video_id="kCc8FmEb1nY" t=4290 window=60 for the KV-cac
 **Token discipline.** Caps above, all clamped server-side; `×N` collapsing for
 runs of near-identical OCR (perceptual-hash buckets, computed at index time);
 `include_links` off by default. Bounded independently of everything else: key-text
-and OCR-highlight selection reads a precomputed per-video "salience" table built
-during indexing, so this tool never scans the cue table — it is O(caps), not
-O(video length). A 4-hour video and a 4-minute video cost the same tokens and
-roughly the same milliseconds. Worst case ≈ 6,000 chars at ceiling settings.
+and OCR-highlight selection is O(caps), not O(video length). A 4-hour video and a
+4-minute video cost the same tokens and roughly the same milliseconds. Worst case
+≈ 6,000 chars at ceiling settings.
+
+**Status — no salience table; an `NTILE` sample instead.** This paragraph used to
+say the selection reads a precomputed per-video "salience" table built during
+indexing. The schema carries no such table, and building one is a second copy of the
+corpus to keep in sync for a bound that can be had without it. What ships:
+`NTILE(:max_key_texts) OVER (ORDER BY start_s)` buckets the video's cues into
+equal-width spans and takes the longest cue in each, so the sample is spread across
+the running time by construction and the query emits `max_key_texts` rows from one
+index scan. OCR highlights come off the `keyframes_live` partial index
+(`dup_of IS NULL`, index-schema §1.6) with the same cap. Same guarantee the original
+claim was making — O(caps) out, no per-row fan-out, cost independent of video
+length — with no table to maintain.
 
 **Errors:** `E_UNKNOWN_VIDEO`, `E_NOT_INDEXED`, `E_INDEXING` (returns whatever is
 already queryable plus the job id), `E_BAD_PARAM`.
@@ -900,6 +963,19 @@ Frames: 6/6 (4 inline, 2 as URLs — inline cap is 4 images / 6MB per call)
   on `(frame_id, w, q)`, single-flight per key, 30-minute cache.
 - Per-frame failures are collected, not fail-fast: the payload lists successes and
   a `failed:` line per bad id.
+
+**Status — two gaps between this section and what ships.**
+
+- **No resizing yet.** `width` and `quality` are accepted, clamped and bound into
+  the URL signature exactly as specified, but `/frames/<id>.jpg` currently serves
+  the stored keyframe at its indexed size — the `derived/` LRU cache of
+  index-schema §6 is not built. Callers see a larger image than they asked for,
+  never a different one, and the signature already covers the parameters, so
+  turning it on is one function and no contract change.
+- **Signed-URL TTL is 24h, not the 1h written above** (`VIDTHEQUE_FRAME_URL_TTL`,
+  default `86400`), per DECISIONS.md. Because the TTL is configurable, the shipped
+  description names no figure at all ("URLs are signed and expire") and the
+  footer prints the actual expiry timestamp it just signed.
 
 **Errors:** `E_UNKNOWN_FRAME` (names the valid ordinal range for that video),
 `E_UNKNOWN_VIDEO`, `E_BAD_PARAM` (neither `frame_ids` nor `video_id`; span too
