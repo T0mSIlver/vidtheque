@@ -33,7 +33,9 @@ What it does, in order:
    readable transcript on stdout.
 
 Each run gets its own data dir (`scripts/.smoke-data/run-<ts>` by default), so
-runs never share a database. Add `--keep` to leave it behind for inspection.
+runs never share a database. Nothing is ever deleted — the database, the
+keyframes and both service logs are the evidence; `--keep` only silences the
+reminder that they are still on disk.
 """
 
 from __future__ import annotations
@@ -607,7 +609,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--url", default=DEFAULT_URL, help="video to index")
     p.add_argument("--channels", default="all", help="index-video channels (all | transcript,ocr | …)")
     p.add_argument("--data-dir", type=Path, default=None, help="default: scripts/.smoke-data/run-<ts>")
-    p.add_argument("--keep", action="store_true", help="keep the data dir on success")
+    p.add_argument("--keep", action="store_true",
+                   help="silence the reminder that the data dir was left on disk")
     p.add_argument("--worker-python", type=Path, default=DEFAULT_WORKER_VENV / "bin" / "python")
     p.add_argument("--install-worker-deps", action="store_true", default=True)
     p.add_argument("--no-install-worker-deps", dest="install_worker_deps", action="store_false")
@@ -752,7 +755,7 @@ async def main(argv: list[str]) -> int:
 
     ok = report.get("job_state") == "done"
     if ok and not args.keep:
-        log(f"(keeping {data_dir}; pass --keep explicitly to silence this) ")
+        log(f"data dir left at {data_dir} (db, keyframes, logs); --keep silences this")
     if not ok:
         log(f"job state was {report.get('job_state')!r} — see {data_dir}/mcp.log")
     return 0 if ok else 1
