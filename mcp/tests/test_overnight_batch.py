@@ -260,6 +260,102 @@ async def test_a_caption_429_keeps_its_type_instead_of_becoming_unsupported(
         await close(parts)
 
 
+# ===================================================================== degraded
+
+
+@pytest.fixture
+async def degraded(settings: Settings, clip: Path):
+    """One video indexed with its OCR leg down. `ready`, and missing a channel.
+
+    `_soft_fail` is deliberate — a video with no OCR is still a video you can
+    find by what was said in it — but the job reported `n_done: 1, n_failed: 0`,
+    no error code, and `job-status` printed every wire stage `done`.
+    """
+    parts = await harness(settings, clip, worker=FakeWorker(fail={"ocr"}))
+    try:
+        job_id = await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+        yield parts, job_id
+    finally:
+        await close(parts)
+
+
+async def test_a_soft_failed_stage_is_visible_in_the_payload(degraded) -> None:
+    parts, job_id = degraded
+    stages = await parts.stages()
+    assert stages["ocr"]["state"] == "failed"  # the premise
+    assert (await parts.one("SELECT index_state FROM videos"))["index_state"] == "ready"
+
+    status = await indexing.job_status(parts.deps, job_id=job_id)
+    payload = structured(status)
+    assert (payload["state"], payload["n_done"], payload["n_failed"]) == ("done", 1, 0)
+    assert payload["n_degraded"] == 1
+    assert payload["degraded_stages"] == ["ocr"]
+
+
+async def test_the_stage_table_reads_the_stage_rows_not_the_item(degraded) -> None:
+    """It printed `ocr done` because the *item* was done. The rows said failed."""
+    parts, job_id = degraded
+    text = body(await indexing.job_status(parts.deps, job_id=job_id))
+    rows = {
+        line.split()[0]: line.split()[1]
+        for line in text.splitlines()
+        if line.startswith("  ") and len(line.split()) >= 2
+    }
+    assert rows["ocr"] == "failed"
+    assert rows["download"] == "done"
+    assert rows["transcribe"] == "done"
+    assert rows["keyframes"] == "done"
+    assert "degraded: 1 video(s) finished with a failed stage (ocr)" in text
+    assert "(1 degraded)" in text
+
+
+async def test_a_degraded_video_can_be_resubmitted_without_force(degraded) -> None:
+    """It short-circuited as "already indexed", so the failed stage was
+    unreachable without `force_reindex` — which redoes the six that were fine."""
+    parts, _job_id = degraded
+    parts.worker.fail = set()  # the worker is back
+    downloads = len(parts.source.downloads)
+
+    result = await indexing.index_video(parts.deps, url=VIDEO_URL)
+    assert not result.is_error, body(result)
+    payload = structured(result)
+    assert payload["job_id"] is not None  # not a no-op any more
+    assert payload["resuming"] == {VIDEO_URL: ["ocr"]}
+    assert "resuming at the failed stage(s) only: ocr" in body(result)
+
+    calls = len(parts.worker.calls)
+    assert await parts.run() is True
+
+    stages = await parts.stages()
+    assert stages["ocr"]["state"] == "done"
+    assert all(row["state"] == "done" for row in stages.values())
+    # Only the failed stage ran: no transcription, no re-embedding of chunks.
+    assert [c for c in parts.worker.calls[calls:] if c.startswith("ocr")]
+    assert "transcribe" not in parts.worker.calls[calls:]
+    assert not [c for c in parts.worker.calls[calls:] if c.startswith("embed:")]
+    # And nothing was re-downloaded: `ocr` reads keyframes off disk.
+    assert len(parts.source.downloads) == downloads
+
+    payload = structured(await indexing.job_status(parts.deps, job_id=payload["job_id"]))
+    assert payload["n_degraded"] == 0
+
+
+async def test_a_clean_job_says_nothing_about_degradation(
+    settings: Settings, clip: Path
+) -> None:
+    parts = await harness(settings, clip)
+    try:
+        job_id = await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+        status = await indexing.job_status(parts.deps, job_id=job_id)
+        assert structured(status)["n_degraded"] == 0
+        assert structured(status)["degraded_stages"] == []
+        assert "degraded" not in body(status)
+    finally:
+        await close(parts)
+
+
 # =================================================================== mixed waves
 
 

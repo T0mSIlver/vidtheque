@@ -124,6 +124,7 @@ async def index_video(
     items = [_item_for(url, known.get(url), url in current) for url in normalized]
     queued = [item for item in items if not item.terminal]
     already = [str(current[url]["public_id"]) for url in normalized if url in current]
+    resuming = await deps.db.read(lambda c: _resume_plan(c, queued, force_reindex))
     args: dict[str, Any] = {
         "expand": expand,
         "max_items": max_items,
@@ -164,6 +165,14 @@ async def index_video(
         lines.append(
             f"{len(already)} already indexed and left alone: " + ", ".join(already[:10])
         )
+    resume_stages = sorted({stage for stages in resuming.values() for stage in stages})
+    if resuming:
+        lines.append(
+            f"{len(resuming)} already indexed but degraded — resuming at the failed "
+            f"stage(s) only: {', '.join(resume_stages)}. Everything that succeeded "
+            "the first time is left alone, and nothing is re-downloaded for a stage "
+            "that is already current."
+        )
     lines.append("Stages: download → transcribe → keyframes → ocr → embed")
     lines.append(f"Queue position {active} · estimated 1-3 minutes per hour of video")
     if tag_list:
@@ -179,9 +188,32 @@ async def index_video(
             "items": len(queued),
             "n_items": len(items),
             "already_indexed": already,
+            "resuming": {url: stages for url, stages in resuming.items()},
             "tags": tag_list,
         },
     )
+
+
+def _resume_plan(
+    conn: sqlite3.Connection, items: Sequence[jobs_store.NewItem], force: bool
+) -> dict[str, list[str]]:
+    """Which queued items are a degraded video coming back for its failed stages.
+
+    Not a new mechanism: `_should_run` has always re-run failed and out-of-date
+    stages and left finished ones. What was missing is that the caller was never
+    told, because a degraded video short-circuited as "already indexed" and
+    never got a job at all.
+    """
+    if force:
+        return {}
+    plan: dict[str, list[str]] = {}
+    for item in items:
+        if item.video_id is None:
+            continue
+        stages = jobs_store.failed_stages(conn, item.video_id)
+        if stages:
+            plan[item.url] = stages
+    return plan
 
 
 def _item_for(url: str, row: sqlite3.Row | None, current: bool) -> jobs_store.NewItem:
@@ -212,7 +244,17 @@ def _lookup(
     conn: sqlite3.Connection, urls: list[str], *, ready_only: bool
 ) -> dict[str, sqlite3.Row]:
     found: dict[str, sqlite3.Row] = {}
-    clause = " AND index_state = 'ready'" if ready_only else ""
+    # "Current" has to mean every stage that ran, ran. A video whose OCR failed
+    # is `ready` — that is deliberate, it is still searchable by transcript —
+    # but treating it as current is what made the failed stage unreachable:
+    # resubmission short-circuited, and only `force_reindex` would touch it,
+    # which redoes the six stages that were fine.
+    clause = (
+        " AND index_state = 'ready' AND NOT EXISTS ("
+        "SELECT 1 FROM video_stages s WHERE s.video_id = videos.id AND s.state = 'failed')"
+        if ready_only
+        else ""
+    )
     for url in urls:
         source_id = source_id_of(url)
         if source_id is None:
@@ -344,6 +386,9 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
     job_id = int(row["id"])
     items = await deps.db.read(lambda c: jobs_store.job_items(c, job_id, 20))
     item_errors = await deps.db.read(lambda c: jobs_store.item_error_counts(c, job_id))
+    degraded = await deps.db.read(lambda c: jobs_store.degraded_items(c, job_id))
+    degraded_stages = sorted({str(row["stage"]) for row in degraded})
+    n_degraded = len({int(row["seq"]) for row in degraded})
     pct = int(round(float(row["progress"] or 0.0) * 100))
     started = iso_z(row["started_at"])
     lines = [
@@ -369,8 +414,18 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
             for stage in internals
         }
         current_pos = positions.get(current["stage"])
-        for i, (wire, _internal) in enumerate(jobs_store.WIRE_STAGES):
-            lines.append(f"  {wire:<11}{_wire_state(current, i, current_pos)}")
+        # `video_stages` is the record of what actually ran. Inferring the table
+        # from the item's position alone printed every row `done` the moment the
+        # item was `done` — including the OCR stage that had failed.
+        stages = (
+            await deps.db.read(lambda c: jobs_store.item_stages(c, int(current["video_id"])))
+            if current["video_id"] is not None
+            else {}
+        )
+        for i, (wire, internals) in enumerate(jobs_store.WIRE_STAGES):
+            lines.append(
+                f"  {wire:<11}{_wire_row(current, i, current_pos, internals, stages)}"
+            )
 
     failed = [i for i in items if i["state"] == "failed"]
     if failed:
@@ -387,6 +442,23 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
             "rate-limited: " + str(row["error_message"] or "")[-MAX_ERROR_CHARS:]
         )
 
+    if degraded:
+        # `done` with a channel missing is the failure mode this whole section
+        # exists for: say which stage, on which video, and how to get it back.
+        lines.append("")
+        lines.append(
+            f"degraded: {n_degraded} video(s) finished with a failed stage "
+            f"({', '.join(degraded_stages)}) — that search channel is missing."
+        )
+        for entry in degraded[:5]:
+            label = entry["public_id"] or entry["source_url"]
+            reason = str(entry["error"] or "")[:MAX_ERROR_CHARS]
+            lines.append(f"  {label} {entry['stage']}: {reason}")
+        lines.append(
+            'fix: index-video url="…" (no force_reindex) re-runs only the failed '
+            "stage(s); everything already indexed is left alone."
+        )
+
     n_done = int(row["n_done"])
     n_failed = int(row["n_failed"])
     n_skipped = int(row["n_skipped"])
@@ -400,7 +472,7 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
         # nothing. The line says what the job produced, or that it produced
         # nothing and why.
         if n_done:
-            tail = _aside(n_failed, n_skipped, n_cancelled)
+            tail = _aside(n_failed, n_skipped, n_cancelled, n_degraded)
             lines.append(f"Queryable now: the {n_done} video(s) this job indexed{tail}.")
             lines.append('next: video-summary video_id="…"')
         else:
@@ -443,19 +515,24 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
             # been rate-limited on the way; the job-level code says the loudest
             # of these, this says all of them.
             "item_errors": item_errors,
+            # Videos that are `done` and incomplete. `n_done` alone cannot
+            # distinguish "indexed" from "indexed without its frame search".
+            "n_degraded": n_degraded,
+            "degraded_stages": degraded_stages,
             "error_code": row["error_code"],
             "note": row["error_message"] if row["state"] == "done" else None,
         },
     )
 
 
-def _aside(n_failed: int, n_skipped: int, n_cancelled: int) -> str:
+def _aside(n_failed: int, n_skipped: int, n_cancelled: int, n_degraded: int = 0) -> str:
     parts = [
         f"{count} {word}"
         for count, word in (
             (n_failed, "failed"),
             (n_skipped, "skipped"),
             (n_cancelled, "superseded"),
+            (n_degraded, "degraded"),
         )
         if count
     ]
@@ -472,6 +549,35 @@ def _skipped_note(items: Sequence[sqlite3.Row]) -> str | None:
     if not reasons:
         return None
     return "skipped:\n" + "\n".join(reasons[:5])
+
+
+def _wire_row(
+    item: sqlite3.Row,
+    wire_pos: int,
+    current_pos: int | None,
+    internals: Sequence[str],
+    stages: dict[str, sqlite3.Row],
+) -> str:
+    """One wire row, read off `video_stages` when there is a video to read.
+
+    A soft-failed stage leaves the item `done` on purpose — a video with no OCR
+    is still a video you can find by what was said in it — but the stage table
+    is the one place that has to say so, and it was inferring `done` from the
+    item instead of reading the rows.
+    """
+    if not stages:
+        return _wire_state(item, wire_pos, current_pos)
+    states = [str(stages[s]["state"]) if s in stages else "pending" for s in internals]
+    running = f"running  {int(float(item['stage_pct']) * 100)}%"
+    if "failed" in states:
+        return "failed"
+    if "running" in states:
+        return running
+    if all(state in ("done", "skipped") for state in states):
+        return "done" if "done" in states else "skipped"
+    if wire_pos == current_pos and item["state"] == "running":
+        return running
+    return "pending"
 
 
 def _wire_state(item: sqlite3.Row, wire_pos: int, current_pos: int | None) -> str:

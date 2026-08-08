@@ -450,12 +450,43 @@ def job_items(conn: sqlite3.Connection, job_id: int, limit: int = 20) -> list[sq
         """
         SELECT i.id, i.seq, i.source_url, i.state, i.stage, i.stage_pct,
                i.error_code, i.error_message, i.started_at, i.finished_at,
-               v.public_id, v.title, v.channel_name, v.duration_s
+               i.video_id, v.public_id, v.title, v.channel_name, v.duration_s
         FROM job_items i LEFT JOIN videos v ON v.id = i.video_id
         WHERE i.job_id = ? ORDER BY i.seq LIMIT ?
         """,
         (job_id, limit),
     ).fetchall()
+
+
+def degraded_items(conn: sqlite3.Connection, job_id: int, limit: int = 20) -> list[sqlite3.Row]:
+    """Items that finished `done` on a video with a stage that failed.
+
+    The silent loss this exists to name: OCR, keyframes or either embedding leg
+    can fail without taking the video down — `_finalize` only calls `fetch` and
+    `stt` essential — so the item is `done`, the job is `done`, `n_failed` is 0,
+    and a requested search channel is simply missing. One row per failed stage.
+    """
+    return conn.execute(
+        """
+        SELECT i.seq, i.source_url, i.video_id, v.public_id, s.stage, s.error
+        FROM job_items i
+        JOIN video_stages s ON s.video_id = i.video_id AND s.state = 'failed'
+        LEFT JOIN videos v ON v.id = i.video_id
+        WHERE i.job_id = ? AND i.state = 'done'
+        ORDER BY i.seq, s.stage LIMIT ?
+        """,
+        (job_id, limit),
+    ).fetchall()
+
+
+def failed_stages(conn: sqlite3.Connection, video_id: int) -> list[str]:
+    """Which stages a `ready` video is missing. The resume plan, in one query."""
+    rows = conn.execute(
+        "SELECT stage FROM video_stages WHERE video_id = ? AND state = 'failed' "
+        "ORDER BY stage",
+        (video_id,),
+    ).fetchall()
+    return [str(row["stage"]) for row in rows]
 
 
 def item_counts(conn: sqlite3.Connection, job_id: int) -> dict[str, int]:

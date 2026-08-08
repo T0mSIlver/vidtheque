@@ -1167,6 +1167,22 @@ The payload carries `n_items`, `n_done`, `n_failed`, `n_skipped` and
 did nothing cannot read as one that did. `note` carries the job's own
 `E_NOTHING_INDEXED` explanation when there is one.
 
+**The stage table is read off `video_stages`, never inferred from the item.**
+Only `fetch` and `stt` are load-bearing enough to fail a video; OCR, keyframes
+and either embedding leg soft-fail so the rest of the video stays searchable
+(§the pipeline). That is the right call and it was invisible: the item went
+`done`, and the renderer printed all five wire rows `done` because the item was.
+A stage that failed now prints `failed` on the row it failed, and the payload
+carries **`n_degraded`** and **`degraded_stages`** beside the four counts —
+`n_done` alone cannot tell "indexed" from "indexed without its frame search".
+
+A degraded video is **not** "already indexed" for `index-video`: resubmitting it
+without `force_reindex` creates a job that re-runs its failed stages and leaves
+the finished ones alone (that is `_should_run`, unchanged), and the response
+names the stages it will resume. Before this it short-circuited, so the only way
+back to the missing channel was `force_reindex` — which redoes the six stages
+that were fine.
+
 It also carries **`item_errors`**, the typed item codes counted
 (`{"E_RATE_LIMIT": 1}`), because the job-level `error_code` is one summary and a
 batch has as many causes as it has items. **`error_code` survives partial
