@@ -26,9 +26,11 @@ log = logging.getLogger(__name__)
 
 DESCRIPTION = """\
 Stateless inference worker for vidtheque: speech-to-text with word timestamps,
-text embeddings, and on-screen-text OCR. One lifecycle manager owns the GPU —
-requests queue rather than compete. The transcription and embedding endpoints
-follow OpenAI's shapes so a GPU-less deployment can swap in a hosted provider.
+text embeddings, frame embeddings, and on-screen-text OCR. One lifecycle manager
+owns the GPU — requests queue rather than compete. The transcription and text
+embedding endpoints follow OpenAI's shapes so a GPU-less deployment can swap in a
+hosted provider. Text and frame embeddings are separate vector spaces with
+separate models and separate endpoints; they are never interchangeable.
 """
 
 

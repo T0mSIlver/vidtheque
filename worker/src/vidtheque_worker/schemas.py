@@ -85,6 +85,10 @@ class EmbeddingsRequest(BaseModel):
     model: str | None = None
     encoding_format: Literal["float"] = "float"
     user: str | None = None
+    input_type: Literal["document", "query"] = "document"
+    """Non-OpenAI extra, and optional: an instruction-tuned embedder prefixes
+    queries and not documents. Defaults to ``document`` so a caller that never
+    sends it indexes correctly, and a symmetric model ignores it entirely."""
 
     def texts(self) -> list[str]:
         return [self.input] if isinstance(self.input, str) else list(self.input)

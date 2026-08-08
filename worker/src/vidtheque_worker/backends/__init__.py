@@ -7,6 +7,7 @@ from .base import (
     BackendUnavailable,
     Embeddings,
     EmbedBackend,
+    ImageEmbedBackend,
     OCRBackend,
     OCRItem,
     STTBackend,
@@ -16,6 +17,7 @@ from .base import (
 )
 from .registry import (
     EMBED_BACKENDS,
+    IMAGE_EMBED_BACKENDS,
     OCR_BACKENDS,
     STT_BACKENDS,
     UnknownBackend,
@@ -31,6 +33,7 @@ __all__ = [
     "BackendUnavailable",
     "EmbedBackend",
     "Embeddings",
+    "ImageEmbedBackend",
     "OCRBackend",
     "OCRItem",
     "STTBackend",
@@ -38,6 +41,7 @@ __all__ = [
     "Transcription",
     "Word",
     "EMBED_BACKENDS",
+    "IMAGE_EMBED_BACKENDS",
     "OCR_BACKENDS",
     "STT_BACKENDS",
     "UnknownBackend",

@@ -37,7 +37,11 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 MAX_EMBED_BATCH = 512
+MAX_IMAGE_EMBED_BATCH = 64
 MAX_OCR_IMAGES = 64
+MAX_PATCH_BUDGET = 4096
+"""Ceiling on the frame embedder's resolution knob. The model's trained budgets
+top out at 1024; this only stops a request from asking for a quadratic blow-up."""
 
 
 def get_manager(request: Request) -> LifecycleManager:
@@ -159,9 +163,67 @@ async def embeddings(request: Request, body: EmbeddingsRequest) -> EmbeddingsRes
         log.info("ignoring requested model=%s; worker serves %s", body.model, configured)
 
     def job(backend: Backend) -> Any:
-        return backend.infer(texts)
+        return backend.infer(texts, input_type=body.input_type)
 
     result = await manager.submit("embed", job, label=f"{len(texts)} texts")
+    return to_embeddings_response(result)
+
+
+# --------------------------------------------------------------------------
+# POST /v1/embeddings/image
+#
+# A sibling of /v1/embeddings rather than an overload of it. Two reasons:
+# /v1/embeddings is the OpenAI JSON contract whose whole point is that a
+# GPU-less deployment can repoint WORKER_URL at a hosted provider, and bolting
+# a multipart branch onto it would break that swap; and the two endpoints do
+# not share a vector space — text goes to the 1024-d transcript index, images
+# to the 1152-d frame index, and a caller that can confuse them will.
+# --------------------------------------------------------------------------
+
+
+@router.post(
+    "/v1/embeddings/image",
+    response_model=EmbeddingsResponse,
+    summary="Embed images into the frame vector space",
+)
+async def image_embeddings(
+    request: Request,
+    file: Annotated[list[UploadFile], File(description="One or more image files")],
+    model: Annotated[str | None, Form()] = None,
+    max_num_patches: Annotated[
+        int | None,
+        Form(description="NaFlex patch budget; trained values are 128/256/576/784/1024"),
+    ] = None,
+) -> EmbeddingsResponse:
+    """Vectors come back in upload order, L2-normalised, one per image."""
+    if not file:
+        raise HTTPException(status_code=400, detail="at least one file is required")
+    if len(file) > MAX_IMAGE_EMBED_BATCH:
+        raise HTTPException(
+            status_code=413,
+            detail=f"{len(file)} images; max {MAX_IMAGE_EMBED_BATCH} per request",
+        )
+    if max_num_patches is not None and not 1 <= max_num_patches <= MAX_PATCH_BUDGET:
+        raise HTTPException(
+            status_code=400,
+            detail=f"max_num_patches must be between 1 and {MAX_PATCH_BUDGET}",
+        )
+
+    manager = get_manager(request)
+    configured = _model_id(manager, "image_embed")
+    if model and configured and model != configured:
+        log.info("ignoring requested model=%s; worker serves %s", model, configured)
+
+    blobs = [await upload.read() for upload in file]
+    if any(not blob for blob in blobs):
+        raise HTTPException(status_code=400, detail="one or more uploads were empty")
+
+    kwargs = {} if max_num_patches is None else {"max_num_patches": max_num_patches}
+
+    def job(backend: Backend) -> Any:
+        return backend.infer(blobs, **kwargs)
+
+    result = await manager.submit("image_embed", job, label=f"{len(blobs)} images")
     return to_embeddings_response(result)
 
 

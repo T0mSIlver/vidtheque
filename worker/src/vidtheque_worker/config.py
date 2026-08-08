@@ -34,13 +34,35 @@ class Settings(BaseSettings):
 
     # --- backend selection ------------------------------------------------
     stt_backend: str = Field(default="whisperx", validation_alias=_either("STT_BACKEND"))
-    embed_backend: str = Field(default="bge-m3", validation_alias=_either("EMBED_BACKEND"))
+    embed_backend: str = Field(
+        default="qwen3-embedding", validation_alias=_either("EMBED_BACKEND")
+    )
+    image_embed_backend: str = Field(
+        default="siglip2", validation_alias=_either("IMAGE_EMBED_BACKEND")
+    )
     ocr_backend: str = Field(default="rapidocr", validation_alias=_either("OCR_BACKEND"))
 
     # --- model identifiers (backend-interpreted) --------------------------
     stt_model: str = Field(default="large-v3", validation_alias=_either("STT_MODEL"))
-    embed_model: str = Field(default="BAAI/bge-m3", validation_alias=_either("EMBED_MODEL"))
+    embed_model: str = Field(
+        default="Qwen/Qwen3-Embedding-0.6B", validation_alias=_either("EMBED_MODEL")
+    )
+    image_embed_model: str = Field(
+        default="google/siglip2-so400m-patch16-naflex",
+        validation_alias=_either("IMAGE_EMBED_MODEL"),
+    )
     ocr_model: str = Field(default="rapidocr-default", validation_alias=_either("OCR_MODEL"))
+
+    # --- embedding behaviour ----------------------------------------------
+    embed_query_prompt: str | None = Field(
+        default=None, validation_alias=_either("EMBED_QUERY_PROMPT")
+    )
+    """Instruction prefix for ``input_type=query``. Unset uses the checkpoint's own."""
+
+    image_embed_max_patches: int = Field(
+        default=256, validation_alias=_either("IMAGE_EMBED_MAX_PATCHES")
+    )
+    """NaFlex patch budget: the frame-embedder's resolution knob, per request."""
 
     # --- device -----------------------------------------------------------
     device: str = Field(default="auto", validation_alias=_either("DEVICE"))
@@ -53,6 +75,10 @@ class Settings(BaseSettings):
     stt_align: bool = Field(default=True, validation_alias=_either("STT_ALIGN"))
     """Word-level forced alignment. Off = coarser timestamps, faster runs."""
 
+    ocr_threads: int = Field(default=4, validation_alias=_either("OCR_THREADS"))
+    """ONNX Runtime intra-op threads. Left to itself it reads the *host* core
+    count rather than the container's and oversubscribes."""
+
     # --- lifecycle --------------------------------------------------------
     idle_unload_seconds: float = Field(
         default=300.0, validation_alias=_either("IDLE_UNLOAD_SECONDS")
@@ -60,7 +86,9 @@ class Settings(BaseSettings):
     """Unload a model after this many seconds without a job. ``0`` disables."""
 
     embed_resident: bool = Field(default=False, validation_alias=_either("EMBED_RESIDENT"))
-    """Keep the embedding model loaded permanently and exempt from eviction."""
+    """Keep the *text* embedding model loaded permanently and exempt from
+    eviction. The frame embedder is never resident — it is an indexing-time
+    cost, not a query-time one, and it is the biggest model of the three."""
 
     vram_headroom_mb: int = Field(default=512, validation_alias=_either("VRAM_HEADROOM_MB"))
     """Slack required on top of a backend's estimate before a load is allowed."""

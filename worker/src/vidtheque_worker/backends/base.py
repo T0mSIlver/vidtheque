@@ -13,7 +13,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
-TASKS = ("stt", "embed", "ocr")
+TASKS = ("stt", "embed", "image_embed", "ocr")
+"""``embed`` is the text vector space; ``image_embed`` is the frame one. They are
+separate tasks rather than two backends for one task because indexing needs both
+models at once — one slot would force the pipeline to choose."""
 
 
 class BackendError(RuntimeError):
@@ -110,7 +113,26 @@ class STTBackend(Backend, Protocol):
 
 @runtime_checkable
 class EmbedBackend(Backend, Protocol):
-    def infer(self, texts: list[str], **kwargs: Any) -> Embeddings: ...
+    def infer(
+        self, texts: list[str], *, input_type: str = "document", **kwargs: Any
+    ) -> Embeddings:
+        """``input_type`` is ``document`` or ``query``.
+
+        Instruction-tuned embedders (Qwen3-Embedding) prefix queries and not
+        documents; getting that asymmetry wrong degrades recall silently. A
+        symmetric model (bge-m3) accepts the argument and ignores it.
+        """
+
+
+@runtime_checkable
+class ImageEmbedBackend(Backend, Protocol):
+    """Images into a *different* vector space from :class:`EmbedBackend`'s.
+
+    Encoded JPEG/PNG bytes in, one L2-normalised vector per image out, in the
+    order they were given.
+    """
+
+    def infer(self, images: list[bytes], **kwargs: Any) -> Embeddings: ...
 
 
 @runtime_checkable
