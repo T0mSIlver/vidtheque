@@ -177,12 +177,30 @@ class PipelineRunner:
         self._task = asyncio.create_task(self._loop(), name="vidtheque-pipeline")
 
     async def stop(self) -> None:
+        """Cancel the loop, then give back every claim this process was holding.
+
+        Cancellation bypasses the item handlers — `CancelledError` is not an
+        `Exception` — so `_settle` found the item still `running` and returned,
+        leaving a `running` job with a heartbeat seconds old. A restart quicker
+        than the staleness window correctly refused to touch it (a fresh
+        heartbeat is what a live job looks like), so the work sat wedged for the
+        full 300 s and the next submission got `E_INDEXING` the whole time.
+
+        The snapshot is taken *before* the cancel: `run_once`'s `finally` clears
+        `_active` on the way out, and by then this is the only record of what was
+        held.
+        """
         self._stop.set()
+        held = tuple(self._active)
         if self._task is not None:
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
             self._task = None
+        if held:
+            released = await self.db.write(lambda c: store.release_claims(c, held))
+            if released:
+                logger.info("released on stop: %s", ", ".join(released))
 
     async def reclaim_stale(self) -> list[str]:
         """Requeue every claim whose heartbeat has gone quiet. Returns job ids.

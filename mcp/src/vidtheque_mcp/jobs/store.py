@@ -299,11 +299,56 @@ def reclaim_stale(
     return reclaimed
 
 
-def _reset_video(conn: sqlite3.Connection, video_id: int) -> None:
+def release_claims(conn: sqlite3.Connection, job_ids: Sequence[int]) -> list[str]:
+    """Hand back what this process is holding, because it is stopping. Now.
+
+    The same three lies `reclaim_stale` undoes, undone at the moment they become
+    lies instead of five minutes later. A controlled shutdown cancels the task
+    mid-item, so the row said `running` with a heartbeat seconds old: a quick
+    restart correctly left it alone, and the claim sat wedged for the whole
+    staleness window with nobody driving it.
+
+    Unlike a crash there is no `E_CRASHED` retirement — being stopped is not the
+    item's fault, and it goes back on the queue whatever its attempt count.
+    """
+    released: list[str] = []
+    for job_id in job_ids:
+        row = conn.execute(
+            "SELECT public_id, state FROM jobs WHERE id = ?", (job_id,)
+        ).fetchone()
+        if row is None or str(row["state"]) != "running":
+            continue  # it finished, or deferred itself, before the stop landed
+        items = conn.execute(
+            "SELECT id, video_id FROM job_items WHERE job_id = ? AND state = 'running'",
+            (job_id,),
+        ).fetchall()
+        for item in items:
+            if item["video_id"] is not None:
+                _reset_video(conn, int(item["video_id"]), "interrupted: the runner was stopped")
+            requeue_item(conn, int(item["id"]))
+        conn.execute(
+            "UPDATE jobs SET state = 'queued', heartbeat_at = NULL WHERE id = ?", (job_id,)
+        )
+        log(
+            conn,
+            job_id,
+            f"requeued: the runner was stopped mid-item ({len(items)} item(s) reset). "
+            "A restart claims it immediately.",
+            "warn",
+        )
+        released.append(str(row["public_id"]))
+    return released
+
+
+def _reset_video(
+    conn: sqlite3.Connection,
+    video_id: int,
+    reason: str = "interrupted: the indexing process was killed mid-stage",
+) -> None:
     conn.execute(
         "UPDATE video_stages SET state = 'pending', error = ? "
         "WHERE video_id = ? AND state = 'running'",
-        ("interrupted: the indexing process was killed mid-stage", video_id),
+        (reason, video_id),
     )
     # `stale` is the schema's word for "indexed, just not with the current
     # pipeline" — it stays searchable, which is right for a video whose

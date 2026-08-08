@@ -23,6 +23,7 @@ Nothing here reaches the network or a GPU: same fakes as `test_pipeline_e2e`.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sqlite3
 from pathlib import Path
@@ -429,6 +430,70 @@ async def test_force_reindex_ignores_the_partition(settings: Settings, clip: Pat
         assert payload["already_indexed"] == []
         items = await items_of(parts, payload["job_id"])
         assert [i["state"] for i in items] == ["queued", "queued"]
+    finally:
+        await close(parts)
+
+
+# ========================================================================== stop
+
+
+async def test_an_orderly_stop_gives_the_claim_back_immediately(
+    settings: Settings, clip: Path
+) -> None:
+    """Shutdown mid-item used to wedge the job for the whole staleness window.
+
+    `CancelledError` is not an `Exception`, so it bypassed the item handlers;
+    `_settle` saw the item still `running` and returned. What was left was a
+    `running` job with a heartbeat seconds old — exactly what a *live* job looks
+    like, so the restart's sweep correctly refused to touch it for 300 s.
+    """
+    entered = asyncio.Event()
+
+    async def block_forever() -> None:
+        entered.set()
+        await asyncio.Event().wait()
+
+    worker = FakeWorker(on_transcribe=block_forever)
+    parts = await harness(settings, clip, worker=worker)
+    try:
+        job_id = await parts.index(url=VIDEO_URL, channels="transcript")
+        await parts.parts.runner.start()
+        await asyncio.wait_for(entered.wait(), timeout=10)
+
+        await parts.parts.runner.stop()
+
+        job = await job_row(parts, job_id)
+        assert job["state"] == "queued"
+        assert job["heartbeat_at"] is None
+        assert job["not_before"] <= job["now"]  # claimable now, not in 300 s
+        item = (await items_of(parts, job_id))[0]
+        assert item["state"] == "queued"
+        # The video and its interrupted stage are back to a state a resume reads.
+        assert (await parts.one("SELECT index_state FROM videos"))["index_state"] == "pending"
+        stages = await parts.stages()
+        assert stages["stt"]["state"] == "pending"
+        assert "runner was stopped" in str(stages["stt"]["error"])
+
+        # No sweep involved: nothing is stale, and the next claim still lands.
+        assert await parts.parts.runner.reclaim_stale() == []
+        worker.on_transcribe = None
+        assert await parts.run() is True
+        assert (await job_row(parts, job_id))["state"] == "done"
+    finally:
+        await close(parts)
+
+
+async def test_a_stop_between_jobs_releases_nothing(
+    settings: Settings, clip: Path
+) -> None:
+    """The guard: a job that finished before the stop landed stays finished."""
+    parts = await harness(settings, clip)
+    try:
+        job_id = await parts.index(url=VIDEO_URL, channels="transcript")
+        assert await parts.run() is True
+        await parts.parts.runner.start()
+        await parts.parts.runner.stop()
+        assert (await job_row(parts, job_id))["state"] == "done"
     finally:
         await close(parts)
 
