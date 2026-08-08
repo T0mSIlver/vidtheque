@@ -81,7 +81,10 @@ WORKER_CPU_DEPS = (
 # deploy/.env.example ships the HF ids the worker reports back. The pipeline's
 # drift check compares the two strings, so with the shipped defaults every
 # embedding stage is skipped. See the report for the bug write-up.
-CONFIG_ALIGNMENT = {
+# What a default install's `config` rows must say — the exact ids the worker
+# reports (migration 0002). A mismatch on a FRESH database is the regression
+# of smoke defect #1 (vector legs silently disabled) and fails the run.
+EXPECTED_CONFIG = {
     "text_embed.model": "Qwen/Qwen3-Embedding-0.6B",
     "frame_embed.model": "google/siglip2-so400m-patch16-naflex",
     "ocr.model": "rapidocr-default",
@@ -209,24 +212,23 @@ async def create_database(data_dir: Path) -> None:
     await db.close()
 
 
-def align_config(db_path: Path) -> dict[str, tuple[str, str]]:
-    """Point `config` at the model ids the worker actually reports."""
-    changed: dict[str, tuple[str, str]] = {}
-    conn = sqlite3.connect(db_path)
+def check_config_alignment(db_path: Path) -> dict[str, tuple[str, str]]:
+    """Read-only canary for smoke defect #1 (config model-name drift).
+
+    Returns ``{key: (db_value, expected)}`` for every mismatch on the fresh
+    database. Never mutates — a smoke that silently rewrote these rows would
+    mask exactly the regression it exists to catch.
+    """
+    mismatched: dict[str, tuple[str, str]] = {}
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
-        for key, value in CONFIG_ALIGNMENT.items():
+        for key, expected in EXPECTED_CONFIG.items():
             row = conn.execute("SELECT value FROM config WHERE key = ?", (key,)).fetchone()
-            if row is None or row[0] == value:
-                continue
-            conn.execute(
-                "UPDATE config SET value = ?, updated_at = unixepoch() WHERE key = ?",
-                (value, key),
-            )
-            changed[key] = (row[0], value)
-        conn.commit()
+            if row is None or row[0] != expected:
+                mismatched[key] = (row[0] if row else "<missing>", expected)
     finally:
         conn.close()
-    return changed
+    return mismatched
 
 
 def db_facts(db_path: Path, data_dir: Path) -> dict[str, Any]:
@@ -618,18 +620,15 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--mcp-port", type=int, default=8390)
     p.add_argument("--job-timeout", type=float, default=3600.0)
     p.add_argument("--request-timeout", type=float, default=900.0)
-    p.add_argument("--align-config", action="store_true", default=True,
-                   help="rewrite config model ids to the ones the worker serves (default on)")
-    p.add_argument("--no-align-config", dest="align_config", action="store_false")
     p.add_argument("--token-mode-check", action="store_true", default=True,
                    help="re-boot in VIDTHEQUE_AUTH=token and verify the signed frame URL")
     p.add_argument("--no-token-mode-check", dest="token_mode_check", action="store_false")
     p.add_argument("--q-transcript", default="memory safety")
-    # A term that is on screen and *not* narrated. The OCR leg drops any line
-    # whose moment is covered by a longer transcript cue matching the same
-    # query, so a word the presenter says out loud returns nothing here.
+    # A term that is on screen and *not* narrated — pure OCR-leg hit.
     p.add_argument("--q-ocr", default="Cargo.toml")
-    # …and one that is both, to show that suppression in the output.
+    # …and one that is both narrated and on screen: since the prefilter fix,
+    # OCR search returns these too, collapsed against the transcript cue only
+    # when the dedup contract says so ([transcript+ocr] provenance preserved).
     p.add_argument("--q-ocr-echo", default="cargo")
     p.add_argument("--q-frame", default="terminal with code on screen")
     return p.parse_args(argv)
@@ -652,10 +651,12 @@ async def main(argv: list[str]) -> int:
 
     t0 = time.monotonic()
     await create_database(data_dir)
-    if args.align_config:
-        report["config_alignment"] = align_config(data_dir / "vidtheque.db")
-        if report["config_alignment"]:
-            log(f"config aligned to the worker's model ids: {report['config_alignment']}")
+    mismatches = check_config_alignment(data_dir / "vidtheque.db")
+    report["config_mismatches"] = mismatches
+    if mismatches:
+        log(f"FAIL: fresh-install config drift (smoke defect #1 regressed): {mismatches}")
+        (data_dir / "report.json").write_text(json.dumps(report, indent=2))
+        return 1
     report["db_bootstrap_seconds"] = round(time.monotonic() - t0, 2)
 
     worker_url = f"http://127.0.0.1:{args.worker_port}"
