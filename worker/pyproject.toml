@@ -17,9 +17,27 @@ dependencies = [
 # Heavy inference stacks. Kept out of the default install so CPU CI and laptop
 # checkouts resolve without CUDA wheels.
 gpu = [
-    "whisperx>=3.3",
+    "whisperx>=3.8.6",
     "sentence-transformers>=3.0",
-    "rapidocr-onnxruntime>=1.3",
+    # SigLIP 2 NaFlex needs Siglip2Model, which landed in transformers 4.50;
+    # 4.56 is the floor for the `dtype=` kwarg. open_clip cannot load NaFlex
+    # from any release, so transformers is the only path.
+    #
+    # The research doc recommends >=5.14 for the processor's automatic
+    # lowercase + pad-to-64 on SigLIP2's *text* tower. That is unsatisfiable
+    # here: transformers 5.14 requires huggingface-hub>=1.5, whisperX 3.8.6
+    # pins huggingface-hub<1.0, and there is no whisperX release without that
+    # cap. Nothing is lost today — this worker only runs the image tower — but
+    # a future frame-query path on transformers 4.x must pass
+    # `padding="max_length", max_length=64, truncation=True` and lowercase the
+    # text itself, or the query embeddings degrade silently.
+    "transformers>=4.56",
+    # `rapidocr`, not the frozen `rapidocr-onnxruntime`: the merged package is
+    # where PP-OCRv6 lives, and it bundles its default models in the wheel.
+    # It deliberately ships no inference engine, so pin one here — floating it
+    # lets a rebuild cross a CUDA-major or Python-minimum boundary silently.
+    "rapidocr==3.9.2",
+    "onnxruntime==1.28.0",
     "numpy>=1.26",
     "pillow>=10.0",
 ]
