@@ -9,6 +9,7 @@ without a key, a model, or a request leaving the process.
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 from typing import Any, Callable
 
@@ -16,6 +17,7 @@ import httpx2 as httpx
 import pytest
 from starlette.testclient import TestClient
 
+import vidtheque_mcp.public
 from vidtheque_mcp.app import build_app
 from vidtheque_mcp.config import Settings
 from vidtheque_mcp.public.ratelimit import Bucket, RateLimiter, client_key
@@ -551,3 +553,150 @@ def test_the_per_ip_ask_bucket_is_charged_before_the_global_one(tmp_path: Path) 
         refused = client.post("/api/ask", json={"q": "b"}, headers=headers)
     assert refused.status_code == 429
     assert refused.json()["bucket"] == "ask", "one visitor cannot spend the day's budget"
+
+
+# ----------------------------------------------- 6. the page as a page, and XSS
+
+STATIC = Path(vidtheque_mcp.public.__file__).parent / "static"
+
+
+def _page(client: TestClient) -> str:
+    response = client.get("/")
+    assert response.status_code == 200
+    return response.text
+
+
+def test_the_page_declares_an_identity_worth_unfurling(public_client: TestClient) -> None:
+    """Title, description, the OG pair, viewport, favicon, a theme per scheme."""
+    body = _page(public_client)
+    assert "<title>vidtheque — search inside a video corpus</title>" in body
+    assert '<meta name="description"' in body
+    assert 'property="og:title"' in body
+    assert 'property="og:description"' in body
+    assert 'name="viewport"' in body and "width=device-width" in body
+    assert 'rel="icon"' in body and "image/svg+xml" in body
+    # Both schemes, or the browser chrome fights the page in one of them.
+    assert body.count('name="theme-color"') == 2
+    assert "(prefers-color-scheme: light)" in body
+    assert "(prefers-color-scheme: dark)" in body
+
+
+def test_the_cold_page_teaches_instead_of_showing_a_blank(public_client: TestClient) -> None:
+    """Before the first search there is something to click, and it is copy."""
+    body = _page(public_client)
+    assert body.count('class="chip example"') == 3
+    assert "what CVE is shown in the opencode talk" in body
+    for landmark in ("<header", "<main>", "<footer>", "<h1"):
+        assert landmark in body
+    assert 'class="sr-only" for="q"' in body, "the search box has a real label"
+
+
+def test_the_page_and_its_assets_are_cacheable(public_client: TestClient) -> None:
+    for path in ("/", "/static/style.css", "/static/app.js"):
+        cache = public_client.get(path).headers.get("cache-control", "")
+        assert "max-age=" in cache, f"{path} is served without a cache lifetime"
+
+
+def test_the_page_builds_no_html_from_data(public_client: TestClient) -> None:
+    """The XSS floor, asserted against the source rather than assumed.
+
+    Everything the page renders is either its own copy or corpus text — and
+    corpus text includes OCR, which is *whatever happened to be on someone's
+    screen*. One rule covers it and is checkable: no HTML sink, anywhere.
+    """
+    # Comment lines are stripped: the file *talks* about innerHTML to say it
+    # never uses one, and that sentence should stay legal.
+    script = "\n".join(
+        line
+        for line in (STATIC / "app.js").read_text().splitlines()
+        if not line.strip().startswith(("//", "*", "/*"))
+    )
+    for sink in (
+        "innerHTML",
+        "outerHTML",
+        "insertAdjacentHTML",
+        "document.write",
+        "eval(",
+        "new Function",
+        "srcdoc",
+    ):
+        assert sink not in script, f"app.js reaches for {sink}"
+    stripped = _page(public_client).replace(
+        '<script type="module" src="/static/app.js"></script>', ""
+    )
+    assert "<script" not in stripped, "no inline script: the page stays CSP-ready"
+
+
+# A line of OCR is untrusted input by construction. This is the shape of it.
+HOSTILE_OCR = (
+    "xsspayload <script>alert(document.cookie)</script> "
+    '<img src=x onerror=alert(1)> "><svg onload=alert(1)> javascript:alert(1) '
+) + ("padding so the line runs past the facade's 400-char budget. " * 12)
+
+
+def _inject_hostile_ocr(tmp_path: Path) -> None:
+    """Put an adversarial OCR line in the corpus, the way a slide would."""
+    conn = sqlite3.connect(tmp_path / "data" / "vidtheque.db")
+    try:
+        row = conn.execute("SELECT id, video_id, t_s FROM keyframes LIMIT 1").fetchone()
+        conn.execute(
+            "INSERT INTO ocr_lines (keyframe_id, video_id, t_s, line_no, text, conf, "
+            "x0, y0, x1, y1) VALUES (?, ?, ?, 9, ?, 0.9, 0, 0, 1, 1)",
+            (row[0], row[1], row[2], HOSTILE_OCR),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_hostile_ocr_text_comes_back_as_data_never_as_markup(tmp_path: Path) -> None:
+    with make_client(tmp_path, PUBLIC) as client:
+        _inject_hostile_ocr(tmp_path)
+        response = client.get("/api/search?q=xsspayload&content_type=ocr")
+    assert response.status_code == 200
+    # Half the defence is the content type: nothing sniffs this as HTML.
+    assert response.headers["content-type"].startswith("application/json")
+    hits = [h for h in response.json()["results"] if "xsspayload" in (h["text"] or "")]
+    assert hits, "the hostile line is in the corpus and searchable"
+    text = hits[0]["text"]
+    # Passed through untouched. The facade does not sanitise — the page never
+    # parses it as HTML (test above), which is the defence that actually holds.
+    assert "<script>alert(document.cookie)</script>" in text
+    # And the tool's character budget still applied to it.
+    assert len(text) <= 400 + 80
+
+
+def test_the_facade_rewrites_the_mcp_only_truncation_hint(tmp_path: Path) -> None:
+    """`pass max_text_chars=0` is advice no browser can take (demo-site.md §2)."""
+    with make_client(tmp_path, PUBLIC) as client:
+        _inject_hostile_ocr(tmp_path)
+        payload = client.get("/api/search?q=xsspayload&content_type=ocr").json()
+    cut = [h["text"] for h in payload["results"] if "chars cut" in (h["text"] or "")]
+    assert cut, "the padded line is long enough to be truncated"
+    assert all("max_text_chars" not in text for text in cut)
+
+
+def test_demo_text_leaves_an_untruncated_snippet_alone() -> None:
+    from vidtheque_mcp.public.api import demo_text
+    from vidtheque_mcp.text import middle_truncate
+
+    assert demo_text("a plain sentence") == "a plain sentence"
+    assert demo_text(None) is None
+    marked = middle_truncate("x" * 200, 40)
+    assert "max_text_chars" in marked, "the marker is still the tool's"
+    assert "max_text_chars" not in demo_text(marked)
+    assert "chars cut" in demo_text(marked)
+
+
+def test_ask_citations_carry_the_evidence_the_model_was_shown(tmp_path: Path) -> None:
+    """The answer's source rows read like search rows, from the same hits."""
+    upstream = Upstream(
+        _completion(tool_calls=[_tool_call("c1", "search", {"query": "kv cache"})]),
+        _completion("The cache trades memory for time [1]."),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        payload = client.post("/api/ask", json={"q": "what does the kv cache cost?"}).json()
+    first = payload["citations"][0]
+    assert first["text"], "a citation without its snippet is a bare title"
+    assert first["source"] in {"transcript", "ocr", "frame", "transcript+ocr"}
+    assert "max_text_chars" not in first["text"]
