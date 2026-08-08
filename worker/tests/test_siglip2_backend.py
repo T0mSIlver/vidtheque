@@ -105,6 +105,28 @@ class FakeModel:
         return FakeTensor(self.rows[: len(self.rows)])
 
 
+class FakePooledOutput:
+    """transformers 5.x's ``BaseModelOutputWithPooling``, minus everything.
+
+    It deliberately has no ``.norm``: that is exactly why 5.x turned both towers
+    into 500s.
+    """
+
+    def __init__(self, pooled: FakeTensor) -> None:
+        self.pooler_output = pooled
+        self.last_hidden_state = "a sequence tensor, not what we want"
+
+
+class WrappingFakeModel(FakeModel):
+    """Same fake, transformers 5.x return shape."""
+
+    def get_text_features(self, **kwargs: Any) -> FakePooledOutput:
+        return FakePooledOutput(super().get_text_features(**kwargs))
+
+    def get_image_features(self, **kwargs: Any) -> FakePooledOutput:
+        return FakePooledOutput(super().get_image_features(**kwargs))
+
+
 FAKE_TORCH = SimpleNamespace(inference_mode=contextlib.nullcontext)
 
 
@@ -112,11 +134,12 @@ def make_backend(
     *,
     rows: list[list[float]] | None = None,
     mask_lengths: list[int] | None = None,
+    model_cls: type[FakeModel] = FakeModel,
     **kwargs: Any,
 ) -> tuple[SigLIP2Backend, FakeProcessor, FakeModel]:
     backend = SigLIP2Backend("google/siglip2-so400m-patch16-naflex", **kwargs)
     processor = FakeProcessor(mask_lengths=mask_lengths)
-    model = FakeModel(rows if rows is not None else [[3.0, 4.0]])
+    model = model_cls(rows if rows is not None else [[3.0, 4.0]])
     backend._processor = processor
     backend._model = model
     backend._torch = FAKE_TORCH
@@ -214,3 +237,36 @@ def test_image_path_still_defaults_to_the_configured_budget(monkeypatch):
     monkeypatch.setattr(mod, "_open_rgb", lambda blob: blob)
     backend.infer([b"\xff\xd8jpeg"])
     assert processor.calls[0]["max_num_patches"] == 576
+
+
+# --------------------------------------------------------------------------
+# the two return shapes of get_*_features
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("model_cls", [FakeModel, WrappingFakeModel], ids=["4.x", "5.x"])
+def test_both_towers_survive_either_transformers_return_shape(
+    model_cls: type[FakeModel], monkeypatch
+) -> None:
+    """4.x returns the pooled tensor, 5.x a ``BaseModelOutputWithPooling``.
+
+    Only 4.x was handled, so on 5.x ``features.norm(...)`` was an
+    AttributeError and both ``/v1/embeddings/image`` and
+    ``/v1/embeddings/frame-query`` answered 500 — frame indexing and frame
+    search dying together the day the whisperX pin frees
+    (research/e2e-smoke-2026-08-08.md §4.3).
+    """
+    backend, _, _ = make_backend(rows=[[3.0, 4.0]], model_cls=model_cls)
+    monkeypatch.setattr(mod, "_open_rgb", lambda blob: blob)
+
+    assert backend.embed_text(["a terminal"]).vectors == [[0.6, 0.8]]
+    assert backend.infer([b"\xff\xd8jpeg"]).vectors == [[0.6, 0.8]]
+
+
+def test_an_unrecognised_return_shape_is_not_silently_embedded() -> None:
+    """A wrong-shaped tensor written next to real vectors is unfindable later,
+    so an unknown shape raises rather than guessing at an attribute."""
+    backend, _, model = make_backend()
+    model.get_text_features = lambda **kwargs: SimpleNamespace(logits="?")
+    with pytest.raises(TypeError, match="pooler_output"):
+        backend.embed_text(["a terminal"])

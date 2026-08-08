@@ -32,6 +32,12 @@ gpu = [
     # `padding="max_length", max_length=64, truncation=True` and lowercases the
     # text. Those are 5.x's own defaults, so it stays correct if the pin moves;
     # drop them and query embeddings degrade with nothing in the logs.
+    #
+    # 5.x also changed what `get_image_features`/`get_text_features` *return* —
+    # a `BaseModelOutputWithPooling` instead of the pooled tensor. The backend
+    # unwraps either shape (`_pooled`), so this floor is a floor and not a
+    # ceiling; the range was silently 4.x-only until the first CPU smoke run
+    # (research/e2e-smoke-2026-08-08.md §4.3).
     "transformers>=4.56",
     # `rapidocr`, not the frozen `rapidocr-onnxruntime`: the merged package is
     # where PP-OCRv6 lives, and it bundles its default models in the wheel.

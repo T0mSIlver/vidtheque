@@ -36,6 +36,12 @@ second load. Two constraints come with it, both silent when wrong:
   this worker is on 4.x because whisperX caps ``huggingface-hub`` below what
   5.14 needs. So :meth:`_encode_text` passes all of it explicitly. Those are
   also 5.x's own defaults, so the call stays correct if the pin ever moves.
+
+The other 4.x/5.x difference is the *return* shape: 4.x's ``get_image_features``
+/ ``get_text_features`` hand back the pooled tensor, 5.x hands back a
+``BaseModelOutputWithPooling``. :func:`_pooled` accepts either, because the
+version this happens to resolve to should not be the difference between a
+working frame leg and a 500.
 """
 
 from __future__ import annotations
@@ -144,7 +150,7 @@ class SigLIP2Backend(BaseBackend):
             images=frames, max_num_patches=budget, return_tensors="pt"
         ).to(self._model.device)
         with torch.inference_mode():
-            features = self._model.get_image_features(**inputs)
+            features = _pooled(self._model.get_image_features(**inputs))
             features = features / features.norm(p=2, dim=-1, keepdim=True)
         return _to_lists(features)
 
@@ -182,13 +188,36 @@ class SigLIP2Backend(BaseBackend):
         ).to(self._model.device)
         _warn_if_truncated(inputs, texts)
         with torch.inference_mode():
-            features = self._model.get_text_features(**inputs)
+            features = _pooled(self._model.get_text_features(**inputs))
             features = features / features.norm(p=2, dim=-1, keepdim=True)
         return _to_lists(features)
 
     @property
     def dims(self) -> int | None:
         return self._dims
+
+
+def _pooled(features: Any) -> Any:
+    """The embedding tensor, whichever shape ``get_*_features`` returned it in.
+
+    transformers 4.x returns the pooled tensor; 5.x returns a
+    ``BaseModelOutputWithPooling`` carrying that same tensor as
+    ``pooler_output``. Calling ``.norm()`` on the 5.x object is an
+    ``AttributeError``, i.e. a 500 from both ``/v1/embeddings/image`` and
+    ``/v1/embeddings/frame-query`` — the day the whisperX pin frees and the
+    resolver picks 5.x, frame indexing and frame search die together
+    (research/e2e-smoke-2026-08-08.md §4.3). Handling both shapes costs one
+    ``getattr``, so the version this runs on stops mattering.
+    """
+    pooled = getattr(features, "pooler_output", None)
+    if pooled is not None:
+        return pooled
+    if hasattr(features, "norm"):
+        return features
+    raise TypeError(
+        "get_*_features returned "
+        f"{type(features).__name__} with neither a tensor nor a pooler_output"
+    )
 
 
 def _to_lists(features: Any) -> list[list[float]]:
