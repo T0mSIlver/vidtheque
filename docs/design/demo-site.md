@@ -176,7 +176,7 @@ What the page needs to render itself, and nothing else:
   "mcp_url": "https://vidtheque.example.com/mcp",
   "auth": "none",
   "ask_enabled": true,
-  "ask_model": "openai/gpt-oss-20b:free",
+  "ask_model": "deepseek/deepseek-v4-flash-0731",
   "videos": 42,
   "limits": {"search_per_min": 30, "ask_per_min": 5, "ask_per_day": 50},
   "repo": "https://github.com/T0mSIlver/vidtheque"
@@ -212,24 +212,19 @@ from timestamped evidence — to a visitor who has not wired up an MCP client.
      "link": "https://youtu.be/zduSFxRajkE?t=11", "thumb": "…"}
   ],
   "rounds": 2,
-  "model": "openai/gpt-oss-20b:free"
+  "model": "deepseek/deepseek-v4-flash-0731"
 }
 ```
 
 ### 3.1 The model
 
-`OPENROUTER_MODEL`, default **`openai/gpt-oss-20b:free`**.
-
-The brief asked for "the current free DeepSeek". Verified against
-`https://openrouter.ai/api/v1/models` on 2026-08-08: **there is no
-`deepseek/*:free` model on OpenRouter any more.** Fourteen `:free` ids exist;
-the DeepSeek family is all paid (cheapest `deepseek/deepseek-v4-flash-0731` at
-$0.09/M in). Of the free ids that advertise `tools` in
-`supported_parameters` — the hard requirement here, since the whole mode is
-function calling — `openai/gpt-oss-20b:free` is the pick: 131k context,
-the most widely exercised tool-calling free model on the platform, and an id
-that has been stable for a year. Alternatives worth a swap, all free and all
-tool-capable: `nvidia/nemotron-3-super-120b-a12b:free` (bigger, 262k),
+`OPENROUTER_MODEL`, default **`deepseek/deepseek-v4-flash-0731`** — Tom's
+call (2026-08-08): the brief's "current free DeepSeek" no longer exists
+(verified against `https://openrouter.ai/api/v1/models`: the DeepSeek family
+is all paid, fourteen unrelated `:free` ids remain), so the demo runs the
+paid-but-cheap pinned snapshot: $0.09/M in, 1M context, `tools` supported.
+The per-day ask budget is the cost control. Free tool-capable fallbacks if
+the account runs dry: `nvidia/nemotron-3-super-120b-a12b:free` (262k),
 `google/gemma-4-31b-it:free`, `inclusionai/ling-3.0-tiny:free` (fastest).
 
 **This is a one-line env change, not a code change** — which is the reason it
@@ -501,7 +496,7 @@ served from disk, so a CSP could be added later without rewriting it.
 
 ## 7. Open, for Tom
 
-1. **The model default.** `openai/gpt-oss-20b:free` stands in for the DeepSeek
+1. **The model default.** `deepseek/deepseek-v4-flash-0731` stands in for the DeepSeek
    free tier that no longer exists (§3.1). If you want a specific one, it is
    `OPENROUTER_MODEL=` and a restart.
 2. **The daily budget is 50 asks.** That is a number chosen to be visibly

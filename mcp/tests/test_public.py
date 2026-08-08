@@ -379,7 +379,7 @@ def test_ask_runs_the_tool_loop_and_cites_real_results(tmp_path: Path) -> None:
         payload = client.post("/api/ask", json={"q": "what does the kv cache cost?"}).json()
 
     assert payload["rounds"] == 1
-    assert payload["model"] == "openai/gpt-oss-20b:free"
+    assert payload["model"] == "deepseek/deepseek-v4-flash-0731"
     assert "[1]" in payload["answer"]
     assert "[9]" not in payload["answer"], "a citation naming nothing is stripped"
     assert payload["citations"], "the cited hit comes back with its deep link"

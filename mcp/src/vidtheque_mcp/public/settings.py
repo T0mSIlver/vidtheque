@@ -20,7 +20,7 @@ from ..config import _bool_env, _env, _float_env, _int_env
 # free DeepSeek" has no id to pin. Of the fourteen `:free` ids that day, this is
 # the one with tool-calling support, a 131k context and a year-stable id.
 # demo-site.md §3.1 lists the alternatives; swapping is an env change.
-DEFAULT_MODEL = "openai/gpt-oss-20b:free"
+DEFAULT_MODEL = "deepseek/deepseek-v4-flash-0731"
 DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 
 REPO_URL = "https://github.com/T0mSIlver/vidtheque"
