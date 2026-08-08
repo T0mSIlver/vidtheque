@@ -241,9 +241,10 @@ def extract_keyframes(
     """Pass 1 decodes the video end to end; pass 2 seeks ~9 times per shot.
 
     For a 40-shot video that is ~360 decoded frames instead of 100,000, which is
-    why pass 1 is most of this stage — measured at 65% of it on an 18-minute
-    1080p talk, with pass 2's ~1,100 seeks the rest
-    (research/keyframe-decode-bench-2026-08-08.md).
+    why pass 1 is most of this stage: 56% and 81% of it on the two 1080p talks in
+    research/keyframe-decode-bench-2026-08-08.md, the rest being pass 2's ~1,100
+    seeks. Both passes are worth attacking; only one of them has a fix that does
+    not change the output.
     """
     shots = thin(detect_shots(video_path, kind=kind, max_shot_seconds=max_shot_seconds), budget)
     return extract_from_shots(
