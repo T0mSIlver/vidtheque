@@ -166,7 +166,7 @@ WHISPERX_RESPONSE: dict[str, Any] = {
     "language": "en",
     "duration": 12.0,
     "text": "paged attention keeps a block table fragmentation drops to four percent",
-    "model": "whisperx-large-v3",
+    "model": "large-v3",
     "segments": [
         {
             "id": 0,
@@ -253,8 +253,8 @@ class FakeWorker:
         healthy: bool = True,
         text_dim: int = 1024,
         frame_dim: int = 1152,
-        text_model: str = "qwen3-embedding-0.6b",
-        frame_model: str = "siglip2-so400m-patch16-naflex",
+        text_model: str = "Qwen/Qwen3-Embedding-0.6B",
+        frame_model: str = "google/siglip2-so400m-patch16-naflex",
         transcript: dict[str, Any] | None = None,
         # Deliberately screen text that is *not* in the transcript: the OCR leg
         # drops a line when a longer transcript cue matching the same query sits
@@ -295,7 +295,7 @@ class FakeWorker:
                 [OcrLine(text=self.ocr_text, confidence=0.94, bbox=(10.0, 20.0, 300.0, 60.0))]
                 for _ in images
             ],
-            "rapidocr-v2",
+            "rapidocr-default",
         )
 
     async def embed_images(self, images: Sequence[Path], *, model=None, max_num_patches=None):

@@ -235,6 +235,58 @@ async def test_worker_model_drift_disables_the_vector_leg(tmp_path: Path) -> Non
         await db.close()
 
 
+async def test_the_shipped_defaults_do_not_drift_against_each_other(tmp_path: Path) -> None:
+    """A fresh migration plus a worker running `deploy/.env.example` defaults has
+    to leave both vector legs live. It did not: the migration seeded short names
+    and the worker reports HF ids, so a default install answered FTS-only and
+    blamed a model mismatch the repo itself created (smoke §4.1)."""
+    from vidtheque_mcp.pipeline.runner import _dimension_mismatch
+
+    env = dict(
+        line.split("=", 1)
+        for line in (Path(__file__).resolve().parents[2] / "deploy/.env.example")
+        .read_text()
+        .splitlines()
+        if line and not line.startswith("#") and "=" in line
+    )
+    data = tmp_path / "data"
+    (data / "keyframes").mkdir(parents=True)
+    seed(data / "vidtheque.db", data / "keyframes")
+    db = Database(path=data / "vidtheque.db")
+    await db.open()
+    try:
+        assert db.writes_allowed is True
+        # Query time: the text leg stays on for the model the worker serves.
+        db.note_worker_drift(env["EMBED_MODEL"], db.text_dim)
+        assert db.vectors.enabled is True
+        assert db.vectors.note() is None
+        # Index time: neither embed stage refuses to write.
+        assert (
+            _dimension_mismatch(
+                [[0.0] * db.text_dim], db.text_dim, db.text_dim,
+                env["EMBED_MODEL"], db.config["text_embed.model"],
+            )
+            is None
+        )
+        assert (
+            _dimension_mismatch(
+                [[0.0] * db.frame_dim], db.frame_dim, db.frame_dim,
+                env["IMAGE_EMBED_MODEL"], db.config["frame_embed.model"],
+            )
+            is None
+        )
+        # And the check is still a check: a different checkpoint at the same
+        # width is exactly the silent-drift case, and is still caught.
+        assert _dimension_mismatch(
+            [[0.0] * db.text_dim], db.text_dim, db.text_dim, "BAAI/bge-m3",
+            db.config["text_embed.model"],
+        )
+        db.note_worker_drift("BAAI/bge-m3", db.text_dim)
+        assert db.vectors.enabled is False
+    finally:
+        await db.close()
+
+
 async def test_search_degrades_to_fts_when_vectors_are_disabled(tmp_path: Path) -> None:
     from .conftest import FakeEmbeddings
     from vidtheque_mcp.app import assemble

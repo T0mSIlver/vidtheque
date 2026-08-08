@@ -37,12 +37,12 @@ class FakeEmbeddings:
     through.
     """
 
-    FRAME_MODEL = "siglip2-so400m-patch16-naflex"
+    FRAME_MODEL = "google/siglip2-so400m-patch16-naflex"
 
     def __init__(
         self,
         dim: int = TEXT_DIM,
-        model: str = "qwen3-embedding-0.6b",
+        model: str = "Qwen/Qwen3-Embedding-0.6B",
         serves_frame_text: bool = True,
     ) -> None:
         self.dim = dim

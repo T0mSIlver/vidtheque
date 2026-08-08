@@ -18,12 +18,15 @@ def fresh(tmp_path: Path) -> sqlite3.Connection:
     conn.close()
 
 
+ALL_VERSIONS = [m.version for m in migrations.discover()]
+
+
 def test_migrations_apply_on_a_fresh_database(fresh: sqlite3.Connection) -> None:
     applied = migrations.migrate(fresh)
-    assert applied == [1]
-    assert migrations.current_version(fresh) == 1
+    assert applied == ALL_VERSIONS
+    assert migrations.current_version(fresh) == ALL_VERSIONS[-1]
     rows = migrations.applied(fresh)
-    assert [int(r["version"]) for r in rows] == [1]
+    assert [int(r["version"]) for r in rows] == ALL_VERSIONS
 
 
 def test_migrations_are_idempotent(fresh: sqlite3.Connection) -> None:
@@ -70,10 +73,68 @@ def test_owner_columns_default_to_one(fresh: sqlite3.Connection) -> None:
 def test_config_is_seeded_with_the_decided_models(fresh: sqlite3.Connection) -> None:
     migrations.migrate(fresh)
     config = dict(fresh.execute("SELECT key, value FROM config"))
-    assert config["text_embed.model"] == "qwen3-embedding-0.6b"
+    assert config["text_embed.model"] == "Qwen/Qwen3-Embedding-0.6B"
     assert config["text_embed.dim"] == "1024"
     assert config["frame_embed.dim"] == "1152"
     assert config["diarization.enabled"] == "0"
+
+
+def _env_defaults() -> dict[str, str]:
+    text = (Path(__file__).resolve().parents[2] / "deploy/.env.example").read_text()
+    return dict(
+        line.split("=", 1)  # type: ignore[misc]
+        for line in text.splitlines()
+        if line and not line.startswith("#") and "=" in line
+    )
+
+
+def test_seeded_model_ids_are_the_ones_the_default_worker_serves(
+    fresh: sqlite3.Connection,
+) -> None:
+    """The whole anti-drift table is a string comparison against what the worker
+    reports. Ship defaults that disagree and both vector legs turn themselves
+    off on a default install — research/e2e-smoke-2026-08-08.md §4.1."""
+    migrations.migrate(fresh)
+    config = dict(fresh.execute("SELECT key, value FROM config"))
+    env = _env_defaults()
+    assert config["text_embed.model"] == env["EMBED_MODEL"]
+    assert config["frame_embed.model"] == env["IMAGE_EMBED_MODEL"]
+    assert config["ocr.model"] == env["OCR_MODEL"]
+    assert config["stt.model"] == env["STT_MODEL"]
+
+
+def test_the_rename_leaves_a_deliberate_operator_value_alone(
+    fresh: sqlite3.Connection, tmp_path: Path
+) -> None:
+    """0002 renames the 0001 defaults; it must not overwrite a chosen model."""
+    only_first = tmp_path / "m1"
+    only_first.mkdir()
+    first = migrations.discover()[0]
+    (only_first / f"{first.version:04d}_{first.name}.sql").write_text(first.sql)
+    migrations.migrate(fresh, only_first)
+    fresh.execute("UPDATE config SET value = 'BAAI/bge-m3' WHERE key = 'text_embed.model'")
+    fresh.execute(
+        "INSERT INTO videos (source_id, url, title) VALUES ('x', 'https://x', 'T')"
+    )
+    fresh.execute(
+        "INSERT INTO video_stages (video_id, stage, state, model_key) "
+        "VALUES (1, 'frame_embed', 'done', 'siglip2-so400m-patch16-naflex')"
+    )
+    fresh.commit()
+
+    migrations.migrate(fresh)
+
+    config = dict(fresh.execute("SELECT key, value FROM config"))
+    assert config["text_embed.model"] == "BAAI/bge-m3"
+    # The rename carries the stage rows with it: the same weights produced them,
+    # so the reindex planner must not read them as stale.
+    assert config["frame_embed.model"] == "google/siglip2-so400m-patch16-naflex"
+    assert (
+        fresh.execute(
+            "SELECT model_key FROM video_stages WHERE stage = 'frame_embed'"
+        ).fetchone()[0]
+        == config["frame_embed.model"]
+    )
 
 
 def test_vec_tables_have_no_partition_key(fresh: sqlite3.Connection) -> None:

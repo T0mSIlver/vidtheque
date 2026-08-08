@@ -73,18 +73,28 @@ Seeded at first migration; **read at boot, never at query time**:
 
 | key | v1 value | why it is pinned here and not in env |
 |---|---|---|
-| `text_embed.model` | `qwen3-embedding-0.6b` | The vectors in the file were produced by *this*. Env can change; the file cannot retroactively agree. |
+| `text_embed.model` | `Qwen/Qwen3-Embedding-0.6B` | The vectors in the file were produced by *this*. Env can change; the file cannot retroactively agree. |
 | `text_embed.dim` | `1024` | Must equal the `vec_chunks` declared dimension. Asserted at boot. |
 | `text_embed.normalized` | `1` | Written L2-normalized, so cosine ≡ dot. |
 | `text_embed.query_prefix` | `query: ` | The record of what indexing assumed. Asymmetric models need the same prefix at query time — a classic silent-drift source. *Applied by the worker, not here* (note below). |
-| `frame_embed.model` | `siglip2-so400m-patch16-naflex` | |
+| `frame_embed.model` | `google/siglip2-so400m-patch16-naflex` | |
 | `frame_embed.dim` | `1152` | Must equal `vec_frames`. |
 | `frame_embed.storage` | `float32` | `float32` or `int8` (§3.4). |
-| `stt.model` | `whisperx-large-v3` | Drives `video_stages` staleness, not query correctness. |
-| `ocr.model` | `rapidocr-v2` | |
+| `stt.model` | `large-v3` | Drives `video_stages` staleness, not query correctness. |
+| `ocr.model` | `rapidocr-default` | |
 | `diarization.enabled` | `0` | Backs `E_FEATURE_DISABLED` for `search speaker=` (tool-surface §4.1). |
 | `chunk.target_seconds` / `chunk.overlap_seconds` | `45` / `15` | Changing these invalidates every chunk vector. |
 | `pipeline.version` | `1` | Bumped when pipeline *semantics* change; see §1.10. |
+
+**The model values are the exact identifiers the worker reports**, i.e. what
+`deploy/.env.example` ships as `EMBED_MODEL` / `IMAGE_EMBED_MODEL` / `OCR_MODEL`
+/ `STT_MODEL`. That is the whole point of the comparison: the drift check is an
+exact match (casefold only, no prefix stripping), so two genuinely different
+checkpoints are still caught, and `model_key` (§2.2) reads back as the thing
+that produced the row. Migration 0001 seeded friendly short names
+(`qwen3-embedding-0.6b`) and 0002 renames them — with the defaults on both
+sides disagreeing, the drift check fired on a default install and disabled both
+vector legs before anything was written (research/e2e-smoke-2026-08-08.md §4.1).
 
 **The query prefix is the worker's to apply, not the query layer's.** `POST
 /v1/embeddings` takes `input_type=document|query` and the worker applies the
