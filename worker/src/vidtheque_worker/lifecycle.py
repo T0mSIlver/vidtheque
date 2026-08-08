@@ -29,7 +29,7 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
-from .backends.base import Backend
+from .backends.base import Backend, BackendCrashed, BackendError
 from .gpu import GPUHookError, NvmlProbe, VramInfo, run_shell_hook
 
 log = logging.getLogger(__name__)
@@ -250,7 +250,11 @@ class LifecycleManager:
                 self._running_task = job.task
                 try:
                     await self._ensure_loaded(job.task)
-                    result = await asyncio.to_thread(job.fn, slot.backend)
+                    try:
+                        result = await asyncio.to_thread(job.fn, slot.backend)
+                    except Exception as exc:
+                        await self._job_raised(slot, exc)
+                        raise
                 finally:
                     self._running_task = None
                     slot.last_used = self._clock()
@@ -263,6 +267,33 @@ class LifecycleManager:
             log.warning("job failed task=%s label=%s: %s", job.task, job.label, exc)
             if not job.future.done():
                 job.future.set_exception(exc)
+
+    async def _job_raised(self, slot: Slot, exc: Exception) -> None:
+        """Decide what a failed *inference* did to the model, under the lock.
+
+        A ``RuntimeError`` out of a backend is the GPU talking: a CUDA OOM
+        leaves the model's context poisoned, and a slot left ``loaded`` then
+        answers every later job with ``invalid device ordinal`` until the
+        process restarts (measured in ``research/gpu-validation-2026-08-08.md``
+        §5.1 — with ``IDLE_UNLOAD_SECONDS=0`` it never recovers at all). So the
+        slot is unloaded here, which also frees its VRAM and, if it was the last
+        non-resident GPU model, gives the lease back.
+
+        Anything else — a ``ValueError`` for bad input, a missing file — is the
+        caller's problem and leaves a perfectly good model loaded.
+        """
+        if not isinstance(exc, RuntimeError):
+            return
+        log.warning("unloading %s after a failed job: %s", slot.task, exc)
+        try:
+            await self._unload(slot.task, reason="job failed")
+        except Exception:  # pragma: no cover - a backend whose unload also dies
+            log.exception("unload of %s failed after a failed job", slot.task)
+        if isinstance(exc, BackendError):
+            return  # already typed; the HTTP layer knows how to answer it
+        raise BackendCrashed(
+            f"{slot.task} backend failed and was unloaded, retry: {exc}"
+        ) from exc
 
     # -- loading / unloading (always under _gpu_lock) ----------------------
     async def _ensure_loaded(self, task: str) -> None:

@@ -66,10 +66,12 @@ TEXT_CONTEXT_TOKENS = 64
 class SigLIP2Backend(BaseBackend):
     name = "siglip2"
     task = "image_embed"
-    # 1.136B params in bfloat16 = 2.3 GB of weights; activations at batch 32-64
-    # take it to roughly 5 GB. Co-resident with the text embedder on a 24 GB
-    # card with room to spare.
-    default_vram_mb = 5000
+    # Measured on an RTX 3090 (research/gpu-validation-2026-08-08.md): 2489 MB
+    # right after load, 2870 MB peak at 44 frames/request and 256 patches. The
+    # old 5000 MB estimate was 1.7x the real peak and bought nothing but
+    # avoidable evictions. IMAGE_EMBED_MAX_PATCHES=1024 is ~4x the work per
+    # image and was not measured — raise this alongside it.
+    default_vram_mb = 3200
 
     def __init__(
         self,

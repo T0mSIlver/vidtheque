@@ -462,6 +462,34 @@ def test_missing_optional_dependency_maps_to_503(parts, recorder):
     assert response.json()["error"]["type"] == "backend_unavailable"
 
 
+def test_inference_failure_is_a_503_the_caller_can_retry(parts):
+    """An OOM mid-inference used to escape as a bare 500 with the slot still
+    `loaded`, which mcp/'s worker client has no contract for. It is now the
+    same 503 + Retry-After envelope as every other transient GPU failure, and
+    the slot is empty by the time the caller sees it."""
+    backends, manager = parts
+    backends["stt"].infer_error = RuntimeError("CUDA failed with error out of memory")
+    app = create_app(settings=Settings(_env_file=None), manager=manager)
+    upload = {"file": ("clip.wav", b"RIFFfake", "audio/wav")}
+    with TestClient(app) as c:
+        response = c.post("/v1/audio/transcriptions", files=upload)
+        assert response.status_code == 503, response.text
+        assert response.headers["retry-after"] == "30"
+        assert response.json()["error"]["type"] == "backend_crashed"
+
+        status = c.get("/status").json()
+        by_task = {b["task"]: b for b in status["backends"]}
+        assert by_task["stt"]["loaded"] is False
+        assert by_task["stt"]["unload_count"] == 1
+        assert status["vram"]["used_mb"] == 0
+
+        # The retry the client is told to make reloads and succeeds.
+        backends["stt"].infer_error = None
+        retried = c.post("/v1/audio/transcriptions", files=upload)
+        assert retried.status_code == 200, retried.text
+        assert retried.json() == {"text": "hello there general kenobi"}
+
+
 def test_openapi_documents_the_contract(client):
     schema = client.get("/openapi.json").json()
     assert set(schema["paths"]) == {

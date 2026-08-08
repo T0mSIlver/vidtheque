@@ -22,8 +22,12 @@ log = logging.getLogger(__name__)
 class WhisperXBackend(BaseBackend):
     name = "whisperx"
     task = "stt"
-    # large-v3 in float16 plus the alignment model, with room for the batch.
-    default_vram_mb = 3200
+    # Measured on an RTX 3090 (research/gpu-validation-2026-08-08.md): 4993 MB
+    # resident with the alignment model warm, 7941 MB *peak* during inference at
+    # STT_BATCH_SIZE=16 (5352 MB at batch 4). Admission control has to gate on
+    # the peak — a load admitted against the resident figure OOMs mid-job — so
+    # this is the peak plus a little, not the weights.
+    default_vram_mb = 8000
 
     def __init__(
         self,

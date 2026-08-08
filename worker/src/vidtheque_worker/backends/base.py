@@ -27,6 +27,18 @@ class BackendUnavailable(BackendError):
     """Optional dependency (or model) missing — surfaced as HTTP 503."""
 
 
+class BackendCrashed(BackendError):
+    """Inference failed in a way that leaves the loaded model unusable.
+
+    A CUDA OOM is the case this exists for: the allocation fails, but the
+    model's CUDA context is poisoned and every later call to that instance
+    returns ``invalid device ordinal`` (measured:
+    ``research/gpu-validation-2026-08-08.md`` §5.1). The lifecycle manager
+    unloads the slot before raising this, so the failure is transient — HTTP
+    503 + ``Retry-After``, and the next request loads a clean model.
+    """
+
+
 # --------------------------------------------------------------------------
 # result shapes
 # --------------------------------------------------------------------------

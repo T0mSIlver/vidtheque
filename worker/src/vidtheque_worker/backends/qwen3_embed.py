@@ -33,9 +33,11 @@ DEFAULT_MODEL = "Qwen/Qwen3-Embedding-0.6B"
 class Qwen3EmbedBackend(BaseBackend):
     name = "qwen3-embedding"
     task = "embed"
-    # 0.6B params in float16 ≈ 1.2 GB of weights, plus activation headroom for a
-    # modest batch of long transcript chunks.
-    default_vram_mb = 1800
+    # Measured on an RTX 3090 (research/gpu-validation-2026-08-08.md): 1975 MB
+    # peak at batch 64 x 575 characters (1146 MB of weights, the rest
+    # activations). Rounded up rather than down — this one runs while something
+    # bigger is usually already on the card.
+    default_vram_mb = 2000
 
     #: Prompt registered by the model's own sentence-transformers config.
     query_prompt_name = "query"

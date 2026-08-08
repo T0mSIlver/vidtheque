@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 
 from . import __version__
 from .api import router
-from .backends.base import BackendError, BackendUnavailable
+from .backends.base import BackendCrashed, BackendError, BackendUnavailable
 from .backends.registry import UnknownBackend, build_backends
 from .config import Settings, get_settings
 from .gpu import GPUHookError, NvmlProbe
@@ -87,6 +87,12 @@ def _install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(BackendUnavailable)
     async def _unavailable(_: Request, exc: BackendUnavailable):
         return _error(503, str(exc), "backend_unavailable", {"Retry-After": "60"})
+
+    @app.exception_handler(BackendCrashed)
+    async def _crashed(_: Request, exc: BackendCrashed):
+        # Transient by construction: the manager already unloaded the slot, so
+        # the retry mcp/ is about to make loads a clean model.
+        return _error(503, str(exc), "backend_crashed", {"Retry-After": "30"})
 
     @app.exception_handler(InsufficientVRAM)
     async def _vram(_: Request, exc: InsufficientVRAM):

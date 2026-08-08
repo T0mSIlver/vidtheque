@@ -7,6 +7,7 @@ import asyncio
 import pytest
 from conftest import FakeBackend, FakeHooks, FakeVram, Recorder
 
+from vidtheque_worker.backends.base import BackendCrashed, BackendUnavailable
 from vidtheque_worker.gpu import GPUHookError
 from vidtheque_worker.lifecycle import (
     InsufficientVRAM,
@@ -462,6 +463,83 @@ async def test_job_failure_propagates_and_the_queue_survives(recorder):
             await manager.submit("embed", lambda b: b.infer(["hi"]))
         backends["embed"].infer_error = None
         assert await manager.submit("embed", lambda b: b.infer(["hi"])) == "embed-ok"
+    finally:
+        await manager.stop()
+
+
+async def test_an_oom_during_inference_unloads_the_slot_and_frees_its_vram(recorder):
+    """The 3090's finding: a CUDA OOM poisons the model's context, so a slot
+    left `loaded` answers every later job with `invalid device ordinal`."""
+    backends = make_backends(recorder)
+    backends["stt"].infer_error = RuntimeError("CUDA failed with error out of memory")
+    probe = FakeVram(backends)
+    manager = await make_manager(backends, recorder, vram_probe=probe)
+    try:
+        with pytest.raises(BackendCrashed):
+            await manager.submit("stt", lambda b: b.infer("a.wav"))
+
+        # slot state: unloaded, and counted as an unload
+        assert not backends["stt"].loaded
+        assert manager.slot("stt").loaded is False
+        assert manager.slot("stt").unload_count == 1
+        assert recorder.names("load", "infer", "unload") == ["stt", "stt", "stt"]
+
+        # VRAM accounting: the estimate came back
+        snap = manager.snapshot()
+        assert {b["task"]: b["loaded"] for b in snap["backends"]}["stt"] is False
+        assert snap["vram"]["used_mb"] == 0
+
+        # and the next request re-loads a clean model
+        backends["stt"].infer_error = None
+        assert await manager.submit("stt", lambda b: b.infer("a.wav")) == "stt-ok"
+        assert manager.slot("stt").load_count == 2
+        assert manager.slot("stt").job_count == 1
+    finally:
+        await manager.stop()
+
+
+async def test_a_crashed_job_gives_the_lease_back(recorder):
+    backends = make_backends(recorder)
+    backends["stt"].infer_error = RuntimeError("CUDA out of memory")
+    hooks = FakeHooks(recorder)
+    manager = await make_manager(
+        backends, recorder, hook_runner=hooks, acquire_cmd="a", release_cmd="r"
+    )
+    try:
+        with pytest.raises(BackendCrashed):
+            await manager.submit("stt", lambda b: b.infer("a.wav"))
+        assert [label for _, label in hooks.calls] == [
+            "GPU_ACQUIRE_CMD",
+            "GPU_RELEASE_CMD",
+        ]
+        assert manager.hooks.acquired is False
+    finally:
+        await manager.stop()
+
+
+async def test_bad_input_does_not_cost_the_loaded_model(recorder):
+    """Only a RuntimeError is the GPU talking. A ValueError is the caller's."""
+    backends = make_backends(recorder)
+    backends["embed"].infer_error = ValueError("bad input")
+    manager = await make_manager(backends, recorder)
+    try:
+        with pytest.raises(ValueError):
+            await manager.submit("embed", lambda b: b.infer(["hi"]))
+        assert backends["embed"].loaded
+        assert manager.slot("embed").unload_count == 0
+    finally:
+        await manager.stop()
+
+
+async def test_a_typed_backend_error_keeps_its_type(recorder):
+    """BackendUnavailable already maps to its own 503; unload, do not re-wrap."""
+    backends = make_backends(recorder)
+    backends["embed"].infer_error = BackendUnavailable("model is not loaded")
+    manager = await make_manager(backends, recorder)
+    try:
+        with pytest.raises(BackendUnavailable):
+            await manager.submit("embed", lambda b: b.infer(["hi"]))
+        assert not backends["embed"].loaded
     finally:
         await manager.stop()
 
