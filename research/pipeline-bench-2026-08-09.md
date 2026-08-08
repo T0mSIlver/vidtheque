@@ -16,11 +16,12 @@ runs, all traces: `bench/results/raw/pipeline-bench-2026-08-09.json`. Every run
 here is against the pipeline as of `3cef225`; this was a multi-agent session and
 `mcp/` moved afterwards, so §6's line numbers are the tree at the time of
 writing and the symbol names are the durable reference.
+
 Video: `https://youtu.be/5C_HPTJg5ek` — Fireship, "Rust in 100 Seconds",
 149 s, the smoke's canonical subject, so the CPU column is comparable with
 `research/e2e-smoke-2026-08-08.md` §2.
 
-**Verdict in one line: the GPU takes 38 s out of a 96 s job and cannot touch
+**Verdict in one line: the GPU takes 33 s out of a 96 s job and cannot touch
 the other 58.** Details in §7; the honest number underneath it is that on
 these three runs the card was busy for **6–13% of the wall clock**.
 
@@ -177,7 +178,9 @@ dominated by reading weights and building the graph, and both are CPU work.
 * `chunk` is SQLite.
 
 So the GPU's effect on this job is **-33 s** (`frame_embed` -31, `text_embed`
--2) against a 96 s CPU baseline, and the remaining 63 s is untouched.
+-2) against a 96 s CPU baseline: 38 s of GPU-able work becomes 5 s, and the
+other 58 s (`fetch` 16 + `stt` 5 + `chunk` + `keyframe` 23 + `ocr` 14) is
+untouched.
 
 ### Against the smoke's CPU baseline
 
