@@ -110,11 +110,20 @@ def expand_prefix_fts(query: str) -> str:
         else:
             parts.append(quoted)
 
-    # Same operator hygiene as sanitize_fts; a group counts as a term.
+    # Same operator hygiene as sanitize_fts; a group counts as a term. One
+    # extra rule the plain sanitizer doesn't need: FTS5 allows implicit AND
+    # between bare phrases but NOT between parenthesised expressions —
+    # `(a OR a*) (b OR b*)` is "syntax error near (". Join adjacent terms
+    # with an explicit AND.
     cleaned: list[str] = []
     for token in parts:
-        if token in _OPERATORS and (not cleaned or cleaned[-1] in _OPERATORS):
+        if token in _OPERATORS:
+            if not cleaned or cleaned[-1] in _OPERATORS:
+                continue
+            cleaned.append(token)
             continue
+        if cleaned and cleaned[-1] not in _OPERATORS:
+            cleaned.append("AND")
         cleaned.append(token)
     while cleaned and cleaned[-1] in _OPERATORS:
         cleaned.pop()

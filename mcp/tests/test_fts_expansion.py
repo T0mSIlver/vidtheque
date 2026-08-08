@@ -24,9 +24,12 @@ from .conftest import Assembled
     ("query", "expected"),
     [
         ("CVE", '("CVE" OR "CVE"*)'),
-        ("opencode CVE", '("opencode" OR "opencode"*) ("CVE" OR "CVE"*)'),
+        # Adjacent groups need an EXPLICIT AND — implicit AND between
+        # parenthesised expressions is an FTS5 syntax error (found live).
+        ("opencode CVE", '("opencode" OR "opencode"*) AND ("CVE" OR "CVE"*)'),
         # Phrases are exact — never expanded.
         ('"kv cache"', '"kv cache"'),
+        ('"kv cache" CVE', '"kv cache" AND ("CVE" OR "CVE"*)'),
         # An explicit star is already a prefix query; don't double-wrap.
         ("nvidia*", '"nvidia"*'),
         # Short terms don't expand (candidate explosion), but are still quoted.
@@ -49,6 +52,33 @@ def test_expansion_empty_exactly_when_sanitize_is_empty() -> None:
         assert bool(expand_prefix_fts(q)) == bool(sanitize_fts(q)), q
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "CVE",
+        "opencode CVE",
+        "opencode CVE http server",
+        '"kv cache" CVE',
+        "cache OR CVE",
+        "nvidia-smi",
+        "torch.compile latency",
+        "a b CVE",  # short terms interleaved with an expanded one
+        "NOT cache CVE",
+    ],
+)
+def test_expanded_output_actually_parses(query: str) -> None:
+    """The lesson of the live syntax error: string-shape tests are not
+    parseability tests. Every expansion must survive a real FTS5 MATCH."""
+    import sqlite3
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute("CREATE VIRTUAL TABLE t USING fts5(text, tokenize=\"unicode61 tokenchars '_-./'\")")
+    conn.execute("INSERT INTO t VALUES ('CVE-2026-22812 opencode http server')")
+    expanded = expand_prefix_fts(query)
+    assert expanded, query
+    conn.execute("SELECT count(*) FROM t WHERE t MATCH ?", (expanded,)).fetchone()
+
+
 # ------------------------------------------------------------- integration
 
 
@@ -69,7 +99,7 @@ def test_transcript_leg_is_not_prefix_expanded() -> None:
 
     ocr_q = queries.expand_prefix_fts("opencode CVE")
     transcript_q = queries.sanitize_fts("opencode CVE")
-    assert ocr_q == '("opencode" OR "opencode"*) ("CVE" OR "CVE"*)'
+    assert ocr_q == '("opencode" OR "opencode"*) AND ("CVE" OR "CVE"*)'
     assert transcript_q == '"opencode" "CVE"'
     # And the OCR bind actually uses the expanded form.
     params = queries.SearchParams(q="opencode CVE", video_ids=[], limit=5)
