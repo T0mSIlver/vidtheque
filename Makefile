@@ -15,8 +15,8 @@ sync: ## Install the workspace (CPU deps only)
 	uv sync
 
 .PHONY: sync-gpu
-sync-gpu: ## Install the workspace with inference extras (whisperX, ST, RapidOCR, NVML)
-	uv sync --package vidtheque-worker --extra gpu --extra nvml
+sync-gpu: ## Full workspace + inference extras in one venv (mcp, worker, whisperX, ST, NVML, dev)
+	uv sync --group gpu
 
 .PHONY: test
 test: ## Run the test suite (CPU only, no model downloads)

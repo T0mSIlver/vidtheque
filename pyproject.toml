@@ -28,6 +28,13 @@ dev = [
     # starlette's TestClient prefers httpx2; the 1.x client is deprecated there.
     "httpx2>=2.9",
 ]
+# The full stack in ONE venv: every workspace member plus the worker's
+# inference extras. `uv sync --group gpu` is what a GPU box (and the
+# persistent stack) runs; `uv sync --package vidtheque-worker --extra gpu`
+# would drop the mcp package and the dev group from the venv.
+gpu = [
+    "vidtheque-worker[gpu,nvml]",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

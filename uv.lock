@@ -2456,6 +2456,9 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
 ]
+gpu = [
+    { name = "vidtheque-worker", extra = ["gpu", "nvml"] },
+]
 
 [package.metadata]
 requires-dist = [
@@ -2469,6 +2472,7 @@ dev = [
     { name = "pytest", specifier = ">=8.3" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
 ]
+gpu = [{ name = "vidtheque-worker", extras = ["gpu", "nvml"], editable = "worker" }]
 
 [[package]]
 name = "vidtheque-mcp"
