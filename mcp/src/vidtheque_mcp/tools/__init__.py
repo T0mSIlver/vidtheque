@@ -23,12 +23,22 @@ from .descriptions import ANNOTATIONS, DESCRIPTIONS
 __all__ = ["Deps", "register"]
 
 
-def register(mcp: MCPServer, deps: Deps) -> None:
-    _register_tools(mcp, deps)
+def register(
+    mcp: MCPServer, deps: Deps, hidden: frozenset[str] = frozenset()
+) -> None:
+    """Register the surface. ``hidden`` names tools this deployment must not have.
+
+    A hidden tool is never handed to ``add_tool``: it is absent from
+    ``tools/list`` and a ``tools/call`` for it is the SDK's unknown-tool error.
+    That is deliberately not "registered but refuses" — see demo-site.md §1.1.
+    Which names land here is the *deployment's* policy (``public/readonly.py``),
+    never this module's.
+    """
+    _register_tools(mcp, deps, hidden)
     _register_resources(mcp, deps)
 
 
-def _register_tools(mcp: MCPServer, deps: Deps) -> None:
+def _register_tools(mcp: MCPServer, deps: Deps, hidden: frozenset[str]) -> None:
     async def search_tool(
         q: str | None = None,
         content_type: str = "all",
@@ -288,6 +298,8 @@ def _register_tools(mcp: MCPServer, deps: Deps) -> None:
         ("tag-video", tag_video_tool),
     ]
     for name, fn in registry:
+        if name in hidden:
+            continue
         mcp.add_tool(
             fn,
             name=name,
@@ -297,7 +309,8 @@ def _register_tools(mcp: MCPServer, deps: Deps) -> None:
             structured_output=False,
         )
 
-    _alias_return(mcp)
+    if "get-frames" not in hidden:
+        _alias_return(mcp)
 
 
 def _alias_return(mcp: MCPServer) -> None:

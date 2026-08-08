@@ -19,7 +19,13 @@ from .config import Settings
 from .tools import Deps, register
 
 
-def build_mcp_server(settings: Settings, deps: Deps, auth: AuthBundle) -> MCPServer:
+def build_mcp_server(
+    settings: Settings,
+    deps: Deps,
+    auth: AuthBundle,
+    hidden_tools: frozenset[str] = frozenset(),
+) -> MCPServer:
+    """``hidden_tools`` are never registered — the read-only public deployment."""
     mcp = MCPServer(
         name="vidtheque",
         title="vidtheque",
@@ -38,5 +44,5 @@ def build_mcp_server(settings: Settings, deps: Deps, auth: AuthBundle) -> MCPSer
         auth=auth.auth_settings,
         log_level=settings.log_level.upper(),  # type: ignore[arg-type]
     )
-    register(mcp, deps)
+    register(mcp, deps, hidden_tools)
     return mcp
