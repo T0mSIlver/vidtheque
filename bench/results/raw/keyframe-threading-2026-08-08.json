@@ -1,0 +1,137 @@
+{
+  "started_at": "2026-08-08T22:36:54+00:00",
+  "host": {
+    "cpus": 10
+  },
+  "settings": {
+    "max_shot_seconds": 25.0,
+    "candidates_per_shot": 9,
+    "budget": 600,
+    "detector": "screencast",
+    "repeats": 1
+  },
+  "videos": [
+    {
+      "full": {
+        "file": "RjfbvDXpFls-1080p.mp4",
+        "bytes": 160371039,
+        "codec": "h264",
+        "profile": "High",
+        "width": 1920,
+        "height": 1080,
+        "fps": 50.0,
+        "fps_exact": "50",
+        "duration_s": 1104.74,
+        "start_time_s": 0.0
+      },
+      "detect": {
+        "file": "RjfbvDXpFls-360vo.mp4",
+        "bytes": 10903860,
+        "codec": "h264",
+        "profile": "Main",
+        "width": 640,
+        "height": 360,
+        "fps": 25.0,
+        "fps_exact": "25",
+        "duration_s": 1104.76,
+        "start_time_s": 0.0
+      },
+      "threading": {
+        "NONE": {
+          "wall_s": 186.97,
+          "cuts": 123,
+          "last_frame": 55236,
+          "cut_list_sha": "4ac0afadf116715b"
+        },
+        "SLICE": {
+          "wall_s": 140.22,
+          "cuts": 123,
+          "last_frame": 55236,
+          "cut_list_sha": "4ac0afadf116715b"
+        },
+        "AUTO": {
+          "wall_s": 94.72,
+          "cuts": 123,
+          "last_frame": 55236,
+          "cut_list_sha": "4ac0afadf116715b"
+        },
+        "identical_cut_lists": true
+      },
+      "nvdec": {
+        "cpu": {
+          "ok": true,
+          "wall_s": 2.42,
+          "realtime_x": 49.7,
+          "error": null
+        },
+        "nvdec": {
+          "ok": false,
+          "wall_s": 0.17,
+          "realtime_x": 692.2,
+          "error": "[h264_cuvid @ 0x64425af40940] Cannot load libnvcuvid.so.1\n[h264_cuvid @ 0x64425af40940] Failed loading nvcuvid.\n[vist#0:0/h264 @ 0x64425b06fa40] [dec:h264_cuvid @ 0x64425af40400] Error while opening d"
+        }
+      }
+    },
+    {
+      "full": {
+        "file": "Sir59K8ZDPU-1080p.mp4",
+        "bytes": 63087186,
+        "codec": "h264",
+        "profile": "High",
+        "width": 1920,
+        "height": 1080,
+        "fps": 59.94005994005994,
+        "fps_exact": "60000/1001",
+        "duration_s": 1277.96,
+        "start_time_s": 0.0
+      },
+      "detect": {
+        "file": "Sir59K8ZDPU-360vo.mp4",
+        "bytes": 5904029,
+        "codec": "h264",
+        "profile": "Main",
+        "width": 640,
+        "height": 360,
+        "fps": 29.97,
+        "fps_exact": "2997/100",
+        "duration_s": 1277.945,
+        "start_time_s": 0.0
+      },
+      "threading": {
+        "NONE": {
+          "wall_s": 189.57,
+          "cuts": 23,
+          "last_frame": 76600,
+          "cut_list_sha": "7592ad1cd9ac0565"
+        },
+        "SLICE": {
+          "wall_s": 255.69,
+          "cuts": 23,
+          "last_frame": 76600,
+          "cut_list_sha": "7592ad1cd9ac0565"
+        },
+        "AUTO": {
+          "wall_s": 137.82,
+          "cuts": 23,
+          "last_frame": 76600,
+          "cut_list_sha": "7592ad1cd9ac0565"
+        },
+        "identical_cut_lists": true
+      },
+      "nvdec": {
+        "cpu": {
+          "ok": true,
+          "wall_s": 2.94,
+          "realtime_x": 40.8,
+          "error": null
+        },
+        "nvdec": {
+          "ok": false,
+          "wall_s": 0.14,
+          "realtime_x": 886.3,
+          "error": "[h264_cuvid @ 0x5e75dfe658c0] Cannot load libnvcuvid.so.1\n[h264_cuvid @ 0x5e75dfe658c0] Failed loading nvcuvid.\n[vist#0:0/h264 @ 0x5e75dfd396c0] [dec:h264_cuvid @ 0x5e75dfd3ab40] Error while opening d"
+        }
+      }
+    }
+  ]
+}
