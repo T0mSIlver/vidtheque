@@ -2,54 +2,94 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>vidtheque — search a video corpus</title>
-<meta name="description" content="A demo of vidtheque: a self-hosted MCP server that turns videos you have watched into a searchable multimodal corpus.">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>vidtheque — search inside a video corpus</title>
+<meta name="description" content="A live demo of vidtheque, a self-hosted MCP server that turns talks you have watched into a searchable corpus: the spoken words, the on-screen text and the frames, each linked back to the second it came from.">
 <meta name="color-scheme" content="light dark">
+<!-- The browser chrome follows the page, in both schemes. -->
+<meta name="theme-color" content="#fbfaf9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131313" media="(prefers-color-scheme: dark)">
+<!-- Unfurls. No og:image yet — a wrong one is worse than none. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="vidtheque">
+<meta property="og:title" content="vidtheque — search inside a video corpus">
+<meta property="og:description" content="Search the spoken words, the on-screen text and the frames of a video corpus. Every hit links back to the second it came from. It is a read-only MCP server: point your own agent at it.">
+<meta name="twitter:card" content="summary">
 <link rel="stylesheet" href="/static/style.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🎞️</text></svg>">
+<!-- A film frame, drawn rather than an emoji: emoji favicons render as a
+     different glyph on every platform and vanish in monochrome tab strips. -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23b45309'/><rect x='6' y='9' width='20' height='14' rx='1.5' fill='%23fbfaf9'/><g fill='%23b45309'><rect x='8.5' y='11' width='3' height='3' rx='0.6'/><rect x='8.5' y='18' width='3' height='3' rx='0.6'/><rect x='20.5' y='11' width='3' height='3' rx='0.6'/><rect x='20.5' y='18' width='3' height='3' rx='0.6'/></g></svg>">
 </head>
 <body>
 
 <header class="masthead">
-  <a class="wordmark" href="/">vidtheque</a>
-  <p class="tagline">Search the spoken words, the on-screen text and the frames of an indexed video corpus.</p>
+  <h1 class="wordmark"><a href="/">vidtheque</a></h1>
+  <p class="tagline">Search what was said, what was on the screen, and the frames themselves.</p>
 </header>
 
 <main>
   <form id="search-form" class="searchbar" role="search" autocomplete="off">
-    <input id="q" name="q" type="search" placeholder="kv cache, paged attention, nvidia-smi…"
-           aria-label="Search the corpus" autofocus>
+    <label class="sr-only" for="q">Search this video corpus</label>
+    <input id="q" name="q" type="search" placeholder="kv cache, nvidia-smi, ontology…"
+           enterkeyhint="search" spellcheck="false" autofocus>
     <button type="submit" id="go">Search</button>
   </form>
 
   <div class="controls">
-    <div id="chips" class="chips" role="group" aria-label="Content type">
-      <button type="button" class="chip is-on" data-type="all">all</button>
-      <button type="button" class="chip" data-type="transcript">transcript</button>
-      <button type="button" class="chip" data-type="ocr">on-screen text</button>
-      <button type="button" class="chip" data-type="frame">frames</button>
+    <div id="chips" class="chips" role="group" aria-label="Search which channel">
+      <button type="button" class="chip is-on" data-type="all" aria-pressed="true">all</button>
+      <button type="button" class="chip" data-type="transcript" aria-pressed="false">transcript</button>
+      <button type="button" class="chip" data-type="ocr" aria-pressed="false">on-screen text</button>
+      <button type="button" class="chip" data-type="frame" aria-pressed="false">frames</button>
     </div>
-    <div id="modes" class="chips modes" role="group" aria-label="Mode" hidden>
-      <button type="button" class="chip is-on" data-mode="search">search</button>
-      <button type="button" class="chip" data-mode="ask">ask ✨</button>
+    <div id="modes" class="chips modes" role="group" aria-label="Result mode" hidden>
+      <button type="button" class="chip is-on" data-mode="search" aria-pressed="true">search</button>
+      <button type="button" class="chip" data-mode="ask" aria-pressed="false">ask ✨</button>
     </div>
   </div>
 
-  <p id="status" class="status" aria-live="polite"></p>
+  <p id="status" class="status" role="status"></p>
 
-  <section id="answer" class="answer" hidden aria-live="polite"></section>
+  <!-- Before the first search: teach the corpus rather than show a blank page.
+       The three examples are copy, so they live here and not in app.js — edit
+       this list when the corpus changes. -->
+  <section id="empty" class="empty" aria-label="Getting started">
+    <h2>Try one of these</h2>
+    <ul class="examples">
+      <li><button type="button" class="chip example">what CVE is shown in the opencode talk</button></li>
+      <li><button type="button" class="chip example">terminal with code on screen</button></li>
+      <li><button type="button" class="chip example">how to build an ontology</button></li>
+    </ul>
+    <p class="hint">
+      A result is one moment in one talk — a sentence that was spoken, text that
+      was on a slide, or what the frame showed. Follow it and the video opens at
+      that second.
+    </p>
+    <div id="corpus" class="corpus" hidden>
+      <h3>In this corpus</h3>
+      <ul id="corpus-list"></ul>
+    </div>
+  </section>
+
+  <section id="answer" class="answer" hidden aria-live="polite" aria-label="Answer"></section>
 
   <section id="results" class="results" aria-label="Results"></section>
+  <div id="results-foot"></div>
 
   <section class="connect">
     <h2>Add this corpus to your own agent</h2>
-    <p>It is a real MCP server, read-only. Point any MCP client at the endpoint:</p>
+    <p>
+      Point an MCP client at the endpoint below and your agent gets seven
+      read-only tools over these talks — search them, pull the transcript around
+      a moment, read the frames — so it can answer from the corpus and cite the
+      second it came from.
+    </p>
     <div class="copyrow">
       <code id="mcp-url">…</code>
       <button type="button" id="copy" class="ghost">Copy</button>
     </div>
     <p class="hint">Claude Code: <code id="cli-line">claude mcp add --transport http vidtheque …</code></p>
+    <p class="copy-note sr-only" id="copy-note" role="status"></p>
   </section>
 </main>
 
@@ -59,7 +99,7 @@
     <a id="repo" href="https://github.com/T0mSIlver/vidtheque">Source on GitHub</a>.
   </p>
   <p class="muted">
-    Every result links back to the original talk on YouTube, at the second it was said.
+    Results link to the original talks on YouTube, at the second they were said.
     vidtheque indexes what it watched; the videos belong to the people who made them.
   </p>
 </footer>

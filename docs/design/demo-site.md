@@ -460,9 +460,16 @@ sidebar, no charts. The corpus is the content; the chrome should be nearly
 invisible. Dark mode via `prefers-color-scheme` with both palettes defined as
 CSS custom properties on `:root`.
 
+The `<head>` is part of the deliverable, not boilerplate: a title that says
+what the thing is, a description, `og:title`/`og:description` (no `og:image` —
+a wrong one is worse than none), `viewport`, a `theme-color` per scheme so the
+browser chrome follows the page, and a **drawn** film-frame favicon as an inline
+SVG data URI rather than an emoji, because an emoji favicon renders as a
+different glyph on every platform and disappears in a monochrome tab strip.
+
 Layout, top to bottom:
 
-1. **Header** — wordmark and one line of what it is.
+1. **Header** — wordmark (the page's `<h1>`) and one line of what it is.
 2. **Search box** — autofocus, submits on Enter. One primary button, labelled
    by the current mode (`Search` / `Ask`).
 3. **Controls row** — filter chips on the left (`all` / `transcript` /
@@ -489,17 +496,62 @@ Layout, top to bottom:
    link to the original talks on YouTube; vidtheque indexes what it watched and
    sends you back to the source.
 
+### 6.1 The states
+
+A demo is judged on the four screens that are not "ten results came back".
+
+- **Before the first search** the page teaches instead of sitting blank: three
+  clickable example queries — real ones, tailored to the corpus, and written in
+  `index.html` because they are copy — a sentence saying what a result *is*, and
+  the list of videos actually indexed, from `/api/videos`. Editing the examples
+  is editing one list in the HTML.
+- **Nothing matched** names the query, and offers the widening that exists: if a
+  content-type filter is on, a button back to `all`; otherwise fewer words, and
+  the reminder that a phrase from a slide will not be in the spoken words.
+- **Refused or broken** — a 429 renders the limiter's `Retry-After` as a
+  *ticking* countdown with the retry disabled until it reaches zero; a failed
+  fetch says the server could not be reached and offers the same retry; a 503
+  in ask mode keeps its "search instead" button and counts down too. No error
+  ever shows a status code or an upstream message.
+- **Loading** is a skeleton with the row geometry of a result — thumbnail box
+  included — so nothing moves when the real rows land (measured: CLS 0 on the
+  results render).
+
+Requests are spent on **Enter or a click, never on a keystroke**: a
+search-as-you-type box against a shared 30/min bucket would refuse a visitor
+mid-word. A search in flight is aborted when a newer one starts, and responses
+carry a sequence number, so a slow reply cannot overwrite a fast one.
+
+### 6.2 The floor
+
+Accessibility: real landmarks and one `<h1>`, a real `<label>` for the search
+box, `aria-pressed` on both chip groups (they are toggles, and a screen reader
+should hear the state, not infer it from colour), `role="status"` on the result
+count and `aria-live` on the answer pane, a single `:focus-visible` ring that
+also lands on the result rows, `alt` text naming the video and the timestamp on
+every thumbnail, and AA contrast in both schemes for every colour pair the page
+actually uses.
+
+Mobile is a first-class target, not a media query afterthought: at 375px the
+input takes its own line with the primary action full-width under it, chips
+wrap, the copy row stacks, and nothing overflows horizontally at 320px either.
+
+**XSS.** OCR text is adversarial by construction — it is whatever was on
+someone's screen, and a slide that says `<script>` is a normal slide. Two rules,
+both testable: every string becomes a DOM text node (there is no `innerHTML`,
+`insertAdjacentHTML`, `document.write` or `eval` anywhere in `app.js`, asserted
+in `test_public.py`), and every URL that reaches an `href` or a `src` passes
+`safeUrl()`, which returns only `http(s)` — so a `javascript:` link in a payload
+becomes the plain video link instead.
+
 **A search is a URL.** `?q=` and `?type=` are written with `replaceState` on
 every search and read back on load, so a result page is shareable and the
 browser's history behaves. `?ask=1` arrives *in* ask mode with the question
 loaded but **does not fire**: an answer costs a slice of the daily model budget,
 and a shared link (or a crawler) must not spend it on page load. One click does.
 
-Accessibility floor: real `<form>`, real `<a href>` on every result (so
-middle-click works), `aria-live="polite"` on the results count and the answer
-pane, visible focus rings, and no colour-only state. Every string that comes
-from the corpus or the model is inserted as a DOM text node — there is no
-`innerHTML` anywhere in `app.js`.
+A real `<form>` and a real `<a href>` on every result, so Enter submits and
+middle-click opens — the two things a search engine is expected to do.
 
 No inline `<script>` beyond a nonce-free module tag — the page is static files
 served from disk, so a CSP could be added later without rewriting it.
@@ -518,7 +570,19 @@ served from disk, so a CSP could be added later without rewriting it.
    accent colour (a warm amber that reads on both grounds), the 46rem column,
    hairline rows over cards, thumbnails at 96px, and the `search | ask ✨` pill
    pair instead of a toggle button. The whole palette is six custom properties
-   at the top of `style.css`.
+   at the top of `style.css`. The palette was checked rather than assumed:
+   every text/ground pair the page uses clears AA in both schemes (the light
+   accent is the tightest at 4.8:1), so a nudge to either accent should be
+   re-checked before it ships.
+6. **The three example queries** on the cold page are corpus-specific copy in
+   `index.html`. They stop being useful the day the corpus changes; there is no
+   machinery to keep them honest, deliberately, because a generated example is
+   a worse example.
+7. **A gibberish query still returns results.** The vector leg has no relevance
+   floor, so `zzzzqqqq` comes back with the whole corpus, semantically ranked.
+   The zero-results state is therefore designed but nearly unreachable in
+   practice. That is a query-layer decision, not a page one — flagged here
+   because it is visible from the page and looks like a bug to a visitor.
 5. **Nothing outstanding on the query layer.** Driving the facade surfaced a
    multi-word FTS break (`search q="kv cache"` → `E_INTERNAL`, fts5 syntax
    error near `"OR"`); it was fixed in parallel by the expanded-OCR-groups
