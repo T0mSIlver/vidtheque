@@ -744,7 +744,7 @@ class IndexingPipeline:
         else:
             await self.db.write(lambda c: store.mark_failed(c, video_id))
 
-        await self._retention(run)
+        await self._retention(run, stages)
         if run.degraded:
             await run.ctx.log("; ".join(sorted(set(run.degraded))), "warn")
         if run.failed_stages:
@@ -767,24 +767,32 @@ class IndexingPipeline:
             )
         )
 
-    async def _retention(self, run: ItemRun) -> None:
-        """DECISIONS.md #3: keep the audio, drop the mp4.
+    async def _retention(self, run: ItemRun, stages: dict[str, Any]) -> None:
+        """DECISIONS.md #3: keep the audio, drop the mp4 — per *resource*.
 
-        Only when nothing failed — a failure must never destroy the input to a
-        retry, which is the whole reason the deletion is here and not in the
-        `fetch` stage that produced the file.
+        "Nothing failed" was the wrong gate. A file must outlive a failure only
+        while it is still the input to something that will re-run, and the mp4
+        is the input to exactly one stage: `keyframe`. OCR and frame embedding
+        read the JPEGs. So a transient OCR error used to pin a multi-gigabyte
+        source video forever — the item finished `done`, the video went `ready`,
+        nothing scheduled a retry, and only an explicit reindex would ever
+        release it. On a 116-video night that is the disk.
+
+        The rule now: each file is released once the stage that consumes it has
+        settled (`done` or `skipped`), and kept while that stage is still
+        retryable (`failed`, `pending`, `running`).
         """
-        if run.meta is None or run.failed_stages:
+        if run.meta is None:
             return
         keep = self.settings.keep_source
         video_id = run.video_id
-        if keep != "originals":
+        if keep != "originals" and _settled(stages, "keyframe"):
             for path in self.layout.media_candidates(run.meta.source_id):
                 _unlink(path)
             if run.media is not None:
                 _unlink(run.media)
             await self.db.write(lambda c: store.clear_media_path(c, video_id))
-        if keep == "none" and run.audio is not None:
+        if keep == "none" and run.audio is not None and _settled(stages, "stt"):
             _unlink(run.audio)
             await self.db.write(lambda c: store.clear_media_path(c, video_id, audio=True))
 
@@ -989,6 +997,11 @@ def _dimension_mismatch(
 def _state_of(stages: dict[str, Any], name: str) -> str:
     row = stages.get(name)
     return str(row["state"]) if row is not None else "missing"
+
+
+def _settled(stages: dict[str, Any], name: str) -> bool:
+    """The stage will not run again on its own: its inputs are free."""
+    return _state_of(stages, name) in ("done", "skipped")
 
 
 def _relative(path: Path | None, root: Path) -> str | None:

@@ -274,8 +274,12 @@ async def test_a_failed_stage_keeps_the_finished_ones(settings: Settings, clip: 
         job = await parts.one("SELECT state FROM jobs WHERE public_id = ?", (job_id,))
         assert job["state"] == "done"
         assert (await parts.one("SELECT index_state FROM videos"))["index_state"] == "ready"
-        # A failure never destroys the input to a retry.
-        assert list((parts.parts.settings.data_dir / "media").glob("aB3dEfG7hIj.*"))
+        # A failure never destroys the input to *its own* retry — and the input
+        # to an OCR retry is the JPEGs, not the mp4. `keyframe` is done, so the
+        # source video is released on schedule: this used to keep it forever
+        # because some other stage had failed.
+        assert not list((parts.parts.settings.data_dir / "media").glob("aB3dEfG7hIj.*"))
+        assert list((parts.parts.settings.data_dir / "keyframes" / "aB3dEfG7hIj").glob("*.jpg"))
     finally:
         await parts.db.close()
         parts.parts.auth.close()
