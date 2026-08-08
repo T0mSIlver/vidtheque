@@ -202,6 +202,52 @@ def test_per_video_diversity_cap_applies_before_the_page(conn: sqlite3.Connectio
     assert max(per_video.values()) == 1
 
 
+def test_per_video_diversity_cap_applies_to_the_ocr_leg_too(
+    conn: sqlite3.Connection,
+) -> None:
+    """The diversity and probe tests only ever exercised the transcript leg, so
+    the other two legs' caps were unasserted (review's coverage note)."""
+    pool = ids(conn)
+    rows = queries.search_ocr(
+        conn,
+        queries.SearchParams(q="cache OR nvidia OR block", video_ids=pool, limit=50, max_per_video=1),
+    )
+    per_video: dict[int, int] = {}
+    for row in rows:
+        per_video[int(row["video_id"])] = per_video.get(int(row["video_id"]), 0) + 1
+    assert per_video
+    assert max(per_video.values()) == 1
+
+
+def test_per_video_diversity_cap_applies_to_the_frame_leg_too(
+    conn: sqlite3.Connection,
+) -> None:
+    pool = ids(conn)
+    qimg = queries.pack_f32(vector_for("kv cache size = 2 * n_layers * n_heads", 1152))
+    rows = queries.search_frames(
+        conn,
+        queries.SearchParams(q="kv cache", video_ids=pool, limit=50, max_per_video=1),
+        qimg,
+        50,
+        max_distance=2.0,
+    )
+    per_video: dict[str, int] = {}
+    for row in rows:
+        per_video[str(row["video_id"])] = per_video.get(str(row["video_id"]), 0) + 1
+    assert per_video
+    assert max(per_video.values()) == 1
+
+
+def test_ocr_probe_and_page_share_the_filter(conn: sqlite3.Connection) -> None:
+    """The transcript leg had this assertion; the OCR leg did not."""
+    pool = ids(conn)
+    params = queries.SearchParams(q="cache OR nvidia OR block", video_ids=pool, limit=50)
+    rows = queries.search_ocr(conn, params)
+    total, hit_ceiling = queries.probe_ocr(conn, params, headroom=1000)
+    assert hit_ceiling is False
+    assert total == len(rows)
+
+
 def test_has_more_comes_from_limit_plus_one(conn: sqlite3.Connection) -> None:
     pool = ids(conn)
     params = queries.SearchParams(

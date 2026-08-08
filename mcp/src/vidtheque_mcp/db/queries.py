@@ -24,6 +24,42 @@ from typing import Any, Iterable, Sequence
 RRF_K = 60.0
 CLUSTER_MAX_SECONDS = 120.0
 
+# --- the vector legs' relevance floor -------------------------------------
+#
+# KNN always returns k rows. It has no notion of "nothing here matched": ask
+# `zzzzqqqq` and the nearest 200 chunks come back, RRF ranks them, and the tool
+# reports the whole corpus with confident-looking scores. Two mechanisms answer
+# that, and it matters which one does the work.
+#
+# 1. This distance floor. sqlite-vec `distance_metric=cosine` yields
+#    1 - cos(theta) in [0, 2]; hits above the ceiling are dropped BEFORE
+#    fusion, never merely ranked lower.
+#
+#    Measured on the live corpus (6 videos, 205 chunk / 298 frame vectors,
+#    2026-08-09) the real and junk distributions OVERLAP ALMOST COMPLETELY:
+#
+#      text  best-hit distance   real 0.504-0.576   junk 0.513-0.616
+#      frame best-hit distance   real 0.877-0.919   junk 0.877-0.966
+#
+#    There is no threshold that separates them. Absolute cosine distance from
+#    an asymmetric-prefix embedder is not calibrated across queries, so any
+#    floor tight enough to reject `flurbles wibbly zonk` (best 0.513) would
+#    also reject `transformer architecture explained` (best 0.504). The
+#    defaults below therefore sit ABOVE the whole measured real range (real
+#    20th-nearest reached 0.664 text / 0.946 frame): they trim an absurd tail
+#    and nothing else, because a floor that deletes real semantic recall is
+#    the worse failure. Env-tunable for corpora with different geometry.
+#
+# 2. `has_lexical_footing`, below — which is what actually makes the empty
+#    state reachable, and does it on evidence rather than on a magic number.
+VEC_MAX_DISTANCE = 0.72
+FRAME_MAX_DISTANCE = 0.96
+
+# vec0 metadata constraints must be plain comparisons to be pushed into the
+# KNN, so "unbounded" is a sentinel rather than NULL. Video positions are
+# REAL seconds; 1e12 s is ~31,000 years.
+VEC_TIME_SENTINEL = 1e12
+
 # ---------------------------------------------------------------------------
 # FTS5 query sanitising
 #
@@ -35,42 +71,186 @@ CLUSTER_MAX_SECONDS = 120.0
 # so a bare `a NEAR b` is a parse error either way. Quoting it as a term is the
 # behaviour a user typing the word "near" expects.
 _OPERATORS = {"AND", "OR", "NOT"}
-_TOKEN = re.compile(r'"[^"]*"|\S+')
+
+# Control characters are removed BEFORE anything else — before the leg-gating
+# `bool(sanitize_fts(q))` decision and before the bind. A query of nothing but
+# NUL used to sanitize to the nonempty `"\x00"`, pass the gate, and reach FTS5
+# as `sqlite3.OperationalError: unterminated string`.
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+# Scripts that do not put spaces between words: a 2-character term there is a
+# whole word, not a stray fragment, so it earns prefix expansion. (The FTS5
+# tables carry `prefix='2 3'`, so a 2-char prefix query is index-served.)
+_DENSE_SCRIPT_RANGES = (
+    (0x2E80, 0x2FFF),  # CJK radicals, Kangxi
+    (0x3040, 0x30FF),  # Hiragana, Katakana
+    (0x3400, 0x4DBF),  # CJK ext A
+    (0x4E00, 0x9FFF),  # CJK unified
+    (0xA000, 0xA4CF),  # Yi
+    (0xAC00, 0xD7AF),  # Hangul syllables
+    (0xF900, 0xFAFF),  # CJK compatibility
+    (0x20000, 0x2FA1F),  # CJK ext B+
+)
+
+
+def _dense_script(term: str) -> bool:
+    return any(
+        any(lo <= ord(ch) <= hi for lo, hi in _DENSE_SCRIPT_RANGES) for ch in term
+    )
+
+
+def _prefix_min(term: str) -> int:
+    """Shortest term that earns prefix expansion, by script.
+
+    Latin `go` expanding to `go*` is a candidate explosion; Han `缓存` is a
+    complete word, and without expansion the OCR token `缓存-管理` (one token,
+    thanks to the tokenchars) is unreachable from the query `缓存`.
+    """
+    return 2 if _dense_script(term) else 3
+
+
+def _lex(query: str) -> list[tuple[str, str, bool]]:
+    """(kind, value, trailing_star) triples. kind: op | ( | ) | phrase | term.
+
+    Small hand lexer rather than one regex, because parentheses must survive as
+    structure: `cache (CVE OR bug)` flattened to `cache CVE OR bug` is
+    `(cache AND CVE) OR bug` under FTS5 precedence — it matches `bug`-only rows.
+    """
+    text = _CONTROL.sub(" ", query)
+    out: list[tuple[str, str, bool]] = []
+    i, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+        if ch.isspace():
+            i += 1
+            continue
+        if ch in "()":
+            out.append((ch, "", False))
+            i += 1
+            continue
+        if ch == '"':
+            close = text.find('"', i + 1)
+            body = text[i + 1 :] if close == -1 else text[i + 1 : close]
+            i = n if close == -1 else close + 1
+            star = i < n and text[i] == "*"
+            if star:
+                i += 1
+            out.append(("phrase", body, star))
+            continue
+        start = i
+        while i < n and not text[i].isspace() and text[i] not in '()"':
+            i += 1
+        raw = text[start:i]
+        star = raw.endswith("*")
+        if star:
+            raw = raw[:-1]
+        if not raw:
+            continue
+        if not star and raw.upper() in _OPERATORS:
+            out.append(("op", raw.upper(), False))
+        else:
+            out.append(("term", raw, star))
+    return out
+
+
+def _assemble(tokens: list[tuple[str, str, bool]], render: Any) -> str:
+    """Rebuild a valid FTS5 expression, preserving the Boolean the user wrote.
+
+    Rules that are the whole point of this function:
+
+    * `a AND NOT b` becomes FTS5's binary `a NOT b` — never `a AND b`, which
+      inverts the exclusion the user asked for.
+    * unary/dangling/doubled operators are dropped (FTS5 has no unary NOT).
+    * parentheses are kept, empty and unbalanced ones repaired.
+    * adjacency is spelled `AND` explicitly: FTS5 allows implicit AND between
+      bare phrases but NOT after a `)`, where it is "syntax error near (".
+    """
+    out: list[str] = []
+    depth = 0
+    pending: str | None = None
+
+    def ends_expr() -> bool:
+        return bool(out) and out[-1] not in _OPERATORS and out[-1] != "("
+
+    def emit(piece: str) -> None:
+        nonlocal pending
+        if ends_expr():
+            out.append(pending or "AND")
+        pending = None
+        out.append(piece)
+
+    for kind, value, star in tokens:
+        if kind == "op":
+            if not ends_expr():
+                continue  # unary or dangling — FTS5 cannot parse it
+            if value == "NOT" and pending == "AND":
+                pending = "NOT"
+            elif pending is None:
+                pending = value
+            continue
+        if kind == "(":
+            emit("(")
+            depth += 1
+            continue
+        if kind == ")":
+            if depth == 0:
+                continue  # unmatched close
+            while out and out[-1] in _OPERATORS:
+                out.pop()
+            if out and out[-1] == "(":
+                out.pop()  # empty group
+            else:
+                out.append(")")
+            depth -= 1
+            pending = None
+            continue
+        piece = render(kind, value, star)
+        if piece:
+            emit(piece)
+
+    while depth > 0:
+        while out and out[-1] in _OPERATORS:
+            out.pop()
+        if out and out[-1] == "(":
+            out.pop()
+        else:
+            out.append(")")
+        depth -= 1
+    while out and out[-1] in _OPERATORS:
+        out.pop()
+    return " ".join(out)
+
+
+def _render_plain(kind: str, value: str, star: bool) -> str:
+    body = value.replace('"', "").strip()
+    if not body:
+        return ""
+    return '"' + body + '"' + ("*" if star else "")
+
+
+def _render_expanded(kind: str, value: str, star: bool) -> str:
+    body = value.replace('"', "").strip()
+    if not body:
+        return ""
+    quoted = '"' + body + '"'
+    if star or kind == "phrase":
+        # A phrase is exact by construction; its suffix star is the user's, and
+        # dropping it (the old lexer did) turns `"foo"*` into `"foo"` and misses
+        # `foobar`.
+        return quoted + ("*" if star else "")
+    if len(body) >= _prefix_min(body):
+        return f"({quoted} OR {quoted}*)"
+    return quoted
 
 
 def sanitize_fts(query: str) -> str:
-    """Quote-wrap user terms, keeping AND/OR/NOT, "phrases" and prefix*.
+    """Quote-wrap user terms, keeping AND/OR/NOT, (groups), "phrases", prefix*.
 
     User text is not a syntax. A query that reduces to nothing (all punctuation,
-    or a dangling operator) returns "" — the caller drops the leg rather than
-    handing FTS5 an expression it cannot parse.
+    control characters, or a dangling operator) returns "" — the caller drops
+    the leg rather than handing FTS5 an expression it cannot parse.
     """
-    parts: list[str] = []
-    for raw in _TOKEN.findall(query.strip()):
-        if raw.startswith('"'):
-            phrase = raw if raw.endswith('"') and len(raw) > 1 else raw + '"'
-            if phrase.strip('"').strip():
-                parts.append(phrase)
-            continue
-        if raw.upper() in _OPERATORS:
-            parts.append(raw.upper())
-            continue
-        trailing_star = raw.endswith("*")
-        term = (raw[:-1] if trailing_star else raw).strip("()")
-        if not term:
-            continue
-        quoted = '"' + term.replace('"', "") + '"'
-        parts.append(quoted + "*" if trailing_star else quoted)
-
-    # An operator needs a term on both sides, so drop dangling and doubled ones.
-    cleaned: list[str] = []
-    for token in parts:
-        if token in _OPERATORS and (not cleaned or cleaned[-1] in _OPERATORS):
-            continue
-        cleaned.append(token)
-    while cleaned and cleaned[-1] in _OPERATORS:
-        cleaned.pop()
-    return " ".join(cleaned)
+    return _assemble(_lex(query), _render_plain)
 
 
 def expand_prefix_fts(query: str) -> str:
@@ -84,50 +264,59 @@ def expand_prefix_fts(query: str) -> str:
     no CVE mentions (screenpipe compensates for the same tokenizer choice the
     same way — query-side expansion, never compound-splitting at index time).
 
-    Each unquoted term of ≥3 chars becomes ``("term" OR "term"*)``; phrases,
-    operators, explicit ``term*`` and short terms pass through `sanitize_fts`
-    semantics unchanged. AND-between-groups is preserved.
+    Each unquoted term at or over its script's threshold becomes
+    ``("term" OR "term"*)``; phrases, operators, explicit ``term*`` and short
+    terms carry `sanitize_fts` semantics unchanged.
     """
-    parts: list[str] = []
-    for raw in _TOKEN.findall(query.strip()):
-        if raw.startswith('"'):  # phrase — exactly as sanitize_fts
-            phrase = raw if raw.endswith('"') and len(raw) > 1 else raw + '"'
-            if phrase.strip('"').strip():
-                parts.append(phrase)
-            continue
-        if raw.upper() in _OPERATORS:
-            parts.append(raw.upper())
-            continue
-        trailing_star = raw.endswith("*")
-        term = (raw[:-1] if trailing_star else raw).strip("()")
-        if not term:
-            continue
-        quoted = '"' + term.replace('"', "") + '"'
-        if trailing_star:
-            parts.append(quoted + "*")
-        elif len(term) >= 3:
-            parts.append(f"({quoted} OR {quoted}*)")
-        else:
-            parts.append(quoted)
+    return _assemble(_lex(query), _render_expanded)
 
-    # Same operator hygiene as sanitize_fts; a group counts as a term. One
-    # extra rule the plain sanitizer doesn't need: FTS5 allows implicit AND
-    # between bare phrases but NOT between parenthesised expressions —
-    # `(a OR a*) (b OR b*)` is "syntax error near (". Join adjacent terms
-    # with an explicit AND.
-    cleaned: list[str] = []
-    for token in parts:
-        if token in _OPERATORS:
-            if not cleaned or cleaned[-1] in _OPERATORS:
-                continue
-            cleaned.append(token)
+
+def footing_fts(query: str) -> str:
+    """OR of every term the user typed — "does ANY of this exist at all?".
+
+    Deliberately not the expression the legs bind: those AND their terms, which
+    is the right recall/precision trade for ranking and the wrong one for this
+    question. Operators and grouping are discarded; only the terms survive.
+    """
+    pieces: list[str] = []
+    for kind, value, star in _lex(query):
+        if kind in {"op", "(", ")"}:
             continue
-        if cleaned and cleaned[-1] not in _OPERATORS:
-            cleaned.append("AND")
-        cleaned.append(token)
-    while cleaned and cleaned[-1] in _OPERATORS:
-        cleaned.pop()
-    return " ".join(cleaned)
+        rendered = _render_expanded(kind, value, star)
+        if rendered:
+            pieces.append(rendered)
+    return " OR ".join(pieces)
+
+
+# `LIMIT 1` inside each subquery: this asks an existence question, so it stops
+# at the first posting rather than counting a corpus-wide term.
+_FOOTING_SQL = """
+SELECT (SELECT COUNT(*) FROM (SELECT 1 FROM cues_fts   WHERE cues_fts   MATCH :q LIMIT 1))
+     + (SELECT COUNT(*) FROM (SELECT 1 FROM ocr_fts    WHERE ocr_fts    MATCH :q LIMIT 1))
+     + (SELECT COUNT(*) FROM (SELECT 1 FROM videos_fts WHERE videos_fts MATCH :q LIMIT 1))
+"""
+
+
+def has_lexical_footing(conn: sqlite3.Connection, query: str | None) -> bool:
+    """True when at least one query term occurs somewhere in the corpus.
+
+    This is the honest gate on the vector legs. KNN cannot answer "nothing
+    here matched" — it returns its k nearest whatever you ask — and the
+    measured distance distributions (see VEC_MAX_DISTANCE) do not separate a
+    real query from gibberish. Whether the corpus contains the words at all
+    does separate them, and it is a fact rather than a tuned constant:
+    measured on the live corpus, every pure-nonsense query
+    (`zzzzqqqq`, `asdfghjkl qwertyuiop`, `flurbles wibbly zonk`, `blorptastic`)
+    has zero footing across all three FTS tables, while every real query the
+    corpus can actually answer has footing in at least one.
+
+    Fails OPEN: a query with no renderable terms is not gated, because the
+    gate's job is to reject nonsense, never to invent a new empty state.
+    """
+    expr = footing_fts(query or "")
+    if not expr:
+        return True
+    return int(conn.execute(_FOOTING_SQL, {"q": expr}).fetchone()[0]) > 0
 
 
 def is_browse_query(query: str | None) -> bool:
@@ -209,6 +398,34 @@ def resolve_videos(conn: sqlite3.Connection, flt: CorpusFilter) -> list[int]:
     return ids
 
 
+def resolve_speakers(conn: sqlite3.Connection, name: str) -> list[int]:
+    """Partial, case-insensitive speaker match -> the cue-level speaker ids.
+
+    Returns [] when nothing matches, which the caller must treat as "filter to
+    nothing", never as "no filter" — `speaker=Alice` returning Bob's cues is the
+    exact failure this resolver closes.
+
+    Merged speakers come along: `merged_into` points at the survivor, and cues
+    written before a merge still carry the old id.
+    """
+    rows = conn.execute(
+        """
+        SELECT id FROM speakers
+        WHERE lower(label) LIKE '%' || lower(:name) || '%'
+           OR lower(COALESCE(display_name, '')) LIKE '%' || lower(:name) || '%'
+        """,
+        {"name": name},
+    ).fetchall()
+    ids = {int(r["id"]) for r in rows}
+    if not ids:
+        return []
+    merged = conn.execute(
+        "SELECT id FROM speakers WHERE merged_into IN (SELECT value FROM json_each(?))",
+        (json.dumps(sorted(ids)),),
+    ).fetchall()
+    return sorted(ids | {int(r["id"]) for r in merged})
+
+
 def lookup_video(conn: sqlite3.Connection, public_id: str) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM videos WHERE public_id = ?", (public_id,)).fetchone()
 
@@ -232,38 +449,94 @@ def lookup_video_ids(conn: sqlite3.Connection, public_ids: Iterable[str]) -> dic
 # evaluated whether or not a guard is true, and an empty FTS5 query string (or
 # an empty vec0 blob) is a parse error, not an empty result.
 
+# Every leg selects its candidates from the ALREADY-SCOPED cue set: the video,
+# time, length and speaker predicates sit inside the candidate CTE, before the
+# `LIMIT :candidate_cap` and before the rank is assigned. Filtering after the
+# cap is the bug this shape exists to prevent — 5,000 stronger global `cache`
+# cues fill the cap, the scope filter then removes all of them, and a search
+# restricted to one video returns zero despite matching cues in that video.
+# Assigning `r` after filtering is the other half: RRF ranks from every leg are
+# then positions within the same scoped universe.
+_CUE_SCOPE = """    AND c.video_id IN (SELECT value FROM json_each(:video_ids))
+    AND (:t_start   IS NULL OR c.end_s   >= :t_start)
+    AND (:t_end     IS NULL OR c.start_s <= :t_end)
+    AND (:min_chars IS NULL OR length(c.text) >= :min_chars)
+    AND (:max_chars IS NULL OR length(c.text) <= :max_chars)
+    AND (:speaker_on = 0
+         OR c.speaker_id IN (SELECT value FROM json_each(:speaker_ids)))"""
+
 _LEG_FTS = """
-fts_hits AS MATERIALIZED (
-  SELECT c.id AS cue_id, c.video_id, c.start_s, c.end_s, c.text,
-         ROW_NUMBER() OVER (ORDER BY f.rank) AS r
+fts_scoped AS MATERIALIZED (
+  SELECT c.id AS cue_id, c.video_id, c.start_s, c.end_s, c.text, f.rank AS bm25
   FROM cues_fts f
   JOIN cues c ON c.id = f.rowid
   WHERE f.cues_fts MATCH :q
-  ORDER BY f.rank
+{scope}
+  ORDER BY f.rank, c.id
   LIMIT :candidate_cap
+),
+fts_hits AS MATERIALIZED (
+  SELECT cue_id, video_id, start_s, end_s, text,
+         ROW_NUMBER() OVER (ORDER BY bm25, cue_id) AS r
+  FROM fts_scoped
 )"""
 
+# `video_id` and `start_s` are plain vec0 metadata columns (index-schema §3.2
+# deliberately avoided PARTITION KEY), and sqlite-vec 0.1.9 pushes `=`/`IN`/
+# range constraints on them INTO the KNN — measured: `k=3 AND video_id IN (3,4)`
+# returns 3 rows from those two videos, not 3 globally then filtered to 0.
+#
+# Two shapes matter. First, the constraint must be written plainly: an
+# `(:x IS NULL OR col …)` guard is NOT recognised as a metadata constraint, so
+# it degrades to a post-KNN filter and silently re-creates the bug. Optional
+# bounds therefore bind sentinels instead of NULL.
+#
+# Second, only SOUND bounds are pushed. `chunks.start_s <= cue.start_s`, so
+# `start_s <= :t_end` cannot drop a chunk holding an in-range cue. There is no
+# `end_s` metadata column, so the lower time bound stays a cue-level predicate
+# and `k` is oversampled instead.
 _LEG_VEC = """
 vec_hits AS MATERIALIZED (
   SELECT chunk_id, distance
   FROM vec_chunks
   WHERE embedding MATCH :qvec AND k = :k_vec
+    AND video_id IN (SELECT value FROM json_each(:video_ids))
+    AND start_s <= :vec_t_end
 ),
-vec_cues AS MATERIALIZED (
+vec_scoped AS MATERIALIZED (
+  -- ONE best distance per cue. Chunks overlap by design (45 s window, 15 s
+  -- overlap), so a cue lands in two chunks and used to arrive as two rows —
+  -- two RRF contributions from ONE leg, which is double-counting, not
+  -- corroboration.
   SELECT c.id AS cue_id, c.video_id, c.start_s, c.end_s, c.text,
-         ROW_NUMBER() OVER (ORDER BY vh.distance) AS r
+         MIN(vh.distance) AS distance
   FROM vec_hits vh
   JOIN chunks ch ON ch.id = vh.chunk_id
   JOIN cues   c  ON c.id BETWEEN ch.first_cue_id AND ch.last_cue_id
+  WHERE vh.distance <= :vec_max_distance
+{scope}
+  GROUP BY c.id
+),
+vec_cues AS MATERIALIZED (
+  SELECT cue_id, video_id, start_s, end_s, text,
+         ROW_NUMBER() OVER (ORDER BY distance, cue_id) AS r
+  FROM vec_scoped
+  ORDER BY distance, cue_id
+  LIMIT :candidate_cap
 )"""
 
 _LEG_BROWSE = """
 browse_hits AS MATERIALIZED (
-  SELECT c.id AS cue_id, c.video_id, c.start_s, c.end_s, c.text,
-         ROW_NUMBER() OVER (ORDER BY c.video_id, c.start_s) AS r
-  FROM cues c
-  WHERE c.video_id IN (SELECT value FROM json_each(:video_ids))
-  LIMIT :candidate_cap
+  SELECT cue_id, video_id, start_s, end_s, text,
+         ROW_NUMBER() OVER (ORDER BY video_id, start_s, cue_id) AS r
+  FROM (
+    SELECT c.id AS cue_id, c.video_id, c.start_s, c.end_s, c.text
+    FROM cues c
+    WHERE 1 = 1
+{scope}
+    ORDER BY c.video_id, c.start_s, c.id
+    LIMIT :candidate_cap
+  )
 )"""
 
 _SCORED_LEG = """    SELECT cue_id, video_id, start_s, end_s, text,
@@ -281,6 +554,9 @@ scored AS (
   ) GROUP BY cue_id
 ),
 
+-- The scope predicates already ran inside every leg, before its cap. This is a
+-- cheap re-check over the fused set, kept so the invariant is visible at the
+-- one place a new leg would be added.
 filtered AS (
   SELECT s.* FROM scored s
   WHERE s.video_id IN (SELECT value FROM json_each(:video_ids))
@@ -293,40 +569,76 @@ filtered AS (
 -- adjacent-cue clustering: gaps-and-islands, bounded on BOTH axes. Gap-only
 -- clustering collapsed an entire video into one 1199.8 s "result" on the
 -- fixture; the fixed grid guarantees a hard ceiling.
+--
+-- The grid cell comes from `start_s`, so it alone bounds only start times: a
+-- run whose last cue starts at 119.9 s and ends at 123 s used to produce a
+-- segment longer than the 120 s this module advertises. A cue whose `end_s`
+-- crosses its own cell boundary is therefore forced into an island of its own
+-- (`crosses`), and so is the cue after it — which makes the invariant exact:
+-- every multi-cue island lies inside one [k*max_span, (k+1)*max_span) cell, so
+-- MAX(end_s) - MIN(start_s) <= max_span.
+--
+-- The explicit policy for a single cue longer than max_span (a 180 s cue does
+-- occur in auto-captions): it is never split, because half a sentence with a
+-- truncated timestamp is a worse citation than an honest overlong one. It
+-- becomes a one-cue island and is the only shape that can exceed the ceiling.
 marked AS (
   SELECT *,
     CASE WHEN :cluster_gap > 0
           AND start_s - LAG(end_s) OVER w <= (SELECT gap_s FROM params)
           AND CAST(start_s / (SELECT max_span FROM params) AS INTEGER)
             = CAST(LAG(start_s) OVER w / (SELECT max_span FROM params) AS INTEGER)
+          AND end_s <= (CAST(start_s / (SELECT max_span FROM params) AS INTEGER) + 1)
+                       * (SELECT max_span FROM params)
+          AND LAG(end_s) OVER w
+              <= (CAST(LAG(start_s) OVER w / (SELECT max_span FROM params) AS INTEGER) + 1)
+                 * (SELECT max_span FROM params)
          THEN 0 ELSE 1 END AS is_new
   FROM filtered
-  WINDOW w AS (PARTITION BY video_id ORDER BY start_s)
+  WINDOW w AS (PARTITION BY video_id ORDER BY start_s, cue_id)
 ),
 islands AS (
-  SELECT *, SUM(is_new) OVER (PARTITION BY video_id ORDER BY start_s
+  SELECT *, SUM(is_new) OVER (PARTITION BY video_id ORDER BY start_s, cue_id
                               ROWS UNBOUNDED PRECEDING) AS island
   FROM marked
 ),
-clustered AS (
+-- Island boundaries come from the MATCHED cues; the passage does not.
+bounds AS (
   SELECT video_id, island,
          MIN(start_s) AS start_s, MAX(end_s) AS end_s,
-         group_concat(text, ' ' ORDER BY start_s) AS text,
-         json_group_array(cue_id ORDER BY start_s) AS cue_ids,
-         MAX(score)  AS score,
-         COUNT(*)    AS n_cues
+         MAX(score)   AS score,
+         COUNT(*)     AS n_matched
   FROM islands
   GROUP BY video_id, island
 ),
+-- ...and then every cue inside that interval is joined back, matched or not.
+-- Concatenating only the matched cues produced keyword confetti: matches at 0 s
+-- and 4 s came back as one "segment" with the cue at 2 s — which may carry the
+-- negation that reverses the meaning — silently dropped.
+clustered AS (
+  SELECT b.video_id, b.island, b.start_s, b.end_s, b.score,
+         group_concat(c.text, ' ' ORDER BY c.start_s, c.id) AS text,
+         json_group_array(c.id ORDER BY c.start_s, c.id)    AS cue_ids,
+         COUNT(*)                                           AS n_cues,
+         b.n_matched
+  FROM bounds b
+  JOIN cues c ON c.video_id = b.video_id
+             AND c.start_s >= b.start_s AND c.start_s <= b.end_s
+  GROUP BY b.video_id, b.island
+),
 
--- per-video diversity, applied BEFORE the page slice: clustering first means a
--- ten-cue sentence counts once against max_per_video.
+-- per-video diversity. This is a bounded-work overfetch, NOT the user's
+-- max_per_video: one video contributing one transcript, one OCR and one frame
+-- hit is three results from one video, so the cap the user asked for can only
+-- be honoured once the legs are fused and cross-modal duplicates collapsed.
+-- tools/search.py owns that cap; this one only stops a single video from
+-- eating the candidate budget.
 capped AS (
   SELECT *, ROW_NUMBER() OVER (PARTITION BY video_id
-                               ORDER BY score DESC, start_s) AS rn
+                               ORDER BY score DESC, start_s, island) AS rn
   FROM clustered
 )
-SELECT video_id, start_s, end_s, text, cue_ids, score, n_cues
+SELECT video_id, start_s, end_s, text, cue_ids, score, n_cues, n_matched
 FROM capped
 WHERE rn <= (SELECT per_video FROM params)
 """
@@ -336,13 +648,13 @@ def _transcript_sql(*, do_fts: bool, do_vec: bool, do_browse: bool) -> str:
     legs: list[str] = []
     unions: list[str] = []
     if do_fts:
-        legs.append(_LEG_FTS)
+        legs.append(_LEG_FTS.format(scope=_CUE_SCOPE))
         unions.append(_SCORED_LEG.format(leg="fts_hits"))
     if do_vec:
-        legs.append(_LEG_VEC)
+        legs.append(_LEG_VEC.format(scope=_CUE_SCOPE))
         unions.append(_SCORED_LEG.format(leg="vec_cues"))
     if do_browse:
-        legs.append(_LEG_BROWSE)
+        legs.append(_LEG_BROWSE.format(scope=_CUE_SCOPE))
         unions.append(_SCORED_LEG.format(leg="browse_hits"))
     return _TRANSCRIPT_HEAD.format(
         legs=",".join(legs), unions="\n    UNION ALL\n".join(unions)
@@ -364,6 +676,11 @@ class SearchParams:
     min_chars: int | None = None
     max_chars: int | None = None
     k_vec: int = 200
+    # `None` = no speaker filter at all. An EMPTY list is not the same thing:
+    # it means "a speaker was asked for and nothing in the corpus matched it",
+    # which must return nothing rather than everything.
+    speaker_ids: Sequence[int] | None = None
+    vec_max_distance: float = VEC_MAX_DISTANCE
 
     @property
     def browse(self) -> bool:
@@ -394,8 +711,16 @@ class SearchParams:
             "video_ids": json.dumps(list(self.video_ids)),
             "t_start": self.t_start,
             "t_end": self.t_end,
+            # A vec0 metadata constraint has to be a plain comparison to be
+            # pushed into the KNN, so the "no bound" case binds a sentinel
+            # rather than NULL. `chunks.start_s <= cues.start_s` makes this
+            # sound: no chunk holding an in-range cue can be dropped.
+            "vec_t_end": VEC_TIME_SENTINEL if self.t_end is None else self.t_end,
+            "vec_max_distance": self.vec_max_distance,
             "min_chars": self.min_chars,
             "max_chars": self.max_chars,
+            "speaker_on": 0 if self.speaker_ids is None else 1,
+            "speaker_ids": json.dumps(list(self.speaker_ids or ())),
             "limit": self.limit + 1,  # the +1 is has_more
             "offset": self.offset,
         }
@@ -405,7 +730,11 @@ def search_transcript(conn: sqlite3.Connection, params: SearchParams) -> list[sq
     legs = params.legs
     if not any(legs.values()):
         return []
-    sql = _transcript_sql(**legs) + "\nORDER BY score DESC, video_id, start_s\nLIMIT :limit OFFSET :offset"
+    sql = (
+        _transcript_sql(**legs)
+        + "\nORDER BY score DESC, video_id, start_s, island"
+        + "\nLIMIT :limit OFFSET :offset"
+    )
     return conn.execute(sql, params.bind()).fetchall()
 
 
@@ -449,22 +778,28 @@ def probe_transcript(conn: sqlite3.Connection, params: SearchParams, headroom: i
 
 _OCR_SQL = """
 WITH ocr_cand AS MATERIALIZED (
-  SELECT o.id, o.video_id, o.t_s, o.text, o.keyframe_id,
-         ROW_NUMBER() OVER (ORDER BY f.rank) AS r
+  -- Scope, time AND length predicates inside the candidate CTE, before the cap
+  -- and before the rank — same rule as the transcript legs. min_chars/max_chars
+  -- used to be missing here entirely: the tool disabled the frame leg for them,
+  -- printed a note, and then let OCR answer `min_chars=100` with a ten-character
+  -- line.
+  SELECT o.id, o.video_id, o.t_s, o.text, o.keyframe_id, f.rank AS bm25
   FROM ocr_fts f
   JOIN ocr_lines o ON o.id = f.rowid
   WHERE f.ocr_fts MATCH :q
-  ORDER BY f.rank
+    AND o.video_id IN (SELECT value FROM json_each(:video_ids))
+    AND (:t_start   IS NULL OR o.t_s >= :t_start)
+    AND (:t_end     IS NULL OR o.t_s <= :t_end)
+    AND (:min_chars IS NULL OR length(o.text) >= :min_chars)
+    AND (:max_chars IS NULL OR length(o.text) <= :max_chars)
+  ORDER BY f.rank, o.id
   LIMIT :candidate_cap
 ),
 scoped AS (
-  SELECT o.* FROM ocr_cand o
-  WHERE o.video_id IN (SELECT value FROM json_each(:video_ids))
-    AND (:t_start IS NULL OR o.t_s >= :t_start)
-    AND (:t_end   IS NULL OR o.t_s <= :t_end)
+  SELECT o.*, ROW_NUMBER() OVER (ORDER BY o.bm25, o.id) AS r FROM ocr_cand o
 ),
 capped AS (
-  SELECT *, ROW_NUMBER() OVER (PARTITION BY video_id ORDER BY r) AS rn
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY video_id ORDER BY r, id) AS rn
   FROM scoped
 )
 SELECT c.id, c.video_id, c.t_s, c.text, c.keyframe_id, c.r,
@@ -509,6 +844,8 @@ def _ocr_bind(params: SearchParams) -> dict[str, Any]:
         "video_ids": json.dumps(list(params.video_ids)),
         "t_start": params.t_start,
         "t_end": params.t_end,
+        "min_chars": params.min_chars,
+        "max_chars": params.max_chars,
         "max_per_video": params.max_per_video,
         "limit": params.limit + 1,
         "offset": params.offset,
@@ -522,21 +859,27 @@ def _ocr_bind(params: SearchParams) -> dict[str, Any]:
 # `limit`: with max_per_video=3, asking for k = limit returns too few distinct
 # videos.
 
+# `video_id` and `t_s` are vec0 metadata columns here too, and both time bounds
+# are exact for a keyframe (a frame is a point, not a span), so all three
+# predicates are pushed into the KNN. Filtering afterwards let `k` be exhausted
+# entirely on out-of-scope videos: a frame search scoped to one video returned
+# nothing while that video plainly held matching frames.
 _FRAME_SQL = """
 WITH frame_hits AS MATERIALIZED (
   SELECT keyframe_id, video_id, t_s, distance
   FROM vec_frames
   WHERE embedding MATCH :q_img_vec AND k = :k_frames
+    AND video_id IN (SELECT value FROM json_each(:video_ids))
+    AND t_s >= :frame_t_start AND t_s <= :frame_t_end
 ),
 ranked AS (
-  SELECT fh.*, ROW_NUMBER() OVER (ORDER BY fh.distance) AS r
+  SELECT fh.*, ROW_NUMBER() OVER (ORDER BY fh.distance, fh.keyframe_id) AS r
   FROM frame_hits fh
-  WHERE fh.video_id IN (SELECT value FROM json_each(:video_ids))
-    AND (:t_start IS NULL OR fh.t_s >= :t_start)
-    AND (:t_end   IS NULL OR fh.t_s <= :t_end)
+  WHERE fh.distance <= :frame_max_distance
 ),
 capped AS (
-  SELECT *, ROW_NUMBER() OVER (PARTITION BY video_id ORDER BY distance) AS rn
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY video_id
+                               ORDER BY distance, keyframe_id) AS rn
   FROM ranked
 )
 SELECT v.public_id || '-' || printf('%05d', k.ord) AS frame_id,
@@ -550,13 +893,17 @@ FROM capped c
 JOIN keyframes k ON k.id = c.keyframe_id
 JOIN videos    v ON v.id = c.video_id
 WHERE c.rn <= :max_per_video
-ORDER BY c.distance
+ORDER BY c.distance, c.keyframe_id
 LIMIT :limit OFFSET :offset
 """
 
 
 def search_frames(
-    conn: sqlite3.Connection, params: SearchParams, qimg: bytes, k_frames: int
+    conn: sqlite3.Connection,
+    params: SearchParams,
+    qimg: bytes,
+    k_frames: int,
+    max_distance: float = FRAME_MAX_DISTANCE,
 ) -> list[sqlite3.Row]:
     return conn.execute(
         _FRAME_SQL,
@@ -565,8 +912,12 @@ def search_frames(
             "k_frames": k_frames,
             "rrf_k": RRF_K,
             "video_ids": json.dumps(list(params.video_ids)),
-            "t_start": params.t_start,
-            "t_end": params.t_end,
+            # Sentinels, not NULL: see VEC_TIME_SENTINEL.
+            "frame_t_start": (
+                -VEC_TIME_SENTINEL if params.t_start is None else params.t_start
+            ),
+            "frame_t_end": VEC_TIME_SENTINEL if params.t_end is None else params.t_end,
+            "frame_max_distance": max_distance,
             "max_per_video": params.max_per_video,
             "limit": params.limit + 1,
             "offset": params.offset,
