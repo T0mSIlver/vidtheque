@@ -119,8 +119,128 @@ async def test_pagination_line_and_has_more(assembled: Assembled) -> None:
     first = await search.run(assembled.deps, q="cache OR attention OR memory", limit=1, cluster_gap=0)
     text = body(first)
     assert "Results: 1/" in text
-    if structured(first)["pagination"]["has_more"]:
-        assert "use offset=1 for more" in text
+    assert structured(first)["pagination"]["has_more"] is True
+    assert "use offset=1 for more" in text
+
+
+async def test_paging_walks_the_whole_result_set_without_gaps_or_repeats(
+    assembled: Assembled,
+) -> None:
+    """The old test inspected one page and asserted nothing about the next.
+
+    A page is only correct relative to its neighbours: `has_more` has to be
+    true exactly while rows remain, no row may appear on two pages, and the
+    concatenation of the pages has to equal the unpaged answer. Post-fetch
+    dedup and a per-video cap applied after the fetch are both able to break
+    each of those independently.
+    """
+    q = "cache OR attention OR memory OR tokenization"
+
+    whole = await search.run(assembled.deps, q=q, limit=50, cluster_gap=0, max_per_video=20)
+    everything = [
+        (r["video_id"], r["start"], r["source"]) for r in structured(whole)["results"]
+    ]
+    assert len(everything) > 3, "need several results for paging to mean anything"
+
+    walked: list[tuple] = []
+    offset = 0
+    while True:
+        page = await search.run(
+            assembled.deps, q=q, limit=2, offset=offset, cluster_gap=0, max_per_video=20
+        )
+        rows = [(r["video_id"], r["start"], r["source"]) for r in structured(page)["results"]]
+        pagination = structured(page)["pagination"]
+        walked.extend(rows)
+        if not pagination["has_more"]:
+            assert "use offset=" not in body(page)
+            break
+        assert rows, "has_more=true with an empty page is the underfill bug"
+        offset += 2
+        assert offset < 100, "has_more never went false"
+
+    assert len(walked) == len(set(walked)), f"a row appeared on two pages: {walked}"
+    assert walked == everything, "the pages must reassemble the unpaged answer"
+
+
+async def test_paging_is_stable_across_identical_calls(assembled: Assembled) -> None:
+    """Same call, same rows — the guarantee `offset` is built on."""
+    kwargs = dict(q="cache OR attention OR memory", limit=2, offset=2, cluster_gap=0)
+    first = structured(await search.run(assembled.deps, **kwargs))["results"]
+    for _ in range(4):
+        again = structured(await search.run(assembled.deps, **kwargs))["results"]
+        assert [(r["video_id"], r["start"]) for r in again] == [
+            (r["video_id"], r["start"]) for r in first
+        ]
+
+
+async def test_max_per_video_is_one_cap_across_all_three_modalities(
+    assembled: Assembled,
+) -> None:
+    """`max_per_video=1` used to mean "one per video PER LEG": the fixture's
+    first video could return a transcript hit, an OCR hit and a frame hit — three
+    results from one video — before any other video appeared."""
+    result = await search.run(
+        assembled.deps, q="cache", limit=20, max_per_video=1, cluster_gap=0
+    )
+    per_video: dict[str, int] = {}
+    for row in structured(result)["results"]:
+        per_video[row["video_id"]] = per_video.get(row["video_id"], 0) + 1
+    assert per_video, "expected hits"
+    assert max(per_video.values()) == 1, per_video
+
+    two = await search.run(assembled.deps, q="cache", limit=20, max_per_video=2, cluster_gap=0)
+    per_video = {}
+    for row in structured(two)["results"]:
+        per_video[row["video_id"]] = per_video.get(row["video_id"], 0) + 1
+    assert max(per_video.values()) <= 2, per_video
+
+
+async def test_recency_order_reaches_a_newer_video_below_the_relevance_prefix(
+    assembled: Assembled,
+) -> None:
+    """`order=recency` sorted a relevance-truncated prefix, so the newest video
+    was returned first only when it was also among the most relevant.
+
+    The fixture's newest video (3Blue1Brown, published 2024-04) has exactly one
+    weak `attention` cue; the older Karpathy video has many strong ones. With
+    limit=1 the old code fetched one row by score and sorted that, so recency
+    could never see the newer video at all.
+    """
+    result = await search.run(
+        assembled.deps,
+        q="attention OR cache OR memory",
+        order="recency",
+        limit=1,
+        cluster_gap=0,
+        max_per_video=20,
+    )
+    rows = structured(result)["results"]
+    assert rows
+    assert rows[0]["video_id"] == "eMlx5fFNoYc", rows
+
+
+async def test_video_time_order_sees_earlier_low_ranked_matches(
+    assembled: Assembled,
+) -> None:
+    """Single-video `order=video_time` sorted only the most relevant matches, so
+    an earlier but lower-ranked position was omitted from the front page.
+
+    In the fixture the best-scoring hit in this video sits at 12.0 s, so a
+    relevance prefix of one cannot be sorted into the right answer.
+    """
+    scoped = await search.run(
+        assembled.deps,
+        q="tokenization OR memory",
+        order="video_time",
+        video_id="kCc8FmEb1nY",
+        limit=1,
+        cluster_gap=0,
+        max_per_video=20,
+    )
+    rows = structured(scoped)["results"]
+    assert rows
+    # The fixture's first video starts at 0.0s; chronological means that one.
+    assert rows[0]["start"] == 0.0, rows
 
 
 async def test_vector_leg_note_when_the_worker_is_down(assembled: Assembled) -> None:

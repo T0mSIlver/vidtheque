@@ -97,6 +97,13 @@ class Settings:
     deeplink_lead_s: int = 2
     count_probe_headroom: int = 30
 
+    # Relevance floors for the two KNN legs — cosine distance, so LOWER is
+    # closer and these are ceilings. Defaults measured against a real corpus;
+    # the reasoning, and why they are deliberately loose, is on
+    # db.queries.VEC_MAX_DISTANCE.
+    vec_max_distance: float = 0.72
+    frame_max_distance: float = 0.96
+
     # Crash recovery (index-schema §1.9). A claim quieter than this belonged to
     # a process that is gone; the runner requeues it and resumes per stage.
     stale_claim_s: int = 300
@@ -201,6 +208,8 @@ class Settings:
             refresh_token_ttl_s=_int_env("VIDTHEQUE_REFRESH_TOKEN_TTL", 30 * 86_400),
             response_max_chars=_int_env("VIDTHEQUE_RESPONSE_MAX_CHARS", 60_000),
             candidate_cap=_int_env("VIDTHEQUE_CANDIDATE_CAP", 5_000),
+            vec_max_distance=_float_env("VIDTHEQUE_VEC_MAX_DISTANCE", 0.72),
+            frame_max_distance=_float_env("VIDTHEQUE_FRAME_MAX_DISTANCE", 0.96),
             deeplink_lead_s=_int_env("VIDTHEQUE_DEEPLINK_LEAD", 2),
             stale_claim_s=_int_env("VIDTHEQUE_STALE_CLAIM_S", 300),
             query_timeout_s=float(_int_env("VIDTHEQUE_QUERY_TIMEOUT_S", 30)),

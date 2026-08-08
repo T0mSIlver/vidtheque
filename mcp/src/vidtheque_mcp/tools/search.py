@@ -39,6 +39,16 @@ CONTENT_TYPES = ("all", "transcript", "ocr", "frame")
 ORDERS = ("relevance", "recency", "video_time")
 DEFAULT_FIELDS = "video_id,start,text,link,source"
 
+# `order=recency` and `order=video_time` are not relevance, so a relevance
+# prefix is the wrong candidate set to sort. Fetching only `offset+limit` rows
+# by score and *then* sorting them by date returned the newest hit only when it
+# also happened to be one of the most relevant: an older video supplying the
+# first `offset+limit+1` hits hid a newer video's hit ranked just below the
+# prefix, and `order=recency` never saw it. Non-relevance orders therefore sort
+# a bounded candidate UNIVERSE, not a prefix. Bounded, because "complete" over
+# a corpus-sized candidate set is not a thing a search tool may promise.
+ORDER_UNIVERSE = 400
+
 
 @dataclass
 class Hit:
@@ -183,8 +193,35 @@ async def run(
     if not video_pool:
         return await _empty_result(deps, q, content_type, flt, notes)
 
+    # A speaker that resolves to nothing means "filter to nothing", never "no
+    # filter" — `speaker_ids=[]` and `speaker_ids=None` are different bindings.
+    speaker_ids: list[int] | None = None
+    if speaker:
+        speaker_ids = await deps.db.read(lambda c: queries.resolve_speakers(c, speaker))
+        if not speaker_ids:
+            notes.append(
+                f'note: no speaker matches "{speaker}" in this corpus — the '
+                "transcript leg was filtered to nothing rather than ignoring the "
+                "filter. video-summary lists the speakers a video has."
+            )
+
+    # The vector legs cannot report "nothing here matched": nearest-neighbour
+    # search returns its k nearest whatever it is asked. If not one word of the
+    # query occurs anywhere in the corpus, they are not queried at all — which
+    # is what makes a genuinely empty answer reachable.
+    use_vector = True
+    if not browse and (legs["transcript"] or legs["frame"]):
+        use_vector = await deps.db.read(lambda c: queries.has_lexical_footing(c, q))
+        if not use_vector:
+            legs["frame"] = False
+            notes.append(
+                "note: no word of this query occurs anywhere in the corpus, so the "
+                "semantic (nearest-neighbour) legs were not queried — they would "
+                "have returned their k nearest vectors regardless."
+            )
+
     qvec = None
-    if legs["transcript"] and not browse:
+    if legs["transcript"] and not browse and use_vector:
         qvec = await deps.embed_query(q or "", notes, space="text")
     qimg = None
     if legs["frame"]:
@@ -194,25 +231,44 @@ async def run(
         if qimg is None:
             legs["frame"] = False
 
+    # Per-leg caps are an overfetch bound, not the user's `max_per_video`: the
+    # cap the user asked for spans modalities and can only be applied once the
+    # legs are fused and cross-modal duplicates collapsed (see _cap_per_video).
+    leg_per_video = min(50, max(max_per_video * 3, max_per_video + 2))
+    fetch_n = offset + limit
+    if order != "relevance":
+        fetch_n = max(fetch_n, ORDER_UNIVERSE)
+
     params = queries.SearchParams(
         q=q,
         video_ids=video_pool,
         qvec=qvec,
-        limit=offset + limit,  # legs are merged, so each fetches the whole prefix
+        limit=fetch_n,  # legs are merged, so each fetches the whole prefix
         offset=0,
-        max_per_video=max_per_video,
+        max_per_video=leg_per_video,
         cluster_gap=cluster_gap,
         candidate_cap=settings.candidate_cap,
         t_start=span_start,
         t_end=span_end,
         min_chars=min_chars,
         max_chars=max_chars,
-        k_vec=min(500, max(50, (offset + limit) * max_per_video * 4)),
+        speaker_ids=speaker_ids,
+        vec_max_distance=settings.vec_max_distance,
+        k_vec=min(1000, max(50, fetch_n * leg_per_video * 4)),
     )
 
     async with admission(deps.search_semaphore):
         hits, leg_counts, probe_total, probe_ceiling = await deps.db.read(
-            lambda c: _run_legs(c, params, legs, qimg, max_per_video, offset, limit, settings.count_probe_headroom)
+            lambda c: _run_legs(
+                c,
+                params,
+                legs,
+                qimg,
+                leg_per_video,
+                fetch_n,
+                settings.count_probe_headroom,
+                settings.frame_max_distance,
+            )
         )
 
     meta = await deps.db.read(lambda c: _video_meta(c, [h.video_id for h in hits]))
@@ -224,11 +280,29 @@ async def run(
             hit.channel = info["channel_name"]
             hit.published_at = info["published_at"]
 
+    # fuse -> collapse cross-modal duplicates -> order -> ONE global per-video
+    # cap -> page slice. The cap has to sit here, after the collapse: applied
+    # per modality it let one video contribute a transcript hit, an OCR hit and
+    # a frame hit — three results — before any other video appeared, and nine
+    # at the default cap.
     hits = _dedup_ocr_against_transcript(hits)
     hits = _sort(hits, order)
+    hits = _cap_per_video(hits, max_per_video)
 
     page = hits[offset : offset + limit]
     has_more = len(hits) > offset + limit
+
+    if not hits:
+        return await _empty_result(
+            deps,
+            q,
+            content_type,
+            flt,
+            notes,
+            reason="Every leg was queried and none of them matched.",
+            limit=limit,
+            offset=offset,
+        )
 
     related: dict[str, int] | None = None
     if include_related and page:
@@ -279,10 +353,10 @@ def _run_legs(
     params: queries.SearchParams,
     legs: dict[str, bool],
     qimg: bytes | None,
-    max_per_video: int,
-    offset: int,
-    limit: int,
+    leg_per_video: int,
+    fetch_n: int,
     headroom: int,
+    frame_max_distance: float,
 ) -> tuple[list[Hit], dict[str, int], int, bool]:
     hits: list[Hit] = []
     counts = {"transcript": 0, "ocr": 0, "frame": 0}
@@ -338,8 +412,8 @@ def _run_legs(
         probe_ceiling = probe_ceiling or ceiling
 
     if legs["frame"] and qimg is not None:
-        k_frames = min(1000, max(20, (offset + limit) * max_per_video * 4))
-        rows = queries.search_frames(conn, params, qimg, k_frames)
+        k_frames = min(2000, max(20, fetch_n * leg_per_video * 4))
+        rows = queries.search_frames(conn, params, qimg, k_frames, frame_max_distance)
         counts["frame"] = len(rows)
         for row in rows:
             hits.append(
@@ -400,6 +474,13 @@ def _dedup_ocr_against_transcript(hits: list[Hit]) -> list[Hit]:
     """
     transcripts = [h for h in hits if h.source == "transcript"]
     survivors: list[Hit] = []
+    # RRF is a sum over LEGS. A survivor that swallowed three OCR lines still
+    # saw the OCR leg once, so it earns one OCR contribution — the best one.
+    # Adding all three would let a repeated slide out-rank a better result;
+    # adding none (the old behaviour) threw away the corroboration entirely, so
+    # a passage both channels agreed on scored the same as one only the
+    # transcript found.
+    absorbed: set[int] = set()
     for hit in hits:
         if hit.source != "ocr":
             survivors.append(hit)
@@ -426,6 +507,11 @@ def _dedup_ocr_against_transcript(hits: list[Hit]) -> list[Hit]:
                     other.frame_id = hit.frame_id
                 if len(hit.text) > len(other.text):
                     other.text = hit.text  # the longer text wins
+                if id(other) not in absorbed:
+                    # OCR rows arrive in rank order, so the first to collapse
+                    # into this survivor is the leg's best contribution.
+                    other.score += hit.score
+                    absorbed.add(id(other))
                 merged = True
                 break
         if not merged:
@@ -433,12 +519,43 @@ def _dedup_ocr_against_transcript(hits: list[Hit]) -> list[Hit]:
     return survivors
 
 
+def _sort_key(hit: Hit) -> tuple[Any, ...]:
+    """The tie-break every ordering ends with.
+
+    Equal BM25 ranks and equal vector distances are ordinary — cues expanded
+    from one chunk all share a distance — and Python's sort is stable over an
+    input whose order came from an unordered set of legs. Without a total order
+    the membership of the rows at the page boundary can change between two
+    identical calls, which is exactly the guarantee `offset` depends on.
+    """
+    return (hit.public_id, hit.start_s, hit.source, hit.frame_id or "", hit.text[:64])
+
+
 def _sort(hits: list[Hit], order: str) -> list[Hit]:
     if order == "recency":
-        return sorted(hits, key=lambda h: (-(h.published_at or 0), -h.score))
+        return sorted(hits, key=lambda h: (-(h.published_at or 0), -h.score, *_sort_key(h)))
     if order == "video_time":
-        return sorted(hits, key=lambda h: h.start_s)
-    return sorted(hits, key=lambda h: (-h.score, h.public_id, h.start_s))
+        return sorted(hits, key=lambda h: (h.start_s, -h.score, *_sort_key(h)))
+    return sorted(hits, key=lambda h: (-h.score, *_sort_key(h)))
+
+
+def _cap_per_video(hits: list[Hit], max_per_video: int) -> list[Hit]:
+    """ONE per-video cap, over the fused and deduplicated list.
+
+    Applied after `_sort`, so which hits a dominant video keeps follows the
+    ordering the caller asked for: the highest-scoring under `relevance` and
+    `recency` (all hits from one video share a publish date), the earliest
+    under `video_time`.
+    """
+    kept: list[Hit] = []
+    seen: dict[int, int] = {}
+    for hit in hits:
+        n = seen.get(hit.video_id, 0)
+        if n >= max_per_video:
+            continue
+        seen[hit.video_id] = n + 1
+        kept.append(hit)
+    return kept
 
 
 def _as_dict(deps: Deps, hit: Hit, max_text_chars: int) -> dict[str, Any]:
@@ -554,6 +671,9 @@ async def _empty_result(
     content_type: str,
     flt: queries.CorpusFilter,
     notes: list[str],
+    reason: str = "No indexed video matched the filters, so no leg was queried.",
+    limit: int = 0,
+    offset: int = 0,
 ) -> CallToolResult:
     """No bare "no results": say what the corpus *does* have and what to try."""
     rollup = await deps.db.read(queries.corpus_rollup)
@@ -573,14 +693,19 @@ async def _empty_result(
         *notes,
         "",
         f"data_status: {status}",
-        "No indexed video matched the filters, so no leg was queried.",
+        reason,
         f"next: {hint}",
     ]
     return text_result(
         "\n".join(lines),
         {
             "results": [],
-            "pagination": {"limit": 0, "offset": 0, "has_more": False, "approx_total": 0},
+            "pagination": {
+                "limit": limit,
+                "offset": offset,
+                "has_more": False,
+                "approx_total": 0,
+            },
             "notes": notes,
             "data_status": status.split()[0],
         },
