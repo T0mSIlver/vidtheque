@@ -162,6 +162,48 @@ async def test_cpu_only_traffic_never_touches_the_lease(recorder):
     assert manager.hooks.events == []
 
 
+async def test_a_resident_model_holds_vram_but_not_the_lease(recorder):
+    """EMBED_RESIDENT=1 used to mean the release hook never ran again: something
+    was always loaded, so the co-tenant stayed stopped for the life of the
+    process. The lease now brackets non-resident GPU work only."""
+    backends = make_backends(recorder)
+    hooks = FakeHooks(recorder)
+    manager = await make_manager(
+        backends,
+        recorder,
+        hook_runner=hooks,
+        acquire_cmd="stop llama",
+        release_cmd="start llama",
+        resident_tasks=("embed",),
+        idle_unload_seconds=0.05,
+        idle_poll_interval=0.01,
+        vram_headroom_mb=0,
+    )
+    try:
+        await manager.submit("embed", lambda b: b.infer(["hi"]))
+        assert backends["embed"].loaded
+        assert hooks.calls == [], "a resident model must not take the lease"
+
+        await manager.submit("stt", lambda b: b.infer("a.wav"))
+        assert [label for _, label in hooks.calls] == ["GPU_ACQUIRE_CMD"]
+        # acquire came *before* the STT load, and after the resident one
+        assert recorder.names("hook", "load") == ["embed", "GPU_ACQUIRE_CMD", "stt"]
+
+        for _ in range(200):  # the reaper takes STT; the resident model stays
+            await asyncio.sleep(0.01)
+            if not backends["stt"].loaded:
+                break
+        assert not backends["stt"].loaded
+        assert [label for _, label in hooks.calls] == [
+            "GPU_ACQUIRE_CMD",
+            "GPU_RELEASE_CMD",
+        ]
+        assert backends["embed"].loaded, "the resident model keeps its VRAM"
+        assert manager.slot("embed").unload_count == 0
+    finally:
+        await manager.stop()
+
+
 async def test_failed_acquire_hook_aborts_the_load(recorder):
     backends = make_backends(recorder)
     hooks = FakeHooks(recorder, error=RuntimeError("llama-server would not stop"))
@@ -606,7 +648,8 @@ async def test_snapshot_shape(recorder):
         assert by_task["stt"]["loaded"] is False
         assert snap["vram"]["available"] is True
         assert snap["vram"]["used_mb"] == 2000
-        assert snap["lease"]["acquired"] is True
+        # The loaded model is resident: it holds VRAM, never the lease.
+        assert snap["lease"]["acquired"] is False
         assert snap["queue"]["running"] is None
     finally:
         await manager.stop()

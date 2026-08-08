@@ -71,3 +71,11 @@ touches them.
   override for near-greyscale screencasts.
 - **yt-dlp heatmap** ("most replayed") captured at index time into the
   videos table for future ranking use — cheap now, nobody else has it.
+- **Lease semantics: resident models hold VRAM but never the lease;
+  acquire/release bracket non-resident GPU work only.** `EMBED_RESIDENT=1`
+  costs a measured 1.5 GB for the life of the process, so bracketing it would
+  fire `GPU_ACQUIRE_CMD` at the first embedding request and never fire
+  `GPU_RELEASE_CMD` again — the co-tenant stopped forever. CPU backends (OCR,
+  0 MB) are outside the bracket for the same reason in reverse: they never
+  contend, so they must never stop a co-tenant. Measured in
+  `research/gpu-validation-2026-08-08.md` §5.2–5.3.

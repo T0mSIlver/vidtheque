@@ -11,11 +11,11 @@ That buys four properties that are painful to retrofit:
 * **Admission control.** Before a load, NVML is asked how much VRAM is free;
   if the estimate does not fit, the least-recently-used non-resident backend is
   evicted first. No NVML installed means "no idea", and no idea means proceed.
-* **Lease hooks.** ``GPU_ACQUIRE_CMD`` runs before the first load of a model
-  that actually holds VRAM and ``GPU_RELEASE_CMD`` once none is left loaded, so
+* **Lease hooks.** ``GPU_ACQUIRE_CMD`` runs before the first load of a
+  *non-resident GPU* model and ``GPU_RELEASE_CMD`` once none is left loaded, so
   a co-tenant (llama.cpp, say) can be stopped and restarted around a burst of
-  indexing work without this code knowing anything about it. CPU backends are
-  outside that bracket — see :func:`_takes_lease`.
+  indexing work without this code knowing anything about it. CPU backends and
+  resident models are outside that bracket — see :func:`_takes_lease`.
 
 Backends are synchronous; jobs run in a worker thread so the event loop keeps
 serving ``/status`` and ``/healthz`` while the GPU is busy.
@@ -439,13 +439,19 @@ class LifecycleManager:
 def _takes_lease(slot: Slot) -> bool:
     """Does loading this backend belong inside the GPU lease?
 
-    Not a 0 MB backend: OCR runs on CPU (``rapidocr_ocr.py``'s docstring has
-    always said so). Taking the lease for it stops a co-tenant that OCR was
-    never going to compete with, and holds it stopped for the whole idle TTL in
-    exchange for nothing — measured doing exactly that in
-    ``research/gpu-validation-2026-08-08.md`` §5.2.
+    Two exclusions, both measured on hardware
+    (``research/gpu-validation-2026-08-08.md`` §5.2, §5.3):
+
+    * **A 0 MB backend** — OCR runs on CPU. Taking the lease for it stops a
+      co-tenant that OCR was never going to compete with, and holds it stopped
+      for the whole idle TTL in exchange for nothing.
+    * **A resident backend** — ``EMBED_RESIDENT=1`` keeps the text embedder
+      loaded for the life of the process (1.5 GB measured). Bracketing it would
+      acquire the lease at the first embedding request and never release it, so
+      the co-tenant would be stopped forever. A resident model holds VRAM; it
+      does not hold the lease.
     """
-    return slot.backend.vram_estimate_mb > 0
+    return slot.backend.vram_estimate_mb > 0 and not slot.resident
 
 
 def _default_poll(idle_unload_seconds: float) -> float:
