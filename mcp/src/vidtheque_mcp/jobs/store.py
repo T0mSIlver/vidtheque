@@ -435,7 +435,24 @@ def log(
 _STAGE_ORDINAL = "CASE i.stage " + " ".join(
     f"WHEN '{stage}' THEN {index}" for index, stage in enumerate(STAGES)
 ) + " ELSE 0 END"
-_ITEM_FRACTION = f"(({_STAGE_ORDINAL}) + i.stage_pct) / {float(len(STAGES))}"
+
+# The floor: stages this job has actually finished for this video, which is
+# durable work no retry undoes. `requeue_item` clears `stage`, so a late-stage
+# item that failed retryably reported *nothing* until it was claimed again and
+# started over — the job's percentage fell back to the terminal siblings and
+# climbed the same ground twice.
+#
+# Keyed on `jobs.created_at`, not `started_at`: `claim_next` rewrites
+# `started_at` on every claim, and stages a *previous* job left behind are not
+# this job's progress. `_invalidate_stages` nulls `finished_at`, so a forced
+# reindex starts from zero exactly as it should.
+_HIGH_WATER = (
+    "(SELECT COUNT(*) FROM video_stages s WHERE s.video_id = i.video_id "
+    "AND s.state IN ('done','skipped') AND COALESCE(s.finished_at, 0) >= j.created_at)"
+)
+_ITEM_FRACTION = (
+    f"MAX((({_STAGE_ORDINAL}) + i.stage_pct), {_HIGH_WATER}) / {float(len(STAGES))}"
+)
 
 
 def _count(state: str) -> str:
@@ -459,7 +476,7 @@ SELECT j.id, j.public_id, j.state, j.kind, j.n_items,
              ((SELECT COUNT(*) FROM job_items i WHERE i.job_id = j.id
                 AND i.state IN ('done','failed','skipped','cancelled'))
               + COALESCE((SELECT SUM({_ITEM_FRACTION}) FROM job_items i
-                           WHERE i.job_id = j.id AND i.state = 'running'), 0.0)
+                           WHERE i.job_id = j.id AND i.state IN ('running','queued')), 0.0)
              ) * 1.0 / MAX(j.n_items, 1)), 3) AS progress
 FROM jobs j
 """

@@ -434,6 +434,85 @@ async def test_force_reindex_ignores_the_partition(settings: Settings, clip: Pat
         await close(parts)
 
 
+# ====================================================================== progress
+
+
+async def test_progress_does_not_fall_back_to_the_siblings_on_a_requeue(
+    assembled: Assembled,
+) -> None:
+    """A retryable failure late in an item used to erase the item from the sum.
+
+    `requeue_item` clears `stage`, and the fractional term only counted running
+    items, so the job's percentage dropped to whatever the terminal siblings
+    contributed and then climbed the same ground a second time. The floor is the
+    stages this job actually finished for that video — durable work no retry
+    undoes.
+    """
+    from vidtheque_mcp.pipeline import store as pipeline_store
+
+    db = assembled.db
+    video = await db.read(
+        lambda c: c.execute("SELECT id FROM videos WHERE source_id = 'kCc8FmEb1nY'").fetchone()
+    )
+    video_id = int(video["id"])
+    job_id = await db.write(
+        lambda c: jobs_store.create_job(
+            c, "index", {}, [(f"https://youtu.be/kCc8FmEb1nY", video_id), (URL_B, None)]
+        )
+    )
+    job = await db.write(jobs_store.claim_next)
+    item = await db.write(lambda c: jobs_store.claim_item(c, int(job["id"])))
+    item_id = int(item["id"])
+
+    for stage in ("fetch", "stt", "chunk"):
+        await db.write(
+            lambda c: pipeline_store.stage_finished(c, video_id, stage, "done", "m")
+        )
+    await db.write(lambda c: jobs_store.record_stage(c, item_id, "text_embed", 0.75))
+    before = float((await db.read(lambda c: jobs_store.get_job(c, job_id)))["progress"])
+
+    await db.write(lambda c: jobs_store.requeue_item(c, item_id))
+    after = float((await db.read(lambda c: jobs_store.get_job(c, job_id)))["progress"])
+
+    assert after > 0.0  # it used to be exactly 0.0: no terminal sibling, no credit
+    assert after == pytest.approx(3 / 7 / 2, abs=0.001)  # three stages of two items
+    assert after <= before
+
+    # And starting the attempt over does not walk it back below that floor.
+    await db.write(lambda c: jobs_store.claim_item(c, int(job["id"])))
+    await db.write(lambda c: jobs_store.record_stage(c, item_id, "fetch", 0.0))
+    retried = float((await db.read(lambda c: jobs_store.get_job(c, job_id)))["progress"])
+    assert retried == pytest.approx(after, abs=0.001)
+
+
+async def test_a_previous_jobs_stages_are_not_this_jobs_progress(
+    assembled: Assembled,
+) -> None:
+    """The floor is keyed on the job, or a reindex would open at 100%."""
+    from vidtheque_mcp.pipeline import store as pipeline_store
+
+    db = assembled.db
+    video = await db.read(
+        lambda c: c.execute("SELECT id FROM videos WHERE source_id = 'kCc8FmEb1nY'").fetchone()
+    )
+    video_id = int(video["id"])
+    for stage in ("fetch", "stt", "chunk", "text_embed", "keyframe", "ocr", "frame_embed"):
+        await db.write(
+            lambda c: pipeline_store.stage_finished(c, video_id, stage, "done", "m")
+        )
+    await db.write(
+        lambda c: c.execute("UPDATE video_stages SET finished_at = unixepoch() - 3600")
+    )
+
+    job_id = await db.write(
+        lambda c: jobs_store.create_job(
+            c, "reindex", {}, [("https://youtu.be/kCc8FmEb1nY", video_id)]
+        )
+    )
+    row = await db.read(lambda c: jobs_store.get_job(c, job_id))
+    assert float(row["progress"]) == 0.0
+
+
 # ========================================================================== stop
 
 
