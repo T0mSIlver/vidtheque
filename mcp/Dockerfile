@@ -5,10 +5,6 @@
 # Build from the repo root so the uv workspace is in context:
 #
 #   docker build -f mcp/Dockerfile -t vidtheque-mcp .
-#
-# NOTE: the MCP framework is not chosen yet (see mcp/NOTE.md), so this image
-# currently packages a stub. The CMD is a placeholder that keeps the container
-# honest — it says what is missing instead of pretending to serve.
 FROM python:3.12-slim-bookworm
 
 ARG UV_VERSION=0.11.24
@@ -44,5 +40,11 @@ RUN uv sync --locked --package vidtheque-mcp
 VOLUME ["/data"]
 EXPOSE 8080
 
-CMD ["python", "-c", "import vidtheque_mcp, sys; \
-sys.exit('vidtheque-mcp is a placeholder: the MCP framework has not been chosen yet (see mcp/NOTE.md)')"]
+# The corpus is one SQLite file plus one directory of JPEGs, both under /data.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
+    CMD curl -fsS http://localhost:8080/healthz || exit 1
+
+ENV VIDTHEQUE_HOST=0.0.0.0 \
+    VIDTHEQUE_PORT=8080
+
+CMD ["vidtheque-mcp"]
