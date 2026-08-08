@@ -1,0 +1,734 @@
+{
+  "check": "stt-underestimate",
+  "started_at": "2026-08-08T19:53:45+00:00",
+  "env": {
+    "IDLE_UNLOAD_SECONDS": "15.0"
+  },
+  "metrics": {
+    "stt_estimate_mb": 3200,
+    "admission_need_mb": 3712,
+    "free_left_mb": 4197,
+    "admitted": true,
+    "status": 500,
+    "error_type": null,
+    "error_message": "None",
+    "vram_peak_mb": 24109,
+    "loaded_after": [
+      "stt"
+    ],
+    "retry_status": 500,
+    "retry_elapsed_s": 0.46,
+    "recovered": false,
+    "unloads_before_reaper_retry": [
+      {
+        "task": "stt",
+        "reason": "idle"
+      }
+    ],
+    "retry_after_reaper_status": 200,
+    "recovered_after_idle_unload": true
+  },
+  "events": [
+    {
+      "t": 0.018,
+      "label": "worker-start"
+    },
+    {
+      "t": 1.803,
+      "label": "baseline"
+    },
+    {
+      "t": 2.682,
+      "label": "ballast-up"
+    },
+    {
+      "t": 4.683,
+      "label": "stt-request-in-band"
+    },
+    {
+      "t": 12.215,
+      "label": "stt-response"
+    },
+    {
+      "t": 15.282,
+      "label": "retry-after-ballast"
+    },
+    {
+      "t": 55.742,
+      "label": "retry-after-reaper"
+    },
+    {
+      "t": 64.142,
+      "label": "worker-stop"
+    },
+    {
+      "t": 67.674,
+      "label": "after-exit"
+    }
+  ],
+  "findings": [
+    "admission control admitted an STT load with 4197 MB free (estimate 3200 + headroom) and the job then failed: 500 None",
+    "the worker did not recover once the co-tenant released VRAM: 500 {'text': 'Internal Server Error'} \u2014 the failed backend stays `loaded` and every later job hits the same broken context",
+    "recovery came from the idle reaper unloading the wedged backend, not from any error handling \u2014 with IDLE_UNLOAD_SECONDS=0 the slot never recovers"
+  ],
+  "baseline_device_mb": 2,
+  "baseline_worker_mb": 2,
+  "status_final": {
+    "version": "0.0.1",
+    "backends": [
+      {
+        "task": "stt",
+        "backend": "whisperx",
+        "model": "large-v3",
+        "loaded": true,
+        "resident": false,
+        "vram_estimate_mb": 3200,
+        "idle_seconds": 2.002,
+        "load_count": 2,
+        "unload_count": 1,
+        "job_count": 1
+      },
+      {
+        "task": "embed",
+        "backend": "qwen3-embedding",
+        "model": "Qwen/Qwen3-Embedding-0.6B",
+        "loaded": false,
+        "resident": false,
+        "vram_estimate_mb": 1800,
+        "idle_seconds": null,
+        "load_count": 0,
+        "unload_count": 0,
+        "job_count": 0
+      },
+      {
+        "task": "image_embed",
+        "backend": "siglip2",
+        "model": "google/siglip2-so400m-patch16-naflex",
+        "loaded": false,
+        "resident": false,
+        "vram_estimate_mb": 5000,
+        "idle_seconds": null,
+        "load_count": 0,
+        "unload_count": 0,
+        "job_count": 0
+      },
+      {
+        "task": "ocr",
+        "backend": "rapidocr",
+        "model": "rapidocr-default",
+        "loaded": false,
+        "resident": false,
+        "vram_estimate_mb": 0,
+        "idle_seconds": null,
+        "load_count": 0,
+        "unload_count": 0,
+        "job_count": 0
+      }
+    ],
+    "vram": {
+      "available": true,
+      "total_mb": 24576,
+      "used_mb": 7808,
+      "free_mb": 16767,
+      "source": "nvml"
+    },
+    "queue": {
+      "depth": 0,
+      "in_flight": 0,
+      "running": null
+    },
+    "lease": {
+      "acquired": true,
+      "acquire_cmd_configured": false,
+      "release_cmd_configured": false
+    },
+    "idle_unload_seconds": 15.0
+  },
+  "worker_load_log": [
+    {
+      "task": "stt",
+      "backend": "whisperx",
+      "seconds": 6.8
+    },
+    {
+      "task": "stt",
+      "backend": "whisperx",
+      "seconds": 2.5
+    }
+  ],
+  "worker_unload_log": [
+    {
+      "task": "stt",
+      "reason": "idle"
+    }
+  ],
+  "after_process_exit_mb": 2,
+  "vram_trace": {
+    "interval_s": 0.5,
+    "samples": [
+      {
+        "t": 0.017,
+        "used_mb": 2
+      },
+      {
+        "t": 0.532,
+        "used_mb": 2
+      },
+      {
+        "t": 1.048,
+        "used_mb": 2
+      },
+      {
+        "t": 1.565,
+        "used_mb": 2
+      },
+      {
+        "t": 2.082,
+        "used_mb": 2
+      },
+      {
+        "t": 2.608,
+        "used_mb": 17
+      },
+      {
+        "t": 3.123,
+        "used_mb": 20055
+      },
+      {
+        "t": 3.639,
+        "used_mb": 20055
+      },
+      {
+        "t": 4.154,
+        "used_mb": 20055
+      },
+      {
+        "t": 4.67,
+        "used_mb": 20055
+      },
+      {
+        "t": 5.186,
+        "used_mb": 20055
+      },
+      {
+        "t": 5.702,
+        "used_mb": 20055
+      },
+      {
+        "t": 6.219,
+        "used_mb": 20055
+      },
+      {
+        "t": 6.735,
+        "used_mb": 20055
+      },
+      {
+        "t": 7.251,
+        "used_mb": 20055
+      },
+      {
+        "t": 7.767,
+        "used_mb": 20055
+      },
+      {
+        "t": 8.283,
+        "used_mb": 20055
+      },
+      {
+        "t": 8.8,
+        "used_mb": 20312
+      },
+      {
+        "t": 9.316,
+        "used_mb": 20312
+      },
+      {
+        "t": 9.833,
+        "used_mb": 20312
+      },
+      {
+        "t": 10.357,
+        "used_mb": 20312
+      },
+      {
+        "t": 10.882,
+        "used_mb": 20312
+      },
+      {
+        "t": 11.408,
+        "used_mb": 23416
+      },
+      {
+        "t": 11.928,
+        "used_mb": 23786
+      },
+      {
+        "t": 12.443,
+        "used_mb": 3749
+      },
+      {
+        "t": 12.959,
+        "used_mb": 3749
+      },
+      {
+        "t": 13.475,
+        "used_mb": 3749
+      },
+      {
+        "t": 13.991,
+        "used_mb": 3749
+      },
+      {
+        "t": 14.508,
+        "used_mb": 3749
+      },
+      {
+        "t": 15.024,
+        "used_mb": 3749
+      },
+      {
+        "t": 15.54,
+        "used_mb": 3749
+      },
+      {
+        "t": 16.057,
+        "used_mb": 3749
+      },
+      {
+        "t": 16.573,
+        "used_mb": 3749
+      },
+      {
+        "t": 17.089,
+        "used_mb": 3749
+      },
+      {
+        "t": 17.605,
+        "used_mb": 3749
+      },
+      {
+        "t": 18.122,
+        "used_mb": 3749
+      },
+      {
+        "t": 18.638,
+        "used_mb": 3749
+      },
+      {
+        "t": 19.154,
+        "used_mb": 3749
+      },
+      {
+        "t": 19.67,
+        "used_mb": 3749
+      },
+      {
+        "t": 20.186,
+        "used_mb": 3749
+      },
+      {
+        "t": 20.703,
+        "used_mb": 3749
+      },
+      {
+        "t": 21.219,
+        "used_mb": 3749
+      },
+      {
+        "t": 21.737,
+        "used_mb": 3749
+      },
+      {
+        "t": 22.253,
+        "used_mb": 3749
+      },
+      {
+        "t": 22.77,
+        "used_mb": 3749
+      },
+      {
+        "t": 23.287,
+        "used_mb": 3749
+      },
+      {
+        "t": 23.804,
+        "used_mb": 3749
+      },
+      {
+        "t": 24.32,
+        "used_mb": 3749
+      },
+      {
+        "t": 24.836,
+        "used_mb": 3749
+      },
+      {
+        "t": 25.353,
+        "used_mb": 3749
+      },
+      {
+        "t": 25.87,
+        "used_mb": 3749
+      },
+      {
+        "t": 26.386,
+        "used_mb": 3749
+      },
+      {
+        "t": 26.903,
+        "used_mb": 3749
+      },
+      {
+        "t": 27.42,
+        "used_mb": 3749
+      },
+      {
+        "t": 27.936,
+        "used_mb": 3749
+      },
+      {
+        "t": 28.452,
+        "used_mb": 3749
+      },
+      {
+        "t": 28.969,
+        "used_mb": 3749
+      },
+      {
+        "t": 29.485,
+        "used_mb": 3749
+      },
+      {
+        "t": 30.002,
+        "used_mb": 3749
+      },
+      {
+        "t": 30.518,
+        "used_mb": 3749
+      },
+      {
+        "t": 31.035,
+        "used_mb": 3749
+      },
+      {
+        "t": 31.551,
+        "used_mb": 3379
+      },
+      {
+        "t": 32.068,
+        "used_mb": 3379
+      },
+      {
+        "t": 32.585,
+        "used_mb": 3379
+      },
+      {
+        "t": 33.103,
+        "used_mb": 3379
+      },
+      {
+        "t": 33.621,
+        "used_mb": 3379
+      },
+      {
+        "t": 34.139,
+        "used_mb": 3379
+      },
+      {
+        "t": 34.656,
+        "used_mb": 3379
+      },
+      {
+        "t": 35.173,
+        "used_mb": 3379
+      },
+      {
+        "t": 35.69,
+        "used_mb": 3379
+      },
+      {
+        "t": 36.208,
+        "used_mb": 3379
+      },
+      {
+        "t": 36.727,
+        "used_mb": 3379
+      },
+      {
+        "t": 37.244,
+        "used_mb": 3379
+      },
+      {
+        "t": 37.762,
+        "used_mb": 3379
+      },
+      {
+        "t": 38.279,
+        "used_mb": 3379
+      },
+      {
+        "t": 38.796,
+        "used_mb": 3379
+      },
+      {
+        "t": 39.313,
+        "used_mb": 3379
+      },
+      {
+        "t": 39.83,
+        "used_mb": 3379
+      },
+      {
+        "t": 40.346,
+        "used_mb": 3379
+      },
+      {
+        "t": 40.862,
+        "used_mb": 3379
+      },
+      {
+        "t": 41.379,
+        "used_mb": 3379
+      },
+      {
+        "t": 41.897,
+        "used_mb": 3379
+      },
+      {
+        "t": 42.413,
+        "used_mb": 3379
+      },
+      {
+        "t": 42.93,
+        "used_mb": 3379
+      },
+      {
+        "t": 43.446,
+        "used_mb": 3379
+      },
+      {
+        "t": 43.963,
+        "used_mb": 3379
+      },
+      {
+        "t": 44.48,
+        "used_mb": 3379
+      },
+      {
+        "t": 44.996,
+        "used_mb": 3379
+      },
+      {
+        "t": 45.513,
+        "used_mb": 3379
+      },
+      {
+        "t": 46.03,
+        "used_mb": 3379
+      },
+      {
+        "t": 46.546,
+        "used_mb": 3379
+      },
+      {
+        "t": 47.062,
+        "used_mb": 3379
+      },
+      {
+        "t": 47.578,
+        "used_mb": 3379
+      },
+      {
+        "t": 48.095,
+        "used_mb": 3379
+      },
+      {
+        "t": 48.611,
+        "used_mb": 3379
+      },
+      {
+        "t": 49.128,
+        "used_mb": 3379
+      },
+      {
+        "t": 49.645,
+        "used_mb": 3379
+      },
+      {
+        "t": 50.161,
+        "used_mb": 3379
+      },
+      {
+        "t": 50.678,
+        "used_mb": 3379
+      },
+      {
+        "t": 51.194,
+        "used_mb": 3379
+      },
+      {
+        "t": 51.711,
+        "used_mb": 3379
+      },
+      {
+        "t": 52.227,
+        "used_mb": 3379
+      },
+      {
+        "t": 52.744,
+        "used_mb": 3379
+      },
+      {
+        "t": 53.261,
+        "used_mb": 3379
+      },
+      {
+        "t": 53.777,
+        "used_mb": 3379
+      },
+      {
+        "t": 54.293,
+        "used_mb": 3379
+      },
+      {
+        "t": 54.81,
+        "used_mb": 3379
+      },
+      {
+        "t": 55.326,
+        "used_mb": 3379
+      },
+      {
+        "t": 55.842,
+        "used_mb": 3379
+      },
+      {
+        "t": 56.359,
+        "used_mb": 3379
+      },
+      {
+        "t": 56.876,
+        "used_mb": 3379
+      },
+      {
+        "t": 57.397,
+        "used_mb": 3379
+      },
+      {
+        "t": 57.919,
+        "used_mb": 3379
+      },
+      {
+        "t": 58.435,
+        "used_mb": 6327
+      },
+      {
+        "t": 58.951,
+        "used_mb": 7649
+      },
+      {
+        "t": 59.466,
+        "used_mb": 8641
+      },
+      {
+        "t": 59.982,
+        "used_mb": 8833
+      },
+      {
+        "t": 60.498,
+        "used_mb": 9025
+      },
+      {
+        "t": 61.016,
+        "used_mb": 6881
+      },
+      {
+        "t": 61.538,
+        "used_mb": 7149
+      },
+      {
+        "t": 62.058,
+        "used_mb": 7485
+      },
+      {
+        "t": 62.575,
+        "used_mb": 7485
+      },
+      {
+        "t": 63.093,
+        "used_mb": 7485
+      },
+      {
+        "t": 63.608,
+        "used_mb": 7485
+      },
+      {
+        "t": 64.124,
+        "used_mb": 7485
+      },
+      {
+        "t": 64.64,
+        "used_mb": 4509
+      },
+      {
+        "t": 65.157,
+        "used_mb": 341
+      },
+      {
+        "t": 65.674,
+        "used_mb": 341
+      },
+      {
+        "t": 66.191,
+        "used_mb": 2
+      },
+      {
+        "t": 66.707,
+        "used_mb": 2
+      },
+      {
+        "t": 67.224,
+        "used_mb": 2
+      }
+    ],
+    "marks": [
+      {
+        "t": 0.018,
+        "label": "worker-start"
+      },
+      {
+        "t": 1.803,
+        "label": "baseline"
+      },
+      {
+        "t": 2.682,
+        "label": "ballast-up"
+      },
+      {
+        "t": 4.683,
+        "label": "stt-request-in-band"
+      },
+      {
+        "t": 12.215,
+        "label": "stt-response"
+      },
+      {
+        "t": 15.282,
+        "label": "retry-after-ballast"
+      },
+      {
+        "t": 55.742,
+        "label": "retry-after-reaper"
+      },
+      {
+        "t": 64.142,
+        "label": "worker-stop"
+      },
+      {
+        "t": 67.674,
+        "label": "after-exit"
+      }
+    ]
+  },
+  "finished_at": "2026-08-08T19:54:52+00:00"
+}

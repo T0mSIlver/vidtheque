@@ -1,0 +1,236 @@
+{
+  "check": "no-room",
+  "started_at": "2026-08-08T19:51:00+00:00",
+  "env": {
+    "IDLE_UNLOAD_SECONDS": "0"
+  },
+  "metrics": {
+    "estimates_mb": {
+      "stt": 3200,
+      "embed": 1800,
+      "image_embed": 5000,
+      "ocr": 0
+    },
+    "free_before_ballast_mb": 24251,
+    "ballast_mb": 22251,
+    "free_under_ballast_mb": 1697,
+    "image_embed_need_mb": 5512,
+    "refusal_status": 503,
+    "refusal_retry_after": "30",
+    "refusal_type": "insufficient_vram",
+    "refusal_message": "image_embed needs ~5512 MB (estimate 5000 + headroom 512), 1697 MB free and nothing evictable",
+    "loaded_after": [],
+    "lease_acquired_after": false
+  },
+  "events": [
+    {
+      "t": 0.016,
+      "label": "worker-start"
+    },
+    {
+      "t": 1.798,
+      "label": "baseline"
+    },
+    {
+      "t": 2.703,
+      "label": "ballast-up"
+    },
+    {
+      "t": 4.704,
+      "label": "request-no-room"
+    },
+    {
+      "t": 4.709,
+      "label": "refusal"
+    },
+    {
+      "t": 6.824,
+      "label": "worker-stop"
+    },
+    {
+      "t": 8.754,
+      "label": "after-exit"
+    }
+  ],
+  "findings": [],
+  "baseline_device_mb": 2,
+  "baseline_worker_mb": 2,
+  "status_final": {
+    "version": "0.0.1",
+    "backends": [
+      {
+        "task": "stt",
+        "backend": "whisperx",
+        "model": "large-v3",
+        "loaded": false,
+        "resident": false,
+        "vram_estimate_mb": 3200,
+        "idle_seconds": null,
+        "load_count": 0,
+        "unload_count": 0,
+        "job_count": 0
+      },
+      {
+        "task": "embed",
+        "backend": "qwen3-embedding",
+        "model": "Qwen/Qwen3-Embedding-0.6B",
+        "loaded": false,
+        "resident": false,
+        "vram_estimate_mb": 1800,
+        "idle_seconds": null,
+        "load_count": 0,
+        "unload_count": 0,
+        "job_count": 0
+      },
+      {
+        "task": "image_embed",
+        "backend": "siglip2",
+        "model": "google/siglip2-so400m-patch16-naflex",
+        "loaded": false,
+        "resident": false,
+        "vram_estimate_mb": 5000,
+        "idle_seconds": 2.117,
+        "load_count": 0,
+        "unload_count": 0,
+        "job_count": 0
+      },
+      {
+        "task": "ocr",
+        "backend": "rapidocr",
+        "model": "rapidocr-default",
+        "loaded": false,
+        "resident": false,
+        "vram_estimate_mb": 0,
+        "idle_seconds": null,
+        "load_count": 0,
+        "unload_count": 0,
+        "job_count": 0
+      }
+    ],
+    "vram": {
+      "available": true,
+      "total_mb": 24576,
+      "used_mb": 324,
+      "free_mb": 24251,
+      "source": "nvml"
+    },
+    "queue": {
+      "depth": 0,
+      "in_flight": 0,
+      "running": null
+    },
+    "lease": {
+      "acquired": false,
+      "acquire_cmd_configured": false,
+      "release_cmd_configured": false
+    },
+    "idle_unload_seconds": 0.0
+  },
+  "worker_load_log": [],
+  "worker_unload_log": [],
+  "after_process_exit_mb": 2,
+  "vram_trace": {
+    "interval_s": 0.5,
+    "samples": [
+      {
+        "t": 0.017,
+        "used_mb": 2
+      },
+      {
+        "t": 0.533,
+        "used_mb": 2
+      },
+      {
+        "t": 1.048,
+        "used_mb": 2
+      },
+      {
+        "t": 1.565,
+        "used_mb": 2
+      },
+      {
+        "t": 2.083,
+        "used_mb": 2
+      },
+      {
+        "t": 2.6,
+        "used_mb": 4
+      },
+      {
+        "t": 3.116,
+        "used_mb": 22555
+      },
+      {
+        "t": 3.633,
+        "used_mb": 22555
+      },
+      {
+        "t": 4.149,
+        "used_mb": 22555
+      },
+      {
+        "t": 4.665,
+        "used_mb": 22555
+      },
+      {
+        "t": 5.182,
+        "used_mb": 2
+      },
+      {
+        "t": 5.698,
+        "used_mb": 2
+      },
+      {
+        "t": 6.214,
+        "used_mb": 2
+      },
+      {
+        "t": 6.73,
+        "used_mb": 2
+      },
+      {
+        "t": 7.246,
+        "used_mb": 2
+      },
+      {
+        "t": 7.763,
+        "used_mb": 2
+      },
+      {
+        "t": 8.279,
+        "used_mb": 2
+      }
+    ],
+    "marks": [
+      {
+        "t": 0.016,
+        "label": "worker-start"
+      },
+      {
+        "t": 1.798,
+        "label": "baseline"
+      },
+      {
+        "t": 2.703,
+        "label": "ballast-up"
+      },
+      {
+        "t": 4.704,
+        "label": "request-no-room"
+      },
+      {
+        "t": 4.709,
+        "label": "refusal"
+      },
+      {
+        "t": 6.824,
+        "label": "worker-stop"
+      },
+      {
+        "t": 8.754,
+        "label": "after-exit"
+      }
+    ]
+  },
+  "finished_at": "2026-08-08T19:51:09+00:00"
+}

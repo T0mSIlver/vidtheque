@@ -1,0 +1,737 @@
+{
+  "check": "resident",
+  "started_at": "2026-08-08T19:40:26+00:00",
+  "env": {
+    "IDLE_UNLOAD_SECONDS": "15.0",
+    "EMBED_RESIDENT": "1"
+  },
+  "metrics": {
+    "embed_status": 200,
+    "image_status": 200,
+    "ocr_status": 200,
+    "vram_all_loaded_mb": 4029,
+    "vram_after_reaper_mb": 1485,
+    "resident_embed_still_loaded": true,
+    "evictable_backends_unloaded": true,
+    "embed_unload_count": 0,
+    "image_embed_unload_count": 1,
+    "resident_cost_mb": 1483,
+    "lease_still_acquired": true
+  },
+  "events": [
+    {
+      "t": 0.018,
+      "label": "worker-start"
+    },
+    {
+      "t": 1.802,
+      "label": "baseline"
+    },
+    {
+      "t": 1.802,
+      "label": "embed-request"
+    },
+    {
+      "t": 8.917,
+      "label": "image-request"
+    },
+    {
+      "t": 13.201,
+      "label": "ocr-request"
+    },
+    {
+      "t": 15.174,
+      "label": "all-loaded"
+    },
+    {
+      "t": 65.174,
+      "label": "after-reaper"
+    },
+    {
+      "t": 65.191,
+      "label": "worker-stop"
+    },
+    {
+      "t": 68.275,
+      "label": "after-exit"
+    }
+  ],
+  "findings": [],
+  "baseline_device_mb": 2,
+  "baseline_worker_mb": 2,
+  "status_final": {
+    "version": "0.0.1",
+    "backends": [
+      {
+        "task": "stt",
+        "backend": "whisperx",
+        "model": "large-v3",
+        "loaded": false,
+        "resident": false,
+        "vram_estimate_mb": 3200,
+        "idle_seconds": null,
+        "load_count": 0,
+        "unload_count": 0,
+        "job_count": 0
+      },
+      {
+        "task": "embed",
+        "backend": "qwen3-embedding",
+        "model": "Qwen/Qwen3-Embedding-0.6B",
+        "loaded": true,
+        "resident": true,
+        "vram_estimate_mb": 1800,
+        "idle_seconds": 56.28,
+        "load_count": 1,
+        "unload_count": 0,
+        "job_count": 1
+      },
+      {
+        "task": "image_embed",
+        "backend": "siglip2",
+        "model": "google/siglip2-so400m-patch16-naflex",
+        "loaded": false,
+        "resident": false,
+        "vram_estimate_mb": 5000,
+        "idle_seconds": 51.999,
+        "load_count": 1,
+        "unload_count": 1,
+        "job_count": 1
+      },
+      {
+        "task": "ocr",
+        "backend": "rapidocr",
+        "model": "rapidocr-default",
+        "loaded": false,
+        "resident": false,
+        "vram_estimate_mb": 0,
+        "idle_seconds": 50.034,
+        "load_count": 1,
+        "unload_count": 1,
+        "job_count": 1
+      }
+    ],
+    "vram": {
+      "available": true,
+      "total_mb": 24576,
+      "used_mb": 1808,
+      "free_mb": 22767,
+      "source": "nvml"
+    },
+    "queue": {
+      "depth": 0,
+      "in_flight": 0,
+      "running": null
+    },
+    "lease": {
+      "acquired": true,
+      "acquire_cmd_configured": false,
+      "release_cmd_configured": false
+    },
+    "idle_unload_seconds": 15.0
+  },
+  "worker_load_log": [
+    {
+      "task": "embed",
+      "backend": "qwen3-embedding",
+      "seconds": 6.8
+    },
+    {
+      "task": "image_embed",
+      "backend": "siglip2",
+      "seconds": 3.8
+    },
+    {
+      "task": "ocr",
+      "backend": "rapidocr",
+      "seconds": 0.5
+    }
+  ],
+  "worker_unload_log": [
+    {
+      "task": "image_embed",
+      "reason": "idle"
+    },
+    {
+      "task": "ocr",
+      "reason": "idle"
+    }
+  ],
+  "after_process_exit_mb": 2,
+  "vram_trace": {
+    "interval_s": 0.5,
+    "samples": [
+      {
+        "t": 0.018,
+        "used_mb": 2
+      },
+      {
+        "t": 0.535,
+        "used_mb": 2
+      },
+      {
+        "t": 1.051,
+        "used_mb": 2
+      },
+      {
+        "t": 1.568,
+        "used_mb": 2
+      },
+      {
+        "t": 2.084,
+        "used_mb": 2
+      },
+      {
+        "t": 2.601,
+        "used_mb": 2
+      },
+      {
+        "t": 3.117,
+        "used_mb": 2
+      },
+      {
+        "t": 3.633,
+        "used_mb": 2
+      },
+      {
+        "t": 4.149,
+        "used_mb": 2
+      },
+      {
+        "t": 4.666,
+        "used_mb": 2
+      },
+      {
+        "t": 5.181,
+        "used_mb": 2
+      },
+      {
+        "t": 5.697,
+        "used_mb": 2
+      },
+      {
+        "t": 6.213,
+        "used_mb": 2
+      },
+      {
+        "t": 6.728,
+        "used_mb": 2
+      },
+      {
+        "t": 7.244,
+        "used_mb": 2
+      },
+      {
+        "t": 7.759,
+        "used_mb": 2
+      },
+      {
+        "t": 8.274,
+        "used_mb": 2
+      },
+      {
+        "t": 8.79,
+        "used_mb": 1919
+      },
+      {
+        "t": 9.337,
+        "used_mb": 1919
+      },
+      {
+        "t": 9.856,
+        "used_mb": 3723
+      },
+      {
+        "t": 10.371,
+        "used_mb": 3723
+      },
+      {
+        "t": 10.887,
+        "used_mb": 3723
+      },
+      {
+        "t": 11.404,
+        "used_mb": 3723
+      },
+      {
+        "t": 11.919,
+        "used_mb": 3723
+      },
+      {
+        "t": 12.437,
+        "used_mb": 3723
+      },
+      {
+        "t": 12.953,
+        "used_mb": 4029
+      },
+      {
+        "t": 13.469,
+        "used_mb": 4029
+      },
+      {
+        "t": 13.987,
+        "used_mb": 4029
+      },
+      {
+        "t": 14.506,
+        "used_mb": 4029
+      },
+      {
+        "t": 15.026,
+        "used_mb": 4029
+      },
+      {
+        "t": 15.542,
+        "used_mb": 4029
+      },
+      {
+        "t": 16.058,
+        "used_mb": 4029
+      },
+      {
+        "t": 16.573,
+        "used_mb": 4029
+      },
+      {
+        "t": 17.09,
+        "used_mb": 4029
+      },
+      {
+        "t": 17.605,
+        "used_mb": 4029
+      },
+      {
+        "t": 18.121,
+        "used_mb": 4029
+      },
+      {
+        "t": 18.636,
+        "used_mb": 4029
+      },
+      {
+        "t": 19.152,
+        "used_mb": 4029
+      },
+      {
+        "t": 19.669,
+        "used_mb": 4029
+      },
+      {
+        "t": 20.185,
+        "used_mb": 4029
+      },
+      {
+        "t": 20.702,
+        "used_mb": 4029
+      },
+      {
+        "t": 21.218,
+        "used_mb": 4029
+      },
+      {
+        "t": 21.736,
+        "used_mb": 4029
+      },
+      {
+        "t": 22.253,
+        "used_mb": 4029
+      },
+      {
+        "t": 22.769,
+        "used_mb": 4029
+      },
+      {
+        "t": 23.285,
+        "used_mb": 4029
+      },
+      {
+        "t": 23.802,
+        "used_mb": 4029
+      },
+      {
+        "t": 24.318,
+        "used_mb": 4029
+      },
+      {
+        "t": 24.834,
+        "used_mb": 4029
+      },
+      {
+        "t": 25.351,
+        "used_mb": 4029
+      },
+      {
+        "t": 25.867,
+        "used_mb": 4029
+      },
+      {
+        "t": 26.384,
+        "used_mb": 4029
+      },
+      {
+        "t": 26.9,
+        "used_mb": 4029
+      },
+      {
+        "t": 27.417,
+        "used_mb": 4029
+      },
+      {
+        "t": 27.934,
+        "used_mb": 4029
+      },
+      {
+        "t": 28.451,
+        "used_mb": 2213
+      },
+      {
+        "t": 28.967,
+        "used_mb": 1485
+      },
+      {
+        "t": 29.482,
+        "used_mb": 1485
+      },
+      {
+        "t": 29.998,
+        "used_mb": 1485
+      },
+      {
+        "t": 30.514,
+        "used_mb": 1485
+      },
+      {
+        "t": 31.03,
+        "used_mb": 1485
+      },
+      {
+        "t": 31.546,
+        "used_mb": 1485
+      },
+      {
+        "t": 32.062,
+        "used_mb": 1485
+      },
+      {
+        "t": 32.578,
+        "used_mb": 1485
+      },
+      {
+        "t": 33.094,
+        "used_mb": 1485
+      },
+      {
+        "t": 33.61,
+        "used_mb": 1485
+      },
+      {
+        "t": 34.126,
+        "used_mb": 1485
+      },
+      {
+        "t": 34.642,
+        "used_mb": 1485
+      },
+      {
+        "t": 35.158,
+        "used_mb": 1485
+      },
+      {
+        "t": 35.675,
+        "used_mb": 1485
+      },
+      {
+        "t": 36.191,
+        "used_mb": 1485
+      },
+      {
+        "t": 36.707,
+        "used_mb": 1485
+      },
+      {
+        "t": 37.223,
+        "used_mb": 1485
+      },
+      {
+        "t": 37.738,
+        "used_mb": 1485
+      },
+      {
+        "t": 38.255,
+        "used_mb": 1485
+      },
+      {
+        "t": 38.771,
+        "used_mb": 1485
+      },
+      {
+        "t": 39.287,
+        "used_mb": 1485
+      },
+      {
+        "t": 39.802,
+        "used_mb": 1485
+      },
+      {
+        "t": 40.319,
+        "used_mb": 1485
+      },
+      {
+        "t": 40.835,
+        "used_mb": 1485
+      },
+      {
+        "t": 41.352,
+        "used_mb": 1485
+      },
+      {
+        "t": 41.868,
+        "used_mb": 1485
+      },
+      {
+        "t": 42.384,
+        "used_mb": 1485
+      },
+      {
+        "t": 42.9,
+        "used_mb": 1485
+      },
+      {
+        "t": 43.416,
+        "used_mb": 1485
+      },
+      {
+        "t": 43.933,
+        "used_mb": 1485
+      },
+      {
+        "t": 44.448,
+        "used_mb": 1485
+      },
+      {
+        "t": 44.965,
+        "used_mb": 1485
+      },
+      {
+        "t": 45.482,
+        "used_mb": 1485
+      },
+      {
+        "t": 45.998,
+        "used_mb": 1485
+      },
+      {
+        "t": 46.514,
+        "used_mb": 1485
+      },
+      {
+        "t": 47.031,
+        "used_mb": 1485
+      },
+      {
+        "t": 47.548,
+        "used_mb": 1485
+      },
+      {
+        "t": 48.064,
+        "used_mb": 1485
+      },
+      {
+        "t": 48.581,
+        "used_mb": 1485
+      },
+      {
+        "t": 49.097,
+        "used_mb": 1485
+      },
+      {
+        "t": 49.614,
+        "used_mb": 1485
+      },
+      {
+        "t": 50.131,
+        "used_mb": 1485
+      },
+      {
+        "t": 50.649,
+        "used_mb": 1485
+      },
+      {
+        "t": 51.165,
+        "used_mb": 1485
+      },
+      {
+        "t": 51.683,
+        "used_mb": 1485
+      },
+      {
+        "t": 52.199,
+        "used_mb": 1485
+      },
+      {
+        "t": 52.715,
+        "used_mb": 1485
+      },
+      {
+        "t": 53.232,
+        "used_mb": 1485
+      },
+      {
+        "t": 53.749,
+        "used_mb": 1485
+      },
+      {
+        "t": 54.265,
+        "used_mb": 1485
+      },
+      {
+        "t": 54.781,
+        "used_mb": 1485
+      },
+      {
+        "t": 55.298,
+        "used_mb": 1485
+      },
+      {
+        "t": 55.813,
+        "used_mb": 1485
+      },
+      {
+        "t": 56.33,
+        "used_mb": 1485
+      },
+      {
+        "t": 56.846,
+        "used_mb": 1485
+      },
+      {
+        "t": 57.361,
+        "used_mb": 1485
+      },
+      {
+        "t": 57.877,
+        "used_mb": 1485
+      },
+      {
+        "t": 58.394,
+        "used_mb": 1485
+      },
+      {
+        "t": 58.911,
+        "used_mb": 1485
+      },
+      {
+        "t": 59.428,
+        "used_mb": 1485
+      },
+      {
+        "t": 59.947,
+        "used_mb": 1485
+      },
+      {
+        "t": 60.464,
+        "used_mb": 1485
+      },
+      {
+        "t": 60.981,
+        "used_mb": 1485
+      },
+      {
+        "t": 61.498,
+        "used_mb": 1485
+      },
+      {
+        "t": 62.014,
+        "used_mb": 1485
+      },
+      {
+        "t": 62.53,
+        "used_mb": 1485
+      },
+      {
+        "t": 63.046,
+        "used_mb": 1485
+      },
+      {
+        "t": 63.562,
+        "used_mb": 1485
+      },
+      {
+        "t": 64.079,
+        "used_mb": 1485
+      },
+      {
+        "t": 64.595,
+        "used_mb": 1485
+      },
+      {
+        "t": 65.111,
+        "used_mb": 1485
+      },
+      {
+        "t": 65.629,
+        "used_mb": 1485
+      },
+      {
+        "t": 66.146,
+        "used_mb": 345
+      },
+      {
+        "t": 66.664,
+        "used_mb": 345
+      },
+      {
+        "t": 67.181,
+        "used_mb": 2
+      },
+      {
+        "t": 67.697,
+        "used_mb": 2
+      },
+      {
+        "t": 68.214,
+        "used_mb": 2
+      }
+    ],
+    "marks": [
+      {
+        "t": 0.018,
+        "label": "worker-start"
+      },
+      {
+        "t": 1.802,
+        "label": "baseline"
+      },
+      {
+        "t": 1.802,
+        "label": "embed-request"
+      },
+      {
+        "t": 8.917,
+        "label": "image-request"
+      },
+      {
+        "t": 13.201,
+        "label": "ocr-request"
+      },
+      {
+        "t": 15.174,
+        "label": "all-loaded"
+      },
+      {
+        "t": 65.174,
+        "label": "after-reaper"
+      },
+      {
+        "t": 65.191,
+        "label": "worker-stop"
+      },
+      {
+        "t": 68.275,
+        "label": "after-exit"
+      }
+    ]
+  },
+  "finished_at": "2026-08-08T19:41:34+00:00"
+}

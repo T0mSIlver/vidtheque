@@ -1,0 +1,320 @@
+{
+  "check": "ocr",
+  "started_at": "2026-08-08T20:01:45+00:00",
+  "env": {
+    "IDLE_UNLOAD_SECONDS": "15.0"
+  },
+  "metrics": {
+    "frames": 44,
+    "request_s": 13.04,
+    "frames_per_s": 3.37,
+    "lines": 419,
+    "vram_before_mb": 2,
+    "vram_peak_during_ocr_mb": 2,
+    "vram_after_mb": 2,
+    "ocr_vram_estimate_mb": 0,
+    "lease_acquired_for_cpu_backend": true
+  },
+  "events": [
+    {
+      "t": 0.018,
+      "label": "worker-start"
+    },
+    {
+      "t": 1.806,
+      "label": "baseline"
+    },
+    {
+      "t": 1.806,
+      "label": "ocr-request"
+    },
+    {
+      "t": 14.85,
+      "label": "ocr-done"
+    },
+    {
+      "t": 14.868,
+      "label": "settle-start"
+    },
+    {
+      "t": 14.884,
+      "label": "settle-end"
+    },
+    {
+      "t": 14.885,
+      "label": "worker-stop"
+    },
+    {
+      "t": 16.916,
+      "label": "after-exit"
+    }
+  ],
+  "findings": [
+    "a CPU-only OCR request acquired the GPU lease (lifecycle._ensure_loaded runs the acquire hook before every first load, whatever the backend's VRAM estimate)"
+  ],
+  "baseline_device_mb": 2,
+  "baseline_worker_mb": 2,
+  "nvml_used_at_baseline_mb": 324,
+  "nvml_offset_mb": 322,
+  "settle": {
+    "baseline_worker_mb": 2,
+    "returned_within_tolerance": true,
+    "seconds_to_settle": 0.02,
+    "final_mb": 2,
+    "delta_mb": 0,
+    "tolerance_mb": 200,
+    "trace": []
+  },
+  "status_final": {
+    "version": "0.0.1",
+    "backends": [
+      {
+        "task": "stt",
+        "backend": "whisperx",
+        "model": "large-v3",
+        "loaded": false,
+        "resident": false,
+        "vram_estimate_mb": 3200,
+        "idle_seconds": null,
+        "load_count": 0,
+        "unload_count": 0,
+        "job_count": 0
+      },
+      {
+        "task": "embed",
+        "backend": "qwen3-embedding",
+        "model": "Qwen/Qwen3-Embedding-0.6B",
+        "loaded": false,
+        "resident": false,
+        "vram_estimate_mb": 1800,
+        "idle_seconds": null,
+        "load_count": 0,
+        "unload_count": 0,
+        "job_count": 0
+      },
+      {
+        "task": "image_embed",
+        "backend": "siglip2",
+        "model": "google/siglip2-so400m-patch16-naflex",
+        "loaded": false,
+        "resident": false,
+        "vram_estimate_mb": 5000,
+        "idle_seconds": null,
+        "load_count": 0,
+        "unload_count": 0,
+        "job_count": 0
+      },
+      {
+        "task": "ocr",
+        "backend": "rapidocr",
+        "model": "rapidocr-default",
+        "loaded": true,
+        "resident": false,
+        "vram_estimate_mb": 0,
+        "idle_seconds": 0.037,
+        "load_count": 1,
+        "unload_count": 0,
+        "job_count": 1
+      }
+    ],
+    "vram": {
+      "available": true,
+      "total_mb": 24576,
+      "used_mb": 324,
+      "free_mb": 24251,
+      "source": "nvml"
+    },
+    "queue": {
+      "depth": 0,
+      "in_flight": 0,
+      "running": null
+    },
+    "lease": {
+      "acquired": true,
+      "acquire_cmd_configured": false,
+      "release_cmd_configured": false
+    },
+    "idle_unload_seconds": 15.0
+  },
+  "worker_load_log": [
+    {
+      "task": "ocr",
+      "backend": "rapidocr",
+      "seconds": 0.5
+    }
+  ],
+  "worker_unload_log": [],
+  "after_process_exit_mb": 2,
+  "vram_trace": {
+    "interval_s": 0.5,
+    "samples": [
+      {
+        "t": 0.018,
+        "used_mb": 2
+      },
+      {
+        "t": 0.535,
+        "used_mb": 2
+      },
+      {
+        "t": 1.053,
+        "used_mb": 2
+      },
+      {
+        "t": 1.571,
+        "used_mb": 2
+      },
+      {
+        "t": 2.087,
+        "used_mb": 2
+      },
+      {
+        "t": 2.61,
+        "used_mb": 2
+      },
+      {
+        "t": 3.128,
+        "used_mb": 2
+      },
+      {
+        "t": 3.648,
+        "used_mb": 2
+      },
+      {
+        "t": 4.169,
+        "used_mb": 2
+      },
+      {
+        "t": 4.69,
+        "used_mb": 2
+      },
+      {
+        "t": 5.209,
+        "used_mb": 2
+      },
+      {
+        "t": 5.73,
+        "used_mb": 2
+      },
+      {
+        "t": 6.253,
+        "used_mb": 2
+      },
+      {
+        "t": 6.772,
+        "used_mb": 2
+      },
+      {
+        "t": 7.292,
+        "used_mb": 2
+      },
+      {
+        "t": 7.809,
+        "used_mb": 2
+      },
+      {
+        "t": 8.331,
+        "used_mb": 2
+      },
+      {
+        "t": 8.855,
+        "used_mb": 2
+      },
+      {
+        "t": 9.375,
+        "used_mb": 2
+      },
+      {
+        "t": 9.895,
+        "used_mb": 2
+      },
+      {
+        "t": 10.415,
+        "used_mb": 2
+      },
+      {
+        "t": 10.933,
+        "used_mb": 2
+      },
+      {
+        "t": 11.456,
+        "used_mb": 2
+      },
+      {
+        "t": 11.975,
+        "used_mb": 2
+      },
+      {
+        "t": 12.497,
+        "used_mb": 2
+      },
+      {
+        "t": 13.015,
+        "used_mb": 2
+      },
+      {
+        "t": 13.534,
+        "used_mb": 2
+      },
+      {
+        "t": 14.053,
+        "used_mb": 2
+      },
+      {
+        "t": 14.572,
+        "used_mb": 2
+      },
+      {
+        "t": 15.088,
+        "used_mb": 2
+      },
+      {
+        "t": 15.604,
+        "used_mb": 2
+      },
+      {
+        "t": 16.12,
+        "used_mb": 2
+      },
+      {
+        "t": 16.637,
+        "used_mb": 2
+      }
+    ],
+    "marks": [
+      {
+        "t": 0.018,
+        "label": "worker-start"
+      },
+      {
+        "t": 1.806,
+        "label": "baseline"
+      },
+      {
+        "t": 1.806,
+        "label": "ocr-request"
+      },
+      {
+        "t": 14.85,
+        "label": "ocr-done"
+      },
+      {
+        "t": 14.868,
+        "label": "settle-start"
+      },
+      {
+        "t": 14.884,
+        "label": "settle-end"
+      },
+      {
+        "t": 14.885,
+        "label": "worker-stop"
+      },
+      {
+        "t": 16.916,
+        "label": "after-exit"
+      }
+    ]
+  },
+  "finished_at": "2026-08-08T20:02:02+00:00"
+}

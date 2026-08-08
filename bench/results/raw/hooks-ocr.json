@@ -1,0 +1,551 @@
+{
+  "check": "hooks-ocr",
+  "started_at": "2026-08-08T20:02:02+00:00",
+  "env": {
+    "IDLE_UNLOAD_SECONDS": "15.0",
+    "GPU_ACQUIRE_CMD": "/tmp/claude-1000/-home-dev-work-website/fd2d97c8-90db-4661-b98f-f7672b649263/scratchpad/results/hook-ocr.sh acquire",
+    "GPU_RELEASE_CMD": "/tmp/claude-1000/-home-dev-work-website/fd2d97c8-90db-4661-b98f-f7672b649263/scratchpad/results/hook-ocr.sh release"
+  },
+  "metrics": {
+    "ocr_status": 200,
+    "hook_lines_after_ocr": [
+      {
+        "epoch": 1786219324.5103364,
+        "event": "acquire",
+        "vram_mb": 2
+      }
+    ],
+    "hook_lines_final": [
+      {
+        "epoch": 1786219324.5103364,
+        "event": "acquire",
+        "vram_mb": 2
+      },
+      {
+        "epoch": 1786219341.973241,
+        "event": "release",
+        "vram_mb": 2
+      }
+    ],
+    "acquires": 1,
+    "vram_during_ocr_mb": 2
+  },
+  "events": [
+    {
+      "t": 0.015,
+      "label": "worker-start"
+    },
+    {
+      "t": 1.8,
+      "label": "baseline"
+    },
+    {
+      "t": 1.8,
+      "label": "ocr-request"
+    },
+    {
+      "t": 4.264,
+      "label": "ocr-done"
+    },
+    {
+      "t": 44.265,
+      "label": "after-reaper"
+    },
+    {
+      "t": 44.266,
+      "label": "worker-stop"
+    },
+    {
+      "t": 46.246,
+      "label": "after-exit"
+    }
+  ],
+  "findings": [
+    "GPU_ACQUIRE_CMD fired for a CPU-only OCR request: rapidocr_ocr.py documents that it 'never contends for the GPU lease', but lifecycle._ensure_loaded acquires before every first load regardless of vram_estimate_mb"
+  ],
+  "baseline_device_mb": 2,
+  "baseline_worker_mb": 2,
+  "nvml_used_at_baseline_mb": 324,
+  "nvml_offset_mb": 322,
+  "status_final": {
+    "version": "0.0.1",
+    "backends": [
+      {
+        "task": "stt",
+        "backend": "whisperx",
+        "model": "large-v3",
+        "loaded": false,
+        "resident": false,
+        "vram_estimate_mb": 3200,
+        "idle_seconds": null,
+        "load_count": 0,
+        "unload_count": 0,
+        "job_count": 0
+      },
+      {
+        "task": "embed",
+        "backend": "qwen3-embedding",
+        "model": "Qwen/Qwen3-Embedding-0.6B",
+        "loaded": false,
+        "resident": false,
+        "vram_estimate_mb": 1800,
+        "idle_seconds": null,
+        "load_count": 0,
+        "unload_count": 0,
+        "job_count": 0
+      },
+      {
+        "task": "image_embed",
+        "backend": "siglip2",
+        "model": "google/siglip2-so400m-patch16-naflex",
+        "loaded": false,
+        "resident": false,
+        "vram_estimate_mb": 5000,
+        "idle_seconds": null,
+        "load_count": 0,
+        "unload_count": 0,
+        "job_count": 0
+      },
+      {
+        "task": "ocr",
+        "backend": "rapidocr",
+        "model": "rapidocr-default",
+        "loaded": false,
+        "resident": false,
+        "vram_estimate_mb": 0,
+        "idle_seconds": 40.001,
+        "load_count": 1,
+        "unload_count": 1,
+        "job_count": 1
+      }
+    ],
+    "vram": {
+      "available": true,
+      "total_mb": 24576,
+      "used_mb": 324,
+      "free_mb": 24251,
+      "source": "nvml"
+    },
+    "queue": {
+      "depth": 0,
+      "in_flight": 0,
+      "running": null
+    },
+    "lease": {
+      "acquired": false,
+      "acquire_cmd_configured": true,
+      "release_cmd_configured": true
+    },
+    "idle_unload_seconds": 15.0
+  },
+  "worker_load_log": [
+    {
+      "task": "ocr",
+      "backend": "rapidocr",
+      "seconds": 0.5
+    }
+  ],
+  "worker_unload_log": [
+    {
+      "task": "ocr",
+      "reason": "idle"
+    }
+  ],
+  "after_process_exit_mb": 2,
+  "vram_trace": {
+    "interval_s": 0.5,
+    "samples": [
+      {
+        "t": 0.017,
+        "used_mb": 2
+      },
+      {
+        "t": 0.532,
+        "used_mb": 2
+      },
+      {
+        "t": 1.049,
+        "used_mb": 2
+      },
+      {
+        "t": 1.566,
+        "used_mb": 2
+      },
+      {
+        "t": 2.082,
+        "used_mb": 2
+      },
+      {
+        "t": 2.605,
+        "used_mb": 2
+      },
+      {
+        "t": 3.122,
+        "used_mb": 2
+      },
+      {
+        "t": 3.64,
+        "used_mb": 2
+      },
+      {
+        "t": 4.161,
+        "used_mb": 2
+      },
+      {
+        "t": 4.677,
+        "used_mb": 2
+      },
+      {
+        "t": 5.193,
+        "used_mb": 2
+      },
+      {
+        "t": 5.709,
+        "used_mb": 2
+      },
+      {
+        "t": 6.226,
+        "used_mb": 2
+      },
+      {
+        "t": 6.742,
+        "used_mb": 2
+      },
+      {
+        "t": 7.258,
+        "used_mb": 2
+      },
+      {
+        "t": 7.774,
+        "used_mb": 2
+      },
+      {
+        "t": 8.29,
+        "used_mb": 2
+      },
+      {
+        "t": 8.806,
+        "used_mb": 2
+      },
+      {
+        "t": 9.323,
+        "used_mb": 2
+      },
+      {
+        "t": 9.84,
+        "used_mb": 2
+      },
+      {
+        "t": 10.356,
+        "used_mb": 2
+      },
+      {
+        "t": 10.872,
+        "used_mb": 2
+      },
+      {
+        "t": 11.388,
+        "used_mb": 2
+      },
+      {
+        "t": 11.903,
+        "used_mb": 2
+      },
+      {
+        "t": 12.42,
+        "used_mb": 2
+      },
+      {
+        "t": 12.937,
+        "used_mb": 2
+      },
+      {
+        "t": 13.453,
+        "used_mb": 2
+      },
+      {
+        "t": 13.97,
+        "used_mb": 2
+      },
+      {
+        "t": 14.487,
+        "used_mb": 2
+      },
+      {
+        "t": 15.003,
+        "used_mb": 2
+      },
+      {
+        "t": 15.52,
+        "used_mb": 2
+      },
+      {
+        "t": 16.036,
+        "used_mb": 2
+      },
+      {
+        "t": 16.553,
+        "used_mb": 2
+      },
+      {
+        "t": 17.069,
+        "used_mb": 2
+      },
+      {
+        "t": 17.585,
+        "used_mb": 2
+      },
+      {
+        "t": 18.101,
+        "used_mb": 2
+      },
+      {
+        "t": 18.617,
+        "used_mb": 2
+      },
+      {
+        "t": 19.133,
+        "used_mb": 2
+      },
+      {
+        "t": 19.65,
+        "used_mb": 2
+      },
+      {
+        "t": 20.166,
+        "used_mb": 2
+      },
+      {
+        "t": 20.682,
+        "used_mb": 2
+      },
+      {
+        "t": 21.198,
+        "used_mb": 2
+      },
+      {
+        "t": 21.713,
+        "used_mb": 2
+      },
+      {
+        "t": 22.23,
+        "used_mb": 2
+      },
+      {
+        "t": 22.746,
+        "used_mb": 2
+      },
+      {
+        "t": 23.262,
+        "used_mb": 2
+      },
+      {
+        "t": 23.779,
+        "used_mb": 2
+      },
+      {
+        "t": 24.296,
+        "used_mb": 2
+      },
+      {
+        "t": 24.812,
+        "used_mb": 2
+      },
+      {
+        "t": 25.328,
+        "used_mb": 2
+      },
+      {
+        "t": 25.845,
+        "used_mb": 2
+      },
+      {
+        "t": 26.362,
+        "used_mb": 2
+      },
+      {
+        "t": 26.879,
+        "used_mb": 2
+      },
+      {
+        "t": 27.397,
+        "used_mb": 2
+      },
+      {
+        "t": 27.913,
+        "used_mb": 2
+      },
+      {
+        "t": 28.429,
+        "used_mb": 2
+      },
+      {
+        "t": 28.947,
+        "used_mb": 2
+      },
+      {
+        "t": 29.463,
+        "used_mb": 2
+      },
+      {
+        "t": 29.98,
+        "used_mb": 2
+      },
+      {
+        "t": 30.497,
+        "used_mb": 2
+      },
+      {
+        "t": 31.013,
+        "used_mb": 2
+      },
+      {
+        "t": 31.531,
+        "used_mb": 2
+      },
+      {
+        "t": 32.047,
+        "used_mb": 2
+      },
+      {
+        "t": 32.564,
+        "used_mb": 2
+      },
+      {
+        "t": 33.08,
+        "used_mb": 2
+      },
+      {
+        "t": 33.597,
+        "used_mb": 2
+      },
+      {
+        "t": 34.113,
+        "used_mb": 2
+      },
+      {
+        "t": 34.63,
+        "used_mb": 2
+      },
+      {
+        "t": 35.146,
+        "used_mb": 2
+      },
+      {
+        "t": 35.663,
+        "used_mb": 2
+      },
+      {
+        "t": 36.179,
+        "used_mb": 2
+      },
+      {
+        "t": 36.695,
+        "used_mb": 2
+      },
+      {
+        "t": 37.211,
+        "used_mb": 2
+      },
+      {
+        "t": 37.728,
+        "used_mb": 2
+      },
+      {
+        "t": 38.245,
+        "used_mb": 2
+      },
+      {
+        "t": 38.761,
+        "used_mb": 2
+      },
+      {
+        "t": 39.278,
+        "used_mb": 2
+      },
+      {
+        "t": 39.795,
+        "used_mb": 2
+      },
+      {
+        "t": 40.311,
+        "used_mb": 2
+      },
+      {
+        "t": 40.827,
+        "used_mb": 2
+      },
+      {
+        "t": 41.342,
+        "used_mb": 2
+      },
+      {
+        "t": 41.859,
+        "used_mb": 2
+      },
+      {
+        "t": 42.375,
+        "used_mb": 2
+      },
+      {
+        "t": 42.892,
+        "used_mb": 2
+      },
+      {
+        "t": 43.409,
+        "used_mb": 2
+      },
+      {
+        "t": 43.925,
+        "used_mb": 2
+      },
+      {
+        "t": 44.442,
+        "used_mb": 2
+      },
+      {
+        "t": 44.958,
+        "used_mb": 2
+      },
+      {
+        "t": 45.475,
+        "used_mb": 2
+      },
+      {
+        "t": 45.992,
+        "used_mb": 2
+      }
+    ],
+    "marks": [
+      {
+        "t": 0.015,
+        "label": "worker-start"
+      },
+      {
+        "t": 1.8,
+        "label": "baseline"
+      },
+      {
+        "t": 1.8,
+        "label": "ocr-request"
+      },
+      {
+        "t": 4.264,
+        "label": "ocr-done"
+      },
+      {
+        "t": 44.265,
+        "label": "after-reaper"
+      },
+      {
+        "t": 44.266,
+        "label": "worker-stop"
+      },
+      {
+        "t": 46.246,
+        "label": "after-exit"
+      }
+    ]
+  },
+  "finished_at": "2026-08-08T20:02:48+00:00"
+}

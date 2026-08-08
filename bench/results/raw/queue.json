@@ -1,0 +1,527 @@
+{
+  "check": "queue",
+  "started_at": "2026-08-08T19:51:09+00:00",
+  "env": {
+    "IDLE_UNLOAD_SECONDS": "0"
+  },
+  "metrics": {
+    "requests": {
+      "stt": {
+        "status": 200,
+        "start": 1.798,
+        "end": 13.905,
+        "elapsed_s": 12.11
+      },
+      "embed": {
+        "status": 200,
+        "start": 1.999,
+        "end": 18.663,
+        "elapsed_s": 16.66
+      }
+    },
+    "wall_clock_s": 16.87,
+    "sum_of_request_s": 28.77,
+    "running_spans": [
+      {
+        "task": "stt",
+        "start": 1.81,
+        "end": 13.851
+      },
+      {
+        "task": "embed",
+        "start": 14.134,
+        "end": 18.583
+      }
+    ],
+    "max_queue_depth": 1,
+    "max_in_flight": 2,
+    "concurrent_gpu_jobs_observed": false,
+    "loaded_20s_after_last_job": [
+      "stt",
+      "embed"
+    ],
+    "vram_held_mb": 5495
+  },
+  "events": [
+    {
+      "t": 0.016,
+      "label": "worker-start"
+    },
+    {
+      "t": 1.798,
+      "label": "baseline"
+    },
+    {
+      "t": 1.798,
+      "label": "concurrent-fire"
+    },
+    {
+      "t": 18.663,
+      "label": "both-done"
+    },
+    {
+      "t": 38.663,
+      "label": "ttl-zero-wait"
+    },
+    {
+      "t": 38.68,
+      "label": "worker-stop"
+    },
+    {
+      "t": 42.213,
+      "label": "after-exit"
+    }
+  ],
+  "findings": [],
+  "baseline_device_mb": 2,
+  "baseline_worker_mb": 2,
+  "status_final": {
+    "version": "0.0.1",
+    "backends": [
+      {
+        "task": "stt",
+        "backend": "whisperx",
+        "model": "large-v3",
+        "loaded": true,
+        "resident": false,
+        "vram_estimate_mb": 3200,
+        "idle_seconds": 24.776,
+        "load_count": 1,
+        "unload_count": 0,
+        "job_count": 1
+      },
+      {
+        "task": "embed",
+        "backend": "qwen3-embedding",
+        "model": "Qwen/Qwen3-Embedding-0.6B",
+        "loaded": true,
+        "resident": false,
+        "vram_estimate_mb": 1800,
+        "idle_seconds": 20.028,
+        "load_count": 1,
+        "unload_count": 0,
+        "job_count": 1
+      },
+      {
+        "task": "image_embed",
+        "backend": "siglip2",
+        "model": "google/siglip2-so400m-patch16-naflex",
+        "loaded": false,
+        "resident": false,
+        "vram_estimate_mb": 5000,
+        "idle_seconds": null,
+        "load_count": 0,
+        "unload_count": 0,
+        "job_count": 0
+      },
+      {
+        "task": "ocr",
+        "backend": "rapidocr",
+        "model": "rapidocr-default",
+        "loaded": false,
+        "resident": false,
+        "vram_estimate_mb": 0,
+        "idle_seconds": null,
+        "load_count": 0,
+        "unload_count": 0,
+        "job_count": 0
+      }
+    ],
+    "vram": {
+      "available": true,
+      "total_mb": 24576,
+      "used_mb": 5818,
+      "free_mb": 18757,
+      "source": "nvml"
+    },
+    "queue": {
+      "depth": 0,
+      "in_flight": 0,
+      "running": null
+    },
+    "lease": {
+      "acquired": true,
+      "acquire_cmd_configured": false,
+      "release_cmd_configured": false
+    },
+    "idle_unload_seconds": 0.0
+  },
+  "worker_load_log": [
+    {
+      "task": "stt",
+      "backend": "whisperx",
+      "seconds": 6.6
+    },
+    {
+      "task": "embed",
+      "backend": "qwen3-embedding",
+      "seconds": 4.4
+    }
+  ],
+  "worker_unload_log": [],
+  "after_process_exit_mb": 2,
+  "vram_trace": {
+    "interval_s": 0.5,
+    "samples": [
+      {
+        "t": 0.016,
+        "used_mb": 2
+      },
+      {
+        "t": 0.532,
+        "used_mb": 2
+      },
+      {
+        "t": 1.049,
+        "used_mb": 2
+      },
+      {
+        "t": 1.564,
+        "used_mb": 2
+      },
+      {
+        "t": 2.081,
+        "used_mb": 2
+      },
+      {
+        "t": 2.597,
+        "used_mb": 2
+      },
+      {
+        "t": 3.114,
+        "used_mb": 2
+      },
+      {
+        "t": 3.631,
+        "used_mb": 2
+      },
+      {
+        "t": 4.147,
+        "used_mb": 2
+      },
+      {
+        "t": 4.664,
+        "used_mb": 2
+      },
+      {
+        "t": 5.181,
+        "used_mb": 2
+      },
+      {
+        "t": 5.697,
+        "used_mb": 261
+      },
+      {
+        "t": 6.214,
+        "used_mb": 261
+      },
+      {
+        "t": 6.731,
+        "used_mb": 261
+      },
+      {
+        "t": 7.255,
+        "used_mb": 261
+      },
+      {
+        "t": 7.804,
+        "used_mb": 261
+      },
+      {
+        "t": 8.32,
+        "used_mb": 3365
+      },
+      {
+        "t": 8.837,
+        "used_mb": 3369
+      },
+      {
+        "t": 9.364,
+        "used_mb": 3735
+      },
+      {
+        "t": 9.881,
+        "used_mb": 4677
+      },
+      {
+        "t": 10.398,
+        "used_mb": 4677
+      },
+      {
+        "t": 10.914,
+        "used_mb": 5733
+      },
+      {
+        "t": 11.431,
+        "used_mb": 6053
+      },
+      {
+        "t": 11.95,
+        "used_mb": 3941
+      },
+      {
+        "t": 12.466,
+        "used_mb": 3941
+      },
+      {
+        "t": 12.982,
+        "used_mb": 3877
+      },
+      {
+        "t": 13.5,
+        "used_mb": 4513
+      },
+      {
+        "t": 14.017,
+        "used_mb": 4513
+      },
+      {
+        "t": 14.532,
+        "used_mb": 4513
+      },
+      {
+        "t": 15.05,
+        "used_mb": 4513
+      },
+      {
+        "t": 15.566,
+        "used_mb": 4513
+      },
+      {
+        "t": 16.105,
+        "used_mb": 4513
+      },
+      {
+        "t": 16.62,
+        "used_mb": 4513
+      },
+      {
+        "t": 17.137,
+        "used_mb": 4513
+      },
+      {
+        "t": 17.653,
+        "used_mb": 4513
+      },
+      {
+        "t": 18.17,
+        "used_mb": 4513
+      },
+      {
+        "t": 18.686,
+        "used_mb": 5495
+      },
+      {
+        "t": 19.202,
+        "used_mb": 5495
+      },
+      {
+        "t": 19.717,
+        "used_mb": 5495
+      },
+      {
+        "t": 20.234,
+        "used_mb": 5495
+      },
+      {
+        "t": 20.751,
+        "used_mb": 5495
+      },
+      {
+        "t": 21.268,
+        "used_mb": 5495
+      },
+      {
+        "t": 21.784,
+        "used_mb": 5495
+      },
+      {
+        "t": 22.299,
+        "used_mb": 5495
+      },
+      {
+        "t": 22.816,
+        "used_mb": 5495
+      },
+      {
+        "t": 23.331,
+        "used_mb": 5495
+      },
+      {
+        "t": 23.848,
+        "used_mb": 5495
+      },
+      {
+        "t": 24.364,
+        "used_mb": 5495
+      },
+      {
+        "t": 24.879,
+        "used_mb": 5495
+      },
+      {
+        "t": 25.395,
+        "used_mb": 5495
+      },
+      {
+        "t": 25.911,
+        "used_mb": 5495
+      },
+      {
+        "t": 26.427,
+        "used_mb": 5495
+      },
+      {
+        "t": 26.943,
+        "used_mb": 5495
+      },
+      {
+        "t": 27.459,
+        "used_mb": 5495
+      },
+      {
+        "t": 27.975,
+        "used_mb": 5495
+      },
+      {
+        "t": 28.491,
+        "used_mb": 5495
+      },
+      {
+        "t": 29.007,
+        "used_mb": 5495
+      },
+      {
+        "t": 29.523,
+        "used_mb": 5495
+      },
+      {
+        "t": 30.038,
+        "used_mb": 5495
+      },
+      {
+        "t": 30.554,
+        "used_mb": 5495
+      },
+      {
+        "t": 31.07,
+        "used_mb": 5495
+      },
+      {
+        "t": 31.587,
+        "used_mb": 5495
+      },
+      {
+        "t": 32.103,
+        "used_mb": 5495
+      },
+      {
+        "t": 32.62,
+        "used_mb": 5495
+      },
+      {
+        "t": 33.137,
+        "used_mb": 5495
+      },
+      {
+        "t": 33.653,
+        "used_mb": 5495
+      },
+      {
+        "t": 34.169,
+        "used_mb": 5495
+      },
+      {
+        "t": 34.685,
+        "used_mb": 5495
+      },
+      {
+        "t": 35.201,
+        "used_mb": 5495
+      },
+      {
+        "t": 35.717,
+        "used_mb": 5495
+      },
+      {
+        "t": 36.234,
+        "used_mb": 5495
+      },
+      {
+        "t": 36.752,
+        "used_mb": 5495
+      },
+      {
+        "t": 37.269,
+        "used_mb": 5495
+      },
+      {
+        "t": 37.784,
+        "used_mb": 5495
+      },
+      {
+        "t": 38.301,
+        "used_mb": 5495
+      },
+      {
+        "t": 38.817,
+        "used_mb": 5495
+      },
+      {
+        "t": 39.333,
+        "used_mb": 2351
+      },
+      {
+        "t": 39.851,
+        "used_mb": 343
+      },
+      {
+        "t": 40.369,
+        "used_mb": 343
+      },
+      {
+        "t": 40.885,
+        "used_mb": 2
+      },
+      {
+        "t": 41.403,
+        "used_mb": 2
+      },
+      {
+        "t": 41.92,
+        "used_mb": 2
+      }
+    ],
+    "marks": [
+      {
+        "t": 0.016,
+        "label": "worker-start"
+      },
+      {
+        "t": 1.798,
+        "label": "baseline"
+      },
+      {
+        "t": 1.798,
+        "label": "concurrent-fire"
+      },
+      {
+        "t": 18.663,
+        "label": "both-done"
+      },
+      {
+        "t": 38.663,
+        "label": "ttl-zero-wait"
+      },
+      {
+        "t": 38.68,
+        "label": "worker-stop"
+      },
+      {
+        "t": 42.213,
+        "label": "after-exit"
+      }
+    ]
+  },
+  "finished_at": "2026-08-08T19:51:51+00:00"
+}
