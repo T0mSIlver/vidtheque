@@ -959,23 +959,36 @@ Frames: 6/6 (4 inline, 2 as URLs — inline cap is 4 images / 6MB per call)
   semaphore 3, after `limit=500&include_frames=true` spawned 500 ffmpeg processes).
 - OCR text capped at 300 chars/frame.
 - Keyframe JPEGs are written at index time and served from disk. There is **no
-  ffmpeg on the query path** — resizing is a cached ImageMagick/PIL resample keyed
-  on `(frame_id, w, q)`, single-flight per key, 30-minute cache.
+  ffmpeg on the query path** — resizing is a cached PIL resample keyed on
+  `(frame_id, w, q)`, single-flight per key, into the `derived/` cache of
+  index-schema §6. The cache is evicted on a **byte cap**
+  (`VIDTHEQUE_DERIVED_CACHE_MB`), not on a 30-minute TTL as this line used to
+  say: a variant is immutable for as long as the keyframe behind it exists, so
+  age is the wrong thing to expire on and disk is the thing worth bounding.
 - Per-frame failures are collected, not fail-fast: the payload lists successes and
   a `failed:` line per bad id.
 
-**Status — two gaps between this section and what ships.**
+**Status — one gap between this section and what ships, and one clamp that is
+wider at the route than at the tool.**
 
-- **No resizing yet.** `width` and `quality` are accepted, clamped and bound into
-  the URL signature exactly as specified, but `/frames/<id>.jpg` currently serves
-  the stored keyframe at its indexed size — the `derived/` LRU cache of
-  index-schema §6 is not built. Callers see a larger image than they asked for,
-  never a different one, and the signature already covers the parameters, so
-  turning it on is one function and no contract change.
 - **Signed-URL TTL is 24h, not the 1h written above** (`VIDTHEQUE_FRAME_URL_TTL`,
   default `86400`), per DECISIONS.md. Because the TTL is configurable, the shipped
   description names no figure at all ("URLs are signed and expire") and the
   footer prints the actual expiry timestamp it just signed.
+- **`/frames/<id>.jpg` clamps `w` to 64..1280, the tool to 128..1280.** The
+  demo facade (demo-site.md) renders a 96×54 grid and asks the route directly;
+  128 is a floor for what a *model* should ask for, not for what a browser may.
+  The signature binds the clamped pair, so widening the route's floor can only
+  turn a URL that used to 401 into one that works.
+
+**Resizing ships.** `w` and `q` are applied, not just signed: the route
+resamples into `derived/` and serves the variant, `w` wider than the stored
+keyframe returns the original rather than an upscale, and no parameters at all
+returns the stored file byte for byte. Responses carry
+`Cache-Control: public, max-age=…` when the URL itself is the credential (open
+mode, or a signed URL — then capped at the signature's own remaining life) and
+`private, max-age=…` under a bearer token or session cookie, where a shared
+cache would otherwise re-serve one caller's frame to the next.
 
 **Errors:** `E_UNKNOWN_FRAME` (names the valid ordinal range for that video),
 `E_UNKNOWN_VIDEO`, `E_BAD_PARAM` (neither `frame_ids` nor `video_id`; span too

@@ -168,10 +168,15 @@ why. They are candidates to fold back into the docs.
     config key stays as the record of what indexing assumed, which is what
     index-schema §1.1 wants it for.
 
-6. **`get-frames` does not resize.** `width`/`quality` are accepted, clamped,
-   and bound into the URL signature, but the route serves the stored keyframe.
-   The `derived/` LRU cache from index-schema §6 is not built yet; adding it
-   changes one function and no contract.
+6. **`get-frames` resizes, through `derived/`.** `width`/`quality` are clamped,
+   bound into the URL signature, and now actually applied: `/frames/<id>.jpg`
+   resamples with PIL into the byte-capped LRU of index-schema §6
+   (`VIDTHEQUE_DERIVED_CACHE_MB`, single-flight per key, atomic writes) and
+   serves the variant. It never upscales — `w` wider than the stored keyframe
+   returns the original — and no parameters at all returns the stored file byte
+   for byte. The route's floor is `w=64`, wider than the tool's 128, because the
+   demo grid renders 96×54 and asks the route directly. Until this landed a
+   ten-result page shipped ~886 KB of full-resolution JPEG to draw thumbnails.
 
 7. **The `return` parameter needs an alias.** `return` is a Python keyword, so
    the handler's parameter is `return_` with a pydantic alias, plus a one-line

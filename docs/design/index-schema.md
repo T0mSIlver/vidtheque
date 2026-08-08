@@ -1717,7 +1717,7 @@ Two media choices the pipeline makes, both env-overridable:
 |---|---|---|
 | `vidtheque.db` | **420 MB** | measured (§3.4) |
 | `keyframes/` | **~3.9 GB** | 40,000 × ~98 KB (1280×720, q78) |
-| `derived/` | ≤ 500 MB | capped LRU cache, ~15 KB per 512 px variant |
+| `derived/` | ≤ 256 MB | byte-capped LRU cache, ~15 KB per 512 px variant, ~4 KB per 96 px one |
 | `audio/` | **~1.8 GB** | 24 kbps opus × 1,200 s × 500 |
 | `media/` (if kept) | **150–250 GB** | estimated: 300–500 MB per 20 min at the 1080p cap, ~2× the 720p arithmetic this row used to carry |
 
@@ -1740,7 +1740,7 @@ an env var without an entry there is a bug).
 | `KEEP_SOURCE_MEDIA` | **`0`** — delete after all stages succeed | 150–250 GB at the 1080p cap (§6.1) to keep 6 GB of index. The corpus is the index; the MP4 is scaffolding. Deleted only after the last stage reports `done`, so a failure never destroys the input to a retry. |
 | `KEEP_AUDIO` | **`1`** — keep opus | 1.8 GB, and it is the expensive-to-reproduce input: re-running STT with a better model needs no re-download, no re-extract, and works for videos since taken down. Best value per byte in the system. |
 | `KEEP_KEYFRAMES` | `1` | They are a query product served over HTTP, not a cache. |
-| `DERIVED_CACHE_MB` | `512` | LRU; `derived/` is disposable. |
+| `DERIVED_CACHE_MB` | `256` | Byte-capped LRU; `derived/` is disposable. Halved from the 512 this row used to carry: thumbnails are what the cache actually holds (~4 KB at 96 px, ~15 KB at 512 px), so 256 MB is already tens of thousands of variants, and the default should be a cache you never notice on a small disk. |
 | `TMP_TTL_HOURS` | `24` | `tmp/` also wiped wholesale at boot — anything there belongs to a job that did not survive. |
 | `JOB_EVENT_RETENTION_DAYS` | `30` | Nightly `DELETE FROM job_events`. |
 | `BACKUP_KEEP` | `7` | Snapshots in `backups/`, if backing up locally. |

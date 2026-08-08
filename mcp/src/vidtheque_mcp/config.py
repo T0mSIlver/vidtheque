@@ -110,6 +110,12 @@ class Settings:
     inline_frame_max: int = 4
     inline_frame_bytes: int = 6 * 1024 * 1024
 
+    # The `derived/` variant cache (index-schema §6) and how long a client may
+    # keep a frame. Both disposable: the cache is a directory you can delete,
+    # the header is bounded by the signed URL's own expiry.
+    derived_cache_mb: int = 256
+    frame_cache_max_age_s: int = 86_400
+
     timezone: str = "UTC"
     log_level: str = "info"
 
@@ -202,6 +208,8 @@ class Settings:
             read_pool_size=_int_env("VIDTHEQUE_READ_POOL_SIZE", 4),
             inline_frame_max=_int_env("VIDTHEQUE_INLINE_FRAME_MAX", 4),
             inline_frame_bytes=_int_env("VIDTHEQUE_INLINE_FRAME_BYTES", 6 * 1024 * 1024),
+            derived_cache_mb=_int_env("DERIVED_CACHE_MB", 256),
+            frame_cache_max_age_s=_int_env("VIDTHEQUE_FRAME_CACHE_MAX_AGE", 86_400),
             timezone=_env("VIDTHEQUE_TIMEZONE", "UTC") or "UTC",
             log_level=(_env("LOG_LEVEL", "info") or "info").lower(),
         )
