@@ -81,7 +81,11 @@ services:
     restart: unless-stopped
     command: tunnel --no-autoupdate run
     environment:
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env to use the tunnel profile}
+      # Not `${TUNNEL_TOKEN:?…}`: interpolation runs over the whole file before
+      # profiles are filtered, so a required-variable guard here breaks every
+      # compose command for people who never asked for the tunnel. cloudflared
+      # complains clearly enough on its own when the token is empty.
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
     depends_on:
       - mcp
 
