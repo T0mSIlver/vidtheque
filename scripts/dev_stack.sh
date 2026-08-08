@@ -45,15 +45,19 @@ start_one() { # name, pidfile, logfile, port, cmd...
   echo "$name started (pgid $(cat "$pidfile"), log $logfile)"
 }
 
-stop_one() { # name, pidfile, pattern
-  local name="$1" pidfile="$2" pattern="$3"
+stop_one() { # name, pidfile, port, module
+  local name="$1" pidfile="$2" port="$3" module="$4"
   if pid_alive "$pidfile"; then
     kill -- "-$(cat "$pidfile")" 2>/dev/null || kill "$(cat "$pidfile")" 2>/dev/null || true
   fi
   # Belt and suspenders: the pidfile has been wrong before (a stop that only
-  # killed the wrapper left orphaned services holding the ports — and a later
-  # "restart" silently served old code). Kill by pattern too.
-  pkill -f "$pattern" 2>/dev/null && echo "$name stopped" || echo "$name not running"
+  # killed the wrapper left orphaned services holding the ports). But the
+  # pattern MUST be instance-scoped: a bare "python -m vidtheque_mcp" match
+  # killed EVERY instance on the box (this took down concurrent agents'
+  # stacks and pushed one onto the live port). The env wrapper puts
+  # VIDTHEQUE_PORT=<port> on the command line — match on that.
+  pkill -f "VIDTHEQUE_PORT=$port .*$module" 2>/dev/null \
+    && echo "$name stopped" || echo "$name not running"
   rm -f "$pidfile"
 }
 
@@ -70,8 +74,8 @@ case "${1:-status}" in
       uv run --no-sync python -m vidtheque_mcp
     ;;
   stop)
-    stop_one mcp "$RUN_DIR/mcp.pid" "python -m vidtheque_mcp"
-    stop_one worker "$RUN_DIR/worker.pid" "python -m vidtheque_worker"
+    stop_one mcp "$RUN_DIR/mcp.pid" "$VIDTHEQUE_MCP_PORT" "python -m vidtheque_mcp"
+    stop_one worker "$RUN_DIR/worker.pid" "$VIDTHEQUE_WORKER_PORT" "python -m vidtheque_worker"
     ;;
   status)
     for svc in worker mcp; do
