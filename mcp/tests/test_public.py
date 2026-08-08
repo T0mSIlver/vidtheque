@@ -169,7 +169,7 @@ def test_search_facade_emits_thumbnail_urls_for_frame_hits(public_client: TestCl
     assert hits, "the ocr leg should return frame-backed hits"
     thumb = hits[0]["thumb"]
     assert thumb.startswith("http://localhost:8080/frames/")
-    assert thumb.endswith(".jpg?w=320&q=70")  # auth=none: unsigned, and honest about it
+    assert thumb.endswith(".jpg?w=192&q=70")  # auth=none: unsigned, and honest about it
     assert public_client.get(thumb).status_code == 200
 
 
@@ -196,7 +196,7 @@ def test_videos_facade_lists_the_library_with_covers(public_client: TestClient) 
     ids = {v["video_id"] for v in payload["videos"]}
     assert {"kCc8FmEb1nY", "zduSFxRajkE", "eMlx5fFNoYc"} <= ids
     by_id = {v["video_id"]: v for v in payload["videos"]}
-    assert by_id["kCc8FmEb1nY"]["thumb"].endswith("kCc8FmEb1nY-00000.jpg?w=320&q=70")
+    assert by_id["kCc8FmEb1nY"]["thumb"].endswith("kCc8FmEb1nY-00000.jpg?w=192&q=70")
     # Seeded with no keyframes at all — a cover it does not have is null, not a
     # fabricated URL that 404s in the page.
     assert by_id["eMlx5fFNoYc"]["thumb"] is None
