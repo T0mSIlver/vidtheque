@@ -364,6 +364,33 @@ async def test_get_frames_url_mode_is_the_default(assembled: Assembled) -> None:
     assert all(not isinstance(b, ImageContent) for b in result.content)
 
 
+async def test_get_frames_says_unsigned_when_the_urls_are_unsigned(
+    assembled: Assembled,
+) -> None:
+    """In `none` mode `_signed_url` returns expiry 0 — not None, so the footer
+    printed "URLs expire None. They are signed", with both halves wrong on
+    every default-mode call (smoke §4.5)."""
+    text = body(await frames_tool.run(assembled.deps, frame_ids=["kCc8FmEb1nY-00000"]))
+    assert "None" not in text
+    assert "do not expire and are not signed" in text
+
+
+async def test_get_frames_says_when_the_urls_really_are_signed(
+    assembled: Assembled,
+) -> None:
+    import dataclasses
+
+    from vidtheque_mcp.auth.tokens import FrameUrlSigner
+
+    deps = dataclasses.replace(
+        assembled.deps, frame_signer=FrameUrlSigner(secret="s3cret", ttl_s=3600)
+    )
+    text = body(await frames_tool.run(deps, frame_ids=["kCc8FmEb1nY-00000"]))
+    assert "sig=" in text
+    assert "They are signed — no auth header" in text
+    assert "URLs expire 20" in text  # a real timestamp, not `None`
+
+
 async def test_get_frames_image_mode_is_jpeg(assembled: Assembled) -> None:
     result = await frames_tool.run(
         assembled.deps, frame_ids=["kCc8FmEb1nY-00000"], return_="image"

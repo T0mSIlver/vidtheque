@@ -164,10 +164,18 @@ async def run(
     text_lines = [header_placeholder, *lines]
     for failure in failures:
         text_lines.append(f"failed: {failure}")
-    if expiry_note is not None:
+    # `_signed_url` returns 0 for "unsigned" (auth `none`), which is not None —
+    # so this said "URLs expire None. They are signed", both halves wrong, on
+    # every default-mode call (research/e2e-smoke-2026-08-08.md §4.5).
+    if expiry_note:
         text_lines.append(
             f"URLs expire {iso_z(expiry_note)}. They are signed — no auth header "
             "needed to fetch them."
+        )
+    elif expiry_note is not None:
+        text_lines.append(
+            "URLs do not expire and are not signed: this server runs with auth "
+            "disabled, so the frame route is open to anyone who can reach it."
         )
 
     blocks.insert(0, TextContent(type="text", text="\n".join(text_lines)))
