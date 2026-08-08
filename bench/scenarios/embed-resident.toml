@@ -1,31 +1,58 @@
 name = "embed-resident"
-description = "Does keeping the embedding model resident pay for its VRAM?"
+description = "Does keeping the text embedding model resident pay for its VRAM?"
 
-# The question this answers: EMBED_RESIDENT=1 costs ~1-2 GB permanently. What
-# it buys is the load time removed from every query-time embedding call — and
-# how often that load happens depends on IDLE_UNLOAD_SECONDS and on how the
-# corpus is used. Run this before defaulting it either way.
+# The question this answers: EMBED_RESIDENT=1 costs ~1.8 GB permanently with the
+# shipped default (Qwen3-Embedding-0.6B; ~2.6 GB with bge-m3). What it buys is
+# the load time removed from every query-time embedding call — and how often
+# that load happens depends on IDLE_UNLOAD_SECONDS and on how the corpus is
+# used. Run this before defaulting it either way.
+#
+# The first three variants hold the backend at the default and vary residency.
+# The fourth swaps the backend instead: bge-m3 is the other shipped
+# EMBED_BACKEND, and measuring the two on the same card is the entire reason
+# the backend seam exists. It runs resident so that comparison is
+# model-vs-model rather than model-vs-load-time.
+#
+# EMBED_MODEL moves with EMBED_BACKEND — the backends do not guess a checkpoint
+# for each other. The two write different vector spaces, so what is comparable
+# across that pair is latency, throughput and VRAM; retrieval quality is a
+# re-embed of the corpus, not a restart.
+#
+# The frame embedder is deliberately absent: EMBED_RESIDENT does not cover it,
+# and at ~5 GB the answer for it is not in doubt.
 
 [[variants]]
 name = "resident"
 [variants.env]
-EMBED_BACKEND = "bge-m3"
+EMBED_BACKEND = "qwen3-embedding"
+EMBED_MODEL = "Qwen/Qwen3-Embedding-0.6B"
 EMBED_RESIDENT = "1"
 IDLE_UNLOAD_SECONDS = "300"
 
 [[variants]]
 name = "on-demand-short-ttl"
 [variants.env]
-EMBED_BACKEND = "bge-m3"
+EMBED_BACKEND = "qwen3-embedding"
+EMBED_MODEL = "Qwen/Qwen3-Embedding-0.6B"
 EMBED_RESIDENT = "0"
 IDLE_UNLOAD_SECONDS = "30"
 
 [[variants]]
 name = "on-demand-long-ttl"
 [variants.env]
-EMBED_BACKEND = "bge-m3"
+EMBED_BACKEND = "qwen3-embedding"
+EMBED_MODEL = "Qwen/Qwen3-Embedding-0.6B"
 EMBED_RESIDENT = "0"
 IDLE_UNLOAD_SECONDS = "600"
+
+[[variants]]
+name = "bge-m3-resident"
+note = "the alternative backend, same conditions as `resident`"
+[variants.env]
+EMBED_BACKEND = "bge-m3"
+EMBED_MODEL = "BAAI/bge-m3"
+EMBED_RESIDENT = "1"
+IDLE_UNLOAD_SECONDS = "300"
 
 [[cases]]
 name = "single-query-cold"

@@ -27,9 +27,11 @@ Two services, one repo, HTTP between them — never a shared Python import.
         │  MCP     │       SQLite + sqlite-vec + FTS5          │
         └─────────▶│       keyframe JPEGs, job queue           │
                    └───────────────────┬──────────────────────┘
-                                       │  HTTP (OpenAI-compatible)
+                                       │  HTTP — OpenAI shapes where they fit
                                        │  /v1/audio/transcriptions
                                        │  /v1/embeddings
+                                       │  /v1/embeddings/image
+                                       │  /v1/embeddings/frame-query
                                        │  /v1/ocr
                                        ▼
                    ┌──────────────────────────────────────────┐
@@ -39,8 +41,11 @@ Two services, one repo, HTTP between them — never a shared Python import.
                    │   load-on-demand, idle-TTL unload,       │
                    │   NVML VRAM check, acquire/release hooks │
                    │                                          │
-                   │   STTBackend   EmbedBackend   OCRBackend │
-                   │   whisperX     bge-m3         RapidOCR   │
+                   │   STTBackend        EmbedBackend         │
+                   │   whisperX          Qwen3-Embedding-0.6B │
+                   │                                          │
+                   │   ImageEmbedBackend    OCRBackend        │
+                   │   SigLIP 2 NaFlex      RapidOCR          │
                    └──────────────────────────────────────────┘
 
   optional: cloudflared ── tunnels the mcp service to a public hostname
@@ -49,7 +54,11 @@ Two services, one repo, HTTP between them — never a shared Python import.
 
 The worker is a **stateless inference API**. No GPU? Skip the worker service
 entirely and point `WORKER_URL` at any OpenAI-compatible provider — the
-endpoints are the contract, not the implementation.
+endpoints are the contract, not the implementation. Transcripts, metadata and
+OCR text are embedded by `Qwen3-Embedding-0.6B` (1024 dims); keyframes by
+`SigLIP 2 NaFlex so400m` (1152 dims), whose *text* tower is what turns a
+natural-language query into something comparable to a frame. Two spaces, never
+mixed, which is why they never share an endpoint.
 
 ## Quickstart
 
@@ -87,7 +96,7 @@ Heavy inference dependencies live in the worker's `[gpu]` extra, so CI and a
 laptop checkout install cleanly without CUDA:
 
 ```bash
-uv sync --extra gpu     # whisperX, sentence-transformers, RapidOCR, NVML
+uv sync --extra gpu     # whisperX, sentence-transformers, transformers, RapidOCR
 ```
 
 ## Layout
