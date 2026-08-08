@@ -27,8 +27,9 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+import httpx2 as httpx
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.routing import Mount
@@ -40,6 +41,8 @@ from .embeddings import EmbeddingClient
 from .http import frames_routes, health_routes
 from .jobs.runner import Pipeline, PipelineRunner
 from .pipeline import PipelineSettings, WorkerAPI, build_pipeline, worker_client
+from .public import PublicSettings, hidden_tools, public_middleware, public_routes
+from .public.ask import OpenRouter
 from .server import build_mcp_server
 from .tools import Deps
 
@@ -56,6 +59,7 @@ class Assembled:
     deps: Deps
     auth: AuthBundle
     runner: PipelineRunner
+    public: PublicSettings = field(default_factory=PublicSettings)
 
 
 def build_app(
@@ -64,9 +68,16 @@ def build_app(
     embeddings: EmbeddingClient | None = None,
     run_pipeline: bool = True,
     pipeline: Pipeline | None = None,
+    public: PublicSettings | None = None,
+    public_http: httpx.AsyncClient | None = None,
 ) -> Starlette:
     return assemble(
-        settings, embeddings=embeddings, run_pipeline=run_pipeline, pipeline=pipeline
+        settings,
+        embeddings=embeddings,
+        run_pipeline=run_pipeline,
+        pipeline=pipeline,
+        public=public,
+        public_http=public_http,
     ).app
 
 
@@ -76,8 +87,14 @@ def assemble(
     embeddings: EmbeddingClient | None = None,
     run_pipeline: bool = True,
     pipeline: Pipeline | None = None,
+    public: PublicSettings | None = None,
+    public_http: httpx.AsyncClient | None = None,
 ) -> Assembled:
+    """``public`` / ``public_http`` are the demo seam: the mode, and the LLM
+    client behind ``/api/ask`` (a ``MockTransport`` in tests, exactly as
+    ``embeddings=`` fakes the worker)."""
     settings.validate()
+    public = public if public is not None else PublicSettings.from_env()
     db = Database(
         path=settings.db_path,
         read_pool_size=settings.read_pool_size,
@@ -113,7 +130,10 @@ def assemble(
         search_semaphore=asyncio.Semaphore(settings.max_concurrent_searches),
     )
 
-    mcp = build_mcp_server(settings, deps, auth)
+    # Read-only public mode: the write tools are never handed to `add_tool`, so
+    # they are absent from `tools/list` rather than present-and-refusing
+    # (demo-site.md §1.1).
+    mcp = build_mcp_server(settings, deps, auth, hidden_tools(public.enabled))
     mcp_app = mcp.streamable_http_app(
         streamable_http_path="/mcp",
         transport_security=TransportSecuritySettings(
@@ -123,6 +143,14 @@ def assemble(
             + ["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"],
         ),
     )
+
+    http: httpx.AsyncClient | None = None
+    llm: OpenRouter | None = None
+    if public.enabled and public.ask_enabled:
+        http = public_http or httpx.AsyncClient(timeout=60.0)
+        llm = OpenRouter(public, http)
+    elif public_http is not None:  # an injected client with no key: still closed
+        http = public_http
 
     @contextlib.asynccontextmanager
     async def lifespan(_: Starlette) -> AsyncIterator[None]:
@@ -138,6 +166,8 @@ def assemble(
                 if run_pipeline:
                     await runner.stop()
                 await client.aclose()
+                if http is not None:
+                    await http.aclose()
                 await db.close()
                 auth.close()
 
@@ -145,11 +175,27 @@ def assemble(
         *health_routes(settings, db),
         *auth.routes,
         *frames_routes(settings, db, auth),
+        *(public_routes() if public.enabled else []),
         # Mount("/") matches everything — it must be last.
         Mount("/", app=mcp_app),
     ]
-    app = Starlette(routes=routes, lifespan=lifespan)
+    # The limiter lives in the root app's middleware stack: `/api/*` and
+    # `/frames/*` are charged per IP, everything else (including the MCP
+    # mount's streaming transport) is passed straight through.
+    app = Starlette(
+        routes=routes,
+        middleware=public_middleware(public) if public.enabled else [],
+        lifespan=lifespan,
+    )
+    app.state.public_settings = public
+    app.state.openrouter = llm
     app.state.assembled = Assembled(
-        app=app, settings=settings, db=db, deps=deps, auth=auth, runner=runner
+        app=app,
+        settings=settings,
+        db=db,
+        deps=deps,
+        auth=auth,
+        runner=runner,
+        public=public,
     )
     return app.state.assembled
