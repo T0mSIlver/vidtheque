@@ -31,7 +31,7 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["worker/tests"]
+testpaths = ["worker/tests", "mcp/tests"]
 filterwarnings = ["error::DeprecationWarning:vidtheque_worker.*"]
 
 [tool.ruff]
