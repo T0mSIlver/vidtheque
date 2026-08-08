@@ -1,0 +1,90 @@
+# vidtheque — reference deployment.
+#
+#   docker compose up -d                      mcp + worker
+#   docker compose --profile tunnel up -d     …plus a Cloudflare tunnel
+#
+# No GPU? Drop the `worker` service and point WORKER_URL at any
+# OpenAI-compatible provider — the endpoints are the contract.
+#
+# Every variable below is documented in .env.example. Copy it to .env first.
+
+name: vidtheque
+
+services:
+  mcp:
+    # Placeholder: the MCP framework has not been chosen yet (see mcp/NOTE.md),
+    # so this builds a stub image. Swap `build` for
+    # `image: ghcr.io/t0msilver/vidtheque-mcp:<tag>` once images are published.
+    build:
+      context: ..
+      dockerfile: mcp/Dockerfile
+    image: vidtheque-mcp:dev
+    restart: unless-stopped
+    environment:
+      WORKER_URL: ${WORKER_URL:-http://worker:8081}
+      VIDTHEQUE_DATA_DIR: /data
+      VIDTHEQUE_PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+      VIDTHEQUE_LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - vidtheque-data:/data
+    ports:
+      - "${MCP_PORT:-8080}:8080"
+    depends_on:
+      - worker
+
+  worker:
+    build:
+      context: ..
+      dockerfile: worker/Dockerfile
+    image: vidtheque-worker:dev
+    restart: unless-stopped
+    environment:
+      # backend selection
+      STT_BACKEND: ${STT_BACKEND:-whisperx}
+      EMBED_BACKEND: ${EMBED_BACKEND:-bge-m3}
+      OCR_BACKEND: ${OCR_BACKEND:-rapidocr}
+      STT_MODEL: ${STT_MODEL:-large-v3}
+      EMBED_MODEL: ${EMBED_MODEL:-BAAI/bge-m3}
+      # device
+      DEVICE: ${DEVICE:-auto}
+      COMPUTE_TYPE: ${COMPUTE_TYPE:-auto}
+      STT_BATCH_SIZE: ${STT_BATCH_SIZE:-16}
+      STT_ALIGN: ${STT_ALIGN:-1}
+      GPU_INDEX: ${GPU_INDEX:-0}
+      # lifecycle
+      IDLE_UNLOAD_SECONDS: ${IDLE_UNLOAD_SECONDS:-300}
+      EMBED_RESIDENT: ${EMBED_RESIDENT:-0}
+      VRAM_HEADROOM_MB: ${VRAM_HEADROOM_MB:-512}
+      # GPU lease hooks — run inside this container, so whatever they call must
+      # be reachable from here (an HTTP endpoint on the host is the usual answer).
+      GPU_ACQUIRE_CMD: ${GPU_ACQUIRE_CMD:-}
+      GPU_RELEASE_CMD: ${GPU_RELEASE_CMD:-}
+      GPU_HOOK_TIMEOUT_SECONDS: ${GPU_HOOK_TIMEOUT_SECONDS:-60}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      HF_HOME: /hf-cache
+    volumes:
+      # Model weights survive container rebuilds. Several GB — keep it.
+      - hf-cache:/hf-cache
+    ports:
+      - "${WORKER_PORT:-8081}:8081"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  cloudflared:
+    profiles: ["tunnel"]
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env to use the tunnel profile}
+    depends_on:
+      - mcp
+
+volumes:
+  vidtheque-data:
+  hf-cache:
