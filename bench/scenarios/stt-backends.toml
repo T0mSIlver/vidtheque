@@ -1,0 +1,58 @@
+name = "stt-backends"
+description = "whisperX across compute types: speed, VRAM, and word-timestamp quality"
+
+# Media is not committed. Record enough here that a result can be argued with:
+# what the clip was, how long, what language.
+[media]
+root = "bench/media"
+note = "put your own clips in bench/media/ — see the durations each case expects"
+
+# One variant = one worker configuration. Backend selection happens at startup,
+# so the harness pauses between variants for a restart.
+
+[[variants]]
+name = "whisperx-fp16"
+[variants.env]
+STT_BACKEND = "whisperx"
+STT_MODEL = "large-v3"
+DEVICE = "cuda"
+COMPUTE_TYPE = "float16"
+
+[[variants]]
+name = "whisperx-int8"
+[variants.env]
+STT_BACKEND = "whisperx"
+STT_MODEL = "large-v3"
+DEVICE = "cuda"
+COMPUTE_TYPE = "int8"
+
+[[variants]]
+name = "whisperx-fp16-noalign"
+[variants.env]
+STT_BACKEND = "whisperx"
+STT_MODEL = "large-v3"
+DEVICE = "cuda"
+COMPUTE_TYPE = "float16"
+STT_ALIGN = "0"
+
+[[cases]]
+name = "conference-talk-40m"
+type = "stt"
+input = "talk-40m.m4a"
+audio_seconds = 2400
+language = "en"
+# reference = "talk-40m.reference.txt"   # enables WER when present
+
+[[cases]]
+name = "screencast-8m"
+type = "stt"
+input = "screencast-8m.m4a"
+audio_seconds = 480
+language = "en"
+
+[[cases]]
+name = "queue-throughput"
+type = "queue"
+input = "screencast-8m.m4a"
+concurrency = 4
+note = "the manager serialises GPU work; this measures end-to-end jobs/minute"

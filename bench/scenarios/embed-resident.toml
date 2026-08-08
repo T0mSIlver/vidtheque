@@ -1,0 +1,56 @@
+name = "embed-resident"
+description = "Does keeping the embedding model resident pay for its VRAM?"
+
+# The question this answers: EMBED_RESIDENT=1 costs ~1-2 GB permanently. What
+# it buys is the load time removed from every query-time embedding call — and
+# how often that load happens depends on IDLE_UNLOAD_SECONDS and on how the
+# corpus is used. Run this before defaulting it either way.
+
+[[variants]]
+name = "resident"
+[variants.env]
+EMBED_BACKEND = "bge-m3"
+EMBED_RESIDENT = "1"
+IDLE_UNLOAD_SECONDS = "300"
+
+[[variants]]
+name = "on-demand-short-ttl"
+[variants.env]
+EMBED_BACKEND = "bge-m3"
+EMBED_RESIDENT = "0"
+IDLE_UNLOAD_SECONDS = "30"
+
+[[variants]]
+name = "on-demand-long-ttl"
+[variants.env]
+EMBED_BACKEND = "bge-m3"
+EMBED_RESIDENT = "0"
+IDLE_UNLOAD_SECONDS = "600"
+
+[[cases]]
+name = "single-query-cold"
+type = "embed"
+input = "one short query string"
+batch = 1
+note = "worst case: the reason resident mode exists"
+
+[[cases]]
+name = "single-query-warm"
+type = "embed"
+input = "one short query string"
+batch = 1
+repeat = 20
+
+[[cases]]
+name = "index-batch"
+type = "embed"
+input = "bench/media/transcript-cues.txt"
+batch = 64
+note = "indexing path: load cost amortises, throughput is what matters"
+
+[[cases]]
+name = "interleaved-with-stt"
+type = "queue"
+input = "bench/media/screencast-8m.m4a"
+concurrency = 2
+note = "the case where a non-resident embed model is evicted by STT and reloaded"
