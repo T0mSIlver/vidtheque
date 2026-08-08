@@ -294,6 +294,48 @@ async def test_segment_context_returns_no_images(assembled: Assembled) -> None:
     assert all(not isinstance(b, ImageContent) for b in result.content)
 
 
+async def test_a_narrated_on_screen_line_still_comes_back_from_the_ocr_channel(
+    assembled: Assembled,
+) -> None:
+    """tool-surface §3.10 collapses OCR into transcript only when the *text* is
+    similar; different text keeps both. The SQL prefilter tested time overlap
+    and length only, so the OCR channel went silent on anything the presenter
+    said out loud — no results, no `note:` (smoke §4.4)."""
+    ocr_only = await search.run(
+        assembled.deps, q="fragmentation", content_type="ocr", limit=5
+    )
+    texts = [r["text"] for r in structured(ocr_only)["results"]]
+    assert texts == ["paged kv cache | block table | 4% fragmentation"]
+
+    # …and with the transcript leg running too, both facts survive: the cue
+    # says one thing, the screen says another.
+    both = await search.run(assembled.deps, q="fragmentation", limit=5)
+    sources = {r["source"] for r in structured(both)["results"]}
+    assert {"transcript", "ocr"} <= sources
+
+
+def test_similar_ocr_and_transcript_still_collapse_into_one_hit() -> None:
+    """The other half of the same rule: a slide that restates the narration is
+    one result, tagged `[transcript+ocr]`, and the longer text wins."""
+    from vidtheque_mcp.tools.search import Hit, _dedup_ocr_against_transcript
+
+    def hit(source: str, text: str, start: float, end: float | None) -> Hit:
+        return Hit(
+            source=source, video_id=1, public_id="v", title="t", channel=None,
+            published_at=None, start_s=start, end_s=end, text=text, score=1.0,
+            cue_ids=[], frame_id="v-00003" if source == "ocr" else None,
+        )
+
+    cue = hit("transcript", "paged attention keeps a block table", 10.0, 13.0)
+    screen = hit("ocr", "Paged attention keeps a block table, for the kv cache", 12.0, None)
+    survivors = _dedup_ocr_against_transcript([cue, screen])
+
+    assert len(survivors) == 1
+    assert survivors[0].source == "transcript+ocr"
+    assert survivors[0].text == screen.text  # the longer text wins
+    assert survivors[0].frame_id == "v-00003"
+
+
 async def test_an_ocr_hits_frame_id_round_trips_through_get_frames(
     assembled: Assembled,
 ) -> None:

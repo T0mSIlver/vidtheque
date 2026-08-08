@@ -1328,31 +1328,27 @@ WITH ocr_cand AS MATERIALIZED (
   WHERE ocr_fts MATCH :q
   ORDER BY f.rank
   LIMIT :candidate_cap
-),
-txt_cand AS MATERIALIZED (
-  SELECT c.id, c.video_id, c.start_s, c.end_s, c.text
-  FROM cues_fts f
-  JOIN cues c ON c.id = f.rowid
-  WHERE cues_fts MATCH :q
-  ORDER BY f.rank
-  LIMIT :candidate_cap
 )
 SELECT o.*
-FROM ocr_cand o
-WHERE NOT EXISTS (
-  SELECT 1 FROM txt_cand t
-  WHERE t.video_id = o.video_id
-    AND o.t_s BETWEEN t.start_s - 5.0 AND t.end_s + 5.0
-    AND length(t.text) >= length(o.text)          -- the longer text wins
-);
+FROM ocr_cand o;
 ```
 
-SQL does the cheap, bounded half — same video, ±5 s, longer text wins. The
-trigram-Jaccard ≥ 0.8 similarity test from tool-surface §3.10 runs caller-side over
-the survivors, because it is O(n·m) string work on a set already capped at
-`limit × a small constant`, and because "which one survived" needs to become the
-`[transcript+ocr]` provenance prefix in the payload — a rendering decision, not a
-storage one.
+**Dedup is not in this query.** It was: a `NOT EXISTS` against a `txt_cand` CTE
+dropped any OCR line a longer transcript cue matching the same query overlapped
+within ±5 s. That clause had no text-similarity test, so it was strictly more
+aggressive than the rule it was prefiltering for (tool-surface §3.10: similar text
+collapses, *different* text keeps both) — the Python half never saw the rows it was
+supposed to judge. And it *dropped* rather than collapsing, so the surviving
+transcript hit never picked up its `[transcript+ocr]` provenance. On a screencast,
+where the presenter narrates what is on screen, `search content_type=ocr` for a
+narrated word returned nothing, with no `note:` — "never silently narrows", broken
+in the quietest possible way (research/e2e-smoke-2026-08-08.md §4.4).
+
+So the rule lives in exactly one place, caller-side: containment or trigram-Jaccard
+≥ 0.8 within ±5 s of the same video, longer text wins, provenance becomes
+`[transcript+ocr]`. It is O(n·m) string work on a set already capped at `limit ×
+a small constant`, which is the bound the SQL clause was there to provide, and
+"which one survived" is a rendering decision rather than a storage one.
 
 ### 4.7 `get-segment-context`
 

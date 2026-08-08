@@ -114,13 +114,22 @@ def test_ocr_leg_matches_screen_identifiers(conn: sqlite3.Connection) -> None:
     assert [r["text"] for r in rows] == ["nvidia-smi 18304MiB"]
 
 
-def test_ocr_dedup_drops_the_shorter_duplicate(conn: sqlite3.Connection) -> None:
-    """SQL does the bounded half: same video, +/-5s, longer text wins."""
+def test_the_ocr_leg_keeps_a_line_the_presenter_also_narrated(
+    conn: sqlite3.Connection,
+) -> None:
+    """The leg does no dedup: that rule is one rule, and it is caller-side.
+
+    SQL used to drop any OCR line a longer transcript cue matching the same
+    query overlapped within +/-5s, with no similarity test — so on a screencast
+    (the corpus this is for) the OCR channel went silent on every narrated
+    word, and said nothing about it (smoke §4.4).
+    """
     pool = ids(conn)
-    rows = queries.search_ocr(conn, queries.SearchParams(q="fragmentation", video_ids=pool, limit=5))
-    # The transcript cue at 13.5s says the same thing and is longer, so the OCR
-    # hit at 12.0s collapses away.
-    assert rows == []
+    rows = queries.search_ocr(
+        conn, queries.SearchParams(q="fragmentation", video_ids=pool, limit=5)
+    )
+    # 12.0s on screen, under a longer cue at 13.5s that says something else.
+    assert [r["text"] for r in rows] == ["paged kv cache | block table | 4% fragmentation"]
 
 
 def test_frame_leg_returns_assembled_frame_ids(conn: sqlite3.Connection) -> None:

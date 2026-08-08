@@ -375,7 +375,20 @@ def probe_transcript(conn: sqlite3.Connection, params: SearchParams, headroom: i
 
 
 # ---------------------------------------------------------------------------
-# §4.6 — OCR leg, with the cheap half of OCR-vs-transcript dedup in SQL
+# §4.6 — OCR leg. OCR-vs-transcript dedup is NOT here; it is one rule, and it
+# lives caller-side in tools/search.py::_dedup_ocr_against_transcript.
+#
+# This used to carry a "cheap half": drop any OCR line a longer transcript cue
+# matching the same query overlapped within +/-5s. It had no text-similarity
+# test, so it was strictly more aggressive than the rule it was meant to
+# prefilter for (tool-surface §3.10: similar text collapses, *different* text
+# keeps both) — and it dropped instead of collapsing, so the survivor never got
+# its `[transcript+ocr]` provenance either. On a screencast, where the
+# presenter narrates what is on screen, searching the OCR channel for a
+# narrated word returned nothing, with no `note:` to say why
+# (research/e2e-smoke-2026-08-08.md §4.4). The Python half is bounded anyway —
+# it runs over `limit x a small constant` rows — so there is nothing to buy
+# here.
 
 _OCR_SQL = """
 WITH ocr_cand AS MATERIALIZED (
@@ -387,25 +400,11 @@ WITH ocr_cand AS MATERIALIZED (
   ORDER BY f.rank
   LIMIT :candidate_cap
 ),
-txt_cand AS MATERIALIZED (
-  SELECT c.id, c.video_id, c.start_s, c.end_s, c.text
-  FROM cues_fts f
-  JOIN cues c ON c.id = f.rowid
-  WHERE f.cues_fts MATCH :q
-  ORDER BY f.rank
-  LIMIT :candidate_cap
-),
 scoped AS (
   SELECT o.* FROM ocr_cand o
   WHERE o.video_id IN (SELECT value FROM json_each(:video_ids))
     AND (:t_start IS NULL OR o.t_s >= :t_start)
     AND (:t_end   IS NULL OR o.t_s <= :t_end)
-    AND NOT EXISTS (
-      SELECT 1 FROM txt_cand t
-      WHERE t.video_id = o.video_id
-        AND o.t_s BETWEEN t.start_s - 5.0 AND t.end_s + 5.0
-        AND length(t.text) >= length(o.text)   -- the longer text wins
-    )
 ),
 capped AS (
   SELECT *, ROW_NUMBER() OVER (PARTITION BY video_id ORDER BY r) AS rn

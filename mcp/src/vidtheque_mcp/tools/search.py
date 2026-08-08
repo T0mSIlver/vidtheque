@@ -385,13 +385,18 @@ def _trigrams(text: str) -> set[str]:
 
 
 def _dedup_ocr_against_transcript(hits: list[Hit]) -> list[Hit]:
-    """The similarity half of OCR-vs-transcript dedup (§3.10).
+    """OCR-vs-transcript dedup (§3.10), the whole rule, in one place.
 
-    SQL already did the cheap, bounded half (same video, +/-5s, longer text
-    wins). This is the trigram-Jaccard >= 0.8 test, run caller-side over a set
-    already capped at limit x a small constant — and because "which one
-    survived" becomes the `[transcript+ocr]` provenance prefix, which is a
-    rendering decision, not a storage one.
+    Same video, within 5s, and *similar text* — containment or trigram-Jaccard
+    >= 0.8. Similar collapses into one result and the longer text wins;
+    different text keeps both, because a shell command that happens to sit
+    under a sentence about it is a second fact, not a duplicate.
+
+    It runs caller-side because it is O(n.m) string work over a set already
+    capped at limit x a small constant, and because "which one survived"
+    becomes the `[transcript+ocr]` provenance prefix — a rendering decision,
+    not a storage one. SQL used to pre-drop on time-overlap and length alone,
+    which failed both halves of the rule at once (smoke §4.4).
     """
     transcripts = [h for h in hits if h.source == "transcript"]
     survivors: list[Hit] = []
@@ -411,7 +416,11 @@ def _dedup_ocr_against_transcript(hits: list[Hit]) -> list[Hit]:
             other_grams = _trigrams(other_norm)
             union = grams | other_grams
             jaccard = len(grams & other_grams) / len(union) if union else 0.0
-            if norm and (norm in other_norm or jaccard >= 0.8):
+            # "contained in the other" runs both ways: with the SQL prefilter
+            # gone, a slide that spells out a clipped cue is the common shape,
+            # and it is the case `the longer text wins` was written for.
+            contained = (norm and norm in other_norm) or (other_norm and other_norm in norm)
+            if norm and (contained or jaccard >= 0.8):
                 other.source = "transcript+ocr"
                 if hit.frame_id and not other.frame_id:
                     other.frame_id = hit.frame_id

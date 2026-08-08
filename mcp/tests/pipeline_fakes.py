@@ -256,10 +256,8 @@ class FakeWorker:
         text_model: str = "Qwen/Qwen3-Embedding-0.6B",
         frame_model: str = "google/siglip2-so400m-patch16-naflex",
         transcript: dict[str, Any] | None = None,
-        # Deliberately screen text that is *not* in the transcript: the OCR leg
-        # drops a line when a longer transcript cue matching the same query sits
-        # within 5 s of it (index-schema §4.6), so an on-screen assertion has to
-        # use words nobody said out loud.
+        # Screen text nobody says out loud, so an on-screen assertion is about
+        # the OCR leg and not about §3.10's OCR-vs-transcript collapse.
         ocr_text: str = "nvidia-smi 18304MiB / 24576MiB",
         fail: set[str] | None = None,
         on_transcribe: Any = None,
