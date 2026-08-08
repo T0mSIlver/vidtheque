@@ -23,6 +23,15 @@ class EmbeddingUnavailable(RuntimeError):
     """The worker could not be reached or refused. Vector legs are skipped."""
 
 
+class FrameQueryUnsupported(EmbeddingUnavailable):
+    """The worker predates ``POST /v1/embeddings/frame-query`` (404).
+
+    Permanent for this worker process — callers may cache the answer instead
+    of re-probing per search. Distinct from a transient outage, which must
+    not be cached.
+    """
+
+
 class EmbeddingClient(Protocol):
     """The seam. Faked in tests; never imported from the worker package."""
 
@@ -41,6 +50,21 @@ class EmbeddingClient(Protocol):
         ``document``). The prefix belongs to whoever runs the model, so we send
         the switch rather than prepending ``config['text_embed.query_prefix']``
         ourselves and applying it twice.
+        """
+        ...
+
+    async def embed_frame_query(
+        self, texts: Sequence[str], model: str | None = None
+    ) -> tuple[list[list[float]], str | None, int | None]:
+        """Embed *query text* into the frame space (SigLIP's text tower).
+
+        ``POST /v1/embeddings/frame-query`` — a sibling path, not a ``space=``
+        flag, so a hosted-provider swap 404s loudly instead of answering with
+        the wrong space. No ``input_type``: the text tower has no asymmetric
+        prefix, and its trained context is 64 tokens — queries only.
+
+        Raises :class:`FrameQueryUnsupported` when the worker predates the
+        endpoint, :class:`EmbeddingUnavailable` on transient failure.
         """
         ...
 
@@ -85,6 +109,34 @@ class HTTPEmbeddingClient:
         vectors = [list(item["embedding"]) for item in items]
         return vectors, body.get("model"), body.get("dimensions")
 
+    async def embed_frame_query(
+        self, texts: Sequence[str], model: str | None = None
+    ) -> tuple[list[list[float]], str | None, int | None]:
+        payload: dict[str, object] = {
+            "input": list(texts),
+            "encoding_format": "float",
+        }
+        if model:
+            payload["model"] = model
+        try:
+            client = await self._http()
+            response = await client.post("/v1/embeddings/frame-query", json=payload)
+        except Exception as exc:  # transport-level failure
+            raise EmbeddingUnavailable(str(exc)) from exc
+        if response.status_code == 404:
+            raise FrameQueryUnsupported(
+                "the worker answered 404 for /v1/embeddings/frame-query "
+                "(it predates the endpoint)"
+            )
+        try:
+            response.raise_for_status()
+            body = response.json()
+        except Exception as exc:
+            raise EmbeddingUnavailable(str(exc)) from exc
+        items = sorted(body.get("data", []), key=lambda d: d.get("index", 0))
+        vectors = [list(item["embedding"]) for item in items]
+        return vectors, body.get("model"), body.get("dimensions")
+
     async def aclose(self) -> None:
         if self._client is not None:
             await self._client.aclose()
@@ -96,6 +148,11 @@ class NullEmbeddingClient:
 
     async def embed(
         self, texts: Sequence[str], model: str | None = None, input_type: str = "query"
+    ) -> tuple[list[list[float]], str | None, int | None]:
+        raise EmbeddingUnavailable("no embedding worker is configured")
+
+    async def embed_frame_query(
+        self, texts: Sequence[str], model: str | None = None
     ) -> tuple[list[list[float]], str | None, int | None]:
         raise EmbeddingUnavailable("no embedding worker is configured")
 

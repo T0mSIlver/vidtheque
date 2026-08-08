@@ -29,13 +29,15 @@ FRAME_DIM = 1152
 class FakeEmbeddings:
     """Deterministic unit vectors keyed on the text, no network.
 
-    Stands in for the worker at the HTTP seam. With ``serves_frame_text`` the
-    SigLIP tower answers in 1152 dimensions and the text model in 1024; without
-    it, every request answers in 1024 — which is what the worker does today,
-    and the case the frame leg has to degrade through.
+    Stands in for the worker at the HTTP seam. ``/v1/embeddings`` always
+    answers with the transcript model (as the real worker does);
+    ``embed_frame_query`` plays ``POST /v1/embeddings/frame-query`` — flip
+    ``serves_frame_text`` off to play a worker that predates the endpoint
+    (404 → ``FrameQueryUnsupported``), the case the frame leg degrades
+    through.
     """
 
-    DIMS = {"qwen3-embedding-0.6b": TEXT_DIM, "siglip2-so400m-patch16-naflex": FRAME_DIM}
+    FRAME_MODEL = "siglip2-so400m-patch16-naflex"
 
     def __init__(
         self,
@@ -45,8 +47,6 @@ class FakeEmbeddings:
     ) -> None:
         self.dim = dim
         self.model = model
-        # The real worker exposes no text->frame-space endpoint yet; flip this
-        # off to exercise the degraded path.
         self.serves_frame_text = serves_frame_text
         self.calls: list[tuple[str | None, list[str]]] = []
         self.fail = False
@@ -59,13 +59,21 @@ class FakeEmbeddings:
         self.calls.append((model, list(texts)))
         if self.fail:
             raise EmbeddingUnavailable("fake worker is down")
-        if model in self.DIMS and self.serves_frame_text:
-            served, dim = model, self.DIMS[model]
-        else:
-            # What the real worker does today: /v1/embeddings answers with the
-            # transcript model whatever `model` asks for.
-            served, dim = self.model, self.dim
-        return [vector_for(t, dim) for t in texts], served, dim
+        # The real /v1/embeddings answers with the transcript model whatever
+        # `model` asks for — frame-space queries have their own endpoint.
+        return [vector_for(t, self.dim) for t in texts], self.model, self.dim
+
+    async def embed_frame_query(
+        self, texts: Sequence[str], model: str | None = None
+    ) -> tuple[list[list[float]], str | None, int | None]:
+        from vidtheque_mcp.embeddings import EmbeddingUnavailable, FrameQueryUnsupported
+
+        self.calls.append((model, list(texts)))
+        if self.fail:
+            raise EmbeddingUnavailable("fake worker is down")
+        if not self.serves_frame_text:
+            raise FrameQueryUnsupported("fake worker predates /v1/embeddings/frame-query")
+        return [vector_for(t, FRAME_DIM) for t in texts], self.FRAME_MODEL, FRAME_DIM
 
     async def aclose(self) -> None:
         return None

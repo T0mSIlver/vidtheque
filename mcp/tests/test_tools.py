@@ -135,9 +135,10 @@ async def test_frame_leg_degrades_when_the_worker_has_no_text_tower(
 ) -> None:
     """`all` still means all: the leg is skipped *and announced*.
 
-    The worker exposes no text->frame-space endpoint today, so a text query
-    cannot reach the 1152-d frame vectors. Skipping quietly would look like
-    "there were no visual matches", which is a different and false claim.
+    A worker that predates POST /v1/embeddings/frame-query answers 404, so a
+    text query cannot reach the 1152-d frame vectors. Skipping quietly would
+    look like "there were no visual matches", which is a different and false
+    claim.
     """
     deps = assembled.deps
     deps.embeddings.serves_frame_text = False  # type: ignore[attr-defined]

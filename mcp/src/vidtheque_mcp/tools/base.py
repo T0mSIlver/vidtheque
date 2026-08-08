@@ -12,7 +12,7 @@ from ..auth.tokens import FrameUrlSigner
 from ..config import Settings
 from ..db import Database, QueryInterrupted
 from ..db import queries
-from ..embeddings import EmbeddingClient, EmbeddingUnavailable
+from ..embeddings import EmbeddingClient, EmbeddingUnavailable, FrameQueryUnsupported
 from ..errors import ToolError, timeout, unknown_video
 from ..jobs.runner import PipelineRunner
 
@@ -28,10 +28,11 @@ class Deps:
     runner: PipelineRunner | None = None
     search_semaphore: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(2))
 
-    # None = not yet probed. Set False the first time the worker answers a
-    # frame-space request in the wrong dimension, so we stop paying for a call
-    # that cannot work; a worker that gains the encoder is picked up on the
-    # next restart. See the frame-leg note in embed_query.
+    # None = not yet probed. Set False the first time the worker 404s
+    # /v1/embeddings/frame-query (it predates the endpoint) or answers it in
+    # the wrong dimension, so we stop paying for a call that cannot work; a
+    # worker that gains the encoder is picked up on the next restart. Transient
+    # outages do NOT set this — they must not be cached. See embed_query.
     frame_text_encoder: bool | None = None
 
     async def embed_query(
@@ -48,12 +49,10 @@ class Deps:
         tower, which is the entire point of using SigLIP over a captioning
         pass. A leg that cannot run prints a `note:`, never a silent narrowing.
 
-        The frame space is conditional on the worker actually serving a
-        text encoder for it: today ``POST /v1/embeddings`` answers with the
-        transcript model whatever ``model`` asks for, and
-        ``/v1/embeddings/image`` takes image bytes, so there is no path from a
-        *text* query into the 1152-d frame space. We probe once, note it, and
-        stop asking.
+        The frame leg goes through ``POST /v1/embeddings/frame-query`` (the
+        SigLIP text tower). A worker that predates that endpoint 404s; we
+        remember that (it is a property of the worker build, not a transient),
+        note it, and stop asking until restart.
         """
         if not self.db.vectors.enabled:
             note = self.db.vectors.note()
@@ -68,17 +67,27 @@ class Deps:
         model = self.db.config.get(f"{space}_embed.model")
         want_dim = self.db.frame_dim if space == "frame" else self.db.text_dim
         try:
-            # The asymmetric query prefix belongs to whoever runs the model:
-            # `input_type=query` is the worker's switch for it, and prepending
-            # config['text_embed.query_prefix'] here as well would apply it
-            # twice.
-            vectors, got_model, dimensions = await self.embeddings.embed(
-                [text], model=model, input_type="query"
-            )
+            if space == "frame":
+                vectors, got_model, dimensions = await self.embeddings.embed_frame_query(
+                    [text], model=model
+                )
+            else:
+                # The asymmetric query prefix belongs to whoever runs the
+                # model: `input_type=query` is the worker's switch for it, and
+                # prepending config['text_embed.query_prefix'] here as well
+                # would apply it twice.
+                vectors, got_model, dimensions = await self.embeddings.embed(
+                    [text], model=model, input_type="query"
+                )
+        except FrameQueryUnsupported:
+            self.frame_text_encoder = False
+            self._frame_note(notes)
+            return None
         except EmbeddingUnavailable as exc:
+            leg = "frame" if space == "frame" else "vector"
             note = (
-                f"note: the embedding worker is unreachable ({exc}) — this "
-                "search ran on the lexical leg only."
+                f"note: the embedding worker is unreachable ({exc}) — the "
+                f"{leg} leg was skipped for this search."
             )
             if note not in notes:
                 notes.append(note)
@@ -113,9 +122,9 @@ class Deps:
         note = (
             "note: the frame leg needs the query run through the frame model's "
             "text tower, and this worker exposes no text->frame-space endpoint "
-            "(/v1/embeddings serves the transcript model; /v1/embeddings/image "
-            "takes image bytes). Frame imagery was not searched; transcripts "
-            "and on-screen text were."
+            "(POST /v1/embeddings/frame-query answered 404 — the worker likely "
+            "predates it). Frame imagery was not searched; transcripts and "
+            "on-screen text were."
         )
         if note not in notes:
             notes.append(note)
