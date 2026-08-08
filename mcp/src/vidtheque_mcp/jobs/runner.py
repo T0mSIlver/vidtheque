@@ -23,6 +23,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Protocol
 
+from ..config import _int_env
 from ..db import Database
 from . import store
 
@@ -30,6 +31,16 @@ logger = logging.getLogger(__name__)
 
 HEARTBEAT_INTERVAL_S = 30.0
 POLL_INTERVAL_S = 2.0
+
+# How long a job sits out after an item was rate-limited, when the source did
+# not say. YouTube's 429s are measured in minutes, not seconds, and the point of
+# a backoff is to stop *this* box asking — retrying in the same millisecond is
+# how a soft block becomes a long one (research §5.5).
+DEFAULT_RATE_LIMIT_BACKOFF_S = 300
+
+# Every other retryable failure is a local hiccup (a worker restart, a disk
+# blip); it gets a short pause so the loop cannot spin, not a cool-off.
+DEFAULT_RETRY_BACKOFF_S = 5
 
 NOT_IMPLEMENTED_MESSAGE = (
     "the indexing pipeline is not implemented in this build: download, "
@@ -39,13 +50,25 @@ NOT_IMPLEMENTED_MESSAGE = (
 
 
 class ItemFailed(Exception):
-    """A per-item failure carrying the typed code job-status will show."""
+    """A per-item failure carrying the typed code job-status will show.
 
-    def __init__(self, code: str, message: str, retryable: bool = False) -> None:
+    ``retry_after_s`` is the source's own answer to "how long?" — a
+    ``Retry-After`` header, or a 429 that named a window. When it is None the
+    runner picks the default for the code.
+    """
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        retryable: bool = False,
+        retry_after_s: int | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.retryable = retryable
+        self.retry_after_s = retry_after_s
 
 
 class ItemCancelled(Exception):
@@ -130,10 +153,16 @@ class PipelineRunner:
         db: Database,
         pipeline: Pipeline | None = None,
         stale_after_s: int = store.DEFAULT_STALE_CLAIM_S,
+        rate_limit_backoff_s: int | None = None,
     ) -> None:
         self.db = db
         self.pipeline: Pipeline = pipeline or NotImplementedPipeline()
         self.stale_after_s = stale_after_s
+        self.rate_limit_backoff_s = (
+            rate_limit_backoff_s
+            if rate_limit_backoff_s is not None
+            else _int_env("VIDTHEQUE_RATE_LIMIT_BACKOFF_S", DEFAULT_RATE_LIMIT_BACKOFF_S)
+        )
         self._task: asyncio.Task[None] | None = None
         self._stop = asyncio.Event()
         # What this process is holding. A blocked event loop is alive, not
@@ -237,7 +266,8 @@ class PipelineRunner:
             try:
                 await self.pipeline.run_item(ctx)
             except ItemFailed as failure:
-                await self._fail_item(item, failure)
+                if await self._fail_item(item, failure):
+                    return  # deferred: the job is queued again, not now
             except ItemCancelled:
                 item_id = ctx.item_id
                 await self.db.write(lambda c: store.finish_item(c, item_id, "cancelled"))
@@ -249,29 +279,71 @@ class PipelineRunner:
                 await self.db.write(lambda c: store.log(c, job_id, message, "info", item_id))
             except Exception as exc:  # pragma: no cover - unexpected
                 logger.exception("pipeline item crashed")
-                await self._fail_item(item, ItemFailed("E_INTERNAL", str(exc), retryable=True))
+                if await self._fail_item(
+                    item, ItemFailed("E_INTERNAL", str(exc), retryable=True)
+                ):
+                    return
             else:
                 item_id = ctx.item_id
                 await self.db.write(lambda c: store.finish_item(c, item_id, "done"))
 
-    async def _fail_item(self, item: sqlite3.Row, failure: ItemFailed) -> None:
+    async def _fail_item(self, item: sqlite3.Row, failure: ItemFailed) -> bool:
+        """Requeue-with-backoff or retire. True means the job was deferred.
+
+        A retryable item goes back on the queue *and takes its job off the
+        runnable set until the backoff expires*: requeueing alone left the item
+        as the lowest-seq candidate of a still-running job, so the next line of
+        `_drive` handed it straight back out. Three attempts against a 429 in
+        under a second, then the same against every URL behind it.
+        """
         item_id = int(item["id"])
         job_id = int(item["job_id"])
         attempts = int(item["attempts"])
         max_attempts = int(item["max_attempts"])
         if failure.retryable and attempts < max_attempts:
+            delay = self._backoff_for(failure)
             await self.db.write(lambda c: store.requeue_item(c, item_id))
             await self.db.write(
                 lambda c: store.log(
-                    c, job_id, f"retrying after {failure.code}: {failure.message}", "warn", item_id
+                    c,
+                    job_id,
+                    f"retrying in {delay}s after {failure.code}: {failure.message}",
+                    "warn",
+                    item_id,
                 )
             )
-            return
+            code, message = self._sticky_error(failure, delay)
+            await self.db.write(
+                lambda c: store.defer_job(c, job_id, delay, code, message)
+            )
+            return True
         await self.db.write(
             lambda c: store.finish_item(c, item_id, "failed", failure.code, failure.message)
         )
         await self.db.write(
             lambda c: store.log(c, job_id, f"{failure.code}: {failure.message}", "error", item_id)
+        )
+        return False
+
+    def _backoff_for(self, failure: ItemFailed) -> int:
+        if failure.retry_after_s is not None:
+            return max(0, int(failure.retry_after_s))
+        if failure.code == "E_RATE_LIMIT":
+            return self.rate_limit_backoff_s
+        return DEFAULT_RETRY_BACKOFF_S
+
+    def _sticky_error(self, failure: ItemFailed, delay: int) -> tuple[str | None, str | None]:
+        """Only rate limiting outlives the retry that fixed it.
+
+        A worker blip that the next attempt rides through is not something the
+        finished job needs to carry; being rate-limited is, because the caller's
+        *next* job is the one that pays for ignoring it.
+        """
+        if failure.code != "E_RATE_LIMIT":
+            return None, None
+        return "E_RATE_LIMIT", (
+            f"the source rate-limited this box during the job; it backed off {delay}s "
+            f"before retrying — {failure.message}"
         )
 
     async def _cancel_requested(self, job_id: int) -> bool:
@@ -306,29 +378,24 @@ def _settle(conn: sqlite3.Connection, job_id: int) -> None:
     terminal with nothing indexed, and calling that plain `done` is how
     ``job-status`` came to promise a video that was never fetched.
     """
-    row = conn.execute("SELECT state FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    row = conn.execute(
+        "SELECT state, error_code, error_message FROM jobs WHERE id = ?", (job_id,)
+    ).fetchone()
     if row is None or row["state"] not in {"running", "queued"}:
         return
     counts = store.item_counts(conn, job_id)
     if sum(n for state, n in counts.items() if state not in store.TERMINAL):
         return
     done, failed = counts.get("done", 0), counts.get("failed", 0)
+    code, message = _job_error(conn, job_id, row)
     if failed and not done:
-        first = conn.execute(
-            "SELECT error_code, error_message FROM job_items WHERE job_id = ? "
-            "AND state = 'failed' ORDER BY seq LIMIT 1",
-            (job_id,),
-        ).fetchone()
-        store.finish_job(
-            conn,
-            job_id,
-            "failed",
-            first["error_code"] if first else None,
-            first["error_message"] if first else None,
-        )
+        store.finish_job(conn, job_id, "failed", code, message)
         return
     if done:
-        store.finish_job(conn, job_id, "done")
+        # Partial success is still partial: the codes the items carry survive
+        # into the job, because "nine of ten, and the tenth was rate-limited" is
+        # a different instruction to an unattended driver than "done".
+        store.finish_job(conn, job_id, "done", code, message)
         return
     reasons = store.nonproductive_reasons(conn, job_id)
     detail = "; ".join(reasons) or "the job had no items to run"
@@ -339,3 +406,24 @@ def _settle(conn: sqlite3.Connection, job_id: int) -> None:
         "E_NOTHING_INDEXED",
         f"no video was indexed: every item was skipped or superseded — {detail}",
     )
+
+
+def _job_error(
+    conn: sqlite3.Connection, job_id: int, row: sqlite3.Row
+) -> tuple[str | None, str | None]:
+    """Which of the job's failures speaks for it. `E_RATE_LIMIT` speaks first.
+
+    It outranks a later failure *and* a sibling success: whether the item that
+    hit the 429 eventually got through says nothing about whether the next job
+    should start immediately. The sticky code written by `defer_job` is honoured
+    even when no item ended up failing at all.
+    """
+    rate_limited = store.first_failure(conn, job_id, "E_RATE_LIMIT")
+    if rate_limited is not None:
+        return "E_RATE_LIMIT", str(rate_limited["error_message"] or "")
+    if str(row["error_code"] or "") == "E_RATE_LIMIT":
+        return "E_RATE_LIMIT", row["error_message"]
+    first = store.first_failure(conn, job_id)
+    if first is not None:
+        return first["error_code"], first["error_message"]
+    return None, None

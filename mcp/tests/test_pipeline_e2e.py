@@ -418,7 +418,12 @@ async def test_whisperx_only_refuses_to_index_a_caption_track(
     )
     try:
         job_id = await parts.index(url=VIDEO_URL, channels="transcript")
-        assert await parts.run() is True
+        # "the worker is down" is retryable, so the item spends its three
+        # attempts before the job retires — each one behind its own backoff now
+        # rather than three of them inside the same millisecond.
+        for _ in range(3):
+            await parts.db.write(lambda c: c.execute("UPDATE jobs SET not_before = 0"))
+            assert await parts.run() is True
         stages = await parts.stages()
         assert stages["stt"]["state"] == "failed"
         assert not await parts.rows("SELECT id FROM cues")

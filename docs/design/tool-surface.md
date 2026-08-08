@@ -1145,6 +1145,15 @@ The payload carries `n_items`, `n_done`, `n_failed`, `n_skipped` and
 did nothing cannot read as one that did. `note` carries the job's own
 `E_NOTHING_INDEXED` explanation when there is one.
 
+It also carries **`item_errors`**, the typed item codes counted
+(`{"E_RATE_LIMIT": 1}`), because the job-level `error_code` is one summary and a
+batch has as many causes as it has items. **`error_code` survives partial
+success**, and `E_RATE_LIMIT` outranks every other code: a job that indexed nine
+of ten videos and was throttled on the tenth is not a clean `done`, and an
+unattended driver reading a null code is a driver that keeps hammering. The
+runner sets it the moment it backs off, so it is there even when the retry
+succeeded and no item ended up `failed`.
+
 Failure detail carries the actionable cause, never a stack trace:
 
 ```

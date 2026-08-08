@@ -202,7 +202,7 @@ class IndexingPipeline:
         try:
             entries = await asyncio.to_thread(self.source.expand, url, expand, max_items)
         except RateLimited as exc:
-            raise ItemFailed("E_RATE_LIMIT", str(exc), retryable=True) from exc
+            raise _rate_limited(exc, str(exc)) from exc
         except SourceError as exc:
             raise ItemFailed("E_UNSUPPORTED_SOURCE", str(exc), retryable=False) from exc
 
@@ -234,7 +234,7 @@ class IndexingPipeline:
         except Unavailable as exc:
             raise ItemFailed("E_UNSUPPORTED_SOURCE", str(exc), retryable=False) from exc
         except RateLimited as exc:
-            raise ItemFailed("E_RATE_LIMIT", str(exc), retryable=True) from exc
+            raise _rate_limited(exc, str(exc)) from exc
         except SourceError as exc:
             raise ItemFailed(
                 "E_UNSUPPORTED_SOURCE",
@@ -295,7 +295,7 @@ class IndexingPipeline:
                 await run.ctx.record("fetch", 0.95)
         except RateLimited as exc:
             await self._stage_failed(run, "fetch", str(exc))
-            raise ItemFailed("E_RATE_LIMIT", str(exc), retryable=True) from exc
+            raise _rate_limited(exc, str(exc)) from exc
         except (SourceError, OSError) as exc:
             await self._stage_failed(run, "fetch", str(exc))
             raise ItemFailed("E_INTERNAL", f"download failed: {exc}", retryable=True) from exc
@@ -373,13 +373,22 @@ class IndexingPipeline:
         )
 
         errors: list[str] = []
+        throttled: RateLimited | None = None
         for kind in attempts:
             try:
                 if kind == "whisperx":
                     result = await self._transcribe_whisperx(run)
                 else:
                     result = await self._transcribe_captions(run)
-            except (WorkerUnavailable, WorkerRejected, RateLimited, SourceError) as exc:
+            except RateLimited as exc:
+                # A 429 on the caption track is the *source* saying "later", not
+                # this video saying "never". Collapsing it into
+                # E_UNSUPPORTED_SOURCE retired the item on the spot and told the
+                # caller the video had no transcript.
+                throttled = exc
+                errors.append(f"{kind}: {exc}")
+                continue
+            except (WorkerUnavailable, WorkerRejected, SourceError) as exc:
                 errors.append(f"{kind}: {exc}")
                 continue
             if result is None:
@@ -407,10 +416,14 @@ class IndexingPipeline:
 
         detail = "; ".join(errors) or "no transcript source was available"
         await self._stage_failed(run, "stt", detail)
+        if throttled is not None:
+            raise _rate_limited(
+                throttled, f"rate-limited fetching a transcript for {run.meta.source_id}: {detail}"
+            )
         raise ItemFailed(
             "E_UNSUPPORTED_SOURCE",
             f"no usable transcript for {run.meta.source_id}: {detail}",
-            retryable=any("worker" in e.lower() or "429" in e for e in errors),
+            retryable=any("worker" in e.lower() for e in errors),
         )
 
     async def _transcribe_whisperx(self, run: ItemRun) -> tuple[list[CueDraft], str, str] | None:
@@ -820,6 +833,21 @@ class IndexingPipeline:
 
 
 # ------------------------------------------------------------------ helpers
+
+
+def _rate_limited(exc: Exception, message: str) -> ItemFailed:
+    """One typed failure for every 429, carrying the window if the source gave one.
+
+    `retry_after_s` travels as far as it is known: the runner defers the job by
+    exactly that long, and falls back to its own cool-off when it is None.
+    """
+    retry_after = getattr(exc, "retry_after_s", None)
+    return ItemFailed(
+        "E_RATE_LIMIT",
+        message,
+        retryable=True,
+        retry_after_s=int(retry_after) if retry_after is not None else None,
+    )
 
 
 def _land_metadata(

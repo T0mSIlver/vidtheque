@@ -308,6 +308,7 @@ async def job_status(
 async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
     job_id = int(row["id"])
     items = await deps.db.read(lambda c: jobs_store.job_items(c, job_id, 20))
+    item_errors = await deps.db.read(lambda c: jobs_store.item_error_counts(c, job_id))
     pct = int(round(float(row["progress"] or 0.0) * 100))
     started = iso_z(row["started_at"])
     lines = [
@@ -342,6 +343,14 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
         message = str(first["error_message"] or "")[-MAX_ERROR_CHARS:]
         lines.append("")
         lines.append(f"error: {first['error_code']} — {message}")
+    elif str(row["error_code"] or "") == "E_RATE_LIMIT":
+        # No item ended up failing, so nothing above would have said it: the
+        # source throttled this box mid-job and the retry got through. It still
+        # decides whether the *next* job should start now.
+        lines.append("")
+        lines.append(
+            "rate-limited: " + str(row["error_message"] or "")[-MAX_ERROR_CHARS:]
+        )
 
     n_done = int(row["n_done"])
     n_failed = int(row["n_failed"])
@@ -395,6 +404,10 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
             "n_failed": n_failed,
             "n_skipped": n_skipped,
             "n_cancelled": n_cancelled,
+            # Every typed item code, counted. A job can be `done` and still have
+            # been rate-limited on the way; the job-level code says the loudest
+            # of these, this says all of them.
+            "item_errors": item_errors,
             "error_code": row["error_code"],
             "note": row["error_message"] if row["state"] == "done" else None,
         },

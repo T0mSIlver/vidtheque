@@ -153,6 +153,33 @@ def requeue_item(conn: sqlite3.Connection, item_id: int) -> None:
     )
 
 
+def defer_job(
+    conn: sqlite3.Connection,
+    job_id: int,
+    delay_s: int,
+    error_code: str | None = None,
+    error_message: str | None = None,
+) -> None:
+    """Put a claimed job back on the queue, unavailable until `delay_s` from now.
+
+    The backoff lever the queue always had and nothing pulled: `claim_next`
+    already filters on `not_before`, but a retryable item was requeued with the
+    job still `running`, so `_drive` claimed the *same* item on the very next
+    iteration. A 429 answered inside a millisecond is a 429 answered again.
+
+    The error code is written *now*, while the job is still going, because that
+    is the only moment it is true — a sibling item succeeding later is not a
+    reason for the payload to stop saying the box was rate-limited.
+    """
+    conn.execute(
+        "UPDATE jobs SET state = 'queued', heartbeat_at = NULL, "
+        "not_before = unixepoch() + ?, "
+        "error_code = COALESCE(?, error_code), error_message = COALESCE(?, error_message) "
+        "WHERE id = ?",
+        (max(0, int(delay_s)), error_code, error_message, job_id),
+    )
+
+
 def cancel_item(conn: sqlite3.Connection, item_id: int, reason: str) -> None:
     """Terminate one item without touching the rest of its job.
 
@@ -407,6 +434,39 @@ def item_counts(conn: sqlite3.Connection, job_id: int) -> dict[str, int]:
         (job_id,),
     ).fetchall()
     return {str(row["state"]): int(row["n"]) for row in rows}
+
+
+def item_error_counts(
+    conn: sqlite3.Connection, job_id: int, states: Sequence[str] = tuple(sorted(TERMINAL))
+) -> dict[str, int]:
+    """Typed item error codes, counted. The job's own code is one summary of a
+    job; this is all of them, and it is the one an unattended driver can act on.
+
+    A job with nine successes and one `E_RATE_LIMIT` used to aggregate to plain
+    `done` with a null code, which reads exactly like a clean run.
+    """
+    placeholders = ",".join("?" for _ in states)
+    rows = conn.execute(
+        "SELECT error_code, COUNT(*) AS n FROM job_items WHERE job_id = ? "
+        f"AND error_code IS NOT NULL AND state IN ({placeholders}) GROUP BY error_code",
+        (job_id, *states),
+    ).fetchall()
+    return {str(row["error_code"]): int(row["n"]) for row in rows}
+
+
+def first_failure(conn: sqlite3.Connection, job_id: int, code: str | None = None) -> sqlite3.Row | None:
+    """The failed item that should speak for the job, in seq order.
+
+    With `code`, the first item that failed *that* way — which is how
+    `E_RATE_LIMIT` keeps priority over a later, less actionable failure.
+    """
+    clause = " AND error_code = ?" if code else ""
+    params: tuple[Any, ...] = (job_id, code) if code else (job_id,)
+    return conn.execute(
+        "SELECT error_code, error_message FROM job_items WHERE job_id = ? "
+        "AND state = 'failed'" + clause + " ORDER BY seq LIMIT 1",
+        params,
+    ).fetchone()
 
 
 def nonproductive_reasons(
