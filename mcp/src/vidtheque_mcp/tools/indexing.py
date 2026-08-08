@@ -116,7 +116,14 @@ async def index_video(
     # looking only at `ready` rows is what let a second job through with a
     # NULL `video_id` and no guard on it.
     known = await deps.db.read(lambda c: _known(c, normalized))
-    items = [(u, known[u]["id"] if u in known else None) for u in normalized]
+    # Partition *before* the job exists. A mixed wave — nine current videos and
+    # one new one — used to queue all ten, and `fetch` probes and downloads
+    # before any later stage discovers the video was current. With the retention
+    # default having deleted the mp4, that is nine redundant downloads a wave.
+    current = {} if force_reindex else existing
+    items = [_item_for(url, known.get(url), url in current) for url in normalized]
+    queued = [item for item in items if not item.terminal]
+    already = [str(current[url]["public_id"]) for url in normalized if url in current]
     args: dict[str, Any] = {
         "expand": expand,
         "max_items": max_items,
@@ -147,12 +154,16 @@ async def index_video(
     active = await deps.db.read(jobs_store.active_job_count)
     lines = [
         f"Job queued: {job_public_id}",
-        f"{len(items)} video(s):",
+        f"{len(queued)} video(s):",
     ]
-    for entry in normalized[:10]:  # never echoes the full expansion
-        lines.append(f"  {entry}")
-    if len(normalized) > 10:
-        lines.append(f"  … and {len(normalized) - 10} more")
+    for item in queued[:10]:  # never echoes the full expansion
+        lines.append(f"  {item.url}")
+    if len(queued) > 10:
+        lines.append(f"  … and {len(queued) - 10} more")
+    if already:
+        lines.append(
+            f"{len(already)} already indexed and left alone: " + ", ".join(already[:10])
+        )
     lines.append("Stages: download → transcribe → keyframes → ocr → embed")
     lines.append(f"Queue position {active} · estimated 1-3 minutes per hour of video")
     if tag_list:
@@ -163,7 +174,29 @@ async def index_video(
 
     return text_result(
         "\n".join(lines),
-        {"job_id": job_public_id, "items": len(items), "tags": tag_list},
+        {
+            "job_id": job_public_id,
+            "items": len(queued),
+            "n_items": len(items),
+            "already_indexed": already,
+            "tags": tag_list,
+        },
+    )
+
+
+def _item_for(url: str, row: sqlite3.Row | None, current: bool) -> jobs_store.NewItem:
+    """One URL's row: work to do, or a terminal `skipped` that says why not."""
+    video_id = int(row["id"]) if row is not None else None
+    if not current or row is None:
+        return jobs_store.NewItem(url, video_id)
+    return jobs_store.NewItem(
+        url,
+        video_id,
+        "skipped",
+        "E_ALREADY_INDEXED",
+        f"already indexed as {row['public_id']} "
+        f"(indexed {iso_z(row['indexed_at']) or 'unknown'}); nothing was re-fetched — "
+        "index-video force_reindex=true to rebuild it.",
     )
 
 
@@ -210,7 +243,7 @@ async def _reclaim_stale(deps: Deps) -> None:
 
 def _create_job(
     conn: sqlite3.Connection,
-    items: list[tuple[str, int | None]],
+    items: list[jobs_store.NewItem],
     kind: str,
     args: dict[str, Any],
     *,
@@ -224,8 +257,10 @@ def _create_job(
     it must never do is what it used to: create an item, let the partial unique
     index refuse it mid-pipeline, and call the resulting no-op job `done`.
     """
-    for url, video_id in items:
-        if video_id is None:
+    for item in items:
+        url, video_id = item.url, item.video_id
+        if video_id is None or item.terminal:
+            # A terminal item claims nothing, so nothing can clash with it.
             continue
         claim = jobs_store.inflight_claim(conn, video_id)
         if claim is None:

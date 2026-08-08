@@ -260,6 +260,82 @@ async def test_a_caption_429_keeps_its_type_instead_of_becoming_unsupported(
         await close(parts)
 
 
+# =================================================================== mixed waves
+
+
+async def test_a_mixed_wave_queues_only_the_new_video(
+    settings: Settings, clip: Path
+) -> None:
+    """Nine ready and one new used to mean ten downloads.
+
+    The no-op shortcut only fired when *every* URL was current, so a wave with
+    one new entry in it queued the lot — and `fetch` probes and downloads before
+    any later stage discovers the video is already indexed.
+    """
+    parts = await harness(settings, clip)
+    try:
+        await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+        downloads = len(parts.source.downloads)
+
+        result = await indexing.index_video(parts.deps, urls=[VIDEO_URL, SECOND_URL])
+        assert not result.is_error, body(result)
+        payload = structured(result)
+        assert payload["items"] == 1  # one video of work
+        assert payload["n_items"] == 2  # two rows, so the wave still adds up
+        assert len(payload["already_indexed"]) == 1
+        assert "already indexed and left alone" in body(result)
+
+        items = await items_of(parts, payload["job_id"])
+        assert [i["state"] for i in items] == ["skipped", "queued"]
+        assert items[0]["error_code"] == "E_ALREADY_INDEXED"
+        assert items[0]["started_at"] is None  # never claimed, never probed
+
+        assert await parts.run() is True
+        # Exactly one video's worth of media, not two.
+        assert len(parts.source.downloads) - downloads == 2
+
+        status = await indexing.job_status(parts.deps, job_id=payload["job_id"])
+        counts = structured(status)
+        assert (counts["n_done"], counts["n_skipped"], counts["n_items"]) == (1, 1, 2)
+        assert counts["item_errors"] == {"E_ALREADY_INDEXED": 1}
+    finally:
+        await close(parts)
+
+
+async def test_a_wave_of_only_ready_videos_still_creates_no_job(
+    settings: Settings, clip: Path
+) -> None:
+    """The shortcut that was already right stays right."""
+    parts = await harness(settings, clip)
+    try:
+        await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+        result = await indexing.index_video(parts.deps, urls=[VIDEO_URL])
+        assert structured(result)["job_id"] is None
+        assert "Already indexed" in body(result)
+    finally:
+        await close(parts)
+
+
+async def test_force_reindex_ignores_the_partition(settings: Settings, clip: Path) -> None:
+    """`force_reindex` means "do it anyway", including for a current video."""
+    parts = await harness(settings, clip)
+    try:
+        await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+
+        result = await indexing.index_video(
+            parts.deps, urls=[VIDEO_URL, SECOND_URL], force_reindex=True
+        )
+        payload = structured(result)
+        assert payload["already_indexed"] == []
+        items = await items_of(parts, payload["job_id"])
+        assert [i["state"] for i in items] == ["queued", "queued"]
+    finally:
+        await close(parts)
+
+
 async def test_a_video_with_no_transcript_at_all_is_still_final(
     settings: Settings, clip: Path
 ) -> None:

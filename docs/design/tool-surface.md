@@ -1048,6 +1048,28 @@ Already indexed: Qk7mF2xLp0A — "Flash Attention 3 walkthrough" (indexed 2026-0
 No job created. next: video-summary video_id="Qk7mF2xLp0A", or index-video force_reindex=true to rebuild.
 ```
 
+**A mixed wave is partitioned before the job exists.** The shortcut above needs
+*every* URL to be current; a batch of ten where nine are already indexed used to
+queue all ten, and `fetch` probes and downloads before any later stage can
+discover the video was current — nine redundant downloads a wave, with the
+retention default having deleted the mp4. Current videos are now inserted
+already terminal as `skipped/E_ALREADY_INDEXED`, so they are counted and
+explained in `job-status` without being work:
+
+```
+Job queued: job_7f3a29b1c04d
+1 video(s):
+  https://youtu.be/9dRk2XcVbNw
+9 already indexed and left alone: Qk7mF2xLp0A, HcQ8pL3vN1s, …
+```
+
+The payload carries `items` (the work), `n_items` (the rows) and
+`already_indexed` (their video ids). `force_reindex` skips the partition
+entirely — it means "do it anyway". Downloading is gated the same way one level
+down: the pipeline fetches audio only if `stt` is going to run and the mp4 only
+if `keyframe` is, so resuming a video whose only outstanding stage is `ocr`
+costs no bandwidth at all.
+
 **Token discipline.** Playlist expansion capped at `max_items` (ceiling 200) and
 the payload lists at most **10 titles**, then `… and 43 more`. Never echoes the
 full expansion. Fixed-size response regardless of batch size.

@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import secrets
 import sqlite3
+from dataclasses import dataclass
 from typing import Any, Sequence
 
 STAGES = ("fetch", "stt", "chunk", "text_embed", "keyframe", "ocr", "frame_embed")
@@ -56,11 +57,36 @@ class DuplicateInFlight(Exception):
         self.job_public_id = job_public_id
 
 
+@dataclass(frozen=True)
+class NewItem:
+    """One row of a job to be. Terminal at birth is a legitimate state.
+
+    A wave of ten URLs where nine are already indexed used to queue all ten,
+    because the no-op shortcut only fired when *every* URL was current. The nine
+    are `skipped/E_ALREADY_INDEXED` before the runner ever sees them: still rows,
+    still counted, still explained in `job-status` — just not work.
+    """
+
+    url: str
+    video_id: int | None = None
+    state: str = "queued"
+    error_code: str | None = None
+    error_message: str | None = None
+
+    @property
+    def terminal(self) -> bool:
+        return self.state in TERMINAL
+
+
+def _as_item(entry: "NewItem | tuple[str, int | None]") -> NewItem:
+    return entry if isinstance(entry, NewItem) else NewItem(entry[0], entry[1])
+
+
 def create_job(
     conn: sqlite3.Connection,
     kind: str,
     args: dict[str, Any],
-    items: Sequence[tuple[str, int | None]],
+    items: Sequence["NewItem | tuple[str, int | None]"],
     priority: int = 100,
 ) -> str:
     """Insert a job and its items. Runs inside the caller's transaction."""
@@ -71,11 +97,16 @@ def create_job(
         (public_id, kind, json.dumps(args), len(items), priority),
     )
     job_id = int(cursor.lastrowid or 0)
-    for seq, (url, video_id) in enumerate(items):
+    for seq, entry in enumerate(items):
+        item = _as_item(entry)
+        url, video_id = item.url, item.video_id
         try:
             conn.execute(
-                "INSERT INTO job_items (job_id, seq, source_url, video_id) VALUES (?, ?, ?, ?)",
-                (job_id, seq, url, video_id),
+                "INSERT INTO job_items (job_id, seq, source_url, video_id, state, "
+                "error_code, error_message, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, "
+                + ("unixepoch()" if item.terminal else "NULL")
+                + ")",
+                (job_id, seq, url, video_id, item.state, item.error_code, item.error_message),
             )
         except sqlite3.IntegrityError as exc:
             # The in-flight guard is the partial unique index, not application

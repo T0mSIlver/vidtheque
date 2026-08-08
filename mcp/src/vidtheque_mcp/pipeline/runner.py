@@ -273,9 +273,19 @@ class IndexingPipeline:
         await run.ctx.record("fetch", 0.25)
 
         # --- media -----------------------------------------------------------
-        want_media = run.wants_frames
-        need_audio = run.wants_transcript and self.settings.wants_whisperx
+        # Gated on whether the stage that consumes the file is actually going to
+        # run. A resume whose only outstanding stage is `ocr` needs no mp4, and
+        # downloading one "in case" is how a wave of already-indexed videos cost
+        # a night of bandwidth before any later stage noticed they were current.
         self._note_worker(run, await self._worker_healthy())
+        want_media = run.wants_frames and self._should_run(
+            run, "keyframe", self._keyframe_model_key()
+        )
+        need_audio = (
+            run.wants_transcript
+            and self.settings.wants_whisperx
+            and self._should_run(run, "stt", self.db.config.get("stt.model", "whisperx"))
+        )
 
         if need_audio and not run.worker_ok and self.settings.captions_allowed:
             # Zero-GPU path: nothing to send the audio to, and the captions the
@@ -544,9 +554,12 @@ class IndexingPipeline:
 
     # --------------------------------------------------------------- keyframe
 
+    def _keyframe_model_key(self) -> str:
+        return f"scenedetect-{self.settings.detector}-w{self.settings.keyframe_max_width}"
+
     async def _stage_keyframes(self, run: ItemRun) -> None:
         assert run.meta is not None
-        model_key = f"scenedetect-{self.settings.detector}-w{self.settings.keyframe_max_width}"
+        model_key = self._keyframe_model_key()
         if not self._should_run(run, "keyframe", model_key):
             return
         if run.media is None or not run.media.exists():
