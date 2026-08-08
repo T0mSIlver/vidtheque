@@ -190,6 +190,18 @@ def embeddings() -> Embeddings:
 
 
 @pytest.fixture
+def image_embeddings() -> Embeddings:
+    """A different width from the text fixture on purpose: the two vector
+    spaces are separate, and a test that passes with both at 3 dims proves
+    less than one that would notice them being crossed."""
+    return Embeddings(
+        vectors=[[0.1, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8]],
+        dims=4,
+        model="fake-frame-embed",
+    )
+
+
+@pytest.fixture
 def ocr_items() -> list[list[OCRItem]]:
     return [
         [

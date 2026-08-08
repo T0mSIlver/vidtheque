@@ -1,6 +1,47 @@
 {
   "components": {
     "schemas": {
+      "Body_image_embeddings_v1_embeddings_image_post": {
+        "properties": {
+          "file": {
+            "description": "One or more image files",
+            "items": {
+              "contentMediaType": "application/octet-stream",
+              "type": "string"
+            },
+            "title": "File",
+            "type": "array"
+          },
+          "max_num_patches": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "NaFlex patch budget; trained values are 128/256/576/784/1024",
+            "title": "Max Num Patches"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_image_embeddings_v1_embeddings_image_post",
+        "type": "object"
+      },
       "Body_ocr_v1_ocr_post": {
         "properties": {
           "file": {
@@ -139,6 +180,15 @@
               }
             ],
             "title": "Input"
+          },
+          "input_type": {
+            "default": "document",
+            "enum": [
+              "document",
+              "query"
+            ],
+            "title": "Input Type",
+            "type": "string"
           },
           "model": {
             "anyOf": [
@@ -454,7 +504,7 @@
     }
   },
   "info": {
-    "description": "Stateless inference worker for vidtheque: speech-to-text with word timestamps,\ntext embeddings, and on-screen-text OCR. One lifecycle manager owns the GPU \u2014\nrequests queue rather than compete. The transcription and embedding endpoints\nfollow OpenAI's shapes so a GPU-less deployment can swap in a hosted provider.\n",
+    "description": "Stateless inference worker for vidtheque: speech-to-text with word timestamps,\ntext embeddings, frame embeddings, and on-screen-text OCR. One lifecycle manager\nowns the GPU \u2014 requests queue rather than compete. The transcription and text\nembedding endpoints follow OpenAI's shapes so a GPU-less deployment can swap in a\nhosted provider. Text and frame embeddings are separate vector spaces with\nseparate models and separate endpoints; they are never interchangeable.\n",
     "title": "vidtheque-worker",
     "version": "0.0.1"
   },
@@ -568,6 +618,45 @@
           }
         },
         "summary": "Embed text (OpenAI-compatible)"
+      }
+    },
+    "/v1/embeddings/image": {
+      "post": {
+        "description": "Vectors come back in upload order, L2-normalised, one per image.",
+        "operationId": "image_embeddings_v1_embeddings_image_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_image_embeddings_v1_embeddings_image_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbeddingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Embed images into the frame vector space"
       }
     },
     "/v1/ocr": {

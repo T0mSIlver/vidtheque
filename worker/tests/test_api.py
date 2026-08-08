@@ -13,7 +13,7 @@ from vidtheque_worker.lifecycle import LifecycleManager
 
 
 @pytest.fixture
-def parts(recorder: Recorder, transcription, embeddings, ocr_items):
+def parts(recorder: Recorder, transcription, embeddings, image_embeddings, ocr_items):
     backends = {
         "stt": FakeBackend(
             "stt",
@@ -26,10 +26,18 @@ def parts(recorder: Recorder, transcription, embeddings, ocr_items):
         "embed": FakeBackend(
             "embed",
             name="fake-embed",
-            model_id="BAAI/bge-m3",
+            model_id="Qwen/Qwen3-Embedding-0.6B",
             vram_estimate_mb=2000,
             recorder=recorder,
             result=embeddings,
+        ),
+        "image_embed": FakeBackend(
+            "image_embed",
+            name="fake-frame-embed",
+            model_id="google/siglip2-so400m-patch16-naflex",
+            vram_estimate_mb=5000,
+            recorder=recorder,
+            result=image_embeddings,
         ),
         "ocr": FakeBackend(
             "ocr",
@@ -158,6 +166,28 @@ def test_embeddings_accepts_a_list(client, parts):
     assert backends["embed"].infer_calls[0][0][0] == ["a", "b"]
 
 
+def test_embeddings_default_to_the_document_side(client, parts):
+    backends, _ = parts
+    client.post("/v1/embeddings", json={"input": "indexed text"})
+    assert backends["embed"].infer_calls[0][1] == {"input_type": "document"}
+
+
+def test_embeddings_pass_the_query_side_through(client, parts):
+    backends, _ = parts
+    response = client.post(
+        "/v1/embeddings", json={"input": "how do I lease the gpu", "input_type": "query"}
+    )
+    assert response.status_code == 200
+    assert backends["embed"].infer_calls[0][1] == {"input_type": "query"}
+
+
+def test_unknown_input_type_is_rejected(client):
+    response = client.post(
+        "/v1/embeddings", json={"input": "x", "input_type": "passage"}
+    )
+    assert response.status_code == 422
+
+
 def test_empty_input_is_rejected(client):
     assert client.post("/v1/embeddings", json={"input": []}).status_code == 400
 
@@ -165,6 +195,83 @@ def test_empty_input_is_rejected(client):
 def test_oversized_batch_is_rejected(client):
     response = client.post("/v1/embeddings", json={"input": ["x"] * 513})
     assert response.status_code == 413
+
+
+# --------------------------------------------------------------------------
+# image embeddings
+# --------------------------------------------------------------------------
+
+
+def _jpegs(count: int) -> list[tuple[str, tuple[str, bytes, str]]]:
+    return [
+        ("file", (f"frame_{i}.jpg", b"\xff\xd8fakejpeg%d" % i, "image/jpeg"))
+        for i in range(count)
+    ]
+
+
+def test_image_embeddings_return_one_vector_per_image(client, parts):
+    backends, _ = parts
+    response = client.post("/v1/embeddings/image", files=_jpegs(2))
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["object"] == "list"
+    assert body["model"] == "fake-frame-embed"
+    # The frame space, not the transcript one.
+    assert body["dimensions"] == 4
+    assert [d["index"] for d in body["data"]] == [0, 1]
+    assert body["data"][0]["embedding"] == [0.1, 0.2, 0.3, 0.4]
+    # Upload order, as raw bytes, in a single batched call.
+    assert backends["image_embed"].infer_calls[0][0][0] == [
+        b"\xff\xd8fakejpeg0",
+        b"\xff\xd8fakejpeg1",
+    ]
+    assert backends["image_embed"].infer_calls[0][1] == {}
+
+
+def test_image_embeddings_do_not_touch_the_text_embedder(client, parts):
+    backends, _ = parts
+    client.post("/v1/embeddings/image", files=_jpegs(1))
+    assert backends["image_embed"].loaded
+    assert not backends["embed"].loaded
+    assert backends["embed"].infer_calls == []
+
+
+def test_image_embeddings_pass_the_patch_budget_through(client, parts):
+    backends, _ = parts
+    response = client.post(
+        "/v1/embeddings/image", files=_jpegs(1), data={"max_num_patches": "1024"}
+    )
+    assert response.status_code == 200
+    assert backends["image_embed"].infer_calls[0][1] == {"max_num_patches": 1024}
+
+
+def test_image_embeddings_reject_an_absurd_patch_budget(client):
+    response = client.post(
+        "/v1/embeddings/image", files=_jpegs(1), data={"max_num_patches": "99999"}
+    )
+    assert response.status_code == 400
+
+
+def test_image_embeddings_reject_an_empty_upload(client):
+    response = client.post(
+        "/v1/embeddings/image", files={"file": ("frame.jpg", b"", "image/jpeg")}
+    )
+    assert response.status_code == 400
+
+
+def test_image_embeddings_reject_an_oversized_batch(client):
+    response = client.post("/v1/embeddings/image", files=_jpegs(65))
+    assert response.status_code == 413
+
+
+def test_image_embed_missing_dependency_maps_to_503(parts, recorder):
+    backends, manager = parts
+    backends["image_embed"].load_error = BackendUnavailable("transformers missing")
+    app = create_app(settings=Settings(_env_file=None), manager=manager)
+    with TestClient(app) as c:
+        response = c.post("/v1/embeddings/image", files=_jpegs(1))
+    assert response.status_code == 503
+    assert response.json()["error"]["type"] == "backend_unavailable"
 
 
 # --------------------------------------------------------------------------
@@ -223,8 +330,10 @@ def test_status_reports_models_vram_and_queue(client):
     by_task = {b["task"]: b for b in body["backends"]}
     assert by_task["embed"]["loaded"] is True
     assert by_task["embed"]["backend"] == "fake-embed"
-    assert by_task["embed"]["model"] == "BAAI/bge-m3"
+    assert by_task["embed"]["model"] == "Qwen/Qwen3-Embedding-0.6B"
     assert by_task["stt"]["loaded"] is False
+    assert by_task["image_embed"]["loaded"] is False
+    assert by_task["image_embed"]["vram_estimate_mb"] == 5000
     assert body["vram"]["available"] is True
     assert body["vram"]["used_mb"] == 2000
     assert body["vram"]["free_mb"] == 22000
@@ -252,6 +361,7 @@ def test_openapi_documents_the_contract(client):
     assert set(schema["paths"]) == {
         "/v1/audio/transcriptions",
         "/v1/embeddings",
+        "/v1/embeddings/image",
         "/v1/ocr",
         "/status",
         "/healthz",

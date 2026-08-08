@@ -247,6 +247,28 @@ async def test_stop_unloads_resident_models_too(recorder):
     assert not backends["embed"].loaded
 
 
+async def test_resident_text_embedder_does_not_exempt_the_frame_embedder(recorder):
+    """EMBED_RESIDENT is about query latency. The frame embedder is an
+    indexing-time cost and the biggest of the three, so it stays evictable."""
+    backends = make_backends(recorder, image_embed=5000)
+    manager = await make_manager(
+        backends,
+        recorder,
+        idle_unload_seconds=0.01,
+        idle_poll_interval=0.005,
+        resident_tasks=("embed",),
+        vram_headroom_mb=0,
+    )
+    try:
+        await manager.submit("embed", lambda b: b.infer(["hi"]))
+        await manager.submit("image_embed", lambda b: b.infer([b"jpeg"]))
+        await asyncio.sleep(0.1)
+        assert backends["embed"].loaded, "resident text embedder must survive"
+        assert not backends["image_embed"].loaded
+    finally:
+        await manager.stop()
+
+
 # --------------------------------------------------------------------------
 # VRAM admission control
 # --------------------------------------------------------------------------
@@ -282,6 +304,44 @@ async def test_resident_backend_is_never_evicted_for_vram(recorder):
             await manager.submit("stt", lambda b: b.infer("a.wav"))
         assert backends["embed"].loaded
         assert not backends["stt"].loaded
+    finally:
+        await manager.stop()
+
+
+async def test_frame_embedder_is_evicted_for_the_text_embedder(recorder):
+    backends = make_backends(recorder, image_embed=5000)
+    manager = await make_manager(
+        backends,
+        recorder,
+        vram_headroom_mb=0,
+        vram_probe=FakeVram(backends, total_mb=6000),
+    )
+    try:
+        await manager.submit("image_embed", lambda b: b.infer([b"jpeg"]))  # 5000/6000
+        await manager.submit("embed", lambda b: b.infer(["hi"]))  # needs 2000
+        assert not backends["image_embed"].loaded
+        assert backends["embed"].loaded
+        assert recorder.names("load", "unload") == [
+            "image_embed",
+            "image_embed",
+            "embed",
+        ]
+    finally:
+        await manager.stop()
+
+
+async def test_the_two_embedders_never_run_at_once(recorder):
+    backends = make_backends(recorder, image_embed=5000)
+    for backend in backends.values():
+        backend.infer_seconds = 0.01
+    manager = await make_manager(backends, recorder, vram_headroom_mb=0)
+    try:
+        await asyncio.gather(
+            manager.submit("embed", lambda b: b.infer(["a"])),
+            manager.submit("image_embed", lambda b: b.infer([b"jpeg"])),
+            manager.submit("embed", lambda b: b.infer(["b"])),
+        )
+        assert all(b.max_concurrent <= 1 for b in backends.values())
     finally:
         await manager.stop()
 
