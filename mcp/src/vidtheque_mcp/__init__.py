@@ -1,12 +1,13 @@
-"""vidtheque MCP server — placeholder package.
+"""vidtheque MCP server — the CPU half of vidtheque.
 
-The framework choice is still open (see ``NOTE.md``). This module exists so the
-uv workspace, the container build and CI all have something to resolve.
+Owns the SQLite + sqlite-vec + FTS5 index, the keyframe directory, the job
+queue, the OAuth authorization server and the nine-tool MCP surface described
+in ``docs/design/tool-surface.md``.
 
-Hard rule: nothing here may import from ``vidtheque_worker``. The two services
-talk over HTTP, and the worker's OpenAPI document is the contract.
+Hard rule (CLAUDE.md): nothing here may import from ``vidtheque_worker``. The
+two services talk over HTTP, and the worker's OpenAPI document is the contract.
 """
 
-__version__ = "0.0.1"
+__version__ = "0.1.0"
 
 __all__ = ["__version__"]
