@@ -1,0 +1,58 @@
+name = "frame-embed-patches"
+description = "SigLIP 2 NaFlex: what the resolution knob costs, and what OCR costs beside it"
+
+# The frame leg has one knob and it is per-request: `max_num_patches`. The model
+# was trained on 128/256/576/784/1024, the worker defaults to 256, and 1024 is
+# roughly 4x the work — the question is whether a screencast frame's small text
+# is worth it, and that is only answerable next to a measured cost.
+#
+# One variant, because nothing here is startup-time: the budget is a form field.
+# The OCR case rides along on purpose. On the 3090 the frame embedder does ~100
+# frames/s and RapidOCR does ~3.4, so OCR is the pipeline's real per-frame cost
+# and any argument about patch budgets should be read against it.
+#
+# Measured at 256 patches on an RTX 3090, 44 keyframes/request:
+# 2867 MB resident, 103 frames/s (bench/results/gpu-3090-2026-08-08.md).
+
+[media]
+root = "bench/media"
+note = "point `input` at a directory of keyframe JPEGs — e.g. the ones an index run wrote"
+
+[[variants]]
+name = "siglip2-naflex"
+[variants.env]
+IMAGE_EMBED_BACKEND = "siglip2"
+IMAGE_EMBED_MODEL = "google/siglip2-so400m-patch16-naflex"
+DEVICE = "cuda"
+IDLE_UNLOAD_SECONDS = "0"
+
+[[cases]]
+name = "frames-256"
+type = "image_embed"
+input = "keyframes"
+max_num_patches = 256
+repeat = 5
+note = "the shipped default"
+
+[[cases]]
+name = "frames-1024"
+type = "image_embed"
+input = "keyframes"
+max_num_patches = 1024
+repeat = 5
+note = "top of the trained ladder; expect ~4x the work per frame"
+
+[[cases]]
+name = "frame-query"
+type = "frame_query"
+input = "a terminal showing a compiler error"
+batch = 1
+repeat = 20
+note = "the text tower, same slot, same weights — the query half of the frame index"
+
+[[cases]]
+name = "ocr-same-frames"
+type = "ocr"
+input = "keyframes"
+batch = 8
+note = "CPU, and the reason the frame leg is not the expensive one"
