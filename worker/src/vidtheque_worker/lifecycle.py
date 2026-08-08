@@ -11,10 +11,11 @@ That buys four properties that are painful to retrofit:
 * **Admission control.** Before a load, NVML is asked how much VRAM is free;
   if the estimate does not fit, the least-recently-used non-resident backend is
   evicted first. No NVML installed means "no idea", and no idea means proceed.
-* **Lease hooks.** ``GPU_ACQUIRE_CMD`` runs before the *first* load and
-  ``GPU_RELEASE_CMD`` after the *last* unload, so a co-tenant (llama.cpp, say)
-  can be stopped and restarted around a burst of indexing work without this
-  code knowing anything about it.
+* **Lease hooks.** ``GPU_ACQUIRE_CMD`` runs before the first load of a model
+  that actually holds VRAM and ``GPU_RELEASE_CMD`` once none is left loaded, so
+  a co-tenant (llama.cpp, say) can be stopped and restarted around a burst of
+  indexing work without this code knowing anything about it. CPU backends are
+  outside that bracket — see :func:`_takes_lease`.
 
 Backends are synchronous; jobs run in a worker thread so the event loop keeps
 serving ``/status`` and ``/healthz`` while the GPU is busy.
@@ -302,12 +303,12 @@ class LifecycleManager:
             return
 
         await self._admit(slot)
-        acquired_here = await self._acquire_lease()
+        acquired_here = await self._acquire_lease() if _takes_lease(slot) else False
         try:
             started = self._clock()
             await asyncio.to_thread(slot.backend.load)
         except BaseException:
-            if acquired_here and not self._any_loaded():
+            if acquired_here and not self._any_lease_holder():
                 await self._release_lease()
             raise
         slot.loaded_at = self._clock()
@@ -366,7 +367,7 @@ class LifecycleManager:
         await asyncio.to_thread(slot.backend.unload)
         slot.unload_count += 1
         slot.loaded_at = None
-        if not self._any_loaded():
+        if not self._any_lease_holder():
             await self._release_lease()
 
     async def _unload_all(self, *, reason: str, include_resident: bool = False) -> None:
@@ -374,8 +375,9 @@ class LifecycleManager:
             if slot.loaded and (include_resident or not slot.resident):
                 await self._unload(task, reason=reason)
 
-    def _any_loaded(self) -> bool:
-        return any(slot.loaded for slot in self._slots.values())
+    def _any_lease_holder(self) -> bool:
+        """Is any model that the lease is *for* still loaded?"""
+        return any(slot.loaded and _takes_lease(slot) for slot in self._slots.values())
 
     # -- lease hooks -------------------------------------------------------
     async def _acquire_lease(self) -> bool:
@@ -432,6 +434,18 @@ class LifecycleManager:
                     await self._unload(task, reason="idle")
                     evicted.append(task)
         return evicted
+
+
+def _takes_lease(slot: Slot) -> bool:
+    """Does loading this backend belong inside the GPU lease?
+
+    Not a 0 MB backend: OCR runs on CPU (``rapidocr_ocr.py``'s docstring has
+    always said so). Taking the lease for it stops a co-tenant that OCR was
+    never going to compete with, and holds it stopped for the whole idle TTL in
+    exchange for nothing — measured doing exactly that in
+    ``research/gpu-validation-2026-08-08.md`` §5.2.
+    """
+    return slot.backend.vram_estimate_mb > 0
 
 
 def _default_poll(idle_unload_seconds: float) -> float:

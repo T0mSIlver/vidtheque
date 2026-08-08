@@ -136,6 +136,32 @@ async def test_acquire_runs_once_for_several_models(recorder):
     assert [label for _, label in hooks.calls] == ["GPU_ACQUIRE_CMD", "GPU_RELEASE_CMD"]
 
 
+async def test_cpu_only_traffic_never_touches_the_lease(recorder):
+    """OCR is CPU-only, so it must not stop the co-tenant it does not compete
+    with — measured doing exactly that in gpu-validation-2026-08-08 §5.2."""
+    backends = make_backends(recorder)
+    hooks = FakeHooks(recorder)
+    manager = await make_manager(
+        backends,
+        recorder,
+        hook_runner=hooks,
+        acquire_cmd="systemctl stop llama-server",
+        release_cmd="systemctl start llama-server",
+    )
+    try:
+        await manager.submit("ocr", lambda b: b.infer([b"img"]))
+        await manager.submit("ocr", lambda b: b.infer([b"img"]))
+        assert backends["ocr"].loaded
+        assert hooks.calls == []
+        assert manager.hooks.acquired is False
+        assert manager.snapshot()["lease"]["acquired"] is False
+    finally:
+        await manager.stop()
+    # ...and the unload at shutdown fires no release either.
+    assert hooks.calls == []
+    assert manager.hooks.events == []
+
+
 async def test_failed_acquire_hook_aborts_the_load(recorder):
     backends = make_backends(recorder)
     hooks = FakeHooks(recorder, error=RuntimeError("llama-server would not stop"))
