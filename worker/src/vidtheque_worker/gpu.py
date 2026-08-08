@@ -34,6 +34,8 @@ class NvmlProbe:
     ``None`` means "no idea" and the caller should proceed rather than block:
     a worker on a box without NVML is a supported configuration, an unusable
     worker is not.
+
+    **These numbers are not ``nvidia-smi``'s numbers.** See :meth:`__call__`.
     """
 
     def __init__(self, index: int = 0) -> None:
@@ -65,6 +67,19 @@ class NvmlProbe:
             self._unavailable_logged = True
 
     def __call__(self) -> VramInfo | None:
+        """Free/used/total VRAM, as NVML sees it — deliberately not as
+        ``nvidia-smi`` sees it.
+
+        ``nvmlDeviceGetMemoryInfo`` counts the driver's own reserve in ``used``
+        and ``nvidia-smi memory.used`` does not: a constant **~322 MB** gap on
+        the reference box (RTX 3090, driver 550.163.01 — measured in
+        ``research/gpu-validation-2026-08-08.md`` §2). ``/status`` therefore
+        reports ~322 MB more used, and admission control believes that much less
+        is free, than the card appears to have. That is the conservative
+        direction and is left alone on purpose: it is not a leak, and there is
+        nothing here to "fix". Related: a process that has ever touched CUDA
+        keeps a ~340 MB primary context until it exits, which no unload frees.
+        """
         if not self._ensure():
             return None
         try:
