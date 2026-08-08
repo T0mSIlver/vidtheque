@@ -111,12 +111,44 @@ def make_detector(kind: str):
 def detect_shots(
     video_path: Path, *, kind: str = "screencast", max_shot_seconds: float = 25.0
 ) -> list[Shot]:
-    """One full decode, auto-downscaled internally, PTS-backed timestamps."""
+    """One full decode, auto-downscaled internally, PTS-backed timestamps.
+
+    "Auto-downscaled" is about the *detector math*, not the decode: 0.7.1's
+    ``compute_downscale_factor`` divides the long edge down to 256 px, so
+    1920x1080 and 640x360 inputs are both analysed at 256x144 — but the resize
+    happens in the decode thread, after every frame has been decoded at full
+    resolution. This pass decodes the whole video and is the entire cost of the
+    keyframe stage (research/keyframe-decode-bench-2026-08-08.md).
+    """
+    spans, duration = detect_spans(video_path, kind=kind)
+    return subdivide(spans, duration, max_shot_seconds)
+
+
+def detect_spans(
+    video_path: Path, *, kind: str = "screencast"
+) -> tuple[list[tuple[float, float]], float]:
+    """The detector's own scene list, before ``subdivide`` adds fixed cuts.
+
+    Split out from ``detect_shots`` so a caller comparing two detection runs can
+    see the *detected* cuts rather than the synthetic ones — one decode, both
+    answers.
+    """
     from scenedetect import SceneManager, open_video
 
     # PyAV for true PTS and 0.7.1's corrupt-frame skipping; open_video falls
     # back to OpenCV on its own if the backend is unavailable.
-    video = open_video(str(video_path), backend="pyav")
+    #
+    # `threading_mode="AUTO"` is FRAME+SLICE threading, and it is worth a third
+    # of this stage. PyAV's default for an H.264 stream is SLICE alone, which on
+    # this box decodes a 1080p50 file at 406 frames/s; AUTO does 1211 — measured
+    # end to end at 138s -> 94s for an 18-minute talk and 187s -> 131s for a
+    # 21-minute one, with **bit-identical cut lists** both times, because the
+    # same frames reach the same detector in the same order. Threaded decoding
+    # is the only free speedup here: everything else that makes this pass
+    # cheaper (a smaller stream, frame skipping) changes what the detector sees.
+    # 0.7.1 re-opens the video itself if AUTO stops short of the last frame
+    # (`VideoStreamAv._handle_eof`), which was the historical reason to avoid it.
+    video = open_video(str(video_path), backend="pyav", threading_mode="AUTO")
     manager = SceneManager()
     manager.add_detector(make_detector(kind))
     manager.auto_downscale = True
@@ -132,8 +164,7 @@ def detect_shots(
         logger.warning("%s: %d frames skipped by the decoder", video_path.name, failures)
 
     duration = float(getattr(video.duration, "seconds", 0.0) or 0.0)
-    spans = [(float(start.seconds), float(end.seconds)) for start, end in scenes]
-    return subdivide(spans, duration, max_shot_seconds)
+    return [(float(start.seconds), float(end.seconds)) for start, end in scenes], duration
 
 
 def subdivide(
@@ -207,13 +238,46 @@ def extract_keyframes(
     phash_threshold: int = 24,
     progress: Callable[[float], None] | None = None,
 ) -> list[KeyframeDraft]:
-    """Pass 1 decodes the video; pass 2 seeks ~9 times per shot.
+    """Pass 1 decodes the video end to end; pass 2 seeks ~9 times per shot.
 
-    For a 40-shot video that is ~360 decoded frames instead of 100,000.
+    For a 40-shot video that is ~360 decoded frames instead of 100,000, which is
+    why pass 1 is most of this stage — measured at 65% of it on an 18-minute
+    1080p talk, with pass 2's ~1,100 seeks the rest
+    (research/keyframe-decode-bench-2026-08-08.md).
+    """
+    shots = thin(detect_shots(video_path, kind=kind, max_shot_seconds=max_shot_seconds), budget)
+    return extract_from_shots(
+        video_path,
+        shots,
+        out_dir,
+        relpath_for,
+        candidates_per_shot=candidates_per_shot,
+        max_width=max_width,
+        quality=quality,
+        phash_threshold=phash_threshold,
+        progress=progress,
+    )
+
+
+def extract_from_shots(
+    video_path: Path,
+    shots: Sequence[Shot],
+    out_dir: Path,
+    relpath_for: Callable[[int, float], str],
+    *,
+    candidates_per_shot: int = 9,
+    max_width: int = 1280,
+    quality: int = 92,
+    phash_threshold: int = 24,
+    progress: Callable[[float], None] | None = None,
+) -> list[KeyframeDraft]:
+    """Pass 2 on its own: seek, score, write, hash.
+
+    Split out of ``extract_keyframes`` so the two passes can be timed — and
+    compared across detection runs — independently (``bench/keyframe_decode.py``).
     """
     import cv2
 
-    shots = thin(detect_shots(video_path, kind=kind, max_shot_seconds=max_shot_seconds), budget)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     capture = cv2.VideoCapture(str(video_path))

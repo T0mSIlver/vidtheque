@@ -93,3 +93,49 @@ def test_sharpness_is_recorded_for_the_get_frames_tiebreak(clip: Path, tmp_path:
     drafts = _extract(clip, tmp_path)
     assert all(d.sharpness >= 0.0 for d in drafts)
     assert any(d.sharpness > 0.0 for d in drafts)
+
+
+# ---------------------------------------------------------------- decode cost
+
+
+def test_detection_decodes_with_frame_threading(clip: Path, monkeypatch) -> None:
+    """PyAV's default for H.264 is SLICE alone, and that is the whole stage.
+
+    Measured on a 1080p50 talk: 406 frames/s default against 1211 with AUTO,
+    138s -> 94s end to end (research/keyframe-decode-bench-2026-08-08.md). It is
+    a one-word argument that is easy to lose in a refactor, so it is asserted.
+    """
+    import scenedetect
+
+    seen: dict[str, object] = {}
+    real = scenedetect.open_video
+
+    def spy(path, *args, **kwargs):
+        seen.update(kwargs)
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(scenedetect, "open_video", spy)
+    keyframes.detect_spans(clip)
+    assert seen["backend"] == "pyav"  # PTS-backed timestamps, not frame_num/fps
+    assert seen["threading_mode"] == "AUTO"
+
+
+def test_frame_threading_does_not_move_the_cuts(clip: Path) -> None:
+    """The reason threaded decoding is the *only* free win here: the detector
+    sees the same frames in the same order, so the answer is bit-identical.
+    Anything else that makes the decode cheaper (a smaller companion stream,
+    frame skipping) changes what it sees — measured, and rejected, in the bench."""
+    from scenedetect import SceneManager, open_video
+
+    def cuts(mode: str) -> list[float]:
+        video = open_video(str(clip), backend="pyav", threading_mode=mode)
+        manager = SceneManager()
+        manager.add_detector(keyframes.make_detector("screencast"))
+        manager.auto_downscale = True
+        manager.detect_scenes(video=video, show_progress=False)
+        return [
+            round(float(start.seconds), 3)
+            for start, _ in manager.get_scene_list(start_in_scene=True)
+        ]
+
+    assert cuts("AUTO") == cuts("NONE")
