@@ -330,6 +330,28 @@ async def test_frame_embedder_is_evicted_for_the_text_embedder(recorder):
         await manager.stop()
 
 
+async def test_both_frame_towers_share_one_slot_and_one_load(recorder):
+    """Image and text towers are two heads of one checkpoint. A frame query
+    against an already-loaded frame model must not reload it, and must not
+    take a slot of its own — the manager only ever has four."""
+    backends = make_backends(recorder, image_embed=5000)
+    manager = await make_manager(
+        backends,
+        recorder,
+        vram_headroom_mb=0,
+        vram_probe=FakeVram(backends, total_mb=8000),
+    )
+    try:
+        await manager.submit("image_embed", lambda b: b.infer([b"jpeg"]))
+        await manager.submit("image_embed", lambda b: b.embed_text(["a terminal"]))
+        assert manager.slot("image_embed").load_count == 1
+        assert manager.slot("image_embed").job_count == 2
+        assert recorder.names("load", "unload") == ["image_embed"]
+        assert manager.tasks == ["stt", "embed", "ocr", "image_embed"]
+    finally:
+        await manager.stop()
+
+
 async def test_the_two_embedders_never_run_at_once(recorder):
     backends = make_backends(recorder, image_embed=5000)
     for backend in backends.values():

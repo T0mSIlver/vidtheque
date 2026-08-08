@@ -56,6 +56,15 @@ touches them.
   in v1; pairing-code flow is a later nicety.
 - **Frame embeddings:** SigLIP 2 `google/siglip2-so400m-patch16-naflex`
   (1152 dims) via transformers ≥5.14 (open_clip cannot load NaFlex).
+  Both towers of that one checkpoint are served from one lifecycle slot:
+  `POST /v1/embeddings/image` indexes keyframes, `POST
+  /v1/embeddings/frame-query` runs the *text* tower so `:q_img_vec`
+  (index-schema §4.5) has an encoder. A sibling path, not a `space=` flag on
+  `/v1/embeddings`: after the hosted-provider `WORKER_URL` swap an unknown
+  field is ignored and answers with the wrong space, an unknown path 404s.
+  The text tower is trained to 64 tokens — queries only, never prose. The
+  transformers pin is in fact ≥4.56 (whisperX caps `huggingface-hub`), so the
+  worker applies the lowercase + pad-to-64 the 5.x processor would.
 - **Worker fixes from research:** OCR dependency is `rapidocr` 3.9.2 (not
   the frozen `rapidocr-onnxruntime`); OCR is CPU-only (no GPU lease
   involvement); PySceneDetect `ContentDetector` needs an explicit weights

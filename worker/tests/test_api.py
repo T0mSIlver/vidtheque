@@ -13,7 +13,14 @@ from vidtheque_worker.lifecycle import LifecycleManager
 
 
 @pytest.fixture
-def parts(recorder: Recorder, transcription, embeddings, image_embeddings, ocr_items):
+def parts(
+    recorder: Recorder,
+    transcription,
+    embeddings,
+    image_embeddings,
+    frame_query_embeddings,
+    ocr_items,
+):
     backends = {
         "stt": FakeBackend(
             "stt",
@@ -38,6 +45,7 @@ def parts(recorder: Recorder, transcription, embeddings, image_embeddings, ocr_i
             vram_estimate_mb=5000,
             recorder=recorder,
             result=image_embeddings,
+            text_result=frame_query_embeddings,
         ),
         "ocr": FakeBackend(
             "ocr",
@@ -275,6 +283,104 @@ def test_image_embed_missing_dependency_maps_to_503(parts, recorder):
 
 
 # --------------------------------------------------------------------------
+# frame queries (the frame model's text tower)
+# --------------------------------------------------------------------------
+
+
+def test_frame_query_answers_in_the_frame_space(client, parts):
+    backends, _ = parts
+    response = client.post(
+        "/v1/embeddings/frame-query", json={"input": "a terminal with a stack trace"}
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["model"] == "fake-frame-embed"
+    # 4, the frame width — not 3, the transcript one.
+    assert body["dimensions"] == 4
+    assert body["data"][0]["embedding"] == [0.9, 0.8, 0.7, 0.6]
+    # The text tower, not the image one.
+    assert backends["image_embed"].embed_text_calls[0][0][0] == [
+        "a terminal with a stack trace"
+    ]
+    assert backends["image_embed"].infer_calls == []
+
+
+def test_frame_query_accepts_a_list(client, parts):
+    backends, _ = parts
+    response = client.post(
+        "/v1/embeddings/frame-query", json={"input": ["slide with a bar chart", "a face"]}
+    )
+    assert response.status_code == 200
+    assert backends["image_embed"].embed_text_calls[0][0][0] == [
+        "slide with a bar chart",
+        "a face",
+    ]
+
+
+def test_frame_query_reuses_the_already_loaded_frame_model(client, parts, recorder):
+    """Both towers are one checkpoint in one slot: the query path must not
+    reload the 5 GB model that the image path already has resident."""
+    backends, manager = parts
+    client.post("/v1/embeddings/image", files=_jpegs(1))
+    client.post("/v1/embeddings/frame-query", json={"input": "a terminal"})
+    assert manager.slot("image_embed").load_count == 1
+    assert recorder.names("load", "unload") == ["image_embed"]
+    assert recorder.names("infer", "embed_text") == ["image_embed", "image_embed"]
+    assert backends["image_embed"].loaded
+
+
+def test_frame_query_does_not_touch_the_text_embedder(client, parts):
+    backends, _ = parts
+    client.post("/v1/embeddings/frame-query", json={"input": "a terminal"})
+    assert not backends["embed"].loaded
+    assert backends["embed"].infer_calls == []
+
+
+def test_frame_query_is_not_the_openai_embeddings_endpoint(client, parts):
+    """/v1/embeddings stays the transcript model whatever is asked of it."""
+    backends, _ = parts
+    response = client.post(
+        "/v1/embeddings",
+        json={"input": "a terminal", "model": "google/siglip2-so400m-patch16-naflex"},
+    )
+    assert response.json()["dimensions"] == 3
+    assert backends["image_embed"].embed_text_calls == []
+
+
+def test_frame_query_rejects_empty_input(client):
+    response = client.post("/v1/embeddings/frame-query", json={"input": []})
+    assert response.status_code == 400
+
+
+def test_frame_query_rejects_an_oversized_batch(client):
+    response = client.post("/v1/embeddings/frame-query", json={"input": ["q"] * 33})
+    assert response.status_code == 413
+
+
+def test_frame_query_ignores_the_text_endpoint_s_input_type(client, parts):
+    """No ``input_type`` here: the frame model is symmetric and this path is the
+    query side by construction. A caller that sends it anyway (the same client
+    talks to both endpoints) is answered, not 422'd — the field would have
+    meant ``query``, which is what this endpoint already is."""
+    backends, _ = parts
+    response = client.post(
+        "/v1/embeddings/frame-query", json={"input": "a terminal", "input_type": "query"}
+    )
+    assert response.status_code == 200
+    assert backends["image_embed"].embed_text_calls[0][1] == {}
+
+
+def test_frame_query_missing_dependency_maps_to_503(parts):
+    backends, manager = parts
+    backends["image_embed"].load_error = BackendUnavailable("transformers missing")
+    app = create_app(settings=Settings(_env_file=None), manager=manager)
+    with TestClient(app) as c:
+        response = c.post("/v1/embeddings/frame-query", json={"input": "a terminal"})
+    assert response.status_code == 503
+    assert response.json()["error"]["type"] == "backend_unavailable"
+
+
+# --------------------------------------------------------------------------
 # ocr
 # --------------------------------------------------------------------------
 
@@ -362,6 +468,7 @@ def test_openapi_documents_the_contract(client):
         "/v1/audio/transcriptions",
         "/v1/embeddings",
         "/v1/embeddings/image",
+        "/v1/embeddings/frame-query",
         "/v1/ocr",
         "/status",
         "/healthz",

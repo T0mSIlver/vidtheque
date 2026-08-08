@@ -54,6 +54,7 @@ class FakeBackend:
         vram_estimate_mb: int = 1000,
         recorder: Recorder | None = None,
         result: Any = None,
+        text_result: Any = None,
         infer_seconds: float = 0.0,
         load_seconds: float = 0.0,
         load_error: Exception | None = None,
@@ -65,12 +66,14 @@ class FakeBackend:
         self._vram = vram_estimate_mb
         self.recorder = recorder or Recorder()
         self.result = result
+        self.text_result = text_result
         self.infer_seconds = infer_seconds
         self.load_seconds = load_seconds
         self.load_error = load_error
         self.infer_error = infer_error
         self._loaded = False
         self.infer_calls: list[tuple[tuple, dict]] = []
+        self.embed_text_calls: list[tuple[tuple, dict]] = []
         self.concurrent = 0
         self.max_concurrent = 0
         self._lock = threading.Lock()
@@ -117,6 +120,16 @@ class FakeBackend:
         finally:
             with self._lock:
                 self.concurrent -= 1
+
+    def embed_text(self, *args: Any, **kwargs: Any) -> Any:
+        """The second tower of an image-embedding backend: same object, same
+        slot. Recorded separately so a test can tell the towers apart."""
+        assert self._loaded, f"{self.task} embedded text while unloaded"
+        self.recorder.record("embed_text", self.task)
+        self.embed_text_calls.append((args, kwargs))
+        if self.infer_error is not None:
+            raise self.infer_error
+        return self.text_result if self.text_result is not None else self.result
 
 
 class FakeVram:
@@ -198,6 +211,15 @@ def image_embeddings() -> Embeddings:
         vectors=[[0.1, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8]],
         dims=4,
         model="fake-frame-embed",
+    )
+
+
+@pytest.fixture
+def frame_query_embeddings() -> Embeddings:
+    """Same width as the image fixture — same space, that is the point — but
+    different values, so a test can prove which tower answered."""
+    return Embeddings(
+        vectors=[[0.9, 0.8, 0.7, 0.6]], dims=4, model="fake-frame-embed"
     )
 
 

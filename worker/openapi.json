@@ -254,6 +254,47 @@
         "title": "EmbeddingsResponse",
         "type": "object"
       },
+      "FrameQueryRequest": {
+        "description": "A query for the frame vector space, run through the frame model's text tower.\n\nNo ``input_type``: the frame model is symmetric and this endpoint is the\nquery side by construction \u2014 the document side is images, and it has its\nown endpoint. Keep the strings short; SigLIP 2's trained text context is 64\ntokens, and anything past it is dropped without an error.",
+        "properties": {
+          "encoding_format": {
+            "const": "float",
+            "default": "float",
+            "title": "Encoding Format",
+            "type": "string"
+          },
+          "input": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Input"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          }
+        },
+        "required": [
+          "input"
+        ],
+        "title": "FrameQueryRequest",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -504,7 +545,7 @@
     }
   },
   "info": {
-    "description": "Stateless inference worker for vidtheque: speech-to-text with word timestamps,\ntext embeddings, frame embeddings, and on-screen-text OCR. One lifecycle manager\nowns the GPU \u2014 requests queue rather than compete. The transcription and text\nembedding endpoints follow OpenAI's shapes so a GPU-less deployment can swap in a\nhosted provider. Text and frame embeddings are separate vector spaces with\nseparate models and separate endpoints; they are never interchangeable.\n",
+    "description": "Stateless inference worker for vidtheque: speech-to-text with word timestamps,\ntext embeddings, frame embeddings, and on-screen-text OCR. One lifecycle manager\nowns the GPU \u2014 requests queue rather than compete. The transcription and text\nembedding endpoints follow OpenAI's shapes so a GPU-less deployment can swap in a\nhosted provider. Text and frame embeddings are separate vector spaces with\nseparate models and separate endpoints; they are never interchangeable. A\nnatural-language query reaches the frame space through the frame model's own\ntext tower, on /v1/embeddings/frame-query \u2014 never through /v1/embeddings.\n",
     "title": "vidtheque-worker",
     "version": "0.0.1"
   },
@@ -618,6 +659,45 @@
           }
         },
         "summary": "Embed text (OpenAI-compatible)"
+      }
+    },
+    "/v1/embeddings/frame-query": {
+      "post": {
+        "description": "Vectors are L2-normalised and comparable to `/v1/embeddings/image`\noutput \u2014 and to nothing `/v1/embeddings` returns.",
+        "operationId": "frame_query_embeddings_v1_embeddings_frame_query_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FrameQueryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbeddingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Embed a text query into the frame vector space"
       }
     },
     "/v1/embeddings/image": {

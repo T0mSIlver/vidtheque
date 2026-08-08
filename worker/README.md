@@ -9,11 +9,12 @@ hosted provider instead.
 | POST   | `/v1/audio/transcriptions` | OpenAI multipart; `response_format=verbose_json` returns segments with word timestamps |
 | POST   | `/v1/embeddings`           | OpenAI JSON; `input` is a string or a list of strings     |
 | POST   | `/v1/embeddings/image`     | custom multipart; images in, one vector each, upload order |
+| POST   | `/v1/embeddings/frame-query` | custom JSON; a short text query into the *frame* space |
 | POST   | `/v1/ocr`                  | custom multipart; images in, `{text, confidence, bbox}` out |
 | GET    | `/status`                  | loaded models, VRAM free/used, queue depth               |
 | GET    | `/healthz`                 | liveness                                                 |
 
-## Two vector spaces, two endpoints
+## Two vector spaces, three endpoints
 
 Text and frames are embedded by different models into spaces that are not
 comparable — 1024 dims from `Qwen3-Embedding-0.6B` for transcripts, metadata and
@@ -23,6 +24,24 @@ separate endpoints rather than one polymorphic `/v1/embeddings` for two reasons:
 deployment can repoint `WORKER_URL` at a hosted provider, and a multipart branch
 would break that swap; and a single endpoint returning vectors from two spaces
 is an index-corruption bug waiting for a caller to make it.
+
+The frame space has two endpoints of its own because it has two towers.
+`/v1/embeddings/image` is the indexing side; `/v1/embeddings/frame-query` runs
+the *text* tower of the same checkpoint, which is the entire reason frames are
+embedded with SigLIP rather than captioned — "a terminal showing a stack trace"
+lands in the same 1152-d space as the frames themselves, with no second model,
+no second slot and no second load. Two things follow:
+
+- **It is a path, not a flag.** `space=frame` on `/v1/embeddings` would be
+  ignored by a hosted OpenAI provider after the `WORKER_URL` swap, which then
+  answers with its own text space at some other width — a silent index
+  corruption. An unknown path 404s instead.
+- **Keep queries short.** SigLIP 2's trained text context is 64 tokens
+  (`model_max_length` in the config is the `1e30` sentinel — ignore it), and
+  everything past it is dropped with no error. The backend passes the
+  lowercasing and `padding="max_length", max_length=64, truncation=True` that
+  transformers 4.x does not apply itself, and logs when a query fills the
+  window. Long text belongs on `/v1/embeddings`, in the other space.
 
 `/v1/embeddings` takes one non-OpenAI optional extra, `input_type`
 (`document` — the default — or `query`). An instruction-tuned embedder prefixes
@@ -39,7 +58,8 @@ checkpoint either way. Trained budgets are 128/256/576/784/1024.
 ## The two ideas worth knowing
 
 **Backend abstraction.** Each task (`stt`, `embed`, `image_embed`, `ocr`) is a
-protocol with `load()` / `unload()` / `infer()` / `vram_estimate_mb`.
+protocol with `load()` / `unload()` / `infer()` / `vram_estimate_mb` (plus
+`embed_text()` on `image_embed`, the second tower of the same checkpoint).
 Implementations register themselves in `backends/registry.py` and are selected
 by env (`STT_BACKEND=whisperx`, `EMBED_BACKEND=qwen3-embedding`,
 `IMAGE_EMBED_BACKEND=siglip2`, `OCR_BACKEND=rapidocr`). Adding a backend is one
@@ -56,9 +76,10 @@ against.
 - idle-TTL unload (`IDLE_UNLOAD_SECONDS`, default 300);
 - an optional resident *text* embedding model (`EMBED_RESIDENT=1`) that is
   exempt from eviction, for corpora where query-time embedding latency matters
-  more than the ~1.8 GB it holds. The frame embedder is never resident: it is
-  an indexing cost, not a query cost, and at ~5 GB it is the largest of the
-  four models;
+  more than the ~1.8 GB it holds. The frame embedder stays evictable even
+  though `/v1/embeddings/frame-query` made it a query-time model too: at ~5 GB
+  it is the largest of the four, so a cold load on a frame search is the trade
+  `EMBED_RESIDENT` deliberately does not extend to it;
 - an NVML free-VRAM check before every load, with LRU eviction of non-resident
   backends when the headroom is short (NVML missing → log and proceed);
 - `GPU_ACQUIRE_CMD` / `GPU_RELEASE_CMD` shell hooks around the first load and
