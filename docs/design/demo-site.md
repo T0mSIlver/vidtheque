@@ -1,0 +1,499 @@
+# The public demo — read-only mode, the `/api` facade, and the demo page
+
+Status: **design, then implementation.** Written before the code, per the task
+brief; the implementation follows it and any divergence is folded back here in
+the same commit (CLAUDE.md's contract rule).
+
+What this adds: a way to point a browser at a vidtheque instance and *see the
+corpus work* — search it, and ask a question about it — without an MCP client,
+without an account, and without the ability to change anything. It is one
+deployment mode of the same server, not a second application.
+
+Sources it must not contradict: `tool-surface.md` (the token-discipline rules
+apply verbatim to the facade), `DECISIONS.md` (auth modes, frame URLs),
+`index-schema.md` (nothing here writes).
+
+---
+
+## 1. The shape
+
+One flag turns the whole thing on:
+
+```
+VIDTHEQUE_PUBLIC_READONLY=1
+```
+
+It is a *mode*, resolved once at app-construction time, exactly like
+`VIDTHEQUE_AUTH` (`auth/modes.py`): one branch in `app.py`, never a per-route
+conditional. Set it and four things change together:
+
+| | off (default) | on |
+|---|---|---|
+| write tools (`index-video`, `tag-video`) | registered | **never registered** |
+| `/api/*` | absent (404) | served |
+| `/` | the MCP mount | the demo page |
+| rate limiting on `/api/*` and `/frames/*` | none | token bucket per IP |
+
+The read surface is untouched: seven read tools, three resources,
+`/frames/<id>.jpg`, `/healthz`, and `/mcp` all behave exactly as they do in a
+private deployment. The public instance is a *real* MCP server that anyone can
+add to their own agent — that is the point of the demo, and why the "add this
+corpus to your own agent" panel exists on the page.
+
+The intended production combination is:
+
+```
+VIDTHEQUE_AUTH=none
+VIDTHEQUE_PUBLIC_READONLY=1
+PUBLIC_URL=https://vidtheque.example.com
+VIDTHEQUE_PUBLIC_HOSTNAME=vidtheque.example.com
+OPENROUTER_API_KEY=sk-or-…
+```
+
+but the flag is orthogonal to the auth mode by construction. `token` or `oauth`
+plus the flag is a valid (if odd) combination: a credentialed read-only
+deployment. The frontend then cannot call `/api` without a credential and says
+so; nothing breaks.
+
+### 1.1 Why "not registered" and not "registered but refuses"
+
+A tool that exists and errors still costs the model context on every session,
+still appears in `tools/list`, and still invites a retry loop. A tool that was
+never registered is absent from `tools/list`, and a `tools/call` for it comes
+back as the SDK's unknown-tool error — the model reads "there is no such tool"
+and moves on. That is the honest description of a read-only corpus.
+
+Implementation: `register()` in `tools/__init__.py` grows one optional
+`hidden: frozenset[str]` argument, threaded from `build_mcp_server`. The
+*policy* — which tools are write tools — is not spelled out in the tools
+package; it is derived from the annotations already in the contract:
+
+```python
+WRITE_TOOLS = frozenset(n for n, a in ANNOTATIONS.items() if not a.read_only_hint)
+```
+
+so a tenth tool with `readOnlyHint: False` is masked the day it is added, with
+no second list to keep in sync. `job-status` stays: it is read-only, it is how
+a curious visitor sees that indexing is a real pipeline, and it exposes
+nothing a job id doesn't already name.
+
+---
+
+## 2. The `/api` facade
+
+The demo page is a browser. A browser cannot do an MCP session handshake, and
+should not have to: the frontend wants JSON, one request, no protocol version
+negotiation. So `/api` is a **facade over the same tool implementations** —
+`tools/search.run`, `tools/library.list_videos`, `tools/segment.run` — reading
+their `structuredContent` and re-shaping it for the page. Not a second query
+layer. Every clamp, every note, every `has_more` is the one the MCP tool
+computed.
+
+Facade rules:
+
+- **Token discipline carries over.** The facade passes its own, *tighter*
+  bounds into the tools: `limit` clamped to 1..20 (MCP allows 50),
+  `max_text_chars` clamped to 120..1000 with a default of 400. There is no
+  `max_text_chars=0` opt-out on a public endpoint — the full-transcript escape
+  hatch is for an owner's agent, not for anonymous traffic. `/api/ask`'s
+  internal tools are tighter still (§3.2).
+- **Typed errors survive the translation.** A tool returning `isError` carries
+  a `structuredContent.code`; `errors.HTTP_STATUS` already maps every `E_*`
+  code to an HTTP status, so the facade returns that status with
+  `{"error": code, "message": …, "next": …}`. One table, two consumers.
+- **Nothing new is queried.** The facade adds exactly two derived fields per
+  result — a `thumb` URL and a `timestamp` clock string — both computed from
+  data the tool already returned.
+
+### 2.1 `GET /api/search`
+
+```
+GET /api/search?q=kv+cache&content_type=all&limit=10&offset=0
+```
+
+| param | values | default |
+|---|---|---|
+| `q` | ≤ 512 chars | required in practice (an empty `q` with no filter is `E_EMPTY_QUERY`) |
+| `content_type` | `all` \| `transcript` \| `ocr` \| `frame` | `all` |
+| `limit` | 1..20 | 10 |
+| `offset` | 0..1000 | 0 |
+| `channel`, `video_id` | passthrough filters | — |
+
+```json
+{
+  "query": "kv cache",
+  "content_type": "all",
+  "results": [
+    {
+      "source": "transcript",
+      "video_id": "kCc8FmEb1nY",
+      "title": "Let's build GPT: from scratch",
+      "channel": "Andrej Karpathy",
+      "start": 12.0,
+      "end": 14.8,
+      "timestamp": "0:12",
+      "text": "we cache the keys and the values at every new token",
+      "link": "https://youtu.be/kCc8FmEb1nY?t=10",
+      "frame_id": "kCc8FmEb1nY-00000",
+      "thumb": "https://…/frames/kCc8FmEb1nY-00000.jpg?w=320&q=70",
+      "score": 0.0312
+    }
+  ],
+  "pagination": {"limit": 10, "offset": 0, "has_more": true, "approx_total": 38},
+  "notes": ["note: …"]
+}
+```
+
+`thumb` is `null` when the hit has no `frame_id` (a transcript-only hit in a
+video with no keyframes). The page falls back to a text card, not a broken
+image.
+
+`notes` is the same `note:` array the MCP payload prints. The page renders it
+in a muted line — "`all` means all" is a promise to a human too, and a search
+where the frame leg was skipped should say so.
+
+### 2.2 `GET /api/videos`
+
+The library listing, straight from `list-videos`:
+
+```
+GET /api/videos?limit=50&offset=0&q=&channel=
+```
+
+`limit` clamped 1..50, default 24. Returns `{"videos": [...], "pagination": …}`
+with the tool's records verbatim (`video_id`, `title`, `channel`, `published`,
+`duration`, `coverage`, `tags`, `link`) plus `thumb` — the video's first
+keyframe, when it has one.
+
+### 2.3 `GET /api/meta`
+
+What the page needs to render itself, and nothing else:
+
+```json
+{
+  "name": "vidtheque",
+  "version": "0.1.0",
+  "mcp_url": "https://vidtheque.example.com/mcp",
+  "auth": "none",
+  "ask_enabled": true,
+  "ask_model": "openai/gpt-oss-20b:free",
+  "videos": 42,
+  "limits": {"search_per_min": 30, "ask_per_min": 5, "ask_per_day": 50},
+  "repo": "https://github.com/T0mSIlver/vidtheque"
+}
+```
+
+`mcp_url` is derived from `PUBLIC_URL` — the same string `config.resource_url`
+builds, so the copy button on the page and the OAuth `resource` can never
+disagree. The page never hardcodes a hostname.
+
+`ask_enabled` is false when no `OPENROUTER_API_KEY` is configured; the page
+then hides the Ask toggle instead of offering a button that 503s.
+
+---
+
+## 3. `/api/ask` — the LLM mode
+
+```
+POST /api/ask   {"q": "how does paged attention reduce fragmentation?"}
+```
+
+A server-side agent loop against OpenRouter's OpenAI-compatible
+`/api/v1/chat/completions`, with **two** internal tools and a hard round cap.
+It exists to show the thing the corpus is actually for — an agent that answers
+from timestamped evidence — to a visitor who has not wired up an MCP client.
+
+```json
+{
+  "answer": "Paged attention keeps a block table … [1]",
+  "citations": [
+    {"n": 1, "video_id": "zduSFxRajkE", "title": "Making LLMs go brrr",
+     "channel": "GPU MODE", "t": 13, "timestamp": "0:13",
+     "link": "https://youtu.be/zduSFxRajkE?t=11", "thumb": "…"}
+  ],
+  "rounds": 2,
+  "model": "openai/gpt-oss-20b:free"
+}
+```
+
+### 3.1 The model
+
+`OPENROUTER_MODEL`, default **`openai/gpt-oss-20b:free`**.
+
+The brief asked for "the current free DeepSeek". Verified against
+`https://openrouter.ai/api/v1/models` on 2026-08-08: **there is no
+`deepseek/*:free` model on OpenRouter any more.** Fourteen `:free` ids exist;
+the DeepSeek family is all paid (cheapest `deepseek/deepseek-v4-flash-0731` at
+$0.09/M in). Of the free ids that advertise `tools` in
+`supported_parameters` — the hard requirement here, since the whole mode is
+function calling — `openai/gpt-oss-20b:free` is the pick: 131k context,
+the most widely exercised tool-calling free model on the platform, and an id
+that has been stable for a year. Alternatives worth a swap, all free and all
+tool-capable: `nvidia/nemotron-3-super-120b-a12b:free` (bigger, 262k),
+`google/gemma-4-31b-it:free`, `inclusionai/ling-3.0-tiny:free` (fastest).
+
+**This is a one-line env change, not a code change** — which is the reason it
+is an env var. Flagged for Tom in §7.
+
+### 3.2 The two internal tools
+
+The model never sees the nine-tool surface. It sees two, described in a handful
+of words each, because a 4-round budget over a free model is not the place for
+progressive disclosure:
+
+| tool | args | what it runs | bounds |
+|---|---|---|---|
+| `search` | `query`, `content_type?` | `tools/search.run` | `limit=6`, `max_text_chars=300`, `max_per_video=2` |
+| `get_segment_context` | `video_id`, `t` | `tools/segment.run` | `window=45`, `max_text_chars=1200` |
+
+Both are handed to the model as the **text** block the tool already renders —
+the model-readable form the whole contract is tuned for — never a JSON dump and
+never a full transcript. The caps above are the facade's, tighter than the MCP
+defaults, and they are server-side: the model cannot ask for more.
+
+`get_segment_context` is the second tool for one reason: a search hit is a
+sentence, and a good answer usually needs the sentence before and after it. One
+drill-down round is the difference between "he mentions the block table" and an
+answer that says what it does.
+
+### 3.3 The loop
+
+```
+system + user
+  ├─ round 1..4:  completion(tools=[search, get_segment_context])
+  │                 └─ tool_calls?  → run them, append results, loop
+  │                 └─ content?     → done
+  └─ final:       completion(tool_choice="none")   ← forced answer
+```
+
+- **Max 4 tool rounds** (`VIDTHEQUE_ASK_MAX_ROUNDS`). A model that is still
+  calling tools on round 5 gets one last completion with tools disabled, so
+  the visitor always gets prose rather than a spinner.
+- **Max 6 tool calls per round**, extras dropped with a note in the tool result
+  — a parallel-tool-call storm on a free model is how the daily budget dies.
+- Every search result the loop sees is recorded, keyed by
+  `(video_id, int(t))`. Citations in the response are **only** from that set:
+  the model can cite `[3]`, but it cannot invent video 4. A citation marker
+  pointing at nothing is stripped from the answer text rather than rendered as
+  a dead link.
+- The system prompt is short and says the two things that matter: answer only
+  from tool results, and mark each claim with the `[n]` of the result it came
+  from.
+- One overall wall-clock budget (`VIDTHEQUE_ASK_TIMEOUT_S`, default 90) across
+  the whole loop, not per request. A free-tier queue that stalls turns into a
+  clean 503, not a held connection.
+
+### 3.4 Degradation — the part that has to be right
+
+The free tier *will* be unavailable. That is the normal case, not the edge
+case, and the frontend is built around it: the Ask toggle degrades to search,
+which always works.
+
+| condition | status | `reason` |
+|---|---|---|
+| no `OPENROUTER_API_KEY` | 503 | `not_configured` |
+| upstream 401/403 (key revoked, out of credit) | 503 | `upstream_rejected` |
+| upstream 429 | 503 | `upstream_rate_limited` |
+| upstream 5xx / timeout / connection error | 503 | `upstream_unavailable` |
+| daily budget spent (§4) | 503 | `budget_exhausted` |
+
+Body, in every case, the same shape:
+
+```json
+{
+  "error": "llm_unavailable",
+  "reason": "upstream_rate_limited",
+  "message": "LLM mode unavailable — use search.",
+  "retry_after_s": 60
+}
+```
+
+**Never leaked:** the API key (obviously), the upstream response body, the
+upstream status line, the model's system prompt, or any exception text from
+`httpx2`. The server logs the upstream status and a 200-char slice of the body
+at WARNING for the operator; the client gets the table above and nothing else.
+An upstream error body is attacker-controlled text and a provider-detail leak;
+there is no version of it that helps a visitor.
+
+The frontend renders the `message` verbatim in the answer pane with a "search
+instead" button, and keeps the query in the box.
+
+---
+
+## 4. Rate limiting
+
+App-level, in-process, token bucket. On `/api/*` and `/frames/*`, in public
+mode only.
+
+**In-memory, single process, deliberately.** vidtheque is one uvicorn process
+holding one SQLite writer; there is no second replica for a shared counter to
+be shared with. If this ever grows a replica, the limiter is the first thing
+that needs Redis — and that is a bigger change than swapping a backend, because
+the SQLite writer would need to move first. Stated here so nobody reads the
+in-memory dict as an oversight. It is also the reason the daily `ask` cap is
+approximate across a restart: the buckets are reset by a redeploy. For a budget
+guard on a free tier, that is acceptable; for anything where money is at stake,
+it would not be.
+
+### 4.1 The buckets
+
+| bucket | routes | default | env |
+|---|---|---|---|
+| `search` | `/api/search`, `/api/videos`, `/api/meta` | 30/min per IP | `VIDTHEQUE_RATE_SEARCH_PER_MIN` |
+| `ask` | `/api/ask` | 5/min per IP | `VIDTHEQUE_RATE_ASK_PER_MIN` |
+| `ask_global` | `/api/ask` | 50/day, whole server | `VIDTHEQUE_RATE_ASK_PER_DAY` |
+| `frames` | `/frames/*` | 120/min per IP | `VIDTHEQUE_RATE_FRAMES_PER_MIN` |
+
+`frames` is loose on purpose: one screen of results is ~10 thumbnails, so a
+visitor paging through the corpus legitimately fetches a hundred images a
+minute. It is there to stop a scraper walking the whole keyframe directory, not
+to police normal browsing.
+
+`/api/ask` is charged against **both** its per-IP bucket and the global one; the
+per-IP check runs first, so one visitor cannot spend the day's budget before
+being told to slow down.
+
+### 4.2 The bucket, exactly
+
+Capacity `n`, refilled continuously at `n / window` tokens per second, capped at
+`n`. A request costs one token. Empty bucket → 429.
+
+Continuous refill rather than a fixed window because a fixed window lets a
+client spend `2n` across a window boundary, and because a visitor who was
+limited a moment ago should get their next request back in seconds, not at the
+top of the minute. `Retry-After` is `ceil((1 - tokens) / rate)` — the real
+answer to "when will this work", rounded up, minimum 1.
+
+Capacity doubles as the burst allowance: 30/min means a visitor arriving cold
+can fire 30 requests immediately and then one every two seconds. That is what a
+search-as-you-type frontend needs, and the page debounces anyway.
+
+The daily bucket is the same maths with `window = 86400`, so the budget trickles
+back through the day instead of everything unblocking at UTC midnight.
+
+Response on refusal:
+
+```
+HTTP/1.1 429 Too Many Requests
+Retry-After: 4
+X-RateLimit-Limit: 30
+X-RateLimit-Remaining: 0
+
+{"error": "E_RATE_LIMIT", "message": "Too many requests — 30 per minute.",
+ "retry_after_s": 4, "bucket": "search"}
+```
+
+`E_RATE_LIMIT` is already in `errors.HTTP_STATUS` at 429; the facade and the
+tool surface use the same code for the same condition.
+
+### 4.3 Identifying the client
+
+`VIDTHEQUE_TRUSTED_IP_HEADER`, default `CF-Connecting-IP`. When the header is
+present it wins; otherwise the ASGI `client` address. Set it to empty to trust
+only the socket.
+
+**This is trust-on-configuration and the caveat is real:** any client can send
+`CF-Connecting-IP: 1.2.3.4` and get a fresh bucket. Behind Cloudflare that is
+impossible — the edge overwrites it — which is the deployment this is written
+for. Exposed directly to the internet, set `VIDTHEQUE_TRUSTED_IP_HEADER=` and
+take the socket address. The default favours the documented deployment and the
+env var exists so the other one is one line away.
+
+Keys are `(bucket, client)`. The dict is swept when it exceeds
+`VIDTHEQUE_RATE_MAX_KEYS` (default 10,000): full buckets are dropped first,
+because a full bucket is indistinguishable from a client that was never seen.
+
+---
+
+## 5. Frames in public mode
+
+`get-frames` returns HMAC-signed capability URLs by default (DECISIONS.md), and
+`/frames/*` accepts a signature, a bearer, or a session cookie. In
+`AUTH=none` — the intended public deployment — `auth.frame_signer` is `None`
+and the route is open, so the facade emits **unsigned** thumbnail URLs:
+
+```
+/frames/kCc8FmEb1nY-00000.jpg?w=320&q=70
+```
+
+That is the honest thing to do rather than a decoration: signing a URL on a
+server that serves the same file unsigned to anyone who asks buys nothing, and
+`get-frames` already says so in its payload ("URLs do not expire and are not
+signed: this server runs with auth disabled"). What guards the keyframe
+directory in public mode is **the rate limiter**, not the signature — a scraper
+gets 120 images a minute and a 429, which makes walking a 600-frame-per-video
+corpus slow enough to be pointless.
+
+If the flag is combined with `token`/`oauth`, `frame_signer` exists and the
+facade signs its thumbnails exactly as `get-frames` does, using the same
+`FrameUrlSigner.url()`. One helper, both callers, no second signing scheme.
+
+Thumbnails are requested at `w=320&q=70` — the route clamps `w` to 128..1280
+and re-serves the stored JPEG; it does **not** resize (there is no image
+pipeline on this path). The width is a hint the frontend also applies in CSS.
+
+---
+
+## 6. The page
+
+Served at `/` from `vidtheque_mcp/public/static/`, three files, no build step,
+no framework, no external requests. `index.html` + `app.js` + `style.css`,
+shipped inside the wheel (hatchling includes package data under the package
+directory).
+
+The aesthetic target is a **search engine, not a dashboard**: a column of text
+on a plain ground, one accent colour, system fonts, no cards-with-shadows, no
+sidebar, no charts. The corpus is the content; the chrome should be nearly
+invisible. Dark mode via `prefers-color-scheme` with both palettes defined as
+CSS custom properties on `:root`.
+
+Layout, top to bottom:
+
+1. **Header** — wordmark, one line of what it is, and the Ask toggle (hidden
+   when `ask_enabled` is false).
+2. **Search box** — autofocus, submits on Enter, debounced at 250 ms.
+3. **Filter chips** — `all` / `transcript` / `on-screen text` / `frames`,
+   mapping to `content_type`. `all` is selected by default and the chip row
+   never disappears.
+4. **Results** — one row per hit, hairline-separated: thumbnail (or a muted
+   placeholder), title · channel, the timestamped snippet with the query terms
+   marked, and `[mm:ss] ↗ youtu.be` opening the video at the moment in a new
+   tab. The whole row is the link.
+5. **Ask pane** (toggle on) — the answer as prose with `[n]` markers rendered as
+   clickable citation chips that scroll to a citation list of the same result
+   rows. A 503 replaces the pane with the degradation message and a "search
+   instead" button.
+6. **"Add this corpus to your own agent"** — the `mcp_url` from `/api/meta`, a
+   copy button, and the one-liner:
+   `claude mcp add --transport http vidtheque <mcp_url>`. This is the panel
+   that makes the demo a demo *of an MCP server* rather than of a search box.
+7. **Footer** — "a vidtheque demo — self-hosted video-corpus MCP server", the
+   GitHub link, and the sentence that matters legally and ethically: results
+   link to the original talks on YouTube; vidtheque indexes what it watched and
+   sends you back to the source.
+
+Accessibility floor: real `<form>`, real `<a href>` on every result (so
+middle-click works), `aria-live="polite"` on the results count and the answer
+pane, visible focus rings, and no colour-only state.
+
+No inline `<script>` beyond a nonce-free module tag — the page is static files
+served from disk, so a CSP could be added later without rewriting it.
+
+---
+
+## 7. Open, for Tom
+
+1. **The model default.** `openai/gpt-oss-20b:free` stands in for the DeepSeek
+   free tier that no longer exists (§3.1). If you want a specific one, it is
+   `OPENROUTER_MODEL=` and a restart.
+2. **The daily budget is 50 asks.** That is a number chosen to be visibly
+   conservative, not measured against anything. Raise it once the free tier's
+   real behaviour is known.
+3. **Visual choices are mine** and are the easiest thing here to overrule: one
+   accent colour (a warm amber that reads on both grounds), the 44rem-ish
+   column, hairline rows over cards, and thumbnails at 96px. The whole palette
+   is six custom properties at the top of `style.css`.
+4. **`/api` is public-mode-only.** A private deployment that wants the JSON
+   facade for its own tooling has to set the flag, which also masks its write
+   tools. If that combination is ever wanted, the flag splits in two; it is not
+   worth two flags today.
