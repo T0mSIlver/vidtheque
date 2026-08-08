@@ -633,6 +633,24 @@ RETURNING id, public_id, kind, args_json;
 job_items.video_id`). `NULL video_id` rows are exempt, because SQL NULLs are
 distinct — which is exactly right for playlist items not yet resolved to a video.
 
+That exemption has a sharp edge, and it drew blood: an item whose video is not
+`ready` yet resolves to `NULL` at insert, so the index cannot refuse it until the
+pipeline attaches the video mid-run — and that refusal was read as "duplicate
+inside this expansion" and *skipped*, which is how an `index-video` that fetched
+nothing reported `done`. `index-video` now resolves the video row whatever its
+`index_state`, so the guard fires at insert, and it resolves a claim before
+creating the job:
+
+| claim on the video | `force_reindex=false` | `force_reindex=true` |
+|---|---|---|
+| live (running, heartbeat fresh) | `E_INDEXING`, names the job | `E_INDEXING`, names the job — cancel it, then retry |
+| queued, or just reclaimed from a dead process | `E_INDEXING`, points at `force_reindex` | **supersedes**: the old item goes `cancelled` with `E_SUPERSEDED`, the new job runs |
+
+Mid-run, `attach_video` distinguishes the two refusals it always could have: the
+same job (a duplicate inside one expansion — `skipped`, with the reason on the
+row) from another job (`E_INDEXING`, a *failed* item, because an item that
+indexed nothing must never read as work done).
+
 **Progress** is a rollup, maintained by trigger so it cannot be forgotten:
 
 ```sql

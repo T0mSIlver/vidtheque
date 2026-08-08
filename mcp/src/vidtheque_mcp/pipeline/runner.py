@@ -209,7 +209,7 @@ class IndexingPipeline:
         urls = [entry.url for entry in entries][:max_items]
         added = await self.db.write(lambda c: store.append_items(c, run.ctx.job_id, urls))
         await run.ctx.log(f"expanded {url} into {added} item(s)", "info", stage="fetch")
-        raise ItemSkipped(f"expanded into {added} item(s)")
+        raise ItemSkipped(f"expanded into {added} item(s)", code="E_EXPANDED")
 
     # ------------------------------------------------------------------ fetch
 
@@ -229,7 +229,7 @@ class IndexingPipeline:
                 max_items = int(run.args.get("max_items") or 25)
                 urls = [e.url for e in playlist_entries(info, max_items)]
                 added = await self.db.write(lambda c: store.append_items(c, run.ctx.job_id, urls))
-                raise ItemSkipped(f"expanded into {added} item(s)")
+                raise ItemSkipped(f"expanded into {added} item(s)", code="E_EXPANDED")
             meta = parse_info(info, url, getattr(self.source, "version", None))
         except Unavailable as exc:
             raise ItemFailed("E_UNSUPPORTED_SOURCE", str(exc), retryable=False) from exc
@@ -243,10 +243,28 @@ class IndexingPipeline:
             ) from exc
 
         run.meta = meta
-        video_id = await self.db.write(lambda c: _land_metadata(c, meta, run.ctx.item_id))
+        video_id, claim = await self.db.write(
+            lambda c: _land_metadata(c, meta, run.ctx.item_id)
+        )
         if video_id is None:
-            # Another item of this job is already indexing the same video.
-            raise ItemSkipped(f"{meta.source_id} is already being indexed by this job")
+            if claim.same_job:
+                # A playlist listing the same video twice: bookkeeping, not an
+                # error, and the other item is doing the work.
+                raise ItemSkipped(
+                    f"{meta.source_id} is already an item of this job",
+                    code="E_DUPLICATE_ITEM",
+                )
+            # Another *job* holds the claim. Before the crash sweep existed
+            # this was silently skipped, and a job whose only item skipped read
+            # as `done` with nothing fetched. It is a typed failure now.
+            holder = claim.job_public_id or "another job"
+            raise ItemFailed(
+                "E_INDEXING",
+                f"{meta.source_id} is already claimed by {holder}; nothing was "
+                "indexed by this item. Wait for that job, or cancel it and retry "
+                "with force_reindex=true.",
+                retryable=False,
+            )
         run.video_id = video_id
         run.stages = await self.db.read(lambda c: store.stage_map(c, video_id))
         await run.ctx.log(
@@ -804,13 +822,14 @@ class IndexingPipeline:
 # ------------------------------------------------------------------ helpers
 
 
-def _land_metadata(conn: Any, meta: VideoMeta, item_id: int) -> int | None:
+def _land_metadata(
+    conn: Any, meta: VideoMeta, item_id: int
+) -> tuple[int | None, store.Claim]:
     """Video row, chapters and links in one transaction, then claim the item."""
     video_id = store.upsert_video(conn, meta)
     store.replace_chapters(conn, video_id, meta)
-    if not store.attach_video(conn, item_id, video_id):
-        return None
-    return video_id
+    claim = store.attach_video(conn, item_id, video_id)
+    return (video_id if claim.ok else None), claim
 
 
 def _dimension_mismatch(

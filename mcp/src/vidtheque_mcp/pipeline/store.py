@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from dataclasses import dataclass
 from typing import Any, Sequence
 
 from ..db.queries import pack_f32
@@ -397,19 +398,46 @@ def _clamp01(value: float) -> float:
 # ---------------------------------------------------------------------- jobs
 
 
-def attach_video(conn: sqlite3.Connection, item_id: int, video_id: int) -> bool:
+@dataclass(frozen=True)
+class Claim:
+    """The outcome of pointing an item at its video.
+
+    ``ok`` is the common case. A refusal is *not* one thing: a duplicate inside
+    one expansion (`same_job`) is bookkeeping the caller skips, while another
+    job holding the claim is a collision the caller must report — reading the
+    second as the first is how an `index-video` that fetched nothing reported
+    `done`.
+    """
+
+    ok: bool
+    same_job: bool = False
+    job_public_id: str | None = None
+
+
+def attach_video(conn: sqlite3.Connection, item_id: int, video_id: int) -> Claim:
     """Point the job item at the video row it resolved to.
 
     Can legitimately fail: `job_items_one_inflight` is a partial unique index,
     so a second queued item for the same video is refused at this moment rather
-    than at insert. The caller skips that item — it is a duplicate inside one
-    expansion, not an error.
+    than at insert.
     """
     try:
         conn.execute("UPDATE job_items SET video_id = ? WHERE id = ?", (video_id, item_id))
     except sqlite3.IntegrityError:
-        return False
-    return True
+        holder = conn.execute(
+            "SELECT i.job_id, j.public_id, (i.job_id = (SELECT job_id FROM job_items "
+            "WHERE id = ?)) AS same_job FROM job_items i JOIN jobs j ON j.id = i.job_id "
+            "WHERE i.video_id = ? AND i.state IN ('queued','running') AND i.id <> ? LIMIT 1",
+            (item_id, video_id, item_id),
+        ).fetchone()
+        if holder is None:  # pragma: no cover - the clash vanished under us
+            return Claim(ok=False)
+        return Claim(
+            ok=False,
+            same_job=bool(holder["same_job"]),
+            job_public_id=str(holder["public_id"]),
+        )
+    return Claim(ok=True)
 
 
 def append_items(conn: sqlite3.Connection, job_id: int, urls: Sequence[str]) -> int:

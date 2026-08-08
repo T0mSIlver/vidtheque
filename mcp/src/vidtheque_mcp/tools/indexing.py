@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from typing import Any
+from typing import Any, Sequence
 
 from mcp_types import CallToolResult
 
@@ -92,6 +92,10 @@ async def index_video(
             "fix the config/dimension mismatch and restart; search still works.",
         )
 
+    # A claim whose process died must not stand in the way of a new job: sweep
+    # before looking, so "already indexing" only ever means a live job.
+    await _reclaim_stale(deps)
+
     # Already indexed, no force_reindex -> no job, return the existing id.
     existing = await deps.db.read(lambda c: _existing(c, normalized))
     if len(existing) == len(normalized) and not force_reindex:
@@ -107,7 +111,12 @@ async def index_video(
             {"job_id": None, "already_indexed": [r["public_id"] for r in existing.values()]},
         )
 
-    items = [(u, existing[u]["id"] if u in existing else None) for u in normalized]
+    # Every video we already have a row for, whatever state it is in — an
+    # `indexing` row is exactly the one whose claim has to be checked, and
+    # looking only at `ready` rows is what let a second job through with a
+    # NULL `video_id` and no guard on it.
+    known = await deps.db.read(lambda c: _known(c, normalized))
+    items = [(u, known[u]["id"] if u in known else None) for u in normalized]
     args: dict[str, Any] = {
         "expand": expand,
         "max_items": max_items,
@@ -117,12 +126,13 @@ async def index_video(
     }
     try:
         job_public_id = await deps.db.write(
-            lambda c: jobs_store.create_job(
+            lambda c: _create_job(
                 c,
+                items,
                 "reindex" if force_reindex else "index",
                 args,
-                items,
                 priority=50 if priority == "high" else 100,
+                force=force_reindex,
             )
         )
     except DuplicateInFlight as clash:
@@ -158,19 +168,99 @@ async def index_video(
 
 
 def _existing(conn: sqlite3.Connection, urls: list[str]) -> dict[str, sqlite3.Row]:
+    return _lookup(conn, urls, ready_only=True)
+
+
+def _known(conn: sqlite3.Connection, urls: list[str]) -> dict[str, sqlite3.Row]:
+    return _lookup(conn, urls, ready_only=False)
+
+
+def _lookup(
+    conn: sqlite3.Connection, urls: list[str], *, ready_only: bool
+) -> dict[str, sqlite3.Row]:
     found: dict[str, sqlite3.Row] = {}
+    clause = " AND index_state = 'ready'" if ready_only else ""
     for url in urls:
         source_id = source_id_of(url)
         if source_id is None:
             continue
         row = conn.execute(
             "SELECT id, public_id, title, indexed_at, index_state FROM videos "
-            "WHERE source_id = ? AND index_state = 'ready'",
+            "WHERE source_id = ?" + clause,
             (source_id,),
         ).fetchone()
         if row is not None:
             found[url] = row
     return found
+
+
+async def _reclaim_stale(deps: Deps) -> None:
+    """Requeue claims whose process is gone, through the runner when there is one.
+
+    The runner knows which jobs *this* process is driving; a sweep that does
+    not would eventually reclaim a job out from under a live event loop.
+    """
+    if deps.runner is not None:
+        await deps.runner.reclaim_stale()
+        return
+    stale_after_s = deps.settings.stale_claim_s
+    if await deps.db.read(lambda c: jobs_store.stale_claims(c, stale_after_s)):
+        await deps.db.write(lambda c: jobs_store.reclaim_stale(c, stale_after_s))
+
+
+def _create_job(
+    conn: sqlite3.Connection,
+    items: list[tuple[str, int | None]],
+    kind: str,
+    args: dict[str, Any],
+    *,
+    priority: int,
+    force: bool,
+) -> str:
+    """Resolve every in-flight claim, then insert the job — one transaction.
+
+    ``force_reindex`` **supersedes** a claim nobody is holding (a queued item,
+    or one just reclaimed from a dead process) and **refuses** a live one. What
+    it must never do is what it used to: create an item, let the partial unique
+    index refuse it mid-pipeline, and call the resulting no-op job `done`.
+    """
+    for url, video_id in items:
+        if video_id is None:
+            continue
+        claim = jobs_store.inflight_claim(conn, video_id)
+        if claim is None:
+            continue
+        if not force or claim["live"]:
+            raise _already_indexing(url, claim)
+        reason = f"superseded by a force_reindex of {url}"
+        jobs_store.cancel_item(conn, int(claim["item_id"]), reason)
+        jobs_store.log(conn, int(claim["job_id"]), reason, "warn", int(claim["item_id"]))
+    return jobs_store.create_job(conn, kind, args, items, priority)
+
+
+def _already_indexing(url: str, claim: sqlite3.Row) -> ToolError:
+    """Live claim -> refuse and say so; queued claim -> point at force_reindex.
+
+    Only ever raised with the video *not* queued: the caller is told what holds
+    it, never handed a job id that will do no work.
+    """
+    job = str(claim["public_id"])
+    if claim["live"]:
+        return ToolError(
+            "E_INDEXING",
+            f"{url} is being indexed right now by {job} "
+            f"(last progress {int(claim['quiet_s'])}s ago). Nothing was queued.",
+            f'job-status job_id="{job}" — wait for it to finish, or cancel it and '
+            "then retry with force_reindex=true.",
+            extra={"job_id": job},
+        )
+    return ToolError(
+        "E_INDEXING",
+        f"{url} is already queued by {job}. Nothing was queued.",
+        f'job-status job_id="{job}", or index-video force_reindex=true to '
+        "supersede that item and start fresh.",
+        extra={"job_id": job},
+    )
 
 
 # ------------------------------------------------------------------ job-status
@@ -253,15 +343,42 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
         lines.append("")
         lines.append(f"error: {first['error_code']} — {message}")
 
+    n_done = int(row["n_done"])
+    n_failed = int(row["n_failed"])
+    n_skipped = int(row["n_skipped"])
+    n_cancelled = int(row["n_cancelled"])
+    skipped_note = _skipped_note(items)
+
     lines.append("")
     if row["state"] == "done":
-        lines.append("Queryable now: everything from this job.")
-        lines.append('next: video-summary video_id="…"')
+        # "everything from this job" was printed unconditionally, including for
+        # a job whose only item was skipped and which therefore indexed
+        # nothing. The line says what the job produced, or that it produced
+        # nothing and why.
+        if n_done:
+            tail = _aside(n_failed, n_skipped, n_cancelled)
+            lines.append(f"Queryable now: the {n_done} video(s) this job indexed{tail}.")
+            lines.append('next: video-summary video_id="…"')
+        else:
+            lines.append("Queryable now: nothing — this job indexed no video.")
+            if skipped_note:
+                lines.append(skipped_note)
+            lines.append('next: index-video url="…" force_reindex=true to index it now.')
     elif row["state"] == "failed":
         lines.append("Queryable now: nothing from this job.")
         lines.append('next: index-video url="…" force_reindex=true to retry.')
+    elif row["state"] == "cancelled":
+        lines.append(
+            f"Queryable now: the {n_done} video(s) this job finished before it stopped."
+            if n_done
+            else "Queryable now: nothing — the job was cancelled before any video finished."
+        )
+        lines.append('next: index-video url="…" force_reindex=true to run it again.')
     else:
-        lines.append("Queryable now: nothing (data is written on stage completion).")
+        done_so_far = f"the {n_done} video(s) finished so far" if n_done else "nothing"
+        lines.append(
+            f"Queryable now: {done_so_far} (data is written on stage completion)."
+        )
         lines.append(f'next: job-status job_id="{row["public_id"]}" again in ~60s.')
 
     return text_result(
@@ -270,12 +387,43 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
             "job_id": str(row["public_id"]),
             "state": str(row["state"]),
             "progress": float(row["progress"] or 0.0),
+            # n_done + n_failed + n_skipped + n_cancelled == n_items once the
+            # job is terminal, so "done with nothing indexed" is visible in the
+            # numbers and not only in the prose.
             "n_items": int(row["n_items"]),
-            "n_done": int(row["n_done"]),
-            "n_failed": int(row["n_failed"]),
+            "n_done": n_done,
+            "n_failed": n_failed,
+            "n_skipped": n_skipped,
+            "n_cancelled": n_cancelled,
             "error_code": row["error_code"],
+            "note": row["error_message"] if row["state"] == "done" else None,
         },
     )
+
+
+def _aside(n_failed: int, n_skipped: int, n_cancelled: int) -> str:
+    parts = [
+        f"{count} {word}"
+        for count, word in (
+            (n_failed, "failed"),
+            (n_skipped, "skipped"),
+            (n_cancelled, "superseded"),
+        )
+        if count
+    ]
+    return f" ({', '.join(parts)})" if parts else ""
+
+
+def _skipped_note(items: Sequence[sqlite3.Row]) -> str | None:
+    """Name what was skipped and why, from the rows themselves."""
+    reasons = [
+        f"  {i['source_url']}: {str(i['error_message'])[:MAX_ERROR_CHARS]}"
+        for i in items
+        if i["state"] in ("skipped", "cancelled") and i["error_message"]
+    ]
+    if not reasons:
+        return None
+    return "skipped:\n" + "\n".join(reasons[:5])
 
 
 def _wire_state(item: sqlite3.Row, wire_pos: int, current_pos: int | None) -> str:

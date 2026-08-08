@@ -1052,10 +1052,18 @@ No job created. next: video-summary video_id="Qk7mF2xLp0A", or index-video force
 the payload lists at most **10 titles**, then `… and 43 more`. Never echoes the
 full expansion. Fixed-size response regardless of batch size.
 
+**`force_reindex` on a video that is already being indexed** supersedes or
+refuses, never silently no-ops (index-schema §1.9): a claim nobody is holding —
+queued, or reclaimed from a process that died — is cancelled and the fresh job
+takes the video; a *live* claim is `E_INDEXING` naming the job that holds it.
+The one thing it must never do is create a job that skips its only item and
+reports `done`, which is what it did until 2026-08-08.
+
 **Errors:** `E_UNSUPPORTED_SOURCE` (yt-dlp can't handle it — lists what is
 supported), `E_BAD_PARAM` (malformed URL, bad tag namespace — lists valid
-namespaces), `E_RATE_LIMIT` (`retry_after_s`), `E_BUSY` (queue at capacity —
-`retry_after_s`), `E_INTERNAL`.
+namespaces), `E_INDEXING` (a live job already holds one of those videos —
+carries its `job_id`), `E_RATE_LIMIT` (`retry_after_s`), `E_BUSY` (queue at
+capacity — `retry_after_s`), `E_INTERNAL`.
 
 **Annotations:** `{title: "Index a video", readOnlyHint: false,
 idempotentHint: true, openWorldHint: true}`. Idempotent because the same URL
@@ -1118,6 +1126,24 @@ job_c19aa4e2b530  queued         0%  (playlist, 12 videos)
 job_5d0e77af1cc2  failed         —   HcQ8pL3vN1s  yt-dlp: video unavailable (private)
 next: index-video url="…" force_reindex=true to retry a failed job.
 ```
+
+**The "Queryable now" line says what the job produced**, and is derived, never
+assumed. It printed "everything from this job" on every `done` job until
+2026-08-08, including one whose only item had been skipped and which had indexed
+nothing at all:
+
+```
+Queryable now: the 12 video(s) this job indexed (1 failed, 2 skipped).
+Queryable now: nothing — this job indexed no video.
+skipped:
+  https://youtu.be/Qk7mF2xLp0A: aB3dEfG7hIj is already claimed by job_2b81c40dd7e9
+next: index-video url="…" force_reindex=true to index it now.
+```
+
+The payload carries `n_items`, `n_done`, `n_failed`, `n_skipped` and
+`n_cancelled`; on a terminal job the four counts sum to `n_items`, so a job that
+did nothing cannot read as one that did. `note` carries the job's own
+`E_NOTHING_INDEXED` explanation when there is one.
 
 Failure detail carries the actionable cause, never a stack trace:
 
