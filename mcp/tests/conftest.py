@@ -15,6 +15,7 @@ from typing import Sequence
 
 import pytest
 
+from .pipeline_fakes import clip  # noqa: F401 — session fixture for the frame tests
 from vidtheque_mcp.app import Assembled, assemble
 from vidtheque_mcp.config import Settings
 from vidtheque_mcp.db import migrations
@@ -333,8 +334,22 @@ def fake_embeddings() -> FakeEmbeddings:
 
 @pytest.fixture
 async def assembled(seeded: Settings, fake_embeddings: FakeEmbeddings):
-    """An assembled app with the lifespan entered, pipeline runner off."""
-    parts: Assembled = assemble(seeded, embeddings=fake_embeddings, run_pipeline=False)
+    """An assembled app with the lifespan entered, pipeline runner off.
+
+    The pipeline is the *placeholder* on purpose. These tests are about the
+    tool surface and the job bookkeeping around the seam; injecting the real
+    indexing pipeline here would put yt-dlp behind a `run_once()` call, and a
+    test suite that can reach YouTube is a test suite that fails on a plane.
+    The real pipeline is exercised in `test_pipeline_*.py`, against fakes.
+    """
+    from vidtheque_mcp.jobs.runner import NotImplementedPipeline
+
+    parts: Assembled = assemble(
+        seeded,
+        embeddings=fake_embeddings,
+        run_pipeline=False,
+        pipeline=NotImplementedPipeline(),
+    )
     await parts.db.open()
     try:
         yield parts
