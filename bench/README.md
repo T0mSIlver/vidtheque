@@ -67,6 +67,7 @@ than no number.
 | `harness.py` | measurement plumbing — VRAM sampler, `/status` poller, HTTP, worker process control. Stdlib only |
 | `gpu_validation.py` | the lifecycle manager against real hardware: load/unload VRAM discipline, residency, eviction, lease hooks |
 | `ballast.py` | squats on VRAM in a separate process, so admission control has a co-tenant to refuse |
+| `keyframe_decode.py` | the CPU side: single-stream vs dual-stream shot detection, timings *and* an equivalence check |
 | `results/` | committed measurements, with the raw JSON they came from |
 
 `gpu_validation.py` answers a different question from `run.py`: not "which
@@ -79,6 +80,27 @@ uv run --no-sync python bench/gpu_validation.py --list
 uv run --no-sync python bench/gpu_validation.py stt embed image_embed ocr \
     --audio talk.opus --frames /path/to/keyframes --out bench/results/raw
 ```
+
+`keyframe_decode.py` answers a third question, and the only CPU one: is the
+keyframe stage decoding pixels nobody looks at? It times shot detection on a
+1080p file against detection on the 360p copy of the same upload, extracting the
+frames from the 1080p file either way — and then, because a speedup that changes
+the output is not a speedup, compares the cuts, the shot count and the phash
+distance between the frames each path chose.
+
+```bash
+uv run --no-sync python bench/keyframe_decode.py \
+    --pair full=/scratch/ID-1080p.mp4,detect=/scratch/ID-360p.mp4 \
+    --repeats 2 --decode-only --pts-probe --nvdec-probe 120 \
+    --out bench/results/raw/keyframe-decode.json
+```
+
+It is the one file here that imports `vidtheque_mcp` — deliberately, since the
+point is to time the shipped `pipeline/keyframes.py`, not a copy of it. No
+worker, no HTTP, no GPU (bar the optional `--nvdec-probe`, which is `ffmpeg`
+alone). The write-up lives with the other pipeline evidence, in
+`research/keyframe-decode-bench-2026-08-08.md`; its raw envelope is
+`results/raw/keyframe-decode-2026-08-08.json`.
 
 **The two VRAM sources disagree by design.** NVML's `used` counts the driver's
 own reserve; `nvidia-smi memory.used` does not. On this box that is a constant
