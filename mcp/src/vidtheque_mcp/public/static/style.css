@@ -1,0 +1,268 @@
+/* vidtheque demo — a search engine, not a dashboard.
+   One column, system fonts, hairline rows, one accent. The corpus is the
+   content; the chrome should be close to invisible. Six custom properties
+   below are the whole palette (demo-site.md §6). */
+
+:root {
+  --bg: #fbfaf9;
+  --fg: #1b1a19;
+  --muted: #6b6764;
+  --line: #e3dfdb;
+  --accent: #b45309;
+  --raised: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #131313;
+    --fg: #e9e6e3;
+    --muted: #97918c;
+    --line: #2b2927;
+    --accent: #f0a55a;
+    --raised: #1a1a19;
+  }
+}
+
+* { box-sizing: border-box; }
+
+/* `display: flex` on .chips would otherwise beat the [hidden] attribute, and
+   both the mode switch and the filter row are flex containers we hide. */
+[hidden] { display: none !important; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  padding: 0 1.25rem 4rem;
+  background: var(--bg);
+  color: var(--fg);
+  font: 400 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        "Helvetica Neue", Arial, sans-serif;
+}
+
+main, .masthead, footer { max-width: 46rem; margin: 0 auto; }
+
+a { color: inherit; }
+a:hover { color: var(--accent); }
+
+code {
+  font: 400 0.875em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* ------------------------------------------------------------------ header */
+
+.masthead { padding: 3rem 0 1.5rem; }
+
+.wordmark {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+}
+
+.tagline { margin: 0.35rem 0 0; color: var(--muted); font-size: 0.95rem; }
+
+/* --------------------------------------------------------------- searchbar */
+
+.searchbar { display: flex; gap: 0.5rem; }
+
+#q {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.7rem 0.9rem;
+  font: inherit;
+  color: inherit;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+#q:focus-visible, button:focus-visible, .chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button {
+  padding: 0.7rem 1rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--bg);
+  background: var(--fg);
+  border: 1px solid var(--fg);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+button.ghost { color: var(--fg); background: transparent; border-color: var(--line); }
+button.ghost[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+button[disabled] { opacity: 0.5; cursor: default; }
+
+/* ------------------------------------------------------------------- chips */
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+
+/* The mode switch reads as a pair, not as two loose filters. `margin-left:auto`
+   keeps it on the right when the filter row is hidden (ask mode). */
+.modes { gap: 0; margin-left: auto; }
+.modes .chip { border-radius: 0; }
+.modes .chip:first-child { border-radius: 999px 0 0 999px; }
+.modes .chip:last-child { border-radius: 0 999px 999px 0; border-left-width: 0; }
+.modes .chip.is-on + .chip { border-left: 1px solid var(--accent); }
+
+.chip {
+  padding: 0.25rem 0.7rem;
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.chip.is-on { color: var(--accent); border-color: var(--accent); font-weight: 600; }
+
+.status { margin: 1rem 0 0; color: var(--muted); font-size: 0.85rem; min-height: 1.2em; }
+.status .note { display: block; }
+
+/* ----------------------------------------------------------------- results */
+
+.results { margin-top: 0.5rem; }
+
+.hit {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-start;
+  padding: 1rem 0;
+  border-top: 1px solid var(--line);
+  text-decoration: none;
+  color: inherit;
+}
+
+.hit:hover .hit-title { color: var(--accent); }
+
+.hit-thumb {
+  flex: 0 0 auto;
+  width: 96px;
+  height: 54px;
+  object-fit: cover;
+  border-radius: 4px;
+  background: var(--line);
+}
+
+.hit-thumb.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+}
+
+.hit-body { min-width: 0; }
+
+.hit-title { font-weight: 600; }
+
+.hit-meta { color: var(--muted); font-size: 0.82rem; margin-top: 0.1rem; }
+.hit-meta .at { color: var(--accent); font-variant-numeric: tabular-nums; }
+
+.hit-text { margin-top: 0.35rem; font-size: 0.94rem; }
+.hit-text mark { background: transparent; color: var(--accent); font-weight: 600; }
+
+.hit-source {
+  display: inline-block;
+  margin-right: 0.4rem;
+  padding: 0 0.35rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  vertical-align: 1px;
+}
+
+.more { margin: 1.25rem 0 0; }
+
+/* ------------------------------------------------------------------ answer */
+
+.answer {
+  margin-top: 1.25rem;
+  padding: 1rem 1.1rem;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: 8px;
+}
+
+.answer p { margin: 0 0 0.6rem; }
+.answer .cite {
+  font-size: 0.75em;
+  font-weight: 700;
+  color: var(--accent);
+  text-decoration: none;
+  vertical-align: super;
+}
+
+.answer .degraded { color: var(--muted); }
+.answer .thinking { color: var(--muted); }
+
+.answer-sources { margin-top: 0.75rem; border-top: 1px solid var(--line); }
+.answer-sources .hit { padding: 0.65rem 0; }
+.answer-sources .hit:first-child { border-top: none; }
+
+.cite-n {
+  flex: 0 0 1.2rem;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
+/* ----------------------------------------------------------------- connect */
+
+.connect { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--line); }
+.connect h2 { margin: 0 0 0.4rem; font-size: 1rem; }
+.connect p { margin: 0 0 0.6rem; color: var(--muted); font-size: 0.9rem; }
+
+.copyrow { display: flex; gap: 0.5rem; align-items: stretch; }
+
+.copyrow code {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.55rem 0.7rem;
+  overflow-x: auto;
+  white-space: nowrap;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.copyrow button { padding: 0.55rem 0.9rem; }
+
+.hint { margin-top: 0.6rem; font-size: 0.85rem; }
+.hint code { color: var(--muted); }
+
+/* ------------------------------------------------------------------ footer */
+
+footer {
+  margin-top: 3rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.85rem;
+}
+
+footer p { margin: 0 0 0.4rem; }
+.muted { color: var(--muted); }
+
+@media (max-width: 30rem) {
+  .hit-thumb { width: 72px; height: 41px; }
+  .searchbar { flex-wrap: wrap; }
+  #q { flex-basis: 100%; }
+}

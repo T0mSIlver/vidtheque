@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vidtheque — search a video corpus</title>
+<meta name="description" content="A demo of vidtheque: a self-hosted MCP server that turns videos you have watched into a searchable multimodal corpus.">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🎞️</text></svg>">
+</head>
+<body>
+
+<header class="masthead">
+  <a class="wordmark" href="/">vidtheque</a>
+  <p class="tagline">Search the spoken words, the on-screen text and the frames of an indexed video corpus.</p>
+</header>
+
+<main>
+  <form id="search-form" class="searchbar" role="search" autocomplete="off">
+    <input id="q" name="q" type="search" placeholder="kv cache, paged attention, nvidia-smi…"
+           aria-label="Search the corpus" autofocus>
+    <button type="submit" id="go">Search</button>
+  </form>
+
+  <div class="controls">
+    <div id="chips" class="chips" role="group" aria-label="Content type">
+      <button type="button" class="chip is-on" data-type="all">all</button>
+      <button type="button" class="chip" data-type="transcript">transcript</button>
+      <button type="button" class="chip" data-type="ocr">on-screen text</button>
+      <button type="button" class="chip" data-type="frame">frames</button>
+    </div>
+    <div id="modes" class="chips modes" role="group" aria-label="Mode" hidden>
+      <button type="button" class="chip is-on" data-mode="search">search</button>
+      <button type="button" class="chip" data-mode="ask">ask ✨</button>
+    </div>
+  </div>
+
+  <p id="status" class="status" aria-live="polite"></p>
+
+  <section id="answer" class="answer" hidden aria-live="polite"></section>
+
+  <section id="results" class="results" aria-label="Results"></section>
+
+  <section class="connect">
+    <h2>Add this corpus to your own agent</h2>
+    <p>It is a real MCP server, read-only. Point any MCP client at the endpoint:</p>
+    <div class="copyrow">
+      <code id="mcp-url">…</code>
+      <button type="button" id="copy" class="ghost">Copy</button>
+    </div>
+    <p class="hint">Claude Code: <code id="cli-line">claude mcp add --transport http vidtheque …</code></p>
+  </section>
+</main>
+
+<footer>
+  <p>
+    A <strong>vidtheque</strong> demo — a self-hosted video-corpus MCP server.
+    <a id="repo" href="https://github.com/T0mSIlver/vidtheque">Source on GitHub</a>.
+  </p>
+  <p class="muted">
+    Every result links back to the original talk on YouTube, at the second it was said.
+    vidtheque indexes what it watched; the videos belong to the people who made them.
+  </p>
+</footer>
+
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>
