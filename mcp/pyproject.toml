@@ -1,13 +1,29 @@
 [project]
 name = "vidtheque-mcp"
-version = "0.0.1"
-description = "vidtheque MCP server (placeholder — framework selection pending)"
-readme = "NOTE.md"
+version = "0.1.0"
+description = "vidtheque MCP server — corpus index, OAuth authorization server, and the 9-tool surface"
+readme = "README.md"
 requires-python = ">=3.12,<3.13"
 license = { text = "MIT" }
-# Intentionally empty: the MCP framework is being chosen by a parallel research
-# task, and picking one here would prejudge it. See NOTE.md.
-dependencies = []
+dependencies = [
+    # Official SDK v2: the only stable Python option that speaks the
+    # 2026-07-28 revision (research/mcp-framework-oauth-research.md §6.1).
+    "mcp>=2.0,<3.0",
+    "starlette>=0.47",
+    "uvicorn>=0.35",
+    # HS256 access tokens; the [crypto] extra keeps asymmetric algorithms
+    # available if a JWKS verifier mode is ever added.
+    "pyjwt[crypto]>=2.10",
+    # Worker calls and CIMD document fetch. httpx2 is what mcp 2.0 itself uses;
+    # note the import name is `httpx2`, not `httpx`.
+    "httpx2>=2.9",
+    "pydantic>=2.11",
+    # Vector legs. Alpha, brute-force KNN — see index-schema.md §3.
+    "sqlite-vec>=0.1.9",
+]
+
+[project.scripts]
+vidtheque-mcp = "vidtheque_mcp.__main__:main"
 
 [build-system]
 requires = ["hatchling"]
