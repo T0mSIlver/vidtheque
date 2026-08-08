@@ -237,8 +237,14 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
             else str(current["source_url"])
         )
         lines.append(f"Video: {label}")
-        for wire, internal in jobs_store.WIRE_STAGES:
-            lines.append(f"  {wire:<11}{_wire_state(current, internal)}")
+        positions = {
+            stage: i
+            for i, (_wire, internals) in enumerate(jobs_store.WIRE_STAGES)
+            for stage in internals
+        }
+        current_pos = positions.get(current["stage"])
+        for i, (wire, _internal) in enumerate(jobs_store.WIRE_STAGES):
+            lines.append(f"  {wire:<11}{_wire_state(current, i, current_pos)}")
 
     failed = [i for i in items if i["state"] == "failed"]
     if failed:
@@ -272,14 +278,25 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
     )
 
 
-def _wire_state(item: sqlite3.Row, internal: tuple[str, ...]) -> str:
-    stage = item["stage"]
-    if item["state"] in ("done",):
+def _wire_state(item: sqlite3.Row, wire_pos: int, current_pos: int | None) -> str:
+    """State of one wire stage, inferred from the item's current position.
+
+    The item row only carries the stage it is *on*; wire stages before it in
+    WIRE_STAGES order are complete (the runner advances strictly in order),
+    later ones pending. Before this, every stage except the running one
+    printed "pending" — including the ones already done.
+    """
+    if item["state"] == "done":
         return "done"
-    if item["state"] == "failed":
-        return "failed" if stage in internal else "pending"
-    if stage in internal and item["state"] == "running":
-        return f"running  {int(float(item['stage_pct']) * 100)}%"
+    if current_pos is None:
+        return "pending"
+    if wire_pos < current_pos:
+        return "done"
+    if wire_pos == current_pos:
+        if item["state"] == "failed":
+            return "failed"
+        if item["state"] == "running":
+            return f"running  {int(float(item['stage_pct']) * 100)}%"
     return "pending"
 
 

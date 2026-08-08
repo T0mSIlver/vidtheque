@@ -19,6 +19,21 @@ from .base import BackendUnavailable, BaseBackend, Segment, Transcription, Word
 log = logging.getLogger(__name__)
 
 
+def normalize_language(tag: str | None) -> str | None:
+    """BCP-47-ish tag → whisper's bare code: ``en-US`` → ``en``, ``pt_BR`` → ``pt``.
+
+    YouTube metadata reports region-qualified tags; faster-whisper's tokenizer
+    hard-rejects them (measured live: ``ValueError: 'en-US' is not a valid
+    language code``, which knocked the whole STT stage over to the caption
+    fallback). Returns ``None`` (= auto-detect) for anything that doesn't
+    reduce to a plausible primary subtag — auto-detect beats a crash.
+    """
+    if not tag:
+        return None
+    primary = tag.replace("_", "-").split("-", 1)[0].strip().lower()
+    return primary if 2 <= len(primary) <= 3 and primary.isalpha() else None
+
+
 class WhisperXBackend(BaseBackend):
     name = "whisperx"
     task = "stt"
@@ -86,12 +101,24 @@ class WhisperXBackend(BaseBackend):
             raise BackendUnavailable("whisperx model is not loaded")
 
         do_align = self.align_default if align is None else align
+        language = normalize_language(language)
         audio = whisperx.load_audio(audio_path)
         duration = float(len(audio)) / 16000.0
 
-        result = self._model.transcribe(
-            audio, batch_size=self.batch_size, language=language
-        )
+        try:
+            result = self._model.transcribe(
+                audio, batch_size=self.batch_size, language=language
+            )
+        except ValueError:
+            if language is None:
+                raise
+            # A tag that survived normalization but whisper still rejects
+            # (exotic subtag, list drift). Auto-detect beats failing the stage.
+            log.warning("whisper rejected language=%r; retrying with auto-detect", language)
+            language = None
+            result = self._model.transcribe(
+                audio, batch_size=self.batch_size, language=None
+            )
         detected = result.get("language") or language
 
         if do_align and detected:
