@@ -330,7 +330,7 @@ def _run_legs(
                     text=str(row["text"] or ""),
                     score=float(row["score"]),
                     cue_ids=[],
-                    frame_id=f"{row['video_id']}-{int(row['ord']):05d}",
+                    frame_id=str(row["frame_id"]),
                 )
             )
         total, ceiling = queries.probe_ocr(conn, params, headroom)

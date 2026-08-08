@@ -294,6 +294,23 @@ async def test_segment_context_returns_no_images(assembled: Assembled) -> None:
     assert all(not isinstance(b, ImageContent) for b in result.content)
 
 
+async def test_an_ocr_hits_frame_id_round_trips_through_get_frames(
+    assembled: Assembled,
+) -> None:
+    """`frame_id` is `<video_id>-NNNNN` (tool-surface §3.1) on every leg. The OCR
+    leg built it from the integer `videos.id`, so the model was handed
+    `1-00001` — an id `get-frames` cannot resolve (smoke §4.2)."""
+    hits = structured(
+        await search.run(assembled.deps, q="nvidia-smi", content_type="ocr", limit=5)
+    )["results"]
+    frame_ids = [h["frame_id"] for h in hits]
+    assert frame_ids == ["kCc8FmEb1nY-00001"]
+
+    fetched = await frames_tool.run(assembled.deps, frame_ids=frame_ids)
+    assert "Frames: 1/1" in body(fetched)
+    assert structured(fetched)["failed"] == []
+
+
 # ---------------------------------------------------------------- get-frames
 
 

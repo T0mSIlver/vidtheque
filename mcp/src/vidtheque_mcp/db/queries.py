@@ -413,9 +413,14 @@ capped AS (
 )
 SELECT c.id, c.video_id, c.t_s, c.text, c.keyframe_id, c.r,
        1.0 / (:rrf_k + c.r) AS score,
-       k.ord AS ord
+       k.ord AS ord,
+       -- The public id, built exactly as the frame leg builds it (§3.1). Built
+       -- from `videos.id` it comes out as `1-00033`, which `get-frames` cannot
+       -- resolve — and the guide tells the model to use only ids it has seen.
+       v.public_id || '-' || printf('%05d', k.ord) AS frame_id
 FROM capped c
 JOIN keyframes k ON k.id = c.keyframe_id
+JOIN videos    v ON v.id = c.video_id
 WHERE c.rn <= :max_per_video
 """
 
