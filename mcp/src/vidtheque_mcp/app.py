@@ -36,9 +36,10 @@ from starlette.routing import Mount
 from .auth.modes import AuthBundle, build_auth
 from .config import Settings
 from .db import Database
-from .embeddings import EmbeddingClient, HTTPEmbeddingClient
+from .embeddings import EmbeddingClient
 from .http import frames_routes, health_routes
-from .jobs.runner import PipelineRunner
+from .jobs.runner import Pipeline, PipelineRunner
+from .pipeline import PipelineSettings, WorkerAPI, build_pipeline, worker_client
 from .server import build_mcp_server
 from .tools import Deps
 
@@ -62,8 +63,11 @@ def build_app(
     *,
     embeddings: EmbeddingClient | None = None,
     run_pipeline: bool = True,
+    pipeline: Pipeline | None = None,
 ) -> Starlette:
-    return assemble(settings, embeddings=embeddings, run_pipeline=run_pipeline).app
+    return assemble(
+        settings, embeddings=embeddings, run_pipeline=run_pipeline, pipeline=pipeline
+    ).app
 
 
 def assemble(
@@ -71,6 +75,7 @@ def assemble(
     *,
     embeddings: EmbeddingClient | None = None,
     run_pipeline: bool = True,
+    pipeline: Pipeline | None = None,
 ) -> Assembled:
     settings.validate()
     db = Database(
@@ -80,9 +85,23 @@ def assemble(
     )
     auth = build_auth(settings)
     # No default model: each leg names the encoder it needs from `config`, so
-    # the transcript and frame spaces cannot be confused for one another.
-    client = embeddings or HTTPEmbeddingClient(settings.worker_url)
-    runner = PipelineRunner(db)
+    # the transcript and frame spaces cannot be confused for one another. The
+    # indexing half needs three more endpoints than query time does, so the
+    # default client is the superset — same object, handed to both.
+    pipeline_settings = PipelineSettings.from_env()
+    client = embeddings or worker_client(settings.worker_url, pipeline_settings)
+    # A fake embedding client (tests) is not a worker: the pipeline gets a real
+    # HTTP client of its own rather than an object missing half the surface.
+    runner = PipelineRunner(
+        db,
+        pipeline
+        or build_pipeline(
+            settings,
+            db,
+            worker=client if isinstance(client, WorkerAPI) else None,
+            pipeline_settings=pipeline_settings,
+        ),
+    )
     deps = Deps(
         settings=settings,
         db=db,

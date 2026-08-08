@@ -1,17 +1,17 @@
 """The pipeline seam.
 
-Job *bookkeeping* is real and complete: rows are created, claimed, heartbeated,
-staged and finished through the state machine in ``store.py``. The pipeline
-*execution* is the next task, so ``PipelineRunner.run_item`` fails the item with
-a clear ``E_NOT_IMPLEMENTED`` instead of pretending to index.
+Job *bookkeeping* lives here — rows are created, claimed, heartbeated, staged
+and finished through the state machine in ``store.py`` — and the work itself
+lives behind one method, ``Pipeline.run_item``. ``pipeline/runner.py`` is the
+real implementation; ``NotImplementedPipeline`` is kept because a build that
+cannot index should say so plainly rather than pretend, and because it is what
+the tool-surface tests inject so no test can reach YouTube.
 
-That failure is deliberate and visible: an ``index-video`` call returns a real
-job id, ``job-status`` reports a real failure with an actionable message, and
-nothing anywhere claims a video is searchable when it is not.
-
-Implementing the pipeline means replacing ``run_item`` (and only ``run_item``):
-claiming, per-stage recording, heartbeats, cancellation checks, retries and the
-rollup triggers are already here and already tested.
+An item finishes in one of four ways, and each is a state the wire already has
+a word for: it returns (``done``), raises ``ItemFailed`` with a typed code
+(``failed``, or requeued when retryable), raises ``ItemCancelled`` at a stage
+boundary (``cancelled``), or raises ``ItemSkipped`` because it was a container
+that fanned out into other items (``skipped``).
 """
 
 from __future__ import annotations
@@ -48,6 +48,20 @@ class ItemFailed(Exception):
         self.retryable = retryable
 
 
+class ItemCancelled(Exception):
+    """The pipeline saw ``cancel_requested`` at a stage boundary and stopped.
+
+    Not a failure: the item is `cancelled`, the stages that finished stay
+    finished, and the next loop iteration cancels whatever is left of the job.
+    """
+
+
+class ItemSkipped(Exception):
+    """The item was not a video to index — it expanded into other items, or it
+    duplicated one already in this job. `skipped` is a terminal state that
+    counts towards neither `n_done` nor `n_failed`."""
+
+
 class Pipeline(Protocol):
     """What a real pipeline must implement. One method, one item."""
 
@@ -72,7 +86,10 @@ class ItemContext:
     video_id: int | None
 
     async def record(self, stage: str, pct: float) -> None:
-        await self.db.write(lambda c: store.record_stage(c, self.item_id, stage, pct))
+        # The heartbeat rides along with progress. A stage can legitimately run
+        # for half an hour, and a job that reports progress but no heartbeat
+        # would be requeued as crashed at the next boot.
+        await self.db.write(lambda c: _record(c, self.job_id, self.item_id, stage, pct))
 
     async def cancelled(self) -> bool:
         return bool(
@@ -163,6 +180,13 @@ class PipelineRunner:
                 await self.pipeline.run_item(ctx)
             except ItemFailed as failure:
                 await self._fail_item(item, failure)
+            except ItemCancelled:
+                item_id = ctx.item_id
+                await self.db.write(lambda c: store.finish_item(c, item_id, "cancelled"))
+            except ItemSkipped as skipped:
+                item_id, message = ctx.item_id, str(skipped)
+                await self.db.write(lambda c: store.finish_item(c, item_id, "skipped"))
+                await self.db.write(lambda c: store.log(c, job_id, message, "info", item_id))
             except Exception as exc:  # pragma: no cover - unexpected
                 logger.exception("pipeline item crashed")
                 await self._fail_item(item, ItemFailed("E_INTERNAL", str(exc), retryable=True))
@@ -198,6 +222,11 @@ class PipelineRunner:
                 ).fetchone()[0]
             )
         )
+
+
+def _record(conn: sqlite3.Connection, job_id: int, item_id: int, stage: str, pct: float) -> None:
+    store.record_stage(conn, item_id, stage, pct)
+    store.heartbeat(conn, job_id)
 
 
 def _cancel_remaining(conn: sqlite3.Connection, job_id: int) -> None:
