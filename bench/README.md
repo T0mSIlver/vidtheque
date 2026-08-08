@@ -68,6 +68,7 @@ than no number.
 | `gpu_validation.py` | the lifecycle manager against real hardware: load/unload VRAM discipline, residency, eviction, lease hooks |
 | `ballast.py` | squats on VRAM in a separate process, so admission control has a co-tenant to refuse |
 | `keyframe_decode.py` | the CPU side: single-stream vs dual-stream shot detection, timings *and* an equivalence check |
+| `pipeline_bench.py` | the whole pipeline, once per configuration: CPU vs GPU vs GPU+whisperX, per stage |
 | `results/` | committed measurements, with the raw JSON they came from |
 
 `gpu_validation.py` answers a different question from `run.py`: not "which
@@ -95,7 +96,31 @@ uv run --no-sync python bench/keyframe_decode.py \
     --out bench/results/raw/keyframe-decode.json
 ```
 
-It is the one file here that imports `vidtheque_mcp` — deliberately, since the
+`pipeline_bench.py` answers the operator's version of the question the other
+three take apart: **what does the GPU buy you end to end.** It indexes one video
+through the real `index-video` → `job-status: done` loop once per configuration
+— `cpu-autocaps`, `gpu-autocaps`, `gpu-whisperx` — with a fresh data dir, its
+own worker and its own mcp process each time, and reports every stage including
+the four the GPU cannot touch (fetch, chunk, keyframe, and OCR while RapidOCR
+runs on CPU).
+
+```bash
+uv run --no-sync python bench/pipeline_bench.py --list
+uv run --no-sync python bench/pipeline_bench.py cpu-autocaps gpu-autocaps gpu-whisperx \
+    --out bench/results/raw/pipeline-bench.json
+```
+
+The configurations live in the file rather than in a `scenarios/*.toml`: a
+variant here is a *pair* of environments (worker and mcp) plus an STT policy,
+and a case is a URL rather than a local file, so nothing about it fits `run.py`'s
+variants-x-cases shape. Everything that is not the variable under test —
+detector, patch budget, OCR threads, idle TTL — is pinned in `COMMON_WORKER` /
+`COMMON_MCP` so the rows compare. It reads three clocks: `video_stages` (the
+pipeline's own per-stage wall clock, 1 s resolution), the worker's `/status`
+queue at 250 ms (the inference span inside a stage), and `nvidia-smi` at 500 ms.
+Write-up: `research/pipeline-bench-2026-08-09.md`.
+
+`keyframe_decode.py` is the one file here that imports `vidtheque_mcp` — deliberately, since the
 point is to time the shipped `pipeline/keyframes.py`, not a copy of it. No
 worker, no HTTP, no GPU (bar the optional `--nvdec-probe`, which is `ffmpeg`
 alone). The write-up lives with the other pipeline evidence, in
