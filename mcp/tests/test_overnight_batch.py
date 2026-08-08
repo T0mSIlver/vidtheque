@@ -23,6 +23,7 @@ Nothing here reaches the network or a GPU: same fakes as `test_pipeline_e2e`.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -36,7 +37,7 @@ from vidtheque_mcp.pipeline.sources import RateLimited
 from vidtheque_mcp.tools import indexing
 
 from .pipeline_fakes import SECOND_URL, VIDEO_URL, FakeWorker, canned_source
-from .test_job_recovery import close
+from .test_job_recovery import Killed, backdate, close, kill_at_keyframe
 from .test_pipeline_e2e import Harness, body, harness, structured
 
 URL_A = "https://youtu.be/Qk7mF2xLp0A"
@@ -428,6 +429,83 @@ async def test_force_reindex_ignores_the_partition(settings: Settings, clip: Pat
         assert payload["already_indexed"] == []
         items = await items_of(parts, payload["job_id"])
         assert [i["state"] for i in items] == ["queued", "queued"]
+    finally:
+        await close(parts)
+
+
+# ========================================================================= force
+
+
+async def test_a_crashed_force_reindex_resumes_per_stage_like_any_other(
+    settings: Settings, clip: Path
+) -> None:
+    """`force_reindex` used to be a mode, so every retry re-ran everything.
+
+    A forced reindex that dies at keyframes came back with `force_reindex` still
+    true in its args: `_should_run` returned true for fetch and stt however
+    recently they had finished, and the media helpers ignored the files already
+    on disk. On an hour-long video that is a redownload and a retranscription
+    per crash — forever, if the crash is deterministic.
+    """
+    worker = FakeWorker()
+    parts = await harness(settings, clip, worker=worker)
+    try:
+        await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+
+        # The forced reindex, killed mid-keyframe.
+        kill_at_keyframe(parts)
+        job_id = await parts.index(url=VIDEO_URL, force_reindex=True)
+        with pytest.raises(Killed):
+            await parts.run()
+
+        # It really did redo the work — that is what force means, once.
+        stages = await parts.stages()
+        assert stages["stt"]["state"] == "done"
+        downloads = len(parts.source.downloads)
+        calls = len(worker.calls)
+        assert "transcribe" in worker.calls  # the force attempt transcribed
+
+        # Now the crash recovery, with keyframes working again: `kill_at_keyframe`
+        # shadowed the method on the instance, so deleting it uncovers the real one.
+        del parts.parts.runner.pipeline._stage_keyframes
+        await backdate(parts)
+        assert await parts.parts.runner.reclaim_stale() == [job_id]
+        assert await parts.run() is True
+
+        job = await job_row(parts, job_id)
+        assert (job["state"], job["n_done"]) == ("done", 1)
+        stages = await parts.stages()
+        assert all(row["state"] == "done" for row in stages.values()), {
+            k: (v["state"], v["error"]) for k, v in stages.items()
+        }
+        # The second attempt is a resume, not a second force.
+        assert len(parts.source.downloads) == downloads
+        assert "transcribe" not in worker.calls[calls:]
+    finally:
+        await close(parts)
+
+
+async def test_the_force_marker_is_per_video_not_per_job(
+    settings: Settings, clip: Path
+) -> None:
+    """Two videos, one forced job: spending the force on the first must not
+    let the second resume as though it had already been invalidated."""
+    parts = await harness(settings, clip)
+    try:
+        await parts.index(urls=[VIDEO_URL, SECOND_URL], channels="transcript")
+        assert await parts.run() is True
+        calls = len(parts.worker.calls)
+
+        await parts.index(
+            urls=[VIDEO_URL, SECOND_URL], channels="transcript", force_reindex=True
+        )
+        assert await parts.run() is True
+
+        # Both videos were re-transcribed, not just the first.
+        assert parts.worker.calls[calls:].count("transcribe") == 2
+        job = await parts.one("SELECT args_json FROM jobs ORDER BY id DESC LIMIT 1")
+        assert len(json.loads(job["args_json"])["force_applied"]) == 2
     finally:
         await close(parts)
 

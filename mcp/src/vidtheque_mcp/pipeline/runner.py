@@ -88,10 +88,32 @@ class ItemRun:
     worker_ok: bool = False
     degraded: list[str] = field(default_factory=list)
     failed_stages: list[str] = field(default_factory=list)
+    # Force is a thing that *happens once*, not a mode every attempt re-enters.
+    # `force` is what the caller asked for; `force_active` is whether this
+    # attempt is the one that threw the recorded stages away.
+    force_active: bool = False
 
     @property
     def force(self) -> bool:
         return bool(self.args.get("force_reindex"))
+
+    @property
+    def forced_videos(self) -> set[int]:
+        return {int(v) for v in (self.args.get("force_applied") or [])}
+
+    @property
+    def intended_stages(self) -> tuple[str, ...]:
+        """The stages this job's `channels` mean to produce for this video."""
+        stages = ["fetch"]
+        if self.wants_transcript:
+            stages += ["stt", "chunk", "text_embed"]
+        if self.wants_frames:
+            stages.append("keyframe")
+        if self.wants_ocr:
+            stages.append("ocr")
+        if self.wants_frame_vectors:
+            stages.append("frame_embed")
+        return tuple(stages)
 
     @property
     def channels(self) -> set[str]:
@@ -267,6 +289,7 @@ class IndexingPipeline:
             )
         run.video_id = video_id
         run.stages = await self.db.read(lambda c: store.stage_map(c, video_id))
+        await self._apply_force(run)
         await run.ctx.log(
             f'fetched metadata for {meta.source_id} "{meta.title}"', "info", stage="fetch"
         )
@@ -322,7 +345,7 @@ class IndexingPipeline:
     async def _fetch_audio(self, run: ItemRun) -> Path | None:
         assert run.meta is not None
         existing = self.layout.audio_path(run.meta.source_id, self.settings.audio_codec)
-        if existing.exists() and not run.force:
+        if existing.exists() and not run.force_active:
             return existing
         media = await asyncio.to_thread(
             self.source.download_audio,
@@ -336,7 +359,7 @@ class IndexingPipeline:
     async def _fetch_media(self, run: ItemRun) -> Path | None:
         assert run.meta is not None
         existing = self.layout.media_candidates(run.meta.source_id)
-        if existing and not run.force:
+        if existing and not run.force_active:
             return existing[0]
         media = await asyncio.to_thread(
             self.source.download_video,
@@ -772,6 +795,36 @@ class IndexingPipeline:
         if await run.ctx.cancelled():
             raise ItemCancelled("cancelled at a stage boundary")
 
+    async def _apply_force(self, run: ItemRun) -> None:
+        """`force_reindex` invalidates the intended stages once, at the start.
+
+        It used to be a mode: `force_reindex=true` stayed in the job args, so
+        every attempt after a crash read it and re-ran *every* completed stage
+        and ignored every file already on disk. A forced reindex that died at
+        keyframes redownloaded and retranscribed the whole video on each retry,
+        forever if the crash was deterministic.
+
+        Throwing the stage rows away once is the same instruction, expressed so
+        that ordinary resume semantics can carry the rest: the second attempt
+        sees fetch and stt already `done` *by this job* and skips them. The
+        marker lives in the job's own args because that is the row that survives
+        the process.
+        """
+        if not run.force or not run.video_id or run.video_id in run.forced_videos:
+            return
+        run.force_active = True
+        video_id, stages = run.video_id, run.intended_stages
+        await self.db.write(lambda c: _invalidate_stages(c, video_id, stages))
+        await self.db.write(
+            lambda c: _note_force_applied(c, run.ctx.job_id, video_id)
+        )
+        run.stages = await self.db.read(lambda c: store.stage_map(c, video_id))
+        await run.ctx.log(
+            "force_reindex: discarded the recorded state of " + ", ".join(stages),
+            "info",
+            stage="fetch",
+        )
+
     def _should_run(self, run: ItemRun, stage: str, model_key: str | None) -> bool:
         """Resume: re-run failed and out-of-date stages, leave finished ones.
 
@@ -781,7 +834,7 @@ class IndexingPipeline:
         It is only worth re-running when we can actually do better — which
         means the worker is answering now.
         """
-        if run.force:
+        if run.force_active:
             return True
         row = run.stages.get(stage)
         if row is None or str(row["state"]) != "done":
@@ -846,6 +899,37 @@ class IndexingPipeline:
 
 
 # ------------------------------------------------------------------ helpers
+
+
+def _invalidate_stages(conn: Any, video_id: int, stages: Sequence[str]) -> None:
+    """Throw away what these stages recorded, so resume has to run them again.
+
+    Deliberately not a delete: the row keeps its history and its `stage_version`,
+    and `pending` is the state a resume already knows how to read.
+    """
+    placeholders = ",".join("?" for _ in stages)
+    conn.execute(
+        "UPDATE video_stages SET state = 'pending', model_key = NULL, "
+        "finished_at = NULL, error = NULL "
+        f"WHERE video_id = ? AND stage IN ({placeholders})",
+        (video_id, *stages),
+    )
+
+
+def _note_force_applied(conn: Any, job_id: int, video_id: int) -> None:
+    """Record that this job has already spent its force on this video.
+
+    In `args_json`, because that is the row that outlives the process: the next
+    attempt reads it back through `job_args` and behaves like a normal resume.
+    """
+    import json
+
+    row = conn.execute("SELECT args_json FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    args = json.loads(row["args_json"] or "{}") if row is not None else {}
+    applied = {int(v) for v in (args.get("force_applied") or [])}
+    applied.add(int(video_id))
+    args["force_applied"] = sorted(applied)
+    conn.execute("UPDATE jobs SET args_json = ? WHERE id = ?", (json.dumps(args), job_id))
 
 
 def _rate_limited(exc: Exception, message: str) -> ItemFailed:
