@@ -52,6 +52,16 @@ def _int_env(name: str, default: int) -> int:
         raise ConfigError(f"{name} must be an integer, got {raw!r}") from exc
 
 
+def _float_env(name: str, default: float) -> float:
+    raw = _env(name)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except ValueError as exc:  # pragma: no cover - operator typo
+        raise ConfigError(f"{name} must be a number, got {raw!r}") from exc
+
+
 def _bool_env(name: str, default: bool) -> bool:
     raw = _env(name)
     if raw is None:
