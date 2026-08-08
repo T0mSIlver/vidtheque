@@ -27,13 +27,20 @@ class EmbeddingClient(Protocol):
     """The seam. Faked in tests; never imported from the worker package."""
 
     async def embed(
-        self, texts: Sequence[str], model: str | None = None
+        self, texts: Sequence[str], model: str | None = None, input_type: str = "query"
     ) -> tuple[list[list[float]], str | None, int | None]:
         """Return (vectors, model_id, dimensions).
 
-        ``model`` selects the encoder: the transcript leg asks for the text
-        model from ``config``, the frame leg asks for the SigLIP tower so the
-        query lands in the *same* embedding space as the stored frame vectors.
+        ``model`` names the encoder we want. The worker is free to ignore it and
+        answer with whatever it serves — which is why the response's ``model``
+        and ``dimensions`` are the authoritative drift check, and why a leg
+        whose dimensions come back wrong is skipped with a ``note:`` rather than
+        compared against vectors from another space.
+
+        ``input_type`` is the worker's asymmetric-prefix switch (``query`` vs
+        ``document``). The prefix belongs to whoever runs the model, so we send
+        the switch rather than prepending ``config['text_embed.query_prefix']``
+        ourselves and applying it twice.
         """
         ...
 
@@ -57,9 +64,13 @@ class HTTPEmbeddingClient:
             return self._client
 
     async def embed(
-        self, texts: Sequence[str], model: str | None = None
+        self, texts: Sequence[str], model: str | None = None, input_type: str = "query"
     ) -> tuple[list[list[float]], str | None, int | None]:
-        payload: dict[str, object] = {"input": list(texts), "encoding_format": "float"}
+        payload: dict[str, object] = {
+            "input": list(texts),
+            "encoding_format": "float",
+            "input_type": input_type,
+        }
         chosen = model or self._model
         if chosen:
             payload["model"] = chosen
@@ -84,7 +95,7 @@ class NullEmbeddingClient:
     """Used when the corpus has no vectors or the operator disabled the worker."""
 
     async def embed(
-        self, texts: Sequence[str], model: str | None = None
+        self, texts: Sequence[str], model: str | None = None, input_type: str = "query"
     ) -> tuple[list[list[float]], str | None, int | None]:
         raise EmbeddingUnavailable("no embedding worker is configured")
 

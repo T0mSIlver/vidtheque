@@ -130,6 +130,40 @@ async def test_vector_leg_note_when_the_worker_is_down(assembled: Assembled) -> 
     assert not result.is_error  # never a silent empty; the lexical leg answers
 
 
+async def test_frame_leg_degrades_when_the_worker_has_no_text_tower(
+    assembled: Assembled,
+) -> None:
+    """`all` still means all: the leg is skipped *and announced*.
+
+    The worker exposes no text->frame-space endpoint today, so a text query
+    cannot reach the 1152-d frame vectors. Skipping quietly would look like
+    "there were no visual matches", which is a different and false claim.
+    """
+    deps = assembled.deps
+    deps.embeddings.serves_frame_text = False  # type: ignore[attr-defined]
+    result = await search.run(deps, q="cache", limit=5)
+    notes = structured(result)["notes"]
+    assert any("no text->frame-space endpoint" in n for n in notes)
+    assert not result.is_error
+    assert structured(result)["results"], "the text legs still answer"
+
+    # Probed once, then remembered: no wasted call per search.
+    assert deps.frame_text_encoder is False
+    before = len(deps.embeddings.calls)  # type: ignore[attr-defined]
+    await search.run(deps, q="cache", limit=5)
+    assert len(deps.embeddings.calls) - before == 1  # type: ignore[attr-defined]
+
+
+async def test_query_prefix_is_the_workers_job(assembled: Assembled) -> None:
+    """`input_type=query` is the worker's asymmetric-prefix switch; applying
+    config['text_embed.query_prefix'] here as well would double it."""
+    deps = assembled.deps
+    await search.run(deps, q="cache", limit=5)
+    _, texts = deps.embeddings.calls[0]  # type: ignore[attr-defined]
+    assert texts == ["cache"]
+    assert deps.db.query_prefix, "the config key still records what indexing assumed"
+
+
 async def test_tsv_format_writes_the_keys_once(assembled: Assembled) -> None:
     result = await search.run(assembled.deps, q="cache", format="tsv", limit=5)
     text = body(result)

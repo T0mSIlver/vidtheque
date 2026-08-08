@@ -101,12 +101,32 @@ why. They are candidates to fold back into the docs.
    does not carry. Rather than run an unbounded `COUNT(*)` per row on a list
    path, the columns are present and blank until counters exist.
 
-5. **The frame leg needs a SigLIP text-tower model on the worker.** The query is
-   embedded with `config['frame_embed.model']` through the same
-   `/v1/embeddings` endpoint, because that is what the worker's OpenAPI offers.
-   If the worker cannot serve that model the leg is skipped with a `note:`.
-   Neither design doc says how the text tower is exposed; this is the concrete
-   proposal.
+5. **The frame leg has no encoder to call yet — a real contract gap.**
+   index-schema §4.5 says `:q_img_vec` is "the *text* query run through
+   SigLIP's text tower — same shared embedding space, which is the entire point
+   of using SigLIP over a captioning pass". The worker exposes no such
+   endpoint: `POST /v1/embeddings` answers with the transcript model whatever
+   `model` asks for, and `POST /v1/embeddings/image` takes image bytes. So
+   there is no path from a text query into the 1152-d frame space, and
+   `search content_type=frame` cannot return anything.
+
+   We ask for `config['frame_embed.model']` once, see the wrong dimension
+   come back, remember it for the process lifetime, and print a `note:` naming
+   the missing endpoint — `all` still means all, and a skipped leg is still
+   announced. A worker that gains the encoder is picked up on the next restart
+   with no change here.
+
+   **The fix belongs on the worker**: a text→frame-space route (a `space=frame`
+   switch on `/v1/embeddings`, or a sibling endpoint) running SigLIP 2's text
+   tower. Until then the frame leg is inert, and both design docs describe a
+   capability the system does not have.
+
+10. **The asymmetric query prefix is the worker's, not ours.** The worker's
+    `/v1/embeddings` takes `input_type=document|query` and applies the model's
+    prompt itself, so we send the switch rather than prepending
+    `config['text_embed.query_prefix']` — doing both would apply it twice. The
+    config key stays as the record of what indexing assumed, which is what
+    index-schema §1.1 wants it for.
 
 6. **`get-frames` does not resize.** `width`/`quality` are accepted, clamped,
    and bound into the URL signature, but the route serves the stored keyframe.

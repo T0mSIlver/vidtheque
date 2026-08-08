@@ -28,6 +28,12 @@ class Deps:
     runner: PipelineRunner | None = None
     search_semaphore: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(2))
 
+    # None = not yet probed. Set False the first time the worker answers a
+    # frame-space request in the wrong dimension, so we stop paying for a call
+    # that cannot work; a worker that gains the encoder is picked up on the
+    # next restart. See the frame-leg note in embed_query.
+    frame_text_encoder: bool | None = None
+
     async def embed_query(
         self,
         text: str,
@@ -41,6 +47,13 @@ class Deps:
         ``"frame"`` for the frame leg — the query goes through SigLIP's *text*
         tower, which is the entire point of using SigLIP over a captioning
         pass. A leg that cannot run prints a `note:`, never a silent narrowing.
+
+        The frame space is conditional on the worker actually serving a
+        text encoder for it: today ``POST /v1/embeddings`` answers with the
+        transcript model whatever ``model`` asks for, and
+        ``/v1/embeddings/image`` takes image bytes, so there is no path from a
+        *text* query into the 1152-d frame space. We probe once, note it, and
+        stop asking.
         """
         if not self.db.vectors.enabled:
             note = self.db.vectors.note()
@@ -48,12 +61,19 @@ class Deps:
                 notes.append(note)
             return None
 
+        if space == "frame" and self.frame_text_encoder is False:
+            self._frame_note(notes)
+            return None
+
         model = self.db.config.get(f"{space}_embed.model")
         want_dim = self.db.frame_dim if space == "frame" else self.db.text_dim
-        prefix = self.db.query_prefix if space == "text" else ""
         try:
+            # The asymmetric query prefix belongs to whoever runs the model:
+            # `input_type=query` is the worker's switch for it, and prepending
+            # config['text_embed.query_prefix'] here as well would apply it
+            # twice.
             vectors, got_model, dimensions = await self.embeddings.embed(
-                [prefix + text], model=model
+                [text], model=model, input_type="query"
             )
         except EmbeddingUnavailable as exc:
             note = (
@@ -75,13 +95,30 @@ class Deps:
                 return None
 
         if not vectors or len(vectors[0]) != want_dim:
-            notes.append(
-                f"note: the worker returned {len(vectors[0]) if vectors else 0}-d "
-                f"vectors for the {space} encoder but the corpus stores "
-                f"{want_dim}-d — that leg was skipped."
-            )
+            if space == "frame":
+                self.frame_text_encoder = False
+                self._frame_note(notes)
+            else:
+                notes.append(
+                    f"note: the worker returned {len(vectors[0]) if vectors else 0}-d "
+                    f"vectors for the {space} encoder but the corpus stores "
+                    f"{want_dim}-d — that leg was skipped."
+                )
             return None
+        if space == "frame":
+            self.frame_text_encoder = True
         return queries.pack_f32(vectors[0])
+
+    def _frame_note(self, notes: list[str]) -> None:
+        note = (
+            "note: the frame leg needs the query run through the frame model's "
+            "text tower, and this worker exposes no text->frame-space endpoint "
+            "(/v1/embeddings serves the transcript model; /v1/embeddings/image "
+            "takes image bytes). Frame imagery was not searched; transcripts "
+            "and on-screen text were."
+        )
+        if note not in notes:
+            notes.append(note)
 
 
 def text_result(body: str, structured: dict[str, Any] | None = None) -> CallToolResult:

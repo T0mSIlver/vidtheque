@@ -28,29 +28,42 @@ FRAME_DIM = 1152
 class FakeEmbeddings:
     """Deterministic unit vectors keyed on the text, no network.
 
-    Stands in for the worker at the HTTP seam. It honours ``model`` the way the
-    real worker does: the SigLIP tower answers in 1152 dimensions, the text
-    model in 1024.
+    Stands in for the worker at the HTTP seam. With ``serves_frame_text`` the
+    SigLIP tower answers in 1152 dimensions and the text model in 1024; without
+    it, every request answers in 1024 — which is what the worker does today,
+    and the case the frame leg has to degrade through.
     """
 
     DIMS = {"qwen3-embedding-0.6b": TEXT_DIM, "siglip2-so400m-patch16-naflex": FRAME_DIM}
 
-    def __init__(self, dim: int = TEXT_DIM, model: str = "qwen3-embedding-0.6b") -> None:
+    def __init__(
+        self,
+        dim: int = TEXT_DIM,
+        model: str = "qwen3-embedding-0.6b",
+        serves_frame_text: bool = True,
+    ) -> None:
         self.dim = dim
         self.model = model
+        # The real worker exposes no text->frame-space endpoint yet; flip this
+        # off to exercise the degraded path.
+        self.serves_frame_text = serves_frame_text
         self.calls: list[tuple[str | None, list[str]]] = []
         self.fail = False
 
     async def embed(
-        self, texts: Sequence[str], model: str | None = None
+        self, texts: Sequence[str], model: str | None = None, input_type: str = "query"
     ) -> tuple[list[list[float]], str | None, int | None]:
         from vidtheque_mcp.embeddings import EmbeddingUnavailable
 
         self.calls.append((model, list(texts)))
         if self.fail:
             raise EmbeddingUnavailable("fake worker is down")
-        served = model or self.model
-        dim = self.DIMS.get(served, self.dim)
+        if model in self.DIMS and self.serves_frame_text:
+            served, dim = model, self.DIMS[model]
+        else:
+            # What the real worker does today: /v1/embeddings answers with the
+            # transcript model whatever `model` asks for.
+            served, dim = self.model, self.dim
         return [vector_for(t, dim) for t in texts], served, dim
 
     async def aclose(self) -> None:
