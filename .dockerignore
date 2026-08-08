@@ -1,0 +1,15 @@
+.git
+.github
+.venv
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.ruff_cache
+.mypy_cache
+bench/runs
+research
+docs
+deploy/.env
+*.md
+!README.md
+!mcp/NOTE.md

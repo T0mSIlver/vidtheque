@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtualenvs / uv
+.venv/
+venv/
+.uv/
+
+# Test / lint caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Model + inference caches (never commit weights)
+.cache/
+hf-cache/
+models/
+*.onnx
+*.bin
+*.safetensors
+*.pt
+*.ckpt
+
+# Local env + secrets
+.env
+.env.*
+!.env.example
+
+# Bench output (results are committed deliberately, raw runs are not)
+bench/runs/
+bench/*.json
+!bench/scenarios/*.json
+
+# Editors / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/

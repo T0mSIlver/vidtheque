@@ -1,0 +1,39 @@
+[project]
+name = "vidtheque"
+version = "0.0.1"
+description = "Self-hosted MCP server that turns videos you've watched into a searchable multimodal corpus"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { file = "LICENSE" }
+dependencies = [
+    "vidtheque-mcp",
+    "vidtheque-worker",
+]
+
+[tool.uv.workspace]
+members = ["mcp", "worker"]
+
+[tool.uv.sources]
+vidtheque-mcp = { workspace = true }
+vidtheque-worker = { workspace = true }
+
+[tool.uv]
+# The repo root is a workspace container, not an installable package.
+package = false
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    # starlette's TestClient prefers httpx2; the 1.x client is deprecated there.
+    "httpx2>=2.9",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["worker/tests"]
+filterwarnings = ["error::DeprecationWarning:vidtheque_worker.*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
