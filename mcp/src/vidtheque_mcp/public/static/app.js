@@ -11,6 +11,9 @@
 
 const $ = (id) => document.getElementById(id);
 
+// One request, one screen of results. The skeleton reserves exactly this many.
+const PAGE_SIZE = 10;
+
 const state = {
   contentType: "all",
   askMode: false,
@@ -75,9 +78,11 @@ const showEmptyState = (on) => {
   $("empty").hidden = !on;
 };
 
-// Reserve the row geometry the results will occupy, so the page does not jump
-// when they land. Three rows is what a first screen usually shows.
-const showSkeleton = (rows = 3) => {
+// Reserve the space the results will occupy, so nothing below them moves when
+// they land: one row per requested result, each the height of a typical hit
+// (thumbnail box, title, meta, two lines of snippet). Fewer, shorter rows look
+// tidier and cost a page-long jump the moment the real ones arrive.
+const showSkeleton = (rows = PAGE_SIZE) => {
   const results = $("results");
   results.replaceChildren();
   results.setAttribute("aria-busy", "true");
@@ -85,9 +90,9 @@ const showSkeleton = (rows = 3) => {
     const row = el("div", "hit skel");
     row.append(el("div", "hit-thumb skel-block"));
     const body = el("div", "hit-body");
-    body.append(el("div", "skel-line skel-block w-70"));
-    body.append(el("div", "skel-line skel-block w-40"));
-    body.append(el("div", "skel-line skel-block w-90"));
+    for (const width of ["w-70", "w-40", "w-90", "w-60"]) {
+      body.append(el("div", `skel-line skel-block ${width}`));
+    }
     row.append(body);
     results.append(row);
   }
@@ -308,7 +313,7 @@ async function runSearch(append = false) {
   const params = new URLSearchParams({
     q,
     content_type: state.contentType,
-    limit: "10",
+    limit: String(PAGE_SIZE),
     offset: String(state.offset),
   });
   let response;

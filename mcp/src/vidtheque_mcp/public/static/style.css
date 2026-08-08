@@ -254,11 +254,17 @@ button.linky {
 
 /* ------------------------------------------------- loading and empty results */
 
+/* Ten rows of grey is a wall; ten rows that fade out read as "about this much
+   is coming". The height reserve is identical either way. */
 .skel { pointer-events: none; }
+.skel:nth-child(n + 4) { opacity: 0.65; }
+.skel:nth-child(n + 7) { opacity: 0.4; }
+.skel:nth-child(n + 9) { opacity: 0.22; }
 
 .skel-line { height: 0.75rem; border-radius: 3px; }
 .skel-line + .skel-line { margin-top: 0.5rem; }
 .w-40 { width: 40%; }
+.w-60 { width: 60%; }
 .w-70 { width: 70%; }
 .w-90 { width: 90%; }
 

@@ -513,9 +513,12 @@ A demo is judged on the four screens that are not "ten results came back".
   fetch says the server could not be reached and offers the same retry; a 503
   in ask mode keeps its "search instead" button and counts down too. No error
   ever shows a status code or an upstream message.
-- **Loading** is a skeleton with the row geometry of a result — thumbnail box
-  included — so nothing moves when the real rows land (measured: CLS 0 on the
-  results render).
+- **Loading** is a skeleton of *one row per requested result*, each with a
+  result's geometry — thumbnail box, title, meta, two lines of snippet — so the
+  space is reserved before the rows land and nothing below them moves
+  (measured: CLS 0 on the results render; three tidier rows cost 0.20). The
+  rows fade out down the list so a full page of grey reads as a reserve rather
+  than a wall.
 
 Requests are spent on **Enter or a click, never on a keystroke**: a
 search-as-you-type box against a shared 30/min bucket would refuse a visitor
