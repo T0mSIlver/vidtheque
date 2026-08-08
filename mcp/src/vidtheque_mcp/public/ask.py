@@ -121,6 +121,10 @@ class Citation:
     t: int
     link: str | None
     frame_id: str | None = None
+    # The evidence the model was shown, carried through so the page's source
+    # list reads exactly like a search result instead of a bare title.
+    source: str | None = None
+    text: str | None = None
 
     def as_dict(self, thumb: str | None) -> dict[str, Any]:
         return {
@@ -132,6 +136,8 @@ class Citation:
             "timestamp": clock(self.t),
             "link": self.link,
             "thumb": thumb,
+            "source": self.source,
+            "text": self.text,
         }
 
 
@@ -144,6 +150,8 @@ class Evidence:
 
     def record(self, hit: dict[str, Any]) -> int:
         """Return the `[n]` for this hit, deduplicated on (video, second)."""
+        from .api import demo_text
+
         video_id = str(hit.get("video_id") or "")
         t = int(hit.get("start") or 0)
         key = (video_id, t)
@@ -160,6 +168,8 @@ class Evidence:
                 t=t,
                 link=hit.get("link"),
                 frame_id=hit.get("frame_id"),
+                source=hit.get("source"),
+                text=demo_text(hit.get("text")),
             )
         )
         return n

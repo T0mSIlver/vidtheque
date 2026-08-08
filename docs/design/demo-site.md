@@ -104,6 +104,14 @@ Facade rules:
 - **Nothing new is queried.** The facade adds exactly two derived fields per
   result — a `thumb` URL and a `timestamp` clock string — both computed from
   data the tool already returned.
+- **One string is rewritten, and only one.** `text.TRUNCATION_MARKER` ends in
+  "pass `max_text_chars=0` for full text" — advice a browser cannot take, since
+  the facade has no such opt-out. `api.demo_text()` rewrites it to
+  `…[N chars cut]…` for `/api` consumers. The pattern is built from the
+  template, not retyped, so a change in `text.py` cannot leave it silently
+  matching nothing. Nothing else about the tool's text is touched: in
+  particular the facade does **not** sanitise, because the page never parses
+  corpus text as HTML (§6).
 
 ### 2.1 `GET /api/search`
 
@@ -209,7 +217,8 @@ from timestamped evidence — to a visitor who has not wired up an MCP client.
   "citations": [
     {"n": 1, "video_id": "zduSFxRajkE", "title": "Making LLMs go brrr",
      "channel": "GPU MODE", "t": 13, "timestamp": "0:13",
-     "link": "https://youtu.be/zduSFxRajkE?t=11", "thumb": "…"}
+     "link": "https://youtu.be/zduSFxRajkE?t=11", "thumb": "…",
+     "source": "transcript", "text": "the block table keeps …"}
   ],
   "rounds": 2,
   "model": "deepseek/deepseek-v4-flash-0731"
@@ -266,6 +275,9 @@ system + user
   the visitor always gets prose rather than a spinner.
 - **Max 6 tool calls per round**, extras dropped with a note in the tool result
   — a parallel-tool-call storm on a free model is how the daily budget dies.
+- A citation carries the evidence the model was shown — `source` and the
+  bounded `text` of the hit, not just a title — so the page's source list reads
+  exactly like a search row instead of a bare link.
 - Every search result the loop sees is recorded, keyed by
   `(video_id, int(t))`. Citations in the response are **only** from that set:
   the model can cite `[3]`, but it cannot invent video 4. A citation marker
