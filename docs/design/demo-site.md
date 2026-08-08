@@ -295,9 +295,15 @@ which always works.
 | upstream 401/403 (key revoked, out of credit) | 503 | `upstream_rejected` |
 | upstream 429 | 503 | `upstream_rate_limited` |
 | upstream 5xx / timeout / connection error | 503 | `upstream_unavailable` |
-| daily budget spent (§4) | 503 | `budget_exhausted` |
+| junk upstream body (HTML error page) | 503 | `upstream_unavailable` |
 
-Body, in every case, the same shape:
+The **daily budget** is the one refusal that is *not* a 503: it is enforced by
+the rate limiter (§4), which answers `429` with `bucket: "ask_global"` before
+the request reaches this code. One mechanism, one place — a second budget
+counter inside the loop would be a second thing to keep in sync. The page
+treats a 429 like the degraded case, with the `Retry-After` in the message.
+
+Body, in every 503 case, the same shape:
 
 ```json
 {
@@ -449,20 +455,24 @@ CSS custom properties on `:root`.
 
 Layout, top to bottom:
 
-1. **Header** — wordmark, one line of what it is, and the Ask toggle (hidden
-   when `ask_enabled` is false).
-2. **Search box** — autofocus, submits on Enter, debounced at 250 ms.
-3. **Filter chips** — `all` / `transcript` / `on-screen text` / `frames`,
-   mapping to `content_type`. `all` is selected by default and the chip row
-   never disappears.
+1. **Header** — wordmark and one line of what it is.
+2. **Search box** — autofocus, submits on Enter. One primary button, labelled
+   by the current mode (`Search` / `Ask`).
+3. **Controls row** — filter chips on the left (`all` / `transcript` /
+   `on-screen text` / `frames`, mapping to `content_type`, `all` by default),
+   and on the right a two-pill **mode switch**, `search | ask ✨`. The switch is
+   hidden entirely when `ask_enabled` is false. In ask mode the filter chips
+   are hidden rather than disabled: the model picks the channel, so a filter
+   there would be a control that does nothing.
 4. **Results** — one row per hit, hairline-separated: thumbnail (or a muted
-   placeholder), title · channel, the timestamped snippet with the query terms
+   placeholder naming the channel the hit came from — `spoken` / `screen` /
+   `frame`), title · channel, the timestamped snippet with the query terms
    marked, and `[mm:ss] ↗ youtu.be` opening the video at the moment in a new
-   tab. The whole row is the link.
-5. **Ask pane** (toggle on) — the answer as prose with `[n]` markers rendered as
-   clickable citation chips that scroll to a citation list of the same result
-   rows. A 503 replaces the pane with the degradation message and a "search
-   instead" button.
+   tab. The whole row is one `<a>`, so middle-click works.
+5. **Ask pane** (ask mode) — the answer as prose with `[n]` markers rendered as
+   superscript links to the moment they cite, followed by the same result rows
+   numbered to match. A 503 replaces the pane with the degradation message and
+   a "search instead" button; a 429 says how long to wait.
 6. **"Add this corpus to your own agent"** — the `mcp_url` from `/api/meta`, a
    copy button, and the one-liner:
    `claude mcp add --transport http vidtheque <mcp_url>`. This is the panel
@@ -472,9 +482,17 @@ Layout, top to bottom:
    link to the original talks on YouTube; vidtheque indexes what it watched and
    sends you back to the source.
 
+**A search is a URL.** `?q=` and `?type=` are written with `replaceState` on
+every search and read back on load, so a result page is shareable and the
+browser's history behaves. `?ask=1` arrives *in* ask mode with the question
+loaded but **does not fire**: an answer costs a slice of the daily model budget,
+and a shared link (or a crawler) must not spend it on page load. One click does.
+
 Accessibility floor: real `<form>`, real `<a href>` on every result (so
 middle-click works), `aria-live="polite"` on the results count and the answer
-pane, visible focus rings, and no colour-only state.
+pane, visible focus rings, and no colour-only state. Every string that comes
+from the corpus or the model is inserted as a DOM text node — there is no
+`innerHTML` anywhere in `app.js`.
 
 No inline `<script>` beyond a nonce-free module tag — the page is static files
 served from disk, so a CSP could be added later without rewriting it.
@@ -490,9 +508,16 @@ served from disk, so a CSP could be added later without rewriting it.
    conservative, not measured against anything. Raise it once the free tier's
    real behaviour is known.
 3. **Visual choices are mine** and are the easiest thing here to overrule: one
-   accent colour (a warm amber that reads on both grounds), the 44rem-ish
-   column, hairline rows over cards, and thumbnails at 96px. The whole palette
-   is six custom properties at the top of `style.css`.
+   accent colour (a warm amber that reads on both grounds), the 46rem column,
+   hairline rows over cards, thumbnails at 96px, and the `search | ask ✨` pill
+   pair instead of a toggle button. The whole palette is six custom properties
+   at the top of `style.css`.
+5. **Multi-word search is broken underneath this** at the time of writing:
+   `search q="kv cache"` answers `E_INTERNAL — fts5: syntax error near "OR"`
+   (single terms and hyphenated ones are fine). The facade surfaces it honestly
+   as a 500 with the typed code, and the demo page shows the message. It is a
+   query-layer bug, not a facade one, and it is being fixed separately — but a
+   public demo cannot ship while two-word queries fail.
 4. **`/api` is public-mode-only.** A private deployment that wants the JSON
    facade for its own tooling has to set the flag, which also masks its write
    tools. If that combination is ever wanted, the flag splits in two; it is not
