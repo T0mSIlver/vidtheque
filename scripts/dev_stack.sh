@@ -31,19 +31,38 @@ mkdir -p "$RUN_DIR"
 
 pid_alive() { [ -f "$1" ] && kill -0 "$(cat "$1")" 2>/dev/null; }
 
-start_one() { # name, pidfile, logfile, cmd...
-  local name="$1" pidfile="$2" logfile="$3"; shift 3
-  if pid_alive "$pidfile"; then echo "$name already running (pid $(cat "$pidfile"))"; return; fi
-  ( cd "$REPO" && nohup "$@" >>"$logfile" 2>&1 & echo $! >"$pidfile" )
-  echo "$name started (pid $(cat "$pidfile"), log $logfile)"
+port_answers() { curl -fsS -m 2 "http://127.0.0.1:$1/healthz" >/dev/null 2>&1; }
+
+start_one() { # name, pidfile, logfile, port, cmd...
+  local name="$1" pidfile="$2" logfile="$3" port="$4"; shift 4
+  if port_answers "$port"; then
+    echo "$name: something already answers on port $port — refusing to double-start" >&2
+    return 1
+  fi
+  # setsid: the whole service (uv wrapper + python child) is one process
+  # group, so stop can kill the group. The pidfile stores the group leader.
+  ( cd "$REPO" && setsid nohup "$@" >>"$logfile" 2>&1 & echo $! >"$pidfile" )
+  echo "$name started (pgid $(cat "$pidfile"), log $logfile)"
+}
+
+stop_one() { # name, pidfile, pattern
+  local name="$1" pidfile="$2" pattern="$3"
+  if pid_alive "$pidfile"; then
+    kill -- "-$(cat "$pidfile")" 2>/dev/null || kill "$(cat "$pidfile")" 2>/dev/null || true
+  fi
+  # Belt and suspenders: the pidfile has been wrong before (a stop that only
+  # killed the wrapper left orphaned services holding the ports — and a later
+  # "restart" silently served old code). Kill by pattern too.
+  pkill -f "$pattern" 2>/dev/null && echo "$name stopped" || echo "$name not running"
+  rm -f "$pidfile"
 }
 
 case "${1:-status}" in
   start)
-    start_one worker "$RUN_DIR/worker.pid" "$RUN_DIR/worker.log" \
+    start_one worker "$RUN_DIR/worker.pid" "$RUN_DIR/worker.log" "$VIDTHEQUE_WORKER_PORT" \
       env VIDTHEQUE_HOST=127.0.0.1 VIDTHEQUE_PORT="$VIDTHEQUE_WORKER_PORT" \
       uv run --no-sync python -m vidtheque_worker
-    start_one mcp "$RUN_DIR/mcp.pid" "$RUN_DIR/mcp.log" \
+    start_one mcp "$RUN_DIR/mcp.pid" "$RUN_DIR/mcp.log" "$VIDTHEQUE_MCP_PORT" \
       env VIDTHEQUE_HOST=127.0.0.1 VIDTHEQUE_PORT="$VIDTHEQUE_MCP_PORT" \
       VIDTHEQUE_DATA_DIR="$DATA_DIR" \
       WORKER_URL="http://127.0.0.1:$VIDTHEQUE_WORKER_PORT" \
@@ -51,22 +70,17 @@ case "${1:-status}" in
       uv run --no-sync python -m vidtheque_mcp
     ;;
   stop)
-    for svc in mcp worker; do
-      if pid_alive "$RUN_DIR/$svc.pid"; then
-        kill "$(cat "$RUN_DIR/$svc.pid")" && echo "$svc stopped"
-      else
-        echo "$svc not running"
-      fi
-      rm -f "$RUN_DIR/$svc.pid"
-    done
+    stop_one mcp "$RUN_DIR/mcp.pid" "python -m vidtheque_mcp"
+    stop_one worker "$RUN_DIR/worker.pid" "python -m vidtheque_worker"
     ;;
   status)
     for svc in worker mcp; do
-      if pid_alive "$RUN_DIR/$svc.pid"; then echo "$svc: running (pid $(cat "$RUN_DIR/$svc.pid"))"
-      else echo "$svc: stopped"; fi
+      if pid_alive "$RUN_DIR/$svc.pid"; then echo "$svc: running (pgid $(cat "$RUN_DIR/$svc.pid"))"
+      else echo "$svc: no live pidfile"; fi
     done
-    curl -fsS "http://127.0.0.1:$VIDTHEQUE_WORKER_PORT/healthz" >/dev/null 2>&1 && echo "worker /healthz: ok" || echo "worker /healthz: no answer"
-    curl -fsS "http://127.0.0.1:$VIDTHEQUE_MCP_PORT/healthz" >/dev/null 2>&1 && echo "mcp /healthz: ok" || echo "mcp /healthz: no answer"
+    port_answers "$VIDTHEQUE_WORKER_PORT" && echo "worker /healthz: ok" || echo "worker /healthz: no answer"
+    port_answers "$VIDTHEQUE_MCP_PORT" && echo "mcp /healthz: ok" || echo "mcp /healthz: no answer"
+    pgrep -af "python -m vidtheque_(worker|mcp)" | sed 's/^/  proc: /' || true
     ;;
   logs)
     tail -n 40 "$RUN_DIR/worker.log" "$RUN_DIR/mcp.log"
