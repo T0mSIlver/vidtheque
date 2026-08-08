@@ -50,8 +50,9 @@ timestamped citations (`youtu.be/ID?t=123`). Owner: Tom Vaucourt. MIT.
 
 ## Git
 
-- Commit locally in small, logical commits. **Never push without Tom's
-  explicit go-ahead** — pushing publishes to a public repo.
+- Commit locally in small, logical commits. The **orchestrating session
+  pushes `main` regularly** as backup (standing authorization from Tom,
+  2026-08-08); **subagents never push**.
 - Multi-agent sessions are common here: `git add` only the specific paths
   you created or edited — never `git add -A` / `git add .` — and expect
   other agents to be writing sibling files concurrently. If `index.lock`
