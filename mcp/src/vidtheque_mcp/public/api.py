@@ -36,7 +36,9 @@ from ..tools import library, search
 from ..tools.base import Deps
 from .settings import REPO_URL, PublicSettings
 
-THUMB_WIDTH = 320
+# 96×54 CSS pixels at 2x DPR — now that /frames actually applies w, this is
+# the honest size (was 320 when the param was decorative; ~2x page weight).
+THUMB_WIDTH = 192
 THUMB_QUALITY = 70
 
 SEARCH_MAX_LIMIT = 20
