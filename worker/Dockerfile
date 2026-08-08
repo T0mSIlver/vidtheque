@@ -27,11 +27,16 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HF_HOME=/hf-cache \
     PATH=/app/.venv/bin:/root/.local/bin:$PATH
 
-# ffmpeg is not optional: whisperX decodes audio through it.
+# ffmpeg is not optional: whisperX decodes audio through it. libgl1 and
+# libglib2.0-0 are not optional either: rapidocr hard-depends on opencv-python
+# (not -headless), which fails at import with `libGL.so.1: cannot open shared
+# object file` without them.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
         ffmpeg \
+        libgl1 \
+        libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ghcr.io/astral-sh/uv:0.11.24 /uv /uvx /usr/local/bin/
