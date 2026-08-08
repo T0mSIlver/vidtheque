@@ -20,6 +20,22 @@ size such that the patch count fits, then pads in the patch dimension.
 
 Vectors come back L2-normalised, in the order the images were given: SigLIP
 scores by sigmoid over a scaled cosine, and ranking only needs the cosine.
+
+**Both towers, one checkpoint.** :meth:`SigLIP2Backend.embed_text` runs the
+*text* tower of the same loaded model, which is the entire reason to index
+frames with SigLIP rather than caption them: a natural-language query lands in
+the same 1152-d space as the frames without a second model, a second slot or a
+second load. Two constraints come with it, both silent when wrong:
+
+* the trained text context is **64 tokens** (the config's ``model_max_length``
+  is the ``1e30`` sentinel — ignore it), so this is a query path and never a
+  way to index prose into the frame space; and
+* the model was trained on lowercased text padded to that 64-token window.
+  transformers 5.x applies the lowercasing and ``padding="max_length",
+  max_length=64, truncation=True`` inside the processor; **4.x does not**, and
+  this worker is on 4.x because whisperX caps ``huggingface-hub`` below what
+  5.14 needs. So :meth:`_encode_text` passes all of it explicitly. Those are
+  also 5.x's own defaults, so the call stays correct if the pin ever moves.
 """
 
 from __future__ import annotations
@@ -36,6 +52,9 @@ DEFAULT_MODEL = "google/siglip2-so400m-patch16-naflex"
 
 PATCH_BUDGETS = (128, 256, 576, 784, 1024)
 """The budgets NaFlex was trained on. Others load, but are off-distribution."""
+
+TEXT_CONTEXT_TOKENS = 64
+"""Trained context of the text tower. Everything past it is dropped, quietly."""
 
 
 class SigLIP2Backend(BaseBackend):
@@ -127,11 +146,73 @@ class SigLIP2Backend(BaseBackend):
         with torch.inference_mode():
             features = self._model.get_image_features(**inputs)
             features = features / features.norm(p=2, dim=-1, keepdim=True)
-        return [[float(x) for x in row] for row in features.float().cpu()]
+        return _to_lists(features)
+
+    # -- text tower --------------------------------------------------------
+    def embed_text(self, texts: list[str], **kwargs: Any) -> Embeddings:
+        """Short natural-language queries into the same space as :meth:`infer`.
+
+        Same instance, same slot, same weights — the towers are two heads of one
+        checkpoint. See the module docstring for the 64-token ceiling and the
+        transformers-4.x preprocessing this has to do by hand.
+        """
+        if self._model is None or self._processor is None:
+            raise BackendUnavailable("frame embedding model is not loaded")
+
+        batch_size = max(1, int(kwargs.get("batch_size", self.batch_size)))
+        vectors: list[list[float]] = []
+        for start in range(0, len(texts), batch_size):
+            vectors.extend(self._encode_text(texts[start : start + batch_size]))
+
+        dims = self._dims or (len(vectors[0]) if vectors else 0)
+        return Embeddings(vectors=vectors, dims=dims, model=self.model_id)
+
+    def _encode_text(self, texts: list[str]) -> list[list[float]]:
+        torch = self._torch
+        # The four arguments below are the whole correctness story on
+        # transformers 4.x: the checkpoint was trained on lowercased text
+        # padded to a 64-token window, and 4.x's processor applies none of it.
+        # Omit them and nothing errors — retrieval quality just quietly drops.
+        inputs = self._processor(
+            text=[text.lower() for text in texts],
+            padding="max_length",
+            max_length=TEXT_CONTEXT_TOKENS,
+            truncation=True,
+            return_tensors="pt",
+        ).to(self._model.device)
+        _warn_if_truncated(inputs, texts)
+        with torch.inference_mode():
+            features = self._model.get_text_features(**inputs)
+            features = features / features.norm(p=2, dim=-1, keepdim=True)
+        return _to_lists(features)
 
     @property
     def dims(self) -> int | None:
         return self._dims
+
+
+def _to_lists(features: Any) -> list[list[float]]:
+    return [[float(x) for x in row] for row in features.float().cpu()]
+
+
+def _warn_if_truncated(inputs: Any, texts: list[str]) -> None:
+    """Say so when a query filled the window, since truncation is otherwise mute.
+
+    Best-effort by design: the mask is only there to be read if the processor
+    returned one, and a query that is exactly 64 tokens long trips this too.
+    Better a spurious line in the log than a query embedded from its first half.
+    """
+    mask = inputs.get("attention_mask") if hasattr(inputs, "get") else None
+    if mask is None:
+        return
+    kept = mask.sum(dim=-1).tolist()
+    for text, length in zip(texts, kept, strict=False):
+        if length >= TEXT_CONTEXT_TOKENS:
+            log.warning(
+                "frame query filled the %d-token window and was truncated: %.60s",
+                TEXT_CONTEXT_TOKENS,
+                text,
+            )
 
 
 def _open_rgb(blob: bytes) -> Any:

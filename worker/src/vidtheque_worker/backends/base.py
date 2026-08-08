@@ -134,6 +134,15 @@ class ImageEmbedBackend(Backend, Protocol):
 
     def infer(self, images: list[bytes], **kwargs: Any) -> Embeddings: ...
 
+    def embed_text(self, texts: list[str], **kwargs: Any) -> Embeddings:
+        """Short text queries into the *same* space :meth:`infer` writes to.
+
+        A vision-language embedder has two towers over one checkpoint, so this
+        is the same instance and the same lifecycle slot — never a second load.
+        Text tower contexts are short (64 tokens for SigLIP 2): this is how a
+        query reaches the frame index, not a way to index prose into it.
+        """
+
 
 @runtime_checkable
 class OCRBackend(Backend, Protocol):

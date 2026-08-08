@@ -27,10 +27,11 @@ gpu = [
     # lowercase + pad-to-64 on SigLIP2's *text* tower. That is unsatisfiable
     # here: transformers 5.14 requires huggingface-hub>=1.5, whisperX 3.8.6
     # pins huggingface-hub<1.0, and there is no whisperX release without that
-    # cap. Nothing is lost today — this worker only runs the image tower — but
-    # a future frame-query path on transformers 4.x must pass
-    # `padding="max_length", max_length=64, truncation=True` and lowercase the
-    # text itself, or the query embeddings degrade silently.
+    # cap. So the frame-query path does that preprocessing itself — see
+    # `_encode_text` in backends/siglip2_image_embed.py, which passes
+    # `padding="max_length", max_length=64, truncation=True` and lowercases the
+    # text. Those are 5.x's own defaults, so it stays correct if the pin moves;
+    # drop them and query embeddings degrade with nothing in the logs.
     "transformers>=4.56",
     # `rapidocr`, not the frozen `rapidocr-onnxruntime`: the merged package is
     # where PP-OCRv6 lives, and it bundles its default models in the wheel.

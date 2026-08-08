@@ -30,7 +30,9 @@ text embeddings, frame embeddings, and on-screen-text OCR. One lifecycle manager
 owns the GPU — requests queue rather than compete. The transcription and text
 embedding endpoints follow OpenAI's shapes so a GPU-less deployment can swap in a
 hosted provider. Text and frame embeddings are separate vector spaces with
-separate models and separate endpoints; they are never interchangeable.
+separate models and separate endpoints; they are never interchangeable. A
+natural-language query reaches the frame space through the frame model's own
+text tower, on /v1/embeddings/frame-query — never through /v1/embeddings.
 """
 
 

@@ -87,8 +87,9 @@ class Settings(BaseSettings):
 
     embed_resident: bool = Field(default=False, validation_alias=_either("EMBED_RESIDENT"))
     """Keep the *text* embedding model loaded permanently and exempt from
-    eviction. The frame embedder is never resident — it is an indexing-time
-    cost, not a query-time one, and it is the biggest model of the three."""
+    eviction. The frame embedder is never resident: its text tower does serve
+    queries, but at ~5 GB it is the biggest model here, so a frame search on a
+    cold worker pays for the load rather than the card paying for it always."""
 
     vram_headroom_mb: int = Field(default=512, validation_alias=_either("VRAM_HEADROOM_MB"))
     """Slack required on top of a backend's estimate before a load is allowed."""

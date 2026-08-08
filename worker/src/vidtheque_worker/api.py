@@ -22,6 +22,7 @@ from .lifecycle import LifecycleManager
 from .schemas import (
     EmbeddingsRequest,
     EmbeddingsResponse,
+    FrameQueryRequest,
     HealthResponse,
     OCRResponse,
     StatusResponse,
@@ -38,6 +39,9 @@ router = APIRouter()
 
 MAX_EMBED_BATCH = 512
 MAX_IMAGE_EMBED_BATCH = 64
+MAX_FRAME_QUERY_BATCH = 32
+"""Lower than the image batch on purpose: this is a query path, one or two
+strings at a time, not the indexing path that earns a big batch."""
 MAX_OCR_IMAGES = 64
 MAX_PATCH_BUDGET = 4096
 """Ceiling on the frame embedder's resolution knob. The model's trained budgets
@@ -224,6 +228,61 @@ async def image_embeddings(
         return backend.infer(blobs, **kwargs)
 
     result = await manager.submit("image_embed", job, label=f"{len(blobs)} images")
+    return to_embeddings_response(result)
+
+
+# --------------------------------------------------------------------------
+# POST /v1/embeddings/frame-query
+#
+# The other half of the frame index: text in, a vector in the *frame* space
+# out, produced by the frame model's own text tower. That is the whole reason
+# frames are embedded with SigLIP rather than captioned — one checkpoint, two
+# towers, one space — so this shares the `image_embed` slot and its loaded
+# model. Nothing is loaded twice.
+#
+# A third path under /v1/embeddings/ rather than a `space=frame` field on
+# /v1/embeddings, and the reason is the same swap the prior split protects.
+# Point WORKER_URL at a hosted OpenAI provider and an unknown *field* is
+# ignored: the caller asks for frame space, gets the provider's text space at
+# some other width, and writes it into the frame index. An unknown *path*
+# 404s. Between a silent index corruption and a loud failure, take the 404.
+#
+# Named for its use, not its modality: the text tower's trained context is 64
+# tokens, so "frame-query" is the only thing it is correct for. An endpoint
+# called /v1/embeddings/text would invite someone to push transcript prose
+# through it and index the truncated result.
+# --------------------------------------------------------------------------
+
+
+@router.post(
+    "/v1/embeddings/frame-query",
+    response_model=EmbeddingsResponse,
+    summary="Embed a text query into the frame vector space",
+)
+async def frame_query_embeddings(
+    request: Request, body: FrameQueryRequest
+) -> EmbeddingsResponse:
+    """Vectors are L2-normalised and comparable to `/v1/embeddings/image`
+    output — and to nothing `/v1/embeddings` returns."""
+    texts = body.texts()
+    if not texts:
+        raise HTTPException(status_code=400, detail="input must not be empty")
+    if len(texts) > MAX_FRAME_QUERY_BATCH:
+        raise HTTPException(
+            status_code=413,
+            detail=f"input has {len(texts)} items; max {MAX_FRAME_QUERY_BATCH} per "
+            "request on the frame-query path",
+        )
+
+    manager = get_manager(request)
+    configured = _model_id(manager, "image_embed")
+    if body.model and configured and body.model != configured:
+        log.info("ignoring requested model=%s; worker serves %s", body.model, configured)
+
+    def job(backend: Backend) -> Any:
+        return backend.embed_text(texts)
+
+    result = await manager.submit("image_embed", job, label=f"{len(texts)} frame queries")
     return to_embeddings_response(result)
 
 

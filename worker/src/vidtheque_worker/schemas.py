@@ -80,18 +80,33 @@ def to_verbose(
 # --------------------------------------------------------------------------
 
 
-class EmbeddingsRequest(BaseModel):
+class _TextInput(BaseModel):
+    """OpenAI's ``input`` polymorphism, shared by the two text-in endpoints."""
+
     input: str | list[str]
     model: str | None = None
     encoding_format: Literal["float"] = "float"
+
+    def texts(self) -> list[str]:
+        return [self.input] if isinstance(self.input, str) else list(self.input)
+
+
+class EmbeddingsRequest(_TextInput):
     user: str | None = None
     input_type: Literal["document", "query"] = "document"
     """Non-OpenAI extra, and optional: an instruction-tuned embedder prefixes
     queries and not documents. Defaults to ``document`` so a caller that never
     sends it indexes correctly, and a symmetric model ignores it entirely."""
 
-    def texts(self) -> list[str]:
-        return [self.input] if isinstance(self.input, str) else list(self.input)
+
+class FrameQueryRequest(_TextInput):
+    """A query for the frame vector space, run through the frame model's text tower.
+
+    No ``input_type``: the frame model is symmetric and this endpoint is the
+    query side by construction — the document side is images, and it has its
+    own endpoint. Keep the strings short; SigLIP 2's trained text context is 64
+    tokens, and anything past it is dropped without an error.
+    """
 
 
 class EmbeddingItem(BaseModel):
