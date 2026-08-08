@@ -73,6 +73,54 @@ def sanitize_fts(query: str) -> str:
     return " ".join(cleaned)
 
 
+def expand_prefix_fts(query: str) -> str:
+    """OCR-leg matching: each plain term also matches as a prefix.
+
+    The OCR tokenizer keeps ``-._/`` inside tokens so `nvidia-smi` and
+    `torch.compile` survive as searchable units — which makes `cve-2026-22812`
+    ONE token, and a search for `CVE` match nothing. Measured live: the model
+    searched "opencode CVE" against a corpus whose OCR plainly contained
+    `CVE-2026-22812 Detail`, got zero hits, and told the user the corpus had
+    no CVE mentions (screenpipe compensates for the same tokenizer choice the
+    same way — query-side expansion, never compound-splitting at index time).
+
+    Each unquoted term of ≥3 chars becomes ``("term" OR "term"*)``; phrases,
+    operators, explicit ``term*`` and short terms pass through `sanitize_fts`
+    semantics unchanged. AND-between-groups is preserved.
+    """
+    parts: list[str] = []
+    for raw in _TOKEN.findall(query.strip()):
+        if raw.startswith('"'):  # phrase — exactly as sanitize_fts
+            phrase = raw if raw.endswith('"') and len(raw) > 1 else raw + '"'
+            if phrase.strip('"').strip():
+                parts.append(phrase)
+            continue
+        if raw.upper() in _OPERATORS:
+            parts.append(raw.upper())
+            continue
+        trailing_star = raw.endswith("*")
+        term = (raw[:-1] if trailing_star else raw).strip("()")
+        if not term:
+            continue
+        quoted = '"' + term.replace('"', "") + '"'
+        if trailing_star:
+            parts.append(quoted + "*")
+        elif len(term) >= 3:
+            parts.append(f"({quoted} OR {quoted}*)")
+        else:
+            parts.append(quoted)
+
+    # Same operator hygiene as sanitize_fts; a group counts as a term.
+    cleaned: list[str] = []
+    for token in parts:
+        if token in _OPERATORS and (not cleaned or cleaned[-1] in _OPERATORS):
+            continue
+        cleaned.append(token)
+    while cleaned and cleaned[-1] in _OPERATORS:
+        cleaned.pop()
+    return " ".join(cleaned)
+
+
 def is_browse_query(query: str | None) -> bool:
     """Bare `*`/empty with filters = browse mode: skip FTS entirely, fast path."""
     return query is None or query.strip() in {"", "*"}
@@ -444,7 +492,9 @@ def probe_ocr(conn: sqlite3.Connection, params: SearchParams, headroom: int = 30
 
 def _ocr_bind(params: SearchParams) -> dict[str, Any]:
     return {
-        "q": sanitize_fts(params.q or ""),
+        # Prefix-expanded, not plain-sanitized: the OCR tokenizer's tokenchars
+        # make `cve-2026-22812` one token, and `CVE` must still find it.
+        "q": expand_prefix_fts(params.q or ""),
         "rrf_k": RRF_K,
         "candidate_cap": params.candidate_cap,
         "video_ids": json.dumps(list(params.video_ids)),
