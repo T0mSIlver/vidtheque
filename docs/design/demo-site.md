@@ -512,12 +512,12 @@ served from disk, so a CSP could be added later without rewriting it.
    hairline rows over cards, thumbnails at 96px, and the `search | ask ✨` pill
    pair instead of a toggle button. The whole palette is six custom properties
    at the top of `style.css`.
-5. **Multi-word search is broken underneath this** at the time of writing:
-   `search q="kv cache"` answers `E_INTERNAL — fts5: syntax error near "OR"`
-   (single terms and hyphenated ones are fine). The facade surfaces it honestly
-   as a 500 with the typed code, and the demo page shows the message. It is a
-   query-layer bug, not a facade one, and it is being fixed separately — but a
-   public demo cannot ship while two-word queries fail.
+5. **Nothing outstanding on the query layer.** Driving the facade surfaced a
+   multi-word FTS break (`search q="kv cache"` → `E_INTERNAL`, fts5 syntax
+   error near `"OR"`); it was fixed in parallel by the expanded-OCR-groups
+   commit and both legs are green again. Worth noting only as evidence that a
+   browser hitting the read surface finds things nine tool descriptions do
+   not — which is half of why the demo is useful internally.
 4. **`/api` is public-mode-only.** A private deployment that wants the JSON
    facade for its own tooling has to set the flag, which also masks its write
    tools. If that combination is ever wanted, the flag splits in two; it is not

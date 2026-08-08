@@ -369,11 +369,8 @@ def test_ask_is_unavailable_without_a_key(public_client: TestClient) -> None:
 
 
 def test_ask_runs_the_tool_loop_and_cites_real_results(tmp_path: Path) -> None:
-    # Single-term on purpose: multi-word FTS is a separate, live bug at the time
-    # of writing (`search q="kv cache"` -> E_INTERNAL, fts5 syntax error), and
-    # this test is about the citation loop, not the query layer.
     upstream = Upstream(
-        _completion(tool_calls=[_tool_call("c1", "search", {"query": "cache"})]),
+        _completion(tool_calls=[_tool_call("c1", "search", {"query": "kv cache"})]),
         _completion(
             "The cache trades memory for time [1]. A fabricated marker [9] is dropped."
         ),
