@@ -457,7 +457,7 @@ async def test_progress_does_not_fall_back_to_the_siblings_on_a_requeue(
     video_id = int(video["id"])
     job_id = await db.write(
         lambda c: jobs_store.create_job(
-            c, "index", {}, [(f"https://youtu.be/kCc8FmEb1nY", video_id), (URL_B, None)]
+            c, "index", {}, [("https://youtu.be/kCc8FmEb1nY", video_id), (URL_B, None)]
         )
     )
     job = await db.write(jobs_store.claim_next)

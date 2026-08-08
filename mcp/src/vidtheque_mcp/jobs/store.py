@@ -578,7 +578,9 @@ def item_error_counts(
     return {str(row["error_code"]): int(row["n"]) for row in rows}
 
 
-def first_failure(conn: sqlite3.Connection, job_id: int, code: str | None = None) -> sqlite3.Row | None:
+def first_failure(
+    conn: sqlite3.Connection, job_id: int, code: str | None = None
+) -> sqlite3.Row | None:
     """The failed item that should speak for the job, in seq order.
 
     With `code`, the first item that failed *that* way — which is how
