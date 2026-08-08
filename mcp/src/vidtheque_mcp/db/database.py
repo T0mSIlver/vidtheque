@@ -1,0 +1,218 @@
+"""The database facade: boot, the anti-drift assertion, and access handles.
+
+The single most important table in the file is ``config``. Index-time and
+query-time must use the same models; if they drift, retrieval degrades silently
+and looks like a bad corpus rather than a bug.
+
+A mismatch is **fatal at boot for writes and degrades reads**: the server
+refuses to index (it would mix embedding spaces) but still serves FTS-only
+search, with a ``note:`` on every response saying the vector legs are disabled
+and why (index-schema §1.1).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import re
+import sqlite3
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable, TypeVar
+
+from .connection import ReadPool, Writer, open_write_connection
+from .migrations import migrate
+
+T = TypeVar("T")
+
+_DIM_RE = re.compile(r"FLOAT\[(\d+)\]", re.I)
+
+
+@dataclass
+class VectorState:
+    """Whether the vector legs may run, and why not when they may not."""
+
+    enabled: bool = True
+    reason: str | None = None
+
+    def disable(self, reason: str) -> None:
+        self.enabled = False
+        self.reason = reason
+
+    def note(self) -> str | None:
+        if self.enabled:
+            return None
+        return f"note: vector legs are disabled — {self.reason} Results are FTS-only."
+
+
+class ConfigDriftError(RuntimeError):
+    """Declared vector dimensions and the config table disagree."""
+
+
+@dataclass
+class Database:
+    """Owns the write connection, the read pool and the boot-time config."""
+
+    path: Path
+    read_pool_size: int = 4
+    query_budget_s: float = 30.0
+
+    config: dict[str, str] = field(default_factory=dict)
+    vectors: VectorState = field(default_factory=VectorState)
+    writes_allowed: bool = True
+
+    _pool: ReadPool | None = field(default=None, repr=False)
+    _writer: Writer | None = field(default=None, repr=False)
+
+    # ------------------------------------------------------------ lifecycle
+
+    async def open(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(self._bootstrap)
+        self._writer = Writer(self.path)
+        await self._writer.open()
+        self._pool = ReadPool(self.path, self.read_pool_size, self.query_budget_s)
+        await self._pool.open()
+
+    async def close(self) -> None:
+        if self._pool is not None:
+            await self._pool.close()
+            self._pool = None
+        if self._writer is not None:
+            await self._writer.close()
+            self._writer = None
+
+    def _bootstrap(self) -> None:
+        conn = open_write_connection(self.path)
+        try:
+            migrate(conn)
+            self.config = {
+                row["key"]: row["value"] for row in conn.execute("SELECT key, value FROM config")
+            }
+            self._assert_dimensions(conn)
+            self._recover_crashed_jobs(conn)
+        finally:
+            conn.close()
+
+    # ------------------------------------------------------ boot assertion
+
+    def _assert_dimensions(self, conn: sqlite3.Connection) -> None:
+        """Compare `config` against the dimensions declared on the vec tables.
+
+        The declared dimension lives in the DDL where the query planner needs
+        it and in `config` where the indexer needs it; they must agree or the
+        two halves of the system mean different things by "a vector".
+        """
+        declared = {
+            name: _declared_dim(conn, name) for name in ("vec_chunks", "vec_frames")
+        }
+        for key, table in (("text_embed.dim", "vec_chunks"), ("frame_embed.dim", "vec_frames")):
+            want = self.config.get(key)
+            got = declared[table]
+            if want is None or got is None:  # pragma: no cover - defensive
+                continue
+            if int(want) != got:
+                self.writes_allowed = False
+                self.vectors.disable(
+                    f"config[{key}]={want} but {table} declares FLOAT[{got}]; "
+                    "indexing is refused so embedding spaces cannot be mixed."
+                )
+
+    def _recover_crashed_jobs(self, conn: sqlite3.Connection) -> None:
+        """Crash recovery at boot (index-schema §1.9).
+
+        Any `running` job whose heartbeat is older than 3x the interval goes
+        back to `queued`, its running items with it, `attempts` already
+        incremented so a job that reliably kills the process retires after
+        `max_attempts` instead of looping forever.
+        """
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            stale = conn.execute(
+                "SELECT id FROM jobs WHERE state = 'running' "
+                "AND (heartbeat_at IS NULL OR heartbeat_at < unixepoch() - 90)"
+            ).fetchall()
+            for row in stale:
+                conn.execute(
+                    "UPDATE job_items SET state = 'queued', attempts = attempts + 1, "
+                    "stage_pct = 0.0 WHERE job_id = ? AND state = 'running'",
+                    (row["id"],),
+                )
+                conn.execute(
+                    "UPDATE jobs SET state = 'queued', heartbeat_at = NULL WHERE id = ?",
+                    (row["id"],),
+                )
+                conn.execute(
+                    "INSERT INTO job_events (job_id, level, message) VALUES (?, 'warn', ?)",
+                    (row["id"], "requeued at boot: heartbeat was stale"),
+                )
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        conn.execute("COMMIT")
+
+    # ------------------------------------------------------------- access
+
+    async def read(self, fn: Callable[[sqlite3.Connection], T], budget_s: float | None = None) -> T:
+        if self._pool is None:  # pragma: no cover - misuse
+            raise RuntimeError("Database.open() was never awaited")
+        return await self._pool.run(fn, budget_s)
+
+    async def write(self, fn: Callable[[sqlite3.Connection], T]) -> T:
+        if self._writer is None:  # pragma: no cover - misuse
+            raise RuntimeError("Database.open() was never awaited")
+        return await self._writer.run(fn)
+
+    # ------------------------------------------------------------- config
+
+    def config_int(self, key: str, default: int) -> int:
+        raw = self.config.get(key)
+        try:
+            return int(raw) if raw is not None else default
+        except ValueError:  # pragma: no cover - corrupt config
+            return default
+
+    @property
+    def text_dim(self) -> int:
+        return self.config_int("text_embed.dim", 1024)
+
+    @property
+    def frame_dim(self) -> int:
+        return self.config_int("frame_embed.dim", 1152)
+
+    @property
+    def query_prefix(self) -> str:
+        return self.config.get("text_embed.query_prefix", "")
+
+    @property
+    def diarization_enabled(self) -> bool:
+        return self.config.get("diarization.enabled", "0") == "1"
+
+    def note_worker_drift(self, model: str | None, dimensions: int | None) -> None:
+        """Called with what the worker actually returned for an embedding.
+
+        The EmbeddingsResponse carries `model` and `dimensions`; that is the
+        authoritative drift check, because it describes the vector we are about
+        to compare against stored ones.
+        """
+        if dimensions is not None and dimensions != self.text_dim:
+            self.vectors.disable(
+                f"the worker returned {dimensions}-d embeddings but the corpus "
+                f"stores {self.text_dim}-d vectors."
+            )
+            return
+        want = self.config.get("text_embed.model")
+        if model and want and model.lower() != want.lower():
+            self.vectors.disable(
+                f"the worker is serving {model!r} but the corpus was embedded "
+                f"with {want!r}."
+            )
+
+
+def _declared_dim(conn: sqlite3.Connection, table: str) -> int | None:
+    sql: Any = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE name = ?", (table,)
+    ).fetchone()
+    if sql is None or sql[0] is None:  # pragma: no cover - defensive
+        return None
+    match = _DIM_RE.search(sql[0])
+    return int(match.group(1)) if match else None
