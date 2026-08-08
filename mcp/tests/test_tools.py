@@ -192,6 +192,11 @@ async def test_list_videos_coverage_flags_the_gaps(assembled: Assembled) -> None
     rows = {r["video_id"]: r["coverage"] for r in structured(result)["videos"]}
     assert rows["kCc8FmEb1nY"] == "tof"
     assert rows["eMlx5fFNoYc"] == "t--"
+    # "missing channels" read as a missing YouTube channel name — and `channel`
+    # is a filter on this same tool (smoke §4.6).
+    text = body(result)
+    assert "have incomplete coverage" in text
+    assert "missing channels" not in text
 
 
 async def test_list_videos_relevance_needs_a_query(assembled: Assembled) -> None:
@@ -603,6 +608,20 @@ async def test_context_resource_is_json_with_timestamps(assembled: Assembled) ->
     assert payload["corpus"]["videos"] == 3
     assert payload["timestamps"]["today_start"].endswith("Z")
     assert payload["id_formats"]["frame_id"].startswith("<video_id>-")
+    # Seconds are the stored fact. Derived from the 0.1-rounded hours figure,
+    # any corpus under ~3 minutes reported 0 (smoke §4.6).
+    assert payload["corpus"]["total_duration_seconds"] == 7000 + 3600 + 1200
+
+
+async def test_a_short_corpus_reports_its_seconds(assembled: Assembled) -> None:
+    import sqlite3
+
+    conn = sqlite3.connect(assembled.settings.db_path)
+    conn.execute("UPDATE videos SET duration_s = 149.0 WHERE 1")
+    conn.commit()
+    conn.close()
+    payload = json.loads(await resources.context_resource(assembled.deps))
+    assert payload["corpus"]["total_duration_seconds"] == 447
 
 
 async def test_guide_carries_the_shared_rules(assembled: Assembled) -> None:

@@ -664,6 +664,10 @@ def video_tags(conn: sqlite3.Connection, video_ids: Sequence[int]) -> dict[int, 
 _CORPUS_SQL = """
 SELECT (SELECT COUNT(*) FROM videos WHERE index_state = 'ready')      AS videos_ready,
        (SELECT COUNT(*) FROM videos WHERE index_state <> 'ready')     AS videos_pending,
+       -- Seconds are the stored fact; hours are a display rounding of them.
+       -- Deriving seconds back out of a 0.1-rounded hours figure reported a
+       -- 149 s corpus as 0 (research/e2e-smoke-2026-08-08.md §4.6).
+       (SELECT COALESCE(SUM(duration_s), 0.0) FROM videos)                  AS duration_s,
        (SELECT COALESCE(ROUND(SUM(duration_s)/3600.0, 1), 0.0) FROM videos) AS hours,
        (SELECT COUNT(*) FROM cues)                                    AS cues,
        (SELECT COUNT(*) FROM keyframes WHERE dup_of IS NULL)          AS keyframes,

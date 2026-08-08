@@ -143,7 +143,10 @@ async def list_videos(
     if missing:
         example = missing[0]
         footer.append(
-            f"{len(missing)} video(s) have missing channels. "
+            # "channels" here means transcript/OCR/frame coverage, but `channel`
+            # is also a filter parameter on this very tool, so the old wording
+            # read as a missing YouTube channel name (smoke §4.6).
+            f"{len(missing)} video(s) have incomplete coverage. "
             f'next: index-video url="https://youtu.be/{example["video_id"]}" force_reindex=true'
         )
     if records:

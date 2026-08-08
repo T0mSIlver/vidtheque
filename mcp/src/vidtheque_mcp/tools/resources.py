@@ -140,7 +140,7 @@ async def context_resource(deps: Deps) -> str:
         },
         "corpus": {
             "videos": total,
-            "total_duration_seconds": int(float(rollup["hours"] or 0) * 3600),
+            "total_duration_seconds": int(float(rollup["duration_s"] or 0)),
             "first_published": iso_day(rollup["oldest_published"]),
             "last_published": iso_day(rollup["newest_published"]),
             "last_indexed": iso_z(rollup["last_indexed"]),
