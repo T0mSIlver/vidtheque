@@ -1,7 +1,7 @@
 # The management dashboard — the primary surface for the index
 
-**Status: REVIEWED (Tom, 2026-08-09). Phase 1 is implemented; phases 2–5 are
-not.** Written 2026-08-09 against the tree at `7dc8226`; every fact about the
+**Status: REVIEWED (Tom, 2026-08-09). Phases 1 and 2 are implemented; phases
+3–5 are not.** Written 2026-08-09 against the tree at `7dc8226`; every fact about the
 code was checked and is cited with a path. The open questions in §10 were real
 forks and are now mostly resolved inline. §8 records what each phase actually
 delivered as it lands.
@@ -693,8 +693,13 @@ the same problem with different units, and the same answers.
 
 All read-only additions to modules that already exist. **No new table.**
 
-**Shipped in phase 1**, except the two `jobs/store.py` items and
-`worker_version`. One thing this list got wrong: `list_videos` did not just
+**Shipped in phase 1**, except `worker_version`; the two `jobs/store.py` items
+**shipped in phase 2**, along with three this list did not anticipate —
+`job_items` had to start selecting `attempts`/`max_attempts` (incremented since
+the retry loop landed, read by nobody), `list_jobs` gained an `offset` so the
+table pages with `has_more`, and `degraded_counts(job_ids)` is the grouped
+version of `degraded_items` a table of rows needs. One thing this list got
+wrong: `list_videos` did not just
 need a new filter, it needed the *existing* clause to become one. `_RESOLVE_SQL`
 hard-codes `index_state IN ('ready','stale')`, which is the right meaning of "in
 the corpus" for search and for a model browsing the library, and the wrong one
@@ -715,10 +720,13 @@ In `db/queries.py`:
 - `per_video_counts(video_id)` — the four `COUNT(*)`s, detail page only.
 - `keyframe_bytes_total()` — for the overview's disk figure.
 
-In `jobs/store.py`:
+In `jobs/store.py` (all shipped in phase 2):
 
-- `job_event_page(job_id, item_id, limit)`.
-- `_JOB_SQL` selects `j.not_before` and `j.priority` (§4.4).
+- `job_event_page(job_id, item_id, limit)` — newest first, on `job_events_by_job`.
+- `_JOB_SQL` selects `j.not_before` and `j.priority` (§4.4), plus `defer_s`, the
+  remainder of the backoff computed on the clock the column was written against.
+- `job_items` selects `attempts` / `max_attempts`; `list_jobs` takes an `offset`;
+  `degraded_counts(job_ids)` answers the table's badge in one grouped query.
 
 In `public/api.py`: the clamp constants become a policy object (§2.5.1).
 
@@ -774,16 +782,40 @@ login to mint), search and ask on this surface (phase 5), and
 `video_stages.worker_version` (§10.5 — a schema change, Tom's, and no read
 depends on it yet).
 
-**Phase 2 — the jobs view.** Read-only. `not_before` as a countdown, `attempts`,
-`degraded_items`, the `job_events` tail, 2 s polling. Closes the blind spot the
-overnight batch found. Still no writes. Also in this phase: dashboard HTML
-switches its frame `src`es to **relative** `/frames/…` paths so pages survive
-SSH tunnels, reverse proxies and port maps unconfigured (found 2026-08-09: a
-preview on a non-default port rendered every thumbnail against a dead
-`PUBLIC_URL`). Absolute URLs remain the MCP contract — agents need
-self-contained authenticated URLs — so the split lives in the `thumb_url`
+**Phase 2 — the jobs view. ✅ SHIPPED 2026-08-09.** Read-only. `not_before` as a
+countdown, `attempts`, `degraded_items`, the `job_events` tail, 2 s polling.
+Closes the blind spot the overnight batch found. Still no writes. Also in this
+phase: dashboard HTML switches its frame `src`es to **relative** `/frames/…`
+paths so pages survive SSH tunnels, reverse proxies and port maps unconfigured
+(found 2026-08-09: a preview on a non-default port rendered every thumbnail
+against a dead `PUBLIC_URL`). Absolute URLs remain the MCP contract — agents
+need self-contained authenticated URLs — so the split lives in the `thumb_url`
 helper, not in the signer. And `/dashboard/` (trailing slash) redirects to
 `/dashboard` instead of 404ing.
+
+What landed, against what this document specified:
+
+| §  | promised | shipped |
+|---|---|---|
+| 4.4 | `not_before` surfaced — "the single highest-value line" | `_JOB_SQL` selects `not_before` **and** `defer_s`, the remainder computed in SQL on the clock the column was written against. Rendered as a countdown that the poller resets and the page ticks down between polls. **Only on a `queued` job**: `not_before` left on a `running` row is a stamp the last deferral dropped, and a countdown against it would invent a wait that is not happening |
+| 4.4 | `attempts` / `max_attempts` | shipped — and `job_items` had to start *selecting* them, which this document did not anticipate. The page states the inference out loud rather than implying it: the counter is one half of "will this come back", the job's countdown is the other, and `retryable` is still not a column |
+| 5.4 | per job: state · kind · priority · the four recomputed counts · created / started / finished | as specified, plus **two durations, never one** — `created → finished` is what the job cost the queue and `started → finished` is time on the runner. Both are only honest because `started_at` is now the first claim; the gap between them *is* the deferral |
+| 5.4 | per item: state · stage · stage_pct · attempts · error_code · error_message · its `job_events` tail | shipped, except the tail is **per job, not per item** — one `job_event_page(job_id)` read for the page instead of one per row (§6.3). The events carry their `item_id`, so per-item filtering is a parameter that already exists when a page wants it |
+| 5.4 | `degraded_items` for every recent `done` job | on the detail page as the full list with stages and reasons; on the *table* as a badge from a new `degraded_counts(job_ids)` — one grouped query for the page, because a badge per row must never become a query per row |
+| 5.4 | live progress: polling, 2 s, stopped when nothing is live | `dashboard/static/jobs.js` against `/dashboard/api/jobs[/{job_id}]`. Not an env var — a poll interval that is a deployment knob is one somebody sets to 100 ms. Every changing value is formatted **server-side** and assigned as `textContent`, so the poller carries no formatter of its own; the one exception is the countdown between ticks, which is arithmetic on a number the server sent. New events are appended as elements, never as markup |
+| 5.4 | `args_json` never verbatim; no stack traces | shipped. Nothing renders `args_json` at all in this phase: `kind`, `priority` and the item rows say everything the page needed |
+| 5.4 | `item_stages` | rendered for **one** item — the running one, or the last to finish, and only if it resolved to a video. Seven stage rows per item is the fan-out §6.3 forbids; every other item's stages are one click away on its own video page. This is also what makes the demo's stated purpose land: the per-stage durations are on the page |
+| 2.4 / 10.4 | demo keeps the view, drops source URLs and `error_message`, keeps the clocks | as specified, and asserted **both ways** — the owner's page is the contrast in the same test, so a redaction that quietly grows fails. One field needed a ruling this document did not cover: a `job_events` message is *both* redacted things at once (the runner writes `"retrying in {delay}s after {code}: {message}"`, and a reclaim writes the item's URL) with no structured half to keep. Demo mode keeps the shape of the log — when, how loud, which stage — and none of the prose |
+| 5.4 | reads listed | `nonproductive_reasons` was **not** used: the items table already shows every `skipped`/`cancelled` item with its reason, and a second read of the same rows is a second way to say it |
+| 6.3 | no page issues a query per row | two reads for the table whatever the row count, six for the detail page whatever the item count, asserted as a *shape* (one row and a hundred cost the same) exactly as phase 1 asserts it |
+| 8 | relative frame paths in dashboard HTML | `thumb_url(…, absolute=False)`, used by every dashboard page. `/api/*` on both prefixes and the MCP tools are asserted still absolute, in the same test. Signing is untouched and needed to be: the MAC covers the frame, the width, the quality and the expiry, **never the origin**, so a relative signed URL verifies as an absolute one does — asserted, including a forged one |
+| 8 | `/dashboard/` redirects | 308, query string preserved, and unguarded like the stylesheet because a redirect leaks nothing. It has to be a real route: `Mount("/")` matches everything, so Starlette's own `redirect_slashes` never gets to run |
+| 9 | new env vars in `deploy/.env.example` | **none added.** The poll interval is a constant, the clamps are the owner policy phase 1 shipped, and the 2 s tick fits inside `VIDTHEQUE_RATE_DASHBOARD_PER_MIN` at 30 requests a minute per open tab |
+
+**Deferred out of phase 2, deliberately:** per-item event filtering (the read
+takes the parameter; no page passes it), `args_json`'s parsed fields, and the
+"degraded across all recent jobs" roll-up — the badge is per job, and the
+corpus overview already answers the corpus-wide version.
 
 **Phase 3 — the write side.** Session login (bearer → the existing
 `vidtheque_session` cookie), POST-only + `Origin` discipline, the index form,
