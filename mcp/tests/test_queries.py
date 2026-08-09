@@ -238,14 +238,19 @@ def test_per_video_diversity_cap_applies_to_the_frame_leg_too(
     assert max(per_video.values()) == 1
 
 
-def test_ocr_probe_and_page_share_the_filter(conn: sqlite3.Connection) -> None:
-    """The transcript leg had this assertion; the OCR leg did not."""
-    pool = ids(conn)
-    params = queries.SearchParams(q="cache OR nvidia OR block", video_ids=pool, limit=50)
-    rows = queries.search_ocr(conn, params)
-    total, hit_ceiling = queries.probe_ocr(conn, params, headroom=1000)
-    assert hit_ceiling is False
-    assert total == len(rows)
+def test_there_is_no_count_probe_on_the_search_legs(conn: sqlite3.Connection) -> None:
+    """The probes are gone, and their absence is the contract.
+
+    They ceilinged at `offset + limit + headroom`, so the "total" they produced
+    moved with the page the caller asked for, and they counted candidate rows
+    before dedup and before the per-video cap — rows paging could never deliver
+    (research/demo-queries-2026-08-09.md §7.8, §9.1.6). `tools/search.py` counts
+    its fused pool instead. `list-videos` keeps its probe: it really does page
+    in SQL.
+    """
+    assert not hasattr(queries, "probe_transcript")
+    assert not hasattr(queries, "probe_ocr")
+    assert hasattr(queries, "probe_videos")
 
 
 def test_has_more_comes_from_limit_plus_one(conn: sqlite3.Connection) -> None:
@@ -262,33 +267,31 @@ def test_has_more_comes_from_limit_plus_one(conn: sqlite3.Connection) -> None:
     assert len(rows[: params.limit]) == 1
 
 
-def test_count_probe_is_bounded_by_the_ceiling(conn: sqlite3.Connection) -> None:
+def test_the_leg_limit_is_the_pool_bound_not_the_page(conn: sqlite3.Connection) -> None:
+    """`limit` on a leg is the candidate pool, and `+1` is "the pool was full".
+
+    The tool passes `CANDIDATE_POOL` here, never `offset + limit`, so the row
+    the `+1` produces is what tells it deeper matches exist.
+    """
     pool = ids(conn)
     params = queries.SearchParams(
         q="cache OR attention OR memory OR tokenization OR percent OR mechanism",
         video_ids=pool,
-        limit=1,
-        offset=0,
+        limit=2,
         cluster_gap=0.0,
         max_per_video=20,
     )
-    total, hit_ceiling = queries.probe_transcript(conn, params, headroom=1)
-    assert total <= params.offset + params.limit + 1
-    assert hit_ceiling is (total == params.offset + params.limit + 1)
-
-    generous, hit = queries.probe_transcript(conn, params, headroom=1000)
-    assert hit is False
-    assert generous >= total
-
-
-def test_probe_and_page_share_the_filter(conn: sqlite3.Connection) -> None:
-    """The probe cannot disagree with the page because it is the same CTE."""
-    pool = ids(conn)
-    params = queries.SearchParams(q="cache", video_ids=pool, limit=50, cluster_gap=0.0)
     rows = queries.search_transcript(conn, params)
-    total, hit = queries.probe_transcript(conn, params, headroom=1000)
-    assert hit is False
-    assert total == len(rows)
+    assert len(rows) == 3, "two rows of pool plus the has-more probe row"
+
+    roomy = queries.SearchParams(
+        q="cache OR attention OR memory OR tokenization OR percent OR mechanism",
+        video_ids=pool,
+        limit=400,
+        cluster_gap=0.0,
+        max_per_video=20,
+    )
+    assert len(queries.search_transcript(conn, roomy)) < 400
 
 
 def test_empty_video_pool_short_circuits(conn: sqlite3.Connection) -> None:

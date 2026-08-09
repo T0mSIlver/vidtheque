@@ -21,6 +21,7 @@ from ..db import queries
 from ..db.connection import admission
 from ..errors import ToolError, bad_param
 from ..text import (
+    TRUNCATION_MARKER,
     cap_response,
     clamp,
     clamp_text_chars,
@@ -33,26 +34,62 @@ from ..text import (
     validate_tag,
 )
 from ..timeparse import parse_corpus_time, parse_offset
+from . import corpus_state
 from .base import Deps, handle_errors, normalize_video_ids, require_known_videos, text_result
 
 CONTENT_TYPES = ("all", "transcript", "ocr", "frame")
 ORDERS = ("relevance", "recency", "video_time")
 DEFAULT_FIELDS = "video_id,start,text,link,source"
+# Every column `format="tsv"` can emit — the keys `_as_dict` writes, and the
+# list `E_BAD_PARAM` names. A field this does not contain used to print as a
+# header with a blank cell under every row (demo-queries §9.1.9), in the one
+# tool that answers `order="bogus"` with a clean typed error. `test_discipline`
+# holds this tuple to `_as_dict`'s keys so the two cannot drift.
+TSV_FIELDS = (
+    "source",
+    "video_id",
+    "title",
+    "channel",
+    "start",
+    "end",
+    "match_start",
+    "match_cue_id",
+    "text",
+    "link",
+    "cue_ids",
+    "frame_id",
+    "score",
+)
 
-# `order=recency` and `order=video_time` are not relevance, so a relevance
-# prefix is the wrong candidate set to sort. Fetching only `offset+limit` rows
-# by score and *then* sorting them by date returned the newest hit only when it
-# also happened to be one of the most relevant: an older video supplying the
-# first `offset+limit+1` hits hid a newer video's hit ranked just below the
-# prefix, and `order=recency` never saw it. Non-relevance orders therefore sort
-# a bounded candidate UNIVERSE, not a prefix. Bounded, because "complete" over
-# a corpus-sized candidate set is not a thing a search tool may promise.
-ORDER_UNIVERSE = 400
+# The candidate POOL: how many rows each leg contributes to the fused ranking.
+# It is a function of the query and nothing else — deliberately not of `offset`,
+# `limit` or the page. Two things go wrong when the pool is `offset + limit`,
+# and the field test hit both (research/demo-queries-2026-08-09.md §9.1.2,
+# §9.1.3):
+#
+# * fusion bonuses fire only when both legs' copies of a hit land inside the
+#   fetched prefix, so `limit=3` and `limit=50` produced different rank 1s for
+#   the same query — the single largest score differentiator in the payload
+#   appearing and disappearing with page size;
+# * the vector leg's `k` grew with the page, so a bigger page pulled more raw
+#   cues into the same cluster and the citation moved.
+#
+# Ranking is therefore computed once over the pool and *then* paged: same query
+# ⇒ same order, same scores, same `?t=`, at any `limit`. Bounded, because
+# "complete" over a corpus-sized candidate set is not a thing a search tool may
+# promise — and bounded independently of `limit`, which is the invariant this
+# constant exists to satisfy.
+#
+# It is also what `order=recency` / `order=video_time` need: sorting a
+# relevance-truncated prefix by date returned the newest hit only when it also
+# happened to be one of the most relevant. Those orders used to be the only
+# callers of a pool; now every order gets one.
+CANDIDATE_POOL = 400
 
 
 @dataclass
 class Hit:
-    source: str  # transcript | ocr | frame | transcript+ocr
+    source: str  # transcript | ocr | frame | transcript+ocr | ocr+frame
     video_id: int
     public_id: str
     title: str
@@ -65,6 +102,22 @@ class Hit:
     cue_ids: list[int]
     frame_id: str | None = None
     n_cues: int = 0
+    # Where the citation points: the best-scoring matched cue inside the
+    # cluster, not the cluster's first second. `None` for the point-in-time
+    # legs, where the hit *is* its own anchor.
+    anchor_s: float | None = None
+    anchor_cue_id: int | None = None
+    anchor_text: str = ""
+    # Tie-break evidence, filled in below: how many rankers found this hit, and
+    # how much of the query its text actually contains.
+    n_legs: int = 1
+    exact: int = 0
+    coverage: float = 0.0
+    _norm: str | None = None
+
+    @property
+    def cite_s(self) -> float:
+        return self.start_s if self.anchor_s is None else self.anchor_s
 
 
 @handle_errors
@@ -105,6 +158,16 @@ async def run(
         raise bad_param(f"order must be one of {', '.join(ORDERS)}.", "omit it for relevance.")
     if format not in ("text", "tsv"):
         raise bad_param("format must be text or tsv.", 'omit it for "text".')
+    unknown_fields = [
+        f
+        for f in (name.strip() for name in (fields or "").split(","))
+        if f and f not in TSV_FIELDS
+    ]
+    if unknown_fields:
+        raise bad_param(
+            f"unknown field(s): {', '.join(unknown_fields)}.",
+            f"available fields: {', '.join(TSV_FIELDS)}.",
+        )
 
     limit = clamp(limit, 1, 50, 10)
     offset = clamp(offset, 0, 10_000, 0)
@@ -191,7 +254,13 @@ async def run(
 
     video_pool = await deps.db.read(lambda c: queries.resolve_videos(c, flt))
     if not video_pool:
-        return await _empty_result(deps, q, content_type, flt, notes)
+        # limit/offset are echoed even here: the early return used to default
+        # them to 0, so a filter that matched no video answered with
+        # `pagination.limit: 0` while the same empty result from an unmatched
+        # query echoed the real limit (§9.1.9).
+        return await _empty_result(
+            deps, q, content_type, flt, notes, limit=limit, offset=offset
+        )
 
     # A speaker that resolves to nothing means "filter to nothing", never "no
     # filter" — `speaker_ids=[]` and `speaker_ids=None` are different bindings.
@@ -247,15 +316,13 @@ async def run(
     # cap the user asked for spans modalities and can only be applied once the
     # legs are fused and cross-modal duplicates collapsed (see _cap_per_video).
     leg_per_video = min(50, max(max_per_video * 3, max_per_video + 2))
-    fetch_n = offset + limit
-    if order != "relevance":
-        fetch_n = max(fetch_n, ORDER_UNIVERSE)
+    fetch_n = CANDIDATE_POOL
 
     params = queries.SearchParams(
         q=q,
         video_ids=video_pool,
         qvec=qvec,
-        limit=fetch_n,  # legs are merged, so each fetches the whole prefix
+        limit=fetch_n,  # the pool, not the page: ranking must not move with limit
         offset=0,
         max_per_video=leg_per_video,
         cluster_gap=cluster_gap,
@@ -266,19 +333,17 @@ async def run(
         max_chars=max_chars,
         speaker_ids=speaker_ids,
         vec_max_distance=settings.vec_max_distance,
-        k_vec=min(1000, max(50, fetch_n * leg_per_video * 4)),
+        k_vec=_k_for(fetch_n),
     )
 
     async with admission(deps.search_semaphore):
-        hits, leg_counts, probe_total, probe_ceiling = await deps.db.read(
+        hits, leg_counts, pool_full = await deps.db.read(
             lambda c: _run_legs(
                 c,
                 params,
                 legs,
                 qimg,
-                leg_per_video,
                 fetch_n,
-                settings.count_probe_headroom,
                 settings.frame_max_distance,
                 max_text_chars,
             )
@@ -297,13 +362,19 @@ async def run(
     # cap -> page slice. The cap has to sit here, after the collapse: applied
     # per modality it let one video contribute a transcript hit, an OCR hit and
     # a frame hit — three results — before any other video appeared, and nine
-    # at the default cap.
+    # at the default cap. And every step runs over the whole POOL, so the cap
+    # BACKFILLS: `limit=6, max_per_video=1` used to return 3 results and assert
+    # "no more results" because the cap was applied to a page of 6 already
+    # fetched (research/demo-queries-2026-08-09.md §7.7).
     hits = _dedup_ocr_against_transcript(hits)
+    hits = _collapse_same_frame(hits)
+    _score_matches(hits, q)
     hits = _sort(hits, order)
     hits = _cap_per_video(hits, max_per_video)
 
+    total = len(hits)
     page = hits[offset : offset + limit]
-    has_more = len(hits) > offset + limit
+    has_more = total > offset + limit
 
     if not hits:
         return await _empty_result(
@@ -312,9 +383,24 @@ async def run(
             content_type,
             flt,
             notes,
-            reason="Every leg was queried and none of them matched.",
+            reason=_nothing_matched(legs),
             limit=limit,
             offset=offset,
+        )
+    if not page:
+        # Past the last page. This used to print `Results: 0/<offset>` and three
+        # blank lines — strictly less help than a genuinely empty search gets
+        # (§7.9). Say where the end is and how to get back to it.
+        return _past_the_end(
+            q, content_type, order, max_per_video, total, limit, offset, notes
+        )
+    if pool_full and not has_more:
+        notes.append(
+            f"note: ranking ran over the first {CANDIDATE_POOL} candidates per leg "
+            "(the pool is bounded independently of limit, so the order never moves "
+            "when you page) and the pool was full — deeper matches exist. Narrow "
+            "with channel=, video_id=, published_after= or a more specific query "
+            "to reach them."
         )
 
     related: dict[str, int] | None = None
@@ -334,8 +420,8 @@ async def run(
         offset=offset,
         limit=limit,
         has_more=has_more,
-        probe_total=probe_total,
-        probe_ceiling=probe_ceiling,
+        total=total,
+        pool_full=pool_full,
         leg_counts=leg_counts,
         notes=notes,
         max_text_chars=max_text_chars,
@@ -349,7 +435,13 @@ async def run(
             "limit": limit,
             "offset": offset,
             "has_more": has_more,
-            "approx_total": probe_total,
+            # The number of results this query can actually deliver, counted
+            # after dedup and after the per-video cap — not a probe over the
+            # raw candidate CTE, which counted rows paging could never reach
+            # and moved with the page it was asked for (§9.1.6). `pool_full`
+            # is what makes it "approx": the pool is bounded.
+            "approx_total": total,
+            "pool_exhausted": pool_full,
         },
         "notes": notes,
     }
@@ -389,25 +481,35 @@ async def _note_embed_backlog(
         )
 
 
+def _k_for(pool: int) -> int:
+    """The vector legs' `k`, bounded and independent of the page.
+
+    It used to be `offset + limit` times a constant, which is the mechanism
+    behind the moving citation: a larger page pulled more raw cues out of the
+    KNN, they joined the same island, and the island grew earlier.
+    """
+    return min(1000, max(50, pool * 2))
+
+
 def _run_legs(
     conn: sqlite3.Connection,
     params: queries.SearchParams,
     legs: dict[str, bool],
     qimg: bytes | None,
-    leg_per_video: int,
     fetch_n: int,
-    headroom: int,
     frame_max_distance: float,
     max_text_chars: int,
-) -> tuple[list[Hit], dict[str, int], int, bool]:
+) -> tuple[list[Hit], dict[str, int], bool]:
     hits: list[Hit] = []
     counts = {"transcript": 0, "ocr": 0, "frame": 0}
-    probe_total = 0
-    probe_ceiling = False
+    # Every leg fetches `pool + 1` rows (SearchParams.bind adds the +1), so a
+    # leg that came back with more than the pool is a leg that had more to give.
+    pool_full = False
 
     if legs["transcript"]:
         rows = queries.search_transcript(conn, params)
         counts["transcript"] = len(rows)
+        pool_full = pool_full or len(rows) > fetch_n
         for row in rows:
             hits.append(
                 Hit(
@@ -423,15 +525,17 @@ def _run_legs(
                     score=float(row["score"]),
                     cue_ids=json.loads(row["cue_ids"]),
                     n_cues=int(row["n_cues"]),
+                    anchor_s=float(row["anchor_s"]),
+                    anchor_cue_id=int(row["anchor_cue_id"]),
+                    anchor_text=str(row["anchor_text"] or ""),
+                    n_legs=int(row["n_legs"]),
                 )
             )
-        total, ceiling = queries.probe_transcript(conn, params, headroom)
-        probe_total += total
-        probe_ceiling = probe_ceiling or ceiling
 
     if legs["ocr"]:
         rows = queries.search_ocr(conn, params)
         counts["ocr"] = len(rows)
+        pool_full = pool_full or len(rows) > fetch_n
         for row in rows:
             hits.append(
                 Hit(
@@ -457,14 +561,11 @@ def _run_legs(
                     frame_id=str(row["frame_id"]),
                 )
             )
-        total, ceiling = queries.probe_ocr(conn, params, headroom)
-        probe_total += total
-        probe_ceiling = probe_ceiling or ceiling
 
     if legs["frame"] and qimg is not None:
-        k_frames = min(2000, max(20, fetch_n * leg_per_video * 4))
-        rows = queries.search_frames(conn, params, qimg, k_frames, frame_max_distance)
+        rows = queries.search_frames(conn, params, qimg, _k_for(fetch_n), frame_max_distance)
         counts["frame"] = len(rows)
+        pool_full = pool_full or len(rows) > fetch_n
         for row in rows:
             hits.append(
                 Hit(
@@ -482,9 +583,8 @@ def _run_legs(
                     frame_id=str(row["frame_id"]),
                 )
             )
-        probe_total += len(rows)
 
-    return hits, counts, probe_total, probe_ceiling
+    return hits, counts, pool_full
 
 
 def _video_meta(conn: sqlite3.Connection, ids: Sequence[int]) -> dict[int, sqlite3.Row]:
@@ -501,6 +601,13 @@ def _video_meta(conn: sqlite3.Connection, ids: Sequence[int]) -> dict[int, sqlit
 
 def _normalize(text: str) -> str:
     return " ".join("".join(c if c.isalnum() or c.isspace() else " " for c in text.casefold()).split())
+
+
+def _norm_of(hit: Hit) -> str:
+    """`_normalize(hit.text)`, memoized — three passes want the same string."""
+    if hit._norm is None:
+        hit._norm = _normalize(hit.text)
+    return hit._norm
 
 
 def _trigrams(text: str) -> set[str]:
@@ -522,7 +629,23 @@ def _dedup_ocr_against_transcript(hits: list[Hit]) -> list[Hit]:
     not a storage one. SQL used to pre-drop on time-overlap and length alone,
     which failed both halves of the rule at once (smoke §4.4).
     """
-    transcripts = [h for h in hits if h.source == "transcript"]
+    # Indexed by video and normalized ONCE. The pool is 400 rows per leg, so
+    # the old shape — re-normalizing and re-trigramming every transcript hit
+    # for every OCR hit, across videos that can never pair — was O(n·m) string
+    # allocation over a set that is now two orders of magnitude bigger.
+    by_video: dict[int, list[Hit]] = {}
+    for hit in hits:
+        if hit.source == "transcript":
+            by_video.setdefault(hit.video_id, []).append(hit)
+    grams_of: dict[int, set[str]] = {}
+
+    def grams_for(hit: Hit) -> set[str]:
+        cached = grams_of.get(id(hit))
+        if cached is None:
+            cached = _trigrams(_norm_of(hit))
+            grams_of[id(hit)] = cached
+        return cached
+
     survivors: list[Hit] = []
     # RRF is a sum over LEGS. A survivor that swallowed three OCR lines still
     # saw the OCR leg once, so it earns one OCR contribution — the best one.
@@ -536,15 +659,13 @@ def _dedup_ocr_against_transcript(hits: list[Hit]) -> list[Hit]:
             survivors.append(hit)
             continue
         merged = False
-        norm = _normalize(hit.text)
-        grams = _trigrams(norm)
-        for other in transcripts:
-            if other.video_id != hit.video_id:
-                continue
+        norm = _norm_of(hit)
+        grams = grams_for(hit)
+        for other in by_video.get(hit.video_id, ()):
             if not (other.start_s - 5.0 <= hit.start_s <= (other.end_s or other.start_s) + 5.0):
                 continue
-            other_norm = _normalize(other.text)
-            other_grams = _trigrams(other_norm)
+            other_norm = _norm_of(other)
+            other_grams = grams_for(other)
             union = grams | other_grams
             jaccard = len(grams & other_grams) / len(union) if union else 0.0
             # "contained in the other" runs both ways: with the SQL prefilter
@@ -561,7 +682,9 @@ def _dedup_ocr_against_transcript(hits: list[Hit]) -> list[Hit]:
                     # OCR rows arrive in rank order, so the first to collapse
                     # into this survivor is the leg's best contribution.
                     other.score += hit.score
+                    other.n_legs += 1
                     absorbed.add(id(other))
+                other._norm = None  # the text may have grown
                 merged = True
                 break
         if not merged:
@@ -569,24 +692,104 @@ def _dedup_ocr_against_transcript(hits: list[Hit]) -> list[Hit]:
     return survivors
 
 
+def _collapse_same_frame(hits: list[Hit]) -> list[Hit]:
+    """One frame, one result — even when two legs found it.
+
+    The OCR leg and the frame leg index the same keyframes, so a slide whose
+    text matches AND whose picture is near the query vector arrived twice: same
+    `frame_id`, same timestamp, same text, two slots and two bites of
+    `max_per_video` (research/demo-queries-2026-08-09.md §7.4). Byte-identical
+    *different* frames are collapsed one layer down, in SQL, on the index-time
+    `phash`; this is the cross-leg half, and like the OCR/transcript collapse it
+    is a fusion event: the survivor keeps both legs' RRF contributions, because
+    two channels agreeing is the corroboration RRF exists to reward.
+    """
+    survivors: list[Hit] = []
+    by_frame: dict[str, Hit] = {}
+    for hit in hits:
+        if hit.frame_id is None or hit.source not in ("ocr", "frame"):
+            survivors.append(hit)
+            continue
+        first = by_frame.get(hit.frame_id)
+        if first is None:
+            by_frame[hit.frame_id] = hit
+            survivors.append(hit)
+            continue
+        first.score += hit.score
+        first.n_legs += 1
+        first.source = "ocr+frame"
+        # The OCR leg's text is the matched window of the slide; the frame
+        # leg's is "visual match, no text hit" or the whole slide. Keep the
+        # one that says something.
+        if len(hit.text) > len(first.text) and first.text == "visual match, no text hit":
+            first.text = hit.text
+            first._norm = None
+    return survivors
+
+
+def _score_matches(hits: list[Hit], q: str | None) -> None:
+    """How much of the query each hit's text actually contains.
+
+    This is the evidence the fusion seam was missing. Every leg's rank 1 scores
+    exactly `1/(60+1)`, so at the top of the payload RRF ties are the rule, not
+    the exception — and the tie used to be broken by `public_id`, i.e.
+    alphabetically by video id, so a CVE number present in exactly two frames in
+    the corpus came back at ranks 3 and 4 behind two hits that did not contain it
+    (research/demo-queries-2026-08-09.md §7.1, §9.2).
+
+    Two signals, both computed over the *normalized* text (casefold, punctuation
+    to spaces) so `CVE-2026-22812` compares equal to `cve 2026 22812`:
+    `exact` — the whole query appears as a phrase — and `coverage` — the share of
+    the query's terms present as whole tokens. Bounded work: one pass over a pool
+    that is bounded independently of `limit`.
+    """
+    norm_q = _normalize(q or "")
+    terms = [t for t in dict.fromkeys(norm_q.split()) if t]
+    if not terms:
+        return
+    phrase = f" {norm_q} "
+    for hit in hits:
+        text = _norm_of(hit)
+        tokens = set(text.split())
+        hit.exact = 1 if len(terms) > 1 and phrase in f" {text} " else 0
+        hit.coverage = round(sum(1 for t in terms if t in tokens) / len(terms), 2)
+
+
+def _relevance_key(hit: Hit) -> tuple[Any, ...]:
+    """Relevance before identity — the documented tie-break order (§3.10).
+
+    1. the fused RRF score;
+    2. the query as an exact phrase in the hit's text;
+    3. the share of the query's terms the hit's text contains;
+    4. how many rankers found it (FTS + vector, or two modalities agreeing).
+
+    Only then `_sort_key`, which is arbitrary and exists solely to make the
+    order total.
+    """
+    return (-hit.score, -hit.exact, -hit.coverage, -hit.n_legs)
+
+
 def _sort_key(hit: Hit) -> tuple[Any, ...]:
-    """The tie-break every ordering ends with.
+    """The last resort: arbitrary, but *total*.
 
     Equal BM25 ranks and equal vector distances are ordinary — cues expanded
     from one chunk all share a distance — and Python's sort is stable over an
     input whose order came from an unordered set of legs. Without a total order
     the membership of the rows at the page boundary can change between two
-    identical calls, which is exactly the guarantee `offset` depends on.
+    identical calls, which is exactly the guarantee `offset` depends on. It is
+    the LAST key, never the first: on its own it is alphabetical by video id.
     """
     return (hit.public_id, hit.start_s, hit.source, hit.frame_id or "", hit.text[:64])
 
 
 def _sort(hits: list[Hit], order: str) -> list[Hit]:
     if order == "recency":
-        return sorted(hits, key=lambda h: (-(h.published_at or 0), -h.score, *_sort_key(h)))
+        return sorted(
+            hits, key=lambda h: (-(h.published_at or 0), *_relevance_key(h), *_sort_key(h))
+        )
     if order == "video_time":
-        return sorted(hits, key=lambda h: (h.start_s, -h.score, *_sort_key(h)))
-    return sorted(hits, key=lambda h: (-h.score, *_sort_key(h)))
+        return sorted(hits, key=lambda h: (h.start_s, *_relevance_key(h), *_sort_key(h)))
+    return sorted(hits, key=lambda h: (*_relevance_key(h), *_sort_key(h)))
 
 
 def _cap_per_video(hits: list[Hit], max_per_video: int) -> list[Hit]:
@@ -608,6 +811,42 @@ def _cap_per_video(hits: list[Hit], max_per_video: int) -> list[Hit]:
     return kept
 
 
+def _keep_the_match(text: str, max_chars: int, needle: str) -> str:
+    """Truncate around the matched passage instead of through it.
+
+    Middle-truncation assumes the signal is at both ends of a sentence, which is
+    right for one cue and wrong for a clustered segment: at
+    `max_text_chars=400` a two-minute cluster came back with the matched phrase
+    cut out of the middle, so the result showed neither the words that matched
+    nor a timestamp near them (research/demo-queries-2026-08-09.md §7.5). This
+    is the transcript-side spelling of what the OCR leg gets from FTS5's
+    `snippet()`: a window that is guaranteed to contain the match.
+
+    Falls back to `middle_truncate` when there is no needle or it is not in the
+    text — the marker, the budget and the `0` opt-out are the same either way.
+    """
+    if max_chars == 0 or len(text) <= max_chars:
+        return text
+    where = text.find(needle) if needle else -1
+    if where < 0 or len(needle) >= max_chars:
+        return middle_truncate(text, max_chars)
+    # Centre the window on the needle, then slide it inside the text so a match
+    # near either end still spends the whole budget on context.
+    start = max(0, where - (max_chars - len(needle)) // 2)
+    start = min(start, len(text) - max_chars)
+    end = start + max_chars
+    out = text[start:end]
+    if start:
+        out = TRUNCATION_MARKER.format(n=start) + out
+    if end < len(text):
+        out = out + TRUNCATION_MARKER.format(n=len(text) - end)
+    return out
+
+
+def _shown_text(hit: Hit, max_text_chars: int) -> str:
+    return _keep_the_match(hit.text, max_text_chars, hit.anchor_text)
+
+
 def _as_dict(deps: Deps, hit: Hit, max_text_chars: int) -> dict[str, Any]:
     return {
         "source": hit.source,
@@ -616,8 +855,12 @@ def _as_dict(deps: Deps, hit: Hit, max_text_chars: int) -> dict[str, Any]:
         "channel": hit.channel,
         "start": round(hit.start_s, 2),
         "end": round(hit.end_s, 2) if hit.end_s is not None else None,
-        "text": middle_truncate(hit.text, max_text_chars),
-        "link": deeplink(hit.public_id, hit.start_s, deps.settings.deeplink_lead_s),
+        # The moment the link points at: inside the segment, at the cue that
+        # actually matched. Equal to `start` for the point-in-time legs.
+        "match_start": round(hit.cite_s, 2),
+        "match_cue_id": hit.anchor_cue_id,
+        "text": _shown_text(hit, max_text_chars),
+        "link": deeplink(hit.public_id, hit.cite_s, deps.settings.deeplink_lead_s),
         "cue_ids": hit.cue_ids,
         "frame_id": hit.frame_id,
         "score": round(hit.score, 4),
@@ -635,8 +878,8 @@ def _render(
     offset: int,
     limit: int,
     has_more: bool,
-    probe_total: int,
-    probe_ceiling: bool,
+    total: int,
+    pool_full: bool,
     leg_counts: dict[str, int],
     notes: list[str],
     max_text_chars: int,
@@ -645,7 +888,7 @@ def _render(
     fields: str,
 ) -> str:
     header = [
-        pagination_line("Results", len(page), offset, limit, has_more, probe_total, probe_ceiling),
+        pagination_line("Results", len(page), offset, limit, has_more, total, pool_full),
         f'Query: "{q or "*"}" · content_type={content_type} · order={order} · '
         f"max_per_video={max_per_video}",
         f"Legs: transcript {leg_counts['transcript']} · ocr {leg_counts['ocr']} · "
@@ -663,14 +906,19 @@ def _render(
         body = tsv(rows, wanted or DEFAULT_FIELDS.split(","))
         return "\n".join(header) + body
 
+    lead = deps.settings.deeplink_lead_s
     blocks: list[str] = []
     for hit in page:
-        link = deeplink(hit.public_id, hit.start_s, deps.settings.deeplink_lead_s)
+        link = deeplink(hit.public_id, hit.cite_s, lead)
         when = clock(hit.start_s) + (f"–{clock(hit.end_s)}" if hit.end_s else "")
+        # A clustered segment is a span; the link is a point inside it. Name the
+        # point, or the payload looks inconsistent with its own link.
+        if hit.anchor_s is not None and int(hit.anchor_s) != int(hit.start_s):
+            when += f" · match at {clock(hit.anchor_s)}"
         lines = [
             f"[{hit.source}] {hit.title} — {hit.channel or 'unknown'} ({hit.public_id})",
             f"  {when} · {link}",
-            "  " + middle_truncate(hit.text, max_text_chars).replace("\n", " "),
+            "  " + _shown_text(hit, max_text_chars).replace("\n", " "),
         ]
         trailer: list[str] = []
         if hit.cue_ids:
@@ -699,8 +947,8 @@ def _render(
         )
     if max_text_chars and any(len(h.text) > max_text_chars for h in page):
         footer.append(
-            f"Text middle-truncated at {max_text_chars} chars — pass "
-            "max_text_chars=0 for full text."
+            f"Text truncated at {max_text_chars} chars, around the matched "
+            "passage — pass max_text_chars=0 for full text."
         )
     if related:
         footer.append(
@@ -720,6 +968,74 @@ def _render(
     return "\n".join(header) + body + ("\n" + "\n".join(footer) if footer else "")
 
 
+def _nothing_matched(legs: dict[str, bool]) -> str:
+    """The empty-state reason line, derived from the legs that actually ran.
+
+    It was the constant "Every leg was queried and none of them matched." — a
+    sentence that is false whenever the caller pinned `content_type`, and that
+    could contradict a `note:` four lines above it in the same payload saying
+    the semantic legs were skipped (research/demo-queries-2026-08-09.md §7.10,
+    §9.1.5). `all` means all, and saying so when it did not is the same lie in
+    the other direction.
+    """
+    ran = [name for name, on in legs.items() if on]
+    if not ran:
+        return "No leg was queried — every leg was ruled out by the filters above."
+    if len(ran) == 3:
+        return "All three legs were queried and none of them matched."
+    joined = " and ".join([", ".join(ran[:-1]), ran[-1]] if len(ran) > 1 else ran)
+    was = "leg was" if len(ran) == 1 else "legs were"
+    return (
+        f"The {joined} {was} queried and nothing matched. The other "
+        f"{'legs' if len(ran) == 1 else 'leg'} did not run — see the note above, "
+        "or drop content_type= to query all three."
+    )
+
+
+def _past_the_end(
+    q: str | None,
+    content_type: str,
+    order: str,
+    max_per_video: int,
+    total: int,
+    limit: int,
+    offset: int,
+    notes: list[str],
+) -> CallToolResult:
+    """`offset` past the last result: say where the end is, do not go quiet.
+
+    Over-paging used to print `Results: 0/<offset>` — a "total" equal to the
+    offset — the query echo, the leg counts, and then two blank lines: strictly
+    less help than a genuinely empty search gets
+    (research/demo-queries-2026-08-09.md §7.9, §9.1.6).
+    """
+    last = max(0, ((total - 1) // limit) * limit)
+    lines = [
+        f"Results: 0/{total} (past the last page)",
+        f'Query: "{q or "*"}" · content_type={content_type} · order={order} · '
+        f"max_per_video={max_per_video}",
+        *notes,
+        "",
+        f"This query has {total} result{'s' if total != 1 else ''}; the last page "
+        f"starts at offset={last}.",
+        f"next: re-run with offset={last}, or offset=0 for the top of the ranking.",
+    ]
+    return text_result(
+        "\n".join(lines),
+        {
+            "results": [],
+            "pagination": {
+                "limit": limit,
+                "offset": offset,
+                "has_more": False,
+                "approx_total": total,
+                "last_offset": last,
+            },
+            "notes": notes,
+        },
+    )
+
+
 async def _empty_result(
     deps: Deps,
     q: str | None,
@@ -735,11 +1051,22 @@ async def _empty_result(
     total = int(rollup["videos_ready"]) + int(rollup["videos_pending"])
     if total == 0:
         status = "empty (nothing has been indexed yet)"
-        hint = 'index-video url="https://youtu.be/…" to add your first video.'
+        hint = deps.hint(
+            "index-video",
+            'index-video url="https://youtu.be/…" to add your first video.',
+            "nothing is indexed on this read-only server, and it exposes no tool "
+            "that can add a video.",
+        )
     else:
+        # "index fresh" was hard-coded, and was the third of three contradicting
+        # answers about the queue in one session (demo-queries §9.1.4). Both the
+        # word and the clause now come from the derivation `corpus-summary` and
+        # `vidtheque://context` read — restricted to the *activity* axis, since
+        # this line is about whether the index is settled, not about coverage.
+        state = await corpus_state.read_corpus_state(deps, total)
         status = (
-            f"ok (corpus has {total} videos, newest published "
-            f"{_day(rollup['newest_published'])}, index fresh)"
+            f"{state.activity_word()} (corpus has {total} videos, newest published "
+            f"{_day(rollup['newest_published'])}, {state.freshness()})"
         )
         hint = "retry with fewer filters, or list-videos to see what is indexed."
     lines = [

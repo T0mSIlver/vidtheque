@@ -116,7 +116,12 @@ def add_cue(
 
 
 def add_ocr(
-    conn: sqlite3.Connection, video_id: int, ordinal: int, t_s: float, *lines: str
+    conn: sqlite3.Connection,
+    video_id: int,
+    ordinal: int,
+    t_s: float,
+    *lines: str,
+    phash: int | None = None,
 ) -> int:
     """One keyframe and its OCR — `*lines` because a slide is several of them.
 
@@ -127,7 +132,17 @@ def add_ocr(
         "INSERT INTO keyframes (video_id, ord, t_s, shot_id, shot_start_s, shot_end_s, phash, "
         "sharpness, width, height, jpeg_path, jpeg_bytes, ocr_state) "
         "VALUES (?, ?, ?, 1, ?, ?, ?, 1.0, 16, 16, ?, 1, 'done')",
-        (video_id, ordinal, t_s, t_s, t_s + 1, 1000 + ordinal, f"k/{video_id}-{ordinal}.jpg"),
+        (
+            video_id,
+            ordinal,
+            t_s,
+            t_s,
+            t_s + 1,
+            # The index-time picture identity. Two keyframes of a held slide
+            # share it, which is how the legs collapse them (§7.4).
+            1000 + ordinal if phash is None else phash,
+            f"k/{video_id}-{ordinal}.jpg",
+        ),
     )
     kf = int(cur.lastrowid or 0)
     for line_no, line in enumerate(lines):
@@ -1012,3 +1027,519 @@ def test_the_configured_floors_are_the_defaults() -> None:
     env = (Path(__file__).resolve().parents[2] / "deploy" / ".env.example").read_text()
     assert "VIDTHEQUE_VEC_MAX_DISTANCE" in env
     assert "VIDTHEQUE_FRAME_MAX_DISTANCE" in env
+
+
+# ===========================================================================
+# The field test, 2026-08-09 (research/demo-queries-2026-08-09.md §7 and §9).
+#
+# Nine observed failures in the search / ranking / citation / pagination
+# cluster, each with the reproducer the field test recorded. They share one
+# root: the ranking used to be computed over `offset + limit` rows, so it was a
+# function of the page the caller asked for rather than of the query. The tests
+# below are written against the *behaviour* — same query, same answer, at any
+# limit — so the guarantee survives a rewrite of how it is achieved.
+# ===========================================================================
+
+
+@pytest.fixture
+async def tool_corpus(settings: Settings, fake_embeddings):
+    """`assembled`, but over a corpus the test builds itself.
+
+    The shared fixture is three videos and ten cues; several of these failures
+    only appear with enough candidates for a page to be a *prefix* of something.
+    """
+    from vidtheque_mcp.app import assemble
+    from vidtheque_mcp.jobs.runner import NotImplementedPipeline
+
+    opened: list = []
+
+    async def build(fn):
+        conn = open_write_connection(settings.db_path)
+        try:
+            migrations.migrate(conn)
+            conn.execute("BEGIN IMMEDIATE")
+            fn(conn)
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+        parts = assemble(
+            settings,
+            embeddings=fake_embeddings,
+            run_pipeline=False,
+            pipeline=NotImplementedPipeline(),
+        )
+        await parts.db.open()
+        opened.append(parts)
+        return parts
+
+    yield build
+    for parts in opened:
+        await parts.db.close()
+        parts.auth.close()
+
+
+def rows_of(result) -> list[dict]:
+    assert result.structured_content is not None
+    return result.structured_content["results"]
+
+
+def page_of(result) -> dict:
+    assert result.structured_content is not None
+    return result.structured_content["pagination"]
+
+
+def text_of(result) -> str:
+    return "\n".join(b.text for b in result.content if getattr(b, "type", "") == "text")
+
+
+def add_frame_vector(
+    conn: sqlite3.Connection, keyframe_id: int, video_id: int, t_s: float, vector_text: str
+) -> None:
+    conn.execute(
+        "INSERT INTO vec_frames (keyframe_id, video_id, t_s, embedding) VALUES (?, ?, ?, ?)",
+        (keyframe_id, video_id, t_s, queries.pack_f32(vector_for(vector_text, FRAME_DIM))),
+    )
+
+
+# ------------------------------------------------ §9.1.2 / §7.5: the citation
+
+
+async def test_the_citation_is_the_matched_cue_and_does_not_move_with_limit(
+    tool_corpus,
+) -> None:
+    """§7.5 and §9.1.2, together, because they are one bug.
+
+    A semantic leg expands its chunk to every cue inside it, so the island grows
+    to the width of the chunk — and the deep link pointed at the island's first
+    second. Worse, how much of the chunk arrived depended on `k`, and `k` was
+    `offset + limit` times a constant, so the citation for the *same hit at the
+    same rank* moved 34 seconds between `limit=3` and `limit=5`.
+
+    The corpus below is that shape at its smallest: 110 decoy chunks sit exactly
+    on the query vector, so under the old `k` the target's own chunk fell
+    outside the KNN at `limit=3` and inside it at `limit=5`.
+    """
+    phrase = "the phrase we are looking for"
+
+    def make(conn: sqlite3.Connection) -> None:
+        decoy = add_video(conn, "decoyvideo0")
+        for i in range(110):
+            cue = add_cue(conn, decoy, i, i * 10.0, i * 10.0 + 4.0, f"decoy line {i}")
+            add_chunk(
+                conn, decoy, i, cue, cue, f"decoy chunk {i}",
+                i * 10.0, i * 10.0 + 4.0, vector_text=phrase,
+            )
+        target = add_video(conn, "targetvide0")
+        cues = [
+            add_cue(
+                conn, target, i, i * 5.0, i * 5.0 + 4.0,
+                f"and here is {phrase}" if i == 20 else f"unrelated preamble number {i}",
+            )
+            for i in range(21)
+        ]
+        add_chunk(
+            conn, target, 0, cues[0], cues[-1], "the whole talk", 0.0, 104.0,
+            vector_text=phrase,
+        )
+
+    parts = await tool_corpus(make)
+    small = rows_of(await search.run(parts.deps, q=phrase, content_type="transcript", limit=3))
+    large = rows_of(await search.run(parts.deps, q=phrase, content_type="transcript", limit=5))
+
+    def target_hit(rows: list[dict]) -> dict:
+        return next(r for r in rows if r["video_id"] == "targetvide0")
+
+    a, b = target_hit(small), target_hit(large)
+    # 1. The link is the same at both page sizes — the whole point.
+    assert a["link"] == b["link"], (a, b)
+    assert a["match_start"] == b["match_start"] == 100.0
+    assert a["score"] == b["score"]
+    # 2. And it points at the matched cue, not at the island's first second.
+    assert a["start"] < 100.0, "the island really is wider than the match"
+    assert a["link"].endswith("?t=98")
+
+
+# ----------------------------------------------------- §9.1.3: rank stability
+
+
+def _fusion_bonus_corpus(conn: sqlite3.Connection) -> None:
+    """One video whose transcript hit is corroborated by an OCR hit that used to
+    fall outside a small page's fetched prefix, and one rival that outranks it
+    without the corroboration."""
+    rival = add_video(conn, "rivalvideo0")
+    add_cue(conn, rival, 0, 0.0, 4.0, "the kv cache the kv cache the kv cache")
+    both = add_video(conn, "bothlegsvid")
+    add_cue(conn, both, 0, 30.0, 34.0, "the kv cache is the whole trick")
+    add_ocr(conn, both, 0, 31.0, "the kv cache is the whole trick")
+    # Four slides that outrank `both`'s on BM25, so the OCR leg's copy of the
+    # corroborating hit sits at rank 5 — outside `limit + 1` for a small page.
+    for i in range(4):
+        noise = add_video(conn, f"ocrnoisevi{i}")
+        add_ocr(conn, noise, 0, 5.0, "kv cache")
+
+
+async def test_rank_one_is_the_same_at_limit_1_and_limit_50(tool_corpus) -> None:
+    """§9.1.3. The `[transcript+ocr]` bonus is the largest score differentiator
+    in the payload, and it used to fire only when both legs' copies of the hit
+    landed inside `offset + limit` — so "show more" did not show more of the
+    same list, it showed a different list with a different winner."""
+    parts = await tool_corpus(_fusion_bonus_corpus)
+    small = rows_of(await search.run(parts.deps, q="kv cache", limit=1))
+    large = rows_of(await search.run(parts.deps, q="kv cache", limit=50))
+
+    assert small[0]["video_id"] == large[0]["video_id"] == "bothlegsvid"
+    assert small[0]["source"] == "transcript+ocr"
+    assert small[0]["score"] == large[0]["score"]
+    # And the corroboration is real, not an artefact of the page: two legs.
+    assert large[0]["score"] > large[1]["score"]
+
+
+# -------------------------------------------- §7.1 / §9.2: the RRF tie-break
+
+
+async def test_an_exact_match_wins_the_rrf_tie(tool_corpus) -> None:
+    """§7.1, the highest-impact finding. Every leg's rank 1 scores exactly
+    1/(60+1), so ties at the top are the rule, not the exception; the tie-break
+    was `_sort_key`, whose first element is `public_id` — alphabetical by video
+    id. An exact, unique string match came back behind a fuzzy neighbour that
+    did not contain it at all."""
+
+    def make(conn: sqlite3.Connection) -> None:
+        # Alphabetically first, and a pure vector neighbour: it contains not one
+        # word of the query.
+        aaa = add_video(conn, "aaaavideo00")
+        cue = add_cue(conn, aaa, 0, 10.0, 14.0, "tiny models on a laptop, mostly")
+        add_chunk(
+            conn, aaa, 0, cue, cue, "tiny models on a laptop, mostly", 10.0, 14.0,
+            vector_text="small towns in bavaria",
+        )
+        # Alphabetically last, and it is the answer, word for word.
+        zzz = add_video(conn, "zzzzvideo00")
+        add_ocr(conn, zzz, 0, 20.0, "the internet runs on small towns in Bavaria")
+
+    parts = await tool_corpus(make)
+    rows = rows_of(await search.run(parts.deps, q="small towns in bavaria", limit=5))
+
+    assert len(rows) == 2, rows
+    assert rows[0]["score"] == rows[1]["score"], "the tie is the premise of the test"
+    assert rows[0]["video_id"] == "zzzzvideo00", rows
+    # The old order, spelled out, so the regression is unmistakable.
+    assert sorted(r["video_id"] for r in rows)[0] == "aaaavideo00"
+
+
+def test_the_tiebreak_puts_relevance_before_identity() -> None:
+    """The unit of the rule: identity is the LAST key, never the first."""
+    weak = search.Hit(
+        source="transcript", video_id=1, public_id="aaa", title="", channel=None,
+        published_at=None, start_s=0.0, end_s=1.0, text="something else",
+        score=0.0164, cue_ids=[1], coverage=0.0,
+    )
+    strong = search.Hit(
+        source="ocr", video_id=2, public_id="zzz", title="", channel=None,
+        published_at=None, start_s=0.0, end_s=None, text="the exact phrase",
+        score=0.0164, cue_ids=[], coverage=1.0, exact=1,
+    )
+    assert search._sort([weak, strong], "relevance") == [strong, weak]
+    # Identity still decides when nothing else can, so the order stays total.
+    strong.exact, strong.coverage = 0, 0.0
+    assert search._sort([strong, weak], "relevance") == [weak, strong]
+
+
+# ------------------------------------------------------- §7.7: max_per_video
+
+
+def _six_videos(conn: sqlite3.Connection) -> None:
+    for i in range(6):
+        vid = add_video(conn, f"evalvideo{i:02d}")
+        add_cue(conn, vid, 0, 10.0, 14.0, "what makes a good eval is coverage")
+        add_cue(conn, vid, 1, 100.0, 104.0, "a good eval has to be reproducible")
+
+
+async def test_max_per_video_backfills_the_page_instead_of_truncating_it(
+    tool_corpus,
+) -> None:
+    """§7.7. The caller asked for 6 and got 3, and the payload asserted "no more
+    results" while the same query without the cap proved ≥30 candidates existed:
+    the cap was applied to a page of six already-fetched rows, and `has_more`
+    was computed after it."""
+    parts = await tool_corpus(_six_videos)
+    result = await search.run(
+        parts.deps, q="good eval", content_type="transcript", limit=6, max_per_video=1
+    )
+    rows = rows_of(result)
+    assert len(rows) == 6, rows
+    assert len({r["video_id"] for r in rows}) == 6
+    assert "(no more results)" in text_of(result)
+    assert page_of(result)["approx_total"] == 6
+
+
+# ----------------------------------------- §7.8 / §9.1.6: pagination honesty
+
+
+async def test_the_total_does_not_scale_with_the_page(tool_corpus) -> None:
+    """§9.1.6. `probe_*` ceilinged at `offset + limit + 30`, so the number the
+    guide explicitly teaches callers to read went `3/~40+` at `limit=3` and
+    `50/~130+` at `limit=50` — same query, same corpus. It needs more
+    candidates than the headroom to show, which is the point: the number only
+    lied once there was something to lie about."""
+
+    def make(conn: sqlite3.Connection) -> None:
+        for i in range(40):
+            vid = add_video(conn, f"evalvideo{i:02d}")
+            add_cue(conn, vid, 0, 10.0, 14.0, "what makes a good eval is coverage")
+            add_cue(conn, vid, 1, 100.0, 104.0, "a good eval has to be reproducible")
+
+    parts = await tool_corpus(make)
+    totals = {
+        page_of(
+            await search.run(
+                parts.deps, q="good eval", content_type="transcript", limit=limit
+            )
+        )["approx_total"]
+        for limit in (1, 3, 12, 50)
+    }
+    assert totals == {80}, totals
+
+
+async def test_the_frame_legs_total_is_not_limit_plus_one(tool_corpus) -> None:
+    """§7.8. The count probe never covered the vector leg, so its "total" was
+    whatever the `limit + 1` fetch returned: `5/6` for a query with 18 matching
+    frames."""
+
+    def make(conn: sqlite3.Connection) -> None:
+        for i in range(8):
+            vid = add_video(conn, f"framevide{i:02d}")
+            kf = add_ocr(conn, vid, 0, 10.0, "terminal window with code")
+            add_frame_vector(conn, kf, vid, 10.0, "a terminal window with code")
+
+    parts = await tool_corpus(make)
+    result = await search.run(
+        parts.deps, q="a terminal window with code", content_type="frame", limit=3
+    )
+    assert len(rows_of(result)) == 3
+    assert page_of(result)["approx_total"] == 8, page_of(result)
+
+
+async def test_paging_past_the_end_says_where_the_end_is(tool_corpus) -> None:
+    """§7.9. Over-paging printed `Results: 0/200` — a "total" equal to the
+    offset — the query echo, the leg counts, and then two blank lines: strictly
+    less help than a genuinely empty search gets."""
+    parts = await tool_corpus(_six_videos)
+    result = await search.run(
+        parts.deps, q="good eval", content_type="transcript", limit=3, offset=200
+    )
+    body = text_of(result)
+    assert "0/200" not in body
+    assert "past the last page" in body
+    pagination = page_of(result)
+    assert pagination["offset"] == 200
+    assert pagination["has_more"] is False
+    assert pagination["approx_total"] == 12
+    assert pagination["last_offset"] == 9
+    assert "offset=9" in body
+
+
+async def test_a_filter_that_matches_nothing_still_echoes_the_page(
+    tool_corpus,
+) -> None:
+    """§9.1.9. The early return defaulted `limit`/`offset` to 0, so the same
+    empty result described itself differently depending on which emptiness it
+    was."""
+    parts = await tool_corpus(_six_videos)
+    result = await search.run(
+        parts.deps, q="good eval", channel="nonexistent", limit=3, offset=6
+    )
+    assert page_of(result) == {
+        "limit": 3,
+        "offset": 6,
+        "has_more": False,
+        "approx_total": 0,
+    }
+
+
+# ------------------------------------------------------- §7.6: cluster_gap=0
+
+
+async def test_cluster_gap_zero_does_not_decay_into_positional_filler(
+    tool_corpus,
+) -> None:
+    """§7.6. Three consecutive cues, ranked 1/2/3 by position, containing none
+    of the query terms — rank 2 was "Thank you, Sid, for speaking."
+
+    The mechanism: the vector leg ranked the *cues* it expanded out of one
+    chunk, so they arrived as ranks 1, 2, 3 and took the whole page. A
+    chunk-level match has no per-cue evidence to spread over forty cues, so at
+    `cluster_gap=0` the semantic leg cites its chunk once, at the chunk's anchor.
+    """
+
+    def make(conn: sqlite3.Connection) -> None:
+        vague = add_video(conn, "vaguevideo0")
+        cues = [
+            add_cue(conn, vague, i, i * 5.0, i * 5.0 + 4.0, f"thank you for speaking {i}")
+            for i in range(20)
+        ]
+        add_chunk(
+            conn, vague, 0, cues[0], cues[-1], "the whole talk", 0.0, 99.0,
+            vector_text="the dirty secret",
+        )
+        lexical = add_video(conn, "lexicalvid0")
+        add_cue(conn, lexical, 0, 12.0, 16.0, "the dirty secret of this industry")
+
+    parts = await tool_corpus(make)
+    rows = rows_of(
+        await search.run(
+            parts.deps,
+            q="the dirty secret",
+            content_type="transcript",
+            cluster_gap=0,
+            limit=3,
+        )
+    )
+    from_vague = [r for r in rows if r["video_id"] == "vaguevideo0"]
+    assert len(from_vague) == 1, "one chunk, one citation"
+    assert rows[0]["video_id"] == "lexicalvid0", rows
+
+
+# ---------------------------------------------------- §7.4: duplicate frames
+
+
+async def test_a_held_slide_is_one_result_not_two(tool_corpus) -> None:
+    """§7.4 ("Andon"). Two keyframes, one slide: the talk held it across a shot
+    boundary, both frames OCR'd to the same text, and both became results —
+    identical down to the timestamp string, and each spending a slot of
+    `max_per_video`. `keyframes.phash` already knows they are one picture."""
+
+    def make(conn: sqlite3.Connection) -> None:
+        vid = add_video(conn, "andonvideo0")
+        add_ocr(conn, vid, 0, 21.0, "Andon Labs", phash=777)
+        add_ocr(conn, vid, 1, 24.0, "Andon Labs", phash=777)
+        add_ocr(conn, vid, 2, 90.0, "Andon Labs, and now a different slide", phash=778)
+
+    parts = await tool_corpus(make)
+    rows = rows_of(await search.run(parts.deps, q="Andon", content_type="ocr", limit=4))
+    assert sorted(r["frame_id"] for r in rows) == [
+        "andonvideo0-00000",
+        "andonvideo0-00002",
+    ], rows
+
+
+async def test_one_frame_found_by_two_legs_is_one_result(tool_corpus) -> None:
+    """The cross-leg half of the same rule: the OCR leg and the frame leg index
+    the same keyframes, so a slide that matches on both arrived twice."""
+
+    def make(conn: sqlite3.Connection) -> None:
+        vid = add_video(conn, "bothframevi")
+        kf = add_ocr(conn, vid, 0, 40.0, "architecture diagram with boxes and arrows")
+        add_frame_vector(conn, kf, vid, 40.0, "architecture diagram with boxes and arrows")
+
+    parts = await tool_corpus(make)
+    rows = rows_of(
+        await search.run(parts.deps, q="architecture diagram with boxes and arrows", limit=5)
+    )
+    assert len(rows) == 1, rows
+    assert rows[0]["source"] == "ocr+frame"
+    # Two channels agreeing is corroboration: RRF sums the legs, it does not
+    # pick one and throw the other away.
+    assert rows[0]["score"] == pytest.approx(2 / 61, abs=5e-5)
+
+
+# ----------------------------------------------------- §7.11: OCR min_chars
+
+
+def test_min_chars_measures_the_frame_not_the_line(corpus: Corpus) -> None:
+    """§7.11. `min_chars` was measured against a single OCR *line* while the leg
+    matched whole frames, so `min_chars=500` nullified the OCR leg with no note
+    — one leg filtered to nothing, which `all` means all forbids. tool-surface
+    §4.1: on the OCR leg the segment is the frame.
+
+    The field test ran against a stack at migration 0002, where the OCR index
+    was still line-granular; migration 0003 moved the predicate onto
+    `ocr_frames.text` with the index. So this is a guard, not a repair — and it
+    is written line-first (five lines, none of them long enough on its own) so
+    it fails the moment the predicate moves back to `ocr_lines`.
+    """
+
+    def make(conn: sqlite3.Connection) -> None:
+        vid = add_video(conn, "denseslide0")
+        # Five lines of ~40 chars: no line reaches 100, the frame is 200+.
+        add_ocr(conn, vid, 0, 10.0, *[f"bullet {i} about evals " + "x" * 20 for i in range(5)])
+        add_ocr(conn, vid, 1, 60.0, "evals")
+
+    corpus.write(make)
+    conn = corpus.read
+    ids = pool(conn)
+
+    dense = queries.search_ocr(
+        conn, queries.SearchParams(q="evals", video_ids=ids, limit=10, min_chars=100)
+    )
+    assert [str(r["frame_id"]) for r in dense] == ["denseslide0-00000"]
+    lines = str(dense[0]["text"]).split(queries.OCR_FRAME_SEPARATOR)
+    assert max(len(line) for line in lines) < 100, "no single LINE would have passed"
+
+    sparse = queries.search_ocr(
+        conn, queries.SearchParams(q="evals", video_ids=ids, limit=10, max_chars=20)
+    )
+    assert [str(r["frame_id"]) for r in sparse] == ["denseslide0-00001"]
+
+
+# --------------------------------- §7.10 / §9.1.5: the empty state, and §7.5
+
+
+async def test_the_empty_state_names_the_legs_that_actually_ran(tool_corpus) -> None:
+    """§7.10 and §9.1.5. "Every leg was queried and none of them matched." is
+    false whenever the caller pinned `content_type` — and at `content_type=all`
+    it contradicted a `note:` four lines above it in the same payload saying the
+    semantic legs had been skipped."""
+    parts = await tool_corpus(_six_videos)
+
+    pinned = text_of(
+        await search.run(parts.deps, q="zzzznothinghere", content_type="ocr", limit=3)
+    )
+    assert "Every leg was queried" not in pinned
+    assert "The ocr leg was queried" in pinned
+
+    # No lexical footing: the semantic legs are gated off, and the payload says
+    # so — so it must not also claim all three ran.
+    gated = text_of(await search.run(parts.deps, q="zzzznothinghere", limit=3))
+    assert "semantic (nearest-neighbour) legs were not queried" in gated
+    assert "All three legs" not in gated
+    assert "The transcript and ocr legs were queried" in gated
+
+    # And with footing, all three really do run, and the line says exactly that.
+    everything = text_of(await search.run(parts.deps, q="reproducible zzzznothing", limit=3))
+    assert "All three legs were queried and none of them matched." in everything
+
+
+async def test_the_matched_phrase_survives_truncation(tool_corpus) -> None:
+    """§7.5's second half. At `max_text_chars=400` the middle-truncation removed
+    the matched phrase from a two-minute cluster, so the result showed neither
+    the words that matched nor a timestamp near them."""
+    phrase = "the dirty secret of forward deployed engineering"
+
+    def make(conn: sqlite3.Connection) -> None:
+        vid = add_video(conn, "longtalkvid")
+        cues = [
+            add_cue(
+                conn, vid, i, i * 5.0, i * 5.0 + 4.0,
+                f"and this is {phrase}" if i == 10
+                else f"filler sentence number {i} " + "padding words " * 6,
+            )
+            for i in range(20)
+        ]
+        add_chunk(
+            conn, vid, 0, cues[0], cues[-1], "the whole talk", 0.0, 99.0,
+            vector_text=phrase,
+        )
+
+    parts = await tool_corpus(make)
+    rows = rows_of(
+        await search.run(
+            parts.deps, q=phrase, content_type="transcript", limit=3, max_text_chars=200
+        )
+    )
+    assert rows, rows
+    assert "chars truncated" in rows[0]["text"], "the cluster is longer than the budget"
+    assert phrase in rows[0]["text"]
+    # ...and the citation is the matched cue inside that two-minute island.
+    assert rows[0]["start"] == 0.0
+    assert rows[0]["match_start"] == 50.0

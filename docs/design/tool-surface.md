@@ -193,6 +193,33 @@ Rendering:
 unbounded `COUNT(*)` that screenpipe still runs (live bug: page capped at 5000
 candidates, count uncapped, `Input` type counts with `LIKE '%q%'` full scan).
 
+**`search` does not use the count probe, and that is the fix, not an exception**
+(amended 2026-08-09). `search` fuses three legs and then dedups and caps them in
+memory, so a probe over one leg's CTE could only ever count the wrong thing.
+It counted rows *before* the cross-modal collapse and before `max_per_video` —
+rows paging can never deliver — and its ceiling was `offset + limit + 30`, so
+the number the guide teaches callers to read scaled with the page they asked
+for: `3/~40+` at `limit=3` and `50/~130+` at `limit=50`, same query, same
+corpus. The frame leg had no probe at all, so its "total" was the `limit + 1`
+fetch: `5/6` for a query with eighteen matching frames. All three are one bug
+(`research/demo-queries-2026-08-09.md` §7.8, §9.1.6). `search`'s rule instead:
+
+1. Every leg fetches a **candidate pool** (`CANDIDATE_POOL`, default 400) with
+   `LIMIT pool + 1` — the `+1` means "this leg had more to give".
+2. The legs are fused, collapsed and capped, and `approx_total` is the length of
+   what is left: post-dedup, post-cap, **page-independent**, and a count of
+   results a caller can actually reach by paging. Zero extra queries.
+3. `pool_exhausted` (structured content) is what makes it "approx": at least one
+   leg filled its pool, so `~380+` rather than `380`. On the last page of an
+   exhausted pool the payload adds a `note:` saying deeper matches exist and
+   naming the filters that reach them.
+4. Paging past the end is a payload, not a silence: `Results: 0/80 (past the
+   last page)`, the offset where the last page starts, and a `next:` back to it.
+   It used to print `Results: 0/200` — a "total" equal to the offset — and then
+   two blank lines, strictly less help than an empty search gets (§7.9).
+
+`list-videos` keeps the probe: it really does page in SQL.
+
 ### 3.5 Output formats
 
 List-shaped tools (`search`, `list-videos`) accept:
@@ -229,6 +256,29 @@ word-level alignment, and it sidesteps screenpipe's live `offset_index` unit bug
 
 Non-YouTube sources (later) fall back to `link: null` plus `frame_id`/`cue_id`;
 the field is always present so the model's rendering doesn't branch.
+
+**"The item's start" is the ANCHOR, not the segment's first second** (amended
+2026-08-09). For everything that is a point in time — a keyframe, a cue — those
+are the same thing. For a clustered transcript segment they are not: the
+semantic leg expands its chunk to every cue inside it, so an island can be two
+minutes wide, and the link used to point at second zero of it while the matched
+phrase sat 25 seconds later. A two-minute-wide citation is the weakest thing in
+the payload of a product whose headline is "timestamped citations"
+(`research/demo-queries-2026-08-09.md` §7.5). The anchor is the **best-scoring
+matched cue in the island** — score, then leg agreement, then position — and it
+is carried in the payload as `match_start` / `match_cue_id` beside the segment's
+`start`/`end`, and printed as `2:00–3:59 · match at 2:23`. Two consequences the
+contract owes callers:
+
+- **The citation is page-independent.** Cluster membership must not derive from
+  the fetched prefix and `k` must not be a function of `offset + limit`, or the
+  same hit at the same rank cites a different second at a different `limit` —
+  it moved 34 seconds between `limit=3` and `limit=5` (§9.1.2). See §3.4's
+  candidate pool, which is the mechanism.
+- **The lead is deliberate and is documented where a caller reads it.**
+  `start: 311.28` next to `?t=309` is `DEEPLINK_LEAD`, not an inconsistency; two
+  independent agents filed it as a bug in one field test (§9.3.1, §9.4), so
+  `vidtheque://guide` now says so in a clause.
 
 ### 3.7 Tags
 
@@ -361,7 +411,25 @@ byte-identical). Matched cues in the same video within `cluster_gap` (default
 **8s**) collapse into one segment; the segment text is the *contiguous* cue run
 from the first to the last matched cue, so it reads as prose rather than keyword
 confetti. Bounded by `cluster_max_seconds` (default 120) and by `max_text_chars`.
-Result shape: `{video_id, start, end, text, cue_ids[]}`.
+Result shape: `{video_id, start, end, match_start, match_cue_id, text, cue_ids[]}`
+— the span, and the anchor inside it that the deep link points at (§3.6).
+
+**`cluster_gap=0` is raw cues, and raw cues need per-cue evidence.** The
+semantic leg's unit is a *chunk*; expanding one to its cues is how a citation
+gets cue granularity, and clustering collapses the expansion again. With
+clustering off, the expansion IS the payload — and it arrived as forty cues
+ranked by position, so `dirty secret it does not exist` returned three
+consecutive cues from one talk containing none of the query's words, rank 2
+being "Thank you, Sid, for speaking" (`research/demo-queries-2026-08-09.md`
+§7.6). Two rules fix it, and the first is not conditional on `cluster_gap`:
+
+- **The vector leg's RRF rank is the rank of the CHUNK**, shared by every cue
+  expanded out of it — not a `ROW_NUMBER()` over the expanded cues, which made
+  the rank a function of cue density (a 40-cue chunk pushed the next-best chunk
+  to rank 41, `1/101` instead of `1/62`, so a chattier caption track won).
+- **At `cluster_gap=0` the semantic leg cites its chunk once**, at the chunk's
+  anchor cue, plus any cue the lexical leg independently matched — that one has
+  evidence of its own. One chunk, one citation.
 
 **Per-video diversity cap.** `ROW_NUMBER() OVER (PARTITION BY video_id ORDER BY
 rank) <= max_per_video`, default **3**, applied *before* the page slice.
@@ -369,6 +437,27 @@ screenpipe's comment on the equivalent app-level cap: *"without this, a single
 dominant app can fill the entire result set."* One 3-hour lecture would otherwise
 bury fifty videos. When the cap actually bit, the payload footer says so and names
 the parameter to widen.
+
+**The cap BACKFILLS; it never shortens the page.** It runs over the whole
+candidate pool (§3.4), so a page reduced by the cap pulls the next candidates in
+behind it, and `has_more` is computed after the cap over the same list. It used
+to be applied to a page that had already been fetched at `limit` rows:
+`limit=6, max_per_video=1` returned three results and asserted *"no more
+results"* while the same query without the cap proved thirty-plus candidates
+existed (`research/demo-queries-2026-08-09.md` §7.7). A cap that silently
+shortens the page is a bug; a cap that shortens the page *and then says the
+corpus is exhausted* is the same bug telling the caller to stop looking.
+
+**One frame, one result.** A keyframe can be found by the OCR leg (its text) and
+by the frame leg (its picture) at once, and a slide held across a shot boundary
+is indexed as several keyframes with one `phash`. Either way the payload showed
+the same picture in two or three slots, identical down to the timestamp string,
+each one spending a slot of `max_per_video` (§7.4, the `Andon` reproducer). Both
+collapse, on the identity the keyframe stage already computed: `phash` within a
+leg (in SQL, so the pool is not spent on duplicates), `frame_id` across the two
+legs (in the fusion step, where the RRF contributions add — two channels
+agreeing is corroboration, and the provenance becomes `[ocr+frame]`). Keyframes
+with `dup_of` set never reach either leg.
 
 **OCR-vs-transcript dedup.** A slide usually says what the speaker is saying. Two
 hits, same second, same claim. Within one video, an OCR hit whose frame timestamp
@@ -392,11 +481,43 @@ is the matched window of it (§3.3).
 `content_type=all` fuses the three legs with **Reciprocal Rank Fusion**
 (`score = Σ 1/(k + rank)`, k=60) rather than a hand-tuned weighted sum. RRF needs
 no per-leg calibration and survives a leg returning nothing. The per-leg candidate
-lists are each cut at `CANDIDATE_CAP` before fusion.
+lists are each cut at `CANDIDATE_CAP` before fusion, and each contributes
+`CANDIDATE_POOL` rows to it — **not `offset + limit`**. Fusion bonuses used to
+fire only when both legs' copies of a hit landed inside the fetched prefix, so
+the single largest score differentiator in the payload appeared and disappeared
+with page size: `reward hacking` had a different rank 1 at `limit=3` and at
+`limit=50`, and a visitor clicking "show more" got a different list rather than
+more of the same one (`research/demo-queries-2026-08-09.md` §9.1.3). Ranking is
+a function of the query; the page is a slice of it.
+
+**The tie-break, in order** (added 2026-08-09). RRF ties are not an edge case:
+every leg's and every sub-ranker's rank 1 scores exactly `1/(60+1)`, so the top
+of a fused payload is usually a tie. The tie-break used to be `_sort_key`, whose
+first element is `public_id` — alphabetically by video id, systematically
+favouring ids that start with `-` or a digit — and an exact, unique string match
+lost to a fuzzy neighbour that did not contain it at all (§7.1, the field test's
+highest-impact finding). Relevance now decides, and identity only breaks what
+relevance cannot:
+
+1. **fused score** — the RRF sum;
+2. **exact phrase** — the whole query occurs, as a phrase, in the hit's text;
+3. **term coverage** — the share of the query's terms present as whole tokens;
+4. **leg agreement** — how many rankers found this hit (FTS + vector, or two
+   modalities collapsing into one result);
+5. then `(public_id, start, source, frame_id, text[:64])`, which is arbitrary
+   and exists only to make the order **total** — without it, page-boundary
+   membership can differ between two identical calls, which is the guarantee
+   `offset` depends on.
+
+2 and 3 compare *normalized* text (casefold, punctuation to spaces), so
+`CVE-2026-22812` matches `cve 2026 22812`. They are computed once over the
+candidate pool, which is bounded independently of `limit`. Non-relevance
+orderings keep their own first key (publish date, video time) and then use this
+same list.
 
 **Provenance prefixes** (so the model never needs a second, narrower query just to
 learn where a hit came from): `[transcript]`, `[ocr]`, `[frame]`, `[transcript+ocr]`,
-`[description]`.
+`[ocr+frame]`, `[description]`.
 
 ---
 
@@ -479,15 +600,20 @@ substring-based.
 | `speaker` | string | — | ≤ 128 chars | Case-insensitive partial. Transcript leg only → other legs skipped with a `note:`. `E_FEATURE_DISABLED` if diarization is off corpus-wide. |
 | `min_chars` / `max_chars` | int | — | 0..100000 | Filter by matched-segment text length. Text legs only. On the OCR leg the segment is the **frame** — all of its lines (index-schema §2.5) — so "short" means a sparse slide, not a short line. |
 | `max_per_video` | int | `3` | clamped 1..20 | Diversity cap (§3.10). |
-| `cluster_gap` | number | `8` | clamped 0..60 | Seconds; `0` disables clustering (returns raw cues). |
+| `cluster_gap` | number | `8` | clamped 0..60 | Seconds; `0` disables clustering (returns raw cues — and the semantic leg then cites each chunk once, §3.10). |
 | `max_text_chars` | int | `1000` | `0` or 120..20000 | §3.3. |
 | `format` | enum `text\|tsv` | `text` | — | §3.5. |
 | `fields` | string | `video_id,start,text,link,source` | ≤ 12 fields | `tsv` only. |
 
 **Return shape.** One `text` block; `structuredContent` mirrors it as
-`{results: [...], pagination: {limit, offset, has_more, approx_total}, notes: [...],
-related_tags?: {...}}`. **No image blocks — ever.** Frame hits carry `frame_id`;
-images come from `get-frames` (§4.6), which is the whole point of that tool.
+`{results: [...], pagination: {limit, offset, has_more, approx_total,
+pool_exhausted, last_offset?}, notes: [...], related_tags?: {...}}`. Each result
+carries `{source, video_id, title, channel, start, end, match_start,
+match_cue_id, text, link, cue_ids, frame_id, score}` — `match_start` is the
+anchor the `link` points at (§3.6), equal to `start` for the point-in-time legs;
+`last_offset` appears only on the past-the-end payload (§3.4). **No image blocks
+— ever.** Frame hits carry `frame_id`; images come from `get-frames` (§4.6),
+which is the whole point of that tool.
 
 ```
 Results: 10/~40+ (use offset=10 for more)
@@ -495,12 +621,12 @@ Query: "kv cache" · content_type=all · order=relevance · max_per_video=3
 Legs: transcript 24 · ocr 9 · frame 7 (fused, RRF k=60; 5000-candidate cap not reached)
 
 [transcript] Let's build GPT: from scratch — Andrej Karpathy (kCc8FmEb1nY)
-  1:12:03–1:12:47 · https://youtu.be/kCc8FmEb1nY?t=4321
-  so the reason we cache the keys and the values is that at every new token you
-  would otherwise recompute attention over the entire prefix, which is quadratic.
-  the cache makes it linear in the number of new tokens, and the price you pay is
-  memory — …[612 chars truncated — pass max_text_chars=0 for full text]… which is
-  why long-context inference is a memory-bandwidth problem, not a compute problem.
+  1:12:03–1:12:47 · match at 1:12:21 · https://youtu.be/kCc8FmEb1nY?t=4339
+  …[612 chars truncated — pass max_text_chars=0 for full text]… so the reason we
+  cache the keys and the values is that at every new token you would otherwise
+  recompute attention over the entire prefix, which is quadratic. the cache makes
+  it linear in the number of new tokens, and the price you pay is memory — which
+  is why long-context inference is a memory-bandwidth problem, not compute.
   cues 1841-1849 · score 0.0312
 
 [transcript+ocr] Fast LLM inference from scratch — Kevin Chen (BpXHvyqZ0Fk)
@@ -523,7 +649,7 @@ Legs: transcript 24 · ocr 9 · frame 7 (fused, RRF k=60; 5000-candidate cap not
 --- (6 more results elided in this example) ---
 
 3 of 10 results came from kCc8FmEb1nY (max_per_video=3 bound). Raise max_per_video for more from it.
-Text middle-truncated at 1000 chars — pass max_text_chars=0 for full text.
+Text truncated at 1000 chars, around the matched passage — pass max_text_chars=0 for full text.
 next: video-summary video_id="kCc8FmEb1nY" for the chapter list (fastest way to name the moment), or get-segment-context video_id="kCc8FmEb1nY" t=4321 for the full surrounding transcript.
 ```
 
@@ -607,6 +733,18 @@ this line answers "is the index settled?", so the coverage words (`partial`,
 `degraded`) stay with `corpus-summary`, which prints both axes. What the three
 surfaces may never again disagree about is whether anything is being indexed.
 
+**The reason line is derived from the legs that ran, and the page is always
+echoed.** It was the constant *"Every leg was queried and none of them
+matched."* — false whenever the caller pinned `content_type` to one leg, and at
+`content_type=all` it could contradict a `note:` four lines above it in the same
+payload saying the semantic legs had been gated off (demo-queries §7.10,
+§9.1.5). `all` means all; claiming `all` when one leg ran is that invariant
+inverted. It now names the legs (*"The transcript and ocr legs were queried and
+nothing matched"* / *"All three legs were queried…"*) and points at the note. The
+same payload also echoes the caller's `limit`/`offset`: the corpus-filter early
+return used to default them to `0`, so an unmatched `channel=` answered with
+`pagination.limit: 0` while an unmatched *query* echoed the real limit (§9.1.9).
+
 **`fields` is validated against the columns this tool can emit** (§3.5), before
 the search runs: an unknown name is `E_BAD_PARAM` listing the valid fields, not a
 header with a blank cell under every row.
@@ -617,9 +755,12 @@ header with a blank cell under every row.
 - Double cap: at most `limit` items **and** at most `limit × (max_text_chars + 220)`
   chars of body before the response cap trims the tail.
 - Bounded independently of `limit`: the FTS/vector candidate window
-  (`CANDIDATE_CAP=5000` per leg), the count probe (`offset+limit+30`), the
-  related-tags co-occurrence (30 tags / 800ms), the dedup comparison window (5s),
-  and the cluster span (120s). None of these grow when `limit` grows.
+  (`CANDIDATE_CAP=5000` per leg), the **fusion pool** (`CANDIDATE_POOL=400` per
+  leg) and with it the vector legs' `k`, the related-tags co-occurrence (30 tags
+  / 800ms), the dedup comparison window (5s), and the cluster span (120s). None
+  of these grow when `limit` grows — and as of 2026-08-09 none of them *shrink*
+  with it either, which is the half that was missing: a bound that tracks the
+  page is not a bound, it is a page-shaped ranking (§3.4, §3.6, §3.10).
 - No images, ever. That path is `get-frames`, where its cost is visible.
 
 **Errors:** `E_EMPTY_QUERY`, `E_BAD_TIME_FORMAT`, `E_BAD_PARAM`, `E_ORDER_SCOPE`,

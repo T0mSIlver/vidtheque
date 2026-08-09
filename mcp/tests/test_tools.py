@@ -104,15 +104,24 @@ async def test_truncation_marker_and_opt_out(assembled: Assembled) -> None:
     marked = [t for t in cut.values() if "chars truncated" in t]
     assert marked, "the fixture's clustered segment is longer than 120 chars"
     assert TRUNCATION_MARKER.split("{")[0] in marked[0]
-    # Middle truncation: both ends survive.
+    # The truncated text is a window OF the full text, and the window is placed
+    # around the match rather than through it (§7.5) — so what survives is a
+    # contiguous run of the original, not necessarily its two ends.
     key = next(k for k, v in cut.items() if "chars truncated" in v)
-    assert whole[key].startswith(cut[key].split("…[")[0])
-    assert whole[key].endswith(cut[key].split("]…")[-1])
+    kept = [part for part in _split_markers(cut[key]) if part]
+    assert kept and all(part in whole[key] for part in kept), (cut[key], whole[key])
     # The 0 opt-out is tested because screenpipe once shipped a build where 0
     # returned only the marker.
     assert all("chars truncated" not in t for t in whole.values())
     assert len(whole[key]) > len(cut[key])
-    assert "Text middle-truncated at 120 chars" in body(truncated)
+    assert "Text truncated at 120 chars, around the matched passage" in body(truncated)
+
+
+def _split_markers(text: str) -> list[str]:
+    """The text split on every `…[N chars truncated …]…` marker."""
+    import re
+
+    return re.split(r"…\[\d+ chars truncated[^]]*\]…", text)
 
 
 async def test_pagination_line_and_has_more(assembled: Assembled) -> None:

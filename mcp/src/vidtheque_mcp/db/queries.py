@@ -554,6 +554,16 @@ fts_hits AS MATERIALIZED (
 # `start_s <= :t_end` cannot drop a chunk holding an in-range cue. There is no
 # `end_s` metadata column, so the lower time bound stays a cue-level predicate
 # and `k` is oversampled instead.
+#
+# The leg's ranked list is a list of CHUNKS, and every cue expanded out of a
+# chunk inherits that chunk's rank. It used to `ROW_NUMBER()` the expanded
+# *cues*, which made the RRF rank a function of cue density rather than of
+# similarity: a 40-cue chunk pushed the second-best chunk's cues to rank 41+
+# (1/101 instead of 1/62), so an equally-near passage in a video with shorter
+# cues lost to one with chattier captions. It is also what turned
+# `cluster_gap=0` into positional filler — three consecutive cues out of one
+# chunk arrived as ranks 1, 2, 3 and took the whole page
+# (research/demo-queries-2026-08-09.md §7.6).
 _LEG_VEC = """
 vec_hits AS MATERIALIZED (
   SELECT chunk_id, distance
@@ -562,27 +572,42 @@ vec_hits AS MATERIALIZED (
     AND video_id IN (SELECT value FROM json_each(:video_ids))
     AND start_s <= :vec_t_end
 ),
+vec_ranked AS MATERIALIZED (
+  SELECT chunk_id, distance,
+         ROW_NUMBER() OVER (ORDER BY distance, chunk_id) AS chunk_r
+  FROM vec_hits
+  WHERE distance <= :vec_max_distance
+),
 vec_scoped AS MATERIALIZED (
   -- ONE best distance per cue. Chunks overlap by design (45 s window, 15 s
   -- overlap), so a cue lands in two chunks and used to arrive as two rows —
   -- two RRF contributions from ONE leg, which is double-counting, not
   -- corroboration.
   SELECT c.id AS cue_id, c.video_id, c.start_s, c.end_s, c.text,
-         MIN(vh.distance) AS distance
-  FROM vec_hits vh
+         MIN(vh.distance) AS distance,
+         MIN(vh.chunk_r)  AS chunk_r
+  FROM vec_ranked vh
   JOIN chunks ch ON ch.id = vh.chunk_id
   JOIN cues   c  ON c.id BETWEEN ch.first_cue_id AND ch.last_cue_id
-  WHERE vh.distance <= :vec_max_distance
+{anchor_only}
 {scope}
   GROUP BY c.id
 ),
 vec_cues AS MATERIALIZED (
-  SELECT cue_id, video_id, start_s, end_s, text,
-         ROW_NUMBER() OVER (ORDER BY distance, cue_id) AS r
+  SELECT cue_id, video_id, start_s, end_s, text, chunk_r AS r
   FROM vec_scoped
-  ORDER BY distance, cue_id
+  ORDER BY chunk_r, cue_id
   LIMIT :candidate_cap
 )"""
+
+# `cluster_gap=0` means "no clustering, raw cues" — and a chunk-level match has
+# no per-cue evidence to spread over forty cues, so at gap 0 the semantic leg
+# cites its chunk ONCE, at the chunk's own anchor cue, plus any cue the lexical
+# leg independently matched (that one has evidence). With clustering on, the
+# island collapses the expansion anyway; with it off, the expansion IS the
+# payload, and it was filler.
+_VEC_ANCHOR_ONLY = """  WHERE (:cluster_gap > 0 OR c.id = ch.first_cue_id{fts})"""
+_VEC_ANCHOR_FTS = " OR c.id IN (SELECT cue_id FROM fts_scoped)"
 
 _LEG_BROWSE = """
 browse_hits AS MATERIALIZED (
@@ -607,8 +632,14 @@ params AS (SELECT :rrf_k AS rrf_k, :cluster_gap AS gap_s,
                   :cluster_max AS max_span, :max_per_video AS per_video),
 {legs},
 
+-- `n_legs` is how many of this query's rankers found this cue. It is not a
+-- score — it is the tie-break evidence the fusion seam had none of: RRF's
+-- rank-1 rows all score exactly 1/(60+1), so without it the payload's order at
+-- the top is decided by whatever the last sort key happened to be
+-- (research/demo-queries-2026-08-09.md §7.1).
 scored AS (
-  SELECT cue_id, video_id, start_s, end_s, text, SUM(s) AS score FROM (
+  SELECT cue_id, video_id, start_s, end_s, text,
+         SUM(s) AS score, COUNT(*) AS n_legs FROM (
 {unions}
   ) GROUP BY cue_id
 ),
@@ -661,13 +692,35 @@ islands AS (
                               ROWS UNBOUNDED PRECEDING) AS island
   FROM marked
 ),
+-- The ANCHOR: the best-scoring matched cue in the island, which is what the
+-- deep link points at. The island's *start* used to be the citation, and a
+-- semantic leg that expands a whole chunk makes the island two minutes wide —
+-- so `?t=` landed on a cue that had nothing to do with the query while the
+-- matched phrase sat 25 s later (research/demo-queries-2026-08-09.md §7.5).
+-- It is a window function rather than an aggregate because the value wanted is
+-- `start_s` at the argmax of `score`, not `MIN(start_s)`.
+anchored AS (
+  SELECT *,
+    FIRST_VALUE(start_s) OVER w AS anchor_s,
+    FIRST_VALUE(cue_id)  OVER w AS anchor_cue_id,
+    FIRST_VALUE(text)    OVER w AS anchor_text,
+    FIRST_VALUE(n_legs)  OVER w AS anchor_legs
+  FROM islands
+  WINDOW w AS (PARTITION BY video_id, island
+               ORDER BY score DESC, n_legs DESC, start_s, cue_id
+               ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+),
 -- Island boundaries come from the MATCHED cues; the passage does not.
 bounds AS (
   SELECT video_id, island,
          MIN(start_s) AS start_s, MAX(end_s) AS end_s,
          MAX(score)   AS score,
-         COUNT(*)     AS n_matched
-  FROM islands
+         COUNT(*)     AS n_matched,
+         MIN(anchor_s)       AS anchor_s,
+         MIN(anchor_cue_id)  AS anchor_cue_id,
+         MIN(anchor_text)    AS anchor_text,
+         MAX(anchor_legs)    AS n_legs
+  FROM anchored
   GROUP BY video_id, island
 ),
 -- ...and then every cue inside that interval is joined back, matched or not.
@@ -679,7 +732,7 @@ clustered AS (
          group_concat(c.text, ' ' ORDER BY c.start_s, c.id) AS text,
          json_group_array(c.id ORDER BY c.start_s, c.id)    AS cue_ids,
          COUNT(*)                                           AS n_cues,
-         b.n_matched
+         b.n_matched, b.anchor_s, b.anchor_cue_id, b.anchor_text, b.n_legs
   FROM bounds b
   JOIN cues c ON c.video_id = b.video_id
              AND c.start_s >= b.start_s AND c.start_s <= b.end_s
@@ -697,7 +750,8 @@ capped AS (
                                ORDER BY score DESC, start_s, island) AS rn
   FROM clustered
 )
-SELECT video_id, start_s, end_s, text, cue_ids, score, n_cues, n_matched
+SELECT video_id, start_s, end_s, text, cue_ids, score, n_cues, n_matched,
+       anchor_s, anchor_cue_id, anchor_text, n_legs
 FROM capped
 WHERE rn <= (SELECT per_video FROM params)
 """
@@ -710,7 +764,12 @@ def _transcript_sql(*, do_fts: bool, do_vec: bool, do_browse: bool) -> str:
         legs.append(_LEG_FTS.format(scope=_CUE_SCOPE))
         unions.append(_SCORED_LEG.format(leg="fts_hits"))
     if do_vec:
-        legs.append(_LEG_VEC.format(scope=_CUE_SCOPE))
+        legs.append(
+            _LEG_VEC.format(
+                scope=_CUE_SCOPE,
+                anchor_only=_VEC_ANCHOR_ONLY.format(fts=_VEC_ANCHOR_FTS if do_fts else ""),
+            )
+        )
         unions.append(_SCORED_LEG.format(leg="vec_cues"))
     if do_browse:
         legs.append(_LEG_BROWSE.format(scope=_CUE_SCOPE))
@@ -797,26 +856,17 @@ def search_transcript(conn: sqlite3.Connection, params: SearchParams) -> list[sq
     return conn.execute(sql, params.bind()).fetchall()
 
 
-def probe_transcript(conn: sqlite3.Connection, params: SearchParams, headroom: int = 30) -> tuple[int, bool]:
-    """Bounded count probe over the SAME expression as the page query.
-
-    It cannot disagree with the page because it *is* the page's filter; a
-    duplicated count query is screenpipe's standing correctness liability.
-    `~40+` reads as "at least 40, we stopped counting".
-    """
-    legs = params.legs
-    if not any(legs.values()):
-        return 0, False
-    ceiling = params.offset + params.limit + headroom
-    sql = (
-        "WITH probe AS ("
-        + _transcript_sql(**legs)
-        + " LIMIT :ceiling) SELECT COUNT(*) FROM probe"
-    )
-    bound = params.bind()
-    bound["ceiling"] = ceiling
-    total = int(conn.execute(sql, bound).fetchone()[0])
-    return total, total >= ceiling
+# There is no `probe_transcript`/`probe_ocr` any more, and their absence is the
+# point. They were bounded count probes over the same CTE as the page, ceilinged
+# at `offset + limit + 30` — so the "total" they produced was a function of the
+# page the caller asked for (`limit=3` → `~40+`, `limit=50` → `~130+`, same
+# query), and they counted candidate rows *before* the cross-modal dedup and the
+# per-video cap, i.e. rows paging could never deliver
+# (research/demo-queries-2026-08-09.md §7.8, §9.1.6). `tools/search.py` fuses a
+# candidate pool that is bounded independently of `limit` and then pages it in
+# memory, so the count it prints is `len(hits)` after dedup and after the cap:
+# page-independent, deliverable, and two fewer queries per search. `list-videos`
+# keeps `probe_videos` — it really does page in SQL.
 
 
 # ---------------------------------------------------------------------------
@@ -864,8 +914,24 @@ WITH ocr_cand AS MATERIALIZED (
   ORDER BY f.rank, o.keyframe_id
   LIMIT :candidate_cap
 ),
+-- Byte-identical slides are ONE result. A talk that holds a slide across two
+-- shots indexes it as two keyframes with the same perceptual hash, and both
+-- matched the same query with the same text: `Andon` came back as two results
+-- that were identical down to the timestamp string, and each one spent a slot
+-- of `max_per_video` (research/demo-queries-2026-08-09.md §7.4). The identity
+-- is the index-time one — `keyframes.phash`, the 64-bit DCT hash the keyframe
+-- stage already computes — so this costs a join, not a comparison pass. The
+-- earliest occurrence wins: it is where the slide first went up.
+deduped AS (
+  SELECT o.*, ROW_NUMBER() OVER (PARTITION BY o.video_id, k.phash
+                                 ORDER BY o.bm25, o.t_s, o.keyframe_id) AS dup_rn
+  FROM ocr_cand o JOIN keyframes k ON k.id = o.keyframe_id
+  WHERE k.dup_of IS NULL
+),
 scoped AS (
-  SELECT o.*, ROW_NUMBER() OVER (ORDER BY o.bm25, o.keyframe_id) AS r FROM ocr_cand o
+  SELECT o.keyframe_id, o.video_id, o.t_s, o.text, o.bm25,
+         ROW_NUMBER() OVER (ORDER BY o.bm25, o.keyframe_id) AS r
+  FROM deduped o WHERE o.dup_rn = 1
 ),
 capped AS (
   SELECT *, ROW_NUMBER() OVER (PARTITION BY video_id ORDER BY r, keyframe_id) AS rn
@@ -905,22 +971,12 @@ _OCR_PAGE = (
     "), p.text) AS matched_text\n"
     "FROM page p ORDER BY p.r"
 )
-_OCR_PROBE = "WITH probe AS (" + _OCR_SQL + " LIMIT :ceiling) SELECT COUNT(*) FROM probe"
 
 
 def search_ocr(conn: sqlite3.Connection, params: SearchParams) -> list[sqlite3.Row]:
     if is_browse_query(params.q) or not sanitize_fts(params.q or ""):
         return []
     return conn.execute(_OCR_PAGE, _ocr_bind(params)).fetchall()
-
-
-def probe_ocr(conn: sqlite3.Connection, params: SearchParams, headroom: int = 30) -> tuple[int, bool]:
-    if is_browse_query(params.q) or not sanitize_fts(params.q or ""):
-        return 0, False
-    bound = _ocr_bind(params)
-    bound["ceiling"] = params.offset + params.limit + headroom
-    total = int(conn.execute(_OCR_PROBE, bound).fetchone()[0])
-    return total, total >= bound["ceiling"]
 
 
 def _ocr_bind(params: SearchParams) -> dict[str, Any]:
@@ -961,10 +1017,23 @@ WITH frame_hits AS MATERIALIZED (
     AND video_id IN (SELECT value FROM json_each(:video_ids))
     AND t_s >= :frame_t_start AND t_s <= :frame_t_end
 ),
+-- One frame, one slot. Same rule and same index-time identity as the OCR leg:
+-- a held slide is several keyframes with one `phash`, they sit at the same
+-- distance from any query vector by construction, and returning all of them
+-- burns the page and the per-video cap on one picture. `dup_of` rows are
+-- excluded outright — the keyframe stage already decided they are the same
+-- image as an earlier frame, and only the earlier one is embedded, so this is
+-- the belt to that braces.
+deduped AS (
+  SELECT fh.*, ROW_NUMBER() OVER (PARTITION BY fh.video_id, k.phash
+                                  ORDER BY fh.distance, fh.t_s, fh.keyframe_id) AS dup_rn
+  FROM frame_hits fh JOIN keyframes k ON k.id = fh.keyframe_id
+  WHERE fh.distance <= :frame_max_distance AND k.dup_of IS NULL
+),
 ranked AS (
-  SELECT fh.*, ROW_NUMBER() OVER (ORDER BY fh.distance, fh.keyframe_id) AS r
-  FROM frame_hits fh
-  WHERE fh.distance <= :frame_max_distance
+  SELECT keyframe_id, video_id, t_s, distance,
+         ROW_NUMBER() OVER (ORDER BY distance, keyframe_id) AS r
+  FROM deduped WHERE dup_rn = 1
 ),
 capped AS (
   SELECT *, ROW_NUMBER() OVER (PARTITION BY video_id

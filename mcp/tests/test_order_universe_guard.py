@@ -1,7 +1,7 @@
 """The non-relevance orderings must sort a UNIVERSE, not a relevance prefix.
 
 `test_tools.py` asserts the user-visible outcome. This file asserts the
-mechanism that produces it, by shrinking `ORDER_UNIVERSE` back to the old
+mechanism that produces it, by shrinking `CANDIDATE_POOL` back to the old
 behaviour (fetch exactly the page) and showing the outcome breaks — otherwise a
 future change could quietly restore the prefix bug while the outcome tests keep
 passing by luck of the fixture's scores.
@@ -20,11 +20,11 @@ def _rows(result) -> list[dict]:
     return result.structured_content["results"]
 
 
-@pytest.mark.parametrize("universe", [1, search.ORDER_UNIVERSE])
+@pytest.mark.parametrize("universe", [1, search.CANDIDATE_POOL])
 async def test_recency_depends_on_the_candidate_universe(
     assembled: Assembled, monkeypatch: pytest.MonkeyPatch, universe: int
 ) -> None:
-    monkeypatch.setattr(search, "ORDER_UNIVERSE", universe)
+    monkeypatch.setattr(search, "CANDIDATE_POOL", universe)
     result = await search.run(
         assembled.deps,
         q="attention OR cache OR memory",
@@ -43,11 +43,11 @@ async def test_recency_depends_on_the_candidate_universe(
         assert newest_first, rows
 
 
-@pytest.mark.parametrize("universe", [1, search.ORDER_UNIVERSE])
+@pytest.mark.parametrize("universe", [1, search.CANDIDATE_POOL])
 async def test_video_time_depends_on_the_candidate_universe(
     assembled: Assembled, monkeypatch: pytest.MonkeyPatch, universe: int
 ) -> None:
-    monkeypatch.setattr(search, "ORDER_UNIVERSE", universe)
+    monkeypatch.setattr(search, "CANDIDATE_POOL", universe)
     result = await search.run(
         assembled.deps,
         # The fixture's best-scoring hit in this video is at 12.0 s, not the
