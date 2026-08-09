@@ -41,13 +41,20 @@ services:
     environment:
       # backend selection
       STT_BACKEND: ${STT_BACKEND:-whisperx}
-      EMBED_BACKEND: ${EMBED_BACKEND:-qwen3-embedding}
-      IMAGE_EMBED_BACKEND: ${IMAGE_EMBED_BACKEND:-siglip2}
+      # One model for both embedding tasks: when these four agree, the worker
+      # loads it once into one shared slot. Split them (qwen3-embedding +
+      # siglip2) and it is two models in two slots.
+      EMBED_BACKEND: ${EMBED_BACKEND:-qwen3-vl-embedding}
+      IMAGE_EMBED_BACKEND: ${IMAGE_EMBED_BACKEND:-qwen3-vl-embedding}
       OCR_BACKEND: ${OCR_BACKEND:-rapidocr}
       STT_MODEL: ${STT_MODEL:-large-v3}
-      EMBED_MODEL: ${EMBED_MODEL:-Qwen/Qwen3-Embedding-0.6B}
-      IMAGE_EMBED_MODEL: ${IMAGE_EMBED_MODEL:-google/siglip2-so400m-patch16-naflex}
+      EMBED_MODEL: ${EMBED_MODEL:-Qwen/Qwen3-VL-Embedding-2B}
+      IMAGE_EMBED_MODEL: ${IMAGE_EMBED_MODEL:-Qwen/Qwen3-VL-Embedding-2B}
+      EMBED_DIM: ${EMBED_DIM:-0}
       EMBED_QUERY_PROMPT: ${EMBED_QUERY_PROMPT:-}
+      FRAME_QUERY_PROMPT: ${FRAME_QUERY_PROMPT:-}
+      EMBED_BATCH_SIZE: ${EMBED_BATCH_SIZE:-16}
+      IMAGE_EMBED_BATCH_SIZE: ${IMAGE_EMBED_BATCH_SIZE:-8}
       IMAGE_EMBED_MAX_PATCHES: ${IMAGE_EMBED_MAX_PATCHES:-256}
       # device
       DEVICE: ${DEVICE:-auto}

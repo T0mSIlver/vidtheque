@@ -273,6 +273,64 @@ async def test_status_reports_the_instructions_a_backend_applies(recorder):
         await manager.stop()
 
 
+# --------------------------------------------------------------------------
+# the HTTP surface over a shared slot: three paths, one model
+# --------------------------------------------------------------------------
+
+
+def test_the_three_endpoints_share_one_model_over_http(recorder):
+    """The point of having made them three separate paths: the routing behind
+    them collapses and the contract does not."""
+    from fastapi.testclient import TestClient
+
+    from vidtheque_worker.app import create_app
+    from vidtheque_worker.backends.base import Embeddings
+    from vidtheque_worker.config import Settings
+
+    vectors = Embeddings(
+        vectors=[[0.1, 0.2]], dims=2, model="Qwen/Qwen3-VL-Embedding-2B"
+    )
+    backends = shared_backends(recorder)
+    backends["embed"].result = vectors
+    backends["embed"].text_result = Embeddings(
+        vectors=[[0.3, 0.4]],
+        dims=2,
+        model="Qwen/Qwen3-VL-Embedding-2B",
+        instruction="frame-instruction",
+    )
+    manager = LifecycleManager(
+        backends,
+        idle_unload_seconds=0,
+        vram_probe=FakeVram(distinct(backends)),
+        hook_runner=FakeHooks(recorder),
+        idle_poll_interval=0.01,
+    )
+    app = create_app(settings=Settings(_env_file=None), manager=manager)
+    with TestClient(app) as client:
+        assert client.post(
+            "/v1/embeddings", json={"input": ["a chunk"], "input_type": "document"}
+        ).status_code == 200
+        assert client.post(
+            "/v1/embeddings/image",
+            files={"file": ("f.jpg", b"\xff\xd8jpeg", "image/jpeg")},
+        ).status_code == 200
+        frame_query = client.post(
+            "/v1/embeddings/frame-query", json={"input": ["a slide"]}
+        )
+        assert frame_query.status_code == 200
+
+        # Three calls, three endpoints, one load.
+        assert recorder.names("load") == ["embed"]
+        # The instruction is echoed, so the corpus's recorded query_prefix can
+        # be checked against behaviour rather than trusted.
+        assert frame_query.json()["instruction"] == "frame-instruction"
+
+        status = client.get("/status").json()
+        by_task = {b["task"]: b for b in status["backends"]}
+        assert by_task["embed"]["slot"] == by_task["image_embed"]["slot"]
+        assert by_task["embed"]["load_count"] == by_task["image_embed"]["load_count"] == 1
+
+
 async def _reap_until(manager: LifecycleManager, tries: int = 50) -> list[str]:
     import asyncio
 

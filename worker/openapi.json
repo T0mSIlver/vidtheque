@@ -233,6 +233,17 @@
             "title": "Dimensions",
             "type": "integer"
           },
+          "instruction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instruction"
+          },
           "model": {
             "title": "Model",
             "type": "string"
@@ -288,7 +299,7 @@
         "type": "object"
       },
       "FrameQueryRequest": {
-        "description": "A query for the frame vector space, run through the frame model's text tower.\n\nNo ``input_type``: the frame model is symmetric and this endpoint is the\nquery side by construction \u2014 the document side is images, and it has its\nown endpoint. Keep the strings short; SigLIP 2's trained text context is 64\ntokens, and anything past it is dropped without an error.",
+        "description": "A query for the frame vector space, run through the frame model itself.\n\nNo ``input_type``: this endpoint is the query side by construction \u2014 the\ndocument side is images, and it has its own endpoint. The frame model\napplies its own frame-retrieval instruction, which the response echoes.\n\nHow long a query may be depends on the configured frame backend, and the\ndifference is silent either way. SigLIP 2's text tower is trained to **64\ntokens** and drops the rest without an error (it logs a warning). The\nunified `Qwen3-VL-Embedding` backend has the model's full 32K context, so\na long descriptive frame query is embedded whole \u2014 which is the shape the\nclient model actually writes.",
         "properties": {
           "encoding_format": {
             "const": "float",
@@ -766,7 +777,7 @@
     }
   },
   "info": {
-    "description": "Stateless inference worker for vidtheque: speech-to-text with word timestamps,\ntext embeddings, frame embeddings, and on-screen-text OCR. One lifecycle manager\nowns the GPU \u2014 requests queue rather than compete. The transcription and text\nembedding endpoints follow OpenAI's shapes so a GPU-less deployment can swap in a\nhosted provider. Text and frame embeddings are separate vector spaces with\nseparate models and separate endpoints; they are never interchangeable. A\nnatural-language query reaches the frame space through the frame model's own\ntext tower, on /v1/embeddings/frame-query \u2014 never through /v1/embeddings.\n",
+    "description": "Stateless inference worker for vidtheque: speech-to-text with word timestamps,\ntext embeddings, frame embeddings, and on-screen-text OCR. One lifecycle manager\nowns the GPU \u2014 requests queue rather than compete. The transcription and text\nembedding endpoints follow OpenAI's shapes so a GPU-less deployment can swap in a\nhosted provider.\n\nText and frame embeddings are separate endpoints, always. Whether they are\nseparate vector *spaces* is configuration: the shipped default is one unified\nmultimodal embedder (Qwen3-VL-Embedding) serving both from one loaded model, and\na two-model setup (Qwen3-Embedding + SigLIP 2) is still selectable and gives two\nspaces that must never be compared. The endpoints do not change between those,\nwhich is the point \u2014 a natural-language query reaches the frame space on\n/v1/embeddings/frame-query and never through /v1/embeddings, so pointing\nWORKER_URL at a hosted provider 404s loudly instead of answering in the wrong\nspace. GET /status says which arrangement is live: entries sharing a `slot`\nshare one loaded model, and `instructions` is what an instruction-aware embedder\nactually applies.\n",
     "title": "vidtheque-worker",
     "version": "0.0.1"
   },
