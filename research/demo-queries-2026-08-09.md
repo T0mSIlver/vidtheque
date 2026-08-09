@@ -559,3 +559,263 @@ asked for.
 
 Chips 2 + 1.2 (`functional property disjoint`) should sit next to each other:
 same video, same minute, one found by reading, one by listening.
+
+---
+
+## 9. Field test — Sonnet agents (2026-08-09)
+
+Author: field-test evaluator, session `peppy-wibbling-moler`. Append-only.
+
+**Method.** Four Sonnet subagents drove the live stack (`mcp :8100`,
+demo/readonly) over the real MCP protocol via `scripts/mcp_call.py`, two at a
+time, ~1 call/2.5 s. None of them was told anything about §7, about the
+migration-0002 gap, or which queries were expected to misbehave. Each was
+briefed only as "you are testing a product; note everything confusing, broken,
+or worse than it should be, with the exact call."
+
+- **tourist** (13 calls) — tool list + `vidtheque://guide` only, free
+  exploration, follow one citation chain to a frame.
+- **researcher** (13 calls) — 8 of §1–§4's verified queries, unmarked, judged
+  against the promise each makes, plus a drill-down.
+- **synthesist** (21 calls) — answered §4.1 and §4.2 properly, with citations,
+  as an ask-mode agent would.
+- **adversary** (37 calls) — weird-but-legal parameters. No auth probing, no
+  writes, no flooding. No `429` at ~1 call/2.5 s with two agents concurrent.
+
+Every finding below was re-run by hand by the evaluator; the reproducers are
+the evaluator's own, not the agents'.
+
+### 9.1 CONFIRMED bugs, new to §7
+
+#### 9.1.1 `get-frames` silently discards ids past `limit` — **highest impact**
+
+```
+call get-frames '{"frame_ids":["Sir59K8ZDPU-00044","9HbzAWnKbo4-00040","O72p-rBb2bA-00028","Yk87oUPVaxU-00013","RjfbvDXpFls-00031"]}'
+  → Frames: 3/3          structured: "failed": []
+call get-frames '{... same five ...,"limit":12}'
+  → Frames: 5/5
+```
+
+Five valid ids, five real frames. The default `limit=3` slices `frame_ids` in
+`tools/frames.py::run` (`rows, failures = await _by_ids(deps, frame_ids[:limit])`)
+**before** validation, so the last two are neither fetched nor reported: they do
+not appear in `frames`, they do not appear in `failed`, and the header prints
+`3/3` — the denominator says "you got all of them". `frame_ids` accepts up to 12
+ids while `limit` defaults to 3, so any caller passing 4+ ids loses data silently.
+The same slice explains the adversary's "junk ids vanished with no error": a
+malformed id in position 4+ is never parsed, so the good `failed:` message that
+fires for positions 1–3 never fires for it. §7.13 missed this because its
+reproducer used exactly three ids.
+
+Severity: high. This is the last step of both flagship flows (§5.1, §5.2) and the
+call a dashboard makes to lay out a strip of frames.
+
+#### 9.1.2 The citation timestamp moves when you change `limit`
+
+```
+call search '{"q":"agents","limit":3}'  → LZuWZRze3MU 3:38–3:52 · ?t=216 · cues 1535-1537 · score 0.0310
+call search '{"q":"agents","limit":5}'  → LZuWZRze3MU 3:04–3:52 · ?t=182 · cues 1531-1537 · score 0.0310
+```
+
+Same query, same rank, same hit, same score — **the deep link moves 34 seconds**.
+`fetch_n = offset + limit` is passed to each leg, so a larger page pulls more raw
+cues into the same cluster and the cluster's *start* (which is what the link
+points at, §7.5) slides earlier. This is §7.5's real root cause, and it is worse
+than §7.5 states: the citation is a function of the page size the caller happened
+to ask for.
+
+#### 9.1.3 Rank 1 changes with `limit` for the same query
+
+```
+call search '{"q":"reward hacking","limit":3}'
+  → 1: [transcript] -npY6XjM8CQ 5:11–5:56 score 0.0308
+call search '{"q":"reward hacking","limit":50}'
+  → 1: [transcript+ocr] (different video) score 0.0457
+```
+
+`_dedup_ocr_against_transcript` awards the `[transcript+ocr]` score bonus only
+when both the transcript hit and the OCR hit land inside the fetched prefix, and
+the prefix is `offset+limit`. So fusion bonuses — the single largest score
+differentiator in the payload, 0.0457 vs 0.0308 — appear and disappear with page
+size. A visitor who clicks "show more" on chip 1 does not get more of the same
+list; they get a different list with a different winner.
+
+#### 9.1.4 `data_status: indexing` from five stale jobs, contradicted twice in one session
+
+```
+resource vidtheque://context     → "active_jobs": 5, "data_status": "indexing"
+call corpus-summary '{}'         → data_status: indexing   /   0 videos currently indexing
+call search '{"q":"🔥","limit":3}' → data_status: ok (… index fresh)
+call job-status '{}'             → 5 queued, 0/10 items, progress 20-40%
+```
+
+Five jobs are stuck `queued` with non-zero progress and zero items; no video is
+in `index_state='indexing'`. `queries.gaps` counts two different things
+(`active_jobs` = rows in `jobs`, `indexing` = videos), and `corpus-summary`'s
+headline `data_status` is driven by the first while its own Gaps block prints the
+second. Net effect on demo day: **the first call anyone makes says the corpus is
+mid-index**, the line below says nothing is indexing, and `search`'s empty state
+says the index is fresh. Three answers, one session. Clearing the stale job rows
+fixes the symptom; the two counters still need one name each.
+
+#### 9.1.5 The empty state contradicts its own `note:`
+
+```
+call search '{"q":"🔥","limit":3}'
+  → note: no word of this query occurs anywhere in the corpus, so the semantic
+    (nearest-neighbour) legs were not queried …
+  → Every leg was queried and none of them matched.
+```
+
+§7.10 recorded this line as false when the caller pins one leg. It is also false
+at `content_type=all`, and here it directly contradicts a `note:` four lines
+above it in the same payload. The constant `reason=` in `_empty_result` should be
+derived from `legs`, not hard-coded.
+
+#### 9.1.6 The pagination "total" is a function of `limit`, and over-paging invents one
+
+```
+call search '{"q":"reward hacking","limit":3}'   → Results: 3/~40+
+call search '{"q":"reward hacking","limit":50}'  → Results: 50/~130+
+call search '{"q":"evals","limit":3,"offset":200}'
+  → Results: 0/200 (no more results)   structured: approx_total 556, has_more false
+```
+
+`probe_*` uses `ceiling = offset + limit + headroom(30)` and the three legs'
+capped counts are summed, so the number the guide explicitly teaches callers to
+read ("Read the pagination line … tells you your next call") scales with the page
+you asked for. §7.8 caught the frame-leg special case (`limit + 1`); the general
+case is worse, because the probe also runs *before* dedup and the per-video cap,
+so it over-counts what paging can actually deliver. At `offset=200` the text
+prints `0/200` — a "total" equal to the offset — while structured content says
+556 and `has_more: false`. Three numbers, one payload, none of them the answer.
+
+#### 9.1.7 `expires_at: 0` reads as "expired in 1970"
+
+`get-frames` prints the correct prose ("URLs do not expire and are not signed…")
+and returns `"expires_at": 0` in structured content for every frame. Any
+programmatic consumer doing `now > expires_at` treats every frame URL as expired.
+`null` is the honest encoding of "never". Flagged by the tourist without reading
+any source.
+
+#### 9.1.8 Demo mode hides the write tools; the copy still recommends them
+
+`tools/list` in demo/readonly returns 7 tools — `index-video` and `tag-video` are
+correctly absent (`public/readonly.py`). But `vidtheque://guide` still says
+"Adding to the library: index-video → job-status", `errors.unknown_video`'s
+`next:` is `index-video url="https://youtu.be/<id>"`, and `job-status` with no
+arguments ends on `next: index-video url="…" force_reindex=true to retry a failed
+job.` Every dead end in the demo points at a tool the demo does not expose.
+
+#### 9.1.9 Smaller, all first-hand
+
+- **`pagination.limit: 0`** when a *corpus filter* matches nothing
+  (`{"q":"agents","channel":"nonexistent","limit":3}`) — the early return in
+  `_empty_result` defaults `limit`/`offset` to 0. The same zero-result shape from
+  an unmatched query correctly echoes `limit: 3`. The empty-state `Query:` line
+  also never echoes the filters that caused the emptiness, while the body says
+  "No indexed video matched the filters".
+- **`format="tsv"` accepts unknown `fields`**:
+  `{"format":"tsv","fields":"nonexistent_field,video_id"}` prints a column headed
+  `nonexistent_field` with every cell blank, no error, no note — while
+  `order="bogus"` in the same tool returns a clean `E_BAD_PARAM` listing the valid
+  values.
+- **`Tags (top 0 of 1)`** — `tag_count` returns 1, `tag_rollup` over the video pool
+  returns 0. There is one tag in the DB attached to nothing. Every tag surface
+  (corpus-summary, list-videos column, video-summary, `vidtheque://corpus`) is
+  empty across all 75 videos while `vidtheque://context` advertises six
+  namespaces; the tourist invented `tag=` (the real parameter is `tags=`) and had
+  it silently dropped.
+- **The `Query:` echo is never truncated** — a 512-char query is reprinted in full
+  in the header of every page, against the token-discipline invariant.
+
+### 9.2 CONFIRMED, already in §7
+
+| §7 | Reproduced by | Note |
+|---|---|---|
+| 7.1 RRF ties, exact match loses | researcher, `CVE-2026-22812` → correct OCR hit at **rank 3**, behind a frame hit with no textual relation (verified by drill-down: the frame is an FDE-headlines collage) | Mechanism added: the tiebreak is `_sort_key`, whose first element is `public_id` — ties are broken **alphabetically by video id**, so ids starting `-`/digits win systematically |
+| 7.2 `max_text_chars=0` on OCR | not re-run; code confirms intent (`row["text"] if max_text_chars == 0`) | Blocked by 0002, not a code bug |
+| 7.3 `get-frames` truncation marker | evaluator, every frame in 9.1.1 | Now **four** sources: the marker says pass `max_text_chars=0`; the tool description says "capped at 300 chars/frame with no opt-out"; the guide says "There is no `max_text_chars` on `get-frames`"; tool-surface §4.7 documents the mismatch |
+| 7.4 one frame, several slots | researcher (`gold commit`, `annotations_to_evals.py`) | 0002 |
+| 7.5 link at cluster start | synthesist, unprompted: `tJFjeMBKbIY` link `?t=1137`, the quoted airline story starts at **1164 s** — 27 s of scrubbing | See 9.1.2 for the root cause |
+| 7.7 `max_per_video` truncates + lies | researcher Q4: `limit=6, max_per_video=1` → `Results: 3/3 (no more results)` with `Legs: transcript 7` and `approx_total: 36` | |
+| 7.8 frame `approx_total` = `limit+1` | subsumed by 9.1.6 | |
+| 7.9 over-paging prints nothing useful | evaluator, verbatim | |
+| 7.10 "Every leg was queried" | widened, see 9.1.5 | |
+| 7.12 unsigned frame URLs | tourist + researcher both quoted the warning back approvingly | Working as intended |
+| 7.13 `get-frames` order | evaluator: request `Sir…,9Hbz…,O72p…,Yk87…,Rjfb…` → returned `Rjfb…,Sir…,Yk87…,O72p…,9Hbz…` | |
+| §0 multi-line OCR | **neither** unbriefed agent hit it | The single-line-matchable query set in §2 is doing its job |
+
+### 9.3 UX friction — not bugs, but they cost demo quality
+
+1. **The 2 s deep-link lead is undocumented and reads as a bug.** Two agents
+   independently flagged that `start: 311.28` sits next to `?t=309`. It is
+   `deeplink_lead_s=2`, deliberate and good. Nothing in the guide or the payload
+   says so, so a careful agent treats the server as inconsistent with itself.
+   One clause in the guide fixes it.
+2. **The frame leg is noisy on descriptive queries.** The researcher scored
+   `a terminal window with code` at **1 of 5** — ranks 2–5 were a markdown test
+   report, a browser on localhost, a leaderboard slide. §3.1 called the same set
+   "on-theme"; both readings are defensible, which is the problem: the chip label
+   promises "terminal with code" and the result is "dense monospace-ish screen".
+   `frame_max_distance=1.0` is permissive enough that the leg never declines to
+   answer. Either tighten it or label the chip for what it does.
+3. **No query-quality signal.** The synthesist's `postmortem on call paged 3am`
+   returned five OCR hits on video-player chrome ("PAUSE/REPLAY/REC", "Ask
+   Gemini") inside a normal-looking `5/~40+` frame. *"A bad query looks
+   structurally identical to a good one."*
+4. **`video-summary` can return `Chapters (0 of 0)`** with no explanation, on a
+   video the guide's step 3 sends you to. The synthesist had to fall back to
+   `get-segment-context` walking, which is exactly what step 3 exists to prevent.
+5. **`list-videos`' `channel` column is the conference, not the speaker's
+   company** — §4.3's "8 companies" answer is only recoverable by parsing titles.
+6. **Silent clamps are inconsistent with the server's own best behaviour.**
+   `limit=0/-5 → 1`, `limit=9999 → 50`, `max_per_video=999 → 20` (visible only in
+   the echoed `Query:` line), `max_text_chars=1 → 120`: none carries a `note:`.
+   `get-segment-context t=99999` does it right — *"note: t was past the end of the
+   video and was clamped to 1274s."* That pattern already exists; it just is not
+   applied.
+
+### 9.4 False alarms — recorded so they are not re-filed
+
+- *"The link lands 2 s before the sentence, not mid-sentence"* — that is
+  `deeplink_lead_s`, by design (see 9.3.1). Filed by two agents.
+- *"Negative `offset` produces an unexplained slice"* — `offset=-3` clamps to 0
+  correctly. The slice looked wrong because of 9.1.2, not because of the offset.
+- *"`window=99999` clamps with no warning"* — the effective window is printed:
+  `Window: 13:56-23:56 (t=1136 ±300s)`. Not a `note:`, but not silent.
+- *"Unsigned, non-expiring frame URLs"* — correct and prominently disclosed in
+  demo mode (§7.12).
+- *"`reward hacking` spans 4 videos, not the 5 talks §1.1 claims"* — the
+  researcher is right about the count, but §1.1 itself lists only four ids while
+  saying five. A doc arithmetic slip, not a product regression.
+- *"`limit=0` returns 1 result"* — documented silent-clamp behaviour.
+
+### 9.5 Ranked for demo day, and the three fixes worth making first
+
+Ranked by what a visitor or an evaluating agent actually hits:
+
+1. 9.1.4 stale `data_status: indexing` — the *first* call in any session.
+2. 9.1.1 `get-frames` silent drop — the last call in both flagship flows.
+3. 9.1.2 / 9.1.3 citation and rank-1 instability under `limit`.
+4. 9.1.6 pagination totals that move with the page.
+5. §7.1 exact match losing the RRF tiebreak (alphabetical by video id).
+6. 9.1.5 empty state that contradicts its own note.
+7. 9.1.8 hints pointing at tools demo mode does not expose.
+
+**Fix 1 — `get-frames`: validate first, slice second, and say what you dropped.**
+Move the `limit` cut after `_by_ids`, and either report over-limit ids in
+`failed:` or raise `E_BAD_PARAM` naming the cap. Silent data loss on the money
+shot is the one failure a demo cannot absorb.
+
+**Fix 2 — make the citation independent of the page.** Anchor the deep link to
+the *matched* cue rather than the cluster start, and stop deriving cluster
+membership from `offset+limit` (cluster over a fixed candidate window, then page).
+One change closes 9.1.2, 9.1.3 and §7.5, and it is the difference between
+"timestamped citations" being a claim and being a guarantee.
+
+**Fix 3 — one honest number per payload.** Clear the five stale job rows before
+the demo; derive `_empty_result`'s reason line from `legs`; encode "never
+expires" as `null`; and either make the probe total page-independent or stop
+printing it as a total. These are small, and together they are the difference
+between a server an agent trusts and one it double-checks.
