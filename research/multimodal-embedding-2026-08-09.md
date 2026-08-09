@@ -787,8 +787,11 @@ For scale, in the same run the deployed SigLIP did the same 250 frames at
 **~93 img/s including HTTP**, so **the 2B is ~17x slower per frame**. That is the
 real cost of the swap, and it is affordable exactly because frame embedding was
 never the expensive stage: §5.3's "minutes, not hours" survives at **~10 minutes
-for a full re-embed** (~14 min if every `dup_of` row is re-embedded too), against
-RapidOCR's 3.4 frames/s, which would take **15 hours** over the same frames.
+for a full re-embed** (~14 min if every `dup_of` row is re-embedded too). The
+calibration that makes it feel small: at 5.38 frames/s the 2B is still **faster
+than the OCR stage the pipeline already runs on every one of these frames**
+(RapidOCR, 3.4 frames/s on CPU). Frame embedding does not become the expensive
+stage; it becomes the second-cheapest thing that touches a keyframe.
 
 **§4.5's token estimate was 34% high.** The shipped processor gives a 1280x720
 keyframe a grid of `[1, 44, 80]` → **880 visual tokens, 902 with the prompt** —
