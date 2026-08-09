@@ -887,8 +887,16 @@ def _render(
     fmt: str,
     fields: str,
 ) -> str:
+    if pool_full and not has_more:
+        # "(no more results)" would be the §7.7 lie in a new place: the pool ran
+        # out, the corpus did not. Name which one ended.
+        first = f"Results: {len(page)}/{total} (end of the ranked pool)"
+    else:
+        first = pagination_line(
+            "Results", len(page), offset, limit, has_more, total, pool_full
+        )
     header = [
-        pagination_line("Results", len(page), offset, limit, has_more, total, pool_full),
+        first,
         f'Query: "{q or "*"}" · content_type={content_type} · order={order} · '
         f"max_per_video={max_per_video}",
         f"Legs: transcript {leg_counts['transcript']} · ocr {leg_counts['ocr']} · "

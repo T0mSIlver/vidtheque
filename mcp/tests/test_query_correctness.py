@@ -1339,6 +1339,26 @@ async def test_paging_past_the_end_says_where_the_end_is(tool_corpus) -> None:
     assert "offset=9" in body
 
 
+async def test_the_end_of_the_pool_is_not_the_end_of_the_corpus(
+    tool_corpus, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bounded pool is honest only if the payload says which end it reached.
+
+    `(no more results)` at the end of a pool that filled would be §7.7's lie in
+    a new place: the ranking ran out, the corpus did not.
+    """
+    parts = await tool_corpus(_six_videos)
+    monkeypatch.setattr(search, "CANDIDATE_POOL", 2)
+    result = await search.run(
+        parts.deps, q="good eval", content_type="transcript", limit=50
+    )
+    body = text_of(result)
+    assert "(no more results)" not in body
+    assert "end of the ranked pool" in body
+    assert "deeper matches exist" in body
+    assert page_of(result)["pool_exhausted"] is True
+
+
 async def test_a_filter_that_matches_nothing_still_echoes_the_page(
     tool_corpus,
 ) -> None:

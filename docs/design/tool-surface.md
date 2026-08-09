@@ -210,9 +210,10 @@ fetch: `5/6` for a query with eighteen matching frames. All three are one bug
    what is left: post-dedup, post-cap, **page-independent**, and a count of
    results a caller can actually reach by paging. Zero extra queries.
 3. `pool_exhausted` (structured content) is what makes it "approx": at least one
-   leg filled its pool, so `~380+` rather than `380`. On the last page of an
-   exhausted pool the payload adds a `note:` saying deeper matches exist and
-   naming the filters that reach them.
+   leg filled its pool, so `~380+` rather than `380`. The last page of an
+   exhausted pool reads `Results: 30/380 (end of the ranked pool)` — never
+   `(no more results)`, which would be §7.7's lie in a new place — plus a
+   `note:` saying deeper matches exist and naming the filters that reach them.
 4. Paging past the end is a payload, not a silence: `Results: 0/80 (past the
    last page)`, the offset where the last page starts, and a `next:` back to it.
    It used to print `Results: 0/200` — a "total" equal to the offset — and then
