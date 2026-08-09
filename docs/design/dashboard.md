@@ -331,12 +331,19 @@ What each stage writes into `model_key`:
 | `stt` | `config['stt.model']` (`large-v3`) or `youtube-{asr\|subs}-{lang}` | `pipeline/runner.py:563`, `:581`, `:624` |
 | `chunk` | `chunk-<target>-<overlap>` | `pipeline/runner.py:632-634` |
 | `text_embed` | `config['text_embed.model']` | `pipeline/runner.py:653`, `:702` |
-| `keyframe` | `scenedetect-<detector>-w<max_width>` | `pipeline/runner.py:707-708` |
+| `keyframe` | `scenedetect-<detector>-w<max_width>+<decode-path>` | `pipeline/runner.py`, `_keyframe_model_key` |
 | `ocr` | `config['ocr.model']` | `pipeline/runner.py:793`, `:855` |
 | `frame_embed` | `config['frame_embed.model']` | `pipeline/runner.py:862`, `:916` |
 
-So the provenance panel (§5.3) needs **no schema addition**. Four caveats the
+So the provenance panel (§5.3) needs **no schema addition**. Five caveats the
 page must be honest about rather than paper over:
+
+0. **`+` separates contract from provenance** (index-schema §1.3). A corpus
+   indexed across the 2026-08-09 fused-decode change carries both
+   `scenedetect-screencast-w1280` and `scenedetect-screencast-w1280+fused`, and
+   the older one is **not** out of date — it is the same detector reading
+   slightly differently resampled pixels. A panel that flags "stale" by string
+   inequality would light up the whole corpus; compare the part before `+`.
 
 1. **A failed or skipped stage has no `model_key`** — it is set to `NULL` on
    failure (`pipeline/runner.py:1152`), on skip (`:1174`), and on force-reindex

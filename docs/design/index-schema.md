@@ -224,6 +224,27 @@ JOIN config  c ON c.key = CASE s.stage
 WHERE s.state = 'done' AND s.model_key IS NOT c.value;
 ```
 
+**`+` splits contract from provenance.** Everything before the first `+` in a
+`model_key` is the *contract* — change it and the stage is out of date.
+Everything after it records *how* that answer was produced and is not, on its
+own, grounds for re-running anything. Only `keyframe` uses the suffix today:
+
+| written | means |
+|---|---|
+| `scenedetect-<detector>-w<max_width>` | detected before 2026-08-09: full-resolution decode, `cv2.resize` down to 256 px |
+| `scenedetect-<detector>-w<max_width>+fused` | detected by the fused pass: one libswscale convert **at** 256 px |
+
+The two produce shot boundaries that can differ by a frame or two (the detector
+math is identical; the pixels reaching it are resampled by a different filter),
+so they may not share a key — but a corpus indexed under the first one is not
+stale, it is *older*. `_should_run` compares only the contract half for
+`keyframe` (`pipeline/runner.py`, `_stage_contract`), which is what lets 75
+already-indexed videos keep their keyframes, their OCR and their frame vectors
+instead of re-downloading every source video that `keep_source=audio` deleted.
+`force_reindex=true` is how a video is deliberately moved onto the new path.
+The reindex-planner query above is unaffected: `keyframe` has no `config` row
+and never appears in it.
+
 `skipped` is how `index-video channels=transcript` (tool-surface §4.7) records that
 keyframes were *deliberately* not built — distinguishable from `pending`, so
 `coverage t,o,f` and `data_status` never report a deliberate choice as missing data.

@@ -87,6 +87,29 @@ CONTAINER_HINT = (
     "one job item per video."
 )
 
+# `model_key` is "what produced this row", and until now every character of it
+# was also "re-run me if I change". These two split those apart for the one
+# stage that needs them split: everything before the separator is the *contract*
+# (a different detector or width really is a different answer and must reindex),
+# everything after it is *provenance* (a different way of arriving at the same
+# kind of answer, recorded for honesty, not grounds for a reindex).
+#
+# It exists because of the 2026-08-09 decision on the fused decode path
+# (research/pipeline-perf-2026-08-09.md §3.3 + addendum): the fused pass 1 moves
+# shot boundaries slightly, so it must not claim the old key — but the 75
+# already-indexed videos are explicitly not being reindexed, and re-detecting
+# them would also re-download every deleted mp4 (`keep_source=audio`) and
+# re-OCR/re-embed every frame. `_should_run` compares contracts for `keyframe`,
+# so an old row stays done and untouched; `force_reindex=true` is how a video
+# moves onto the new path deliberately.
+PROVENANCE_SEP = "+"
+KEYFRAME_DECODE_PATH = "fused"  # pass 1 converts colour at 256 px, not at 1080p
+
+
+def _stage_contract(model_key: str | None) -> str:
+    """The invalidating half of a `model_key` — everything before `+`."""
+    return str(model_key or "").split(PROVENANCE_SEP, 1)[0]
+
 
 @dataclass
 class ItemRun:
@@ -705,7 +728,19 @@ class IndexingPipeline:
     # --------------------------------------------------------------- keyframe
 
     def _keyframe_model_key(self) -> str:
-        return f"scenedetect-{self.settings.detector}-w{self.settings.keyframe_max_width}"
+        """`scenedetect-<detector>-w<max_width>+<decode-path>`.
+
+        The `+fused` half is provenance, not contract (see `PROVENANCE_SEP`):
+        it records that this video's shots were detected by the fused
+        convert+downscale pass 1, which is a different answer from the old
+        full-resolution path — same detector, same thresholds, marginally
+        different pixels — without making every video indexed before
+        2026-08-09 stale.
+        """
+        return (
+            f"scenedetect-{self.settings.detector}-w{self.settings.keyframe_max_width}"
+            f"{PROVENANCE_SEP}{KEYFRAME_DECODE_PATH}"
+        )
 
     async def _stage_keyframes(self, run: ItemRun) -> None:
         assert run.meta is not None
@@ -1122,11 +1157,24 @@ class IndexingPipeline:
     def _should_run(self, run: ItemRun, stage: str, model_key: str | None) -> bool:
         """Resume: re-run failed and out-of-date stages, leave finished ones.
 
-        `stt` gets one extra clause. A video indexed from auto-captions has a
-        `model_key` that will never equal `config['stt.model']`, so the plain
-        rule would re-fetch its captions on every retry of an unrelated stage.
-        It is only worth re-running when we can actually do better — which
-        means the worker is answering now.
+        Two stages get an extra clause, both for the same underlying reason —
+        a `model_key` can differ without the difference being worth what
+        re-running costs.
+
+        `stt`: a video indexed from auto-captions has a `model_key` that will
+        never equal `config['stt.model']`, so the plain rule would re-fetch its
+        captions on every retry of an unrelated stage. It is only worth
+        re-running when we can actually do better — which means the worker is
+        answering now.
+
+        `keyframe`: only the *contract* half of the key invalidates
+        (`_stage_contract`). A done keyframe row detected by the old
+        full-resolution pass 1 keeps its rows, its JPEGs, its OCR and its frame
+        vectors; the corpus carries both provenances at once, which is the
+        2026-08-09 decision written down as behaviour. This clause also decides
+        `want_media` (`:329`) — without it, every already-indexed video touched
+        by any later job would re-download its source mp4 before discovering it
+        had nothing to do.
         """
         if run.force_active:
             return True
@@ -1136,6 +1184,8 @@ class IndexingPipeline:
         recorded = row["model_key"]
         if stage == "stt":
             return bool(recorded != model_key and run.worker_ok and self.settings.wants_whisperx)
+        if stage == "keyframe":
+            return _stage_contract(recorded) != _stage_contract(model_key)
         return recorded != model_key
 
     async def _stage_running(self, run: ItemRun, stage: str) -> None:

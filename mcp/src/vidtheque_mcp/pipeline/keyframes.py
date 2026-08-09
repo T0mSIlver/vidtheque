@@ -19,6 +19,15 @@ The three findings from research §4 that this file exists to encode:
    shot.** Across a slide build the "sharpest" frame is the one with the most
    text on screen — precisely the frame worth OCR-ing. Across shots the number
    means nothing (a text-heavy slide always outscores a blank one).
+4. **Pass 1 converts colour at the detection resolution, not the source's.**
+   The detector never sees more than 256 px on the long edge, so decoding a
+   1080p frame to a 6.2 MB BGR array and resizing it down to 110 KB converts
+   56x more pixels than anyone reads. `_fused_stream_class` folds both steps
+   into one libswscale call (research/pipeline-perf-2026-08-09.md §3.3 and its
+   2026-08-09 addendum). It is not bit-equivalent to the old path and was not
+   required to be: shot boundaries may move by a frame or two, and the corpus
+   carries mixed provenance in `video_stages.model_key` instead of being
+   reindexed.
 
 Timestamps come from the decoder's reported position, never `frame_num / fps`.
 0.7 made frame rates exact `Fraction`s and timestamps PTS-backed for this
@@ -32,6 +41,7 @@ from __future__ import annotations
 import logging
 import struct
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
@@ -42,6 +52,10 @@ logger = logging.getLogger(__name__)
 EDGE_TRIM = 0.12  # skip the first/last 12% of a shot: transitions, motion blur
 STORED_HASH_SIZE = 8  # 64 bits — what `keyframes.phash` can hold
 DEDUP_HASH_SIZE = 16  # 256 bits — what telling two slides apart needs
+# `scenedetect.scene_manager.DEFAULT_MIN_WIDTH` (0.7.1). Mirrored rather than
+# imported so this module's imports stay lazy; asserted against the real value
+# in the tests, which is what catches an upstream change to it.
+DETECTION_MIN_WIDTH = 256
 
 
 @dataclass
@@ -108,35 +122,135 @@ def make_detector(kind: str):
     )
 
 
+def detection_size(
+    source: tuple[int, int], min_width: int = DETECTION_MIN_WIDTH
+) -> tuple[int, int]:
+    """The resolution PySceneDetect would have analysed this frame at.
+
+    Reproduces `compute_downscale_factor` (which divides the *long* edge down to
+    256 px) followed by the `round(dim / factor)` the decode thread resizes
+    with, so the fused path hands the detector the same geometry the old one
+    did — the pixels differ, the shape does not.
+    """
+    width, height = source
+    longest = max(width, height)
+    if longest <= 0 or longest < min_width:
+        return (width, height)
+    factor = longest / float(min_width)
+    return (max(1, round(width / factor)), max(1, round(height / factor)))
+
+
+@lru_cache(maxsize=1)
+def _fused_stream_class() -> type:
+    """PySceneDetect's PyAV backend with the convert and the downscale fused.
+
+    The backend abstraction is the seam: `SceneManager.detect_scenes` takes any
+    `VideoStream`, its decode thread resizes only when
+    `compute_downscale_factor(max(video.frame_size)) > 1.0`, and it compares
+    each decoded array's shape against `video.frame_size` to spot corruption. A
+    stream that *reports* the detection size and *returns* frames at it
+    therefore satisfies both checks and skips the resize entirely — no
+    monkeypatching, no fork of the manager.
+
+    Everything else is inherited, deliberately: PTS-backed `position`, the
+    corrupt-frame skipping and `decode_failures`, `seek`, and `_handle_eof`'s
+    re-open when AUTO threading stops short of the last frame. Only `read`
+    changes, and only in *how* the frame becomes an array:
+
+        stock:  frame.to_ndarray(format="bgr24")   -> 1920x1080 BGR (6.2 MB)
+                cv2.resize(..., INTER_LINEAR)      -> 256x144    (110 KB)
+        fused:  reformatter.reformat(frame, 256, 144, "bgr24")  -> one swscale
+
+    One `VideoReformatter` is kept per stream because PyAV's docs are explicit
+    that a fresh `reformat()` call reconfigures the internal scaler context;
+    reusing it configures swscale once per video instead of once per frame.
+
+    The class is built lazily (and cached) because `av` and `scenedetect` are
+    heavy imports and this module is imported by the runner at boot.
+    """
+    from av.video.reformatter import VideoReformatter
+    from scenedetect.backends.pyav import VideoStreamAv
+
+    class FusedDetectionStream(VideoStreamAv):
+        """A `VideoStreamAv` that decodes straight to detection resolution."""
+
+        BACKEND_NAME = "pyav-fused"
+
+        def __init__(
+            self,
+            path: str,
+            *,
+            threading_mode: str = "AUTO",
+            min_width: int = DETECTION_MIN_WIDTH,
+        ) -> None:
+            super().__init__(path, threading_mode=threading_mode)
+            self._source_size: tuple[int, int] = super().frame_size
+            self._detect_size: tuple[int, int] = detection_size(self._source_size, min_width)
+            self._reformatter = VideoReformatter()
+
+        @property
+        def source_size(self) -> tuple[int, int]:
+            """What the container holds, for anyone reporting on the decode."""
+            return self._source_size
+
+        @property
+        def frame_size(self) -> tuple[int, int]:
+            """What `read()` returns — and so what the manager must not resize."""
+            return self._detect_size
+
+        def read(self, decode: bool = True) -> Any:
+            # `decode=False` is the seek path and the frame-skip path: advance
+            # without paying for a conversion, exactly as the parent does. The
+            # parent's own EOF recovery re-enters through here with decode=False
+            # too, which is why this delegates rather than reimplementing.
+            advanced = super().read(decode=False)
+            if advanced is False or not decode:
+                return advanced
+            width, height = self._detect_size
+            converted = self._reformatter.reformat(
+                self._frame, width=width, height=height, format="bgr24"
+            )
+            return converted.to_ndarray()
+
+    return FusedDetectionStream
+
+
 def detect_shots(
     video_path: Path, *, kind: str = "screencast", max_shot_seconds: float = 25.0
 ) -> list[Shot]:
-    """One full decode, auto-downscaled internally, PTS-backed timestamps.
+    """One full decode at detection resolution, PTS-backed timestamps.
 
-    "Auto-downscaled" is about the *detector math*, not the decode: 0.7.1's
-    ``compute_downscale_factor`` divides the long edge down to 256 px, so
-    1920x1080 and 640x360 inputs are both analysed at 256x144 — but the resize
-    happens in the decode thread, after every frame has been decoded at full
-    resolution. This pass decodes the whole video and is the entire cost of the
-    keyframe stage (research/keyframe-decode-bench-2026-08-08.md).
+    The detector never analyses more than 256 px on the long edge: 0.7.1's
+    ``compute_downscale_factor`` divides the long edge down to it, so 1920x1080
+    and 640x360 inputs are both analysed at 256x144. Until 2026-08-09 the
+    *decode* was still full-resolution — every frame converted to a 6.2 MB BGR
+    array and then resized down to 110 KB. It is fused now (``detect_spans``).
+    This pass decodes the whole video and is roughly two-thirds of the keyframe
+    stage (research/pipeline-perf-2026-08-09.md §2).
     """
     spans, duration = detect_spans(video_path, kind=kind)
     return subdivide(spans, duration, max_shot_seconds)
 
 
 def detect_spans(
-    video_path: Path, *, kind: str = "screencast"
+    video_path: Path, *, kind: str = "screencast", fused: bool = True
 ) -> tuple[list[tuple[float, float]], float]:
     """The detector's own scene list, before ``subdivide`` adds fixed cuts.
 
     Split out from ``detect_shots`` so a caller comparing two detection runs can
     see the *detected* cuts rather than the synthetic ones — one decode, both
     answers.
-    """
-    from scenedetect import SceneManager, open_video
 
-    # PyAV for true PTS and 0.7.1's corrupt-frame skipping; open_video falls
-    # back to OpenCV on its own if the backend is unavailable.
+    ``fused=False`` is the pre-2026-08-09 frame path (full-resolution BGR, then
+    ``cv2.resize``) and exists for exactly one caller: ``bench/keyframe_decode.py
+    --fused-probe``, which is where "the boundaries barely move" gets a number
+    on a real 1080p talk instead of an assertion. It is not reachable from the
+    pipeline, has no env var, and records no model_key of its own — indexing is
+    always fused (research/pipeline-perf-2026-08-09.md, 2026-08-09 addendum).
+    """
+    from scenedetect import SceneManager
+
+    # PyAV for true PTS and 0.7.1's corrupt-frame skipping.
     #
     # `threading_mode="AUTO"` is FRAME+SLICE threading, and it is worth a third
     # of this stage. PyAV's default for an H.264 stream is SLICE alone, which on
@@ -148,7 +262,12 @@ def detect_spans(
     # cheaper (a smaller stream, frame skipping) changes what the detector sees.
     # 0.7.1 re-opens the video itself if AUTO stops short of the last frame
     # (`VideoStreamAv._handle_eof`), which was the historical reason to avoid it.
-    video = open_video(str(video_path), backend="pyav", threading_mode="AUTO")
+    if fused:
+        video: Any = _fused_stream_class()(str(video_path), threading_mode="AUTO")
+    else:
+        from scenedetect import open_video
+
+        video = open_video(str(video_path), backend="pyav", threading_mode="AUTO")
     manager = SceneManager()
     manager.add_detector(make_detector(kind))
     manager.auto_downscale = True
