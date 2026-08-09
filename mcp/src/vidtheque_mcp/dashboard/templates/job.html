@@ -5,25 +5,32 @@
 
 <div class="pagehead" data-poll="{{ root }}/api/jobs/{{ job.job_id }}"
      data-interval="{{ poll_ms }}" data-live="{{ 'yes' if live else 'no' }}">
-  <h1>Job <code>{{ job.job_id }}</code></h1>
+  {# The states go on the title's baseline like every other page's header, and
+     the countdown goes with them: on a deferred job it is the highest-value
+     string on the surface and it used to sit fourth in a sentence. #}
+  <div class="pagehead-line">
+    <h1>Job <code>{{ job.job_id }}</code></h1>
+    <p class="pagehead-meta">
+      <span class="pill tone-{{ job.state | tone }}" data-field="job-state">{{ job.state }}</span>
+      {% if job.cancel_requested %}<span class="pill pill-small tone-warn">cancel requested</span>{% endif %}
+      {# `not_before`, read back at last. It ticks between polls and is reset by
+         each one, so a page left open says how long the wait still has to run. #}
+      <span class="countdown" data-field="job-defer" data-defer="{{ job.defer_s }}"
+            {{ 'hidden' if not job.defer_s }}>
+        held <span data-field="job-defer-clock">{{ job.text.defer }}</span> more
+      </span>
+    </p>
+  </div>
   <p class="pagehead-meta">
-    <span class="pill tone-{{ job.state | tone }}" data-field="job-state">{{ job.state }}</span>
-    <span class="sep">·</span>{{ job.kind }}
-    {% if job.cancel_requested %}<span class="pill pill-small tone-warn">cancel requested</span>{% endif %}
-    {# `not_before`, read back at last. It ticks between polls and is reset by
-       each one, so a page left open says how long the wait still has to run. #}
-    <span class="countdown" data-field="job-defer" data-defer="{{ job.defer_s }}"
-          {{ 'hidden' if not job.defer_s }}>
-      held <span data-field="job-defer-clock">{{ job.text.defer }}</span> more
-    </span>
-    <span class="sep">·</span>priority {{ job.priority }}
-    <span class="sep">·</span><span data-field="job-counts">{{ job.text.counts }}</span>
+    <span class="fact">{{ job.kind }}</span>
+    <span class="sep">·</span><span class="fact">priority <span class="mono">{{ job.priority }}</span></span>
+    <span class="sep">·</span><span class="fact" data-field="job-counts">{{ job.text.counts }}</span>
   </p>
-  <p class="pagehead-meta">
+  <p class="pagehead-meta progressline">
     <span class="meter meter-wide" aria-hidden="true"><span class="meter-fill" data-field="job-meter"
           style="width:{{ job.progress }}%"></span></span>
     <span class="meter-label" data-field="job-progress">{{ job.text.progress }}</span>
-    <span class="stale-note" data-field="job-stale" hidden>this job has finished — reload for the final record</span>
+    <span class="stale-note" data-field="job-stale" hidden>this job has finished, so reload for the final record</span>
   </p>
 </div>
 
@@ -55,7 +62,7 @@
   <p class="notice-detail"><span class="errtext">{{ job.error_message }}</span></p>
   {% elif redacted %}
   <p class="notice-detail">
-    The code is published; the message is not — the pipeline's error strings
+    The code is published; the message is not, because the pipeline's error strings
     carry the operator's own configuration.
   </p>
   {% endif %}
@@ -156,7 +163,7 @@
             <span class="errtext">message not published on this instance</span>
             {% endif %}
             {% if item.state == 'queued' and item.retries_left %}
-            <span class="muted">— {{ item.retries_left }} attempt(s) left, so it is queued to try again</span>
+            <span class="muted">· {{ item.retries_left }} attempt(s) left, so it is queued to try again</span>
             {% endif %}
           </td>
         </tr>
@@ -169,7 +176,7 @@
     Whether a failure will retry is not a column: <code>retryable</code> is
     decided where the error is raised and never written down. What a row can say
     is <code>attempts</code> against <code>max_attempts</code>, and what the job
-    can say is whether it is being held off — together those are the whole of
+    can say is whether it is being held off. Together those are the whole of
     "is this coming back".
     {% if items_capped %}Only the first {{ items | length }} items are listed.{% endif %}
   </p>
@@ -205,7 +212,7 @@
     </table>
   </div>
   <p class="panel-note">
-    The seven internal stages for the item this job is on — the running one, or
+    The seven internal stages for the item this job is on: the running one, or
     the last one to finish. <code>job-status</code> collapses these into five
     wire stages for a model; a human gets the seven and the clock on each, which
     is the honest answer to what a video costs. Every other item's stages are on
@@ -265,8 +272,8 @@
     rate limiting is sticky on the job row, so for every other retry this log is
     the only timeline there is.
     {% if redacted %}
-    Message text is not published on this instance — it carries submitted URLs
-    and the pipeline's raw error strings — so what is shown is when each event
+    Message text is not published on this instance, because it carries submitted
+    URLs and the pipeline's raw error strings. What is shown is when each event
     happened, how loud it was, and which stage it came from.
     {% endif %}
   </p>
