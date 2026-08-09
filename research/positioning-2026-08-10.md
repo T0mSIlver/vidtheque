@@ -899,3 +899,15 @@ have time to watch — verbatim, timestamped, on tap for you and your agents.
 
 **Status: this reads as the lock. Landing versions to be built against v2 +
 round 1b ("follow the builders") on Tom's go.**
+
+---
+
+## LOCKED (Tom, 2026-08-10, ~00:45)
+
+Tom locked the positioning: full "follow the builders" + "you don't have time
+to watch everything — thanks to vidtheque, your agent does" + "empowering AI
+with the knowledge of all the builders and creators." The rejected framings
+(A's second-brain headline, B's archive noun, C's protocol-forward identity)
+stay in this document as evidence only. **The contract now lives at
+`docs/design/positioning.md`** — that file contains only what we ship and
+carries the amendment rule. All surfaces align to it from here.
