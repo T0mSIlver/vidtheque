@@ -743,10 +743,60 @@ async function runSearch(append = false) {
 
 // ----------------------------------------------------------------------- ask
 
+// ------------------------------------------------------------- the work log
+//
+// An ask can sit ninety seconds behind one static line while the model works
+// the corpus. Every tool call it makes arrives as an activity event (§3.5) and
+// becomes one line here: what it asked for, then what came back. The server
+// builds the words — they are counted from real results — and the page's only
+// job is to put them on screen as text, like every other corpus string.
+//
+// The answer itself is *not* streamed. It lands whole, and when it does the log
+// folds into a disclosure under it: the evidence trail stays inspectable, and
+// the answer owns the pane.
+
+const workLog = () => {
+  const list = el("ol", "worklist");
+  const lines = new Map();
+  return {
+    node: list,
+    // A line the model has started. It is the current work, so it carries the
+    // one spinner on screen — see `runAsk`, which parks the idle one while it.
+    start(id, text) {
+      const item = el("li", "work is-running");
+      item.append(el("span", "work-what", text || ""));
+      lines.set(id, item);
+      list.append(item);
+    },
+    // …and what it found. Never a guess: the server counted it. The arrow is a
+    // text node rather than a `::before`, so the line still reads as a line
+    // when it is copied out of the page or the stylesheet never arrives.
+    done(id, result) {
+      const item = lines.get(id);
+      if (!item) return;
+      item.classList.remove("is-running");
+      if (result) item.append(el("span", "work-result", ` → ${result}`));
+    },
+    get empty() {
+      return !lines.size;
+    },
+  };
+};
+
+// The trail, after the fact. `<details>` because the platform's disclosure is
+// the whole widget — keyboard, semantics, the open/closed state — and a demo
+// does not need a second one.
+const workDisclosure = (log) => {
+  const box = el("details", "worklog");
+  box.append(el("summary", null, "Show its work"));
+  box.append(log.node);
+  return box;
+};
+
 // The answer text is plain prose with [n] markers; each becomes a link into
 // the source list below it. Server-side, a marker naming nothing was already
 // stripped — this only ever renders citations that exist.
-const renderAnswer = (payload) => {
+const renderAnswer = (payload, log) => {
   const pane = $("answer");
   pane.replaceChildren();
 
@@ -780,6 +830,8 @@ const renderAnswer = (payload) => {
     for (const c of payload.citations) sources.append(hitRow(c, "", c.n));
     pane.append(sources);
   }
+  // Sources are the evidence; the log is how it was found. Under both, folded.
+  if (log && !log.empty) pane.append(workDisclosure(log));
   if (payload.model) {
     pane.append(el("p", "answer-foot", `Answered from the corpus by ${payload.model}.`));
   }
@@ -808,14 +860,64 @@ const renderDegraded = (message, retryAfter) => {
   pane.hidden = false;
 };
 
+// The stream is NDJSON — one JSON object per line — over the same POST. A
+// browser without `ReadableStream` never asks for it and gets the plain JSON
+// body instead, which is the same answer arriving in one piece (§3.5).
+const NDJSON = "application/x-ndjson";
+const CAN_STREAM =
+  typeof ReadableStream === "function" && typeof TextDecoder === "function";
+
+// Read the body line by line, handing each complete line to `onEvent`. A chunk
+// boundary can land mid-line and mid-character, which is what the buffer and
+// `{stream: true}` are for. `stale()` is checked per event, not only per fetch:
+// a mode switch aborts the request, and nothing it sends afterwards may draw.
+const readEvents = async (response, stale, onEvent) => {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let cut;
+  for (;;) {
+    const { value, done } = await reader.read();
+    buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+    while ((cut = buffer.indexOf("\n")) !== -1) {
+      const line = buffer.slice(0, cut).trim();
+      buffer = buffer.slice(cut + 1);
+      if (!line) continue;
+      if (stale()) {
+        await reader.cancel();
+        return;
+      }
+      // A line that does not parse is a truncated stream, not an event. It is
+      // skipped; with no terminal event the caller falls through to the
+      // degraded pane, which is the honest end for a stream that stopped.
+      let event;
+      try {
+        event = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      onEvent(event);
+    }
+    if (done) return;
+  }
+};
+
 async function runAsk() {
   const q = $("q").value.trim();
   if (!q) return;
   const { signal, stale } = beginRequest();
   showEmptyState(false);
   const pane = $("answer");
-  pane.replaceChildren(el("p", "thinking", "reading the corpus…"));
+  const log = workLog();
+  // Two things wait here: the log, which fills as the model works, and one
+  // idle line under it. Exactly one spinner is on screen at any moment — the
+  // idle line steps aside while a tool call is running, because the honest
+  // place for it is whichever line is the current work.
+  const idle = el("p", "thinking", "reading the corpus…");
+  pane.replaceChildren(log.node, idle);
   pane.hidden = false;
+  // The pane is a live region; `aria-busy` holds the announcement until the
+  // answer lands rather than reading out every line as it arrives.
   pane.setAttribute("aria-busy", "true");
   clearResults();
   setStatus("");
@@ -825,27 +927,73 @@ async function runAsk() {
   try {
     const response = await fetch("/api/ask", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: CAN_STREAM ? `${NDJSON}, application/json;q=0.9` : "application/json",
+      },
       body: JSON.stringify({ q }),
       signal,
     });
-    const payload = await response.json().catch(() => ({}));
     // The visitor may have switched to search — or asked something else —
     // while this was upstream. Every render below reopens the answer pane, so
     // a stale one would plant it over whatever is on screen now.
     if (stale()) return;
-    if (response.status === 429) {
+
+    // Everything that fails *before* the model is reached is still a status
+    // code with a JSON body: a 429 from the limiter with its `Retry-After`, a
+    // 503 with no key. Only a request that got as far as the loop streams.
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      if (stale()) return;
       renderDegraded(
-        payload.message || "Too many questions for now — search still works.",
-        Number(payload.retry_after_s) || Number(response.headers.get("Retry-After")) || 60,
+        payload.message ||
+          (response.status === 429
+            ? "Too many questions for now — search still works."
+            : "LLM mode unavailable — use search."),
+        Number(payload.retry_after_s) ||
+          Number(response.headers.get("Retry-After")) ||
+          (response.status === 429 ? 60 : 0),
       );
-    } else if (!response.ok) {
+      return;
+    }
+
+    const streamed = (response.headers.get("content-type") || "").includes(NDJSON);
+    if (!streamed || !response.body) {
+      const payload = await response.json().catch(() => ({}));
+      if (stale()) return;
+      renderAnswer(payload);
+      return;
+    }
+
+    let answer = null;
+    let failure = null;
+    await readEvents(response, stale, (event) => {
+      if (event.event === "activity") {
+        if (event.phase === "start") {
+          log.start(event.id, event.text);
+          idle.hidden = true;
+        } else {
+          log.done(event.id, event.result);
+          idle.hidden = false;
+        }
+      } else if (event.event === "answer") {
+        answer = event.payload || {};
+      } else if (event.event === "error") {
+        failure = event.payload || {};
+      }
+    });
+    if (stale()) return;
+    // No partial answer is ever shown: either the whole thing arrived, or the
+    // pane degrades. A stream that stopped without a terminal event is the
+    // second case, and reads as the server going away — which it did.
+    if (answer) renderAnswer(answer, log);
+    else if (failure) {
       renderDegraded(
-        payload.message || "LLM mode unavailable — use search.",
-        Number(payload.retry_after_s) || 0,
+        failure.message || "LLM mode unavailable — use search.",
+        Number(failure.retry_after_s) || 0,
       );
     } else {
-      renderAnswer(payload);
+      renderDegraded("The answer was cut off. Search still works.", 0);
     }
   } catch (error) {
     if (stale(error)) return;

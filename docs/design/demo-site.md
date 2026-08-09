@@ -691,10 +691,12 @@ Layout, top to bottom:
    full size (§6.4). What a row says about *where the hit came from* is §6.3.
    The answer's Sources list keeps the flat row: a citation is one moment, not a
    video.
-5. **Ask pane** (ask mode) — the answer as prose with `[n]` markers rendered as
+5. **Ask pane** (ask mode) — while the model works, the activity log (§6.6);
+   when the answer lands, the answer as prose with `[n]` markers rendered as
    superscript links to the moment they cite, followed by the same result rows
-   numbered to match. A 503 replaces the pane with the degradation message and
-   a "search instead" button; a 429 says how long to wait.
+   numbered to match, and the log folded underneath. A 503 replaces the pane
+   with the degradation message and a "search instead" button; a 429 says how
+   long to wait.
 6. **"Add this corpus to your own agent"** — the `mcp_url` from `/api/meta`, a
    copy button, and the one-liner:
    `claude mcp add --transport http vidtheque <mcp_url>`. This is the panel
@@ -742,6 +744,10 @@ A demo is judged on the four screens that are not "ten results came back".
   had, so that is what the next one reserves. The first search of a session
   guesses `[4, 3, 3]`: ten hits over three talks, which is what this corpus
   usually answers. CLS is 0 on the steady state, not unconditionally.
+- **Loading, in ask mode**, is not a skeleton — there is no shape to reserve,
+  because nobody knows what the model will find. It is the activity log (§6.6),
+  which is the honest version of the same promise: rather than reserving space
+  for an answer, it shows the work that will produce one.
 
 Requests are spent on **Enter or a click, never on a keystroke**: a
 search-as-you-type box against a shared 30/min bucket would refuse a visitor
@@ -756,7 +762,10 @@ never going to land. The mode half is not theoretical: an ask can run for 90s
 against a free tier, which is plenty of time for a visitor to give up and
 search, and a late answer that reopens the answer pane over those results (or a
 late search dropping rows under an answer) is the one failure a stranger will
-blame on the corpus rather than on the chrome.
+blame on the corpus rather than on the chrome. **A stream is held to the same
+rule, per event rather than per reply:** the abort tears the connection down,
+and staleness is re-checked before every line is drawn, so a stream that is no
+longer the newest request cannot keep writing into a pane that has moved on.
 
 ### 6.2 The floor
 
@@ -892,6 +901,50 @@ rather than a URL the page guessed.
 The empty, no-results, rate-limited and failed-page states are unchanged: they
 replace or annotate the results region as they always did, and a failed "More
 results" still leaves the cards a visitor already has on screen (§6.1).
+
+### 6.6 "Show its work" — the activity log
+
+An ask used to be one line of copy and a spinner for up to ninety seconds. The
+stream (§3.5) replaces it with the work itself: one row per tool call, appended
+as the events arrive.
+
+```
+   Searching on-screen text for “kv cache” → 2 hits in 2 talks
+   Searching the corpus for “block table” → 2 hits in 1 talk
+⟳  Reading the transcript around 12:34 in “Let's build GPT: from scratch”
+```
+
+Four decisions worth stating:
+
+- **One spinner, on whatever is actually happening.** A running row carries it;
+  an idle line under the list ("reading the corpus…") carries it between calls,
+  when the slow thing is the model thinking rather than a tool running. The idle
+  line steps aside while a row is running, so there is never a second spinner
+  claiming a second kind of work.
+- **The result is a text node with its arrow in it**, not a `::before`. The
+  arrow is chrome, but a log a visitor copies out of the page should still read
+  as a log, and so should one whose stylesheet never arrived.
+- **When the answer lands, the log stops owning the pane.** It folds into a
+  native `<details>` — "Show its work" — placed under the answer and its Sources.
+  The evidence trail stays one click away, and the disclosure is the platform's:
+  keyboard, semantics and state for free, as with the lightbox (§6.4).
+- **The pane is a live region, and stays `aria-busy` until the answer.** Without
+  that, a screen reader narrates six activity rows and then re-narrates two of
+  them as their results land. `aria-busy` holds the announcement to one, when
+  there is something worth announcing.
+
+Everything in a row is a corpus or model string that the server phrased, and the
+page's rules do not bend for it: text nodes only (§6.2), and no URL anywhere in
+the log — an activity line links to nothing, so there is nothing for `safeUrl` to
+guard. A title with a `<script>` in it is a title with a `<script>` in it.
+
+**Progressive enhancement, on the page's side of it.** The `Accept` header that
+asks for the stream is only sent when the browser has `ReadableStream` and
+`TextDecoder`; otherwise the same POST returns the same answer in one piece, with
+no log and no disclosure. Nobody gets a worse answer, and one code path renders
+it either way. A stream that ends *without* a terminal event — a server that went
+away mid-answer — degrades like any other failure: no partial answer is ever
+shown.
 
 ---
 

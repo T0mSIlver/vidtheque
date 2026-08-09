@@ -448,7 +448,8 @@ button.linky {
 .answer .degraded { color: var(--fg); }
 .answer .degraded-wait,
 .answer .thinking { color: var(--muted); }
-.answer .thinking::after {
+.answer .thinking::after,
+.answer .work.is-running::after {
   content: "";
   display: inline-block;
   width: 0.6em;
@@ -464,8 +465,42 @@ button.linky {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .answer .thinking::after { animation-duration: 3s; }
+  .answer .thinking::after,
+  .answer .work.is-running::after { animation-duration: 3s; }
 }
+
+/* ---------------------------------------------------------------- work log */
+
+/* What the model did, while it does it: one line per tool call, the result
+   appended when it lands. Muted, because it is the machinery — until the
+   answer arrives, when it is the only thing on screen. */
+.worklist {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.work { margin: 0 0 0.3rem; }
+.work.is-running { color: var(--fg); }
+
+.work-result { color: var(--fg); }
+.work.is-running .work-result { display: none; }
+
+/* Folded away once the answer owns the pane. */
+.worklog {
+  margin-top: 0.9rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.6rem;
+}
+.worklog > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.worklog > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.worklog[open] > summary { margin-bottom: 0.5rem; }
 
 .answer-foot { margin: 0.9rem 0 0; color: var(--muted); font-size: 0.8rem; }
 
