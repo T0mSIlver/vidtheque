@@ -888,3 +888,30 @@ which is why this section has no `bench/results/raw/*.json` beside it. Left
 unfixed on purpose: `bench/keyframe_decode.py` was being edited by another agent
 in this same session, and a two-line fix landing under them was not worth the
 collision.
+
+---
+
+## §10 — fused probe on real footage, and the phantom-cut verdict (2026-08-09, evening)
+
+`--fused-probe` on `1lgFGaHoGq8` (21.7 min, 1080p60, the same talk §9 used;
+orchestrator run, raw JSON lost to a scratchpad rotation — numbers preserved
+here):
+
+- **detect ×1.65** (155.0 s → 94.0 s best-of-2), **stage ×1.26** (189.5 s →
+  150.5 s). Fused extraction ran 56.5 s vs legacy 34.5 s on its own shot list
+  (51 vs 49 shots; unexplained gap, possibly seek-pattern noise — worth a look
+  if extraction ever dominates again).
+- Boundaries: 24 → 22 scenes, 5 moved >100 ms (3 >1 s), kept frames 35/42
+  pixel-identical, phash256 mean 6.5.
+- **Every large delta inspected visually and ruled a *legacy* phantom.** Frames
+  either side of both lost cuts (1165.3 s, 1182.8 s) show the same static wide
+  stage shot; either side of the 28.7 s "moved" boundary (368.9 s) shows the
+  same unchanged terminal slide. The legacy full-res convert-then-`cv2.resize`
+  chain passes more compression noise/flicker to the detector; the fused
+  swscale path low-passes it. The merges remove junk keyframes (same family as
+  the 190 zero-OCR black fade frames §9 flagged), and fused kept *more*
+  keyframes overall (51 vs 49) via shot subdivision — coverage did not shrink.
+
+Verdict (Tom, 2026-08-09): not a regression, a correction. Decision to adopt
+fused for future indexing stands; old corpus stays under its old key per the
+`+fused` provenance grammar.
