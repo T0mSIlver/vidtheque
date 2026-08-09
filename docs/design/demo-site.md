@@ -986,7 +986,12 @@ shown.
    filters". They are *true* and they are rare on the demo's paths, and a lookup
    table of nicer phrasings here would drift the day a leg is edited. The fix, if
    it is worth one, is in the query layer's wording, not in the page.
-4. **`/api` is public-mode-only.** A private deployment that wants the JSON
-   facade for its own tooling has to set the flag, which also masks its write
-   tools. If that combination is ever wanted, the flag splits in two; it is not
-   worth two flags today.
+4. **Resolved (2026-08-09): `/api` is still public-mode-only, and it no longer
+   matters.** A private deployment that wants JSON gets `/dashboard/api/*` —
+   the *same handlers*, mounted under the dashboard's prefix with the owner
+   clamp policy (dashboard.md §2.5.1, phase 1). So the flag never had to split
+   in two: `/api/*` stays the anonymous surface with the tight bounds this
+   document specifies, and the second caller arrived as a second policy rather
+   than as a second query layer. `public/api.py`'s five clamp constants are now
+   `PUBLIC_CLAMPS`, asserted against the numbers in §2.1 and §2.2 so the
+   refactor cannot have widened them.

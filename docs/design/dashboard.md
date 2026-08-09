@@ -1,10 +1,10 @@
 # The management dashboard — the primary surface for the index
 
-**Status: DRAFT, pending Tom's review. Written 2026-08-09.** Nothing here is
-implemented. Every fact about the current code was checked against the tree at
-`7dc8226` and is cited with a path; every *recommendation* is mine and is marked
-as one. The open questions in §10 are real forks, not rhetorical ones — the rest
-of the document is what I would build if nobody answered them.
+**Status: REVIEWED (Tom, 2026-08-09). Phase 1 is implemented; phases 2–5 are
+not.** Written 2026-08-09 against the tree at `7dc8226`; every fact about the
+code was checked and is cited with a path. The open questions in §10 were real
+forks and are now mostly resolved inline. §8 records what each phase actually
+delivered as it lands.
 
 The decision this encodes (Tom, 2026-08-09): **today the management surface of
 vidtheque is the MCP server, and that is backwards.** An agent is the right
@@ -693,6 +693,16 @@ the same problem with different units, and the same answers.
 
 All read-only additions to modules that already exist. **No new table.**
 
+**Shipped in phase 1**, except the two `jobs/store.py` items and
+`worker_version`. One thing this list got wrong: `list_videos` did not just
+need a new filter, it needed the *existing* clause to become one. `_RESOLVE_SQL`
+hard-codes `index_state IN ('ready','stale')`, which is the right meaning of "in
+the corpus" for search and for a model browsing the library, and the wrong one
+for a page whose whole job is "what state is each video in" — a `pending` video
+was invisible to every surface vidtheque has. It is now
+`CorpusFilter.index_states`, defaulting to that same pair
+(`queries.QUERYABLE_INDEX_STATES`), and the dashboard passes `all`.
+
 In `db/queries.py`:
 
 - `list_videos` gains an `index_state` filter (the partial index exists, unused).
@@ -727,12 +737,42 @@ reader (`config.py:92`) while every other tunable has one.
 
 **Phase 0 — today.** `public/` is the embryo. Nothing to do.
 
-**Phase 1 — read-only dashboard, private mode.** The `/dashboard` route group,
-`/dashboard/api/*` with owner clamps, three pages: overview, videos table, video
-detail. No writes, no new auth (read views follow whatever `/frames/*` already
-accepts). This is the highest value per line in the whole plan — the provenance
-panel and the four browsers — and it incidentally delivers demo-site.md §7.4, a
-JSON facade in private mode.
+**Phase 1 — read-only dashboard, private mode. ✅ SHIPPED 2026-08-09.** The
+`/dashboard` route group, `/dashboard/api/*` with owner clamps, three pages:
+overview, videos table, video detail. No writes, no new auth (read views follow
+whatever `/frames/*` already accepts). This is the highest value per line in the
+whole plan — the provenance panel and the four browsers — and it incidentally
+delivers demo-site.md §7.4, a JSON facade in private mode.
+
+What landed, against what this document specified:
+
+| §  | promised | shipped |
+|---|---|---|
+| 2.1 | route group in this process, before the `Mount("/")` | `dashboard/`, wired at `app.py:191` |
+| 2.5.1 | `public/api.py`'s clamps become a policy object | `ClampPolicy`, `PUBLIC_CLAMPS` / `OWNER_CLAMPS`; `api_routes(policy, prefix, ask=)` serves both surfaces from one set of handlers |
+| 2.5.3 | the rate limiter loses its mode conditional | a `dashboard` bucket, installed in every mode. **Diverged:** in a *private* deployment it is the only bucket — `/frames/*` is not charged. One detail page asks for ~48 frames, and 120/min would refuse the second page load. The owner is not that bucket's threat model; a public deployment is unchanged |
+| 2.5.4 | one declared list of write routes | `dashboard.WRITE_ROUTES`, empty, asserted empty |
+| 2.6 | `/dashboard`, JSON under `/dashboard/api/*` | as specified, not configurable |
+| 3.2 | bearer or the existing session cookie; `none` serves read-only | as specified. Read views are open in `none` (the corpus already is, through `/mcp` and `/frames`) and need the credential in `token`/`oauth` — pages get an HTML 401 naming the fix, `/dashboard/api/*` gets the typed JSON one |
+| 3.3 | no state-changing GET; Origin on every write | `require_write()` ships now, refusing in `none` mode and checking `Sec-Fetch-Site`/`Origin`, with tests. A test also asserts every registered route is GET-only |
+| 4.1 | provenance from `video_stages`, four caveats | all seven stages in pipeline order, a stage with no row rendered `absent`, `model_key` NULL as `—`, and the caveats as a panel note. `stage_version` is read and **not shown** (§10.5's open half) |
+| 4.2 | no per-row counts; counts on the detail page | coverage pills in the table, `per_video_counts()` on the detail page only. A test asserts the read count does not grow with the page size, on both pages |
+| 4.5 | print the tool's word, never a fifth vocabulary | `data_status` and every state string printed verbatim; colour maps *from* the string and falls back to neutral |
+| 5.1 | overview: counts, gaps, rollups, declared models beside live vector state, disk | as specified. `SUM(jpeg_bytes)` and `os.stat`, no directory walk, no filesystem path on the page |
+| 5.2 | the table, with an `index_state` filter | as specified, defaulting to `all`. The filter needed a query-layer change this document did not anticipate: `resolve_videos` hard-coded `index_state IN ('ready','stale')`, so *no* surface could see a `pending` or `failed` video. That clause is now `CorpusFilter.index_states` with the same pair as its default, and `list-videos` gained the filter plus an `index_state` field (tool-surface.md §4.2, same commit) |
+| 5.3 | header, provenance, scene timeline, keyframe strip, transcript and OCR browsers | all six, plus chapters. The strip and the OCR browser share one pager, so the boxes drawn are always for the frames in view |
+| 6 | the byte analogues | double caps, `has_more` over totals, three fixed widths through the derived cache, `loading="lazy"` and explicit `width`/`height`, never base64 |
+| 6.6 | XSS posture identical to demo-site.md §6.2 | Jinja2 autoescape, no `| safe` in any template (asserted), no HTML sink in the module (asserted, same list as `app.js`), `safeUrl()` on every URL reaching an `href`/`src` |
+| 9 | new env vars in `deploy/.env.example` | `VIDTHEQUE_DASHBOARD`, `VIDTHEQUE_RATE_DASHBOARD_PER_MIN`. The other two are phase 3's and are not shipped yet |
+| 10.2 | Jinja2 with autoescape, as a deliberate dependency commit | its own commit, `mcp/pyproject.toml` + `uv.lock` only |
+
+**Deferred out of phase 1, deliberately:** the jobs view (phase 2, and it is
+what `not_before` is waiting for), everything in §5.5 and every write route
+(phase 3), `VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS` and
+`VIDTHEQUE_DASHBOARD_SESSION_TTL_S` (phase 3, when there is a write side and a
+login to mint), search and ask on this surface (phase 5), and
+`video_stages.worker_version` (§10.5 — a schema change, Tom's, and no read
+depends on it yet).
 
 **Phase 2 — the jobs view.** Read-only. `not_before` as a countdown, `attempts`,
 `degraded_items`, the `job_events` tail, 2 s polling. Closes the blind spot the
