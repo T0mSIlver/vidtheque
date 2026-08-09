@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block main %}
+<section class="notice notice-bad" aria-labelledby="err">
+  <h1 class="notice-title" id="err">{{ error.message }}</h1>
+  <p class="notice-detail"><code>{{ error.code }}</code></p>
+  {% if error.next %}
+  <p class="notice-next">{{ error.next }}</p>
+  {% endif %}
+</section>
+{% endblock %}

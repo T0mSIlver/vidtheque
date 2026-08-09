@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+{% macro nav_link(f_off, c_off, anchor) -%}
+{{ root }}/videos/{{ video.video_id }}?frames={{ frame_page }}&amp;frame_offset={{ f_off }}&amp;cues={{ cue_page }}&amp;cue_offset={{ c_off }}#{{ anchor }}
+{%- endmacro %}
+{% block main %}
+
+<p class="crumbs"><a href="{{ root }}/videos">Videos</a> <span aria-hidden="true">/</span> <code>{{ video.video_id }}</code></p>
+
+<div class="pagehead">
+  <h1>{{ video.title }}</h1>
+  <p class="pagehead-meta">
+    <span class="pill tone-{{ video.index_state | tone }}">{{ video.index_state }}</span>
+    {# video-summary's own word, verbatim (§4.5) — shown only when it says
+       something `index_state` did not, which for a failed video it does not. #}
+    {% if data_status and data_status != video.index_state %}
+    <span class="pill tone-{{ data_status | tone }}">{{ data_status }}</span>
+    {% endif %}
+    <span class="sep">·</span>{{ video.channel }}
+    <span class="sep">·</span>published {{ video.published_at | day }}
+    <span class="sep">·</span>{{ video.duration_s | duration }}
+    {% if video.language %}<span class="sep">·</span>{{ video.language }}{% endif %}
+    {% if video.indexed_at %}<span class="sep">·</span>indexed {{ video.indexed_at | minute }}
+    {% else %}<span class="sep">·</span>never finished indexing{% endif %}
+  </p>
+  <p class="pagehead-meta">
+    <a href="{{ video.url }}" rel="noopener noreferrer" target="_blank">Open on YouTube</a>
+    {% if video.tags %}
+    <span class="sep">·</span>
+    {% for tag in video.tags %}<a class="chip chip-small" href="{{ root }}/videos?tags={{ tag | urlencode }}&amp;index_state=all">{{ tag }}</a>{% endfor %}
+    {% endif %}
+  </p>
+</div>
+
+{% if summary_error %}
+<section class="notice">
+  <h2 class="notice-title">{{ summary_error.message }}</h2>
+  <p class="notice-detail">
+    <code>{{ summary_error.code }}</code> — that is <code>video-summary</code>
+    refusing, verbatim. The panels below read the index directly, so they still
+    say what exists.
+  </p>
+  {% if summary_error.next %}<p class="notice-next">{{ summary_error.next }}</p>{% endif %}
+</section>
+{% endif %}
+
+<section class="panel" aria-labelledby="counts">
+  <h2 class="panel-title" id="counts">What was stored</h2>
+  <dl class="figures">
+    <div class="figure">
+      <dt>cues</dt>
+      <dd>{{ counts['cues'] | count }}</dd>
+      <dd class="figure-note">
+        {% for origin, n in origins.items() %}{{ origin }} {{ n }}{{ " · " if not loop.last }}{% endfor %}
+        {% if not origins %}none{% endif %}
+      </dd>
+    </div>
+    <div class="figure">
+      <dt>chunks</dt>
+      <dd>{{ counts['chunks'] | count }}</dd>
+      <dd class="figure-note">the embedding unit</dd>
+    </div>
+    <div class="figure">
+      <dt>keyframes</dt>
+      <dd>{{ counts['keyframes_kept'] | count }}</dd>
+      <dd class="figure-note">
+        kept of {{ counts['keyframes'] | count }} captured
+      </dd>
+    </div>
+    <div class="figure">
+      <dt>frames with text</dt>
+      <dd>{{ counts['ocr_frames'] | count }}</dd>
+      <dd class="figure-note">{{ counts['ocr_lines'] | count }} lines read</dd>
+    </div>
+    <div class="figure">
+      <dt>chapters</dt>
+      <dd>{{ counts['chapters'] | count }}</dd>
+      <dd class="figure-note">from the source metadata</dd>
+    </div>
+    <div class="figure">
+      <dt>keyframe bytes</dt>
+      <dd>{{ counts['jpeg_bytes'] | bytes_human }}</dd>
+      <dd class="figure-note">
+        {% if counts['cues_with_words'] %}word timings on {{ counts['cues_with_words'] | count }} cues{% else %}no word timings stored{% endif %}
+      </dd>
+    </div>
+  </dl>
+</section>
+
+<section class="panel" aria-labelledby="provenance">
+  <h2 class="panel-title" id="provenance">Provenance</h2>
+  <div class="tablewrap">
+    <table class="grid stages">
+      <caption class="sr-only">Each pipeline stage, its state and the model that produced it</caption>
+      <thead>
+        <tr>
+          <th scope="col">stage</th>
+          <th scope="col">state</th>
+          <th scope="col">model</th>
+          <th scope="col">started</th>
+          <th scope="col" class="num">took</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for stage in stages %}
+        <tr class="{{ 'is-bad' if stage.state == 'failed' else '' }}">
+          <th scope="row"><code>{{ stage.stage }}</code></th>
+          <td><span class="pill tone-{{ stage.state | tone }}">{{ stage.state }}</span></td>
+          <td class="col-model">{% if stage.model_key %}<code>{{ stage.model_key }}</code>{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td>{% if stage.started_at %}{{ stage.started_at | minute }}{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td class="num">{{ elapsed(stage.started_at, stage.finished_at) }}</td>
+        </tr>
+        {% if stage.error %}
+        <tr class="stage-error">
+          <td colspan="5"><span class="label">error</span> <span class="errtext">{{ stage.error }}</span></td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="panel-note">
+    Provenance records what <em>succeeded</em>. A failed, skipped or
+    re-invalidated stage has its <code>model_key</code> set to NULL, so a dash
+    here means "not recorded", never "unknown model". The names are the
+    corpus's declared models, not a report from the worker — the live check is
+    the vector state on the <a href="{{ root }}">corpus page</a>. Only
+    <code>fetch</code> records a build version (<code>yt-dlp-&lt;version&gt;</code>);
+    <code>stt</code> records <code>large-v3</code>, not the whisperX release.
+    <code>stage_version</code> is declared in the schema and never incremented,
+    so it is not shown.
+  </p>
+</section>
+
+<section class="panel" aria-labelledby="timeline">
+  <h2 class="panel-title" id="timeline">Scene timeline</h2>
+  {% if shots %}
+  <ol class="timeline" aria-label="Shots across the runtime">
+    {% for shot in shots %}
+    <li class="shotbar{{ ' is-dedup' if shot.kept == 0 }}" data-shot="{{ shot.shot_id }}"
+        style="left:{{ shot.left }}%;width:{{ shot.width }}%">
+      <a href="{{ nav_link(shot.frame_offset, cue_offset, 'frame-' ~ shot.first_ord) }}"
+         title="shot {{ shot.shot_id }} — {{ shot.start_s | clock }} to {{ shot.end_s | clock }}, {{ shot.kept }}/{{ shot.frames }} frames kept">
+        <span class="sr-only">Shot {{ shot.shot_id }}, {{ shot.start_s | clock }} to {{ shot.end_s | clock }},
+          {{ shot.kept }} of {{ shot.frames }} keyframes kept</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ol>
+  <p class="timeline-scale" aria-hidden="true">
+    <span>0:00</span><span>{{ video.duration_s | duration }}</span>
+  </p>
+  <p class="panel-note">
+    {{ shots | length }} shot(s){{ ", capped — the video has more" if shots_capped }}.
+    There is no scenes table: a shot is a group of keyframes sharing a
+    <code>shot_id</code>, and the dimmed bars are shots whose every frame was
+    dropped as a near-duplicate, which is also why they carry no on-screen text.
+    Follow one to its first frame below.
+  </p>
+  {% else %}
+  <p class="empty-note">
+    No keyframes were captured for this video, so there are no shots. The
+    <code>keyframe</code> row above says why.
+  </p>
+  {% endif %}
+</section>
+
+<section class="panel" aria-labelledby="frames-title" id="frames">
+  <h2 class="panel-title" id="frames-title">Keyframes</h2>
+  {% if frames %}
+  <ul class="strip">
+    {% for frame in frames %}
+    <li class="framecard{{ ' is-dup' if frame.dup_of_ord is not none }}" id="frame-{{ frame.ord }}"
+        data-shot="{{ frame.shot_id }}">
+      <button type="button" class="framebtn" data-large="{{ frame.large }}"
+              data-frame="{{ frame.frame_id }}"
+              data-caption="{{ frame.frame_id }} · {{ frame.t_s | clock }}"
+              data-link="https://youtu.be/{{ video.video_id }}?t={{ frame.t_s | int }}">
+        <img src="{{ frame.thumb }}" alt="Keyframe {{ frame.ord }} at {{ frame.t_s | clock }}"
+             width="192" height="108" loading="lazy" decoding="async">
+      </button>
+      <p class="framemeta">
+        <span class="at">{{ frame.t_s | clock }}</span>
+        <span class="muted">#{{ frame.ord }}</span>
+        <span class="pill pill-small tone-{{ frame.ocr_state | tone }}">{{ frame.ocr_state }}</span>
+      </p>
+      <p class="framemeta muted">
+        shot {{ frame.shot_id }}<span class="sep">·</span>{{ frame.width }}×{{ frame.height }}<span class="sep">·</span>{{ frame.jpeg_bytes | bytes_human }}
+      </p>
+      {% if frame.dup_of_ord is not none %}
+      <p class="framemeta"><span class="dupnote">duplicate of #{{ frame.dup_of_ord }}</span></p>
+      {% else %}
+      <p class="framemeta muted">sharpness {{ "%.1f" | format(frame.sharpness) }}</p>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% if frame_offset or frames_more %}
+  <nav class="pager" aria-label="Keyframe pages">
+    {% if frame_offset %}
+    <a class="ghostlink" href="{{ nav_link([frame_offset - frame_page, 0] | max, cue_offset, 'frames') }}">← Earlier frames</a>
+    {% endif %}
+    {% if frames_more %}
+    <a class="ghostlink" href="{{ nav_link(frame_offset + frame_page, cue_offset, 'frames') }}">Next {{ frame_page }} frames →</a>
+    {% endif %}
+  </nav>
+  {% endif %}
+  {% else %}
+  <p class="empty-note">No keyframes on this page.</p>
+  {% endif %}
+</section>
+
+<section class="panel" aria-labelledby="ocr-title" id="ocr">
+  <h2 class="panel-title" id="ocr-title">On-screen text, and where it was</h2>
+  {% set read_frames = frames | selectattr("lines") | list %}
+  {% if read_frames %}
+  <div class="ocrgrid">
+    {% for frame in read_frames %}
+    <figure class="ocrframe" id="ocr-{{ frame.frame_id }}">
+      <div class="ocrstage">
+        <img src="{{ frame.detail }}" alt="Keyframe {{ frame.ord }} at {{ frame.t_s | clock }}"
+             width="512" height="288" loading="lazy" decoding="async">
+        {% for line in frame.lines %}
+        <span class="ocrbox" aria-hidden="true"
+              style="left:{{ (line.box[0] * 100) | round(3) }}%;top:{{ (line.box[1] * 100) | round(3) }}%;width:{{ ((line.box[2] - line.box[0]) * 100) | round(3) }}%;height:{{ ((line.box[3] - line.box[1]) * 100) | round(3) }}%"></span>
+        {% endfor %}
+      </div>
+      <figcaption>
+        <p class="framemeta"><span class="at">{{ frame.t_s | clock }}</span> <span class="muted">#{{ frame.ord }} · {{ frame.lines | length }} line(s)</span></p>
+        <ol class="ocrlines">
+          {% for line in frame.lines %}
+          <li class="ocrline"
+              data-box="{{ line.box[0] }},{{ line.box[1] }},{{ line.box[2] }},{{ line.box[3] }}">
+            <span class="ocrtext">{{ line.text }}</span>
+            {% if line.conf is not none %}<span class="conf">{{ "%.2f" | format(line.conf) }}</span>{% endif %}
+          </li>
+          {% endfor %}
+        </ol>
+      </figcaption>
+    </figure>
+    {% endfor %}
+  </div>
+  <p class="panel-note">
+    Boxes are the OCR engine's own, normalised 0–1 at write time, drawn over
+    the frame at whatever width it is rendered. The searchable unit is the
+    frame — all of its lines joined in reading order — which is why a phrase
+    that wraps across two lines is findable.
+  </p>
+  {% else %}
+  <p class="empty-note">
+    None of the frames on this page carry on-screen text. Frames dropped as
+    near-duplicates are never read, so <code>skipped</code> above is a
+    deduplication result, not an OCR failure.
+  </p>
+  {% endif %}
+</section>
+
+<section class="panel" aria-labelledby="transcript-title" id="transcript">
+  <h2 class="panel-title" id="transcript-title">Transcript</h2>
+  {% if cues %}
+  <ol class="cues">
+    {% for cue in cues %}
+    {% if cue.chunk_opens %}
+    <li class="chunkmark" aria-hidden="true">
+      chunk {{ cue.chunk_opens.seq }} · {{ cue.chunk_opens.start_s | clock }}–{{ cue.chunk_opens.end_s | clock }} · {{ cue.chunk_opens.n_chars }} chars
+    </li>
+    {% endif %}
+    <li class="cue{{ ' in-chunk' if cue.chunk_opens or cue.chunk_closes }}">
+      <a class="at" href="https://youtu.be/{{ video.video_id }}?t={{ cue.start_s | int }}"
+         rel="noopener noreferrer" target="_blank">{{ cue.start_s | clock }}</a>
+      <span class="badge badge-{{ 'spoken' if cue.origin == 'whisperx' else 'screen' }}">{{ cue.origin }}</span>
+      <span class="cuetext">{{ cue.text }}</span>
+      {% if cue.speaker %}<span class="muted speaker">{{ cue.speaker }}</span>{% endif %}
+      {% if cue.avg_logprob is not none %}<span class="conf" title="avg_logprob">{{ "%.2f" | format(cue.avg_logprob) }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+  {% if cue_offset or cues_more %}
+  <nav class="pager" aria-label="Transcript pages">
+    {% if cue_offset %}
+    <a class="ghostlink" href="{{ nav_link(frame_offset, [cue_offset - cue_page, 0] | max, 'transcript') }}">← Earlier</a>
+    {% endif %}
+    {% if cues_more %}
+    <a class="ghostlink" href="{{ nav_link(frame_offset, cue_offset + cue_page, 'transcript') }}">Next {{ cue_page }} cues →</a>
+    {% endif %}
+  </nav>
+  {% endif %}
+  <p class="panel-note">
+    The rule down the left marks a chunk — the span of cues that became one
+    embedding. Word-level timings are stored for
+    {{ counts['cues_with_words'] | count }} of {{ counts['cues'] | count }} cues
+    and are not printed: they are about a tenth of the whole index and nothing
+    a person reads.
+  </p>
+  {% else %}
+  <p class="empty-note">
+    No transcript cues on this page. The <code>stt</code> row above says whether
+    one was ever produced.
+  </p>
+  {% endif %}
+</section>
+
+{% if chapters %}
+<section class="panel" aria-labelledby="chapters">
+  <h2 class="panel-title" id="chapters">Chapters</h2>
+  <ol class="rowlist tight">
+    {% for chapter in chapters %}
+    <li class="minirow">
+      <a class="at" href="https://youtu.be/{{ video.video_id }}?t={{ chapter.start | int }}"
+         rel="noopener noreferrer" target="_blank">{{ chapter.start | clock }}</a>
+      <span>{{ chapter.title }}</span>
+    </li>
+    {% endfor %}
+  </ol>
+</section>
+{% endif %}
+
+{% endblock %}
+
+{% block dialog %}
+{# Click a frame and it opens here, big enough to read the slide, with the OCR
+   boxes over it. A native <dialog>: Esc, the backdrop, the focus trap and the
+   modal semantics are the platform's. #}
+<dialog id="shot" class="shot" aria-labelledby="shot-caption">
+  <div class="shot-inner">
+    <div class="shot-stage">
+      <img id="shot-img" class="shot-img" alt="">
+      <div id="shot-boxes" class="shot-boxes" aria-hidden="true"></div>
+    </div>
+    <div class="shot-foot">
+      <p id="shot-caption" class="shot-caption"></p>
+      <label class="shot-toggle"><input type="checkbox" id="shot-showboxes" checked> Show OCR boxes</label>
+      <a id="shot-link" class="shot-link" target="_blank" rel="noopener noreferrer">Open at this second</a>
+    </div>
+    <button type="button" id="shot-close" class="ghost shot-close" autofocus>Close</button>
+  </div>
+</dialog>
+{% endblock %}

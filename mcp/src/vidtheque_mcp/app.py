@@ -36,6 +36,7 @@ from starlette.routing import Mount
 
 from .auth.modes import AuthBundle, build_auth
 from .config import Settings
+from .dashboard import DashboardSettings, dashboard_routes
 from .db import Database
 from .embeddings import EmbeddingClient
 from .http import frames_routes, health_routes
@@ -60,6 +61,7 @@ class Assembled:
     auth: AuthBundle
     runner: PipelineRunner
     public: PublicSettings = field(default_factory=PublicSettings)
+    dashboard: DashboardSettings = field(default_factory=DashboardSettings)
 
 
 def build_app(
@@ -69,6 +71,7 @@ def build_app(
     run_pipeline: bool = True,
     pipeline: Pipeline | None = None,
     public: PublicSettings | None = None,
+    dashboard: DashboardSettings | None = None,
     public_http: httpx.AsyncClient | None = None,
 ) -> Starlette:
     return assemble(
@@ -77,6 +80,7 @@ def build_app(
         run_pipeline=run_pipeline,
         pipeline=pipeline,
         public=public,
+        dashboard=dashboard,
         public_http=public_http,
     ).app
 
@@ -88,13 +92,16 @@ def assemble(
     run_pipeline: bool = True,
     pipeline: Pipeline | None = None,
     public: PublicSettings | None = None,
+    dashboard: DashboardSettings | None = None,
     public_http: httpx.AsyncClient | None = None,
 ) -> Assembled:
     """``public`` / ``public_http`` are the demo seam: the mode, and the LLM
     client behind ``/api/ask`` (a ``MockTransport`` in tests, exactly as
-    ``embeddings=`` fakes the worker)."""
+    ``embeddings=`` fakes the worker). ``dashboard`` is the same seam for the
+    management route group."""
     settings.validate()
     public = public if public is not None else PublicSettings.from_env()
+    dashboard = dashboard if dashboard is not None else DashboardSettings.from_env()
     db = Database(
         path=settings.db_path,
         read_pool_size=settings.read_pool_size,
@@ -176,18 +183,23 @@ def assemble(
         *auth.routes,
         *frames_routes(settings, db, auth),
         *(public_routes() if public.enabled else []),
+        *(dashboard_routes() if dashboard.enabled else []),
         # Mount("/") matches everything — it must be last.
         Mount("/", app=mcp_app),
     ]
-    # The limiter lives in the root app's middleware stack: `/api/*` and
-    # `/frames/*` are charged per IP, everything else (including the MCP
-    # mount's streaming transport) is passed straight through.
+    # The limiter lives in the root app's middleware stack: `/api/*`,
+    # `/frames/*` and `/dashboard/*` are charged per IP, everything else
+    # (including the MCP mount's streaming transport) is passed straight
+    # through. It is no longer public-mode-only — dashboard.md §2.5.3.
     app = Starlette(
         routes=routes,
-        middleware=public_middleware(public) if public.enabled else [],
+        middleware=public_middleware(
+            public, dashboard.rate_per_min if dashboard.enabled else None
+        ),
         lifespan=lifespan,
     )
     app.state.public_settings = public
+    app.state.dashboard_settings = dashboard
     app.state.openrouter = llm
     app.state.assembled = Assembled(
         app=app,
@@ -197,5 +209,6 @@ def assemble(
         auth=auth,
         runner=runner,
         public=public,
+        dashboard=dashboard,
     )
     return app.state.assembled

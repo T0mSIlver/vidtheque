@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% macro page_link(offset) -%}
+{{ root }}/videos?q={{ filters.q | urlencode }}&amp;channel={{ filters.channel | urlencode }}&amp;tags={{ filters.tags | urlencode }}&amp;has={{ filters.has }}&amp;index_state={{ filters.index_state }}&amp;order={{ filters.order }}&amp;limit={{ filters.limit }}&amp;offset={{ offset }}
+{%- endmacro %}
+{% macro sort_link(key) -%}
+{{ root }}/videos?q={{ filters.q | urlencode }}&amp;channel={{ filters.channel | urlencode }}&amp;tags={{ filters.tags | urlencode }}&amp;has={{ filters.has }}&amp;index_state={{ filters.index_state }}&amp;order={{ key }}&amp;limit={{ filters.limit }}
+{%- endmacro %}
+{% block main %}
+
+<div class="pagehead">
+  <h1>Videos</h1>
+  <p class="pagehead-meta">
+    Every row is one video and what the pipeline made of it. Counts live on the
+    detail page — this table stays cheap by showing coverage, not totals.
+  </p>
+</div>
+
+{# A real GET form: the filters are the URL, so a filtered table is a link
+   somebody can send. No JavaScript is involved in any of it. #}
+<form class="filters" method="get" action="{{ root }}/videos">
+  <div class="field field-wide">
+    <label for="f-q">Title, channel or description</label>
+    <input id="f-q" name="q" type="search" value="{{ filters.q }}" placeholder="attention, tokenizer…"
+           spellcheck="false" autocomplete="off">
+  </div>
+  <div class="field">
+    <label for="f-channel">Channel</label>
+    <input id="f-channel" name="channel" type="text" value="{{ filters.channel }}" autocomplete="off">
+  </div>
+  <div class="field">
+    <label for="f-tags">Tags</label>
+    <input id="f-tags" name="tags" type="text" value="{{ filters.tags }}" placeholder="topic:attention"
+           autocomplete="off">
+  </div>
+  <div class="field">
+    <label for="f-state">State</label>
+    <select id="f-state" name="index_state">
+      <option value="all"{{ ' selected' if filters.index_state == 'all' }}>all states</option>
+      {% for state in index_states %}
+      <option value="{{ state }}"{{ ' selected' if filters.index_state == state }}>{{ state }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label for="f-has">Coverage</label>
+    <select id="f-has" name="has">
+      {% for value in has_values %}
+      <option value="{{ value }}"{{ ' selected' if filters.has == value }}>{{ "any" if value == "any" else value }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field">
+    <label for="f-order">Order</label>
+    <select id="f-order" name="order">
+      {% for value in orders %}
+      <option value="{{ value }}"{{ ' selected' if filters.order == value }}>{{ value }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field field-narrow">
+    <label for="f-limit">Rows</label>
+    <input id="f-limit" name="limit" type="number" min="1" max="100" value="{{ filters.limit }}"
+           inputmode="numeric">
+  </div>
+  <div class="field field-actions">
+    <button type="submit">Apply</button>
+    <a class="ghostlink" href="{{ root }}/videos">Reset</a>
+  </div>
+</form>
+
+{% if error %}
+<section class="notice notice-bad">
+  <h2 class="notice-title">{{ error.message }}</h2>
+  <p class="notice-detail"><code>{{ error.code }}</code></p>
+  {% if error.next %}<p class="notice-next">{{ error.next }}</p>{% endif %}
+</section>
+{% elif not rows %}
+<section class="notice">
+  <h2 class="notice-title">Nothing matches those filters.</h2>
+  <p class="notice-detail">
+    {% if filters.index_state != 'all' %}
+    The state filter is on <code>{{ filters.index_state }}</code> — most videos
+    in a healthy corpus are <code>ready</code>.
+    {% else %}
+    Widen the query, or drop the coverage filter: <code>has={{ filters.has }}</code>
+    only matches videos whose pipeline finished that leg.
+    {% endif %}
+  </p>
+  <p class="notice-next"><a href="{{ root }}/videos">Show everything</a></p>
+</section>
+{% else %}
+
+<p class="tablecount" role="status">
+  {{ rows | length }} shown{% if pagination.approx_total %} of ~{{ pagination.approx_total }}{% endif %}{% if pagination.has_more %}, more available{% endif %}.
+</p>
+
+<div class="tablewrap">
+<table class="grid videos">
+  <caption class="sr-only">Videos in the corpus, with the state of each pipeline leg</caption>
+  <thead>
+    <tr>
+      <th scope="col" class="col-shot"><span class="sr-only">Frame</span></th>
+      <th scope="col"><a href="{{ sort_link('title') }}">Title</a></th>
+      <th scope="col"><a href="{{ sort_link('recency') }}">Published</a></th>
+      <th scope="col" class="num"><a href="{{ sort_link('duration') }}">Duration</a></th>
+      <th scope="col">State</th>
+      <th scope="col">Coverage</th>
+      <th scope="col">Tags</th>
+      <th scope="col"><a href="{{ sort_link('indexed_at') }}">Indexed</a></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td class="col-shot" data-label="Frame">
+        {% if row.thumb %}
+        <img class="thumb" src="{{ row.thumb }}" alt="" width="96" height="54" loading="lazy" decoding="async">
+        {% else %}
+        <span class="thumb thumb-empty">no frame</span>
+        {% endif %}
+      </td>
+      <th scope="row" class="col-title" data-label="Title">
+        <a class="row-title" href="{{ root }}/videos/{{ row.video_id }}">{{ row.title }}</a>
+        <span class="row-meta">{{ row.channel }}<span class="sep">·</span><code>{{ row.video_id }}</code></span>
+      </th>
+      <td data-label="Published"><time>{{ row.published }}</time></td>
+      <td class="num" data-label="Duration">{{ row.duration }}</td>
+      <td data-label="State">
+        <span class="pill tone-{{ row.index_state | tone }}">{{ row.index_state }}</span>
+      </td>
+      <td data-label="Coverage">
+        <span class="coverage">
+          {% for pill in row.coverage_pills %}
+          <span class="cov cov-{{ 'on' if pill.present else 'off' }}"
+                title="{{ pill.label }}{{ '' if pill.present else ' — missing' }}">
+            <span aria-hidden="true">{{ pill.letter }}</span>
+            <span class="sr-only">{{ pill.label }}{{ ': present' if pill.present else ': missing' }}</span>
+          </span>
+          {% endfor %}
+        </span>
+      </td>
+      <td data-label="Tags">
+        {% if row.tag_list %}
+        <span class="taglist">
+          {% for tag in row.tag_list %}<a class="chip chip-small" href="{{ root }}/videos?tags={{ tag | urlencode }}&amp;index_state=all">{{ tag }}</a>{% endfor %}
+        </span>
+        {% else %}<span class="muted">—</span>{% endif %}
+      </td>
+      <td data-label="Indexed"><time>{{ row.indexed_at }}</time></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% if pagination.offset or pagination.has_more %}
+<nav class="pager" aria-label="Pagination">
+  {% if pagination.offset %}
+  <a class="ghostlink" href="{{ page_link([pagination.offset - pagination.limit, 0] | max) }}">← Previous</a>
+  {% endif %}
+  {% if pagination.has_more %}
+  <a class="ghostlink" href="{{ page_link(pagination.offset + pagination.limit) }}">Next {{ pagination.limit }} →</a>
+  {% endif %}
+</nav>
+{% endif %}
+{% endif %}
+
+{% endblock %}

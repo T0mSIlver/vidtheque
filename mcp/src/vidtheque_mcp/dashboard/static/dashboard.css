@@ -1,0 +1,885 @@
+/* vidtheque dashboard — the demo's world, at working density.
+
+   Same six custom properties as public/static/style.css (asserted equal in
+   test_dashboard.py, because the demo page is not registered in private mode
+   and an @import would be a second round trip for a palette). Same system
+   fonts, same hairline rows, same single amber accent, no cards, no shadows.
+
+   What this surface adds, and why:
+     * a wider measure — the demo reads a column, this one scans a table;
+     * a second neutral ground (--panel) for table heads and the masthead,
+       which is what separates a dense grid from the page it sits on;
+     * a state palette. Every state on this surface is also a word, so nothing
+       here depends on being able to see the colour. */
+
+:root {
+  --bg: #fbfaf9;
+  --fg: #1b1a19;
+  --muted: #6b6764;
+  --line: #e3dfdb;
+  --accent: #b45309;
+  --raised: #ffffff;
+
+  --panel: #f4f1ee;
+  --tone-ok: #2f6f3e;
+  --tone-warn: #8a5a00;
+  --tone-bad: #b3261e;
+  --tone-work: #1f5f8b;
+  --tone-wait: #6b6764;
+  --tone-neutral: #6b6764;
+
+  --measure: 74rem;
+  --prose: 46rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #131313;
+    --fg: #e9e6e3;
+    --muted: #97918c;
+    --line: #2b2927;
+    --accent: #f0a55a;
+    --raised: #1a1a19;
+
+    --panel: #1c1b1a;
+    --tone-ok: #6cc08a;
+    --tone-warn: #e0a955;
+    --tone-bad: #f08a80;
+    --tone-work: #7fb6e0;
+    --tone-wait: #97918c;
+    --tone-neutral: #97918c;
+  }
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  padding: 0 1.25rem calc(4rem + env(safe-area-inset-bottom));
+  background: var(--bg);
+  color: var(--fg);
+  font: 400 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        "Helvetica Neue", Arial, sans-serif;
+}
+
+main, .masthead, footer { max-width: var(--measure); margin: 0 auto; }
+
+a { color: inherit; }
+a:hover { color: var(--accent); }
+
+code {
+  font: 400 0.875em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
+.muted { color: var(--muted); }
+.sep { padding: 0 0.4rem; color: var(--muted); }
+.unit { font-size: 0.7em; font-weight: 400; color: var(--muted); }
+.num { font-variant-numeric: tabular-nums; text-align: right; }
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.skip {
+  position: absolute;
+  left: 0.5rem; top: -3rem;
+  z-index: 5;
+  padding: 0.5rem 0.8rem;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  transition: top 160ms ease-out;
+}
+.skip:focus { top: 0.5rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .skip { transition: none; }
+}
+
+/* ------------------------------------------------------------------ header */
+
+.masthead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.75rem 1.5rem;
+  padding: 2rem 0 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand { flex: 0 0 auto; }
+
+.wordmark {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.wordmark a { text-decoration: none; }
+
+.rubric { margin: 0.1rem 0 0; color: var(--muted); font-size: 0.82rem; }
+
+.nav { display: flex; gap: 1.25rem; }
+
+.nav a {
+  padding-bottom: 0.2rem;
+  font-size: 0.95rem;
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+.nav a[aria-current="page"] { color: var(--accent); border-bottom-color: var(--accent); }
+
+.deployment {
+  margin: 0 0 0 auto;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* -------------------------------------------------------------- page heads */
+
+.crumbs { margin: 1.25rem 0 0; color: var(--muted); font-size: 0.85rem; }
+.crumbs a { text-decoration: none; }
+
+.pagehead { padding: 1.5rem 0 1.25rem; }
+.pagehead h1 {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.pagehead-meta {
+  margin: 0.4rem 0 0;
+  max-width: var(--prose);
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.pagehead-meta a { color: var(--accent); }
+
+/* ------------------------------------------------------------------ panels */
+
+/* A panel is a heading and a hairline, not a card. Nested boxes are how a
+   dashboard stops being scannable. */
+.panel { margin-top: 2.25rem; padding-top: 0.9rem; border-top: 1px solid var(--line); }
+
+.panel-title {
+  margin: 0 0 0.9rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.panel-note {
+  margin: 0.9rem 0 0;
+  max-width: var(--prose);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.empty-note {
+  margin: 0;
+  max-width: var(--prose);
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 0 2.5rem; }
+.split > .panel:nth-child(2) { margin-top: 2.25rem; }
+
+/* ----------------------------------------------------------------- figures */
+
+.figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 1.25rem 2rem;
+  margin: 0;
+}
+
+.figure > dt {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.figure > dd {
+  margin: 0.15rem 0 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.figure > dd.figure-note {
+  margin-top: 0.15rem;
+  font-size: 0.8rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+.figure-note a { color: var(--accent); }
+
+/* -------------------------------------------------------------------- gaps */
+
+.gaplist { margin: 0; padding: 0; list-style: none; font-size: 0.95rem; }
+.gaplist li { padding: 0.4rem 0; border-bottom: 1px solid var(--line); }
+.gaplist li:last-child { border-bottom: 0; }
+.gaplist a {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  text-decoration: none;
+}
+.gaplist a:hover { text-decoration: underline; }
+
+/* -------------------------------------------------------------------- rows */
+
+.rowlist { margin: 0; padding: 0; list-style: none; }
+
+.row {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-start;
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--line);
+}
+.rowlist > .row:first-child { border-top: 0; }
+
+.row-shot { flex: 0 0 auto; line-height: 0; text-decoration: none; }
+.row-body { flex: 1 1 auto; min-width: 0; }
+.row-title { font-weight: 600; text-decoration: none; }
+.row-meta { display: block; margin: 0.1rem 0 0; color: var(--muted); font-size: 0.82rem; }
+
+.minirow {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.35rem 0;
+  border-top: 1px solid var(--line);
+  font-size: 0.9rem;
+}
+.rowlist.tight > .minirow:first-child { border-top: 0; }
+.minirow > :first-child { flex: 1 1 auto; min-width: 0; }
+.minirow-figure { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+
+/* A chapter row leads with its timestamp, so the title — not the clock — is
+   the thing that takes the width. */
+.minirow > .at:first-child { flex: 0 0 auto; }
+.minirow > .at:first-child + span { flex: 1 1 auto; min-width: 0; }
+
+/* Fixed box, mirrored in the img attributes: a row keeps its height whether
+   the frame has loaded, failed, or never existed. CLS 0 is a shipped property
+   of this project and a keyframe strip is the easiest place to lose it. */
+.thumb {
+  display: block;
+  width: 96px;
+  height: 54px;
+  object-fit: cover;
+  border-radius: 4px;
+  background: var(--line);
+}
+
+.thumb-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+}
+
+/* ------------------------------------------------------------------- chips */
+
+.chiplist { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0; padding: 0; list-style: none; }
+
+.chip {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.chip:hover { color: var(--fg); border-color: var(--muted); }
+.chip-n { font-variant-numeric: tabular-nums; font-weight: 600; }
+.chip-small { padding: 0.05rem 0.45rem; font-size: 0.72rem; }
+
+.taglist { display: inline-flex; flex-wrap: wrap; gap: 0.25rem; }
+
+/* ------------------------------------------------------------------ states */
+
+/* Every pill carries its own word, so the colour is reinforcement and never
+   the message. */
+.pill {
+  display: inline-block;
+  padding: 0.05rem 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--tone, var(--tone-neutral));
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+.pill-small { font-size: 0.66rem; }
+
+.tone-ok      { --tone: var(--tone-ok); }
+.tone-warn    { --tone: var(--tone-warn); }
+.tone-bad     { --tone: var(--tone-bad); }
+.tone-work    { --tone: var(--tone-work); }
+.tone-wait    { --tone: var(--tone-wait); }
+.tone-neutral { --tone: var(--tone-neutral); }
+
+span.tone-bad { color: var(--tone-bad); }
+
+/* Coverage: three letters, and the missing one is hollow *and* struck, so it
+   reads as absent without colour. */
+.coverage { display: inline-flex; gap: 0.2rem; }
+
+.cov {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+.cov-on { color: var(--bg); background: var(--tone-ok); border-color: var(--tone-ok); }
+.cov-off { color: var(--muted); border-style: dashed; text-decoration: line-through; }
+
+/* ----------------------------------------------------------------- filters */
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1rem;
+  padding: 0.9rem 1rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.field { display: flex; flex-direction: column; gap: 0.25rem; }
+.field-wide { flex: 1 1 16rem; min-width: 0; }
+.field-narrow { flex: 0 0 5rem; }
+.field-actions { flex-direction: row; gap: 0.6rem; align-items: center; margin-left: auto; }
+
+.field label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.field input, .field select {
+  padding: 0.4rem 0.55rem;
+  font: inherit;
+  font-size: 0.9rem;
+  color: inherit;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.field input::placeholder { color: var(--muted); opacity: 1; }
+
+button {
+  padding: 0.45rem 0.9rem;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--bg);
+  background: var(--fg);
+  border: 1px solid var(--fg);
+  border-radius: 6px;
+  cursor: pointer;
+}
+button:hover { background: var(--accent); border-color: var(--accent); }
+button.ghost { color: var(--fg); background: transparent; border-color: var(--line); }
+button.ghost:hover { color: var(--accent); background: transparent; border-color: var(--accent); }
+button[disabled] { opacity: 0.5; cursor: default; }
+
+.ghostlink {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.ghostlink:hover { border-color: var(--accent); }
+
+/* ------------------------------------------------------------------ tables */
+
+.tablecount { margin: 1.25rem 0 0.4rem; color: var(--muted); font-size: 0.85rem; }
+
+.tablewrap { overflow-x: auto; }
+
+.grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.grid caption { text-align: left; }
+
+.grid thead th {
+  padding: 0.45rem 0.6rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  white-space: nowrap;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.grid thead th.num { text-align: right; }
+.grid thead a { text-decoration: none; }
+.grid thead a:hover { color: var(--accent); }
+
+.grid tbody th, .grid tbody td {
+  padding: 0.55rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+  font-weight: 400;
+}
+.grid tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.grid tbody tr:hover { background: var(--panel); }
+
+.videos .col-shot { width: 96px; padding-right: 0; }
+.videos .col-title { min-width: 16rem; }
+.videos .row-meta { font-size: 0.78rem; }
+.videos time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.stages .col-model { max-width: 22rem; }
+.stages tr.is-bad th[scope="row"] code { color: var(--tone-bad); }
+
+.stage-error td { padding-top: 0; border-bottom: 1px solid var(--line); }
+.stage-error .label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--tone-bad);
+}
+.stage-error .errtext {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.pager { display: flex; gap: 0.6rem; margin-top: 1rem; }
+
+/* ---------------------------------------------------------------- timeline */
+
+/* One bar per shot, positioned as a percentage of the runtime. Real data, so
+   it earns the pixels: this is the video's cut structure, not a sparkline
+   standing in for content. */
+.timeline {
+  position: relative;
+  height: 3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+/* A shot can be two seconds of a two-hour talk. `min-width` keeps it visible
+   rather than sub-pixel: the bar's *position* is the fact, and a mark you
+   cannot see is a mark that lies about the cut structure. */
+.shotbar { position: absolute; top: 0; bottom: 0; min-width: 3px; }
+
+.shotbar a {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  opacity: 0.75;
+  border-right: 1px solid var(--bg);
+}
+.shotbar a:hover, .shotbar a:focus-visible { opacity: 1; }
+.shotbar:focus-within { z-index: 1; }
+
+/* The timeline and the strip are two views of one thing; hovering either end
+   lights the other, which is the only way that link is visible at all. */
+.shotbar.is-linked a { opacity: 1; }
+.framecard.is-linked .framebtn img { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* A shot whose every frame was deduplicated: hatched, so it is legible as
+   "captured, then dropped" and not as an empty stretch of video. */
+.shotbar.is-dedup a {
+  opacity: 0.4;
+  background: repeating-linear-gradient(
+    135deg, var(--muted) 0 2px, transparent 2px 6px
+  );
+}
+
+.timeline-scale {
+  display: flex;
+  justify-content: space-between;
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ frames */
+
+.strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 1.1rem 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.framecard { min-width: 0; scroll-margin-top: 2rem; }
+
+/* The box, not the image, owns the geometry: a keyframe file that has gone
+   missing leaves a grey rectangle where it was, and nothing below it moves.
+   CLS 0 is a shipped property of this project and a strip of forty images is
+   the easiest place in it to lose. */
+.framebtn {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  padding: 0;
+  overflow: hidden;
+  background: var(--line);
+  border: 0;
+  border-radius: 4px;
+  line-height: 0;
+  cursor: zoom-in;
+}
+.framebtn:hover { background: var(--line); }
+
+.framebtn img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.framecard.is-dup .framebtn img { opacity: 0.45; }
+.framecard.is-dup:hover .framebtn img { opacity: 0.8; }
+
+.framemeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem;
+  margin: 0.3rem 0 0;
+  font-size: 0.76rem;
+}
+
+.at {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+.at:hover { text-decoration: underline; }
+
+.dupnote {
+  font-size: 0.72rem;
+  color: var(--muted);
+  border-bottom: 1px dashed var(--line);
+}
+
+/* --------------------------------------------------------------------- ocr */
+
+.ocrgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+  gap: 1.5rem;
+}
+
+.ocrframe { margin: 0; min-width: 0; }
+
+/* The boxes are the point of this panel: it is the difference between "OCR
+   ran" and "here is what it read, and where". */
+/* `overflow: hidden` on a fixed box, so a box can never escape onto the caption
+   under it — including when the keyframe file is gone and the image has no
+   intrinsic size to hold the frame open. */
+.ocrstage {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  line-height: 0;
+  background: var(--line);
+  border-radius: 4px;
+}
+
+.ocrstage img { width: 100%; height: 100%; object-fit: cover; }
+
+.ocrbox {
+  position: absolute;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.ocrlines {
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.82rem;
+}
+
+.ocrline {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.15rem 0 0.15rem 0.55rem;
+  border-left: 1px dashed var(--line);
+}
+
+.ocrtext {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
+.conf {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* -------------------------------------------------------------- transcript */
+
+.cues { margin: 0; padding: 0; list-style: none; }
+
+.cue {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.3rem 0 0.3rem 0.75rem;
+  border-left: 1px solid transparent;
+  font-size: 0.92rem;
+}
+
+/* The rule down the left is the chunk — the span of cues that became one
+   embedding. */
+.cue.in-chunk, .chunkmark { border-left-color: var(--line); }
+
+.chunkmark {
+  margin-top: 0.6rem;
+  padding: 0.15rem 0 0.15rem 0.75rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-left: 1px solid var(--line);
+}
+
+.cuetext { flex: 1 1 20rem; min-width: 0; }
+.cue .speaker { font-size: 0.8rem; }
+
+/* Three sources, three kinds of evidence, said in a word — the demo's own
+   vocabulary, so a badge means the same thing on both surfaces. */
+.badge {
+  display: inline-block;
+  padding: 0 0.35rem;
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+.badge-screen {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  border-style: dashed;
+}
+
+/* ----------------------------------------------------------------- notices */
+
+.notice {
+  margin-top: 1.5rem;
+  padding: 1rem 1.1rem;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.notice-bad { border-color: var(--tone-bad); }
+.notice-title { margin: 0; font-size: 1rem; font-weight: 600; }
+.notice-detail { margin: 0.4rem 0 0; max-width: var(--prose); color: var(--muted); font-size: 0.9rem; }
+.notice-next { margin: 0.6rem 0 0; max-width: var(--prose); font-size: 0.9rem; }
+
+/* ---------------------------------------------------------------- lightbox */
+
+.shot {
+  width: min(96vw, 72rem);
+  max-width: min(96vw, 72rem);
+  padding: 0;
+  color: var(--fg);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.shot::backdrop { background: rgb(0 0 0 / 0.66); }
+
+.shot-inner { position: relative; padding: 0.75rem; }
+
+/* The stage owns the geometry, so a box can never land outside the picture and
+   the dialog does not resize under the pointer while the bytes arrive. */
+.shot-stage {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  line-height: 0;
+  background: var(--line);
+  border-radius: 6px;
+}
+
+.shot-img { display: block; width: 100%; height: 100%; object-fit: contain; }
+
+.shot-boxes { position: absolute; inset: 0; }
+.shot-boxes .ocrbox { border-width: 2px; }
+.shot-boxes[hidden] { display: none; }
+
+.shot-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem 1rem;
+  margin-top: 0.6rem;
+}
+
+.shot-caption { margin: 0; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+.shot-toggle { display: flex; gap: 0.4rem; align-items: center; color: var(--muted); font-size: 0.85rem; }
+.shot-link { color: var(--accent); font-size: 0.9rem; text-decoration: none; }
+.shot-link:hover { text-decoration: underline; }
+
+.shot-close {
+  position: absolute;
+  top: 1.15rem;
+  right: 1.15rem;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.85rem;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+
+/* ------------------------------------------------------------------ footer */
+
+footer {
+  margin-top: 3rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.82rem;
+}
+footer p { margin: 0; max-width: var(--prose); }
+
+/* ------------------------------------------------------------------ mobile */
+
+@media (max-width: 60rem) {
+  .split { grid-template-columns: 1fr; gap: 0; }
+}
+
+@media (max-width: 52rem) {
+  /* The table stops being a table. Each row becomes its own stacked block
+     with the column name in front of the value, which is the only shape that
+     fits eight columns on a 375px screen without a horizontal scroll. */
+  .grid.videos thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .grid.videos, .grid.videos tbody, .grid.videos tr, .grid.videos th, .grid.videos td { display: block; }
+
+  .grid.videos tr {
+    padding: 0.85rem 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .grid.videos tr:hover { background: none; }
+
+  .grid.videos th, .grid.videos td {
+    padding: 0.1rem 0;
+    border-bottom: 0;
+  }
+
+  .grid.videos td[data-label]:not(.col-shot) {
+    display: flex;
+    gap: 0.6rem;
+    align-items: baseline;
+  }
+  .grid.videos td[data-label]:not(.col-shot)::before {
+    content: attr(data-label);
+    flex: 0 0 5.5rem;
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+  }
+  .grid.videos td.num { text-align: left; }
+  .grid.videos .col-shot { width: auto; margin-bottom: 0.4rem; }
+  .grid.videos .col-title { min-width: 0; margin-bottom: 0.35rem; }
+
+  /* The other grids stay tables and scroll inside their own wrapper. A five
+     column provenance table squeezed into 375px breaks `text_embed` across
+     three lines, which is worse than a swipe. The page body still never
+     scrolls sideways — the wrapper does. */
+  .grid:not(.videos) { min-width: 34rem; }
+}
+
+@media (max-width: 40rem) {
+  body { padding: 0 1rem calc(3rem + env(safe-area-inset-bottom)); }
+
+  .masthead { gap: 0.5rem 1rem; padding: 1.5rem 0 0.85rem; }
+  .deployment { margin-left: 0; flex-basis: 100%; }
+
+  .pagehead h1 { font-size: 1.3rem; }
+  .panel { margin-top: 1.75rem; }
+
+  .figures { grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr)); gap: 1rem 1.25rem; }
+  .figure > dd { font-size: 1.25rem; }
+
+  .filters { padding: 0.75rem; }
+  .field-wide { flex-basis: 100%; }
+  .field-actions { margin-left: 0; flex-basis: 100%; }
+  .field-actions button { flex: 1 1 auto; }
+
+  .strip { grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); }
+  .ocrgrid { grid-template-columns: 1fr; }
+
+  .shot { width: 96vw; max-width: 96vw; }
+  .shot-close { top: 1rem; right: 1rem; }
+}

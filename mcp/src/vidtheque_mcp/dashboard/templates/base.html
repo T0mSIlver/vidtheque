@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{{ title }} — vidtheque</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#fbfaf9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131313" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="{{ root }}/static/dashboard.css">
+{# The demo page's drawn film frame, so the two surfaces are one product in a
+   tab strip. An emoji favicon renders as a different glyph on every platform
+   and vanishes in monochrome. #}
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23b45309'/><rect x='6' y='9' width='20' height='14' rx='1.5' fill='%23fbfaf9'/><g fill='%23b45309'><rect x='8.5' y='11' width='3' height='3' rx='0.6'/><rect x='8.5' y='18' width='3' height='3' rx='0.6'/><rect x='20.5' y='11' width='3' height='3' rx='0.6'/><rect x='20.5' y='18' width='3' height='3' rx='0.6'/></g></svg>">
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="masthead">
+  <div class="brand">
+    <p class="wordmark"><a href="{{ root }}">vidtheque</a></p>
+    <p class="rubric">the index, explaining itself</p>
+  </div>
+  <nav class="nav" aria-label="Sections">
+    <a href="{{ root }}"{% if page == 'corpus' %} aria-current="page"{% endif %}>Corpus</a>
+    <a href="{{ root }}/videos"{% if page == 'videos' %} aria-current="page"{% endif %}>Videos</a>
+  </nav>
+  <p class="deployment">
+    <span title="VIDTHEQUE_AUTH">auth {{ auth_mode }}</span>
+    {% if readonly %}<span class="sep">·</span><span>read-only mode</span>{% endif %}
+    {% if not writes_allowed %}<span class="sep">·</span><span class="tone-bad">indexing refused</span>{% endif %}
+  </p>
+</header>
+
+<main id="main">
+{% block main %}{% endblock %}
+</main>
+
+<footer>
+  <p class="muted">
+    vidtheque {{ version }} — a self-hosted video-corpus MCP server.
+    This is the management surface; the corpus itself is served at <code>/mcp</code>.
+  </p>
+</footer>
+
+{% block dialog %}{% endblock %}
+<script type="module" src="{{ root }}/static/dashboard.js"></script>
+</body>
+</html>

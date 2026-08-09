@@ -69,27 +69,54 @@ def public_routes() -> list[Route]:
     ]
 
 
-def public_middleware(public: PublicSettings) -> list[Middleware]:
+def public_middleware(
+    public: PublicSettings, dashboard_per_min: int | None = None
+) -> list[Middleware]:
     """The limiter, as a Starlette middleware spec.
 
     It sits in the root app's stack rather than wrapping the returned object, so
     ``build_app`` still hands back a real ``Starlette``. Non-matching paths —
     including the MCP mount's streaming transport — are passed through
     untouched by the middleware itself.
+
+    It is no longer public-mode-only (dashboard.md §2.5.3): a management surface
+    a bot can hammer with ``/dashboard/api/videos`` is the same denial of
+    service as a public one, so the ``dashboard`` bucket is installed whenever
+    that route group is. ``dashboard_per_min`` arrives as a plain number rather
+    than as ``DashboardSettings`` because ``dashboard/`` imports ``public.api``
+    and the reverse edge would be a cycle.
+
+    In a private deployment the *only* bucket is ``dashboard``: `/frames/*`
+    behaves exactly as it does today, because charging the owner 48 thumbnails
+    for one detail page against a 120/min bucket would refuse the second page
+    load, and the owner is not the threat model that bucket was written for.
     """
-    limiter = RateLimiter(
-        {
-            "search": (public.search_per_min, 60.0),
-            "ask": (public.ask_per_min, 60.0),
-            # The same maths with a 24h window, so the budget trickles back
-            # through the day instead of unblocking at UTC midnight.
-            "ask_global": (public.ask_per_day, 86_400.0),
-            "frames": (public.frames_per_min, 60.0),
-        },
-        max_keys=public.rate_max_keys,
-    )
+    limits: dict[str, tuple[int, float]] = {}
+    if public.enabled:
+        limits.update(
+            {
+                "search": (public.search_per_min, 60.0),
+                "ask": (public.ask_per_min, 60.0),
+                # The same maths with a 24h window, so the budget trickles back
+                # through the day instead of unblocking at UTC midnight.
+                "ask_global": (public.ask_per_day, 86_400.0),
+                "frames": (public.frames_per_min, 60.0),
+            }
+        )
+    if dashboard_per_min is not None:
+        limits["dashboard"] = (dashboard_per_min, 60.0)
+    if not limits:
+        return []
+
+    limiter = RateLimiter(limits, max_keys=public.rate_max_keys)
 
     def bucket_for(path: str) -> str | None:
+        # `/dashboard/api/*` is matched before `/api/*`, so the owner's JSON is
+        # charged to the loose bucket rather than to the anonymous one.
+        if "dashboard" in limits and path.startswith("/dashboard"):
+            return "dashboard"
+        if "search" not in limits:
+            return None
         if path == "/api/ask":
             return "ask"
         if path.startswith("/api/"):
@@ -99,7 +126,7 @@ def public_middleware(public: PublicSettings) -> list[Middleware]:
         return None
 
     def extra_buckets(path: str) -> tuple[str, ...]:
-        return ("ask_global",) if path == "/api/ask" else ()
+        return ("ask_global",) if path == "/api/ask" and "ask_global" in limits else ()
 
     return [
         Middleware(
