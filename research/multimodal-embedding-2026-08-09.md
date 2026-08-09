@@ -669,3 +669,24 @@ this is a third scenario file, not a new harness.
    text. It needs ~16 GB. Is the ~12 GB llama.cpp lease permanent, or is there a
    world where the worker gets the whole card for a night of indexing and the
    lease comes back in the morning?
+
+---
+
+## Addendum — Tom's decision (2026-08-09, evening)
+
+**Adopt the unified recommendation with two amendments: native 2048 dims and
+full precision, both revisitable on evidence.**
+
+- **Dims: 2048, not the memo's MRL@1024.** Truncation is the fallback if
+  query-time search proves too slow, not the starting point — MRL makes it a
+  config change + ~12 min re-embed later, so the cheap experiment is to start
+  from full quality. Consequence: *both* vector tables rebuild
+  (`vec_chunks` 1024→2048, `vec_frames` 1152→2048), and index-schema.md's
+  dims change with the implementation. Storage stays trivial
+  (~5.5k vectors × 8 KB ≈ 45 MB fp32).
+- **Precision: full (bf16 weights, ~4.4 GB), not quantized.** Quantization is
+  the second lever held in reserve for the same "too slow / too big" trigger.
+- Bench items when the GPU frees up, in order: (1) single-query embed latency
+  at 2048/bf16 — the number nobody has published; (2) the frame-leg quality
+  spot-check against SigLIP on our own slides/terminal frames; (3) only if
+  either disappoints: MRL@1024 and/or a quantized checkpoint.
