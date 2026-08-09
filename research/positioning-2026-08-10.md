@@ -1392,3 +1392,13 @@ Only the questions that block building the demo page.
    shelf, not the library. One more builder's channel — even a small one — makes
    that sentence visibly true instead of aspirational, and kills the "this is a
    conference site" read. It costs GPU hours and nothing else.
+
+---
+
+## Kit amendment (Tom, 2026-08-10, ~01:20)
+
+Tom approved the post-lock kit with one edit: headline candidate #7 becomes
+**"Builders talk. Your agent listens."** — replacing "The field talks. Your
+stack listens." The fix names both actors the lock cares about (the builders,
+the agent) and promotes the line from section-header material back to a real
+H1 candidate: the twin line's rhythm with the lock's nouns.
