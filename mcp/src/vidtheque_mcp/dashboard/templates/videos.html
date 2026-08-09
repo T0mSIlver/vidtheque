@@ -8,10 +8,24 @@
 {% block main %}
 
 <div class="pagehead">
-  <h1>Videos</h1>
+  <div class="pagehead-line">
+    <h1>Videos</h1>
+    {# The filters that are actually narrowing the table, on the title's own
+       baseline. The form below says what every control is set to; this says
+       what the *result set* is, which is the thing you check before you believe
+       a row count. #}
+    <p class="pagehead-meta">
+      {% if filters.index_state != 'all' %}<span class="fact">state <span class="mono">{{ filters.index_state }}</span></span>
+      <span class="sep">·</span>{% endif %}
+      {% if filters.has != 'any' %}<span class="fact">has <span class="mono">{{ filters.has }}</span></span>
+      <span class="sep">·</span>{% endif %}
+      <span class="fact">ordered by <span class="mono">{{ filters.order }}</span></span>
+    </p>
+  </div>
   <p class="pagehead-meta">
     Every row is one video and what the pipeline made of it. Counts live on the
-    detail page — this table stays cheap by showing coverage, not totals.
+    detail page, so this table stays cheap by showing coverage rather than
+    totals.
   </p>
 </div>
 
@@ -79,8 +93,8 @@
   <h2 class="notice-title">Nothing matches those filters.</h2>
   <p class="notice-detail">
     {% if filters.index_state != 'all' %}
-    The state filter is on <code>{{ filters.index_state }}</code> — most videos
-    in a healthy corpus are <code>ready</code>.
+    The state filter is on <code>{{ filters.index_state }}</code>, and most
+    videos in a healthy corpus are <code>ready</code>.
     {% else %}
     Widen the query, or drop the coverage filter: <code>has={{ filters.has }}</code>
     only matches videos whose pipeline finished that leg.
@@ -91,22 +105,32 @@
 {% else %}
 
 <p class="tablecount" role="status">
-  {{ rows | length }} shown{% if pagination.approx_total %} of ~{{ pagination.approx_total }}{% endif %}{% if pagination.has_more %}, more available{% endif %}.
+  <span><span class="shown">{{ rows | length }}</span> shown{% if pagination.approx_total %} of ~<span class="shown">{{ pagination.approx_total }}</span>{% endif %}{% if pagination.has_more %}, more available{% endif %}.</span>
 </p>
 
+{# `order` is the URL's, so the head can say which column the rows are actually
+   in. `aria-sort` carries it to a screen reader and the stylesheet redraws that
+   head's underline in the accent — no caret glyph, because this surface has no
+   icon language and a sort arrow is not where one should start. The direction
+   is the one the query actually uses (`_LIST_ORDER`): titles go A→Z and
+   everything else newest/longest first. There is no opposite variant to toggle
+   to, so a head is a statement, not a switch. #}
+{% set sorted_by = {'title': ('title', 'ascending'), 'recency': ('published', 'descending'),
+                    'duration': ('duration', 'descending'), 'indexed_at': ('indexed', 'descending')} %}
+{% set sorted_col, sorted_dir = sorted_by.get(filters.order, (none, none)) %}
 <div class="tablewrap">
 <table class="grid videos">
   <caption class="sr-only">Videos in the corpus, with the state of each pipeline leg</caption>
   <thead>
     <tr>
       <th scope="col" class="col-shot"><span class="sr-only">Frame</span></th>
-      <th scope="col"><a href="{{ sort_link('title') }}">Title</a></th>
-      <th scope="col"><a href="{{ sort_link('recency') }}">Published</a></th>
-      <th scope="col" class="num"><a href="{{ sort_link('duration') }}">Duration</a></th>
+      <th scope="col"{% if sorted_col == 'title' %} aria-sort="{{ sorted_dir }}"{% endif %}><a href="{{ sort_link('title') }}">Title</a></th>
+      <th scope="col"{% if sorted_col == 'published' %} aria-sort="{{ sorted_dir }}"{% endif %}><a href="{{ sort_link('recency') }}">Published</a></th>
+      <th scope="col" class="num"{% if sorted_col == 'duration' %} aria-sort="{{ sorted_dir }}"{% endif %}><a href="{{ sort_link('duration') }}">Duration</a></th>
       <th scope="col">State</th>
       <th scope="col">Coverage</th>
       <th scope="col">Tags</th>
-      <th scope="col"><a href="{{ sort_link('indexed_at') }}">Indexed</a></th>
+      <th scope="col"{% if sorted_col == 'indexed' %} aria-sort="{{ sorted_dir }}"{% endif %}><a href="{{ sort_link('indexed_at') }}">Indexed</a></th>
     </tr>
   </thead>
   <tbody>
