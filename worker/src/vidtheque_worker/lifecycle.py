@@ -19,6 +19,14 @@ That buys four properties that are painful to retrofit:
 
 Backends are synchronous; jobs run in a worker thread so the event loop keeps
 serving ``/status`` and ``/healthz`` while the GPU is busy.
+
+**Slots are per model, not per task.** Four tasks usually mean four slots, but a
+unified embedder answers ``embed`` and ``image_embed`` from one checkpoint and
+gets **one shared Slot** — see :class:`Slot` and :func:`_build_slots`. Every
+loop below that decides what to evict, what to charge, what is idle and who
+holds the lease iterates :meth:`LifecycleManager.slots`, which visits each slot
+once; iterating the task map instead would do all four of those things twice to
+one model.
 """
 
 from __future__ import annotations
@@ -79,18 +87,47 @@ class WorkerShuttingDown(ManagerNotRunning):
 
 @dataclass(slots=True)
 class Slot:
+    """One loaded model and its bookkeeping — **not** necessarily one task.
+
+    A unified multimodal embedder answers both ``embed`` and ``image_embed``
+    from one checkpoint, and then both task names map to this one object:
+    ``tasks`` names them all and ``task`` is the primary. That is the whole
+    shared-slot mechanism, and every property that used to be per-task is now
+    per-*slot* by construction rather than by agreement — one ``load_count``,
+    one ``last_used`` eviction clock, one ``resident`` flag, one
+    ``vram_estimate_mb`` charged to admission control, one lease bracket.
+
+    Two slots over one checkpoint would have loaded ~4.4 GB twice and charged
+    ~8.8 GB for it, evicting whisperX to make room for a model already on the
+    card (``research/multimodal-embedding-2026-08-09.md`` §5.5).
+    """
+
     task: str
     backend: Backend
     resident: bool = False
+    tasks: tuple[str, ...] = ()
     last_used: float | None = None
     loaded_at: float | None = None
     load_count: int = 0
     unload_count: int = 0
     job_count: int = 0
 
+    def __post_init__(self) -> None:
+        if not self.tasks:
+            self.tasks = (self.task,)
+
     @property
     def loaded(self) -> bool:
         return self.backend.loaded
+
+    @property
+    def label(self) -> str:
+        """What logs and ``/status`` call this slot: ``embed+image_embed``."""
+        return "+".join(self.tasks)
+
+    @property
+    def shared(self) -> bool:
+        return len(self.tasks) > 1
 
 
 @dataclass(slots=True)
@@ -142,11 +179,7 @@ class LifecycleManager:
         idle_poll_interval: float | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
-        resident = set(resident_tasks)
-        self._slots: dict[str, Slot] = {
-            task: Slot(task=task, backend=backend, resident=task in resident)
-            for task, backend in backends.items()
-        }
+        self._slots: dict[str, Slot] = _build_slots(backends, set(resident_tasks))
         self.idle_unload_seconds = idle_unload_seconds
         self.vram_headroom_mb = vram_headroom_mb
         self.acquire_cmd = acquire_cmd
@@ -182,6 +215,18 @@ class LifecycleManager:
     def slot(self, task: str) -> Slot:
         return self._slots[task]
 
+    def slots(self) -> list[Slot]:
+        """Every slot once, in insertion order.
+
+        The distinction that matters everywhere below: iterating ``_slots``
+        visits a shared slot once per task it serves, which would evict it
+        twice, charge it twice and report it twice.
+        """
+        seen: dict[int, Slot] = {}
+        for slot in self._slots.values():
+            seen.setdefault(id(slot), slot)
+        return list(seen.values())
+
     # -- start / stop ------------------------------------------------------
     async def start(self) -> None:
         if self._runner is not None:
@@ -190,10 +235,10 @@ class LifecycleManager:
         self._runner = asyncio.create_task(self._run_queue(), name="vidtheque-gpu-queue")
         self._reaper = asyncio.create_task(self._run_reaper(), name="vidtheque-idle-reaper")
         log.info(
-            "lifecycle manager started: tasks=%s idle_unload=%ss resident=%s",
-            ",".join(self._slots),
+            "lifecycle manager started: slots=%s idle_unload=%ss resident=%s",
+            ",".join(slot.label for slot in self.slots()),
             self.idle_unload_seconds,
-            ",".join(t for t, s in self._slots.items() if s.resident) or "none",
+            ",".join(s.label for s in self.slots() if s.resident) or "none",
         )
 
     async def stop(self) -> None:
@@ -329,6 +374,17 @@ class LifecycleManager:
                     "load_count": slot.load_count,
                     "unload_count": slot.unload_count,
                     "job_count": slot.job_count,
+                    # Still one entry per *task*, because that is what callers
+                    # look up by. `slot` names the slot the entry belongs to, so
+                    # a reader can tell "two models" from "one model answering
+                    # two tasks" — and knows not to sum `vram_estimate_mb`
+                    # across entries that share a slot.
+                    "slot": slot.label,
+                    "shared_with": [t for t in slot.tasks if t != task],
+                    # What an instruction-aware embedder actually applies, so
+                    # the corpus's `*_embed.query_prefix` record can be checked
+                    # against behaviour rather than trusted (it has been wrong).
+                    "instructions": _instructions(slot.backend),
                 }
             )
         return {
@@ -525,24 +581,26 @@ class LifecycleManager:
             return  # no NVML: proceed rather than block
 
         while info.free_mb < needed:
-            victim = self._eviction_candidate(exclude=slot.task)
+            victim = self._eviction_candidate(exclude=slot)
             if victim is None:
                 raise InsufficientVRAM(
-                    f"{slot.task} needs ~{needed} MB (estimate "
+                    f"{slot.label} needs ~{needed} MB (estimate "
                     f"{slot.backend.vram_estimate_mb} + headroom {self.vram_headroom_mb}), "
                     f"{info.free_mb} MB free and nothing evictable"
                 )
-            await self._unload(victim, reason="vram pressure")
+            await self._unload(victim.task, reason="vram pressure")
             probed = self._vram_probe()
             if probed is None:
                 return
             info = probed
 
-    def _eviction_candidate(self, *, exclude: str) -> str | None:
+    def _eviction_candidate(self, *, exclude: Slot) -> Slot | None:
+        """The LRU evictable slot. Excluded by *slot*, not by task name — a
+        shared slot must not be able to evict itself under its other name."""
         candidates = [
             slot
-            for task, slot in self._slots.items()
-            if task != exclude
+            for slot in self.slots()
+            if slot is not exclude
             and slot.loaded
             and not slot.resident
             and slot.backend.vram_estimate_mb > 0
@@ -550,13 +608,13 @@ class LifecycleManager:
         if not candidates:
             return None
         candidates.sort(key=lambda s: (s.last_used if s.last_used is not None else 0.0))
-        return candidates[0].task
+        return candidates[0]
 
     async def _unload(self, task: str, *, reason: str) -> None:
         slot = self._slots[task]
         if not slot.loaded:
             return
-        log.info("unloading %s (%s)", task, reason)
+        log.info("unloading %s (%s)", slot.label, reason)
         await asyncio.to_thread(slot.backend.unload)
         slot.unload_count += 1
         slot.loaded_at = None
@@ -564,13 +622,20 @@ class LifecycleManager:
             await self._release_lease()
 
     async def _unload_all(self, *, reason: str, include_resident: bool = False) -> None:
-        for task, slot in self._slots.items():
+        for slot in self.slots():
             if slot.loaded and (include_resident or not slot.resident):
-                await self._unload(task, reason=reason)
+                await self._unload(slot.task, reason=reason)
 
     def _any_lease_holder(self) -> bool:
-        """Is any model that the lease is *for* still loaded?"""
-        return any(slot.loaded and _takes_lease(slot) for slot in self._slots.values())
+        """Is any model that the lease is *for* still loaded?
+
+        Over distinct slots, so a shared embedder counts once: the lease is
+        released when the model it was taken for is gone, and a slot serving
+        two tasks is one model. Release fires exactly when no task needs it,
+        because "no task needs it" and "the slot is unloaded" are the same
+        statement once the slot is shared.
+        """
+        return any(slot.loaded and _takes_lease(slot) for slot in self.slots())
 
     # -- lease hooks -------------------------------------------------------
     async def _acquire_lease(self) -> bool:
@@ -617,16 +682,60 @@ class LifecycleManager:
         evicted: list[str] = []
         async with self._gpu_lock:
             now = self._clock()
-            for task, slot in self._slots.items():
+            for slot in self.slots():
                 if not slot.loaded or slot.resident:
                     continue
                 reference = slot.last_used if slot.last_used is not None else slot.loaded_at
                 if reference is None:
                     continue
                 if now - reference >= self.idle_unload_seconds:
-                    await self._unload(task, reason="idle")
-                    evicted.append(task)
+                    await self._unload(slot.task, reason="idle")
+                    # The slot's primary task, once — a shared slot going idle
+                    # is one eviction, not one per task it serves.
+                    evicted.append(slot.task)
         return evicted
+
+
+def _build_slots(
+    backends: Mapping[str, Backend], resident_tasks: set[str]
+) -> dict[str, Slot]:
+    """Task -> Slot, with **one Slot per distinct backend instance**.
+
+    Identity, not equality: ``build_backends`` returns the same object under
+    ``embed`` and ``image_embed`` when one checkpoint serves both, and that is
+    the signal. Two separately-constructed instances of the same class are two
+    models with two sets of weights, and they get two slots — which is correct,
+    because that is what they are.
+
+    A shared slot is resident if *any* of its tasks is: ``EMBED_RESIDENT=1``
+    with a unified embedder pins one model, and pinning it "for text but not
+    for frames" is not a state one set of weights can be in.
+    """
+    slots: dict[str, Slot] = {}
+    by_backend: dict[int, Slot] = {}
+    for task, backend in backends.items():
+        existing = by_backend.get(id(backend))
+        if existing is not None:
+            existing.tasks += (task,)
+            existing.resident = existing.resident or task in resident_tasks
+            slots[task] = existing
+            continue
+        slot = Slot(task=task, backend=backend, resident=task in resident_tasks)
+        by_backend[id(backend)] = slot
+        slots[task] = slot
+    return slots
+
+
+def _instructions(backend: Backend) -> dict[str, str | None] | None:
+    """What an instruction-aware backend applies, for ``/status``. None if it
+    is not instruction-aware, which is itself the answer."""
+    fn = getattr(backend, "instructions", None)
+    if not callable(fn):
+        return None
+    try:
+        return fn()
+    except Exception:  # pragma: no cover - a status page must not raise
+        return None
 
 
 def _call_and_signal(
@@ -661,11 +770,16 @@ def _takes_lease(slot: Slot) -> bool:
     * **A 0 MB backend** — OCR runs on CPU. Taking the lease for it stops a
       co-tenant that OCR was never going to compete with, and holds it stopped
       for the whole idle TTL in exchange for nothing.
-    * **A resident backend** — ``EMBED_RESIDENT=1`` keeps the text embedder
-      loaded for the life of the process (1.5 GB measured). Bracketing it would
-      acquire the lease at the first embedding request and never release it, so
-      the co-tenant would be stopped forever. A resident model holds VRAM; it
-      does not hold the lease.
+    * **A resident backend** — ``EMBED_RESIDENT=1`` keeps the embedder loaded
+      for the life of the process (1.5 GB measured with the old 0.6B text
+      model; ~4.4 GB with the unified 2B, which is why the recommendation is
+      now firmer that it stays off). Bracketing it would acquire the lease at
+      the first embedding request and never release it, so the co-tenant would
+      be stopped forever. A resident model holds VRAM; it does not hold the
+      lease.
+
+    Asked per *slot*, so a shared embedder is one answer rather than two that
+    could disagree.
     """
     return slot.backend.vram_estimate_mb > 0 and not slot.resident
 

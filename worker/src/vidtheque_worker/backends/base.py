@@ -17,9 +17,18 @@ from typing import Any, Protocol, runtime_checkable
 log = logging.getLogger(__name__)
 
 TASKS = ("stt", "embed", "image_embed", "ocr")
-"""``embed`` is the text vector space; ``image_embed`` is the frame one. They are
-separate tasks rather than two backends for one task because indexing needs both
-models at once — one slot would force the pipeline to choose."""
+"""``embed`` is the text leg; ``image_embed`` is the frame leg. They are separate
+tasks rather than two backends for one task because indexing needs both at once —
+one slot would force the pipeline to choose.
+
+They are separate *tasks*, not necessarily separate *models*. A unified
+multimodal embedder (``qwen3_vl_embed.py``) answers both, and then
+:func:`~vidtheque_worker.backends.registry.build_backends` hands the lifecycle
+manager the same instance under both names and the manager gives it **one
+shared Slot**: one load, one VRAM charge, one eviction clock, one lease. Two
+slots over one checkpoint would charge ~8.8 GB of admission for 4.4 GB of
+weights and evict whisperX to make room for a model already on the card
+(``research/multimodal-embedding-2026-08-09.md`` §5.5)."""
 
 
 class BackendError(RuntimeError):
@@ -180,6 +189,17 @@ class Embeddings:
     vectors: list[list[float]]
     dims: int
     model: str
+    instruction: str | None = None
+    """The instruction the model was asked to embed *under*, or None for a bare
+    (document-side) encode.
+
+    Reported back on the response and on ``/status`` because the corpus records
+    what indexing assumed — ``config['text_embed.query_prefix']`` and
+    ``config['frame_embed.query_prefix']`` — and that record drifted out of
+    sync with behaviour once already, silently
+    (``research/pipeline-perf-2026-08-09.md`` §5). An instruction-aware model
+    with two instructions makes it more load-bearing, not less, so the worker
+    says what it applied instead of leaving it to be inferred."""
 
 
 @dataclass(slots=True)
@@ -264,21 +284,29 @@ class EmbedBackend(Backend, Protocol):
 
 @runtime_checkable
 class ImageEmbedBackend(Backend, Protocol):
-    """Images into a *different* vector space from :class:`EmbedBackend`'s.
+    """Images into the frame vector space.
 
     Encoded JPEG/PNG bytes in, one L2-normalised vector per image out, in the
     order they were given.
+
+    Whether that space is *different* from :class:`EmbedBackend`'s depends on
+    the configuration and on nothing else: with two checkpoints (SigLIP 2 +
+    Qwen3-Embedding) they are two spaces that must never be compared, and with
+    one unified checkpoint they are the same space served by the same shared
+    slot. Neither the HTTP paths nor `mcp/`'s two legs change between those two
+    worlds — see ``qwen3_vl_embed.py``.
     """
 
     def infer(self, images: list[bytes], **kwargs: Any) -> Embeddings: ...
 
     def embed_text(self, texts: list[str], **kwargs: Any) -> Embeddings:
-        """Short text queries into the *same* space :meth:`infer` writes to.
+        """Text queries into the *same* space :meth:`infer` writes to.
 
-        A vision-language embedder has two towers over one checkpoint, so this
-        is the same instance and the same lifecycle slot — never a second load.
-        Text tower contexts are short (64 tokens for SigLIP 2): this is how a
-        query reaches the frame index, not a way to index prose into it.
+        Always the same instance and the same lifecycle slot — never a second
+        load. On a dual encoder this is the checkpoint's text tower, with a
+        short trained context (64 tokens for SigLIP 2); on a unified embedder
+        it is the same weights under the frame-retrieval instruction, at the
+        model's full context. It is how a query reaches the frame index.
         """
 
 

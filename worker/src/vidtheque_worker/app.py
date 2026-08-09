@@ -34,10 +34,19 @@ Stateless inference worker for vidtheque: speech-to-text with word timestamps,
 text embeddings, frame embeddings, and on-screen-text OCR. One lifecycle manager
 owns the GPU — requests queue rather than compete. The transcription and text
 embedding endpoints follow OpenAI's shapes so a GPU-less deployment can swap in a
-hosted provider. Text and frame embeddings are separate vector spaces with
-separate models and separate endpoints; they are never interchangeable. A
-natural-language query reaches the frame space through the frame model's own
-text tower, on /v1/embeddings/frame-query — never through /v1/embeddings.
+hosted provider.
+
+Text and frame embeddings are separate endpoints, always. Whether they are
+separate vector *spaces* is configuration: the shipped default is one unified
+multimodal embedder (Qwen3-VL-Embedding) serving both from one loaded model, and
+a two-model setup (Qwen3-Embedding + SigLIP 2) is still selectable and gives two
+spaces that must never be compared. The endpoints do not change between those,
+which is the point — a natural-language query reaches the frame space on
+/v1/embeddings/frame-query and never through /v1/embeddings, so pointing
+WORKER_URL at a hosted provider 404s loudly instead of answering in the wrong
+space. GET /status says which arrangement is live: entries sharing a `slot`
+share one loaded model, and `instructions` is what an instruction-aware embedder
+actually applies.
 """
 
 
@@ -48,6 +57,10 @@ def build_manager(settings: Settings) -> LifecycleManager:
     return LifecycleManager(
         build_backends(settings),
         idle_unload_seconds=settings.idle_unload_seconds,
+        # Named for the `embed` slot. With a unified embedder that slot is also
+        # `image_embed`'s, and `_build_slots` makes the flag cover both — one
+        # set of weights cannot be pinned for one leg and evictable for the
+        # other.
         resident_tasks=("embed",) if settings.embed_resident else (),
         vram_headroom_mb=settings.vram_headroom_mb,
         acquire_cmd=settings.gpu_acquire_cmd,

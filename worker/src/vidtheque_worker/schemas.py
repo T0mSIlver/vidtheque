@@ -100,12 +100,18 @@ class EmbeddingsRequest(_TextInput):
 
 
 class FrameQueryRequest(_TextInput):
-    """A query for the frame vector space, run through the frame model's text tower.
+    """A query for the frame vector space, run through the frame model itself.
 
-    No ``input_type``: the frame model is symmetric and this endpoint is the
-    query side by construction — the document side is images, and it has its
-    own endpoint. Keep the strings short; SigLIP 2's trained text context is 64
-    tokens, and anything past it is dropped without an error.
+    No ``input_type``: this endpoint is the query side by construction — the
+    document side is images, and it has its own endpoint. The frame model
+    applies its own frame-retrieval instruction, which the response echoes.
+
+    How long a query may be depends on the configured frame backend, and the
+    difference is silent either way. SigLIP 2's text tower is trained to **64
+    tokens** and drops the rest without an error (it logs a warning). The
+    unified `Qwen3-VL-Embedding` backend has the model's full 32K context, so
+    a long descriptive frame query is embedded whole — which is the shape the
+    client model actually writes.
     """
 
 
@@ -128,6 +134,16 @@ class EmbeddingsResponse(BaseModel):
     dimensions: int
     """Non-OpenAI extra: the index pins this alongside the model name."""
 
+    instruction: str | None = None
+    """Non-OpenAI extra: the instruction these vectors were embedded under, or
+    null for a bare document-side encode.
+
+    An instruction-aware embedder gives the same text different vectors under
+    different instructions, so "which model" is no longer the whole answer to
+    "what space is this". The corpus records the assumption
+    (`config['text_embed.query_prefix']`, `config['frame_embed.query_prefix']`);
+    this is the behaviour, so the two can be compared instead of trusted."""
+
 
 def to_embeddings_response(result: Embeddings) -> EmbeddingsResponse:
     # Whitespace tokens are a stand-in: the backends do not expose a tokeniser
@@ -138,6 +154,7 @@ def to_embeddings_response(result: Embeddings) -> EmbeddingsResponse:
         ],
         model=result.model,
         dimensions=result.dims,
+        instruction=result.instruction,
     )
 
 

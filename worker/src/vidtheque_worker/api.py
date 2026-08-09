@@ -232,9 +232,15 @@ async def embeddings(request: Request, body: EmbeddingsRequest) -> EmbeddingsRes
 # A sibling of /v1/embeddings rather than an overload of it. Two reasons:
 # /v1/embeddings is the OpenAI JSON contract whose whole point is that a
 # GPU-less deployment can repoint WORKER_URL at a hosted provider, and bolting
-# a multipart branch onto it would break that swap; and the two endpoints do
-# not share a vector space — text goes to the 1024-d transcript index, images
-# to the 1152-d frame index, and a caller that can confuse them will.
+# a multipart branch onto it would break that swap; and the two endpoints write
+# to two indexes that a caller who can confuse them will confuse.
+#
+# Whether they are two *spaces* is now configuration — the shipped unified
+# embedder writes both indexes in one 2048-d space from one shared slot, and a
+# two-model setup writes a 1024-d transcript index and a 1152-d frame index that
+# must never be compared. The split survives the unification unchanged, because
+# it was never only about the width: the mcp side keeps two independently
+# staleable stages, two `config` records and two dimension assertions over it.
 # --------------------------------------------------------------------------
 
 
@@ -302,10 +308,12 @@ def _named(exc: InvalidImageError, filenames: list[str | None]) -> InvalidImageE
 # POST /v1/embeddings/frame-query
 #
 # The other half of the frame index: text in, a vector in the *frame* space
-# out, produced by the frame model's own text tower. That is the whole reason
-# frames are embedded with SigLIP rather than captioned — one checkpoint, two
-# towers, one space — so this shares the `image_embed` slot and its loaded
-# model. Nothing is loaded twice.
+# out, produced by the frame model itself — SigLIP 2's text tower, or the
+# unified embedder under its frame-retrieval instruction. That is the whole
+# reason frames are embedded rather than captioned: one checkpoint, one space,
+# so this shares the `image_embed` slot and its loaded model. Nothing is loaded
+# twice — and with the unified embedder the `image_embed` slot *is* the `embed`
+# slot, so a cold `content_type=all` search pays one load instead of two.
 #
 # A third path under /v1/embeddings/ rather than a `space=frame` field on
 # /v1/embeddings, and the reason is the same swap the prior split protects.

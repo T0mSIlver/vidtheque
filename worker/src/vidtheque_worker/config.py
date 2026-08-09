@@ -36,34 +36,82 @@ class Settings(BaseSettings):
     # --- backend selection ------------------------------------------------
     stt_backend: str = Field(default="whisperx", validation_alias=_either("STT_BACKEND"))
     embed_backend: str = Field(
-        default="qwen3-embedding", validation_alias=_either("EMBED_BACKEND")
+        default="qwen3-vl-embedding", validation_alias=_either("EMBED_BACKEND")
     )
     image_embed_backend: str = Field(
-        default="siglip2", validation_alias=_either("IMAGE_EMBED_BACKEND")
+        default="qwen3-vl-embedding", validation_alias=_either("IMAGE_EMBED_BACKEND")
     )
+    """Defaulted to the *same* backend as ``embed_backend``, which is what makes
+    the shipped configuration one model in one shared slot. Point the two at
+    different backends (``qwen3-embedding`` + ``siglip2``, the pre-2026-08-09
+    pair, or the §7 hybrid) and they go back to two models in two slots — still
+    supported, and still two loads on a cold ``content_type=all`` search."""
+
     ocr_backend: str = Field(default="rapidocr", validation_alias=_either("OCR_BACKEND"))
 
     # --- model identifiers (backend-interpreted) --------------------------
     stt_model: str = Field(default="large-v3", validation_alias=_either("STT_MODEL"))
     embed_model: str = Field(
-        default="Qwen/Qwen3-Embedding-0.6B", validation_alias=_either("EMBED_MODEL")
+        default="Qwen/Qwen3-VL-Embedding-2B", validation_alias=_either("EMBED_MODEL")
     )
     image_embed_model: str = Field(
-        default="google/siglip2-so400m-patch16-naflex",
+        default="Qwen/Qwen3-VL-Embedding-2B",
         validation_alias=_either("IMAGE_EMBED_MODEL"),
     )
+    """Must equal ``embed_model`` for the shared slot to engage — a difference,
+    even one that resolves to the same weights, is read as two checkpoints and
+    loads two."""
+
     ocr_model: str = Field(default="rapidocr-default", validation_alias=_either("OCR_MODEL"))
 
     # --- embedding behaviour ----------------------------------------------
     embed_query_prompt: str | None = Field(
         default=None, validation_alias=_either("EMBED_QUERY_PROMPT")
     )
-    """Instruction prefix for ``input_type=query``. Unset uses the checkpoint's own."""
+    """Instruction for ``/v1/embeddings`` with ``input_type=query``. Unset uses
+    the backend's documented default, which the corpus records as
+    ``config['text_embed.query_prefix']``."""
+
+    frame_query_prompt: str | None = Field(
+        default=None, validation_alias=_either("FRAME_QUERY_PROMPT")
+    )
+    """Instruction for ``/v1/embeddings/frame-query``. A *different* instruction
+    from ``embed_query_prompt`` on purpose: one unified model, one space, two
+    retrieval tasks. Ignored by a dual-encoder frame backend (SigLIP 2's text
+    tower takes no instruction). Recorded as
+    ``config['frame_embed.query_prefix']``."""
+
+    embed_dim: int = Field(default=0, validation_alias=_either("EMBED_DIM"))
+    """MRL truncation width for the unified embedder; ``0`` = the checkpoint's
+    native 2048.
+
+    The fallback lever, not the starting point (Tom, 2026-08-09): Qwen publish a
+    sweep showing 1024 -> 512 costing 1.4% of retrieval, so narrowing later is a
+    config change plus a ~12-minute re-embed. It must match
+    ``config['text_embed.dim']`` / ``config['frame_embed.dim']`` in the corpus
+    or `mcp/` disables both vector legs rather than mix widths."""
+
+    embed_batch_size: int = Field(
+        default=16, validation_alias=_either("EMBED_BATCH_SIZE")
+    )
+    """Texts per forward pass inside the worker. `mcp/` batches per *request*
+    (``VIDTHEQUE_EMBED_BATCH``); this bounds what one request costs in VRAM."""
+
+    image_embed_batch_size: int = Field(
+        default=8, validation_alias=_either("IMAGE_EMBED_BATCH_SIZE")
+    )
+    """Frames per forward pass. Lower than the text batch because a 1280x720
+    keyframe is ~1,176 visual tokens against a chunk's few hundred, and the
+    activation is what the VRAM estimate is mostly made of."""
 
     image_embed_max_patches: int = Field(
         default=256, validation_alias=_either("IMAGE_EMBED_MAX_PATCHES")
     )
-    """NaFlex patch budget: the frame-embedder's resolution knob, per request."""
+    """NaFlex patch budget: the frame-embedder's resolution knob, per request.
+
+    A **SigLIP-2-only** knob. The unified embedder ignores it — it takes the
+    frame at its stored resolution, which lands on the knee of its own scaling
+    curve with nothing to tune."""
 
     # --- device -----------------------------------------------------------
     device: str = Field(default="auto", validation_alias=_either("DEVICE"))
@@ -87,10 +135,22 @@ class Settings(BaseSettings):
     """Unload a model after this many seconds without a job. ``0`` disables."""
 
     embed_resident: bool = Field(default=False, validation_alias=_either("EMBED_RESIDENT"))
-    """Keep the *text* embedding model loaded permanently and exempt from
-    eviction. The frame embedder is never resident: its text tower does serve
-    queries, but at ~5 GB it is the biggest model here, so a frame search on a
-    cold worker pays for the load rather than the card paying for it always."""
+    """Keep the embedding model loaded permanently and exempt from eviction.
+
+    It applies to the ``embed`` slot. With the shipped unified configuration
+    that *is* the frame slot — one shared Slot carries one ``resident`` flag,
+    so the model is resident for both legs or for neither, and there is one
+    decision to make instead of two. (Before the unification this key covered
+    the text embedder only, because the frame embedder was a second, larger
+    checkpoint that was never worth pinning.)
+
+    Leave it **off**, and more firmly than before. A resident backend keeps
+    ``_any_lease_holder()`` true forever, so ``GPU_RELEASE_CMD`` never fires
+    while the worker is up — measured in
+    ``research/gpu-validation-2026-08-08.md`` §5.3, where llama.cpp is stopped
+    at the first embedding request and never restarted. That trap cost 1,483 MB
+    standing with the 0.6B text embedder; with a unified 2B it costs ~4.4 GB
+    standing *and* the co-tenant still never comes back."""
 
     vram_headroom_mb: int = Field(default=512, validation_alias=_either("VRAM_HEADROOM_MB"))
     """Slack required on top of a backend's estimate before a load is allowed."""
