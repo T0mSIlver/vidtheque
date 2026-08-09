@@ -471,7 +471,9 @@ note: speaker= applies to the transcript leg only — ocr and frame legs were no
 ```
 
 **Status — the frame leg, and how it degrades.** The frame leg needs the query in
-the *frame* embedding space, which means the query text through SigLIP's text tower.
+the *frame* embedding space, which means the query text through the frame model
+itself (the shipped unified embedder under its frame-retrieval instruction, or
+SigLIP 2's text tower with the two-model configuration — see index-schema §4.5).
 That is a dedicated worker endpoint, `POST /v1/embeddings/frame-query` — a sibling
 path rather than a `space=` field on `/v1/embeddings`, because an unknown *field* is
 ignored by a hosted OpenAI-compatible worker (you get text-space vectors at some
@@ -490,6 +492,27 @@ Two consequences a caller can observe:
 Either way `content_type=all` still queries transcript and OCR and still says in the
 payload that the frame leg did not run. `all` means all; a skipped leg is announced,
 never silently dropped.
+
+**A third case, and it is not a skip: a leg that ran over an index still being
+filled.** Changing the embedding model rebuilds the vector tables and marks the
+embed stages stale (index-schema §1.10), so for the length of one backfill a
+vector leg searches fewer videos than the corpus contains. It does not fail and
+it does not skip — nearest-neighbour search simply returns less — so it prints a
+`note:` of its own, once per affected leg:
+
+```
+note: 75 videos in scope are waiting to be re-embedded after an embedding-model
+change, so the frame leg's semantic half searched only the videos that are
+current — keyword matching covered the rest. index-video force_reindex=false
+url="…" (or the overnight batch) backfills them; no download or transcription is
+involved.
+```
+
+The leg is deliberately **not** disabled for the window. Disabling it would be
+worse than useless: the indexing stages that produce the vectors skip themselves
+whenever the vector legs are off, so switching them off latches the backfill off
+too. Honesty here is a `note:`, not a smaller answer. `corpus-summary` reports
+the same window as `data_status: degraded` (§4.3).
 
 Empty result set (no bare "no results"; screenpipe's `guidance.next_best_query`
 principle applied to search):
@@ -716,7 +739,28 @@ model guessing:
 | `empty` | nothing indexed yet → `next:` is `index-video` |
 | `indexing` | ≥1 job in flight; counts are a moving target → `next:` is `job-status` |
 | `partial` | ≥1 video indexed with missing channels (transcript-only, no frames) |
-| `degraded` | ≥1 job failed in the last 24h; results may be incomplete |
+| `degraded` | ≥1 job failed in the last 24h, **or** ≥1 video is waiting to be re-embedded after an embedding-model change; results may be incomplete |
+
+**The re-embed window is a `degraded`, and it says so in words too.** Changing
+the embedding model rebuilds the vector tables and sets the `text_embed` /
+`frame_embed` stages back to `pending` (index-schema §1.10). Nearest-neighbour
+search over a half-filled index does not fail — it quietly returns less — so
+this endpoint reports it rather than letting the corpus look complete:
+
+```
+data_status: degraded
+note: 75 transcript and 75 frame vector set(s) are waiting to be re-embedded
+after an embedding-model change — semantic search covers only the videos
+already re-embedded; keyword search is unaffected. Nothing is re-downloaded or
+re-transcribed by the backfill.
+```
+
+with `embed_backlog: {"text": N, "frame": M}` in the structured payload. It
+reuses `degraded` rather than inventing a sixth value, per dashboard §4.5 —
+"the corpus is complete and its semantic half is not" is what the word already
+means here. `search` prints its own per-leg `note:` for the same window (§4.1),
+and `index-video url="…"` with **no** `force_reindex` is the backfill: the
+outstanding stages resume, and nothing is re-downloaded or re-transcribed.
 
 **Token discipline.** Hard caps on every section (10 channels / 30 tags / 8 recent
 by default; 50/100/25 ceilings). Repeated sibling rows collapse with `×N` in the

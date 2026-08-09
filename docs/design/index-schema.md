@@ -71,20 +71,34 @@ CREATE TABLE config (
 
 Seeded at first migration; **read at boot, never at query time**:
 
-| key | v1 value | why it is pinned here and not in env |
+| key | value (after 0004) | why it is pinned here and not in env |
 |---|---|---|
-| `text_embed.model` | `Qwen/Qwen3-Embedding-0.6B` | The vectors in the file were produced by *this*. Env can change; the file cannot retroactively agree. |
-| `text_embed.dim` | `1024` | Must equal the `vec_chunks` declared dimension. Asserted at boot. |
+| `text_embed.model` | `Qwen/Qwen3-VL-Embedding-2B` | The vectors in the file were produced by *this*. Env can change; the file cannot retroactively agree. |
+| `text_embed.dim` | `2048` | Must equal the `vec_chunks` declared dimension. Asserted at boot. |
 | `text_embed.normalized` | `1` | Written L2-normalized, so cosine ≡ dot. |
-| `text_embed.query_prefix` | `query: ` | The record of what indexing assumed. Asymmetric models need the same prefix at query time — a classic silent-drift source. *Applied by the worker, not here* (note below). |
-| `frame_embed.model` | `google/siglip2-so400m-patch16-naflex` | |
-| `frame_embed.dim` | `1152` | Must equal `vec_frames`. |
+| `text_embed.query_prefix` | `Given a search query, retrieve the transcript passage that answers it` | The record of what indexing assumed. *Applied by the worker, not here* (note below). |
+| `frame_embed.model` | `Qwen/Qwen3-VL-Embedding-2B` | **The same checkpoint.** Still its own key: two independently-staleable stages, two dimension assertions, and one of them may be pointed elsewhere. |
+| `frame_embed.dim` | `2048` | Must equal `vec_frames`. |
+| `frame_embed.query_prefix` | `Given a search query, retrieve the video frame that matches it` | Added by 0004. A *different* instruction from the text leg's: one model, one space, two retrieval tasks. |
 | `frame_embed.storage` | `float32` | `float32` or `int8` (§3.4). |
 | `stt.model` | `large-v3` | Drives `video_stages` staleness, not query correctness. |
 | `ocr.model` | `rapidocr-default` | |
 | `diarization.enabled` | `0` | Backs `E_FEATURE_DISABLED` for `search speaker=` (tool-surface §4.1). |
 | `chunk.target_seconds` / `chunk.overlap_seconds` | `45` / `15` | Changing these invalidates every chunk vector. |
-| `pipeline.version` | `1` | Bumped when pipeline *semantics* change; see §1.10. |
+| `pipeline.version` | `2` | Bumped when pipeline *semantics* change; see §1.10. 0004 bumped it: a checkpoint swap changes no column and invalidates every vector. |
+
+**One model, two records, and they stay two.** Tom's decision of 2026-08-09
+(`research/multimodal-embedding-2026-08-09.md`, addendum) replaced
+`Qwen/Qwen3-Embedding-0.6B` + `google/siglip2-so400m-patch16-naflex` with one
+`Qwen/Qwen3-VL-Embedding-2B` at its native 2048 dims, bf16, non-resident. Both
+legs are now one vector space served by one loaded model in one worker slot.
+Nothing above collapses: the two legs remain two stages, two config records and
+two boot assertions, because the pair is a *configuration* — the old models are
+still selectable, and the memo's §7 hybrid (`Qwen3-Embedding-4B` for
+transcripts + `Qwen3-VL-Embedding-2B` for frames) is two checkpoints again.
+`text_embed.model == frame_embed.model` is what tells the drift check it may
+treat a frame-space mismatch as a whole-index mismatch (§5.4 of the memo);
+when they differ, a frame-space mismatch costs the frame leg alone.
 
 **The model values are the exact identifiers the worker reports**, i.e. what
 `deploy/.env.example` ships as `EMBED_MODEL` / `IMAGE_EMBED_MODEL` / `OCR_MODEL`
@@ -98,11 +112,34 @@ vector legs before anything was written (research/e2e-smoke-2026-08-08.md §4.1)
 
 **The query prefix is the worker's to apply, not the query layer's.** `POST
 /v1/embeddings` takes `input_type=document|query` and the worker applies the
-checkpoint's own instruction prefix itself, so the query layer sends the switch
+checkpoint's own instruction itself, so the query layer sends the switch
 (`input_type="query"`) and never prepends `config['text_embed.query_prefix']` —
 doing both applies it twice, which is exactly the silent drift this table exists
-to prevent. The key stays because it records what *indexing* assumed; nothing on
-the read path reads it to build a string.
+to prevent. The keys stay because they record what *indexing* assumed; nothing
+on the read path reads them to build a string.
+
+**And a record nobody can check is a record that lies.** These keys shipped
+wrong from 0001 — `query: ` recorded against a model that applies `Instruct:
+…\nQuery: …` — and nothing noticed for the life of the project, because nothing
+reads them (`research/pipeline-perf-2026-08-09.md` §5). An instruction-aware
+model with *two* instructions over *one* space makes them more load-bearing,
+not less: the same sentence embeds differently under each, so "which model" is
+no longer the whole answer to "what space is this". Two things close it:
+
+* 0004 writes the worker's actual shipped defaults into both keys
+  (`DEFAULT_QUERY_INSTRUCTION` / `DEFAULT_FRAME_INSTRUCTION` in
+  `worker/src/vidtheque_worker/backends/qwen3_vl_embed.py`, overridable with
+  `EMBED_QUERY_PROMPT` / `FRAME_QUERY_PROMPT`);
+* the worker now **says what it applied** — `instruction` on every
+  `EmbeddingsResponse`, and `instructions` per backend on `GET /status`. So
+  `curl $WORKER_URL/status` against these two rows is the whole reconciliation,
+  and it is one command rather than a code read.
+
+The remaining gap is honest and small: nothing *automatically* reconciles the
+two. Wiring the echoed `instruction` into the drift check would mean widening
+the `(vectors, model, dimensions)` tuple the entire vector path is built on, for
+a check that a human can now run in one command. Recorded as a choice, not an
+oversight.
 
 **Boot assertion** (runs before the server accepts a request):
 
@@ -859,8 +896,49 @@ The runner:
    vec dimension is `DROP` + `CREATE` + `INSERT INTO cues_fts(cues_fts)
    VALUES('rebuild')` — measured at **0.8 s for 149,700 cues**. Vectors cannot be
    rebuilt from SQLite alone (they need the GPU worker), so a dimension change
-   enqueues a `backfill_embeddings` job and the boot assertion in §1.1 keeps the
-   vector legs disabled until it finishes.
+   leaves the two vec tables empty and the corpus mid-backfill.
+
+   **Corrected by 0004: the vector legs stay *enabled* through that window, and
+   the window is reported instead.** The original clause said the §1.1 boot
+   assertion "keeps the vector legs disabled until it finishes", and that is
+   unimplementable as written — `_stage_text_embed` and `_stage_frame_embed`
+   both skip themselves when `db.vectors.enabled` is false, so disabling the
+   legs latches the backfill off forever and "until it finishes" never arrives
+   (`research/multimodal-embedding-2026-08-09.md` §5.4). The two states are
+   different and only one of them is dangerous:
+
+   * **Incoherent** — `config` and the DDL disagree, or the worker answers in
+     another model or width. Mixing spaces is *possible*, so writes are refused
+     and reads go FTS-only with a `note:`. Unchanged.
+   * **Coherent but not yet filled** — everything agrees, the vectors simply do
+     not exist yet. Nothing can be mixed; the legs are safe to run and the
+     backfill *must* be able to run. A migration that changes DDL and `config`
+     in one transaction only ever produces this state.
+
+   So the migration sets the two embed stages from `done` to `pending` — which
+   is both the re-run trigger `_should_run` already honours and the honest thing
+   to read, since `coverage`/`has_frames`/`data_status` derive from `done` and a
+   stale `done` row would claim search the corpus cannot answer — and the
+   degraded window is *named*: `queries.embed_backlog` counts videos whose
+   chunks or keyframes are `done` while their embed stage is `pending`,
+   `corpus-summary` reports `data_status: degraded` with the reason, and every
+   search that uses a vector leg prints a `note:` saying how many videos are
+   waiting and that keyword matching covered them. `skipped` is untouched: it
+   records a deliberate choice, not an omission.
+
+   Keeping the old tables serving until the new ones fill was considered and
+   rejected. It means two vec tables per leg at two widths and a query layer
+   that unions them — fusing ranks from two embedding spaces into one RRF, which
+   is exactly the "plausible-looking garbage that no test catches" §1.1 exists
+   to prevent. The degraded window is minutes and it is reported; a mixed space
+   is permanent and silent.
+
+   One consequence for the tooling: an invalidated video has to look like a
+   *resume*, not a rebuild. `index-video` short-circuits anything `ready` with
+   no outstanding stage, and `force_reindex=true` re-downloads the mp4 and
+   re-transcribes the audio to redo two stages that need neither — so `pending`
+   counts as outstanding alongside `failed` (`jobs/store.failed_stages`), and
+   `index-video url="…"` with no force is the backfill command.
 4. Checksums are recorded so an edited-after-the-fact migration is detected, not
    silently re-run.
 
@@ -1096,7 +1174,7 @@ CREATE VIRTUAL TABLE vec_chunks USING vec0(
   chunk_id  INTEGER PRIMARY KEY,
   video_id  INTEGER,                 -- metadata column, NOT a partition key (§3.2)
   start_s   FLOAT,
-  embedding FLOAT[1024] distance_metric=cosine,
+  embedding FLOAT[2048] distance_metric=cosine,
   chunk_size=256
 );
 
@@ -1104,19 +1182,45 @@ CREATE VIRTUAL TABLE vec_frames USING vec0(
   keyframe_id INTEGER PRIMARY KEY,
   video_id    INTEGER,
   t_s         FLOAT,
-  embedding   FLOAT[1152] distance_metric=cosine,
+  embedding   FLOAT[2048] distance_metric=cosine,
   chunk_size=256
 );
 ```
 
-1024 = `qwen3-embedding-0.6b`; 1152 = SigLIP 2 SO400M NaFlex. Both dimensions are
-duplicated in `config` and asserted equal at boot (§1.1) — the declared dimension
-lives in the DDL where the query planner needs it, and in `config` where the
-*indexer* needs it, and a schema that can only be read by parsing `sqlite_master`
-is not a schema the pipeline should be parsing.
+2048 = `Qwen/Qwen3-VL-Embedding-2B`, native, on **both** tables — the two legs
+share one space (§1.1). Before 0004 they were 1024 (`Qwen3-Embedding-0.6B`) and
+1152 (SigLIP 2 SO400M NaFlex). Both dimensions are still duplicated in `config`
+and asserted equal at boot (§1.1) — the declared dimension lives in the DDL
+where the query planner needs it, and in `config` where the *indexer* needs it,
+and a schema that can only be read by parsing `sqlite_master` is not a schema
+the pipeline should be parsing.
+
+Native width, not the memo's MRL@1024: truncation is the fallback if query
+latency or storage argues for it, not the starting point, and MRL makes it a
+config change plus a ~12-minute re-embed later (`EMBED_DIM` on the worker,
+`*_embed.dim` here, and a rebuild of these two tables).
+
+**A `vec0` dimension is a literal in DDL, and there is no conditional CREATE.**
+That is why 0004 rebuilds both tables unconditionally while guarding its
+`config` rewrites on the shipped values: a corpus that deliberately kept another
+embedder lands in the boot assertion's mismatch state — writes refused, reads
+FTS-only, both numbers named — which is loud and recoverable. Staying on your
+own embedder means setting `*_embed.dim` to its width and re-creating the
+matching table at that width; the vectors were invalidated by the width change
+either way. Both old worker backends remain selectable; only the default moved.
 
 Vectors are written **L2-normalized**, so cosine distance is a dot product and
 `config['text_embed.normalized']=1` is a promise the pipeline keeps.
+
+**`INSERT OR REPLACE` does not work here.** It parses, and it appeared to work
+for the life of the project because every write the pipeline made was the
+*first* write for that id. The second is `OperationalError: UNIQUE constraint
+failed on vec_chunks primary key`: the conflict resolution never reaches vec0's
+shadow tables. Nothing hit it until an embedding-model change made re-embedding
+an already-embedded video a normal operation — it would have failed the
+`text_embed` stage of every video on the second pass, with a message that reads
+like corruption. `pipeline/store.py` deletes by id and then inserts, in the same
+transaction, so a batch is still all-or-nothing.
 
 ### 3.2 `PARTITION KEY` is a trap at this scale — measured
 
@@ -1187,6 +1291,7 @@ Fixture: 500 videos × 20 min, 150,000 cues, 18,500 chunks, 40,000 keyframes,
 |---|---|---|
 | `vec_frames` vectors (40,000 × 1152 × f32) | 185.4 | 44% |
 | `vec_chunks` vectors (18,500 × 1024 × f32) | 76.7 | 18% |
+| *(after 0004: 40,000 × 2048 → **327.7 MB**, 18,500 × 2048 → **151.6 MB**)* | | |
 | `cues` (of which `words_json` 41.1) | 63.2 | 15% |
 | `ocr_lines` | 21.8 | 5% |
 | `cues_fts` (data + docsize) | 18.3 | 4% |
@@ -1204,7 +1309,23 @@ half of the file grows by roughly the size of the text itself — call it +10 MB
 on a 420 MB file — and no re-measurement is claimed here. The FTS half of a
 `delete_video` gets *cheaper*: 400 line documents become ~80 frame documents.
 
-**Vectors are two-thirds of the database.** The lever is quantization:
+**Vectors are two-thirds of the database, and 0004 widens both.** At the
+500-video projection the two vector rows go from 262 MB to **479 MB**, taking
+the file from ~420 MB to roughly 640 MB — vectors from 62% to 75% of it. On the
+live corpus it is nothing: ~5,750 vectors × 8 KB ≈ **45 MB**, against 556 MB of
+keyframe JPEGs that nobody proposes to shrink. The projection is where it would
+start to matter, and it has two levers rather than one now, because Qwen
+publish measurements for both on this checkpoint (memo §4.4):
+
+* **MRL** — 1024 → 512 costs 1.4% of retrieval on their sweep, so 2048 → 1024
+  should cost less. Halves both rows.
+* **int8** — the paper's §7.1 reports int8 preserving retrieval "with
+  negligible degradation" and binary significantly impairing it. Unlike the
+  table below, that is a *quantization-aware-trained* claim about this model
+  rather than a generic one, which makes `config['frame_embed.storage']` a much
+  safer switch than it was.
+
+The lever measured below is quantization:
 
 | frame vector storage | file | KNN k=50 |
 |---|---|---|
@@ -1510,20 +1631,54 @@ ORDER BY c.distance
 LIMIT :limit + 1;
 ```
 
-`:q_img_vec` is the *text* query run through SigLIP's text tower — same shared
-embedding space, which is the entire point of using SigLIP over a captioning pass.
-`frame_id` is assembled here so no caller ever constructs it by hand.
+`:q_img_vec` is the *text* query embedded into the frame space — the entire
+point of embedding frames rather than captioning them. `frame_id` is assembled
+here so no caller ever constructs it by hand.
 
-**Where `:q_img_vec` comes from: `POST /v1/embeddings/frame-query`.** Both towers of
-`google/siglip2-so400m-patch16-naflex` are served from one worker lifecycle slot —
-`POST /v1/embeddings/image` indexes keyframes, and this sibling path runs the text
-tower so the query reaches the same 1152-d space. A sibling **path**, not a
-`space=frame` **field** on `/v1/embeddings`, and that shape is load-bearing: point
-`WORKER_URL` at a hosted OpenAI-compatible provider and an unknown *field* is
-ignored — you ask for frame space, get text space at some other width, and compare
-it against the frame index. An unknown *path* 404s, which is a failure you can
-detect. It takes no `input_type`: the asymmetric prefix of §1.1 belongs to the text
-embedding model, and this tower is trained to 64 tokens — queries only, never prose.
+**Where `:q_img_vec` comes from: `POST /v1/embeddings/frame-query`.** The frame
+model serves both directions from one worker lifecycle slot — `POST
+/v1/embeddings/image` indexes keyframes, and this sibling path puts a query into
+the same space. What runs behind it depends on the configured backend, and the
+difference is worth stating because it changes what a query may *be*:
+
+* **`Qwen/Qwen3-VL-Embedding-2B` (shipped).** The same weights that answer
+  `/v1/embeddings`, under a different instruction —
+  `config['frame_embed.query_prefix']` rather than
+  `config['text_embed.query_prefix']`. One model, one 2048-d space, two
+  retrieval tasks. Full 32K context, so a long descriptive frame query is
+  embedded whole. And the slot is shared with `embed`, so a cold
+  `content_type=all` search pays **one** model load instead of two (it used to
+  be Qwen3-0.6B's 3.7 s *and* SigLIP's 5.8 s, possibly with an eviction between
+  them).
+* **`google/siglip2-so400m-patch16-naflex`.** The checkpoint's *text tower*,
+  into its own 1152-d space, a second model in a second slot. Trained to **64
+  tokens**: queries only, never prose, and everything past it is dropped with a
+  log line and no error.
+
+Either way `content_type=all` embeds the query **twice**, once per leg, and that
+does not change with a unified model: an instruction-aware embedder gives the
+same sentence different vectors under different instructions, so collapsing the
+two calls would be one embedding answering two questions. Both calls hit one
+loaded model, so the cost is a forward pass, not a load.
+
+A sibling **path**, not a `space=frame` **field** on `/v1/embeddings`, and that
+shape is load-bearing whichever backend is configured: point `WORKER_URL` at a
+hosted OpenAI-compatible provider and an unknown *field* is ignored — you ask
+for frame space, get text space at some other width, and compare it against the
+frame index. An unknown *path* 404s, which is a failure you can detect. It takes
+no `input_type`: this path *is* the query side, and the document side is images
+with its own endpoint.
+
+**The relevance ceiling on this leg is uncalibrated as shipped.**
+`VIDTHEQUE_FRAME_MAX_DISTANCE` was measured at 0.96 in SigLIP's 1152-d space
+(real best-hit 0.877–0.919, junk 0.877–0.966), and an absolute cosine distance
+does not survive a change of embedder — a model that packs its corpus at a
+different radius turns a ceiling that sat safely above one real range into one
+that cuts through another, which is the failure mode `db/queries.py` calls the
+worse one. So both floors ship open (1.0, i.e. drop only anti-correlated hits)
+until the GPU bench re-measures them, with the SigLIP-era values documented in
+`deploy/.env.example` for anyone still on that pair. The gate that actually
+rejects nonsense is unchanged and is not a magic number: `has_lexical_footing`.
 
 Degradation is explicit, per the "`all` means all, and a skipped leg says so" rule.
 A worker that predates the endpoint 404s; the query layer remembers that (it is a
