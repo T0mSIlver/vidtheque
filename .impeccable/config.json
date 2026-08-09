@@ -14,12 +14,39 @@
       },
       {
         "rule": "overused-font",
-        "value": "Inter",
+        "value": "inter",
         "files": [
           "mcp/src/vidtheque_mcp/dashboard/static/dashboard.css"
         ],
         "createdAt": "2026-08-09T15:50:00.000Z",
         "reason": "Inter Variable is pinned by the brief, not reached for: Tom chose Direction C from research/dashboard-design-research-2026-08-09.md, which names it for the human-text channel. This is an Operate surface where a workhorse UI face is the correct register, the file is vendored latin-subset with its OFL text, and there is no display face anywhere on this surface for it to be doing double duty as."
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          "dashboard/videos/*"
+        ],
+        "createdAt": "2026-08-09T17:47:14.546Z",
+        "reason": "The .timeline band on the video detail route. Its children are the shot bars: absolutely positioned, top:0/bottom:0, left/width set to their true percentage of the runtime, and carrying no visible text (each bar's description is .sr-only). Padding inside the band would either compress the time axis, so a bar's position stops being the fact DESIGN.md says it is, or open a cosmetic gap at the ends of a scale that runs 0:00 to the runtime. Scoped to the route glob rather than project-wide, so a cramped element anywhere else still fails."
+      },
+      {
+        "rule": "em-dash-overuse",
+        "value": "*",
+        "files": [
+          "dashboard/videos/*"
+        ],
+        "createdAt": "2026-08-09T17:47:20.141Z",
+        "reason": "Every remaining em-dash on these routes is a data placeholder, not prose cadence. dashboard.md 4.1 requires a stage with a NULL model_key, no start clock and no elapsed time to print an em-dash rather than a guess, so a seven-row provenance table with three absent or pending stages emits fifteen of them before a single sentence is written. The prose cadence the rule is actually aimed at was fixed rather than waived: the panel notes on these pages carried five em-dashes between them and now carry none."
+      },
+      {
+        "rule": "em-dash-overuse",
+        "value": "*",
+        "files": [
+          "dashboard/jobs/*"
+        ],
+        "createdAt": "2026-08-09T17:47:30.196Z",
+        "reason": "Same as the videos route: the job detail page prints an em-dash for an item stage that has none and for every clock a stage never recorded, which is dashboard.md 4.1's rule applied to job items. The prose on this page was rewritten to drop its five em-dashes rather than waived."
       }
     ]
   }
