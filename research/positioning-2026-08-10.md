@@ -805,3 +805,46 @@ list where screenpipe already proved it belongs, and build two things first: a
 live stat band read out of the index (herdr), and one annotated slide specimen
 with amber callout tabs (impeccable) that makes the whole argument in a single
 image.
+
+---
+
+## Refinement round 1 (Tom + orchestrator, 2026-08-10, ~01:00)
+
+**Tom's critique of Direction B as recommended:** "searchable archive" sounds
+like a 2025 product — RAG over YouTube. That may be what the mechanism is, but
+the goal is something dynamic: *ask your agent to implement an AI feature, and
+the agent — armed with vidtheque — answers with the SOTA according to recent
+AI Engineer talks.* vidtheque provides knowledge **derived** from video; it
+**solidifies** things that were only ever spoken or shown on screen. And the
+screenpipe acquisition asymmetry (§A's weakness) is not permanent: automatic
+capture — follow a channel, it keeps watching — is an easy future feature.
+
+**The fused direction (B′ — "working knowledge from video"):**
+- Position: talks are where the state of the art appears first and evaporates
+  fastest; vidtheque solidifies them into verbatim, timestamped, quotable
+  knowledge on tap for you *and your agents mid-task*.
+- Enemy: the gap between what the field just said and what you can act on —
+  knowledge trapped in video. (B's YouTube-search-box enemy survives as a
+  mid-page demo beat, not the headline.)
+- The demo corpus reframes from "an archive of AI Engineer 2026" to "the SOTA
+  according to the people shipping it — ask it something."
+- Roadmap line that makes the position true by construction: **follow
+  channels; vidtheque keeps watching** (channel indexing + a refresh schedule
+  — mostly exists). Deliberate subscription, not involuntary capture: keeps
+  the no-surveillance-debt advantage.
+- Proof obligation: the "agents use it mid-task" claim needs a shown artifact,
+  not a sentence — a real captured agent exchange (the 2026-08-09 field test's
+  synthesist transcripts are exactly this) as the demo page's third beat.
+
+Candidate hero copy, this register (draft, unchosen):
+> **The field talks. Your stack listens.**
+> vidtheque turns the videos that matter into solid, timestamped knowledge you
+> and your agents can actually use. Ask what the state of the art is; get the
+> sentence, the slide, and the second it happened.
+
+Alternate headline: "Knowledge is announced in videos. vidtheque makes it
+usable." — with B's "It read the slides, too." demoted to the annotated
+specimen's caption.
+
+**Status: awaiting Tom's confirmation of B′ before landing-page versions are
+built against it.**
