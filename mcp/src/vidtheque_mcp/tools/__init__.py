@@ -33,7 +33,12 @@ def register(
     That is deliberately not "registered but refuses" — see demo-site.md §1.1.
     Which names land here is the *deployment's* policy (``public/readonly.py``),
     never this module's.
+
+    The set is also handed to ``deps``: masking a tool and still recommending it
+    is one bug, not two (demo-queries §9.1.8), so the copy is written against
+    the same set the registry is.
     """
+    deps.hidden_tools = hidden
     _register_tools(mcp, deps, hidden)
     _register_resources(mcp, deps)
 
@@ -226,10 +231,13 @@ def _register_tools(mcp: MCPServer, deps: Deps, hidden: frozenset[str]) -> None:
         # wire name comes from a pydantic alias; see `_alias_return` below for
         # the other half.
         return_: Annotated[str, Field(alias="return")] = "url",
-        limit: int = 3,
+        # `limit` bounds the video_id span mode. None = not asked for, which is
+        # what lets named frame_ids print a note instead of being narrowed.
+        limit: int | None = None,
         width: int = 512,
         quality: int = 75,
         include_ocr: bool = True,
+        max_text_chars: int = 300,
     ) -> CallToolResult:
         return await frames_tool.run(
             deps,
@@ -242,6 +250,7 @@ def _register_tools(mcp: MCPServer, deps: Deps, hidden: frozenset[str]) -> None:
             width=width,
             quality=quality,
             include_ocr=include_ocr,
+            max_text_chars=max_text_chars,
         )
 
     async def index_video_tool(
@@ -362,4 +371,4 @@ def _register_resources(mcp: MCPServer, deps: Deps) -> None:
         mime_type="text/markdown",
     )
     async def guide() -> str:
-        return resources.GUIDE
+        return resources.guide(deps)

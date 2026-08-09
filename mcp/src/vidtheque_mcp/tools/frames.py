@@ -9,6 +9,13 @@ server itself. We default to the URL.
 
 When more images are requested than the inline budget allows, the extras
 **downgrade to URLs rather than failing**.
+
+`limit` bounds the `video_id` span mode. Named `frame_ids` are the caller's own
+cap — already hard-bounded at 12 — so they are validated and fetched in full,
+in the order they were asked for, and a `limit` that would have narrowed them
+prints a `note:` (`all` means all). Slicing them first cost the caller data
+*and* the `failed:` line that would have explained it
+(`research/demo-queries-2026-08-09.md` §9.1.1).
 """
 
 from __future__ import annotations
@@ -23,12 +30,14 @@ from mcp_types import CallToolResult, ContentBlock, ImageContent, TextContent
 from ..db import queries
 from ..errors import ToolError, bad_param, unknown_frame, unknown_video
 from ..http.frames import parse_frame_id
-from ..text import clamp, clock, deeplink, iso_z, middle_truncate
+from ..text import clamp, clamp_text_chars, clock, deeplink, iso_z, middle_truncate
 from ..timeparse import parse_offset
 from .base import Deps, blocks_result, handle_errors
 
 MAX_SPAN_S = 600.0
+MAX_FRAME_IDS = 12
 OCR_CHARS_PER_FRAME = 300
+MAX_OCR_CHARS_PER_FRAME = 2000
 
 
 @handle_errors
@@ -39,29 +48,47 @@ async def run(
     t_start: float | str | None = None,
     t_end: float | str | None = None,
     return_: str = "url",
-    limit: int = 3,
+    limit: int | None = None,
     width: int = 512,
     quality: int = 75,
     include_ocr: bool = True,
+    max_text_chars: int = OCR_CHARS_PER_FRAME,
 ) -> CallToolResult:
     mode = (return_ or "url").lower()
     if mode not in ("url", "image"):
         raise bad_param('return must be "url" or "image".', 'omit it for "url".')
-    limit = clamp(limit, 1, 12, 3)
+    asked_limit = limit
+    limit = clamp(limit, 1, MAX_FRAME_IDS, 3)
     width = clamp(width, 128, 1280, 512)
     quality = clamp(quality, 20, 95, 75)
+    # The `0` opt-out is the documented one (text.clamp_text_chars). Here it
+    # means "the frame's every line, in reading order" — the same promise the
+    # shared truncation marker makes, which this tool used to print without
+    # accepting the parameter it names.
+    max_text_chars = clamp_text_chars(
+        max_text_chars, 120, MAX_OCR_CHARS_PER_FRAME, OCR_CHARS_PER_FRAME
+    )
 
     if not frame_ids and not video_id:
         raise bad_param(
             "pass either frame_ids or video_id.",
             "frame ids come from search, video-summary or get-segment-context.",
         )
-    if frame_ids and len(frame_ids) > 12:
-        raise bad_param("frame_ids accepts at most 12 ids.", "call again with fewer ids.")
+    if frame_ids and len(frame_ids) > MAX_FRAME_IDS:
+        raise bad_param(
+            f"frame_ids accepts at most {MAX_FRAME_IDS} ids.", "call again with fewer ids."
+        )
 
     failures: list[str] = []
+    notes: list[str] = []
     if frame_ids:
-        rows, failures = await _by_ids(deps, frame_ids[:limit])
+        # Validate first, slice never: every named id is fetched or reported.
+        rows, failures = await _by_ids(deps, frame_ids)
+        if asked_limit is not None and clamp(asked_limit, 1, MAX_FRAME_IDS, 3) < len(frame_ids):
+            notes.append(
+                f"note: limit bounds the video_id span mode; all {len(frame_ids)} named "
+                f"frame_ids were fetched (the cap on named ids is {MAX_FRAME_IDS})."
+            )
     else:
         assert video_id is not None
         span_start = parse_offset(t_start, "t_start")
@@ -86,6 +113,7 @@ async def run(
     inline_bytes = 0
     header_placeholder = ""
     lines: list[str] = []
+    urls_emitted = False
     expiry_note: int | None = None
 
     for row in rows:
@@ -94,7 +122,7 @@ async def run(
         frame_id = f"{public_id}-{ordinal:05d}"
         t_s = float(row["t_s"])
         link = deeplink(public_id, t_s, deps.settings.deeplink_lead_s)
-        ocr_text = middle_truncate(str(row["ocr_text"] or ""), OCR_CHARS_PER_FRAME)
+        ocr_text = middle_truncate(str(row["ocr_text"] or ""), max_text_chars)
         record: dict[str, Any] = {
             "frame_id": frame_id,
             "video_id": public_id,
@@ -138,6 +166,7 @@ async def run(
             record["inline"] = True
         else:
             url, expires_at = _signed_url(deps, frame_id, width, quality)
+            urls_emitted = True
             expiry_note = expires_at
             lines.append(f"{frame_id} · {clock(t_s)} · {link}")
             lines.append(f"  image: {url}")
@@ -164,15 +193,20 @@ async def run(
     text_lines = [header_placeholder, *lines]
     for failure in failures:
         text_lines.append(f"failed: {failure}")
-    # `_signed_url` returns 0 for "unsigned" (auth `none`), which is not None —
-    # so this said "URLs expire None. They are signed", both halves wrong, on
-    # every default-mode call (research/e2e-smoke-2026-08-08.md §4.5).
-    if expiry_note:
+    text_lines.extend(notes)
+    # `_signed_url` returns None for "unsigned" (auth `none`) — "never expires",
+    # the honest encoding of what the structured payload used to call `0`, which
+    # every `now > expires_at` consumer reads as "expired in 1970"
+    # (demo-queries-2026-08-09 §9.1.7). It used to print "URLs expire None. They
+    # are signed", both halves wrong, on every default-mode call
+    # (research/e2e-smoke-2026-08-08.md §4.5), so the two conditions are the
+    # emitted-a-URL flag and the expiry, not one overloaded number.
+    if urls_emitted and expiry_note is not None:
         text_lines.append(
             f"URLs expire {iso_z(expiry_note)}. They are signed — no auth header "
             "needed to fetch them."
         )
-    elif expiry_note is not None:
+    elif urls_emitted:
         text_lines.append(
             "URLs do not expire and are not signed: this server runs with auth "
             "disabled, so the frame route is open to anyone who can reach it."
@@ -185,19 +219,22 @@ async def run(
     )
 
 
-def _signed_url(deps: Deps, frame_id: str, width: int, quality: int) -> tuple[str, int]:
+def _signed_url(deps: Deps, frame_id: str, width: int, quality: int) -> tuple[str, int | None]:
+    """The second element is the expiry, or `None` for "never expires"."""
     signer = deps.frame_signer
     if signer is None:
         # `none` mode: the whole server is open, so an unsigned path is honest.
         return (
             f"{deps.settings.public_url.rstrip('/')}/frames/{frame_id}.jpg?w={width}&q={quality}",
-            0,
+            None,
         )
     return signer.url(deps.settings.public_url, frame_id, width, quality)
 
 
 async def _by_ids(deps: Deps, ids: list[str]) -> tuple[list[sqlite3.Row], list[str]]:
-    """Per-frame failures are collected, not fail-fast."""
+    """Per-frame failures are collected, not fail-fast; rows come back in the
+    order the caller asked for (the SQL orders by `(video_id, ord)`, which is a
+    strip of frames laid out in an order nobody asked for — §7.13)."""
     parsed: list[tuple[str, int]] = []
     failures: list[str] = []
     for frame_id in ids:
@@ -228,7 +265,9 @@ async def _by_ids(deps: Deps, ids: list[str]) -> tuple[list[sqlite3.Row], list[s
             f"{public_id}-{ordinal:05d}: no such keyframe "
             f"(valid ordinals 00000-{(highest or 0):05d})"
         )
-    return rows, failures
+    requested = {pair: position for position, pair in enumerate(pairs)}
+    ordered = sorted(rows, key=lambda r: requested.get((int(r["video_id"]), int(r["ord"])), 0))
+    return ordered, failures
 
 
 def _resolve(data_dir: Path, relative: str) -> Path | None:

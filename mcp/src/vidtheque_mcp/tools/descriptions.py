@@ -105,19 +105,18 @@ exactly as a result gave them.
 
 GET_FRAMES = """
 Fetch keyframe images from indexed videos, as URLs (default) or inline base64.
-return="image" only if you render inline images.
 
 USE WHEN: a result mentions a slide, diagram, chart or UI and text is not
 enough — you have frame ids from search, video-summary or get-segment-context.
-Also when OCR reads garbled or clipped: dense slides (tables, code, bullets)
-are pixels, not text.
+Also when OCR reads garbled or clipped: dense slides (tables, code) are pixels,
+not text.
 
 DO NOT USE: to browse a video (frames are keyframes, not a filmstrip).
 
-START WITH limit=3 and return="url"; open the URL to read the frame. The ocr:
-line is capped at 300 chars/frame with no opt-out; the image is the full text.
-return="image" inlines base64 JPEG, max 4 per call — 10-20x the nominal token
-cost on some clients.
+START WITH return="url" and open the URL. Every id you pass is fetched (max 12);
+limit bounds only the video_id span mode. The ocr: line is capped at 300
+chars/frame — max_text_chars=0 gives every line. return="image" inlines base64
+JPEG, max 4 per call — 10-20x the nominal token cost on some clients.
 """.strip()
 
 INDEX_VIDEO = """

@@ -591,6 +591,117 @@ async def test_get_frames_span_is_bounded(assembled: Assembled) -> None:
     assert "narrow" in payload["next"]
 
 
+def _fatten_ocr(assembled: Assembled, video_id: str, ordinal: int) -> str:
+    """Give one keyframe an OCR line longer than any per-frame cap."""
+    import sqlite3
+
+    line = "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H " + ("advisory text " * 40).strip()
+    conn = sqlite3.connect(assembled.settings.db_path)
+    conn.execute(
+        "INSERT INTO ocr_lines (keyframe_id, video_id, t_s, line_no, text, conf, x0, y0, x1, y1) "
+        "SELECT k.id, k.video_id, k.t_s, 99, ?, 0.9, 0, 0, 1, 1 FROM keyframes k "
+        "JOIN videos v ON v.id = k.video_id WHERE v.source_id = ? AND k.ord = ?",
+        (line, video_id, ordinal),
+    )
+    conn.commit()
+    conn.close()
+    return line
+
+
+async def test_get_frames_validates_every_id_before_limit_slices(
+    assembled: Assembled,
+) -> None:
+    """`frame_ids[:limit]` cut the list *before* validation, so ids past `limit`
+    were neither fetched nor reported and the header still printed `3/3`
+    (demo-queries-2026-08-09 §9.1.1). Named ids are the caller's own cap: all of
+    them are fetched, up to the 12-id `E_BAD_PARAM`, and `limit` — which bounds
+    the `video_id` span mode — prints a `note:` instead of narrowing silently."""
+    ids = ["kCc8FmEb1nY-00000", "kCc8FmEb1nY-00001", "zduSFxRajkE-00000"]
+    result = await frames_tool.run(assembled.deps, frame_ids=ids, limit=1)
+    payload = structured(result)
+    assert [f["frame_id"] for f in payload["frames"]] == ids
+    text = body(result)
+    assert "Frames: 3/3" in text
+    assert "note:" in text
+    assert "limit" in text
+
+
+async def test_get_frames_reports_a_bad_id_past_the_limit(assembled: Assembled) -> None:
+    """A malformed id in position 4+ was never parsed, so the `failed:` line that
+    fires for positions 1-3 never fired for it (§9.1.1, the adversary's run)."""
+    result = await frames_tool.run(
+        assembled.deps,
+        frame_ids=["kCc8FmEb1nY-00000", "kCc8FmEb1nY-00001", "not-a-frame-id"],
+        limit=1,
+    )
+    payload = structured(result)
+    assert any("not a valid frame id" in f for f in payload["failed"])
+    assert "Frames: 2/3" in body(result)
+
+
+async def test_get_frames_limit_still_bounds_the_span_mode(assembled: Assembled) -> None:
+    result = await frames_tool.run(assembled.deps, video_id="kCc8FmEb1nY", limit=1)
+    assert len(structured(result)["frames"]) == 1
+    assert "note:" not in body(result)
+
+
+async def test_get_frames_preserves_request_order(assembled: Assembled) -> None:
+    """§7.13: the SQL orders by (video_id, ord); a UI laying out a strip of
+    frames asked in one order and got another."""
+    ids = ["zduSFxRajkE-00000", "kCc8FmEb1nY-00001", "kCc8FmEb1nY-00000"]
+    payload = structured(await frames_tool.run(assembled.deps, frame_ids=ids))
+    assert [f["frame_id"] for f in payload["frames"]] == ids
+
+
+async def test_get_frames_honours_the_zero_opt_out(assembled: Assembled) -> None:
+    """§7.3: the truncation marker told the caller to pass `max_text_chars=0`,
+    the tool had no such parameter, and the guide said it never would. Three
+    sources, three stories — the documented `0` opt-out wins."""
+    line = _fatten_ocr(assembled, "zduSFxRajkE", 0)
+    capped = body(await frames_tool.run(assembled.deps, frame_ids=["zduSFxRajkE-00000"]))
+    assert "chars truncated" in capped
+    assert line not in capped
+
+    full = await frames_tool.run(
+        assembled.deps, frame_ids=["zduSFxRajkE-00000"], max_text_chars=0
+    )
+    assert "chars truncated" not in body(full)
+    assert line in body(full)
+    assert line in structured(full)["frames"][0]["ocr"]
+
+
+async def test_get_frames_max_text_chars_is_clamped_not_prompt_only(
+    assembled: Assembled,
+) -> None:
+    _fatten_ocr(assembled, "zduSFxRajkE", 0)
+    result = await frames_tool.run(
+        assembled.deps, frame_ids=["zduSFxRajkE-00000"], max_text_chars=99999
+    )
+    assert len(structured(result)["frames"][0]["ocr"]) <= 2000 + len(TRUNCATION_MARKER)
+
+
+async def test_get_frames_never_expiring_urls_are_null_not_zero(
+    assembled: Assembled,
+) -> None:
+    """§9.1.7: `expires_at: 0` reads as "expired in 1970" to anyone doing
+    `now > expires_at`. `null` is the honest encoding of "never"."""
+    result = await frames_tool.run(assembled.deps, frame_ids=["kCc8FmEb1nY-00000"])
+    assert structured(result)["frames"][0]["expires_at"] is None
+    assert "do not expire and are not signed" in body(result)
+
+
+async def test_get_frames_signed_urls_carry_a_real_expiry(assembled: Assembled) -> None:
+    import dataclasses
+
+    from vidtheque_mcp.auth.tokens import FrameUrlSigner
+
+    deps = dataclasses.replace(
+        assembled.deps, frame_signer=FrameUrlSigner(secret="s3cret", ttl_s=3600)
+    )
+    result = await frames_tool.run(deps, frame_ids=["kCc8FmEb1nY-00000"])
+    assert structured(result)["frames"][0]["expires_at"] > 0
+
+
 # ------------------------------------------------------------------ tagging
 
 

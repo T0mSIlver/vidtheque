@@ -993,23 +993,19 @@ Nobody in the landscape survey ships the URL variant. We default to it.
 **Description (ships verbatim):**
 
 ```
-Fetch keyframe images from indexed videos. Returns image URLs by default; pass
-return="image" only if you can render inline images.
+Fetch keyframe images from indexed videos, as URLs (default) or inline base64.
 
-USE WHEN: a result mentions a slide, diagram, chart, terminal or UI and the text
-alone is not enough — you have frame ids from search, video-summary or
-get-segment-context. Also when OCR reads garbled or clipped: dense slides
-(tables, code, bullet lists) survive as pixels, not as text.
+USE WHEN: a result mentions a slide, diagram, chart or UI and text is not
+enough — you have frame ids from search, video-summary or get-segment-context.
+Also when OCR reads garbled or clipped: dense slides (tables, code) are pixels,
+not text.
 
-DO NOT USE: to browse a video visually (frames are keyframes, not a filmstrip —
-use video-summary for structure); with more than a handful of ids at once.
+DO NOT USE: to browse a video (frames are keyframes, not a filmstrip).
 
-START WITH limit=3 and return="url", then open the URL to read the frame. URLs
-are signed and expire in 1 hour; fetching one costs no context. The ocr: line is
-capped at 300 chars per frame and has no opt-out — the image is the full text.
-return="image" inlines base64 JPEG and is capped at 4 images per call regardless
-of limit — on some clients inline images cost 10-20x their nominal token price,
-so prefer URLs unless you know yours renders them.
+START WITH return="url" and open the URL. Every id you pass is fetched (max 12);
+limit bounds only the video_id span mode. The ocr: line is capped at 300
+chars/frame — max_text_chars=0 gives every line. return="image" inlines base64
+JPEG, max 4 per call — 10-20x the nominal token cost on some clients.
 ```
 
 **Changed 2026-08-09.** The old "DO NOT USE … to read text that is already in the
@@ -1019,22 +1015,59 @@ were only answerable from the pixels, because the OCR text is a flat
 reading-order join that is capped per frame and mangles digits and bullet glyphs
 (`8.8` → `8.&`, rank `1 ●` → `10`). The description now says the opposite — a
 garbled or clipped OCR line is a reason to open the image. It also states the
-300-char cap, because `get-frames` has no `max_text_chars` parameter while the
-shared truncation marker tells the caller to pass one
-(`research/mcp-design-bench-2026-08-09.md` §D3, §D4).
+300-char cap (`research/mcp-design-bench-2026-08-09.md` §D3, §D4).
+
+**Changed 2026-08-09 (second pass), and these are contract changes, not
+wording.** The field test with unbriefed agents
+(`research/demo-queries-2026-08-09.md` §7.3, §7.13, §9.1.1, §9.1.7) found four
+ways this tool lied about what it had done:
+
+1. **`limit` no longer slices `frame_ids`.** It bounds the `video_id` span mode
+   only. `frame_ids[:limit]` was applied *before* validation, so with the
+   default `limit=3` a caller passing five valid ids got three frames, an empty
+   `failed:`, and the header `Frames: 3/3` — the denominator asserting it had
+   them all. A malformed id in position 4+ was never parsed either, so the good
+   `failed:` message never fired for it. Named ids are the caller's own cap and
+   they already have a server-side one: `frame_ids` > 12 is `E_BAD_PARAM`, and
+   the §7 token table has always budgeted the 12-id worst case. So every named
+   id is now validated and fetched, and a `limit` that would have narrowed the
+   list prints a `note:` instead — the `all` means `all` rule, applied to ids.
+   The alternative (report the dropped ids in `failed:`) keeps a cap the caller
+   never asked for and makes the money shot of both flagship flows depend on
+   remembering to raise it.
+2. **`max_text_chars` exists, with the documented `0` opt-out** (`0` or
+   120..2000, default 300). The shared truncation marker prints *"pass
+   max_text_chars=0 for full text"*; the parameter did not exist, the tool
+   description said "no opt-out", and the guide said there never would be one —
+   three sources, three behaviours. `0` returns the frame's every OCR line in
+   reading order, which is the same promise §3.3 makes for the OCR leg. The
+   image is still the only place the *layout* survives.
+3. **Rows come back in the order the caller asked for.** The SQL orders by
+   `(video_id, ord)`; a UI laying out a strip of frames asked in one order and
+   got another.
+4. **`expires_at` is `null`, not `0`, when a URL never expires.** In `none`
+   mode every frame carried `"expires_at": 0`, which any consumer doing
+   `now > expires_at` reads as "expired in 1970". The prose already said "URLs
+   do not expire"; the number now agrees with it.
+
+The same `0`-opt-out fix lands in `get-segment-context`'s on-screen block
+(§4.5), which printed the same marker and ignored the same parameter; its
+independent 8-frame / 1200-char cap still binds and still announces itself in
+words.
 
 **Parameters:**
 
 | name | type | default | constraint | notes |
 |---|---|---|---|---|
-| `frame_ids` | string[] | — | ≤ 12 ids | Either this **or** `video_id` (+ optional time range). |
+| `frame_ids` | string[] | — | ≤ 12 ids, `E_BAD_PARAM` above that | Either this **or** `video_id` (+ optional time range). All of them are fetched, in request order; `limit` does not narrow them. |
 | `video_id` | string | — | | With `offset_start`/`offset_end`, returns the keyframes in that span. |
 | `offset_start` / `offset_end` | number \| string | — | §3.2 | Span within `video_id`; span > 600s → `E_BAD_PARAM` with a narrowing hint. |
 | `return` | enum `url\|image` | `url` | — | No `path` mode: this is a remote server. |
-| `limit` | int | `3` | clamped 1..12 | |
+| `limit` | int | `3` | clamped 1..12 | Bounds the `video_id` span mode. Passed alongside `frame_ids` it prints a `note:` and changes nothing. |
 | `width` | int | `512` | clamped 128..1280 | Longest edge; aspect preserved. |
 | `quality` | int | `75` | clamped 20..95 | JPEG quality. |
-| `include_ocr` | bool | `true` | ≤ 300 chars/frame | The frame's OCR text alongside — often removes the need to look at all. |
+| `include_ocr` | bool | `true` | | The frame's OCR text alongside — often removes the need to look at all. |
+| `max_text_chars` | int | `300` | `0` or 120..2000 | Per-frame OCR budget, middle-truncated. `0` is the documented opt-out: the frame's every line, in reading order. |
 
 **Return shape — `return="url"` (default):** one text block, no image blocks.
 
@@ -1048,6 +1081,16 @@ kCc8FmEb1nY-00705 · 1:12:54 · https://youtu.be/kCc8FmEb1nY?t=4372
   ocr: "(terminal) nvidia-smi — 18,304MiB / 24,564MiB"
 …
 URLs expire 2026-08-08T18:00:00Z. They are signed — no auth header needed to fetch them.
+```
+
+The header is `Frames: <fetched>/<asked for>`, and both halves are honest: a
+named id that could not be fetched appears on a `failed:` line and counts in the
+denominator, never in neither. `expires_at` in the structured payload is the
+epoch second the signature dies, or `null` when URLs never expire (auth `none`),
+matching the footer prose exactly. A `limit` passed alongside `frame_ids` adds:
+
+```
+note: limit bounds the video_id span mode; all 5 named frame_ids were fetched (the cap on named ids is 12).
 ```
 
 Signed URLs, not bearer-protected paths: the renderer that fetches the image is
@@ -1077,11 +1120,16 @@ Frames: 6/6 (4 inline, 2 as URLs — inline cap is 4 images / 6MB per call)
 ```
 
 **Token discipline.**
-- `limit` clamped 1..12. Inline images capped at **4 per call and 6MB total,
+- Two item caps, both server-side: `frame_ids` ≤ 12 (a hard `E_BAD_PARAM`, not a
+  silent slice) and span-mode `limit` clamped 1..12. The worst case is the same
+  12 frames either way, which is what the §7 table already budgets.
+- Inline images capped at **4 per call and 6MB total,
   independent of `limit`** — this is the "bound the expensive path independently"
   rule (screenpipe's `MAX_INLINE_FRAMES_PER_SEARCH=20` + concurrency 4 + global
   semaphore 3, after `limit=500&include_frames=true` spawned 500 ffmpeg processes).
-- OCR text capped at 300 chars/frame.
+- OCR text capped at 300 chars/frame by default, `max_text_chars` 0 or 120..2000.
+  The `0` opt-out is real here — a marker that names a parameter the tool does
+  not accept is worse than no marker (§7.3 of the field test).
 - Keyframe JPEGs are written at index time and served from disk. There is **no
   ffmpeg on the query path** — resizing is a cached PIL resample keyed on
   `(frame_id, w, q)`, single-flight per key, into the `derived/` cache of
@@ -1501,6 +1549,8 @@ when it fails.
     "search.max_per_video": [1, 20],
     "list-videos.limit": [1, 100],
     "get-frames.limit": [1, 12],
+    "get-frames.frame_ids": [1, 12],
+    "get-frames.max_text_chars": [120, 2000],
     "get-segment-context.window": [5, 300],
     "out_of_range": "clamped silently — read the printed count, not the one you asked for"
   },
@@ -1565,7 +1615,9 @@ does not get you more, it gets you the cap with no warning.
 | `search limit` | 1–50 | 10 |
 | `search max_per_video` | 1–20 | 3 |
 | `list-videos limit` | 1–100 | 20 |
-| `get-frames limit` | 1–12 | 3 |
+| `get-frames limit` (span mode) | 1–12 | 3 |
+| `get-frames frame_ids` | ≤ 12 ids | — |
+| `get-frames max_text_chars` | `0` or 120–2000 | 300 |
 | `get-segment-context window` | 5–300 s | 45 |
 
 To get past a cap, page with `offset` — the pagination line tells you the next
@@ -1608,8 +1660,12 @@ you asked for.
   from the layout that made them readable, and OCR mangles digits and bullet
   glyphs (`8.8` → `8.&`, a rank `1 ●` → `10`). When the answer depends on which
   value sits in which cell, or on a number, read the image: `get-frames`
-  `return="url"` and open the URL. There is no `max_text_chars` on `get-frames`
-  — the picture is the un-truncated text.
+  `return="url"` and open the URL. `get-frames max_text_chars=0` gives the
+  frame's every line in reading order — but the picture is still the only place
+  the layout survives.
+- `get-frames limit` bounds the `video_id` span mode only. Ids you name are all
+  fetched, up to 12, in the order you asked for; a bad one comes back on a
+  `failed:` line rather than vanishing.
 - Use only parameter names a payload printed or the tool schema lists. An
   unknown parameter is dropped silently, so a call that "worked" may have
   ignored the filter you thought you applied.
@@ -1652,7 +1708,7 @@ parameter gets added.
 | `corpus-summary` | ~3,500 | fixed section caps (50/100/25) |
 | `video-summary` | ~6,000 | 50 chapters + 30 key texts + 30 OCR × 1,200 chars, response cap |
 | `get-segment-context` | ~22,000 (`max_text_chars=20000` + 1,200 OCR) | window ≤300s **and** char budget |
-| `get-frames` (`url`) | 12 × ~400 ≈ 5,000 | `limit≤12`, OCR 300/frame |
+| `get-frames` (`url`) | 12 × ~400 ≈ 5,000 at the default; 12 × ~2,000 ≈ 25,000 at `max_text_chars=2000`, and one full frame's OCR per frame at the `0` opt-out | ≤ 12 ids (`frame_ids` **or** `limit`), OCR 300/frame by default |
 | `get-frames` (`image`) | 4 images / 6MB + ~1,600 chars | inline cap independent of `limit` |
 | `index-video` | ~1,200 | ≤10 titles echoed |
 | `job-status` | ~2,500 | ≤20 jobs, fixed stage table, 400-char errors |
