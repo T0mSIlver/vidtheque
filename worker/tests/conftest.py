@@ -17,6 +17,7 @@ import pytest
 from vidtheque_worker.backends.base import (
     Embeddings,
     OCRItem,
+    OCRPage,
     Segment,
     Transcription,
     Word,
@@ -232,10 +233,14 @@ def frame_query_embeddings() -> Embeddings:
 
 
 @pytest.fixture
-def ocr_items() -> list[list[OCRItem]]:
+def ocr_items() -> list[OCRPage]:
     return [
-        [
-            OCRItem(text="uv sync", confidence=0.93, bbox=[10.0, 20.0, 110.0, 44.0]),
-            OCRItem(text="$ make test", confidence=0.88, bbox=[10.0, 50.0, 150.0, 74.0]),
-        ]
+        OCRPage(
+            items=[
+                OCRItem(text="uv sync", confidence=0.93, bbox=[10.0, 20.0, 110.0, 44.0]),
+                OCRItem(
+                    text="$ make test", confidence=0.88, bbox=[10.0, 50.0, 150.0, 74.0]
+                ),
+            ]
+        )
     ]

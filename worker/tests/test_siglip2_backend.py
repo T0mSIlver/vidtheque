@@ -10,6 +10,7 @@ it gets an assertion rather than a comment.
 from __future__ import annotations
 
 import contextlib
+import io
 import logging
 import math
 from types import SimpleNamespace
@@ -18,7 +19,11 @@ from typing import Any
 import pytest
 
 from vidtheque_worker.backends import siglip2_image_embed as mod
-from vidtheque_worker.backends.base import BackendUnavailable
+from vidtheque_worker.backends.base import (
+    BackendUnavailable,
+    InvalidImageError,
+    looks_like_device_failure,
+)
 from vidtheque_worker.backends.siglip2_image_embed import (
     TEXT_CONTEXT_TOKENS,
     SigLIP2Backend,
@@ -220,7 +225,7 @@ def test_both_towers_run_on_one_model_instance(monkeypatch):
     """The reason the frame query shares the ``image_embed`` slot: it is the
     same object, so serving a query loads nothing extra."""
     backend, processor, model = make_backend()
-    monkeypatch.setattr(mod, "_open_rgb", lambda blob: blob)
+    monkeypatch.setattr(mod, "_decode", lambda blob, index: blob)
 
     backend.infer([b"\xff\xd8jpeg"], max_num_patches=1024)
     backend.embed_text(["a terminal"])
@@ -234,7 +239,7 @@ def test_both_towers_run_on_one_model_instance(monkeypatch):
 
 def test_image_path_still_defaults_to_the_configured_budget(monkeypatch):
     backend, processor, _ = make_backend(max_num_patches=576)
-    monkeypatch.setattr(mod, "_open_rgb", lambda blob: blob)
+    monkeypatch.setattr(mod, "_decode", lambda blob, index: blob)
     backend.infer([b"\xff\xd8jpeg"])
     assert processor.calls[0]["max_num_patches"] == 576
 
@@ -257,10 +262,71 @@ def test_both_towers_survive_either_transformers_return_shape(
     (research/e2e-smoke-2026-08-08.md §4.3).
     """
     backend, _, _ = make_backend(rows=[[3.0, 4.0]], model_cls=model_cls)
-    monkeypatch.setattr(mod, "_open_rgb", lambda blob: blob)
+    monkeypatch.setattr(mod, "_decode", lambda blob, index: blob)
 
     assert backend.embed_text(["a terminal"]).vectors == [[0.6, 0.8]]
     assert backend.infer([b"\xff\xd8jpeg"]).vectors == [[0.6, 0.8]]
+
+
+# --------------------------------------------------------------------------
+# decoding: the one part of this file that needs a real PIL
+# --------------------------------------------------------------------------
+
+
+def _png(size: tuple[int, int] = (8, 6)) -> bytes:
+    Image = pytest.importorskip("PIL.Image")
+    buffer = io.BytesIO()
+    Image.new("RGB", size, (1, 2, 3)).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize(
+    ("blob", "why"),
+    [
+        (b"this is not an image at all", "garbage"),
+        (_png()[:40], "truncated"),
+        (b"<svg xmlns='http://www.w3.org/2000/svg'><rect/></svg>", "svg"),
+    ],
+    ids=["garbage", "truncated", "svg"],
+)
+def test_undecodable_bytes_are_a_typed_input_error(blob, why):
+    """PIL raises `UnidentifiedImageError`/`OSError`, which matched no handler
+    in the app and so came back as a bare 500 — read by mcp/ as a
+    non-retryable failure of the whole indexing job, for one bad keyframe."""
+    pytest.importorskip("PIL")
+    with pytest.raises(InvalidImageError) as raised:
+        mod._decode(blob, 7)
+    assert raised.value.index == 7
+    assert "image 7" in str(raised.value)
+    # Never mistaken for the card, whatever the message says.
+    assert not looks_like_device_failure(raised.value)
+
+
+def test_a_real_image_decodes_to_rgb():
+    pytest.importorskip("PIL")
+    image = mod._decode(_png((8, 6)), 0)
+    assert (image.width, image.height, image.mode) == (8, 6, "RGB")
+
+
+def test_an_image_with_no_pixels_is_refused(monkeypatch):
+    """A decoder that says yes to zero pixels still has nothing to embed, and
+    the processor's failure on it would be a 500 rather than a 400."""
+    monkeypatch.setattr(
+        mod, "_open_rgb", lambda blob: SimpleNamespace(width=0, height=0)
+    )
+    with pytest.raises(InvalidImageError, match="no pixels"):
+        mod._decode(b"whatever", 3)
+
+
+def test_a_missing_pillow_is_the_workers_problem_not_the_uploads(monkeypatch):
+    """BackendUnavailable is a 503 the operator must fix; it must not be
+    relabelled as "your bytes are bad" on the way through the decoder."""
+    def explode(blob):
+        raise BackendUnavailable("pillow is not installed")
+
+    monkeypatch.setattr(mod, "_open_rgb", explode)
+    with pytest.raises(BackendUnavailable):
+        mod._decode(b"whatever", 0)
 
 
 def test_an_unrecognised_return_shape_is_not_silently_embedded() -> None:

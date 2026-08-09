@@ -17,11 +17,12 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse
 
 from . import __version__
-from .backends.base import Backend
+from .backends.base import Backend, InvalidImageError
 from .lifecycle import LifecycleManager
 from .schemas import (
     EmbeddingsRequest,
     EmbeddingsResponse,
+    ErrorResponse,
     FrameQueryRequest,
     HealthResponse,
     OCRResponse,
@@ -46,6 +47,30 @@ MAX_OCR_IMAGES = 64
 MAX_PATCH_BUDGET = 4096
 """Ceiling on the frame embedder's resolution knob. The model's trained budgets
 top out at 1024; this only stops a request from asking for a quadratic blow-up."""
+
+INFERENCE_ERRORS: dict[int | str, dict[str, Any]] = {
+    400: {
+        "model": ErrorResponse,
+        "description": (
+            "The payload is the problem — an undecodable image, an unsupported "
+            "parameter. Re-sending it will fail the same way, so this is not a "
+            "retry: `error.type` names which."
+        ),
+    },
+    413: {"model": ErrorResponse, "description": "Batch larger than this endpoint's cap."},
+    500: {"model": ErrorResponse, "description": "The backend failed unexpectedly."},
+    503: {
+        "model": ErrorResponse,
+        "description": (
+            "Not now: the model is loading, the card is full, the lease hook "
+            "failed, a device error unloaded the slot, or the worker is "
+            "shutting down. Carries `Retry-After` in seconds."
+        ),
+    },
+}
+"""Documented on every inference route because the envelope is the contract —
+``mcp/`` branches on the status code and reads ``Retry-After``, and anyone
+coding against this file otherwise sees only the 200s and FastAPI's 422."""
 
 
 def get_manager(request: Request) -> LifecycleManager:
@@ -72,6 +97,19 @@ def _model_id(manager: LifecycleManager, task: str) -> str | None:
     "/v1/audio/transcriptions",
     response_model=None,
     summary="Transcribe audio (OpenAI-compatible)",
+    responses={
+        200: {
+            "model": VerboseTranscriptionOut,
+            "description": (
+                "Shape follows `response_format`: `verbose_json` is the schema "
+                "below (segments, and word timestamps when word granularity is "
+                "asked for), `json` is `{\"text\": ...}`, `text` is the "
+                "transcript as `text/plain`."
+            ),
+            "content": {"text/plain": {"schema": {"type": "string"}}},
+        },
+        **INFERENCE_ERRORS,
+    },
 )
 async def transcriptions(
     request: Request,
@@ -79,7 +117,10 @@ async def transcriptions(
     model: Annotated[str | None, Form()] = None,
     language: Annotated[str | None, Form()] = None,
     response_format: Annotated[str, Form()] = "json",
-    temperature: Annotated[float, Form()] = 0.0,
+    temperature: Annotated[
+        float,
+        Form(description="Greedy decoding only: 0 is the sole accepted value"),
+    ] = 0.0,
     timestamp_granularities: Annotated[
         list[str] | None, Form(alias="timestamp_granularities[]")
     ] = None,
@@ -89,6 +130,17 @@ async def transcriptions(
             status_code=400,
             detail=f"unsupported response_format {response_format!r}; "
             "use json, verbose_json or text",
+        )
+    if temperature:
+        # The field is accepted (OpenAI clients send it, and this endpoint's
+        # whole point is being swappable for one) but it was never passed to
+        # the backend. Say so rather than transcribe greedily and let the
+        # caller believe it sampled: a silent drop is only invisible while
+        # every caller happens to send 0.
+        raise HTTPException(
+            status_code=400,
+            detail=f"temperature={temperature} is not supported; this worker "
+            "decodes greedily, so only temperature=0 is accepted",
         )
 
     manager = get_manager(request)
@@ -148,6 +200,7 @@ def _cleanup(path: str) -> None:
     "/v1/embeddings",
     response_model=EmbeddingsResponse,
     summary="Embed text (OpenAI-compatible)",
+    responses=INFERENCE_ERRORS,
 )
 async def embeddings(request: Request, body: EmbeddingsRequest) -> EmbeddingsResponse:
     texts = body.texts()
@@ -189,6 +242,7 @@ async def embeddings(request: Request, body: EmbeddingsRequest) -> EmbeddingsRes
     "/v1/embeddings/image",
     response_model=EmbeddingsResponse,
     summary="Embed images into the frame vector space",
+    responses=INFERENCE_ERRORS,
 )
 async def image_embeddings(
     request: Request,
@@ -227,8 +281,21 @@ async def image_embeddings(
     def job(backend: Backend) -> Any:
         return backend.infer(blobs, **kwargs)
 
-    result = await manager.submit("image_embed", job, label=f"{len(blobs)} images")
+    try:
+        result = await manager.submit("image_embed", job, label=f"{len(blobs)} images")
+    except InvalidImageError as exc:
+        # The backend counts positions; only this layer knows what they were
+        # called, and a 400 saying "image 37" is a lot less useful to whoever
+        # has to go and look than one naming the file.
+        raise _named(exc, [upload.filename for upload in file]) from exc
     return to_embeddings_response(result)
+
+
+def _named(exc: InvalidImageError, filenames: list[str | None]) -> InvalidImageError:
+    index = exc.index
+    if index is None or not 0 <= index < len(filenames) or not filenames[index]:
+        return exc
+    return InvalidImageError(f"{exc} (file {filenames[index]!r})", index=index)
 
 
 # --------------------------------------------------------------------------
@@ -258,6 +325,7 @@ async def image_embeddings(
     "/v1/embeddings/frame-query",
     response_model=EmbeddingsResponse,
     summary="Embed a text query into the frame vector space",
+    responses=INFERENCE_ERRORS,
 )
 async def frame_query_embeddings(
     request: Request, body: FrameQueryRequest
@@ -291,12 +359,23 @@ async def frame_query_embeddings(
 # --------------------------------------------------------------------------
 
 
-@router.post("/v1/ocr", response_model=OCRResponse, summary="OCR one or more images")
+@router.post(
+    "/v1/ocr",
+    response_model=OCRResponse,
+    summary="OCR one or more images",
+    responses=INFERENCE_ERRORS,
+)
 async def ocr(
     request: Request,
     file: Annotated[list[UploadFile], File(description="One or more image files")],
     min_confidence: Annotated[float | None, Form()] = None,
 ) -> OCRResponse:
+    """Exactly one `data` entry per uploaded file, in upload order.
+
+    An image the decoder refuses gets an entry with `error` set and no items,
+    rather than failing the batch: one unreadable keyframe out of sixty-four
+    should not cost the other sixty-three their OCR.
+    """
     if not file:
         raise HTTPException(status_code=400, detail="at least one file is required")
     if len(file) > MAX_OCR_IMAGES:

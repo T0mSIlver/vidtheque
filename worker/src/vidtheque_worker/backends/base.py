@@ -190,6 +190,26 @@ class OCRItem:
     """``[x0, y0, x1, y1]`` in pixels, axis-aligned around the detected polygon."""
 
 
+@dataclass(slots=True)
+class OCRPage:
+    """What one input image produced — text, or the reason there is none.
+
+    OCR is the one batch endpoint that can answer *per file*, and it should:
+    ``mcp/`` requires exactly one indexed result per input, so failing the
+    whole request over one unreadable frame loses the OCR stage for the other
+    63 images in the batch, non-retryably. An entry with ``error`` set keeps
+    the cardinality contract and still says what happened.
+
+    A device failure is never a page error — it propagates, unloads the slot
+    and fails the request, because the next image would fail the same way.
+    """
+
+    items: list[OCRItem] = field(default_factory=list)
+    error: str | None = None
+    code: str | None = None
+    """``error.type``-style tag for the failure, mirroring the HTTP errors."""
+
+
 # --------------------------------------------------------------------------
 # protocols
 # --------------------------------------------------------------------------
@@ -264,7 +284,9 @@ class ImageEmbedBackend(Backend, Protocol):
 
 @runtime_checkable
 class OCRBackend(Backend, Protocol):
-    def infer(self, images: list[bytes], **kwargs: Any) -> list[list[OCRItem]]: ...
+    def infer(self, images: list[bytes], **kwargs: Any) -> list[OCRPage]: ...
+    """One page per image, in order, always — an unreadable image comes back as
+    a page carrying its error, never as a missing entry or a raised exception."""
 
 
 # --------------------------------------------------------------------------

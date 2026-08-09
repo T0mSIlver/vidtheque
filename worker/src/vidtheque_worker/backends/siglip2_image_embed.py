@@ -50,7 +50,13 @@ import io
 import logging
 from typing import Any
 
-from .base import BackendUnavailable, BaseBackend, Embeddings
+from .base import (
+    BackendError,
+    BackendUnavailable,
+    BaseBackend,
+    Embeddings,
+    InvalidImageError,
+)
 
 log = logging.getLogger(__name__)
 
@@ -134,7 +140,7 @@ class SigLIP2Backend(BaseBackend):
                 "max_num_patches=%d is outside the trained set %s", budget, PATCH_BUDGETS
             )
         batch_size = int(kwargs.get("batch_size", self.batch_size))
-        frames = [_open_rgb(blob) for blob in images]
+        frames = [_decode(blob, index) for index, blob in enumerate(images)]
 
         vectors: list[list[float]] = []
         for start in range(0, len(frames), max(1, batch_size)):
@@ -244,6 +250,31 @@ def _warn_if_truncated(inputs: Any, texts: list[str]) -> None:
                 TEXT_CONTEXT_TOKENS,
                 text,
             )
+
+
+def _decode(blob: bytes, index: int) -> Any:
+    """Decode one upload, or say which one was not an image.
+
+    Unlike OCR, this endpoint cannot answer per file — there is no vector to
+    put in the failed slot, and ``mcp/`` rejects a response that is short by
+    one — so a single bad frame does fail the batch. It fails it as a 400 with
+    the position in it, which is outside the client's retryable set: the
+    caller drops the frame and moves on instead of replaying 64 uploads until
+    the backpressure budget runs out. Bare PIL exceptions used to reach
+    FastAPI's bare-500 path, stack trace and all.
+    """
+    try:
+        image = _open_rgb(blob)
+    except BackendError:
+        raise  # BackendUnavailable: the *worker* is broken, not the upload
+    except Exception as exc:
+        raise InvalidImageError(
+            f"image {index} could not be decoded: {type(exc).__name__}: {exc}",
+            index=index,
+        ) from exc
+    if not image.width or not image.height:
+        raise InvalidImageError(f"image {index} has no pixels", index=index)
+    return image
 
 
 def _open_rgb(blob: bytes) -> Any:

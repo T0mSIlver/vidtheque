@@ -7,7 +7,12 @@ from conftest import FakeBackend, FakeHooks, FakeVram, Recorder
 from fastapi.testclient import TestClient
 
 from vidtheque_worker.app import create_app
-from vidtheque_worker.backends.base import BackendUnavailable
+from vidtheque_worker.backends.base import (
+    BackendUnavailable,
+    InvalidImageError,
+    OCRItem,
+    OCRPage,
+)
 from vidtheque_worker.config import Settings
 from vidtheque_worker.lifecycle import LifecycleManager
 
@@ -102,6 +107,24 @@ def test_verbose_json_carries_word_timestamps(client, parts):
     (args, kwargs) = backends["stt"].infer_calls[0]
     assert args[0].endswith(".wav")
     assert kwargs == {"language": None, "align": True}
+
+
+def test_temperature_is_honoured_or_refused_never_dropped(client, parts):
+    """The field was accepted, documented, and then never passed to the
+    backend. Invisible while every caller sends 0 — which mcp/ does — and a
+    silent greedy decode for the first one that does not."""
+    backends, _ = parts
+    upload = {"file": ("clip.wav", b"RIFFfake", "audio/wav")}
+
+    ok = client.post("/v1/audio/transcriptions", files=upload, data={"temperature": "0"})
+    assert ok.status_code == 200, ok.text
+
+    refused = client.post(
+        "/v1/audio/transcriptions", files=upload, data={"temperature": "0.8"}
+    )
+    assert refused.status_code == 400
+    assert "temperature" in refused.json()["detail"]
+    assert len(backends["stt"].infer_calls) == 1, "the refused one never ran"
 
 
 def test_default_json_is_just_text(client):
@@ -267,6 +290,27 @@ def test_image_embeddings_reject_an_empty_upload(client):
     assert response.status_code == 400
 
 
+def test_corrupt_image_bytes_are_a_400_that_names_the_file(client, parts):
+    """PIL's `UnidentifiedImageError` matched no handler, so it came back as a
+    bare 500 with a stack trace — and 500 is outside mcp/'s retryable set, so
+    it failed the indexing job non-retryably with nothing useful in the body.
+    It is a typed 400 now, and the model that was never at fault stays loaded."""
+    backends, _ = parts
+    backends["image_embed"].infer_error = InvalidImageError(
+        "image 1 could not be decoded: UnidentifiedImageError: cannot identify",
+        index=1,
+    )
+    response = client.post("/v1/embeddings/image", files=_jpegs(3))
+    assert response.status_code == 400, response.text
+    body = response.json()
+    assert body["error"]["type"] == "invalid_image"
+    assert "frame_1.jpg" in body["error"]["message"]
+    assert backends["image_embed"].loaded, "a bad upload must not cost a reload"
+
+    status = client.get("/status").json()
+    assert {b["task"]: b["unload_count"] for b in status["backends"]}["image_embed"] == 0
+
+
 def test_image_embeddings_reject_an_oversized_batch(client):
     response = client.post("/v1/embeddings/image", files=_jpegs(65))
     assert response.status_code == 413
@@ -419,6 +463,37 @@ def test_ocr_rejects_an_empty_upload(client):
     assert response.status_code == 400
 
 
+def test_an_unreadable_image_fails_alone_and_keeps_its_place(client, parts):
+    """One corrupt keyframe used to escape as a bare 500 — which mcp/ reads as
+    non-retryable and turns into "the whole OCR stage for this video failed".
+    It is now this image's error and nobody else's, in this image's entry."""
+    backends, _ = parts
+    backends["ocr"].result = [
+        OCRPage(items=[OCRItem(text="uv sync", confidence=0.9)]),
+        OCRPage(error="image 1 could not be decoded: cannot identify image file",
+                code="invalid_image"),
+        OCRPage(items=[]),
+    ]
+    response = client.post(
+        "/v1/ocr",
+        files=[
+            ("file", ("good.jpg", b"\xff\xd8jpeg", "image/jpeg")),
+            ("file", ("corrupt.jpg", b"not-an-image", "image/jpeg")),
+            ("file", ("blank.jpg", b"\xff\xd8jpeg", "image/jpeg")),
+        ],
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    # The cardinality mcp/ enforces: one indexed entry per input, in order.
+    assert [entry["index"] for entry in data] == [0, 1, 2]
+    assert data[1]["filename"] == "corrupt.jpg"
+    assert data[1]["items"] == []
+    assert data[1]["error"]["type"] == "invalid_image"
+    assert "could not be decoded" in data[1]["error"]["message"]
+    # A read image and an image with no text on it are both errorless.
+    assert data[0]["error"] is None and data[2]["error"] is None
+
+
 # --------------------------------------------------------------------------
 # status / health
 # --------------------------------------------------------------------------
@@ -443,7 +518,12 @@ def test_status_reports_models_vram_and_queue(client):
     assert body["vram"]["available"] is True
     assert body["vram"]["used_mb"] == 2000
     assert body["vram"]["free_mb"] == 22000
-    assert body["queue"] == {"depth": 0, "in_flight": 0, "running": None}
+    assert body["queue"] == {
+        "depth": 0,
+        "in_flight": 0,
+        "running": None,
+        "consumer_alive": True,
+    }
 
 
 # --------------------------------------------------------------------------
@@ -501,3 +581,26 @@ def test_openapi_documents_the_contract(client):
         "/status",
         "/healthz",
     }
+
+
+def test_openapi_documents_the_error_envelope(client):
+    """No Python import crosses mcp/ ↔ worker/, so this file is the only place
+    a client can learn that a failure is `{"error": {...}}` and not FastAPI's
+    `{"detail": ...}` — and which codes are worth retrying."""
+    schema = client.get("/openapi.json").json()
+    for path in ("/v1/embeddings", "/v1/embeddings/image", "/v1/ocr"):
+        responses = schema["paths"][path]["post"]["responses"]
+        assert {"400", "413", "500", "503"} <= set(responses), path
+        for status in ("400", "503"):
+            body = responses[status]["content"]["application/json"]["schema"]
+            assert body["$ref"].endswith("ErrorResponse"), (path, status)
+    envelope = schema["components"]["schemas"]["ErrorResponse"]["properties"]
+    assert envelope["error"]["$ref"].endswith("ErrorBody")
+    fields = schema["components"]["schemas"]["ErrorBody"]["properties"]
+    assert set(fields) == {"message", "type"}
+    # The verbose transcription shape mcp/ codes against, no longer `schema: {}`.
+    ok = schema["paths"]["/v1/audio/transcriptions"]["post"]["responses"]["200"]
+    assert ok["content"]["application/json"]["schema"]["$ref"].endswith(
+        "VerboseTranscriptionOut"
+    )
+    assert ok["content"]["text/plain"]["schema"] == {"type": "string"}

@@ -108,6 +108,7 @@
           },
           "temperature": {
             "default": 0.0,
+            "description": "Greedy decoding only: 0 is the sole accepted value",
             "title": "Temperature",
             "type": "number"
           },
@@ -254,6 +255,38 @@
         "title": "EmbeddingsResponse",
         "type": "object"
       },
+      "ErrorBody": {
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "description": "Stable code for the failure. `invalid_input`/`invalid_image`/`invalid_media` (400) mean the payload is the problem and re-sending it will fail identically; `backend_crashed`, `insufficient_vram`, `gpu_lease_failed`, `backend_unavailable`, `worker_shutting_down` and `worker_not_ready` (503, with `Retry-After`) all mean not-now rather than never.",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "type"
+        ],
+        "title": "ErrorBody",
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "description": "The envelope every handled failure uses.\n\nDocumented because it is the shape a client branches on, and because it is\n*not* FastAPI's `{\"detail\": ...}` \u2014 a caller that reads only `detail` gets\nnothing useful out of a 503.",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
       "FrameQueryRequest": {
         "description": "A query for the frame vector space, run through the frame model's text tower.\n\nNo ``input_type``: the frame model is symmetric and this endpoint is the\nquery side by construction \u2014 the document side is images, and it has its\nown endpoint. Keep the strings short; SigLIP 2's trained text context is 64\ntokens, and anything past it is dropped without an error.",
         "properties": {
@@ -327,8 +360,39 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "OCRErrorOut": {
+        "description": "Why one image produced no text. Absent means it was read successfully.",
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "description": "Stable code, e.g. invalid_image",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "message"
+        ],
+        "title": "OCRErrorOut",
+        "type": "object"
+      },
       "OCRImageResult": {
         "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OCRErrorOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set when this image could not be read. `items` is then empty, and the entry still counts as this image's one result \u2014 a per-file failure never shortens the response."
+          },
           "filename": {
             "anyOf": [
               {
@@ -441,6 +505,46 @@
         "title": "OCRResponse",
         "type": "object"
       },
+      "SegmentOut": {
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "seek": {
+            "default": 0,
+            "title": "Seek",
+            "type": "integer"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "words": {
+            "items": {
+              "$ref": "#/components/schemas/WordOut"
+            },
+            "title": "Words",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "start",
+          "end",
+          "text"
+        ],
+        "title": "SegmentOut",
+        "type": "object"
+      },
       "StatusResponse": {
         "properties": {
           "backends": {
@@ -541,6 +645,122 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "VerboseTranscriptionOut": {
+        "properties": {
+          "backend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend"
+          },
+          "duration": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/SegmentOut"
+            },
+            "title": "Segments",
+            "type": "array"
+          },
+          "task": {
+            "const": "transcribe",
+            "default": "transcribe",
+            "title": "Task",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "VerboseTranscriptionOut",
+        "type": "object"
+      },
+      "WordOut": {
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          },
+          "word": {
+            "title": "Word",
+            "type": "string"
+          }
+        },
+        "required": [
+          "word"
+        ],
+        "title": "WordOut",
+        "type": "object"
       }
     }
   },
@@ -604,10 +824,37 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/VerboseTranscriptionOut"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
               }
             },
-            "description": "Successful Response"
+            "description": "Shape follows `response_format`: `verbose_json` is the schema below (segments, and word timestamps when word granularity is asked for), `json` is `{\"text\": ...}`, `text` is the transcript as `text/plain`."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The payload is the problem \u2014 an undecodable image, an unsupported parameter. Re-sending it will fail the same way, so this is not a retry: `error.type` names which."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Batch larger than this endpoint's cap."
           },
           "422": {
             "content": {
@@ -618,6 +865,26 @@
               }
             },
             "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The backend failed unexpectedly."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not now: the model is loading, the card is full, the lease hook failed, a device error unloaded the slot, or the worker is shutting down. Carries `Retry-After` in seconds."
           }
         },
         "summary": "Transcribe audio (OpenAI-compatible)"
@@ -647,6 +914,26 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The payload is the problem \u2014 an undecodable image, an unsupported parameter. Re-sending it will fail the same way, so this is not a retry: `error.type` names which."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Batch larger than this endpoint's cap."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -656,6 +943,26 @@
               }
             },
             "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The backend failed unexpectedly."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not now: the model is loading, the card is full, the lease hook failed, a device error unloaded the slot, or the worker is shutting down. Carries `Retry-After` in seconds."
           }
         },
         "summary": "Embed text (OpenAI-compatible)"
@@ -686,6 +993,26 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The payload is the problem \u2014 an undecodable image, an unsupported parameter. Re-sending it will fail the same way, so this is not a retry: `error.type` names which."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Batch larger than this endpoint's cap."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -695,6 +1022,26 @@
               }
             },
             "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The backend failed unexpectedly."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not now: the model is loading, the card is full, the lease hook failed, a device error unloaded the slot, or the worker is shutting down. Carries `Retry-After` in seconds."
           }
         },
         "summary": "Embed a text query into the frame vector space"
@@ -725,6 +1072,26 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The payload is the problem \u2014 an undecodable image, an unsupported parameter. Re-sending it will fail the same way, so this is not a retry: `error.type` names which."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Batch larger than this endpoint's cap."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -734,6 +1101,26 @@
               }
             },
             "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The backend failed unexpectedly."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not now: the model is loading, the card is full, the lease hook failed, a device error unloaded the slot, or the worker is shutting down. Carries `Retry-After` in seconds."
           }
         },
         "summary": "Embed images into the frame vector space"
@@ -741,6 +1128,7 @@
     },
     "/v1/ocr": {
       "post": {
+        "description": "Exactly one `data` entry per uploaded file, in upload order.\n\nAn image the decoder refuses gets an entry with `error` set and no items,\nrather than failing the batch: one unreadable keyframe out of sixty-four\nshould not cost the other sixty-three their OCR.",
         "operationId": "ocr_v1_ocr_post",
         "requestBody": {
           "content": {
@@ -763,6 +1151,26 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The payload is the problem \u2014 an undecodable image, an unsupported parameter. Re-sending it will fail the same way, so this is not a retry: `error.type` names which."
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Batch larger than this endpoint's cap."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -772,6 +1180,26 @@
               }
             },
             "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "The backend failed unexpectedly."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not now: the model is loading, the card is full, the lease hook failed, a device error unloaded the slot, or the worker is shutting down. Carries `Retry-After` in seconds."
           }
         },
         "summary": "OCR one or more images"

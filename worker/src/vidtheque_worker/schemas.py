@@ -13,7 +13,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from .backends.base import Embeddings, OCRItem, Transcription
+from .backends.base import Embeddings, OCRPage, Transcription
 
 # --------------------------------------------------------------------------
 # transcriptions
@@ -154,10 +154,25 @@ class OCRItemOut(BaseModel):
     )
 
 
+class OCRErrorOut(BaseModel):
+    """Why one image produced no text. Absent means it was read successfully."""
+
+    type: str = Field(description="Stable code, e.g. invalid_image")
+    message: str
+
+
 class OCRImageResult(BaseModel):
     index: int
     filename: str | None = None
     items: list[OCRItemOut] = Field(default_factory=list)
+    error: OCRErrorOut | None = Field(
+        default=None,
+        description=(
+            "Set when this image could not be read. `items` is then empty, and "
+            "the entry still counts as this image's one result — a per-file "
+            "failure never shortens the response."
+        ),
+    )
 
 
 class OCRResponse(BaseModel):
@@ -168,7 +183,7 @@ class OCRResponse(BaseModel):
 
 
 def to_ocr_response(
-    per_image: list[list[OCRItem]],
+    pages: list[OCRPage],
     filenames: list[str | None],
     *,
     model: str | None = None,
@@ -183,10 +198,17 @@ def to_ocr_response(
                 filename=filenames[i] if i < len(filenames) else None,
                 items=[
                     OCRItemOut(text=it.text, confidence=it.confidence, bbox=it.bbox)
-                    for it in items
+                    for it in page.items
                 ],
+                error=(
+                    None
+                    if page.error is None
+                    else OCRErrorOut(
+                        type=page.code or "invalid_image", message=page.error
+                    )
+                ),
             )
-            for i, items in enumerate(per_image)
+            for i, page in enumerate(pages)
         ],
     )
 
@@ -208,3 +230,33 @@ class StatusResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: Literal["ok"] = "ok"
     version: str
+
+
+# --------------------------------------------------------------------------
+# errors
+# --------------------------------------------------------------------------
+
+
+class ErrorBody(BaseModel):
+    message: str
+    type: str = Field(
+        description=(
+            "Stable code for the failure. `invalid_input`/`invalid_image`/"
+            "`invalid_media` (400) mean the payload is the problem and "
+            "re-sending it will fail identically; `backend_crashed`, "
+            "`insufficient_vram`, `gpu_lease_failed`, `backend_unavailable`, "
+            "`worker_shutting_down` and `worker_not_ready` (503, with "
+            "`Retry-After`) all mean not-now rather than never."
+        )
+    )
+
+
+class ErrorResponse(BaseModel):
+    """The envelope every handled failure uses.
+
+    Documented because it is the shape a client branches on, and because it is
+    *not* FastAPI's `{"detail": ...}` — a caller that reads only `detail` gets
+    nothing useful out of a 503.
+    """
+
+    error: ErrorBody

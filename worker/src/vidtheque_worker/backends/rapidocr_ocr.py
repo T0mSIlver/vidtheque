@@ -35,7 +35,14 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from .base import BackendUnavailable, BaseBackend, OCRItem
+from .base import (
+    BackendUnavailable,
+    BaseBackend,
+    InvalidImageError,
+    OCRItem,
+    OCRPage,
+    looks_like_device_failure,
+)
 
 log = logging.getLogger(__name__)
 
@@ -92,16 +99,34 @@ class RapidOCRBackend(BaseBackend):
         self._engine = None
 
     # -- inference ---------------------------------------------------------
-    def infer(self, images: list[bytes], **kwargs: Any) -> list[list[OCRItem]]:
+    def infer(self, images: list[bytes], **kwargs: Any) -> list[OCRPage]:
+        """One page per image. An image the decoder refuses is *its own*
+        failure, not the batch's: it comes back as a page with an error on it,
+        so the other sixty-three frames still index. A device failure is not
+        caught here — it propagates, unloads the slot, and fails the request,
+        because the next image would hit exactly the same wall.
+        """
         if self._engine is None:
             raise BackendUnavailable("rapidocr engine is not loaded")
 
         min_confidence = float(kwargs.get("min_confidence", self.min_confidence))
-        out: list[list[OCRItem]] = []
-        for blob in images:
+        out: list[OCRPage] = []
+        for index, blob in enumerate(images):
             # RapidOCR decodes bytes itself (path/bytes/ndarray/URL all accepted).
-            result = self._engine(blob, text_score=min_confidence)
-            out.append(_items(result, min_confidence))
+            try:
+                result = self._engine(blob, text_score=min_confidence)
+            except Exception as exc:
+                if looks_like_device_failure(exc):
+                    raise
+                log.warning("image %d could not be read for OCR: %s", index, exc)
+                out.append(
+                    OCRPage(
+                        error=f"image {index} could not be decoded: {exc}",
+                        code=InvalidImageError.code,
+                    )
+                )
+                continue
+            out.append(OCRPage(items=_items(result, min_confidence)))
         return out
 
 
