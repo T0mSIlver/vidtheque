@@ -204,6 +204,119 @@ async def test_an_empty_batch_never_reaches_the_wire() -> None:
     assert await client.embed_images([]) == ([], None, None)
 
 
+# --------------------------------------------------------------- cardinality
+
+
+async def test_ocr_missing_a_page_is_a_failure_not_an_empty_page(tmp_path: Path) -> None:
+    """Seven results for eight images used to write `ocr_state='empty'` on the
+    eighth — a real answer, recorded as read, with the stage marked done. No
+    resume would ever repair it."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {"index": i, "items": [{"text": "hello", "confidence": 0.9}]}
+                    for i in range(7)
+                ],
+                "model": "rapidocr-default",
+            },
+        )
+
+    client, _ = make_client(handler, retries=0)
+    images = [_jpeg(tmp_path, f"frame{i}") for i in range(8)]
+    with pytest.raises(WorkerUnavailable) as caught:
+        await client.ocr(images)
+    assert "7 result(s) for 8 image(s)" in str(caught.value)
+
+
+async def test_a_duplicated_or_out_of_range_index_is_refused(tmp_path: Path) -> None:
+    for data in (
+        [{"index": 0, "items": []}, {"index": 0, "items": []}],  # duplicate
+        [{"index": 0, "items": []}, {"index": 9, "items": []}],  # out of range
+        [{"index": 0, "items": []}, {"items": []}],  # no index at all
+    ):
+
+        def handler(request: httpx.Request, data=data) -> httpx.Response:
+            return httpx.Response(200, json={"data": data, "model": "rapidocr-default"})
+
+        client, _ = make_client(handler, retries=0)
+        with pytest.raises(WorkerUnavailable):
+            await client.ocr([_jpeg(tmp_path, "a"), _jpeg(tmp_path, "b")])
+
+
+async def test_a_page_with_no_text_is_still_a_valid_result(tmp_path: Path) -> None:
+    """`items` is optional in the worker's schema — `index` is what is required."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"data": [{"index": 0}, {"index": 1, "items": []}], "model": "rapidocr-default"},
+        )
+
+    client, _ = make_client(handler)
+    results, model = await client.ocr([_jpeg(tmp_path, "a"), _jpeg(tmp_path, "b")])
+    assert results == [[], []]
+    assert model == "rapidocr-default"
+
+
+async def test_short_embedding_responses_are_refused_rather_than_written(
+    tmp_path: Path,
+) -> None:
+    """Seven vectors for eight frames wrote seven rows through a non-strict zip
+    and marked the stage done. Zero vectors wrote nothing, and still did."""
+    for count in (0, 7):
+
+        def handler(request: httpx.Request, count=count) -> httpx.Response:
+            return httpx.Response(200, json=embeddings_body(dim=1152, count=count))
+
+        client, _ = make_client(handler, retries=0)
+        with pytest.raises(WorkerUnavailable) as caught:
+            await client.embed_images([_jpeg(tmp_path, f"frame{i}") for i in range(8)])
+        assert "8 image(s)" in str(caught.value)
+
+
+async def test_a_batch_that_mixes_vector_widths_is_refused() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "model": "Qwen/Qwen3-Embedding-0.6B",
+                "dimensions": 1024,
+                "data": [
+                    {"index": 0, "embedding": [0.1] * 1024},
+                    {"index": 1, "embedding": [0.1] * 512},
+                ],
+            },
+        )
+
+    client, _ = make_client(handler, retries=0)
+    with pytest.raises(WorkerUnavailable) as caught:
+        await client.embed(["a", "b"], input_type="document")
+    assert "mixes vector widths" in str(caught.value)
+
+
+async def test_a_header_that_disagrees_with_the_bytes_is_refused() -> None:
+    """`_dimension_mismatch` checks the header against the corpus. This checks
+    the header against what actually arrived."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "model": "Qwen/Qwen3-Embedding-0.6B",
+                "dimensions": 1024,
+                "data": [{"index": 0, "embedding": [0.1] * 512}],
+            },
+        )
+
+    client, _ = make_client(handler, retries=0)
+    with pytest.raises(WorkerUnavailable) as caught:
+        await client.embed(["a"], input_type="document")
+    assert "1024-d but the vectors are 512-d" in str(caught.value)
+
+
 # ------------------------------------------------------- the indexing budget
 
 

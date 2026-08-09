@@ -622,7 +622,7 @@ class IndexingPipeline:
                     return
                 rows = [
                     (int(row["id"]), float(row["start_s"]), vector)
-                    for row, vector in zip(batch, vectors, strict=False)
+                    for row, vector in zip(batch, vectors, strict=True)
                 ]
                 video_id = run.video_id
                 await self.db.write(lambda c: store.write_chunk_vectors(c, video_id, rows))
@@ -722,7 +722,7 @@ class IndexingPipeline:
                 await self.db.write(lambda c: store.set_ocr_state(c, ids, "failed"))
                 await self._soft_fail(run, "ocr", str(exc))
                 return
-            for row, lines in zip(batch, results, strict=False):
+            for row, lines in zip(batch, results, strict=True):
                 video_id = run.video_id
                 keyframe_id = int(row["id"])
                 t_s = float(row["t_s"])
@@ -777,7 +777,7 @@ class IndexingPipeline:
                 return
             rows = [
                 (int(row["id"]), float(row["t_s"]), vector)
-                for row, vector in zip(batch, vectors, strict=False)
+                for row, vector in zip(batch, vectors, strict=True)
             ]
             video_id = run.video_id
             await self.db.write(lambda c: store.write_frame_vectors(c, video_id, rows))

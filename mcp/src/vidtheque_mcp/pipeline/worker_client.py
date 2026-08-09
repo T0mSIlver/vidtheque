@@ -260,7 +260,7 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
         if chosen:
             payload["model"] = chosen
         body = await self._send("/v1/embeddings", json_body=payload)
-        return _vectors(body)
+        return _vectors(body, len(texts), "/v1/embeddings", "input")
 
     async def ocr(
         self, images: Sequence[Path], *, min_confidence: float | None = None
@@ -277,12 +277,10 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
             files=lambda: [("file", (path.name, path.open("rb"), "image/jpeg")) for path in images],
             data=data or None,
         )
-        results: list[list[OcrLine]] = [[] for _ in images]
-        for entry in body.get("data", []):
-            index = int(entry.get("index", 0))
-            if not 0 <= index < len(results):
-                continue
-            results[index] = [_ocr_line(item) for item in entry.get("items", [])]
+        pages = _by_index(body.get("data", []), len(images), "/v1/ocr", "image")
+        # An image with no text legitimately omits `items` — the worker's schema
+        # requires `index`, not `items`. A *missing index* is the failure.
+        results = [[_ocr_line(item) for item in pages[i].get("items", [])] for i in range(len(images))]
         return results, body.get("model") or body.get("backend")
 
     async def embed_images(
@@ -305,7 +303,7 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
             files=lambda: [("file", (path.name, path.open("rb"), "image/jpeg")) for path in images],
             data=data or None,
         )
-        return _vectors(body)
+        return _vectors(body, len(images), "/v1/embeddings/image", "image")
 
     async def embed_frame_query(
         self, texts: Sequence[str], *, model: str | None = None
@@ -340,13 +338,72 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
             raise WorkerUnavailable(
                 f"this worker serves no text->frame-space endpoint ({exc})"
             ) from exc
-        return _vectors(body)
+        return _vectors(body, len(texts), FRAME_QUERY_PATH, "input")
 
 
-def _vectors(body: dict[str, Any]) -> tuple[list[list[float]], str | None, int | None]:
-    items = sorted(body.get("data", []), key=lambda d: d.get("index", 0))
-    vectors = [list(item["embedding"]) for item in items]
-    return vectors, body.get("model"), body.get("dimensions")
+def _by_index(
+    data: Any, expected: int, path: str, noun: str
+) -> list[dict[str, Any]]:
+    """Exactly one response entry per input, indexed, in range, no duplicates.
+
+    The old readers were forgiving in the one way that costs data: OCR
+    initialised every page empty and dropped entries whose index it did not
+    recognise, so seven results for eight images wrote a real `ocr_state` of
+    `empty` on the eighth — and the stage still went `done`, so no resume would
+    ever repair it. The embedding reader simply zipped whatever came back
+    against the inputs, non-strict, so a short response wrote a prefix of the
+    rows and called the stage done.
+
+    A short, duplicated or out-of-range response is the worker misbehaving, and
+    the honest answer is a retryable failure rather than a partial commit.
+    """
+    if not isinstance(data, list):
+        raise WorkerUnavailable(f"{path}: expected a list of results, got {type(data).__name__}")
+    found: dict[int, dict[str, Any]] = {}
+    for entry in data:
+        if not isinstance(entry, dict):
+            raise WorkerUnavailable(f"{path}: a result entry was not an object")
+        index = entry.get("index")
+        if not isinstance(index, int) or isinstance(index, bool):
+            raise WorkerUnavailable(f"{path}: a result carried no usable index ({index!r})")
+        if not 0 <= index < expected:
+            raise WorkerUnavailable(
+                f"{path}: result index {index} is outside the {expected} {noun}(s) sent"
+            )
+        if index in found:
+            raise WorkerUnavailable(f"{path}: {noun} {index} came back twice")
+        found[index] = entry
+    if len(found) != expected:
+        missing = sorted(set(range(expected)) - set(found))[:5]
+        raise WorkerUnavailable(
+            f"{path}: {len(found)} result(s) for {expected} {noun}(s); "
+            f"missing {noun}(s) {missing}"
+        )
+    return [found[i] for i in range(expected)]
+
+
+def _vectors(
+    body: dict[str, Any], expected: int, path: str, noun: str
+) -> tuple[list[list[float]], str | None, int | None]:
+    items = _by_index(body.get("data", []), expected, path, noun)
+    vectors: list[list[float]] = []
+    for position, item in enumerate(items):
+        raw = item.get("embedding")
+        if not isinstance(raw, (list, tuple)) or not raw:
+            raise WorkerUnavailable(f"{path}: {noun} {position} came back with no embedding")
+        vectors.append([float(value) for value in raw])
+    widths = {len(vector) for vector in vectors}
+    if len(widths) > 1:
+        raise WorkerUnavailable(f"{path}: the batch mixes vector widths {sorted(widths)}")
+    dimensions = body.get("dimensions")
+    if isinstance(dimensions, int) and widths and int(dimensions) not in widths:
+        # The header and the payload disagree about the space these live in.
+        # `_dimension_mismatch` compares the header against the corpus; this
+        # compares it against the bytes that arrived.
+        raise WorkerUnavailable(
+            f"{path}: the response says {dimensions}-d but the vectors are {widths.pop()}-d"
+        )
+    return vectors, body.get("model"), dimensions
 
 
 def _ocr_line(item: dict[str, Any]) -> OcrLine:
