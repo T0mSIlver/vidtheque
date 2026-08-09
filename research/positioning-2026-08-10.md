@@ -862,3 +862,40 @@ the library. "Untapped discourse" is the market claim: the knowledge exists,
 is public, and nobody has made it usable — vidtheque is the tap. This slots
 directly into B′'s roadmap line (follow channels; it keeps watching) and
 names the growth motion: each added channel compounds the corpus's value.
+
+---
+
+## Refinement round 2 (Tom, 2026-08-10, ~01:40) — the inversion
+
+Tom, verbatim in substance: "If screenpipe is 'AI powered by what you've seen,
+said or heard', vidtheque is **'AI powered by what you didn't have time to
+see, say or hear — but that's still valuable because it comes from SOTA
+sources.'** It's a way to inject the knowledge of the best AI engineers into
+your work."
+
+This is a category move, not a copy tweak:
+
+- **Not a memory product.** "Second brain" frames (A) extend *your own*
+  experience; vidtheque extends *past* it — other people's expertise, made
+  usable. The screenpipe symmetry becomes a positioning twin: same product
+  family shape (index + search + AI on top), opposite knowledge flow
+  (inward-personal vs outward-expert).
+- **The scarcity is time.** The discourse lives on YouTube (round 1b);
+  nobody has time to watch it; agents do. "You can't watch everything.
+  Your agent can."
+- **Receipts are the trust mechanism, not a feature.** What separates
+  injected knowledge from a hallucinated summary is the sentence, the slide,
+  and the second. This is why the moment-with-receipt object is the product's
+  signature artifact.
+- **Personas re-rank**: primary — the builder who can't watch everything;
+  secondary — the creator searching their own catalogue (which is the
+  screenpipe-shaped flow, still served, no longer the headline).
+- Candidate contrast line (possibly public-usable):
+  *"screenpipe remembers what you've seen. vidtheque knows what you haven't."*
+
+**Working position, v2:** vidtheque injects the knowledge of the best AI
+engineers into your work — from the talks, streams and deep-dives you didn't
+have time to watch — verbatim, timestamped, on tap for you and your agents.
+
+**Status: this reads as the lock. Landing versions to be built against v2 +
+round 1b ("follow the builders") on Tom's go.**
