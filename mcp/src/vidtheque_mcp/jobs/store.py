@@ -559,9 +559,17 @@ def list_jobs(
 
 
 def job_items(conn: sqlite3.Connection, job_id: int, limit: int = 20) -> list[sqlite3.Row]:
+    """One job's items. ``attempts`` is here because nothing else records it.
+
+    `ItemFailed.retryable` is not persisted, so no row says "this will retry":
+    a page infers it from `attempts < max_attempts` and from the job's
+    `not_before` (dashboard.md §4.4). Both halves have to be selected for the
+    inference to be available at all.
+    """
     return conn.execute(
         """
         SELECT i.id, i.seq, i.source_url, i.state, i.stage, i.stage_pct,
+               i.attempts, i.max_attempts,
                i.error_code, i.error_message, i.started_at, i.finished_at,
                i.video_id, v.public_id, v.title, v.channel_name, v.duration_s
         FROM job_items i LEFT JOIN videos v ON v.id = i.video_id
