@@ -154,6 +154,11 @@ async def search_endpoint(request: Request) -> JSONResponse:
             "results": [_decorate_hit(deps, hit) for hit in payload.get("results", [])],
             "pagination": payload.get("pagination", {}),
             "notes": payload.get("notes", []),
+            # Only the tool's empty path sets this, and it is the difference
+            # between "nothing matched" and "nothing is indexed" — which a
+            # `?q=` link to a fresh instance would otherwise report as a bad
+            # query. Absent on a page of hits, where it would say nothing.
+            "data_status": payload.get("data_status"),
         }
     )
 
@@ -173,8 +178,9 @@ async def videos_endpoint(request: Request) -> JSONResponse:
         # `relevance` needs something to be relevant to; the tool raises
         # E_ORDER_SCOPE otherwise, so the facade picks the order that fits.
         order="relevance" if q else "recency",
-        format="tsv",
-        fields=library.DEFAULT_LIST_FIELDS,
+        # `format`/`fields` are deliberately not passed: they shape the *text*
+        # block, and this reads `structured_content`, which carries every field
+        # whatever they say. Passing them read as though they mattered here.
     )
     if result.is_error:
         return _error_response(result.structured_content, "listing failed")

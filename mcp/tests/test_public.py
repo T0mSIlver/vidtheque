@@ -919,3 +919,48 @@ def test_duplicate_tool_call_ids_are_made_unique(tmp_path: Path) -> None:
     ids = [c["id"] for c in turn["tool_calls"]]
     assert len(set(ids)) == 2, "a repeated id is a 400 upstream, read as a 503 downstream"
     assert ids[0] == "same"  # the model's own id is kept wherever it can be
+
+
+def test_the_facade_forwards_data_status_when_nothing_matched(
+    public_client: TestClient,
+) -> None:
+    """Finding 8: "nothing matched" and "nothing is indexed" are different pages."""
+    payload = public_client.get("/api/search?q=cache&channel=nobody-at-all").json()
+    assert payload["results"] == []
+    assert payload["data_status"] == "ok", "a real corpus that this query missed"
+    # A page of hits has nothing to say about it, and says nothing.
+    assert public_client.get("/api/search?q=cache").json()["data_status"] is None
+
+
+def test_an_empty_corpus_says_so_rather_than_blaming_the_query(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    conn = sqlite3.connect(settings.db_path)
+    try:
+        conn.execute("DELETE FROM videos")
+        conn.commit()
+    finally:
+        conn.close()
+    app = build_app(
+        settings, embeddings=FakeEmbeddings(), run_pipeline=False, public=PUBLIC
+    )
+    with TestClient(app, base_url="http://localhost:8080") as client:
+        payload = client.get("/api/search?q=cache").json()
+    assert payload["results"] == []
+    assert payload["data_status"] == "empty"
+
+
+def test_the_second_page_can_be_refused_while_the_first_stands(tmp_path: Path) -> None:
+    """Finding 9/2's server half: "More results" is a request, and it can 429.
+
+    What the page does with that — a notice under the rows it already has,
+    rather than a wipe — needs a DOM-level harness and is not asserted here.
+    """
+    tight = PublicSettings(enabled=True, search_per_min=1)
+    with make_client(tmp_path, tight) as client:
+        first = client.get("/api/search?q=cache&limit=2")
+        assert first.status_code == 200
+        assert first.json()["pagination"]["has_more"] is True, "a second page to refuse"
+        second = client.get("/api/search?q=cache&limit=2&offset=2")
+    assert second.status_code == 429
+    assert second.json()["bucket"] == "search"
+    assert int(second.headers["retry-after"]) >= 1

@@ -160,6 +160,13 @@ image.
 in a muted line — "`all` means all" is a promise to a human too, and a search
 where the frame leg was skipped should say so.
 
+`data_status` is the search tool's own word for the state of the corpus, and it
+is present **only on the empty path**, where the tool sets it (`"ok"`,
+`"empty"`, …); a page of hits carries `null`. It is forwarded because
+"nothing matched" and "nothing is indexed yet" are different screens: a `?q=`
+link into a fresh instance would otherwise blame the query for an empty corpus
+(§6.1).
+
 ### 2.2 `GET /api/videos`
 
 The library listing, straight from `list-videos`:
@@ -172,6 +179,11 @@ GET /api/videos?limit=50&offset=0&q=&channel=
 with the tool's records verbatim (`video_id`, `title`, `channel`, `published`,
 `duration`, `coverage`, `tags`, `link`) plus `thumb` — the video's first
 keyframe, when it has one.
+
+The facade does **not** pass `format`/`fields`: those shape the tool's *text*
+block, and this path reads `structured_content`, which carries every field
+regardless. Passing them read as though the facade were choosing a projection
+it is not.
 
 ### 2.3 `GET /api/meta`
 
