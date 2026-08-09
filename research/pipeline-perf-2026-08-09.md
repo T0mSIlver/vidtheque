@@ -548,3 +548,196 @@ outright.
    question.
 6. **jina-embeddings-v5-text-small is better than 0.6B at the same size and
    dimension, and is CC BY-NC.** A licensing call, not a technical one.
+
+---
+
+# 8. Addendum, 2026-08-09 (evening): §3.3 shipped
+
+Append-only addendum. §3.3 above is left exactly as written; this section
+records the decision that overtook it, what was implemented, and one finding
+about `_should_run` that changed the shape of the work.
+
+## 8.1 Tom's decision
+
+> The fused path becomes the method for all future indexing. Shot boundaries are
+> allowed to move relative to the old method. The existing 75 videos are **not**
+> reindexed — mixed `model_key` provenance in the corpus is accepted.
+> Bit-exactness with the old path is explicitly no longer a requirement.
+
+That resolves open question §7.2 without paying its price. §3.3 assumed the
+change implied "a one-time full reindex — including re-downloading every source
+video, since `keep_source=audio` has already deleted them", and priced the item
+accordingly. The decision buys the 65%-of-the-stage win on everything indexed
+from now on and simply declines the reindex; the corpus ends up carrying two
+provenances at once, which is a database property rather than a defect.
+
+**Corollary the reference-clip set is not needed for.** With no equivalence bar
+to clear, nothing had to be proven before shipping. What is still worth
+measuring is how *large* the divergence is on real content — not as a gate, but
+because "the changes would be minimal" is currently an expectation and not a
+number (§8.5).
+
+## 8.2 The seam: a `VideoStream` subclass, not a patch
+
+PyAV worked; the ffmpeg-piped-rawvideo fallback was not needed and is not
+implemented.
+
+PySceneDetect's backend abstraction turned out to be the whole answer.
+`SceneManager.detect_scenes(video=...)` accepts any `VideoStream`, and its decode
+thread makes exactly two decisions about the frames it receives
+(`scene_manager.py:618-677`):
+
+- it resizes only when `compute_downscale_factor(max(video.frame_size)) > 1.0`;
+- it compares each decoded array's shape against `video.frame_size` and logs a
+  corruption warning when they disagree.
+
+So a stream that *reports* the detection size and *returns* frames at it
+satisfies both — no resize, no warning, no monkeypatching of the manager and no
+fork of its loop. `keyframes._fused_stream_class()` builds one lazily:
+
+```python
+class FusedDetectionStream(VideoStreamAv):     # the shipped 0.7.1 backend
+    BACKEND_NAME = "pyav-fused"
+
+    @property
+    def frame_size(self): return self._detect_size      # e.g. (256, 144)
+
+    def read(self, decode=True):
+        advanced = super().read(decode=False)           # decode, no conversion
+        if advanced is False or not decode:
+            return advanced
+        return self._reformatter.reformat(
+            self._frame, width=w, height=h, format="bgr24"
+        ).to_ndarray()
+```
+
+Four properties of that, each of which was a reason not to write a fresh
+backend:
+
+- **Everything else is inherited whole**: PTS-backed `position` (deep links are
+  the product), corrupt-frame skipping and `decode_failures`, `seek`, and
+  `_handle_eof`'s re-open when AUTO threading stops short of the last frame.
+- **`decode=False` still costs nothing.** It is the seek and frame-skip path,
+  and the parent's own EOF recovery re-enters through it, which is why `read`
+  delegates rather than reimplementing the decode loop.
+- **The reformatter is per stream, not per frame**, as PyAV's docs require: one
+  swscale context configured once per video.
+- **The geometry is unchanged.** `detection_size()` mirrors 0.7.1's
+  `compute_downscale_factor` *and* its `round(dim / factor)`, so the detector
+  receives the same shape it always did, from the same preset, with the same
+  thresholds. Only the pixels differ. A test asserts `DETECTION_MIN_WIDTH`
+  against the upstream constant, which is what catches 0.8 changing it.
+
+## 8.3 The `_should_run` finding — the part that needed care
+
+**A changed `model_key` on a `done` row does force a re-run**
+(`runner.py`, `_should_run`: `return recorded != model_key`). Taken as-is, a new
+key would have contradicted the decision immediately: the next job to touch any
+of the 75 videos would have re-detected it, and because `want_media` is gated on
+that same call (`runner.py:329-331`), it would first have re-downloaded the
+source mp4 that `keep_source=audio` deleted. "Do not reindex" is not the default
+behaviour; it had to be built.
+
+The resolution is one new piece of grammar in the key, and one clause:
+
+| | |
+|---|---|
+| key before | `scenedetect-screencast-w1280` |
+| key now | `scenedetect-screencast-w1280`**`+fused`** |
+| rule | everything before `+` is the **contract**; everything after is **provenance** |
+
+`_should_run` compares only the contract half for `keyframe`. Consequences,
+each of them asserted in `mcp/tests/test_pipeline_keyframes.py`:
+
+- a `done` row reading `scenedetect-screencast-w1280` is **not** re-run, and no
+  mp4 is fetched for it;
+- `talking_head`, or `w960`, or a NULL key, **is** re-run — a different detector
+  or width is a genuinely different set of keyframes and still invalidates;
+- a `failed` row still retries, and `force_reindex=true` still overrides
+  everything, which is how a video is deliberately moved onto the fused path;
+- no other stage forgives anything: for `ocr`, `frame_embed`, `text_embed` the
+  key is a model id and a changed model must go stale.
+
+This is deliberately narrower than "keyframes never re-run on a key change",
+which would have silently broken the detector-swap workflow that
+`index-schema.md` §1.3 documents. Both design docs now describe the `+`
+convention (`index-schema.md` §1.3, `dashboard.md` §9's caveat list — a
+provenance panel that flags staleness by string inequality would light up the
+whole corpus).
+
+## 8.4 What was implemented, and what was removed
+
+- `keyframes.detect_spans(..., fused=True)` is the pipeline's only path. There
+  is **no env var**: an escape hatch whose two settings produce different
+  boundaries would need its own `model_key`, and Tom's decision says there is
+  one method, not two.
+- `fused=False` survives as a keyword argument with exactly one caller —
+  `bench/keyframe_decode.py --fused-probe`. Deleting it would have deleted the
+  only way to measure the thing this section is about.
+- `av` became a **direct** dependency of `mcp/` (its own commit). No new wheel:
+  `scenedetect-headless[pyav]` already resolved av 18.0.0. The pipeline imports
+  it now, so it declares it.
+- Pass 2 is untouched, thread pool and all (§4.1).
+
+## 8.5 Numbers taken here, and the ones that are Tom's
+
+Measured on this box, CPU only, on synthetic clips — the corpus and the GPU were
+not touched.
+
+**The conversion itself**, isolated over 800 frames of 1080p25, decode excluded:
+
+| frame preparation | per frame | decode + prepare |
+|---|---:|---:|
+| `to_ndarray("bgr24")` at 1920x1080 + `cv2.resize` | 421 us | 1,197 frames/s |
+| fused `reformat(256x144, "bgr24")` | **17.5 us** | **2,315 frames/s** |
+
+**24x on the step §3.3 identified**, and it is the step that scales with source
+resolution: 1080p pays 421 us, the detector reads 36,864 pixels either way.
+
+End to end on a 1080p25 synthetic clip, via the bench's own `--fused-probe`:
+detection **2.39 s → 1.41 s (x1.7)**, stage x1.42, **0 of 4 boundaries moved**,
+**4/4 kept frames bit-identical**. On the 320x240 test fixture one boundary of
+four moves by 200 ms — which is the expected behaviour, not a bug, and the tests
+assert the cuts are *found within a couple of frames* rather than asserting
+equality.
+
+Two honest caveats on those figures:
+
+1. **Synthetic content decodes unusually fast**, so the fused share of the pass
+   is understated relative to a real H.264 talk — but the 421 us is a fixed
+   per-frame cost, so the *absolute* saving transfers.
+2. **§3.3's "stage 8.83 → 3.1 s/video-minute, ~2.8x" remains unverified.** It
+   assumed pass 1 falls to near its bare-decode floor; the detector's own
+   per-frame work (`ContentDetector` plus the Canny map) runs on the main thread
+   and is unchanged, so the wall is `max(decode+prepare, detect)` and the
+   ceiling is whichever of those is left. Expect real gains between the x1.4 and
+   the x2.8, nearer the top of that range the higher the source resolution.
+
+**What only Tom's box can answer**, one command
+(`bench/README.md`, `--fused-probe`):
+
+```bash
+uv run --no-sync python bench/keyframe_decode.py \
+    --pair full=/scratch/ID-1080p.mp4,detect=/scratch/ID-1080p.mp4 --no-dual \
+    --fused-probe --repeats 2 \
+    --out bench/results/raw/keyframe-fused-2026-08-09.json
+```
+
+It prints the pass-1 speedup on a real talk, `boundaries.moved` /
+`moved_over_100ms` / the ten worst, and `identical_kept_frames` — the
+product-level number, since a boundary that slid 40 ms changed nothing if the
+frame the stage kept, and the `youtu.be/ID?t=` it points at, is the same frame.
+Unlike `--extract-workers` there is no `all_identical` gate: this one is already
+shipped, and the measurement tells us how much of the corpus's future differs
+from its past, not whether it may.
+
+## 8.6 What this changes in the table in §4
+
+| # | action | speedup (stage) | output | status |
+|---|---|---|---|---|
+| 4 | fused PyAV `reformat` in pass 1 | x1.4 measured here, x2.8 predicted | **cuts move** | **shipped**, `+fused` in the key, no reindex |
+
+Items 1–3 are unaffected: the pass-2 pool, `CAP_PROP_N_THREADS` and
+`SHOT_CANDIDATES` all still apply on top of a fused pass 1, and multiply with it
+rather than adding. Open questions §7.1, §7.3 and §7.4 are untouched. §7.2 is
+answered.
