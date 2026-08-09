@@ -1,0 +1,853 @@
+<!doctype html>
+<html lang="en" data-version="v2">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vidtheque — Builders talk. Your agent listens.</title>
+<meta name="description" content="Empowering AI with the knowledge of the builders and creators. Point vidtheque at the builders you trust; it watches every talk and answers with the sentence, the slide, and the second it happened.">
+<meta name="theme-color" content="#fbfaf9">
+<!-- Unfurls. No og:image until the moment card exists — a wrong one is worse than none. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="vidtheque">
+<meta property="og:title" content="The knowledge of the builders, on tap.">
+<meta property="og:description" content="You don’t have time to watch it all. Thanks to vidtheque, your agent does.">
+<meta name="twitter:card" content="summary">
+
+<!--
+  ============================================================================
+  vidtheque landing — VERSION 2 · "PAPER"
+  ============================================================================
+  The screenpipe register, made ours (research/positioning-2026-08-10.md §1.1):
+  off-white paper ground, monospace at display size, ONE acid accent on the
+  primary CTA with a hard-offset shadow and square corners, tick rules,
+  numbered sections, mono uppercase kickers, crop marks. Airy density; all the
+  drama comes from dark product imagery dropped into the light shell.
+
+  Copy follows docs/design/positioning.md (LOCKED) and the post-lock kit's five
+  beats. H1 is Tom's amended candidate #7. His other line —
+  "You don't have time to watch it all. Your agent does." — opens beat 3, set
+  over the wall of 78 talks, where the image beneath it makes the line literal.
+
+  TWO DELIBERATE DIVERGENCES from DESIGN.md, both marketing-surface only:
+   1. The H1 is set in JetBrains Mono at display size. DESIGN.md's Two-Channel
+      Rule (mono = the machine said it) is normative for /dashboard; the public
+      surface shares the six pinned colours, the faces, and the mono rule for
+      *data*. Mono-as-display is the one borrowed device this direction exists
+      to test — §1.1's "the one thing to steal". Inside the page the two-channel
+      rule holds without exception: every id, timecode, count and quote-source
+      is mono; every sentence a human wrote is Inter.
+   2. The primary CTA carries a hard-offset zero-blur shadow. That is the
+      neobrutalist costume the craft floor warns about — earned here because the
+      brief pins it and the whole direction is a study of that register.
+
+  ASSETS — all local, zero external requests, no live calls at render:
+   · fonts/     the three vendored dashboard faces (SIL OFL 1.1), copied in
+   · specimen.jpg  keyframe Sir59K8ZDPU-00044 @ 1136.335s, straight off the box
+   · wall/      the 78 cover frames
+   · ribbon/    16 real keyframes, ids and timecodes verbatim
+
+  NUMBERS — the do-not list's rule 7: never print a number that is not read out
+  of the index at render time. Every figure on this page is rendered from the
+  DATA block below, which was read out of vidtheque.db (read-only) at build
+  time. The shipped page swaps DATA for /api/meta and nothing else changes.
+  ============================================================================
+-->
+
+<style>
+/* ── faces ──────────────────────────────────────────────────────────────── */
+@font-face{font-family:'Inter';src:url(v2-assets/fonts/inter-latin-wght-normal.woff2) format('woff2-variations');
+  font-weight:100 900;font-style:normal;font-display:swap}
+@font-face{font-family:'JetBrains Mono';src:url(v2-assets/fonts/jetbrains-mono-latin-wght-normal.woff2) format('woff2-variations');
+  font-weight:100 800;font-style:normal;font-display:swap}
+@font-face{font-family:'Instrument Serif';src:url(v2-assets/fonts/instrument-serif-latin-400-normal.woff2) format('woff2');
+  font-weight:400;font-style:normal;font-display:swap}
+
+/* ── tokens ─────────────────────────────────────────────────────────────── */
+:root{
+  /* the six pinned colours, DESIGN.md frontmatter */
+  --paper:#fbfaf9; --ink:#1b1a19; --pencil:#6b6764; --line:#e3dfdb;
+  --raised:#ffffff; --panel:#f1f0ef;
+  --rule:#cfceca; --mark:#8d8d86;
+  /* the one signal, in its two tokens: burnt amber reads, lamp amber fills */
+  --accent:#b45309; --acid:#ffc53d; --accent-bg:#fff7c2; --accent-line:#e9c162;
+  /* the dark bands — the product's own imagery, dropped into the light shell */
+  --dark:#131313; --dark-fg:#e9e6e3; --dark-pencil:#97918c; --dark-line:#2b2927;
+
+  --font-sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  --font-mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --font-brand:'Instrument Serif',Georgia,'Times New Roman',serif;
+
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
+  --s7:48px; --s8:64px; --s9:96px; --s10:128px;
+  --pad:40px; --wide:1216px;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:var(--font-sans); font-size:15px; line-height:1.55;
+  font-weight:400; -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+img{display:block;max-width:100%}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+::selection{background:var(--accent-bg);color:var(--ink)}
+
+/* the ground is never flat: a hairline plotting grid, barely there, plus the
+   product's own mark as a watermark. Texture sits behind the type, always. */
+body::before{
+  content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:
+    linear-gradient(to right,rgba(27,26,25,.028) 1px,transparent 1px),
+    linear-gradient(to bottom,rgba(27,26,25,.028) 1px,transparent 1px);
+  background-size:32px 32px;
+}
+.page{position:relative;z-index:1}
+
+/* ── chassis ────────────────────────────────────────────────────────────── */
+.wrap{max-width:var(--wide);margin-inline:auto;padding-inline:var(--pad)}
+.bleed{width:100%}
+
+/* tick rule — a ruler's edge, not a hairline. Section boundaries. */
+.tickrule{height:9px;border-top:1px solid var(--rule);
+  background-image:repeating-linear-gradient(to right,var(--rule) 0 1px,transparent 1px 16px);
+  background-size:16px 5px;background-repeat:repeat-x;background-position:0 0;
+}
+.hair{height:1px;background:var(--line);border:0;margin:0}
+
+/* crop marks — drawn, not a glyph */
+.crop{position:absolute;width:11px;height:11px;pointer-events:none;opacity:.55}
+.crop::before,.crop::after{content:"";position:absolute;background:var(--mark)}
+.crop::before{left:5px;top:0;width:1px;height:11px}
+.crop::after{top:5px;left:0;height:1px;width:11px}
+.crop.tl{left:calc(var(--pad) - 22px);top:-6px}
+.crop.tr{right:calc(var(--pad) - 22px);top:-6px}
+.crop.bl{left:calc(var(--pad) - 22px);bottom:-6px}
+.crop.br{right:calc(var(--pad) - 22px);bottom:-6px}
+
+/* ── type ───────────────────────────────────────────────────────────────── */
+.kicker{
+  font-family:var(--font-mono);font-size:11px;font-weight:500;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--pencil);
+  display:flex;align-items:flex-start;gap:10px;margin:0 0 var(--s5);
+}
+.kicker::before{content:"";width:34px;height:1px;background:var(--accent);flex:none;
+  margin-top:8px}
+.kicker .num{color:var(--accent);font-weight:700}
+.kicker.on-dark{color:var(--dark-pencil)}
+
+h2{
+  font-family:var(--font-mono);font-weight:700;
+  font-size:clamp(24px,3.1vw,38px);line-height:1.12;letter-spacing:-.035em;
+  margin:0 0 var(--s4);text-wrap:balance;
+}
+.sub{font-size:17px;line-height:1.55;color:var(--pencil);max-width:62ch;margin:0}
+.prose{max-width:68ch}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums;
+  font-feature-settings:"liga" 0,"calt" 0}
+
+/* ── masthead ───────────────────────────────────────────────────────────── */
+.masthead{display:flex;align-items:center;justify-content:space-between;
+  gap:var(--s4);padding-block:var(--s5) var(--s4)}
+.lockup{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit}
+.brandmark{flex:none;display:block}
+.wordmark{font-family:var(--font-brand);font-size:23px;line-height:1;
+  letter-spacing:-.01em;font-weight:400}
+.mastmeta{font-family:var(--font-mono);font-size:11px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--pencil);display:flex;gap:var(--s4);align-items:center}
+.mastmeta a{color:var(--pencil);text-decoration:none;border-bottom:1px solid var(--line);padding-bottom:2px}
+.mastmeta a:hover{color:var(--ink);border-bottom-color:var(--accent)}
+
+/* ── beat 1 · hero ──────────────────────────────────────────────────────── */
+.hero{position:relative;padding-block:var(--s9) var(--s7);text-align:center}
+.hero .kicker{justify-content:center}
+h1{
+  font-family:var(--font-mono);font-weight:700;
+  font-size:clamp(30px,6.1vw,76px);line-height:1.04;letter-spacing:-.04em;
+  margin:0 auto var(--s5);max-width:21ch;text-wrap:balance;
+}
+h1 .said{color:var(--accent)}
+.deck{font-size:19px;line-height:1.5;color:var(--pencil);
+  max-width:60ch;margin:0 auto var(--s7);text-wrap:pretty}
+
+.askrow{display:flex;justify-content:center;margin-bottom:var(--s4)}
+.askbox{display:flex;width:min(620px,100%);border:1.5px solid var(--ink);background:var(--raised)}
+.askbox:focus-within{box-shadow:0 0 0 3px var(--accent-bg)}
+.askbox input{
+  flex:1;min-width:0;border:0;background:transparent;padding:0 var(--s4);
+  font-family:var(--font-mono);font-size:14px;color:var(--ink);height:52px;
+}
+.askbox input::placeholder{color:var(--pencil)}
+.askbox input:focus{outline:none}
+/* the one acid object on the page: square, hard offset, zero blur */
+.btn-acid{
+  flex:none;border:1.5px solid var(--ink);background:var(--acid);color:var(--ink);
+  font-family:var(--font-mono);font-size:13px;font-weight:700;letter-spacing:.04em;
+  text-transform:uppercase;height:52px;padding-inline:22px;cursor:pointer;
+  margin:-1.5px -1.5px -1.5px 0;box-shadow:5px 5px 0 var(--ink);
+  transition:transform .12s cubic-bezier(.2,.8,.2,1),box-shadow .12s cubic-bezier(.2,.8,.2,1);
+}
+.btn-acid:hover{transform:translate(2px,2px);box-shadow:3px 3px 0 var(--ink)}
+.btn-acid:active{transform:translate(5px,5px);box-shadow:0 0 0 var(--ink)}
+
+.chips{display:flex;flex-wrap:wrap;gap:var(--s2);justify-content:center;
+  margin:var(--s5) auto 0;max-width:780px}
+.chip{
+  font-family:var(--font-mono);font-size:12px;line-height:1;
+  padding:8px 11px;border:1px solid var(--line);background:var(--raised);
+  color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;gap:7px;
+  text-align:left;
+}
+.chip:hover{border-color:var(--accent);background:var(--accent-bg)}
+.chip .pin{color:var(--pencil);font-size:10px;letter-spacing:.1em;text-transform:uppercase}
+.chip[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-bg)}
+
+/* the peer CTA: herdr's copyable one-liner, welded COPY button */
+.oneliner{display:flex;align-items:stretch;width:min(620px,100%);margin:var(--s6) auto 0;
+  border:1px solid var(--rule);background:var(--panel)}
+.oneliner code{flex:1;min-width:0;font-family:var(--font-mono);font-size:13px;
+  padding:11px var(--s4);color:var(--ink);text-align:left;overflow-x:auto;white-space:nowrap}
+.oneliner code .dollar{color:var(--pencil);user-select:none}
+.copy{flex:none;border:0;border-left:1px solid var(--rule);background:transparent;
+  font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--pencil);padding-inline:15px;cursor:pointer}
+.copy:hover{background:var(--accent-bg);color:var(--accent)}
+.copy[data-done="1"]{color:var(--accent)}
+.metaline{font-family:var(--font-mono);font-size:11px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--pencil);margin:var(--s3) 0 0;text-align:center}
+
+/* the contact sheet: real keyframes, dark, bleeding off both edges */
+.ribbon{margin-top:var(--s8);overflow:hidden;border-top:1px solid var(--line);
+  border-bottom:1px solid var(--line);background:var(--dark)}
+.ribbon-track{display:flex;gap:1px;background:var(--dark-line);
+  width:max-content;margin-inline:-40px}
+.rframe{flex:none;width:154px;background:var(--dark)}
+.rframe img{width:154px;height:87px;object-fit:cover;opacity:.86}
+.rcap{font-family:var(--font-mono);font-size:10px;letter-spacing:.04em;
+  color:var(--dark-pencil);padding:5px 6px 6px;display:flex;justify-content:space-between;gap:6px}
+.rcap b{font-weight:400;color:var(--dark-fg);opacity:.75}
+
+/* ── beat 2 · the annotated specimen ────────────────────────────────────── */
+.beat{position:relative;padding-block:var(--s9)}
+.beat-head{margin-bottom:var(--s7)}
+
+.specimen{position:relative;margin-top:var(--s6)}
+.plate{position:relative;margin:0;background:var(--dark);border:1px solid var(--ink);
+  padding:10px;box-shadow:8px 8px 0 var(--line)}
+.frameholder{position:relative;aspect-ratio:16/9;overflow:hidden}
+.frameholder img{width:100%;height:100%;object-fit:cover}
+/* the real OCR box, drawn from ocr_lines.x0/y0/x1/y1 */
+.ocrbox{position:absolute;border:1.5px solid var(--acid);
+  box-shadow:0 0 0 1px rgba(19,19,19,.55);
+  opacity:0;transition:opacity .5s cubic-bezier(.16,1,.3,1) .1s}
+.specimen.lit .ocrbox{opacity:1}
+.platefoot{display:flex;justify-content:space-between;gap:var(--s4);flex-wrap:wrap;
+  font-family:var(--font-mono);font-size:11px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--dark-pencil);padding:9px 2px 2px}
+.platefoot .id{text-transform:none;letter-spacing:.02em;color:var(--dark-fg)}
+
+/* impeccable's device: annotation tabs on leader lines */
+.tabs{display:grid;grid-template-columns:1fr;gap:0;margin-top:var(--s5);
+  border-top:1px solid var(--line)}
+.tab{display:grid;grid-template-columns:190px 1fr;gap:var(--s4);align-items:baseline;
+  padding:13px 2px;border-bottom:1px solid var(--line);
+  opacity:0;transform:translateY(6px);
+  transition:opacity .55s cubic-bezier(.16,1,.3,1),transform .55s cubic-bezier(.16,1,.3,1)}
+.specimen.lit .tab{opacity:1;transform:none}
+.specimen.lit .tab:nth-child(1){transition-delay:.10s}
+.specimen.lit .tab:nth-child(2){transition-delay:.20s}
+.specimen.lit .tab:nth-child(3){transition-delay:.30s}
+.specimen.lit .tab:nth-child(4){transition-delay:.40s}
+.tab dt{font-family:var(--font-mono);font-size:10.5px;font-weight:700;letter-spacing:.15em;
+  text-transform:uppercase;color:var(--ink);position:relative;
+  display:flex;align-items:center;gap:9px}
+.tab dt span{background:var(--acid);padding:4px 7px;border:1px solid var(--ink)}
+.tab dt::after{content:"";flex:1;height:1px;background:var(--rule)}
+.tab dd{margin:0;font-family:var(--font-mono);font-size:14px;color:var(--ink);
+  overflow-wrap:anywhere}
+.tab dd.human{font-family:var(--font-sans);font-size:15px;color:var(--pencil)}
+.tab dd .hit{background:var(--accent-bg);box-shadow:0 1px 0 var(--accent-line);padding:1px 3px}
+
+.speclede{margin-top:var(--s7);max-width:68ch;font-size:16px;line-height:1.6}
+.speclede strong{font-weight:600}
+
+/* the ledger band — herdr's device, fed from the corpus */
+.ledger{display:grid;grid-template-columns:repeat(4,1fr);
+  border-top:2px solid var(--rule);border-bottom:1px solid var(--line);margin-top:var(--s8)}
+.cell{padding:var(--s5) var(--s5) var(--s5) 0;border-left:1px solid var(--line);
+  padding-left:var(--s5)}
+.cell:first-child{border-left:0;padding-left:0}
+.figure{font-family:var(--font-mono);font-weight:700;font-size:clamp(30px,3.8vw,46px);
+  line-height:1;letter-spacing:-.035em;font-variant-numeric:tabular-nums;display:block}
+.figure .unit{font-size:.5em;font-weight:500;letter-spacing:0;color:var(--pencil);margin-left:3px}
+.celllabel{font-family:var(--font-mono);font-size:10.5px;font-weight:500;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--pencil);margin-top:11px;display:block}
+.ledgerfoot{font-family:var(--font-mono);font-size:11px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--pencil);margin-top:var(--s3)}
+
+/* ── beat 3 · the corpus wall (dark band in the light page) ─────────────── */
+.band{background:var(--dark);color:var(--dark-fg);padding-block:var(--s9);
+  border-top:1px solid var(--ink);border-bottom:1px solid var(--ink)}
+.band h2{color:var(--dark-fg)}
+.band .statement{
+  font-family:var(--font-mono);font-weight:700;
+  font-size:clamp(26px,4.3vw,54px);line-height:1.08;letter-spacing:-.04em;
+  margin:0 0 var(--s5);max-width:20ch;text-wrap:balance;color:var(--dark-fg);
+}
+.band .statement .does{color:var(--acid)}
+.band .sub{color:var(--dark-pencil)}
+.bandhead{display:flex;gap:var(--s7);align-items:flex-end;justify-content:space-between;
+  flex-wrap:wrap;margin-bottom:var(--s7)}
+.bandhead .right{max-width:44ch}
+.bandhead .right p{margin:0;color:var(--dark-pencil);font-size:15px}
+.bandhead .right .headline9{font-family:var(--font-mono);font-size:12px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--dark-fg);margin-bottom:var(--s3)}
+
+.wall{display:grid;grid-template-columns:repeat(13,1fr);gap:2px;background:var(--dark-line);
+  border:1px solid var(--dark-line)}
+.tile{position:relative;background:var(--dark);aspect-ratio:16/9;overflow:hidden;
+  display:block;border:0;padding:0;cursor:default}
+.tile img{width:100%;height:100%;object-fit:cover;opacity:.72;
+  transition:opacity .22s cubic-bezier(.2,.8,.2,1)}
+.tile:hover img,.tile:focus-visible img{opacity:1}
+.tile .tid{position:absolute;left:0;right:0;bottom:0;padding:3px 4px;
+  font-family:var(--font-mono);font-size:9.5px;letter-spacing:.01em;color:var(--dark-fg);
+  background:linear-gradient(to top,rgba(19,19,19,.92),rgba(19,19,19,0));
+  opacity:0;transition:opacity .22s}
+.tile:hover .tid,.tile:focus-visible .tid{opacity:1}
+
+/* the roadmap affordance: a real cell in the grid, dashed, amber, and honest */
+.follow{grid-column:1/-1;background:var(--dark);border:1px dashed var(--accent-line);
+  display:flex;align-items:center;gap:var(--s4);flex-wrap:wrap;
+  padding:var(--s4) var(--s5);cursor:pointer;text-align:left;width:100%;color:inherit}
+.follow:hover{background:#191817}
+.follow .plus{font-family:var(--font-mono);font-size:19px;font-weight:700;color:var(--acid);line-height:1}
+.follow .lab{font-family:var(--font-mono);font-size:14px;color:var(--acid);letter-spacing:-.01em}
+.follow .tagroadmap{font-family:var(--font-mono);font-size:9.5px;font-weight:600;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--dark);background:var(--accent-line);padding:3px 7px}
+.follownote{margin:0;padding:var(--s4) var(--s5);border:1px dashed var(--accent-line);
+  border-top:0;font-size:14px;color:var(--dark-pencil);max-width:none}
+.follownote code{font-family:var(--font-mono);font-size:13px;color:var(--dark-fg)}
+.follownote[hidden]{display:none}
+.walltotal{margin:var(--s5) 0 0;color:var(--dark-pencil);font-size:15px;max-width:70ch}
+.walltotal b{color:var(--dark-fg);font-weight:500;font-family:var(--font-mono);
+  font-variant-numeric:tabular-nums}
+
+/* ── beat 4 · the agent transcript ──────────────────────────────────────── */
+.term{margin-top:var(--s6);border:1px solid var(--ink);background:var(--dark);
+  box-shadow:8px 8px 0 var(--line)}
+.termbar{display:flex;align-items:center;justify-content:space-between;gap:var(--s4);
+  padding:9px var(--s4);border-bottom:1px solid var(--dark-line);
+  font-family:var(--font-mono);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--dark-pencil)}
+.termbar .live{display:inline-flex;align-items:center;gap:7px;color:var(--dark-fg)}
+.dot{width:6px;height:6px;background:var(--acid);flex:none}
+.termbody{padding:var(--s5) var(--s4);overflow-x:auto;
+  font-family:var(--font-mono);font-size:12.5px;line-height:1.62;color:var(--dark-fg);
+  font-variant-numeric:tabular-nums}
+.termbody pre{margin:0;white-space:pre;min-width:min-content}
+.t-q{color:var(--acid)}
+.t-call{color:var(--dark-fg)}
+.t-meta{color:var(--dark-pencil)}
+.t-leg{color:var(--accent-line)}
+.t-quote{color:#d7d2cd}
+.t-link{color:var(--accent-line);text-decoration:none;border-bottom:1px solid rgba(233,193,98,.4)}
+.t-link:hover{border-bottom-color:var(--accent-line)}
+.t-ans{color:var(--dark-fg)}
+.t-cite{color:var(--accent-line)}
+.termfoot{border-top:1px solid var(--dark-line);padding:var(--s4);
+  font-size:13px;line-height:1.55;color:var(--dark-pencil)}
+.termfoot code{font-family:var(--font-mono);font-size:12px;color:var(--dark-fg)}
+
+/* ── beat 5 · quickstart + footer ───────────────────────────────────────── */
+.starts{display:grid;grid-template-columns:1fr 1fr;gap:var(--s6);margin-top:var(--s7)}
+/* grid items default to min-width:auto, which lets the nowrap one-liner set the
+   track's floor and push the page sideways at 390. */
+.start{min-width:0}
+.start h3{font-family:var(--font-sans);font-size:15px;font-weight:600;margin:0 0 var(--s2)}
+.start p{margin:0 0 var(--s4);color:var(--pencil);font-size:14px;max-width:46ch}
+.start .oneliner{margin:0;width:100%}
+.startmeta{margin-top:var(--s7);display:flex;flex-wrap:wrap;gap:var(--s5);
+  font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--pencil);border-top:1px solid var(--line);padding-top:var(--s4)}
+.startmeta .early{color:var(--accent)}
+
+footer{border-top:1px solid var(--rule);padding-block:var(--s8) var(--s9);position:relative}
+.footethic{font-size:16px;line-height:1.6;max-width:60ch;margin:0 0 var(--s5)}
+.footattr{font-size:14px;color:var(--pencil);max-width:62ch;margin:0 0 var(--s7)}
+.footrow{display:flex;justify-content:space-between;align-items:flex-end;gap:var(--s5);flex-wrap:wrap}
+.signature{font-family:var(--font-brand);font-size:clamp(46px,9vw,104px);line-height:.9;
+  letter-spacing:-.02em;color:var(--ink);margin:0}
+.footlinks{font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--pencil);display:flex;flex-direction:column;gap:6px;text-align:right}
+.footlinks a{color:var(--pencil);text-decoration:none;border-bottom:1px solid var(--line);padding-bottom:2px}
+.footlinks a:hover{color:var(--accent);border-bottom-color:var(--accent)}
+
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ── responsive ─────────────────────────────────────────────────────────── */
+@media (max-width:860px){
+  :root{--pad:24px;--s9:64px;--s8:48px}
+  .ledger{grid-template-columns:repeat(2,1fr)}
+  .cell{border-left:0;border-top:1px solid var(--line);padding-left:0;padding-right:var(--s4)}
+  .cell:nth-child(2n){padding-left:var(--s4);border-left:1px solid var(--line)}
+  .cell:first-child,.cell:nth-child(2){border-top:0}
+  .starts{grid-template-columns:1fr;gap:var(--s6)}
+  /* 78 closes as a rectangle on 13 and on 6, and on nothing in between */
+  .wall{grid-template-columns:repeat(6,1fr)}
+  .crop{display:none}
+}
+@media (max-width:560px){
+  :root{--pad:18px}
+  body{font-size:15px}
+  .hero{padding-block:var(--s7) var(--s6);text-align:left}
+  .hero .kicker{justify-content:flex-start}
+  h1{margin-inline:0;max-width:none;letter-spacing:-.04em}
+  .deck{margin-inline:0;font-size:16px}
+  .askrow{justify-content:flex-start}
+  .askbox{flex-wrap:wrap}
+  .askbox input{flex:1 0 100%;height:48px;border-bottom:1.5px solid var(--ink)}
+  .btn-acid{flex:1 0 100%;margin:0;height:48px;box-shadow:4px 4px 0 var(--ink)}
+  .chips{justify-content:flex-start;gap:6px}
+  .chip{width:100%;justify-content:space-between}
+  .metaline{text-align:left}
+  /* a shell line that scrolls out of sight on a phone is a line you cannot read:
+     below 560 the one-liners wrap instead. */
+  .oneliner code{white-space:pre-wrap;overflow-x:visible;overflow-wrap:anywhere}
+  .termbar{flex-direction:column;align-items:flex-start;gap:4px}
+  .termbody pre{white-space:pre-wrap;overflow-wrap:anywhere}
+  .tab{grid-template-columns:1fr;gap:6px}
+  .tab dt::after{display:none}
+  .tab dt span{width:max-content}
+  .plate{box-shadow:5px 5px 0 var(--line)}
+  .term{box-shadow:5px 5px 0 var(--line)}
+  .bandhead{gap:var(--s5)}
+  .rframe,.rframe img{width:118px}
+  .rframe img{height:66px}
+  .termbody{font-size:11px}
+}
+
+@media (prefers-reduced-motion:reduce){
+  *{transition-duration:.001ms !important;animation-duration:.001ms !important}
+  .specimen .ocrbox{opacity:1}
+  .specimen .tab{opacity:1;transform:none}
+}
+</style>
+</head>
+
+<body>
+<div class="page">
+
+<!-- ── masthead ─────────────────────────────────────────────────────────── -->
+<div class="wrap">
+  <header class="masthead">
+    <a class="lockup" href="#top">
+      <svg class="brandmark" width="26" height="26" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+        <rect width="32" height="32" rx="7" fill="#b45309"/>
+        <rect x="6" y="9" width="20" height="14" rx="1.5" fill="#fbfaf9"/>
+        <g fill="#b45309">
+          <rect x="8.5" y="11" width="3" height="3" rx="0.6"/>
+          <rect x="8.5" y="18" width="3" height="3" rx="0.6"/>
+          <rect x="20.5" y="11" width="3" height="3" rx="0.6"/>
+          <rect x="20.5" y="18" width="3" height="3" rx="0.6"/>
+        </g>
+      </svg>
+      <span class="wordmark">vidtheque</span>
+    </a>
+    <div class="mastmeta">
+      <span data-fig="channel-line">&nbsp;</span>
+      <a href="https://github.com/tomvaucourt/vidtheque">Source</a>
+    </div>
+  </header>
+</div>
+<div class="wrap"><hr class="hair"></div>
+
+<main id="top">
+
+<!-- ══ BEAT 1 · HERO ═══════════════════════════════════════════════════════ -->
+<section class="hero">
+  <span class="crop tl"></span><span class="crop tr"></span>
+  <div class="wrap">
+    <p class="kicker"><span class="num">00</span> &nbsp;The knowledge of the builders, on tap</p>
+
+    <h1>Builders talk.<br>Your agent <span class="said">listens.</span></h1>
+
+    <p class="deck">Point it at the builders you trust. It watches every talk, keeps
+      every sentence and every slide, and answers with the second it happened.</p>
+
+    <form class="askrow-form" onsubmit="return false">
+      <div class="askrow">
+        <div class="askbox">
+          <label class="sr" for="q">Ask the corpus</label>
+          <input id="q" name="q" type="search" autocomplete="off" spellcheck="false"
+                 placeholder="owl:FunctionalProperty" value="">
+          <button class="btn-acid" type="submit">Ask the corpus</button>
+        </div>
+      </div>
+
+      <div class="chips" role="group" aria-label="Verified example questions">
+        <button class="chip" type="button" data-q="reward hacking">reward hacking</button>
+        <button class="chip" type="button" data-q="owl:FunctionalProperty" data-type="ocr">owl:FunctionalProperty<span class="pin">on screen</span></button>
+        <button class="chip" type="button" data-q="small towns in Bavaria" data-type="transcript">small towns in Bavaria<span class="pin">spoken</span></button>
+        <button class="chip" type="button" data-q="architecture diagram with boxes and arrows" data-type="frame">architecture diagram with boxes and arrows<span class="pin">frames</span></button>
+        <button class="chip" type="button" data-q="slop">slop</button>
+      </div>
+    </form>
+
+    <div class="oneliner">
+      <code><span class="dollar">$ </span>docker compose up -d</code>
+      <button class="copy" type="button" data-copy="docker compose up -d">Copy</button>
+    </div>
+    <p class="metaline">macOS · Linux · MIT · one SQLite file</p>
+  </div>
+
+  <!-- the contact sheet: real keyframes, real ids, real timecodes -->
+  <div class="ribbon" aria-hidden="true">
+    <div class="ribbon-track" id="ribbon"></div>
+  </div>
+</section>
+
+<!-- ══ BEAT 2 · PROOF — THE ANNOTATED SPECIMEN ════════════════════════════ -->
+<div class="tickrule"></div>
+<section class="beat">
+  <span class="crop tl"></span><span class="crop br"></span>
+  <div class="wrap">
+    <div class="beat-head">
+      <p class="kicker"><span class="num">01</span> &nbsp;Proof</p>
+      <h2>It watched the screen, too.</h2>
+      <p class="sub">One frame, one line of on-screen text, and the second it was up.
+        This is what an answer looks like before anybody writes a paragraph about it.</p>
+    </div>
+
+    <div class="specimen" id="specimen">
+      <figure class="plate" style="margin:0">
+        <div class="frameholder">
+          <img src="v2-assets/specimen.jpg" width="1280" height="720" alt="A conference slide titled “OWL catches what prose can’t pin down”, a four-column table of rules and axioms, with the phrase owl:FunctionalProperty boxed in the second column.">
+          <!-- the box is the row's own ocr_lines.x0/y0/x1/y1, not a drawing -->
+          <span class="ocrbox" style="left:49.92%;top:30.83%;width:14.77%;height:2.92%"></span>
+        </div>
+        <figcaption class="platefoot">
+          <span class="id mono">Sir59K8ZDPU-00044</span>
+          <span class="mono">18:56 · 1280×720 · ocr done · 34 lines</span>
+        </figcaption>
+      </figure>
+
+      <dl class="tabs">
+        <div class="tab">
+          <dt><span>On-screen text</span></dt>
+          <dd><span class="hit">owl:FunctionalProperty</span> &nbsp;— line 11 of 34, conf 0.99873</dd>
+        </div>
+        <div class="tab">
+          <dt><span>Never spoken</span></dt>
+          <dd class="human">At 19:01 the speaker says “I’ll just put these, you can look at the
+            slides” and never reads the line out. The string is in no transcript, in any talk.</dd>
+        </div>
+        <div class="tab">
+          <dt><span>Found at</span></dt>
+          <dd>18:56 &nbsp;<span class="mono" style="color:var(--pencil)">(t = 1136.335 s · shot 44 · 1128.49–1164.95)</span></dd>
+        </div>
+        <div class="tab">
+          <dt><span>The receipt</span></dt>
+          <dd><a href="https://youtu.be/Sir59K8ZDPU?t=1136">youtu.be/Sir59K8ZDPU?t=1136</a></dd>
+        </div>
+      </dl>
+
+      <p class="speclede">Ask for <span class="mono">owl:FunctionalProperty</span> and one
+        result comes back out of <b data-fig="talks-inline">&nbsp;</b> talks: a slide from
+        <i>Why Agentic Systems Need Ontologies</i>, up for thirty-six seconds, at 18:56.
+        Nobody read it out. A transcript cannot answer that question at any quality of
+        retrieval, because the string was never said —
+        <strong>the sentence, the slide, and the second</strong> are three different legs,
+        and this one only exists on the screen.</p>
+    </div>
+
+    <!-- the ledger band — the only place a number appears in chrome, and it is live -->
+    <div class="ledger" id="ledger"></div>
+    <p class="ledgerfoot" data-fig="ledger-foot">&nbsp;</p>
+  </div>
+</section>
+
+<!-- ══ BEAT 3 · THE CORPUS WALL ═══════════════════════════════════════════ -->
+<section class="band">
+  <div class="wrap">
+    <div class="bandhead">
+      <div>
+        <p class="kicker on-dark"><span class="num">02</span> &nbsp;The corpus</p>
+        <p class="statement">You don’t have time to watch it all.<br>Your agent <span class="does">does.</span></p>
+      </div>
+      <div class="right">
+        <p class="headline9">Follow the builders. Get the sentence, the slide, and the second.</p>
+        <p>Every cover below is a talk vidtheque sat through end to end — the words, the
+          text that crossed the screen, and the frames, all answerable to the second.</p>
+      </div>
+    </div>
+
+    <div class="wall" id="wall"></div>
+
+    <button class="follow" type="button" id="followbtn" aria-expanded="false" aria-controls="follownote">
+      <span class="plus" aria-hidden="true">+</span>
+      <span class="lab">follow a channel</span>
+      <span class="tagroadmap">On the roadmap</span>
+    </button>
+    <p class="follownote" id="follownote" hidden>
+      Today: point <code>index-video</code> at a channel and it watches every talk on it,
+      once. Next: the subscription stands, and it keeps watching so you don’t have to.
+      That line is not shipped yet, which is why this cell is dashed.
+    </p>
+
+    <p class="walltotal" data-fig="wall-total">&nbsp;</p>
+  </div>
+</section>
+
+<!-- ══ BEAT 4 · THE AGENT TRANSCRIPT ══════════════════════════════════════ -->
+<section class="beat">
+  <span class="crop tl"></span><span class="crop br"></span>
+  <div class="wrap">
+    <div class="beat-head">
+      <p class="kicker"><span class="num">03</span> &nbsp;The agent</p>
+      <h2>Your agent watched it.</h2>
+      <p class="sub">An agent, on the real protocol, answering a question no single talk
+        answers: four speakers, four positions, one call.</p>
+    </div>
+
+    <div class="term">
+      <div class="termbar">
+        <span class="live"><span class="dot" aria-hidden="true"></span> Field test · 2026-08-09</span>
+        <span>synthesist · 21 calls · read-only</span>
+      </div>
+      <div class="termbody" tabindex="0" role="region" aria-label="Agent transcript">
+<pre><span class="t-q">▸ ask</span>  What do speakers disagree about when it comes to LLM-as-a-judge?
+
+<span class="t-call">$ search</span> <span class="t-meta">q=</span>"LLM as a judge" <span class="t-meta">content_type=</span>transcript <span class="t-meta">max_per_video=</span>1 <span class="t-meta">limit=</span>6
+  <span class="t-meta">Results: 6/~20+ · legs: transcript 6 · order=relevance</span>
+
+  <span class="t-leg">[transcript]</span> When Will The Benchmaxxing Plague End? — Nick Heiner, Surge AI (-npY6XjM8CQ)
+    16:01 · <a class="t-link" href="https://youtu.be/-npY6XjM8CQ?t=961">https://youtu.be/-npY6XjM8CQ?t=961</a>
+    <span class="t-quote">And LLM as a judge doesn't really work either because LLMs don't have good
+    taste in writing.</span>
+
+  <span class="t-leg">[transcript]</span> The Future of Evals: From LLM as a Judge to Agent as a Judge — Aparna Dhinakaran, Arize AI (q2JrUKBMf0w)
+    04:07 · <a class="t-link" href="https://youtu.be/q2JrUKBMf0w?t=247">https://youtu.be/q2JrUKBMf0w?t=247</a>
+    <span class="t-quote">Agent as a judge is about adaptive dynamic analysis. LLM as a judge just
+    gives you a fixed rubric with these fixed scores.</span>
+
+  <span class="t-leg">[transcript]</span> Evaling Video Slop — Maor Bril, Character.ai (b_PmGocP4rc)
+    03:59 · <a class="t-link" href="https://youtu.be/b_PmGocP4rc?t=239">https://youtu.be/b_PmGocP4rc?t=239</a>
+    <span class="t-quote">We started using LLM as a judge for everything, and we have amazing
+    foundational models that we just throw videos at them.</span>
+
+  <span class="t-leg">[transcript]</span> Evals-Driven Development for a Mental Health AI Coach — Akele Reed &amp; Dave Revere, SonderMind (O72p-rBb2bA)
+    04:24 · <a class="t-link" href="https://youtu.be/O72p-rBb2bA?t=264">https://youtu.be/O72p-rBb2bA?t=264</a>
+    <span class="t-quote">Keeping the guardrails as separate LLM as the judge calls makes them more
+    robust and harder to circumvent.</span>
+
+<span class="t-q">▸ answer</span>
+  <span class="t-ans">They disagree about whether the judge can hold taste. Surge argues it cannot —
+  writing quality is the case where the judge inherits the frontier's own blind
+  spot <span class="t-cite">(-npY6XjM8CQ 16:01)</span> — and pays professional writers instead. Arize
+  agrees the fixed rubric is the limit, but treats it as a generation problem
+  rather than a dead end: an agent judge does adaptive analysis over a trajectory
+  <span class="t-cite">(q2JrUKBMf0w 04:07)</span>. Two teams ship it anyway and say what makes it hold:
+  Character.ai calibrates the judge against human annotation frame by frame
+  <span class="t-cite">(b_PmGocP4rc 03:59)</span>, SonderMind splits guardrails into separate judge calls so
+  one prompt cannot be talked out of all of them <span class="t-cite">(O72p-rBb2bA 04:24)</span>.
+  Nobody in the four says it is solved.</span>
+</pre>
+      </div>
+      <div class="termfoot">
+        Four Sonnet agents drove the live stack over the real protocol on 2026-08-09;
+        the synthesist answered this question in 21 calls. Every title, timecode, quote
+        and link above is read out of the corpus — the paragraph at the bottom is the
+        agent’s. The same run turned up a real defect, a citation landing at the top of
+        its cluster instead of on the matched sentence; it is filed, not fixed.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ BEAT 5 · QUICKSTART ════════════════════════════════════════════════ -->
+<div class="tickrule"></div>
+<section class="beat">
+  <span class="crop tl"></span><span class="crop tr"></span>
+  <div class="wrap">
+    <div class="beat-head">
+      <p class="kicker"><span class="num">04</span> &nbsp;Run it</p>
+      <h2>Yours, on your box.</h2>
+      <p class="sub">One compose file, one SQLite file, no build step, no runtime network
+        dependency. The CPU half runs on a Pi.</p>
+    </div>
+
+    <div class="starts">
+      <div class="start">
+        <h3>Run your own.</h3>
+        <p>Clone it, copy the example env, bring it up. Then point <code class="mono">index-video</code>
+          at the first builder you want followed.</p>
+        <div class="oneliner">
+          <code><span class="dollar">$ </span>docker compose up -d</code>
+          <button class="copy" type="button" data-copy="docker compose up -d">Copy</button>
+        </div>
+      </div>
+      <div class="start">
+        <h3>Any agent can drink from it.</h3>
+        <p>One line adds the corpus to Claude, Codex, or anything else that speaks MCP.
+          It is read-only, and it is the same surface the transcript above ran on.</p>
+        <div class="oneliner">
+          <code><span class="dollar">$ </span>claude mcp add --transport http vidtheque &lt;mcp_url&gt;</code>
+          <button class="copy" type="button" data-copy="claude mcp add --transport http vidtheque <mcp_url>">Copy</button>
+        </div>
+      </div>
+    </div>
+
+    <p class="startmeta">
+      <span>macOS · Linux · MIT · runs the CPU half on a Pi</span>
+      <span class="early">early development · no releases yet · schemas can still change</span>
+    </p>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <span class="crop tl"></span>
+  <div class="wrap">
+    <p class="footethic">The videos belong to the people who made them. vidtheque watched
+      them, kept the timestamps, and sends you back to the source.</p>
+    <p class="footattr" data-fig="foot-attr">&nbsp;</p>
+    <div class="footrow">
+      <p class="signature">vidtheque</p>
+      <nav class="footlinks" aria-label="Footer">
+        <a href="https://github.com/tomvaucourt/vidtheque">github.com/tomvaucourt/vidtheque</a>
+        <span>MIT · self-hosted · one owner</span>
+      </nav>
+    </div>
+  </div>
+</footer>
+
+</div><!-- /.page -->
+
+<script id="DATA" type="application/json">{"stats":{"talks":78,"seconds":97538,"cues":17138,"ocr_lines":61198,"keyframes":4736,"ocr_frames":2931,"words":264392,"channel":"AI Engineer"},"wall":[{"v":"iQ5xldZ9StU","t":"Realtime multiplayer, automation, and you!","s":"Idan Gazit, GitHub","d":1300},{"v":"7vn4WpqNpck","t":"Benchmarking Coding Agents on New vs Legacy Codebases","s":"Denys Linkov, Wisedocs","d":1087},{"v":"Z-c11pV_uvU","t":"Anthropic's CCA Exam as a Field-Guide for Agentic Engineering","s":"Frank Coyle, UC Berkeley","d":1208},{"v":"LZuWZRze3MU","t":"The New Primitives: Building AI Native Software","s":"Kwindla Kramer, Daily","d":1274},{"v":"CoEIs6Xm8m8","t":"Open Source Is Dead. Long Live Open Source.","s":"Saoud Rizwan, Cline","d":1050},{"v":"FWMJQDH3iK0","t":"Local Models: Trust, Control, Optimization","s":"Carter Abdallah, NVIDIA","d":2600},{"v":"J4_jCrTxMkk","t":"Compression at the Edge","s":"NVIDIA, Unsloth, HuggingFace, Ollama","d":2760},{"v":"QHBjufYK8TA","t":"The State of Model Routing","s":"NVIDIA, Cognition, OpenRouter","d":2897},{"v":"RmS5s6Wbin4","t":"Gadgets: Personal app vibe coding that is actually safe","s":"Kenton Varda, Cloudflare","d":1133},{"v":"jQDXzEVHMSE","t":"Building Turbopuffer: Gergely Orosz (@pragmaticengineer ) × Simon Eskildsen (CEO)","s":"","d":3389},{"v":"-jY2T2PiJBE","t":"MCP Apps: Extending the Frontier","s":"Ido Salomon & Liad Yosef","d":1118},{"v":"s4r6nk5WsZw","t":"MCP Tasks (async): Why Aren't Any Agents Supporting Them?","s":"Cornelia Davis, Temporal","d":1434},{"v":"-npY6XjM8CQ","t":"When Will The Benchmaxxing Plague End?","s":"Nick Heiner, Surge AI","d":1044},{"v":"ZFxh7sqbUZo","t":"Teaching AI to Find Real Vulnerabilities","s":"Prof. David Brumley, Bugcrowd","d":1637},{"v":"2aS7aKoXn64","t":"Rethinking Environments for Long-Horizon Work","s":"Rayan Garg, Theta Software","d":1274},{"v":"cJ0EOzey--o","t":"What's Next After RLHF?","s":"Diogo Almeida, TypeSafe AI","d":1084},{"v":"_PdK6x7PQNM","t":"Data Quality Is the Compute Multiplier","s":"Ari Morcos, DatologyAI","d":1145},{"v":"k35LeKZEhiE","t":"Learning on the Job: The Future of Post-Training","s":"Raymond Feng, Applied Compute","d":1100},{"v":"ewtOo0scUh0","t":"Data and Environment Curation for Post-Training LLMs","s":"Mahesh Sathiamoorthy, Bespoke Labs","d":1151},{"v":"2bvtay8wGYI","t":"Scaling to Long Horizons","s":"Ross Taylor & Chengxi Taylor, General Reasoning","d":1087},{"v":"zkX03APVj0M","t":"Emulated: The Data for Fully Autonomous Software Engineers and Companies","s":"Joseph Wang","d":992},{"v":"xbPriQWXtWM","t":"The Base Model Is Dead","s":"Varun Singh, Arcee AI","d":1064},{"v":"3ZMUiFaQ3qg","t":"Verifiable Environments for AI in Biology","s":"Kenny Workman, LatchBio","d":1062},{"v":"lCBf9slCanI","t":"Ending AI Slop","s":"Thais Castello Branco, Taste Labs","d":990},{"v":"jWq-aZIU0kM","t":"Benchmarks: The Good, the Bad, and the Ugly","s":"Ali Khial, G2i","d":768},{"v":"AQv3qRCG6Gw","t":"Reinforcement Learning without Verifiable Rewards","s":"Will Brown, Prime Intellect","d":1166},{"v":"AVMr9PMINyo","t":"Agents at Scale: Inside MiniMax's Model and the Infrastructure Behind It","s":"Dan Fu and Olive Song","d":1214},{"v":"AMiyLItEtLA","t":"fighting slop with slop","s":"Vaibhav Gupta, Boundary","d":1292},{"v":"pWXUkLP9uWM","t":"First Steps Toward Automated AI Research","s":"Richard Socher, CEO Recursive AI","d":1223},{"v":"z0sh8HyTrDo","t":"Your Finance Agent's Bottleneck Is You","s":"Ramana Siddanth Emani, Auditoria AI","d":822},{"v":"tJFjeMBKbIY","t":"Build for the Memo, Not the Demo","s":"Shawn Chan, China Resources Holdings","d":1462},{"v":"o6U_2vd967Y","t":"Let's integrate AI Agents in Event-Sourced Systems","s":"Divakar Kumar, FlyersSoft","d":1296},{"v":"s67bE2Ur3bY","t":"Wearing the Agent: From Group Chats to Glasses","s":"Sai Krishna Rallabandi","d":1148},{"v":"iKQ78wyJEXU","t":"We Vetted 2000 AI Skills Before They Reached Developers","s":"Lucas Palma, Nubank","d":984},{"v":"Tt2kX2sgQio","t":"How Kepler Built Verifiable AI for Financial Services","s":"Vinoo Ganesh","d":1349},{"v":"YnNF55QV0zs","t":"Persona Engineering: A Field Guide to AI Synthetic Personas","s":"Ishan Anand, InsightSciences.ai","d":1269},{"v":"Owb8g3yDyzo","t":"Why Off-the-Shelf AI Doesn't Understand Money","s":"Udi Menkes, Intuit","d":1190},{"v":"KMR_RBoCa4M","t":"SimulationMaxxing: How we ship agents 20× faster","s":"Aman Gupta (Nubank) + Shreya Rajpal (Snowglobe)","d":989},{"v":"7jjudsEhBtM","t":"Skills are new features: Building Skill-Centric Harness","s":"Yogendra Miraje, FactSet","d":1043},{"v":"kiqubc5b5Yo","t":"Morgan Stanley's ALPHALAB: Multi-Agent Research Across Optimization Domains","s":"Brendan Rappazzo","d":1206},{"v":"BInpv7lGp1o","t":"Your Agent Didn't Fail. Your Harness Did.","s":"Vinoth Govindarajan, OpenAI","d":1105},{"v":"wpOA-UXynoM","t":"How Forward Deployed Engineering is done at Factory","s":"Eno Reyes","d":1281},{"v":"l0FLhNqBOic","t":"AI tools for Forward Deployed Engineering","s":"Vasuman Moza, Varick Agents","d":1222},{"v":"RVxym6mmIns","t":"How Forward Deployed Engineering is done at Cognition","s":"Jia Wu","d":1058},{"v":"ITMXwI6QL6A","t":"How Forward Deployed Engineering is done at Ramp","s":"Leo Mehr","d":844},{"v":"Byv311hdoHE","t":"The Dirty Secret of Forward Deployed Engineering","s":"Natalie Meurer, Sierra","d":1009},{"v":"7wu2hsRfvV0","t":"How Forward Deployed Engineering is done at Decagon","s":"Sunny Rekhi","d":1088},{"v":"1OMHGsUZiqA","t":"How Forward Deployed Engineering is done at Kepler","s":"Vinoo Ganesh","d":1340},{"v":"KwhgfwOSToQ","t":"Forward Deployed Engineering 101","s":"Kevin Bai, Anthropic, ex Palantir & Rippling Founding FDE","d":1068},{"v":"lyL5QhgIOxc","t":"Serving 2 Million Models Without Melting: Scaling the Hugging Face Hub","s":"Arek Borucki, Hugging Face","d":1299},{"v":"CgsWxRUY5Eo","t":"AI Agents for Performance: Ship Faster, Pay Less","s":"Rajat Shah, Netflix","d":2018},{"v":"Yk87oUPVaxU","t":"DeepSWE: A Contamination-Resistant Coding Benchmark","s":"James Shi, Datacurve","d":1054},{"v":"ZyIoTOAbRfs","t":"State of Data","s":"Sean Cai, Independent / State of Data","d":1102},{"v":"KhYifX22yhE","t":"The Messy Reality of Scale: Synthetic Data and Pre-Training","s":"Marah Abdin & Robert McHardy, poolside","d":1051},{"v":"O72p-rBb2bA","t":"Evals-Driven Development for a Mental Health AI Coach","s":"Akele Reed & Dave Revere, SonderMind","d":1277},{"v":"xIt_mTQp6mY","t":"Loop Engineering from First Principles","s":"Kyle Mistele, HumanLayer","d":1077},{"v":"hacEQHHhu2Q","t":"Why Large? Tiny LMs & Agents on Edge/Robotics","s":"Cormac Brick, Google","d":1304},{"v":"Ib5t2RLtxvM","t":"From Agent Traces to Agent Simulations","s":"Rustem Feyzkhanov, Snorkel AI","d":1223},{"v":"b_PmGocP4rc","t":"Evaling Video Slop","s":"Maor Bril, Character.ai","d":1393},{"v":"31GUkCBD-Uc","t":"Building Closed-Loop Evals for a Multimodal Agent at Scale","s":"Soumya Gupta & Jai Chopra, Uber","d":1298},{"v":"xyL2Ltkh-SA","t":"How Evals and Prompts Shape Agent Behavior","s":"Preetika Bhateja & Daniel Bump, YouTube Ads","d":1169},{"v":"9HbzAWnKbo4","t":"From Signal to PR: Anatomy of a Self-Improving Agent","s":"Jason Lopatecki, Arize","d":1235},{"v":"q2JrUKBMf0w","t":"The Future of Evals: From LLM as a Judge to Agent as a Judge","s":"Aparna Dhinakaran, Arize AI","d":366},{"v":"jRCpXUjz4CI","t":"Everything Is a Rollout","s":"Alex Shaw + Ryan Marten, Terminal-Bench, Harbor, Laude Institute","d":1271},{"v":"cO8qC6HBuBg","t":"Vending-Bench: Long-Horizon Agent Evals","s":"Lukas Petersson, Andon Labs","d":1085},{"v":"O-CBZ3JtRvo","t":"Training Frontier Models to Out-Think Hackers","s":"Uri Rolls, Arithmetic & Thom Wolf, Hugging Face","d":1047},{"v":"GgLQ02aO-hs","t":"The Unreasonable Effectiveness of Separating the Task from the Model","s":"Maxime Rivest & Isaac Miller","d":1031},{"v":"-I5W5QVAT8E","t":"Notion's Token Town","s":"Sarah Sachs, Notion","d":1435},{"v":"Ib5GBkD555M","t":"Harness Engineering is not Enough: Why Software Factories Fail","s":"Dex Horthy, HumanLayer","d":1157},{"v":"2JX6JYyQG4Y","t":"Perception Agents","s":"Antje Barth, Amazon AGI Lab","d":1304},{"v":"418t26CVz-w","t":"Local Agentic Theory For Mobile Games","s":"Shafik Quoraishee & Joanne Song, The New York Times","d":1084},{"v":"Sir59K8ZDPU","t":"Why Agentic Systems Need Ontologies","s":"Frank Coyle, UC Berkeley","d":1278},{"v":"9QebvrrY3KY","t":"Claude for Long-Horizon Tasks","s":"Lance Martin, Anthropic","d":1518},{"v":"8qWIPUia2O8","t":"Every Harness Will Become A Claw","s":"Sam Bhagwat, Mastra","d":935},{"v":"1EZdpEhwmNc","t":"Through the AI Fog: The Architectural Decision Agentic Security Depends On","s":"Manoj Nair, Snyk","d":1409},{"v":"0RNNfxpdbQk","t":"Medic for Apache Spark - First Aid for Failing Jobs - Drasko Profirovic, Pinterest","s":"","d":680},{"v":"-561cZmir5Q","t":"From Tokens to Cells: Foundation Models for Single-Cell Biology - Akram Baharlouei, Altos Labs","s":"","d":1017},{"v":"RjfbvDXpFls","t":"Building pi in a World of Slop","s":"Mario Zechner","d":1105}]}</script>
+<script>
+(() => {
+  "use strict";
+  /* Everything numeric on this page comes out of this block, which was read out
+     of vidtheque.db (read-only) at build time. The shipped page replaces it with
+     /api/meta and no markup changes. Nothing here is invented and nothing is
+     fetched: the page makes zero network requests. */
+  const DATA = JSON.parse(document.getElementById("DATA").textContent);
+  const S = DATA.stats;
+  const n = (x) => x.toLocaleString("en-US");
+
+  /* ── the ledger band ─────────────────────────────────────────────────── */
+  const hours = S.seconds / 3600;
+  const cells = [
+    [n(S.talks), "", "Talks"],
+    [hours.toFixed(1), "h", "Hours watched"],
+    [n(S.cues), "", "Moments on tap"],
+    [n(S.ocr_lines), "", "Lines read off the screen"],
+  ];
+  document.getElementById("ledger").innerHTML = cells
+    .map(([fig, unit, lab]) =>
+      `<div class="cell"><span class="figure">${fig}${
+        unit ? `<span class="unit">${unit}</span>` : ""
+      }</span><span class="celllabel">${lab}</span></div>`)
+    .join("");
+
+  const hh = Math.floor(S.seconds / 3600);
+  const mm = Math.round((S.seconds % 3600) / 60);
+  const set = (k, html) => {
+    document.querySelectorAll(`[data-fig="${k}"]`).forEach((el) => (el.innerHTML = html));
+  };
+  set("ledger-foot",
+    `read out of the corpus · one channel · ${n(S.keyframes)} frames kept · ` +
+    `${n(S.ocr_frames)} of them read`);
+  set("channel-line", `${S.channel} · ${n(S.talks)} talks`);
+  set("talks-inline", n(S.talks));
+  set("wall-total",
+    `<b>${n(S.talks)}</b> talks from one channel — ${S.channel} — ` +
+    `<b>${hh}h ${String(mm).padStart(2, "0")}m</b> of it, ` +
+    `watched down to the second: <b>${n(S.words)}</b> words spoken, ` +
+    `<b>${n(S.ocr_lines)}</b> lines that crossed the screen, <b>${n(S.keyframes)}</b> frames kept. ` +
+    `This is the first shelf, not the library.`);
+  set("foot-attr",
+    `Talks from the ${S.channel} channel. Nothing here is hosted or redistributed: ` +
+    `vidtheque downloads a video, reads it, and deletes the file. Every answer links back ` +
+    `to the original, where the view counts — and a channel comes out on request, ` +
+    `one row, one command.`);
+
+  /* ── the contact sheet ───────────────────────────────────────────────── */
+  const RIBBON = [
+    ["t13.jpg", "-jY2T2PiJBE", "00:17"], ["t16.jpg", "AMiyLItEtLA", "08:41"],
+    ["t19.jpg", "ZFxh7sqbUZo", "24:35"], ["t23.jpg", "QHBjufYK8TA", "10:43"],
+    ["t25.jpg", "J4_jCrTxMkk", "28:04"], ["t29.jpg", "jQDXzEVHMSE", "00:23"],
+    ["t35.jpg", "jRCpXUjz4CI", "18:34"], ["t38.jpg", "LZuWZRze3MU", "18:28"],
+    ["t40.jpg", "0RNNfxpdbQk", "00:11"], ["t43.jpg", "pWXUkLP9uWM", "02:25"],
+    ["t47.jpg", "418t26CVz-w", "05:55"], ["t50.jpg", "3ZMUiFaQ3qg", "11:46"],
+    ["t55.jpg", "k35LeKZEhiE", "17:35"], ["t57.jpg", "s4r6nk5WsZw", "05:47"],
+    ["t64.jpg", "lyL5QhgIOxc", "17:02"], ["t68.jpg", "pWXUkLP9uWM", "18:48"],
+  ];
+  document.getElementById("ribbon").innerHTML = RIBBON.map(
+    ([f, id, tc]) =>
+      `<div class="rframe"><img src="v2-assets/ribbon/${f}" width="480" height="270" alt=""` +
+      ` loading="lazy" decoding="async"><div class="rcap"><b>${id}</b><span>${tc}</span></div></div>`
+  ).join("");
+
+  /* ── the wall ────────────────────────────────────────────────────────── */
+  const esc = (s) => s.replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  document.getElementById("wall").innerHTML = DATA.wall.map((v) => {
+    const who = v.s ? ` — ${v.s}` : "";
+    /* no tabindex: 78 tab stops between the wall and the roadmap cell is worse
+       for a keyboard than the wall being one image with a label. */
+    return `<span class="tile" role="img" aria-label="${esc(v.t + who)}">` +
+      `<img src="v2-assets/wall/${v.v}.jpg" width="300" height="168" alt="" loading="lazy" decoding="async">` +
+      `<span class="tid">${esc(v.v)}</span></span>`;
+  }).join("");
+
+  /* ── states: the copy buttons, the chips, the roadmap note ───────────── */
+  document.querySelectorAll(".copy").forEach((b) => {
+    b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(b.dataset.copy); } catch (e) { /* no clipboard */ }
+      const was = b.textContent;
+      b.textContent = "Copied";
+      b.dataset.done = "1";
+      setTimeout(() => { b.textContent = was; delete b.dataset.done; }, 1400);
+    });
+  });
+
+  const input = document.getElementById("q");
+  document.querySelectorAll(".chip").forEach((c) => {
+    /* the button's text is the query (demo-site.md §6.1); absence of a pin
+       resets to `all`. Nothing fires on load, and nothing fires on click —
+       one click spends budget, and this page has none to spend. */
+    c.addEventListener("click", () => {
+      document.querySelectorAll(".chip").forEach((o) => o.setAttribute("aria-pressed", "false"));
+      c.setAttribute("aria-pressed", "true");
+      input.value = c.dataset.q;
+      input.focus();
+    });
+  });
+
+  const fb = document.getElementById("followbtn");
+  const fn = document.getElementById("follownote");
+  fb.addEventListener("click", () => {
+    const open = fb.getAttribute("aria-expanded") === "true";
+    fb.setAttribute("aria-expanded", String(!open));
+    fn.hidden = open;
+  });
+
+  /* ── the one authored moment: the specimen's argument assembling ─────── */
+  const spec = document.getElementById("specimen");
+  if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches && "IntersectionObserver" in window) {
+    const io = new IntersectionObserver((es) => {
+      es.forEach((e) => { if (e.isIntersecting) { spec.classList.add("lit"); io.disconnect(); } });
+    }, { threshold: 0.28 });
+    io.observe(spec);
+  } else {
+    spec.classList.add("lit");
+  }
+})();
+</script>
+</body>
+</html>
