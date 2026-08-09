@@ -75,10 +75,15 @@ puts theirs), archive, RAG, index (as a noun in copy; fine as a verb),
 second brain (the saturated inward-memory frame — ours flows outward),
 "search engine".
 
-**Word law:** never "everything you've *seen*" — always "everything you've
-*watched*" (deliberate, published, no surveillance debt). Case-sensitive
-identifiers are never uppercased (a mangled `youtu.be` id is a broken
-promise).
+**Word law:** never "everything *you've* watched" — the corpus is precisely
+the videos you **didn't have to watch**. Ownership language attaches to the
+*choice*, not the viewing: "the builders you **follow**", "the channels you
+chose", "what the builders published" — and the agent is the one who watched
+("your agent watched it", "it keeps watching so you don't have to"). Equally
+never "everything you've *seen*" (that's surveillance-capture language —
+screenpipe's flow, not ours; our ingestion is deliberate and published, no
+surveillance debt). Case-sensitive identifiers are never uppercased (a
+mangled `youtu.be` id is a broken promise).
 
 ## Surface implications
 

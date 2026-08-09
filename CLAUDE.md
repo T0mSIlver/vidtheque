@@ -1,8 +1,10 @@
 # CLAUDE.md — how we work on vidtheque
 
-Self-hosted MCP server that turns videos you've watched into a searchable
-multimodal corpus — transcript, on-screen text, and frame search with
-timestamped citations (`youtu.be/ID?t=123`). Owner: Tom Vaucourt. MIT.
+Self-hosted server that turns the videos you follow — the ones you didn't
+have time to watch — into solid, timestamped knowledge for you and your
+agents: transcript, on-screen text, and frame search with receipts
+(`youtu.be/ID?t=123`). Public framing is contracted in
+`docs/design/positioning.md`. Owner: Tom Vaucourt. MIT.
 
 ## Ground truth, in order
 
