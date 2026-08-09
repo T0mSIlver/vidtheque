@@ -15,6 +15,9 @@ Archivo 100-900 for what people said and are called; JetBrains Mono for what the
 machine produced — ids, timecodes, boxes, confidences.
 STORY: the visitor sees the detector's real work on a real frame and understands
 that every claim on the card carries a second-accurate receipt back to the source.
+COPY: bound by docs/design/positioning.md (LOCKED 2026-08-10). This piece renders
+pillar three — receipts, always: the sentence, the slide, the second. The seen /
+heard tags name what the models perceived on the frame, never what the reader saw.
 FIRST VIEWPORT: masthead line at display scale over a live corpus readout, then
 treatment A's result list immediately, boxes acquiring on load.
 FORM: instrument plate / machine-vision exhibit. Brief-pinned (square, futuristic,
@@ -403,6 +406,9 @@ footer.end p{font-size:13px;line-height:1.6;color:var(--fg2);max-width:56ch}
 footer.end p + p{margin-top:11px}
 footer.end code{font-family:var(--mono);font-size:12px;color:var(--seen)}
 footer.end .lab{margin-bottom:10px;display:block}
+/* every frame on this page is somebody else's work, at their expense */
+footer.end .attrib{grid-column:1/-1;border-top:1px solid var(--rule);padding-top:16px;
+  font-family:var(--mono);font-size:11px;letter-spacing:.02em;color:var(--fg3);max-width:none}
 
 /* ---------- share scaling ---------- */
 .stage{overflow:hidden;position:relative;border:1px solid var(--rule2);
@@ -441,11 +447,12 @@ footer.end .lab{margin-bottom:10px;display:block}
       <div class="lab">read-only from vidtheque.db</div>
     </div>
     <div class="mast">
-      <h1>A search result you would <em>screenshot</em>.</h1>
-      <p class="lede">One moment out of the corpus: the frame the indexer kept, the sentence the
-        speaker actually said, the text the model read <b>off the screen</b> with its box drawn where it
-        found it, and a link that drops you back into the video <b>at that second</b>. Every value below
-        came out of the database — nothing here is placeholder copy.</p>
+      <h1>The sentence, the slide, the <em>second</em>.</h1>
+      <p class="lede">One moment out of the corpus, handed back the way your agent gets it: the
+        sentence a builder actually said, the slide behind them with the box drawn where the text
+        was read <b>off the screen</b>, and a link that lands <b>on the second</b> it happened. This
+        is the receipt — what separates knowledge you can act on from a summary you have to trust.
+        Every value below came out of the database; nothing here is placeholder copy.</p>
       <dl class="readout" id="readout"></dl>
     </div>
   </div>
@@ -518,7 +525,7 @@ footer.end .lab{margin-bottom:10px;display:block}
   <footer class="end">
     <div>
       <span class="lab">What is real on this page</span>
-      <p>Frames are the indexer's own keyframes, downscaled to 1120px. Boxes are
+      <p>Frames are the corpus's own keyframes, downscaled to 1120px. Boxes are
         <code>ocr_lines.x0/y0/x1/y1</code>, normalised 0–1, drawn as percentages — nothing was
         nudged to fit. Spoken lines are <code>cues.text</code> at the cue that contains the
         keyframe timestamp, with its neighbours either side. Timecodes are
@@ -533,6 +540,9 @@ footer.end .lab{margin-bottom:10px;display:block}
       <p>Type is Archivo and JetBrains Mono, both OFL, vendored beside this file. Lab pieces are
         not bound by <code>DESIGN.md</code>.</p>
     </div>
+    <p class="attrib">Every frame, sentence and slide on this page is a builder's own work.
+      vidtheque watched the talks and points back at them; the videos belong to the people who
+      made them.</p>
   </footer>
 </main>
 
@@ -553,8 +563,8 @@ footer.end .lab{margin-bottom:10px;display:block}
   /* ---- readout ---- */
   const st = DATA.stats;
   const hrs = st.seconds / 3600;
-  [['corpus', 'AI Engineer', 'one channel, unedited'],
-   ['talks', num(st.talks), 'indexed, ready'],
+  [['corpus', 'AI Engineer', 'the first channel followed'],
+   ['talks', num(st.talks), 'watched, ready'],
    ['runtime', Math.floor(hrs) + 'h ' + pad(Math.round((hrs % 1) * 60)) + 'm', num(st.words) + ' words'],
    ['spoken lines', num(st.cues), 'whisperx cues'],
    ['on-screen lines', num(st.ocr_lines), 'across ' + num(st.ocr_frames) + ' frames'],
@@ -717,7 +727,7 @@ footer.end .lab{margin-bottom:10px;display:block}
         </div>
       </div>
       <div class="foot">${receiptHTML(m, 'lg')}
-        <span class="lab">keyframe ${pad(m.ord)} of ${num(DATA.stats.keyframes)} kept from ${Math.round(DATA.stats.seconds/3600)} hours</span>
+        <span class="lab">the sentence, the slide, the second — out of ${Math.round(DATA.stats.seconds/3600)} hours your agent watched</span>
         <span class="brand"><b>vidtheque<span>.</span></b></span></div>`;
     s.querySelector('.fslot').replaceWith(frame(m, { boxes: 'hero', scan: false }));
     return s;
@@ -783,7 +793,7 @@ footer.end .lab{margin-bottom:10px;display:block}
         <blockquote style="font-size:${fitSize(cue.t, 54, 33)}">${esc(cue.t)}</blockquote>
         <div class="credit"><strong>${esc(m.speaker)}</strong><em>${esc(m.title)}</em></div>
         <div class="rct">${receiptHTML(m, 'lg')}
-          <span class="lab">${num(DATA.stats.cues)} spoken lines · ${num(DATA.stats.ocr_lines)} on-screen lines · every one addressable</span></div>
+          <span class="lab">the sentence, the slide, the second — every one addressable</span></div>
       </div>`);
     return s;
   }

@@ -7,9 +7,13 @@
  uses it: tally red #ff2b26 (on air), tally green #22e07c (preview), cue amber
  #ffb020. Archivo wdth 62–125 as CG display lettering; Martian Mono for
  timecode, source IDs, telemetry. No glow, no glass, no rounded cards.
- STORY: this is everything I have watched, all of it on the wall at once; a
- plain question dims the wall, punches one frame to air, and hands back the
- sentence, the on-screen text, and a link that starts at the second it happens.
+ STORY: this is the knowledge of every builder the corpus follows, all of it on
+ the wall at once; a plain question dims the wall, punches one frame to air, and
+ hands back the sentence, the slide, and a link that starts at the second it
+ happens. Copy is bound by docs/design/positioning.md (LOCKED 2026-08-10):
+ you don't have time to watch everything, your agent does; receipts always;
+ every string here checked against that file's vocabulary law, including the
+ one about never shouting a case-sensitive id.
  FIRST VIEWPORT: full-bleed 8-col wall, slow drift; headline top-left at 66px
  over a left-weighted scrim; query slug bar under it; program monitor bottom-
  right with red tally, OCR overlay, lower-third and a red citation slab;
@@ -126,6 +130,11 @@ body{
   animation:pulse 1.9s steps(1,end) infinite}
 @keyframes pulse{0%,62%{opacity:1}63%,100%{opacity:.22}}
 .spacer{flex:1}
+/* the position, printed where a gallery prints the feed name */
+.band{color:var(--ink2)}
+.band b{color:var(--ink);font-variation-settings:'wdth' 88,'wght' 700}
+/* the frames on this wall are other people's work, and the rail says so */
+.attrib{color:var(--ink3)}
 .tele{display:flex;gap:16px}
 .tele i{font-style:normal;color:var(--ink2)}
 .tele i b{color:var(--ink);font-variation-settings:'wdth' 88,'wght' 700}
@@ -339,7 +348,9 @@ h1 em{font-style:normal;color:var(--red)}
   .cite .go svg{width:10px;height:10px}
   .rail{height:26px;font-size:6.8px;letter-spacing:.11em;gap:10px;padding:0 9px}
   .mark .w{font-size:10px}
-  .tele i:nth-child(n+3){display:none}
+  /* the band carries the position; the counters are the first thing to go */
+  .tele{display:none}
+  .attrib{display:none}
   .qlist span{padding:3px 6px 2.5px}
   .qlist span:not(.on){display:none}
   .srcs{font-size:8.4px;letter-spacing:.03em}
@@ -372,19 +383,29 @@ h1 em{font-style:normal;color:var(--red)}
 
   <div class="rail t">
     <span class="mark"><span class="rec"></span><span class="w">VIDTHEQUE</span></span>
-    <span>Master control</span>
+    <span class="band">The knowledge of <b>79 builders</b>, on tap</span>
     <span class="spacer"></span>
     <span class="tele">
-      <i>SRC <b>79</b></i><i>FRAMES <b>4,736</b></i><i>CUES <b>17,138</b></i>
-      <i>OCR LINES <b>61,198</b></i><i>RUNTIME <b>27.3 H</b></i>
+      <i>TALKS <b>79</b></i><i>FRAMES <b>4,736</b></i><i>SPOKEN LINES <b>17,138</b></i>
+      <i>ON-SCREEN LINES <b>61,198</b></i><i>RUNTIME <b>27.3 H</b></i>
     </span>
   </div>
 
   <div class="copy">
-    <h1>A second brain for<br>everything<br>you&#8217;ve <em>watched</em></h1>
-    <p class="deck">Every talk you sat through, indexed three ways &mdash; what was said,
-      what was on the screen, and the frame itself. Ask in plain words; get back the
-      second it happened.</p>
+    <!-- Headline, three drafts against the locked position. Shipped: 1.
+         1. YOU DON'T HAVE TIME TO WATCH IT ALL. YOUR AGENT DOES.
+            — the position's own sentence, the reason the product exists,
+              and the only one of the three that names the reader's problem
+              before it names ours. Ships.
+         2. THE KNOWLEDGE OF THE BUILDERS, ON TAP.
+            — true, blessed word for blessed word, but it describes the
+              shelf rather than the reader; reads like a subtitle.
+         3. EVERY TALK YOU MISSED, ON THE SECOND.
+            — carries the receipt, loses the agent; "missed" is a smaller
+              idea than "you don't have time", and slightly accusing. -->
+    <h1>You don&#8217;t<br>have time to<br>watch it all.<br>Your <em>agent</em> does.</h1>
+    <p class="deck">vidtheque watched every talk the builders gave, so you didn&#8217;t have to.
+      Ask in plain words; get back the sentence, the slide, and the second it happened.</p>
     <div class="slugbar">
     <span class="ic"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3.6 1.8 L8.2 6 L3.6 10.2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></span>
     <span class="q"><span id="qtext"></span><span class="caret"></span></span>
@@ -443,6 +464,7 @@ h1 em{font-style:normal;color:var(--red)}
 
   <div class="rail b">
     <span>Canned demo &middot; local assets &middot; no network</span>
+    <span class="attrib">The videos belong to the people who made them</span>
     <span class="spacer"></span>
     <span class="qlist" id="qlist"></span>
     <span class="spacer"></span>

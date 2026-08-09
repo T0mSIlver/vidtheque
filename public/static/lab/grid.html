@@ -6,13 +6,17 @@
 <title>The corpus grid — vidtheque lab</title>
 <!--
 THESIS: scale is the argument, so the corpus is the first thing on the page — a
-lit wall of every frame the indexer chose. It refuses the media-library rut:
+lit wall of one frame from every talk it watched. It refuses the media-library rut:
 filter sidebar, search box, twelve padded cards above the fold.
 OWN-WORLD: shared with piece 01 — grading-suite dark, 0px corners, hairline steel,
 lime #c9f938 = SEEN, amber #ff9f45 = HEARD, Archivo for people, JetBrains Mono for
 machine output.
 STORY: the visitor scrolls a wall they cannot count, pulls one frame out under the
-loupe, and reads the totals as a sentence rather than a spec sheet.
+loupe, and reads the totals as a sentence rather than a spec sheet. The wall ends
+on the growth motion: an empty slot where the next channel goes.
+COPY: bound by docs/design/positioning.md (LOCKED 2026-08-10). This piece renders
+pillar one — follow the builders: the demo is the first shelf, not the library, so
+the last tile in the wall is "+ follow a channel".
 FIRST VIEWPORT: the wall, bleeding to all four edges, with the title burned into
 its top rows through a scrim; tiles light up in a diagonal wave on load.
 FORM: contact sheet and loupe. Brief-pinned world (square, futuristic, eye candy).
@@ -76,6 +80,28 @@ a{color:inherit;text-decoration:none}
   opacity:0;transition:opacity .2s ease}
 .tile.on .flick{opacity:.9;animation:blip .9s steps(2,end) infinite}
 @keyframes blip{0%,60%{opacity:.9}61%,100%{opacity:.15}}
+
+/* ---------- the last tile: where the next channel goes ---------- */
+/* 78 covers close the wall as a full rectangle at 6, 3 and 2 columns, so the
+   follow slot takes the row after them whole rather than orphaning a cell.
+   Its height is one tile row (six 16:9 cells = 96/9), so the rhythm holds. */
+.tile.follow{grid-column:1/-1;aspect-ratio:96/9;cursor:pointer;
+  background:linear-gradient(180deg,#080c12,#04060a);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px}
+@media (max-width:1199px){.tile.follow{aspect-ratio:80/9}}
+@media (max-width:899px){.tile.follow{aspect-ratio:64/9}}
+@media (max-width:639px){.tile.follow{aspect-ratio:48/9}}
+.tile.follow::after{box-shadow:inset 0 0 0 1px rgba(201,249,56,.28)}
+.tile.follow:hover::after,.tile.follow:focus-visible::after{
+  box-shadow:inset 0 0 0 2px var(--seen),0 0 26px rgba(201,249,56,.35)}
+.tile.follow .n{color:var(--seen)}
+.tile.follow strong{display:flex;align-items:baseline;gap:.36em;color:var(--fg);
+  font-size:clamp(17px,2.1vw,31px);font-weight:800;letter-spacing:-.04em;line-height:1}
+.tile.follow strong i{font-style:normal;font-weight:300;color:var(--seen);
+  font-size:1.18em;line-height:1}
+.tile.follow:hover strong,.tile.follow:focus-visible strong{color:var(--seen)}
+.tile.follow .sub{font-family:var(--mono);font-size:clamp(9px,.85vw,11.5px);font-weight:600;
+  letter-spacing:.15em;text-transform:uppercase;color:var(--fg3);text-align:center;padding:0 14px}
 
 /* the vault lighting up, once */
 @keyframes lift{from{opacity:0;transform:translateY(9px) scale(.965)}to{opacity:1;transform:none}}
@@ -171,6 +197,10 @@ footer.end p{font-size:13px;line-height:1.6;color:var(--fg2);max-width:56ch}
 footer.end p + p{margin-top:10px}
 footer.end code{font-family:var(--mono);font-size:12px;color:var(--seen)}
 footer.end .lab{margin-bottom:10px;display:block}
+/* 78 covers of other people's work sit above this line; it is the least the
+   page owes them */
+footer.end .attrib{grid-column:1/-1;border-top:1px solid var(--rule);padding-top:15px;
+  font-family:var(--mono);font-size:11px;letter-spacing:.02em;color:var(--fg3);max-width:none}
 @media (max-width:820px){
   footer.end{grid-template-columns:1fr}
   .hero p{max-width:42ch}
@@ -191,10 +221,9 @@ footer.end .lab{margin-bottom:10px;display:block}
   <div class="wall" id="wall"></div>
   <div class="veil"></div>
   <div class="hero">
-    <h1>Everything you watched, <em>still here</em>.</h1>
-    <p>One real frame from each of the 78 talks below — the sharpest keyframe the indexer kept
-      from the middle of each one. <b>Point at any of them.</b></p>
-    <div class="cue"><s></s><span>78 talks below</span></div>
+    <h1>The knowledge of the builders of <em>AI Engineer 2026</em></h1>
+    <p>One real frame from each of the 78 talks below. <b>Point at any of them.</b></p>
+    <div class="cue"><s></s><span>78 talks &middot; ask it something</span></div>
   </div>
   <div class="loupe" id="loupe"></div>
 </section>
@@ -237,6 +266,8 @@ footer.end .lab{margin-bottom:10px;display:block}
         <code>cues.text</code>, so it is approximate and says so here rather than in a tooltip.</p>
       <p>Speaker names are parsed out of the title — <code>speakers</code> is empty in this corpus.</p>
     </div>
+    <p class="attrib">Every frame on this wall is a builder's own work. vidtheque watched the talks
+      and points back at them, to the second; the videos belong to the people who made them.</p>
   </footer>
 </main>
 
@@ -253,9 +284,9 @@ footer.end .lab{margin-bottom:10px;display:block}
   /* ---- the count, written out ---- */
   const hrs = S.seconds / 3600;
   document.getElementById('countline').innerHTML =
-    `<span class="n">${S.talks}</span> talks went in. ` +
+    `<span class="n">${S.talks}</span> talks by the builders. ` +
     `<span class="n h">${Math.floor(hrs)}h&#8202;${pad(Math.round((hrs % 1) * 60))}m</span> ` +
-    `<em>of somebody standing in front of a room,</em> kept as ` +
+    `<em>of somebody standing in front of a room,</em> watched end to end and kept as ` +
     `<span class="n s">${num(S.keyframes)}</span> <em>frames worth keeping,</em> ` +
     `<span class="n h">${num(S.cues)}</span> <em>spoken lines and</em> ` +
     `<span class="n s">${num(S.ocr_lines)}</span> <em>lines read off the screen.</em>`;
@@ -274,6 +305,18 @@ footer.end .lab{margin-bottom:10px;display:block}
       <span class="n">${pad(i + 1)}</span><span class="flick"></span>`;
     wall.append(t);
   });
+
+  /* The roadmap affordance, in the wall's own grammar: the slot the next
+     channel lands in. Not a button bolted to the page — the last tile of the
+     corpus, because the demo is the first shelf and not the library. */
+  const follow = document.createElement('button');
+  follow.className = 'tile follow'; follow.type = 'button';
+  follow.setAttribute('aria-label', 'Follow a channel — on the roadmap');
+  follow.innerHTML = `<span class="n">NEXT</span>
+    <strong><i>+</i>follow a channel</strong>
+    <span class="sub">vidtheque keeps watching so you don&#8217;t have to</span>`;
+  wall.append(follow);
+
   /* diagonal wave: delay from the tile's own row+column, measured after layout */
   requestAnimationFrame(() => {
     const c = Math.max(1, Math.round(wall.clientWidth / (wall.children[0].offsetWidth + 3)));
@@ -322,11 +365,15 @@ footer.end .lab{margin-bottom:10px;display:block}
     clearInterval(timer); cur = -1; loupe.classList.remove('on');
     [...wall.children].forEach(c => c.classList.remove('on'));
   }
+  /* the follow slot is a tile but not a talk — it has no index into G, and the
+     loupe has nothing to show for it */
   wall.addEventListener('pointerover', e => {
-    const t = e.target.closest('.tile'); if (t) open(+t.dataset.i, t);
+    const t = e.target.closest('.tile');
+    if (t && t.dataset.i !== undefined) open(+t.dataset.i, t); else if (t) close();
   });
   wall.addEventListener('focusin', e => {
-    const t = e.target.closest('.tile'); if (t) open(+t.dataset.i, t);
+    const t = e.target.closest('.tile');
+    if (t && t.dataset.i !== undefined) open(+t.dataset.i, t); else if (t) close();
   });
   wall.addEventListener('pointerleave', close);
 
