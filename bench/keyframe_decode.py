@@ -454,6 +454,123 @@ def extract_workers_probe(
     }
 
 
+def fused_probe(
+    path: Path, kind: str, repeats: int, work_dir: Path
+) -> dict[str, Any]:
+    """Pass 1's lever: where the colour conversion happens.
+
+    The old path decoded every frame to full-resolution BGR and let
+    `SceneManager` resize it to 256 px; the fused path (shipped 2026-08-09,
+    `detect_spans(fused=True)`) does both in one libswscale call at the output
+    size. `fused=False` still exists for exactly this comparison.
+
+    Unlike `--extract-workers`, **this one is not expected to be identical** —
+    swscale's bilinear and OpenCV's INTER_LINEAR resample differently and the
+    `screencast` preset weights a Canny edge map at 1.0, so boundaries move.
+    Tom's decision (research/pipeline-perf-2026-08-09.md, 2026-08-09 addendum)
+    accepted that on the strength of "the changes would be minimal", and this is
+    where minimal gets a number: how many boundaries moved, by how much, and —
+    the one that decides whether a deep link changed — how many of the frames
+    the stage actually *keeps* are the same pixels.
+
+    Both paths extract from their own shot list, because that is what indexing
+    would do. Detection is repeated `repeats` times and the best wall taken;
+    extraction runs once per path.
+    """
+    runs: dict[str, dict[str, Any]] = {}
+    detected: dict[str, list[tuple[float, float]]] = {}
+    kept: dict[str, list[KeyframeDraft]] = {}
+
+    for label, fused in (("legacy", False), ("fused", True)):
+        detect_timings: list[Timing] = []
+        spans: list[tuple[float, float]] = []
+        duration = 0.0
+        for repeat in range(repeats):
+            timing, payload = Timing.measure(detect_spans, path, kind=kind, fused=fused)
+            spans, duration = payload
+            detect_timings.append(timing)
+            print(
+                f"  [{label}] detect #{repeat + 1}: {timing.wall:.1f}s wall, "
+                f"{timing.cpu:.1f}s cpu, {len(spans)} scenes"
+            )
+        shots = thin(subdivide(spans, duration, MAX_SHOT_SECONDS), BUDGET)
+        target = work_dir / f"fused-probe-{label}"
+        if target.exists():
+            shutil.rmtree(target)
+        extract_timing, drafts = Timing.measure(
+            extract_from_shots,
+            path,
+            shots,
+            target,
+            lambda ordinal, t_s: f"{ordinal:05d}-{int(round(t_s * 1000)):09d}.jpg",
+            candidates_per_shot=CANDIDATES,
+        )
+        print(
+            f"  [{label}] extract: {extract_timing.wall:.1f}s wall, "
+            f"{len(drafts)} keyframes from {len(shots)} shots"
+        )
+        detected[label] = spans
+        kept[label] = drafts
+        runs[label] = {
+            "detect_wall_s": [round(t.wall, 2) for t in detect_timings],
+            "detect_best_s": round(min(t.wall for t in detect_timings), 2),
+            "detect_cpu_s": [t.cpu for t in detect_timings],
+            "extract_wall_s": round(extract_timing.wall, 2),
+            "stage_best_s": round(
+                min(t.wall for t in detect_timings) + extract_timing.wall, 2
+            ),
+            "scenes": len(detected[label]),
+            "shots": len(shots),
+            "keyframes": len(drafts),
+        }
+
+    legacy_cuts = [round(start, 4) for start, _ in detected["legacy"]]
+    fused_cuts = [round(start, 4) for start, _ in detected["fused"]]
+
+    # Boundary-by-boundary, in the only direction that matters for provenance:
+    # what happened to each cut the old corpus was built on.
+    moved: list[dict[str, float]] = []
+    for cut in legacy_cuts:
+        nearest = min(fused_cuts, key=lambda f: abs(f - cut), default=None)
+        if nearest is None:
+            continue
+        delta = round(abs(nearest - cut), 4)
+        if delta:
+            moved.append({"legacy_s": cut, "fused_s": nearest, "delta_s": delta})
+    moved.sort(key=lambda entry: entry["delta_s"], reverse=True)
+
+    frames = pair_keyframes(kept["legacy"], kept["fused"])
+    return {
+        "runs": runs,
+        "speedup": {
+            "detect": round(
+                runs["legacy"]["detect_best_s"] / runs["fused"]["detect_best_s"], 2
+            )
+            if runs["fused"]["detect_best_s"]
+            else None,
+            "stage": round(runs["legacy"]["stage_best_s"] / runs["fused"]["stage_best_s"], 2)
+            if runs["fused"]["stage_best_s"]
+            else None,
+        },
+        "boundaries": {
+            "legacy": len(legacy_cuts),
+            "fused": len(fused_cuts),
+            "count_delta": len(fused_cuts) - len(legacy_cuts),
+            "unchanged": len(legacy_cuts) - len(moved),
+            "moved": len(moved),
+            "moved_over_100ms": sum(1 for m in moved if m["delta_s"] > 0.1),
+            "moved_over_1s": sum(1 for m in moved if m["delta_s"] > 1.0),
+            "worst": moved[:10],
+            "drift": drift(legacy_cuts, fused_cuts),
+        },
+        # The product-level answer: a boundary that moved 40 ms changed nothing
+        # if the frame the stage kept, and the deep link pointing at it, is the
+        # same frame.
+        "kept_frames": frames,
+        "identical_kept_frames": f"{frames['identical_frames']}/{frames['matched']}",
+    }
+
+
 def nvdec_probe(path: Path, seconds: float) -> dict[str, Any]:
     """What the 3090 would do with the same decode, measured with ffmpeg alone.
 
@@ -528,6 +645,14 @@ def main() -> int:
         "--extract-workers (VIDTHEQUE_KEYFRAME_DECODE_THREADS). 0 = OpenCV's default.",
     )
     parser.add_argument(
+        "--fused-probe",
+        action="store_true",
+        help="pass 1 old vs new: full-resolution decode + cv2.resize against the "
+        "fused swscale convert-at-256px that shipped 2026-08-09. Reports the "
+        "speedup *and* the shot-boundary diff (how many moved, by how much, and "
+        "how many kept frames are still identical).",
+    )
+    parser.add_argument(
         "--no-dual",
         action="store_true",
         help="skip the single-vs-dual comparison (for a threading-only run)",
@@ -574,6 +699,18 @@ def main() -> int:
             modes = [m.strip().upper() for m in args.threading.split(",") if m.strip()]
             entry["threading"] = threading_probe(full, args.kind, modes)
             print(f"  identical cut lists: {entry['threading']['identical_cut_lists']}")
+        if args.fused_probe:
+            entry["fused"] = fused_probe(full, args.kind, args.repeats, work_dir)
+            boundaries = entry["fused"]["boundaries"]
+            print(
+                f"  fused: detect x{entry['fused']['speedup']['detect']}, "
+                f"stage x{entry['fused']['speedup']['stage']}; cuts "
+                f"{boundaries['legacy']}->{boundaries['fused']}, "
+                f"{boundaries['moved']} moved "
+                f"({boundaries['moved_over_100ms']} by >100ms), "
+                f"kept frames identical "
+                f"{entry['fused']['identical_kept_frames']}"
+            )
         if args.extract_workers:
             counts = [int(c) for c in args.extract_workers.split(",") if c.strip()]
             threads = [int(c) for c in args.decode_threads.split(",") if c.strip()]

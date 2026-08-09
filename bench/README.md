@@ -67,7 +67,7 @@ than no number.
 | `harness.py` | measurement plumbing — VRAM sampler, `/status` poller, HTTP, worker process control. Stdlib only |
 | `gpu_validation.py` | the lifecycle manager against real hardware: load/unload VRAM discipline, residency, eviction, lease hooks |
 | `ballast.py` | squats on VRAM in a separate process, so admission control has a co-tenant to refuse |
-| `keyframe_decode.py` | the CPU side: single-stream vs dual-stream shot detection, timings *and* an equivalence check |
+| `keyframe_decode.py` | the CPU side: shot detection and frame extraction, every lever (dual-stream, PyAV threading, pass-2 workers, fused convert) with timings *and* a diff of what the output did |
 | `pipeline_bench.py` | the whole pipeline, once per configuration: CPU vs GPU vs GPU+whisperX, per stage |
 | `results/` | committed measurements, with the raw JSON they came from |
 
@@ -110,6 +110,25 @@ uv run --no-sync python bench/keyframe_decode.py \
     --pair full=/scratch/ID-1080p.mp4,detect=/scratch/ID-1080p.mp4 --no-dual \
     --extract-workers 1,2,4,8 --decode-threads 0,2 \
     --out bench/results/raw/keyframe-workers.json
+```
+
+`--fused-probe` is pass 1's lever, and the only one here whose answer is
+*allowed* to differ. It runs detection both ways on the same file — the
+pre-2026-08-09 path (full-resolution BGR, then `cv2.resize`) against the fused
+one that ships now (`detect_spans(fused=True)`: one libswscale convert straight
+to 256 px) — extracts from each path's own shot list, and reports the speedup
+next to the damage: how many boundaries moved, by how much, the ten worst, and
+how many of the frames the stage actually *keeps* are still the same pixels.
+That last number is the product one, since `t_s` is the deep link. This is where
+"the changes would be minimal"
+(`research/pipeline-perf-2026-08-09.md`, 2026-08-09 addendum) gets checked on a
+real 1080p talk rather than an 8-second fixture:
+
+```bash
+uv run --no-sync python bench/keyframe_decode.py \
+    --pair full=/scratch/ID-1080p.mp4,detect=/scratch/ID-1080p.mp4 --no-dual \
+    --fused-probe --repeats 2 \
+    --out bench/results/raw/keyframe-fused.json
 ```
 
 `pipeline_bench.py` answers the operator's version of the question the other
