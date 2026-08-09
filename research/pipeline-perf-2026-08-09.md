@@ -915,3 +915,297 @@ here):
 Verdict (Tom, 2026-08-09): not a regression, a correction. Decision to adopt
 fused for future indexing stands; old corpus stays under its old key per the
 `+fused` provenance grammar.
+
+---
+
+# 11. Addendum, 2026-08-09 (late evening): NVDEC, now that it loads — and it loses
+
+Append-only. Everything above is left as written. §3.4 rejected hardware decode
+on four grounds, the first of which was that `h264_cuvid` **could not load on
+this box**. Tom mounted `libnvcuvid.so.1` into the container this evening
+(`ffmpeg -decoders` lists ten cuvid decoders), which retires that ground and
+makes the rejection worth re-deciding on numbers instead of on a `dlopen`
+failure.
+
+**The rejection survives, and for a better reason than the old one.** On this
+box the 3090's NVDEC engine decodes 1080p60 H.264 at **786 frames/s**; the ten
+CPU cores decode the same stream at **2,716 frames/s**. Hardware decode is a
+**3.5x downgrade** here, and every variant of it measured below is slower
+end-to-end than the fused CPU path that shipped this morning. The interesting
+result is not that, though — it is the ceiling probe that came with it, which
+says pass 1 has **43 s of detector** inside its 89.5 s wall, so the half of the
+stage everyone has been optimising is now roughly half decode and half
+`ContentDetector`, and no decoder can touch the second half.
+
+## 11.1 What was run
+
+| | |
+|---|---|
+| script | `bench/keyframe_gpu.py` (new; the pipeline is imported, not modified) |
+| file | `1lgFGaHoGq8.mp4` — the same 21.7 min / 1080p59.94 / 77,989-frame talk §9 and §10 used, kept for comparability |
+| detector | `--kind screencast`, `make_detector` unchanged, `candidates_per_shot=9`, `budget=600`, `max_shot_seconds=25` |
+| baseline | `detect_spans(fused=True)` **re-measured tonight**, so every comparison shares conditions |
+| box | 10 cores, RTX 3090, driver 550.163.01, ffmpeg 7.1.5, demo stack up (mcp :8100, worker :8081) |
+| raw | `bench/results/raw/keyframe-gpu-2026-08-09.json` |
+
+The seam is §8.2's seam. `SceneManager.detect_scenes(video=...)` takes any
+`VideoStream`, so `FFmpegPipeStream` is one whose decoder is an **ffmpeg
+subprocess** writing `rawvideo bgr24` down a pipe. That makes the whole decode
+chain an argument list — `-hwaccel cuda -hwaccel_output_format cuda -c:v
+h264_cuvid -vf scale_cuda=256:144,hwdownload,…` — swappable per variant with the
+detector held fixed. Every variant read all 77,989 frames; a variant that
+quietly dropped frames could not have passed as a speedup.
+
+## 11.2 The table
+
+Pass 1, best of 2 (`nvdec-1080` is n=1, it costs four minutes a run). "CPU" is
+wall-clock CPU seconds across **both** processes — `RUSAGE_SELF` plus reaped
+children, since half the work is in a subprocess. Damage is against the fused
+baseline's own cut list.
+
+| variant | pass-1 wall | **vs fused** | CPU (of which ffmpeg) | boundary damage | kept frames |
+|---|---:|---:|---:|---|---|
+| **cpu-fused** (shipped) | **89.5 s** | **1.00** | 686 s (—) | baseline | baseline |
+| `nvdec-scale` | 97.4 s | **0.92** | 714 s (35 s) | 22→22 cuts, 1 moved 0.50 s | **50/51 identical** |
+| `nvdec-resize` | 97.8 s | **0.92** | 707 s (36 s) | 22→22 cuts, 1 moved 0.47 s | **50/51 identical** |
+| `cpu-pipe` (control) | 100.8 s | 0.89 | 760 s (345 s) | 22→22 cuts, 1 moved 0.47 s | **50/51 identical** |
+| `nvdec-1080` (naive) | 235.2 s | **0.38** | 1,522 s (625 s) | 22→22 cuts, 1 moved 0.50 s | **50/51 identical** |
+
+- `nvdec-scale` = `-hwaccel cuda -hwaccel_output_format cuda -c:v h264_cuvid`
+  + `scale_cuda=256:144:interp_algo=bilinear,hwdownload,format=nv12` — §3.4's
+  prescribed shape, downscaled before the PCIe crossing.
+- `nvdec-resize` = the same with the resize **inside the decoder**
+  (`-resize 256x144`) and no scale filter. Identical throughput, so cuvid's own
+  resize and `scale_cuda` cost the same nothing.
+- `cpu-pipe` is the control that matters: same pipe, same detector, CPU decode.
+  It isolates NVDEC from the subprocess architecture, and it says the
+  architecture costs ~11 s on its own.
+- `nvdec-1080` downloads full-resolution frames and lets `SceneManager` resize,
+  i.e. the arm §3.4 predicted would throw the win away.
+
+Stage-level, adding pass 2 (which none of these change): fused
+89.5 + 36.0 = **125.5 s**, `nvdec-scale` 97.4 + 38.1 = **135.5 s**, **x0.93**.
+For the record against §1's corpus rate, tonight's fused stage is
+**5.8 s per video-minute** on this talk, against the 8.83 the pre-fused corpus
+averaged.
+
+`interp_algo=bilinear` is set deliberately: PyAV's `VideoReformatter.reformat`
+defaults to bilinear and `scale_cuda`'s own default is nearest, so leaving it
+alone would have made GPU decode look worse than it is by comparing two
+different resamplers rather than two different decoders.
+
+## 11.3 The ceiling, and the decode-bound / detector-bound split
+
+Probe 3, and the number the recommendation turns on. All rows are the **first
+300 s** of the same file (17,982 frames), extrapolated to the whole video by
+x4.337. "Detector floor" is the detector with **no decoder at all**: 300 s of
+detection-resolution BGR baked to disk and replayed with `cat`, so it measures
+`ContentDetector` plus the pipe read and nothing else.
+
+| probe | wall (300 s) | frames/s | whole video |
+|---|---:|---:|---:|
+| `null-cpu` — CPU decode, discarded inside ffmpeg | 6.6 s | **2,716** | 28.7 s |
+| `drain-cpu-pipe` — CPU decode + scale + pipe | 11.5 s | 1,563 | 49.9 s |
+| `null-nvdec` — NVDEC decode, frames never leave the card | 22.9 s | **785** | 99.3 s |
+| `drain-nvdec-scale` — + `scale_cuda` + `hwdownload` + pipe | 22.9 s | 786 | 99.2 s |
+| `drain-nvdec-resize` — decoder-side resize + pipe | 22.9 s | 786 | 99.2 s |
+| `drain-nvdec-cpuscale` — download at 1080p, scale on CPU | 22.9 s | 786 | 99.2 s |
+| `drain-nvdec-1080` — 1080p BGR down the pipe | 40.7 s | 442 | 176.4 s |
+| **detector floor** — no decoder | **9.9 s** | **1,815** | **43.0 s** |
+
+Three things fall out of that table.
+
+**1. NVDEC is the bottleneck in every NVDEC variant, and the engine is the
+bottleneck inside NVDEC.** `null-nvdec`, `drain-nvdec-scale`,
+`drain-nvdec-resize` and `drain-nvdec-cpuscale` are all 22.9 s to three
+significant figures. Downloading the frames, scaling them, and pushing 1.9 GiB
+through a pipe are all free relative to the decode. The 3090 has a single NVDEC
+engine and it delivers 786 fps on this stream; the whole video would take 99.2 s
+to decode, which is **more than the 89.5 s the CPU path spends decoding *and*
+detecting**. The measured `nvdec-scale` wall of 97.4 s is its own feed ceiling,
+arrived at from below. There is no tuning here: the ceiling is the silicon.
+
+**2. Pass 1 is 48% detector.** 43.0 s of the fused path's 89.5 s is detection
+math that no decoder change can reach. The CPU accounting closes the same way:
+the detector floor burns 76.1 s of CPU per 300 s → ~330 s for the video, the
+fused pass spends 686 s, so decode + prepare is ~356 s — and independently,
+ffmpeg's own CPU decode + scale of the whole file costs ~321 s of CPU. **Pass 1
+is a ~50/50 split of CPU between decode and detect**, and its 686 s of CPU on ten
+cores has a perfect-parallelism floor of 68.6 s against a measured 89.5 s (77%
+efficiency).
+
+**3. That is why the fastest feed still loses.** `cpu-pipe` hands the decode to
+ffmpeg, which does it *better* (49.9 s of feed against a 43.0 s detector floor)
+— and the whole run gets **slower**, 100.8 s. The cores ffmpeg uses are the
+cores the detector wants; moving decode out of the process does not create any.
+On this box pass 1 is **core-bound, not decoder-bound**, and the only decoder
+that changes that is one which uses no cores at all — which NVDEC is (35 s of
+CPU, down from 345 s) and which is exactly why it is still not a win: it hands
+back 310 s of CPU and takes 10 s of wall in exchange.
+
+So the honest ceiling for all future decoder work on pass 1: an **infinitely
+fast, CPU-free decoder** takes pass 1 from 89.5 s to 43.0 s, **x2.08**. Nothing
+available reaches it, and the remaining prize is the detector's own math, not the
+frames.
+
+## 11.4 §3.4's `scale_cuda` rule: confirmed, and moot
+
+The rule stands, with numbers. Downloading at full resolution instead of at
+detection resolution costs **786 → 442 fps** on the feed (x1.78) and
+**97.4 s → 235.2 s** with the detector attached (x2.4) — worse than the feed
+ratio alone, because the consumer also pays for 6.2 MB/frame instead of 110 KB
+(104 GiB over the pipe instead of 1.9 GiB, at a sustained 2.6 GiB/s). §3.4's
+"a plain `hwdownload` at 1080p throws it away" is exactly right.
+
+It is also moot: the correct arm loses to the CPU too. Both arms of a rule can
+be below the floor.
+
+## 11.5 Boundary damage: real, small, and **not the GPU's**
+
+Every pipe variant produced the same damage against the fused baseline:
+
+- **22 scenes → 22 scenes**, 21 of 22 boundaries **bit-identical**;
+- one boundary moved, at 16.967 s → 16.47/16.50 s (**0.47–0.50 s**), none over 1 s;
+- **50 of 51 kept frames pixel-identical** (phash256 mean 2.24; the single max of
+  114 is the frame either side of that one moved boundary); mean sharpness ratio
+  0.985.
+
+Against §10's precedent — 5 boundaries moved >100 ms, 3 of them >1 s, 35/42 kept
+frames identical, and Tom's verdict of "not a regression, a correction" — this
+is an order of magnitude less movement, and it would have been acceptable.
+
+The mechanism is worth recording because it is **not** the GPU. `cpu-pipe` moves
+the same boundary by the same 0.4672 s as `nvdec-resize`; `nvdec-scale` lands at
+0.5006 s. So the drift comes from the **format path** — ffmpeg's
+`nv12 → bgr24` through swscale versus PyAV's direct `yuv420p → bgr24` reformat —
+and the GPU decoder's contribution is the ~33 ms of difference between the two
+NVDEC arms and the CPU arm. torchcodec's "CUDA decode is not bit-exact" warning
+(§3.4) is true and, on this content, is the smallest term in the error budget.
+
+## 11.6 Pass 2: NVDEC seeks are 6.6x worse
+
+Probe 4, on the real candidate timestamps: 6 shots x 9 candidates = 54 absolute
+seeks, the same `linspace(low, high, 9)` `_sharpest_in` uses, projected to the
+full 459-seek pass.
+
+| seek path | per seek | projected pass 2 | hits |
+|---|---:|---:|---:|
+| **`cv2.VideoCapture` + `CAP_PROP_POS_MSEC`** (shipped) | **74 ms** | **34.0 s** | 54/54 |
+| `ffmpeg -ss` per seek, CPU decode | 164 ms | 75.5 s | 54/54 |
+| `ffmpeg -ss` per seek, `h264_cuvid` | **490 ms** | **225.1 s** | 54/54 |
+
+The projection checks out against reality: 34.0 s projected, 36.0 s measured for
+the whole of pass 2 including the JPEG writes and the phashes. And the 74 ms
+against §2's fitted 115 ms is the same seek on a quieter box.
+
+The NVDEC arm's 490 ms is not decode — it is ~330 ms of **CUDA context creation
+per process**, on top of ffmpeg's own ~90 ms of spawn and container parse. The
+only way to amortise that is a long-lived CUDA process, and the only long-lived
+CUDA process in this architecture is the worker, which may not read mcp's media
+directory (the invariant, and §3.4's third ground). **Pass 2 stays on cv2.**
+
+One methodological note for whoever reads the raw JSON: the first run of this
+probe reported 885 ms/seek and `hits: 0` — it asked ffmpeg for `rawvideo` from a
+chain still holding CUDA frames, so it was timing 54 error messages. The `hits`
+counter exists because of that, and the committed numbers are from the re-run
+with `hwdownload,format=nv12`.
+
+## 11.7 §10's unexplained extraction gap: it does not reproduce
+
+§10 flagged "fused extraction ran 56.5 s vs legacy 34.5 s on its own shot list
+(51 vs 49 shots; unexplained gap)". Re-measured tonight on the same file, both
+shot lists, one after the other:
+
+| shot list | scenes | shots | seeks | span median | candidate-gap median | **extract** |
+|---|---:|---:|---:|---:|---:|---:|
+| legacy (`fused=False`) | 24 | 49 | 441 | 26.53 s | 2.653 s | **36.2 s** |
+| fused (shipped) | 22 | 51 | 459 | 26.53 s | 2.653 s | **36.0 s** |
+
+The gap is gone, and the shot lists are the same shape in the only dimension
+pass 2 is sensitive to: candidate spacing (2.653 s median in both, 41/49 vs
+43/51 gaps above the ~2 s GOP). §9 already recorded that pass 2 is
+contention-sensitive and that a busy box made the same configuration 18% slower;
+§10's 34.5-vs-56.5 was that, not a property of the fused shot list. Tonight's
+whole-stage numbers are faster than both prior sessions' for the same reason —
+the box is quiet. **Nothing to chase.**
+
+(For the same reason, tonight's fused speedup over legacy is **x1.59**
+(142.2 s → 89.5 s) where §10 measured x1.65. Same conclusion, quieter box.)
+
+## 11.8 VRAM
+
+Sampled at 1 Hz for the duration of every GPU run, as peak minus the reading
+taken immediately before it:
+
+- **+340 to +370 MiB** for every NVDEC variant, including `nvdec-1080` — CUDA
+  context plus cuvid surfaces, and it does not scale with what the filter chain
+  does afterwards.
+- The absolute baseline moved between runs (1,485 MiB early, 3,713 MiB later)
+  because something else on the box took the card mid-session; the deltas are
+  stable across that, which is the point of measuring a delta.
+
+So decode VRAM is not the objection — a third of a gigabyte would sit beside the
+~12 GB llama.cpp lease without trouble. The objection is that it buys nothing.
+
+## 11.9 Recommendation
+
+**CPU-fused stays the answer. Do not build `/v1/shots`; do not put NVDEC in
+mcp/.** The arithmetic, on §1's corpus (75 videos, 26.1 h, 23,652 s of pipeline,
+keyframe 13,837 s) and §2's through-origin split (pass 1 ≈ 65% = 8,994 s, pass 2
+≈ 36% = 4,981 s — the fit's own shares, which sum to 101%):
+
+Post-§8 the corpus baseline has already moved. At tonight's measured x1.59 on
+pass 1, the same corpus re-indexed today would spend **8,994 / 1.59 = 5,657 s**
+in pass 1, a **10,638 s** keyframe stage, and a **20,453 s** pipeline. That is
+the number the three options are scored against.
+
+- **mcp-side NVDEC** (`nvdec-scale`, the best GPU arm): pass 1 x0.92 →
+  5,657 → **6,149 s**, i.e. **492 s worse** on the corpus and a **2.4% slower
+  pipeline** (20,453 → 20,945 s). For that the deployment acquires a
+  `libnvcuvid.so.1` mount, a CUDA runtime in the mcp container, and a stage that
+  competes with whisperX for the card it currently never touches. Negative on
+  both axes; there is no version of this worth the muddiness.
+
+- **a stateless `/v1/shots` worker endpoint**: the most it could ever remove
+  from mcp's clock is the whole of pass 1, **5,657 s, 27.7% of the post-§8
+  pipeline** — but only as accounting, because the worker runs on the same box
+  and the same card. Its best implementation is NVDEC at 99.2 s/video against
+  mcp's 89.5 s, or the identical CPU code at 89.5 s. **Wall-clock gain: 0 s at
+  best, −492 s at worst**, in exchange for shipping a 150 MB mp4 over the HTTP
+  seam per video (or letting the worker read mcp's media directory, which breaks
+  the invariant outright, §3.4). The endpoint's premise — that the GPU decodes
+  faster — is false on this hardware. **Do not build it.** If it is ever built
+  it must be for a *detector* that only exists on the GPU (TransNetV2, §3.4), and
+  that is a different decision with a different rejection attached.
+
+- **CPU-fused, unchanged**: 20,453 s, no new dependency, no new failure mode,
+  and the two un-taken pass-2 wins from §9 (`EXTRACT_WORKERS=4`, x1.25 on pass 2;
+  `SHOT_CANDIDATES=5`, untested) still apply on top.
+
+The last line is the one worth carrying forward: **the remaining headroom in
+pass 1 is 89.5 → 43.0 s (x2.08), and all of it is on the far side of the
+decoder.** A free decoder would save 2,937 s of the corpus's 20,453 — **14.4% of
+the whole pipeline** — and the fastest decoder measured tonight claims none of
+it, because pass 1 is core-bound and its CPU is split ~50/50 between decode and
+`ContentDetector`. Whatever is attacked next in this stage, it is the detector's
+per-frame math or the number of frames handed to it, not where the frames come
+from. §3.4's NVDEC row can be marked **rejected, measured** rather than
+**rejected, could not load**.
+
+## 11.10 What this run does not cover
+
+- **One file, one box.** 1080p60 H.264 High on a 3090 with 10 cores. NVDEC's
+  relative standing is a hardware ratio: it would flip on a box with 4 cores, or
+  with a card whose decode engine is not shared with the whole pipeline. The
+  conclusion is about Tom's box, which is the box that matters here.
+- **No concurrency test.** NVDEC's one surviving argument is that it hands back
+  310 s of CPU per video, which would matter if two videos were indexed at once
+  — the runner does one at a time, and the workload that would contend
+  (whisperX) wants the same card, so this was not pursued.
+- **The ceiling probes use the first 300 s** of the file and extrapolate x4.337.
+  Per-frame detector and decoder cost is near-constant, but the first five
+  minutes hold 8 of the video's 22 scenes, so treat the detector floor as
+  approximate — and slightly pessimistic, since it also pays for the pipe read.
+- **Frame skipping was not measured.** It is the obvious lever now that the
+  detector is half the pass, and it changes the output, so it belongs with §3's
+  "needs Tom" items rather than in a bench.
