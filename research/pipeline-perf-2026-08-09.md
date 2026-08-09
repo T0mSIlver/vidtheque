@@ -741,3 +741,150 @@ Items 1–3 are unaffected: the pass-2 pool, `CAP_PROP_N_THREADS` and
 `SHOT_CANDIDATES` all still apply on top of a fused pass 1, and multiply with it
 rather than adding. Open questions §7.1, §7.3 and §7.4 are untouched. §7.2 is
 answered.
+
+# 9. Addendum, 2026-08-09 (GPU window): §7.1 measured on a real 1080p talk
+
+Append-only. Everything above is left as written; this section reports one run of
+the committed `bench/keyframe_decode.py --extract-workers` on Tom's box and what
+it changes in §3.1, §4 and §7.1.
+
+**The gate passes. The speedup does not.** `all_identical: true` across all
+twelve configurations — so `VIDTHEQUE_KEYFRAME_EXTRACT_WORKERS=4` may ship — but
+it is worth **x1.25 on pass 2 and ~x1.06 on the keyframe stage**, not the x1.30
+on the *stage* that §3.1's arithmetic predicted. The reason is the interesting
+part: **pass 2 was never serial.**
+
+## 9.1 What was run
+
+| | |
+|---|---|
+| file | a real 1080p conference talk already on the box (`1lgFGaHoGq8.mp4`, AI Engineer World's Fair) — **not** synthetic, and not downloaded: YouTube is rate-limiting this box, which is why the batch is parked |
+| stream | H.264 High, 1920x1080, 59.94 fps, **1301 s (21.7 min)** |
+| detector | `--kind screencast`; 22 scenes → **51 shots** after `subdivide`/`thin` |
+| settings | `candidates_per_shot=9`, `budget=600`, `max_shot_seconds=25` (the bench's own constants, i.e. today's defaults) |
+| pipeline code | `33c8cd6` — the fused pass 1 of §8 is *in*, so these are post-§8 numbers |
+| box | 10 cores, shared with the live demo stack (worker + mcp) |
+
+Detection runs once; all twelve configurations extract from that one shot list,
+so the only variable is the extractor. Every configuration produced 51 keyframes
+and `pair_keyframes` matched all 51 against the 1-worker baseline as
+**identical frames**.
+
+## 9.2 The matrix
+
+Wall seconds / CPU seconds for pass 2, one invocation, baseline first:
+
+| `decode_threads` \ `workers` | 1 | 2 | 4 | 8 |
+|---|---|---|---|---|
+| 0 (OpenCV default) | **61.3** / 280.4 | 51.0 / 301.8 | **49.2** / 326.5 | 50.3 / 349.1 |
+| 1 | 65.6 / 283.8 | 53.8 / 300.3 | 49.6 / 323.4 | 50.5 / 348.1 |
+| 2 | 60.1 / 279.3 | 52.4 / 299.0 | 48.3 / 323.1 | 49.4 / 352.1 |
+
+- `all_identical`: **true** (12/12).
+- Best configuration: `workers=4`; `x1.25` at the default decode threads, `x1.27`
+  against the probe's own baseline.
+- **8 workers is not better than 4** — same wall, 7% more CPU. On a 10-core box
+  that also runs the worker, 4 is the number.
+
+A second, earlier invocation of the same command (while a sibling agent's job was
+running) gave 63.8 / 52.0 / 58.3 / 54.9 — same `all_identical: true`, but
+non-monotonic and 18% slower at `w=4`. **Pass 2 is contention-sensitive**, which
+is itself a reason not to raise the pool higher than 4: the gain is small enough
+that a busy box eats it.
+
+## 9.3 Why it is x1.25 and not x3: pass 2 was already using 4.6 cores
+
+Look at the CPU column at `workers=1`: **280 s of CPU in 61 s of wall — 4.6
+cores, with one worker thread.** `cv2.VideoCapture`'s FFmpeg backend frame-threads
+the decode by default, and on this box its default `CAP_PROP_N_THREADS` is
+**10, one per core**. §3.1's "the *search* half of pass 2 can run on N threads"
+is true, but it was already running on ~5.
+
+So the pool is not turning a serial pass parallel; it is overlapping the *seek*
+latency that the decoder threads cannot hide. That is worth something real —
+20% — and it costs 16% more total CPU (280 s → 326 s) to get it, which is the
+signature of exactly that: more redundant decode, less waiting.
+
+**Consequence for the numbers in §3.1 and §4**, on §3.1's own stage shares
+(pass 1 ≈ 0.65, pass 2 ≈ 0.36):
+
+| | §3.1 predicted | measured here |
+|---|---|---|
+| pass 2 | x3 (assumed) | **x1.25** |
+| keyframe stage | x1.30 | **x1.066** |
+| corpus saving | ~59 min | **~18 min** (23,652 s → ~22,590 s, x1.047) |
+
+The corpus figure is §3.1's own arithmetic re-run: if a 3x pass 2 saved 59 min,
+pass 2 over the corpus is ~5,325 s, and a 1.25x pass 2 saves ~1,065 s.
+
+**It is worth relatively more after §8, not less.** The fused pass 1 shrinks the
+half of the stage the pool does not touch, so on a post-§8 stage
+(pass 1 ≈ 0.38 after x1.7) the same x1.25 on pass 2 is **x1.11 on the stage**.
+The two multiply, as §8.6 said they would.
+
+## 9.4 `VIDTHEQUE_KEYFRAME_DECODE_THREADS` is inert — the `set()` is refused
+
+Item 2 of the §4 table is "unmeasured". It is now measured, and the answer is
+that **it does nothing**, because it never reaches the decoder:
+
+```python
+cap = cv2.VideoCapture(path)          # OpenCV 5.0.0, FFmpeg backend
+cap.get(cv2.CAP_PROP_N_THREADS)       # -> 10.0   (one per core, the default)
+cap.set(cv2.CAP_PROP_N_THREADS, 1.0)  # -> False  (refused)
+cap.get(cv2.CAP_PROP_N_THREADS)       # -> 10.0   (unchanged)
+```
+
+The evidence in the matrix agrees with the API: at `workers=1`, CPU is 280.4 s,
+283.8 s and 279.3 s at `decode_threads` 0, 1 and 2. If the setting had landed,
+`decode_threads=1` would have dropped CPU by ~4x, not 1%. The knob's own comment
+in `keyframes.py:501` ("the FFmpeg backend honours it") is the thing that is
+wrong, not the knob's plumbing.
+
+**The fix, if the lever is wanted, is the constructor** — OpenCV applies
+`params` at open time and refuses them afterwards:
+
+```python
+cv2.VideoCapture(path, cv2.CAP_FFMPEG, [int(cv2.CAP_PROP_N_THREADS), 1])
+# opened True, N_THREADS -> 1.0
+```
+
+Verified on this box, same OpenCV build. Whether it is *worth* wanting is a
+different question: the reason the pool only buys 1.25x is that those decoder
+threads are already doing the work, so turning them down to hand the cores to the
+pool is at best a wash and at worst §3.1's arithmetic in reverse. **Recommend:
+leave the default at 0, and either fix the comment or move the `set()` into the
+constructor so the env var stops being a promise the code cannot keep.**
+
+## 9.5 What this changes
+
+- **§7.1 is answered: yes, ship it.** `all_identical: true` on a real 1080p60
+  talk with 2-second GOPs, 51 shots, 459 absolute seeks — the identity claim
+  survives outside the 8-second fixture. `VIDTHEQUE_KEYFRAME_EXTRACT_WORKERS=4`
+  can go in the deploy env.
+- **§4's table should read x1.25 (pass 2) / ~x1.06 (stage), not ~x1.30.** The
+  recommendation does not change — it is still free and still identical — but it
+  is a 5-6% pipeline win, not a 20% one, and nobody should size a night's
+  indexing on the old figure.
+- **§4's item 2 is now measured: no effect, and inert on this build** (§9.4).
+- Item 3 (`SHOT_CANDIDATES=5`) is untouched and is now the largest un-taken win
+  in pass 2, precisely because the pool turned out to be small: cutting the
+  candidates cuts the seeks, and seeks are what pass 2 is actually spending its
+  wall clock on.
+
+### A wrinkle in the bench script, for whoever owns it
+
+`extract_workers_probe` crashes **after** every configuration has run and
+printed, in its own summary:
+
+```
+best = min(runs, key=lambda r: r["wall"])   # keyframe_decode.py:445
+KeyError: 'wall'
+```
+
+`Timing.as_dict()` emits `wall_s` / `cpu_s` (line 84), and lines 445, 449 and 451
+read `wall`. So the per-configuration lines print but `--out` never gets written
+and `all_identical` never prints. Both runs above were recovered from stdout,
+which is why this section has no `bench/results/raw/*.json` beside it. Left
+unfixed on purpose: `bench/keyframe_decode.py` was being edited by another agent
+in this same session, and a two-line fix landing under them was not worth the
+collision.
