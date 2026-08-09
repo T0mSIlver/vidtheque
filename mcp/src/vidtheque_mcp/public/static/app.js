@@ -1065,9 +1065,21 @@ for (const chip of document.querySelectorAll("#chips .chip")) {
   chip.addEventListener("click", () => selectContentType(chip.dataset.type, true));
 }
 
+// An example may name the channel it needs: `owl:FunctionalProperty` is only
+// on a slide, and a query about what a frame *looks like* has to reach the
+// frame leg. It sets the chip row rather than smuggling a parameter past it,
+// so the pin is visible, it lands in the shared URL, and the widening tip in
+// the empty state ("you are searching only on-screen text") already knows how
+// to undo it.
+//
+// An example with no `data-type` resets to `all`, and that is not a default —
+// it is the fix for the sequence that otherwise looks like a broken corpus:
+// click the on-screen example, then click a spoken one, and without the reset
+// the second query runs pinned to OCR and finds nothing it was ever going to.
 for (const example of document.querySelectorAll(".example")) {
   example.addEventListener("click", () => {
     $("q").value = example.textContent.trim();
+    selectContentType(example.dataset.type || "all", false);
     state.askMode ? runAsk() : runSearch();
   });
 }

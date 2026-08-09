@@ -694,13 +694,37 @@ def test_the_page_declares_an_identity_worth_unfurling(public_client: TestClient
 
 
 def test_the_cold_page_teaches_instead_of_showing_a_blank(public_client: TestClient) -> None:
-    """Before the first search there is something to click, and it is copy."""
+    """Before the first search there is something to click, and it is copy.
+
+    Five examples since 2026-08-09, drawn from `research/demo-queries-2026-08-09
+    .md` rather than written from memory (demo-site.md §6.1). The count is not
+    the contract and this does not pin it; what is asserted is the *shape* the
+    wiring depends on — see the next test for the half that can silently rot.
+    """
     body = _page(public_client)
-    assert body.count('class="chip example"') == 3
-    assert "what CVE is shown in the opencode talk" in body
+    assert body.count("class=\"chip example\"") >= 3
+    assert "owl:FunctionalProperty" in body, "the flagship on-screen example"
     for landmark in ("<header", "<main>", "<footer>", "<h1"):
         assert landmark in body
     assert 'class="sr-only" for="q"' in body, "the search box has a real label"
+
+
+def test_an_example_that_needs_a_channel_pins_it(public_client: TestClient) -> None:
+    """demo-site.md §6.1: `data-type` on an example, honoured by `app.js`.
+
+    `owl:FunctionalProperty` is in this corpus only as text on a slide, so
+    unpinned it is buried by the other legs and the flagship demonstration of
+    "we index frames" demonstrates nothing. The pin is copy, in the HTML beside
+    the query it belongs to; the *reset* is the half that lives in `app.js`, and
+    without it clicking an on-screen example and then a spoken one runs the
+    second query against OCR and reports an empty corpus.
+    """
+    body = _page(public_client)
+    for pin in ('data-type="ocr">owl:FunctionalProperty', 'data-type="frame"'):
+        assert pin in body
+
+    script = (STATIC / "app.js").read_text()
+    assert 'selectContentType(example.dataset.type || "all", false)' in script
 
 
 def test_the_page_and_its_assets_are_cacheable(public_client: TestClient) -> None:

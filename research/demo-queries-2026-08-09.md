@@ -854,3 +854,48 @@ item went:
 The §9 recommendation to "clear the 5 stale job rows" was wrong and was not
 done — those rows are the deferred straggler batch (`not_before` 23:00
 2026-08-09) and the `deferred` vocabulary now describes them truthfully.
+
+---
+
+## §11 — The five that shipped as the welcome page's chips (2026-08-09, night)
+
+`mcp/src/vidtheque_mcp/public/static/index.html` had three examples written
+before the corpus existed. They are now five, drawn from this document and
+re-verified against the live server the same evening — mid re-embed, which is
+the caveat the last column carries. §8 proposes twelve for the *dashboard*; this
+is the welcome page's five, chosen to cover one channel each.
+
+| chip (the button's text is the query) | pin | leg it demonstrates | re-verified 2026-08-09 night |
+|---|---|---|---|
+| `reward hacking` | *(none → `all`)* | fusion | rank 1 is `[transcript+ocr]`, score 0.0323, clear of the 0.0164 floor; rank 2 an Uber slide reading "Generation Evals: Failure Examples (Reward Hacking)". **Better unpinned than pinned to `transcript`** — pinned, §1.1's definition hit has fallen to rank 5 |
+| `owl:FunctionalProperty` | `ocr` | on-screen text | **1/1, no notes, unaffected by the re-embed.** Post-0003 it returns the whole frame, so the hit now reads as the slide's argument and not one line: "an order can be refunded at most once \| `owl:FunctionalProperty` \| — the double-payout bug" |
+| `architecture diagram with boxes and arrows` | `frame` | frame embeddings | **Pending.** Returns title cards today; §3.2's verified winner (`lyL5QhgIOxc-00039`, the MongoDB sharding topology) does not appear at all. 66 of 79 videos are awaiting re-embed, so the frame leg's semantic half is searching ~13 of them. Re-run when the batch drains |
+| `small towns in Bavaria` | `transcript` | paraphrase, not keyword | rank 1 (`jQDXzEVHMSE` 20:28), quote fully visible. §7.1's "ships at rank 2" is fixed. Ranks 2-3 are re-embed filler |
+| `slop` | *(none → `all`)* | cross-cutting | rank 1 `RjfbvDXpFls` 17:26, rank 2 `AMiyLItEtLA` "Fighting slop with slop". §4.4's fused `[transcript+ocr]` pair is absent today — re-embed |
+
+Two rules came out of wiring them, and both are in `demo-site.md` §6.1 now:
+
+1. **The button's text is the query.** A chip labelled one thing and sending
+   another cannot be read back against its own results.
+2. **`data-type` pins a channel; its absence resets to `all`.** The reset is
+   not a default — without it, clicking the on-screen chip and then a spoken
+   one runs the second query against OCR and reports an empty corpus.
+
+Three things a reader of this section should know before freezing anything:
+
+- **Every transcript and frame chip currently carries the re-embed `note:`,**
+  two paragraphs of operator prose including `index-video force_reindex=false
+  url="…"`. The demo page renders notes without the `note:` prefix (demo-site.md
+  §2.4), so a visitor sees backfill instructions until the batch drains. The two
+  OCR-pinned queries emit no notes at all.
+- **`slop`'s rank-1 quote contains profanity** at any `max_text_chars` the page
+  uses ("Critical code, read every fucking line" — Mario Zechner, *Building pi
+  in a World of Slop*). It is a real quote from a public talk and the chip is
+  otherwise the best cross-cutting query in the set. Flagged for Tom, not
+  decided by an agent.
+- **`guardrail_safety_check` (pin `ocr`) is the swap-in** if the frame chip has
+  to be pulled at launch: 3/3, no notes, immune to the re-embed, and post-0003
+  its top hit is the legible reasoning slide rather than the small trace-tree
+  screenshot §2.2 warned about. It was left out only because it tells the same
+  story as `owl:FunctionalProperty` — an identifier that exists on a screen and
+  is never spoken.

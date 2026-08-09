@@ -60,14 +60,30 @@
   <p id="status" class="status" role="status"></p>
 
   <!-- Before the first search: teach the corpus rather than show a blank page.
-       The three examples are copy, so they live here and not in app.js — edit
-       this list when the corpus changes. -->
+       The examples are copy, so they live here and not in app.js — edit this
+       list when the corpus changes.
+
+       Two rules, both learned the hard way (research/demo-queries-2026-08-09.md):
+
+       1. The button's own text *is* the query. What you click is what you
+          searched, so a visitor can read the result back against the words
+          they sent. Never label one thing and send another.
+       2. `data-type` pins a channel, and an example with no `data-type` resets
+          to `all` (app.js). `owl:FunctionalProperty` is the flagship precisely
+          because nothing spoken and nothing semantic can answer it — unpinned,
+          the other legs' noise buries the one frame that can — and a visual
+          query has to reach the frame leg to be a demonstration of anything.
+
+       Between them these five cover every channel the chip row offers: all,
+       on-screen text, frames, the transcript, all. -->
   <section id="empty" class="empty" aria-label="Getting started">
     <h2>Try one of these</h2>
     <ul class="examples">
-      <li><button type="button" class="chip example">what CVE is shown in the opencode talk</button></li>
-      <li><button type="button" class="chip example">terminal with code on screen</button></li>
-      <li><button type="button" class="chip example">how to build an ontology</button></li>
+      <li><button type="button" class="chip example">reward hacking</button></li>
+      <li><button type="button" class="chip example" data-type="ocr">owl:FunctionalProperty</button></li>
+      <li><button type="button" class="chip example" data-type="frame">architecture diagram with boxes and arrows</button></li>
+      <li><button type="button" class="chip example" data-type="transcript">small towns in Bavaria</button></li>
+      <li><button type="button" class="chip example">slop</button></li>
     </ul>
     <p class="hint">
       A result is one moment in one talk — a sentence that was spoken, text that

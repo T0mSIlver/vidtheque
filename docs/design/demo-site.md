@@ -745,11 +745,38 @@ Layout, top to bottom:
 
 A demo is judged on the four screens that are not "ten results came back".
 
-- **Before the first search** the page teaches instead of sitting blank: three
-  clickable example queries — real ones, tailored to the corpus, and written in
-  `index.html` because they are copy — a sentence saying what a result *is*, and
-  the list of videos actually indexed, from `/api/videos`. Editing the examples
-  is editing one list in the HTML.
+- **Before the first search** the page teaches instead of sitting blank: a
+  handful of clickable example queries — real ones, tailored to the corpus, and
+  written in `index.html` because they are copy — a sentence saying what a
+  result *is*, and the list of videos actually indexed, from `/api/videos`.
+  Editing the examples is editing one list in the HTML.
+
+  *Amended 2026-08-09: five, from the verified set, and one of them names its
+  channel.* The examples are now drawn from
+  `research/demo-queries-2026-08-09.md`, which is 25 queries run against the
+  real corpus rather than three written from memory, and they carry two rules
+  the first three did not need:
+
+  1. **The button's text is the query.** What you click is what you searched, so
+    the result can be read back against the words that were sent. No example is
+    labelled one thing and sends another.
+  2. **`data-type` pins a channel; no `data-type` resets to `all`.** The
+    flagship example is `owl:FunctionalProperty`, which exists in this corpus
+    only as text on a slide — pinned to `ocr` it returns exactly one hit and
+    nothing else can answer it at all, which is the whole argument for indexing
+    frames. Unpinned, the other legs' noise buries it. A *visual* example has
+    the same problem in reverse and takes `frame`. The pin sets the chip row
+    rather than smuggling a parameter past it, so it is visible, it lands in the
+    shared URL, and the "you are searching only …" widening tip already knows
+    how to undo it. The reset is what stops the sequence *on-screen example →
+    spoken example* from running the second query pinned to OCR and reporting an
+    empty corpus.
+
+  The five, and the channel each is there to demonstrate: `reward hacking`
+  (all — the fused `[transcript+ocr]` badge), `owl:FunctionalProperty` (ocr),
+  `architecture diagram with boxes and arrows` (frame),
+  `small towns in Bavaria` (transcript — a paraphrase, not a keyword),
+  `slop` (all).
 - **Nothing matched** names the query, and offers the widening that exists: if a
   content-type filter is on, a button back to `all`; otherwise fewer words, and
   the reminder that a phrase from a slide will not be in the spoken words. When
