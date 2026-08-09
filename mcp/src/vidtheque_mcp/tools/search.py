@@ -11,6 +11,7 @@ diversity cap -> page slice.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from dataclasses import dataclass
 from typing import Any, Sequence
@@ -83,7 +84,18 @@ TSV_FIELDS = (
 # It is also what `order=recency` / `order=video_time` need: sorting a
 # relevance-truncated prefix by date returned the newest hit only when it also
 # happened to be one of the most relevant. Those orders used to be the only
-# callers of a pool; now every order gets one.
+# callers of a pool (as ORDER_UNIVERSE, same 400); now every order gets one.
+#
+# What it costs, measured on a synthetic 75-video / 16,500-cue corpus with the
+# distance floor disabled and a query matching most of it — the worst case, and
+# not a realistic one: the transcript leg is roughly linear in the pool
+# (100 -> 202 ms, 200 -> 355 ms, 400 -> 646 ms), because `clustered` joins the
+# cue run back per island returned. Whole-search, same corpus, that is 737 ms
+# against 567 ms for the old `offset + limit` fetch at `limit=10` — and 851 ms
+# against 1,411 ms at `limit=50`, since `k` no longer grows with the page. A
+# query that matches tens of cues rather than thousands never fills the pool and
+# pays none of this. If a corpus ever needs it lower, this is the one number to
+# turn: it trades paging depth (400 / 50 = 8 full pages) for candidate-set work.
 CANDIDATE_POOL = 400
 
 
@@ -599,8 +611,16 @@ def _video_meta(conn: sqlite3.Connection, ids: Sequence[int]) -> dict[int, sqlit
     return {int(r["id"]): r for r in rows}
 
 
+# Punctuation (and `_`, which `\w` counts and `str.isalnum` does not) to spaces.
+# The character-by-character generator this replaces cost 170 ms of a 700 ms
+# search once the candidate pool made it run over ~1,200 rows instead of ~30:
+# normalization is now on the hot path for three passes (dedup, trigrams, match
+# scoring), so it is one C-level `re.sub` per text.
+_PUNCT = re.compile(r"[^\w\s]|_")
+
+
 def _normalize(text: str) -> str:
-    return " ".join("".join(c if c.isalnum() or c.isspace() else " " for c in text.casefold()).split())
+    return " ".join(_PUNCT.sub(" ", text.casefold()).split())
 
 
 def _norm_of(hit: Hit) -> str:
