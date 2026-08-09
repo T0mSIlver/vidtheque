@@ -18,6 +18,14 @@ dependencies = [
     # note the import name is `httpx2`, not `httpx`.
     "httpx2>=2.9",
     "pydantic>=2.11",
+    # The management dashboard's templating (docs/design/dashboard.md §10.2).
+    # Until now the only server-rendered HTML was the OAuth login page's
+    # f-string (auth/login.py) — fine for two forms, wrong for a page that
+    # renders OCR lines, video titles and yt-dlp error strings, every one of
+    # them attacker-controlled. Jinja2 with `autoescape=True` makes escaping
+    # the default and `| safe` the audited exception, which is the property
+    # demo-site.md §6.2 already demands of the JS side.
+    "jinja2>=3.1.6",
     # Vector legs. Alpha, brute-force KNN — see index-schema.md §3.
     "sqlite-vec>=0.1.9",
     # ---------------------------------------------------------------- pipeline
