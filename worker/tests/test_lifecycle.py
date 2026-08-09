@@ -20,6 +20,7 @@ from vidtheque_worker.lifecycle import (
     LifecycleManager,
     ManagerNotRunning,
     WorkerShuttingDown,
+    _InFlight,
 )
 
 
@@ -399,6 +400,20 @@ async def test_the_grace_period_is_bounded(recorder, caplog):
     assert recorder.names("unload-during-infer") == ["stt"]
     with pytest.raises(WorkerShuttingDown):
         await asyncio.wait_for(running, timeout=1.0)
+
+
+async def test_a_job_that_never_reached_its_thread_does_not_hold_the_shutdown(recorder):
+    """The other outcome of cancelling a `to_thread`: if the executor had not
+    picked the call up yet, no thread exists and `done` will never be set.
+    Waiting the whole grace period on it would pay a shutdown delay for
+    nothing."""
+    backends = make_backends(recorder)
+    manager = await make_manager(backends, recorder, shutdown_grace_seconds=30.0)
+    manager._in_thread = _InFlight()  # dispatched, never started
+
+    started = asyncio.get_running_loop().time()
+    await asyncio.wait_for(manager.stop(), timeout=5.0)
+    assert asyncio.get_running_loop().time() - started < 2.0
 
 
 async def test_submit_during_and_after_stop_is_refused(recorder):

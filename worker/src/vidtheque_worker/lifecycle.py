@@ -45,6 +45,11 @@ log = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
+START_GRACE_SECONDS = 0.25
+"""How long shutdown will wait for a dispatched job to actually reach its
+thread before concluding that it never will. Sub-millisecond in practice — the
+default executor is not contended here — so this is a bound, not a delay."""
+
 VramProbe = Callable[[], VramInfo | None]
 HookRunner = Callable[[str, str], Awaitable[None]]
 """``(command, label) -> awaitable``. Injectable so tests never spawn a shell."""
@@ -98,6 +103,21 @@ class _Job:
 
 
 @dataclass(slots=True)
+class _InFlight:
+    """Where the worker thread of one dispatched job has got to.
+
+    ``started`` exists to keep :meth:`LifecycleManager.stop` honest about the
+    other outcome: if the coroutine is cancelled before the executor ever picks
+    the call up, the function never runs and ``done`` is never set. Waiting the
+    whole grace period on a thread that does not exist would be paying the
+    shutdown delay for nothing.
+    """
+
+    started: threading.Event = field(default_factory=threading.Event)
+    done: threading.Event = field(default_factory=threading.Event)
+
+
+@dataclass(slots=True)
 class HookLog:
     """What the manager has done to the lease, for /status and for tests."""
 
@@ -145,10 +165,10 @@ class LifecycleManager:
         self._running_task: str | None = None
         self._in_flight = 0
         self._stopping = False
-        self._inference_done: threading.Event | None = None
-        """Set by the worker thread when the last dispatched job function
-        returned. ``to_thread`` cannot be cancelled, so this is the only handle
-        :meth:`stop` has on a thread that is still inside the model."""
+        self._in_thread: _InFlight | None = None
+        """The last dispatched job's thread state. ``to_thread`` cannot be
+        cancelled, so this is the only handle :meth:`stop` has on a thread that
+        is still inside the model."""
         self.hooks = HookLog()
 
     # -- plumbing ----------------------------------------------------------
@@ -239,14 +259,16 @@ class LifecycleManager:
 
     async def _await_inference(self) -> None:
         """Wait, bounded, for the worker thread of the last dispatched job."""
-        done = self._inference_done
-        if done is None or done.is_set() or self.shutdown_grace_seconds <= 0:
+        flight = self._in_thread
+        if flight is None or flight.done.is_set() or self.shutdown_grace_seconds <= 0:
             return
+        if not await asyncio.to_thread(flight.started.wait, START_GRACE_SECONDS):
+            return  # cancelled before the executor ran it: no thread to wait for
         log.info(
             "waiting up to %.1fs for the in-flight job before unloading",
             self.shutdown_grace_seconds,
         )
-        finished = await asyncio.to_thread(done.wait, self.shutdown_grace_seconds)
+        finished = await asyncio.to_thread(flight.done.wait, self.shutdown_grace_seconds)
         if not finished:
             log.warning(
                 "in-flight job still running after %.1fs; unloading anyway",
@@ -409,9 +431,9 @@ class LifecycleManager:
         something to wait on before it starts freeing weights out from under
         that thread.
         """
-        done = threading.Event()
-        self._inference_done = done
-        return await asyncio.to_thread(_call_and_signal, job.fn, slot.backend, done)
+        flight = _InFlight()
+        self._in_thread = flight
+        return await asyncio.to_thread(_call_and_signal, job.fn, slot.backend, flight)
 
     async def _job_raised(self, slot: Slot, exc: Exception) -> None:
         """Decide what a failed *inference* did to the model, under the lock.
@@ -597,12 +619,13 @@ class LifecycleManager:
 
 
 def _call_and_signal(
-    fn: Callable[[Backend], Any], backend: Backend, done: threading.Event
+    fn: Callable[[Backend], Any], backend: Backend, flight: _InFlight
 ) -> Any:
+    flight.started.set()
     try:
         return fn(backend)
     finally:
-        done.set()
+        flight.done.set()
 
 
 def _unloads_the_slot(exc: BaseException) -> bool:

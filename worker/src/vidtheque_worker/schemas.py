@@ -164,7 +164,11 @@ class OCRErrorOut(BaseModel):
 class OCRImageResult(BaseModel):
     index: int
     filename: str | None = None
-    items: list[OCRItemOut] = Field(default_factory=list)
+    items: list[OCRItemOut]
+    """Required, and empty rather than absent when an image carried no text or
+    could not be read — the worker has always emitted it, and a schema that
+    permits its absence invites a reader that treats missing as `[]` for real
+    text it simply failed to parse."""
     error: OCRErrorOut | None = Field(
         default=None,
         description=(
