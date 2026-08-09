@@ -1135,3 +1135,139 @@ already has the ledger band doing that job.
   drift. The screenshots that back this section are in the agent's scratchpad
   and are not committed — regenerate rather than trust the description if a
   future decision turns on a detail.
+
+---
+
+# Appendix C — the finish pass, and a second opinion from GPT-5.6 (2026-08-09, finish agent)
+
+**Why this section exists.** Tom reviewed layout v2 and said: *"Enhance the UI
+of the dashboard — make it look like a finished product. I want to build brand
+identity; take inspiration and mix and match from the design research."* He
+explicitly authorised mixing Direction A's serif display voice into Direction
+C's chassis for brand moments. This appendix records what the mix turned out to
+be, and the external review that was run against the result — because the review
+disagreed with the build in two places that are worth a future agent's time.
+
+## C.1 What the A/C mix became
+
+One rule, written into `DESIGN.md` as **The Wordmark-Only Rule**: the serif sets
+the string `vidtheque` and nothing else, ever, and exactly two selectors may
+name `--font-display`. §1.3 of this memo rejected Direction A *for the surface*
+and was right to — a display serif and 48px section gaps are the wrong answer
+for a table you scan sixty rows of. But the product's own name is not a data
+surface. It is the one string on the page the index did not produce, and setting
+it in a different voice is the same move the mono/sans split already makes for
+everything else: **the typeface says where the string came from.**
+
+Face: **Instrument Serif** 400, latin subset, 21,032 bytes, `@fontsource/
+instrument-serif@5.2.8`. §5 item 2 of this memo recorded its licence as
+unverified; it is verified now — the package's `LICENSE` is the SIL OFL 1.1
+verbatim and `metadata.json` declares `OFL-1.1`. Newsreader was the considered
+alternative from the same §1.5 table and was rejected: it is a text serif, and
+at 20px lowercase it reads as book type rather than as a mark. One weight and no
+italic is a feature here, not a limitation — there is no ladder for the face to
+climb into a UI role.
+
+The mark beside it is the favicon `demo-site.md` already specified, redrawn as
+inline SVG at 24px so its two colours come from `--accent` and `--bg` and flip
+with the scheme. No new asset was designed. The same lockup repeats once in the
+footer, which is what stops one serif word in a rail reading as an accident.
+
+## C.2 The second opinion: GPT-5.6 Sol, read-only
+
+`codex exec -m gpt-5.6-sol -c model_reasoning_effort='"high"' -s read-only`,
+pointed at the impeccable methodology (`SKILL.md`, `critique.md`, `operate.md`),
+`DESIGN.md`, `PRODUCT.md`, `docs/design/dashboard.md` §5, the templates, the
+stylesheet and a screenshot directory of seven pages × two widths × two schemes.
+
+**Its verdict:** *"No — not yet. It now reads as a strong, unusually thoughtful
+internal tool with an authored visual system, not scaffolding."* Design health
+**29/40**. On the brand specifically: *"The identity is real, not merely a
+stylesheet… Instrument Serif is coherent: the favicon-derived amber mark makes
+the wordmark a lockup, and the footer repetition makes the serif look
+intentional. The Wordmark-Only Rule is exactly the fence it needs. Do not extend
+the serif to headings, notices, or figures."*
+
+**Seven findings. Applied:** the countdown clipped off the right edge of its own
+cell at 390px (the single line §4.4 says the jobs page exists for, fitting only
+on a laptop); no durable selected state after a shot bar navigates; the failed
+stage buried inside a sideways-scrolling table on a phone; `ready` beside
+`no_frames` reading as self-contradiction; `error_code` missing from the job
+header that §5.4 asks for it in; 24 keyframes standing between the provenance
+table and the OCR overlay; three 404 recovery links duplicating the rail.
+
+**Refused, and why:**
+
+- *"Reorder the job page so the event log follows the waiting notice for active
+  or deferred jobs."* A page that is two different shapes depending on the state
+  of the thing it describes costs the operator the layout they learned. The
+  event log's position is fixed.
+- *"Cut 'There is no scenes table…'."* Pinned by
+  `test_dashboard.py::test_the_scene_timeline_is_positions_not_a_query_per_shot`,
+  and it is the sentence that stops a reader looking for a table that does not
+  exist.
+- *"Cut 'of ~4' from the result strip."* `approx_total` is the view's own
+  approximation and prints with a `~`; that is `has_more` discipline observed,
+  not contradicted.
+- *"Cut most of the implementation-history prose."* Fair as far as it goes, and
+  deliberately not actioned by a design agent: those notes are the surface's
+  voice (*"the index, explaining itself"*) and several of them are other agents'
+  records of decisions. An editorial pass on them is Tom's call, not a side
+  effect of a visual finish.
+
+**Two findings deferred as real but out of territory** — both are functional
+contract gaps, not visual ones, and both need `views.py` plus a service-layer
+parameter:
+
+1. **`docs/design/dashboard.md` §5.1 requires active and recently-failed job
+   counts on the overview**, and the page does not have them. The reviewer
+   called this the single change that would most move the surface from
+   well-built internal tool to finished product, and that is probably right: the
+   page answers "what is in the corpus" and not "what is the queue doing", which
+   is half of the mid-batch question it exists for.
+2. **§5.2 lists `published_after/before` and `indexed_after/before` as filters**
+   of the videos table. Four of the contract's filters are absent from the form.
+
+**One finding that improved a rule rather than the code.** The reviewer read
+*"Don't ship … a gradient"* literally and flagged the deduplicated shot's
+`repeating-linear-gradient` hatch as a contract violation. The rule means *no
+tonal ramp as decoration*; the hatch is two flat colours at a fixed 2px/6px
+pitch encoding a fact the index stores. `DESIGN.md` now says so. A hatch drawn
+as an SVG mask would satisfy the letter and change nothing about the pixels,
+which is how you can tell the letter was not the point.
+
+## C.3 The contrast sweep found four marks under the floor
+
+Worth recording because two of them were inherited and one could never have been
+fixed by tuning:
+
+| mark | was | is |
+|---|---|---|
+| a kept shot bar (`--accent` on `--panel`) | 0.75 opacity, **2.98:1** | 0.85 opacity, 3.48:1 light / 5.98:1 dark |
+| a deduplicated shot's hatch | `--mark` at 0.4 over `--panel`, **1.47:1** | full-strength `--mark` over its own `--bg` ground, 3.20:1 / 3.59:1 |
+| the footage counter's ticks | `--rule`, **1.51:1** | `--mark`, 3.20:1 |
+| `.notice-detail` | the whole paragraph in the mono face | sans; the `<code>` and `.errtext` inside it stay mono |
+
+The hatch is the interesting one. `--mark` on `--panel` measures **2.93:1 at
+full strength** — a number `DESIGN.md` already recorded, which is why the rail
+foot has no `·` separators — so *no* opacity of it could ever have cleared the
+3:1 floor. The fix was to change the ground, not the ink: the bar paints its own
+`--bg` and hatches at full strength on top. It also reads better, as paper with
+a scratch on it rather than as a gap between bars.
+
+## C.4 Honesty notes
+
+- The screenshots behind this appendix are in the agent's scratchpad and are not
+  committed, per the precedent this memo's §2.4 set.
+- The preview corpus was **enriched** for the screenshot round: the seeded
+  fixture carries three keyframes, which is right for assertions and useless for
+  judging a shot timeline, so a scratchpad script wrote ~41 synthetic keyframes
+  across 28 shots with OCR lines whose boxes match text actually drawn on the
+  JPEG. Nothing in the repo or on the live stack was touched. Any judgement here
+  about the timeline's density is a judgement about synthetic data with a real
+  shape, not about Tom's corpus.
+- `@playwright/cli` reuses a browser session, and the dashboard serves its
+  stylesheet with `max-age=300`. A CSS edit inside that window is invisible to a
+  screenshot taken after it, and a fix can be "verified" that never landed. The
+  screenshot script closes the browser at the start of every round for this
+  reason. This cost one wrong conclusion before it was caught.
