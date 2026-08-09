@@ -50,6 +50,15 @@ STATIC_DIR = Path(__file__).parent / "static"
 # get a stylesheet.
 _STATIC_CACHE = "public, max-age=300"
 
+# The three kinds of file in `static/`. A font served as `text/javascript` does
+# load in today's browsers — they sniff woff2 — but it stops loading the moment
+# anything in front of this app sets `X-Content-Type-Options: nosniff`, which is
+# not a bet worth taking on the one asset the whole type system rests on. The
+# fonts also outlive a deploy in a way a stylesheet does not: they are
+# content-stable binaries, so they get the long immutable cache the CSS cannot.
+_MEDIA = {".css": "text/css", ".js": "text/javascript", ".woff2": "font/woff2"}
+_FONT_CACHE = "public, max-age=31536000, immutable"
+
 
 def dashboard_routes() -> list[Route]:
     """The route group. Order matters only against ``Mount("/")`` in app.py."""
@@ -91,11 +100,14 @@ def dashboard_routes() -> list[Route]:
             return Response(status_code=404)
         if not path.is_file():
             return Response(status_code=404)
-        media = "text/css" if path.suffix == ".css" else "text/javascript"
+        media = _MEDIA.get(path.suffix)
+        if media is None:  # the OFL texts and the provenance note are not assets
+            return Response(status_code=404)
+        binary = path.suffix == ".woff2"
         return FileResponse(
             path,
-            media_type=f"{media}; charset=utf-8",
-            headers={"Cache-Control": _STATIC_CACHE},
+            media_type=media if binary else f"{media}; charset=utf-8",
+            headers={"Cache-Control": _FONT_CACHE if binary else _STATIC_CACHE},
         )
 
     async def trailing_slash(request: Request) -> Response:
