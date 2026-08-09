@@ -54,7 +54,7 @@ be re-tested and promoted once 0003 lands.
 Unless noted, run with `content_type="transcript"`, `limit=5`,
 `max_text_chars` 200–400. Capability label in bold.
 
-### 1.1 `reward hacking` — **exact term, defined out loud, five talks deep**
+### 1.1 `reward hacking` — **exact term, defined out loud, four talks deep**
 Top hit: *When Will The Benchmaxxing Plague End?* (`-npY6XjM8CQ`) 5:11–5:56.
 Result #3 is the money shot: a **single cue** at 5:57, `cue 4774`,
 `https://youtu.be/-npY6XjM8CQ?t=355` —
@@ -62,8 +62,10 @@ Result #3 is the money shot: a **single cue** at 5:57, `cue 4774`,
 > meet the letter of the law but not the spirit."
 
 Why it demos: single-cue clusters make the deep link land *mid-sentence on the
-exact moment*, which is the whole promise. Results span 5 talks
-(`-npY6XjM8CQ`, `AQv3qRCG6Gw`, `2aS7aKoXn64`, `31GUkCBD-Uc`).
+exact moment*, which is the whole promise. Results span 4 talks
+(`-npY6XjM8CQ`, `AQv3qRCG6Gw`, `2aS7aKoXn64`, `31GUkCBD-Uc`) — corrected from
+"5 talks" on 2026-08-09; the ids were always four, and the count was the slip
+(§9.4). Any chip label built from this line says four.
 
 ### 1.2 `functional property disjoint` — **speech ↔ slide pairing**
 Top hit: *Why Agentic Systems Need Ontologies* (`Sir59K8ZDPU`) `cue 789`, 19:01,
