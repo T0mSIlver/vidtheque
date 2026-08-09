@@ -289,6 +289,55 @@ def test_one_very_long_cue_still_produces_a_chunk() -> None:
     assert len(chunks) == 1
 
 
+def _coverage(cues: list[captions.CueDraft], target: float, overlap: float) -> set[int]:
+    covered: set[int] = set()
+    for chunk in chunking.build_chunks(cues, target, overlap):
+        covered.update(range(chunk.first_index, chunk.last_index + 1))
+    return covered
+
+
+def test_a_long_cue_across_the_stride_boundary_is_not_dropped() -> None:
+    """The review's trigger, exactly: 0-20, 25-55, 60-62 at 45 s / 15 s.
+
+    The middle cue does not fit the first window, and its start (25) is before
+    the stride (30), so the time-based advance scan skipped past it to the cue
+    at 60 — permanently omitting it from every chunk, and so from the vector
+    index. Nothing anywhere would have noticed.
+    """
+    cues = [
+        captions.CueDraft(0.0, 20.0, "the first thing said"),
+        captions.CueDraft(25.0, 55.0, "the middle one that used to vanish"),
+        captions.CueDraft(60.0, 62.0, "the last thing said"),
+    ]
+    chunks = chunking.build_chunks(cues, 45.0, 15.0)
+    assert _coverage(cues, 45.0, 15.0) == {0, 1, 2}
+    assert any("used to vanish" in chunk.text for chunk in chunks)
+
+
+def test_every_cue_lands_in_a_chunk_whatever_the_layout() -> None:
+    """The invariant, over the layouts that break the naive stride: silences,
+    runaway cues, bursts, and cues that straddle the window edge."""
+    import random
+
+    rng = random.Random(20260809)
+    for trial in range(200):
+        cues: list[captions.CueDraft] = []
+        clock = 0.0
+        for index in range(rng.randint(1, 40)):
+            clock += rng.choice([0.0, 0.2, 1.0, 5.0, 30.0, 90.0])
+            span = rng.choice([0.5, 2.0, 8.0, 29.0, 30.0])
+            cues.append(captions.CueDraft(clock, clock + span, f"cue {index}"))
+            clock += span
+        target = rng.choice([10.0, 45.0, 60.0])
+        overlap = rng.choice([0.0, 5.0, 15.0, 45.0])
+        assert _coverage(cues, target, overlap) == set(range(len(cues))), (
+            trial,
+            target,
+            overlap,
+            [(c.start_s, c.end_s) for c in cues],
+        )
+
+
 # ----------------------------------------------------------------- keyframes
 
 

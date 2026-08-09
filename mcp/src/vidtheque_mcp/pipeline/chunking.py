@@ -82,5 +82,14 @@ def build_chunks(
                 break
         else:
             advanced = end_index + 1
-        start_index = max(advanced, start_index + 1)
+        # …but never past the end of the window we just emitted. The time-based
+        # snap could jump over a cue that did not fit in this chunk and does not
+        # start until after the stride — cues of 0-20, 25-55, 60-62 at a 45 s
+        # target drop the middle one from every chunk, and therefore from
+        # search and from the vector index, silently. One unusually long
+        # subtitle cue is enough, and `_tidy` allows them up to 30 s.
+        #
+        # The invariant this restores: a cue may only be stepped over if the
+        # chunk that just closed contained it.
+        start_index = max(min(advanced, end_index + 1), start_index + 1)
     return chunks
