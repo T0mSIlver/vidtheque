@@ -776,7 +776,14 @@ depends on it yet).
 
 **Phase 2 — the jobs view.** Read-only. `not_before` as a countdown, `attempts`,
 `degraded_items`, the `job_events` tail, 2 s polling. Closes the blind spot the
-overnight batch found. Still no writes.
+overnight batch found. Still no writes. Also in this phase: dashboard HTML
+switches its frame `src`es to **relative** `/frames/…` paths so pages survive
+SSH tunnels, reverse proxies and port maps unconfigured (found 2026-08-09: a
+preview on a non-default port rendered every thumbnail against a dead
+`PUBLIC_URL`). Absolute URLs remain the MCP contract — agents need
+self-contained authenticated URLs — so the split lives in the `thumb_url`
+helper, not in the signer. And `/dashboard/` (trailing slash) redirects to
+`/dashboard` instead of 404ing.
 
 **Phase 3 — the write side.** Session login (bearer → the existing
 `vidtheque_session` cookie), POST-only + `Origin` discipline, the index form,
