@@ -44,3 +44,4 @@ bench/*.json
 *.swp
 .idea/
 .vscode/
+.impeccable/
