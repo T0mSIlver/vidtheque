@@ -17,11 +17,26 @@ Two rules it exists to keep:
   and `next:` hint. One table, two consumers.
 
 Those bounds are a :class:`ClampPolicy` rather than module constants because
-there are now two callers with two answers to "how much may you ask for"
-(dashboard.md §2.5.1): anonymous traffic on `/api/*` and the owner on
-`/dashboard/api/*`. One set of handlers, two policies, still no second query
-layer — and the policy is chosen by *which route group the request arrived
-through*, never by anything in the request.
+there are two answers to "how much may you ask for" (dashboard.md §2.5.1):
+anonymous traffic gets the demo's, the owner gets a wider one. One set of
+handlers, two policies, still no second query layer.
+
+**The policy follows the credential, not the route group** (phase 5; the fix
+`docs/deploy-public.md` opened as a policy question and phase 4 declined to
+make). Phase 1 chose it by prefix — `/api/*` public, `/dashboard/api/*` owner —
+which is correct exactly when the prefix implies the caller, and in the
+intended public deployment (``VIDTHEQUE_PUBLIC_READONLY=1`` +
+``VIDTHEQUE_AUTH=none``) it does not: nothing stands in front of
+`/dashboard/api/*` there, so an anonymous visitor was handed the owner's
+bounds, including ``search_text_chars=None`` — the full-transcript hatch this
+module's second rule reserves for an owner's agent. At 120 requests a minute
+that is not a wider page, it is the corpus.
+
+So :func:`policy_for` asks ``auth.credential.is_owner``: a bearer, a login
+session or a trusted peer gets :data:`OWNER_CLAMPS`; everyone else gets
+:data:`PUBLIC_CLAMPS`, on **both** prefixes, in **every** mode. The prefix
+still decides what is *registered* (`ask=False` on the dashboard, and
+`/api/*` only in public mode); it no longer decides what a caller may take.
 """
 
 from __future__ import annotations
@@ -36,6 +51,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from .. import __version__
+from ..auth.credential import is_owner
 from ..db import queries
 from ..errors import HTTP_STATUS
 from ..text import clamp, clamp_text_chars, clock
@@ -115,6 +131,31 @@ OWNER_CLAMPS = ClampPolicy(
 )
 
 
+async def policy_for(request: Request) -> ClampPolicy:
+    """Which bounds this **caller** gets — see the module docstring.
+
+    One predicate, both prefixes, every mode. The three consequences worth
+    stating out loud, because each of them is a deliberate answer:
+
+    * **``VIDTHEQUE_AUTH=none`` has no credential**, so every request in it is
+      anonymous and gets :data:`PUBLIC_CLAMPS` — which is the point, since that
+      is the mode the public demo ships in. The owner of a private
+      ``AUTH=none`` box gets their bounds back one of two ways: through
+      ``VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS`` (the LAN answer, and see
+      ``is_owner`` for why that counts), or through `/mcp` and the tools
+      themselves, which are unmasked in that mode and were always the owner's
+      agent's real surface — the JSON facade is a convenience over them, never
+      the only way in.
+    * **A read-only deployment that does have a credential no longer clamps its
+      own owner**, which is the flaw in the mode-keyed version
+      `docs/deploy-public.md` sketched and rejected.
+    * **A bearer widens `/api/*` too.** The demo's own bounds are what an
+      anonymous browser gets; a caller who can prove they are the owner is the
+      caller the hatch was written for, whichever path they knocked on.
+    """
+    return OWNER_CLAMPS if await is_owner(request) else PUBLIC_CLAMPS
+
+
 # --------------------------------------------------------------------- shared
 
 
@@ -190,10 +231,9 @@ def _decorate_hit(deps: Deps, hit: dict[str, Any]) -> dict[str, Any]:
 # ------------------------------------------------------------------ endpoints
 
 
-async def search_endpoint(
-    request: Request, policy: ClampPolicy = PUBLIC_CLAMPS
-) -> JSONResponse:
+async def search_endpoint(request: Request) -> JSONResponse:
     deps: Deps = request.app.state.assembled.deps
+    policy = await policy_for(request)
     params = request.query_params
     content_type = params.get("content_type") or "all"
     if content_type not in CONTENT_TYPES:
@@ -250,10 +290,9 @@ async def search_endpoint(
     )
 
 
-async def videos_endpoint(
-    request: Request, policy: ClampPolicy = PUBLIC_CLAMPS
-) -> JSONResponse:
+async def videos_endpoint(request: Request) -> JSONResponse:
     deps: Deps = request.app.state.assembled.deps
+    policy = await policy_for(request)
     params = request.query_params
     limit = _int_param(
         request, "limit", 1, policy.videos_max_limit, policy.videos_default_limit
@@ -305,10 +344,9 @@ def _cover_frames(conn: sqlite3.Connection, public_ids: list[str]) -> dict[str, 
     return {str(r["public_id"]): f"{r['public_id']}-{int(r['ord']):05d}" for r in rows}
 
 
-async def meta_endpoint(
-    request: Request, policy: ClampPolicy = PUBLIC_CLAMPS
-) -> JSONResponse:
+async def meta_endpoint(request: Request) -> JSONResponse:
     assembled = request.app.state.assembled
+    policy = await policy_for(request)
     deps: Deps = assembled.deps
     public: PublicSettings = request.app.state.public_settings
     rollup = await deps.db.read(queries.corpus_rollup)
@@ -357,30 +395,25 @@ async def meta_endpoint(
     )
 
 
-def api_routes(
-    policy: ClampPolicy = PUBLIC_CLAMPS, prefix: str = "", *, ask: bool = True
-) -> list[Route]:
-    """The read facade, under ``{prefix}/api/*``, bounded by ``policy``.
+def api_routes(prefix: str = "", *, ask: bool = True) -> list[Route]:
+    """The read facade, under ``{prefix}/api/*``, bounded by :func:`policy_for`.
 
     ``prefix`` is what makes the dashboard's JSON the same handlers rather than
-    a second implementation: ``api_routes(OWNER_CLAMPS, "/dashboard")`` is the
-    whole of dashboard.md §2.5.1. ``ask=False`` leaves the LLM route out, which
-    is how the dashboard gets JSON without also getting a spend surface.
+    a second implementation: ``api_routes("/dashboard")`` is the whole of
+    dashboard.md §2.5.1. ``ask=False`` leaves the LLM route out, which is how
+    the dashboard gets JSON without also getting a spend surface.
+
+    **There is no ``policy`` parameter any more** (phase 5). It was the shape
+    of the phase-1 bug: a bound chosen where the route is registered is a bound
+    that cannot see who called, and `/dashboard/api/*` is registered in every
+    mode — including the one with nothing in front of it. The handlers resolve
+    it per request instead, which is also why these three wrappers are now the
+    endpoints themselves.
     """
-
-    async def search_route(request: Request) -> JSONResponse:
-        return await search_endpoint(request, policy)
-
-    async def videos_route(request: Request) -> JSONResponse:
-        return await videos_endpoint(request, policy)
-
-    async def meta_route(request: Request) -> JSONResponse:
-        return await meta_endpoint(request, policy)
-
     routes = [
-        Route(f"{prefix}/api/search", search_route, methods=["GET"]),
-        Route(f"{prefix}/api/videos", videos_route, methods=["GET"]),
-        Route(f"{prefix}/api/meta", meta_route, methods=["GET"]),
+        Route(f"{prefix}/api/search", search_endpoint, methods=["GET"]),
+        Route(f"{prefix}/api/videos", videos_endpoint, methods=["GET"]),
+        Route(f"{prefix}/api/meta", meta_endpoint, methods=["GET"]),
     ]
     if ask:
         from .ask import ask_endpoint

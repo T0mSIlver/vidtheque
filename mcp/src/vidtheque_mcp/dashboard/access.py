@@ -15,6 +15,13 @@ of to one route:
    table. Phase 3 adds a second page that mints one (``writes.login``) and no
    second session system: same cookie name, same row, same TTL.
 
+That check — :func:`~vidtheque_mcp.auth.credential.credential` — **moved to**
+``auth/credential.py`` in phase 5, when `public/api.py` started keying its
+clamp policy off the credential rather than off the route group (§2.5.1's
+amendment). It is re-exported here so nothing in this package changed, and it
+is in ``auth/`` because a route group is the wrong owner of an answer two route
+groups need.
+
 Two rules fall out of using a cookie, and both are cheap now and expensive
 later (§3.3):
 
@@ -51,9 +58,24 @@ from urllib.parse import urlsplit
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from ..auth.login import SESSION_COOKIE
+from ..auth.credential import credential
 from ..auth.modes import AuthBundle
 from .settings import ROOT
+
+# Re-exported, not redefined. `credential()` lived here until `public/api.py`
+# needed the same answer to pick a clamp policy (phase 5); it now lives in
+# `auth/`, which imports neither route group. Every caller in this package —
+# and the `dashboard.credential` name `__init__` re-exports — is unchanged.
+__all__ = [
+    "WRITE_ROUTES",
+    "auth_required",
+    "credential",
+    "origin_evidence",
+    "origin_ok",
+    "require_write",
+    "sign_in_hint",
+    "write_side_enabled",
+]
 
 # One list, declared once (§2.5.4). Every path here is POST-only, every one is
 # behind `require_write`, and a test asserts both — plus that this list is
@@ -71,26 +93,6 @@ WRITE_ROUTES: tuple[str, ...] = (
 def write_side_enabled(auth_mode: str, readonly: bool) -> bool:
     """Does this deployment register a write side at all? (§2.3, §3.2 rule 3.)"""
     return not readonly and auth_mode != "none"
-
-
-async def credential(request: Request) -> str | None:
-    """Which credential let this request through, or ``None``.
-
-    Modelled on ``http/frames.py:_authorized``. The name is returned rather
-    than a bool because the callers treat the three differently: ``open`` is
-    read-only by construction, and ``session`` is the *ambient* one, which is
-    the only one a cross-site page could ever cause to be sent.
-    """
-    auth: AuthBundle = request.app.state.assembled.auth
-    if auth.mode == "none":
-        return "open"
-    header = request.headers.get("authorization", "")
-    if header.lower().startswith("bearer ") and auth.token_verifier is not None:
-        if await auth.token_verifier.verify_token(header[7:]) is not None:
-            return "bearer"
-    if auth.store is not None and auth.store.load_session(request.cookies.get(SESSION_COOKIE)):
-        return "session"
-    return None
 
 
 def sign_in_hint(mode: str, *, login: bool = True) -> str:

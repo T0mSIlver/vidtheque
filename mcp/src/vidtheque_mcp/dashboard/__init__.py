@@ -7,9 +7,11 @@ corpus's *plumbing* — nobody should have to ask a language model which model
 transcribed a video or whether OCR quietly failed on forty of them.
 
 Phase 1 is read-only: the corpus overview, the videos table and the video
-detail page, plus `/dashboard/api/*` — the same handlers `/api/*` uses, under
-owner clamps, which is also the JSON facade a private deployment could not have
-before (demo-site.md §7.4).
+detail page, plus `/dashboard/api/*` — the same handlers `/api/*` uses, which is
+also the JSON facade a private deployment could not have before
+(demo-site.md §7.4). Those handlers were bounded by owner clamps *because of the
+prefix* until phase 5 keyed them off the credential instead; see
+`public/api.py:policy_for`.
 
 Phase 2 adds the jobs view and its poll target, still read-only: `not_before`
 as a live countdown, `attempts`, the degraded list and the `job_events` tail
@@ -28,7 +30,7 @@ from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Route
 
-from ..public.api import OWNER_CLAMPS, api_routes
+from ..public.api import api_routes
 from . import views, writes
 from .access import (
     WRITE_ROUTES,
@@ -180,12 +182,19 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
         # shadow the other today, but the ordering means a future read route
         # with a greedier converter cannot quietly swallow a POST either.
         *write_routes,
-        # The same handlers `/api/*` uses, under owner clamps — and behind the
-        # same gate as the pages, because JSON that skips the credential check
-        # is the hole the pages were guarded against.
+        # The same handlers `/api/*` uses — behind the same gate as the pages,
+        # because JSON that skips the credential check is the hole the pages
+        # were guarded against, and under whatever clamps the *caller* earns.
+        #
+        # The clamps used to be pinned to `OWNER_CLAMPS` here, which was right
+        # only while the prefix implied the caller. It does not in `AUTH=none`,
+        # where the gate above is open by design: `public/api.py:policy_for`
+        # now resolves the policy per request, so this prefix grants a wider
+        # bound to a bearer or a session and the demo's bound to everyone else
+        # (phase 5; `docs/deploy-public.md`'s clamp audit item).
         *[
             Route(route.path, guarded(route.endpoint, json=True), methods=["GET"])
-            for route in api_routes(OWNER_CLAMPS, ROOT, ask=False)
+            for route in api_routes(ROOT, ask=False)
         ],
         # The jobs view's own poll target. Not one of `api_routes`' handlers
         # because `/api/*` answers questions about the *corpus* and this one

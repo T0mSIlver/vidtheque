@@ -82,14 +82,39 @@ the one thing a visitor can act on: that vector search is off, without the
 mismatch that caused it. So the audit's job here is now **verification, not a
 decision** — §2.5 has the grep.
 
-**Clamp policy on `/dashboard/api/*` — open, and it is a §1 policy question.**
+**Clamp policy on `/dashboard/api/*` — RESOLVED 2026-08-09 (dashboard phase 5):
+fixed, not accepted.** The three answers below are kept because the reasoning is
+the record; what changed is that answer 3 was taken, in its honest form. **The
+clamp policy now follows the credential, not the flag and not the prefix**
+(`public/api.py:policy_for`, `auth/credential.py:is_owner`, dashboard.md §2.4):
+a bearer, a `vidtheque_session` cookie or a socket peer inside
+`VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS` gets `OWNER_CLAMPS` on either prefix in
+every mode; everything else, **including every request in `AUTH=none`**, gets
+`PUBLIC_CLAMPS` on either prefix. What is left for this runbook is verification:
+
+```bash
+# Both must now say "public" on the public deployment.
+curl -s http://127.0.0.1:8100/api/meta           | jq .clamps
+curl -s http://127.0.0.1:8100/dashboard/api/meta | jq .clamps
+# The hatch, the thing that actually mattered: the reply must be truncated,
+# with the `…` marker, not a full transcript.
+curl -s 'http://127.0.0.1:8100/dashboard/api/search?q=transformer&max_text_chars=0' \
+  | jq '[.results[].text | length] | max'          # expect <= ~480, never thousands
+```
+
+If the instance has a token configured, the contrast is the check that the fix
+is credential-keyed rather than mode-keyed — the same URL with
+`-H "Authorization: Bearer $VIDTHEQUE_TOKEN"` must come back `"owner"`.
+
+The original finding, and the three answers it landed on, follow.
+
 Found while shipping phase 4, not fixed there, because it is the "what is a
 scraper allowed to take" question this section says an agent cannot answer.
-`/dashboard/api/*` is registered in **every** mode with `OWNER_CLAMPS`
-(`dashboard/__init__.py`, `public/api.py`), and in the intended production
-combination (`READONLY=1` + `AUTH=none`) there is no credential in front of it —
-so an anonymous visitor gets the *owner's* bounds on the JSON facade rather
-than the demo's:
+`/dashboard/api/*` is registered in **every** mode, and it was registered with
+`OWNER_CLAMPS` (`dashboard/__init__.py`, `public/api.py`); in the intended
+production combination (`READONLY=1` + `AUTH=none`) there is no credential in
+front of it — so an anonymous visitor got the *owner's* bounds on the JSON
+facade rather than the demo's:
 
 ```bash
 curl -s http://127.0.0.1:8100/api/meta           | jq .clamps   # policy "public", 20/50
@@ -121,6 +146,17 @@ The audit lands on one of, in increasing order of cost:
    credential configured would then clamp its own owner. If it is taken, the
    honest version keys off the credential rather than the flag, which is a
    design change and belongs in phase 5 beside search-and-ask moving in.
+
+   **Taken — the honest version, and not the one-liner.** Both of the costs
+   this entry priced were real and both were paid: two phase-1 assertions were
+   rewritten (the one named here, and `test_the_dashboard_json_is_clamped_
+   server_side`, which read the owner ceiling on an anonymous request), and
+   the mode-keyed form was rejected on its own argument — Tom's deployment is
+   read-only *and* has a token. Trusted CIDRs were ruled authenticated-
+   equivalent: that setting already grants the whole write side with no
+   credential presented, so a network trusted to change the corpus but not to
+   read a transcript of it would be a boundary with no shape, and it is what
+   gives an `AUTH=none` LAN instance its owner back.
 
 **Rate-limit bypass.** The limiter is in-memory, single-process, and charges
 before the handler runs (`public/ratelimit.py`). Probe, through the tunnel:

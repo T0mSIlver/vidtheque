@@ -251,21 +251,36 @@ def test_the_owner_policy_is_wider_than_the_public_one_and_still_bounded() -> No
 
 
 def test_one_set_of_handlers_serves_both_prefixes(tmp_path: Path) -> None:
-    """The dashboard's JSON is `/api`'s handlers at another path, not a copy."""
+    """The dashboard's JSON is `/api`'s handlers at another path, not a copy.
+
+    **Amended in phase 5.** This test used to read the two prefixes' *clamps*
+    as the proof they were different route groups sharing handlers, and that
+    reading is what the clamp bug looked like from inside the suite: the demo
+    deployment is `AUTH=none`, so both of these requests are anonymous, and an
+    anonymous caller now gets the demo's bounds whichever prefix it knocked on.
+    What makes them one implementation is the payload *shape*; the bounds are
+    section 10's subject.
+    """
     with make_client(tmp_path, public=PublicSettings(enabled=True)) as client:
         public = client.get("/api/videos").json()
         owner = client.get("/dashboard/api/videos").json()
     assert set(public) == set(owner) == {"videos", "pagination"}
-    assert public["pagination"]["limit"] == 24
-    assert owner["pagination"]["limit"] == 50
+    assert public["videos"] == owner["videos"]
+    assert public["pagination"]["limit"] == owner["pagination"]["limit"] == 24
 
 
 def test_the_dashboard_json_is_clamped_server_side(client: TestClient) -> None:
+    """`?limit=100000` is clamped, not honoured — whoever is asking.
+
+    The `client` fixture is `AUTH=none`, i.e. anonymous, so the ceiling it
+    meets is the public one. The owner's ceiling is asserted in section 10;
+    what matters here is that *neither* is the number in the URL.
+    """
     payload = client.get("/dashboard/api/videos?limit=100000").json()
-    assert payload["pagination"]["limit"] == 100  # not 100000, and not 50
+    assert payload["pagination"]["limit"] == 50  # not 100000
     search = client.get("/dashboard/api/search?q=cache&limit=999").json()
-    assert search["pagination"]["limit"] == 50
-    assert client.get("/dashboard/api/meta").json()["clamps"]["policy"] == "owner"
+    assert search["pagination"]["limit"] == 20
+    assert client.get("/dashboard/api/meta").json()["clamps"]["policy"] == "public"
 
 
 def test_the_dashboard_json_is_the_private_mode_facade(client: TestClient) -> None:
@@ -2090,3 +2105,218 @@ def test_the_browse_target_is_the_route_groups_own_root(tmp_path: Path) -> None:
         browse = demo.get("/api/meta").json()["browse"]
     assert browse == DASHBOARD_ROOT
     assert browse.startswith("/") and not browse.startswith("//")
+
+
+# ------------------------------- 10. credential-keyed clamps (phase 5, §2.4)
+
+
+"""The clamp policy follows the credential, not the route group.
+
+`docs/deploy-public.md` opened this as a policy question and phase 4 declined
+to answer it: `/dashboard/api/*` was registered with `OWNER_CLAMPS` in every
+mode, and the intended public deployment (`VIDTHEQUE_PUBLIC_READONLY=1` +
+`VIDTHEQUE_AUTH=none`) puts nothing in front of it — so an anonymous visitor
+was handed the owner's bounds, `max_text_chars=0` included. That is the
+full-transcript hatch demo-site.md §2 reserves for an owner's agent, and at
+120 req/min the corpus is a short crawl.
+
+The matrix below is the fix, asserted as a matrix rather than as three
+examples: {anonymous, session, bearer, trusted peer} × {none, token} ×
+{readonly on, off}, on **both** prefixes.
+"""
+
+
+def _policy(client: TestClient, path: str, **kwargs) -> str:
+    response = client.get(f"{path}/api/meta", **kwargs)
+    assert response.status_code == 200, response.text
+    return response.json()["clamps"]["policy"]
+
+
+def test_anonymous_gets_the_public_policy_on_both_prefixes_in_every_mode(
+    tmp_path: Path,
+) -> None:
+    """The bug, closed. `AUTH=none` has no credential, so nobody is the owner.
+
+    Both halves of the intended public deployment are here — the demo flag on
+    and off — because the flag was never what made the JSON reachable: the
+    route group is registered in every mode, and `guarded()` is open in `none`
+    by design (the corpus is already open through `/mcp` there).
+    """
+    for readonly in (True, False):
+        with make_client(tmp_path, public=PublicSettings(enabled=readonly)) as anon:
+            assert _policy(anon, ROOT) == "public"
+            if readonly:  # `/api/*` is public-mode-only
+                assert _policy(anon, "") == "public"
+
+
+def test_a_bearer_or_a_session_gets_the_owner_policy_on_both_prefixes(
+    tmp_path: Path,
+) -> None:
+    """The other half: a credential widens the bounds wherever it is presented.
+
+    Including on `/api/*`. The demo's numbers are what an anonymous browser
+    gets; a caller who can prove they are the owner is the caller the hatch was
+    written for, and which path they knocked on says nothing about who they are.
+
+    The session leg is minted the way `token` mode's own gate test mints one
+    rather than through `/dashboard/login`, because in a *read-only* deployment
+    that page is not registered (§2.3) and the cookie still has to be honoured:
+    a session outlives the flag that was flipped after it was issued.
+    """
+    import time
+
+    from vidtheque_mcp.auth.login import SESSION_COOKIE
+
+    for readonly in (True, False):
+        with owner_client(tmp_path, readonly=readonly) as client:
+            assert _policy(client, ROOT, headers=BEARER) == "owner"
+
+            store = client.app.state.assembled.auth.store
+            assert store is not None
+            store.save_session("clamp-sid", "owner", int(time.time()) + 600)
+            client.cookies.set(SESSION_COOKIE, "clamp-sid")
+            assert _policy(client, ROOT) == "owner"
+            if readonly:  # `/api/*` is public-mode-only
+                assert _policy(client, "") == "owner"
+                client.cookies.clear()
+                assert _policy(client, "", headers=BEARER) == "owner"
+
+    # And the live login page, in the deployment that registers one.
+    with owner_client(tmp_path, readonly=False) as private:
+        sign_in(private)
+        assert _policy(private, ROOT) == "owner"
+
+
+def test_a_readonly_deployment_with_a_credential_does_not_clamp_its_own_owner(
+    tmp_path: Path,
+) -> None:
+    """Why the policy is not keyed off `VIDTHEQUE_PUBLIC_READONLY`.
+
+    `api_routes(PUBLIC_CLAMPS if readonly else OWNER_CLAMPS, …)` was the
+    one-line version deploy-public.md sketched and rejected: it would clamp the
+    owner of a demo instance that *does* have a token configured, which is Tom's
+    own deployment. Keying off the credential separates the two callers the
+    flag cannot tell apart.
+    """
+    with owner_client(tmp_path, readonly=True) as client:
+        anon = client.get(f"{ROOT}/api/videos?limit=100000")
+        assert anon.status_code == 401  # `token` mode gates the read side too
+        owner = client.get(f"{ROOT}/api/videos?limit=100000", headers=BEARER).json()
+        assert owner["pagination"]["limit"] == 100
+        # And the demo's own front door, same instance, same request, no token.
+        assert client.get("/api/videos?limit=100000").json()["pagination"]["limit"] == 50
+
+
+def test_a_trusted_peer_counts_as_a_credential_for_the_clamps(tmp_path: Path) -> None:
+    """The CIDR decision, deliberate: yes, it grants the owner policy.
+
+    `VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS` already grants that network the *write*
+    side with no credential at all (§3.4) — indexing, re-indexing, tagging. A
+    network trusted to change the corpus but not to read a transcript of it
+    would be a boundary with no shape. It is also the lever that gives an
+    `AUTH=none` LAN deployment its owner back, so this asserts it in `none`
+    mode, where there is no other credential to hold.
+
+    Socket peer only, as everywhere else: the forged-header client is outside.
+    """
+    import ipaddress
+
+    lan = DashboardSettings(trusted_cidrs=(ipaddress.ip_network("10.0.0.0/8"),))
+
+    def app() -> object:  # a fresh app per client: one lifespan each
+        return build_app(
+            _settings(tmp_path, auth_mode="none"),
+            embeddings=FakeEmbeddings(),
+            run_pipeline=False,
+            public=PublicSettings(enabled=True),
+            dashboard=lan,
+        )
+
+    inside = TestClient(app(), base_url="http://localhost:8080", client=("10.9.9.9", 1))
+    with inside:
+        assert _policy(inside, ROOT) == "owner"
+        assert _policy(inside, "") == "owner"
+
+    outside = TestClient(
+        app(), base_url="http://localhost:8080", client=("203.0.113.7", 1)
+    )
+    with outside:
+        forged = {"CF-Connecting-IP": "10.9.9.9", "X-Forwarded-For": "10.9.9.9"}
+        assert _policy(outside, ROOT, headers=forged) == "public"
+        assert _policy(outside, "", headers=forged) == "public"
+
+
+def test_the_full_transcript_hatch_is_refused_to_anonymous_traffic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`max_text_chars=0` — the one difference that is not "a bigger page".
+
+    The seeded corpus has no segment long enough for a length assertion to mean
+    anything, so this asserts the number the facade *hands the service layer*,
+    which is the contract: `0` is the documented opt-out and the public policy
+    does not have one.
+
+    The anonymous half is measured on `AUTH=none` + `READONLY=1`, because that
+    is the deployment the hatch was reachable on — in `token` mode the
+    dashboard's read gate refuses an anonymous caller long before a clamp
+    matters. Both prefixes, because the bug was that one of them differed.
+    """
+    from vidtheque_mcp.public import api
+
+    asked: list[int] = []
+    real = api.search.run
+
+    async def spy(deps, **kwargs):
+        asked.append(kwargs["max_text_chars"])
+        return await real(deps, **kwargs)
+
+    monkeypatch.setattr(api.search, "run", spy)
+
+    with make_client(tmp_path, public=PublicSettings(enabled=True)) as demo:
+        for path in ("", ROOT):
+            assert demo.get(f"{path}/api/search?q=cache&max_text_chars=0").status_code == 200
+    assert asked == [400, 400], "anonymous keeps the demo's forced width"
+
+    asked.clear()
+    with owner_client(tmp_path, readonly=True) as client:
+        for path in ("", ROOT):
+            got = client.get(f"{path}/api/search?q=cache&max_text_chars=0", headers=BEARER)
+            assert got.status_code == 200
+    assert asked == [0, 0], "the owner is the agent the hatch was written for"
+
+
+def test_the_demo_pages_own_clamp_numbers_are_untouched(tmp_path: Path) -> None:
+    """No regression to what demo-site.md §2.1/§2.2 promises a visitor.
+
+    The policy objects are pinned in `test_public.py`; this pins the numbers a
+    request actually meets on the deployment the demo ships as.
+    """
+    with make_client(tmp_path, public=PublicSettings(enabled=True)) as demo:
+        meta = demo.get("/api/meta").json()["clamps"]
+        assert meta == {
+            "policy": "public",
+            "search_max_limit": PUBLIC_CLAMPS.search_max_limit,
+            "videos_max_limit": PUBLIC_CLAMPS.videos_max_limit,
+        }
+        videos = demo.get("/api/videos").json()["pagination"]
+        assert videos["limit"] == PUBLIC_CLAMPS.videos_default_limit
+        search = demo.get("/api/search?q=cache").json()["pagination"]
+        assert search["limit"] == PUBLIC_CLAMPS.search_default_limit
+
+
+def test_the_pages_keep_the_owner_page_size_and_that_is_the_decision(
+    tmp_path: Path,
+) -> None:
+    """§2.4: what phase 5 keyed off the credential is the JSON, not the HTML.
+
+    The hatch is an `/api/*` parameter and reaches no page — no template renders
+    untruncated transcript text and no page takes `max_text_chars`. What is left
+    between the policies on a page is rows-per-page, on a listing the demo
+    publishes in full anyway, so keying it off the credential would paginate the
+    browsable corpus at 24 rows to protect nothing.
+    """
+    with make_client(tmp_path, public=PublicSettings(enabled=True)) as demo:
+        body = page(demo, f"{ROOT}/videos?limit=100000")
+        assert "max_text_chars" not in body
+    # And the page's bound is still the server's, not the URL's.
+    assert OWNER_CLAMPS.videos_max_limit == 100

@@ -166,6 +166,7 @@ write affordances absent and two fields redacted:
 | jobs | full, with source URLs and error text | states, codes, counts and durations — the "what does a video cost" view (§5.4) |
 | index form | yes | **absent** |
 | re-index / delete / tag | yes | **absent** |
+| `/dashboard/api/*` | owner clamps | **public clamps, unless the caller holds a credential** |
 
 *Amended in phase 4 (2026-08-09): "no settings" is four fields, named.* The
 overview row above was written before the page existed and turned out to be
@@ -181,6 +182,49 @@ It keeps the *effect* of drift — "vector search is off on this instance", whic
 changes what a visitor should believe about the results — and it gains one rail
 item back to the welcome page, so the two halves of the public site link to each
 other in both directions.
+
+*Amended in phase 5 (2026-08-09): the last row, and it is a column heading that
+was wrong rather than a projection that was missing.* Every other row here
+splits on `VIDTHEQUE_PUBLIC_READONLY`, because every other row is about what a
+**page** renders and a page is served to whoever the read gate let in. The JSON
+facade is not: it takes parameters, and one of them —`max_text_chars=0`— is the
+full-transcript hatch demo-site.md §2 reserves for an owner's agent. Phase 1
+bounded it by prefix (§2.5.1), which reads as "the owner's JSON" and is only
+true when the prefix implies the caller. In the deployment this document is
+about it does not: `AUTH=none` has no credential to check, so the read gate is
+open by design, and an anonymous visitor was collecting the corpus's transcripts
+at 120 requests a minute. The bound is now **keyed off the credential**
+(`public/api.py:policy_for`, `auth/credential.py:is_owner`):
+
+| the caller holds | `/api/*` | `/dashboard/api/*` |
+|---|---|---|
+| nothing (incl. every request in `AUTH=none`) | public | public |
+| `Authorization: Bearer <token>` | owner | owner |
+| a `vidtheque_session` cookie | owner | owner |
+| a socket peer in `VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS` | owner | owner |
+
+— in **every** mode, with `VIDTHEQUE_PUBLIC_READONLY` on or off. The flag is not
+in the table and that is the point: a read-only deployment that *does* have a
+token configured is Tom's own, and a mode-keyed clamp would have clamped its
+owner.
+
+**Trusted CIDRs count as a credential, deliberately.** The setting already
+grants that network the whole write side with nothing presented at all (§3.4) —
+indexing, re-indexing, tagging. A network trusted to *change* the corpus but not
+to read a transcript of it would be a boundary with no shape. It is also the
+answer to the private-LAN owner story this change would otherwise break: in
+`AUTH=none` there is no credential, so the owner of a LAN instance is anonymous
+by this rule and gets the demo's bounds on the JSON. Two things give them back
+their reach — set `VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS` to the LAN, or use `/mcp`,
+which is unmasked in that mode and was always the owner's agent's real surface.
+The JSON facade is a convenience over the tools, never the only way in.
+
+**The pages keep the owner page size for every reader**, and that is a decision.
+The hatch is an `/api/*` parameter that reaches no page: no template renders
+untruncated transcript text and no page takes `max_text_chars`. What is left
+between the two policies on a page is rows-per-page and how far an offset may
+walk, on a listing the demo publishes in full anyway — so keying *that* off the
+credential would paginate the browsable corpus at 24 rows to protect nothing.
 
 Redacting job source URLs and `error_message` in demo mode is a recommendation,
 not a given (open question §10.4). The argument for it: yt-dlp's failure strings
@@ -199,7 +243,10 @@ Nothing is deleted and nothing is forked.
    Those constants become a small policy object — public clamps (`limit` 1..20,
    `max_text_chars` forced to 400) or owner clamps (wider, still server-side) —
    chosen by which route group the request arrived through. One set of handlers,
-   two policies, no second query layer. This also settles an open question
+   two policies, no second query layer. *Amended in phase 5: chosen by the
+   **credential**, not the route group — see §2.4's table. The prefix still
+   decides what is registered; it never decided who was asking.* This also
+   settles an open question
    already logged in demo-site.md §7.4: `/api` is public-mode-only today, and a
    private deployment that wants JSON has to enable the public flag. It stops
    having to, because `/dashboard/api/*` exists in private mode.
@@ -932,6 +979,14 @@ answers and the one-line version of each; if the answer is "clamp it", the
 honest fix keys off the *credential* rather than the flag, which is a design
 change and belongs in phase 5.
 
+**Resolved 2026-08-09, as the honest version.** The answer was "clamp it", and
+the credential-keyed fix landed ahead of the rest of phase 5 because it is
+ship-blocking for the public launch. §2.4 carries the matrix, the CIDR ruling
+and the reason the *pages* were left alone; `docs/deploy-public.md`'s audit item
+carries the verification. The one-line mode-keyed version was **not** taken, for
+the reason that section already gave: it would clamp the owner of a read-only
+deployment that has a credential configured, which is the deployment Tom runs.
+
 **Deferred out of phase 4, deliberately:** a `robots.txt` and the `noindex` the
 dashboard already sends are not the same decision, and whether the public
 projection *wants* to be crawlable is a content question for the audit
@@ -943,6 +998,23 @@ fifth flat aggregate on a page that already answers the question with links.
 ask pane, sharing `public/api.py`'s handlers; the welcome page becomes purely an
 entry point. `delete_video` — the pipeline job, then the button — belongs here or
 later.
+
+**Shipped early out of phase 5: credential-keyed clamps (2026-08-09).** Not the
+phase's main body — it is the phase-4 escalation above, pulled forward because
+the public launch cannot ship without it. What landed:
+
+| §  | promised | shipped |
+|---|---|---|
+| 2.4 | the clamp policy keys off the credential, not the flag or the prefix | `public/api.py:policy_for`, one predicate, both prefixes, every mode. `api_routes()` **lost its `policy` parameter** — a bound chosen where a route is registered is a bound that cannot see who called |
+| 2.4 | trusted CIDRs are authenticated-equivalent | as specified, and asserted in `none` mode, where it is the only credential there is. Socket peer only; the forged-header client is outside, asserted with `CF-Connecting-IP` and `X-Forwarded-For` both set to an address inside the network |
+| — | *(not in this document)* | **`credential()` moved to `auth/credential.py`** and is re-exported from `dashboard/access.py`. Two route groups now need the same answer, and a route group is the wrong owner of it. `is_owner()` is the new half, and the whole of it is the distinction `"open"` forces: `AUTH=none` means *no check*, never *the owner* |
+| — | *(not in this document)* | **Two phase-1 assertions were rewritten**, exactly as `docs/deploy-public.md` predicted they would have to be. `test_one_set_of_handlers_serves_both_prefixes` used the two prefixes' *clamps* as its proof they shared handlers — which is what the bug looked like from inside the suite, since both of those requests are anonymous. It now proves it on the payload shape |
+| — | *(not in this document)* | The matrix is asserted as a matrix: {anonymous, session, bearer, trusted peer} × {`none`, `token`} × {readonly on, off}, plus the hatch specifically (`max_text_chars=0` → 400 for anonymous on both prefixes, `0` for a bearer on both), plus a no-regression test for the demo's own numbers |
+
+**Deliberately not in it:** the *pages* (§2.4's last paragraph — the hatch
+reaches no page, and the rest is rows-per-page on a listing the demo publishes
+in full), and no new environment variable, because the lever this needed
+already exists and is already documented.
 
 3 → 4 → 5 is ordered; 1 and 2 are independent of everything else.
 

@@ -27,6 +27,14 @@ from .. import __version__
 from ..db import queries
 from ..errors import HTTP_STATUS, ToolError
 from ..jobs import store as jobs_store
+# The *pages* keep the owner page size for every reader, and that is a
+# decision, not the leftover of phase 5's credential-keyed clamp (dashboard.md
+# §2.4). What phase 5 fixed is the full-transcript hatch, which is a `/api/*`
+# parameter and reaches no page: no template renders untruncated transcript
+# text, and no page takes `max_text_chars`. What is left between the two
+# policies here is rows-per-page and how far an offset may walk, on a listing
+# the demo publishes in full anyway — so keying it off the credential would
+# paginate the browsable corpus at 24 rows to protect nothing.
 from ..public.api import OWNER_CLAMPS, _cover_frames, thumb_url
 from ..text import clamp, iso_day, iso_minute
 from ..timeparse import parse_corpus_time

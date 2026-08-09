@@ -97,6 +97,17 @@ Facade rules:
   `max_text_chars=0` opt-out on a public endpoint — the full-transcript escape
   hatch is for an owner's agent, not for anonymous traffic. `/api/ask`'s
   internal tools are tighter still (§3.2).
+
+  *Amended 2026-08-09 (dashboard phase 5).* "Public endpoint" turned out to
+  mean the wrong thing for a year's worth of one word: the bound was chosen by
+  **which prefix** a request arrived on, and `/dashboard/api/*` — registered in
+  every mode, and unguarded in the `AUTH=none` the demo ships as — is a public
+  endpoint on the intended deployment however private its name reads. It is now
+  chosen by the **credential**: a bearer, a login session or a trusted peer gets
+  the owner bounds on either prefix, and everyone else gets the numbers above on
+  either prefix. **None of the numbers in §2.1 or §2.2 changed**, and none of
+  them can be reached by an anonymous caller any more. See dashboard.md §2.4 and
+  `docs/deploy-public.md`'s clamp audit item.
 - **Typed errors survive the translation.** A tool returning `isError` carries
   a `structuredContent.code`; `errors.HTTP_STATUS` already maps every `E_*`
   code to an HTTP status, so the facade returns that status with
@@ -1019,3 +1030,13 @@ shown.
    than as a second query layer. `public/api.py`'s five clamp constants are now
    `PUBLIC_CLAMPS`, asserted against the numbers in §2.1 and §2.2 so the
    refactor cannot have widened them.
+
+   *Amended 2026-08-09 (phase 5): "mounted … with the owner clamp policy" is no
+   longer how the second caller is recognised.* Mounting under a prefix is a
+   statement about where a route is, not about who called it, and in the
+   `AUTH=none` demo nothing stands between the internet and that prefix — so an
+   anonymous visitor was getting the owner policy, `max_text_chars=0` included.
+   The policy now follows the credential (`public/api.py:policy_for`). The rest
+   of this entry stands unchanged: still one set of handlers, still two
+   policies, still no second query layer, and `/api/*` is still
+   public-mode-only.
