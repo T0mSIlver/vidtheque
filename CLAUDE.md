@@ -57,6 +57,10 @@ timestamped citations (`youtu.be/ID?t=123`). Owner: Tom Vaucourt. MIT.
   you created or edited — never `git add -A` / `git add .` — and expect
   other agents to be writing sibling files concurrently. If `index.lock`
   collides, wait and retry.
+- **Commit with an explicit pathspec** (`git commit -m "…" -- <paths>`), not
+  a bare `git commit`: the index is shared, and a bare commit sweeps up
+  whatever a concurrent agent had staged mid-commit (this happened,
+  2026-08-09 — a docs commit swallowed 600 lines of a sibling's work).
 - **Never rewrite history (`reset`/`amend`) on a commit that exists** — the
   orchestrator may have pushed it under you; fix forward with a new commit.
   Orchestrator side of the same lesson: pushing while an agent is mid-run
