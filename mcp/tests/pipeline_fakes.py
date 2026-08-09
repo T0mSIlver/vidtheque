@@ -227,6 +227,14 @@ class ClipSource(RecordedSource):
         super().__init__(**kwargs)
         self.clip = clip
         self.downloads: list[str] = []
+        # Every URL this source was asked about. A probe is a real request to
+        # YouTube on the live box, so "was one made at all" is an assertion the
+        # local-resolution tests need (`test_pipeline_resolution.py`).
+        self.probes: list[str] = []
+
+    def probe(self, url: str) -> dict[str, Any]:
+        self.probes.append(url)
+        return super().probe(url)
 
     def download_audio(self, url, source_id, dest_dir, codec):  # type: ignore[no-untyped-def]
         self.downloads.append("audio")
