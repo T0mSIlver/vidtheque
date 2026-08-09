@@ -1,9 +1,13 @@
-"""The management dashboard — `docs/design/dashboard.md`, phase 1.
+"""The management dashboard — `docs/design/dashboard.md`, phases 1 and 2.
 
-Three read-only pages, `/dashboard/api/*` under owner clamps, and the auth gate
+Five read-only pages, `/dashboard/api/*` under owner clamps, and the auth gate
 in front of both. Nothing here reaches the network or loads a model: the pages
 are rendered against the seeded fixture corpus through the same ASGI app the
 server runs.
+
+Phase 2's half is the jobs view — the `not_before` countdown, the retry
+counter, the degraded list and the event tail — plus its demo projection, which
+keeps every clock and drops exactly two fields.
 
 The two things this file is most interested in are the ones a screenshot cannot
 check: that a corpus string never becomes markup, and that every list is
@@ -89,10 +93,99 @@ def _corpus(tmp_path: Path) -> Path:
         conn.execute(
             "UPDATE ocr_lines SET text = ? WHERE keyframe_id = ?", (HOSTILE, keep["id"])
         )
+        _seed_jobs(conn)
         conn.execute("COMMIT")
     finally:
         conn.close()
     return data
+
+
+def _seed_jobs(conn) -> None:  # type: ignore[no-untyped-def]
+    """The three shapes the jobs view exists for (dashboard.md §5.4).
+
+    A queued job held off by a `not_before` in the future — the countdown that
+    was true and invisible during the overnight batch; a running job mid-item,
+    with a retry already spent; and a finished one carrying both kinds of loss,
+    the item that failed loudly and the item that succeeded with a stage
+    missing underneath it.
+    """
+    videos = conn.execute("SELECT id, public_id FROM videos ORDER BY id").fetchall()
+
+    # 1. Deferred. `not_before` is relative to now so the countdown is always
+    #    in the future, whatever clock the test runs on.
+    conn.execute(
+        "INSERT INTO jobs (owner_id, public_id, kind, args_json, n_items, priority, "
+        "state, not_before, created_at, error_code, error_message) VALUES "
+        "(1, 'job_deferred01', 'index', '{}', 1, 100, 'queued', unixepoch() + 240, "
+        "unixepoch() - 900, 'E_RATE_LIMIT', ?)",
+        ("the source rate-limited this box; cookiefile /home/dev/.cookies.txt",),
+    )
+    deferred = int(
+        conn.execute("SELECT id FROM jobs WHERE public_id='job_deferred01'").fetchone()[0]
+    )
+    conn.execute(
+        "INSERT INTO job_items (job_id, seq, source_url, state, attempts, started_at) "
+        "VALUES (?, 0, 'https://youtu.be/deferredvid', 'queued', 2, unixepoch() - 880)",
+        (deferred,),
+    )
+    conn.execute(
+        "INSERT INTO job_events (job_id, at, level, message) VALUES "
+        "(?, unixepoch() - 300, 'warn', ?)",
+        (deferred, f"retrying in 300s after E_RATE_LIMIT: HTTP 429 {HOSTILE}"),
+    )
+
+    # 2. Running, mid-item, second attempt.
+    conn.execute(
+        "INSERT INTO jobs (owner_id, public_id, kind, args_json, n_items, priority, "
+        "state, created_at, started_at, heartbeat_at) VALUES "
+        "(1, 'job_running001', 'index', '{}', 2, 50, 'running', unixepoch() - 1200, "
+        "unixepoch() - 1100, unixepoch() - 4)"
+    )
+    running = int(
+        conn.execute("SELECT id FROM jobs WHERE public_id='job_running001'").fetchone()[0]
+    )
+    conn.execute(
+        "INSERT INTO job_items (job_id, seq, source_url, video_id, state, stage, "
+        "stage_pct, attempts, started_at) VALUES (?, 0, ?, ?, 'running', 'stt', 0.42, 2, "
+        "unixepoch() - 690)",
+        (running, f"https://youtu.be/{videos[0]['public_id']}", videos[0]["id"]),
+    )
+    conn.execute(
+        "INSERT INTO job_items (job_id, seq, source_url, state) VALUES "
+        "(?, 1, 'https://youtu.be/queuedvideo', 'queued')",
+        (running,),
+    )
+
+    # 3. Finished: one loud failure, one silent one.
+    conn.execute(
+        "INSERT INTO jobs (owner_id, public_id, kind, args_json, n_items, priority, "
+        "state, created_at, started_at, finished_at) VALUES "
+        "(1, 'job_finished01', 'index', '{}', 2, 100, 'failed', unixepoch() - 8000, "
+        "unixepoch() - 7900, unixepoch() - 6400)"
+    )
+    finished = int(
+        conn.execute("SELECT id FROM jobs WHERE public_id='job_finished01'").fetchone()[0]
+    )
+    conn.execute(
+        "INSERT INTO job_items (job_id, seq, source_url, video_id, state, attempts, "
+        "started_at, finished_at) VALUES (?, 0, ?, ?, 'done', 1, unixepoch() - 7900, "
+        "unixepoch() - 7000)",
+        (finished, f"https://youtu.be/{videos[2]['public_id']}", videos[2]["id"]),
+    )
+    conn.execute(
+        "INSERT INTO job_items (job_id, seq, source_url, state, attempts, error_code, "
+        "error_message, started_at, finished_at) VALUES "
+        "(?, 1, 'https://youtu.be/failedvideo', 'failed', 3, 'E_SOURCE', ?, "
+        "unixepoch() - 7000, unixepoch() - 6400)",
+        (finished, f"ERROR: [youtube] Sign in to confirm you are not a bot. {HOSTILE}"),
+    )
+    # `done` item, failed stage: n_failed is 0 and a search channel is missing.
+    conn.execute(
+        "INSERT OR REPLACE INTO video_stages (video_id, stage, state, model_key, "
+        "started_at, finished_at, error) VALUES (?, 'ocr', 'failed', NULL, "
+        "unixepoch() - 7200, unixepoch() - 7100, ?)",
+        (videos[2]["id"], "worker returned 503 for 41 frames; on-screen text is missing"),
+    )
 
 
 def _settings(tmp_path: Path, **kwargs) -> Settings:
@@ -477,6 +570,241 @@ def test_an_unknown_video_is_a_typed_404(client: TestClient) -> None:
     assert "E_UNKNOWN_VIDEO" in body
 
 
+# -------------------------------------------------------- 3b. §5.4 the jobs
+
+
+def test_the_jobs_table_shows_the_countdown_that_was_invisible(
+    client: TestClient,
+) -> None:
+    """dashboard.md §4.4: the single highest-value line on the page.
+
+    `defer_job` has written `not_before` since the backoff landed and nothing
+    ever read it, so "this job is deferred for another 240 seconds" was true
+    and unobservable from every surface vidtheque had.
+    """
+    body = page(client, f"{ROOT}/jobs")
+    for job in ("job_deferred01", "job_running001", "job_finished01"):
+        assert job in body
+    countdowns = re.findall(r'data-field="job-defer" data-defer="(\d+)"', body)
+    assert len(countdowns) == 3, "every row carries the field, whatever its value"
+    # Only the queued job is actually being held off. A `not_before` left behind
+    # on a running row is a stamp, not a wait, and must not become a countdown.
+    assert sorted(countdowns, key=int)[-1] != "0"
+    live = [n for n in countdowns if n != "0"]
+    assert len(live) == 1 and 200 < int(live[0]) <= 240
+    assert "held <span" in body
+
+
+def test_the_jobs_table_is_clamped_and_pages_with_has_more(client: TestClient) -> None:
+    one = page(client, f"{ROOT}/jobs?limit=1")
+    assert "more available" in one
+    assert "offset=1" in one
+    assert one.count("<tr data-job=") == 1
+    assert 'value="100"' in page(client, f"{ROOT}/jobs?limit=100000")
+    # An unknown state is not honoured and not an error.
+    assert "job_finished01" in page(client, f"{ROOT}/jobs?state=nonsense")
+    active = page(client, f"{ROOT}/jobs?state=active")
+    assert "job_running001" in active and "job_finished01" not in active
+
+
+def test_the_job_page_says_what_the_video_cost(client: TestClient) -> None:
+    """§10.4: the clocks are the point, and the two of them mean different things."""
+    body = page(client, f"{ROOT}/jobs/job_finished01")
+    assert "wall clock" in body and "created → finished" in body
+    assert "on the runner" in body and "first claim → finished" in body
+    # 1600s of wall clock, 1500s on the runner: the difference is the wait.
+    assert "26m 40s" in body and "25m 00s" in body
+    # And the per-stage durations, for the item the job ended on.
+    assert "Stage by stage" in body
+    for stage in ("fetch", "stt", "chunk", "text_embed", "keyframe", "ocr", "frame_embed"):
+        assert f"<code>{stage}</code>" in body
+
+
+def test_the_job_page_carries_attempts_the_degraded_list_and_the_tail(
+    client: TestClient,
+) -> None:
+    body = page(client, f"{ROOT}/jobs/job_finished01")
+    assert "3/3" in body  # attempts against max_attempts — the retry counter
+    assert "E_SOURCE" in body
+    assert "Sign in to confirm you are not a bot" in body
+    # `done` + `n_failed=0` + a failed stage is the silent loss this page names.
+    assert "Finished with something missing" in body
+    assert "<code>ocr</code> failed" in body
+    assert "worker returned 503 for 41 frames" in body
+
+
+def test_the_deferred_job_explains_itself(client: TestClient) -> None:
+    body = page(client, f"{ROOT}/jobs/job_deferred01")
+    assert "Waiting, not stuck" in body
+    assert "E_RATE_LIMIT" in body
+    # The event tail is the only place a non-rate-limit deferral exists at all.
+    assert "retrying in 300s after E_RATE_LIMIT" in body
+    assert "here and nowhere else" in body
+
+
+def test_an_unknown_job_is_a_typed_404(client: TestClient) -> None:
+    assert "E_UNKNOWN_JOB" in page(client, f"{ROOT}/jobs/job_nope", status=404)
+    missing = client.get(f"{ROOT}/api/jobs/job_nope")
+    assert missing.status_code == 404
+    assert missing.json()["error"] == "E_UNKNOWN_JOB"
+
+
+def test_the_poll_target_is_the_page_projection_and_says_when_to_stop(
+    client: TestClient,
+) -> None:
+    """§5.4: 2 s while anything is live, stopped when nothing is."""
+    payload = client.get(f"{ROOT}/api/jobs").json()
+    assert payload["poll_ms"] == 2000
+    assert payload["live"] is True  # two of the three jobs are queued/running
+    assert payload["pagination"]["limit"] == 25
+    deferred = next(j for j in payload["jobs"] if j["job_id"] == "job_deferred01")
+    assert 200 < deferred["defer_s"] <= 240
+    # The strings the page rendered, so the tick cannot format them differently.
+    assert deferred["text"]["defer"].endswith("s")
+    assert deferred["text"]["counts"] == "0/1 done"
+
+    # Nothing live in this filter, so a tab watching it stops.
+    done = client.get(f"{ROOT}/api/jobs?state=done").json()
+    assert done["live"] is False
+
+    single = client.get(f"{ROOT}/api/jobs/job_running001").json()
+    assert single["live"] is True
+    assert single["job"]["state"] == "running"
+    assert [i["text"]["attempts"] for i in single["items"]] == ["2/3", "0/3"]
+    assert single["items"][0]["text"]["stage"] == "stt 42%"
+    assert client.get(f"{ROOT}/api/jobs?limit=100000").json()["pagination"]["limit"] == 100
+
+
+def test_the_jobs_pages_do_not_fan_out_per_row(client: TestClient) -> None:
+    """§6.3 again, for the two pages phase 2 adds.
+
+    One row and a hundred must cost the same number of reads — the degraded
+    badge in particular is one grouped query for the page, not a probe per job.
+    """
+    one = _count_reads(client, f"{ROOT}/jobs?limit=1")
+    many = _count_reads(client, f"{ROOT}/jobs?limit=100")
+    assert one == many <= 3, f"{one} reads for 1 job, {many} for 100"
+    detail = _count_reads(client, f"{ROOT}/jobs/job_finished01")
+    assert detail <= 8, f"{detail} reads for one job page"
+
+
+def test_the_demo_projection_keeps_the_clocks_and_drops_the_rest(
+    tmp_path: Path,
+) -> None:
+    """§2.4 and §10.4, which pull in opposite directions and both hold.
+
+    The demo keeps the jobs view because its stated purpose is showing a
+    visitor what indexing a video costs in time. It drops exactly two things:
+    source URLs, which are `args_json` by another name, and error text, which
+    is yt-dlp talking about the operator's own box.
+    """
+    secrets = (
+        "youtu.be/failedvideo",
+        "Sign in to confirm you are not a bot",
+        "cookiefile",
+        "worker returned 503",
+        "retrying in 300s",
+    )
+    with make_client(tmp_path, public=PublicSettings(enabled=True)) as demo:
+        for path in (f"{ROOT}/jobs", f"{ROOT}/jobs/job_finished01",
+                     f"{ROOT}/jobs/job_deferred01"):
+            body = page(demo, path)
+            for secret in secrets:
+                assert secret not in body, f"{secret} leaked on {path}"
+        body = page(demo, f"{ROOT}/jobs/job_finished01")
+        # …and keeps the codes, the counts and every clock.
+        assert "E_SOURCE" in body and "1/2 done · 1 failed" in body
+        assert "26m 40s" in body and "25m 00s" in body
+        assert "Stage by stage" in body
+        assert "Finished with something missing" in body and "<code>ocr</code> failed" in body
+        assert "not published on this instance" in body
+        held = page(demo, f"{ROOT}/jobs/job_deferred01")
+        assert "Waiting, not stuck" in held and "held <span" in held
+        # The JSON projection is the same one, not a second rule that can drift.
+        single = demo.get(f"{ROOT}/api/jobs/job_finished01").json()
+        assert single["job"]["error_message"] is None
+        assert all(item["source_url"] is None for item in single["items"])
+        assert all(event["message"] is None for event in single["events"])
+        assert single["items"][1]["error_code"] == "E_SOURCE"
+        assert single["items"][1]["took_s"] == 600
+
+    # The owner's instance is the contrast: same page, both fields present.
+    with make_client(tmp_path) as owner:
+        body = page(owner, f"{ROOT}/jobs/job_finished01")
+        assert "Sign in to confirm you are not a bot" in body
+        assert "worker returned 503" in body
+        assert owner.get(f"{ROOT}/api/jobs/job_finished01").json()["items"][1][
+            "source_url"
+        ] == "https://youtu.be/failedvideo"
+
+
+# ------------------------------------------ 3c. relative frames, and the slash
+
+
+def test_dashboard_html_frames_are_relative_and_the_api_stays_absolute(
+    client: TestClient,
+) -> None:
+    """Phase 2's second half: a page knows its own host better than PUBLIC_URL.
+
+    A preview on a tunnelled port rendered every thumbnail against a dead
+    origin. The split lives in `thumb_url`, not in the signer — and the MCP
+    side keeps absolute URLs, because an agent has no page to resolve against.
+    """
+    base = "http://localhost:8080"
+    for path in (ROOT, f"{ROOT}/videos", f"{ROOT}/videos/kCc8FmEb1nY"):
+        body = page(client, path)
+        assert "/frames/" in body
+        assert f"{base}/frames/" not in body, f"{path} embeds PUBLIC_URL"
+        assert re.search(r'src="/frames/[\w:-]+\.jpg\?w=\d+', body)
+
+    # The JSON facade is unchanged, on both prefixes and for the tools.
+    thumbs = [
+        v["thumb"]
+        for v in client.get(f"{ROOT}/api/videos").json()["videos"]
+        if v["thumb"]
+    ]
+    assert thumbs and all(t.startswith(f"{base}/frames/") for t in thumbs)
+
+
+async def test_the_mcp_surface_still_hands_out_absolute_frame_urls(
+    assembled, fake_embeddings
+) -> None:
+    """The other half of the same assertion, at the tool layer."""
+    from vidtheque_mcp.tools import frames
+
+    result = await frames.run(assembled.deps, video_id="kCc8FmEb1nY", limit=2)
+    payload = result.structured_content or {}
+    urls = [f["url"] for f in payload.get("frames", [])]
+    assert urls and all(u.startswith("http://localhost:8080/frames/") for u in urls)
+
+
+def test_a_relative_frame_url_still_carries_a_valid_signature(tmp_path: Path) -> None:
+    """The signer covers the frame, the width, the quality and the expiry —
+    never the origin — so dropping the origin cannot invalidate anything."""
+    with make_client(tmp_path, auth_mode="token", token="s3cret") as client:
+        headers = {"Authorization": "Bearer s3cret"}
+        body = client.get(f"{ROOT}/videos/kCc8FmEb1nY", headers=headers).text
+        match = re.search(r'src="(/frames/[^"]+)"', body)
+        assert match, "no frame on the detail page"
+        url = match.group(1).replace("&amp;", "&")
+        assert "sig=" in url and "exp=" in url
+        # No bearer, no cookie: the signature on the relative URL is the whole
+        # credential, exactly as it is on an absolute one.
+        assert client.get(url).status_code == 200
+        assert client.get(url.split("&sig=")[0] + "&sig=forged").status_code == 401
+
+
+def test_the_trailing_slash_redirects_rather_than_404ing(client: TestClient) -> None:
+    """`Mount("/")` matches everything, so Starlette's own redirect never fires."""
+    response = client.get(f"{ROOT}/", follow_redirects=False)
+    assert response.status_code == 308
+    assert response.headers["location"] == ROOT
+    # The query survives, so a bookmarked filter with a stray slash still works.
+    with_query = client.get(f"{ROOT}/?index_state=failed", follow_redirects=False)
+    assert with_query.headers["location"] == f"{ROOT}?index_state=failed"
+    assert client.get(f"{ROOT}/").status_code == 200
+
+
 def test_the_pages_are_never_cached(client: TestClient) -> None:
     for path in (ROOT, f"{ROOT}/videos", f"{ROOT}/videos/kCc8FmEb1nY"):
         assert client.get(path).headers["cache-control"] == "no-store"
@@ -498,11 +826,21 @@ def test_the_asset_route_serves_nothing_outside_its_directory(
 
 @pytest.mark.parametrize(
     "path",
-    ["", "/videos", "/videos/kCc8FmEb1nY", "/videos/aaaaaaaaaaa", "/videos/zduSFxRajkE"],
+    [
+        "",
+        "/videos",
+        "/videos/kCc8FmEb1nY",
+        "/videos/aaaaaaaaaaa",
+        "/videos/zduSFxRajkE",
+        "/jobs",
+        "/jobs/job_deferred01",
+        "/jobs/job_finished01",
+    ],
 )
 def test_no_corpus_string_ever_becomes_markup(client: TestClient, path: str) -> None:
     """demo-site.md §6.2, for a surface that renders more hostile text than the
-    demo does: OCR lines, titles, channel names and yt-dlp's own error strings.
+    demo does: OCR lines, titles, channel names, yt-dlp's own error strings and
+    — since phase 2 — the job event log, which is the runner quoting them.
 
     Jinja2's autoescape is the mechanism; this is the assertion that it is on
     everywhere and that nothing reached for `| safe`.
@@ -513,7 +851,8 @@ def test_no_corpus_string_ever_becomes_markup(client: TestClient, path: str) -> 
     assert "<script>alert" not in body
     assert "<img src=x" not in body
     assert "<svg onload" not in body
-    if "aaaaaaaaaaa" in path or path == "/videos":
+    if "aaaaaaaaaaa" in path or path in ("/videos", "/jobs/job_deferred01",
+                                         "/jobs/job_finished01"):
         assert "&lt;script&gt;alert" in body, "the hostile string is there, escaped"
         assert "&lt;img src=x onerror=alert(1)&gt;" in body
 
@@ -527,31 +866,44 @@ def test_the_templates_never_reach_for_safe() -> None:
         assert "autoescape" not in text, f"{template.name} toggles autoescape inline"
 
 
-def test_the_dashboard_module_builds_no_html_from_data() -> None:
-    """The JS half of the same rule, asserted the way `app.js` already is."""
-    script = "\n".join(
-        line
-        for line in (STATIC / "dashboard.js").read_text().splitlines()
-        if not line.strip().startswith(("//", "*", "/*"))
-    )
-    for sink in (
-        "innerHTML",
-        "outerHTML",
-        "insertAdjacentHTML",
-        "document.write",
-        "eval(",
-        "new Function",
-        "srcdoc",
-    ):
-        assert sink not in script, f"dashboard.js reaches for {sink}"
-    assert "safeUrl(" in script, "URLs reaching href/src are filtered"
+def test_no_dashboard_module_builds_html_from_data() -> None:
+    """The JS half of the same rule, asserted the way `app.js` already is.
+
+    Every module in the bundle, not a named one: the poller appends live event
+    rows, which is exactly the code path that reaches for `innerHTML` if nobody
+    is watching, and its text is the runner quoting yt-dlp.
+    """
+    modules = sorted(STATIC.glob("*.js"))
+    assert {m.name for m in modules} == {"dashboard.js", "jobs.js"}
+    for module in modules:
+        script = "\n".join(
+            line
+            for line in module.read_text().splitlines()
+            if not line.strip().startswith(("//", "*", "/*"))
+        )
+        for sink in (
+            "innerHTML",
+            "outerHTML",
+            "insertAdjacentHTML",
+            "document.write",
+            "eval(",
+            "new Function",
+            "srcdoc",
+        ):
+            assert sink not in script, f"{module.name} reaches for {sink}"
+        assert "safeUrl(" in script, f"{module.name} filters URLs"
+        assert "textContent" in script
 
 
 def test_the_pages_carry_no_inline_script(client: TestClient) -> None:
-    for path in ("", "/videos", "/videos/kCc8FmEb1nY"):
-        body = page(client, ROOT + path).replace(
-            f'<script type="module" src="{ROOT}/static/dashboard.js"></script>', ""
-        )
+    tags = (
+        f'<script type="module" src="{ROOT}/static/dashboard.js"></script>',
+        f'<script type="module" src="{ROOT}/static/jobs.js"></script>',
+    )
+    for path in ("", "/videos", "/videos/kCc8FmEb1nY", "/jobs", "/jobs/job_running001"):
+        body = page(client, ROOT + path)
+        for tag in tags:
+            body = body.replace(tag, "")
         assert "<script" not in body, "the page stays CSP-ready"
 
 
