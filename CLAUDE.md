@@ -64,6 +64,13 @@ timestamped citations (`youtu.be/ID?t=123`). Owner: Tom Vaucourt. MIT.
   a bare `git commit`: the index is shared, and a bare commit sweeps up
   whatever a concurrent agent had staged mid-commit (this happened,
   2026-08-09 — a docs commit swallowed 600 lines of a sibling's work).
+- Pathspec commits are not enough for **shared files**: they commit the
+  *working tree* of the named paths, so a sibling's in-flight edits to the
+  same file ride along (happened twice, 2026-08-09, in `tool-surface.md` and
+  `tools/resources.py`). For contract docs and other shared files: keep your
+  edit small, commit it promptly, and say in the commit message if you may
+  have swept sibling hunks — or leave the file uncommitted and tell the
+  orchestrator whose commit it should ride in. Never stage-and-wait.
 - **Never rewrite history (`reset`/`amend`) on a commit that exists** — the
   orchestrator may have pushed it under you; fix forward with a new commit.
   Orchestrator side of the same lesson: pushing while an agent is mid-run
