@@ -1,0 +1,883 @@
+<!doctype html>
+<html lang="en" data-version="v3">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vidtheque — the knowledge of the builders, on tap</title>
+<meta name="description" content="Empowering AI with the knowledge of the builders and creators.">
+<!--
+ LANDING VERSION 3 — RECEIPT-FIRST.
+
+ THESIS: the moment-with-receipt is the opening argument. Before a single
+ feature claim the reader is looking at the product's own output at size —
+ a real keyframe, the real OCR box glowing on the words the machine read off
+ the screen, the sentence that was being spoken at that second, and the
+ youtu.be/…?t= slab that lands on it. The page then bets everything on the
+ second artifact: a real agent, on the real protocol, answering a question no
+ single talk answers. Features are what is left over.
+
+ OWN-WORLD: impeccable.style's register as the north star (research
+ positioning-2026-08-10 §1.4, from the screenshot, not the fetch summary):
+ gold on black, kintsugi seams drawn as gold hairline cracks, light-weight
+ display type at very large size, dramatic dark elegance, annotation tabs in
+ mono uppercase attached to a live specimen. Fused with the moment cards'
+ channel hues where they carry meaning: SEEN (what the machine read off the
+ screen) keeps the prototypes' lime, because a detection box has to be
+ legible as a different channel from the chrome; HEARD collapses into the
+ gold accent, because the spoken sentence, the citation and the one action on
+ the page are the same promise and the family rule is one accent, loudly.
+ Zero radius, hairlines not cards, no gradient wash, no 3D, no faux-CRT.
+
+ COPY: bound by docs/design/positioning.md (LOCKED 2026-08-10) and the
+ post-lock kit + amendment in research/positioning-2026-08-10.md. H1 is Tom's
+ order (candidate #7 as amended). "You don't have time to watch it all. Your
+ agent does." is beat 2's header. The protocol word appears once, in the
+ quickstart, and nowhere above it. Every number is read out of v3-assets/data.js
+ at render time; nothing is hardcoded in the markup.
+
+ FINISH: lab version for judgement from screenshots at 1440 and 390. Lab
+ pieces do not bind DESIGN.md; its dark ground, one-accent rule, hairline
+ habit and tabular figures are honoured anyway.
+
+ DATA: v3-assets/data.js, harvested read-only from vidtheque.db. Frames,
+ boxes, sentences, ids and counts are the corpus's own. The agent exchange in
+ beat 3 is transcribed from research/demo-queries-2026-08-09.md §4.1, §1.8,
+ §7.5 and §9 — laid out for width, not re-recorded and not rewritten. The
+ page makes zero network requests.
+-->
+<style>
+@font-face{font-family:"Archivo VF";src:url("v3-assets/fonts/archivo-latin-wght-normal.woff2") format("woff2");font-weight:100 900;font-display:block;font-style:normal}
+@font-face{font-family:"JetBrains Mono VF";src:url("v3-assets/fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2");font-weight:100 800;font-display:block;font-style:normal}
+
+:root{
+  /* ground: near-black, warm, three plates deep */
+  --void:#08080a; --pitch:#040405; --plate:#0e0e12; --plate2:#141419; --plate3:#1a1a20;
+  --seam:#242429; --seam2:#33333b;
+  /* type */
+  --fg:#f3f0ea; --fg2:#9d968c; --fg3:#6b665e;
+  /* the one accent — gold. CTA, one word of the H1, the citation slab,
+     the active chip, the heard channel. Nothing else. */
+  --gold:#e7b455; --gold-hi:#f6cd78; --gold-ink:#120c02;
+  --gold-6:rgba(231,180,85,.06); --gold-12:rgba(231,180,85,.12);
+  --gold-24:rgba(231,180,85,.24); --gold-44:rgba(231,180,85,.44);
+  /* the seen channel — the machine reading the screen. Boxes and labels only. */
+  --seen:#c9f938; --seen-24:rgba(201,249,56,.24); --seen-48:rgba(201,249,56,.48);
+  --sans:"Archivo VF",system-ui,-apple-system,sans-serif;
+  --mono:"JetBrains Mono VF",ui-monospace,SFMono-Regular,monospace;
+  --gut:clamp(20px,4.2vw,72px);
+  --maxw:1420px;
+}
+*{margin:0;padding:0;box-sizing:border-box;border-radius:0}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{
+  background:var(--void); color:var(--fg);
+  font-family:var(--sans); font-size:16px; line-height:1.55;
+  font-weight:340; letter-spacing:-.004em;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  overflow-x:hidden;
+}
+img{display:block;max-width:100%}
+a{color:inherit;text-decoration:none}
+::selection{background:var(--gold);color:var(--gold-ink)}
+
+/* ── atoms ─────────────────────────────────────────────────────────── */
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 var(--gut)}
+.mono{font-family:var(--mono);font-variant-ligatures:none}
+/* mono uppercase micro-label, wide tracking — the family's one device that
+   carries most of the register. Never applied to an identifier. */
+.ml{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.19em;
+  text-transform:uppercase;color:var(--fg3);font-variant-ligatures:none;line-height:1.4}
+.ml.gold{color:var(--gold)}
+.ml.seen{color:var(--seen)}
+/* kicker: short rule then the label (herdr's device) */
+.kick{display:flex;align-items:center;gap:12px}
+.kick s{display:block;width:34px;height:1px;background:var(--gold);text-decoration:none;flex:none}
+.hr{height:1px;background:var(--seam);border:0}
+.id{font-family:var(--mono);text-transform:none;font-variant-ligatures:none}
+
+/* light-weight display at size is the register's least-copied move (§1.4);
+   everything else on the page is set in the same face at 320–520 */
+h1,h2,h3{font-weight:200;letter-spacing:-.032em;line-height:1.02;text-wrap:balance}
+h1{font-size:clamp(2.5rem,5vw,4.9rem);line-height:.98;letter-spacing:-.038em}
+h1 em{font-style:normal;color:var(--gold);font-weight:200}
+h2{font-size:clamp(1.9rem,3.5vw,3.35rem);font-weight:210}
+h2 em{font-style:normal;color:var(--gold);font-weight:210}
+h3{font-size:clamp(1.3rem,1.7vw,1.6rem);font-weight:300}
+.lede{font-size:clamp(.98rem,1.12vw,1.1rem);line-height:1.62;color:var(--fg2);max-width:60ch;font-weight:340}
+.lede b{color:var(--fg);font-weight:500}
+.lede .g{color:var(--gold);font-weight:400}
+
+/* kintsugi seams — gold hairline cracks bleeding in from two corners,
+   drawn as strokes (never a gradient wash), plus a 2%-gold cross-hatch. */
+.seams{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:0}
+.seams svg{position:absolute;width:min(52vw,820px);height:auto}
+.seams svg.tr{top:-22%;right:-7%;opacity:.75}
+.seams svg.bl{bottom:-40%;left:-15%;width:min(50vw,780px);transform:scale(-1,-1);opacity:.8}
+.hatch{position:absolute;inset:0;pointer-events:none;z-index:0;
+  background-image:
+    linear-gradient(90deg,rgba(231,180,85,.035) 1px,transparent 1px),
+    linear-gradient(rgba(231,180,85,.035) 1px,transparent 1px);
+  background-size:72px 72px}
+
+/* ── top rail ──────────────────────────────────────────────────────── */
+.rail{position:relative;z-index:20;border-bottom:1px solid var(--seam)}
+.railin{display:flex;align-items:center;justify-content:space-between;gap:18px;
+  padding:15px 0 14px}
+.mark{display:flex;align-items:baseline;gap:11px}
+.mark b{font-family:var(--sans);font-weight:500;font-size:16.5px;letter-spacing:-.035em;color:var(--fg)}
+.mark b i{font-style:normal;color:var(--gold)}
+.railmeta{display:flex;align-items:center;gap:16px}
+.railmeta .dot{width:5px;height:5px;background:var(--seen);display:block;flex:none}
+
+/* ── beat 1 · hero ─────────────────────────────────────────────────── */
+.hero{position:relative;background:var(--pitch);border-bottom:1px solid var(--seam);
+  overflow:hidden}
+.heroin{position:relative;z-index:2;max-width:var(--maxw);margin:0 auto;
+  display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.06fr);align-items:center;
+  gap:clamp(28px,3.2vw,54px);
+  padding:clamp(44px,5.6vw,86px) 0 clamp(44px,5.6vw,86px) var(--gut)}
+.herocopy{display:flex;flex-direction:column;align-items:flex-start;gap:clamp(18px,1.8vw,26px);
+  max-width:34rem}
+.herocopy h1{max-width:15ch}
+.ctarow{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.cta{display:inline-flex;align-items:center;gap:12px;background:var(--gold);color:var(--gold-ink);
+  font-family:var(--sans);font-size:15px;font-weight:600;letter-spacing:-.012em;
+  padding:15px 22px 15px 24px;border:1px solid var(--gold);
+  transition:background .16s ease,box-shadow .16s ease}
+.cta:hover{background:var(--gold-hi);box-shadow:0 0 0 1px var(--gold),0 0 34px -6px rgba(231,180,85,.55)}
+.cta svg{width:12px;height:12px;flex:none}
+.ctanote{font-family:var(--mono);font-size:10.5px;line-height:1.55;color:var(--fg3);
+  max-width:34ch;letter-spacing:.01em;font-variant-ligatures:none}
+.chips{display:flex;flex-direction:column;gap:9px;width:100%}
+.chiprow{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-family:var(--mono);font-size:11px;font-weight:450;color:var(--fg2);
+  border:1px solid var(--seam2);padding:6px 9px;line-height:1.2;
+  font-variant-ligatures:none;transition:border-color .16s ease,color .16s ease}
+.chip:hover{border-color:var(--gold-44);color:var(--fg)}
+.chip.on{border-color:var(--gold);color:var(--gold);background:var(--gold-6)}
+
+/* the specimen: a share-card-grade moment, bleeding off the right edge */
+.herostage{position:relative;align-self:stretch;display:flex;align-items:center}
+.spec{position:relative;width:100%;background:var(--plate);
+  border:1px solid var(--seam2);border-right:0;
+  box-shadow:0 40px 90px -30px rgba(0,0,0,.95)}
+.spec::before{content:"";position:absolute;left:-1px;top:-1px;width:12px;height:1px;background:var(--gold)}
+.spec::after{content:"";position:absolute;left:-1px;top:-1px;width:1px;height:12px;background:var(--gold)}
+.spechead{display:flex;align-items:center;gap:12px;padding:9px 14px;
+  border-bottom:1px solid var(--seam);background:var(--plate2)}
+.spechead .r{margin-left:auto}
+
+/* ── the frame and its detections ──────────────────────────────────── */
+.frame{position:relative;aspect-ratio:16/9;background:#000;overflow:hidden;isolation:isolate}
+.frame>img{width:100%;height:100%;object-fit:cover;display:block}
+.frame::after{content:"";position:absolute;inset:0;pointer-events:none;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+.det{position:absolute;left:var(--x);top:var(--y);width:var(--w);height:var(--h);
+  outline:1px solid rgba(201,249,56,.22);pointer-events:none}
+.det.on{outline:1.5px solid var(--seen);
+  box-shadow:0 0 0 1px rgba(201,249,56,.22),0 0 26px 2px rgba(201,249,56,.26)}
+.det .tab{position:absolute;left:-1.5px;bottom:100%;margin-bottom:3px;
+  background:var(--seen);color:#0a1400;font-family:var(--mono);font-size:8.5px;
+  font-weight:700;letter-spacing:.14em;text-transform:uppercase;padding:2.5px 6px;
+  white-space:nowrap;line-height:1.1;display:flex;gap:7px;align-items:center}
+.det .tab i{font-style:normal;font-weight:500;opacity:.66;letter-spacing:.06em;text-transform:none}
+.frame.sm .det.on{box-shadow:0 0 0 1px rgba(201,249,56,.2),0 0 14px 1px rgba(201,249,56,.3)}
+@keyframes acq{from{opacity:0;transform:scale(1.05)}to{opacity:1;transform:none}}
+.frame .det{animation:acq .5s cubic-bezier(.16,1,.3,1) backwards;animation-delay:calc(var(--i)*40ms + 160ms)}
+@media (prefers-reduced-motion:reduce){.frame .det{animation:none}}
+
+/* impeccable's annotation tab: gold rectangle on a leader line, in the margin */
+.anno{position:absolute;z-index:5;display:flex;align-items:center;pointer-events:none;
+  left:var(--ax);top:var(--ay)}
+.anno s{display:block;height:1px;width:var(--al,54px);background:var(--gold);
+  text-decoration:none;flex:none}
+.anno b{background:var(--gold);color:var(--gold-ink);font-family:var(--mono);font-size:8.5px;
+  font-weight:700;letter-spacing:.16em;text-transform:uppercase;padding:3px 7px;
+  white-space:nowrap;line-height:1.15}
+.anno.rev{flex-direction:row-reverse}
+
+/* the heard channel + the receipt: the bottom half of the specimen */
+.specsay{padding:18px 20px 16px;border-top:1px solid var(--seam);display:flex;
+  flex-direction:column;gap:12px}
+.said{font-size:clamp(1.02rem,1.32vw,1.32rem);line-height:1.34;font-weight:330;
+  letter-spacing:-.022em;color:var(--fg);border-left:1px solid var(--gold);padding-left:15px;
+  max-width:56ch;text-wrap:pretty}
+.who{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.who strong{font-size:14px;font-weight:520;letter-spacing:-.02em}
+.who em{font-style:normal;font-size:13px;color:var(--fg2);font-weight:340}
+.who em::before{content:"";display:inline-block;width:1px;height:9px;background:var(--seam2);
+  margin-right:10px;vertical-align:baseline}
+/* the citation slab — the whole promise, in one gold bar */
+.receipt{display:inline-flex;align-items:stretch;font-family:var(--mono);font-size:13px;
+  font-weight:600;line-height:1;border:1px solid var(--gold);color:var(--gold);
+  background:var(--gold-6);letter-spacing:-.01em;font-variant-ligatures:none;align-self:flex-start}
+.receipt span{padding:9px 0 9px 11px;display:flex;align-items:center}
+.receipt span.vid{padding-left:0;color:var(--fg)}
+.receipt b{background:var(--gold);color:var(--gold-ink);padding:9px 11px;display:flex;
+  align-items:center;gap:8px;font-weight:700;margin-left:11px}
+.receipt svg{width:9px;height:9px;flex:none}
+.receipt.sm{font-size:11px}
+.receipt.sm span{padding:6px 0 6px 8px}
+.receipt.sm span.vid{padding-left:0}
+.receipt.sm b{padding:6px 8px;margin-left:8px}
+.receipt:hover{background:var(--gold-12)}
+.specfoot{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  border-top:1px solid var(--seam);padding:11px 20px;background:var(--plate2)}
+.specfoot .r{margin-left:auto}
+
+/* ── section chrome ────────────────────────────────────────────────── */
+section.beat{position:relative;padding:clamp(64px,7.4vw,124px) 0;border-bottom:1px solid var(--seam)}
+.bhead{display:flex;flex-direction:column;gap:20px;max-width:74ch}
+.bhead h2{max-width:19ch}
+.bhead .lede{max-width:64ch}
+.bhead + *{margin-top:clamp(34px,4vw,58px)}
+/* a header with a data card on the shoulder, so the beat is not three
+   left-aligned paragraphs in a row */
+.split{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,.72fr);
+  gap:clamp(24px,3.4vw,64px);align-items:start}
+.split .bhead + *{margin-top:0}
+.chancard{border:1px solid var(--seam2);background:var(--plate);padding:20px 22px 22px;
+  display:flex;flex-direction:column;gap:14px}
+.chancard .cname{font-size:clamp(1.5rem,2.1vw,2rem);font-weight:220;letter-spacing:-.035em;
+  line-height:1;color:var(--fg)}
+.chancard dl{display:flex;flex-direction:column;border-top:1px solid var(--seam)}
+.chancard dl div{display:flex;align-items:baseline;gap:14px;padding:8px 0;
+  border-bottom:1px solid var(--seam)}
+.chancard dt{font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--fg3)}
+.chancard dd{margin-left:auto;font-family:var(--mono);font-size:13px;color:var(--fg);
+  font-variant-numeric:tabular-nums}
+/* the two channel hues, named where they are first used */
+.legend{border-left:1px solid var(--seam2);padding-left:clamp(18px,1.8vw,26px);
+  display:flex;flex-direction:column;gap:14px}
+.legend .lg{display:grid;grid-template-columns:16px minmax(0,1fr);gap:12px;align-items:start}
+.legend .lg i{width:12px;height:12px;margin-top:5px;display:block}
+.legend .lg i.hd{background:var(--gold)}
+.legend .lg i.sn{outline:1.5px solid var(--seen);background:rgba(201,249,56,.1)}
+.legend .lg i.fr{background:var(--plate3);outline:1px solid var(--seam2)}
+.legend p{font-size:13.5px;line-height:1.52;color:var(--fg2);font-weight:340}
+.legend p b{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--fg)}
+
+/* ── beat 2 · the stack of moments ─────────────────────────────────── */
+.stack{display:flex;flex-direction:column;border:1px solid var(--seam2);background:var(--plate)}
+.mrow{display:grid;grid-template-columns:34px minmax(0,300px) minmax(0,1fr);
+  border-bottom:1px solid var(--seam);transition:background .18s ease}
+.stack .mrow:last-child{border-bottom:0}
+.mrow:hover{background:var(--plate2)}
+.mrow .num{border-right:1px solid var(--seam);padding:18px 0 0;text-align:center}
+.mrow .th{padding:18px;border-right:1px solid var(--seam)}
+.mrow .bd{padding:18px 20px 20px;display:flex;flex-direction:column;gap:11px;min-width:0}
+.mrow .said{font-size:clamp(1rem,1.2vw,1.18rem)}
+.seenline{display:flex;gap:10px;align-items:flex-start;font-family:var(--mono);font-size:11.5px;
+  line-height:1.5;color:var(--seen);min-width:0;font-variant-ligatures:none}
+.seenline .ll{color:var(--fg3);flex:none;letter-spacing:.16em;font-size:9.5px;font-weight:700;
+  text-transform:uppercase;padding-top:2px}
+.seenline p{min-width:0;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;
+  -webkit-line-clamp:2;-webkit-box-orient:vertical}
+/* the invariant made visible: a leg that cannot apply prints a note, never
+   silently narrows */
+.note{font-family:var(--mono);font-size:11px;line-height:1.55;color:var(--gold);
+  letter-spacing:.005em;font-variant-ligatures:none;max-width:74ch}
+.note::before{content:"note: ";color:var(--fg3)}
+.mfoot{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:2px}
+.mfoot .r{margin-left:auto}
+
+/* ── beat 3 · the agent transcript ─────────────────────────────────── */
+.term{border:1px solid var(--seam2);background:var(--plate);
+  box-shadow:0 40px 90px -34px rgba(0,0,0,.9)}
+.termhead{display:flex;align-items:center;gap:12px;padding:11px 16px;
+  border-bottom:1px solid var(--seam);background:var(--plate2);flex-wrap:wrap}
+.termhead .live{display:flex;align-items:center;gap:8px;color:var(--gold)}
+.termhead .live i{width:6px;height:6px;background:var(--gold);display:block;flex:none;
+  animation:tick 2.4s steps(1,end) infinite}
+@keyframes tick{0%,64%{opacity:1}65%,100%{opacity:.2}}
+.termhead .r{margin-left:auto}
+.termbody{padding:clamp(16px,1.7vw,26px) clamp(14px,1.7vw,26px) clamp(20px,2vw,30px);
+  font-family:var(--mono);font-size:12.5px;line-height:1.72;font-variant-ligatures:none;
+  color:var(--fg2);overflow-x:auto}
+.termbody .q{color:var(--fg);font-family:var(--sans);font-size:clamp(1.05rem,1.6vw,1.55rem);
+  font-weight:250;letter-spacing:-.028em;line-height:1.24;max-width:52ch;margin-bottom:6px}
+.termbody .ask{display:flex;gap:13px;align-items:flex-start;padding-bottom:18px;
+  border-bottom:1px solid var(--seam);margin-bottom:18px}
+.termbody .ask .caret{color:var(--gold);font-weight:700;flex:none;padding-top:5px}
+.call{white-space:pre;color:var(--fg);margin-top:14px}
+.call .k{color:var(--gold)}
+.call .arg{color:var(--fg2)}
+.ret{margin-top:3px;padding-left:16px;border-left:1px solid var(--seam2)}
+.ret .meta{color:var(--fg3)}
+.hit{display:grid;grid-template-columns:46px 118px 58px minmax(0,1fr);gap:14px;
+  align-items:baseline;padding:5px 0}
+.hit .rk{color:var(--fg3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.hit .vd{color:var(--seen)}
+.hit .tc{color:var(--gold);font-variant-numeric:tabular-nums}
+.hit .qt{color:var(--fg);font-family:var(--sans);font-size:15px;font-weight:330;
+  letter-spacing:-.016em;line-height:1.42}
+.hit .qt u{text-decoration:none;color:var(--fg3);display:block;margin-top:4px;
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase}
+.idlist{color:var(--seen);padding:5px 0;word-spacing:.2em}
+.answer{margin-top:24px;border-top:1px solid var(--seam);padding-top:22px;
+  display:flex;flex-direction:column;gap:20px}
+.acite{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px 26px;align-items:end}
+.acite p{font-family:var(--sans);font-size:clamp(1rem,1.34vw,1.32rem);font-weight:280;
+  line-height:1.36;letter-spacing:-.024em;color:var(--fg);border-left:1px solid var(--gold);
+  padding-left:16px;max-width:70ch}
+.acite p u{text-decoration:none;display:block;margin-top:7px;font-family:var(--mono);
+  font-size:11px;color:var(--fg3);letter-spacing:.02em}
+.termfoot{border-top:1px solid var(--seam);padding:16px;background:var(--plate2);
+  display:flex;flex-direction:column;gap:10px}
+.termfoot .note{max-width:112ch}
+
+/* ── beat 4 · the corpus band, the ledger, the affordance ──────────── */
+.band{position:relative;display:grid;gap:1px;background:var(--seam);
+  border-top:1px solid var(--seam);border-bottom:1px solid var(--seam)}
+.band figure{position:relative;background:#000;overflow:hidden;aspect-ratio:16/9}
+.band img{width:100%;height:100%;object-fit:cover;filter:saturate(.78) brightness(.68);
+  transition:filter .2s ease,transform .2s ease}
+.band figure:hover img{filter:none;transform:scale(1.04)}
+.band figure::after{content:"";position:absolute;inset:0;pointer-events:none;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}
+/* the roadmap affordance is a real cell in the wall, and it is honest about
+   being next: dashed, gold, no fill, never a shipped button */
+.follow{background:var(--pitch);display:flex;align-items:center;justify-content:center;
+  gap:12px;outline:1px dashed var(--gold-44);outline-offset:-4px;padding:8px;
+  text-align:center;transition:background .18s ease}
+.follow:hover{background:var(--gold-6)}
+.follow span{font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--gold);line-height:1.35}
+.followsub{font-family:var(--mono);font-size:10.5px;color:var(--fg3);letter-spacing:.02em;
+  display:block;text-transform:none;font-weight:400;margin-top:4px}
+.ledger{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+  border:1px solid var(--seam2);background:var(--plate)}
+.ledger div{padding:20px 22px 22px;border-right:1px solid var(--seam);min-width:0}
+.ledger div:last-child{border-right:0}
+.ledger dt{font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.17em;
+  text-transform:uppercase;color:var(--fg3);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.ledger dd{font-family:var(--mono);font-size:clamp(1.6rem,2.5vw,2.5rem);font-weight:300;
+  letter-spacing:-.045em;margin-top:9px;font-variant-numeric:tabular-nums;color:var(--fg)}
+.ledger dd u{text-decoration:none;color:var(--gold);font-size:.44em;font-weight:500;
+  letter-spacing:0;margin-left:2px}
+.bandmeta{display:flex;align-items:baseline;justify-content:space-between;gap:20px;
+  flex-wrap:wrap;padding:14px 0 0}
+
+/* ── beat 5 · quickstart + footer ──────────────────────────────────── */
+.starts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.start{display:flex;flex-direction:column;gap:11px;min-width:0}
+.copybox{display:flex;align-items:stretch;border:1px solid var(--seam2);background:var(--plate);
+  min-width:0}
+.copybox code{flex:1 1 0;min-width:0;font-family:var(--mono);font-size:13px;color:var(--fg);
+  padding:14px 16px;overflow-x:auto;white-space:nowrap;font-variant-ligatures:none;
+  letter-spacing:-.01em}
+.copybox code i{font-style:normal;color:var(--fg3)}
+.copybox button{border:0;border-left:1px solid var(--seam2);background:transparent;color:var(--gold);
+  font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.19em;padding:0 15px;
+  cursor:pointer;transition:background .16s ease,color .16s ease}
+.copybox button:hover{background:var(--gold);color:var(--gold-ink)}
+footer{padding:clamp(40px,4.6vw,64px) 0 clamp(44px,5vw,70px);position:relative}
+.fgrid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:clamp(24px,3vw,60px);
+  align-items:start}
+.fgrid p{font-size:14.5px;line-height:1.62;color:var(--fg2);max-width:56ch;font-weight:340}
+.fgrid p + p{margin-top:12px}
+.fgrid a.lnk{color:var(--gold);border-bottom:1px solid var(--gold-44)}
+.fmark{display:flex;align-items:flex-end;justify-content:flex-end}
+.fmark b{font-size:clamp(2.2rem,4.4vw,4rem);font-weight:250;letter-spacing:-.045em;color:var(--fg);
+  line-height:.9}
+.fmark b i{font-style:normal;color:var(--gold)}
+.fbase{margin-top:clamp(28px,3vw,44px);padding-top:16px;border-top:1px solid var(--seam);
+  display:flex;gap:18px;flex-wrap:wrap;align-items:baseline}
+.fbase .r{margin-left:auto}
+
+/* ── responsive ────────────────────────────────────────────────────── */
+@media (max-width:1180px){
+  .heroin{grid-template-columns:1fr;padding-right:var(--gut);gap:34px}
+  .herostage{order:-1;margin:0 calc(var(--gut) * -1) 0;width:calc(100% + var(--gut) * 2)}
+  .spec{border-right:1px solid var(--seam2);border-left:0}
+  .herocopy{max-width:44rem}
+  .mrow{grid-template-columns:30px minmax(0,240px) minmax(0,1fr)}
+  .split{grid-template-columns:1fr;gap:30px}
+  .legend{border-left:0;padding-left:0;border-top:1px solid var(--seam2);padding-top:22px}
+  .ledger{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .ledger div:nth-child(2){border-right:0}
+  .ledger div:nth-child(-n+2){border-bottom:1px solid var(--seam)}
+}
+@media (max-width:780px){
+  body{font-size:15px}
+  .starts{grid-template-columns:1fr}
+  .fgrid{grid-template-columns:1fr;gap:26px}
+  .fmark{justify-content:flex-start}
+  .mrow{grid-template-columns:1fr}
+  .mrow .num{display:none}
+  .mrow .th{border-right:0;padding:16px 16px 0}
+  .mrow .bd{padding:14px 16px 18px}
+  .hide-s{display:none}
+  .anno{display:none}
+  .railin{padding:12px 0;gap:10px}
+  .railmeta{gap:9px}
+  .railmeta .ml{font-size:8.6px;letter-spacing:.15em}
+  .mark b{font-size:15px}
+  /* at 390 the confidence tabs cover the slide they annotate — the glowing
+     box is the signal, and the header above it names the channel */
+  .frame .det .tab{display:none}
+  .spechead{font-size:9px;gap:8px}
+  .spechead .ml{font-size:9px;letter-spacing:.14em}
+  .acite{grid-template-columns:1fr;gap:12px}
+  .acite .receipt{justify-self:start}
+  .hit{grid-template-columns:1fr;gap:2px;padding:7px 0}
+  .hit .rk{display:none}
+  .termbody{font-size:11.5px}
+  .ledger{grid-template-columns:1fr}
+  .ledger div{border-right:0;border-bottom:1px solid var(--seam);padding:15px 16px 16px}
+  .ledger div:last-child{border-bottom:0}
+  .ledger dd{font-size:1.9rem}
+  .cta{width:100%;justify-content:space-between}
+  .ctanote{max-width:none}
+  .seams svg{width:120vw}
+}
+</style>
+</head>
+<body>
+
+<!-- ─────────────────────── top rail ─────────────────────── -->
+<header class="rail">
+  <div class="wrap railin">
+    <div class="mark"><b>vidtheque<i>.</i></b><span class="ml hide-s" id="railCorpus"></span></div>
+    <div class="railmeta">
+      <i class="dot"></i><span class="ml">read-only from vidtheque.db</span>
+    </div>
+  </div>
+</header>
+
+<!-- ───────────────── beat 1 · the moment, first ───────────────── -->
+<section class="hero">
+  <div class="hatch"></div>
+  <div class="seams">
+    <!-- kintsugi: gold seams, drawn as strokes -->
+    <svg class="tr" viewBox="0 0 620 520" fill="none" aria-hidden="true">
+      <defs><filter id="seamglow" x="-40%" y="-40%" width="180%" height="180%">
+        <feGaussianBlur stdDeviation="6"/></filter></defs>
+      <g stroke="#e7b455" fill="none" stroke-linecap="round">
+        <g filter="url(#seamglow)" opacity=".20" stroke-width="2.6">
+          <path d="M620 4C562 52 540 64 508 104c-40 48-38 88-76 124-42 40-46 86-88 122-44 38-44 88-82 130"/>
+        </g>
+        <path d="M620 4C562 52 540 64 508 104c-40 48-38 88-76 124-42 40-46 86-88 122-44 38-44 88-82 130" stroke-width="1.3" opacity=".78"/>
+        <path d="M508 104c30 38 46 60 50 98s-18 62-10 100" stroke-width=".9" opacity=".46"/>
+        <path d="M432 228c-34-14-64-12-94 2s-48 34-58 58" stroke-width=".9" opacity=".42"/>
+        <path d="M344 350c-30-6-56 4-78 24" stroke-width=".8" opacity=".34"/>
+        <path d="M558 202c26 14 42 38 50 64" stroke-width=".7" opacity=".28"/>
+        <path d="M262 480c-30-28-58-32-88-20" stroke-width=".7" opacity=".26"/>
+        <path d="M470 60c22 10 34 26 40 46" stroke-width=".7" opacity=".24"/>
+      </g>
+    </svg>
+    <svg class="bl" viewBox="0 0 620 520" fill="none" aria-hidden="true">
+      <g stroke="#e7b455" fill="none" stroke-linecap="round">
+        <g filter="url(#seamglow)" opacity=".2" stroke-width="2.8">
+          <path d="M620 30C566 74 546 92 514 132c-38 48-30 86-70 122-40 36-44 84-84 118"/>
+        </g>
+        <path d="M620 30C566 74 546 92 514 132c-38 48-30 86-70 122-40 36-44 84-84 118" stroke-width="1.25" opacity=".82"/>
+        <path d="M514 132c28 34 42 58 44 94s-14 52-6 84" stroke-width=".9" opacity=".5"/>
+        <path d="M444 254c-32-10-58-4-84 14s-40 40-46 66" stroke-width=".85" opacity=".42"/>
+        <path d="M360 372c-26 4-48 18-64 40" stroke-width=".75" opacity=".3"/>
+        <path d="M558 226c24 12 40 32 48 56" stroke-width=".7" opacity=".26"/>
+      </g>
+    </svg>
+  </div>
+
+  <div class="heroin">
+    <div class="herocopy">
+      <div class="kick"><s></s><span class="ml gold">the knowledge of the builders, on tap</span></div>
+      <h1>Builders talk.<br>Your agent <em>listens.</em></h1>
+      <p class="lede">Point it at the builders you trust. It watches every talk, keeps every
+        sentence and every line that crossed the screen, and answers with <b>the second it
+        happened</b> — like the one on the right, which nobody read out loud.</p>
+      <div class="ctarow">
+        <a class="cta" href="#ask">Ask the corpus
+          <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="square"><path d="M2.6 6h6.6M6.4 3.2 9.2 6l-2.8 2.8"/></svg>
+        </a>
+        <p class="ctanote">one click spends a real ask.<br>a shared link never fires on its own.</p>
+      </div>
+      <div class="chips">
+        <span class="ml">verified against the live stack</span>
+        <div class="chiprow" id="chips"></div>
+      </div>
+    </div>
+
+    <div class="herostage">
+      <figure class="spec" id="spec"></figure>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── beat 2 · the stack of moments ───────────── -->
+<section class="beat" id="stack">
+  <div class="wrap">
+    <div class="split">
+      <div class="bhead">
+        <div class="kick"><s></s><span class="ml gold">three more, out of the corpus</span></div>
+        <h2>You don't have time to watch it all. <em>Your agent does.</em></h2>
+        <p class="lede">Every one of these is a moment your agent can hand back mid-task: the
+          sentence a builder actually said, the text the machine read off the screen behind them,
+          and a link that lands on the second. When a leg has nothing to give, it
+          <b>says so</b> — it never quietly narrows the answer.</p>
+      </div>
+      <div class="legend">
+        <span class="ml">two channels, one timeline</span>
+        <div class="lg"><i class="hd"></i>
+          <p><b>heard</b> — every sentence spoken, aligned to the word, so the link lands
+             mid-sentence instead of at the top of a chunk.</p></div>
+        <div class="lg"><i class="sn"></i>
+          <p><b>seen</b> — every line that crossed the screen, kept with the box it was read
+             from. That box is drawn on the frame, never nudged to fit.</p></div>
+        <div class="lg"><i class="fr"></i>
+          <p><b>the frame itself</b> — kept as evidence, so a moment with nothing readable on
+             screen is still a moment.</p></div>
+      </div>
+    </div>
+    <div class="stack" id="stackRows" style="margin-top:clamp(34px,4vw,58px)"></div>
+  </div>
+</section>
+
+<!-- ───────────── beat 3 · your agent watched it ───────────── -->
+<section class="beat" id="ask">
+  <div class="wrap">
+    <div class="bhead">
+      <div class="kick"><s></s><span class="ml gold">recorded 2026-08-09 · not re-recorded</span></div>
+      <h2>Your agent <em>watched it.</em></h2>
+      <p class="lede">An agent, on the real protocol, answering a question no single talk
+        answers — and citing five speakers. Four Sonnet agents drove the live stack for an
+        afternoon; this is the one that was asked to answer properly, <b>with citations</b>,
+        the way ask mode does.</p>
+    </div>
+
+    <div class="term">
+      <div class="termhead">
+        <span class="live"><i></i><span class="ml gold">synthesist · 21 calls</span></span>
+        <span class="ml hide-s">claude sonnet · vidtheque over the real protocol · demo/readonly</span>
+        <span class="ml r">field test 2026-08-09</span>
+      </div>
+      <div class="termbody">
+        <div class="ask">
+          <span class="caret">&gt;</span>
+          <p class="q">What do speakers disagree about when it comes to LLM as a judge?</p>
+        </div>
+
+        <p class="call"><span class="k">call</span> search <span class="arg">{"q":"LLM as a judge","content_type":"transcript","max_per_video":1,"limit":6}</span></p>
+        <div class="ret">
+          <p class="meta">← 5 talks · legs: transcript · relevance-first, one moment per video</p>
+          <div class="hit"><span class="rk">01</span><span class="vd id">-npY6XjM8CQ</span><span class="tc">16:01</span>
+            <span class="qt">“LLM as a judge doesn't really work either because LLMs don't have good taste in writing.”<u>the sceptic</u></span></div>
+          <div class="hit"><span class="rk">02</span><span class="vd id">q2JrUKBMf0w</span><span class="tc">04:07</span>
+            <span class="qt">“Agent as a judge is about adaptive dynamic analysis. LLM as a judge just gives you a fixed rubric.”<u>the successor argument</u></span></div>
+          <p class="idlist"><span class="rk" style="color:var(--fg3)">03–05&nbsp;&nbsp;</span><span
+            class="id">b_PmGocP4rc</span>&nbsp; <span class="id">31GUkCBD-Uc</span>&nbsp; <span
+            class="id">O72p-rBb2bA</span> <span class="meta" style="color:var(--fg3)">— the practitioners who ship it anyway</span></p>
+        </div>
+
+        <p class="call"><span class="k">call</span> search <span class="arg">{"q":"benchmark contamination training data leaked","max_per_video":1,"limit":6}</span></p>
+        <div class="ret">
+          <p class="meta">← 5 talks, five positions, one call</p>
+          <p class="idlist id">-npY6XjM8CQ&nbsp; _PdK6x7PQNM&nbsp; jWq-aZIU0kM&nbsp; 1EZdpEhwmNc&nbsp; Yk87oUPVaxU</p>
+        </div>
+
+        <div class="answer">
+          <span class="ml gold">the answer, with its receipts attached</span>
+          <div class="acite">
+            <p>“LLM as a judge doesn't really work either because LLMs don't have good taste in writing.”
+              <u>the sceptic · rank 1 · transcript leg</u></p>
+            <a class="receipt sm" href="https://youtu.be/-npY6XjM8CQ?t=961" rel="noopener">
+              <span>youtu.be/</span><span class="vid id">-npY6XjM8CQ</span><b>?t=961
+              <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"><path d="M3.4 8.6 8.6 3.4M4.6 3.4h4v4"/></svg></b></a>
+          </div>
+          <div class="acite">
+            <p>“Agent as a judge is about adaptive dynamic analysis. LLM as a judge just gives you a fixed rubric.”
+              <u>the successor argument · rank 2 · transcript leg</u></p>
+            <a class="receipt sm" href="https://youtu.be/q2JrUKBMf0w?t=247" rel="noopener">
+              <span>youtu.be/</span><span class="vid id">q2JrUKBMf0w</span><b>?t=247
+              <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"><path d="M3.4 8.6 8.6 3.4M4.6 3.4h4v4"/></svg></b></a>
+          </div>
+        </div>
+      </div>
+      <div class="termfoot">
+        <p class="note">the agent filed a complaint of its own, unprompted: on a second question
+          the link for <span class="id">tJFjeMBKbIY</span> came back <b class="id">?t=1137</b>
+          and the airline story it had just quoted starts at <b>1164 s</b> — 27 seconds of
+          scrubbing. The citation points at the start of the cluster, not at the sentence. Open,
+          logged, and being fixed. A receipt you have to hunt for is a receipt with a bug.</p>
+        <span class="ml">calls, results and the caveat as recorded in research/demo-queries-2026-08-09.md — laid out for width, nothing rewritten</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── beat 4 · the corpus, and the next shelf ───────────── -->
+<section class="beat" id="corpus">
+  <div class="wrap">
+    <div class="split">
+      <div class="bhead">
+        <div class="kick"><s></s><span class="ml gold">the first shelf, not the library</span></div>
+        <h2>Follow the builders. Get the sentence, the slide, and <em>the second.</em></h2>
+        <p class="lede">Every frame below is a talk this corpus has already watched all the way
+          through. Point it at a conference, a channel, a creator, and their knowledge compounds
+          into yours.</p>
+      </div>
+      <div class="chancard" id="chanCard"></div>
+    </div>
+  </div>
+  <div class="band" id="band" style="margin-top:clamp(34px,4vw,58px)"></div>
+  <div class="wrap">
+    <div class="bandmeta">
+      <span class="ml" id="bandLine"></span>
+      <span class="ml hide-s">hover a frame for the talk</span>
+    </div>
+    <dl class="ledger" id="ledger" style="margin-top:clamp(26px,3vw,44px)"></dl>
+  </div>
+</section>
+
+<!-- ───────────── beat 5 · quickstart + footer ───────────── -->
+<section class="beat" id="run" style="border-bottom:0">
+  <div class="wrap">
+    <div class="bhead">
+      <div class="kick"><s></s><span class="ml gold">yours, on your box</span></div>
+      <h2>Run your own. Point your agent at it.</h2>
+      <p class="lede">One compose file, one SQLite file, no build step, no runtime network
+        dependency. It runs the CPU half on a Pi.</p>
+    </div>
+    <div class="starts">
+      <div class="start">
+        <span class="ml">1 · run the corpus</span>
+        <div class="copybox">
+          <code><i>$</i> docker compose up -d</code>
+          <button type="button" data-copy="docker compose up -d">copy</button>
+        </div>
+        <p class="ml" style="color:var(--fg3);text-transform:none;letter-spacing:.02em;font-size:11px">
+          clone, copy <span class="id">.env.example</span> to <span class="id">.env</span>, and it is up.</p>
+      </div>
+      <div class="start">
+        <span class="ml">2 · hand it to your agent</span>
+        <div class="copybox">
+          <code><i>$</i> claude mcp add --transport http vidtheque &lt;mcp_url&gt;</code>
+          <button type="button" data-copy="claude mcp add --transport http vidtheque <mcp_url>">copy</button>
+        </div>
+        <p class="ml" style="color:var(--fg3);text-transform:none;letter-spacing:.02em;font-size:11px">
+          one line for Claude, Codex, or anything that speaks the protocol.</p>
+      </div>
+    </div>
+    <div class="fbase" style="margin-top:clamp(24px,2.6vw,38px)">
+      <span class="ml">macOS · Linux · MIT · runs the CPU half on a Pi</span>
+      <span class="ml r" style="color:var(--gold)">early development · no releases yet · schemas can still change</span>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="hatch"></div>
+  <div class="wrap" style="position:relative;z-index:2">
+    <div class="fgrid">
+      <div>
+        <span class="ml gold">attribution</span>
+        <p style="margin-top:12px">The videos belong to the people who made them. vidtheque watched
+          them, kept the timestamps, and sends you back to the source — every answer on this page
+          is a quotation with a link that lands on the second it was said.</p>
+        <p>Nothing is hosted or redistributed here: the file is downloaded, read, and deleted.
+          What stays is the transcript, the text that was on screen, and the keyframes kept as
+          evidence. A creator who would rather not be followed is a complete reason, and there is
+          no appeal to make.</p>
+        <p><a class="lnk" href="https://github.com/tomvaucourt/vidtheque" rel="noopener">the repo</a>
+          · MIT · one owner, self-hosted.</p>
+      </div>
+      <div class="fmark"><b>vidtheque<i>.</i></b></div>
+    </div>
+    <div class="fbase">
+      <span class="ml">landing v3 · receipt-first</span>
+      <span class="ml" id="footStamp"></span>
+      <span class="ml r">numbers read out of the corpus at render time</span>
+    </div>
+  </div>
+</footer>
+
+<script src="v3-assets/data.js"></script>
+<script>
+(() => {
+  const D = window.VT, A = 'v3-assets/';
+  const M = Object.fromEntries(D.moments.map(m => [m.id, m]));
+  const el = (t, c, h) => { const n = document.createElement(t); if (c) n.className = c;
+    if (h != null) n.innerHTML = h; return n; };
+  const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  const pad = n => String(n).padStart(2, '0');
+  const hms = s => { s = Math.floor(s); const h = (s/3600)|0, m = ((s%3600)/60)|0;
+    return (h ? h + ':' + pad(m) : pad(m)) + ':' + pad(s % 60); };
+  const num = n => Math.round(n).toLocaleString('en-US');
+  const ARROW = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"><path d="M3.4 8.6 8.6 3.4M4.6 3.4h4v4"/></svg>';
+
+  /* ---- the frame, with the boxes exactly where ocr_lines put them ---- */
+  function frame(m, opt = {}) {
+    const f = el('figure', 'frame' + (opt.sm ? ' sm' : ''));
+    const img = el('img');
+    img.src = A + m.img; img.loading = 'eager'; img.decoding = 'sync';
+    img.alt = 'Keyframe at ' + hms(m.t) + ' of ' + m.title + ' — ' + m.speaker;
+    f.append(img);
+    m.ocr.forEach((l, i) => {
+      const on = m.hero.includes(i);
+      if (opt.only === 'hero' && !on) return;
+      const [x0, y0, x1, y1] = l.b;
+      const d = el('div', 'det' + (on ? ' on' : ''));
+      d.style.cssText = `--x:${(x0*100).toFixed(2)}%;--y:${(y0*100).toFixed(2)}%;` +
+        `--w:${((x1-x0)*100).toFixed(2)}%;--h:${((y1-y0)*100).toFixed(2)}%;--i:${i}`;
+      if (on && opt.tabs && opt.tabs[i]) d.append(el('span', 'tab', opt.tabs[i] + '<i>' + l.c.toFixed(2) + '</i>'));
+      f.append(d);
+    });
+    return f;
+  }
+
+  const receipt = (m, cls = '') =>
+    `<a class="receipt ${cls}" href="https://youtu.be/${m.video_id}?t=${Math.floor(m.t)}" rel="noopener">` +
+    `<span>youtu.be/</span><span class="vid id">${m.video_id}</span>` +
+    `<b>?t=${Math.floor(m.t)}${ARROW}</b></a>`;
+
+  const cueOf = m => m.cues[m.cue_index];
+  const seenText = m => m.hero.map(i => m.ocr[i].t).join(' ');
+
+  /* ═══════════ beat 1 — the specimen, before any claim ═══════════ */
+  {
+    const m = M[3285];                       /* a pull request, rendered on a slide */
+    const spec = document.getElementById('spec');
+    spec.append(el('div', 'spechead',
+      `<span class="ml seen">seen — ${m.ocr.length} lines read off the screen</span>
+       <span class="ml r">keyframe #${m.id} · ord ${m.ord} · ${hms(m.t)} of ${hms(m.duration)}</span>`));
+
+    const holder = el('div');
+    holder.style.position = 'relative';
+    holder.append(frame(m, { tabs: { 5: 'on-screen text', 9: 'never spoken' } }));
+    /* impeccable's margin annotation, on a leader line, pointing at the diff */
+    const an = el('div', 'anno rev', '<b>read at ' + hms(m.t) + '</b><s></s>');
+    an.style.cssText = '--ax:56%;--ay:23.5%;--al:38px;transform:translate(0,-50%)';
+    holder.append(an);
+    spec.append(holder);
+
+    spec.append(el('div', 'specsay',
+      `<span class="ml gold">heard — spoken at ${hms(m.t)}</span>
+       <p class="said">${esc(cueOf(m).t)}</p>
+       <div class="who"><strong>${esc(m.speaker)}</strong><em>${esc(m.title)}</em></div>`));
+    spec.append(el('div', 'specfoot',
+      `${receipt(m)}<span class="ml hide-s r">the sentence, the slide, and the second it happened</span>`));
+  }
+
+  /* verified chips (research/demo-queries-2026-08-09.md §2.1, §1.1, §3.4, §1.8) */
+  {
+    const chips = ['owl:FunctionalProperty', 'reward hacking',
+                   'a photo of a person on stage at a podium',
+                   'benchmark contamination training data leaked'];
+    const box = document.getElementById('chips');
+    chips.forEach((q, i) => {
+      const a = el('a', 'chip' + (i === 0 ? ' on' : ''), esc(q));
+      a.href = '#ask'; box.append(a);
+    });
+  }
+
+  /* ═══════════ beat 2 — the stack: a slide, a terminal, a person ═══════════ */
+  {
+    const rows = document.getElementById('stackRows');
+    [41, 1944, 564].forEach((id, i) => {
+      const m = M[id], cue = cueOf(m);
+      const r = el('div', 'mrow');
+      r.append(el('div', 'num', '<span class="ml">' + pad(i + 1) + '</span>'));
+      const th = el('div', 'th');
+      th.append(frame(m, { sm: true, only: 'hero' }));
+      r.append(th);
+      const seen = m.ocr.length
+        ? `<div class="seenline"><span class="ll">seen</span><p>${esc(seenText(m))}</p></div>`
+        : `<p class="note">nothing readable on screen here — <b>ocr_state=empty</b>, so this
+             moment stands on the sentence alone, and the frame is the evidence.</p>`;
+      r.append(el('div', 'bd',
+        `<div class="who"><strong>${esc(m.speaker)}</strong><em>${esc(m.title)}${m.org ? ' · ' + esc(m.org) : ''}</em></div>
+         <p class="said">${esc(cue.t)}</p>
+         ${seen}
+         <div class="mfoot">${receipt(m, 'sm')}<span class="ml r">${esc(m.kick)}</span></div>`));
+      rows.append(r);
+    });
+  }
+
+  /* ═══════════ beat 4 — the wall, compressed to a band ═══════════ */
+  {
+    const band = document.getElementById('band');
+    const G = D.grid;
+    /* the affordance is a real cell in the wall and it closes the rectangle:
+       pick the column count nearest the target cell size for which the last
+       row has 2–4 cells left over, so the wall never ends ragged and the
+       roadmap cell never swells into a banner. */
+    const layout = () => {
+      const w = band.clientWidth || window.innerWidth;
+      const cell = w < 700 ? 52 : 76;
+      const target = Math.max(3, Math.min(22, Math.round(w / cell)));
+      let cols = target, span = 0, best = 1e9;
+      for (let c = Math.max(3, target - 4); c <= Math.min(24, target + 4); c++) {
+        const s = (c - (G.length % c)) % c || c;
+        if (s < 2 || s > 4) continue;
+        const d = Math.abs(c - target);
+        if (d < best) { best = d; cols = c; span = s; }
+      }
+      if (!span) span = (cols - (G.length % cols)) % cols || cols;
+      band.style.gridTemplateColumns = `repeat(${cols},minmax(0,1fr))`;
+      band.querySelector('.follow').style.gridColumn = 'span ' + span;
+      band.querySelector('.followsub').style.display = span > 2 ? 'block' : 'none';
+    };
+    G.forEach(g => {
+      const f = el('figure');
+      const img = el('img');
+      img.src = A + g.img; img.loading = 'lazy'; img.decoding = 'async';
+      img.alt = g.title + ' — ' + g.speaker;
+      f.title = g.title + ' — ' + g.speaker + (g.org ? ' (' + g.org + ')' : '') +
+        ' · ' + hms(g.dur) + ' · ' + num(g.cues) + ' spoken lines · ' + num(g.ocr) + ' lines read off the screen';
+      f.append(img); band.append(f);
+    });
+    const fol = el('a', 'follow',
+      '<span>+ follow a channel<span class="followsub">today: point it at a channel. next: it keeps watching.</span></span>');
+    fol.href = '#run';
+    band.append(fol);
+    layout();
+    addEventListener('resize', layout, { passive: true });
+
+    /* ---- the ledger band: four cells, live off the same readout ---- */
+    const st = D.stats, hrs = st.seconds / 3600;
+    [['talks', num(st.talks), ''],
+     ['hours watched', Math.floor(hrs) + '<u>h</u> ' + pad(Math.round((hrs % 1) * 60)) + '<u>m</u>', ''],
+     ['moments kept', num(st.keyframes), ''],
+     ['lines read off the screen', num(st.ocr_lines), '']
+    ].forEach(([k, v]) => {
+      const d = el('div'); d.append(el('dt', '', k), el('dd', '', v));
+      document.getElementById('ledger').append(d);
+    });
+    document.getElementById('bandLine').innerHTML =
+      `${num(st.talks)} talks · ${num(st.cues)} sentences spoken · ${num(st.words)} words · ` +
+      `${num(st.ocr_frames)} frames read · one channel followed so far`;
+    const d0 = new Date(st.first_pub * 1000), d1 = new Date(st.last_pub * 1000);
+    const ymd = d => d.toISOString().slice(0, 10);
+    document.getElementById('railCorpus').innerHTML =
+      'following <span class="id" style="color:var(--gold)">' + esc(st.channel) + '</span> · ' +
+      num(st.talks) + ' talks watched';
+    document.getElementById('chanCard').innerHTML =
+      `<span class="ml gold">the channel followed so far</span>
+       <p class="cname">${esc(st.channel)}</p>
+       <dl>
+         <div><dt>talks watched</dt><dd>${num(st.talks)}</dd></div>
+         <div><dt>published between</dt><dd>${ymd(d0)} → ${ymd(d1)}</dd></div>
+         <div><dt>frames kept</dt><dd>${num(st.keyframes)}</dd></div>
+       </dl>
+       <p class="ml" style="text-transform:none;letter-spacing:.02em;color:var(--fg3)">
+         the demo is the first shelf. the next one is a channel you choose.</p>`;
+    document.getElementById('footStamp').textContent =
+      'corpus read ' + ymd(d0) + ' → ' + ymd(d1) + ' · ' + num(st.keyframes) + ' keyframes on disk';
+  }
+
+  /* ---- copy buttons (herdr's device) ---- */
+  document.querySelectorAll('[data-copy]').forEach(b => {
+    b.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(b.dataset.copy); } catch (e) { /* no clipboard, no drama */ }
+      const was = b.textContent; b.textContent = 'copied';
+      setTimeout(() => { b.textContent = was; }, 1400);
+    });
+  });
+})();
+</script>
+</body>
+</html>
