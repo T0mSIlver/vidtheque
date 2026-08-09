@@ -21,7 +21,7 @@ from vidtheque_mcp.pipeline.runner import LIFECYCLE_RETRY_S
 from vidtheque_mcp.pipeline.settings import PipelineSettings
 from vidtheque_mcp.tools import indexing
 
-from .pipeline_fakes import INFO, VIDEO_URL, FakeWorker, canned_source
+from .pipeline_fakes import INFO, PLAYLIST_URL, VIDEO_URL, FakeWorker, canned_source
 from .test_job_recovery import close
 from .test_pipeline_e2e import FAST, Harness, harness, structured
 
@@ -106,6 +106,128 @@ async def test_keep_source_none_releases_the_audio_once_stt_has_settled(
         assert (await parts.stages())["stt"]["state"] == "done"
         assert audio_files(parts) == []
         assert media_files(parts) == []
+    finally:
+        await close(parts)
+
+
+# ============================================================== caption fallback
+
+
+def test_the_candidate_list_is_ordered_not_singular() -> None:
+    """`track()` returned one option, so one bad URL ended the caption path."""
+    from vidtheque_mcp.pipeline import sources
+
+    meta = sources.parse_info(INFO, VIDEO_URL)
+    candidates = meta.candidates(("en",))
+    assert len(candidates) == 3  # auto json3, auto vtt, manual json3
+    assert [(c.automatic, c.ext) for c in candidates] == [
+        (True, "json3"),  # word-timed first
+        (True, "vtt"),
+        (False, "json3"),  # the manual inventory is still reachable
+    ]
+    # The single-track accessor keeps its old answer.
+    assert meta.track(("en",), automatic=True) is candidates[0]
+
+
+async def test_a_403_on_the_preferred_track_falls_through_to_the_next(
+    settings: Settings, clip: Path
+) -> None:
+    """The French auto-json3 403s while the VTT beside it is fine. Before this,
+    the fetch exception left `_transcribe_captions` and nothing else was tried."""
+
+    class OneBadTrack:
+        def __init__(self, inner) -> None:  # type: ignore[no-untyped-def]
+            self._inner = inner
+            self.asked: list[str] = []
+
+        def __getattr__(self, name: str):  # type: ignore[no-untyped-def]
+            return getattr(self._inner, name)
+
+        def fetch_subtitle(self, track):  # type: ignore[no-untyped-def]
+            from vidtheque_mcp.pipeline.sources import SourceError
+
+            self.asked.append(f"{track.lang}/{track.ext}")
+            if track.ext == "json3" and track.automatic:
+                raise SourceError("HTTP Error 403: Forbidden")
+            return self._inner.fetch_subtitle(track)
+
+    parts = await harness(settings, clip, worker=FakeWorker(healthy=False))
+    source = OneBadTrack(canned_source(clip))
+    parts.parts.runner.pipeline.source = source
+    try:
+        await parts.index(url=VIDEO_URL, channels="transcript")
+        assert await parts.run() is True
+
+        stages = await parts.stages()
+        assert stages["stt"]["state"] == "done"
+        assert len(source.asked) > 1, "it gave up after the first candidate"
+        assert await parts.rows("SELECT id FROM cues")
+    finally:
+        await close(parts)
+
+
+async def test_a_malformed_caption_payload_is_one_candidate_failing(
+    settings: Settings, clip: Path
+) -> None:
+    """An expired timedtext URL answers with an error page, not json3."""
+
+    class Garbage:
+        def __init__(self, inner) -> None:  # type: ignore[no-untyped-def]
+            self._inner = inner
+
+        def __getattr__(self, name: str):  # type: ignore[no-untyped-def]
+            return getattr(self._inner, name)
+
+        def fetch_subtitle(self, track):  # type: ignore[no-untyped-def]
+            if track.automatic and track.ext == "json3":
+                return "<html><body>410 Gone</body></html>"
+            return self._inner.fetch_subtitle(track)
+
+    parts = await harness(settings, clip, worker=FakeWorker(healthy=False))
+    parts.parts.runner.pipeline.source = Garbage(canned_source(clip))
+    try:
+        await parts.index(url=VIDEO_URL, channels="transcript")
+        assert await parts.run() is True
+        assert (await parts.stages())["stt"]["state"] == "done"
+        assert await parts.rows("SELECT id FROM cues")
+    finally:
+        await close(parts)
+
+
+# ============================================================== fan-out replay
+
+
+async def test_re_expanding_a_playlist_does_not_double_its_items(
+    settings: Settings, clip: Path
+) -> None:
+    """Expansion commits N children, then the process dies before the container
+    item is marked skipped. The reclaim re-expands — and used to append the same
+    N URLs again, with every probe and download that implies."""
+    from vidtheque_mcp.jobs import store as jobs_store
+    from vidtheque_mcp.pipeline import store as pipeline_store
+
+    parts = await harness(settings, clip)
+    try:
+        job_id = await parts.db.write(
+            lambda c: jobs_store.create_job(c, "index", {}, [(PLAYLIST_URL, None)])
+        )
+        row = await parts.one("SELECT id FROM jobs WHERE public_id = ?", (job_id,))
+        urls = ["https://youtu.be/aB3dEfG7hIj", "https://youtu.be/zZ9yY8xX7wV"]
+
+        first = await parts.db.write(
+            lambda c: pipeline_store.append_items(c, int(row["id"]), urls)
+        )
+        second = await parts.db.write(
+            lambda c: pipeline_store.append_items(c, int(row["id"]), urls)
+        )
+        assert (first, second) == (2, 0)
+
+        items = await parts.rows(
+            "SELECT source_url FROM job_items WHERE job_id = ? ORDER BY seq", (int(row["id"]),)
+        )
+        assert [str(i["source_url"]) for i in items] == [PLAYLIST_URL, *urls]
+        job = await parts.one("SELECT n_items FROM jobs WHERE id = ?", (int(row["id"]),))
+        assert job["n_items"] == 3  # not 5
     finally:
         await close(parts)
 

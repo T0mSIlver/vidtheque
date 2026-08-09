@@ -127,17 +127,35 @@ class VideoMeta:
 
     def track(self, langs: Sequence[str], *, automatic: bool) -> SubtitleTrack | None:
         """Best track for the wanted languages, preferring word-timed formats."""
-        for lang in langs:
-            candidates = [
-                t
-                for t in self.subtitles
-                if t.automatic is automatic and _lang_matches(t.lang, lang)
-            ]
-            if not candidates:
-                continue
-            candidates.sort(key=lambda t: _ext_rank(t.ext))
-            return candidates[0]
+        for candidate in self.candidates(langs):
+            if candidate.automatic is automatic:
+                return candidate
         return None
+
+    def candidates(self, langs: Sequence[str]) -> list[SubtitleTrack]:
+        """Every usable track, best first — not just the best one.
+
+        Returning a single track meant one 403 or one malformed json3 ended the
+        caption path outright: the French VTT beside it, the English auto track,
+        and the manual inventory were never tried, and under `captions_only` the
+        video failed for the sake of one URL.
+
+        Order is the preference that was already implied: automatic before
+        manual (only YouTube's auto json3 carries word offsets), the requested
+        languages in the order they were asked for, and word-timed formats
+        before the rest.
+        """
+        ordered: list[SubtitleTrack] = []
+        for automatic in (True, False):
+            for lang in langs:
+                matches = [
+                    track
+                    for track in self.subtitles
+                    if track.automatic is automatic and _lang_matches(track.lang, lang)
+                ]
+                matches.sort(key=lambda t: _ext_rank(t.ext))
+                ordered += [track for track in matches if track not in ordered]
+        return ordered
 
 
 @dataclass(frozen=True)

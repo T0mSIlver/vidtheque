@@ -472,7 +472,7 @@ class IndexingPipeline:
                 if kind == "whisperx":
                     result = await self._transcribe_whisperx(run)
                 else:
-                    result = await self._transcribe_captions(run)
+                    result = await self._transcribe_captions(run, errors)
             except RateLimited as exc:
                 # A 429 on the caption track is the *source* saying "later", not
                 # this video saying "never". Collapsing it into
@@ -570,25 +570,50 @@ class IndexingPipeline:
         # planner reads this video as permanently out of date.
         return cues, "whisperx", model or served
 
-    async def _transcribe_captions(self, run: ItemRun) -> tuple[list[CueDraft], str, str] | None:
-        """Auto-captions first (json3 carries word offsets), manual second."""
+    async def _transcribe_captions(
+        self, run: ItemRun, errors: list[str] | None = None
+    ) -> tuple[list[CueDraft], str, str] | None:
+        """Every candidate track in preference order, not just the best one.
+
+        One 403 or one malformed json3 used to end the caption path outright,
+        because a single track was selected and a fetch exception left the
+        method. The French VTT beside it, the English auto track and the whole
+        manual inventory were never tried.
+        """
         assert run.meta is not None
         if not self.settings.captions_allowed:
             return None
-        langs = self.settings.subtitle_langs
-        for automatic in (True, False):
-            track = run.meta.track(langs, automatic=automatic)
-            if track is None:
+        recorded = errors if errors is not None else []
+        throttled: RateLimited | None = None
+        for track in run.meta.candidates(self.settings.subtitle_langs):
+            label = f"captions {track.lang}/{track.ext}"
+            try:
+                payload = await asyncio.to_thread(self.source.fetch_subtitle, track)
+                if track.ext == "json3":
+                    cues = cues_from_json3(payload, word_timed=track.word_timed)
+                else:
+                    cues = cues_from_vtt(payload)
+            except RateLimited as exc:
+                # Remembered, not raised yet: another language may be served
+                # from a path this box has not been throttled on.
+                throttled = exc
+                recorded.append(f"{label}: {exc}")
                 continue
-            payload = await asyncio.to_thread(self.source.fetch_subtitle, track)
-            if track.ext == "json3":
-                cues = cues_from_json3(payload, word_timed=track.word_timed)
-            else:
-                cues = cues_from_vtt(payload)
+            except SourceError as exc:
+                recorded.append(f"{label}: {exc}")
+                continue
+            except (ValueError, TypeError, KeyError) as exc:
+                # A timedtext URL that expired answers with an error page, not
+                # json3, and `json.loads` says so in a way nothing above caught.
+                recorded.append(f"{label}: malformed payload ({exc})")
+                continue
             if not cues:
+                recorded.append(f"{label}: produced no cues")
                 continue
-            origin = "yt_auto" if automatic else "yt_manual"
-            return cues, origin, f"youtube-{'asr' if automatic else 'subs'}-{track.lang}"
+            origin = "yt_auto" if track.automatic else "yt_manual"
+            return cues, origin, f"youtube-{'asr' if track.automatic else 'subs'}-{track.lang}"
+        if throttled is not None:
+            raise throttled
         return None
 
     # ------------------------------------------------------------------ chunk
