@@ -55,6 +55,10 @@
 <p class="tablecount" role="status">
   {{ jobs | length }} shown{% if pagination.has_more %}, more available{% endif %}.
   {% if live %}<span class="livedot" aria-hidden="true"></span>live{% endif %}
+  {# The tick patches rows it can find. A job queued after this page loaded has
+     no row to patch, and a table that silently omits one is worse than a table
+     that says so. #}
+  <span class="stale-note" data-field="job-stale" hidden>a job was queued since this page loaded — reload</span>
 </p>
 
 <div class="tablewrap" data-poll="{{ root }}/api/jobs?state={{ filters.state }}&amp;limit={{ filters.limit }}&amp;offset={{ pagination.offset }}"

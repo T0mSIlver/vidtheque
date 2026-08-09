@@ -5,9 +5,10 @@
 
 <div class="pagehead" data-poll="{{ root }}/api/jobs/{{ job.job_id }}"
      data-interval="{{ poll_ms }}" data-live="{{ 'yes' if live else 'no' }}">
-  <h1>{{ job.kind }} <code>{{ job.job_id }}</code></h1>
+  <h1>Job <code>{{ job.job_id }}</code></h1>
   <p class="pagehead-meta">
     <span class="pill tone-{{ job.state | tone }}" data-field="job-state">{{ job.state }}</span>
+    <span class="sep">·</span>{{ job.kind }}
     {% if job.cancel_requested %}<span class="pill pill-small tone-warn">cancel requested</span>{% endif %}
     {# `not_before`, read back at last. It ticks between polls and is reset by
        each one, so a page left open says how long the wait still has to run. #}
@@ -27,7 +28,11 @@
 </div>
 
 {% if job.defer_s %}
-<section class="notice" aria-labelledby="deferred">
+{# `data-field`/`data-defer` so this whole section is part of the countdown: it
+   ticks with the pill above it and goes away when the wait does, rather than
+   sitting there telling a claimed job it is being held. #}
+<section class="notice" aria-labelledby="deferred" data-field="job-defer"
+         data-defer="{{ job.defer_s }}">
   <h2 class="notice-title" id="deferred">Waiting, not stuck</h2>
   <p class="notice-detail">
     The job is <code>queued</code> with a <code>not_before</code> in the future,

@@ -91,6 +91,15 @@ function tickDeferrals() {
   }
 }
 
+/** The one thing this script cannot patch is a row that is not on the page —
+ *  a job queued since it rendered, or the panels a finished job makes stale.
+ *  Both reveal a note the server already wrote; neither invents a sentence. */
+function showStale() {
+  for (const note of document.querySelectorAll("[data-field='job-stale']")) {
+    note.hidden = false;
+  }
+}
+
 function applyJob(scope, job) {
   setState(scope, "job-state", job.state);
   setText(scope, "job-progress", job.text.progress);
@@ -190,6 +199,7 @@ if (root) {
     for (const job of payload.jobs || []) {
       const row = document.querySelector(`[data-job="${job.job_id}"]`);
       if (row) applyJob(row, job);
+      else showStale(); // a job queued since this page rendered
     }
 
     if (!payload.live && live) {
@@ -197,9 +207,7 @@ if (root) {
       // page this script does not patch (the degraded list, the stage table)
       // are now the stale ones. Say so once, then stop.
       live = false;
-      for (const note of document.querySelectorAll("[data-field='job-stale']")) {
-        note.hidden = false;
-      }
+      showStale();
       stop();
     }
   }
