@@ -1,0 +1,772 @@
+<!--
+ THESIS: the corpus IS the hero — a master-control monitor wall of 70 real
+ keyframes that a real query punches to program. Refuses the category page:
+ centred headline, blurred gradient, decorative search box, nothing behind it.
+ OWN-WORLD: broadcast rack room. Graphite void #06080b, rack #0d1016, 1px
+ steel hairlines, zero corner radius anywhere, and colour only where a gallery
+ uses it: tally red #ff2b26 (on air), tally green #22e07c (preview), cue amber
+ #ffb020. Archivo wdth 62–125 as CG display lettering; Martian Mono for
+ timecode, source IDs, telemetry. No glow, no glass, no rounded cards.
+ STORY: this is everything I have watched, all of it on the wall at once; a
+ plain question dims the wall, punches one frame to air, and hands back the
+ sentence, the on-screen text, and a link that starts at the second it happens.
+ FIRST VIEWPORT: full-bleed 8-col wall, slow drift; headline top-left at 66px
+ over a left-weighted scrim; query slug bar under it; program monitor bottom-
+ right with red tally, OCR overlay, lower-third and a red citation slab;
+ hairline telemetry rails top and bottom.
+ FORM: broadcast multiviewer / master control gallery. Brief-pinned direction
+ (square, futuristic, eye candy, real personality) on a narrowly specified
+ request — no concept roll, per new-work §3.
+ FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+ LAB: prototype for judgement from screenshots. DESIGN.md is deliberately NOT
+ amended — lab pieces do not bind the product's visual contract.
+ DATA: every frame, title, timecode, OCR line, transcript line and citation on
+ this page is real, read from vidtheque.db. The three searches are canned and
+ labelled as such; the page makes zero network requests.
+-->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>vidtheque — master control</title>
+<link rel="stylesheet" href="hero/type.css">
+<style>
+:root{
+  --void:#06080b; --rack:#0d1016; --rack2:#10141a;
+  --edge:#222933; --edge2:#39434f;
+  --ink:#eef2f6; --ink2:#93a0af; --ink3:#5d6a78;
+  --red:#ff2b26; --green:#22e07c; --amber:#ffb020;
+  --mono:'Martian Mono',ui-monospace,monospace;
+  --disp:'Archivo',system-ui,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box;border-radius:0}
+html,body{height:100%}
+body{
+  background:var(--void); color:var(--ink);
+  font-family:var(--disp); font-synthesis:none;
+  overflow:hidden;
+}
+.stage{position:fixed;inset:0;overflow:hidden}
+
+/* ─────────────────────────── the wall ─────────────────────────── */
+.wallwrap{position:absolute;inset:-5%;overflow:hidden;
+  animation:drift 104s ease-in-out infinite alternate}
+@keyframes drift{
+  0%  {transform:translate3d(-1.4%,-1.0%,0) scale(1.015)}
+  50% {transform:translate3d(1.0%,0.6%,0) scale(1.038)}
+  100%{transform:translate3d(-0.6%,1.4%,0) scale(1.015)}
+}
+.wall{display:grid;width:100%;height:100%;gap:1px;background:#11151b;
+  grid-auto-rows:1fr}
+.tile{position:relative;overflow:hidden;background:#080a0e;
+  transition:opacity .34s linear, filter .34s linear, transform .18s linear}
+.tile img{width:100%;height:100%;object-fit:cover;display:block;
+  filter:saturate(.88) contrast(1.04)}
+.tile .slug{position:absolute;left:0;bottom:0;right:0;
+  display:flex;justify-content:space-between;gap:6px;
+  padding:2px 4px 2.5px;background:rgba(3,5,8,.72);
+  font-family:var(--mono);font-size:6.6px;line-height:1;
+  font-variation-settings:'wdth' 82,'wght' 500;
+  letter-spacing:.05em;color:rgba(226,236,246,.72);
+  white-space:nowrap;overflow:hidden}
+.tile .slug b{font-variation-settings:'wdth' 82,'wght' 700;color:rgba(226,236,246,.5)}
+.tile::after{content:'';position:absolute;inset:0;pointer-events:none;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.045)}
+
+/* dim-on-search, staggered down the wall so it follows the scan bar.
+   Dim far enough to read as "off air", never so far that the corpus —
+   the actual hero — disappears from the frame. */
+.wall.searching .tile{opacity:.34;filter:grayscale(.9) brightness(.62);
+  transition-delay:calc(var(--r) * 46ms)}
+.wall.searching .tile.pvw,
+.wall.searching .tile.pgm{opacity:1;filter:none;transition-delay:0ms}
+.tile.pvw::after{box-shadow:inset 0 0 0 2px var(--green)}
+.tile.pgm{transform:scale(1.055);z-index:4;
+  box-shadow:0 14px 34px -8px rgba(0,0,0,.95)}
+.tile.pgm::after{box-shadow:inset 0 0 0 3px var(--red)}
+.tile.pgm .slug{background:var(--red);color:#0a0000}
+.tile.pgm .slug b{color:rgba(10,0,0,.66)}
+
+/* scan bar */
+.scan{position:absolute;left:0;right:0;height:88px;top:-90px;pointer-events:none;
+  z-index:6;opacity:0;
+  background:linear-gradient(to bottom,rgba(255,43,38,0) 0%,rgba(255,43,38,.10) 62%,
+    rgba(255,43,38,.42) 94%,var(--red) 100%);
+  mix-blend-mode:screen}
+.scan.go{animation:sweep .68s cubic-bezier(.32,.9,.36,1) 1 both}
+@keyframes sweep{
+  0%{opacity:1;transform:translateY(0)}
+  92%{opacity:1}
+  100%{opacity:0;transform:translateY(calc(100vh + 92px))}
+}
+
+/* light direction: heavy on the type side, open on the wall side */
+.scrim{position:absolute;inset:0;pointer-events:none;z-index:2;
+  background:
+   linear-gradient(100deg,rgba(4,6,9,.90) 0%,rgba(4,6,9,.74) 26%,
+     rgba(4,6,9,.40) 52%,rgba(4,6,9,.20) 100%),
+   linear-gradient(to bottom,rgba(4,6,9,.66) 0%,rgba(4,6,9,0) 14%,
+     rgba(4,6,9,0) 76%,rgba(4,6,9,.72) 100%)}
+/* CRT grille — the wall is being watched on rack monitors */
+.grille{position:absolute;inset:0;pointer-events:none;z-index:3;opacity:.5;
+  background:repeating-linear-gradient(to bottom,
+    rgba(255,255,255,.030) 0 1px,rgba(0,0,0,0) 1px 3px)}
+
+/* ─────────────────────────── rails ─────────────────────────── */
+.rail{position:absolute;left:0;right:0;height:30px;z-index:20;
+  display:flex;align-items:center;gap:18px;padding:0 14px;
+  background:rgba(6,8,11,.94);
+  font-family:var(--mono);font-size:8.6px;letter-spacing:.15em;
+  font-variation-settings:'wdth' 88,'wght' 500;
+  text-transform:uppercase;color:var(--ink3);white-space:nowrap;overflow:hidden}
+.rail.t{top:0;border-bottom:1px solid var(--edge)}
+.rail.b{bottom:0;border-top:1px solid var(--edge)}
+.mark{display:flex;align-items:center;gap:8px;color:var(--ink)}
+.mark .w{font-family:var(--disp);font-size:12px;letter-spacing:.2em;
+  font-variation-settings:'wdth' 108,'wght' 800}
+.rec{width:8px;height:8px;background:var(--red);flex:0 0 8px;
+  animation:pulse 1.9s steps(1,end) infinite}
+@keyframes pulse{0%,62%{opacity:1}63%,100%{opacity:.22}}
+.spacer{flex:1}
+.tele{display:flex;gap:16px}
+.tele i{font-style:normal;color:var(--ink2)}
+.tele i b{color:var(--ink);font-variation-settings:'wdth' 88,'wght' 700}
+.qlist{display:flex;gap:0;border:1px solid var(--edge)}
+.qlist span{padding:4px 9px 3.5px;border-right:1px solid var(--edge);color:var(--ink3)}
+.qlist span:last-child{border-right:0}
+.qlist span.on{background:var(--amber);color:#180d00;
+  font-variation-settings:'wdth' 88,'wght' 700}
+
+/* ─────────────────────────── headline ─────────────────────────── */
+/* one flow column: headline, deck, slug bar. Nothing here is positioned
+   against a guessed offset, so the type can never land on the bar. */
+.copy{position:absolute;z-index:12;left:48px;top:92px;width:640px;
+  display:flex;flex-direction:column;align-items:flex-start;gap:26px}
+h1{font-family:var(--disp);text-transform:uppercase;color:#fff;
+  font-size:67px;line-height:.885;letter-spacing:-.021em;
+  font-variation-settings:'wdth' 114,'wght' 900;
+  text-wrap:balance;
+  text-shadow:0 6px 30px rgba(0,0,0,.92),0 1px 0 rgba(0,0,0,.7)}
+h1 em{font-style:normal;color:var(--red)}
+.deck{max-width:47ch;font-size:15.5px;line-height:1.5;
+  color:#aab6c4;font-variation-settings:'wdth' 100,'wght' 400;
+  text-shadow:0 2px 14px rgba(0,0,0,.9)}
+
+/* query slug bar */
+.slugbar{position:relative;z-index:12;width:100%;
+  height:54px;display:flex;align-items:stretch;
+  background:rgba(10,13,18,.96);border:1px solid var(--edge2);
+  box-shadow:0 18px 40px -16px rgba(0,0,0,.9)}
+.slugbar .ic{width:44px;display:grid;place-items:center;color:var(--amber);
+  border-right:1px solid var(--edge)}
+.slugbar .ic svg{width:13px;height:13px}
+.slugbar .q{flex:1;display:flex;align-items:center;padding:0 13px;
+  font-family:var(--mono);font-size:14px;color:var(--ink);
+  font-variation-settings:'wdth' 90,'wght' 450;letter-spacing:.005em;
+  overflow:hidden;white-space:nowrap}
+.caret{display:inline-block;width:8px;height:17px;background:var(--amber);
+  margin-left:3px;flex:0 0 8px;animation:blink 1.06s steps(1,end) infinite}
+@keyframes blink{0%,52%{opacity:1}53%,100%{opacity:0}}
+.slugbar .st{display:flex;align-items:center;padding:0 15px;
+  border-left:1px solid var(--edge);
+  font-family:var(--mono);font-size:9px;letter-spacing:.19em;
+  font-variation-settings:'wdth' 88,'wght' 700;
+  text-transform:uppercase;color:var(--ink3);background:#0a0d12}
+.slugbar .st[data-s="searching"]{color:#180d00;background:var(--amber)}
+.slugbar .st[data-s="onair"]{color:#160000;background:var(--red)}
+
+/* candidate source list — what the green tallies on the wall actually are.
+   Relevance-first, the way the tool orders results. */
+.srcs{width:100%;background:rgba(9,12,17,.92);border:1px solid var(--edge);
+  box-shadow:0 18px 40px -20px rgba(0,0,0,.9);
+  font-family:var(--mono);font-size:9.6px;letter-spacing:.055em;
+  font-variation-settings:'wdth' 84,'wght' 500;color:var(--ink2)}
+.srcs .hd{display:flex;gap:14px;padding:5px 11px 4.5px;
+  border-bottom:1px solid var(--edge);color:var(--ink3);
+  font-size:8px;letter-spacing:.19em;text-transform:uppercase}
+.srcs .hd b{color:var(--ink2);font-variation-settings:'wdth' 84,'wght' 700}
+.srcs .hd .r{margin-left:auto}
+.srcs .row{display:flex;align-items:center;gap:11px;padding:0 11px;height:26px;
+  border-bottom:1px solid rgba(34,41,51,.6);opacity:.30;
+  transition:opacity .2s linear,background-color .001s linear}
+.srcs .row:last-child{border-bottom:0}
+.srcs .row.on{opacity:1}
+.srcs .row .tl{width:26px;flex:0 0 26px;color:#0d1016;background:#2b3440;
+  text-align:center;line-height:14px;font-size:7px;letter-spacing:.1em;
+  font-variation-settings:'wdth' 80,'wght' 800}
+.srcs .row.on .tl{background:var(--green)}
+.srcs .row .tc{color:var(--ink);flex:0 0 auto;
+  font-variation-settings:'wdth' 84,'wght' 700}
+.srcs .row .ti{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.srcs .row.air{opacity:1;background:var(--red);color:#170000}
+.srcs .row.air .tl{background:#170000;color:var(--red)}
+.srcs .row.air .tc{color:#170000}
+
+/* ─────────────────────── program monitor ─────────────────────── */
+.pgmwrap{position:absolute;z-index:14;right:48px;bottom:76px;width:648px;
+  background:var(--rack);border:1px solid var(--edge2);
+  box-shadow:0 34px 70px -18px rgba(0,0,0,.95),0 2px 0 rgba(255,255,255,.035);
+  outline:3px solid transparent;outline-offset:0;
+  transition:outline-color .001s linear}
+.pgmwrap.live{outline-color:var(--red)}
+.pgmhead{display:flex;align-items:center;gap:14px;height:28px;padding:0 0 0 0;
+  border-bottom:1px solid var(--edge);
+  font-family:var(--mono);font-size:8.6px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--ink3);
+  font-variation-settings:'wdth' 88,'wght' 500}
+.chip{align-self:stretch;display:flex;align-items:center;padding:0 11px;
+  background:#1a2029;color:var(--ink2);
+  font-variation-settings:'wdth' 88,'wght' 800}
+.pgmwrap.live .chip{background:var(--red);color:#150000}
+.pgmhead b{color:var(--ink);font-variation-settings:'wdth' 88,'wght' 700}
+/* source IDs and query strings are case-sensitive identifiers — never shout them */
+#pSrc,.qlist span{text-transform:none}
+.pgmhead .r{margin-left:auto;padding-right:12px}
+
+.screen{position:relative;aspect-ratio:16/9;background:#04060a;overflow:hidden}
+.screen>img{width:100%;height:100%;object-fit:cover;display:block;
+  filter:saturate(.94) contrast(1.03)}
+.screen.bars>img{opacity:0}
+.bars-svg{position:absolute;inset:0;width:100%;height:100%;display:none}
+.screen.bars .bars-svg{display:block}
+.flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
+.flash.go{animation:cut .13s steps(2,end) 1 both}
+@keyframes cut{0%{opacity:.82}100%{opacity:0}}
+
+/* OCR overlay boxes — real normalised bboxes from ocr_lines */
+.obox{position:absolute;border:1.5px solid var(--green);opacity:0;
+  transition:opacity .14s linear;
+  box-shadow:0 0 0 1px rgba(4,8,6,.55) inset}
+.obox.on{opacity:1}
+.obox u{position:absolute;left:-1.5px;bottom:100%;text-decoration:none;
+  background:var(--green);color:#02140a;padding:1.5px 4px 1px;
+  font-family:var(--mono);font-size:7px;letter-spacing:.13em;
+  font-variation-settings:'wdth' 82,'wght' 700;white-space:nowrap}
+
+/* burn-in: the OCR hit, printed edge to edge across the top of the picture
+   the way a timecode/ident burn runs on a real feed */
+.burn{position:absolute;left:0;right:0;top:0;
+  background:rgba(4,6,9,.88);border-bottom:1px solid rgba(255,176,32,.30);
+  padding:5px 12px 4.5px;display:flex;align-items:baseline;gap:11px;
+  font-family:var(--mono);font-size:11px;color:var(--amber);
+  font-variation-settings:'wdth' 88,'wght' 600;letter-spacing:.01em;
+  white-space:nowrap;overflow:hidden;
+  clip-path:inset(0 100% 0 0);transition:clip-path .34s cubic-bezier(.2,.85,.3,1)}
+.burn.on{clip-path:inset(0 0 0 0)}
+.burn small{font-size:7.4px;letter-spacing:.16em;color:var(--ink3);
+  text-transform:uppercase;font-variation-settings:'wdth' 82,'wght' 600}
+.burn small.r{margin-left:auto;color:var(--ink3)}
+
+/* lower third: the spoken sentence */
+.third{position:absolute;left:0;right:0;bottom:0;
+  background:linear-gradient(to top,rgba(3,5,8,.96) 62%,rgba(3,5,8,0));
+  padding:26px 14px 11px;
+  clip-path:inset(100% 0 0 0);transition:clip-path .42s cubic-bezier(.18,.9,.28,1)}
+.third.on{clip-path:inset(0 0 0 0)}
+.third .said{font-family:var(--disp);font-size:17.5px;line-height:1.32;
+  color:#fff;font-variation-settings:'wdth' 100,'wght' 500;
+  text-wrap:balance;max-width:62ch}
+.third .who{margin-top:6px;display:flex;gap:12px;
+  font-family:var(--mono);font-size:8px;letter-spacing:.17em;
+  text-transform:uppercase;color:var(--ink2);
+  font-variation-settings:'wdth' 84,'wght' 500}
+.third .who b{color:var(--green);font-variation-settings:'wdth' 84,'wght' 700}
+
+/* provenance strip */
+.prov{display:flex;align-items:center;gap:0;height:24px;
+  border-top:1px solid var(--edge);background:#0a0d12;
+  font-family:var(--mono);font-size:8px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--ink3);
+  font-variation-settings:'wdth' 84,'wght' 500}
+.prov span{padding:0 12px;border-right:1px solid var(--edge);line-height:23px}
+.prov span:last-child{border-right:0;margin-left:auto}
+.prov b{color:var(--ink2);font-variation-settings:'wdth' 84,'wght' 700}
+.prov .m{color:var(--green)}
+
+/* the citation slab — the product's whole promise, in one red bar */
+.cite{display:flex;align-items:center;gap:12px;height:48px;padding:0 14px;
+  background:var(--red);color:#150000}
+.cite .u{font-family:var(--mono);font-size:14.5px;
+  font-variation-settings:'wdth' 92,'wght' 700;letter-spacing:.002em;
+  white-space:nowrap;overflow:hidden}
+.cite .u i{font-style:normal;opacity:.62}
+.cite .go{margin-left:auto;display:flex;align-items:center;gap:7px;
+  font-family:var(--mono);font-size:8.6px;letter-spacing:.18em;
+  text-transform:uppercase;font-variation-settings:'wdth' 84,'wght' 700;
+  opacity:.82}
+.cite .go svg{width:12px;height:12px}
+.cite.off{background:#151a21;color:var(--ink3)}
+.cite.off .go{opacity:.5}
+
+/* when the gallery is to air, the whole room is to air */
+.stage::after{content:'';position:absolute;inset:0;z-index:30;pointer-events:none;
+  box-shadow:inset 0 0 0 0 var(--red);transition:box-shadow .001s linear}
+.stage.onair::after{box-shadow:inset 0 0 0 3px var(--red)}
+
+/* corner registration ticks — a rack-room habit */
+.ticks{position:absolute;inset:0;z-index:11;pointer-events:none}
+.ticks i{position:absolute;width:15px;height:15px;
+  border:0 solid rgba(180,200,220,.34)}
+.ticks i:nth-child(1){left:40px;top:44px;border-left-width:1px;border-top-width:1px}
+.ticks i:nth-child(2){right:40px;top:44px;border-right-width:1px;border-top-width:1px}
+.ticks i:nth-child(3){left:40px;bottom:44px;border-left-width:1px;border-bottom-width:1px}
+.ticks i:nth-child(4){right:40px;bottom:44px;border-right-width:1px;border-bottom-width:1px}
+
+/* ─────────────────────────── mobile ─────────────────────────── */
+@media (max-width:820px){
+  .copy{left:14px;right:14px;top:46px;width:auto;gap:16px}
+  h1{font-size:38px;line-height:.9;letter-spacing:-.024em;
+    font-variation-settings:'wdth' 104,'wght' 900}
+  .deck{font-size:12.5px;line-height:1.45;max-width:40ch}
+  .slugbar{height:44px}
+  .slugbar .ic{width:34px}
+  .slugbar .ic svg{width:11px}
+  .slugbar .q{font-size:10.5px;padding:0 9px}
+  .caret{width:6px;height:13px}
+  .slugbar .st{padding:0 9px;font-size:7.4px;letter-spacing:.14em}
+  .pgmwrap{left:14px;right:14px;width:auto;bottom:46px}
+  .pgmhead{height:24px;font-size:7.2px;letter-spacing:.12em;gap:8px}
+  .chip{padding:0 8px}
+  .burn{font-size:8.4px;padding:4px 8px 3.5px;gap:7px}
+  .burn small.r{display:none}
+  .third{padding:20px 10px 9px}
+  .third .said{font-size:13px;line-height:1.28}
+  .third .who{font-size:6.8px;letter-spacing:.13em;gap:8px}
+  .prov{height:21px;font-size:6.8px;letter-spacing:.11em}
+  .prov span{padding:0 8px;line-height:20px}
+  .prov span:nth-child(2){display:none}
+  .cite{height:40px;padding:0 10px}
+  .cite .u{font-size:11px}
+  .cite .go{font-size:7px;letter-spacing:.13em}
+  .cite .go svg{width:10px;height:10px}
+  .rail{height:26px;font-size:6.8px;letter-spacing:.11em;gap:10px;padding:0 9px}
+  .mark .w{font-size:10px}
+  .tele i:nth-child(n+3){display:none}
+  .qlist span{padding:3px 6px 2.5px}
+  .qlist span:not(.on){display:none}
+  .srcs{font-size:8.4px;letter-spacing:.03em}
+  .srcs .hd{font-size:7px;letter-spacing:.14em;padding:4px 8px}
+  .srcs .row{height:23px;padding:0 8px;gap:8px}
+  .srcs .row:nth-child(n+4){display:none}
+  .srcs .row .tl{width:22px;flex:0 0 22px;font-size:6px}
+  .ticks{display:none}
+  .tile .slug{font-size:5px;padding:1px 2px}
+  .tile .slug b{display:none}
+  .scrim{background:
+    linear-gradient(to bottom,rgba(4,6,9,.93) 0%,rgba(4,6,9,.84) 42%,
+      rgba(4,6,9,.62) 62%,rgba(4,6,9,.86) 100%)}
+}
+
+@media (prefers-reduced-motion:reduce){
+  .wallwrap{animation:none}
+  .scan{display:none}
+  .rec,.caret{animation:none}
+  .tile,.burn,.third{transition:none}
+}
+</style>
+
+<div class="stage">
+  <div class="wallwrap"><div class="wall" id="wall"></div></div>
+  <div class="scan" id="scan"></div>
+  <div class="scrim"></div>
+  <div class="grille"></div>
+  <div class="ticks"><i></i><i></i><i></i><i></i></div>
+
+  <div class="rail t">
+    <span class="mark"><span class="rec"></span><span class="w">VIDTHEQUE</span></span>
+    <span>Master control</span>
+    <span class="spacer"></span>
+    <span class="tele">
+      <i>SRC <b>79</b></i><i>FRAMES <b>4,736</b></i><i>CUES <b>17,138</b></i>
+      <i>OCR LINES <b>61,198</b></i><i>RUNTIME <b>27.3 H</b></i>
+    </span>
+  </div>
+
+  <div class="copy">
+    <h1>A second brain for<br>everything<br>you&#8217;ve <em>watched</em></h1>
+    <p class="deck">Every talk you sat through, indexed three ways &mdash; what was said,
+      what was on the screen, and the frame itself. Ask in plain words; get back the
+      second it happened.</p>
+    <div class="slugbar">
+    <span class="ic"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3.6 1.8 L8.2 6 L3.6 10.2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></span>
+    <span class="q"><span id="qtext"></span><span class="caret"></span></span>
+    <span class="st" id="status" data-s="ready">Ready</span>
+    </div>
+    <div class="srcs" id="srcs">
+      <div class="hd"><span>Candidates</span><b id="srcN">&mdash;</b>
+        <span class="r">Ranked by relevance</span></div>
+      <div id="srcRows"></div>
+    </div>
+  </div>
+
+  <div class="pgmwrap" id="pgmwrap">
+    <div class="pgmhead">
+      <span class="chip" id="pgmchip">PVW</span>
+      <span>SRC <b id="pSrc">&mdash;</b></span>
+      <span>TC <b id="pTc">--:--:--</b></span>
+      <span class="r">16:9 &middot; 1280&times;720</span>
+    </div>
+    <div class="screen bars" id="screen">
+      <svg class="bars-svg" viewBox="0 0 16 9" preserveAspectRatio="none" aria-hidden="true">
+        <rect x="0"  y="0" width="2.286" height="6.3" fill="#4e5256"/>
+        <rect x="2.286" y="0" width="2.286" height="6.3" fill="#4e4c18"/>
+        <rect x="4.571" y="0" width="2.286" height="6.3" fill="#164c50"/>
+        <rect x="6.857" y="0" width="2.286" height="6.3" fill="#194c22"/>
+        <rect x="9.143" y="0" width="2.286" height="6.3" fill="#48174a"/>
+        <rect x="11.429" y="0" width="2.286" height="6.3" fill="#4c1a18"/>
+        <rect x="13.714" y="0" width="2.286" height="6.3" fill="#181a4e"/>
+        <rect x="0" y="6.3" width="16" height="0.9" fill="#12161c"/>
+        <rect x="0" y="7.2" width="16" height="1.8" fill="#080a0e"/>
+        <rect x="0" y="7.2" width="2.6" height="1.8" fill="#101820"/>
+        <rect x="5.2" y="7.2" width="2.6" height="1.8" fill="#101820"/>
+        <rect x="10.4" y="7.2" width="2.6" height="1.8" fill="#101820"/>
+      </svg>
+      <img id="pImg" alt="" src="">
+      <div id="boxes"></div>
+      <div class="burn" id="burn"><small>OCR</small><span id="burnTxt"></span><small class="r" id="burnLine"></small></div>
+      <div class="third" id="third">
+        <p class="said" id="said"></p>
+        <p class="who"><b id="whoTc">--:--:--</b><span id="whoTitle"></span></p>
+      </div>
+      <div class="flash" id="flash"></div>
+    </div>
+    <div class="prov">
+      <span>Match <b class="m" id="pMode">&mdash;</b></span>
+      <span>Conf <b id="pConf">&mdash;</b></span>
+      <span id="pCounts">&mdash;</span>
+    </div>
+    <div class="cite off" id="cite">
+      <span class="u" id="citeTxt"></span>
+      <span class="go">Open at <span id="citeAt">--:--</span>
+        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3.4 8.6 L8.6 3.4 M4.7 3.4 H8.6 V7.3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+      </span>
+    </div>
+  </div>
+
+  <div class="rail b">
+    <span>Canned demo &middot; local assets &middot; no network</span>
+    <span class="spacer"></span>
+    <span class="qlist" id="qlist"></span>
+    <span class="spacer"></span>
+    <span id="clock">--:--:--</span>
+  </div>
+</div>
+
+<script>
+/* Every value below was read out of vidtheque.db (read-only). Nothing is invented. */
+const TILES = [
+{"f":"t00.jpg","id":"CoEIs6Xm8m8","tc":"00:00:45"},
+{"f":"t01.jpg","id":"z0sh8HyTrDo","tc":"00:02:55"},
+{"f":"t02.jpg","id":"b_PmGocP4rc","tc":"00:01:12"},
+{"f":"t03.jpg","id":"hacEQHHhu2Q","tc":"00:00:35"},
+{"f":"t04.jpg","id":"s67bE2Ur3bY","tc":"00:00:40"},
+{"f":"t05.jpg","id":"Byv311hdoHE","tc":"00:00:52"},
+{"f":"t06.jpg","id":"tJFjeMBKbIY","tc":"00:00:35"},
+{"f":"t07.jpg","id":"O-CBZ3JtRvo","tc":"00:05:10"},
+{"f":"t08.jpg","id":"o6U_2vd967Y","tc":"00:03:33"},
+{"f":"t09.jpg","id":"tJFjeMBKbIY","tc":"00:07:36"},
+{"f":"t10.jpg","id":"zkX03APVj0M","tc":"00:02:26"},
+{"f":"t11.jpg","id":"zkX03APVj0M","tc":"00:01:10"},
+{"f":"t12.jpg","id":"cJ0EOzey--o","tc":"00:00:52"},
+{"f":"t13.jpg","id":"-jY2T2PiJBE","tc":"00:00:17"},
+{"f":"t14.jpg","id":"jRCpXUjz4CI","tc":"00:00:55"},
+{"f":"t15.jpg","id":"CgsWxRUY5Eo","tc":"00:12:46"},
+{"f":"t16.jpg","id":"AMiyLItEtLA","tc":"00:08:41"},
+{"f":"t17.jpg","id":"Byv311hdoHE","tc":"00:05:58"},
+{"f":"t18.jpg","id":"jWq-aZIU0kM","tc":"00:05:54"},
+{"f":"t19.jpg","id":"ZFxh7sqbUZo","tc":"00:24:35"},
+{"f":"t20.jpg","id":"Ib5GBkD555M","tc":"00:00:18"},
+{"f":"t21.jpg","id":"q2JrUKBMf0w","tc":"00:05:45"},
+{"f":"t22.jpg","id":"GgLQ02aO-hs","tc":"00:00:44"},
+{"f":"t23.jpg","id":"QHBjufYK8TA","tc":"00:10:43"},
+{"f":"t24.jpg","id":"FWMJQDH3iK0","tc":"00:08:00"},
+{"f":"t25.jpg","id":"J4_jCrTxMkk","tc":"00:28:04"},
+{"f":"t26.jpg","id":"2JX6JYyQG4Y","tc":"00:00:28"},
+{"f":"t27.jpg","id":"GgLQ02aO-hs","tc":"00:00:37"},
+{"f":"t28.jpg","id":"2JX6JYyQG4Y","tc":"00:00:41"},
+{"f":"t29.jpg","id":"jQDXzEVHMSE","tc":"00:00:23"},
+{"f":"t30.jpg","id":"J4_jCrTxMkk","tc":"00:28:37"},
+{"f":"t31.jpg","id":"jQDXzEVHMSE","tc":"00:00:19"},
+{"f":"t32.jpg","id":"2JX6JYyQG4Y","tc":"00:00:32"},
+{"f":"t33.jpg","id":"AMiyLItEtLA","tc":"00:12:23"},
+{"f":"t34.jpg","id":"z0sh8HyTrDo","tc":"00:04:41"},
+{"f":"t35.jpg","id":"jRCpXUjz4CI","tc":"00:18:34"},
+{"f":"t36.jpg","id":"xIt_mTQp6mY","tc":"00:16:34"},
+{"f":"t37.jpg","id":"jRCpXUjz4CI","tc":"00:06:38"},
+{"f":"t38.jpg","id":"LZuWZRze3MU","tc":"00:18:28"},
+{"f":"t39.jpg","id":"KhYifX22yhE","tc":"00:17:04"},
+{"f":"t40.jpg","id":"0RNNfxpdbQk","tc":"00:00:11"},
+{"f":"t41.jpg","id":"1EZdpEhwmNc","tc":"00:07:05"},
+{"f":"t42.jpg","id":"LZuWZRze3MU","tc":"00:10:47"},
+{"f":"t43.jpg","id":"pWXUkLP9uWM","tc":"00:02:25"},
+{"f":"t44.jpg","id":"xIt_mTQp6mY","tc":"00:04:36"},
+{"f":"t45.jpg","id":"Sir59K8ZDPU","tc":"00:18:56"},
+{"f":"t46.jpg","id":"zkX03APVj0M","tc":"00:10:37"},
+{"f":"t47.jpg","id":"418t26CVz-w","tc":"00:05:55"},
+{"f":"t48.jpg","id":"o6U_2vd967Y","tc":"00:18:14"},
+{"f":"t49.jpg","id":"ZyIoTOAbRfs","tc":"00:11:41"},
+{"f":"t50.jpg","id":"3ZMUiFaQ3qg","tc":"00:11:46"},
+{"f":"t51.jpg","id":"Yk87oUPVaxU","tc":"00:04:27"},
+{"f":"t52.jpg","id":"AMiyLItEtLA","tc":"00:01:48"},
+{"f":"t53.jpg","id":"-I5W5QVAT8E","tc":"00:00:40"},
+{"f":"t54.jpg","id":"LZuWZRze3MU","tc":"00:09:23"},
+{"f":"t55.jpg","id":"k35LeKZEhiE","tc":"00:17:35"},
+{"f":"t56.jpg","id":"RVxym6mmIns","tc":"00:11:08"},
+{"f":"t57.jpg","id":"s4r6nk5WsZw","tc":"00:05:47"},
+{"f":"t58.jpg","id":"-jY2T2PiJBE","tc":"00:03:33"},
+{"f":"t59.jpg","id":"GgLQ02aO-hs","tc":"00:00:34"},
+{"f":"t60.jpg","id":"Sir59K8ZDPU","tc":"00:20:26"},
+{"f":"t61.jpg","id":"Sir59K8ZDPU","tc":"00:20:10"},
+{"f":"t62.jpg","id":"Sir59K8ZDPU","tc":"00:09:32"},
+{"f":"t63.jpg","id":"Sir59K8ZDPU","tc":"00:00:23"},
+{"f":"t64.jpg","id":"lyL5QhgIOxc","tc":"00:17:02"},
+{"f":"t65.jpg","id":"lyL5QhgIOxc","tc":"00:11:22"},
+{"f":"t66.jpg","id":"lyL5QhgIOxc","tc":"00:00:40"},
+{"f":"t67.jpg","id":"lyL5QhgIOxc","tc":"00:05:56"},
+{"f":"t68.jpg","id":"pWXUkLP9uWM","tc":"00:18:48"},
+{"f":"t69.jpg","id":"pWXUkLP9uWM","tc":"00:02:54"}
+];
+
+const QUERIES = [
+  {
+    q:"owl:FunctionalProperty",
+    hit:45, pvw:[60,61,62,63],
+    mode:"OCR · exact", conf:"1.00",
+    counts:"15 frames · 35 cues · 3 videos",
+    img:"hero/r1.jpg", src:"Sir59K8ZDPU", tc:"00:18:56", t:1136, at:"18:56",
+    ocr:"owl:FunctionalProperty", line:"line 11 / 34", label:"owl:FunctionalProperty",
+    boxes:[[0.499,0.308,0.647,0.338,""]],
+    said:"So you have these functional properties, disjoint properties … the errors it can catch, look over in the right-hand column.",
+    saidTc:"00:19:01",
+    title:"Why Agentic Systems Need Ontologies — Frank Coyle",
+    top:"top 5 of 15",
+    rows:[["00:18:56","OWL catches what prose can't pin down"],
+          ["00:20:26","The guardrail: ontologies, RDFS + OWL"],
+          ["00:20:11","The reasoner as a validation layer"],
+          ["00:09:33","RDFS infers. OWL constrains."],
+          ["00:00:24","Why Agentic Systems Need Ontologies"]]
+  },
+  {
+    q:"the talk where they showed the sharded-mongo diagram",
+    hit:64, pvw:[65,66,67],
+    mode:"frame + transcript · semantic", conf:"0.98",
+    counts:"11 frames · 37 cues · 5 videos",
+    img:"hero/r2.jpg", src:"lyL5QhgIOxc", tc:"00:17:02", t:1022, at:"17:02",
+    ocr:"MONGOS · CONFIG SERVERS · SHARD A · SHARD B", line:"6 of 41 lines", label:"sharded-mongo diagram",
+
+    boxes:[[0.395,0.190,0.455,0.221,"MONGOS"],[0.534,0.190,0.594,0.221,""],
+           [0.668,0.190,0.726,0.221,""],[0.832,0.192,0.927,0.221,"CONFIG SERVERS"],
+           [0.275,0.414,0.340,0.443,"SHARD A"],[0.684,0.414,0.747,0.443,"SHARD B"]],
+    said:"Sharding means scaling your database horizontally.",
+    saidTc:"00:16:56",
+    title:"Serving 2 Million Models Without Melting — Arek Borucki",
+    top:"top 4 of 11",
+    rows:[["00:17:02","CLIENT APPLICATION → MONGOS → SHARD A / SHARD B"],
+          ["00:11:23","High-level Architecture — MongoDB, Apache Lucene"],
+          ["00:05:57","High-level Architecture — MongoDB Atlas"],
+          ["00:00:41","Serving 3 Million Models"]]
+  },
+  {
+    q:"the most expensive typo in history",
+    hit:9, pvw:[68,69],
+    mode:"transcript · lexical", conf:"1.00",
+    counts:"10 frames · 48 cues · 7 videos",
+    img:"hero/r3.jpg", src:"tJFjeMBKbIY", tc:"00:07:36", t:456, at:"07:36",
+    ocr:"~$100,000,000,000", line:"line 4 / 14", label:"most expensive typo",
+    boxes:[[0.380,0.261,0.827,0.376,""]],
+    said:"Let me tell you about the most expensive typo in history.",
+    saidTc:"00:07:24",
+    title:"Build for the Memo, Not the Demo — Shawn Chan",
+    top:"top 3 of 10",
+    rows:[["00:07:36","The most expensive typo in history"],
+          ["00:18:49","Automating science with RSI"],
+          ["00:02:54","Technological evolution"]]
+  }
+];
+
+const $ = s => document.querySelector(s);
+const wall=$('#wall'), scan=$('#scan');
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ── build the wall ───────────────────────────────────────────── */
+let slots=[];
+function buildWall(){
+  const w=innerWidth, cols = w<=820 ? 5 : (w<1180 ? 6 : 8);
+  const tw=w/cols, th=tw*9/16;
+  const rows=Math.max(4,Math.ceil((innerHeight*1.10)/th)+1);
+  wall.style.gridTemplateColumns=`repeat(${cols},1fr)`;
+  wall.innerHTML=''; slots=[];
+  const n=cols*rows;
+  for(let i=0;i<n;i++){
+    const t=TILES[(i*37)%TILES.length];
+    const d=document.createElement('div');
+    d.className='tile'; d.style.setProperty('--r', Math.floor(i/cols));
+    d.dataset.i=(i*37)%TILES.length;
+    d.innerHTML=`<img src="hero/${t.f}" alt="" loading="eager" decoding="async">`+
+      `<span class="slug"><b>${t.id}</b><span>${t.tc}</span></span>`;
+    wall.appendChild(d);
+    (slots[(i*37)%TILES.length] ||= []).push(d);
+  }
+}
+buildWall();
+let rt; addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(buildWall,180)});
+
+/* ── the sequence ─────────────────────────────────────────────── */
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+let token=0;
+
+function clearWall(){
+  wall.classList.remove('searching');
+  wall.querySelectorAll('.pvw,.pgm').forEach(e=>e.classList.remove('pvw','pgm'));
+}
+function setStatus(s,label){ $('#status').dataset.s=s; $('#status').textContent=label; }
+function chips(i){
+  $('#qlist').innerHTML = QUERIES.map((q,j)=>
+    `<span class="${j===i?'on':''}">${q.label}</span>`).join('');
+}
+function buildRows(q){
+  $('#srcN').textContent=q.top;
+  $('#srcRows').innerHTML=q.rows.map(([tc,ti])=>
+    `<div class="row"><span class="tl">PVW</span><span class="tc">${tc}</span>`+
+    `<span class="ti">${ti.replace(/</g,'&lt;')}</span></div>`).join('');
+}
+const rowAt=i=>$('#srcRows').children[i];
+function pgmReset(){
+  document.querySelector('.stage').classList.remove('onair');
+  $('#pgmwrap').classList.remove('live');
+  $('#pgmchip').textContent='PVW';
+  $('#screen').classList.add('bars');
+  $('#burn').classList.remove('on'); $('#third').classList.remove('on');
+  $('#boxes').innerHTML='';
+  $('#cite').classList.add('off'); $('#citeTxt').textContent=''; $('#citeAt').textContent='--:--';
+  $('#pSrc').textContent='—'; $('#pTc').textContent='--:--:--';
+  $('#pMode').textContent='—'; $('#pConf').textContent='—';
+  $('#pCounts').textContent='standing by';
+}
+async function typeIn(el,text,ms,tk){
+  el.textContent='';
+  for(let i=0;i<text.length;i++){
+    if(tk!==token) return;
+    el.textContent=text.slice(0,i+1);
+    await sleep(ms + (text[i]===' '?18:0));
+  }
+}
+function drawBoxes(q){
+  $('#boxes').innerHTML = q.boxes.map(b=>{
+    const [x0,y0,x1,y1,lab]=b;
+    return `<div class="obox" style="left:${x0*100}%;top:${y0*100}%;`+
+      `width:${(x1-x0)*100}%;height:${(y1-y0)*100}%">`+
+      (lab?`<u>${lab.replace(/</g,'&lt;')}</u>`:'')+`</div>`;
+  }).join('');
+}
+function cutTo(q){
+  $('#screen').classList.remove('bars');
+  $('#pImg').src=q.img;
+  document.querySelector('.stage').classList.add('onair');
+  $('#pgmwrap').classList.add('live');
+  $('#pgmchip').textContent='PGM';
+  $('#pSrc').textContent=q.src;
+  $('#pTc').textContent=q.tc;
+  $('#pMode').textContent=q.mode;
+  $('#pConf').textContent=q.conf;
+  $('#pCounts').textContent=q.counts;
+  $('#said').textContent=q.said;
+  $('#whoTc').textContent=q.saidTc;
+  $('#whoTitle').textContent=q.title;
+  $('#burnTxt').textContent=q.ocr;
+  $('#burnLine').textContent=q.line;
+  $('#citeAt').textContent=q.at;
+  drawBoxes(q);
+  const f=$('#flash'); f.classList.remove('go'); void f.offsetWidth; f.classList.add('go');
+}
+
+async function run(i,tk){
+  const q=QUERIES[i];
+  chips(i); clearWall(); pgmReset(); buildRows(q);
+  setStatus('ready','Ready');
+  $('#qtext').textContent='';
+  await sleep(620); if(tk!==token) return;
+
+  await typeIn($('#qtext'), q.q, 34, tk); if(tk!==token) return;
+  await sleep(340); if(tk!==token) return;
+
+  setStatus('searching','Searching');
+  scan.classList.remove('go'); void scan.offsetWidth; scan.classList.add('go');
+  wall.classList.add('searching');
+  await sleep(880); if(tk!==token) return;
+
+  /* preview tallies, staggered — the candidate set, on the wall and in the list */
+  for(let j=0;j<q.pvw.length;j++){
+    (slots[q.pvw[j]]||[]).forEach(e=>e.classList.add('pvw'));
+    rowAt(j+1)?.classList.add('on');
+    await sleep(85); if(tk!==token) return;
+  }
+  (slots[q.hit]||[]).forEach(e=>e.classList.add('pvw'));
+  rowAt(0)?.classList.add('on');
+  await sleep(560); if(tk!==token) return;
+
+  /* the punch — a hard cut, no easing, the way a gallery does it */
+  (slots[q.hit]||[]).forEach(e=>{e.classList.remove('pvw');e.classList.add('pgm')});
+  const r0=rowAt(0); if(r0){r0.classList.add('air');r0.querySelector('.tl').textContent='PGM';}
+  cutTo(q);
+  setStatus('onair','On air');
+  await sleep(300); if(tk!==token) return;
+
+  $('#boxes').querySelectorAll('.obox').forEach((b,j)=>
+    setTimeout(()=>b.classList.add('on'), j*90));
+  await sleep(360); if(tk!==token) return;
+  $('#burn').classList.add('on');
+  await sleep(620); if(tk!==token) return;
+  $('#third').classList.add('on');
+  await sleep(420); if(tk!==token) return;
+
+  $('#cite').classList.remove('off');
+  await typeIn($('#citeTxt'), `youtu.be/${q.src}?t=${q.t}`, 21, tk);
+  if(tk!==token) return;
+
+  await sleep(4600); if(tk!==token) return;
+
+  /* clear down */
+  const s=q.q;
+  for(let k=s.length;k>=0;k-=2){
+    if(tk!==token) return;
+    $('#qtext').textContent=s.slice(0,k); await sleep(11);
+  }
+  await sleep(180);
+}
+
+async function loop(){
+  const tk=++token; let i=0;
+  while(tk===token){ await run(i,tk); i=(i+1)%QUERIES.length; }
+}
+
+/* instant end-state, for stills */
+function freeze(i){
+  token++;
+  const q=QUERIES[i];
+  chips(i); clearWall(); pgmReset(); buildRows(q);
+  $('#qtext').textContent=q.q;
+  setStatus('onair','On air');
+  wall.classList.add('searching');
+  q.pvw.forEach(idx=>(slots[idx]||[]).forEach(e=>e.classList.add('pvw')));
+  (slots[q.hit]||[]).forEach(e=>e.classList.add('pgm'));
+  [...$('#srcRows').children].forEach(r=>r.classList.add('on'));
+  const fr=rowAt(0); if(fr){fr.classList.add('air');fr.querySelector('.tl').textContent='PGM';}
+  cutTo(q);
+  $('#flash').classList.remove('go');
+  $('#boxes').querySelectorAll('.obox').forEach(b=>b.classList.add('on'));
+  $('#burn').classList.add('on');
+  $('#third').classList.add('on');
+  $('#cite').classList.remove('off');
+  $('#citeTxt').textContent=`youtu.be/${q.src}?t=${q.t}`;
+}
+window.HERO={freeze,loop,QUERIES};
+
+/* clock — the only genuinely live number on the page */
+setInterval(()=>{
+  const d=new Date();
+  $('#clock').textContent=[d.getHours(),d.getMinutes(),d.getSeconds()]
+    .map(n=>String(n).padStart(2,'0')).join(':');
+},1000);
+
+chips(0);
+if(reduce){ freeze(0); } else { loop(); }
+</script>
