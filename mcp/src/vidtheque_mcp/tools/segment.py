@@ -22,6 +22,7 @@ from .base import Deps, handle_errors, text_result
 
 MAX_OCR_FRAMES = 8
 MAX_OCR_CHARS = 1200
+OCR_CHARS_PER_FRAME = 300
 MAX_FRAME_REFS = 12
 
 
@@ -130,6 +131,12 @@ async def run(
         lines.append("")
         lines.append(f"ON-SCREEN TEXT ({len(frames)} keyframes)")
         ocr_used = 0
+        # `max_text_chars=0` is the documented opt-out, and the truncation
+        # marker this block prints names it by name — so it has to work here
+        # too, not only on the transcript above (demo-queries-2026-08-09 §7.3).
+        # The independent 1200-char block cap still binds; it announces itself
+        # in words rather than through a marker that promises an opt-out.
+        per_frame = OCR_CHARS_PER_FRAME if max_text_chars else 0
         for frame in frames:
             text = str(frame["screen_text"] or "")
             if not text:
@@ -140,7 +147,7 @@ async def run(
             ocr_used += len(text)
             lines.append(
                 f"[{clock(frame['t_s'])}] {video_id}-{int(frame['ord']):05d}  "
-                f"{middle_truncate(text, 300)}"
+                f"{middle_truncate(text, per_frame)}"
             )
 
     if include_frame_refs and frame_ids:

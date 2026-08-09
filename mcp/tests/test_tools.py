@@ -702,6 +702,21 @@ async def test_get_frames_signed_urls_carry_a_real_expiry(assembled: Assembled) 
     assert structured(result)["frames"][0]["expires_at"] > 0
 
 
+async def test_segment_ocr_honours_the_zero_opt_out(assembled: Assembled) -> None:
+    """The same marker, the same lie, in the segment payload: `max_text_chars=0`
+    left the on-screen text truncated at 300 chars/frame. The OCR block's own
+    independent cap still binds, and it names itself."""
+    line = _fatten_ocr(assembled, "zduSFxRajkE", 0)
+    capped = body(await segment.run(assembled.deps, video_id="zduSFxRajkE", t=12))
+    assert "chars truncated" in capped
+
+    full = body(
+        await segment.run(assembled.deps, video_id="zduSFxRajkE", t=12, max_text_chars=0)
+    )
+    assert "chars truncated" not in full
+    assert line in full
+
+
 # ------------------------------------------------------------------ tagging
 
 

@@ -927,7 +927,7 @@ found it by guessing after burning three window-walk calls
 | `include_frame_refs` | bool | `true` | ≤ 12 ids | Frame ids for `get-frames`. Ids only, never images. |
 | `include_chapter` | bool | `true` | | |
 | `include_links` | bool | `false` | ≤ 10 | Description links whose timestamp falls in the window. |
-| `max_text_chars` | int | `4000` | `0` or 200..20000 | Transcript window budget. `0` still respects `window`. |
+| `max_text_chars` | int | `4000` | `0` or 200..20000 | Transcript window budget. `0` still respects `window`, and also lifts the 300-char per-frame cut in the on-screen block — the marker there names this parameter, so it has to work (field test §7.3). The block's own 8-frame / 1200-char cap still binds and says so in words. |
 
 **Return shape:**
 
