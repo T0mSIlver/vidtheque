@@ -9,12 +9,40 @@
 <meta name="theme-color" content="#fbfaf9" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#131313" media="(prefers-color-scheme: dark)">
 <link rel="stylesheet" href="{{ root }}/static/dashboard.css">
+{# The text face only. Preloading the mono too costs more bytes up front than
+   the swap it would prevent, and the mono's first paint is a timecode in a
+   column that is already tabular in the fallback. Root-relative like every
+   other asset on this surface, never built from PUBLIC_URL. #}
+<link rel="preload" href="{{ root }}/static/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 {# The demo page's drawn film frame, so the two surfaces are one product in a
    tab strip. An emoji favicon renders as a different glyph on every platform
    and vanishes in monochrome. #}
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23b45309'/><rect x='6' y='9' width='20' height='14' rx='1.5' fill='%23fbfaf9'/><g fill='%23b45309'><rect x='8.5' y='11' width='3' height='3' rx='0.6'/><rect x='8.5' y='18' width='3' height='3' rx='0.6'/><rect x='20.5' y='11' width='3' height='3' rx='0.6'/><rect x='20.5' y='18' width='3' height='3' rx='0.6'/></g></svg>">
 </head>
 <body>
+<!--
+  DIRECTION: "the cutting room" — research/dashboard-design-research-2026-08-09.md
+  §1.2 Direction C, chosen by Tom 2026-08-09. Normative tokens: /DESIGN.md.
+
+  THESIS: the index explaining itself in the vernacular of the room that cut
+  the footage. It refuses the SaaS admin panel of same-size stat cards.
+
+  OWN-WORLD: warm paper (#fbfaf9) and one burnt amber (#b45309) on vendored
+  Radix sand + amber; hairlines only, no cards, no shadows; Inter for human
+  text, JetBrains Mono for every machine string.
+
+  STORY: the operator arrives mid-batch, reads the ledger band in one glance,
+  and clicks the number next to the thing that is wrong.
+
+  FIRST VIEWPORT: masthead hairline, page title, then a full-width ruled
+  ledger of five mono figures; gaps as sentences directly beneath.
+
+  FORM: pinned by the brief, so no concept roll — a user-pinned direction beats
+  the roll.
+
+  FINISH: unreviewed and undocumented is unfinished; this build ends with the
+  finish review, the verdict, and DESIGN.md.
+-->
 
 <a class="skip" href="#main">Skip to content</a>
 
@@ -29,8 +57,8 @@
     <a href="{{ root }}/jobs"{% if page == 'jobs' %} aria-current="page"{% endif %}>Jobs</a>
   </nav>
   <p class="deployment">
-    <span title="VIDTHEQUE_AUTH">auth {{ auth_mode }}</span>
-    {% if readonly %}<span class="sep">·</span><span>read-only mode</span>{% endif %}
+    <span title="VIDTHEQUE_AUTH">auth={{ auth_mode }}</span>
+    {% if readonly %}<span class="sep">·</span><span>read-only</span>{% endif %}
     {% if not writes_allowed %}<span class="sep">·</span><span class="tone-bad">indexing refused</span>{% endif %}
   </p>
 </header>
@@ -40,8 +68,8 @@
 </main>
 
 <footer>
-  <p class="muted">
-    vidtheque {{ version }} — a self-hosted video-corpus MCP server.
+  <p>
+    vidtheque <code>{{ version }}</code> — a self-hosted video-corpus MCP server.
     This is the management surface; the corpus itself is served at <code>/mcp</code>.
   </p>
 </footer>

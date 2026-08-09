@@ -1,16 +1,179 @@
-/* vidtheque dashboard — the demo's world, at working density.
+/* vidtheque dashboard — "the cutting room".
+   Direction C, research/dashboard-design-research-2026-08-09.md §1.2.
+   The normative version of everything below is DESIGN.md at the repo root.
 
-   Same six custom properties as public/static/style.css (asserted equal in
-   test_dashboard.py, because the demo page is not registered in private mode
-   and an @import would be a second round trip for a palette). Same system
-   fonts, same hairline rows, same single amber accent, no cards, no shadows.
+   The one rule this surface is built on: **mono means the machine said it,
+   sans means a human wrote it.** Titles, channel names, prose and labels are
+   Inter. Every timecode, duration, id, model key, error code, byte count and
+   clock is JetBrains Mono and tabular. It is not a costume for "technical" —
+   it is the surface's information architecture wearing a typeface, and it is a
+   promotion of a rule this project already had (demo-site.md §6.3 sets OCR text
+   in mono behind a dashed rule, because OCR text is what a machine read).
 
-   What this surface adds, and why:
-     * a wider measure — the demo reads a column, this one scans a table;
-     * a second neutral ground (--panel) for table heads and the masthead,
-       which is what separates a dense grid from the page it sits on;
-     * a state palette. Every state on this surface is also a word, so nothing
-       here depends on being able to see the colour. */
+   The world stays the incumbent one: warm paper, one burnt-amber signal. What
+   changed is that six hand-picked values became two vendored Radix scales plus
+   three state scales, so hover / selected / subtle-fill finally exist in both
+   schemes instead of being invented per component.
+
+   The first six custom properties are asserted equal to public/static/style.css
+   (test_dashboard.py::test_the_dashboard_palette_matches_the_demos) — the thing
+   that stops the two surfaces drifting into two visual worlds. They are pinned.
+   Everything the dashboard adds is added *around* them, never on top of them.
+
+   Fonts are vendored, latin subset, relative `src` — static/fonts/PROVENANCE.md
+   has the sizes, the licences and the two things checked inside the files. */
+
+/* ------------------------------------------------------------------ fonts */
+
+/* Relative, not `{{ root }}`-absolute and never PUBLIC_URL: this stylesheet is
+   loaded from an SSH tunnel on a port nobody predicted, and a dead font URL is
+   a worse version of the dead thumbnail phase 2 already shipped and fixed
+   (docs/design/dashboard.md §8). */
+
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("fonts/inter-latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "JetBrains Mono Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url("fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* ------------------------------------------------- 1. the vendored palette */
+
+/* Radix Colors 3.0.0, MIT, values copied in — not the package, because "no
+   build step" is a shipped constraint and a colour scale is data, not code.
+   https://www.radix-ui.com/colors · sRGB hex only; the display-p3 half of the
+   distribution is dropped because it doubles the file to move colours nobody
+   on this surface can see the difference in.
+
+   Each step has a declared job and this project uses them as declared:
+     1–2  page and panel grounds        3  subtle component background
+     4–5  hovered / pressed component   6  subtle border
+     7    component border              8  strong border, focus
+     9    solid fill                   10  hovered solid
+    11    low-contrast text (≥4.5:1)   12  high-contrast text
+
+   `sand` is the neutral, not `slate` or `sage`: the memo offered those for
+   Direction C, but the identity kept from the incumbent is *warm* paper, and a
+   cool grey sitting one pixel from #fbfaf9 reads as a mistake rather than as a
+   system. Warm ground wants the warm scale. `amber` carries the signal; the
+   three state scales are here at every step so a later page never has to
+   invent one. */
+
+:root {
+  --sand-1: #fdfdfc;
+  --sand-2: #f9f9f8;
+  --sand-3: #f1f0ef;
+  --sand-4: #e9e8e6;
+  --sand-5: #e2e1de;
+  --sand-6: #dad9d6;
+  --sand-7: #cfceca;
+  --sand-8: #bcbbb5;
+  --sand-9: #8d8d86;
+  --sand-10: #82827c;
+  --sand-11: #63635e;
+  --sand-12: #21201c;
+
+  --amber-1: #fefdfb;
+  --amber-2: #fefbe9;
+  --amber-3: #fff7c2;
+  --amber-4: #ffee9c;
+  --amber-5: #fbe577;
+  --amber-6: #f3d673;
+  --amber-7: #e9c162;
+  --amber-8: #e2a336;
+  --amber-9: #ffc53d;
+  --amber-10: #ffba18;
+  --amber-11: #ab6400;
+  --amber-12: #4f3422;
+
+  --grass-2: #f5fbf5;
+  --grass-3: #e9f6e9;
+  --grass-6: #b2ddb5;
+  --grass-9: #46a758;
+  --grass-11: #2a7e3b;
+
+  --red-2: #fff7f7;
+  --red-3: #feebec;
+  --red-6: #fdbdbe;
+  --red-9: #e5484d;
+  --red-11: #ce2c31;
+
+  --blue-2: #f4faff;
+  --blue-3: #e6f4fe;
+  --blue-6: #acd8fc;
+  --blue-9: #0090ff;
+  --blue-11: #0d74ce;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --sand-1: #111110;
+    --sand-2: #191918;
+    --sand-3: #222221;
+    --sand-4: #2a2a28;
+    --sand-5: #31312e;
+    --sand-6: #3b3a37;
+    --sand-7: #494844;
+    --sand-8: #62605b;
+    --sand-9: #6f6d66;
+    --sand-10: #7c7b74;
+    --sand-11: #b5b3ad;
+    --sand-12: #eeeeec;
+
+    --amber-1: #16120c;
+    --amber-2: #1d180f;
+    --amber-3: #302008;
+    --amber-4: #3f2700;
+    --amber-5: #4d3000;
+    --amber-6: #5c3d05;
+    --amber-7: #714f19;
+    --amber-8: #8f6424;
+    --amber-9: #ffc53d;
+    --amber-10: #ffd60a;
+    --amber-11: #ffca16;
+    --amber-12: #ffe7b3;
+
+    --grass-2: #141a15;
+    --grass-3: #1b2a1e;
+    --grass-6: #2d5736;
+    --grass-9: #46a758;
+    --grass-11: #71d083;
+
+    --red-2: #201314;
+    --red-3: #3b1219;
+    --red-6: #72232d;
+    --red-9: #e5484d;
+    --red-11: #ff9592;
+
+    --blue-2: #111927;
+    --blue-3: #0d2847;
+    --blue-6: #104d87;
+    --blue-9: #0090ff;
+    --blue-11: #70b8ff;
+  }
+}
+
+/* ------------------------------------------------- 2. the semantic palette */
+
+/* The six pinned properties come first and in this order, both schemes: the
+   palette test reads them positionally out of `:root { … }`. Adding one here
+   means adding it to public/static/style.css in the same commit and widening
+   that test — which is exactly the friction it exists to create. */
 
 :root {
   --bg: #fbfaf9;
@@ -20,16 +183,106 @@
   --accent: #b45309;
   --raised: #ffffff;
 
-  --panel: #f4f1ee;
-  --tone-ok: #2f6f3e;
-  --tone-warn: #8a5a00;
-  --tone-bad: #b3261e;
-  --tone-work: #1f5f8b;
-  --tone-wait: #6b6764;
-  --tone-neutral: #6b6764;
+  /* Second ground: table heads and the filter bar. What separates a dense grid
+     from the page it is sitting on. */
+  --panel: var(--sand-3);
+  /* A hovered row is deliberately a *lighter* ground than the head. Measured:
+     --accent on sand-3 is 4.41:1 and on sand-2 is 4.77:1, and a hovered row is
+     exactly where a link is about to be clicked. The 1px accent edge (see
+     `.grid tbody tr:hover`) is what makes the fainter fill legible. */
+  --row-hover: var(--sand-2);
+  /* A rule that has to be seen across a full-width band, where --line is the
+     hairline that must not be. */
+  --rule: var(--sand-7);
+  /* Non-text marks only — hatching, an empty thumbnail's fill. Never type. */
+  --mark: var(--sand-9);
 
-  --measure: 74rem;
-  --prose: 46rem;
+  /* The signal. --accent is the ink (links, the focus ring, the playhead);
+     these are the fills and borders it needs to also be a *state*. */
+  --accent-bg: var(--amber-3);
+  --accent-line: var(--amber-7);
+  --accent-solid: var(--amber-9);
+
+  /* Every state is a word as well as a colour, so these reinforce and never
+     carry the message. Step 11 is the ink, step 2 its ground, step 6 its
+     border. Step *2*, not 3: Radix's own contract is "step 11 reads ≥4.5:1 on
+     steps 1 and 2", and measured against step 3 the blue pill lands at 4.25:1.
+     One deviation, and it is deliberate — see --tone-warn. */
+  --tone-ok: var(--grass-11);
+  --tone-ok-bg: var(--grass-2);
+  --tone-ok-line: var(--grass-6);
+  /* The one hand-held colour in the system, and the reason is measured, not
+     aesthetic: Radix `amber-11` is the weakest step 11 in the whole set and
+     lands at 4.42:1 on this page ground and 4.43:1 on its own step 2 — under
+     the floor in both places, in the light scheme only. This is the warn ink
+     the dashboard already shipped, it sits between amber-11 and amber-12 in
+     the same hue, and it measures 5.69:1. The dark scheme has no such problem
+     and stays on the scale. */
+  --tone-warn: #8a5a00;
+  --tone-warn-bg: var(--amber-2);
+  --tone-warn-line: var(--amber-6);
+  --tone-bad: var(--red-11);
+  --tone-bad-bg: var(--red-2);
+  --tone-bad-line: var(--red-6);
+  --tone-work: var(--blue-11);
+  --tone-work-bg: var(--blue-2);
+  --tone-work-line: var(--blue-6);
+  --tone-wait: var(--sand-11);
+  --tone-wait-bg: var(--sand-2);
+  --tone-wait-line: var(--sand-6);
+  --tone-neutral: var(--sand-11);
+  --tone-neutral-bg: var(--sand-2);
+  --tone-neutral-line: var(--sand-6);
+
+  /* --------------------------------------------------------------- type */
+
+  --font-sans: "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo,
+    Consolas, monospace;
+
+  /* Three weights, and no fourth. 510 is the working weight of a dense
+     surface: heavier than body, lighter than a heading, and only a variable
+     font can hold it. */
+  --w-regular: 400;
+  --w-medium: 510;
+  --w-strong: 590;
+
+  --t-micro: 0.6875rem;   /* 11px — column labels, coverage glyphs */
+  --t-meta: 0.75rem;      /* 12px — table heads, row meta, footnotes */
+  --t-machine: 0.78125rem;/* 12.5px — ids, model keys, error codes, clocks */
+  --t-cell: 0.8125rem;    /* 13px — table cells */
+  --t-body: 0.875rem;     /* 14px — body, list rows */
+  --t-lead: 0.9375rem;    /* 15px — panel headings, notice titles */
+  --t-h2: 1.25rem;        /* 20px — section headings that are not panels */
+  --t-h1: 1.875rem;       /* 30px — page title */
+  --t-figure: 1.875rem;   /* 30px — a ledger number */
+
+  --lh-tight: 1.2;
+  --lh-cell: 1.4;
+  --lh-body: 1.5;
+
+  /* ------------------------------------------------------------- metrics */
+
+  /* 4px base, no exceptions. A value off this grid is a new primitive and
+     DESIGN.md has to say so. */
+  --s1: 0.25rem;
+  --s2: 0.5rem;
+  --s3: 0.75rem;
+  --s4: 1rem;
+  --s5: 1.25rem;
+  --s6: 1.5rem;
+  --s8: 2rem;
+  --s10: 2.5rem;
+  --s12: 3rem;
+
+  --r-sm: 3px;
+  --r-md: 5px;
+  --r-lg: 8px;
+
+  --measure: 74rem;  /* the grid this surface scans */
+  --prose: 46rem;    /* the column it reads */
+  --row: 2.125rem;   /* 34px — the table row */
 }
 
 @media (prefers-color-scheme: dark) {
@@ -41,15 +294,13 @@
     --accent: #f0a55a;
     --raised: #1a1a19;
 
-    --panel: #1c1b1a;
-    --tone-ok: #6cc08a;
-    --tone-warn: #e0a955;
-    --tone-bad: #f08a80;
-    --tone-work: #7fb6e0;
-    --tone-wait: #97918c;
-    --tone-neutral: #97918c;
+    /* Dark has no amber problem: `amber-11` measures 12.13:1 on this ground,
+       so the warn ink goes back on the scale where it belongs. */
+    --tone-warn: var(--amber-11);
   }
 }
+
+/* ---------------------------------------------------------------- 3. base */
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -57,11 +308,13 @@ html { -webkit-text-size-adjust: 100%; }
 
 body {
   margin: 0;
-  padding: 0 1.25rem calc(4rem + env(safe-area-inset-bottom));
+  padding: 0 var(--s5) calc(4rem + env(safe-area-inset-bottom));
   background: var(--bg);
   color: var(--fg);
-  font: 400 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-        "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-sans);
+  font-size: var(--t-body);
+  font-weight: var(--w-regular);
+  line-height: var(--lh-body);
 }
 
 main, .masthead, footer { max-width: var(--measure); margin: 0 auto; }
@@ -69,15 +322,63 @@ main, .masthead, footer { max-width: var(--measure); margin: 0 auto; }
 a { color: inherit; }
 a:hover { color: var(--accent); }
 
-code {
-  font: 400 0.875em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  overflow-wrap: anywhere;
+h1, h2, h3 { font-weight: var(--w-strong); letter-spacing: -0.01em; }
+
+/* ------------------------------------------------- the two-channel rule */
+
+/* Everything the machine produced, in one selector list. A count, a clock, a
+   duration, an id, a model key, an error string, a byte figure. Tabular by
+   construction (the face is monospaced) and ligature-free, because in
+   `error_code` and `t=1234` the literal characters are the information —
+   JetBrains Mono ships `calt` and would otherwise draw `->` as an arrow. */
+.mono,
+code,
+time,
+.num,
+.at,
+.figure > dd,
+.minirow-figure,
+.chip-n,
+.cov,
+.conf,
+.countdown,
+.meter-label,
+.errtext,
+.eventtext,
+.ocrtext,
+.badge-screen,
+.deployment,
+.timeline-scale,
+.shot-caption {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-variant-ligatures: none;
 }
 
+/* Mono runs optically larger than Inter at the same size; inline machine
+   strings inside a sentence are set down one notch so the line does not
+   step up around them. */
+code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
+
 .muted { color: var(--muted); }
-.sep { padding: 0 0.4rem; color: var(--muted); }
-.unit { font-size: 0.7em; font-weight: 400; color: var(--muted); }
-.num { font-variant-numeric: tabular-nums; text-align: right; }
+.sep { padding: 0 var(--s1); color: var(--mark); }
+.unit { font-size: 0.62em; font-weight: var(--w-regular); color: var(--muted); letter-spacing: 0; }
+.num { text-align: right; }
+
+/* A label: 11px, tracked, muted, sans. Used above every ledger figure and in
+   front of every stacked table cell on mobile, so the two read as one idiom. */
+.label,
+.panel-title,
+.figure > dt,
+.field label,
+.grid thead th,
+.chunkmark {
+  font-size: var(--t-micro);
+  font-weight: var(--w-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+}
 
 .sr-only {
   position: absolute;
@@ -91,20 +392,20 @@ code {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: var(--r-sm);
 }
 
 .skip {
   position: absolute;
-  left: 0.5rem; top: -3rem;
+  left: var(--s2); top: -3rem;
   z-index: 5;
-  padding: 0.5rem 0.8rem;
+  padding: var(--s2) var(--s3);
   background: var(--raised);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--r-md);
   transition: top 160ms ease-out;
 }
-.skip:focus { top: 0.5rem; }
+.skip:focus { top: var(--s2); }
 
 @media (prefers-reduced-motion: reduce) {
   .skip { transition: none; }
@@ -116,8 +417,8 @@ code {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.75rem 1.5rem;
-  padding: 2rem 0 1rem;
+  gap: var(--s3) var(--s6);
+  padding: var(--s6) 0 var(--s3);
   border-bottom: 1px solid var(--line);
 }
 
@@ -125,113 +426,141 @@ code {
 
 .wordmark {
   margin: 0;
-  font-size: 1.25rem;
-  font-weight: 700;
+  font-size: var(--t-lead);
+  font-weight: var(--w-strong);
   letter-spacing: -0.02em;
 }
 .wordmark a { text-decoration: none; }
 
-.rubric { margin: 0.1rem 0 0; color: var(--muted); font-size: 0.82rem; }
+.rubric { margin: 0; color: var(--muted); font-size: var(--t-meta); }
 
-.nav { display: flex; gap: 1.25rem; }
+.nav { display: flex; gap: var(--s5); }
 
 .nav a {
-  padding-bottom: 0.2rem;
-  font-size: 0.95rem;
+  padding-bottom: var(--s1);
+  font-size: var(--t-cell);
+  font-weight: var(--w-medium);
+  color: var(--muted);
   text-decoration: none;
   border-bottom: 2px solid transparent;
 }
+.nav a:hover { color: var(--fg); }
 .nav a[aria-current="page"] { color: var(--accent); border-bottom-color: var(--accent); }
 
 .deployment {
   margin: 0 0 0 auto;
   color: var(--muted);
-  font-size: 0.8rem;
-  font-variant-numeric: tabular-nums;
+  font-size: var(--t-meta);
 }
 
 /* -------------------------------------------------------------- page heads */
 
-.crumbs { margin: 1.25rem 0 0; color: var(--muted); font-size: 0.85rem; }
+.crumbs { margin: var(--s5) 0 0; color: var(--muted); font-size: var(--t-meta); }
 .crumbs a { text-decoration: none; }
 
-.pagehead { padding: 1.5rem 0 1.25rem; }
+.pagehead { padding: var(--s8) 0 var(--s5); }
 .pagehead h1 {
   margin: 0;
-  font-size: 1.6rem;
-  font-weight: 700;
+  font-size: var(--t-h1);
+  font-weight: var(--w-strong);
+  line-height: var(--lh-tight);
   letter-spacing: -0.02em;
   text-wrap: balance;
 }
+/* Deliberately not a flex row: half of this line is sentence, half is machine
+   string, and a flex container swallows the spaces between them. */
 .pagehead-meta {
-  margin: 0.4rem 0 0;
-  max-width: var(--prose);
+  margin: var(--s2) 0 0;
   color: var(--muted);
-  font-size: 0.88rem;
+  font-size: var(--t-meta);
 }
+.pagehead-meta .mono { color: var(--fg); }
 .pagehead-meta a { color: var(--accent); }
 
 /* ------------------------------------------------------------------ panels */
 
 /* A panel is a heading and a hairline, not a card. Nested boxes are how a
-   dashboard stops being scannable. */
-.panel { margin-top: 2.25rem; padding-top: 0.9rem; border-top: 1px solid var(--line); }
+   dashboard stops being scannable, and no rule on this surface is thicker than
+   1px except the two that mean something: the ledger's top rule and a notice
+   that has gone bad. */
+.panel { margin-top: var(--s8); padding-top: var(--s3); border-top: 1px solid var(--line); }
+.panel-title { margin: 0 0 var(--s3); }
 
-.panel-title {
-  margin: 0 0 0.9rem;
-  font-size: 0.78rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
+/* A panel whose two halves stopped agreeing. The rule is the alarm; the words
+   under it still say what happened, because colour is never the message. */
+.panel.is-drift { border-top: 2px solid var(--tone-bad); }
+.panel.is-drift > .panel-title { color: var(--tone-bad); }
+
+/* Declared above, live below: the pair that makes the models panel a diff. */
+.live-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  align-items: baseline;
+  margin: var(--s3) 0 0;
 }
 
 .panel-note {
-  margin: 0.9rem 0 0;
+  margin: var(--s3) 0 0;
   max-width: var(--prose);
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: var(--t-meta);
 }
 
 .empty-note {
   margin: 0;
   max-width: var(--prose);
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: var(--t-cell);
 }
 
-.split { display: grid; grid-template-columns: 1fr 1fr; gap: 0 2.5rem; }
-.split > .panel:nth-child(2) { margin-top: 2.25rem; }
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 0 var(--s10); }
+.split > .panel:nth-child(2) { margin-top: var(--s8); }
 
-/* ----------------------------------------------------------------- figures */
+/* ------------------------------------------------------------- the ledger */
+
+/* The overview's signature, and the reason this page is not a grid of stat
+   cards: one ruled band across the full measure, five columns divided by
+   hairlines, the figures in mono at 30px. It reads as a line in a log because
+   that is what it is — the corpus, counted, at this second. */
+.ledger {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  margin: 0;
+  border-top: 2px solid var(--rule);
+  border-bottom: 1px solid var(--line);
+}
+
+.ledger > .figure {
+  padding: var(--s4) var(--s4) var(--s4) 0;
+  border-left: 1px solid var(--line);
+  padding-left: var(--s4);
+}
+.ledger > .figure:first-child { border-left: 0; padding-left: 0; }
 
 .figures {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
-  gap: 1.25rem 2rem;
+  gap: var(--s5) var(--s8);
   margin: 0;
 }
 
-.figure > dt {
-  font-size: 0.72rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
-}
+.figure { min-width: 0; }
 
 .figure > dd {
-  margin: 0.15rem 0 0;
-  font-size: 1.5rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
+  margin: var(--s1) 0 0;
+  font-size: var(--t-figure);
+  font-weight: var(--w-medium);
+  line-height: var(--lh-tight);
+  letter-spacing: -0.02em;
 }
 
 .figure > dd.figure-note {
-  margin-top: 0.15rem;
-  font-size: 0.8rem;
-  font-weight: 400;
+  margin-top: var(--s1);
+  font-family: var(--font-sans);
+  font-size: var(--t-meta);
+  font-weight: var(--w-regular);
+  line-height: var(--lh-cell);
   letter-spacing: 0;
   color: var(--muted);
 }
@@ -239,16 +568,29 @@ code {
 
 /* -------------------------------------------------------------------- gaps */
 
-.gaplist { margin: 0; padding: 0; list-style: none; font-size: 0.95rem; }
-.gaplist li { padding: 0.4rem 0; border-bottom: 1px solid var(--line); }
+/* Sentences with a number in them, not a chart. The number is the link,
+   because the number is the thing you want to go and look at. */
+.gaplist { margin: 0; padding: 0; list-style: none; font-size: var(--t-body); }
+.gaplist li {
+  display: flex;
+  gap: var(--s3);
+  align-items: baseline;
+  padding: var(--s2) 0;
+  border-bottom: 1px solid var(--line);
+}
 .gaplist li:last-child { border-bottom: 0; }
 .gaplist a {
-  font-weight: 600;
+  flex: 0 0 3.5rem;
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  font-size: var(--t-cell);
+  font-weight: var(--w-medium);
+  text-align: right;
   color: var(--accent);
   text-decoration: none;
 }
 .gaplist a:hover { text-decoration: underline; }
+.gaplist a.gap-none { color: var(--muted); font-weight: var(--w-regular); }
 
 /* -------------------------------------------------------------------- rows */
 
@@ -256,29 +598,36 @@ code {
 
 .row {
   display: flex;
-  gap: 0.9rem;
+  gap: var(--s3);
   align-items: flex-start;
-  padding: 0.7rem 0;
+  padding: var(--s2) 0;
   border-top: 1px solid var(--line);
 }
 .rowlist > .row:first-child { border-top: 0; }
 
 .row-shot { flex: 0 0 auto; line-height: 0; text-decoration: none; }
 .row-body { flex: 1 1 auto; min-width: 0; }
-.row-title { font-weight: 600; text-decoration: none; }
-.row-meta { display: block; margin: 0.1rem 0 0; color: var(--muted); font-size: 0.82rem; }
+.row-title { font-weight: var(--w-medium); text-decoration: none; }
+.row-meta {
+  display: block;
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: var(--t-meta);
+}
 
 .minirow {
   display: flex;
   align-items: baseline;
-  gap: 0.75rem;
-  padding: 0.35rem 0;
+  gap: var(--s3);
+  padding: var(--s1) 0;
   border-top: 1px solid var(--line);
-  font-size: 0.9rem;
+  font-size: var(--t-cell);
 }
 .rowlist.tight > .minirow:first-child { border-top: 0; }
 .minirow > :first-child { flex: 1 1 auto; min-width: 0; }
-.minirow-figure { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+.minirow a { text-decoration: none; }
+.minirow a:hover { text-decoration: underline; }
+.minirow-figure { flex: 0 0 auto; font-size: var(--t-machine); }
 
 /* A chapter row leads with its timestamp, so the title — not the clock — is
    the thing that takes the width. */
@@ -293,8 +642,8 @@ code {
   width: 96px;
   height: 54px;
   object-fit: cover;
-  border-radius: 4px;
-  background: var(--line);
+  border-radius: var(--r-sm);
+  background: var(--sand-4);
 }
 
 .thumb-empty {
@@ -302,71 +651,74 @@ code {
   align-items: center;
   justify-content: center;
   color: var(--muted);
-  font-size: 0.62rem;
+  font-size: var(--t-micro);
   letter-spacing: 0.04em;
 }
 
 /* ------------------------------------------------------------------- chips */
 
-.chiplist { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0; padding: 0; list-style: none; }
+.chiplist { display: flex; flex-wrap: wrap; gap: var(--s1); margin: 0; padding: 0; list-style: none; }
 
 .chip {
-  display: inline-block;
-  padding: 0.2rem 0.6rem;
-  font-size: 0.82rem;
+  display: inline-flex;
+  gap: var(--s2);
+  align-items: baseline;
+  padding: 2px var(--s2);
+  font-size: var(--t-meta);
   color: var(--muted);
   text-decoration: none;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--r-sm);
 }
-.chip:hover { color: var(--fg); border-color: var(--muted); }
-.chip-n { font-variant-numeric: tabular-nums; font-weight: 600; }
-.chip-small { padding: 0.05rem 0.45rem; font-size: 0.72rem; }
+.chip:hover { color: var(--fg); border-color: var(--accent-line); background: var(--row-hover); }
+.chip-n { font-size: var(--t-micro); font-weight: var(--w-medium); color: var(--fg); }
+.chip-small { padding: 0 var(--s1); font-size: var(--t-micro); }
 
-.taglist { display: inline-flex; flex-wrap: wrap; gap: 0.25rem; }
+.taglist { display: inline-flex; flex-wrap: wrap; gap: var(--s1); }
 
 /* ------------------------------------------------------------------ states */
 
 /* Every pill carries its own word, so the colour is reinforcement and never
-   the message. */
+   the message. Ground + hairline + ink, all three from one Radix scale at its
+   declared steps, which is the whole reason the scales are vendored. */
 .pill {
   display: inline-block;
-  padding: 0.05rem 0.45rem;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
+  padding: 1px var(--s2);
+  font-size: var(--t-micro);
+  font-weight: var(--w-medium);
+  letter-spacing: 0.04em;
   color: var(--tone, var(--tone-neutral));
-  border: 1px solid currentColor;
-  border-radius: 3px;
+  background: var(--tone-bg, var(--tone-neutral-bg));
+  border: 1px solid var(--tone-line, var(--tone-neutral-line));
+  border-radius: var(--r-sm);
   vertical-align: 1px;
   white-space: nowrap;
 }
-.pill-small { font-size: 0.66rem; }
+.pill-small { font-size: var(--t-micro); }
 
-.tone-ok      { --tone: var(--tone-ok); }
-.tone-warn    { --tone: var(--tone-warn); }
-.tone-bad     { --tone: var(--tone-bad); }
-.tone-work    { --tone: var(--tone-work); }
-.tone-wait    { --tone: var(--tone-wait); }
-.tone-neutral { --tone: var(--tone-neutral); }
+.tone-ok      { --tone: var(--tone-ok);      --tone-bg: var(--tone-ok-bg);      --tone-line: var(--tone-ok-line); }
+.tone-warn    { --tone: var(--tone-warn);    --tone-bg: var(--tone-warn-bg);    --tone-line: var(--tone-warn-line); }
+.tone-bad     { --tone: var(--tone-bad);     --tone-bg: var(--tone-bad-bg);     --tone-line: var(--tone-bad-line); }
+.tone-work    { --tone: var(--tone-work);    --tone-bg: var(--tone-work-bg);    --tone-line: var(--tone-work-line); }
+.tone-wait    { --tone: var(--tone-wait);    --tone-bg: var(--tone-wait-bg);    --tone-line: var(--tone-wait-line); }
+.tone-neutral { --tone: var(--tone-neutral); --tone-bg: var(--tone-neutral-bg); --tone-line: var(--tone-neutral-line); }
 
 span.tone-bad { color: var(--tone-bad); }
 
 /* Coverage: three letters, and the missing one is hollow *and* struck, so it
    reads as absent without colour. */
-.coverage { display: inline-flex; gap: 0.2rem; }
+.coverage { display: inline-flex; gap: 2px; }
 
 .cov {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.35rem;
-  height: 1.35rem;
-  font-size: 0.72rem;
-  font-weight: 600;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  width: 1.25rem;
+  height: 1.25rem;
+  font-size: var(--t-micro);
+  font-weight: var(--w-medium);
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: var(--r-sm);
 }
 .cov-on { color: var(--bg); background: var(--tone-ok); border-color: var(--tone-ok); }
 .cov-off { color: var(--muted); border-style: dashed; text-decoration: line-through; }
@@ -377,126 +729,120 @@ span.tone-bad { color: var(--tone-bad); }
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 0.75rem 1rem;
-  padding: 0.9rem 1rem;
+  gap: var(--s3) var(--s4);
+  padding: var(--s3) var(--s4);
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--r-md);
 }
 
-.field { display: flex; flex-direction: column; gap: 0.25rem; }
+.field { display: flex; flex-direction: column; gap: var(--s1); }
 .field-wide { flex: 1 1 16rem; min-width: 0; }
 .field-narrow { flex: 0 0 5rem; }
-.field-actions { flex-direction: row; gap: 0.6rem; align-items: center; margin-left: auto; }
-
-.field label {
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
-}
+.field-actions { flex-direction: row; gap: var(--s2); align-items: center; margin-left: auto; }
 
 .field input, .field select {
-  padding: 0.4rem 0.55rem;
-  font: inherit;
-  font-size: 0.9rem;
+  padding: var(--s1) var(--s2);
+  font-family: var(--font-sans);
+  font-size: var(--t-cell);
   color: inherit;
   background: var(--raised);
-  border: 1px solid var(--line);
-  border-radius: 6px;
+  border: 1px solid var(--sand-7);
+  border-radius: var(--r-sm);
 }
 .field input::placeholder { color: var(--muted); opacity: 1; }
 
 button {
-  padding: 0.45rem 0.9rem;
-  font: inherit;
-  font-size: 0.9rem;
-  font-weight: 600;
+  padding: var(--s1) var(--s3);
+  font-family: var(--font-sans);
+  font-size: var(--t-cell);
+  font-weight: var(--w-medium);
   color: var(--bg);
   background: var(--fg);
   border: 1px solid var(--fg);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   cursor: pointer;
 }
 button:hover { background: var(--accent); border-color: var(--accent); }
-button.ghost { color: var(--fg); background: transparent; border-color: var(--line); }
+button.ghost { color: var(--fg); background: transparent; border-color: var(--sand-7); }
 button.ghost:hover { color: var(--accent); background: transparent; border-color: var(--accent); }
 button[disabled] { opacity: 0.5; cursor: default; }
 
 .ghostlink {
-  padding: 0.4rem 0.75rem;
-  font-size: 0.85rem;
+  padding: var(--s1) var(--s3);
+  font-size: var(--t-cell);
   text-decoration: none;
-  border: 1px solid var(--line);
-  border-radius: 6px;
+  border: 1px solid var(--sand-7);
+  border-radius: var(--r-sm);
 }
 .ghostlink:hover { border-color: var(--accent); }
 
 /* ------------------------------------------------------------------ tables */
 
-.tablecount { margin: 1.25rem 0 0.4rem; color: var(--muted); font-size: 0.85rem; }
+.tablecount { margin: var(--s5) 0 var(--s1); color: var(--muted); font-size: var(--t-meta); }
 
 .tablewrap { overflow-x: auto; }
 
 .grid {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.9rem;
+  font-size: var(--t-cell);
+  line-height: var(--lh-cell);
 }
 
 .grid caption { text-align: left; }
 
 .grid thead th {
-  padding: 0.45rem 0.6rem;
-  font-size: 0.7rem;
-  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--s2) var(--s2);
   text-align: left;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
   white-space: nowrap;
   background: var(--panel);
-  border-bottom: 1px solid var(--line);
+  /* An inset shadow, not a border: `border-collapse: collapse` drops a sticky
+     cell's own border the moment it detaches, and a head with no underline
+     floating over rows is worse than no sticky head at all. */
+  box-shadow: inset 0 -1px 0 var(--sand-7);
 }
 .grid thead th.num { text-align: right; }
-.grid thead a { text-decoration: none; }
-.grid thead a:hover { color: var(--accent); }
+.grid thead a { text-decoration: none; color: inherit; }
+/* To the foreground, not the accent: the head sits on --panel, where --accent
+   measures 4.41:1 and this label is 11px. */
+.grid thead a:hover { color: var(--fg); text-decoration: underline; }
 
 .grid tbody th, .grid tbody td {
-  padding: 0.55rem 0.6rem;
+  height: var(--row);
+  padding: var(--s2);
   text-align: left;
   vertical-align: top;
   border-bottom: 1px solid var(--line);
-  font-weight: 400;
+  font-weight: var(--w-regular);
 }
-.grid tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.grid tbody td.num { text-align: right; font-size: var(--t-machine); }
+.grid tbody th[scope="row"] { font-weight: var(--w-medium); }
 
-.grid tbody tr:hover { background: var(--panel); }
+/* The row you are pointing at: a light fill and a 1px accent edge in the
+   gutter. The edge, not the fill, is what makes it readable at a glance — and
+   the lighter fill is what keeps a link inside it above 4.5:1. */
+.grid tbody tr:hover {
+  background: var(--row-hover);
+  box-shadow: inset 1px 0 0 var(--accent);
+}
 
 .videos .col-shot { width: 96px; padding-right: 0; }
 .videos .col-title { min-width: 16rem; }
-.videos .row-meta { font-size: 0.78rem; }
-.videos time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.videos .row-meta { font-size: var(--t-micro); }
+.videos time { white-space: nowrap; }
 
 .stages .col-model { max-width: 22rem; }
 .stages tr.is-bad th[scope="row"] code { color: var(--tone-bad); }
 
 .stage-error td { padding-top: 0; border-bottom: 1px solid var(--line); }
-.stage-error .label {
-  font-size: 0.68rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--tone-bad);
-}
-.stage-error .errtext {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.8rem;
-  overflow-wrap: anywhere;
-}
+.stage-error .label { color: var(--tone-bad); }
+.stage-error .errtext { font-size: var(--t-machine); overflow-wrap: anywhere; }
 
-.pager { display: flex; gap: 0.6rem; margin-top: 1rem; }
+.pager { display: flex; gap: var(--s2); margin-top: var(--s4); }
 
 /* ---------------------------------------------------------------- timeline */
 
@@ -511,7 +857,7 @@ button[disabled] { opacity: 0.5; cursor: default; }
   list-style: none;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   overflow: hidden;
 }
 
@@ -540,17 +886,16 @@ button[disabled] { opacity: 0.5; cursor: default; }
 .shotbar.is-dedup a {
   opacity: 0.4;
   background: repeating-linear-gradient(
-    135deg, var(--muted) 0 2px, transparent 2px 6px
+    135deg, var(--mark) 0 2px, transparent 2px 6px
   );
 }
 
 .timeline-scale {
   display: flex;
   justify-content: space-between;
-  margin: 0.25rem 0 0;
+  margin: var(--s1) 0 0;
   color: var(--muted);
-  font-size: 0.72rem;
-  font-variant-numeric: tabular-nums;
+  font-size: var(--t-micro);
 }
 
 /* ------------------------------------------------------------------ frames */
@@ -558,37 +903,31 @@ button[disabled] { opacity: 0.5; cursor: default; }
 .strip {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
-  gap: 1.1rem 1rem;
+  gap: var(--s4) var(--s3);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.framecard { min-width: 0; scroll-margin-top: 2rem; }
+.framecard { min-width: 0; scroll-margin-top: var(--s8); }
 
 /* The box, not the image, owns the geometry: a keyframe file that has gone
-   missing leaves a grey rectangle where it was, and nothing below it moves.
-   CLS 0 is a shipped property of this project and a strip of forty images is
-   the easiest place in it to lose. */
+   missing leaves a grey rectangle where it was, and nothing below it moves. */
 .framebtn {
   display: block;
   width: 100%;
   aspect-ratio: 16 / 9;
   padding: 0;
   overflow: hidden;
-  background: var(--line);
+  background: var(--sand-4);
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   line-height: 0;
   cursor: zoom-in;
 }
-.framebtn:hover { background: var(--line); }
+.framebtn:hover { background: var(--sand-4); }
 
-.framebtn img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
+.framebtn img { width: 100%; height: 100%; object-fit: cover; }
 
 .framecard.is-dup .framebtn img { opacity: 0.45; }
 .framecard.is-dup:hover .framebtn img { opacity: 0.8; }
@@ -597,21 +936,21 @@ button[disabled] { opacity: 0.5; cursor: default; }
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.35rem;
-  margin: 0.3rem 0 0;
-  font-size: 0.76rem;
+  gap: var(--s1);
+  margin: var(--s1) 0 0;
+  font-size: var(--t-meta);
 }
 
 .at {
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  font-size: var(--t-machine);
+  font-weight: var(--w-medium);
   color: var(--accent);
   text-decoration: none;
 }
 .at:hover { text-decoration: underline; }
 
 .dupnote {
-  font-size: 0.72rem;
+  font-size: var(--t-micro);
   color: var(--muted);
   border-bottom: 1px dashed var(--line);
 }
@@ -621,23 +960,20 @@ button[disabled] { opacity: 0.5; cursor: default; }
 .ocrgrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
-  gap: 1.5rem;
+  gap: var(--s6);
 }
 
 .ocrframe { margin: 0; min-width: 0; }
 
 /* The boxes are the point of this panel: it is the difference between "OCR
    ran" and "here is what it read, and where". */
-/* `overflow: hidden` on a fixed box, so a box can never escape onto the caption
-   under it — including when the keyframe file is gone and the image has no
-   intrinsic size to hold the frame open. */
 .ocrstage {
   position: relative;
   aspect-ratio: 16 / 9;
   overflow: hidden;
   line-height: 0;
-  background: var(--line);
-  border-radius: 4px;
+  background: var(--sand-4);
+  border-radius: var(--r-sm);
 }
 
 .ocrstage img { width: 100%; height: 100%; object-fit: cover; }
@@ -649,34 +985,19 @@ button[disabled] { opacity: 0.5; cursor: default; }
   background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
-.ocrlines {
-  margin: 0.5rem 0 0;
-  padding: 0;
-  list-style: none;
-  font-size: 0.82rem;
-}
+.ocrlines { margin: var(--s2) 0 0; padding: 0; list-style: none; font-size: var(--t-cell); }
 
 .ocrline {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--s2);
   align-items: baseline;
-  padding: 0.15rem 0 0.15rem 0.55rem;
+  padding: 2px 0 2px var(--s2);
   border-left: 1px dashed var(--line);
 }
 
-.ocrtext {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  overflow-wrap: anywhere;
-}
+.ocrtext { flex: 1 1 auto; min-width: 0; font-size: var(--t-machine); overflow-wrap: anywhere; }
 
-.conf {
-  flex: 0 0 auto;
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-variant-numeric: tabular-nums;
-}
+.conf { flex: 0 0 auto; color: var(--muted); font-size: var(--t-micro); }
 
 /* -------------------------------------------------------------- transcript */
 
@@ -685,11 +1006,11 @@ button[disabled] { opacity: 0.5; cursor: default; }
 .cue {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: var(--s2);
   align-items: baseline;
-  padding: 0.3rem 0 0.3rem 0.75rem;
+  padding: var(--s1) 0 var(--s1) var(--s3);
   border-left: 1px solid transparent;
-  font-size: 0.92rem;
+  font-size: var(--t-body);
 }
 
 /* The rule down the left is the chunk — the span of cues that became one
@@ -697,42 +1018,34 @@ button[disabled] { opacity: 0.5; cursor: default; }
 .cue.in-chunk, .chunkmark { border-left-color: var(--line); }
 
 .chunkmark {
-  margin-top: 0.6rem;
-  padding: 0.15rem 0 0.15rem 0.75rem;
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  margin-top: var(--s2);
+  padding: 2px 0 2px var(--s3);
   border-left: 1px solid var(--line);
 }
 
 .cuetext { flex: 1 1 20rem; min-width: 0; }
-.cue .speaker { font-size: 0.8rem; }
+.cue .speaker { font-size: var(--t-meta); color: var(--muted); }
 
 /* Three sources, three kinds of evidence, said in a word — the demo's own
    vocabulary, so a badge means the same thing on both surfaces. */
 .badge {
   display: inline-block;
-  padding: 0 0.35rem;
-  font-size: 0.66rem;
+  padding: 0 var(--s1);
+  font-size: var(--t-micro);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--muted);
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   vertical-align: 1px;
   white-space: nowrap;
 }
-.badge-screen {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  border-style: dashed;
-}
+.badge-screen { text-transform: none; border-style: dashed; }
 
 /* -------------------------------------------------------------------- jobs */
 
 .jobs .col-title { min-width: 11rem; }
-.jobs time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.jobs time { white-space: nowrap; }
 .jobitems .col-title { min-width: 14rem; }
 
 /* Progress as a rule, not a widget: the same hairline the tables are made of,
@@ -744,29 +1057,24 @@ button[disabled] { opacity: 0.5; cursor: default; }
   height: 4px;
   vertical-align: 1px;
   overflow: hidden;
-  background: var(--line);
+  background: var(--sand-5);
   border-radius: 2px;
 }
 .meter-wide { width: 12rem; }
 .meter-fill { display: block; height: 100%; background: var(--accent); }
-.meter-label {
-  margin-left: 0.4rem;
-  font-variant-numeric: tabular-nums;
-  font-size: 0.85rem;
-  color: var(--muted);
-}
+.meter-label { margin-left: var(--s1); font-size: var(--t-machine); color: var(--muted); }
 
-/* The countdown. It is the highest-value line on this page — "deferred for
+/* The countdown. It is the highest-value line on that page — "deferred for
    another 240s" was true and invisible on every surface vidtheque had — so it
-   is set in the interface font at working weight, not as another muted pill. */
+   is set as machine text at working weight, not as another muted pill. */
 .countdown {
   display: inline-block;
-  padding: 0.05rem 0.4rem;
-  font-size: 0.78rem;
-  font-variant-numeric: tabular-nums;
+  padding: 1px var(--s2);
+  font-size: var(--t-machine);
   color: var(--tone-warn);
-  border: 1px dashed var(--tone-warn);
-  border-radius: 999px;
+  background: var(--tone-warn-bg);
+  border: 1px dashed var(--tone-warn-line);
+  border-radius: var(--r-sm);
   white-space: nowrap;
 }
 
@@ -774,7 +1082,7 @@ button[disabled] { opacity: 0.5; cursor: default; }
   display: inline-block;
   width: 6px;
   height: 6px;
-  margin: 0 0.35rem 0 0.5rem;
+  margin: 0 var(--s1) 0 var(--s2);
   vertical-align: 1px;
   background: var(--tone-work);
   border-radius: 50%;
@@ -782,50 +1090,57 @@ button[disabled] { opacity: 0.5; cursor: default; }
 }
 @keyframes pulse { 50% { opacity: 0.25; } }
 
-.stale-note { margin-left: 0.75rem; font-size: 0.85rem; color: var(--muted); }
+.stale-note { margin-left: var(--s3); font-size: var(--t-meta); color: var(--muted); }
 
 @media (prefers-reduced-motion: reduce) {
   .livedot { animation: none; }
 }
 
-/* The event log. Monospaced, because every line is machine output and the
-   deferral timeline reads as a column of clocks. */
+/* The event log. Machine text end to end, and the deferral timeline reads as a
+   column of clocks. */
 .events { margin: 0; padding: 0; list-style: none; }
 .event {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem 0.6rem;
+  gap: var(--s1) var(--s2);
   align-items: baseline;
-  padding: 0.35rem 0;
+  padding: var(--s1) 0;
   border-bottom: 1px solid var(--line);
-  font-size: 0.85rem;
+  font-size: var(--t-cell);
 }
 .event:last-child { border-bottom: 0; }
 .event .at { flex: 0 0 auto; }
-.eventtext {
-  flex: 1 1 22rem;
-  min-width: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.8rem;
-  overflow-wrap: anywhere;
-}
+.eventtext { flex: 1 1 22rem; min-width: 0; font-size: var(--t-machine); overflow-wrap: anywhere; }
 /* An event that arrived while the page was open. A left rule rather than a
    flash: it survives being scrolled past, which an animation does not. */
-.event.is-new { margin-left: -0.6rem; padding-left: 0.5rem; border-left: 2px solid var(--accent); }
+.event.is-new { margin-left: calc(var(--s2) * -1); padding-left: var(--s2); border-left: 1px solid var(--accent); }
 
 /* ----------------------------------------------------------------- notices */
 
+/* Not a card: a band under a rule that is thick enough to be the loudest thing
+   on the page, in the tone of what went wrong. */
 .notice {
-  margin-top: 1.5rem;
-  padding: 1rem 1.1rem;
-  background: var(--raised);
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  margin-top: var(--s6);
+  padding: var(--s3) 0 var(--s4);
+  border-top: 2px solid var(--tone-line, var(--line));
 }
-.notice-bad { border-color: var(--tone-bad); }
-.notice-title { margin: 0; font-size: 1rem; font-weight: 600; }
-.notice-detail { margin: 0.4rem 0 0; max-width: var(--prose); color: var(--muted); font-size: 0.9rem; }
-.notice-next { margin: 0.6rem 0 0; max-width: var(--prose); font-size: 0.9rem; }
+.notice-bad { --tone: var(--tone-bad); --tone-line: var(--tone-bad); }
+.notice-title {
+  margin: 0;
+  font-size: var(--t-lead);
+  font-weight: var(--w-strong);
+  color: var(--tone, var(--fg));
+}
+.notice-detail {
+  margin: var(--s2) 0 0;
+  max-width: var(--prose);
+  font-family: var(--font-mono);
+  font-size: var(--t-machine);
+  font-variant-ligatures: none;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.notice-next { margin: var(--s2) 0 0; max-width: var(--prose); font-size: var(--t-cell); }
 
 /* ---------------------------------------------------------------- lightbox */
 
@@ -836,12 +1151,12 @@ button[disabled] { opacity: 0.5; cursor: default; }
   color: var(--fg);
   background: var(--raised);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--r-lg);
 }
 
 .shot::backdrop { background: rgb(0 0 0 / 0.66); }
 
-.shot-inner { position: relative; padding: 0.75rem; }
+.shot-inner { position: relative; padding: var(--s3); }
 
 /* The stage owns the geometry, so a box can never land outside the picture and
    the dialog does not resize under the pointer while the bytes arrive. */
@@ -850,8 +1165,8 @@ button[disabled] { opacity: 0.5; cursor: default; }
   aspect-ratio: 16 / 9;
   overflow: hidden;
   line-height: 0;
-  background: var(--line);
-  border-radius: 6px;
+  background: var(--sand-4);
+  border-radius: var(--r-md);
 }
 
 .shot-img { display: block; width: 100%; height: 100%; object-fit: contain; }
@@ -865,21 +1180,21 @@ button[disabled] { opacity: 0.5; cursor: default; }
   flex-wrap: wrap;
   justify-content: space-between;
   align-items: baseline;
-  gap: 0.5rem 1rem;
-  margin-top: 0.6rem;
+  gap: var(--s2) var(--s4);
+  margin-top: var(--s2);
 }
 
-.shot-caption { margin: 0; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
-.shot-toggle { display: flex; gap: 0.4rem; align-items: center; color: var(--muted); font-size: 0.85rem; }
-.shot-link { color: var(--accent); font-size: 0.9rem; text-decoration: none; }
+.shot-caption { margin: 0; font-size: var(--t-machine); }
+.shot-toggle { display: flex; gap: var(--s1); align-items: center; color: var(--muted); font-size: var(--t-meta); }
+.shot-link { color: var(--accent); font-size: var(--t-cell); text-decoration: none; }
 .shot-link:hover { text-decoration: underline; }
 
 .shot-close {
   position: absolute;
-  top: 1.15rem;
-  right: 1.15rem;
-  padding: 0.3rem 0.65rem;
-  font-size: 0.85rem;
+  top: var(--s5);
+  right: var(--s5);
+  padding: var(--s1) var(--s2);
+  font-size: var(--t-meta);
   color: var(--fg);
   background: var(--bg);
   border: 1px solid var(--line);
@@ -888,14 +1203,23 @@ button[disabled] { opacity: 0.5; cursor: default; }
 /* ------------------------------------------------------------------ footer */
 
 footer {
-  margin-top: 3rem;
-  padding-top: 1.25rem;
+  margin-top: var(--s12);
+  padding-top: var(--s5);
   border-top: 1px solid var(--line);
-  font-size: 0.82rem;
+  font-size: var(--t-meta);
+  color: var(--muted);
 }
 footer p { margin: 0; max-width: var(--prose); }
 
 /* ------------------------------------------------------------------ mobile */
+
+@media (max-width: 76rem) {
+  /* Five ledger columns stop fitting before the table does. Two rows of the
+     same band, not five stacked cards. */
+  .ledger { grid-template-columns: repeat(3, 1fr); }
+  .ledger > .figure:nth-child(3n + 1) { border-left: 0; padding-left: 0; }
+  .ledger > .figure:nth-child(n + 4) { border-top: 1px solid var(--line); }
+}
 
 @media (max-width: 60rem) {
   .split { grid-template-columns: 1fr; gap: 0; }
@@ -913,33 +1237,35 @@ footer p { margin: 0; max-width: var(--prose); }
   :is(.grid.videos, .grid.jobs) td { display: block; }
 
   :is(.grid.videos, .grid.jobs) tr {
-    padding: 0.85rem 0;
+    padding: var(--s3) 0;
     border-bottom: 1px solid var(--line);
   }
   :is(.grid.videos, .grid.jobs) tr:hover { background: none; }
 
   :is(.grid.videos, .grid.jobs) th, :is(.grid.videos, .grid.jobs) td {
-    padding: 0.1rem 0;
+    height: auto;
+    padding: 1px 0;
     border-bottom: 0;
   }
 
   :is(.grid.videos, .grid.jobs) td[data-label]:not(.col-shot) {
     display: flex;
-    gap: 0.6rem;
+    gap: var(--s2);
     align-items: baseline;
   }
   :is(.grid.videos, .grid.jobs) td[data-label]:not(.col-shot)::before {
     content: attr(data-label);
     flex: 0 0 5.5rem;
-    font-size: 0.68rem;
-    font-weight: 600;
+    font-family: var(--font-sans);
+    font-size: var(--t-micro);
+    font-weight: var(--w-medium);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.07em;
     color: var(--muted);
   }
   :is(.grid.videos, .grid.jobs) td.num { text-align: left; }
-  .grid.videos .col-shot { width: auto; margin-bottom: 0.4rem; }
-  :is(.grid.videos, .grid.jobs) .col-title { min-width: 0; margin-bottom: 0.35rem; }
+  .grid.videos .col-shot { width: auto; margin-bottom: var(--s1); }
+  :is(.grid.videos, .grid.jobs) .col-title { min-width: 0; margin-bottom: var(--s1); }
 
   /* The other grids stay tables and scroll inside their own wrapper. A five
      column provenance table squeezed into 375px breaks `text_embed` across
@@ -950,18 +1276,28 @@ footer p { margin: 0; max-width: var(--prose); }
 }
 
 @media (max-width: 40rem) {
-  body { padding: 0 1rem calc(3rem + env(safe-area-inset-bottom)); }
+  body { padding: 0 var(--s4) calc(3rem + env(safe-area-inset-bottom)); }
 
-  .masthead { gap: 0.5rem 1rem; padding: 1.5rem 0 0.85rem; }
+  .masthead { gap: var(--s2) var(--s4); padding: var(--s5) 0 var(--s3); }
   .deployment { margin-left: 0; flex-basis: 100%; }
 
-  .pagehead h1 { font-size: 1.3rem; }
-  .panel { margin-top: 1.75rem; }
+  .pagehead { padding: var(--s6) 0 var(--s4); }
+  .pagehead h1 { font-size: var(--t-h2); }
+  .panel { margin-top: var(--s6); }
 
-  .figures { grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr)); gap: 1rem 1.25rem; }
-  .figure > dd { font-size: 1.25rem; }
+  /* Two columns, and the fifth figure takes the full width rather than
+     sitting alone next to a hole. */
+  .ledger { grid-template-columns: repeat(2, 1fr); }
+  .ledger > .figure { padding: var(--s3) var(--s3) var(--s3) 0; }
+  .ledger > .figure:nth-child(3n + 1) { border-left: 1px solid var(--line); padding-left: var(--s3); }
+  .ledger > .figure:nth-child(odd) { border-left: 0; padding-left: 0; }
+  .ledger > .figure:nth-child(n + 3) { border-top: 1px solid var(--line); }
+  .ledger > .figure:last-child:nth-child(odd) { grid-column: 1 / -1; }
 
-  .filters { padding: 0.75rem; }
+  .figures { grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr)); gap: var(--s4) var(--s5); }
+  .figure > dd { font-size: var(--t-h2); }
+
+  .filters { padding: var(--s3); }
   .field-wide { flex-basis: 100%; }
   .field-actions { margin-left: 0; flex-basis: 100%; }
   .field-actions button { flex: 1 1 auto; }
@@ -970,5 +1306,5 @@ footer p { margin: 0; max-width: var(--prose); }
   .ocrgrid { grid-template-columns: 1fr; }
 
   .shot { width: 96vw; max-width: 96vw; }
-  .shot-close { top: 1rem; right: 1rem; }
+  .shot-close { top: var(--s4); right: var(--s4); }
 }
