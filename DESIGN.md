@@ -652,9 +652,16 @@ A full-width horizontal band **directly under the header** (`.timeband`, and
 counts grid and a seven-row table, which put the one artefact no neighbouring
 product has below the fold on a laptop). One absolutely-positioned bar per shot
 across the true duration, on a `--panel` ground inside a hairline. Kept
-keyframes solid `--accent` at 0.75 opacity; a shot whose every frame was
-deduplicated is hatched in `--mark` at 0.4, so it reads as "captured, then
-dropped" rather than as empty video. Minimum bar width 3px — the bar's
+keyframes solid `--accent` at **0.85** opacity (0.75 measured 2.98:1 on
+`--panel`, two hundredths under the floor for a non-text mark, and this mark is
+the page's whole argument; 0.85 measures 3.48:1 light / 5.98:1 dark and still
+leaves the step to full opacity that hover and focus use). A shot whose every
+frame was deduplicated paints **its own `--bg` ground** and hatches `--mark` on
+it at full strength, so it reads as "captured, then dropped" rather than as
+empty video — and as paper with a scratch on it rather than as a gap between
+bars. It is not hatched over `--panel`: `--mark` on `--panel` is 2.93:1 at full
+strength, so no opacity of it could ever clear 3:1, while on `--bg` the same
+graphite measures 3.20:1 light / 3.59:1 dark. Minimum bar width 3px — the bar's
 *position* is the fact, and a mark you cannot see lies about the cut structure.
 Hovering either the timeline or the keyframe strip lights the other.
 

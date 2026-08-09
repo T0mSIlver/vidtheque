@@ -1197,10 +1197,11 @@ button[disabled] { opacity: 0.5; cursor: default; }
   vertical-align: -2px;
   border-radius: 1px;
 }
-.swatch-kept { background: var(--accent); opacity: 0.75; }
+.swatch-kept { background: var(--accent); opacity: 0.85; }
 .swatch-dedup {
-  background: repeating-linear-gradient(135deg, var(--mark) 0 2px, transparent 2px 6px), var(--panel);
-  opacity: 0.55;
+  background:
+    repeating-linear-gradient(135deg, var(--mark) 0 2px, transparent 2px 6px),
+    var(--bg);
 }
 
 /* One bar per shot, positioned as a percentage of the runtime. Real data, so
@@ -1223,11 +1224,15 @@ button[disabled] { opacity: 0.5; cursor: default; }
    cannot see is a mark that lies about the cut structure. */
 .shotbar { position: absolute; top: 0; bottom: 0; min-width: 3px; }
 
+/* 0.85, not 0.75. Measured: --accent at 0.75 over --panel is 2.98:1, two
+   hundredths under the 3:1 floor a non-text mark has to clear, and this mark is
+   the page's whole argument. 0.85 measures 3.48:1 in light and 4.96:1 in dark,
+   and still leaves the step to full opacity that hover and focus use. */
 .shotbar a {
   display: block;
   height: 100%;
   background: var(--accent);
-  opacity: 0.75;
+  opacity: 0.85;
   border-right: 1px solid var(--bg);
 }
 .shotbar a:hover, .shotbar a:focus-visible { opacity: 1; }
@@ -1239,12 +1244,22 @@ button[disabled] { opacity: 0.5; cursor: default; }
 .framecard.is-linked .framebtn img { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* A shot whose every frame was deduplicated: hatched, so it is legible as
-   "captured, then dropped" and not as an empty stretch of video. */
+   "captured, then dropped" and not as an empty stretch of video.
+
+   The bar paints its own `--bg` ground and hatches at full strength on top of
+   it, instead of hatching the band's `--panel` at 0.4 opacity. That is a
+   contrast fix with a measurement behind it: `--mark` on `--panel` is 2.93:1 at
+   *full* strength — DESIGN.md already records this, which is why the rail foot
+   has no `·` separators — so a 0.4 hatch of it (1.47:1) could never reach the
+   3:1 floor a non-text mark has to clear, whatever opacity it was given. On
+   `--bg` the same graphite measures 3.59:1 light and 3.66:1 dark. It also reads
+   better: paper with a scratch on it, which is exactly "captured, then
+   dropped", and unmistakably a bar rather than a gap between bars. */
 .shotbar.is-dedup a {
-  opacity: 0.4;
-  background: repeating-linear-gradient(
-    135deg, var(--mark) 0 2px, transparent 2px 6px
-  );
+  opacity: 1;
+  background:
+    repeating-linear-gradient(135deg, var(--mark) 0 2px, transparent 2px 6px),
+    var(--bg);
 }
 
 /* The footage counter. Five marks at the quarters, each one a hairline tick and
@@ -1274,7 +1289,10 @@ button[disabled] { opacity: 0.5; cursor: default; }
   left: 50%;
   width: 1px;
   height: var(--s1);
-  background: var(--rule);
+  /* `--mark`, not `--rule`: this is a mark that points at a position, not a
+     rule that separates two things. Measured, that is also the difference
+     between 1.51:1 and 3.59:1 on the page ground. */
+  background: var(--mark);
 }
 /* The ends label the ends: a centred `0:00` would hang half of itself off the
    left of the band, and its tick belongs on the band's own edge. */
@@ -1589,12 +1607,16 @@ button[disabled] { opacity: 0.5; cursor: default; }
   font-weight: var(--w-strong);
   color: var(--tone, var(--fg));
 }
+/* Sans, not mono. This paragraph is a sentence a human wrote about what went
+   wrong; the machine's contribution to it — the `error_code`, the tool name,
+   the env var — arrives inside `<code>` or `.errtext` and is mono there. Setting
+   the whole paragraph in the machine face broke the Two-Channel Rule on the one
+   surface whose entire premise is that the face tells you who is speaking, and
+   it read as a terminal transcript on pages where nothing had crashed. */
 .notice-detail {
   margin: var(--s2) 0 0;
   max-width: var(--prose-meta);
-  font-family: var(--font-mono);
-  font-size: var(--t-machine);
-  font-variant-ligatures: none;
+  font-size: var(--t-cell);
   color: var(--muted);
   overflow-wrap: anywhere;
 }

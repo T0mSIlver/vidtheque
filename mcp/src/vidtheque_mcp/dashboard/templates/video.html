@@ -58,8 +58,12 @@
    like the overview's ledger band it carries only an sr-only heading: a band of
    bars over a footage counter running 0:00 to the runtime does not need a
    caption to say it is a timeline. #}
-<section class="timeband" aria-labelledby="timeline">
-  <h2 class="sr-only" id="timeline">Scene timeline</h2>
+{# With shots it is the band and needs no caption. With none it is a two-line
+   sentence, and an unlabelled sentence directly under a notice reads as part of
+   the notice — so the empty case becomes an ordinary panel with its heading
+   showing, like every other empty panel on the page. #}
+<section class="timeband{{ '' if shots else ' panel' }}" aria-labelledby="timeline">
+  <h2 class="{{ 'sr-only' if shots else 'panel-title' }}" id="timeline">Scene timeline</h2>
   {% if shots %}
   <ol class="timeline" aria-label="Shots across the runtime">
     {% for shot in shots %}
