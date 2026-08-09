@@ -58,23 +58,69 @@ on, and they are on for different reasons:
   **never registered** rather than registered-and-refusing. Verify against a
   live `tools/list` through the tunnel, not against the source.
 - `VIDTHEQUE_AUTH=none` means the dashboard's write side is never registered at
-  all (`dashboard/access.py`, `require_write`). `WRITE_ROUTES` is empty in
-  phase 1 anyway — confirm it is still empty when you ship.
+  all (`dashboard/access.py`, `write_side_enabled`), and so does
+  `VIDTHEQUE_PUBLIC_READONLY=1` — the same predicate, either half sufficient.
+  `WRITE_ROUTES` is five paths since phase 3 (login, logout, index, reindex,
+  tags); what to confirm is that **none of them is in the router**, and that
+  each 404s rather than 403ing:
+  `for p in login logout index; do curl -s -o /dev/null -w "%{http_code} /$p\n" -X POST http://127.0.0.1:8100/dashboard/$p; done`
+  — expect `404` three times.
 
 Then check the redactions actually applied to data: `_redacted()` is
 `assembled.public.enabled` (`dashboard/views.py:649-660`), and it drops
 `error_message` from job cards (`:718`), `source_url` and `error_message` from
 job items (`:765-767`), and `message` from job events (`:801`). Everything else
 on that view — states, codes, counts, clocks — is deliberately kept
-(`dashboard.md` §10.4). **Known delta to decide on:** the *corpus overview* is
-not redacted. It renders the declared embedding model ids, the vector-leg state
-including `vectors.reason`, database and keyframe byte totals, and
-`auth={{ auth_mode }}` in the page chrome (`dashboard/views.py:200-210`,
-`templates/base.html:117`). `dashboard.md` §2.4 promised the demo overview would
-carry "no settings, no paths". There are no filesystem paths in it — `_file_size`
-returns an integer, and the `disable()` reason strings are dimension/model
-mismatches with no URLs in them — but the model ids *are* settings. Accept it
-(it is all in the public repo already) or fix it; either way, decide it.
+(`dashboard.md` §10.4). **Resolved in dashboard phase 4 (2026-08-09): fixed,
+not accepted.** This runbook found the *corpus overview* unredacted — declared
+embedding model ids, the vector-leg state including `vectors.reason`, database
+and keyframe byte totals, and `auth={{ auth_mode }}` in the page chrome — against
+§2.4's promise of "no settings, no paths". There were no filesystem paths in it,
+but the model ids *are* settings. The projection now drops all four
+(`dashboard/views.py:_redacted`, and the amendment under §2.4's table), keeping
+the one thing a visitor can act on: that vector search is off, without the
+mismatch that caused it. So the audit's job here is now **verification, not a
+decision** — §2.5 has the grep.
+
+**Clamp policy on `/dashboard/api/*` — open, and it is a §1 policy question.**
+Found while shipping phase 4, not fixed there, because it is the "what is a
+scraper allowed to take" question this section says an agent cannot answer.
+`/dashboard/api/*` is registered in **every** mode with `OWNER_CLAMPS`
+(`dashboard/__init__.py`, `public/api.py`), and in the intended production
+combination (`READONLY=1` + `AUTH=none`) there is no credential in front of it —
+so an anonymous visitor gets the *owner's* bounds on the JSON facade rather
+than the demo's:
+
+```bash
+curl -s http://127.0.0.1:8100/api/meta           | jq .clamps   # policy "public", 20/50
+curl -s http://127.0.0.1:8100/dashboard/api/meta | jq .clamps   # policy "owner",  50/100
+```
+
+Two of the three differences are only "a bigger page of the same public
+listing". The third is not: `OWNER_CLAMPS.search_text_chars is None` passes the
+caller's `max_text_chars` through, **including the documented `0` opt-out**, so
+`/dashboard/api/search?q=…&max_text_chars=0` returns untruncated transcript text
+— the full-transcript escape hatch `demo-site.md` §2 reserves for "an owner's
+agent, not anonymous traffic". At `VIDTHEQUE_RATE_DASHBOARD_PER_MIN=120` the
+whole corpus's transcripts are a short crawl.
+
+The audit lands on one of, in increasing order of cost:
+
+1. **Accept it.** The corpus is talks that are public on YouTube and the
+   transcripts are derived from them; if the answer to §1's first question is
+   "all of it is public", this changes nothing.
+2. **`VIDTHEQUE_DASHBOARD=0`**, or the ingress rule in
+   `deploy/cloudflared.example.yml` that 404s `^/dashboard` at the edge — which
+   also costs the browsable corpus, so it is the answer only if the dashboard
+   was not wanted publicly anyway.
+3. **Make the policy follow the mode**, one line:
+   `api_routes(PUBLIC_CLAMPS if readonly else OWNER_CLAMPS, ROOT, ask=False)`.
+   It is deliberately not done here because it rewrites a phase-1 assertion
+   (`test_one_set_of_handlers_serves_both_prefixes` pins owner clamps on that
+   prefix *in demo mode*), and because a read-only deployment that also has a
+   credential configured would then clamp its own owner. If it is taken, the
+   honest version keys off the credential rather than the flag, which is a
+   design change and belongs in phase 5 beside search-and-ask moving in.
 
 **Rate-limit bypass.** The limiter is in-memory, single-process, and charges
 before the handler runs (`public/ratelimit.py`). Probe, through the tunnel:
@@ -272,6 +318,21 @@ counts and all of its clocks; it must not show the submitted URL, the error
 message, or any job-event message. If a failed job renders identically with the
 flag on and off, the flag is not reaching the process — go to §6.1.
 
+Then the *overview*, which phase 4 redacted after this runbook found it open:
+
+```bash
+curl -s http://127.0.0.1:8100/dashboard | grep -ciE 'Qwen/|Declared models|keyframe JPEGs|auth='
+# expect 0 — model ids, byte totals and the auth line are the operator's console
+curl -s http://127.0.0.1:8100/dashboard | grep -c 'read-only demo'
+# expect 1 — the rail says what the reader may do, and nothing about the box
+```
+
+The corpus must still be all there on the same page: the five ledger counts, the
+channel and tag rollups, the arrivals, the queue line and the gaps. A demo
+overview that renders as an empty shell means the redaction grew past its four
+fields, which the suite asserts both ways
+(`test_the_overview_projection_keeps_the_corpus_and_drops_the_box`).
+
 ### 2.6 Frames byte-cap sanity
 
 Under `AUTH=none` the keyframe directory is served unsigned to anyone, so the
@@ -291,8 +352,10 @@ Two things to check, both arithmetic:
    the limiter makes it "slow enough to be pointless", not impossible). Confirm
    it is still the accepted answer now that the corpus is real and public.
 2. **Cache thrash.** The demo asks for three widths — 192 (list thumb), 320
-   (frame hit), 960 (lightbox) — so a full crawl materialises roughly
-   3 × 3,460 variants. On rough per-variant sizes that is several hundred MB
+   (frame hit), 960 (lightbox) — and the read-only projection, public since
+   phase 4, asks for three more: 192 (shared), 512 (detail) and 1280
+   (lightbox). Five distinct widths across the two surfaces, so a full crawl
+   materialises roughly 5 × 3,460 variants rather than three. On rough per-variant sizes that is several hundred MB
    against a 256 MB cap, i.e. the cache **will** evict under sustained public
    load and every eviction is a re-encode on the request path. Measure the
    actual `derived/` sizes on the box (`du -sh $DATA_DIR/derived`) and raise

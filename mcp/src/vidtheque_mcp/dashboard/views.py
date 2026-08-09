@@ -25,10 +25,11 @@ from starlette.responses import HTMLResponse, JSONResponse, Response
 
 from .. import __version__
 from ..db import queries
-from ..errors import HTTP_STATUS
+from ..errors import HTTP_STATUS, ToolError
 from ..jobs import store as jobs_store
 from ..public.api import OWNER_CLAMPS, _cover_frames, thumb_url
-from ..text import clamp, iso_minute
+from ..text import clamp, iso_day, iso_minute
+from ..timeparse import parse_corpus_time
 from ..tools import library
 from ..tools.base import Deps
 from .render import build_environment, span
@@ -112,6 +113,36 @@ def _chrome(request: Request, page: str) -> dict[str, Any]:
     }
 
 
+def _redacted(request: Request) -> bool:
+    """Is this the demo's read-only projection rather than the owner's page?
+
+    The same flag that has always decided which half of vidtheque you get, and
+    the whole of §2.4's right-hand column. It is deliberately a property of the
+    **deployment**, not of the reader: a read-only instance that also has a
+    credential configured still serves the projection, because the projection
+    is what that mode *is*.
+
+    Two rules follow it, and phase 4 is the second one arriving:
+
+    * the **jobs** view (phase 2) keeps its states, its codes, its counts and
+      **all of its clocks** — showing a visitor what indexing a video costs in
+      time is the view's stated purpose there (§10.4) — and drops source URLs,
+      because `jobs.args_json` carries whatever was submitted, and error text,
+      because yt-dlp's failure strings carry cookiefile paths, player clients
+      and the operator's politeness settings;
+    * the **corpus overview** (phase 4) keeps the corpus — counts, channels,
+      tags, coverage, arrivals — and drops the operator's box: the declared
+      model ids and their dimensions, the drift reason, the byte totals, and
+      the `VIDTHEQUE_AUTH` line in the rail. §2.4 promised "no settings, no
+      paths"; the model ids *are* settings, and the runbook's audit
+      (`docs/deploy-public.md` §1.1) found them on the page.
+
+    The videos table and the video detail page are **not** redacted: §2.4 gives
+    them to the demo whole, and everything on them is corpus, not deployment.
+    """
+    return bool(request.app.state.assembled.public.enabled)
+
+
 def sign_in_page(request: Request, mode: str, *, login: bool = True) -> Response:
     """The 401 an unauthenticated browser gets — a page, not a JSON blob."""
     from .access import sign_in_hint
@@ -147,10 +178,19 @@ def _tool_error(result: Any) -> dict[str, Any] | None:
 # ---------------------------------------------------------------- §5.1 corpus
 
 
+# How far back "recently failed" reaches on the overview (§5.1). A day, because
+# the question the line answers is "what failed while I was asleep" — a corpus
+# that had a bad week six months ago must not light this up forever. The page
+# prints the window in the sentence, from this constant, so the number and the
+# words it sits in can never disagree.
+FAILED_WINDOW_S = 86_400
+
+
 async def overview(request: Request) -> Response:
     assembled = request.app.state.assembled
     deps: Deps = assembled.deps
     db = assembled.db
+    redact = _redacted(request)
 
     summary = await library.corpus_summary(
         deps,
@@ -175,7 +215,16 @@ async def overview(request: Request) -> Response:
     rollup = await db.read(queries.corpus_rollup)
     pool = await db.read(lambda c: queries.resolve_videos(c, queries.CorpusFilter()))
     recent = await db.read(lambda c: queries.recent_indexed(c, pool, RECENT_CAP))
-    keyframe_bytes = await db.read(queries.keyframe_bytes_total)
+    # The queue, in one row (§5.1). Read in both modes: what the machine is
+    # doing is corpus-shaped, not operator-shaped, and the jobs view the
+    # numbers link into is already part of the demo projection (§10.4).
+    health = await db.read(
+        lambda c: jobs_store.job_health(c, int(time.time()) - FAILED_WINDOW_S)
+    )
+    # The one read the projection skips rather than redacts: a byte total of
+    # the operator's disk is not a fact about the corpus, and not asking for it
+    # is cheaper and more honest than asking and then not printing it.
+    keyframe_bytes = None if redact else await db.read(queries.keyframe_bytes_total)
 
     covers = await db.read(
         lambda c: _cover_frames(c, [str(r["public_id"]) for r in recent])
@@ -203,9 +252,23 @@ async def overview(request: Request) -> Response:
             "channels": payload.get("channels", []),
             "tags": payload.get("tags", {}),
             "gaps": payload.get("gaps", {}),
-            "config": _declared_models(assembled.db.config),
+            # §5.1's job line, and the two links it is made of. The window is
+            # in the context rather than in the copy so the sentence and the
+            # query behind it are the same number.
+            "jobs": health,
+            "failed_window_h": FAILED_WINDOW_S // 3600,
+            # The three the projection drops (§2.4). `None` rather than absent:
+            # `StrictUndefined` is on, so a template that forgets the guard is a
+            # loud failure in a test rather than a blank panel on a public page.
+            "config": None if redact else _declared_models(assembled.db.config),
             "vectors": assembled.db.vectors,
-            "storage": {
+            # The reason is a config/dimension mismatch written for the
+            # operator; the *state* it caused is the visitor's business, because
+            # search answers differently without the vector legs.
+            "drift_reason": None if redact else assembled.db.vectors.reason,
+            "storage": None
+            if redact
+            else {
                 "keyframes": keyframe_bytes,
                 # os.stat, not a directory walk: the file knows its own size and
                 # the keyframe bytes are a column (§5.1).
@@ -256,6 +319,84 @@ def _declared_models(config: dict[str, str]) -> list[dict[str, str]]:
 _ORDERS = ("recency", "title", "duration", "indexed_at", "relevance")
 _HAS = ("any", "transcript", "ocr", "frames", "all")
 
+# The two ranges §5.2 lists and phase 1 did not wire, in the order they appear
+# in the band: when the talk was published, and when this box indexed it. They
+# are the corpus axis and the operations axis, and CLAUDE.md's invariant is
+# that they are never overloaded — which is exactly why they are two controls
+# and not one "date" filter with a mode.
+_DATE_FILTERS = (
+    ("published_after", "published_before"),
+    ("indexed_after", "indexed_before"),
+)
+_DATE_PARAMS = tuple(name for pair in _DATE_FILTERS for name in pair)
+
+# A date is a position on a real timeline, so it gets real bounds. Both are
+# *clamps*, not refusals, and the clamped value is echoed back into the form and
+# into every link on the page — a filter the server quietly changed and did not
+# show is the silent narrowing CLAUDE.md forbids.
+#
+# The floor is one second rather than zero: the column is unix seconds, and
+# `iso_day` renders a falsy stamp as `—`, so a floor of 0 would not survive the
+# round trip back into a date input. The ceiling is a year out, because nothing
+# in a corpus was indexed after now and "next year" is already a generous
+# reading of a clock skew.
+_DATE_FLOOR = 1
+_DATE_CEILING_S = 365 * 86_400
+_DAY_S = 86_400
+# Long enough for every accepted spelling (`2026-08-09T12:00:00+00:00` is 25),
+# short enough that the parser is never handed a kilobyte to think about.
+_DATE_MAX_CHARS = 32
+
+
+def _date_filters(
+    params: Any, now: int
+) -> tuple[dict[str, int | None], dict[str, str], dict[str, Any] | None]:
+    """Resolve the four date inputs to clamped epochs, plus what to echo back.
+
+    Resolved **here** rather than passed through as strings, for one reason
+    worth the extra call: `parse_corpus_time` accepts `30d`, `today` and a bare
+    unix stamp as well as `2026-08-09`, and those are good things to be able to
+    type into a URL and bad things to leave in a form field a browser renders
+    as a date picker. So the entry point stays generous and the canonical form
+    is the resolved UTC **day** — which is then what the picker shows, what the
+    pager links carry, and what the query actually filtered on. The URL a
+    visitor sends and the sentence the page prints are the same fact.
+
+    Both ends are snapped to that day on purpose, and the two ends are snapped
+    differently because the clause they feed is asymmetric
+    (`db/queries.py:416-419`): `>= after` and `< before`. So `after` becomes the
+    start of its day and `before` becomes the start of the *next* one, which is
+    what makes `published_before=2026-08-09` include the ninth. The alternative
+    — passing the instant through unrounded — is a control whose label says a
+    day and whose filter means a moment, and a range that quietly drops
+    everything published on its own end date reads as a bug because it is one.
+
+    The third element is the tool's own typed refusal when a value will not
+    parse, rendered rather than dropped: `timeparse` treats an unparseable
+    filter as a hard error precisely because a silently ignored filter is a
+    page reporting the wrong result set with total confidence.
+    """
+    resolved: dict[str, int | None] = {}
+    echo: dict[str, str] = {}
+    for name in _DATE_PARAMS:
+        raw = (params.get(name) or "").strip()[:_DATE_MAX_CHARS]
+        if not raw:
+            resolved[name], echo[name] = None, ""
+            continue
+        try:
+            value = int(parse_corpus_time(raw, name) or 0)
+        except ToolError as error:
+            return (
+                resolved,
+                echo,
+                {"code": error.code, "message": error.message, "next": error.next_hint},
+            )
+        value = max(_DATE_FLOOR, min(now + _DATE_CEILING_S, value))
+        day = value - value % _DAY_S
+        resolved[name] = day + (_DAY_S if name.endswith("_before") else 0)
+        echo[name] = iso_day(max(day, _DATE_FLOOR))
+    return resolved, echo, None
+
 
 async def videos(request: Request) -> Response:
     assembled = request.app.state.assembled
@@ -277,20 +418,8 @@ async def videos(request: Request) -> Response:
     limit = clamp(params.get("limit"), 1, OWNER_CLAMPS.videos_max_limit,  # type: ignore[arg-type]
                   OWNER_CLAMPS.videos_default_limit)
     offset = clamp(params.get("offset"), 0, OWNER_CLAMPS.offset_max, 0)  # type: ignore[arg-type]
+    dates, date_echo, date_error = _date_filters(params, int(time.time()))
 
-    result = await library.list_videos(
-        deps,
-        q=q,
-        channel=channel,
-        tags=tags,
-        has=has,
-        index_state=index_state,
-        order=order,
-        limit=limit,
-        offset=offset,
-        fields="video_id,title,channel,published,duration,coverage,tags,indexed_at,index_state",
-        max_text_chars=200,
-    )
     filters = {
         "q": q or "",
         "channel": channel or "",
@@ -299,9 +428,15 @@ async def videos(request: Request) -> Response:
         "index_state": index_state,
         "order": order,
         "limit": limit,
+        **date_echo,
     }
-    error = _tool_error(result)
-    if error is not None:
+    # Every key the form and the link macros read, whatever went wrong: a
+    # refused date must still render a band with the other seven controls in
+    # it, so the reader can fix the one that broke instead of losing the query.
+    for name in _DATE_PARAMS:
+        filters.setdefault(name, "")
+
+    def refusal(error: dict[str, Any]) -> Response:
         return _render(
             "videos.html",
             {
@@ -317,6 +452,32 @@ async def videos(request: Request) -> Response:
             },
             status=HTTP_STATUS.get(error["code"], 500),
         )
+
+    if date_error is not None:
+        return refusal(date_error)
+
+    result = await library.list_videos(
+        deps,
+        q=q,
+        channel=channel,
+        tags=tags,
+        has=has,
+        index_state=index_state,
+        # Already resolved and clamped above, so the tool re-parses an integer
+        # rather than a string — same parameters, same clauses, one parse.
+        published_after=dates["published_after"],  # type: ignore[arg-type]
+        published_before=dates["published_before"],  # type: ignore[arg-type]
+        indexed_after=dates["indexed_after"],  # type: ignore[arg-type]
+        indexed_before=dates["indexed_before"],  # type: ignore[arg-type]
+        order=order,
+        limit=limit,
+        offset=offset,
+        fields="video_id,title,channel,published,duration,coverage,tags,indexed_at,index_state",
+        max_text_chars=200,
+    )
+    error = _tool_error(result)
+    if error is not None:
+        return refusal(error)
 
     payload = result.structured_content or {}
     rows = [dict(v) for v in payload.get("videos", [])]
@@ -663,20 +824,6 @@ POLL_MS = 2_000
 
 # The states that mean "this will change under the reader".
 LIVE_STATES = ("queued", "running")
-
-
-def _redacted(request: Request) -> bool:
-    """Is this the demo's projection of the jobs view (§2.4)?
-
-    The same flag that has always decided which half of vidtheque you get. In
-    demo mode the jobs view keeps its states, its codes, its counts **and all
-    of its clocks** — showing a visitor what indexing a video costs in time is
-    the view's stated purpose there (§10.4) — and loses exactly two things:
-    source URLs, because `jobs.args_json` carries whatever was submitted, and
-    error text, because yt-dlp's failure strings carry cookiefile paths, player
-    clients and the operator's politeness settings.
-    """
-    return bool(request.app.state.assembled.public.enabled)
 
 
 def _counts_line(card: dict[str, Any]) -> str:

@@ -746,3 +746,38 @@ def active_job_count(conn: sqlite3.Connection) -> int:
     return int(
         conn.execute("SELECT COUNT(*) FROM jobs WHERE state IN ('queued','running')").fetchone()[0]
     )
+
+
+def job_health(conn: sqlite3.Connection, failed_since: int) -> dict[str, int]:
+    """What the queue is doing right now, in one row (dashboard.md §5.1).
+
+    The overview's job line. Four conditional sums over `jobs` rather than four
+    counting statements, because the corpus overview is already the one page
+    that answers with flat aggregates and a fan-out here would be four round
+    trips for three numbers a human reads in one glance.
+
+    `deferred` is the subset of `active` that is being *held off* — the
+    `not_before` backoff `claim_next` honours. It is a subset and the page says
+    so: during the overnight batch sixteen jobs were queued, none of them were
+    about to run, and no surface said which of those two facts was true (§4.4).
+
+    `failed_recent` is windowed rather than total because "what failed while I
+    was asleep" is the question; a corpus with a bad week six months ago must
+    not light this up forever. The window is the caller's, so the sentence on
+    the page and the number in it come from the same constant.
+    """
+    row = conn.execute(
+        """
+        SELECT COALESCE(SUM(state IN ('queued','running')), 0)          AS active,
+               COALESCE(SUM(state = 'running'), 0)                      AS running,
+               COALESCE(SUM(state = 'queued'
+                            AND COALESCE(not_before, 0) > unixepoch()), 0) AS deferred,
+               COALESCE(SUM(state = 'failed'
+                            AND COALESCE(finished_at, 0) >= ?), 0)      AS failed_recent
+        FROM jobs
+        """,
+        (int(failed_since),),
+    ).fetchone()
+    return {
+        key: int(row[key]) for key in ("active", "running", "deferred", "failed_recent")
+    }

@@ -1754,3 +1754,339 @@ def test_the_write_affordances_appear_only_with_the_write_side(
         assert "VIDTHEQUE_AUTH=token" in overview
         assert "Re-index" not in page(none_mode, f"{ROOT}/videos")
         assert 'id="manage"' not in page(none_mode, f"{ROOT}/videos/kCc8FmEb1nY")
+
+
+# ------------------------------------------- 9. the projection (phase 4)
+
+# `VIDTHEQUE_PUBLIC_READONLY=1` — the deployment Tom ships through the tunnel:
+# the welcome page at `/`, the read-only projection at `/dashboard`, and no
+# write side by two independent mechanisms (dashboard.md §2.4,
+# docs/deploy-public.md §2.2). Everything in this section is measured against
+# it *and* against the owner's instance, in the same test wherever the point is
+# a difference — a redaction with no contrast beside it is a redaction that can
+# quietly grow to cover the whole page and still pass.
+DEMO = PublicSettings(enabled=True)
+
+# The operator's own console, in the strings it would leak in. The model ids are
+# `config` rows; the byte panel is a measurement of somebody's disk; `auth=` is
+# an environment variable and its value.
+OPERATOR_STRINGS = (
+    "Qwen/Qwen3-VL-Embedding-2B",
+    "Declared models",
+    "keyframe JPEGs",
+    "one SQLite file, one writer",
+    "auth=",
+    "VIDTHEQUE_AUTH",
+)
+
+READ_PAGES = (
+    ROOT,
+    f"{ROOT}/videos",
+    f"{ROOT}/videos/kCc8FmEb1nY",
+    f"{ROOT}/jobs",
+    f"{ROOT}/jobs/job_finished01",
+)
+
+
+def test_the_demo_serves_every_read_page_and_none_of_the_write_ones(
+    tmp_path: Path,
+) -> None:
+    """§2.4's table, top to bottom, as one composed assertion.
+
+    Phase 4's headline: the flag that used to gate only the demo page and
+    `/api` now also decides which *dashboard* you get. Nothing here is new
+    machinery — the write side has been absent under this flag since phase 3
+    and the jobs redaction since phase 2 — so the thing worth asserting is the
+    composition, which no single earlier test covered.
+    """
+    with make_client(tmp_path, public=DEMO) as demo:
+        for path in READ_PAGES:
+            assert demo.get(path).status_code == 200, path
+        # The corpus is still whole on the two pages §2.4 gives the demo
+        # unredacted: every state, every video, the seven stages.
+        table = page(demo, f"{ROOT}/videos")
+        assert "aaaaaaaaaaa" in table and "kCc8FmEb1nY" in table
+        assert table.count('class="cov cov-') == 4 * 3
+        detail = page(demo, f"{ROOT}/videos/kCc8FmEb1nY")
+        for stage in ("fetch", "stt", "chunk", "text_embed", "keyframe", "ocr"):
+            assert stage in detail
+        # And the write side is absent, not refusing (§2.3).
+        registered = {str(getattr(r, "path", "")) for r in demo.app.routes}
+        assert not (registered & set(WRITE_ROUTES))
+        assert demo.get(f"{ROOT}/index").status_code == 404
+        assert demo.get(f"{ROOT}/login").status_code == 404
+        assert "Add to the index" not in table and "Re-index" not in table
+
+
+def test_the_overview_projection_keeps_the_corpus_and_drops_the_box(
+    tmp_path: Path,
+) -> None:
+    """§2.4: "counts, channels, tags, coverage — no settings, no paths".
+
+    The delta `docs/deploy-public.md` §1.1 flagged and this phase closes: the
+    overview was rendering the declared checkpoint ids, the drift reason and
+    two byte totals to anonymous traffic. Asserted **both ways** in one test,
+    so a redaction that grows to swallow the corpus fails here.
+    """
+    with make_client(tmp_path, public=DEMO) as demo:
+        body = page(demo, ROOT)
+        for leaked in OPERATOR_STRINGS:
+            assert leaked not in body, f"{leaked} is on the demo overview"
+        # …and the corpus is all still there.
+        assert "transcript cues" in body and "on-screen lines" in body
+        assert "Andrej Karpathy" in body and "topic:attention" in body
+        assert "Recently indexed" in body and "What is missing" in body
+        assert re.search(r'class="pill tone-\w+">(ok|partial|degraded|indexing|empty)<', body)
+        # The rail says what the reader may do and stops there.
+        assert "read-only demo" in body
+        # The way back into the search engine, which exists under this flag and
+        # only under it.
+        assert 'href="/">Search the corpus' in body
+
+    with make_client(tmp_path) as owner:
+        body = page(owner, ROOT)
+        for kept in OPERATOR_STRINGS:
+            assert kept in body, f"{kept} vanished from the owner's overview"
+        assert 'href="/">Search the corpus' not in body
+
+
+def test_the_drift_reason_is_the_operators_sentence_and_the_effect_is_not(
+    tmp_path: Path,
+) -> None:
+    """The banner splits rather than disappearing.
+
+    A visitor is entitled to know that search is answering from full-text —
+    it changes what the results mean. They are not entitled to the dimension
+    mismatch that caused it, which names models and is addressed to whoever set
+    the environment.
+    """
+    reason = "the worker is serving other-model but the corpus used qwen."
+    for public, expect_reason in ((DEMO, False), (PublicSettings(enabled=False), True)):
+        with make_client(tmp_path, public=public) as client:
+            client.app.state.assembled.db.vectors.disable(reason)
+            body = page(client, ROOT)
+            assert "full-text" in body
+            assert (reason in body) is expect_reason
+            assert ("The corpus and the worker disagree" in body) is expect_reason
+
+
+def test_the_demo_dashboard_is_charged_to_the_limiter_like_the_private_one(
+    tmp_path: Path,
+) -> None:
+    """§6.8 and §2.5.3 — and now with the public buckets beside it.
+
+    A read-only dashboard on a public hostname is the *more* exposed of the two
+    deployments the `dashboard` bucket exists for, so the composed mode must
+    not lose it to the public bucket map.
+    """
+    with make_client(
+        tmp_path, public=DEMO, dashboard=DashboardSettings(rate_per_min=2)
+    ) as demo:
+        assert demo.get(ROOT).status_code == 200
+        assert demo.get(f"{ROOT}/videos").status_code == 200
+        refused = demo.get(f"{ROOT}/jobs")
+        assert refused.status_code == 429
+        assert refused.json()["bucket"] == "dashboard"
+        # The demo's own buckets are untouched by it.
+        assert demo.get("/api/videos").status_code == 200
+
+
+def test_the_projection_still_goes_through_the_byte_capped_frame_cache(
+    tmp_path: Path,
+) -> None:
+    """§6.4: three fixed widths, never base64, on the public surface too."""
+    with make_client(tmp_path, public=DEMO) as demo:
+        for path in (ROOT, f"{ROOT}/videos", f"{ROOT}/videos/kCc8FmEb1nY"):
+            body = page(demo, path)
+            # The favicon is a drawn `data:` SVG in the `<head>` and always was;
+            # what must never appear is a *frame* inlined as bytes.
+            assert "src=\"data:image" not in body
+            for width in set(re.findall(r"/frames/[\w.-]+\.jpg\?w=(\d+)", body)):
+                assert int(width) in (192, 512, 1280), f"{width} on {path}"
+
+
+# --- 9.1 codex gap 1: the queue, on the first screen (§5.1)
+
+
+def test_the_overview_counts_the_queue_and_links_into_it(client: TestClient) -> None:
+    """Active, deferred and recently-failed — the numbers, and where they go.
+
+    The fixture is the three shapes the jobs view exists for: one queued job
+    held off by a `not_before` in the future, one running, and one that failed
+    an hour and a half ago. So the counts are 2 active (1 of them deferred) and
+    1 recently failed, and each figure is a link into the jobs view already
+    filtered to what it counted.
+    """
+    body = page(client, ROOT)
+    assert "The queue" in body
+    assert f'href="{ROOT}/jobs?state=active">2</a>' in body
+    assert f'href="{ROOT}/jobs?state=failed">1</a>' in body
+    assert "1 of them waiting on a backoff" in body
+    assert "failed in the last 24 hours" in body
+    # The links are real filters, not decoration.
+    assert "job_running001" in page(client, f"{ROOT}/jobs?state=active")
+    assert "job_finished01" in page(client, f"{ROOT}/jobs?state=failed")
+
+
+def test_the_queue_read_is_one_query_and_the_projection_keeps_it(
+    tmp_path: Path,
+) -> None:
+    """It is a corpus-shaped fact, so it survives the demo (§2.4) — and it is
+    one grouped statement, because the overview is the one page that answers
+    with flat aggregates and four counts must not be four round trips."""
+    from vidtheque_mcp.db.connection import open_read_connection
+    from vidtheque_mcp.jobs import store as jobs_store
+
+    conn = open_read_connection(_corpus(tmp_path) / "vidtheque.db")
+    try:
+        assert jobs_store.job_health(conn, 0) == {
+            "active": 2,
+            "running": 1,
+            "deferred": 1,
+            "failed_recent": 1,
+        }
+        # A window that excludes the failure reports zero rather than forever.
+        assert jobs_store.job_health(conn, 2**31)["failed_recent"] == 0
+    finally:
+        conn.close()
+
+    with make_client(tmp_path, public=DEMO) as demo:
+        assert "The queue" in page(demo, ROOT)
+
+
+# --- 9.2 codex gap 2: the date filters (§5.2)
+
+
+def test_the_date_filters_narrow_both_axes_and_never_overload_them(
+    client: TestClient,
+) -> None:
+    """CLAUDE.md's two-axis rule, as two controls.
+
+    `published_*` picks videos and `indexed_*` picks when this box did the
+    work; the fixture publishes across 2023–2025 and indexed all three ready
+    videos at one moment, so a filter that confused them would be visible here.
+    """
+    after = page(client, f"{ROOT}/videos?published_after=2024-01-01")
+    assert "kCc8FmEb1nY" not in after  # published 2023-01-17
+    assert "zduSFxRajkE" in after and "eMlx5fFNoYc" in after
+
+    # The named day is *included*: `< before` is the clause, so `before`
+    # resolves to the start of the next day. A range that dropped everything
+    # published on its own end date would read as a bug because it is one.
+    on_the_day = page(client, f"{ROOT}/videos?published_before=2024-02-20")
+    assert "zduSFxRajkE" in on_the_day and "kCc8FmEb1nY" in on_the_day
+    assert "eMlx5fFNoYc" not in on_the_day
+
+    # The other axis, and the video with no `indexed_at` at all is not caught
+    # by it.
+    indexed = page(client, f"{ROOT}/videos?indexed_after=2025-06-01")
+    assert "kCc8FmEb1nY" in indexed and "aaaaaaaaaaa" not in indexed
+    assert "aaaaaaaaaaa" in page(client, f"{ROOT}/videos?index_state=indexing")
+
+
+def test_the_date_filters_compose_with_every_other_filter_and_carry(
+    client: TestClient,
+) -> None:
+    """A filtered table is a link somebody can send — all of it, not most."""
+    both = page(
+        client,
+        f"{ROOT}/videos?published_after=2024-01-01&index_state=ready&has=transcript"
+        "&order=title&limit=2",
+    )
+    assert "zduSFxRajkE" in both and "kCc8FmEb1nY" not in both
+    # Every sort head carries the range — a filter that survives one click and
+    # not the next is a filter the reader has to re-apply.
+    assert both.count("published_after=2024-01-01") == 4  # the four sortable columns
+    # …and the page says out loud what is narrowing it.
+    assert "published <span" in both and "2024-01-01" in both
+
+    # So does the pager, which only exists when there is a second page.
+    paged = page(client, f"{ROOT}/videos?published_after=2024-01-01&limit=1")
+    assert "more available" in paged
+    assert "published_after=2024-01-01&amp;published_before=&amp;" in paged
+    assert "offset=1" in paged
+
+
+def test_the_date_filters_are_clamped_and_canonicalised_server_side(
+    client: TestClient,
+) -> None:
+    """A date in the URL bar is an input, and the page shows what it became.
+
+    Two things happen server-side and both are then *visible*: a generous
+    spelling (`30d ago`, `today`) resolves to a UTC day, and an absurd one is
+    clamped to a year out. Silently applying either would be the narrowing
+    CLAUDE.md forbids; applying it and printing it is the filter explaining
+    itself.
+    """
+    import time as _time
+
+    from vidtheque_mcp.text import iso_day
+
+    ceiling = iso_day(int(_time.time()) + 365 * 86_400)
+    clamped = page(client, f"{ROOT}/videos?published_before=2999-01-01")
+    assert f'value="{ceiling}"' in clamped
+    assert "2999" not in clamped
+
+    today = iso_day(int(_time.time()))
+    relative = page(client, f"{ROOT}/videos?indexed_after=today")
+    assert f'value="{today}"' in relative
+    assert "indexed_after=today" not in relative  # the link carries the day
+
+    # An overlong value is truncated rather than handed to the parser whole.
+    assert client.get(f"{ROOT}/videos?published_after={'9' * 400}").status_code in (200, 400)
+
+
+def test_a_date_that_will_not_parse_is_a_typed_refusal_not_a_dropped_filter(
+    client: TestClient,
+) -> None:
+    """`timeparse` refuses rather than ignoring, and the page says so.
+
+    A silently dropped filter is a table reporting the wrong result set with
+    total confidence. The other seven controls survive the refusal, so the one
+    that broke can be fixed without losing the query.
+    """
+    response = client.get(f"{ROOT}/videos?published_after=lastwinter&channel=GPU+MODE")
+    assert response.status_code == 400
+    body = response.text
+    assert "E_BAD_TIME_FORMAT" in body
+    assert "lastwinter" in body
+    assert 'value="GPU MODE"' in body  # the rest of the band is still set
+    assert "kCc8FmEb1nY" not in body  # and no rows are claimed
+
+
+# --- 9.3 the welcome page's one link
+
+
+def test_the_welcome_page_gains_its_link_into_the_browsable_corpus(
+    tmp_path: Path,
+) -> None:
+    """§2.4: the demo page keeps its aesthetic and gains one link.
+
+    It is hidden in the markup and unhidden by `/api/meta`, so a deployment
+    that turned the route group off — or the edge rule in
+    `deploy/cloudflared.example.yml` that 404s `^/dashboard` — does not leave
+    an invitation to a dead page in the masthead.
+    """
+    with make_client(tmp_path, public=DEMO) as demo:
+        body = demo.get("/").text
+        assert 'id="browse"' in body and 'href="/dashboard"' in body
+        assert "Browse the corpus" in body
+        assert demo.get("/api/meta").json()["browse"] == ROOT
+        # One link, not a nav: the welcome page is a search engine (§6).
+        assert body.count('class="browse"') == 1
+
+    with make_client(
+        tmp_path, public=DEMO, dashboard=DashboardSettings(enabled=False)
+    ) as off:
+        assert off.get("/api/meta").json()["browse"] is None
+        assert off.get(ROOT).status_code == 404
+
+
+def test_the_browse_target_is_the_route_groups_own_root(tmp_path: Path) -> None:
+    """One source of truth for the path, asserted rather than assumed."""
+    from vidtheque_mcp.dashboard.settings import ROOT as DASHBOARD_ROOT
+
+    with make_client(tmp_path, public=DEMO) as demo:
+        browse = demo.get("/api/meta").json()["browse"]
+    assert browse == DASHBOARD_ROOT
+    assert browse.startswith("/") and not browse.startswith("//")

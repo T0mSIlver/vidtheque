@@ -1,9 +1,17 @@
 {% extends "base.html" %}
+{# The filter state, as query string, in one place. Every link on this page is
+   the current query with one thing changed — a page, or an order — so the
+   parts that do not change are written once. A date range that survives the
+   pager but not the sort head is a filter the reader has to re-apply, and a
+   reader who has to re-apply a filter stops believing the row count. #}
+{% macro carried() -%}
+q={{ filters.q | urlencode }}&amp;channel={{ filters.channel | urlencode }}&amp;tags={{ filters.tags | urlencode }}&amp;has={{ filters.has }}&amp;index_state={{ filters.index_state }}&amp;published_after={{ filters.published_after }}&amp;published_before={{ filters.published_before }}&amp;indexed_after={{ filters.indexed_after }}&amp;indexed_before={{ filters.indexed_before }}
+{%- endmacro %}
 {% macro page_link(offset) -%}
-{{ root }}/videos?q={{ filters.q | urlencode }}&amp;channel={{ filters.channel | urlencode }}&amp;tags={{ filters.tags | urlencode }}&amp;has={{ filters.has }}&amp;index_state={{ filters.index_state }}&amp;order={{ filters.order }}&amp;limit={{ filters.limit }}&amp;offset={{ offset }}
+{{ root }}/videos?{{ carried() }}&amp;order={{ filters.order }}&amp;limit={{ filters.limit }}&amp;offset={{ offset }}
 {%- endmacro %}
 {% macro sort_link(key) -%}
-{{ root }}/videos?q={{ filters.q | urlencode }}&amp;channel={{ filters.channel | urlencode }}&amp;tags={{ filters.tags | urlencode }}&amp;has={{ filters.has }}&amp;index_state={{ filters.index_state }}&amp;order={{ key }}&amp;limit={{ filters.limit }}
+{{ root }}/videos?{{ carried() }}&amp;order={{ key }}&amp;limit={{ filters.limit }}
 {%- endmacro %}
 {% block main %}
 
@@ -18,6 +26,20 @@
       {% if filters.index_state != 'all' %}<span class="fact">state <span class="mono">{{ filters.index_state }}</span></span>
       <span class="sep">·</span>{% endif %}
       {% if filters.has != 'any' %}<span class="fact">has <span class="mono">{{ filters.has }}</span></span>
+      <span class="sep">·</span>{% endif %}
+      {# An open end is `…`, not a made-up boundary: "published 2025-01-01 …"
+         says one end is set and the other is not, where "published 2025-01-01 –
+         2026-08-09" would be the page inventing a filter nobody applied. The
+         days here are the resolved ones, so this line and the query agree. #}
+      {% if filters.published_after or filters.published_before %}
+      <span class="fact">published <span class="mono">{{ filters.published_after or "…" }}</span>
+      <span class="sep">–</span>
+      <span class="mono">{{ filters.published_before or "…" }}</span></span>
+      <span class="sep">·</span>{% endif %}
+      {% if filters.indexed_after or filters.indexed_before %}
+      <span class="fact">indexed <span class="mono">{{ filters.indexed_after or "…" }}</span>
+      <span class="sep">–</span>
+      <span class="mono">{{ filters.indexed_before or "…" }}</span></span>
       <span class="sep">·</span>{% endif %}
       <span class="fact">ordered by <span class="mono">{{ filters.order }}</span></span>
     </p>
@@ -63,6 +85,32 @@
       {% endfor %}
     </select>
   </div>
+  {# The two time axes, as two controls, never one (CLAUDE.md's invariant):
+     `published` picks which videos, `indexed` picks when this box did the work.
+     A `<fieldset>` because a range is one question asked with two inputs, and a
+     screen reader needs the legend to know that the second date belongs to the
+     first. Both submit with the band, both are GET, both are clamped and
+     re-resolved server-side — a date in the URL bar is an input. #}
+  <fieldset class="field field-range">
+    <legend>Published</legend>
+    <div class="range">
+      <label class="sr-only" for="f-pub-after">Published on or after</label>
+      <input id="f-pub-after" name="published_after" type="date" value="{{ filters.published_after }}">
+      <span class="range-sep" aria-hidden="true">–</span>
+      <label class="sr-only" for="f-pub-before">Published on or before</label>
+      <input id="f-pub-before" name="published_before" type="date" value="{{ filters.published_before }}">
+    </div>
+  </fieldset>
+  <fieldset class="field field-range">
+    <legend>Indexed</legend>
+    <div class="range">
+      <label class="sr-only" for="f-idx-after">Indexed on or after</label>
+      <input id="f-idx-after" name="indexed_after" type="date" value="{{ filters.indexed_after }}">
+      <span class="range-sep" aria-hidden="true">–</span>
+      <label class="sr-only" for="f-idx-before">Indexed on or before</label>
+      <input id="f-idx-before" name="indexed_before" type="date" value="{{ filters.indexed_before }}">
+    </div>
+  </fieldset>
   <div class="field">
     <label for="f-order">Order</label>
     <select id="f-order" name="order">
@@ -92,7 +140,17 @@
 <section class="notice">
   <h2 class="notice-title">Nothing matches those filters.</h2>
   <p class="notice-detail">
-    {% if filters.index_state != 'all' %}
+    {% set dated = filters.published_after or filters.published_before
+                   or filters.indexed_after or filters.indexed_before %}
+    {% if dated %}
+    {# Named first when it is set, because a date range is the filter a reader
+       is least likely to still have in mind: the two ends live in a fieldset
+       above and neither of them is a word in the query box. #}
+    A date range is narrowing this table. Clear the
+    {{ "published" if filters.published_after or filters.published_before else "indexed" }}
+    range, or widen it — the corpus header on the overview says the span the
+    whole index covers.
+    {% elif filters.index_state != 'all' %}
     The state filter is on <code>{{ filters.index_state }}</code>, and most
     videos in a healthy corpus are <code>ready</code>.
     {% else %}

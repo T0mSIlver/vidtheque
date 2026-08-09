@@ -194,11 +194,13 @@ What the page needs to render itself, and nothing else:
 {
   "name": "vidtheque",
   "version": "0.1.0",
+  "browse": "/dashboard",
   "mcp_url": "https://vidtheque.example.com/mcp",
   "auth": "none",
   "ask_enabled": true,
   "ask_model": "deepseek/deepseek-v4-flash-0731",
   "videos": 42,
+  "clamps": {"policy": "public", "search_max_limit": 20, "videos_max_limit": 50},
   "limits": {"search_per_min": 30, "ask_per_min": 5, "ask_per_day": 50},
   "repo": "https://github.com/T0mSIlver/vidtheque"
 }
@@ -210,6 +212,21 @@ disagree. The page never hardcodes a hostname.
 
 `ask_enabled` is false when no `OPENROUTER_API_KEY` is configured; the page
 then hides the Ask toggle instead of offering a button that 503s.
+
+`clamps` names the policy that answered, so a caller can see what it may ask
+for rather than discovering it by being clamped (added with the dashboard's
+second policy, dashboard.md §2.5.1).
+
+`browse` is **added in dashboard phase 4 (2026-08-09)**: the path of the
+browsable corpus, or `null`. It is a root-relative path and not a URL, because
+the only consumer is this page and this page is already on the origin. The
+masthead link (§6 item 1) is hidden in the markup and unhidden by this field, so
+a deployment running `VIDTHEQUE_DASHBOARD=0` — or the edge rule in
+`deploy/cloudflared.example.yml` that 404s `^/dashboard` at the tunnel — does
+not leave an invitation to a dead page in the header. The page validates it as a
+same-origin path before it reaches an `href` (one leading slash, never two);
+`safeUrl()` is the wrong tool for this one, because it resolves against the
+current document and would happily accept an absolute URL on another host.
 
 ### 2.4 The humanising layer
 
@@ -674,7 +691,14 @@ different glyph on every platform and disappears in a monochrome tab strip.
 
 Layout, top to bottom:
 
-1. **Header** — wordmark (the page's `<h1>`) and one line of what it is.
+1. **Header** — wordmark (the page's `<h1>`) and one line of what it is, and —
+   *added in dashboard phase 4 (2026-08-09)* — **one link**, right-aligned on
+   the wordmark's baseline: `Browse the corpus →`, into the dashboard's
+   read-only projection (`dashboard.md` §2.4). One link and not a nav: this
+   page is a search engine and the search box is its one primary action, so the
+   link is a quiet outline rather than a second filled control beside it. It is
+   hidden until `/api/meta` reports `browse` (§2.3). Below ~30rem it wraps to
+   its own line under the tagline rather than squeezing it.
 2. **Search box** — autofocus, submits on Enter. One primary button, labelled
    by the current mode (`Search` / `Ask`).
 3. **Controls row** — filter chips on the left (`all` / `transcript` /

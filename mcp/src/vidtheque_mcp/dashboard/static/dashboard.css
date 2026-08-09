@@ -935,7 +935,11 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
 .tone-wait    { --tone: var(--tone-wait);    --tone-bg: var(--tone-wait-bg);    --tone-line: var(--tone-wait-line); }
 .tone-neutral { --tone: var(--tone-neutral); --tone-bg: var(--tone-neutral-bg); --tone-line: var(--tone-neutral-line); }
 
+/* A tone on a run of text rather than on a pill: the word inside a sentence
+   that the sentence is about. Only two exist because only two are ever the
+   subject of one — something is wrong, or something is waiting. */
 span.tone-bad { color: var(--tone-bad); }
+span.tone-warn { color: var(--tone-warn); }
 
 /* Coverage: three letters, and the missing one is hollow *and* struck, so it
    reads as absent without colour. */
@@ -971,6 +975,31 @@ span.tone-bad { color: var(--tone-bad); }
 .field { display: flex; flex-direction: column; gap: var(--s1); }
 .field-wide { flex: 1 1 16rem; min-width: 0; }
 .field-narrow { flex: 0 0 5rem; }
+
+/* A range is one question asked with two inputs, so it is a fieldset — and the
+   browser's own box around it goes, like every other box on this surface (the
+   No-Card Rule). The legend then has to be dragged back onto the label ladder
+   by hand: `<legend>` does not inherit the `.field label` selector and ships
+   with padding of its own. */
+.field-range { min-width: 0; margin: 0; padding: 0; border: 0; }
+.field-range > legend {
+  padding: 0;
+  font-size: var(--t-micro);
+  font-weight: var(--w-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+}
+/* The two dates read as one control: an en dash between them, at the same
+   34px height as everything else in the band, and the pair wraps as a unit
+   rather than leaving one end of a range on the line below the other. */
+.field-range > .range {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  margin-top: var(--s1);
+}
+.range-sep { color: var(--mark); }
 /* The buttons pack at the end of the controls, not at the far end of the band.
    A two-field filter bar on a 1900px screen used to put Apply 1400px away from
    the select it applies to. */
@@ -998,6 +1027,17 @@ span.tone-bad { color: var(--tone-bad); }
 .field select { padding-right: var(--s5); }
 .field input::placeholder { color: var(--muted); opacity: 1; }
 .field input:hover, .field select:hover { border-color: var(--sand-8); }
+/* A date input carries the platform's calendar button inside its own box, so
+   it takes a width the picker fits in and gives back the right padding a text
+   field wants. Fixed rather than `auto`: the two ends of a range must be the
+   same width whether or not either of them has a value in it, or an empty
+   "to" collapses and the dash stops reading as a range. Set after the shared
+   metrics above, because it is overriding one of them. */
+.field-range input {
+  width: 8.5rem;
+  padding-right: var(--s1);
+  font-variant-numeric: tabular-nums;
+}
 
 button {
   display: inline-flex;

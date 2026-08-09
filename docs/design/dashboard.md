@@ -1,7 +1,7 @@
 # The management dashboard — the primary surface for the index
 
-**Status: REVIEWED (Tom, 2026-08-09). Phases 1, 2 and 3 are implemented; phases
-4–5 are not.** Written 2026-08-09 against the tree at `7dc8226`; every fact about the
+**Status: REVIEWED (Tom, 2026-08-09). Phases 1, 2, 3 and 4 are implemented;
+phase 5 is not.** Written 2026-08-09 against the tree at `7dc8226`; every fact about the
 code was checked and is cited with a path. The open questions in §10 were real
 forks and are now mostly resolved inline. §8 records what each phase actually
 delivered as it lands.
@@ -166,6 +166,21 @@ write affordances absent and two fields redacted:
 | jobs | full, with source URLs and error text | states, codes, counts and durations — the "what does a video cost" view (§5.4) |
 | index form | yes | **absent** |
 | re-index / delete / tag | yes | **absent** |
+
+*Amended in phase 4 (2026-08-09): "no settings" is four fields, named.* The
+overview row above was written before the page existed and turned out to be
+one word short of a specification — `docs/deploy-public.md` §1.1 audited the
+built page and found the declared checkpoint ids, `vectors.reason`, two byte
+totals and `auth={{ auth_mode }}` on it, all of which are settings by any
+reading and none of which the row's own wording obviously forbade. The
+projection now drops, precisely: the **declared-models panel** (the `config`
+rows and their dimensions), the **drift reason** (a dimension/model mismatch
+addressed to whoever set the environment), the **storage figures** (a
+measurement of the operator's disk), and the **`auth=` line** in the rail foot.
+It keeps the *effect* of drift — "vector search is off on this instance", which
+changes what a visitor should believe about the results — and it gains one rail
+item back to the welcome page, so the two halves of the public site link to each
+other in both directions.
 
 Redacting job source URLs and `error_message` in demo mode is a recommendation,
 not a given (open question §10.4). The argument for it: yt-dlp's failure strings
@@ -881,11 +896,48 @@ tool for 100+-item runs (§10.7's roadmap half; the form's 200-URL cap is where
 that becomes the answer), a CSRF token (see the §3.3 row — the posture is
 deliberate, not pending), and per-video job history on the table.
 
-**Phase 4 — the demo becomes the subset.** `VIDTHEQUE_PUBLIC_READONLY=1` serves
-the welcome page plus the read-only projection; the demo page keeps its search
-and ask and gains a link into the browsable corpus. This is the phase where
-`public/` stops being a separate frontend and becomes a policy on the
-dashboard's.
+**Phase 4 — the demo becomes the subset. ✅ SHIPPED 2026-08-09.**
+`VIDTHEQUE_PUBLIC_READONLY=1` serves the welcome page plus the read-only
+projection; the demo page keeps its search and ask and gains a link into the
+browsable corpus. This is the phase where `public/` stops being a separate
+frontend and becomes a policy on the dashboard's. It also closes the two
+read-side gaps the second opinion assigned here — the queue on the first
+screen, and the date filters §5.2 listed and phase 1 did not wire.
+
+What landed, against what this document specified:
+
+| §  | promised | shipped |
+|---|---|---|
+| 2.4 | the demo serves the read-only projection of every read page | as specified, and it needed **no new gate**: the flag already unregistered the write side (phase 3) and already redacted the jobs view (phase 2), so this phase is the composition plus the overview's own redaction. The composed behaviour is now asserted as one test rather than inferred from three |
+| 2.4 | "no settings, no paths" on the overview | **four fields, named** — see the amendment under that table. The row was one word short of a specification and `docs/deploy-public.md` §1.1 found the difference on the live page. The split is a template conditional on the mode the view already resolves, per §2.4's "not a second implementation": one `_redacted(request)`, the same one phase 2 wrote for the jobs view, promoted out of the jobs section and given the whole surface's docstring |
+| 2.4 | the drift banner is private | **halved rather than hidden.** The *reason* is a dimension/model mismatch written for an operator; the *effect* — search is answering from full-text — changes what a visitor should believe about every result on the next page. A demo that quietly reported health it did not have would be the redaction lying, which is a worse failure than the leak it was fixing |
+| 2.4 | the welcome page gains one link | `Browse the corpus →` in the masthead, one link and not a nav, **hidden until `/api/meta` says the route group is registered**. `VIDTHEQUE_DASHBOARD=0` and the edge rule in `deploy/cloudflared.example.yml` both make `/dashboard` a 404, and a masthead invitation to a 404 is the same mistake as a button that 403s (§2.3). `/api/meta` gains `browse` (demo-site.md §2.3, same commit) |
+| — | *(not in this document)* | **The rail links back.** In read-only mode the rail gains one item, `Search the corpus` → `/`. The public site is two pages and a visitor who followed the link in should be able to follow one back out; the condition is exact rather than approximate, because `/` is registered by `public_routes()` under the same flag that makes this the projection |
+| 5.1 | active and recently-failed job counts | `jobs_store.job_health(conn, since)` — one grouped statement, four conditional sums, no fan-out on the page that answers in flat aggregates. Rendered as **three** numbers rather than two: `deferred` is the subset of active that is being *held off*, which is the overnight batch's own lesson (§4.4) applied to the first screen. Each figure is a link into the jobs view already filtered to what it counted. `failed_recent` is windowed at 24 h, and the window is a constant the sentence prints, so the number and the words cannot disagree |
+| 5.2 | date filters: `published_after/before`, `indexed_after/before` | as specified, as two `<fieldset>` members of the existing GET band. Three things this document did not settle: (a) the values are **resolved server-side to a UTC day** and echoed back canonically, so `?indexed_after=30d` is a working entry point that immediately becomes `2026-07-10` in the picker, in the URL and in the page's own description of itself; (b) `before` resolves to the start of the *next* day, because the clause is `< before` and a range that dropped everything published on its own end date reads as a bug; (c) an absurd year is **clamped** to now + 365 d and the clamped value is printed — a filter the server changed and did not show is the silent narrowing CLAUDE.md forbids |
+| 5.2 | clamped server-side | plus a 32-character cap on the raw value before the parser sees it, and a value that will not parse is the tool's own `E_BAD_TIME_FORMAT`, rendered with the rest of the band still populated. `timeparse` refuses rather than ignoring, and the page keeps that: a silently dropped filter is a table reporting the wrong result set with total confidence |
+| 6.8 | rate limited in every mode | asserted for the *composed* mode: with the public buckets installed beside it, `/dashboard/*` is still charged to `dashboard`, and the projection's frames still go through the byte-capped derived cache at the same three fixed widths |
+| DESIGN.md | new primitives declared in the same commit | three `components:` entries (`field-range`, `field-range-input`, `field-range-separator`, plus `text-tone`), a phase-4 section, and an amendment to the rail-foot paragraph. No new colour, no off-ladder size, no off-grid spacing |
+
+**Found in phase 4 and deliberately not fixed in it:** `/dashboard/api/*` is
+registered with `OWNER_CLAMPS` in **every** mode (phase 1, §2.5.1), and in the
+intended public combination there is no credential in front of it — so an
+anonymous visitor gets the owner's bounds on the JSON facade, including
+`max_text_chars=0`, which is the full-transcript hatch demo-site.md §2 reserves
+for an owner's agent. It is not a *page* the §2.4 table covers and it is not a
+leak of the operator's box; it is the "how much of the corpus is public"
+question, which `docs/deploy-public.md` §1 names as a policy call for Tom and
+the audit rather than one an agent makes. Written up there with the three
+answers and the one-line version of each; if the answer is "clamp it", the
+honest fix keys off the *credential* rather than the flag, which is a design
+change and belongs in phase 5.
+
+**Deferred out of phase 4, deliberately:** a `robots.txt` and the `noindex` the
+dashboard already sends are not the same decision, and whether the public
+projection *wants* to be crawlable is a content question for the audit
+(`docs/deploy-public.md` §1) rather than a code one; an `order` for the jobs
+view; and per-channel coverage counts on the overview, which would be the
+fifth flat aggregate on a page that already answers the question with links.
 
 **Phase 5 — search and ask move in.** The dashboard grows the search box and the
 ask pane, sharing `public/api.py`'s handlers; the welcome page becomes purely an

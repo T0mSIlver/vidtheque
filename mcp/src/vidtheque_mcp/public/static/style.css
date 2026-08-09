@@ -71,7 +71,33 @@ code {
 
 /* ------------------------------------------------------------------ header */
 
-.masthead { padding: 3rem 0 1.5rem; }
+/* The brand on the left, the one link out on the right, on the wordmark's own
+   baseline. It wraps to its own line under ~30rem rather than squeezing the
+   tagline, and it is the only thing in this header that is not the brand —
+   which is the argument for it being one link and not a nav. */
+.masthead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1.5rem;
+  padding: 3rem 0 1.5rem;
+}
+
+.masthead-brand { min-width: 0; }
+
+/* A quiet outline, not a button: the search box is the page's one primary
+   action and a second filled control beside it would compete with it. */
+.browse {
+  flex: 0 0 auto;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.9rem;
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.browse:hover { color: var(--accent); border-color: var(--accent); }
 
 .wordmark {
   margin: 0;

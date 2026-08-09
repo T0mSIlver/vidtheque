@@ -23,8 +23,17 @@
 <body>
 
 <header class="masthead">
-  <h1 class="wordmark"><a href="/">vidtheque</a></h1>
-  <p class="tagline">Search what was said, what was on the screen, and the frames themselves.</p>
+  <div class="masthead-brand">
+    <h1 class="wordmark"><a href="/">vidtheque</a></h1>
+    <p class="tagline">Search what was said, what was on the screen, and the frames themselves.</p>
+  </div>
+  <!-- The one link out (dashboard.md §2.4). This page is the search engine and
+       stays one; the browsable corpus behind it — every video, how each was
+       indexed, what the pipeline made of it — is the dashboard's read-only
+       projection. Hidden until /api/meta says the route group is registered, so
+       a deployment that turned it off, or an edge rule that 404s it, does not
+       leave an invitation to a dead page in the masthead. -->
+  <a id="browse" class="browse" href="/dashboard" hidden>Browse the corpus <span aria-hidden="true">→</span></a>
 </header>
 
 <main>

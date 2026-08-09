@@ -35,17 +35,31 @@
   </div>
 </div>
 
-{% if not vectors.enabled or not writes_allowed %}
+{# The drift banner is the private half of §2.4's overview row, and the
+   projection keeps the half a visitor can act on. The *reason* is a
+   dimension/model mismatch written for whoever set the env; the *effect* — that
+   search is answering from full-text alone — changes what a visitor should
+   believe about the results, so it survives with the operator's sentence cut
+   out of it rather than being hidden along with it. #}
+{% if not vectors.enabled or (not writes_allowed and not readonly) %}
 <section class="notice notice-bad" aria-labelledby="drift">
+  {% if readonly %}
+  <h2 class="notice-title" id="drift">Vector search is off on this instance</h2>
+  <p class="notice-next">
+    Search still answers from full-text, and every response says so. Meaning is
+    ranked by words here, not by embeddings.
+  </p>
+  {% else %}
   <h2 class="notice-title" id="drift">The corpus and the worker disagree</h2>
-  {% if vectors.reason %}
-  <p class="notice-detail">{{ vectors.reason }}</p>
+  {% if drift_reason %}
+  <p class="notice-detail">{{ drift_reason }}</p>
   {% endif %}
   <p class="notice-next">
     Search still answers from full-text; the vector legs are off and every
     response says so. Indexing is
     {{ "refused, so no video can mix embedding spaces" if not writes_allowed else "still allowed" }}.
   </p>
+  {% endif %}
 </section>
 {% endif %}
 
@@ -125,6 +139,34 @@
   </section>
 
   <div>
+    {# §5.1's job line, in the same idiom as the gaps below it: a sentence with
+       a number in it, and the number is the link, because the number is the
+       thing you want to go and look at. It is first in this column because it
+       is the only panel on the page describing something that is happening
+       *now* — the operator who arrives mid-batch reads this line, clicks the
+       figure next to the thing that is wrong, and is on the jobs view. #}
+    <section class="panel" aria-labelledby="queue">
+      <h2 class="panel-title" id="queue">The queue</h2>
+      <ul class="gaplist">
+        <li>
+          <a class="{{ 'gap-none' if not jobs.active }}" href="{{ root }}/jobs?state=active">{{ jobs.active | count }}</a>
+          <span>
+            job(s) queued or running
+            {%- if jobs.deferred %},
+            {# The line that was invisible during the overnight batch: queued
+               and *held off* are two different states of the same word, and
+               only one of them is about to run (§4.4). #}
+            <span class="tone-warn">{{ jobs.deferred | count }} of them waiting on a backoff</span>
+            {%- endif %}
+          </span>
+        </li>
+        <li>
+          <a class="{{ 'gap-none' if not jobs.failed_recent }}" href="{{ root }}/jobs?state=failed">{{ jobs.failed_recent | count }}</a>
+          <span>job(s) failed in the last {{ failed_window_h }} hours</span>
+        </li>
+      </ul>
+    </section>
+
     <section class="panel" aria-labelledby="gaps">
       <h2 class="panel-title" id="gaps">What is missing</h2>
       {# Sentences with a number in them. The number is the link, because the
@@ -150,6 +192,11 @@
       </ul>
     </section>
 
+    {# §2.4: the demo overview carries the corpus, not the box it is on. Two
+       byte totals are a measurement of somebody's disk, and the projection
+       does not take that read at all rather than taking it and not printing
+       it. #}
+    {% if storage %}
     <section class="panel" aria-labelledby="storage">
       <h2 class="panel-title" id="storage">Storage</h2>
       <dl class="figures">
@@ -165,6 +212,7 @@
         </div>
       </dl>
     </section>
+    {% endif %}
   </div>
 </div>
 
@@ -203,7 +251,18 @@
 </div>
 
 {# Declared beside live: the panel is a diff, and it goes red when the two
-   halves stop agreeing. #}
+   halves stop agreeing.
+
+   Absent in the demo projection (§2.4: "no settings"). The four rows are the
+   `config` table — checkpoint ids and vector dimensions, which are the
+   deployment's answer to "how was this box configured", not the corpus's
+   answer to "what is in it". They are in the public repo, which is the
+   argument for keeping them; a management page that a stranger can screenshot
+   is not the place to publish them, which is the argument that won
+   (`docs/deploy-public.md` §1.1 raised it as a decision, and this is the
+   decision). Nothing else on the page depended on it: the live vector state it
+   sat beside is still in the banner above, in the words a visitor can act on. #}
+{% if config %}
 <section class="panel{{ ' is-drift' if not vectors.enabled or not writes_allowed }}" aria-labelledby="models">
   <h2 class="panel-title" id="models">Declared models, and what the worker is serving</h2>
   {# Declared on the left, live on the right — the panel is a diff, and now it
@@ -239,5 +298,6 @@
     </div>
   </div>
 </section>
+{% endif %}
 
 {% endblock %}

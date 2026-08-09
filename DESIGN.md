@@ -229,6 +229,23 @@ components:
     padding: "0 0.5rem"
     height: "1.5rem"
     typography: "{typography.label}"
+  field-range:
+    backgroundColor: "transparent"
+    borderColor: "transparent"
+    padding: "0"
+    typography: "{typography.label}"
+  field-range-input:
+    backgroundColor: "{colors.raised}"
+    textColor: "{colors.fg}"
+    rounded: "{rounded.sm}"
+    padding: "0 0.25rem 0 0.5rem"
+    width: "8.5rem"
+    typography: "{typography.cell}"
+  field-range-separator:
+    textColor: "{colors.mark}"
+  text-tone:
+    textColor: "{colors.tone-warn}"
+    typography: "{typography.body}"
 ---
 
 # Design System: vidtheque dashboard
@@ -648,6 +665,36 @@ state, and `docs/design/dashboard.md` §3.3 has no state-changing GET in it.
 Every control on this surface is real HTML for the same reason the shot
 timeline is a real `<a href>`: the write side works with JavaScript off.
 
+### The projection (phase 4): two primitives, and one subtraction
+Added 2026-08-09 with the date filters and the demo's read-only overview.
+
+- **Date range** (`field-range`, `field-range-input`, `field-range-separator`):
+  a range is *one question asked with two inputs*, so it is a `<fieldset>` with
+  a `<legend>` on the Label ladder — a screen reader needs the legend to know
+  the second date belongs to the first, and a sighted reader needs one word
+  above the pair rather than two words beside them. The browser's box goes, the
+  No-Card Rule holding inside the filter bar exactly as it does inside a form.
+  The two inputs are a **fixed** 8.5rem (136px — on the grid, and wide enough
+  for the platform's own calendar button), because two ends of a range that
+  size themselves stop reading as a pair the moment one of them is empty. The
+  separator is an en dash in `--mark`, `aria-hidden`, at the same weight as the
+  hairlines it sits between.
+- **Text tone** (`text-tone`): a state hue on a run of prose rather than on a
+  pill, for the clause inside a sentence that the sentence is about — "2 jobs
+  queued or running, *1 of them waiting on a backoff*". Only `--tone-bad` and
+  `--tone-warn` exist as text: those are the two states that are ever the
+  subject of a sentence, and Every State Is A Word still holds, because the
+  words carry it and the colour only agrees.
+
+**The subtraction** is the demo projection (`docs/design/dashboard.md` §2.4).
+Under `VIDTHEQUE_PUBLIC_READONLY=1` the overview loses the declared-models
+panel, the storage figures and the `auth=…` line in the rail foot, and the rail
+gains one item back to the welcome page. It is the *same template* with panels
+absent, not a second design: nothing changes size, nothing changes colour, and
+the two-column zone below the ledger band closes up because a `.panel` that is
+not rendered takes its `--s8` with it. A projection that needed its own
+stylesheet would be a second surface pretending to be a mode.
+
 ### Containers
 There are none. See **The No-Card Rule**. The two exceptions with a real box are
 the filter bar (`--panel` ground, `--line` border, 5px) and the lightbox
@@ -665,8 +712,12 @@ the filter bar (`--panel` ground, `--line` border, 5px) and the lightbox
 - **Shape:** a 15rem (`--rail`) sticky column on `--panel`, hairline on its
   right edge, holding three things in order — the brand lockup, one or more
   `.nav-group` label + `.navlist` pairs, and a `.rail-foot` pinned to the bottom
-  carrying what this deployment is allowed to do (`auth=…`, read-only, indexing
-  refused). Environment state belongs to the chassis, not to a page header.
+  carrying what this deployment is allowed to do (`auth=…`, indexing refused,
+  no write side). Environment state belongs to the chassis, not to a page
+  header. *Amended in phase 4:* in the demo projection the foot carries the one
+  line a visitor can act on — `read-only demo` — and none of the environment,
+  because `auth=…` is a variable name and its value on a page a stranger can
+  screenshot (`docs/design/dashboard.md` §2.4).
 - **Item:** full-bleed to the rail's edges (padding on the item, not the rail),
   `--row` tall — a nav item and a table row are the same 34px, which is what
   stops the rail feeling like a different product from the grid beside it. 13px

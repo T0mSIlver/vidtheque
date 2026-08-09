@@ -312,10 +312,27 @@ async def meta_endpoint(
     deps: Deps = assembled.deps
     public: PublicSettings = request.app.state.public_settings
     rollup = await deps.db.read(queries.corpus_rollup)
+    # Where the browsable corpus is, when there is one (dashboard.md §2.4). The
+    # welcome page's one link out is unhidden by this and by nothing else: with
+    # `VIDTHEQUE_DASHBOARD=0`, or with the edge rule that 404s `^/dashboard`
+    # (`deploy/cloudflared.example.yml`), the route group is not there and a
+    # link to it would be an invitation to a 404. The server knows; the page
+    # asks rather than assuming.
+    #
+    # Imported here rather than at module scope because the dependency runs the
+    # other way: `dashboard/` imports this module for its clamps and its
+    # handlers, so a top-level edge back would be a cycle. By the time a request
+    # reaches this line the package is long since loaded — `app.py` imports it
+    # at boot whatever the mode — and one source of truth for the path beats a
+    # second copy of the literal.
+    from ..dashboard.settings import ROOT
+
+    dashboard = request.app.state.dashboard_settings
     return JSONResponse(
         {
             "name": "vidtheque",
             "version": __version__,
+            "browse": ROOT if dashboard.enabled else None,
             # The same string config.resource_url builds, so the page's copy
             # button and the OAuth `resource` can never disagree.
             "mcp_url": deps.settings.resource_url,

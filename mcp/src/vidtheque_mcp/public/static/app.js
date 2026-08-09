@@ -1134,6 +1134,16 @@ const renderCorpus = (videos) => {
     if (repo) $("repo").href = repo;
     // No key configured — hide the switch rather than offer a mode that 503s.
     $("modes").hidden = !meta.ask_enabled;
+    // The way into the browsable corpus, shown only when the server says the
+    // route group is there. `safeUrl` is the wrong tool here — it resolves
+    // against the current page and would happily accept an absolute URL on
+    // another host — so this is a same-origin *path* check instead: one
+    // leading slash, no second one (`//host` is cross-origin), nothing but the
+    // characters a route prefix is made of.
+    if (typeof meta.browse === "string" && /^\/[a-z0-9][a-z0-9/_-]*$/i.test(meta.browse)) {
+      $("browse").href = meta.browse;
+      $("browse").hidden = false;
+    }
     if (!q && meta.videos) {
       setStatus(`${meta.videos} video${meta.videos === 1 ? "" : "s"} indexed.`);
     }

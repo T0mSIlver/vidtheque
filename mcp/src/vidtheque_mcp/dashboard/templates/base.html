@@ -102,6 +102,19 @@
       <li><a href="{{ root }}/index"{% if page == 'index' %} aria-current="page"{% endif %}>Add to the index</a></li>
     </ul>
     {% endif %}
+    {# The demo's way back. In read-only mode this surface is one half of a
+       two-page site — the welcome page at `/` is the search engine, this is the
+       browsable corpus behind it (dashboard.md §2.4) — and a visitor who
+       followed the link in ought to be able to follow one back out. The
+       condition is exact rather than approximate: `/` is registered by
+       `public_routes()` under the same flag that makes this the projection, so
+       the link exists precisely when its target does. #}
+    {% if readonly %}
+    <p class="nav-group">This demo</p>
+    <ul class="navlist">
+      <li><a href="/">Search the corpus</a></li>
+    </ul>
+    {% endif %}
     {# Room still left: search (dashboard.md §5.6) and settings arrive as one
        more `<p class="nav-group">` + `<ul class="navlist">` pair. The CSS
        already carries the group label, the gap between groups and the active
@@ -113,12 +126,24 @@
        separators the masthead used are gone on purpose: `--mark` measures
        2.93:1 on `--panel`, under the 3:1 floor for a non-text mark, and a
        column 240px wide had nowhere to put them anyway. #}
+    {# The projection's version says what the *reader* is allowed to do and
+       stops there. `auth={{ auth_mode }}` names an environment variable and its
+       value, and "indexing refused" is a sentence about a worker nobody
+       visiting the demo can reach — both are the operator's console leaking
+       onto a page a stranger can screenshot (§2.4, and `docs/deploy-public.md`
+       §1.1 found this one). What survives is the only line that changes what a
+       visitor should expect: nothing here writes. #}
+    {% if readonly %}
+    <p class="deployment">
+      <span>read-only demo</span>
+    </p>
+    {% else %}
     <p class="deployment">
       <span title="VIDTHEQUE_AUTH">auth={{ auth_mode }}</span>
-      {% if readonly %}<span>read-only</span>{% endif %}
       {% if not writes_allowed %}<span class="tone-bad">indexing refused</span>{% endif %}
-      {% if not write_side and not readonly %}<span>no write side</span>{% endif %}
+      {% if not write_side %}<span>no write side</span>{% endif %}
     </p>
+    {% endif %}
     {# §3.2 rule 3 asks the `none`-mode dashboard to say *why* it is read-only
        and give the one-line fix. DESIGN.md gives the rail foot the job of
        carrying what this deployment is allowed to do, so the sentence lives
