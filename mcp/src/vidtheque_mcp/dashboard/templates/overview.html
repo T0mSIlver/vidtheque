@@ -4,21 +4,35 @@
 {# The overview is a ledger, not a dashboard of cards: what is in the corpus,
    what is missing from it, what arrived last, and whether the models the
    corpus was built with are still the ones being served. Read top to bottom
-   it is the answer to "what happened while I was asleep". #}
+   it is the answer to "what happened while I was asleep".
+
+   Layout v2: the band still runs the full width, but everything under it is
+   zoned — the arrivals take two thirds because they are the dense thing, and
+   the three short answers (what is missing, what it costs on disk) sit beside
+   them instead of under 1400px of nothing. #}
 
 <div class="pagehead">
-  <h1>Corpus</h1>
-  <p class="pagehead-meta">
-    {# `data_status` is corpus-summary's own word, printed verbatim: the four
-       vocabularies are not unified and this page does not invent a fifth. #}
-    <span class="pill tone-{{ corpus.data_status | tone }}">{{ corpus.data_status }}</span>
-    <span class="sep">·</span>
-    published <span class="mono">{{ rollup['oldest_published'] | day }}</span>
-    <span class="sep">–</span>
-    <span class="mono">{{ rollup['newest_published'] | day }}</span>
-    <span class="sep">·</span>
-    last indexed <span class="mono">{{ rollup['last_indexed'] | minute }}</span>
-  </p>
+  <div class="pagehead-line">
+    {# Named for the rail item that reaches it — a nav that says "Overview" and
+       a page that says "Corpus" makes the operator check which one they are
+       on. dashboard.md §5.1 calls this page the corpus overview. #}
+    <h1>Corpus overview</h1>
+    <p class="pagehead-meta">
+      {# `data_status` is corpus-summary's own word, printed verbatim: the four
+         vocabularies are not unified and this page does not invent a fifth. #}
+      <span class="pill tone-{{ corpus.data_status | tone }}">{{ corpus.data_status }}</span>
+      <span class="sep">·</span>
+      {# Each fact is one unbreakable unit, so when the strip runs out of room
+         it wraps *between* facts and never through a date range or a clock. #}
+      <span class="fact">published <span class="mono">{{ rollup['oldest_published'] | day }}</span>
+      <span class="sep">–</span>
+      <span class="mono">{{ rollup['newest_published'] | day }}</span></span>
+      <span class="sep">·</span>
+      {# "indexed", not "last indexed": this is the corpus header, so the clock
+         is unambiguous, and the shorter label keeps the strip on two units. #}
+      <span class="fact">indexed <span class="mono">{{ rollup['last_indexed'] | minute }}</span></span>
+    </p>
+  </div>
 </div>
 
 {% if not vectors.enabled or not writes_allowed %}
@@ -73,59 +87,86 @@
   </dl>
 </section>
 
-<section class="panel" aria-labelledby="gaps">
-  <h2 class="panel-title" id="gaps">What is missing</h2>
-  {# Sentences with a number in them. The number is the link, because the
-     number is the thing you want to go and look at. #}
-  {# A zero is good news and must not wear the accent: the colour on this page
-     means "go and look at this", and there is nothing to look at. #}
-  <ul class="gaplist">
-    <li>
-      <a class="{{ 'gap-none' if not gaps.transcript_no_ocr }}" href="{{ root }}/videos?has=transcript&amp;index_state=all">{{ gaps.transcript_no_ocr | count }}</a>
-      <span>video(s) have a transcript but no on-screen text</span>
-    </li>
-    <li>
-      <a class="{{ 'gap-none' if not gaps.indexing }}" href="{{ root }}/videos?index_state=indexing">{{ gaps.indexing | count }}</a>
-      <span>video(s) are mid-pipeline</span>
-    </li>
-    <li>
-      {# The rollup probes this one with LIMIT 5, so five means "five or more"
-         and the page says so rather than reporting a cap as a count. #}
-      <a class="{{ 'gap-none' if not gaps.failed }}" href="{{ root }}/videos?index_state=failed">{{ gaps.failed }}{{ "+" if gaps.failed >= 5 }}</a>
-      <span>video(s) are marked failed with a failed stage behind it</span>
-    </li>
-  </ul>
-</section>
+{# The zone: what arrived (dense, wants the width) beside what is wrong and
+   what it costs (short answers that never wanted 1400px). #}
+<div class="split split-main">
+  <section class="panel" aria-labelledby="recent">
+    <h2 class="panel-title" id="recent">Recently indexed</h2>
+    {% if recent %}
+    <ul class="rowlist">
+      {% for video in recent %}
+      <li class="row">
+        <a class="row-shot" href="{{ root }}/videos/{{ video.video_id }}" tabindex="-1" aria-hidden="true">
+          {% if video.thumb %}
+          <img class="thumb" src="{{ video.thumb }}" alt="" width="96" height="54" loading="lazy" decoding="async">
+          {% else %}
+          <span class="thumb thumb-empty">no frame</span>
+          {% endif %}
+        </a>
+        <div class="row-body">
+          <a class="row-title" href="{{ root }}/videos/{{ video.video_id }}">{{ video.title }}</a>
+          <p class="row-meta">
+            {{ video.channel }}<span class="sep">·</span><span class="mono">{{ video.duration_s | duration }}</span>
+          </p>
+        </div>
+        {# The clock goes to the far end of the row rather than trailing the
+           channel: in a wide column that turns the list into a column of
+           arrival times you can scan without reading a single title. #}
+        <p class="row-when">indexed <span class="mono">{{ video.indexed_at | minute }}</span></p>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty-note">
+      Nothing has finished indexing yet. Add a video with the
+      <code>index-video</code> tool and this list is where it lands.
+    </p>
+    {% endif %}
+  </section>
 
-<section class="panel" aria-labelledby="recent">
-  <h2 class="panel-title" id="recent">Recently indexed</h2>
-  {% if recent %}
-  <ul class="rowlist">
-    {% for video in recent %}
-    <li class="row">
-      <a class="row-shot" href="{{ root }}/videos/{{ video.video_id }}" tabindex="-1" aria-hidden="true">
-        {% if video.thumb %}
-        <img class="thumb" src="{{ video.thumb }}" alt="" width="96" height="54" loading="lazy" decoding="async">
-        {% else %}
-        <span class="thumb thumb-empty">no frame</span>
-        {% endif %}
-      </a>
-      <div class="row-body">
-        <a class="row-title" href="{{ root }}/videos/{{ video.video_id }}">{{ video.title }}</a>
-        <p class="row-meta">
-          {{ video.channel }}<span class="sep">·</span><span class="mono">{{ video.duration_s | duration }}</span><span class="sep">·</span>indexed <span class="mono">{{ video.indexed_at | minute }}</span>
-        </p>
-      </div>
-    </li>
-    {% endfor %}
-  </ul>
-  {% else %}
-  <p class="empty-note">
-    Nothing has finished indexing yet. Add a video with the
-    <code>index-video</code> tool and this list is where it lands.
-  </p>
-  {% endif %}
-</section>
+  <div>
+    <section class="panel" aria-labelledby="gaps">
+      <h2 class="panel-title" id="gaps">What is missing</h2>
+      {# Sentences with a number in them. The number is the link, because the
+         number is the thing you want to go and look at. #}
+      {# A zero is good news and must not wear the accent: the colour on this
+         page means "go and look at this", and there is nothing to look at. #}
+      <ul class="gaplist">
+        <li>
+          <a class="{{ 'gap-none' if not gaps.transcript_no_ocr }}" href="{{ root }}/videos?has=transcript&amp;index_state=all">{{ gaps.transcript_no_ocr | count }}</a>
+          <span>video(s) have a transcript but no on-screen text</span>
+        </li>
+        <li>
+          <a class="{{ 'gap-none' if not gaps.indexing }}" href="{{ root }}/videos?index_state=indexing">{{ gaps.indexing | count }}</a>
+          <span>video(s) are mid-pipeline</span>
+        </li>
+        <li>
+          {# The rollup probes this one with LIMIT 5, so five means "five or
+             more" and the page says so rather than reporting a cap as a
+             count. #}
+          <a class="{{ 'gap-none' if not gaps.failed }}" href="{{ root }}/videos?index_state=failed">{{ gaps.failed }}{{ "+" if gaps.failed >= 5 }}</a>
+          <span>video(s) are marked failed with a failed stage behind it</span>
+        </li>
+      </ul>
+    </section>
+
+    <section class="panel" aria-labelledby="storage">
+      <h2 class="panel-title" id="storage">Storage</h2>
+      <dl class="figures">
+        <div class="figure">
+          <dt>keyframe JPEGs</dt>
+          <dd>{{ storage.keyframes | bytes_human }}</dd>
+          <dd class="figure-note">summed from the column, not walked on disk</dd>
+        </div>
+        <div class="figure">
+          <dt>index</dt>
+          <dd>{{ storage.database | bytes_human }}</dd>
+          <dd class="figure-note">one SQLite file, one writer</dd>
+        </div>
+      </dl>
+    </section>
+  </div>
+</div>
 
 <div class="split">
   <section class="panel" aria-labelledby="channels">
@@ -165,48 +206,38 @@
    halves stop agreeing. #}
 <section class="panel{{ ' is-drift' if not vectors.enabled or not writes_allowed }}" aria-labelledby="models">
   <h2 class="panel-title" id="models">Declared models, and what the worker is serving</h2>
-  <div class="tablewrap">
-    <table class="grid">
-      <thead>
-        <tr><th scope="col">stage</th><th scope="col">model</th><th scope="col" class="num">dim</th></tr>
-      </thead>
-      <tbody>
-        {% for model in config %}
-        <tr>
-          <th scope="row">{{ model.label }}</th>
-          <td><code>{{ model.value }}</code></td>
-          <td class="num">{{ model.dim or "—" }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  {# Declared on the left, live on the right — the panel is a diff, and now it
+     is laid out as one instead of stacking the two halves it compares. #}
+  <div class="split">
+    <div class="tablewrap">
+      <table class="grid">
+        <thead>
+          <tr><th scope="col">stage</th><th scope="col">model</th><th scope="col" class="num">dim</th></tr>
+        </thead>
+        <tbody>
+          {% for model in config %}
+          <tr>
+            <th scope="row">{{ model.label }}</th>
+            <td><code>{{ model.value }}</code></td>
+            <td class="num">{{ model.dim or "—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <p class="live-state">
+        <span class="label">live</span>
+        <span class="pill tone-{{ 'ok' if vectors.enabled else 'bad' }}">{{ "vector legs on" if vectors.enabled else "vector legs off" }}</span>
+        <span class="pill tone-{{ 'ok' if writes_allowed else 'bad' }}">{{ "indexing allowed" if writes_allowed else "indexing refused" }}</span>
+      </p>
+      <p class="panel-note">
+        These are what the <em>corpus</em> was built with — the <code>config</code>
+        table, written by migrations and read once at boot. They are not a report
+        from the worker. The live check is the pair of states above.
+      </p>
+    </div>
   </div>
-  <p class="live-state">
-    <span class="label">live</span>
-    <span class="pill tone-{{ 'ok' if vectors.enabled else 'bad' }}">{{ "vector legs on" if vectors.enabled else "vector legs off" }}</span>
-    <span class="pill tone-{{ 'ok' if writes_allowed else 'bad' }}">{{ "indexing allowed" if writes_allowed else "indexing refused" }}</span>
-  </p>
-  <p class="panel-note">
-    These are what the <em>corpus</em> was built with — the <code>config</code>
-    table, written by migrations and read once at boot. They are not a report
-    from the worker. The live check is the pair of states above.
-  </p>
-</section>
-
-<section class="panel" aria-labelledby="storage">
-  <h2 class="panel-title" id="storage">Storage</h2>
-  <dl class="figures">
-    <div class="figure">
-      <dt>keyframe JPEGs</dt>
-      <dd>{{ storage.keyframes | bytes_human }}</dd>
-      <dd class="figure-note">summed from the column, not walked on disk</dd>
-    </div>
-    <div class="figure">
-      <dt>index</dt>
-      <dd>{{ storage.database | bytes_human }}</dd>
-      <dd class="figure-note">one SQLite file, one writer</dd>
-    </div>
-  </dl>
 </section>
 
 {% endblock %}
