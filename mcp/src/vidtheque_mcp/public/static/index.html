@@ -104,6 +104,21 @@
   </p>
 </footer>
 
+<!-- Click a frame and it opens here, big enough to read the slide. A native
+     <dialog>: Esc, the backdrop, the focus trap and the modal semantics are the
+     platform's, so the page carries none of them. Empty until something opens
+     it — app.js fills it from the hit that was clicked. -->
+<dialog id="shot" class="shot" aria-labelledby="shot-caption">
+  <div class="shot-inner">
+    <img id="shot-img" class="shot-img" alt="">
+    <div class="shot-foot">
+      <p id="shot-caption" class="shot-caption"></p>
+      <a id="shot-link" class="shot-link" target="_blank" rel="noopener noreferrer"></a>
+    </div>
+    <button type="button" id="shot-close" class="ghost shot-close" autofocus>Close</button>
+  </div>
+</dialog>
+
 <script type="module" src="/static/app.js"></script>
 </body>
 </html>

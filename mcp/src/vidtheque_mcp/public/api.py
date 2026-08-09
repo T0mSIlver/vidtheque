@@ -42,6 +42,10 @@ THUMB_WIDTH = 192
 # A frame hit matched on its *image*, so the page renders it at 160×90 CSS
 # pixels instead of 96×54; the width follows, at the same 2x.
 FRAME_THUMB_WIDTH = 320
+# The click-to-enlarge view (§6.4). Wide enough to read a slide, well inside the
+# route's 64..1280 clamp and the `derived/` byte cap, and fetched only when a
+# visitor actually opens one — so it costs nothing on a results page.
+LIGHTBOX_WIDTH = 960
 THUMB_QUALITY = 70
 
 SEARCH_MAX_LIMIT = 20
@@ -109,11 +113,15 @@ def _int_param(request: Request, name: str, low: int, high: int, default: int) -
 
 
 def _decorate_hit(deps: Deps, hit: dict[str, Any]) -> dict[str, Any]:
-    """The only two fields the facade adds, both from data already returned."""
+    """The fields the facade adds, all of them from data already returned."""
     row = dict(hit)
     row["timestamp"] = clock(hit.get("start"))
     width = FRAME_THUMB_WIDTH if hit.get("source") == "frame" else THUMB_WIDTH
     row["thumb"] = thumb_url(deps, hit.get("frame_id"), width)
+    # The enlarged frame. A second *URL*, not a second query — and under
+    # `token`/`oauth` it has to be signed here, because the page cannot sign a
+    # width of its own (which is the point: the clamp is the server's).
+    row["thumb_large"] = thumb_url(deps, hit.get("frame_id"), LIGHTBOX_WIDTH)
     row["text"] = demo_text(hit.get("text"))
     return row
 

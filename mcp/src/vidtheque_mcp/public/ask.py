@@ -136,7 +136,7 @@ class Citation:
     source: str | None = None
     text: str | None = None
 
-    def as_dict(self, thumb: str | None) -> dict[str, Any]:
+    def as_dict(self, thumb: str | None, thumb_large: str | None) -> dict[str, Any]:
         return {
             "n": self.n,
             "video_id": self.video_id,
@@ -146,6 +146,8 @@ class Citation:
             "timestamp": clock(self.t),
             "link": self.link,
             "thumb": thumb,
+            # The Sources list is a list of search rows, so it enlarges like one.
+            "thumb_large": thumb_large,
             "source": self.source,
             "text": self.text,
         }
@@ -515,7 +517,7 @@ def _answer(
     decision depends on what has already been *written* — two fabricated markers
     in a row (`"text [8][9] end"`) would otherwise each add their own space.
     """
-    from .api import thumb_url
+    from .api import FRAME_THUMB_WIDTH, LIGHTBOX_WIDTH, THUMB_WIDTH, thumb_url
 
     known = {c.n: c for c in evidence.items}
     used: list[int] = []
@@ -545,7 +547,15 @@ def _answer(
     out.append(content[pos:])
     cleaned = "".join(out).strip()
     citations = [
-        known[n].as_dict(thumb_url(deps, known[n].frame_id)) for n in sorted(used)
+        known[n].as_dict(
+            thumb_url(
+                deps,
+                known[n].frame_id,
+                FRAME_THUMB_WIDTH if known[n].source == "frame" else THUMB_WIDTH,
+            ),
+            thumb_url(deps, known[n].frame_id, LIGHTBOX_WIDTH),
+        )
+        for n in sorted(used)
     ]
     return {
         "answer": cleaned,

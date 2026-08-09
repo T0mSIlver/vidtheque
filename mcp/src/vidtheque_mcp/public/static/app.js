@@ -265,7 +265,11 @@ const thumbFor = (hit) => {
     // arrive — the wide box for a frame hit included.
     img.width = wide ? 320 : 160;
     img.height = wide ? 180 : 90;
-    img.addEventListener("error", () => img.replaceWith(placeholder(hit)));
+    // A frame that will not load takes its enlarge button with it: a control
+    // that opens a broken image is worse than no control.
+    img.addEventListener("error", () =>
+      (img.closest(".hit-shot") || img).replaceWith(placeholder(hit)),
+    );
     return img;
   }
   return placeholder(hit);
@@ -280,15 +284,105 @@ const placeholder = (hit) => {
   return box;
 };
 
-// The whole row is one <a>, so middle-click and "open in new tab" work.
-const hitRow = (hit, query, n) => {
-  const row = el("a", isFrameHit(hit) ? "hit is-frame" : "hit");
-  row.href = safeUrl(hit.link) || `https://youtu.be/${encodeURIComponent(hit.video_id || "")}`;
-  row.target = "_blank";
-  row.rel = "noopener noreferrer";
-  if (n) row.append(el("span", "cite-n", `[${n}]`));
-  row.append(thumbFor(hit));
+// -------------------------------------------------------------- the lightbox
+//
+// A thumbnail is 96 or 160 CSS pixels of a slide: enough to recognise, never
+// enough to read. Clicking one opens the frame at `thumb_large` (a width the
+// *server* picked and clamped — the page cannot ask for a size of its own).
+//
+// The native <dialog> does the work: `showModal()` brings Esc, the inert
+// background, the focus trap and the modal semantics with it. The two things
+// it does not reliably do are click-outside and returning focus to the exact
+// element that opened it, so those are here — the trigger is remembered rather
+// than inferred, because clicking a button does not focus it on every browser.
+const DIALOG_WORKS = typeof HTMLDialogElement !== "undefined" &&
+  typeof HTMLDialogElement.prototype.showModal === "function";
 
+let shotTrigger = null;
+
+const openShot = (hit, trigger) => {
+  const src = safeUrl(hit.thumb_large) || safeUrl(hit.thumb);
+  if (!src) return;
+  const dialog = $("shot");
+  const image = $("shot-img");
+  image.src = src;
+  image.alt = `Frame from ${hit.title || hit.video_id} at ${hit.timestamp || "0:00"}`;
+  const where = [hit.title || hit.video_id, hit.channel, hit.timestamp || "0:00"]
+    .filter(Boolean)
+    .join(" · ");
+  $("shot-caption").textContent = where;
+  const link = $("shot-link");
+  link.href =
+    safeUrl(hit.link) || `https://youtu.be/${encodeURIComponent(hit.video_id || "")}`;
+  link.textContent = `open at ${hit.timestamp || "0:00"} on YouTube ↗`;
+  shotTrigger = trigger || null;
+  dialog.showModal();
+  // `showModal()` focuses the first focusable thing in the dialog, which is the
+  // YouTube link — so the first Enter after opening would leave the page. Close
+  // is the safe landing, and the `autofocus` in the markup says the same thing
+  // for anyone reading the HTML.
+  $("shot-close").focus();
+};
+
+if (DIALOG_WORKS) {
+  const dialog = $("shot");
+  $("shot-close").addEventListener("click", () => dialog.close());
+  // The dialog itself is only the backdrop: `.shot-inner` covers every pixel of
+  // the box, so a click that lands on the dialog element landed outside it.
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog.close();
+  });
+  dialog.addEventListener("close", () => {
+    // Nothing to release the image for otherwise: a 960px frame would stay
+    // decoded until the next one replaced it.
+    $("shot-img").removeAttribute("src");
+    if (shotTrigger?.isConnected) shotTrigger.focus();
+    shotTrigger = null;
+  });
+}
+
+// The thumbnail cell: a button when there is a frame to enlarge, the plain
+// image or the placeholder when there is not. It is *inside* the row rather
+// than inside the row's link, because a button inside an <a> is neither valid
+// nor operable — which is what makes the row a `<div>` with its own link.
+const thumbCell = (hit) => {
+  const image = thumbFor(hit);
+  if (!DIALOG_WORKS || image.tagName !== "IMG") return image;
+  const button = el("button", "hit-shot");
+  button.type = "button";
+  // The button owns the accessible name, so the image inside it is decorative
+  // — otherwise a screen reader reads the frame twice.
+  button.setAttribute(
+    "aria-label",
+    `Enlarge the frame from ${hit.title || hit.video_id} at ${hit.timestamp || "0:00"}`,
+  );
+  image.alt = "";
+  button.append(image);
+  button.addEventListener("click", () => openShot(hit, button));
+  return button;
+};
+
+// A link into the corpus, as a real <a href>: middle-click and "open in new
+// tab" are two of the three things a search result has to do.
+const momentLink = (hit, className) => {
+  const link = el("a", className);
+  link.href =
+    safeUrl(hit.link) || `https://youtu.be/${encodeURIComponent(hit.video_id || "")}`;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  return link;
+};
+
+// The row *was* one <a> around everything. It is now a row containing two
+// controls — the thumbnail button and the link over the text — because the
+// enlarge button cannot live inside the anchor. Everything the anchor used to
+// cover except the image still opens the video, so middle-click is intact.
+const hitRow = (hit, query, n) => {
+  const row = el("div", isFrameHit(hit) ? "hit is-frame" : "hit");
+  if (n) row.append(el("span", "cite-n", `[${n}]`));
+  row.append(thumbCell(hit));
+
+  const link = momentLink(hit, "hit-link");
   const body = el("div", "hit-body");
   body.append(el("div", "hit-title", hit.title || hit.video_id));
 
@@ -302,7 +396,8 @@ const hitRow = (hit, query, n) => {
 
   const snippet = snippetFor(hit, query);
   if (snippet) body.append(snippet);
-  row.append(body);
+  link.append(body);
+  row.append(link);
   return row;
 };
 

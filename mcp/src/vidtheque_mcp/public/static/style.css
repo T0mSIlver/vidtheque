@@ -199,11 +199,34 @@ button.linky {
   align-items: flex-start;
   padding: 1rem 0;
   border-top: 1px solid var(--line);
+  color: inherit;
+}
+
+/* The row is a row, not a link: the thumbnail next to this is a button, and a
+   button inside an <a> is neither valid nor operable. Everything textual is
+   still inside one real anchor, so middle-click and open-in-new-tab work. */
+.hit-link {
+  flex: 1 1 auto;
+  min-width: 0;
   text-decoration: none;
   color: inherit;
 }
 
-.hit:hover .hit-title { color: var(--accent); }
+.hit-link:hover .hit-title { color: var(--accent); }
+
+/* The enlarge control. A button with every default stripped, so the row's
+   geometry is exactly the image's — no padding, no border, no layout shift. */
+.hit-shot {
+  flex: 0 0 auto;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  line-height: 0;
+  cursor: zoom-in;
+}
 
 /* Fixed box, set on the element and mirrored in the img attributes: the row
    keeps its height whether the frame has loaded, failed, or never existed. */
@@ -405,6 +428,64 @@ button.linky {
   font-size: 0.8rem;
 }
 
+/* ---------------------------------------------------------------- lightbox */
+
+/* The dialog element is the *backdrop*: it carries no padding, so `.shot-inner`
+   covers every pixel of the box and a click that lands on the dialog itself
+   landed outside the picture. That is what makes click-to-dismiss a two-line
+   listener instead of a hit test. */
+.shot {
+  width: min(96vw, 60rem);
+  max-width: min(96vw, 60rem);
+  padding: 0;
+  color: var(--fg);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.shot::backdrop { background: rgb(0 0 0 / 0.66); }
+
+.shot-inner { position: relative; padding: 0.75rem; }
+
+/* The aspect ratio is reserved before the bytes land, so opening the dialog
+   does not resize it under the pointer. */
+.shot-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+  background: var(--line);
+  border-radius: 6px;
+}
+
+.shot-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.shot-caption { margin: 0; font-size: 0.9rem; overflow-wrap: anywhere; }
+.shot-link { color: var(--accent); font-size: 0.9rem; text-decoration: none; }
+.shot-link:hover { text-decoration: underline; }
+
+/* Over the image, so it is where the eye already is — with the page's own
+   ground behind it rather than a frame it might disappear into. */
+.shot-close {
+  position: absolute;
+  top: 1.15rem;
+  right: 1.15rem;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.85rem;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+
 /* ----------------------------------------------------------------- connect */
 
 .connect { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--line); }
@@ -466,6 +547,9 @@ footer p { margin: 0 0 0.4rem; }
   .snip { font-size: 0.9rem; }
   .snip-screen,
   .snip-frame { font-size: 0.82rem; }
+
+  .shot { width: 96vw; max-width: 96vw; }
+  .shot-close { top: 1rem; right: 1rem; }
 
   .answer { padding: 0.9rem; }
   .copyrow { flex-wrap: wrap; }

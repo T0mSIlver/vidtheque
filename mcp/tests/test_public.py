@@ -173,6 +173,27 @@ def test_search_facade_emits_thumbnail_urls_for_frame_hits(public_client: TestCl
     assert public_client.get(thumb).status_code == 200
 
 
+def test_every_frame_backed_hit_carries_an_enlargeable_url(
+    public_client: TestClient,
+) -> None:
+    """Click-to-enlarge is a second URL, not a second query (§6.4).
+
+    The width is the facade's and the clamp is the route's: a browser cannot
+    ask `/frames` for a size of its own, and under `token`/`oauth` it could not
+    sign one either.
+    """
+    payload = public_client.get("/api/search?q=nvidia-smi&content_type=ocr").json()
+    hits = [h for h in payload["results"] if h["frame_id"]]
+    assert hits, "the ocr leg should return frame-backed hits"
+    large = hits[0]["thumb_large"]
+    assert large.endswith(".jpg?w=960&q=70")
+    assert public_client.get(large).status_code == 200
+    # A hit with no keyframe has nothing to enlarge, and says so with a null
+    # rather than a URL that 404s inside a dialog.
+    empty = [h for h in payload["results"] if not h["frame_id"]]
+    assert all(h["thumb_large"] is None for h in empty)
+
+
 def test_a_frame_hit_asks_for_the_wider_thumbnail(public_client: TestClient) -> None:
     """A frame hit matched on its *image*, so the page shows it bigger (§6.3).
 
@@ -243,6 +264,15 @@ def test_the_demo_page_is_served_at_the_root(public_client: TestClient) -> None:
     assert "/static/app.js" in body
     assert "Add this corpus to your own agent" in body
     assert "youtube" in body.lower() or "YouTube" in body
+
+
+def test_the_enlarge_dialog_is_a_real_dialog(public_client: TestClient) -> None:
+    """Esc, the backdrop, the focus trap and the modal role are the platform's."""
+    body = public_client.get("/").text
+    assert "<dialog id=\"shot\"" in body
+    assert 'aria-labelledby="shot-caption"' in body
+    # Opening it must not put Enter on "leave the page": Close takes focus.
+    assert 'id="shot-close"' in body and "autofocus" in body
 
 
 def test_the_page_assets_are_served_and_confined(public_client: TestClient) -> None:
@@ -769,6 +799,11 @@ def test_ask_citations_carry_the_evidence_the_model_was_shown(tmp_path: Path) ->
     assert first["text"], "a citation without its snippet is a bare title"
     assert first["source"] in {"transcript", "ocr", "frame", "transcript+ocr"}
     assert "max_text_chars" not in first["text"]
+    # A source row is a search row, so it enlarges like one — including the
+    # null when the cited moment has no keyframe behind it.
+    assert "thumb_large" in first
+    frames = [c for c in payload["citations"] if c["thumb"]]
+    assert all(c["thumb_large"].endswith("?w=960&q=70") for c in frames)
 
 
 # ------------------------------- 7. the seams a launch day actually finds

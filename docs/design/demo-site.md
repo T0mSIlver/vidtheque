@@ -101,9 +101,12 @@ Facade rules:
   a `structuredContent.code`; `errors.HTTP_STATUS` already maps every `E_*`
   code to an HTTP status, so the facade returns that status with
   `{"error": code, "message": …, "next": …}`. One table, two consumers.
-- **Nothing new is queried.** The facade adds exactly two derived fields per
-  result — a `thumb` URL and a `timestamp` clock string — both computed from
-  data the tool already returned.
+- **Nothing new is queried.** The facade adds three derived fields per result —
+  a `timestamp` clock string and two frame URLs, `thumb` and `thumb_large` —
+  every one of them computed from data the tool already returned. `thumb_large`
+  is a *URL*, not bytes: the enlarged frame is fetched only if a visitor opens
+  one (§6.4), and it is built here because the width has to be clamped (and,
+  under `token`/`oauth`, signed) server-side.
 - **One string is rewritten, and only one.** `text.TRUNCATION_MARKER` ends in
   "pass `max_text_chars=0` for full text" — advice a browser cannot take, since
   the facade has no such opt-out. `api.demo_text()` rewrites it to
@@ -143,7 +146,8 @@ GET /api/search?q=kv+cache&content_type=all&limit=10&offset=0
       "text": "we cache the keys and the values at every new token",
       "link": "https://youtu.be/kCc8FmEb1nY?t=10",
       "frame_id": "kCc8FmEb1nY-00000",
-      "thumb": "https://…/frames/kCc8FmEb1nY-00000.jpg?w=320&q=70",
+      "thumb": "https://…/frames/kCc8FmEb1nY-00000.jpg?w=192&q=70",
+      "thumb_large": "https://…/frames/kCc8FmEb1nY-00000.jpg?w=960&q=70",
       "score": 0.0312
     }
   ],
@@ -152,9 +156,10 @@ GET /api/search?q=kv+cache&content_type=all&limit=10&offset=0
 }
 ```
 
-`thumb` is `null` when the hit has no `frame_id` (a transcript-only hit in a
-video with no keyframes). The page falls back to a text card, not a broken
-image.
+`thumb` and `thumb_large` are both `null` when the hit has no `frame_id` (a
+transcript-only hit in a video with no keyframes). The page falls back to a text
+card, not a broken image — and offers no enlarge control for a frame that does
+not exist.
 
 `notes` is the same `note:` array the MCP payload prints. The page renders it
 in a muted line — "`all` means all" is a promise to a human too, and a search
@@ -558,9 +563,9 @@ Layout, top to bottom:
 4. **Results** — one row per hit, hairline-separated: thumbnail (or a muted
    placeholder naming the channel the hit came from), title · channel, the
    timestamped snippet with the query terms marked, and `[mm:ss] ↗ youtu.be`
-   opening the video at the moment in a new tab. The whole row is one `<a>`, so
-   middle-click works. What the row says about *where the hit came from* is
-   §6.3.
+   opening the video at the moment in a new tab. The text is one `<a>`, so
+   middle-click works; the thumbnail is its own button and opens the frame full
+   size (§6.4). What the row says about *where the hit came from* is §6.3.
 5. **Ask pane** (ask mode) — the answer as prose with `[n]` markers rendered as
    superscript links to the moment they cite, followed by the same result rows
    numbered to match. A 503 replaces the pane with the degradation message and
@@ -656,7 +661,8 @@ loaded but **does not fire**: an answer costs a slice of the daily model budget,
 and a shared link (or a crawler) must not spend it on page load. One click does.
 
 A real `<form>` and a real `<a href>` on every result, so Enter submits and
-middle-click opens — the two things a search engine is expected to do.
+middle-click opens — the two things a search engine is expected to do. (The
+thumbnail is the one exception, and it is a `<button>` for a reason: §6.4.)
 
 No inline `<script>` beyond a nonce-free module tag — the page is static files
 served from disk, so a CSP could be added later without rewriting it.
@@ -688,6 +694,39 @@ badge — it is `all` means `all`, applied to a row.
 The same treatment is in the answer's Sources list, because that list *is* a
 list of search rows (one `hitRow`, two callers). The ask prompt asks for the
 same distinction in prose (§3.3).
+
+### 6.4 Click to enlarge
+
+A thumbnail is 96 or 160 CSS pixels of somebody's slide: enough to recognise,
+never enough to *read*. Clicking one opens the frame at `thumb_large`
+(`w=960`) in a dialog with the title, the channel, the timestamp, and
+`open at <t> on YouTube`.
+
+It is the **native `<dialog>`**, opened with `showModal()`. Esc, the inert
+background, the focus trap and the modal semantics are the platform's, so the
+page implements none of them; it adds the two things the element does not give
+for free — a click that lands on the dialog element itself (its padding is zero,
+so `.shot-inner` covers the box and such a click landed on the backdrop)
+dismisses, and focus returns to the **exact** thumbnail that opened it, tracked
+rather than inferred because clicking a button does not focus it on every
+browser. The Close button carries `autofocus` and is focused explicitly, because
+`showModal()`'s own default would land on the YouTube link — and the first Enter
+after opening a picture should not leave the page.
+
+This is what turned the result row inside out. A row used to be one `<a>` around
+everything, and a button cannot live inside an anchor. So the row is a flex
+`<div>` holding two controls: the thumbnail button, and one anchor over *all*
+the text. Middle-click and open-in-new-tab still work everywhere they used to
+except on the image itself, which now has its own job. The geometry is unchanged
+— the button strips every default (no padding, no border, `line-height: 0`), so
+there is no layout shift and the skeleton still matches.
+
+Feature-detected once: no `showModal`, no button — the thumbnail stays the inert
+image it was, rather than becoming a control that half works.
+
+The dialog lives in `index.html` as empty markup and is filled per click, and
+it is filled the way everything else is: text nodes only, `safeUrl()` on the
+image `src` and the link `href`.
 
 ---
 
