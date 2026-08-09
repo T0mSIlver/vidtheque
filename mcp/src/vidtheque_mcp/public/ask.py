@@ -175,6 +175,13 @@ class Evidence:
         )
         return n
 
+    def describe(self, video_id: str) -> tuple[str, str | None]:
+        """Title and channel already known for a video, from an earlier hit."""
+        for item in self.items:
+            if item.video_id == video_id:
+                return item.title, item.channel
+        return "", None
+
 
 class OpenRouter:
     """The thinnest possible OpenAI-compatible chat client.
@@ -263,8 +270,9 @@ async def run_ask(
             break
 
         rounds += 1
-        messages.append(_assistant_turn(message, calls[:MAX_TOOL_CALLS_PER_ROUND]))
-        for call in calls[:MAX_TOOL_CALLS_PER_ROUND]:
+        batch = _with_ids(calls[:MAX_TOOL_CALLS_PER_ROUND], rounds)
+        messages.append(_assistant_turn(message, batch))
+        for call in batch:
             messages.append(await _run_tool(deps, call, evidence))
         if len(calls) > MAX_TOOL_CALLS_PER_ROUND:
             # A parallel-tool-call storm on a free model is how the daily budget
@@ -315,6 +323,30 @@ def _first_message(payload: dict[str, Any]) -> dict[str, Any]:
     return message if isinstance(message, dict) else {}
 
 
+def _with_ids(calls: list[dict[str, Any]], round_no: int) -> list[dict[str, Any]]:
+    """Give every tool call an id, and no two the same.
+
+    An OpenAI-compatible upstream requires each `tool` message's
+    `tool_call_id` to name exactly one call in the assistant turn before it. A
+    model that emits two `search` calls with no ids (the cheap and free tiers
+    this demo pins are exactly where that happens) used to produce two tool
+    messages both claiming `"search"` — a 400 upstream, which the visitor reads
+    as a 503 for a loop that was otherwise fine. Synthesised here, once, so the
+    assistant turn and the tool messages carry the same string by construction.
+    """
+    fixed: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for i, call in enumerate(calls):
+        entry = dict(call)
+        call_id = str(entry.get("id") or "")
+        if not call_id or call_id in seen:
+            call_id = f"call_{round_no}_{i}"
+        seen.add(call_id)
+        entry["id"] = call_id
+        fixed.append(entry)
+    return fixed
+
+
 def _assistant_turn(message: dict[str, Any], calls: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "role": "assistant",
@@ -339,13 +371,14 @@ async def _run_tool(
     if name == "search":
         text = await _tool_search(deps, args, evidence)
     elif name == "get_segment_context":
-        text = await _tool_context(deps, args)
+        text = await _tool_context(deps, args, evidence)
     else:
         text = f"error: no tool named {name!r}. Use search or get_segment_context."
 
     return {
+        # `_with_ids` ran over this batch, so the id exists and is unique.
         "role": "tool",
-        "tool_call_id": call.get("id") or name,
+        "tool_call_id": call["id"],
         "name": name,
         "content": text,
     }
@@ -384,7 +417,7 @@ async def _tool_search(deps: Deps, args: dict[str, Any], evidence: Evidence) -> 
     return "\n".join(lines)
 
 
-async def _tool_context(deps: Deps, args: dict[str, Any]) -> str:
+async def _tool_context(deps: Deps, args: dict[str, Any], evidence: Evidence) -> str:
     video_id = str(args.get("video_id") or "").strip()
     if not video_id:
         return "error: get_segment_context needs a video_id from a search hit."
@@ -404,10 +437,50 @@ async def _tool_context(deps: Deps, args: dict[str, Any]) -> str:
     if result.is_error:
         return f"error: {payload.get('code')} — {payload.get('message')}"
     block = result.content[0]
-    return getattr(block, "text", "")
+    text = getattr(block, "text", "")
+
+    # The window is evidence the loop showed the model, so it gets an `[n]`
+    # like a search hit does. Without one, an answer built from a drill-down —
+    # the round where the model did the *most* work — cites a marker that names
+    # nothing, gets it stripped, and lands on the page with an empty Sources
+    # list. Deduplicated on (video, second) like every other record, so drilling
+    # into the hit the model already has reuses that hit's number.
+    cues = payload.get("cues") or []
+    if cues:
+        centre = float(payload.get("t") or t)
+        title, channel = evidence.describe(video_id)
+        n = evidence.record(
+            {
+                "video_id": video_id,
+                "start": centre,
+                "title": title,
+                "channel": channel,
+                "link": deeplink(video_id, centre, deps.settings.deeplink_lead_s),
+                "source": "transcript",
+                "text": middle_truncate(
+                    " ".join(str(cue.get("text") or "") for cue in cues),
+                    ASK_SEARCH_TEXT_CHARS,
+                ),
+            }
+        )
+        text = f"This window is [{n}] — cite [{n}] for anything you take from it.\n{text}"
+    return text
 
 
-_CITATION = re.compile(r"\[(\d{1,2})\]")
+# A citation marker *with the horizontal space that flanks it*, so dropping one
+# takes the hole with it. `[ \t]` only: a newline is a paragraph break to the
+# page's renderer and is never eaten.
+_CITATION = re.compile(r"(?P<pre>[ \t]*)\[(?P<n>\d{1,2})\](?P<post>[ \t]*)")
+
+# What a dropped marker must not leave a space in front of.
+_TIGHT_AFTER = ",.;:!?)]}\n"
+
+
+def _last_char(parts: list[str]) -> str:
+    for part in reversed(parts):
+        if part:
+            return part[-1]
+    return ""
 
 
 def _answer(
@@ -417,21 +490,47 @@ def _answer(
     rounds: int,
     public: PublicSettings,
 ) -> dict[str, Any]:
-    """Strip citations that name nothing, and return only the ones used."""
+    """Strip citations that name nothing, and return only the ones used.
+
+    Stripping is a rewrite, not a deletion: `"the block table [9] is kept"` has
+    to come back as `"the block table is kept"` — not with the double space a
+    bare deletion leaves — and `"see [9]."` must not become `"see ."`. Models
+    emit markers that name nothing often enough for that to show up in a real
+    share of answers, and an answer is the thing a visitor screenshots.
+
+    Done as one left-to-right rebuild rather than a `sub()` callback because the
+    decision depends on what has already been *written* — two fabricated markers
+    in a row (`"text [8][9] end"`) would otherwise each add their own space.
+    """
     from .api import thumb_url
 
     known = {c.n: c for c in evidence.items}
     used: list[int] = []
+    out: list[str] = []
+    pos = 0
 
-    def keep(match: re.Match[str]) -> str:
-        n = int(match.group(1))
-        if n not in known:
-            return ""  # a marker pointing at nothing is not a link, it is noise
-        if n not in used:
-            used.append(n)
-        return match.group(0)
-
-    cleaned = _CITATION.sub(keep, content).strip()
+    for match in _CITATION.finditer(content):
+        out.append(content[pos : match.start()])
+        pos = match.end()
+        n = int(match.group("n"))
+        if n in known:
+            if n not in used:
+                used.append(n)
+            out.append(match.group(0))  # untouched, the spaces around it included
+            continue
+        # A marker pointing at nothing is not a link, it is noise. One space is
+        # left where it separated two words, and none where the text either side
+        # already closes up: a gap already written, punctuation, or an edge.
+        tail = content[pos:]
+        previous = _last_char(out)
+        if not previous or previous in " \t\n":
+            continue
+        if not tail or tail[0] in _TIGHT_AFTER:
+            continue
+        if match.group("pre") or match.group("post"):
+            out.append(" ")
+    out.append(content[pos:])
+    cleaned = "".join(out).strip()
     citations = [
         known[n].as_dict(thumb_url(deps, known[n].frame_id)) for n in sorted(used)
     ]

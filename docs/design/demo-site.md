@@ -278,11 +278,28 @@ system + user
 - A citation carries the evidence the model was shown — `source` and the
   bounded `text` of the hit, not just a title — so the page's source list reads
   exactly like a search row instead of a bare link.
+- **A drill-down window is evidence too.** `get_segment_context` records the
+  window it returned under an `[n]` and tells the model that number, keyed on
+  `(video_id, int(t))` like every other record — so drilling into a hit the
+  model already has reuses that hit's number, and an answer written *only* from
+  a drill-down still has sources. Without it the round where the model does the
+  most work is the one that lands with an empty Sources list, every marker in
+  it stripped for naming nothing.
+- **Tool-call ids are synthesised when the model omits them.** An
+  OpenAI-compatible upstream requires each `tool` message's `tool_call_id` to
+  name exactly one call in the assistant turn before it; two id-less `search`
+  calls (which is a cheap/free tier's habit) would otherwise both be sent as
+  `"search"` and 400 the whole loop. The assistant turn is rewritten with the
+  same ids the tool messages use, so the two can never disagree.
 - Every search result the loop sees is recorded, keyed by
   `(video_id, int(t))`. Citations in the response are **only** from that set:
   the model can cite `[3]`, but it cannot invent video 4. A citation marker
   pointing at nothing is stripped from the answer text rather than rendered as
-  a dead link.
+  a dead link — and stripping is a *rewrite*, not a deletion: the horizontal
+  space that flanked the marker goes with it, so `"the block table [9] is"`
+  comes back as `"the block table is"` and `"see [9]."` does not become
+  `"see ."`. An answer is the thing a visitor screenshots; a typo in one is
+  worth the twenty lines.
 - The system prompt is short and says the two things that matter: answer only
   from tool results, and mark each claim with the `[n]` of the result it came
   from.

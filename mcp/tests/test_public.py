@@ -380,6 +380,11 @@ def test_ask_runs_the_tool_loop_and_cites_real_results(tmp_path: Path) -> None:
     with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
         payload = client.post("/api/ask", json={"q": "what does the kv cache cost?"}).json()
 
+    # Two completions, not three: one that called the tool, one that answered.
+    # `Upstream` repeats its last script entry forever, so without this a loop
+    # that fires a spurious extra completion — the way the daily budget dies —
+    # passes every other assertion here unchanged.
+    assert len(upstream.requests) == 2
     assert payload["rounds"] == 1
     assert payload["model"] == "deepseek/deepseek-v4-flash-0731"
     assert "[1]" in payload["answer"]
@@ -405,6 +410,8 @@ def test_ask_offers_exactly_two_tools(tmp_path: Path) -> None:
         client.post("/api/ask", json={"q": "hello"})
     names = {t["function"]["name"] for t in upstream.requests[0]["tools"]}
     assert names == {"search", "get_segment_context"}
+    # An answer on the first completion is one completion, never a second.
+    assert len(upstream.requests) == 1
 
 
 def test_ask_forces_an_answer_when_the_rounds_run_out(tmp_path: Path) -> None:
@@ -416,6 +423,9 @@ def test_ask_forces_an_answer_when_the_rounds_run_out(tmp_path: Path) -> None:
         payload = client.post("/api/ask", json={"q": "why?"}).json()
     assert payload["answer"] == "Final answer."
     assert payload["rounds"] == 2
+    # Two tool rounds and the forced answer — the round cap is a cap on
+    # completions, not only on the rounds counter.
+    assert len(upstream.requests) == 3
     assert upstream.requests[-1]["tool_choice"] == "none"
 
 
@@ -430,6 +440,7 @@ def test_ask_drill_down_tool_reads_the_transcript_window(tmp_path: Path) -> None
     )
     with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
         assert client.post("/api/ask", json={"q": "what price?"}).status_code == 200
+    assert len(upstream.requests) == 2
     tool_message = next(
         m for m in upstream.requests[1]["messages"] if m.get("role") == "tool"
     )
@@ -796,3 +807,115 @@ def test_a_refused_request_is_not_charged_to_the_buckets_that_let_it_through() -
     limiter.refund("ask", "1.1.1.1")
     assert limiter._buckets[("ask", "1.1.1.1")].tokens <= 5.0
     limiter.refund("ask", "9.9.9.9")  # a bucket that does not exist is a no-op
+
+
+def test_a_stripped_citation_leaves_no_seam_behind(tmp_path: Path) -> None:
+    """Finding 4: a fabricated `[n]` goes, and so does the hole it leaves."""
+    upstream = Upstream(
+        _completion(tool_calls=[_tool_call("c1", "search", {"query": "kv cache"})]),
+        _completion("The block table [9] is kept [1]. See [9]. Also [8][7] here."),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        answer = client.post("/api/ask", json={"q": "what?"}).json()["answer"]
+    assert answer == "The block table is kept [1]. See. Also here."
+    assert "  " not in answer, "a removed marker must not leave a double space"
+    assert " ." not in answer, "nor an orphaned full stop"
+
+
+def test_an_answer_with_only_real_citations_is_passed_through_verbatim(
+    tmp_path: Path,
+) -> None:
+    """The rewrite runs on every answer, so it has to be a no-op on a clean one."""
+    prose = "Paged attention [1] keeps a block table.\n\nIt is the trick [1]."
+    upstream = Upstream(
+        _completion(tool_calls=[_tool_call("c1", "search", {"query": "kv cache"})]),
+        _completion(prose),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        answer = client.post("/api/ask", json={"q": "what?"}).json()["answer"]
+    assert answer == prose
+
+
+def test_a_drill_down_window_is_recorded_as_citable_evidence(tmp_path: Path) -> None:
+    """Finding 5: an answer built only from `get_segment_context` keeps its sources."""
+    upstream = Upstream(
+        _completion(
+            tool_calls=[
+                _tool_call("c1", "get_segment_context", {"video_id": "kCc8FmEb1nY", "t": 12})
+            ]
+        ),
+        _completion("The price you pay is memory [1]."),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        payload = client.post("/api/ask", json={"q": "what price?"}).json()
+    assert payload["answer"] == "The price you pay is memory [1]."
+    assert payload["citations"], "a drill-down-only answer used to lose every source"
+    cited = payload["citations"][0]
+    assert cited["n"] == 1
+    assert cited["video_id"] == "kCc8FmEb1nY"
+    assert cited["link"].startswith("https://youtu.be/kCc8FmEb1nY")
+    assert cited["text"], "the window's own words, so the source row is not a bare title"
+    # And the model was told which number the window is, or it could not cite it.
+    tool_message = next(
+        m for m in upstream.requests[1]["messages"] if m.get("role") == "tool"
+    )
+    assert tool_message["content"].startswith("This window is [1]")
+
+
+def test_a_drill_down_into_a_known_hit_reuses_that_hit_number(tmp_path: Path) -> None:
+    """Dedup on (video, second) holds across both tools, or the `[n]` would drift."""
+    upstream = Upstream(
+        _completion(tool_calls=[_tool_call("c1", "search", {"query": "block table"})]),
+        _completion(
+            tool_calls=[
+                _tool_call("c2", "get_segment_context", {"video_id": "zduSFxRajkE", "t": 10})
+            ]
+        ),
+        _completion("Paged attention keeps a block table [1]."),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        payload = client.post("/api/ask", json={"q": "block table?"}).json()
+    assert [c["n"] for c in payload["citations"]] == [1]
+    context_message = [
+        m for m in upstream.requests[2]["messages"] if m.get("role") == "tool"
+    ][-1]
+    assert context_message["content"].startswith("This window is [1]")
+
+
+def test_tool_calls_without_ids_get_distinct_synthesised_ones(tmp_path: Path) -> None:
+    """Finding 7: two id-less `search` calls used to share one `tool_call_id`."""
+    idless = {
+        "type": "function",
+        "function": {"name": "search", "arguments": json.dumps({"query": "cache"})},
+    }
+    upstream = Upstream(
+        _completion(tool_calls=[dict(idless), dict(idless)]),
+        _completion("Both searched."),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        assert client.post("/api/ask", json={"q": "cache?"}).status_code == 200
+    messages = upstream.requests[1]["messages"]
+    turn = next(m for m in messages if m.get("role") == "assistant" and m.get("tool_calls"))
+    ids = [c["id"] for c in turn["tool_calls"]]
+    assert len(ids) == 2 and len(set(ids)) == 2 and all(ids)
+    tool_ids = [m["tool_call_id"] for m in messages if m.get("role") == "tool"]
+    assert sorted(tool_ids) == sorted(ids), "each tool message names exactly one call"
+
+
+def test_duplicate_tool_call_ids_are_made_unique(tmp_path: Path) -> None:
+    upstream = Upstream(
+        _completion(
+            tool_calls=[
+                _tool_call("same", "search", {"query": "cache"}),
+                _tool_call("same", "search", {"query": "memory"}),
+            ]
+        ),
+        _completion("Done."),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        assert client.post("/api/ask", json={"q": "cache?"}).status_code == 200
+    messages = upstream.requests[1]["messages"]
+    turn = next(m for m in messages if m.get("role") == "assistant" and m.get("tool_calls"))
+    ids = [c["id"] for c in turn["tool_calls"]]
+    assert len(set(ids)) == 2, "a repeated id is a 400 upstream, read as a 503 downstream"
+    assert ids[0] == "same"  # the model's own id is kept wherever it can be
