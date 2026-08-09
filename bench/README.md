@@ -68,6 +68,7 @@ than no number.
 | `gpu_validation.py` | the lifecycle manager against real hardware: load/unload VRAM discipline, residency, eviction, lease hooks |
 | `ballast.py` | squats on VRAM in a separate process, so admission control has a co-tenant to refuse |
 | `keyframe_decode.py` | the CPU side: shot detection and frame extraction, every lever (dual-stream, PyAV threading, pass-2 workers, fused convert) with timings *and* a diff of what the output did |
+| `keyframe_gpu.py` | the same stage with the decode moved to an ffmpeg subprocess — NVDEC variants, the feed ceiling with no detector on it, and the pass-2 seek |
 | `pipeline_bench.py` | the whole pipeline, once per configuration: CPU vs GPU vs GPU+whisperX, per stage |
 | `results/` | committed measurements, with the raw JSON they came from |
 
@@ -131,6 +132,35 @@ uv run --no-sync python bench/keyframe_decode.py \
     --out bench/results/raw/keyframe-fused.json
 ```
 
+`keyframe_gpu.py` asks whether the *decoder* should be the GPU's. It reuses
+§8.2's seam — `SceneManager.detect_scenes(video=...)` takes any `VideoStream` —
+with a stream fed by an **ffmpeg subprocess** writing `rawvideo bgr24` down a
+pipe, so a whole decode chain is an argument list and the detector stays fixed.
+`--variants` times them against `detect_spans(fused=True)` re-measured in the
+same conditions, and diffs every one of them with `keyframe_decode.py`'s own
+boundary/kept-frame machinery, since GPU decode is not bit-exact.
+
+`--ceiling` is the probe that decides whether any of it matters: the same chains
+with **no detector**, plus a detector floor measured by baking raw frames to
+disk and replaying them with `cat`. Pass-1 wall is `max(feed, detect)`, so those
+two numbers bracket everything a decoder could ever buy. `--seek-probe` does the
+same for pass 2, on the real `_sharpest_in` candidate timestamps.
+
+```bash
+uv run --no-sync python bench/keyframe_gpu.py \
+    --video /scratch/ID-1080p.mp4 --repeats 2 \
+    --variants nvdec-scale,nvdec-resize,cpu-pipe,nvdec-1080 \
+    --variant-repeats nvdec-1080=1 \
+    --kept-frames --ceiling --seek-probe 6 --legacy-shape \
+    --raw-cache /var/tmp/floor.raw \
+    --out bench/results/raw/keyframe-gpu.json
+```
+
+`--raw-cache` wants ~110 KB per frame of the ceiling window and must not be on
+tmpfs. The answer on Tom's box, for the record: NVDEC decodes this stream at
+786 frames/s against the CPU's 2,716, so every GPU variant is *slower*
+(`research/pipeline-perf-2026-08-09.md` §11).
+
 `pipeline_bench.py` answers the operator's version of the question the other
 three take apart: **what does the GPU buy you end to end.** It indexes one video
 through the real `index-video` → `job-status: done` loop once per configuration
@@ -155,10 +185,12 @@ pipeline's own per-stage wall clock, 1 s resolution), the worker's `/status`
 queue at 250 ms (the inference span inside a stage), and `nvidia-smi` at 500 ms.
 Write-up: `research/pipeline-bench-2026-08-09.md`.
 
-`keyframe_decode.py` is the one file here that imports `vidtheque_mcp` — deliberately, since the
-point is to time the shipped `pipeline/keyframes.py`, not a copy of it. No
-worker, no HTTP, no GPU (bar the optional `--nvdec-probe`, which is `ffmpeg`
-alone). The write-up lives with the other pipeline evidence, in
+`keyframe_decode.py` and `keyframe_gpu.py` are the two files here that import
+`vidtheque_mcp` — deliberately, since the point is to time the shipped
+`pipeline/keyframes.py`, not a copy of it (`keyframe_gpu.py` also imports
+`keyframe_decode.py`, so there is one definition of "damage" and not two).
+Neither touches the worker, HTTP or the database; the GPU appears only as
+`ffmpeg` arguments. The write-up lives with the other pipeline evidence, in
 `research/keyframe-decode-bench-2026-08-08.md`; its raw envelope is
 `results/raw/keyframe-decode-2026-08-08.json`.
 
