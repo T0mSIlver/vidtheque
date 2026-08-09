@@ -383,7 +383,7 @@ async def run(
             content_type,
             flt,
             notes,
-            reason=_nothing_matched(legs),
+            reason=_nothing_matched(legs, content_type),
             limit=limit,
             offset=offset,
         )
@@ -976,7 +976,11 @@ def _render(
     return "\n".join(header) + body + ("\n" + "\n".join(footer) if footer else "")
 
 
-def _nothing_matched(legs: dict[str, bool]) -> str:
+def _and_list(names: list[str]) -> str:
+    return " and ".join([", ".join(names[:-1]), names[-1]] if len(names) > 1 else names)
+
+
+def _nothing_matched(legs: dict[str, bool], content_type: str) -> str:
     """The empty-state reason line, derived from the legs that actually ran.
 
     It was the constant "Every leg was queried and none of them matched." — a
@@ -984,20 +988,26 @@ def _nothing_matched(legs: dict[str, bool]) -> str:
     could contradict a `note:` four lines above it in the same payload saying
     the semantic legs were skipped (research/demo-queries-2026-08-09.md §7.10,
     §9.1.5). `all` means all, and saying so when it did not is the same lie in
-    the other direction.
+    the other direction. It also says *why* the others sat out, because the two
+    reasons want different next steps: a pinned `content_type` is the caller's
+    own doing and has no `note:` to read, everything else has one.
     """
     ran = [name for name, on in legs.items() if on]
+    missing = [name for name, on in legs.items() if not on]
     if not ran:
         return "No leg was queried — every leg was ruled out by the filters above."
-    if len(ran) == 3:
+    if not missing:
         return "All three legs were queried and none of them matched."
-    joined = " and ".join([", ".join(ran[:-1]), ran[-1]] if len(ran) > 1 else ran)
     was = "leg was" if len(ran) == 1 else "legs were"
-    return (
-        f"The {joined} {was} queried and nothing matched. The other "
-        f"{'legs' if len(ran) == 1 else 'leg'} did not run — see the note above, "
-        "or drop content_type= to query all three."
+    why = (
+        f"you pinned content_type={content_type}, so the "
+        f"{_and_list(missing)} {'leg' if len(missing) == 1 else 'legs'} did not run — "
+        "omit it to query all three"
+        if content_type != "all"
+        else f"the {_and_list(missing)} {'leg' if len(missing) == 1 else 'legs'} "
+        "did not run, for the reason in the note above"
     )
+    return f"The {_and_list(ran)} {was} queried and nothing matched; {why}."
 
 
 def _past_the_end(

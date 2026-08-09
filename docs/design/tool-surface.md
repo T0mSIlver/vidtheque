@@ -740,8 +740,10 @@ matched."* — false whenever the caller pinned `content_type` to one leg, and a
 `content_type=all` it could contradict a `note:` four lines above it in the same
 payload saying the semantic legs had been gated off (demo-queries §7.10,
 §9.1.5). `all` means all; claiming `all` when one leg ran is that invariant
-inverted. It now names the legs (*"The transcript and ocr legs were queried and
-nothing matched"* / *"All three legs were queried…"*) and points at the note. The
+inverted. It now names the legs that ran (*"The transcript and ocr legs were
+queried and nothing matched"* / *"All three legs were queried…"*) **and why the
+others sat out** — a pinned `content_type` is the caller's own doing and has no
+`note:` to read, everything else has one, and the two want different fixes. The
 same payload also echoes the caller's `limit`/`offset`: the corpus-filter early
 return used to default them to `0`, so an unmatched `channel=` answered with
 `pagination.limit: 0` while an unmatched *query* echoed the real limit (§9.1.9).

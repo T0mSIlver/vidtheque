@@ -1517,6 +1517,10 @@ async def test_the_empty_state_names_the_legs_that_actually_ran(tool_corpus) -> 
     )
     assert "Every leg was queried" not in pinned
     assert "The ocr leg was queried" in pinned
+    # ...and why the others sat out, which here is the caller's own doing and
+    # has no `note:` to point at.
+    assert "you pinned content_type=ocr" in pinned
+    assert "transcript and frame legs did not run" in pinned
 
     # No lexical footing: the semantic legs are gated off, and the payload says
     # so — so it must not also claim all three ran.
@@ -1524,6 +1528,7 @@ async def test_the_empty_state_names_the_legs_that_actually_ran(tool_corpus) -> 
     assert "semantic (nearest-neighbour) legs were not queried" in gated
     assert "All three legs" not in gated
     assert "The transcript and ocr legs were queried" in gated
+    assert "for the reason in the note above" in gated
 
     # And with footing, all three really do run, and the line says exactly that.
     everything = text_of(await search.run(parts.deps, q="reproducible zzzznothing", limit=3))
