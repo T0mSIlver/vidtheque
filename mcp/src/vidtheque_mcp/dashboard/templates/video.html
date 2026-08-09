@@ -6,20 +6,28 @@
 
 <p class="crumbs"><a href="{{ root }}/videos">Videos</a> <span aria-hidden="true">/</span> <code>{{ video.video_id }}</code></p>
 
+{# The states go on the title's own baseline at the far end of the band, the way
+   every other page's header works; the facts get their own line under it. They
+   used to share one paragraph, which meant a pill, a channel name, three
+   machine strings and a sentence fragment all wrapping through each other. #}
 <div class="pagehead">
-  <h1>{{ video.title }}</h1>
+  <div class="pagehead-line">
+    <h1>{{ video.title }}</h1>
+    <p class="pagehead-meta">
+      <span class="pill tone-{{ video.index_state | tone }}">{{ video.index_state }}</span>
+      {# video-summary's own word, verbatim (§4.5). Shown only when it says
+         something `index_state` did not, which for a failed video it does not. #}
+      {% if data_status and data_status != video.index_state %}
+      <span class="pill tone-{{ data_status | tone }}">{{ data_status }}</span>
+      {% endif %}
+    </p>
+  </div>
   <p class="pagehead-meta">
-    <span class="pill tone-{{ video.index_state | tone }}">{{ video.index_state }}</span>
-    {# video-summary's own word, verbatim (§4.5) — shown only when it says
-       something `index_state` did not, which for a failed video it does not. #}
-    {% if data_status and data_status != video.index_state %}
-    <span class="pill tone-{{ data_status | tone }}">{{ data_status }}</span>
-    {% endif %}
-    <span class="sep">·</span>{{ video.channel }}
-    <span class="sep">·</span>published {{ video.published_at | day }}
-    <span class="sep">·</span>{{ video.duration_s | duration }}
-    {% if video.language %}<span class="sep">·</span>{{ video.language }}{% endif %}
-    {% if video.indexed_at %}<span class="sep">·</span>indexed {{ video.indexed_at | minute }}
+    {{ video.channel }}
+    <span class="sep">·</span><span class="fact">published <span class="mono">{{ video.published_at | day }}</span></span>
+    <span class="sep">·</span><span class="fact"><span class="mono">{{ video.duration_s | duration }}</span></span>
+    {% if video.language %}<span class="sep">·</span><span class="fact"><span class="mono">{{ video.language }}</span></span>{% endif %}
+    {% if video.indexed_at %}<span class="sep">·</span><span class="fact">indexed <span class="mono">{{ video.indexed_at | minute }}</span></span>
     {% else %}<span class="sep">·</span>never finished indexing{% endif %}
   </p>
   <p class="pagehead-meta">
@@ -35,13 +43,67 @@
 <section class="notice">
   <h2 class="notice-title">{{ summary_error.message }}</h2>
   <p class="notice-detail">
-    <code>{{ summary_error.code }}</code> — that is <code>video-summary</code>
+    <code>{{ summary_error.code }}</code> is <code>video-summary</code>
     refusing, verbatim. The panels below read the index directly, so they still
     say what exists.
   </p>
   {% if summary_error.next %}<p class="notice-next">{{ summary_error.next }}</p>{% endif %}
 </section>
 {% endif %}
+
+{# The spine. DESIGN.md calls this "a full-width horizontal band under the
+   header" and it spent phase 2 as the third panel down, under a counts grid and
+   a seven-row table — which put the one artefact no neighbouring product has
+   below the fold on a laptop. It is the first thing after the header now, and
+   like the overview's ledger band it carries only an sr-only heading: a band of
+   bars over a footage counter running 0:00 to the runtime does not need a
+   caption to say it is a timeline. #}
+<section class="timeband" aria-labelledby="timeline">
+  <h2 class="sr-only" id="timeline">Scene timeline</h2>
+  {% if shots %}
+  <ol class="timeline" aria-label="Shots across the runtime">
+    {% for shot in shots %}
+    <li class="shotbar{{ ' is-dedup' if shot.kept == 0 }}" data-shot="{{ shot.shot_id }}"
+        style="left:{{ shot.left }}%;width:{{ shot.width }}%">
+      <a href="{{ nav_link(shot.frame_offset, cue_offset, 'frame-' ~ shot.first_ord) }}"
+         title="shot {{ shot.shot_id }}, {{ shot.start_s | clock }} to {{ shot.end_s | clock }}, {{ shot.kept }}/{{ shot.frames }} frames kept">
+        <span class="sr-only">Shot {{ shot.shot_id }}, {{ shot.start_s | clock }} to {{ shot.end_s | clock }},
+          {{ shot.kept }} of {{ shot.frames }} keyframes kept</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ol>
+  {# Quarter marks at their true percentage, not spaced by flexbox: the band
+     above is an argument that a bar's position is a fact, and a scale whose
+     labels are only approximately where they claim would undercut it. #}
+  <p class="timeline-scale" aria-hidden="true">
+    {% for q in [0, 25, 50, 75, 100] %}
+    <span class="tick" style="left:{{ q }}%">{{ (video.duration_s * q / 100) | clock }}</span>
+    {% endfor %}
+  </p>
+  <div class="timeband-foot">
+    <p class="panel-note">
+      {{ shots | length }} shot(s){{ ", capped: the video has more" if shots_capped }}.
+      There is no scenes table: a shot is a group of keyframes sharing a
+      <code>shot_id</code>. Follow one to its first frame below.
+    </p>
+    {# The hatch is the only mark on this page whose meaning is not written next
+       to it, so it gets written here. Both swatches are the bars' own fills. #}
+    <p class="timeband-legend">
+      <span><span class="swatch swatch-kept" aria-hidden="true"></span>keyframes kept</span>
+      <span><span class="swatch swatch-dedup" aria-hidden="true"></span>every frame deduplicated</span>
+    </p>
+  </div>
+  {% else %}
+  <div class="empty">
+    <p class="empty-lead">No keyframes were captured, so this video has no shots.</p>
+    <p class="empty-note">
+      The <code>keyframe</code> row in Provenance below says whether the stage
+      ran, failed or never started.
+    </p>
+  </div>
+  {% endif %}
+</section>
 
 <section class="panel" aria-labelledby="counts">
   <h2 class="panel-title" id="counts">What was stored</h2>
@@ -102,7 +164,11 @@
       </thead>
       <tbody>
         {% for stage in stages %}
-        <tr class="{{ 'is-bad' if stage.state == 'failed' else '' }}">
+        {# A stage with no `video_stages` row never ran, which is a different
+           fact from a stage that ran and produced nothing — so the row stays,
+           at the full seven, and recedes. DESIGN.md: an `absent` stage is a
+           dimmed rule, not a missing row. #}
+        <tr class="{{ 'is-bad' if stage.state == 'failed' else ('is-absent' if stage.state == 'absent' else '') }}">
           <th scope="row"><code>{{ stage.stage }}</code></th>
           <td><span class="pill tone-{{ stage.state | tone }}">{{ stage.state }}</span></td>
           <td class="col-model">{% if stage.model_key %}<code>{{ stage.model_key }}</code>{% else %}<span class="muted">—</span>{% endif %}</td>
@@ -122,46 +188,13 @@
     Provenance records what <em>succeeded</em>. A failed, skipped or
     re-invalidated stage has its <code>model_key</code> set to NULL, so a dash
     here means "not recorded", never "unknown model". The names are the
-    corpus's declared models, not a report from the worker — the live check is
+    corpus's declared models, not a report from the worker; the live check is
     the vector state on the <a href="{{ root }}">corpus page</a>. Only
     <code>fetch</code> records a build version (<code>yt-dlp-&lt;version&gt;</code>);
     <code>stt</code> records <code>large-v3</code>, not the whisperX release.
     <code>stage_version</code> is declared in the schema and never incremented,
     so it is not shown.
   </p>
-</section>
-
-<section class="panel" aria-labelledby="timeline">
-  <h2 class="panel-title" id="timeline">Scene timeline</h2>
-  {% if shots %}
-  <ol class="timeline" aria-label="Shots across the runtime">
-    {% for shot in shots %}
-    <li class="shotbar{{ ' is-dedup' if shot.kept == 0 }}" data-shot="{{ shot.shot_id }}"
-        style="left:{{ shot.left }}%;width:{{ shot.width }}%">
-      <a href="{{ nav_link(shot.frame_offset, cue_offset, 'frame-' ~ shot.first_ord) }}"
-         title="shot {{ shot.shot_id }} — {{ shot.start_s | clock }} to {{ shot.end_s | clock }}, {{ shot.kept }}/{{ shot.frames }} frames kept">
-        <span class="sr-only">Shot {{ shot.shot_id }}, {{ shot.start_s | clock }} to {{ shot.end_s | clock }},
-          {{ shot.kept }} of {{ shot.frames }} keyframes kept</span>
-      </a>
-    </li>
-    {% endfor %}
-  </ol>
-  <p class="timeline-scale" aria-hidden="true">
-    <span>0:00</span><span>{{ video.duration_s | duration }}</span>
-  </p>
-  <p class="panel-note">
-    {{ shots | length }} shot(s){{ ", capped — the video has more" if shots_capped }}.
-    There is no scenes table: a shot is a group of keyframes sharing a
-    <code>shot_id</code>, and the dimmed bars are shots whose every frame was
-    dropped as a near-duplicate, which is also why they carry no on-screen text.
-    Follow one to its first frame below.
-  </p>
-  {% else %}
-  <p class="empty-note">
-    No keyframes were captured for this video, so there are no shots. The
-    <code>keyframe</code> row above says why.
-  </p>
-  {% endif %}
 </section>
 
 <section class="panel" aria-labelledby="frames-title" id="frames">
@@ -171,9 +204,14 @@
     {% for frame in frames %}
     <li class="framecard{{ ' is-dup' if frame.dup_of_ord is not none }}" id="frame-{{ frame.ord }}"
         data-shot="{{ frame.shot_id }}">
+      {# Pixel size and byte weight moved off the card and into the lightbox's
+         caption. dashboard.md §5.3 asks a card for `t_s`, `ord`, `sharpness`,
+         `ocr_state` and whether it is a duplicate; the other two were three
+         lines of 12px chrome under a 108px picture, and they belong where you
+         are actually looking at the file. #}
       <button type="button" class="framebtn" data-large="{{ frame.large }}"
               data-frame="{{ frame.frame_id }}"
-              data-caption="{{ frame.frame_id }} · {{ frame.t_s | clock }}"
+              data-caption="{{ frame.frame_id }} · {{ frame.t_s | clock }} · {{ frame.width }}×{{ frame.height }} · {{ frame.jpeg_bytes | bytes_human }}"
               data-link="https://youtu.be/{{ video.video_id }}?t={{ frame.t_s | int }}">
         <img src="{{ frame.thumb }}" alt="Keyframe {{ frame.ord }} at {{ frame.t_s | clock }}"
              width="192" height="108" loading="lazy" decoding="async">
@@ -184,13 +222,10 @@
         <span class="pill pill-small tone-{{ frame.ocr_state | tone }}">{{ frame.ocr_state }}</span>
       </p>
       <p class="framemeta muted">
-        shot {{ frame.shot_id }}<span class="sep">·</span>{{ frame.width }}×{{ frame.height }}<span class="sep">·</span>{{ frame.jpeg_bytes | bytes_human }}
+        shot {{ frame.shot_id }}<span class="sep">·</span>
+        {%- if frame.dup_of_ord is not none %}<span class="dupnote">duplicate of #{{ frame.dup_of_ord }}</span>
+        {%- else %}sharpness {{ "%.1f" | format(frame.sharpness) }}{% endif %}
       </p>
-      {% if frame.dup_of_ord is not none %}
-      <p class="framemeta"><span class="dupnote">duplicate of #{{ frame.dup_of_ord }}</span></p>
-      {% else %}
-      <p class="framemeta muted">sharpness {{ "%.1f" | format(frame.sharpness) }}</p>
-      {% endif %}
     </li>
     {% endfor %}
   </ul>
@@ -205,7 +240,13 @@
   </nav>
   {% endif %}
   {% else %}
-  <p class="empty-note">No keyframes on this page.</p>
+  <div class="empty">
+    <p class="empty-lead">No keyframes on this page of the strip.</p>
+    <p class="empty-note">
+      The <code>keyframes</code> figure above says how many exist in total; if
+      it is zero, the <code>keyframe</code> stage is the row to read.
+    </p>
+  </div>
   {% endif %}
 </section>
 
@@ -241,16 +282,20 @@
   </div>
   <p class="panel-note">
     Boxes are the OCR engine's own, normalised 0–1 at write time, drawn over
-    the frame at whatever width it is rendered. The searchable unit is the
-    frame — all of its lines joined in reading order — which is why a phrase
-    that wraps across two lines is findable.
+    the frame at whatever width it is rendered. Point at a line to light its
+    box, or at a box to light its line. The searchable unit is the whole frame,
+    all of its lines joined in reading order, which is why a phrase that wraps
+    across two lines is findable.
   </p>
   {% else %}
-  <p class="empty-note">
-    None of the frames on this page carry on-screen text. Frames dropped as
-    near-duplicates are never read, so <code>skipped</code> above is a
-    deduplication result, not an OCR failure.
-  </p>
+  <div class="empty">
+    <p class="empty-lead">None of the frames on this page carry on-screen text.</p>
+    <p class="empty-note">
+      Frames dropped as near-duplicates are never read, so <code>skipped</code>
+      in the strip above is a deduplication result and not an OCR failure. A
+      frame that was read and held nothing says <code>empty</code>.
+    </p>
+  </div>
   {% endif %}
 </section>
 
@@ -285,17 +330,20 @@
   </nav>
   {% endif %}
   <p class="panel-note">
-    The rule down the left marks a chunk — the span of cues that became one
+    The rule down the left marks a chunk, the span of cues that became one
     embedding. Word-level timings are stored for
     {{ counts['cues_with_words'] | count }} of {{ counts['cues'] | count }} cues
     and are not printed: they are about a tenth of the whole index and nothing
     a person reads.
   </p>
   {% else %}
-  <p class="empty-note">
-    No transcript cues on this page. The <code>stt</code> row above says whether
-    one was ever produced.
-  </p>
+  <div class="empty">
+    <p class="empty-lead">No transcript cues on this page.</p>
+    <p class="empty-note">
+      The <code>stt</code> row in Provenance says whether one was ever produced,
+      and the <code>cues</code> figure says how many exist in total.
+    </p>
+  </div>
   {% endif %}
 </section>
 
@@ -322,16 +370,22 @@
    modal semantics are the platform's. #}
 <dialog id="shot" class="shot" aria-labelledby="shot-caption">
   <div class="shot-inner">
+    {# The caption and the close control sit above the picture. The button used
+       to be absolutely positioned over the frame's top-right corner, which is
+       exactly where a slide puts its title — so the dialog's one control sat on
+       the part of the image somebody opened the dialog to read. #}
+    <div class="shot-head">
+      <p id="shot-caption" class="shot-caption"></p>
+      <button type="button" id="shot-close" class="ghost shot-close" autofocus>Close</button>
+    </div>
     <div class="shot-stage">
       <img id="shot-img" class="shot-img" alt="">
       <div id="shot-boxes" class="shot-boxes" aria-hidden="true"></div>
     </div>
     <div class="shot-foot">
-      <p id="shot-caption" class="shot-caption"></p>
       <label class="shot-toggle"><input type="checkbox" id="shot-showboxes" checked> Show OCR boxes</label>
       <a id="shot-link" class="shot-link" target="_blank" rel="noopener noreferrer">Open at this second</a>
     </div>
-    <button type="button" id="shot-close" class="ghost shot-close" autofocus>Close</button>
   </div>
 </dialog>
 {% endblock %}
