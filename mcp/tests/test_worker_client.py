@@ -13,6 +13,7 @@ from typing import Any
 import httpx2 as httpx
 import pytest
 
+from vidtheque_mcp.embeddings import EmbeddingUnavailable
 from vidtheque_mcp.pipeline.worker_client import (
     FRAME_QUERY_PATH,
     HTTPWorkerClient,
@@ -201,6 +202,57 @@ async def test_an_empty_batch_never_reaches_the_wire() -> None:
     client, _ = make_client(handler)
     assert await client.ocr([]) == ([], None)
     assert await client.embed_images([]) == ([], None, None)
+
+
+# ------------------------------------------------------- the indexing budget
+
+
+async def test_document_embeddings_get_the_retry_loop_and_the_long_budget() -> None:
+    """`embed` was the one method not overridden, so `text_embed` inherited the
+    20 s query timeout with no retry and no `Retry-After`. A cold Qwen3 load is
+    7.8-19.2 s on the reference box, so the model loading failed the job."""
+    calls: list[str] = []
+    timeouts: list[Any] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        timeouts.append(request.extensions.get("timeout"))
+        if len(calls) == 1:
+            return httpx.Response(503, headers={"Retry-After": "9"}, json={"detail": "loading"})
+        return httpx.Response(200, json=embeddings_body(dim=1024))
+
+    client, slept = make_client(handler, op_timeout_s=120.0)
+    vectors, model, dims = await client.embed(["a chunk of transcript"], input_type="document")
+
+    assert calls == ["/v1/embeddings", "/v1/embeddings"]  # it waited and retried
+    assert slept == [9.0]  # exactly what the worker asked for
+    assert (len(vectors), dims) == (1, 1024)
+    read = (timeouts[0] or {}).get("read")
+    assert read is None or read > 20.0, "still on the query budget"
+
+
+async def test_a_query_embedding_still_fails_fast_instead_of_waiting() -> None:
+    """The other half: a search would rather answer FTS-only than wait out a
+    model load, and the two callers share one client object."""
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(503, headers={"Retry-After": "30"}, json={"detail": "loading"})
+
+    client, slept = make_client(handler)
+    with pytest.raises(EmbeddingUnavailable):
+        await client.embed(["a query"], input_type="query")
+    assert len(calls) == 1
+    assert slept == []
+
+
+async def test_an_empty_document_batch_never_reaches_the_wire() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+        raise AssertionError("should not have been called")
+
+    client, _ = make_client(handler)
+    assert await client.embed([], input_type="document") == ([], None, None)
 
 
 # --------------------------------------------------------------- frame query

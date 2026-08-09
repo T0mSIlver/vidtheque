@@ -226,6 +226,42 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
             timeout_s=self._stt_timeout,
         )
 
+    async def embed(
+        self, texts: Sequence[str], model: str | None = None, input_type: str = "query"
+    ) -> tuple[list[list[float]], str | None, int | None]:
+        """``POST /v1/embeddings``, on the *indexing* budget when it is indexing.
+
+        This was the one method the class did not override, so `text_embed` —
+        the only caller that passes ``input_type="document"`` — inherited
+        ``HTTPEmbeddingClient.embed``: the 20-second *query* timeout, no retry
+        loop, and no ``Retry-After`` handling. A cold Qwen3-Embedding load is
+        7.8-19.2 s on the reference box (bench 2026-08-09 §6.1), so load plus
+        the first batch crossed 20 s, the read timeout became
+        `EmbeddingUnavailable`, and the job runner burned all three item
+        attempts re-running `fetch` and dying in the same place. The same gap
+        also lost the worker's 503 + `Retry-After` contract, so an
+        `InsufficientVRAM` refusal on a busy card failed the stage outright.
+
+        The switch is `input_type` because it already names the caller exactly:
+        documents are only ever embedded by the pipeline, queries only ever by
+        `search`, and a search would still rather answer FTS-only in 20 seconds
+        than wait two minutes for a model to load.
+        """
+        if input_type != "document":
+            return await super().embed(texts, model=model, input_type=input_type)
+        if not texts:
+            return [], None, None
+        payload: dict[str, Any] = {
+            "input": list(texts),
+            "encoding_format": "float",
+            "input_type": input_type,
+        }
+        chosen = model or self._model
+        if chosen:
+            payload["model"] = chosen
+        body = await self._send("/v1/embeddings", json_body=payload)
+        return _vectors(body)
+
     async def ocr(
         self, images: Sequence[Path], *, min_confidence: float | None = None
     ) -> tuple[list[list[OcrLine]], str | None]:
