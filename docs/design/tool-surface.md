@@ -329,6 +329,18 @@ strings. The shipped ones say the tool-specific part and point at the guide for 
 rest. The blocks are left as written: they are still where the wording was argued
 out, and trimming them here would lose the argument without gaining a contract.
 
+**One shape rule, added 2026-08-09: the first line of every shipped description
+is a complete sentence under 80 characters.** Plenty of clients render only
+`description.splitlines()[0]`, or the first ~100 characters — two bench agents
+had no access to anything else, and `job-status` was truncating to *"Check the
+status of an indexing job started by index-video. Call with no …"*, which reads
+as a broken instruction rather than a short one. All nine were rewrapped so the
+truncation point falls at a sentence boundary. The corollary is the reason the
+`next:` hints and the guide got the operational detail in the same pass: anything
+load-bearing that sits in the tail of a description is, for some real fraction of
+clients, not shipped at all
+(`research/mcp-design-bench-2026-08-09.md` §D12).
+
 **Purpose:** cross-video search over transcripts, on-screen text and frame imagery,
 returning timestamped deep links.
 
@@ -349,9 +361,12 @@ video-summary); to read the full transcript around a moment you already found (u
 get-segment-context with the video_id and t from a result here). Do not use this
 to search the public YouTube catalogue — it only searches videos already indexed.
 
-START WITH limit=5 and add filters before raising it. content_type=all means all
-three channels, always. Ordering defaults to relevance, not recency — pass
-order=recency explicitly if the user asked for "latest".
+START WITH limit=5 and add filters before raising it. limit clamps to 50
+server-side; page with offset rather than asking for more. content_type=all means
+all three channels, always. Ordering defaults to relevance, not recency — pass
+order=recency explicitly if the user asked for "latest". After a hit,
+video-summary's chapter list names the moment faster than probing
+get-segment-context.
 
 Two independent time axes, do not confuse them: published_after/published_before
 select WHICH VIDEOS by upload date; offset_start/offset_end select WHERE INSIDE a
@@ -423,8 +438,16 @@ Legs: transcript 24 · ocr 9 · frame 7 (fused, RRF k=60; 5000-candidate cap not
 
 3 of 10 results came from kCc8FmEb1nY (max_per_video=3 bound). Raise max_per_video for more from it.
 Text middle-truncated at 1000 chars — pass max_text_chars=0 for full text.
-next: get-segment-context video_id="kCc8FmEb1nY" t=4321 for the full surrounding transcript.
+next: video-summary video_id="kCc8FmEb1nY" for the chapter list (fastest way to name the moment), or get-segment-context video_id="kCc8FmEb1nY" t=4321 for the full surrounding transcript.
 ```
+
+**The `next:` line names two follow-ups as of 2026-08-09.** It used to name only
+`get-segment-context`, and that is what agents did — the bench has one walking
+four `get-segment-context` windows to find a passage whose chapter title
+(`7:27 The "YOLO" security philosophy…`) `video-summary` would have printed in
+one call, and another burning three windows on a passage sitting at a window edge
+(`research/mcp-design-bench-2026-08-09.md` §D2, §D8). The guide already ranked
+`video-summary` third in the flow; the hint now agrees with the guide.
 
 A leg-skip note looks like this, on the line under `Legs:`:
 
@@ -597,7 +620,18 @@ video-summary).
 Turn off what you do not need: include_channels, include_tags, include_recent,
 include_gaps, include_guidance (all default true). Every section is capped; raise
 max_channels / max_tags only when the user is explicitly enumerating.
+
+Three resources back this up: vidtheque://guide (tool flow and shared rules),
+vidtheque://context (limits, id formats, time), vidtheque://corpus (the whole
+library as TSV).
 ```
+
+The resource list rides on this description because a client that does not
+surface `resources/list` leaves the model with no protocol-native way to learn
+the URIs — three of the four bench agents found `vidtheque://guide` only by
+guessing it (`vidtheque://help` first), and one never found it at all
+(`research/mcp-design-bench-2026-08-09.md` §D1). `corpus-summary` is the
+documented first call, so it is where the list costs least.
 
 **Parameters:**
 
@@ -800,8 +834,16 @@ broad coverage call it two or three times at different t, or use video-summary);
 to find the moment in the first place (use search).
 
 Pass video_id and t exactly as they appeared in a previous result. Never invent
-them. START WITH window=45.
+them. START WITH window=45 — seconds each side of t, clamped 5-300. If the line
+you want is cut off at an edge of the window, raise window rather than guessing
+new t values.
 ```
+
+`window` earns its place in the description (and in the tool's own `next:` line)
+because it is otherwise invisible: the input schema carries no per-parameter
+descriptions, and a truncating client shows only the first line. A bench agent
+found it by guessing after burning three window-walk calls
+(`research/mcp-design-bench-2026-08-09.md` §D2).
 
 **Parameters:**
 
@@ -845,7 +887,7 @@ ON-SCREEN TEXT (3 keyframes)
 FRAMES: kCc8FmEb1nY-00701, kCc8FmEb1nY-00703, kCc8FmEb1nY-00705
   → get-frames frame_ids=["kCc8FmEb1nY-00703"] to see the slide
 
-next: search q="memory bandwidth" video_id="kCc8FmEb1nY" to find where else he says this.
+next: if the line you want runs past this window, call again with a larger window= (up to 300) rather than guessing a new t; or search q="memory bandwidth" video_id="kCc8FmEb1nY" to find where else he says this.
 ```
 
 **Token discipline.** Double-capped: `window` seconds **and** `max_text_chars`,
@@ -886,18 +928,30 @@ return="image" only if you can render inline images.
 
 USE WHEN: a result mentions a slide, diagram, chart, terminal or UI and the text
 alone is not enough — you have frame ids from search, video-summary or
-get-segment-context.
+get-segment-context. Also when OCR reads garbled or clipped: dense slides
+(tables, code, bullet lists) survive as pixels, not as text.
 
 DO NOT USE: to browse a video visually (frames are keyframes, not a filmstrip —
-use video-summary for structure); to read text that is already in the payload
-(OCR text is returned with the search result, no image needed); with more than a
-handful of ids at once.
+use video-summary for structure); with more than a handful of ids at once.
 
-START WITH limit=3 and return="url". URLs are signed and expire in 1 hour;
-fetching one costs no context. return="image" inlines base64 JPEG and is capped at
-4 images per call regardless of limit — on some clients inline images cost 10-20x
-their nominal token price, so prefer URLs unless you know yours renders them.
+START WITH limit=3 and return="url", then open the URL to read the frame. URLs
+are signed and expire in 1 hour; fetching one costs no context. The ocr: line is
+capped at 300 chars per frame and has no opt-out — the image is the full text.
+return="image" inlines base64 JPEG and is capped at 4 images per call regardless
+of limit — on some clients inline images cost 10-20x their nominal token price,
+so prefer URLs unless you know yours renders them.
 ```
+
+**Changed 2026-08-09.** The old "DO NOT USE … to read text that is already in the
+payload (OCR text is returned with the search result, no image needed)" was
+wrong often enough to be harmful: on the bench, five of eight visual questions
+were only answerable from the pixels, because the OCR text is a flat
+reading-order join that is capped per frame and mangles digits and bullet glyphs
+(`8.8` → `8.&`, rank `1 ●` → `10`). The description now says the opposite — a
+garbled or clipped OCR line is a reason to open the image. It also states the
+300-char cap, because `get-frames` has no `max_text_chars` parameter while the
+shared truncation marker tells the caller to pass one
+(`research/mcp-design-bench-2026-08-09.md` §D3, §D4).
 
 **Parameters:**
 
@@ -1125,8 +1179,16 @@ seconds, and prefer telling the user "it is running, ask me again in a minute"
 over polling repeatedly inside one turn.
 
 A job is only searchable at state "done". States "transcribing" onward make the
-transcript partially queryable — the response says exactly what is available.
+transcript partially queryable — the response says exactly what is available. A
+job still running needs another poll, not a re-index — force_reindex is for a job
+that actually reported "failed".
 ```
+
+The last sentence is a counterweight, not a nicety: the list-mode footer prints
+`next: index-video url="…" force_reindex=true to retry a failed job` even when
+the only job is running normally, and a bench agent read that as an instruction
+to re-index a job at 57% (`research/mcp-design-bench-2026-08-09.md` §D5). The
+real fix is to make that hint state-aware in `tools/indexing.py`; it is deferred.
 
 **Parameters:**
 
@@ -1309,11 +1371,14 @@ video_id	title	channel	published	duration	coverage	tags
 Qk7mF2xLp0A	Flash Attention 3 walkthrough	GPU MODE	2026-08-02	1:04:11	tof	topic:attention,series:gpu-mode
 9dRk2XcVbNw	Speculative decoding, explained	Trelis Research	2026-07-29	0:38:20	tof	topic:inference
 …
-# showing 200 of 312 — narrow with the list-videos tool (channel=, tags=, q=, published_after=)
+# showing 200 of 312 — narrow with the list-videos tool (channel=, tags=, q=, published_after=) · read vidtheque://guide for the tool flow
 ```
 
 The footer is the `format=outline` lesson applied to a resource: say what you
-truncated and name the tool that narrows it.
+truncated and name the tool that narrows it. The pointer to `vidtheque://guide`
+was added 2026-08-09: `vidtheque://corpus` is the resource a client is most
+likely to surface on its own, which makes it the one place a model reliably
+reads before it knows the guide exists.
 
 ### 5.2 `vidtheque://context` — precomputed timestamps and corpus facts
 
@@ -1350,10 +1415,27 @@ when it fails.
     "job_id": "job_ + 12 hex"
   },
   "deep_link_format": "https://youtu.be/<video_id>?t=<seconds>",
+  "resources": ["vidtheque://corpus", "vidtheque://context", "vidtheque://guide"],
+  "limits": {
+    "search.limit": [1, 50],
+    "search.max_per_video": [1, 20],
+    "list-videos.limit": [1, 100],
+    "get-frames.limit": [1, 12],
+    "get-segment-context.window": [5, 300],
+    "out_of_range": "clamped silently — read the printed count, not the one you asked for"
+  },
   "features": {"diarization": true, "ocr": true, "frame_embeddings": true},
   "server_version": "0.1.0"
 }
 ```
+
+`resources` and `limits` were added 2026-08-09. Both exist because the clamps are
+silent by contract (§3.4) and a caller cannot tell a clamp from a complete answer
+after the fact: a bench agent asked `search` for `limit=500`, got 50, and had no
+signal anywhere in the text payload that it had been narrowed
+(`research/mcp-design-bench-2026-08-09.md` §D6). Publishing the caps ahead of the
+call is the cheap half of that fix; printing a `note:` when a clamp actually
+binds is the other half, and is deferred.
 
 ### 5.3 `vidtheque://guide` — progressive disclosure
 
@@ -1377,6 +1459,39 @@ the top down — each step narrows what the next one has to read.
 Adding to the library: index-video → job-status. Nothing is searchable until the
 job reports "done".
 
+Step 3 is the one people skip. When the question is *where* a video discusses
+something, `video-summary`'s chapter list usually names the moment in one call —
+faster than walking `get-segment-context` windows outward from a search hit.
+
+## Resources
+
+There are exactly three, and this is the list:
+
+- `vidtheque://guide` — this document.
+- `vidtheque://corpus` — the whole library as TSV, 200 rows, newest first.
+- `vidtheque://context` — JSON: current time, precomputed date boundaries,
+  corpus counts, id formats, and the server-side limits below.
+
+There are no other URIs. `vidtheque://video/<id>` and the like do not exist —
+drill down with tools, not with invented resource URIs.
+
+## Server-side limits
+
+Values outside these are **clamped silently**, not rejected: asking for more
+does not get you more, it gets you the cap with no warning.
+
+| Parameter | Range | Default |
+|---|---|---|
+| `search limit` | 1–50 | 10 |
+| `search max_per_video` | 1–20 | 3 |
+| `list-videos limit` | 1–100 | 20 |
+| `get-frames limit` | 1–12 | 3 |
+| `get-segment-context window` | 5–300 s | 45 |
+
+To get past a cap, page with `offset` — the pagination line tells you the next
+one. To check what you actually got, read the printed count, never the number
+you asked for.
+
 ## Rules
 
 - **Never fabricate ids or timestamps.** Only use video_id, frame_id, cue_id and
@@ -1384,13 +1499,15 @@ job reports "done".
   came from your memory is not in this corpus.
 - **This searches only what is indexed.** It is not the YouTube catalogue. If
   something is missing, the answer is index-video, not a guess.
-- Two time axes: `published_after/before` chooses videos by upload date;
-  `offset_start/end` chooses seconds inside a video. They are not interchangeable.
+- Two time axes: `published_after`/`published_before` choose videos by upload
+  date; `t_start`/`t_end` choose seconds inside a video. They are not
+  interchangeable, and neither is the pagination `offset`.
 - `channel` and `video_title` are case-insensitive substrings.
 - Ordering defaults to relevance. Pass `order=recency` only if the user asked for
   "latest" or "newest".
 - Start with `limit=5` and `max_text_chars=500`. Raise them when the first page
   proves the query is right.
+- `max_text_chars=0` opts out of truncation entirely.
 - Auto-generated captions are noisy: unusual spellings, no punctuation, wrong
   proper nouns. Prefer two or three words over an exact long phrase, and check
   `get-segment-context` before quoting anything verbatim.
@@ -1399,7 +1516,34 @@ job reports "done".
 - `search` never returns images. Frame ids do; `get-frames` turns them into URLs.
 - Read the pagination line: `Results: 10/~40+ (use offset=10 for more)` tells you
   your next call.
+- A `note:` line means a leg was skipped and why. `all` always means all: a
+  missing leg is always announced, never silently dropped.
+- Read the `Legs:` counts. `transcript 0` next to on-screen hits usually means
+  the phrasing differs, not that the topic is unspoken — slides write
+  `hasFather`, `owl:FunctionalProperty`, `CVE-2026-22812`; speech says "has
+  father", "functional property". Re-search the spoken phrasing, or open
+  `get-segment-context` at the top on-screen hit.
+- **On-screen text is a flat reading-order join, and it is capped per frame.**
+  Tables, code, bullet lists and quote/attribution pairs come back unscrambled
+  from the layout that made them readable, and OCR mangles digits and bullet
+  glyphs (`8.8` → `8.&`, a rank `1 ●` → `10`). When the answer depends on which
+  value sits in which cell, or on a number, read the image: `get-frames`
+  `return="url"` and open the URL. There is no `max_text_chars` on `get-frames`
+  — the picture is the un-truncated text.
+- Use only parameter names a payload printed or the tool schema lists. An
+  unknown parameter is dropped silently, so a call that "worked" may have
+  ignored the filter you thought you applied.
 ```
+
+**This block is now the shipped text, synced 2026-08-09** — it used to drift
+(it still said `offset_start`/`offset_end` after DECISIONS.md renamed the axis to
+`t_start`/`t_end`). Four sections were added the same day from the design bench
+(`research/mcp-design-bench-2026-08-09.md`): the resource list and the "there are
+no other URIs" line (§D1), the server-side limits table (§D6), the
+spoken-vs-on-screen phrasing rule (§D7), and the OCR-is-a-flat-join rule with its
+escalate-to-the-image instruction (§D3). The guide is where a rule belongs when it
+is true of more than one tool — that is the whole reason DECISIONS.md lifted the
+shared rules out of the nine descriptions.
 
 ---
 

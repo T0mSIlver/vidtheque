@@ -19,27 +19,26 @@ from __future__ import annotations
 from mcp_types import ToolAnnotations
 
 SEARCH = """
-Search the indexed video corpus: spoken content (transcripts), on-screen text
-(OCR of keyframes) and frame imagery, with a timestamped youtu.be deep link on
-every result.
+Search the indexed video corpus: transcripts, on-screen text, frame imagery.
+Every result carries a timestamped youtu.be deep link.
 
 USE WHEN: you need specific words, claims, numbers, code or visuals from videos
-the user has indexed — "where does he explain KV caching", "which video shows
-the nvidia-smi output".
+the user has indexed — "where does he explain KV caching".
 
-DO NOT USE: to learn what is in the corpus at all (corpus-summary); to
-understand one video end to end (video-summary); to read the full transcript
-around a moment you already found (get-segment-context). This searches only
-indexed videos, never the public YouTube catalogue.
+DO NOT USE: to learn what is in the corpus (corpus-summary); to understand one
+video end to end (video-summary); to read the transcript around a hit
+(get-segment-context). Indexed videos only, never the public YouTube catalogue.
 
-START WITH limit=5 and add filters before raising it. content_type=all means
-all three channels, always. See vidtheque://guide for the shared rules.
+START WITH limit=5; limit clamps to 50, so page with offset.
+content_type=all means all three channels, always. Follow a hit with
+video-summary — its chapter list names the moment faster than probing
+get-segment-context. See vidtheque://guide.
 """.strip()
 
 LIST_VIDEOS = """
-List videos in the corpus, with optional filters. The browsable library: title,
-channel, publish date, duration, tags, and which channels of data each video has
-(transcript / OCR / frame embeddings).
+List videos in the corpus, with optional filters — the browsable library.
+Title, channel, publish date, duration, tags, and which channels of data each
+video has (transcript / OCR / frame embeddings).
 
 USE WHEN: the user asks what is indexed, wants everything from one channel or
 tag, or you need a video_id before calling video-summary or a scoped search.
@@ -53,25 +52,28 @@ START WITH limit=20, format="tsv". See vidtheque://guide for the shared rules.
 """.strip()
 
 CORPUS_SUMMARY = """
-Pre-aggregated overview of the whole video corpus: how many videos, which
-channels, which topics/tags, date span, coverage gaps, and what was indexed most
-recently. One call instead of paging list-videos.
+Pre-aggregated overview of the whole video corpus — one call, not paged.
+How many videos, which channels, which topics/tags, date span, coverage gaps,
+and what was indexed most recently.
 
-USE WHEN: this is your FIRST call in a session, or the user asks what is in the
-library, what topics are covered, or whether something is indexed yet. Also call
-it after an empty search — it says whether the corpus is empty, still indexing,
-or simply does not contain that topic.
+USE WHEN: this is your FIRST call in a session, the user asks what is in the
+library, or a search came back empty — it says whether the corpus is empty,
+still indexing, or simply lacks that topic.
 
 DO NOT USE: to find content (search); for detail on one video (video-summary).
 
 Turn off what you do not need: include_channels, include_tags, include_recent,
 include_gaps, include_guidance. Every section is capped.
+
+Three resources back this up: vidtheque://guide (tool flow and shared rules),
+vidtheque://context (limits, id formats, time), vidtheque://corpus (the whole
+library as TSV).
 """.strip()
 
 VIDEO_SUMMARY = """
-Structured overview of one indexed video: chapters with timestamps and deep
-links, speakers, the most informative on-screen texts, tags, and links from the
-description. Use it instead of reading the whole transcript.
+Structured overview of one indexed video, instead of its whole transcript.
+Chapters with timestamps and deep links, speakers, the most informative
+on-screen texts, tags, and links from the description.
 
 USE WHEN: the user asks what a video covers, wants its structure, or you need to
 pick a timestamp to drill into. A good second call after search returns a video
@@ -86,42 +88,41 @@ transcripts are never returned at any setting.
 """.strip()
 
 GET_SEGMENT_CONTEXT = """
-Everything around one moment in one video: the verbatim transcript window, the
-on-screen text of nearby keyframes, the enclosing chapter, and frame ids you can
-pass to get-frames.
+Everything around one moment in one video, given a video_id and a timestamp.
+The verbatim transcript window, the on-screen text of nearby keyframes, the
+enclosing chapter, and frame ids for get-frames.
 
-USE WHEN: search or video-summary gave you a video_id and a timestamp and you
-need the actual words — to quote accurately, to check context before and after,
-or to decide whether a hit is relevant.
+USE WHEN: search or video-summary gave you a hit and you need the actual words —
+to quote accurately, or to judge whether it is relevant.
 
-DO NOT USE: as a transcript dump (the window is capped at 300s and 4000 chars —
-for broad coverage call it two or three times at different t, or use
+DO NOT USE: as a transcript dump (capped at 300s and 4000 chars — use
 video-summary); to find the moment in the first place (search).
 
-START WITH window=45. Pass video_id and t exactly as a previous result gave
-them.
+START WITH window=45 — seconds each side of t, clamped 5-300. If the line you
+want is cut off, raise window rather than guessing new t. Pass video_id and t
+exactly as a result gave them.
 """.strip()
 
 GET_FRAMES = """
-Fetch keyframe images from indexed videos. Returns image URLs by default; pass
-return="image" only if you can render inline images.
+Fetch keyframe images from indexed videos, as URLs (default) or inline base64.
+return="image" only if you render inline images.
 
-USE WHEN: a result mentions a slide, diagram, chart, terminal or UI and the text
-alone is not enough — you have frame ids from search, video-summary or
-get-segment-context.
+USE WHEN: a result mentions a slide, diagram, chart or UI and text is not
+enough — you have frame ids from search, video-summary or get-segment-context.
+Also when OCR reads garbled or clipped: dense slides (tables, code, bullets)
+are pixels, not text.
 
-DO NOT USE: to browse a video visually (frames are keyframes, not a filmstrip);
-to read text already in the payload (OCR text comes with the search result).
+DO NOT USE: to browse a video (frames are keyframes, not a filmstrip).
 
-START WITH limit=3 and return="url". URLs are signed and expire; fetching one
-costs no context. return="image" inlines base64 JPEG, capped at 4 images per
-call regardless of limit — on some clients inline images cost 10-20x their
-nominal token price.
+START WITH limit=3 and return="url"; open the URL to read the frame. The ocr:
+line is capped at 300 chars/frame with no opt-out; the image is the full text.
+return="image" inlines base64 JPEG, max 4 per call — 10-20x the nominal token
+cost on some clients.
 """.strip()
 
 INDEX_VIDEO = """
-Add a video, playlist or channel to the corpus. Returns immediately with a job
-id — indexing runs in the background and takes roughly 1-3 minutes per hour of
+Add a video, playlist or channel to the corpus. Async — returns a job id.
+Indexing runs in the background and takes roughly 1-3 minutes per hour of
 video, longer if the GPU is busy.
 
 USE WHEN: the user gives you a video URL that search says is not indexed, or
@@ -136,8 +137,8 @@ Tell the user it is queued and poll job-status at most every 15 seconds.
 """.strip()
 
 JOB_STATUS = """
-Check the status of an indexing job started by index-video. Call with no
-arguments to list recent jobs.
+Check the status of an indexing job started by index-video.
+Call with no arguments to list recent jobs.
 
 USE WHEN: you started an index-video job and need to know whether the video is
 searchable yet, or a tool told you a video is still indexing.
@@ -147,13 +148,14 @@ seconds, and prefer telling the user "it is running, ask me again in a minute"
 over polling repeatedly inside one turn.
 
 A job is only searchable at state "done". The response says exactly what is
-available before then.
+available before then. A job still running needs another poll, not a re-index —
+force_reindex is for a job that actually reported "failed".
 """.strip()
 
 TAG_VIDEO = """
-Add or remove tags on an indexed video. Tags are namespaced — topic:, person:,
-project:, source:, lang:, series: — and are used as filters by search,
-list-videos and corpus-summary.
+Add or remove namespaced tags on an indexed video.
+Namespaces are topic:, person:, project:, source:, lang:, series:, and the tags
+are used as filters by search, list-videos and corpus-summary.
 
 USE WHEN: the user asks to organise, label or collect videos, or explicitly
 approves a tag you proposed.

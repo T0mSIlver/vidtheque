@@ -155,7 +155,11 @@ async def run(
             lines.append(f"  {clock(link['t_s'])} {link['url']} {link['title'] or ''}")
 
     lines.append("")
-    lines.append(f'next: search q="…" video_id="{video_id}" to find where else this comes up.')
+    lines.append(
+        "next: if the line you want runs past this window, call again with a larger "
+        "window= (up to 300) rather than guessing a new t; or "
+        f'search q="…" video_id="{video_id}" to find where else this comes up.'
+    )
 
     structured: dict[str, Any] = {
         "video_id": video_id,

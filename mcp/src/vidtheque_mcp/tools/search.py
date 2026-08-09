@@ -658,8 +658,13 @@ def _render(
         )
     if page:
         first = page[0]
+        # Two next steps, because the bench showed the single get-segment-context
+        # hint pulling models into window-walking when the question was "where
+        # does this video discuss X" — a chapter list answers that in one call.
         footer.append(
-            f'next: get-segment-context video_id="{first.public_id}" '
+            f'next: video-summary video_id="{first.public_id}" for the chapter '
+            "list (fastest way to name the moment), or "
+            f'get-segment-context video_id="{first.public_id}" '
             f"t={int(first.start_s)} for the full surrounding transcript."
         )
     return "\n".join(header) + body + ("\n" + "\n".join(footer) if footer else "")

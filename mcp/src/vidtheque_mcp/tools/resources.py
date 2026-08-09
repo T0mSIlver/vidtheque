@@ -37,6 +37,39 @@ the top down — each step narrows what the next one has to read.
 Adding to the library: index-video → job-status. Nothing is searchable until the
 job reports "done".
 
+Step 3 is the one people skip. When the question is *where* a video discusses
+something, `video-summary`'s chapter list usually names the moment in one call —
+faster than walking `get-segment-context` windows outward from a search hit.
+
+## Resources
+
+There are exactly three, and this is the list:
+
+- `vidtheque://guide` — this document.
+- `vidtheque://corpus` — the whole library as TSV, 200 rows, newest first.
+- `vidtheque://context` — JSON: current time, precomputed date boundaries,
+  corpus counts, id formats, and the server-side limits below.
+
+There are no other URIs. `vidtheque://video/<id>` and the like do not exist —
+drill down with tools, not with invented resource URIs.
+
+## Server-side limits
+
+Values outside these are **clamped silently**, not rejected: asking for more
+does not get you more, it gets you the cap with no warning.
+
+| Parameter | Range | Default |
+|---|---|---|
+| `search limit` | 1–50 | 10 |
+| `search max_per_video` | 1–20 | 3 |
+| `list-videos limit` | 1–100 | 20 |
+| `get-frames limit` | 1–12 | 3 |
+| `get-segment-context window` | 5–300 s | 45 |
+
+To get past a cap, page with `offset` — the pagination line tells you the next
+one. To check what you actually got, read the printed count, never the number
+you asked for.
+
 ## Rules
 
 - **Never fabricate ids or timestamps.** Only use video_id, frame_id, cue_id and
@@ -63,6 +96,21 @@ job reports "done".
   your next call.
 - A `note:` line means a leg was skipped and why. `all` always means all: a
   missing leg is always announced, never silently dropped.
+- Read the `Legs:` counts. `transcript 0` next to on-screen hits usually means
+  the phrasing differs, not that the topic is unspoken — slides write
+  `hasFather`, `owl:FunctionalProperty`, `CVE-2026-22812`; speech says "has
+  father", "functional property". Re-search the spoken phrasing, or open
+  `get-segment-context` at the top on-screen hit.
+- **On-screen text is a flat reading-order join, and it is capped per frame.**
+  Tables, code, bullet lists and quote/attribution pairs come back unscrambled
+  from the layout that made them readable, and OCR mangles digits and bullet
+  glyphs (`8.8` → `8.&`, a rank `1 ●` → `10`). When the answer depends on which
+  value sits in which cell, or on a number, read the image: `get-frames`
+  `return="url"` and open the URL. There is no `max_text_chars` on `get-frames`
+  — the picture is the un-truncated text.
+- Use only parameter names a payload printed or the tool schema lists. An
+  unknown parameter is dropped silently, so a call that "worked" may have
+  ignored the filter you thought you applied.
 """
 
 
@@ -106,7 +154,7 @@ async def corpus_resource(deps: Deps) -> str:
     # Say what you truncated and name the tool that narrows it.
     lines.append(
         f"# showing {len(rows)} of {total} — narrow with the list-videos tool "
-        "(channel=, tags=, q=, published_after=)"
+        "(channel=, tags=, q=, published_after=) · read vidtheque://guide for the tool flow"
     )
     return "\n".join(lines)
 
@@ -155,6 +203,20 @@ async def context_resource(deps: Deps) -> str:
             "job_id": "job_ + 12 hex",
         },
         "deep_link_format": "https://youtu.be/<video_id>?t=<seconds>",
+        # The three URIs, named here because a client that cannot list
+        # resources otherwise leaves the model guessing (and guessing a URI is
+        # what produces `vidtheque://video/<id>`).
+        "resources": ["vidtheque://corpus", "vidtheque://context", "vidtheque://guide"],
+        # Clamps are silent by design (a request over the cap returns the cap),
+        # so the caps have to be readable somewhere before the call.
+        "limits": {
+            "search.limit": [1, 50],
+            "search.max_per_video": [1, 20],
+            "list-videos.limit": [1, 100],
+            "get-frames.limit": [1, 12],
+            "get-segment-context.window": [5, 300],
+            "out_of_range": "clamped silently — read the printed count, not the one requested",
+        },
         "features": {
             "diarization": deps.db.diarization_enabled,
             "ocr": True,
