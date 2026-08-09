@@ -11,7 +11,8 @@
 
 const $ = (id) => document.getElementById(id);
 
-// One request, one screen of results. The skeleton reserves exactly this many.
+// One request, one screen of results — hits, which the page then groups into a
+// card per video. What the skeleton reserves is that *shape*, not this number.
 const PAGE_SIZE = 10;
 
 const state = {
