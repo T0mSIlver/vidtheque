@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en" data-page="grid">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The corpus grid — vidtheque lab</title>
+<!--
+THESIS: scale is the argument, so the corpus is the first thing on the page — a
+lit wall of every frame the indexer chose. It refuses the media-library rut:
+filter sidebar, search box, twelve padded cards above the fold.
+OWN-WORLD: shared with piece 01 — grading-suite dark, 0px corners, hairline steel,
+lime #c9f938 = SEEN, amber #ff9f45 = HEARD, Archivo for people, JetBrains Mono for
+machine output.
+STORY: the visitor scrolls a wall they cannot count, pulls one frame out under the
+loupe, and reads the totals as a sentence rather than a spec sheet.
+FIRST VIEWPORT: the wall, bleeding to all four edges, with the title burned into
+its top rows through a scrim; tiles light up in a diagonal wave on load.
+FORM: contact sheet and loupe. Brief-pinned world (square, futuristic, eye candy).
+FINISH: lab prototype, judged from screenshots; not bound by DESIGN.md.
+-->
+<style>
+@font-face{font-family:"Archivo VF";src:url("assets/fonts/archivo-latin-wght-normal.woff2") format("woff2");font-weight:100 900;font-display:block;font-style:normal}
+@font-face{font-family:"JetBrains Mono VF";src:url("assets/fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2");font-weight:100 800;font-display:block;font-style:normal}
+
+:root{
+  --ink:#05070a; --plate:#0b0f16; --plate2:#10151e; --plate3:#161d29;
+  --rule:#1b2331; --rule2:#283345;
+  --fg:#eaeff7; --fg2:#9aa8bd; --fg3:#778799;
+  --seen:#c9f938; --heard:#ff9f45;
+  --sans:"Archivo VF",system-ui,sans-serif;
+  --mono:"JetBrains Mono VF",ui-monospace,monospace;
+  --gut:clamp(16px,3vw,44px);
+}
+*{box-sizing:border-box;margin:0;padding:0;border-radius:0}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--ink);color:var(--fg);font-family:var(--sans);font-size:16px;
+  line-height:1.5;letter-spacing:-.005em;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+img{display:block;max-width:100%}
+a{color:inherit;text-decoration:none}
+::selection{background:var(--seen);color:#05070a}
+.mono{font-family:var(--mono);font-variant-ligatures:none}
+.lab{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--fg3);font-variant-ligatures:none}
+.wrap{max-width:1340px;margin:0 auto;padding:0 var(--gut)}
+
+/* ---------- top bar ---------- */
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;
+  padding:13px var(--gut);border-bottom:1px solid var(--rule);position:relative;z-index:30;
+  background:var(--ink)}
+.mark{display:flex;align-items:baseline;gap:10px}
+.mark b{font-weight:800;font-size:15px;letter-spacing:-.03em}
+.mark span.d{color:var(--seen)}
+
+/* ---------- the vault ---------- */
+.vault{position:relative;z-index:1}
+/* 78 = 6 x 13 = 3 x 26, so the wall closes as a full rectangle at both ends of
+   the range and never leaves a single orphan tile on the last row */
+.wall{display:grid;gap:3px;padding:3px;grid-template-columns:repeat(6,minmax(0,1fr))}
+@media (max-width:1199px){.wall{grid-template-columns:repeat(5,minmax(0,1fr))}}
+@media (max-width:899px){.wall{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media (max-width:639px){.wall{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.tile{position:relative;overflow:hidden;background:#04060a;aspect-ratio:16/9;
+  cursor:crosshair;outline:0;isolation:isolate}
+.tile img{width:100%;height:100%;object-fit:cover;
+  filter:brightness(.7) saturate(.8) contrast(1.03);
+  transition:filter .22s ease,transform .5s cubic-bezier(.16,1,.3,1)}
+.tile::after{content:"";position:absolute;inset:0;pointer-events:none;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.05);transition:box-shadow .18s ease}
+.tile.on img,.tile:focus-visible img{filter:none;transform:scale(1.035)}
+.tile.on::after,.tile:focus-visible::after{box-shadow:inset 0 0 0 2px var(--seen),0 0 26px rgba(201,249,56,.35)}
+.tile .n{position:absolute;left:0;top:0;font-family:var(--mono);font-size:8.5px;font-weight:700;
+  color:rgba(255,255,255,.42);background:rgba(4,6,10,.62);padding:2px 4px;line-height:1;
+  transition:color .18s ease,background .18s ease}
+.tile.on .n{color:#05070a;background:var(--seen)}
+.tile .flick{position:absolute;right:4px;bottom:4px;width:5px;height:5px;background:var(--seen);
+  opacity:0;transition:opacity .2s ease}
+.tile.on .flick{opacity:.9;animation:blip .9s steps(2,end) infinite}
+@keyframes blip{0%,60%{opacity:.9}61%,100%{opacity:.15}}
+
+/* the vault lighting up, once */
+@keyframes lift{from{opacity:0;transform:translateY(9px) scale(.965)}to{opacity:1;transform:none}}
+.wall .tile{animation:lift .62s cubic-bezier(.16,1,.3,1) backwards;
+  animation-delay:calc(var(--d)*14ms)}
+@media (prefers-reduced-motion:reduce){.wall .tile{animation:none}.tile.on .flick{animation:none}}
+
+/* hero burned into the top rows */
+.veil{position:absolute;left:0;right:0;top:0;height:clamp(400px,46vw,600px);pointer-events:none;
+  background:linear-gradient(180deg,#05070a 0,rgba(5,7,10,.975) 42%,rgba(5,7,10,.93) 68%,rgba(5,7,10,.5) 88%,transparent);
+  z-index:5}
+.hero{position:absolute;left:0;right:0;top:0;padding:clamp(34px,5.4vw,84px) var(--gut) 0;z-index:6;
+  pointer-events:none}
+.hero h1{font-size:clamp(2.7rem,8.2vw,7rem);font-weight:830;line-height:.9;letter-spacing:-.05em;
+  max-width:15ch;text-wrap:balance}
+.hero h1 em{font-style:normal;color:var(--seen)}
+.hero p{margin-top:22px;max-width:62ch;font-size:clamp(.95rem,1.25vw,1.12rem);line-height:1.55;
+  color:var(--fg2);font-weight:380;text-shadow:0 2px 18px rgba(5,7,10,.9)}
+.hero p b{color:var(--fg);font-weight:620}
+.hero .cue{margin-top:26px;display:flex;align-items:center;gap:12px}
+.hero .cue s{width:44px;height:1px;background:var(--seen);text-decoration:none}
+.hero .cue span{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--seen)}
+
+/* ---------- loupe ---------- */
+.loupe{position:absolute;width:352px;z-index:20;pointer-events:none;
+  background:var(--plate);border:1px solid var(--seen);
+  box-shadow:0 26px 60px -18px rgba(0,0,0,.92),0 0 34px rgba(201,249,56,.14);
+  opacity:0;transform:translateY(6px);transition:opacity .16s ease,transform .16s ease}
+.loupe.on{opacity:1;transform:none}
+.loupe .lframe{position:relative;aspect-ratio:16/9;background:#000;overflow:hidden}
+.loupe .lframe img{width:100%;height:100%;object-fit:cover}
+.loupe .lframe .tc{position:absolute;right:6px;bottom:6px;font-family:var(--mono);font-size:10px;
+  font-weight:700;background:var(--seen);color:#05070a;padding:2px 5px;line-height:1.2}
+.loupe .lbody{padding:11px 13px 13px}
+.loupe h3{font-size:15px;font-weight:750;letter-spacing:-.025em;line-height:1.22}
+.loupe .by{margin-top:6px;font-family:var(--mono);font-size:10.5px;color:var(--fg2);letter-spacing:.02em}
+.loupe .by u{text-decoration:none;color:var(--seen)}
+.loupe .facts{margin-top:11px;display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
+  background:var(--rule);border:1px solid var(--rule)}
+.loupe .facts div{background:var(--plate2);padding:6px 8px}
+.loupe .facts dt{font-family:var(--mono);font-size:8.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--fg3)}
+.loupe .facts dd{font-family:var(--mono);font-size:13px;font-weight:600;margin-top:2px;
+  font-variant-numeric:tabular-nums}
+.loupe .strip{margin-top:11px;display:flex;gap:3px}
+.loupe .strip i{flex:1;height:3px;background:var(--rule2)}
+.loupe .strip i.on{background:var(--seen)}
+.loupe .url{margin-top:10px;font-family:var(--mono);font-size:10.5px;color:var(--seen);
+  border:1px solid rgba(201,249,56,.4);padding:5px 7px;letter-spacing:-.01em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (hover:none),(max-width:900px){.loupe{display:none}}
+
+/* ---------- the count, as a sentence ---------- */
+.count{padding:clamp(56px,8vw,116px) 0 clamp(44px,5vw,76px);position:relative;
+  display:grid;grid-template-columns:minmax(0,1.62fr) minmax(0,1fr);
+  gap:clamp(24px,4vw,64px);align-items:end}
+.count p.big{font-size:clamp(1.5rem,3.3vw,3.1rem);font-weight:420;line-height:1.14;
+  letter-spacing:-.037em;text-wrap:pretty}
+.count p .n{font-weight:830;letter-spacing:-.05em}
+.count p .n.s{color:var(--seen)} .count p .n.h{color:var(--heard)}
+.count p em{font-style:normal;color:var(--fg2)}
+.count .after{font-size:.98rem;line-height:1.62;color:var(--fg2);
+  border-top:1px solid var(--rule2);padding-top:16px}
+.count .after code{font-family:var(--mono);font-size:.86em;color:var(--seen)}
+@media (max-width:820px){.count{grid-template-columns:1fr;align-items:start}}
+
+/* ---------- density field ---------- */
+.field{padding-bottom:clamp(48px,6vw,84px)}
+.fieldhead{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;
+  padding-bottom:12px;border-bottom:1px solid var(--rule2);flex-wrap:wrap}
+.fieldhead h2{font-size:clamp(1.3rem,2.4vw,1.9rem);font-weight:790;letter-spacing:-.035em}
+.fieldhead p{font-size:13px;color:var(--fg2);max-width:52ch;line-height:1.5}
+.bars{display:flex;align-items:flex-end;gap:2px;height:190px;margin-top:22px}
+.bars .b{flex:1;min-width:0;background:var(--rule2);position:relative;
+  height:var(--h);transition:filter .15s ease}
+.bars .b i{position:absolute;left:0;right:0;bottom:0;height:var(--o);background:var(--seen);
+  opacity:.92;box-shadow:0 -1px 0 rgba(201,249,56,.55),0 0 10px rgba(201,249,56,.22)}
+.bars .b:hover{filter:brightness(1.6)}
+.bars .b:hover::after{content:attr(data-t);position:absolute;left:50%;bottom:calc(100% + 8px);
+  transform:translateX(-50%);white-space:nowrap;background:var(--seen);color:#05070a;
+  font-family:var(--mono);font-size:10px;font-weight:700;padding:4px 7px;z-index:4;max-width:60vw;
+  overflow:hidden;text-overflow:ellipsis}
+.axis{display:flex;justify-content:space-between;gap:12px;padding-top:9px;border-top:1px solid var(--rule)}
+.legend{display:flex;gap:18px;flex-wrap:wrap;padding-top:14px}
+.legend span{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:10px;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--fg3)}
+.legend span i{width:9px;height:9px;display:block}
+
+/* ---------- footer ---------- */
+footer.end{border-top:1px solid var(--rule2);padding:32px 0 64px;
+  display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:32px}
+footer.end p{font-size:13px;line-height:1.6;color:var(--fg2);max-width:56ch}
+footer.end p + p{margin-top:10px}
+footer.end code{font-family:var(--mono);font-size:12px;color:var(--seen)}
+footer.end .lab{margin-bottom:10px;display:block}
+@media (max-width:820px){
+  footer.end{grid-template-columns:1fr}
+  .hero p{max-width:42ch}
+  .bars{height:130px}
+}
+@media (max-width:620px){.hide-sm{display:none}.topbar{padding:11px var(--gut)}}
+</style>
+</head>
+<body>
+<script id="corpus" type="application/json">{"stats":{"talks":78,"seconds":97538.0,"cues":17138,"ocr_lines":61198,"keyframes":4736,"ocr_frames":2931,"chunks":2827,"words":264392,"frame_bytes":589084708,"channel":"AI Engineer","first_pub":1776380286,"last_pub":1786224606},"grid":[{"v":"iQ5xldZ9StU","t":"Realtime multiplayer, automation, and you!","s":"Idan Gazit","o":"GitHub","d":1300,"p":1786224606,"i":"grid/iQ5xldZ9StU.jpg","k":679.4,"c":267,"f":84,"x":2118,"st":["grid/iQ5xldZ9StU-0.jpg","grid/iQ5xldZ9StU-1.jpg","grid/iQ5xldZ9StU-2.jpg"]},{"v":"7vn4WpqNpck","t":"Benchmarking Coding Agents on New vs Legacy Codebases","s":"Denys Linkov","o":"Wisedocs","d":1087,"p":1786215606,"i":"grid/7vn4WpqNpck.jpg","k":382.3,"c":202,"f":42,"x":228,"st":[]},{"v":"Z-c11pV_uvU","t":"Anthropic's CCA Exam as a Field-Guide for Agentic Engineering","s":"Frank Coyle","o":"UC Berkeley","d":1208,"p":1786204806,"i":"grid/Z-c11pV_uvU.jpg","k":245.9,"c":232,"f":47,"x":392,"st":[]},{"v":"LZuWZRze3MU","t":"The New Primitives: Building AI Native Software","s":"Kwindla Kramer","o":"Daily","d":1274,"p":1786146813,"i":"grid/LZuWZRze3MU.jpg","k":1095.5,"c":205,"f":103,"x":810,"st":["grid/LZuWZRze3MU-0.jpg","grid/LZuWZRze3MU-1.jpg","grid/LZuWZRze3MU-2.jpg"]},{"v":"CoEIs6Xm8m8","t":"Open Source Is Dead. Long Live Open Source.","s":"Saoud Rizwan","o":"Cline","d":1050,"p":1786145211,"i":"grid/CoEIs6Xm8m8.jpg","k":636.5,"c":130,"f":37,"x":382,"st":[]},{"v":"FWMJQDH3iK0","t":"Local Models: Trust, Control, Optimization","s":"Carter Abdallah","o":"NVIDIA","d":2600,"p":1786068006,"i":"grid/FWMJQDH3iK0.jpg","k":925.7,"c":348,"f":124,"x":80,"st":[]},{"v":"J4_jCrTxMkk","t":"Compression at the Edge","s":"NVIDIA","o":"Unsloth, HuggingFace, Ollama","d":2760,"p":1786064406,"i":"grid/J4_jCrTxMkk.jpg","k":1343.2,"c":531,"f":162,"x":239,"st":["grid/J4_jCrTxMkk-0.jpg","grid/J4_jCrTxMkk-1.jpg","grid/J4_jCrTxMkk-2.jpg"]},{"v":"QHBjufYK8TA","t":"The State of Model Routing","s":"NVIDIA","o":"Cognition, OpenRouter","d":2897,"p":1786036044,"i":"grid/QHBjufYK8TA.jpg","k":1993.7,"c":515,"f":218,"x":137,"st":[]},{"v":"RmS5s6Wbin4","t":"Gadgets: Personal app vibe coding that is actually safe","s":"Kenton Varda","o":"Cloudflare","d":1133,"p":1785969730,"i":"grid/RmS5s6Wbin4.jpg","k":477.6,"c":188,"f":55,"x":301,"st":[]},{"v":"jQDXzEVHMSE","t":"Building Turbopuffer","s":"Gergely Orosz (@pragmaticengineer ) \u00d7 Simon Eskildsen (CEO)","o":"","d":3389,"p":1785781567,"i":"grid/jQDXzEVHMSE.jpg","k":1267.2,"c":811,"f":171,"x":1681,"st":["grid/jQDXzEVHMSE-0.jpg","grid/jQDXzEVHMSE-1.jpg","grid/jQDXzEVHMSE-2.jpg"]},{"v":"-jY2T2PiJBE","t":"MCP Apps: Extending the Frontier","s":"Ido Salomon & Liad Yosef","o":"","d":1118,"p":1785713406,"i":"grid/-jY2T2PiJBE.jpg","k":242.2,"c":227,"f":95,"x":1876,"st":[]},{"v":"s4r6nk5WsZw","t":"MCP Tasks (async): Why Aren't Any Agents Supporting Them?","s":"Cornelia Davis","o":"Temporal","d":1434,"p":1785700806,"i":"grid/s4r6nk5WsZw.jpg","k":915.1,"c":248,"f":82,"x":2174,"st":[]},{"v":"-npY6XjM8CQ","t":"When Will The Benchmaxxing Plague End?","s":"Nick Heiner","o":"Surge AI","d":1044,"p":1785688206,"i":"grid/-npY6XjM8CQ.jpg","k":373.7,"c":166,"f":49,"x":569,"st":["grid/-npY6XjM8CQ-0.jpg","grid/-npY6XjM8CQ-1.jpg","grid/-npY6XjM8CQ-2.jpg"]},{"v":"ZFxh7sqbUZo","t":"Teaching AI to Find Real Vulnerabilities","s":"Prof. David Brumley","o":"Bugcrowd","d":1637,"p":1785544206,"i":"grid/ZFxh7sqbUZo.jpg","k":996.5,"c":325,"f":64,"x":626,"st":[]},{"v":"2aS7aKoXn64","t":"Rethinking Environments for Long-Horizon Work","s":"Rayan Garg","o":"Theta Software","d":1274,"p":1785542406,"i":"grid/2aS7aKoXn64.jpg","k":281.9,"c":225,"f":51,"x":411,"st":[]},{"v":"cJ0EOzey--o","t":"What's Next After RLHF?","s":"Diogo Almeida","o":"TypeSafe AI","d":1084,"p":1785540606,"i":"grid/cJ0EOzey--o.jpg","k":176.7,"c":206,"f":48,"x":530,"st":["grid/cJ0EOzey--o-0.jpg","grid/cJ0EOzey--o-1.jpg","grid/cJ0EOzey--o-2.jpg"]},{"v":"_PdK6x7PQNM","t":"Data Quality Is the Compute Multiplier","s":"Ari Morcos","o":"DatologyAI","d":1145,"p":1785538806,"i":"grid/_PdK6x7PQNM.jpg","k":386.3,"c":199,"f":46,"x":778,"st":[]},{"v":"k35LeKZEhiE","t":"Learning on the Job: The Future of Post-Training","s":"Raymond Feng","o":"Applied Compute","d":1100,"p":1785537006,"i":"grid/k35LeKZEhiE.jpg","k":214.9,"c":122,"f":48,"x":144,"st":[]},{"v":"ewtOo0scUh0","t":"Data and Environment Curation for Post-Training LLMs","s":"Mahesh Sathiamoorthy","o":"Bespoke Labs","d":1151,"p":1785535206,"i":"grid/ewtOo0scUh0.jpg","k":177.8,"c":175,"f":53,"x":421,"st":["grid/ewtOo0scUh0-0.jpg","grid/ewtOo0scUh0-1.jpg","grid/ewtOo0scUh0-2.jpg"]},{"v":"2bvtay8wGYI","t":"Scaling to Long Horizons","s":"Ross Taylor & Chengxi Taylor","o":"General Reasoning","d":1087,"p":1785533406,"i":"grid/2bvtay8wGYI.jpg","k":281.8,"c":224,"f":48,"x":624,"st":[]},{"v":"zkX03APVj0M","t":"Emulated: The Data for Fully Autonomous Software Engineers and Companies","s":"Joseph Wang","o":"","d":992,"p":1785531603,"i":"grid/zkX03APVj0M.jpg","k":227.6,"c":164,"f":41,"x":309,"st":[]},{"v":"xbPriQWXtWM","t":"The Base Model Is Dead","s":"Varun Singh","o":"Arcee AI","d":1064,"p":1785529821,"i":"grid/xbPriQWXtWM.jpg","k":185.6,"c":97,"f":41,"x":688,"st":["grid/xbPriQWXtWM-0.jpg","grid/xbPriQWXtWM-1.jpg","grid/xbPriQWXtWM-2.jpg"]},{"v":"3ZMUiFaQ3qg","t":"Verifiable Environments for AI in Biology","s":"Kenny Workman","o":"LatchBio","d":1062,"p":1785528035,"i":"grid/3ZMUiFaQ3qg.jpg","k":494.3,"c":206,"f":63,"x":472,"st":[]},{"v":"lCBf9slCanI","t":"Ending AI Slop","s":"Thais Castello Branco","o":"Taste Labs","d":990,"p":1785525980,"i":"grid/lCBf9slCanI.jpg","k":706.9,"c":181,"f":42,"x":323,"st":[]},{"v":"jWq-aZIU0kM","t":"Benchmarks: The Good, the Bad, and the Ugly","s":"Ali Khial","o":"G2i","d":768,"p":1785513606,"i":"grid/jWq-aZIU0kM.jpg","k":640.0,"c":121,"f":32,"x":405,"st":["grid/jWq-aZIU0kM-0.jpg","grid/jWq-aZIU0kM-1.jpg","grid/jWq-aZIU0kM-2.jpg"]},{"v":"AQv3qRCG6Gw","t":"Reinforcement Learning without Verifiable Rewards","s":"Will Brown","o":"Prime Intellect","d":1166,"p":1785510006,"i":"grid/AQv3qRCG6Gw.jpg","k":972.0,"c":164,"f":46,"x":439,"st":[]},{"v":"AVMr9PMINyo","t":"Agents at Scale: Inside MiniMax's Model and the Infrastructure Behind It","s":"Dan Fu and Olive Song","o":"","d":1214,"p":1785466814,"i":"grid/AVMr9PMINyo.jpg","k":246.1,"c":250,"f":51,"x":118,"st":[]},{"v":"AMiyLItEtLA","t":"fighting slop with slop","s":"Vaibhav Gupta","o":"Boundary","d":1292,"p":1785460290,"i":"grid/AMiyLItEtLA.jpg","k":316.6,"c":277,"f":103,"x":4097,"st":["grid/AMiyLItEtLA-0.jpg","grid/AMiyLItEtLA-1.jpg","grid/AMiyLItEtLA-2.jpg"]},{"v":"pWXUkLP9uWM","t":"First Steps Toward Automated AI Research","s":"Richard Socher","o":"CEO Recursive AI","d":1223,"p":1785430777,"i":"grid/pWXUkLP9uWM.jpg","k":303.9,"c":149,"f":53,"x":1456,"st":[]},{"v":"z0sh8HyTrDo","t":"Your Finance Agent's Bottleneck Is You","s":"Ramana Siddanth Emani","o":"Auditoria AI","d":822,"p":1785380406,"i":"grid/z0sh8HyTrDo.jpg","k":493.8,"c":127,"f":33,"x":324,"st":[]},{"v":"tJFjeMBKbIY","t":"Build for the Memo, Not the Demo","s":"Shawn Chan","o":"China Resources Holdings","d":1462,"p":1785376806,"i":"grid/tJFjeMBKbIY.jpg","k":354.2,"c":240,"f":58,"x":220,"st":["grid/tJFjeMBKbIY-0.jpg","grid/tJFjeMBKbIY-1.jpg","grid/tJFjeMBKbIY-2.jpg"]},{"v":"o6U_2vd967Y","t":"Let's integrate AI Agents in Event-Sourced Systems","s":"Divakar Kumar","o":"FlyersSoft","d":1296,"p":1785369606,"i":"grid/o6U_2vd967Y.jpg","k":951.0,"c":204,"f":57,"x":569,"st":[]},{"v":"s67bE2Ur3bY","t":"Wearing the Agent: From Group Chats to Glasses","s":"Sai Krishna Rallabandi","o":"","d":1148,"p":1785365899,"i":"grid/s67bE2Ur3bY.jpg","k":635.0,"c":155,"f":46,"x":667,"st":[]},{"v":"iKQ78wyJEXU","t":"We Vetted 2000 AI Skills Before They Reached Developers","s":"Lucas Palma","o":"Nubank","d":984,"p":1785362406,"i":"grid/iKQ78wyJEXU.jpg","k":810.0,"c":128,"f":36,"x":348,"st":["grid/iKQ78wyJEXU-0.jpg","grid/iKQ78wyJEXU-1.jpg","grid/iKQ78wyJEXU-2.jpg"]},{"v":"Tt2kX2sgQio","t":"How Kepler Built Verifiable AI for Financial Services","s":"Vinoo Ganesh","o":"","d":1349,"p":1785358806,"i":"grid/Tt2kX2sgQio.jpg","k":333.8,"c":249,"f":50,"x":455,"st":[]},{"v":"YnNF55QV0zs","t":"Persona Engineering: A Field Guide to AI Synthetic Personas","s":"Ishan Anand","o":"InsightSciences.ai","d":1269,"p":1785356135,"i":"grid/YnNF55QV0zs.jpg","k":641.6,"c":237,"f":48,"x":1262,"st":[]},{"v":"Owb8g3yDyzo","t":"Why Off-the-Shelf AI Doesn't Understand Money","s":"Udi Menkes","o":"Intuit","d":1190,"p":1785355206,"i":"grid/Owb8g3yDyzo.jpg","k":1021.5,"c":202,"f":47,"x":416,"st":["grid/Owb8g3yDyzo-0.jpg","grid/Owb8g3yDyzo-1.jpg","grid/Owb8g3yDyzo-2.jpg"]},{"v":"KMR_RBoCa4M","t":"SimulationMaxxing: How we ship agents 20\u00d7 faster","s":"Aman Gupta (Nubank) + Shreya Rajpal (Snowglobe)","o":"","d":989,"p":1785351606,"i":"grid/KMR_RBoCa4M.jpg","k":739.4,"c":185,"f":35,"x":420,"st":[]},{"v":"7jjudsEhBtM","t":"Skills are new features: Building Skill-Centric Harness","s":"Yogendra Miraje","o":"FactSet","d":1043,"p":1785348006,"i":"grid/7jjudsEhBtM.jpg","k":336.2,"c":136,"f":52,"x":702,"st":[]},{"v":"kiqubc5b5Yo","t":"Morgan Stanley's ALPHALAB: Multi-Agent Research Across Optimization Domains","s":"Brendan Rappazzo","o":"","d":1206,"p":1785344786,"i":"grid/kiqubc5b5Yo.jpg","k":792.0,"c":169,"f":46,"x":647,"st":["grid/kiqubc5b5Yo-0.jpg","grid/kiqubc5b5Yo-1.jpg","grid/kiqubc5b5Yo-2.jpg"]},{"v":"BInpv7lGp1o","t":"Your Agent Didn't Fail. Your Harness Did.","s":"Vinoth Govindarajan","o":"OpenAI","d":1105,"p":1785340806,"i":"grid/BInpv7lGp1o.jpg","k":532.4,"c":259,"f":46,"x":704,"st":[]},{"v":"wpOA-UXynoM","t":"How Forward Deployed Engineering is done at Factory","s":"Eno Reyes","o":"","d":1281,"p":1785276006,"i":"grid/wpOA-UXynoM.jpg","k":177.3,"c":187,"f":52,"x":429,"st":[]},{"v":"l0FLhNqBOic","t":"AI tools for Forward Deployed Engineering","s":"Vasuman Moza","o":"Varick Agents","d":1222,"p":1785272406,"i":"grid/l0FLhNqBOic.jpg","k":720.5,"c":216,"f":51,"x":177,"st":["grid/l0FLhNqBOic-0.jpg","grid/l0FLhNqBOic-1.jpg","grid/l0FLhNqBOic-2.jpg"]},{"v":"RVxym6mmIns","t":"How Forward Deployed Engineering is done at Cognition","s":"Jia Wu","o":"","d":1058,"p":1785268806,"i":"grid/RVxym6mmIns.jpg","k":849.7,"c":210,"f":51,"x":641,"st":[]},{"v":"ITMXwI6QL6A","t":"How Forward Deployed Engineering is done at Ramp","s":"Leo Mehr","o":"","d":844,"p":1785265206,"i":"grid/ITMXwI6QL6A.jpg","k":399.4,"c":136,"f":34,"x":142,"st":[]},{"v":"Byv311hdoHE","t":"The Dirty Secret of Forward Deployed Engineering","s":"Natalie Meurer","o":"Sierra","d":1009,"p":1785261618,"i":"grid/Byv311hdoHE.jpg","k":689.1,"c":174,"f":41,"x":414,"st":["grid/Byv311hdoHE-0.jpg","grid/Byv311hdoHE-1.jpg","grid/Byv311hdoHE-2.jpg"]},{"v":"7wu2hsRfvV0","t":"How Forward Deployed Engineering is done at Decagon","s":"Sunny Rekhi","o":"","d":1088,"p":1785258035,"i":"grid/7wu2hsRfvV0.jpg","k":679.4,"c":190,"f":39,"x":331,"st":[]},{"v":"1OMHGsUZiqA","t":"How Forward Deployed Engineering is done at Kepler","s":"Vinoo Ganesh","o":"","d":1340,"p":1785254400,"i":"grid/1OMHGsUZiqA.jpg","k":532.2,"c":246,"f":47,"x":285,"st":[]},{"v":"KwhgfwOSToQ","t":"Forward Deployed Engineering 101","s":"Kevin Bai","o":"Anthropic, ex Palantir & Rippling Founding FDE","d":1068,"p":1785250806,"i":"grid/KwhgfwOSToQ.jpg","k":777.2,"c":191,"f":47,"x":81,"st":["grid/KwhgfwOSToQ-0.jpg","grid/KwhgfwOSToQ-1.jpg","grid/KwhgfwOSToQ-2.jpg"]},{"v":"lyL5QhgIOxc","t":"Serving 2 Million Models Without Melting: Scaling the Hugging Face Hub","s":"Arek Borucki","o":"Hugging Face","d":1299,"p":1785246071,"i":"grid/lyL5QhgIOxc.jpg","k":1022.3,"c":191,"f":50,"x":497,"st":[]},{"v":"CgsWxRUY5Eo","t":"AI Agents for Performance: Ship Faster, Pay Less","s":"Rajat Shah","o":"Netflix","d":2018,"p":1785200344,"i":"grid/CgsWxRUY5Eo.jpg","k":513.8,"c":257,"f":72,"x":776,"st":[]},{"v":"Yk87oUPVaxU","t":"DeepSWE: A Contamination-Resistant Coding Benchmark","s":"James Shi","o":"Datacurve","d":1054,"p":1785089456,"i":"grid/Yk87oUPVaxU.jpg","k":140.4,"c":128,"f":36,"x":207,"st":["grid/Yk87oUPVaxU-0.jpg","grid/Yk87oUPVaxU-1.jpg","grid/Yk87oUPVaxU-2.jpg"]},{"v":"ZyIoTOAbRfs","t":"State of Data","s":"Sean Cai","o":"Independent / State of Data","d":1102,"p":1785085206,"i":"grid/ZyIoTOAbRfs.jpg","k":954.5,"c":196,"f":42,"x":581,"st":[]},{"v":"KhYifX22yhE","t":"The Messy Reality of Scale: Synthetic Data and Pre-Training","s":"Marah Abdin & Robert McHardy","o":"poolside","d":1051,"p":1785027606,"i":"grid/KhYifX22yhE.jpg","k":845.7,"c":190,"f":42,"x":506,"st":[]},{"v":"O72p-rBb2bA","t":"Evals-Driven Development for a Mental Health AI Coach","s":"Akele Reed & Dave Revere","o":"SonderMind","d":1277,"p":1785020436,"i":"grid/O72p-rBb2bA.jpg","k":336.1,"c":222,"f":46,"x":397,"st":["grid/O72p-rBb2bA-0.jpg","grid/O72p-rBb2bA-1.jpg","grid/O72p-rBb2bA-2.jpg"]},{"v":"xIt_mTQp6mY","t":"Loop Engineering from First Principles","s":"Kyle Mistele","o":"HumanLayer","d":1077,"p":1785012100,"i":"grid/xIt_mTQp6mY.jpg","k":276.2,"c":201,"f":70,"x":1476,"st":[]},{"v":"hacEQHHhu2Q","t":"Why Large? Tiny LMs & Agents on Edge/Robotics","s":"Cormac Brick","o":"Google","d":1304,"p":1784998806,"i":"grid/hacEQHHhu2Q.jpg","k":567.9,"c":196,"f":57,"x":608,"st":[]},{"v":"Ib5t2RLtxvM","t":"From Agent Traces to Agent Simulations","s":"Rustem Feyzkhanov","o":"Snorkel AI","d":1223,"p":1784941202,"i":"grid/Ib5t2RLtxvM.jpg","k":932.3,"c":262,"f":45,"x":673,"st":["grid/Ib5t2RLtxvM-0.jpg","grid/Ib5t2RLtxvM-1.jpg","grid/Ib5t2RLtxvM-2.jpg"]},{"v":"b_PmGocP4rc","t":"Evaling Video Slop","s":"Maor Bril","o":"Character.ai","d":1393,"p":1784937602,"i":"grid/b_PmGocP4rc.jpg","k":926.6,"c":234,"f":54,"x":551,"st":[]},{"v":"31GUkCBD-Uc","t":"Building Closed-Loop Evals for a Multimodal Agent at Scale","s":"Soumya Gupta & Jai Chopra","o":"Uber","d":1298,"p":1784930425,"i":"grid/31GUkCBD-Uc.jpg","k":185.2,"c":251,"f":52,"x":785,"st":[]},{"v":"xyL2Ltkh-SA","t":"How Evals and Prompts Shape Agent Behavior","s":"Preetika Bhateja & Daniel Bump","o":"YouTube Ads","d":1169,"p":1784926800,"i":"grid/xyL2Ltkh-SA.jpg","k":669.6,"c":216,"f":47,"x":431,"st":["grid/xyL2Ltkh-SA-0.jpg","grid/xyL2Ltkh-SA-1.jpg","grid/xyL2Ltkh-SA-2.jpg"]},{"v":"9HbzAWnKbo4","t":"From Signal to PR: Anatomy of a Self-Improving Agent","s":"Jason Lopatecki","o":"Arize","d":1235,"p":1784924132,"i":"grid/9HbzAWnKbo4.jpg","k":665.1,"c":228,"f":68,"x":1766,"st":[]},{"v":"q2JrUKBMf0w","t":"The Future of Evals: From LLM as a Judge to Agent as a Judge","s":"Aparna Dhinakaran","o":"Arize AI","d":366,"p":1784923206,"i":"grid/q2JrUKBMf0w.jpg","k":187.6,"c":69,"f":17,"x":460,"st":[]},{"v":"jRCpXUjz4CI","t":"Everything Is a Rollout","s":"Alex Shaw + Ryan Marten","o":"Terminal-Bench, Harbor, Laude Institute","d":1271,"p":1784908806,"i":"grid/jRCpXUjz4CI.jpg","k":398.1,"c":217,"f":74,"x":1032,"st":["grid/jRCpXUjz4CI-0.jpg","grid/jRCpXUjz4CI-1.jpg","grid/jRCpXUjz4CI-2.jpg"]},{"v":"cO8qC6HBuBg","t":"Vending-Bench: Long-Horizon Agent Evals","s":"Lukas Petersson","o":"Andon Labs","d":1085,"p":1784905206,"i":"grid/cO8qC6HBuBg.jpg","k":773.1,"c":213,"f":46,"x":624,"st":[]},{"v":"O-CBZ3JtRvo","t":"Training Frontier Models to Out-Think Hackers","s":"Uri Rolls","o":"Arithmetic & Thom Wolf, Hugging Face","d":1047,"p":1784870355,"i":"grid/O-CBZ3JtRvo.jpg","k":309.1,"c":194,"f":85,"x":1442,"st":[]},{"v":"GgLQ02aO-hs","t":"The Unreasonable Effectiveness of Separating the Task from the Model","s":"Maxime Rivest & Isaac Miller","o":"","d":1031,"p":1784828706,"i":"grid/GgLQ02aO-hs.jpg","k":236.7,"c":187,"f":44,"x":903,"st":["grid/GgLQ02aO-hs-0.jpg","grid/GgLQ02aO-hs-1.jpg","grid/GgLQ02aO-hs-2.jpg"]},{"v":"-I5W5QVAT8E","t":"Notion's Token Town","s":"Sarah Sachs","o":"Notion","d":1435,"p":1784827806,"i":"grid/-I5W5QVAT8E.jpg","k":843.4,"c":311,"f":80,"x":1657,"st":[]},{"v":"Ib5GBkD555M","t":"Harness Engineering is not Enough: Why Software Factories Fail","s":"Dex Horthy","o":"HumanLayer","d":1157,"p":1784824206,"i":"grid/Ib5GBkD555M.jpg","k":359.6,"c":230,"f":164,"x":4794,"st":[]},{"v":"2JX6JYyQG4Y","t":"Perception Agents","s":"Antje Barth","o":"Amazon AGI Lab","d":1304,"p":1784822406,"i":"grid/2JX6JYyQG4Y.jpg","k":762.2,"c":229,"f":71,"x":1622,"st":["grid/2JX6JYyQG4Y-0.jpg","grid/2JX6JYyQG4Y-1.jpg","grid/2JX6JYyQG4Y-2.jpg"]},{"v":"418t26CVz-w","t":"Local Agentic Theory For Mobile Games","s":"Shafik Quoraishee & Joanne Song","o":"The New York Times","d":1084,"p":1784775601,"i":"grid/418t26CVz-w.jpg","k":355.5,"c":168,"f":46,"x":814,"st":[]},{"v":"Sir59K8ZDPU","t":"Why Agentic Systems Need Ontologies","s":"Frank Coyle","o":"UC Berkeley","d":1278,"p":1784768407,"i":"grid/Sir59K8ZDPU.jpg","k":319.2,"c":241,"f":51,"x":480,"st":[]},{"v":"9QebvrrY3KY","t":"Claude for Long-Horizon Tasks","s":"Lance Martin","o":"Anthropic","d":1518,"p":1784739606,"i":"grid/9QebvrrY3KY.jpg","k":854.6,"c":282,"f":61,"x":239,"st":["grid/9QebvrrY3KY-0.jpg","grid/9QebvrrY3KY-1.jpg","grid/9QebvrrY3KY-2.jpg"]},{"v":"8qWIPUia2O8","t":"Every Harness Will Become A Claw","s":"Sam Bhagwat","o":"Mastra","d":935,"p":1784669406,"i":"grid/8qWIPUia2O8.jpg","k":197.1,"c":195,"f":43,"x":328,"st":[]},{"v":"1EZdpEhwmNc","t":"Through the AI Fog: The Architectural Decision Agentic Security Depends On","s":"Manoj Nair","o":"Snyk","d":1409,"p":1784567874,"i":"grid/1EZdpEhwmNc.jpg","k":743.2,"c":315,"f":64,"x":736,"st":[]},{"v":"0RNNfxpdbQk","t":"Medic for Apache Spark - First Aid for Failing Jobs","s":"Drasko Profirovic","o":"Pinterest","d":680,"p":1784528690,"i":"grid/0RNNfxpdbQk.jpg","k":520.8,"c":98,"f":25,"x":254,"st":["grid/0RNNfxpdbQk-0.jpg","grid/0RNNfxpdbQk-1.jpg","grid/0RNNfxpdbQk-2.jpg"]},{"v":"-561cZmir5Q","t":"From Tokens to Cells: Foundation Models for Single-Cell Biology","s":"Akram Baharlouei","o":"Altos Labs","d":1017,"p":1784491206,"i":"grid/-561cZmir5Q.jpg","k":289.1,"c":142,"f":43,"x":725,"st":[]},{"v":"RjfbvDXpFls","t":"Building pi in a World of Slop","s":"Mario Zechner","o":"","d":1105,"p":1776380286,"i":"grid/RjfbvDXpFls.jpg","k":766.9,"c":279,"f":126,"x":3772,"st":[]}]}</script>
+
+<div class="topbar">
+  <div class="mark"><b>vidtheque<span class="d">.</span></b><span class="lab hide-sm">lab · piece 02</span></div>
+  <div class="lab">read-only from vidtheque.db</div>
+</div>
+
+<section class="vault">
+  <div class="wall" id="wall"></div>
+  <div class="veil"></div>
+  <div class="hero">
+    <h1>Everything you watched, <em>still here</em>.</h1>
+    <p>One real frame from each of the 78 talks below — the sharpest keyframe the indexer kept
+      from the middle of each one. <b>Point at any of them.</b></p>
+    <div class="cue"><s></s><span>78 talks below</span></div>
+  </div>
+  <div class="loupe" id="loupe"></div>
+</section>
+
+<main class="wrap">
+  <section class="count">
+    <p class="big" id="countline"></p>
+    <p class="after">All of it addressable to the second: a hit anywhere in this wall comes back
+      as <code>youtu.be/&lt;id&gt;?t=&lt;seconds&gt;</code>, whether the match was something
+      somebody said, something written on a slide behind them, or the frame itself.</p>
+  </section>
+
+  <section class="field">
+    <div class="fieldhead">
+      <div><h2>Every talk, by length and by how much it wrote on the wall</h2></div>
+      <p>Bar height is the talk's runtime. The lit part is how much of it carried on-screen text —
+        slide-heavy talks fill up, panels stay dark.</p>
+    </div>
+    <div class="bars" id="bars"></div>
+    <div class="axis"><span class="lab" id="ax-l"></span><span class="lab" id="ax-r"></span></div>
+    <div class="legend">
+      <span><i style="background:var(--seen)"></i>frames carrying on-screen text</span>
+      <span><i style="background:var(--rule2)"></i>runtime with none</span>
+    </div>
+  </section>
+
+  <footer class="end">
+    <div>
+      <span class="lab">How the wall was built</span>
+      <p>One cover per talk: the highest-<code>sharpness</code> keyframe between 12% and 88% of the
+        runtime, so no title cards and no end slates. Downscaled to 300px wide — the whole wall of
+        78 is under 1 MB. Every fourth talk also prefetches three more frames spread across its
+        timeline; those are the ones that flip under the loupe.</p>
+    </div>
+    <div>
+      <span class="lab">What the numbers are</span>
+      <p>Counted once, live, off <code>vidtheque.db</code> at build time: <code>videos</code> where
+        <code>index_state='ready'</code>, and straight <code>count(*)</code> on <code>cues</code>,
+        <code>ocr_lines</code> and <code>keyframes</code>. Word count is whitespace-split
+        <code>cues.text</code>, so it is approximate and says so here rather than in a tooltip.</p>
+      <p>Speaker names are parsed out of the title — <code>speakers</code> is empty in this corpus.</p>
+    </div>
+  </footer>
+</main>
+
+<script>
+(() => {
+  const D = JSON.parse(document.getElementById('corpus').textContent);
+  const S = D.stats, G = D.grid;
+  const num = n => n.toLocaleString('en-US');
+  const pad = n => String(n).padStart(2, '0');
+  const hms = s => { s = Math.floor(s); const h = (s / 3600) | 0;
+    return (h ? h + ':' + pad(((s % 3600) / 60) | 0) : (((s % 3600) / 60) | 0)) + ':' + pad(s % 60); };
+  const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+  /* ---- the count, written out ---- */
+  const hrs = S.seconds / 3600;
+  document.getElementById('countline').innerHTML =
+    `<span class="n">${S.talks}</span> talks went in. ` +
+    `<span class="n h">${Math.floor(hrs)}h&#8202;${pad(Math.round((hrs % 1) * 60))}m</span> ` +
+    `<em>of somebody standing in front of a room,</em> kept as ` +
+    `<span class="n s">${num(S.keyframes)}</span> <em>frames worth keeping,</em> ` +
+    `<span class="n h">${num(S.cues)}</span> <em>spoken lines and</em> ` +
+    `<span class="n s">${num(S.ocr_lines)}</span> <em>lines read off the screen.</em>`;
+
+  /* ---- the wall ---- */
+  const wall = document.getElementById('wall');
+  const loupe = document.getElementById('loupe');
+  const cols = () => Math.max(1, Math.round(wall.clientWidth /
+    (wall.firstElementChild ? wall.firstElementChild.getBoundingClientRect().width + 3 : 160)));
+
+  G.forEach((v, i) => {
+    const t = document.createElement('button');
+    t.className = 'tile'; t.type = 'button'; t.dataset.i = i;
+    t.setAttribute('aria-label', `${v.t} — ${v.s}`);
+    t.innerHTML = `<img src="assets/${v.i}" alt="" loading="eager" decoding="async">
+      <span class="n">${pad(i + 1)}</span><span class="flick"></span>`;
+    wall.append(t);
+  });
+  /* diagonal wave: delay from the tile's own row+column, measured after layout */
+  requestAnimationFrame(() => {
+    const c = Math.max(1, Math.round(wall.clientWidth / (wall.children[0].offsetWidth + 3)));
+    [...wall.children].forEach((t, i) => t.style.setProperty('--d', ((i % c) + Math.floor(i / c) * 1.5).toFixed(1)));
+  });
+
+  /* ---- loupe ---- */
+  let timer = null, cur = -1;
+  function paint(v, frame, k, frames) {
+    loupe.innerHTML = `
+      <div class="lframe"><img src="assets/${frame}" alt=""><span class="tc">${hms(v.d)}</span></div>
+      <div class="lbody">
+        <h3>${esc(v.t)}</h3>
+        <div class="by">${esc(v.s || 'AI Engineer')}${v.o ? ' · ' + esc(v.o) : ''}
+          <u>${frames.length > 1 ? frames.length + ' frames' : 'cover only'}</u></div>
+        <dl class="facts">
+          <div><dt>spoken</dt><dd>${num(v.c)}</dd></div>
+          <div><dt>on screen</dt><dd>${num(v.x)}</dd></div>
+          <div><dt>frames</dt><dd>${num(v.f)}</dd></div>
+        </dl>
+        <div class="strip">${frames.map((_, j) => `<i class="${j === k ? 'on' : ''}"></i>`).join('')}</div>
+        <div class="url">youtu.be/${v.v}</div>
+      </div>`;
+  }
+  function open(i, tile) {
+    if (i === cur) return;
+    cur = i;
+    const v = G[i], frames = [v.i, ...v.st];
+    let k = 0;
+    paint(v, frames[0], 0, frames);
+    clearInterval(timer);
+    if (frames.length > 1) timer = setInterval(() => {
+      k = (k + 1) % frames.length; paint(v, frames[k], k, frames);
+    }, 620);
+    const wr = wall.getBoundingClientRect(), tr = tile.getBoundingClientRect();
+    const W = 352, GAPY = 10;
+    let x = tr.left - wr.left + tr.width / 2 - W / 2;
+    x = Math.max(6, Math.min(x, wr.width - W - 6));
+    let y = tr.bottom - wr.top + GAPY;
+    if (y + 330 > wr.height) y = tr.top - wr.top - 330 - GAPY;
+    loupe.style.left = x + 'px'; loupe.style.top = Math.max(6, y) + 'px';
+    loupe.classList.add('on');
+    [...wall.children].forEach(c => c.classList.toggle('on', +c.dataset.i === i));
+  }
+  function close() {
+    clearInterval(timer); cur = -1; loupe.classList.remove('on');
+    [...wall.children].forEach(c => c.classList.remove('on'));
+  }
+  wall.addEventListener('pointerover', e => {
+    const t = e.target.closest('.tile'); if (t) open(+t.dataset.i, t);
+  });
+  wall.addEventListener('focusin', e => {
+    const t = e.target.closest('.tile'); if (t) open(+t.dataset.i, t);
+  });
+  wall.addEventListener('pointerleave', close);
+
+  /* ---- density field ---- */
+  const bars = document.getElementById('bars');
+  const maxD = Math.max(...G.map(v => v.d));
+  const byPub = [...G].sort((a, b) => a.p - b.p);
+  byPub.forEach(v => {
+    const b = document.createElement('div');
+    b.className = 'b';
+    b.innerHTML = '<i></i>';
+    const lit = Math.min(1, v.x / Math.max(1, v.f) / 24);   /* ocr lines per kept frame */
+    b.style.setProperty('--h', (18 + 82 * (v.d / maxD)).toFixed(1) + '%');
+    b.style.setProperty('--o', (lit * 100).toFixed(0) + '%');
+    b.dataset.t = `${v.t} · ${hms(v.d)} · ${num(v.x)} on-screen lines`;
+    bars.append(b);
+  });
+  const fmtd = ts => new Date(ts * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  document.getElementById('ax-l').textContent = fmtd(byPub[0].p) + ' · oldest';
+  document.getElementById('ax-r').textContent = fmtd(byPub[byPub.length - 1].p) + ' · newest';
+})();
+</script>
+</body>
+</html>

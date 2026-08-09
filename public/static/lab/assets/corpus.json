@@ -1,0 +1,2069 @@
+{
+ "stats": {
+  "talks": 78,
+  "seconds": 97538.0,
+  "cues": 17138,
+  "ocr_lines": 61198,
+  "keyframes": 4736,
+  "ocr_frames": 2931,
+  "chunks": 2827,
+  "words": 264392,
+  "frame_bytes": 589084708,
+  "channel": "AI Engineer",
+  "first_pub": 1776380286,
+  "last_pub": 1786224606
+ },
+ "moments": [
+  {
+   "id": 41,
+   "kind": "slide",
+   "note": "on-screen text, three lines",
+   "img": "moments/m41.jpg",
+   "video_id": "RjfbvDXpFls",
+   "title": "Building pi in a World of Slop",
+   "speaker": "Mario Zechner",
+   "org": "",
+   "full_title": "Building pi in a World of Slop \u2014 Mario Zechner",
+   "t": 327.66,
+   "duration": 1105.0,
+   "published": 1776380286,
+   "shot_start": 324.84,
+   "shot_end": 330.48,
+   "ord": 40,
+   "w": 1280,
+   "h": 720,
+   "sharpness": 941.28,
+   "ocr_state": "done",
+   "cue_index": 1,
+   "cues": [
+    {
+     "start": 324.266,
+     "end": 325.166,
+     "text": "So what does that tell us?"
+    },
+    {
+     "start": 325.93,
+     "end": 332.514,
+     "text": "A form two thesis is, we are in the fuck around and find out phase of coding agents, and their current form is not their final form, right?"
+    },
+    {
+     "start": 333.695,
+     "end": 337.337,
+     "text": "So second thesis is, we need better ways to fuck around."
+    }
+   ],
+   "ocr": [
+    {
+     "text": "15:48",
+     "conf": 0.99846,
+     "x0": 0.95625,
+     "y0": 0.013888888888888888,
+     "x1": 0.98671875,
+     "y1": 0.03888888888888889
+    },
+    {
+     "text": "EARENDIL",
+     "conf": 0.99978,
+     "x0": 0.0109375,
+     "y0": 0.06111111111111111,
+     "x1": 0.05703125,
+     "y1": 0.07916666666666666
+    },
+    {
+     "text": "We are in the fuck",
+     "conf": 0.98691,
+     "x0": 0.2921875,
+     "y0": 0.3402777777777778,
+     "x1": 0.70703125,
+     "y1": 0.42916666666666664
+    },
+    {
+     "text": "around and find out",
+     "conf": 0.99078,
+     "x0": 0.2828125,
+     "y0": 0.4222222222222222,
+     "x1": 0.71640625,
+     "y1": 0.5055555555555555
+    },
+    {
+     "text": "phase of (coding) agents",
+     "conf": 0.98953,
+     "x0": 0.2265625,
+     "y0": 0.49027777777777776,
+     "x1": 0.7734375,
+     "y1": 0.5916666666666667
+    },
+    {
+     "text": "THESIS 1",
+     "conf": 0.94229,
+     "x0": 0.453125,
+     "y0": 0.5944444444444444,
+     "x1": 0.5453125,
+     "y1": 0.6319444444444444
+    },
+    {
+     "text": "MARIO ZECHNER",
+     "conf": 0.99925,
+     "x0": 0.01328125,
+     "y0": 0.9638888888888889,
+     "x1": 0.0921875,
+     "y1": 0.9875
+    },
+    {
+     "text": "@BADLOGICGAMES",
+     "conf": 0.99936,
+     "x0": 0.10234375,
+     "y0": 0.9652777777777778,
+     "x1": 0.18515625,
+     "y1": 0.9888888888888889
+    },
+    {
+     "text": "AI ENGINEER EUROPE \u00b7 APRIL 10, 2026",
+     "conf": 0.96925,
+     "x0": 0.78515625,
+     "y0": 0.9625,
+     "x1": 0.98515625,
+     "y1": 0.9888888888888889
+    }
+   ],
+   "strip": [
+    {
+     "img": "strip/41-38.jpg",
+     "t": 317.06,
+     "ord": 38,
+     "here": false
+    },
+    {
+     "img": "strip/41-39.jpg",
+     "t": 324.12,
+     "ord": 39,
+     "here": false
+    },
+    {
+     "img": "strip/41-40.jpg",
+     "t": 327.66,
+     "ord": 40,
+     "here": true
+    },
+    {
+     "img": "strip/41-41.jpg",
+     "t": 335.96,
+     "ord": 41,
+     "here": false
+    },
+    {
+     "img": "strip/41-42.jpg",
+     "t": 354.4,
+     "ord": 42,
+     "here": false
+    }
+   ]
+  },
+  {
+   "id": 1944,
+   "kind": "terminal",
+   "note": "a live REPL, mid-demo",
+   "img": "moments/m1944.jpg",
+   "video_id": "AMiyLItEtLA",
+   "title": "fighting slop with slop",
+   "speaker": "Vaibhav Gupta",
+   "org": "Boundary",
+   "full_title": "fighting slop with slop \u2014 Vaibhav Gupta, Boundary",
+   "t": 685.318,
+   "duration": 1292.0,
+   "published": 1785460290,
+   "shot_start": 684.93425,
+   "shot_end": 686.1521333333334,
+   "ord": 59,
+   "w": 1280,
+   "h": 720,
+   "sharpness": 2039.91,
+   "ocr_state": "done",
+   "cue_index": 1,
+   "cues": [
+    {
+     "start": 677.595,
+     "end": 683.839,
+     "text": "So Claude can find what were bugs, what were errors, and what were inefficiencies, and start optimizing your code without you having to do it yourself."
+    },
+    {
+     "start": 685.21,
+     "end": 693.877,
+     "text": "And I think if we go start thinking about it from this way, it's not so much about reading all the code, but it's more so about as a human understanding the system that you're working with."
+    },
+    {
+     "start": 694.357,
+     "end": 698.54,
+     "text": "And the tools that you can build can give you information about the system that you're working with."
+    }
+   ],
+   "ocr": [
+    {
+     "text": "vbv@Vaibhavs-MacBook-Pro-3 ts-demo % bunx ts-node",
+     "conf": 0.99261,
+     "x0": 0.23203125,
+     "y0": 0.0625,
+     "x1": 0.65625,
+     "y1": 0.09583333333333334
+    },
+    {
+     "text": "AlEngineer",
+     "conf": 0.95464,
+     "x0": 0.08828125,
+     "y0": 0.08055555555555556,
+     "x1": 0.15,
+     "y1": 0.1111111111111111
+    },
+    {
+     "text": "> [2, 3].sort()",
+     "conf": 0.95473,
+     "x0": 0.2296875,
+     "y0": 0.09444444444444444,
+     "x1": 0.36328125,
+     "y1": 0.13055555555555556
+    },
+    {
+     "text": "World'sFair",
+     "conf": 0.99972,
+     "x0": 0.0453125,
+     "y0": 0.11388888888888889,
+     "x1": 0.19453125,
+     "y1": 0.16666666666666666
+    },
+    {
+     "text": "[2\uff0c3]",
+     "conf": 0.86985,
+     "x0": 0.2296875,
+     "y0": 0.12916666666666668,
+     "x1": 0.303125,
+     "y1": 0.1638888888888889
+    },
+    {
+     "text": "> [2, 3, 11].sort()",
+     "conf": 0.94818,
+     "x0": 0.22890625,
+     "y0": 0.1625,
+     "x1": 0.39765625,
+     "y1": 0.1986111111111111
+    },
+    {
+     "text": "[11\uff0c2\uff0c3]",
+     "conf": 0.90799,
+     "x0": 0.23046875,
+     "y0": 0.19722222222222222,
+     "x1": 0.33828125,
+     "y1": 0.23194444444444445
+    },
+    {
+     "text": "> [2, 3, 11, 23].sort()",
+     "conf": 0.93651,
+     "x0": 0.228125,
+     "y0": 0.22916666666666666,
+     "x1": 0.43125,
+     "y1": 0.2652777777777778
+    },
+    {
+     "text": "[11\uff0c2,23\uff0c3 ]",
+     "conf": 0.86316,
+     "x0": 0.22890625,
+     "y0": 0.2625,
+     "x1": 0.3734375,
+     "y1": 0.30416666666666664
+    },
+    {
+     "text": "> let x: string = 1;",
+     "conf": 0.98522,
+     "x0": 0.2296875,
+     "y0": 0.3,
+     "x1": 0.40625,
+     "y1": 0.33611111111111114
+    },
+    {
+     "text": "<repl>.ts:7:5 - error TS2322: Type 'number' is not assignable to type 'string'.",
+     "conf": 0.98393,
+     "x0": 0.23125,
+     "y0": 0.3333333333333333,
+     "x1": 0.9109375,
+     "y1": 0.37083333333333335
+    },
+    {
+     "text": "let x: string = 1;",
+     "conf": 0.9959,
+     "x0": 0.2453125,
+     "y0": 0.3972222222222222,
+     "x1": 0.40625,
+     "y1": 0.4388888888888889
+    },
+    {
+     "text": "> let x: string = 1 as unknown as string;",
+     "conf": 0.98373,
+     "x0": 0.23125,
+     "y0": 0.5041666666666667,
+     "x1": 0.5859375,
+     "y1": 0.5416666666666666
+    },
+    {
+     "text": "undefined",
+     "conf": 0.99908,
+     "x0": 0.23125,
+     "y0": 0.5388888888888889,
+     "x1": 0.31328125,
+     "y1": 0.5708333333333333
+    },
+    {
+     "text": "'sFair",
+     "conf": 0.92779,
+     "x0": 0.11484375,
+     "y0": 0.6791666666666667,
+     "x1": 0.18359375,
+     "y1": 0.725
+    },
+    {
+     "text": "Engineering the future of Al",
+     "conf": 0.99263,
+     "x0": 0.334375,
+     "y0": 0.8291666666666667,
+     "x1": 0.87890625,
+     "y1": 0.9277777777777778
+    }
+   ],
+   "strip": [
+    {
+     "img": "strip/1944-57.jpg",
+     "t": 655.97,
+     "ord": 57,
+     "here": false
+    },
+    {
+     "img": "strip/1944-58.jpg",
+     "t": 674.74,
+     "ord": 58,
+     "here": false
+    },
+    {
+     "img": "strip/1944-59.jpg",
+     "t": 685.32,
+     "ord": 59,
+     "here": true
+    },
+    {
+     "img": "strip/1944-60.jpg",
+     "t": 698.73,
+     "ord": 60,
+     "here": false
+    },
+    {
+     "img": "strip/1944-61.jpg",
+     "t": 727.31,
+     "ord": 61,
+     "here": false
+    }
+   ]
+  },
+  {
+   "id": 564,
+   "kind": "spoken",
+   "note": "nothing on screen but a person talking",
+   "img": "moments/m564.jpg",
+   "video_id": "FWMJQDH3iK0",
+   "title": "Local Models: Trust, Control, Optimization",
+   "speaker": "Carter Abdallah",
+   "org": "NVIDIA",
+   "full_title": "Local Models: Trust, Control, Optimization \u2014 Carter Abdallah, NVIDIA",
+   "t": 1492.558,
+   "duration": 2600.0,
+   "published": 1786068006,
+   "shot_start": 1475.0616833333333,
+   "shot_end": 1500.4084333333335,
+   "ord": 73,
+   "w": 1280,
+   "h": 720,
+   "sharpness": 41.71,
+   "ocr_state": "empty",
+   "cue_index": 1,
+   "cues": [
+    {
+     "start": 1480.45,
+     "end": 1490.693,
+     "text": "levels towards full autonomy where you kind of need to deploy it into do the last mile of actually training for that specific use case, but then also deploying it to those specific users."
+    },
+    {
+     "start": 1490.713,
+     "end": 1497.636,
+     "text": "So there's a reason why chatbot isn't good at self-driving, because it's not trained on that, it's not deployed into that context."
+    },
+    {
+     "start": 1498.776,
+     "end": 1502.619,
+     "text": "I think it's the same even for these specific knowledge work use cases."
+    }
+   ],
+   "ocr": [],
+   "strip": [
+    {
+     "img": "strip/564-71.jpg",
+     "t": 1449.01,
+     "ord": 71,
+     "here": false
+    },
+    {
+     "img": "strip/564-72.jpg",
+     "t": 1472.02,
+     "ord": 72,
+     "here": false
+    },
+    {
+     "img": "strip/564-73.jpg",
+     "t": 1492.56,
+     "ord": 73,
+     "here": true
+    },
+    {
+     "img": "strip/564-74.jpg",
+     "t": 1522.72,
+     "ord": 74,
+     "here": false
+    },
+    {
+     "img": "strip/564-75.jpg",
+     "t": 1536.02,
+     "ord": 75,
+     "here": false
+    }
+   ]
+  },
+  {
+   "id": 3285,
+   "kind": "diff",
+   "note": "a pull request on a slide",
+   "img": "moments/m3285.jpg",
+   "video_id": "9HbzAWnKbo4",
+   "title": "From Signal to PR: Anatomy of a Self-Improving Agent",
+   "speaker": "Jason Lopatecki",
+   "org": "Arize",
+   "full_title": "From Signal to PR: Anatomy of a Self-Improving Agent \u2014 Jason Lopatecki, Arize",
+   "t": 566.166,
+   "duration": 1235.0,
+   "published": 1784924132,
+   "shot_start": 543.8099333333333,
+   "shot_end": 569.21865,
+   "ord": 29,
+   "w": 1280,
+   "h": 720,
+   "sharpness": 897.71,
+   "ocr_state": "done",
+   "cue_index": 1,
+   "cues": [
+    {
+     "start": 559.436,
+     "end": 562.097,
+     "text": "But again, it's about that cold start."
+    },
+    {
+     "start": 562.337,
+     "end": 568.118,
+     "text": "Can I start with like all this information on the issue and guide it the rest of the way is kind of where we are right now."
+    },
+    {
+     "start": 568.738,
+     "end": 572.079,
+     "text": "And for us, your job kind of moves from responder to reviewer."
+    }
+   ],
+   "ocr": [
+    {
+     "text": "AlEngineer",
+     "conf": 0.97544,
+     "x0": 0.08828125,
+     "y0": 0.08055555555555556,
+     "x1": 0.14921875,
+     "y1": 0.1111111111111111
+    },
+    {
+     "text": "THE OUTPUT",
+     "conf": 0.99951,
+     "x0": 0.27890625,
+     "y0": 0.09166666666666666,
+     "x1": 0.3390625,
+     "y1": 0.11666666666666667
+    },
+    {
+     "text": "World'sFair",
+     "conf": 0.99981,
+     "x0": 0.0453125,
+     "y0": 0.11388888888888889,
+     "x1": 0.19375,
+     "y1": 0.16666666666666666
+    },
+    {
+     "text": "The pull request",
+     "conf": 0.99977,
+     "x0": 0.27734375,
+     "y0": 0.12777777777777777,
+     "x1": 0.46953125,
+     "y1": 0.18333333333333332
+    },
+    {
+     "text": "\u00b7Open",
+     "conf": 0.98956,
+     "x0": 0.29609375,
+     "y0": 0.23194444444444445,
+     "x1": 0.33203125,
+     "y1": 0.2569444444444444
+    },
+    {
+     "text": "Guard todo_update against in-progress items",
+     "conf": 0.99684,
+     "x0": 0.3390625,
+     "y0": 0.22777777777777777,
+     "x1": 0.5890625,
+     "y1": 0.2569444444444444
+    },
+    {
+     "text": "opened by agent",
+     "conf": 0.99936,
+     "x0": 0.81953125,
+     "y0": 0.23333333333333334,
+     "x1": 0.9171875,
+     "y1": 0.25555555555555554
+    },
+    {
+     "text": "def todo_update(item, status):",
+     "conf": 0.99954,
+     "x0": 0.2921875,
+     "y0": 0.29583333333333334,
+     "x1": 0.4625,
+     "y1": 0.3194444444444444
+    },
+    {
+     "text": "+ if item.status == \"in_progress\":",
+     "conf": 0.98177,
+     "x0": 0.29140625,
+     "y0": 0.32222222222222224,
+     "x1": 0.48359375,
+     "y1": 0.3486111111111111
+    },
+    {
+     "text": "+ return # already running don't retry",
+     "conf": 0.99879,
+     "x0": 0.29140625,
+     "y0": 0.35138888888888886,
+     "x1": 0.50625,
+     "y1": 0.3763888888888889
+    },
+    {
+     "text": "stream.send(update(item, status))",
+     "conf": 0.98679,
+     "x0": 0.29140625,
+     "y0": 0.38055555555555554,
+     "x1": 0.4765625,
+     "y1": 0.4027777777777778
+    },
+    {
+     "text": "+2 1 file router/todos.py",
+     "conf": 0.98371,
+     "x0": 0.290625,
+     "y0": 0.6680555555555555,
+     "x1": 0.45,
+     "y1": 0.6944444444444444
+    },
+    {
+     "text": "signal - PR, no human in the middle",
+     "conf": 0.97591,
+     "x0": 0.71953125,
+     "y0": 0.6680555555555555,
+     "x1": 0.91875,
+     "y1": 0.6930555555555555
+    },
+    {
+     "text": "World'sFair",
+     "conf": 0.99825,
+     "x0": 0.10234375,
+     "y0": 0.7402777777777778,
+     "x1": 0.14140625,
+     "y1": 0.7597222222222222
+    },
+    {
+     "text": "TRACK 5\u00b7 JULY 1, 2026",
+     "conf": 0.95558,
+     "x0": 0.50703125,
+     "y0": 0.8333333333333334,
+     "x1": 0.71015625,
+     "y1": 0.8666666666666667
+    },
+    {
+     "text": "Evals",
+     "conf": 0.9851,
+     "x0": 0.56328125,
+     "y0": 0.8763888888888889,
+     "x1": 0.65390625,
+     "y1": 0.9416666666666667
+    }
+   ],
+   "strip": [
+    {
+     "img": "strip/3285-27.jpg",
+     "t": 521.8,
+     "ord": 27,
+     "here": false
+    },
+    {
+     "img": "strip/3285-28.jpg",
+     "t": 532.72,
+     "ord": 28,
+     "here": false
+    },
+    {
+     "img": "strip/3285-29.jpg",
+     "t": 566.17,
+     "ord": 29,
+     "here": true
+    },
+    {
+     "img": "strip/3285-30.jpg",
+     "t": 569.9,
+     "ord": 30,
+     "here": false
+    },
+    {
+     "img": "strip/3285-31.jpg",
+     "t": 598.41,
+     "ord": 31,
+     "here": false
+    }
+   ]
+  }
+ ],
+ "grid": [
+  {
+   "vid": "iQ5xldZ9StU",
+   "title": "Realtime multiplayer, automation, and you!",
+   "speaker": "Idan Gazit",
+   "org": "GitHub",
+   "dur": 1300.0,
+   "published": 1786224606,
+   "img": "grid/iQ5xldZ9StU.jpg",
+   "t": 679.379,
+   "strip": [
+    {
+     "img": "grid/iQ5xldZ9StU-0.jpg",
+     "t": 337.103
+    },
+    {
+     "img": "grid/iQ5xldZ9StU-1.jpg",
+     "t": 537.153
+    },
+    {
+     "img": "grid/iQ5xldZ9StU-2.jpg",
+     "t": 603.887
+    }
+   ],
+   "cues": 267,
+   "frames": 84,
+   "ocr": 2118
+  },
+  {
+   "vid": "7vn4WpqNpck",
+   "title": "Benchmarking Coding Agents on New vs Legacy Codebases",
+   "speaker": "Denys Linkov",
+   "org": "Wisedocs",
+   "dur": 1087.0,
+   "published": 1786215606,
+   "img": "grid/7vn4WpqNpck.jpg",
+   "t": 382.349,
+   "strip": [],
+   "cues": 202,
+   "frames": 42,
+   "ocr": 228
+  },
+  {
+   "vid": "Z-c11pV_uvU",
+   "title": "Anthropic's CCA Exam as a Field-Guide for Agentic Engineering",
+   "speaker": "Frank Coyle",
+   "org": "UC Berkeley",
+   "dur": 1208.0,
+   "published": 1786204806,
+   "img": "grid/Z-c11pV_uvU.jpg",
+   "t": 245.912,
+   "strip": [],
+   "cues": 232,
+   "frames": 47,
+   "ocr": 392
+  },
+  {
+   "vid": "LZuWZRze3MU",
+   "title": "The New Primitives: Building AI Native Software",
+   "speaker": "Kwindla Kramer",
+   "org": "Daily",
+   "dur": 1274.0,
+   "published": 1786146813,
+   "img": "grid/LZuWZRze3MU.jpg",
+   "t": 1095.528,
+   "strip": [
+    {
+     "img": "grid/LZuWZRze3MU-0.jpg",
+     "t": 108.492
+    },
+    {
+     "img": "grid/LZuWZRze3MU-1.jpg",
+     "t": 529.379
+    },
+    {
+     "img": "grid/LZuWZRze3MU-2.jpg",
+     "t": 928.995
+    }
+   ],
+   "cues": 205,
+   "frames": 103,
+   "ocr": 810
+  },
+  {
+   "vid": "CoEIs6Xm8m8",
+   "title": "Open Source Is Dead. Long Live Open Source.",
+   "speaker": "Saoud Rizwan",
+   "org": "Cline",
+   "dur": 1050.0,
+   "published": 1786145211,
+   "img": "grid/CoEIs6Xm8m8.jpg",
+   "t": 636.503,
+   "strip": [],
+   "cues": 130,
+   "frames": 37,
+   "ocr": 382
+  },
+  {
+   "vid": "FWMJQDH3iK0",
+   "title": "Local Models: Trust, Control, Optimization",
+   "speaker": "Carter Abdallah",
+   "org": "NVIDIA",
+   "dur": 2600.0,
+   "published": 1786068006,
+   "img": "grid/FWMJQDH3iK0.jpg",
+   "t": 925.658,
+   "strip": [],
+   "cues": 348,
+   "frames": 124,
+   "ocr": 80
+  },
+  {
+   "vid": "J4_jCrTxMkk",
+   "title": "Compression at the Edge",
+   "speaker": "NVIDIA",
+   "org": "Unsloth, HuggingFace, Ollama",
+   "dur": 2760.0,
+   "published": 1786064406,
+   "img": "grid/J4_jCrTxMkk.jpg",
+   "t": 1343.158,
+   "strip": [
+    {
+     "img": "grid/J4_jCrTxMkk-0.jpg",
+     "t": 260.277
+    },
+    {
+     "img": "grid/J4_jCrTxMkk-1.jpg",
+     "t": 909.959
+    },
+    {
+     "img": "grid/J4_jCrTxMkk-2.jpg",
+     "t": 1933.849
+    }
+   ],
+   "cues": 531,
+   "frames": 162,
+   "ocr": 239
+  },
+  {
+   "vid": "QHBjufYK8TA",
+   "title": "The State of Model Routing",
+   "speaker": "NVIDIA",
+   "org": "Cognition, OpenRouter",
+   "dur": 2897.0,
+   "published": 1786036044,
+   "img": "grid/QHBjufYK8TA.jpg",
+   "t": 1993.742,
+   "strip": [],
+   "cues": 515,
+   "frames": 218,
+   "ocr": 137
+  },
+  {
+   "vid": "RmS5s6Wbin4",
+   "title": "Gadgets: Personal app vibe coding that is actually safe",
+   "speaker": "Kenton Varda",
+   "org": "Cloudflare",
+   "dur": 1133.0,
+   "published": 1785969730,
+   "img": "grid/RmS5s6Wbin4.jpg",
+   "t": 477.61,
+   "strip": [],
+   "cues": 188,
+   "frames": 55,
+   "ocr": 301
+  },
+  {
+   "vid": "jQDXzEVHMSE",
+   "title": "Building Turbopuffer",
+   "speaker": "Gergely Orosz (@pragmaticengineer ) \u00d7 Simon Eskildsen (CEO)",
+   "org": "",
+   "dur": 3389.0,
+   "published": 1785781567,
+   "img": "grid/jQDXzEVHMSE.jpg",
+   "t": 1267.216,
+   "strip": [
+    {
+     "img": "grid/jQDXzEVHMSE-0.jpg",
+     "t": 339.356
+    },
+    {
+     "img": "grid/jQDXzEVHMSE-1.jpg",
+     "t": 1790.455
+    },
+    {
+     "img": "grid/jQDXzEVHMSE-2.jpg",
+     "t": 2621.652
+    }
+   ],
+   "cues": 811,
+   "frames": 171,
+   "ocr": 1681
+  },
+  {
+   "vid": "-jY2T2PiJBE",
+   "title": "MCP Apps: Extending the Frontier",
+   "speaker": "Ido Salomon & Liad Yosef",
+   "org": "",
+   "dur": 1118.0,
+   "published": 1785713406,
+   "img": "grid/-jY2T2PiJBE.jpg",
+   "t": 242.209,
+   "strip": [],
+   "cues": 227,
+   "frames": 95,
+   "ocr": 1876
+  },
+  {
+   "vid": "s4r6nk5WsZw",
+   "title": "MCP Tasks (async): Why Aren't Any Agents Supporting Them?",
+   "speaker": "Cornelia Davis",
+   "org": "Temporal",
+   "dur": 1434.0,
+   "published": 1785700806,
+   "img": "grid/s4r6nk5WsZw.jpg",
+   "t": 915.131,
+   "strip": [],
+   "cues": 248,
+   "frames": 82,
+   "ocr": 2174
+  },
+  {
+   "vid": "-npY6XjM8CQ",
+   "title": "When Will The Benchmaxxing Plague End?",
+   "speaker": "Nick Heiner",
+   "org": "Surge AI",
+   "dur": 1044.0,
+   "published": 1785688206,
+   "img": "grid/-npY6XjM8CQ.jpg",
+   "t": 373.657,
+   "strip": [
+    {
+     "img": "grid/-npY6XjM8CQ-0.jpg",
+     "t": 86.92
+    },
+    {
+     "img": "grid/-npY6XjM8CQ-1.jpg",
+     "t": 310.36
+    },
+    {
+     "img": "grid/-npY6XjM8CQ-2.jpg",
+     "t": 669.802
+    }
+   ],
+   "cues": 166,
+   "frames": 49,
+   "ocr": 569
+  },
+  {
+   "vid": "ZFxh7sqbUZo",
+   "title": "Teaching AI to Find Real Vulnerabilities",
+   "speaker": "Prof. David Brumley",
+   "org": "Bugcrowd",
+   "dur": 1637.0,
+   "published": 1785544206,
+   "img": "grid/ZFxh7sqbUZo.jpg",
+   "t": 996.529,
+   "strip": [],
+   "cues": 325,
+   "frames": 64,
+   "ocr": 626
+  },
+  {
+   "vid": "2aS7aKoXn64",
+   "title": "Rethinking Environments for Long-Horizon Work",
+   "speaker": "Rayan Garg",
+   "org": "Theta Software",
+   "dur": 1274.0,
+   "published": 1785542406,
+   "img": "grid/2aS7aKoXn64.jpg",
+   "t": 281.915,
+   "strip": [],
+   "cues": 225,
+   "frames": 51,
+   "ocr": 411
+  },
+  {
+   "vid": "cJ0EOzey--o",
+   "title": "What's Next After RLHF?",
+   "speaker": "Diogo Almeida",
+   "org": "TypeSafe AI",
+   "dur": 1084.0,
+   "published": 1785540606,
+   "img": "grid/cJ0EOzey--o.jpg",
+   "t": 176.677,
+   "strip": [
+    {
+     "img": "grid/cJ0EOzey--o-0.jpg",
+     "t": 89.456
+    },
+    {
+     "img": "grid/cJ0EOzey--o-1.jpg",
+     "t": 387.387
+    },
+    {
+     "img": "grid/cJ0EOzey--o-2.jpg",
+     "t": 695.161
+    }
+   ],
+   "cues": 206,
+   "frames": 48,
+   "ocr": 530
+  },
+  {
+   "vid": "_PdK6x7PQNM",
+   "title": "Data Quality Is the Compute Multiplier",
+   "speaker": "Ari Morcos",
+   "org": "DatologyAI",
+   "dur": 1145.0,
+   "published": 1785538806,
+   "img": "grid/_PdK6x7PQNM.jpg",
+   "t": 386.253,
+   "strip": [],
+   "cues": 199,
+   "frames": 46,
+   "ocr": 778
+  },
+  {
+   "vid": "k35LeKZEhiE",
+   "title": "Learning on the Job: The Future of Post-Training",
+   "speaker": "Raymond Feng",
+   "org": "Applied Compute",
+   "dur": 1100.0,
+   "published": 1785537006,
+   "img": "grid/k35LeKZEhiE.jpg",
+   "t": 214.915,
+   "strip": [],
+   "cues": 122,
+   "frames": 48,
+   "ocr": 144
+  },
+  {
+   "vid": "ewtOo0scUh0",
+   "title": "Data and Environment Curation for Post-Training LLMs",
+   "speaker": "Mahesh Sathiamoorthy",
+   "org": "Bespoke Labs",
+   "dur": 1151.0,
+   "published": 1785535206,
+   "img": "grid/ewtOo0scUh0.jpg",
+   "t": 177.811,
+   "strip": [
+    {
+     "img": "grid/ewtOo0scUh0-0.jpg",
+     "t": 110.627
+    },
+    {
+     "img": "grid/ewtOo0scUh0-1.jpg",
+     "t": 410.594
+    },
+    {
+     "img": "grid/ewtOo0scUh0-2.jpg",
+     "t": 755.555
+    }
+   ],
+   "cues": 175,
+   "frames": 53,
+   "ocr": 421
+  },
+  {
+   "vid": "2bvtay8wGYI",
+   "title": "Scaling to Long Horizons",
+   "speaker": "Ross Taylor & Chengxi Taylor",
+   "org": "General Reasoning",
+   "dur": 1087.0,
+   "published": 1785533406,
+   "img": "grid/2bvtay8wGYI.jpg",
+   "t": 281.848,
+   "strip": [],
+   "cues": 224,
+   "frames": 48,
+   "ocr": 624
+  },
+  {
+   "vid": "zkX03APVj0M",
+   "title": "Emulated: The Data for Fully Autonomous Software Engineers and Companies",
+   "speaker": "Joseph Wang",
+   "org": "",
+   "dur": 992.0,
+   "published": 1785531603,
+   "img": "grid/zkX03APVj0M.jpg",
+   "t": 227.594,
+   "strip": [],
+   "cues": 164,
+   "frames": 41,
+   "ocr": 309
+  },
+  {
+   "vid": "xbPriQWXtWM",
+   "title": "The Base Model Is Dead",
+   "speaker": "Varun Singh",
+   "org": "Arcee AI",
+   "dur": 1064.0,
+   "published": 1785529821,
+   "img": "grid/xbPriQWXtWM.jpg",
+   "t": 185.552,
+   "strip": [
+    {
+     "img": "grid/xbPriQWXtWM-0.jpg",
+     "t": 94.094
+    },
+    {
+     "img": "grid/xbPriQWXtWM-1.jpg",
+     "t": 335.035
+    },
+    {
+     "img": "grid/xbPriQWXtWM-2.jpg",
+     "t": 794.444
+    }
+   ],
+   "cues": 97,
+   "frames": 41,
+   "ocr": 688
+  },
+  {
+   "vid": "3ZMUiFaQ3qg",
+   "title": "Verifiable Environments for AI in Biology",
+   "speaker": "Kenny Workman",
+   "org": "LatchBio",
+   "dur": 1062.0,
+   "published": 1785528035,
+   "img": "grid/3ZMUiFaQ3qg.jpg",
+   "t": 494.294,
+   "strip": [],
+   "cues": 206,
+   "frames": 63,
+   "ocr": 472
+  },
+  {
+   "vid": "lCBf9slCanI",
+   "title": "Ending AI Slop",
+   "speaker": "Thais Castello Branco",
+   "org": "Taste Labs",
+   "dur": 990.0,
+   "published": 1785525980,
+   "img": "grid/lCBf9slCanI.jpg",
+   "t": 706.906,
+   "strip": [],
+   "cues": 181,
+   "frames": 42,
+   "ocr": 323
+  },
+  {
+   "vid": "jWq-aZIU0kM",
+   "title": "Benchmarks: The Good, the Bad, and the Ugly",
+   "speaker": "Ali Khial",
+   "org": "G2i",
+   "dur": 768.0,
+   "published": 1785513606,
+   "img": "grid/jWq-aZIU0kM.jpg",
+   "t": 639.973,
+   "strip": [
+    {
+     "img": "grid/jWq-aZIU0kM-0.jpg",
+     "t": 70.687
+    },
+    {
+     "img": "grid/jWq-aZIU0kM-1.jpg",
+     "t": 229.296
+    },
+    {
+     "img": "grid/jWq-aZIU0kM-2.jpg",
+     "t": 485.952
+    }
+   ],
+   "cues": 121,
+   "frames": 32,
+   "ocr": 405
+  },
+  {
+   "vid": "AQv3qRCG6Gw",
+   "title": "Reinforcement Learning without Verifiable Rewards",
+   "speaker": "Will Brown",
+   "org": "Prime Intellect",
+   "dur": 1166.0,
+   "published": 1785510006,
+   "img": "grid/AQv3qRCG6Gw.jpg",
+   "t": 971.988,
+   "strip": [],
+   "cues": 164,
+   "frames": 46,
+   "ocr": 439
+  },
+  {
+   "vid": "AVMr9PMINyo",
+   "title": "Agents at Scale: Inside MiniMax's Model and the Infrastructure Behind It",
+   "speaker": "Dan Fu and Olive Song",
+   "org": "",
+   "dur": 1214.0,
+   "published": 1785466814,
+   "img": "grid/AVMr9PMINyo.jpg",
+   "t": 246.079,
+   "strip": [],
+   "cues": 250,
+   "frames": 51,
+   "ocr": 118
+  },
+  {
+   "vid": "AMiyLItEtLA",
+   "title": "fighting slop with slop",
+   "speaker": "Vaibhav Gupta",
+   "org": "Boundary",
+   "dur": 1292.0,
+   "published": 1785460290,
+   "img": "grid/AMiyLItEtLA.jpg",
+   "t": 316.65,
+   "strip": [
+    {
+     "img": "grid/AMiyLItEtLA-0.jpg",
+     "t": 108.859
+    },
+    {
+     "img": "grid/AMiyLItEtLA-1.jpg",
+     "t": 303.687
+    },
+    {
+     "img": "grid/AMiyLItEtLA-2.jpg",
+     "t": 897.146
+    }
+   ],
+   "cues": 277,
+   "frames": 103,
+   "ocr": 4097
+  },
+  {
+   "vid": "pWXUkLP9uWM",
+   "title": "First Steps Toward Automated AI Research",
+   "speaker": "Richard Socher",
+   "org": "CEO Recursive AI",
+   "dur": 1223.0,
+   "published": 1785430777,
+   "img": "grid/pWXUkLP9uWM.jpg",
+   "t": 303.87,
+   "strip": [],
+   "cues": 149,
+   "frames": 53,
+   "ocr": 1456
+  },
+  {
+   "vid": "z0sh8HyTrDo",
+   "title": "Your Finance Agent's Bottleneck Is You",
+   "speaker": "Ramana Siddanth Emani",
+   "org": "Auditoria AI",
+   "dur": 822.0,
+   "published": 1785380406,
+   "img": "grid/z0sh8HyTrDo.jpg",
+   "t": 493.793,
+   "strip": [],
+   "cues": 127,
+   "frames": 33,
+   "ocr": 324
+  },
+  {
+   "vid": "tJFjeMBKbIY",
+   "title": "Build for the Memo, Not the Demo",
+   "speaker": "Shawn Chan",
+   "org": "China Resources Holdings",
+   "dur": 1462.0,
+   "published": 1785376806,
+   "img": "grid/tJFjeMBKbIY.jpg",
+   "t": 354.154,
+   "strip": [
+    {
+     "img": "grid/tJFjeMBKbIY-0.jpg",
+     "t": 176.66
+    },
+    {
+     "img": "grid/tJFjeMBKbIY-1.jpg",
+     "t": 562.796
+    },
+    {
+     "img": "grid/tJFjeMBKbIY-2.jpg",
+     "t": 1265.114
+    }
+   ],
+   "cues": 240,
+   "frames": 58,
+   "ocr": 220
+  },
+  {
+   "vid": "o6U_2vd967Y",
+   "title": "Let's integrate AI Agents in Event-Sourced Systems",
+   "speaker": "Divakar Kumar",
+   "org": "FlyersSoft",
+   "dur": 1296.0,
+   "published": 1785369606,
+   "img": "grid/o6U_2vd967Y.jpg",
+   "t": 951.05,
+   "strip": [],
+   "cues": 204,
+   "frames": 57,
+   "ocr": 569
+  },
+  {
+   "vid": "s67bE2Ur3bY",
+   "title": "Wearing the Agent: From Group Chats to Glasses",
+   "speaker": "Sai Krishna Rallabandi",
+   "org": "",
+   "dur": 1148.0,
+   "published": 1785365899,
+   "img": "grid/s67bE2Ur3bY.jpg",
+   "t": 634.968,
+   "strip": [],
+   "cues": 155,
+   "frames": 46,
+   "ocr": 667
+  },
+  {
+   "vid": "iKQ78wyJEXU",
+   "title": "We Vetted 2000 AI Skills Before They Reached Developers",
+   "speaker": "Lucas Palma",
+   "org": "Nubank",
+   "dur": 984.0,
+   "published": 1785362406,
+   "img": "grid/iKQ78wyJEXU.jpg",
+   "t": 810.009,
+   "strip": [
+    {
+     "img": "grid/iKQ78wyJEXU-0.jpg",
+     "t": 142.776
+    },
+    {
+     "img": "grid/iKQ78wyJEXU-1.jpg",
+     "t": 242.409
+    },
+    {
+     "img": "grid/iKQ78wyJEXU-2.jpg",
+     "t": 564.914
+    }
+   ],
+   "cues": 128,
+   "frames": 36,
+   "ocr": 348
+  },
+  {
+   "vid": "Tt2kX2sgQio",
+   "title": "How Kepler Built Verifiable AI for Financial Services",
+   "speaker": "Vinoo Ganesh",
+   "org": "",
+   "dur": 1349.0,
+   "published": 1785358806,
+   "img": "grid/Tt2kX2sgQio.jpg",
+   "t": 333.767,
+   "strip": [],
+   "cues": 249,
+   "frames": 50,
+   "ocr": 455
+  },
+  {
+   "vid": "YnNF55QV0zs",
+   "title": "Persona Engineering: A Field Guide to AI Synthetic Personas",
+   "speaker": "Ishan Anand",
+   "org": "InsightSciences.ai",
+   "dur": 1269.0,
+   "published": 1785356135,
+   "img": "grid/YnNF55QV0zs.jpg",
+   "t": 641.574,
+   "strip": [],
+   "cues": 237,
+   "frames": 48,
+   "ocr": 1262
+  },
+  {
+   "vid": "Owb8g3yDyzo",
+   "title": "Why Off-the-Shelf AI Doesn't Understand Money",
+   "speaker": "Udi Menkes",
+   "org": "Intuit",
+   "dur": 1190.0,
+   "published": 1785355206,
+   "img": "grid/Owb8g3yDyzo.jpg",
+   "t": 1021.454,
+   "strip": [
+    {
+     "img": "grid/Owb8g3yDyzo-0.jpg",
+     "t": 110.21
+    },
+    {
+     "img": "grid/Owb8g3yDyzo-1.jpg",
+     "t": 417.968
+    },
+    {
+     "img": "grid/Owb8g3yDyzo-2.jpg",
+     "t": 703.987
+    }
+   ],
+   "cues": 202,
+   "frames": 47,
+   "ocr": 416
+  },
+  {
+   "vid": "KMR_RBoCa4M",
+   "title": "SimulationMaxxing: How we ship agents 20\u00d7 faster",
+   "speaker": "Aman Gupta (Nubank) + Shreya Rajpal (Snowglobe)",
+   "org": "",
+   "dur": 989.0,
+   "published": 1785351606,
+   "img": "grid/KMR_RBoCa4M.jpg",
+   "t": 739.355,
+   "strip": [],
+   "cues": 185,
+   "frames": 35,
+   "ocr": 420
+  },
+  {
+   "vid": "7jjudsEhBtM",
+   "title": "Skills are new features: Building Skill-Centric Harness",
+   "speaker": "Yogendra Miraje",
+   "org": "FactSet",
+   "dur": 1043.0,
+   "published": 1785348006,
+   "img": "grid/7jjudsEhBtM.jpg",
+   "t": 336.219,
+   "strip": [],
+   "cues": 136,
+   "frames": 52,
+   "ocr": 702
+  },
+  {
+   "vid": "kiqubc5b5Yo",
+   "title": "Morgan Stanley's ALPHALAB: Multi-Agent Research Across Optimization Domains",
+   "speaker": "Brendan Rappazzo",
+   "org": "",
+   "dur": 1206.0,
+   "published": 1785344786,
+   "img": "grid/kiqubc5b5Yo.jpg",
+   "t": 792.025,
+   "strip": [
+    {
+     "img": "grid/kiqubc5b5Yo-0.jpg",
+     "t": 102.185
+    },
+    {
+     "img": "grid/kiqubc5b5Yo-1.jpg",
+     "t": 408.058
+    },
+    {
+     "img": "grid/kiqubc5b5Yo-2.jpg",
+     "t": 775.008
+    }
+   ],
+   "cues": 169,
+   "frames": 46,
+   "ocr": 647
+  },
+  {
+   "vid": "BInpv7lGp1o",
+   "title": "Your Agent Didn't Fail. Your Harness Did.",
+   "speaker": "Vinoth Govindarajan",
+   "org": "OpenAI",
+   "dur": 1105.0,
+   "published": 1785340806,
+   "img": "grid/BInpv7lGp1o.jpg",
+   "t": 532.432,
+   "strip": [],
+   "cues": 259,
+   "frames": 46,
+   "ocr": 704
+  },
+  {
+   "vid": "wpOA-UXynoM",
+   "title": "How Forward Deployed Engineering is done at Factory",
+   "speaker": "Eno Reyes",
+   "org": "",
+   "dur": 1281.0,
+   "published": 1785276006,
+   "img": "grid/wpOA-UXynoM.jpg",
+   "t": 177.26,
+   "strip": [],
+   "cues": 187,
+   "frames": 52,
+   "ocr": 429
+  },
+  {
+   "vid": "l0FLhNqBOic",
+   "title": "AI tools for Forward Deployed Engineering",
+   "speaker": "Vasuman Moza",
+   "org": "Varick Agents",
+   "dur": 1222.0,
+   "published": 1785272406,
+   "img": "grid/l0FLhNqBOic.jpg",
+   "t": 720.503,
+   "strip": [
+    {
+     "img": "grid/l0FLhNqBOic-0.jpg",
+     "t": 162.195
+    },
+    {
+     "img": "grid/l0FLhNqBOic-1.jpg",
+     "t": 525.558
+    },
+    {
+     "img": "grid/l0FLhNqBOic-2.jpg",
+     "t": 1118.267
+    }
+   ],
+   "cues": 216,
+   "frames": 51,
+   "ocr": 177
+  },
+  {
+   "vid": "RVxym6mmIns",
+   "title": "How Forward Deployed Engineering is done at Cognition",
+   "speaker": "Jia Wu",
+   "org": "",
+   "dur": 1058.0,
+   "published": 1785268806,
+   "img": "grid/RVxym6mmIns.jpg",
+   "t": 849.749,
+   "strip": [],
+   "cues": 210,
+   "frames": 51,
+   "ocr": 641
+  },
+  {
+   "vid": "ITMXwI6QL6A",
+   "title": "How Forward Deployed Engineering is done at Ramp",
+   "speaker": "Leo Mehr",
+   "org": "",
+   "dur": 844.0,
+   "published": 1785265206,
+   "img": "grid/ITMXwI6QL6A.jpg",
+   "t": 399.432,
+   "strip": [],
+   "cues": 136,
+   "frames": 34,
+   "ocr": 142
+  },
+  {
+   "vid": "Byv311hdoHE",
+   "title": "The Dirty Secret of Forward Deployed Engineering",
+   "speaker": "Natalie Meurer",
+   "org": "Sierra",
+   "dur": 1009.0,
+   "published": 1785261618,
+   "img": "grid/Byv311hdoHE.jpg",
+   "t": 689.088,
+   "strip": [
+    {
+     "img": "grid/Byv311hdoHE-0.jpg",
+     "t": 146.229
+    },
+    {
+     "img": "grid/Byv311hdoHE-1.jpg",
+     "t": 321.955
+    },
+    {
+     "img": "grid/Byv311hdoHE-2.jpg",
+     "t": 599.449
+    }
+   ],
+   "cues": 174,
+   "frames": 41,
+   "ocr": 414
+  },
+  {
+   "vid": "7wu2hsRfvV0",
+   "title": "How Forward Deployed Engineering is done at Decagon",
+   "speaker": "Sunny Rekhi",
+   "org": "",
+   "dur": 1088.0,
+   "published": 1785258035,
+   "img": "grid/7wu2hsRfvV0.jpg",
+   "t": 679.429,
+   "strip": [],
+   "cues": 190,
+   "frames": 39,
+   "ocr": 331
+  },
+  {
+   "vid": "1OMHGsUZiqA",
+   "title": "How Forward Deployed Engineering is done at Kepler",
+   "speaker": "Vinoo Ganesh",
+   "org": "",
+   "dur": 1340.0,
+   "published": 1785254400,
+   "img": "grid/1OMHGsUZiqA.jpg",
+   "t": 532.182,
+   "strip": [],
+   "cues": 246,
+   "frames": 47,
+   "ocr": 285
+  },
+  {
+   "vid": "KwhgfwOSToQ",
+   "title": "Forward Deployed Engineering 101",
+   "speaker": "Kevin Bai",
+   "org": "Anthropic, ex Palantir & Rippling Founding FDE",
+   "dur": 1068.0,
+   "published": 1785250806,
+   "img": "grid/KwhgfwOSToQ.jpg",
+   "t": 777.226,
+   "strip": [
+    {
+     "img": "grid/KwhgfwOSToQ-0.jpg",
+     "t": 127.077
+    },
+    {
+     "img": "grid/KwhgfwOSToQ-1.jpg",
+     "t": 543.61
+    },
+    {
+     "img": "grid/KwhgfwOSToQ-2.jpg",
+     "t": 816.916
+    }
+   ],
+   "cues": 191,
+   "frames": 47,
+   "ocr": 81
+  },
+  {
+   "vid": "lyL5QhgIOxc",
+   "title": "Serving 2 Million Models Without Melting: Scaling the Hugging Face Hub",
+   "speaker": "Arek Borucki",
+   "org": "Hugging Face",
+   "dur": 1299.0,
+   "published": 1785246071,
+   "img": "grid/lyL5QhgIOxc.jpg",
+   "t": 1022.288,
+   "strip": [],
+   "cues": 191,
+   "frames": 50,
+   "ocr": 497
+  },
+  {
+   "vid": "CgsWxRUY5Eo",
+   "title": "AI Agents for Performance: Ship Faster, Pay Less",
+   "speaker": "Rajat Shah",
+   "org": "Netflix",
+   "dur": 2018.0,
+   "published": 1785200344,
+   "img": "grid/CgsWxRUY5Eo.jpg",
+   "t": 513.813,
+   "strip": [],
+   "cues": 257,
+   "frames": 72,
+   "ocr": 776
+  },
+  {
+   "vid": "Yk87oUPVaxU",
+   "title": "DeepSWE: A Contamination-Resistant Coding Benchmark",
+   "speaker": "James Shi",
+   "org": "Datacurve",
+   "dur": 1054.0,
+   "published": 1785089456,
+   "img": "grid/Yk87oUPVaxU.jpg",
+   "t": 140.39,
+   "strip": [
+    {
+     "img": "grid/Yk87oUPVaxU-0.jpg",
+     "t": 267.334
+    },
+    {
+     "img": "grid/Yk87oUPVaxU-1.jpg",
+     "t": 333.149
+    },
+    {
+     "img": "grid/Yk87oUPVaxU-2.jpg",
+     "t": 352.068
+    }
+   ],
+   "cues": 128,
+   "frames": 36,
+   "ocr": 207
+  },
+  {
+   "vid": "ZyIoTOAbRfs",
+   "title": "State of Data",
+   "speaker": "Sean Cai",
+   "org": "Independent / State of Data",
+   "dur": 1102.0,
+   "published": 1785085206,
+   "img": "grid/ZyIoTOAbRfs.jpg",
+   "t": 954.537,
+   "strip": [],
+   "cues": 196,
+   "frames": 42,
+   "ocr": 581
+  },
+  {
+   "vid": "KhYifX22yhE",
+   "title": "The Messy Reality of Scale: Synthetic Data and Pre-Training",
+   "speaker": "Marah Abdin & Robert McHardy",
+   "org": "poolside",
+   "dur": 1051.0,
+   "published": 1785027606,
+   "img": "grid/KhYifX22yhE.jpg",
+   "t": 845.678,
+   "strip": [],
+   "cues": 190,
+   "frames": 42,
+   "ocr": 506
+  },
+  {
+   "vid": "O72p-rBb2bA",
+   "title": "Evals-Driven Development for a Mental Health AI Coach",
+   "speaker": "Akele Reed & Dave Revere",
+   "org": "SonderMind",
+   "dur": 1277.0,
+   "published": 1785020436,
+   "img": "grid/O72p-rBb2bA.jpg",
+   "t": 336.102,
+   "strip": [
+    {
+     "img": "grid/O72p-rBb2bA-0.jpg",
+     "t": 153.57
+    },
+    {
+     "img": "grid/O72p-rBb2bA-1.jpg",
+     "t": 643.927
+    },
+    {
+     "img": "grid/O72p-rBb2bA-2.jpg",
+     "t": 1011.527
+    }
+   ],
+   "cues": 222,
+   "frames": 46,
+   "ocr": 397
+  },
+  {
+   "vid": "xIt_mTQp6mY",
+   "title": "Loop Engineering from First Principles",
+   "speaker": "Kyle Mistele",
+   "org": "HumanLayer",
+   "dur": 1077.0,
+   "published": 1785012100,
+   "img": "grid/xIt_mTQp6mY.jpg",
+   "t": 276.243,
+   "strip": [],
+   "cues": 201,
+   "frames": 70,
+   "ocr": 1476
+  },
+  {
+   "vid": "hacEQHHhu2Q",
+   "title": "Why Large? Tiny LMs & Agents on Edge/Robotics",
+   "speaker": "Cormac Brick",
+   "org": "Google",
+   "dur": 1304.0,
+   "published": 1784998806,
+   "img": "grid/hacEQHHhu2Q.jpg",
+   "t": 567.917,
+   "strip": [],
+   "cues": 196,
+   "frames": 57,
+   "ocr": 608
+  },
+  {
+   "vid": "Ib5t2RLtxvM",
+   "title": "From Agent Traces to Agent Simulations",
+   "speaker": "Rustem Feyzkhanov",
+   "org": "Snorkel AI",
+   "dur": 1223.0,
+   "published": 1784941202,
+   "img": "grid/Ib5t2RLtxvM.jpg",
+   "t": 932.265,
+   "strip": [
+    {
+     "img": "grid/Ib5t2RLtxvM-0.jpg",
+     "t": 107.174
+    },
+    {
+     "img": "grid/Ib5t2RLtxvM-1.jpg",
+     "t": 493.643
+    },
+    {
+     "img": "grid/Ib5t2RLtxvM-2.jpg",
+     "t": 978.361
+    }
+   ],
+   "cues": 262,
+   "frames": 45,
+   "ocr": 673
+  },
+  {
+   "vid": "b_PmGocP4rc",
+   "title": "Evaling Video Slop",
+   "speaker": "Maor Bril",
+   "org": "Character.ai",
+   "dur": 1393.0,
+   "published": 1784937602,
+   "img": "grid/b_PmGocP4rc.jpg",
+   "t": 926.642,
+   "strip": [],
+   "cues": 234,
+   "frames": 54,
+   "ocr": 551
+  },
+  {
+   "vid": "31GUkCBD-Uc",
+   "title": "Building Closed-Loop Evals for a Multimodal Agent at Scale",
+   "speaker": "Soumya Gupta & Jai Chopra",
+   "org": "Uber",
+   "dur": 1298.0,
+   "published": 1784930425,
+   "img": "grid/31GUkCBD-Uc.jpg",
+   "t": 185.168,
+   "strip": [],
+   "cues": 251,
+   "frames": 52,
+   "ocr": 785
+  },
+  {
+   "vid": "xyL2Ltkh-SA",
+   "title": "How Evals and Prompts Shape Agent Behavior",
+   "speaker": "Preetika Bhateja & Daniel Bump",
+   "org": "YouTube Ads",
+   "dur": 1169.0,
+   "published": 1784926800,
+   "img": "grid/xyL2Ltkh-SA.jpg",
+   "t": 669.619,
+   "strip": [
+    {
+     "img": "grid/xyL2Ltkh-SA-0.jpg",
+     "t": 106.723
+    },
+    {
+     "img": "grid/xyL2Ltkh-SA-1.jpg",
+     "t": 427.01
+    },
+    {
+     "img": "grid/xyL2Ltkh-SA-2.jpg",
+     "t": 748.765
+    }
+   ],
+   "cues": 216,
+   "frames": 47,
+   "ocr": 431
+  },
+  {
+   "vid": "9HbzAWnKbo4",
+   "title": "From Signal to PR: Anatomy of a Self-Improving Agent",
+   "speaker": "Jason Lopatecki",
+   "org": "Arize",
+   "dur": 1235.0,
+   "published": 1784924132,
+   "img": "grid/9HbzAWnKbo4.jpg",
+   "t": 665.131,
+   "strip": [],
+   "cues": 228,
+   "frames": 68,
+   "ocr": 1766
+  },
+  {
+   "vid": "q2JrUKBMf0w",
+   "title": "The Future of Evals: From LLM as a Judge to Agent as a Judge",
+   "speaker": "Aparna Dhinakaran",
+   "org": "Arize AI",
+   "dur": 366.0,
+   "published": 1784923206,
+   "img": "grid/q2JrUKBMf0w.jpg",
+   "t": 187.604,
+   "strip": [],
+   "cues": 69,
+   "frames": 17,
+   "ocr": 460
+  },
+  {
+   "vid": "jRCpXUjz4CI",
+   "title": "Everything Is a Rollout",
+   "speaker": "Alex Shaw + Ryan Marten",
+   "org": "Terminal-Bench, Harbor, Laude Institute",
+   "dur": 1271.0,
+   "published": 1784908806,
+   "img": "grid/jRCpXUjz4CI.jpg",
+   "t": 398.098,
+   "strip": [
+    {
+     "img": "grid/jRCpXUjz4CI-0.jpg",
+     "t": 110.51
+    },
+    {
+     "img": "grid/jRCpXUjz4CI-1.jpg",
+     "t": 631.498
+    },
+    {
+     "img": "grid/jRCpXUjz4CI-2.jpg",
+     "t": 1173.339
+    }
+   ],
+   "cues": 217,
+   "frames": 74,
+   "ocr": 1032
+  },
+  {
+   "vid": "cO8qC6HBuBg",
+   "title": "Vending-Bench: Long-Horizon Agent Evals",
+   "speaker": "Lukas Petersson",
+   "org": "Andon Labs",
+   "dur": 1085.0,
+   "published": 1784905206,
+   "img": "grid/cO8qC6HBuBg.jpg",
+   "t": 773.122,
+   "strip": [],
+   "cues": 213,
+   "frames": 46,
+   "ocr": 624
+  },
+  {
+   "vid": "O-CBZ3JtRvo",
+   "title": "Training Frontier Models to Out-Think Hackers",
+   "speaker": "Uri Rolls",
+   "org": "Arithmetic & Thom Wolf, Hugging Face",
+   "dur": 1047.0,
+   "published": 1784870355,
+   "img": "grid/O-CBZ3JtRvo.jpg",
+   "t": 309.109,
+   "strip": [],
+   "cues": 194,
+   "frames": 85,
+   "ocr": 1442
+  },
+  {
+   "vid": "GgLQ02aO-hs",
+   "title": "The Unreasonable Effectiveness of Separating the Task from the Model",
+   "speaker": "Maxime Rivest & Isaac Miller",
+   "org": "",
+   "dur": 1031.0,
+   "published": 1784828706,
+   "img": "grid/GgLQ02aO-hs.jpg",
+   "t": 236.72,
+   "strip": [
+    {
+     "img": "grid/GgLQ02aO-hs-0.jpg",
+     "t": 122.422
+    },
+    {
+     "img": "grid/GgLQ02aO-hs-1.jpg",
+     "t": 321.071
+    },
+    {
+     "img": "grid/GgLQ02aO-hs-2.jpg",
+     "t": 646.129
+    }
+   ],
+   "cues": 187,
+   "frames": 44,
+   "ocr": 903
+  },
+  {
+   "vid": "-I5W5QVAT8E",
+   "title": "Notion's Token Town",
+   "speaker": "Sarah Sachs",
+   "org": "Notion",
+   "dur": 1435.0,
+   "published": 1784827806,
+   "img": "grid/-I5W5QVAT8E.jpg",
+   "t": 843.359,
+   "strip": [],
+   "cues": 311,
+   "frames": 80,
+   "ocr": 1657
+  },
+  {
+   "vid": "Ib5GBkD555M",
+   "title": "Harness Engineering is not Enough: Why Software Factories Fail",
+   "speaker": "Dex Horthy",
+   "org": "HumanLayer",
+   "dur": 1157.0,
+   "published": 1784824206,
+   "img": "grid/Ib5GBkD555M.jpg",
+   "t": 359.576,
+   "strip": [],
+   "cues": 230,
+   "frames": 164,
+   "ocr": 4794
+  },
+  {
+   "vid": "2JX6JYyQG4Y",
+   "title": "Perception Agents",
+   "speaker": "Antje Barth",
+   "org": "Amazon AGI Lab",
+   "dur": 1304.0,
+   "published": 1784822406,
+   "img": "grid/2JX6JYyQG4Y.jpg",
+   "t": 762.178,
+   "strip": [
+    {
+     "img": "grid/2JX6JYyQG4Y-0.jpg",
+     "t": 182.683
+    },
+    {
+     "img": "grid/2JX6JYyQG4Y-1.jpg",
+     "t": 844.927
+    },
+    {
+     "img": "grid/2JX6JYyQG4Y-2.jpg",
+     "t": 1096.746
+    }
+   ],
+   "cues": 229,
+   "frames": 71,
+   "ocr": 1622
+  },
+  {
+   "vid": "418t26CVz-w",
+   "title": "Local Agentic Theory For Mobile Games",
+   "speaker": "Shafik Quoraishee & Joanne Song",
+   "org": "The New York Times",
+   "dur": 1084.0,
+   "published": 1784775601,
+   "img": "grid/418t26CVz-w.jpg",
+   "t": 355.522,
+   "strip": [],
+   "cues": 168,
+   "frames": 46,
+   "ocr": 814
+  },
+  {
+   "vid": "Sir59K8ZDPU",
+   "title": "Why Agentic Systems Need Ontologies",
+   "speaker": "Frank Coyle",
+   "org": "UC Berkeley",
+   "dur": 1278.0,
+   "published": 1784768407,
+   "img": "grid/Sir59K8ZDPU.jpg",
+   "t": 319.186,
+   "strip": [],
+   "cues": 241,
+   "frames": 51,
+   "ocr": 480
+  },
+  {
+   "vid": "9QebvrrY3KY",
+   "title": "Claude for Long-Horizon Tasks",
+   "speaker": "Lance Martin",
+   "org": "Anthropic",
+   "dur": 1518.0,
+   "published": 1784739606,
+   "img": "grid/9QebvrrY3KY.jpg",
+   "t": 854.62,
+   "strip": [
+    {
+     "img": "grid/9QebvrrY3KY-0.jpg",
+     "t": 323.657
+    },
+    {
+     "img": "grid/9QebvrrY3KY-1.jpg",
+     "t": 628.394
+    },
+    {
+     "img": "grid/9QebvrrY3KY-2.jpg",
+     "t": 736.719
+    }
+   ],
+   "cues": 282,
+   "frames": 61,
+   "ocr": 239
+  },
+  {
+   "vid": "8qWIPUia2O8",
+   "title": "Every Harness Will Become A Claw",
+   "speaker": "Sam Bhagwat",
+   "org": "Mastra",
+   "dur": 935.0,
+   "published": 1784669406,
+   "img": "grid/8qWIPUia2O8.jpg",
+   "t": 197.08,
+   "strip": [],
+   "cues": 195,
+   "frames": 43,
+   "ocr": 328
+  },
+  {
+   "vid": "1EZdpEhwmNc",
+   "title": "Through the AI Fog: The Architectural Decision Agentic Security Depends On",
+   "speaker": "Manoj Nair",
+   "org": "Snyk",
+   "dur": 1409.0,
+   "published": 1784567874,
+   "img": "grid/1EZdpEhwmNc.jpg",
+   "t": 743.192,
+   "strip": [],
+   "cues": 315,
+   "frames": 64,
+   "ocr": 736
+  },
+  {
+   "vid": "0RNNfxpdbQk",
+   "title": "Medic for Apache Spark - First Aid for Failing Jobs",
+   "speaker": "Drasko Profirovic",
+   "org": "Pinterest",
+   "dur": 680.0,
+   "published": 1784528690,
+   "img": "grid/0RNNfxpdbQk.jpg",
+   "t": 520.77,
+   "strip": [
+    {
+     "img": "grid/0RNNfxpdbQk-0.jpg",
+     "t": 103.979
+    },
+    {
+     "img": "grid/0RNNfxpdbQk-1.jpg",
+     "t": 184.059
+    },
+    {
+     "img": "grid/0RNNfxpdbQk-2.jpg",
+     "t": 349.391
+    }
+   ],
+   "cues": 98,
+   "frames": 25,
+   "ocr": 254
+  },
+  {
+   "vid": "-561cZmir5Q",
+   "title": "From Tokens to Cells: Foundation Models for Single-Cell Biology",
+   "speaker": "Akram Baharlouei",
+   "org": "Altos Labs",
+   "dur": 1017.0,
+   "published": 1784491206,
+   "img": "grid/-561cZmir5Q.jpg",
+   "t": 289.12,
+   "strip": [],
+   "cues": 142,
+   "frames": 43,
+   "ocr": 725
+  },
+  {
+   "vid": "RjfbvDXpFls",
+   "title": "Building pi in a World of Slop",
+   "speaker": "Mario Zechner",
+   "org": "",
+   "dur": 1105.0,
+   "published": 1776380286,
+   "img": "grid/RjfbvDXpFls.jpg",
+   "t": 766.86,
+   "strip": [],
+   "cues": 279,
+   "frames": 126,
+   "ocr": 3772
+  }
+ ]
+}
