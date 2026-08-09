@@ -1,0 +1,119 @@
+# cloudflared — locally-managed tunnel config for vidtheque.
+#
+# TEMPLATE. Nothing here runs until you copy it, fill the placeholders and
+# point cloudflared at it. The go-public procedure is docs/deploy-public.md;
+# read that first, because the tunnel is the last step, not the first.
+#
+#   cp deploy/cloudflared.example.yml ~/.cloudflared/config.yml
+#   $EDITOR ~/.cloudflared/config.yml          # three placeholders below
+#   cloudflared tunnel ingress validate --config ~/.cloudflared/config.yml
+#   cloudflared tunnel --config ~/.cloudflared/config.yml run vidtheque
+#
+# Two ways to run a tunnel, and this file is only for the first:
+#
+#   locally-managed   this file + a credentials JSON. Ingress is version
+#                     controlled, reviewable, and diffable — which is why the
+#                     runbook recommends it for a box you own.
+#   remotely-managed  a TUNNEL_TOKEN and ingress configured in the Cloudflare
+#                     dashboard. That is what `docker compose --profile tunnel`
+#                     runs (deploy/docker-compose.yml), and it ignores this
+#                     file entirely. Cloudflare's docs now present remote as
+#                     the default; we prefer local because "what is exposed"
+#                     is then a thing you can grep for.
+#
+# Docs, current as of 2026-08-09:
+#   configuration file
+#     https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/local-management/configuration-file/
+#   originRequest parameters
+#     https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/origin-parameters/
+#   run parameters (the CLI flags that also work as keys here)
+#     https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/run-parameters/
+
+# The tunnel's UUID (or its name). `cloudflared tunnel create vidtheque`
+# prints both; `cloudflared tunnel list` prints them again.
+tunnel: 00000000-0000-0000-0000-000000000000
+
+# Written by `cloudflared tunnel create`. Copy the literal path out of that
+# command's output rather than assuming this one: the default directory is
+# searched as ~/.cloudflared, then /etc/cloudflared, then
+# /usr/local/etc/cloudflared, and `sudo` resolves $HOME to /root.
+credentials-file: /home/YOUR_USER/.cloudflared/00000000-0000-0000-0000-000000000000.json
+
+# Rules are evaluated top to bottom, first match wins, and the file MUST end
+# with a catch-all. A rule with no `hostname` matches every hostname.
+ingress:
+  # vidtheque is one origin serving everything: the demo page at `/`, the
+  # `/api/*` facade, `/frames/*`, `/dashboard/*`, the MCP transport at `/mcp`,
+  # `/healthz`, and (under VIDTHEQUE_AUTH=oauth) `/auth/*` and
+  # `/.well-known/*`. One rule, no path splitting.
+  #
+  # The service URL is where cloudflared reaches vidtheque *from where
+  # cloudflared runs*:
+  #   host-installed cloudflared + scripts/dev_stack.sh  -> http://127.0.0.1:8100
+  #   host-installed cloudflared + docker compose         -> http://127.0.0.1:8080
+  #   cloudflared inside the compose network              -> http://mcp:8080
+  # Plain http is correct here and is not a downgrade: this hop is inside the
+  # box. TLS is terminated at Cloudflare's edge, which is what makes
+  # PUBLIC_URL an https:// URL (see the runbook, "the hostname mapping").
+  - hostname: vidtheque.example.com
+    service: http://127.0.0.1:8100
+
+  # OPTIONAL — keep the management dashboard off the public hostname.
+  # `path` is a REGULAR EXPRESSION, not a prefix, and this rule must come
+  # BEFORE the rule above to have any effect. Uncomment both this and the
+  # ordering change if the go-public decision is "welcome page + demo only".
+  # Leaving it commented is the shipped decision: dashboard.md §2.4 designs a
+  # redacted read-only projection precisely so the corpus is browsable in
+  # public — but that projection is only redacted when
+  # VIDTHEQUE_PUBLIC_READONLY=1 is actually reaching the process.
+  # - hostname: vidtheque.example.com
+  #   path: ^/dashboard
+  #   service: http_status:404
+
+  # Mandatory catch-all. Anything that reaches the tunnel without matching a
+  # rule above — including a hostname you have not routed — gets a 404 from
+  # cloudflared rather than reaching vidtheque.
+  - service: http_status:404
+
+# Defaults for every rule above. Per-rule `originRequest:` blocks override.
+originRequest:
+  # TCP connect to the local origin. 30s is the documented default; 10s is
+  # plenty for a loopback hop and turns "the stack is down" into a fast 502
+  # instead of a thirty-second hang.
+  connectTimeout: 10s
+  # Do NOT set httpHostHeader here. cloudflared forwards the public hostname
+  # as `Host` by default, and the MCP transport's DNS-rebinding guard checks
+  # exactly that header — the fix for a 421 is to name the hostname in
+  # VIDTHEQUE_PUBLIC_HOSTNAME, not to rewrite the header on the way in.
+  # httpHostHeader: ""
+  #
+  # Do NOT set disableChunkedEncoding. It is documented for WSGI origins and
+  # has nothing to do with streaming; vidtheque runs uvicorn (ASGI).
+  #
+  # There is NO originRequest key that controls response buffering. Cloudflare
+  # Tunnel buffers a proxied response unless the origin sends
+  # `Content-Type: text/event-stream`. That is why `/mcp` streams fine (the MCP
+  # SDK sends exactly that) and why the ask activity stream does not (it sends
+  # `application/x-ndjson`) — runbook, "what breaks behind a proxy".
+
+# --------------------------------------------------------------------------
+# The rest of these are documented as CLI flags. The flag->key mapping holds
+# for locally-managed tunnels (drop the `--`), but no current Cloudflare doc
+# shows them as YAML, so they are commented rather than shipped.
+# --------------------------------------------------------------------------
+
+# debug | info | warn | error | fatal
+# loglevel: info
+# logfile: /var/log/cloudflared/cloudflared.log
+
+# Never let cloudflared update itself under a running deployment; update it
+# the same way you update everything else on the box.
+# no-autoupdate: true
+
+# auto | http2 | quic. Leave on auto. Switch to http2 only if you observe
+# QUIC-related disconnects on long-lived connections.
+# protocol: auto
+
+# Prometheus-style metrics on loopback. Handy while smoke-testing the tunnel;
+# bind it to 127.0.0.1 and nothing else.
+# metrics: 127.0.0.1:20241

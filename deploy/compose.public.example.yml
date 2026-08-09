@@ -1,0 +1,84 @@
+# Public-mode overlay for deploy/docker-compose.yml.
+#
+# TEMPLATE, and an OVERLAY: it changes nothing until you name it explicitly.
+#
+#   docker compose -f deploy/docker-compose.yml \
+#                  -f deploy/compose.public.example.yml \
+#                  --profile tunnel up -d
+#
+# It exists because of two things the base compose file gets wrong for a
+# public deployment, both documented in docs/deploy-public.md:
+#
+#   1. THE ENV GAP. `deploy/.env` is compose's *interpolation* source, not the
+#      container's environment. The base file hands the `mcp` service four
+#      variables by name (WORKER_URL, VIDTHEQUE_DATA_DIR, VIDTHEQUE_PUBLIC_URL,
+#      VIDTHEQUE_LOG_LEVEL) and nothing else — so VIDTHEQUE_PUBLIC_READONLY,
+#      VIDTHEQUE_AUTH, VIDTHEQUE_PUBLIC_HOSTNAME, VIDTHEQUE_TRUSTED_IP_HEADER,
+#      the rate-limit budgets, OPENROUTER_API_KEY and every pipeline knob sit
+#      in .env being read by nobody. The failure is silent and it is the worst
+#      possible one: the server comes up in FULL READ-WRITE MODE with the write
+#      tools registered, on a public hostname. `env_file` closes it.
+#
+#   2. THE BIND. `"${MCP_PORT:-8080}:8080"` publishes on 0.0.0.0, so the origin
+#      is reachable by any route the box has — and a request that did not come
+#      through Cloudflare can forge `CF-Connecting-IP` and mint itself a fresh
+#      rate-limit bucket per request. Binding to loopback makes the tunnel the
+#      only path in, which is the precondition that makes trusting that header
+#      sound. See docs/deploy-public.md, "the trusted-header config item".
+#
+# This overlay adds no new environment variables. Everything it references has
+# an entry in deploy/.env.example, which stays the document of record.
+
+services:
+  mcp:
+    # Hand the container the whole .env. Compose merges this UNDER the base
+    # file's `environment:` block, so the four explicit variables there still
+    # win — including VIDTHEQUE_PUBLIC_URL, which is interpolated from
+    # ${PUBLIC_URL}. Set PUBLIC_URL in .env to the https:// tunnel hostname.
+    env_file:
+      - .env
+    ports:
+      # Loopback only: cloudflared is the sole way in. Keep the published port
+      # so `curl http://127.0.0.1:8080/healthz` still works on the box for the
+      # smoke tests; drop the whole `ports:` block if cloudflared runs inside
+      # this compose network and reaches the service as http://mcp:8080.
+      - "127.0.0.1:${MCP_PORT:-8080}:8080"
+
+  worker:
+    # Same reasoning, less urgency: the worker holds no public surface. It is
+    # here so the two services cannot drift into reading their configuration
+    # from two different places.
+    env_file:
+      - .env
+    ports:
+      # The worker must never be reachable from off-box. It answers an
+      # unauthenticated OpenAI-compatible API that will happily spend the GPU.
+      - "127.0.0.1:${WORKER_PORT:-8081}:8081"
+
+  # The base file already defines this service under `profiles: ["tunnel"]`,
+  # running a REMOTELY-managed tunnel from TUNNEL_TOKEN with ingress
+  # configured in the Cloudflare dashboard. Nothing to add for that path.
+  #
+  # For a LOCALLY-managed tunnel (deploy/cloudflared.example.yml — ingress in
+  # the repo instead of in a dashboard), replace it with the block below:
+  # mount the config and the credentials JSON read-only and run by name.
+  #
+  # cloudflared:
+  #   profiles: ["tunnel"]
+  #   image: cloudflare/cloudflared:latest
+  #   restart: unless-stopped
+  #   command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run vidtheque
+  #   environment:
+  #     TUNNEL_TOKEN: ""          # unset: a locally-managed tunnel uses the
+  #                               # credentials file, not a token.
+  #   volumes:
+  #     # The in-container home is /home/nonroot/.cloudflared, not /root.
+  #     - ./cloudflared.yml:/etc/cloudflared/config.yml:ro
+  #     - ${CLOUDFLARED_CREDENTIALS:-./cloudflared-credentials.json}:/etc/cloudflared/credentials.json:ro
+  #   depends_on:
+  #     - mcp
+  #
+  # With that block, the ingress rule's service URL must be the compose-network
+  # name — `http://mcp:8080`, not `http://127.0.0.1:8100` — and
+  # `credentials-file:` inside the config must be
+  # `/etc/cloudflared/credentials.json`.
