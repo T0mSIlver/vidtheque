@@ -235,6 +235,126 @@ def test_vtt_is_understood_as_a_last_resort() -> None:
     assert cues[0].start_s == pytest.approx(4.08)
 
 
+def test_vtt_accepts_the_hourless_timestamp_grammar() -> None:
+    """`MM:SS.mmm` is valid WebVTT. Requiring hours rejected every cue of an
+    otherwise fine track, and the caller read no cues as "no transcript"."""
+    payload = (
+        "WEBVTT\n\n"
+        "00:04.080 --> 00:08.280\npaged attention keeps a block table\n\n"
+        "01:08.400 --> 01:11.400\nfragmentation drops to four percent\n"
+    )
+    cues = captions.cues_from_vtt(payload)
+    assert [c.text for c in cues] == [
+        "paged attention keeps a block table",
+        "fragmentation drops to four percent",
+    ]
+    assert cues[0].start_s == pytest.approx(4.08)
+    assert cues[1].start_s == pytest.approx(68.4)
+
+
+def test_a_whisperx_word_with_no_start_lands_in_its_segment() -> None:
+    """whisperX explicitly permits nullable timings. An unplaced *first* word
+    was put at video time 0.0, so a deep link into the last minute of a lecture
+    opened at the beginning — and `_from_words` took that 0.0 as the cue start."""
+    payload = {
+        "segments": [
+            {
+                "start": 3_600.0,
+                "end": 3_604.0,
+                "words": [
+                    {"word": "seventeen"},  # the aligner could not place it
+                    {"word": "percent", "start": 3_601.5, "end": 3_602.0},
+                    {"word": "faster", "start": 3_602.0, "end": 3_603.0},
+                ],
+            }
+        ]
+    }
+    cues = captions.cues_from_verbose_json(payload)
+    assert len(cues) == 1
+    assert cues[0].start_s >= 3_600.0, "the unplaced word fell back to video time zero"
+    assert cues[0].text == "seventeen percent faster"
+    starts = [start for _word, start, _end in cues[0].words]
+    assert starts == sorted(starts)
+    assert 3_600.0 <= starts[0] < 3_601.5
+
+
+def test_unplaced_whisperx_words_do_not_all_share_one_timestamp() -> None:
+    payload = {
+        "segments": [
+            {
+                "start": 10.0,
+                "end": 14.0,
+                "words": [
+                    {"word": "one", "start": 10.0, "end": 10.5},
+                    {"word": "two"},
+                    {"word": "three"},
+                    {"word": "four", "start": 13.0, "end": 13.5},
+                ],
+            }
+        ]
+    }
+    starts = [start for _w, start, _e in captions.cues_from_verbose_json(payload)[0].words]
+    assert starts == sorted(starts)
+    assert len(set(starts)) == 4, "the gap was filled by inheriting one clock"
+    assert 10.0 < starts[1] < starts[2] < 13.0
+
+
+def test_a_json3_seg_without_an_offset_does_not_inherit_the_previous_one() -> None:
+    """Identical word starts walk a word-level deep link onto the wrong word."""
+    payload = json.dumps(
+        {
+            "events": [
+                {
+                    "tStartMs": 1_000,
+                    "dDurationMs": 4_000,
+                    "segs": [
+                        {"utf8": "alpha"},
+                        {"utf8": " beta", "tOffsetMs": 500},
+                        {"utf8": " gamma"},  # unknown, not "also 500"
+                        {"utf8": " delta", "tOffsetMs": 3_000},
+                    ],
+                }
+            ]
+        }
+    )
+    cue = captions.cues_from_json3(payload, word_timed=True)[0]
+    starts = [start for _w, start, _e in cue.words]
+    assert starts == sorted(starts)
+    assert len(set(starts)) == 4
+    assert 1.5 < starts[2] < 4.0
+
+
+def test_a_text_bearing_append_event_is_not_indexed_twice() -> None:
+    """The rolling window: append events repeat the growing caption line."""
+    payload = json.dumps(
+        {
+            "events": [
+                {"tStartMs": 0, "dDurationMs": 2_000, "aAppend": 1,
+                 "segs": [{"utf8": "paged attention"}]},
+                {"tStartMs": 0, "dDurationMs": 4_000,
+                 "segs": [{"utf8": "paged attention keeps a block table"}]},
+            ]
+        }
+    )
+    cues = captions.cues_from_json3(payload, word_timed=False)
+    assert [c.text for c in cues] == ["paged attention keeps a block table"]
+
+
+def test_a_track_made_only_of_append_events_still_parses() -> None:
+    """The safety net: an empty transcript is worse than a duplicated one."""
+    payload = json.dumps(
+        {
+            "events": [
+                {"tStartMs": 0, "dDurationMs": 2_000, "aAppend": 1,
+                 "segs": [{"utf8": "only ever appended"}]},
+            ]
+        }
+    )
+    assert [c.text for c in captions.cues_from_json3(payload, word_timed=False)] == [
+        "only ever appended"
+    ]
+
+
 def test_cues_never_overlap_after_tidying() -> None:
     raw = [
         captions.CueDraft(0.0, 9.0, "one"),
