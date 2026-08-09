@@ -7,12 +7,19 @@ import asyncio
 import pytest
 from conftest import FakeBackend, FakeHooks, FakeVram, Recorder
 
-from vidtheque_worker.backends.base import BackendCrashed, BackendUnavailable
+from vidtheque_worker.backends.base import (
+    BackendCrashed,
+    BackendError,
+    BackendPoisoned,
+    BackendUnavailable,
+    InvalidImageError,
+)
 from vidtheque_worker.gpu import GPUHookError
 from vidtheque_worker.lifecycle import (
     InsufficientVRAM,
     LifecycleManager,
     ManagerNotRunning,
+    WorkerShuttingDown,
 )
 
 
@@ -316,6 +323,117 @@ async def test_stop_unloads_resident_models_too(recorder):
     assert not backends["embed"].loaded
 
 
+# --------------------------------------------------------------------------
+# shutdown: the queue, the thread, and the runner's death
+# --------------------------------------------------------------------------
+
+
+async def _wait_for(predicate, timeout: float = 2.0) -> None:
+    """Poll until ``predicate()`` or fail — never a bare sleep in a race test."""
+    deadline = asyncio.get_running_loop().time() + timeout
+    while not predicate():
+        if asyncio.get_running_loop().time() > deadline:
+            raise AssertionError("condition never became true")
+        await asyncio.sleep(0.005)
+
+
+async def test_stop_resolves_every_queued_job(recorder):
+    """The lifespan hang: cancelling the runner only ever resolved the job it
+    was running, so anything still queued kept a pending future, its handler
+    never returned, and shutdown waited for uvicorn's kill."""
+    backends = make_backends(recorder)
+    backends["stt"].infer_seconds = 0.2
+    manager = await make_manager(backends, recorder)
+
+    running = asyncio.create_task(manager.submit("stt", lambda b: b.infer("a.wav")))
+    await _wait_for(lambda: backends["stt"].concurrent == 1)
+    queued = [
+        asyncio.create_task(manager.submit("stt", lambda b: b.infer("b.wav"))),
+        asyncio.create_task(manager.submit("stt", lambda b: b.infer("c.wav"))),
+    ]
+    await _wait_for(lambda: manager.snapshot()["queue"]["depth"] == 2)
+
+    await asyncio.wait_for(manager.stop(), timeout=5.0)
+
+    for task in queued:
+        with pytest.raises(WorkerShuttingDown):
+            await asyncio.wait_for(task, timeout=1.0)
+    # The in-flight one is answered too, rather than left cancelled.
+    with pytest.raises(WorkerShuttingDown):
+        await asyncio.wait_for(running, timeout=1.0)
+    assert manager.snapshot()["queue"]["depth"] == 0
+
+
+async def test_stop_waits_for_the_in_flight_thread_before_unloading(recorder):
+    """`asyncio.to_thread` cannot be cancelled: the coroutine is abandoned and
+    the thread runs on. Unloading straight after the cancel freed weights out
+    from under a live thread."""
+    backends = make_backends(recorder)
+    backends["stt"].infer_seconds = 0.2
+    manager = await make_manager(backends, recorder, shutdown_grace_seconds=5.0)
+
+    running = asyncio.create_task(manager.submit("stt", lambda b: b.infer("a.wav")))
+    await _wait_for(lambda: backends["stt"].concurrent == 1)
+    await asyncio.wait_for(manager.stop(), timeout=5.0)
+
+    assert recorder.names("unload-during-infer") == []
+    order = [kind for kind, task in recorder.kinds("infer-done", "unload") if task == "stt"]
+    assert order == ["infer-done", "unload"]
+    with pytest.raises(WorkerShuttingDown):
+        await asyncio.wait_for(running, timeout=1.0)
+
+
+async def test_the_grace_period_is_bounded(recorder, caplog):
+    """The documented residual: a job that outlasts the grace does *not* hold
+    the shutdown open. A teardown that never finishes is worse than the race."""
+    backends = make_backends(recorder)
+    backends["stt"].infer_seconds = 0.3
+    manager = await make_manager(backends, recorder, shutdown_grace_seconds=0.02)
+
+    running = asyncio.create_task(manager.submit("stt", lambda b: b.infer("a.wav")))
+    await _wait_for(lambda: backends["stt"].concurrent == 1)
+    with caplog.at_level("WARNING"):
+        await asyncio.wait_for(manager.stop(), timeout=1.0)
+
+    assert "still running" in caplog.text
+    assert recorder.names("unload-during-infer") == ["stt"]
+    with pytest.raises(WorkerShuttingDown):
+        await asyncio.wait_for(running, timeout=1.0)
+
+
+async def test_submit_during_and_after_stop_is_refused(recorder):
+    backends = make_backends(recorder)
+    manager = await make_manager(backends, recorder)
+    await manager.stop()
+    with pytest.raises(WorkerShuttingDown):
+        await manager.submit("embed", lambda b: b.infer(["hi"]))
+
+
+async def test_a_dead_runner_does_not_strand_queued_jobs(recorder):
+    """Nothing supervises the consumer. If it ever dies for a reason that is
+    not `stop()`, every queued future is waiting on a task that no longer
+    exists — so the runner drains on its way out, whatever killed it."""
+    backends = make_backends(recorder)
+    backends["stt"].infer_seconds = 0.2
+    manager = await make_manager(backends, recorder)
+    try:
+        running = asyncio.create_task(manager.submit("stt", lambda b: b.infer("a.wav")))
+        await _wait_for(lambda: backends["stt"].concurrent == 1)
+        queued = asyncio.create_task(manager.submit("stt", lambda b: b.infer("b.wav")))
+        await _wait_for(lambda: manager.snapshot()["queue"]["depth"] == 1)
+
+        manager._runner.cancel()  # a death that is not a shutdown
+
+        with pytest.raises(WorkerShuttingDown):
+            await asyncio.wait_for(queued, timeout=1.0)
+        with pytest.raises(WorkerShuttingDown):
+            await asyncio.wait_for(running, timeout=1.0)
+        # and /status says which of "busy" and "wedged" this is
+        assert manager.snapshot()["queue"]["consumer_alive"] is False
+    finally:
+        await manager.stop()
+
+
 async def test_resident_text_embedder_does_not_exempt_the_frame_embedder(recorder):
     """EMBED_RESIDENT is about query latency. The frame embedder is an
     indexing-time cost and the biggest of the three, so it stays evictable."""
@@ -527,8 +645,13 @@ async def test_job_failure_propagates_and_the_queue_survives(recorder):
     backends["embed"].infer_error = ValueError("bad input")
     manager = await make_manager(backends, recorder)
     try:
-        with pytest.raises(ValueError):
+        with pytest.raises(BackendError) as raised:
             await manager.submit("embed", lambda b: b.infer(["hi"]))
+        # Wrapped, not swallowed: an untyped exception would reach FastAPI's
+        # bare-500 path with no error.type on it, and the cause is what a log
+        # reader actually needs.
+        assert isinstance(raised.value.__cause__, ValueError)
+        assert "ValueError" in str(raised.value)
         backends["embed"].infer_error = None
         assert await manager.submit("embed", lambda b: b.infer(["hi"])) == "embed-ok"
     finally:
@@ -586,15 +709,109 @@ async def test_a_crashed_job_gives_the_lease_back(recorder):
 
 
 async def test_bad_input_does_not_cost_the_loaded_model(recorder):
-    """Only a RuntimeError is the GPU talking. A ValueError is the caller's."""
+    """Only the device talking unloads a slot. A ValueError is the caller's."""
     backends = make_backends(recorder)
     backends["embed"].infer_error = ValueError("bad input")
     manager = await make_manager(backends, recorder)
     try:
-        with pytest.raises(ValueError):
+        with pytest.raises(BackendError):
             await manager.submit("embed", lambda b: b.infer(["hi"]))
         assert backends["embed"].loaded
         assert manager.slot("embed").unload_count == 0
+    finally:
+        await manager.stop()
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        RuntimeError("Expected all tensors to be on the same device"),
+        RuntimeError("stack expects each tensor to be equal size"),
+        ValueError("'en-US' is not a valid language code"),
+        OSError("broken data stream when reading image file"),
+    ],
+    ids=["dtype", "shape", "language", "decoder"],
+)
+async def test_a_non_device_runtimeerror_keeps_the_model_loaded(recorder, exc):
+    """The measured cost of getting this wrong, per bad input: a 5.8 s reload,
+    and a 503 the mcp client reads as backpressure — so it replays the same
+    doomed input until the 1800 s retry budget is gone. whisperX raises
+    RuntimeError for a malformed media stream, torch for a dtype mismatch,
+    onnxruntime for a shape error; none of them are the card."""
+    backends = make_backends(recorder)
+    backends["stt"].infer_error = exc
+    manager = await make_manager(backends, recorder)
+    try:
+        with pytest.raises(BackendError) as raised:
+            await manager.submit("stt", lambda b: b.infer("a.wav"))
+        assert not isinstance(raised.value, BackendCrashed)
+        assert backends["stt"].loaded
+        assert manager.slot("stt").unload_count == 0
+        assert recorder.names("unload") == []
+    finally:
+        await manager.stop()
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        RuntimeError("CUDA out of memory. Tried to allocate 2.00 GiB"),
+        RuntimeError("CUBLAS_STATUS_EXECUTION_FAILED when calling cublasGemmEx"),
+        RuntimeError("invalid device ordinal"),
+        Exception("device-side assert triggered"),
+    ],
+    ids=["oom", "cublas", "ordinal", "assert"],
+)
+async def test_a_device_failure_still_unloads_whatever_its_type(recorder, exc):
+    """The message sniff behind the typed signal: three of the four shipped
+    stacks report a dead device as an untyped exception, and onnxruntime's is
+    not even a RuntimeError."""
+    backends = make_backends(recorder)
+    backends["stt"].infer_error = exc
+    manager = await make_manager(backends, recorder)
+    try:
+        with pytest.raises(BackendCrashed):
+            await manager.submit("stt", lambda b: b.infer("a.wav"))
+        assert not backends["stt"].loaded
+        assert manager.slot("stt").unload_count == 1
+    finally:
+        await manager.stop()
+
+
+async def test_a_poisoned_backend_says_so_by_type(recorder):
+    """The signal a backend raises when it recognises its own device failure —
+    no message sniffing involved, and the wire shape is BackendCrashed's."""
+    backends = make_backends(recorder)
+    backends["image_embed"] = FakeBackend(
+        "image_embed", vram_estimate_mb=3200, recorder=recorder
+    )
+    backends["image_embed"].infer_error = BackendPoisoned("the context is gone")
+    manager = await make_manager(backends, recorder)
+    try:
+        with pytest.raises(BackendPoisoned):
+            await manager.submit("image_embed", lambda b: b.infer([b"x"]))
+        assert not backends["image_embed"].loaded
+        assert manager.slot("image_embed").unload_count == 1
+    finally:
+        await manager.stop()
+
+
+async def test_a_typed_input_error_is_never_a_device_failure(recorder):
+    """Not even when the filename says `cuda`: an input error never unloads."""
+    backends = make_backends(recorder)
+    backends["image_embed"] = FakeBackend(
+        "image_embed", vram_estimate_mb=3200, recorder=recorder
+    )
+    backends["image_embed"].infer_error = InvalidImageError(
+        "image 3 (cuda-talk-out-of-memory.png) is not a decodable image", index=3
+    )
+    manager = await make_manager(backends, recorder)
+    try:
+        with pytest.raises(InvalidImageError) as raised:
+            await manager.submit("image_embed", lambda b: b.infer([b"x"]))
+        assert raised.value.index == 3
+        assert backends["image_embed"].loaded
+        assert manager.slot("image_embed").unload_count == 0
     finally:
         await manager.stop()
 

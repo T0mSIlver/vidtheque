@@ -101,6 +101,13 @@ class FakeBackend:
     def unload(self) -> None:
         if not self._loaded:
             return
+        if self.concurrent:
+            # The real version of this is `_model = None` plus
+            # `torch.cuda.empty_cache()` under a thread that is still inside
+            # the model — a use-after-free in C++, i.e. a segfault or a
+            # corrupted context that surfaces on the next load. A fake cannot
+            # crash, so it records instead and a test asserts on the absence.
+            self.recorder.record("unload-during-infer", self.task)
         self._loaded = False
         self.recorder.record("unload", self.task)
 
@@ -120,6 +127,7 @@ class FakeBackend:
         finally:
             with self._lock:
                 self.concurrent -= 1
+            self.recorder.record("infer-done", self.task)
 
     def embed_text(self, *args: Any, **kwargs: Any) -> Any:
         """The second tower of an image-embedding backend: same object, same

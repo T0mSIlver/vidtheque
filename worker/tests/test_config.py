@@ -26,6 +26,7 @@ DOCUMENTED_ENV = (
     "IMAGE_EMBED_MAX_PATCHES",
     "OCR_THREADS",
     "PORT",
+    "SHUTDOWN_GRACE_SECONDS",
 )
 
 
@@ -51,6 +52,7 @@ def test_defaults_match_the_documented_ones(clean_env):
     assert s.image_embed_max_patches == 256
     assert s.ocr_threads == 4
     assert s.port == 8081
+    assert s.shutdown_grace_seconds == 30.0
 
 
 def test_bare_env_name_is_accepted(monkeypatch):

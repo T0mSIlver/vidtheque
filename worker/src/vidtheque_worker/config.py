@@ -111,6 +111,14 @@ class Settings(BaseSettings):
         default=60.0, validation_alias=_either("GPU_HOOK_TIMEOUT_SECONDS")
     )
 
+    shutdown_grace_seconds: float = Field(
+        default=30.0, validation_alias=_either("SHUTDOWN_GRACE_SECONDS")
+    )
+    """How long shutdown waits for a job that is already inside a model.
+
+    ``asyncio.to_thread`` cannot be cancelled, so the alternative to waiting is
+    freeing weights out from under a live thread. ``0`` disables the wait."""
+
     # --- caches -----------------------------------------------------------
     hf_home: str | None = Field(default=None, validation_alias=AliasChoices("HF_HOME"))
 

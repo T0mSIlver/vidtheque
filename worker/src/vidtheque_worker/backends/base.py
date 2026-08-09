@@ -10,8 +10,11 @@ line to ``registry.py``. Nothing else in the worker learns its name.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
+
+log = logging.getLogger(__name__)
 
 TASKS = ("stt", "embed", "image_embed", "ocr")
 """``embed`` is the text vector space; ``image_embed`` is the frame one. They are
@@ -20,11 +23,21 @@ models at once — one slot would force the pipeline to choose."""
 
 
 class BackendError(RuntimeError):
-    """Backend failed in a way the caller can be told about."""
+    """Backend failed in a way the caller can be told about.
+
+    ``code`` is the ``error.type`` the HTTP layer puts on the wire. It lives on
+    the class so a new error is one subclass rather than one subclass plus a
+    handler plus a mapping table — and so ``mcp/`` can classify on a string
+    that is declared in exactly one place.
+    """
+
+    code = "backend_error"
 
 
 class BackendUnavailable(BackendError):
     """Optional dependency (or model) missing — surfaced as HTTP 503."""
+
+    code = "backend_unavailable"
 
 
 class BackendCrashed(BackendError):
@@ -37,6 +50,99 @@ class BackendCrashed(BackendError):
     unloads the slot before raising this, so the failure is transient — HTTP
     503 + ``Retry-After``, and the next request loads a clean model.
     """
+
+    code = "backend_crashed"
+
+
+class BackendPoisoned(BackendCrashed):
+    """*The device* failed, not the input: unload the slot before anything else.
+
+    This is the type a backend raises when it recognises a genuine device
+    condition — a CUDA OOM, a lost context, a cuBLAS failure — and it is the
+    only signal the lifecycle manager treats as "the loaded model is now
+    rubbish". It carries ``BackendCrashed``'s wire shape deliberately (503 +
+    ``Retry-After: 30``, ``error.type: backend_crashed``) so narrowing the
+    *unload* rule changed no contract ``mcp/`` codes against.
+
+    Everything the manager used to unload for and no longer does — a
+    ``RuntimeError`` from a malformed media stream, a dtype mismatch, a shape
+    error — costs a 5.8 s reload per hit and, because 503 is backpressure to
+    the mcp client, replays the same doomed input until the 1800 s retry budget
+    is gone. That is the failure this type exists to stop.
+    """
+
+
+class BackendInputError(BackendError):
+    """The payload is the problem, and re-sending it will fail the same way.
+
+    HTTP 400 with ``code`` as ``error.type``: outside ``mcp/``'s
+    ``RETRYABLE_STATUS``, so the client fails the item instead of spending its
+    backpressure budget on it. The model stays loaded — a bad JPEG says nothing
+    about the weights.
+    """
+
+    code = "invalid_input"
+
+
+class InvalidImageError(BackendInputError):
+    """Bytes that no decoder would take: not an image, truncated, zero-pixel."""
+
+    code = "invalid_image"
+
+    def __init__(self, message: str, *, index: int | None = None) -> None:
+        super().__init__(message)
+        self.index = index
+        """Position in the request's file list, when the batch knows it."""
+
+
+class InvalidMediaError(BackendInputError):
+    """Audio/video the decoder could not read — the STT-side twin of the above."""
+
+    code = "invalid_media"
+
+
+DEVICE_FAILURE_MARKERS = (
+    "cuda",
+    "out of memory",
+    "cublas",
+    "cudnn",
+    "device-side assert",
+    "no kernel image",
+    "invalid device ordinal",
+    "cudaerror",
+    "nvrtc",
+)
+"""Substrings that mean the card, in the exceptions the shipped stacks raise."""
+
+DEVICE_FAILURE_TYPES = frozenset(
+    {"OutOfMemoryError", "AcceleratorError", "CudaError", "CUDAOutOfMemoryError"}
+)
+"""``torch.cuda.OutOfMemoryError`` and friends, matched by name so this module
+imports without torch."""
+
+
+def looks_like_device_failure(exc: BaseException) -> bool:
+    """Defense in depth behind :class:`BackendPoisoned`.
+
+    A backend that recognises its own device failures raises the type and this
+    is never consulted. It exists because three of the four shipped stacks
+    (ctranslate2, onnxruntime, transformers) report a dead device as an
+    untyped exception whose *only* distinguishing feature is the message —
+    onnxruntime's is not even a ``RuntimeError`` — and getting a real OOM
+    wrong leaves a poisoned model answering every later job.
+
+    Matched on the message rather than the type for that reason, and never
+    consulted for a :class:`BackendInputError`: a filename with ``cuda`` in it
+    must not cost a reload.
+    """
+    if isinstance(exc, BackendInputError):
+        return False
+    if isinstance(exc, BackendPoisoned):
+        return True
+    if type(exc).__name__ in DEVICE_FAILURE_TYPES:
+        return True
+    text = str(exc).lower()
+    return any(marker in text for marker in DEVICE_FAILURE_MARKERS)
 
 
 # --------------------------------------------------------------------------
@@ -212,17 +318,32 @@ class BaseBackend:
 
     # -- helpers -----------------------------------------------------------
     @staticmethod
-    def _empty_cuda_cache() -> None:
-        try:  # pragma: no cover - requires torch
+    def _empty_cuda_cache() -> bool:
+        """Hand the allocator's cached blocks back. ``False`` if that failed.
+
+        Swallowed on purpose — an unload that raises is worse than an unload
+        that frees less than it hoped — but *logged*, because the silent
+        version had a nasty tail: if this ever stops working, every unload
+        becomes a no-op for VRAM, admission control sees no room after
+        evicting, and the worker answers 503 forever while ``/healthz`` says
+        200. That is a line in the log or an invisible wedge.
+        """
+        try:
             import gc
 
             import torch
-
+        except Exception as exc:  # no torch: nothing cached, nothing to free
+            log.debug("no torch to empty a CUDA cache with: %s", exc)
+            return False
+        try:  # pragma: no cover - requires a torch install
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-        except Exception:
-            pass
+            return True
+        except Exception:  # pragma: no cover - a broken/absent driver
+            log.error("torch.cuda.empty_cache() failed; VRAM may not come back",
+                      exc_info=True)
+            return False
 
     def __repr__(self) -> str:  # pragma: no cover - debug aid
         state = "loaded" if self._loaded else "unloaded"

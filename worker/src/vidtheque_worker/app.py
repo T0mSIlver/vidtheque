@@ -16,7 +16,12 @@ from fastapi.responses import JSONResponse
 
 from . import __version__
 from .api import router
-from .backends.base import BackendCrashed, BackendError, BackendUnavailable
+from .backends.base import (
+    BackendCrashed,
+    BackendError,
+    BackendInputError,
+    BackendUnavailable,
+)
 from .backends.registry import UnknownBackend, build_backends
 from .config import Settings, get_settings
 from .gpu import GPUHookError, NvmlProbe
@@ -45,6 +50,7 @@ def build_manager(settings: Settings) -> LifecycleManager:
         acquire_cmd=settings.gpu_acquire_cmd,
         release_cmd=settings.gpu_release_cmd,
         hook_timeout_seconds=settings.gpu_hook_timeout_seconds,
+        shutdown_grace_seconds=settings.shutdown_grace_seconds,
         vram_probe=NvmlProbe(settings.gpu_index),
     )
 
@@ -84,15 +90,26 @@ def _error(status_code: int, message: str, kind: str, headers: dict | None = Non
 
 
 def _install_error_handlers(app: FastAPI) -> None:
+    # Starlette dispatches on the exception's MRO, so a subclass always finds
+    # its own handler before its parent's — registration order is irrelevant.
+
+    @app.exception_handler(BackendInputError)
+    async def _bad_input(_: Request, exc: BackendInputError):
+        # 400 rather than 503, and that difference is the whole point: it is
+        # outside mcp/'s RETRYABLE_STATUS, so a corrupt frame fails the item
+        # instead of being replayed until the backpressure budget is gone. The
+        # model stayed loaded, so nothing here costs a reload either.
+        return _error(400, str(exc), exc.code)
+
     @app.exception_handler(BackendUnavailable)
     async def _unavailable(_: Request, exc: BackendUnavailable):
-        return _error(503, str(exc), "backend_unavailable", {"Retry-After": "60"})
+        return _error(503, str(exc), exc.code, {"Retry-After": "60"})
 
     @app.exception_handler(BackendCrashed)
     async def _crashed(_: Request, exc: BackendCrashed):
         # Transient by construction: the manager already unloaded the slot, so
         # the retry mcp/ is about to make loads a clean model.
-        return _error(503, str(exc), "backend_crashed", {"Retry-After": "30"})
+        return _error(503, str(exc), exc.code, {"Retry-After": "30"})
 
     @app.exception_handler(InsufficientVRAM)
     async def _vram(_: Request, exc: InsufficientVRAM):
@@ -108,7 +125,7 @@ def _install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(BackendError)
     async def _backend(_: Request, exc: BackendError):
-        return _error(500, str(exc), "backend_error")
+        return _error(500, str(exc), exc.code)
 
 
 app = create_app()

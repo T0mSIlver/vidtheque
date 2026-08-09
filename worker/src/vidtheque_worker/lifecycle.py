@@ -25,12 +25,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
-from .backends.base import Backend, BackendCrashed, BackendError
+from .backends.base import (
+    Backend,
+    BackendCrashed,
+    BackendError,
+    BackendInputError,
+    BackendUnavailable,
+    looks_like_device_failure,
+)
 from .gpu import GPUHookError, NvmlProbe, VramInfo, run_shell_hook
 
 log = logging.getLogger(__name__)
@@ -46,8 +54,22 @@ class InsufficientVRAM(RuntimeError):
     """Not enough free VRAM for a load, even after evicting what we may."""
 
 
-class ManagerNotRunning(RuntimeError):
-    """submit() before start(), or after stop()."""
+class ManagerNotRunning(BackendUnavailable):
+    """submit() before start(), or after stop().
+
+    A ``BackendUnavailable`` rather than a bare ``RuntimeError`` so it answers
+    503 + ``Retry-After`` like every other "not now" instead of a bare 500: the
+    job never reached a model, so replaying it against the next process is
+    exactly the right thing for the client to do.
+    """
+
+    code = "worker_not_ready"
+
+
+class WorkerShuttingDown(ManagerNotRunning):
+    """The manager stopped before this job ran. Nothing was inferred."""
+
+    code = "worker_shutting_down"
 
 
 @dataclass(slots=True)
@@ -94,6 +116,7 @@ class LifecycleManager:
         acquire_cmd: str | None = None,
         release_cmd: str | None = None,
         hook_timeout_seconds: float = 60.0,
+        shutdown_grace_seconds: float = 30.0,
         vram_probe: VramProbe | None = None,
         hook_runner: HookRunner | None = None,
         idle_poll_interval: float | None = None,
@@ -109,6 +132,7 @@ class LifecycleManager:
         self.acquire_cmd = acquire_cmd
         self.release_cmd = release_cmd
         self.hook_timeout_seconds = hook_timeout_seconds
+        self.shutdown_grace_seconds = shutdown_grace_seconds
         self._vram_probe: VramProbe = vram_probe or NvmlProbe()
         self._hook_runner: HookRunner = hook_runner or self._default_hook_runner
         self._clock = clock
@@ -120,6 +144,11 @@ class LifecycleManager:
         self._reaper: asyncio.Task | None = None
         self._running_task: str | None = None
         self._in_flight = 0
+        self._stopping = False
+        self._inference_done: threading.Event | None = None
+        """Set by the worker thread when the last dispatched job function
+        returned. ``to_thread`` cannot be cancelled, so this is the only handle
+        :meth:`stop` has on a thread that is still inside the model."""
         self.hooks = HookLog()
 
     # -- plumbing ----------------------------------------------------------
@@ -137,6 +166,7 @@ class LifecycleManager:
     async def start(self) -> None:
         if self._runner is not None:
             return
+        self._stopping = False
         self._runner = asyncio.create_task(self._run_queue(), name="vidtheque-gpu-queue")
         self._reaper = asyncio.create_task(self._run_reaper(), name="vidtheque-idle-reaper")
         log.info(
@@ -147,6 +177,31 @@ class LifecycleManager:
         )
 
     async def stop(self) -> None:
+        """Tear down: refuse new work, resolve every queued job, then unload.
+
+        The order matters and each step is one of the two ways this used to
+        wedge a shutdown.
+
+        ``_stopping`` goes up first so a request racing the teardown is
+        refused rather than queued behind a runner that is already gone —
+        :meth:`submit` has no await between its check and its ``put``, so the
+        flag closes the window completely.
+
+        Then the queue is *drained*. Cancelling the runner only ever resolved
+        the job it happened to be running: everything already queued kept a
+        pending future, the handlers awaiting those futures never returned,
+        and the lifespan hung until uvicorn's timeout killed the process.
+
+        Then the in-flight worker thread is given a bounded grace period.
+        ``asyncio.to_thread`` cannot be cancelled — the awaiting coroutine is
+        abandoned, the thread runs on — so unloading straight after the cancel
+        raced ``_model = None`` and ``empty_cache()`` against a thread still
+        inside the model. **Residual, deliberately:** if the grace expires the
+        unload proceeds anyway, because a shutdown that never finishes is
+        worse than the race it is avoiding. Size ``SHUTDOWN_GRACE_SECONDS``
+        for the longest job you are willing to wait on.
+        """
+        self._stopping = True
         for task in (self._reaper, self._runner):
             if task is not None:
                 task.cancel()
@@ -157,8 +212,46 @@ class LifecycleManager:
                 except asyncio.CancelledError:
                     pass
         self._reaper = self._runner = None
+        self._drain_queue("the worker is shutting down; the job never ran")
+        await self._await_inference()
         async with self._gpu_lock:
             await self._unload_all(reason="shutdown", include_resident=True)
+
+    def _drain_queue(self, reason: str) -> int:
+        """Resolve every queued job with :class:`WorkerShuttingDown`.
+
+        Nothing else consumes ``_queue``, so a job left in it is a caller
+        awaiting a future that no longer has anyone to complete it.
+        """
+        failed = 0
+        while True:
+            try:
+                job = self._queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            self._queue.task_done()
+            if not job.future.done():
+                job.future.set_exception(WorkerShuttingDown(reason))
+                failed += 1
+        if failed:
+            log.warning("failed %d queued job(s): %s", failed, reason)
+        return failed
+
+    async def _await_inference(self) -> None:
+        """Wait, bounded, for the worker thread of the last dispatched job."""
+        done = self._inference_done
+        if done is None or done.is_set() or self.shutdown_grace_seconds <= 0:
+            return
+        log.info(
+            "waiting up to %.1fs for the in-flight job before unloading",
+            self.shutdown_grace_seconds,
+        )
+        finished = await asyncio.to_thread(done.wait, self.shutdown_grace_seconds)
+        if not finished:
+            log.warning(
+                "in-flight job still running after %.1fs; unloading anyway",
+                self.shutdown_grace_seconds,
+            )
 
     # -- public API --------------------------------------------------------
     async def submit(self, task: str, fn: Callable[[Backend], T], *, label: str = "") -> T:
@@ -169,22 +262,33 @@ class LifecycleManager:
         """
         if task not in self._slots:
             raise KeyError(f"no backend registered for task {task!r}")
+        if self._stopping:
+            raise WorkerShuttingDown("the worker is shutting down; the job never ran")
         if self._runner is None or self._runner.done():
             raise ManagerNotRunning("lifecycle manager is not running")
 
         loop = asyncio.get_running_loop()
         future: asyncio.Future = loop.create_future()
+        job = _Job(task=task, fn=fn, future=future, enqueued_at=self._clock(), label=label)
         self._in_flight += 1
-        await self._queue.put(
-            _Job(task=task, fn=fn, future=future, enqueued_at=self._clock(), label=label)
-        )
         try:
+            # Unbounded queue: `put` never awaits, so nothing can run between
+            # the liveness check above and the job landing in the queue.
+            await self._queue.put(job)
             return await future
         finally:
             self._in_flight -= 1
 
     def snapshot(self) -> dict[str, Any]:
-        """Everything ``GET /status`` reports. Cheap enough to call per request."""
+        """Everything ``GET /status`` reports. Cheap enough to call per request.
+
+        Read *without* ``_gpu_lock``, deliberately. Taking it would make
+        ``/status`` queue behind whatever the GPU is doing, and a status
+        endpoint that blocks for the length of a transcription is worse than
+        one that can catch a load mid-eviction and report the transitional
+        picture. Every field is a plain attribute read, so nothing here can
+        tear; only the cross-slot composition can be a moment out of date.
+        """
         now = self._clock()
         vram = self._vram_probe()
         backends = []
@@ -222,6 +326,10 @@ class LifecycleManager:
                 "depth": self._queue.qsize(),
                 "in_flight": self._in_flight,
                 "running": self._running_task,
+                # The one field that distinguishes "busy" from "wedged": with a
+                # dead consumer, depth and in_flight climb and nothing else on
+                # this page changes.
+                "consumer_alive": self._runner is not None and not self._runner.done(),
             },
             "lease": {
                 "acquired": self.hooks.acquired,
@@ -233,16 +341,33 @@ class LifecycleManager:
 
     # -- queue consumer ----------------------------------------------------
     async def _run_queue(self) -> None:
-        while True:
-            job = await self._queue.get()
-            try:
-                await self._execute(job)
-            except asyncio.CancelledError:
-                if not job.future.done():
-                    job.future.cancel()
-                raise
-            finally:
-                self._queue.task_done()
+        """The single consumer. Its death is the queue's death, so it says so.
+
+        Whatever ends this task — the cancel in :meth:`stop`, or a bug nobody
+        has written yet — every job left in the queue has a caller awaiting a
+        future that will now never be completed by anyone. Draining on the way
+        out turns "the request hangs until the client's timeout" into a 503
+        that says what happened.
+        """
+        try:
+            while True:
+                job = await self._queue.get()
+                try:
+                    await self._execute(job)
+                except asyncio.CancelledError:
+                    if not job.future.done():
+                        job.future.set_exception(
+                            WorkerShuttingDown(
+                                f"{job.task} was interrupted by shutdown; "
+                                "it may or may not have run"
+                            )
+                        )
+                    raise
+                finally:
+                    self._queue.task_done()
+        except BaseException:
+            self._drain_queue("the GPU queue runner stopped")
+            raise
 
     async def _execute(self, job: _Job) -> None:
         slot = self._slots[job.task]
@@ -252,7 +377,7 @@ class LifecycleManager:
                 try:
                     await self._ensure_loaded(job.task)
                     try:
-                        result = await asyncio.to_thread(job.fn, slot.backend)
+                        result = await self._dispatch(job, slot)
                     except Exception as exc:
                         await self._job_raised(slot, exc)
                         raise
@@ -265,27 +390,62 @@ class LifecycleManager:
         except asyncio.CancelledError:
             raise
         except BaseException as exc:  # noqa: BLE001 - the caller gets the exception
-            log.warning("job failed task=%s label=%s: %s", job.task, job.label, exc)
+            log.warning(
+                "job failed task=%s label=%s: %s",
+                job.task,
+                job.label,
+                exc,
+                # A rejected upload is not worth a traceback; anything else is.
+                exc_info=not isinstance(exc, BackendInputError),
+            )
             if not job.future.done():
                 job.future.set_exception(exc)
+
+    async def _dispatch(self, job: _Job, slot: Slot) -> Any:
+        """Run the job function in a thread, leaving a completion flag behind.
+
+        The flag outlives the await on purpose: cancelling this coroutine
+        abandons the thread rather than stopping it, and :meth:`stop` needs
+        something to wait on before it starts freeing weights out from under
+        that thread.
+        """
+        done = threading.Event()
+        self._inference_done = done
+        return await asyncio.to_thread(_call_and_signal, job.fn, slot.backend, done)
 
     async def _job_raised(self, slot: Slot, exc: Exception) -> None:
         """Decide what a failed *inference* did to the model, under the lock.
 
-        A ``RuntimeError`` out of a backend is the GPU talking: a CUDA OOM
-        leaves the model's context poisoned, and a slot left ``loaded`` then
-        answers every later job with ``invalid device ordinal`` until the
+        Unloading is for the device failing, not for the job failing. A CUDA
+        OOM leaves the model's context poisoned, and a slot left ``loaded``
+        then answers every later job with ``invalid device ordinal`` until the
         process restarts (measured in ``research/gpu-validation-2026-08-08.md``
-        §5.1 — with ``IDLE_UNLOAD_SECONDS=0`` it never recovers at all). So the
-        slot is unloaded here, which also frees its VRAM and, if it was the last
-        non-resident GPU model, gives the lease back.
+        §5.1 — with ``IDLE_UNLOAD_SECONDS=0`` it never recovers at all). So a
+        :class:`BackendPoisoned` — or an untyped exception that
+        :func:`looks_like_device_failure` recognises — unloads the slot, which
+        also frees its VRAM and, if it was the last non-resident GPU model,
+        gives the lease back.
 
-        Anything else — a ``ValueError`` for bad input, a missing file — is the
-        caller's problem and leaves a perfectly good model loaded.
+        The discriminator used to be ``isinstance(exc, RuntimeError)``, which
+        is what whisperX raises for a malformed media stream, torch for a dtype
+        mismatch and onnxruntime for a shape error. Each of those cost a full
+        reload (5.8 s for the frame embedder) *and* came back as 503, which the
+        mcp client reads as backpressure and answers by replaying the same
+        input until the 1800 s budget is gone. None of them are the device
+        talking, so none of them unload anything now.
+
+        What is left keeps its type when it has one, and gets wrapped in a
+        typed :class:`BackendError` when it does not — an untyped exception
+        would otherwise reach FastAPI's bare-500 path, stack trace and all,
+        with no ``error.type`` for the caller to classify.
         """
-        if not isinstance(exc, RuntimeError):
-            return
-        log.warning("unloading %s after a failed job: %s", slot.task, exc)
+        if not _unloads_the_slot(exc):
+            if isinstance(exc, BackendError):
+                return  # already typed; the HTTP layer knows how to answer it
+            raise BackendError(
+                f"{slot.task} backend raised {type(exc).__name__}: {exc}"
+            ) from exc
+        log.warning("unloading %s after a device failure: %s", slot.task, exc)
         try:
             await self._unload(slot.task, reason="job failed")
         except Exception:  # pragma: no cover - a backend whose unload also dies
@@ -434,6 +594,28 @@ class LifecycleManager:
                     await self._unload(task, reason="idle")
                     evicted.append(task)
         return evicted
+
+
+def _call_and_signal(
+    fn: Callable[[Backend], Any], backend: Backend, done: threading.Event
+) -> Any:
+    try:
+        return fn(backend)
+    finally:
+        done.set()
+
+
+def _unloads_the_slot(exc: BaseException) -> bool:
+    """Is the loaded model worth keeping after this exception?
+
+    Two cases say no. A device failure (:func:`looks_like_device_failure`) —
+    the context is poisoned and every later job on that instance fails. And a
+    :class:`BackendUnavailable` raised *from inference*, which means the
+    backend says it cannot serve while its slot says ``loaded``: the two have
+    drifted, and unloading costs one reload of something that was not working
+    anyway. Everything else leaves a perfectly good model where it is.
+    """
+    return looks_like_device_failure(exc) or isinstance(exc, BackendUnavailable)
 
 
 def _takes_lease(slot: Slot) -> bool:
