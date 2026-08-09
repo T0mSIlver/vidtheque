@@ -30,9 +30,23 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Protocol, Sequence, runtime_checkable
 
+import httpx2 as httpx
+
 from ..embeddings import EmbeddingUnavailable, HTTPEmbeddingClient
 
 logger = logging.getLogger(__name__)
+
+# Transport failures where the server provably never saw the request: nothing
+# was executed, so replaying it costs a round trip. Everything else — a read
+# timeout above all — happens *after* the body was accepted, and for an
+# expensive non-idempotent call it may be running on the GPU right now.
+CONNECT_FAILURES = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.PoolTimeout,
+    httpx.UnsupportedProtocol,
+    httpx.InvalidURL,
+)
 
 # The text tower of the frame model, exposed as its own path. See the note on
 # `embed_frame_query` — this is the one assumption in the file.
@@ -68,7 +82,12 @@ class WorkerAPI(Protocol):
     async def healthy(self) -> bool: ...
 
     async def transcribe(
-        self, audio: Path, *, language: str | None = None, model: str | None = None
+        self,
+        audio: Path,
+        *,
+        language: str | None = None,
+        model: str | None = None,
+        duration_s: float | None = None,
     ) -> dict[str, Any]: ...
 
     async def ocr(
@@ -101,6 +120,8 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
         stt_timeout_s: float = 1800.0,
         retries: int = 3,
         retry_max_wait_s: float = 120.0,
+        retry_total_s: float = 1800.0,
+        stt_realtime_factor: float = 2.0,
     ) -> None:
         # `timeout_s` stays the *query* budget it is on the parent — a search
         # would rather answer FTS-only than wait two minutes. Indexing calls
@@ -110,6 +131,8 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
         self._stt_timeout = stt_timeout_s
         self._retries = max(0, retries)
         self._retry_max_wait = retry_max_wait_s
+        self._retry_total = max(0.0, retry_total_s)
+        self._stt_realtime_factor = max(0.0, stt_realtime_factor)
         self._sleep = asyncio.sleep  # swapped in tests
 
     # ------------------------------------------------------------- transport
@@ -122,17 +145,31 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
         files: Callable[[], list[tuple[str, tuple[str, Any, str]]]] | None = None,
         data: dict[str, Any] | None = None,
         timeout_s: float | None = None,
+        replay_after_acceptance: bool = True,
     ) -> dict[str, Any]:
         """POST with the worker's backpressure honoured.
 
         ``files`` is a *factory*, not a list: each attempt opens its own
         handles, because a retried multipart body has to start from byte zero
         and a spent file object silently uploads nothing.
+
+        ``replay_after_acceptance=False`` says this call is expensive and not
+        idempotent: a connect failure is still replayed (the server never saw
+        it), but a read timeout is not, because the worker may be running the
+        request right now and a retry would enqueue the same 70 minutes of GPU
+        work a second time.
+
+        Two budgets, on purpose. ``retries`` bounds *requests* — a worker that
+        keeps dropping the connection is not going to start answering. The 503
+        wait is bounded by ``retry_total_s`` of wall clock instead, because
+        `Retry-After: 30` four times is 90 seconds, and "an indexing job has
+        hours" was written about a loop that gave up in a minute and a half.
         """
         client = await self._http()
         attempt = 0
+        waited = 0.0
         last: Exception | None = None
-        while attempt <= self._retries:
+        while True:
             handles: list[Any] = []
             try:
                 kwargs: dict[str, Any] = {"timeout": timeout_s or self._op_timeout}
@@ -147,6 +184,12 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
                 response = await client.post(path, **kwargs)
             except Exception as exc:  # connect/read/timeout
                 last = exc
+                if not replay_after_acceptance and not isinstance(exc, CONNECT_FAILURES):
+                    raise WorkerUnavailable(
+                        f"{path}: {exc}. The request was accepted before it failed, so it "
+                        "may still be running on the worker; it is not replayed. Raise "
+                        "VIDTHEQUE_STT_TIMEOUT_S if this is a long recording."
+                    ) from exc
                 if attempt >= self._retries:
                     raise WorkerUnavailable(f"{path}: {exc}") from exc
                 await self._backoff(attempt, None, str(exc))
@@ -160,11 +203,16 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
 
             if response.status_code in RETRYABLE_STATUS:
                 detail = _detail(response)
-                if attempt >= self._retries:
+                if waited >= self._retry_total:
                     raise WorkerUnavailable(
-                        f"{path}: {response.status_code} after {attempt + 1} attempts ({detail})"
+                        f"{path}: {response.status_code} for the whole "
+                        f"{self._retry_total:.0f}s backpressure budget ({detail})"
                     )
-                await self._backoff(attempt, response.headers.get("retry-after"), detail)
+                # Backpressure is the worker saying "not yet", which is not the
+                # same as failing: it costs the wait budget, not an attempt.
+                waited += await self._backoff(
+                    attempt, response.headers.get("retry-after"), detail, floor=0.5
+                )
                 attempt += 1
                 continue
             if response.status_code >= 400:
@@ -178,17 +226,27 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
                     f"{path}: expected a JSON object, got {type(body).__name__}"
                 )
             return body
-        raise WorkerUnavailable(f"{path}: {last}")  # pragma: no cover - loop always returns
 
-    async def _backoff(self, attempt: int, retry_after: str | None, why: str) -> None:
-        """Retry-After when the worker names one, exponential when it does not."""
+    async def _backoff(
+        self, attempt: int, retry_after: str | None, why: str, floor: float = 0.0
+    ) -> float:
+        """Retry-After when the worker names one, exponential when it does not.
+
+        Returns the seconds spent, which is what the backpressure budget counts
+        — a wall clock read here would make the budget untestable and would not
+        measure anything the clock does not already say. ``floor`` keeps a
+        `Retry-After: 0` from turning that budget into a hot loop.
+        """
         delay = _parse_retry_after(retry_after)
         if delay is None:
-            delay = min(2.0 * (2**attempt), self._retry_max_wait)
+            # Capped exponent: the budget can allow many more waits than an int
+            # can shift, and `2 ** 1024` is an OverflowError, not a long sleep.
+            delay = min(2.0 * (2 ** min(attempt, 16)), self._retry_max_wait)
             delay += random.uniform(0, 0.5)  # nothing else is racing, but still
-        delay = min(delay, self._retry_max_wait)
+        delay = max(min(delay, self._retry_max_wait), floor)
         logger.info("worker asked us to wait %.1fs (attempt %d): %s", delay, attempt + 1, why)
         await self._sleep(delay)
+        return delay
 
     # --------------------------------------------------------------- surface
 
@@ -203,12 +261,25 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
             return False
 
     async def transcribe(
-        self, audio: Path, *, language: str | None = None, model: str | None = None
+        self,
+        audio: Path,
+        *,
+        language: str | None = None,
+        model: str | None = None,
+        duration_s: float | None = None,
     ) -> dict[str, Any]:
         """``POST /v1/audio/transcriptions``, verbose_json, word granularity.
 
         ``timestamp_granularities[]`` keeps the literal brackets: it is
         OpenAI's form-field name, and the worker's schema spells it that way.
+
+        The budget is sized from the recording, not from a constant: a flat
+        1,800 s covers a conference talk and not a three-hour stream, and the
+        timeout it produced was the *worst* possible failure here — the whole
+        multipart body was replayed, up to three more times, each one enqueuing
+        the same transcription again on a worker that was probably still running
+        the first. Read timeouts are no longer replayed at all (the request was
+        accepted), so the budget has to be right rather than recoverable.
         """
         data: dict[str, Any] = {
             "response_format": "verbose_json",
@@ -223,8 +294,15 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
             "/v1/audio/transcriptions",
             files=lambda: [("file", (audio.name, audio.open("rb"), "application/octet-stream"))],
             data=data,
-            timeout_s=self._stt_timeout,
+            timeout_s=self.stt_budget(duration_s),
+            replay_after_acceptance=False,
         )
+
+    def stt_budget(self, duration_s: float | None) -> float:
+        """`VIDTHEQUE_STT_TIMEOUT_S` as a floor, plus room for the recording."""
+        if not duration_s or duration_s <= 0:
+            return self._stt_timeout
+        return max(self._stt_timeout, float(duration_s) * self._stt_realtime_factor)
 
     async def embed(
         self, texts: Sequence[str], model: str | None = None, input_type: str = "query"

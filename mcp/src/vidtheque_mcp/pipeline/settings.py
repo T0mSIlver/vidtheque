@@ -71,6 +71,16 @@ class PipelineSettings:
     stt_timeout_s: float = 1800.0
     worker_retries: int = 3
     worker_retry_max_wait_s: float = 120.0
+    # Backpressure (503 + Retry-After) is the worker saying "not yet", not
+    # failing. It is bounded by wall clock rather than by request count:
+    # four requests at Retry-After 30 is 90 seconds, which is not the
+    # "an indexing job has hours" the retry loop was written for.
+    worker_retry_total_s: float = 1800.0
+    # `stt_timeout_s` is a floor; a recording longer than it gets this many
+    # seconds of budget per second of audio. A read timeout is no longer
+    # replayed (the worker may still be transcribing), so the budget has to
+    # be right rather than recoverable.
+    stt_realtime_factor: float = 2.0
 
     # ------------------------------------------------------------- yt-dlp manners
     sleep_requests_s: float = 0.75
@@ -119,6 +129,8 @@ class PipelineSettings:
             stt_timeout_s=_float_env("VIDTHEQUE_STT_TIMEOUT_S", 1800.0),
             worker_retries=_int_env("VIDTHEQUE_WORKER_RETRIES", 3),
             worker_retry_max_wait_s=_float_env("VIDTHEQUE_WORKER_RETRY_MAX_WAIT_S", 120.0),
+            worker_retry_total_s=_float_env("VIDTHEQUE_WORKER_RETRY_TOTAL_S", 1800.0),
+            stt_realtime_factor=_float_env("VIDTHEQUE_STT_REALTIME_FACTOR", 2.0),
             sleep_requests_s=_float_env("VIDTHEQUE_YTDLP_SLEEP_REQUESTS", 0.75),
             sleep_interval_s=_float_env("VIDTHEQUE_YTDLP_SLEEP_INTERVAL", 10.0),
             max_sleep_interval_s=_float_env("VIDTHEQUE_YTDLP_MAX_SLEEP_INTERVAL", 20.0),

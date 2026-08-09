@@ -72,25 +72,61 @@ async def test_retry_after_is_ignored_when_it_is_not_a_number(tmp_path: Path) ->
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(503, headers={"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"})
 
-    client, slept = make_client(handler, retries=1)
+    client, slept = make_client(handler, retries=1, retry_total_s=10.0)
     with pytest.raises(WorkerUnavailable):
         await client.ocr([tmp_path / "missing.jpg"] and [_jpeg(tmp_path)])
     # Fell back to the exponential rather than trusting a clock we cannot read.
     assert slept and 2.0 <= slept[0] <= 2.5
 
 
-async def test_retries_are_bounded_and_then_reported_as_unavailable(tmp_path: Path) -> None:
+async def test_backpressure_is_bounded_by_the_wait_budget_not_the_retry_count(
+    tmp_path: Path,
+) -> None:
+    """503 is the worker saying "not yet", which is not the same as failing.
+
+    Bounding it by `retries` meant `Retry-After: 30` four times — about ninety
+    seconds — for a loop whose docstring says an indexing job has hours. The two
+    budgets are separate now: requests for transport failures, wall clock for
+    backpressure.
+    """
     attempts: list[int] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         attempts.append(1)
-        return httpx.Response(503)
+        return httpx.Response(503, headers={"Retry-After": "30"})
 
-    client, _ = make_client(handler, retries=2)
+    client, slept = make_client(handler, retries=2, retry_total_s=120.0)
     with pytest.raises(WorkerUnavailable) as caught:
         await client.embed_images([_jpeg(tmp_path)])
+    assert len(attempts) == 5  # 4 x 30s of waiting, not 3 requests
+    assert sum(slept) == 120.0
+    assert "backpressure budget" in str(caught.value)
+
+
+async def test_a_retry_after_of_zero_cannot_become_a_hot_loop(tmp_path: Path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, headers={"Retry-After": "0"})
+
+    client, slept = make_client(handler, retry_total_s=5.0)
+    with pytest.raises(WorkerUnavailable):
+        await client.embed_images([_jpeg(tmp_path)])
+    assert all(delay >= 0.5 for delay in slept)
+    assert len(slept) <= 11
+
+
+async def test_transport_failures_are_still_bounded_by_the_retry_count(
+    tmp_path: Path,
+) -> None:
+    attempts: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts.append(1)
+        raise httpx.ConnectError("connection refused")
+
+    client, _ = make_client(handler, retries=2)
+    with pytest.raises(WorkerUnavailable):
+        await client.embed_images([_jpeg(tmp_path)])
     assert len(attempts) == 3  # the first go plus two retries
-    assert "503" in str(caught.value)
 
 
 async def test_a_4xx_is_not_retried(tmp_path: Path) -> None:
@@ -147,6 +183,65 @@ async def test_a_retried_upload_resends_the_whole_file(tmp_path: Path) -> None:
     assert len(bodies[0]) == len(bodies[1])
     assert bodies[1].count(b"\x00" * 4096) == 1
     assert b"RIFF" in bodies[1]
+
+
+async def test_a_read_timeout_on_a_transcription_is_not_replayed(tmp_path: Path) -> None:
+    """The review's worst case: the worker accepted 70 minutes of audio, then
+    the read timed out. Replaying the multipart body — three more times — asks
+    a worker that is probably still transcribing to transcribe it again."""
+    attempts: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts.append(1)
+        raise httpx.ReadTimeout("timed out waiting for the response")
+
+    client, _ = make_client(handler, retries=3)
+    with pytest.raises(WorkerUnavailable) as caught:
+        await client.transcribe(_wav(tmp_path))
+    assert len(attempts) == 1
+    assert "may still be running on the worker" in str(caught.value)
+
+
+async def test_a_connect_failure_on_a_transcription_is_still_replayed(
+    tmp_path: Path,
+) -> None:
+    """The server provably never saw it, so nothing can be running twice."""
+    attempts: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise httpx.ConnectError("connection refused")
+        return httpx.Response(200, json={"segments": [], "model": "large-v3"})
+
+    client, _ = make_client(handler, retries=3)
+    assert await client.transcribe(_wav(tmp_path)) == {"segments": [], "model": "large-v3"}
+    assert len(attempts) == 2
+
+
+async def test_an_idempotent_call_still_retries_a_read_timeout(tmp_path: Path) -> None:
+    """Only the expensive, non-idempotent upload opts out. Re-running OCR on a
+    JPEG costs a CPU second and has no side effects."""
+    attempts: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise httpx.ReadTimeout("slow")
+        return httpx.Response(200, json={"data": [{"index": 0}], "model": "rapidocr-default"})
+
+    client, _ = make_client(handler, retries=2)
+    results, _model = await client.ocr([_jpeg(tmp_path)])
+    assert results == [[]]
+    assert len(attempts) == 2
+
+
+def test_the_stt_budget_is_sized_from_the_recording() -> None:
+    client, _ = make_client(lambda r: None, stt_timeout_s=1800.0, stt_realtime_factor=2.0)
+    assert client.stt_budget(None) == 1800.0
+    assert client.stt_budget(0.0) == 1800.0
+    assert client.stt_budget(600.0) == 1800.0  # the floor still wins on a short talk
+    assert client.stt_budget(4_200.0) == 8_400.0  # a 70-minute recording
 
 
 async def test_transcription_asks_for_verbose_json_with_word_timestamps(tmp_path: Path) -> None:

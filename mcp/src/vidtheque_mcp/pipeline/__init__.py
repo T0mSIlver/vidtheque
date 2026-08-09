@@ -56,4 +56,6 @@ def worker_client(worker_url: str, resolved: PipelineSettings) -> HTTPWorkerClie
         stt_timeout_s=resolved.stt_timeout_s,
         retries=resolved.worker_retries,
         retry_max_wait_s=resolved.worker_retry_max_wait_s,
+        retry_total_s=resolved.worker_retry_total_s,
+        stt_realtime_factor=resolved.stt_realtime_factor,
     )

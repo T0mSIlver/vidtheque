@@ -525,7 +525,14 @@ class IndexingPipeline:
             return None
         assert run.meta is not None
         model = self.db.config.get("stt.model")
-        payload = await self.worker.transcribe(run.audio, language=run.meta.language, model=model)
+        payload = await self.worker.transcribe(
+            run.audio,
+            language=run.meta.language,
+            model=model,
+            # The budget is sized from the recording: a flat 1,800 s covers
+            # a conference talk and not a three-hour stream.
+            duration_s=run.meta.duration_s or None,
+        )
         cues = cues_from_verbose_json(payload)
         served = str(payload.get("model") or model or "whisperx")
         if cues and not any(cue.words for cue in cues):
