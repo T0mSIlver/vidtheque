@@ -563,8 +563,19 @@ Ordering defaults to most-recently-published.
 | `limit` | int | `20` | clamped 1..100 | |
 | `offset` | int | `0` | 0..10000 | |
 | `format` | enum `text\|tsv` | `tsv` | — | TSV by default: this output is inherently columnar. |
-| `fields` | string | `video_id,title,channel,published,duration,coverage` | ≤ 12 | adds: `tags`, `indexed_at`, `cues`, `frames`, `link` |
+| `fields` | string | `video_id,title,channel,published,duration,coverage` | ≤ 12 | adds: `tags`, `indexed_at`, `index_state`, `cues`, `frames`, `link` |
 | `max_text_chars` | int | `120` | `0` or 40..2000 | Per-cell (titles), not per-response. |
+
+**`index_state` is a field, not a parameter.** The implementation
+(`tools/library.list_videos`) also takes an `index_state=` filter
+(`pending|indexing|ready|failed|stale|all`), and the MCP tool deliberately does
+not expose it: a model asking the library what is *in* the corpus wants the
+videos that have data to answer with, which is what omitting it means
+(`ready` + `stale`, `queries.QUERYABLE_INDEX_STATES` — the clause this tool has
+always had, now a default instead of a constant). The management dashboard is
+the caller that needs the other four states, and it calls the service layer
+directly (dashboard.md §5.2, §7). The *field* is exposed here because a row
+that is `stale` reads as a healthy row without it.
 
 **Return shape:**
 

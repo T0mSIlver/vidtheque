@@ -347,6 +347,20 @@ def is_browse_query(query: str | None) -> bool:
 # §4.1 — resolve corpus filters to a video-id set
 
 
+# Every `index_state` the schema permits (0001_initial.sql:70), in the order a
+# video moves through them.
+INDEX_STATES = ("pending", "indexing", "ready", "failed", "stale")
+
+# What a *query* means by "in the corpus": a video that has data to answer with.
+# A `pending` video has no cues; an `indexing` one has half of them and is being
+# written to; a `failed` one is a row and an error string. Search and
+# list-videos have always meant this and still do — it is the default rather
+# than a hard-coded clause only because the dashboard's job is the opposite one
+# (dashboard.md §5.2: "what state is each video in"), and a management surface
+# that cannot see the failures is the one view nobody needs.
+QUERYABLE_INDEX_STATES = ("ready", "stale")
+
+
 @dataclass
 class CorpusFilter:
     channel: str | None = None
@@ -357,6 +371,7 @@ class CorpusFilter:
     indexed_before: int | None = None
     video_ids: Sequence[str] = field(default_factory=tuple)
     tags: Sequence[str] = field(default_factory=tuple)
+    index_states: Sequence[str] = QUERYABLE_INDEX_STATES
 
     def as_params(self) -> dict[str, Any]:
         return {
@@ -366,6 +381,7 @@ class CorpusFilter:
             "published_before": self.published_before,
             "indexed_after": self.indexed_after,
             "indexed_before": self.indexed_before,
+            "index_states": json.dumps(list(self.index_states)),
         }
 
 
@@ -377,7 +393,7 @@ WHERE (:channel          IS NULL OR channel_lc LIKE '%' || lower(:channel) || '%
   AND (:published_before IS NULL OR published_at <  :published_before)
   AND (:indexed_after    IS NULL OR indexed_at   >= :indexed_after)
   AND (:indexed_before   IS NULL OR indexed_at   <  :indexed_before)
-  AND index_state IN ('ready','stale')
+  AND index_state IN (SELECT value FROM json_each(:index_states))
 """
 
 # The tag join is the shape that bit screenpipe hardest. Cap first, join second;
@@ -1457,6 +1473,240 @@ def keyframe_path(conn: sqlite3.Connection, public_id: str, ordinal: int) -> sql
     return conn.execute(
         "SELECT k.jpeg_path, k.jpeg_bytes FROM keyframes k JOIN videos v ON v.id = k.video_id "
         "WHERE v.public_id = ? AND k.ord = ?",
+        (public_id, ordinal),
+    ).fetchone()
+
+
+# ---------------------------------------------------------------------------
+# The dashboard's reads — dashboard.md §7.
+#
+# These answer questions the tool surface was designed *not* to answer, because
+# a model does not need them: which of the seven stages ran and with what
+# model, where the shot boundaries are, what the chunk boundaries are, what OCR
+# read and *where on the screen* it read it. Every one is read-only, bounded,
+# and over an index that already exists. No new table.
+
+
+# The pipeline's order, which is not `video_stages`'s storage order (the PK is
+# `(video_id, stage)`, so rows come back alphabetically). A provenance panel
+# that lists `chunk` before `fetch` is a panel nobody can read.
+STAGE_ORDER = ("fetch", "stt", "chunk", "text_embed", "keyframe", "ocr", "frame_embed")
+
+
+def video_stages(conn: sqlite3.Connection, video_id: int) -> list[sqlite3.Row]:
+    """The stage rows this video has, in pipeline order.
+
+    Missing stages are missing on purpose: `video_stages` carries a row only
+    once a stage has been planned, so "no row" and "pending" are different
+    facts and the caller decides how to say so.
+    """
+    return conn.execute(
+        """
+        SELECT stage, state, model_key, stage_version, started_at, finished_at, error
+        FROM video_stages WHERE video_id = ?
+        ORDER BY CASE stage
+                   WHEN 'fetch' THEN 0 WHEN 'stt' THEN 1 WHEN 'chunk' THEN 2
+                   WHEN 'text_embed' THEN 3 WHEN 'keyframe' THEN 4
+                   WHEN 'ocr' THEN 5 ELSE 6 END
+        """,
+        (video_id,),
+    ).fetchall()
+
+
+def shot_timeline(
+    conn: sqlite3.Connection, video_id: int, limit: int = 2_000
+) -> list[sqlite3.Row]:
+    """One row per shot, from `keyframes GROUP BY shot_id`.
+
+    There is no `scenes` table (dashboard.md §4.3) — the shot boundaries are
+    denormalized onto every keyframe, and `keyframes_shot(video_id, shot_id)`
+    is the index this rides. One grouped query for the whole video, never one
+    per shot, and bounded: a four-hour talk with a hard cut every two seconds
+    is a legal corpus entry.
+    """
+    return conn.execute(
+        """
+        SELECT shot_id,
+               MIN(shot_start_s) AS start_s,
+               MAX(shot_end_s)   AS end_s,
+               MIN(ord)          AS first_ord,
+               COUNT(*)          AS frames,
+               SUM(CASE WHEN dup_of IS NULL THEN 1 ELSE 0 END) AS kept,
+               SUM(CASE WHEN ocr_state = 'done'  THEN 1 ELSE 0 END) AS ocr_done,
+               SUM(CASE WHEN ocr_state = 'empty' THEN 1 ELSE 0 END) AS ocr_empty
+        FROM keyframes WHERE video_id = :vid
+        GROUP BY shot_id ORDER BY start_s LIMIT :limit
+        """,
+        {"vid": video_id, "limit": limit},
+    ).fetchall()
+
+
+def keyframe_page(
+    conn: sqlite3.Connection,
+    video_id: int,
+    offset: int,
+    limit: int,
+    shot_id: int | None = None,
+) -> list[sqlite3.Row]:
+    """The keyframe strip, by ordinal — duplicates **included**.
+
+    `keyframes_in_span` and `keyframe_count` both hide `dup_of IS NOT NULL`,
+    which is right for search and wrong here: "why does this shot have no OCR"
+    is answered entirely by that column, so the strip shows the deduped frames
+    dimmed rather than pretending they were never captured.
+
+    Returns ``limit + 1`` rows so the caller can say `has_more` without a
+    second count query.
+    """
+    return conn.execute(
+        """
+        SELECT k.id, k.ord, k.t_s, k.shot_id, k.shot_start_s, k.shot_end_s,
+               k.sharpness, k.width, k.height, k.jpeg_bytes, k.dup_of, k.ocr_state,
+               dup.ord AS dup_of_ord
+        FROM keyframes k
+        LEFT JOIN keyframes dup ON dup.id = k.dup_of
+        WHERE k.video_id = :vid AND (:shot IS NULL OR k.shot_id = :shot)
+        ORDER BY k.ord LIMIT :limit OFFSET :offset
+        """,
+        {"vid": video_id, "shot": shot_id, "limit": limit + 1, "offset": offset},
+    ).fetchall()
+
+
+def cue_page(
+    conn: sqlite3.Connection, video_id: int, offset: int, limit: int
+) -> list[sqlite3.Row]:
+    """Transcript cues by time, on `cues_time(video_id, start_s)`.
+
+    `words_json` is ~10% of the database and is never a thing a human reads
+    (DECISIONS.md), so this reports whether word timings exist and does not
+    carry them. `origin` and `avg_logprob` do come along: they are how a reader
+    sees that a video came in through YouTube's captions rather than whisperX.
+
+    Returns ``limit + 1`` rows — `has_more` over a total, as everywhere else.
+    """
+    return conn.execute(
+        """
+        SELECT c.id, c.seq, c.start_s, c.end_s, c.text, c.origin, c.avg_logprob,
+               (c.words_json IS NOT NULL) AS has_words,
+               COALESCE(s.display_name, s.label) AS speaker
+        FROM cues c LEFT JOIN speakers s ON s.id = c.speaker_id
+        WHERE c.video_id = :vid
+        ORDER BY c.start_s, c.seq LIMIT :limit OFFSET :offset
+        """,
+        {"vid": video_id, "limit": limit + 1, "offset": offset},
+    ).fetchall()
+
+
+def chunk_spans(
+    conn: sqlite3.Connection, video_id: int, first_cue_id: int, last_cue_id: int
+) -> list[sqlite3.Row]:
+    """The chunks overlapping a cue-id range — the embedding unit, drawn.
+
+    Scoped to the cue page rather than to the video, because "what exactly is
+    the embedding unit" is a question about the cues in front of you and a
+    four-hour talk has hundreds of chunks. `chunks_span(first_cue_id,
+    last_cue_id)` is the index.
+    """
+    return conn.execute(
+        """
+        SELECT id, seq, start_s, end_s, first_cue_id, last_cue_id, n_chars
+        FROM chunks
+        WHERE video_id = :vid AND last_cue_id >= :lo AND first_cue_id <= :hi
+        ORDER BY seq
+        """,
+        {"vid": video_id, "lo": first_cue_id, "hi": last_cue_id},
+    ).fetchall()
+
+
+def cue_origins(conn: sqlite3.Connection, video_id: int) -> dict[str, int]:
+    """`whisperx | yt_manual | yt_auto` → how many cues came in that way."""
+    rows = conn.execute(
+        "SELECT origin, COUNT(*) AS n FROM cues WHERE video_id = ? GROUP BY origin",
+        (video_id,),
+    ).fetchall()
+    return {str(r["origin"]): int(r["n"]) for r in rows}
+
+
+def ocr_for_frames(
+    conn: sqlite3.Connection, keyframe_ids: Sequence[int], limit: int = 400
+) -> dict[int, list[sqlite3.Row]]:
+    """OCR lines and their boxes, for the frames in view — one grouped query.
+
+    The boxes are normalized 0–1 at write time (`pipeline/store.py`), so a
+    caller can draw them over the frame at any width without knowing the
+    frame's pixels. Double-capped: the caller bounds the frame list, and
+    ``limit`` bounds the lines, because a slide of dense small print is one
+    keyframe with two hundred lines on it.
+    """
+    if not keyframe_ids:
+        return {}
+    rows = conn.execute(
+        """
+        SELECT keyframe_id, line_no, text, conf, x0, y0, x1, y1
+        FROM ocr_lines
+        WHERE keyframe_id IN (SELECT value FROM json_each(:ids))
+        ORDER BY keyframe_id, line_no LIMIT :limit
+        """,
+        {"ids": json.dumps([int(k) for k in keyframe_ids]), "limit": limit},
+    ).fetchall()
+    out: dict[int, list[sqlite3.Row]] = {}
+    for row in rows:
+        out.setdefault(int(row["keyframe_id"]), []).append(row)
+    return out
+
+
+_PER_VIDEO_COUNTS = """
+SELECT (SELECT COUNT(*) FROM cues       WHERE video_id = :vid) AS cues,
+       (SELECT COUNT(*) FROM cues       WHERE video_id = :vid
+          AND words_json IS NOT NULL)                          AS cues_with_words,
+       (SELECT COUNT(*) FROM chunks     WHERE video_id = :vid) AS chunks,
+       (SELECT COUNT(*) FROM chapters   WHERE video_id = :vid) AS chapters,
+       (SELECT COUNT(*) FROM keyframes  WHERE video_id = :vid) AS keyframes,
+       (SELECT COUNT(*) FROM keyframes  WHERE video_id = :vid
+          AND dup_of IS NULL)                                  AS keyframes_kept,
+       (SELECT COUNT(*) FROM ocr_frames WHERE video_id = :vid) AS ocr_frames,
+       (SELECT COUNT(*) FROM ocr_lines  WHERE video_id = :vid) AS ocr_lines,
+       (SELECT COALESCE(SUM(jpeg_bytes), 0) FROM keyframes
+          WHERE video_id = :vid)                               AS jpeg_bytes
+"""
+
+
+def per_video_counts(conn: sqlite3.Connection, video_id: int) -> sqlite3.Row:
+    """The counts `videos` does not denormalize — **detail page only**.
+
+    dashboard.md §4.2: there are no per-video counters in the schema, so these
+    are `COUNT(*)`s. Each rides a covering index (`cues_time`, `chunks_time`,
+    `ocr_time`, `keyframes_live`) and they run one video at a time. A fifty-row
+    table must never fan out into four hundred of them, which is why the videos
+    table shows coverage booleans instead.
+    """
+    return conn.execute(_PER_VIDEO_COUNTS, {"vid": video_id}).fetchone()
+
+
+def keyframe_bytes_total(conn: sqlite3.Connection) -> int:
+    """Keyframe bytes on disk, from the column that already stores them.
+
+    `SUM(jpeg_bytes)` rather than walking `keyframes/`: a directory walk grows
+    with the corpus while the overview page is loading, and the schema knows
+    the answer already.
+    """
+    return int(
+        conn.execute("SELECT COALESCE(SUM(jpeg_bytes), 0) FROM keyframes").fetchone()[0]
+    )
+
+
+def keyframe_detail(
+    conn: sqlite3.Connection, public_id: str, ordinal: int
+) -> sqlite3.Row | None:
+    """One keyframe by wire id (`<public_id>-<ord:05d>`), with its shot."""
+    return conn.execute(
+        """
+        SELECT k.id, k.ord, k.t_s, k.shot_id, k.shot_start_s, k.shot_end_s,
+               k.sharpness, k.width, k.height, k.jpeg_bytes, k.dup_of, k.ocr_state,
+               v.public_id, v.title
+        FROM keyframes k JOIN videos v ON v.id = k.video_id
+        WHERE v.public_id = ? AND k.ord = ?
+        """,
         (public_id, ordinal),
     ).fetchone()
 

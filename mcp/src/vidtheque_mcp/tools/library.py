@@ -27,10 +27,17 @@ from ..timeparse import parse_corpus_time, parse_offset
 from .base import Deps, handle_errors, normalize_video_ids, require_known_videos, text_result
 
 LIST_FIELDS = ("video_id", "title", "channel", "published", "duration", "coverage",
-               "tags", "indexed_at", "cues", "frames", "link")
+               "tags", "indexed_at", "index_state", "cues", "frames", "link")
 DEFAULT_LIST_FIELDS = "video_id,title,channel,published,duration,coverage"
 HAS_VALUES = ("transcript", "ocr", "frames", "all", "any")
 LIST_ORDERS = ("recency", "title", "duration", "indexed_at", "relevance")
+
+# `index_state=` accepts one of the five states, or `all`. Omitting it keeps
+# the query surface's own meaning of "in the corpus" — `ready` and `stale`, the
+# videos that have data to answer with (queries.QUERYABLE_INDEX_STATES). The
+# dashboard passes `all`, because a management view that cannot see the failed
+# and the half-indexed is the one view nobody needs (dashboard.md §5.2).
+INDEX_STATE_VALUES = (*queries.INDEX_STATES, "all")
 
 
 # ---------------------------------------------------------------- list-videos
@@ -47,6 +54,7 @@ async def list_videos(
     indexed_after: str | None = None,
     indexed_before: str | None = None,
     has: str = "any",
+    index_state: str | None = None,
     order: str = "recency",
     limit: int = 20,
     offset: int = 0,
@@ -56,6 +64,11 @@ async def list_videos(
 ) -> CallToolResult:
     if has not in HAS_VALUES:
         raise bad_param(f"has must be one of {', '.join(HAS_VALUES)}.")
+    if index_state is not None and index_state not in INDEX_STATE_VALUES:
+        raise bad_param(
+            f"index_state must be one of {', '.join(INDEX_STATE_VALUES)}.",
+            "omit it for the videos that have data to answer with.",
+        )
     if order not in LIST_ORDERS:
         raise bad_param(f"order must be one of {', '.join(LIST_ORDERS)}.")
     if format not in ("text", "tsv"):
@@ -83,6 +96,7 @@ async def list_videos(
         indexed_after=parse_corpus_time(indexed_after, "indexed_after"),
         indexed_before=parse_corpus_time(indexed_before, "indexed_before"),
         tags=tag_list,
+        index_states=_index_states(index_state),
     )
 
     async with admission(deps.search_semaphore):
@@ -119,6 +133,7 @@ async def list_videos(
             f'channel~"{channel}"' if channel else "",
             f"tags={','.join(tag_list)}" if tag_list else "",
             f"has={has}" if has != "any" else "",
+            f"index_state={index_state}" if index_state else "",
             f"order={order}",
         ]
         if part
@@ -166,6 +181,14 @@ async def list_videos(
     )
 
 
+def _index_states(index_state: str | None) -> tuple[str, ...]:
+    if index_state is None:
+        return queries.QUERYABLE_INDEX_STATES
+    if index_state == "all":
+        return queries.INDEX_STATES
+    return (index_state,)
+
+
 def _coverage(row: sqlite3.Row) -> str:
     return (
         ("t" if row["has_transcript"] else "-")
@@ -187,6 +210,9 @@ def _list_record(
         "coverage": _coverage(row),
         "tags": ",".join(tag_map.get(int(row["id"]), [])),
         "indexed_at": iso_day(row["indexed_at"]),
+        # Printed verbatim, never re-derived: `index_state` is the schema's own
+        # word and the dashboard colours from the string (dashboard.md §4.5).
+        "index_state": str(row["index_state"]),
         "cues": "",
         "frames": "",
         "link": f"https://youtu.be/{public_id}",

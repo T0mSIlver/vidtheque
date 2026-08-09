@@ -329,6 +329,24 @@ async def test_list_videos_rejects_unknown_fields(assembled: Assembled) -> None:
     assert structured(result)["code"] == "E_BAD_PARAM"
 
 
+async def test_list_videos_carries_index_state_verbatim(assembled: Assembled) -> None:
+    """The schema's own word, never re-derived (dashboard.md §4.5)."""
+    result = await library.list_videos(assembled.deps, fields="video_id,index_state")
+    assert {v["index_state"] for v in structured(result)["videos"]} == {"ready"}
+    assert "index_state" in body(result)
+
+
+async def test_list_videos_can_be_filtered_by_index_state(assembled: Assembled) -> None:
+    """Omitted means the queryable ones; `all` means all — never a silent narrow."""
+    every = await library.list_videos(assembled.deps, index_state="all")
+    assert len(structured(every)["videos"]) == 3
+    none_ = await library.list_videos(assembled.deps, index_state="failed")
+    assert structured(none_)["videos"] == []
+    assert "index_state=failed" in body(none_)
+    bad = await library.list_videos(assembled.deps, index_state="nonsense")
+    assert structured(bad)["code"] == "E_BAD_PARAM"
+
+
 # ------------------------------------------------------------ corpus-summary
 
 

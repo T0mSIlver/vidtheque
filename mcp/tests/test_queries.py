@@ -10,7 +10,7 @@ import pytest
 
 from vidtheque_mcp.config import Settings
 from vidtheque_mcp.db import queries
-from vidtheque_mcp.db.connection import open_read_connection
+from vidtheque_mcp.db.connection import open_read_connection, open_write_connection
 
 from .conftest import TEXT_DIM, seed, vector_for
 
@@ -345,3 +345,125 @@ def test_segment_context_queries(conn: sqlite3.Connection) -> None:
     assert len(cues) == 5  # the 420 s cue is outside the window
     assert queries.context_chapter(conn, 1, 6.0)["title"] == "intro"
     assert len(queries.context_ocr(conn, 1, 6.0, 45)) == 1
+
+
+# ------------------------------------------------------ the dashboard's reads
+
+
+def test_index_state_defaults_to_the_queryable_ones(settings: Settings) -> None:
+    """A `pending` video has no data to answer with, so queries do not see it.
+
+    The dashboard is the surface that must see it (dashboard.md §5.2), which is
+    why that clause is now a filter with a default rather than a constant in
+    the SQL.
+    """
+    seed(settings.db_path, settings.keyframes_dir)
+    write = open_write_connection(settings.db_path)
+    try:
+        write.execute(
+            "INSERT INTO videos (owner_id, source_id, url, title, index_state) "
+            "VALUES (1, 'pend1ngv1d', 'https://youtu.be/pend1ngv1d', 'not yet', 'pending')"
+        )
+        write.commit()
+    finally:
+        write.close()
+    conn = open_read_connection(settings.db_path)
+    try:
+        default = queries.resolve_videos(conn, queries.CorpusFilter())
+        every = queries.resolve_videos(
+            conn, queries.CorpusFilter(index_states=queries.INDEX_STATES)
+        )
+        only = queries.resolve_videos(conn, queries.CorpusFilter(index_states=("pending",)))
+        assert len(every) == len(default) + 1
+        assert len(only) == 1
+    finally:
+        conn.close()
+
+
+def test_video_stages_come_back_in_pipeline_order(conn: sqlite3.Connection) -> None:
+    """Not alphabetical: the PK is `(video_id, stage)` and `chunk` sorts first."""
+    stages = [str(r["stage"]) for r in queries.video_stages(conn, 1)]
+    assert stages == [s for s in queries.STAGE_ORDER if s in set(stages)]
+    assert stages[0] == "stt" and stages[-1] == "frame_embed"
+    assert queries.video_stages(conn, 3)  # the video with no OCR still has rows
+
+
+def test_the_shot_timeline_is_one_grouped_query(conn: sqlite3.Connection) -> None:
+    shots = queries.shot_timeline(conn, 1)
+    assert [int(s["shot_id"]) for s in shots] == [0, 1]
+    first = shots[0]
+    assert float(first["start_s"]) <= float(first["end_s"])
+    assert int(first["frames"]) == 1 and int(first["kept"]) == 1
+    assert int(first["ocr_done"]) == 1
+    assert len(queries.shot_timeline(conn, 1, limit=1)) == 1
+
+
+def test_keyframe_and_cue_pages_probe_one_row_past_the_limit(
+    conn: sqlite3.Connection,
+) -> None:
+    """`has_more` over a total, everywhere — the caller reads `len() > limit`."""
+    assert len(queries.keyframe_page(conn, 1, 0, 1)) == 2
+    assert len(queries.cue_page(conn, 1, 0, 2)) == 3
+    assert len(queries.cue_page(conn, 1, 0, 50)) == 6  # nothing left to probe
+    page = queries.cue_page(conn, 1, 0, 2)
+    assert [float(c["start_s"]) for c in page[:2]] == [0.0, 3.0]
+    assert str(page[0]["origin"]) == "whisperx"
+    assert int(page[0]["has_words"]) == 0
+
+
+def test_chunk_spans_are_scoped_to_the_cue_page(conn: sqlite3.Connection) -> None:
+    page = queries.cue_page(conn, 1, 0, 50)
+    spans = queries.chunk_spans(conn, 1, int(page[0]["id"]), int(page[-1]["id"]))
+    assert len(spans) == 1
+    assert int(spans[0]["first_cue_id"]) == int(page[0]["id"])
+    # A cue-id range before the first chunk's cues overlaps nothing.
+    assert queries.chunk_spans(conn, 1, -2, -1) == []
+
+
+def test_ocr_boxes_come_back_grouped_and_normalized(conn: sqlite3.Connection) -> None:
+    frames = queries.keyframe_page(conn, 2, 0, 10)
+    ids_ = [int(f["id"]) for f in frames]
+    boxes = queries.ocr_for_frames(conn, ids_)
+    assert len(boxes) == 1
+    lines = next(iter(boxes.values()))
+    assert [str(line["text"]) for line in lines] == [
+        "paged kv cache",
+        "block table",
+        "4% fragmentation",
+    ]
+    for line in lines:
+        assert 0.0 <= float(line["x0"]) <= 1.0 and 0.0 <= float(line["y1"]) <= 1.0
+    assert queries.ocr_for_frames(conn, []) == {}
+    capped = queries.ocr_for_frames(conn, ids_, limit=2)
+    assert sum(len(v) for v in capped.values()) == 2
+
+
+def test_per_video_counts_are_one_row_of_counts(conn: sqlite3.Connection) -> None:
+    row = queries.per_video_counts(conn, 2)
+    assert int(row["cues"]) == 3
+    assert int(row["chunks"]) == 1
+    assert int(row["keyframes"]) == 1 == int(row["keyframes_kept"])
+    assert int(row["ocr_frames"]) == 1 and int(row["ocr_lines"]) == 3
+    assert int(row["cues_with_words"]) == 0
+    assert int(row["jpeg_bytes"]) > 0
+    assert int(queries.per_video_counts(conn, 3)["keyframes"]) == 0
+
+
+def test_keyframe_bytes_come_from_the_column_not_the_filesystem(
+    conn: sqlite3.Connection,
+) -> None:
+    total = queries.keyframe_bytes_total(conn)
+    per_video = sum(int(queries.per_video_counts(conn, v)["jpeg_bytes"]) for v in (1, 2, 3))
+    assert total == per_video > 0
+
+
+def test_keyframe_detail_is_addressed_by_wire_id(conn: sqlite3.Connection) -> None:
+    frame = queries.keyframe_detail(conn, "zduSFxRajkE", 0)
+    assert frame is not None and int(frame["ord"]) == 0
+    assert str(frame["public_id"]) == "zduSFxRajkE"
+    assert queries.keyframe_detail(conn, "zduSFxRajkE", 999) is None
+
+
+def test_cue_origins_show_where_a_transcript_came_from(conn: sqlite3.Connection) -> None:
+    assert queries.cue_origins(conn, 1) == {"whisperx": 6}
+    assert queries.cue_origins(conn, 99) == {}
