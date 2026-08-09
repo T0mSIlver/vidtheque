@@ -107,6 +107,63 @@ async def test_keep_source_none_releases_the_audio_once_stt_has_settled(
         await close(parts)
 
 
+# ================================================================ 403 throttling
+
+
+def test_a_download_403_is_classified_as_throttling_not_an_internal_error() -> None:
+    """Measured twice in seven bench runs while a sibling agent shared the IP.
+
+    The same URL works minutes later, so it is throttling wearing a different
+    status code — but it arrived as `E_INTERNAL` and burned the generic retry
+    budget instead of the rate-limit one.
+    """
+    from vidtheque_mcp.pipeline.sources import _is_rate_limit, _is_unavailable
+
+    throttled = "ERROR: unable to download video data: HTTP Error 403: Forbidden"
+    assert _is_rate_limit(throttled)
+    assert _is_rate_limit("giving up after 3 fragment retries: HTTP Error 403")
+    assert _is_rate_limit("HTTP Error 429: Too Many Requests")
+
+    # Narrow on purpose: a 403 on an *extraction* is geo-blocking or
+    # members-only, which no amount of waiting fixes.
+    members = "ERROR: Join this channel to get access to members-only content"
+    assert not _is_rate_limit(members)
+    assert _is_unavailable(members)
+
+
+async def test_a_403_on_the_media_download_defers_the_job(
+    settings: Settings, clip: Path
+) -> None:
+    class Forbidden:
+        def __init__(self, inner) -> None:  # type: ignore[no-untyped-def]
+            self._inner = inner
+
+        def __getattr__(self, name: str):  # type: ignore[no-untyped-def]
+            return getattr(self._inner, name)
+
+        def download_video(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            from vidtheque_mcp.pipeline.sources import RateLimited
+
+            raise RateLimited(
+                "unable to download video data: HTTP Error 403: Forbidden"
+            )
+
+    parts = await harness(settings, clip)
+    parts.parts.runner.pipeline.source = Forbidden(canned_source(clip))
+    parts.parts.runner.rate_limit_backoff_s = 240
+    try:
+        job_id = await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+
+        job = await parts.one(
+            "SELECT *, unixepoch() AS now FROM jobs WHERE public_id = ?", (job_id,)
+        )
+        assert (job["state"], job["error_code"]) == ("queued", "E_RATE_LIMIT")
+        assert job["not_before"] - job["now"] == pytest.approx(240, abs=5)
+    finally:
+        await close(parts)
+
+
 # ==================================================================== lifecycle
 
 

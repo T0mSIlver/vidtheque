@@ -606,8 +606,26 @@ def _seconds_until_release(info: dict[str, Any]) -> int | None:
 
 
 def _is_rate_limit(message: str) -> bool:
+    """429, and the 403 that YouTube serves for the same reason.
+
+    Measured on the reference box (bench 2026-08-09 §6.5): two of seven runs hit
+    `unable to download video data: HTTP Error 403: Forbidden` on the *media*
+    download while a second agent shared the IP. It is throttling wearing a
+    different status code — the same URL works again minutes later — but it
+    arrived as `E_INTERNAL`, so it burned the generic retry budget instead of
+    the rate-limit one and never triggered a cool-off.
+
+    Deliberately narrow: a 403 on the *download* is throttling, while a 403 on
+    an extraction is usually geo-blocking or a members-only stream, which
+    `_is_unavailable` already claims and which no amount of waiting fixes.
+    """
     lowered = message.lower()
-    return "429" in lowered or "too many requests" in lowered
+    if "429" in lowered or "too many requests" in lowered:
+        return True
+    return "403" in lowered and any(
+        marker in lowered
+        for marker in ("unable to download", "fragment", "giving up after", "video data")
+    )
 
 
 def _is_not_yet(message: str) -> bool:
