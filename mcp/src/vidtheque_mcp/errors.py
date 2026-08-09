@@ -103,13 +103,22 @@ def bad_time(value: str, param: str) -> ToolError:
     )
 
 
-def unknown_video(video_id: str) -> ToolError:
-    return ToolError(
-        "E_UNKNOWN_VIDEO",
-        f'Video "{video_id}" is not in the corpus.',
+def unknown_video(video_id: str, can_index: bool = True) -> ToolError:
+    """``can_index`` is False where the deployment masks `index-video`.
+
+    The remedy has to be a tool the caller can actually see: in demo/read-only
+    mode `index-video` is absent from `tools/list`, and this error kept naming
+    it anyway — the most-hit dead end in the surface pointing at the one tool
+    that is not there (demo-queries §9.1.8).
+    """
+    remedy = (
         f'index-video url="https://youtu.be/{video_id}" to add it (takes ~2-6 min), '
-        "or list-videos to browse what is indexed.",
+        "or list-videos to browse what is indexed."
+        if can_index
+        else "list-videos to browse what is indexed — this server is read-only and "
+        "cannot add videos, so a video that is not listed cannot be answered from."
     )
+    return ToolError("E_UNKNOWN_VIDEO", f'Video "{video_id}" is not in the corpus.', remedy)
 
 
 def unknown_frame(frame_id: str, video_id: str | None, max_ord: int | None) -> ToolError:

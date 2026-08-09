@@ -395,7 +395,12 @@ async def job_status(
         if row is None:
             return text_result(
                 f"No indexing job has ever run for {video_id}.\n"
-                f'next: index-video url="https://youtu.be/{video_id}"',
+                + deps.hint(
+                    "index-video",
+                    f'next: index-video url="https://youtu.be/{video_id}"',
+                    "This server is read-only: it runs no jobs and exposes no tool "
+                    "that starts one.",
+                ),
                 {"job": None},
             )
         return await _single(deps, row)
@@ -417,6 +422,16 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
         f"{row['public_id']} · state: {row['state']} · {pct}%"
         + (f" · started {started}" if started else "")
     ]
+    # `queued` covers two different situations and printed the same word for
+    # both: waiting for a runner slot, and held behind a backoff nothing could
+    # see (demo-queries §9.1.4). `not_before` is the difference, and `defer_s`
+    # is the remainder on the clock it was written against.
+    if (deferral := _deferral(row)) is not None:
+        until, remaining = deferral
+        lines.append(
+            f"deferred until {until} ({remaining}s to go) — this job is queued and "
+            "is not running; nothing is being indexed for it right now."
+        )
     if row["cancel_requested"]:
         lines.append("cancel requested — the job stops at the next stage boundary.")
 
@@ -478,8 +493,13 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
             reason = middle_truncate(str(entry["error"] or ""), MAX_ERROR_CHARS)
             lines.append(f"  {label} {entry['stage']}: {reason}")
         lines.append(
-            'fix: index-video url="…" (no force_reindex) re-runs only the failed '
-            "stage(s); everything already indexed is left alone."
+            deps.hint(
+                "index-video",
+                'fix: index-video url="…" (no force_reindex) re-runs only the failed '
+                "stage(s); everything already indexed is left alone.",
+                "This server is read-only: the missing channel cannot be rebuilt "
+                "here. The video's other channels are searchable.",
+            )
         )
 
     n_done = int(row["n_done"])
@@ -502,17 +522,17 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
             lines.append("Queryable now: nothing — this job indexed no video.")
             if skipped_note:
                 lines.append(skipped_note)
-            lines.append('next: index-video url="…" force_reindex=true to index it now.')
+            lines.append(_reindex_hint(deps, "to index it now"))
     elif row["state"] == "failed":
         lines.append("Queryable now: nothing from this job.")
-        lines.append('next: index-video url="…" force_reindex=true to retry.')
+        lines.append(_reindex_hint(deps, "to retry"))
     elif row["state"] == "cancelled":
         lines.append(
             f"Queryable now: the {n_done} video(s) this job finished before it stopped."
             if n_done
             else "Queryable now: nothing — the job was cancelled before any video finished."
         )
-        lines.append('next: index-video url="…" force_reindex=true to run it again.')
+        lines.append(_reindex_hint(deps, "to run it again"))
     else:
         done_so_far = f"the {n_done} video(s) finished so far" if n_done else "nothing"
         lines.append(
@@ -546,6 +566,29 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
             "note": row["error_message"] if row["state"] == "done" else None,
         },
     )
+
+
+def _reindex_hint(deps: Deps, purpose: str) -> str:
+    """The one `next:` that names `index-video`, in the one place it is written."""
+    return deps.hint(
+        "index-video",
+        f'next: index-video url="…" force_reindex=true {purpose}.',
+        "This server is read-only: it exposes no tool that can re-run a job.",
+    )
+
+
+def _deferral(row: sqlite3.Row) -> tuple[str, int] | None:
+    """`(when it resumes, seconds to go)` for a queued job held by `not_before`.
+
+    Reads phase 2's columns rather than recomputing the clock: `_JOB_SQL`
+    selects `not_before` and `MAX(0, not_before - unixepoch()) AS defer_s`.
+    """
+    if row["state"] != "queued":
+        return None
+    remaining = int(row["defer_s"] or 0)
+    if remaining <= 0:
+        return None
+    return iso_z(row["not_before"]) or "an unknown time", remaining
 
 
 def _aside(n_failed: int, n_skipped: int, n_cancelled: int, n_degraded: int = 0) -> str:
@@ -628,16 +671,33 @@ def _wire_state(item: sqlite3.Row, wire_pos: int, current_pos: int | None) -> st
 async def _list(deps: Deps, rows: list[sqlite3.Row], state: str) -> CallToolResult:
     active = sum(1 for r in rows if r["state"] in ("queued", "running"))
     failed = sum(1 for r in rows if r["state"] == "failed")
-    lines = [f"Jobs: {active} active, {failed} failed (filter state={state})"]
+    deferred = sum(1 for r in rows if _deferral(r) is not None)
+    running = sum(1 for r in rows if r["state"] == "running")
+    header = f"Jobs: {active} active, {failed} failed (filter state={state})"
+    if deferred:
+        # Five jobs "queued, 20-40%, 0/10 items" read as five jobs indexing.
+        # They were five jobs waiting for a clock (§9.1.4).
+        header += f" · {deferred} of the active jobs are deferred, {running} running"
+    lines = [header]
     for row in rows:
         pct = int(round(float(row["progress"] or 0.0) * 100))
+        deferral = _deferral(row)
+        suffix = f"  deferred until {deferral[0]}" if deferral else ""
         lines.append(
             f"{row['public_id']}  {str(row['state']):<10} {pct:>3}%  "
-            f"{int(row['n_done'])}/{int(row['n_items'])} items"
+            f"{int(row['n_done'])}/{int(row['n_items'])} items{suffix}"
         )
     if not rows:
         lines.append("(none)")
-    lines.append('next: index-video url="…" force_reindex=true to retry a failed job.')
+    # State-aware, at last: the unconditional retry hint sent a bench agent to
+    # re-index a job that was running normally at 57% (tool-surface §4.8), and
+    # in demo mode it named a tool that is not registered (§9.1.8).
+    if failed:
+        lines.append(_reindex_hint(deps, "to retry a failed job"))
+    elif rows:
+        lines.append(
+            f'next: job-status job_id="{rows[0]["public_id"]}" for the stage table.'
+        )
     return text_result(
         "\n".join(lines),
         {
@@ -646,6 +706,10 @@ async def _list(deps: Deps, rows: list[sqlite3.Row], state: str) -> CallToolResu
                     "job_id": str(r["public_id"]),
                     "state": str(r["state"]),
                     "progress": float(r["progress"] or 0.0),
+                    # `deferred` distinguishes "waiting for a slot" from
+                    # "waiting for a clock"; `defer_s` is what is left of it.
+                    "deferred": _deferral(r) is not None,
+                    "defer_s": int(r["defer_s"] or 0),
                 }
                 for r in rows
             ]

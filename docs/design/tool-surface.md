@@ -151,6 +151,17 @@ loses the payoff of a transcript sentence; both ends carry signal.
   slide middle-truncated, which is as likely to cut the match out as to keep it.
   `max_text_chars=0` still means everything: the frame's every line, in reading
   order. `get-frames` on the `frame_id` in the hit shows the frame itself.
+- **`search`'s transcript leg truncates around the match, not through it**
+  (added 2026-08-09). A clustered segment is a passage, not a sentence, so
+  middle-truncation's premise — the signal is at both ends — is wrong for it: at
+  `max_text_chars=400` a two-minute cluster came back with the matched phrase
+  cut out of the middle, so the result showed neither the words that matched nor
+  a timestamp near them (`research/demo-queries-2026-08-09.md` §7.5). The window
+  is placed over the **anchor cue** (§3.6) and slid inside the text, so the
+  budget is spent on context around a match that is guaranteed to survive. Same
+  marker, same budget, same tested `0` opt-out; up to two markers, one per end
+  that was cut. This is the transcript-side spelling of what the OCR leg already
+  got from `snippet()`. Everything else in the payload stays middle-truncated.
 
 Truncation is the second cap, never the only one. Each tool also caps item counts
 (§ per-tool "token discipline" blocks), and the **response as a whole** is capped
@@ -198,6 +209,15 @@ with ids dropped (−73%)**. Their conclusion, verbatim: *"The win is not the sy
 format; structured data goes in `structuredContent`, which conformant clients read
 without spending prose tokens.
 
+**An unknown `fields` name is `E_BAD_PARAM`, naming the valid columns.** Both
+tools validate every name the caller wrote, *before* the ≤ 12 cap is applied, so
+a typo in the thirteenth position is rejected rather than sliced away. `search`
+used to emit the unknown name as a header with an empty cell under every row
+while `order="bogus"` on the same call returned a clean typed error — one tool,
+two standards (demo-queries §9.1.9). The valid sets are `search`'s
+`TSV_FIELDS` (the keys of a result row) and `list-videos`' `LIST_FIELDS`; a
+`fields` list is never silently narrowed, in either direction.
+
 ### 3.6 Deep links
 
 **Every timestamped item in every payload carries `https://youtu.be/<id>?t=<int>`.**
@@ -224,6 +244,31 @@ a co-occurrence block computed from tags appearing on the same videos as the
 result set — bounded at **30 tags / 800ms**, and it **degrades to omission**, never
 to an error or a slow response.
 
+**A corpus with no tags does not advertise tags.** Every self-initiated tag
+surface is conditional on a tag being attached to a video: `corpus-summary`'s
+`Tags` block, the `tags` column of `vidtheque://corpus`, and
+`vidtheque://context`'s `tag_namespaces`. Over the 75-video demo corpus all three
+printed an empty feature — `Tags (top 0 of 1)`, a column of 200 empty cells, six
+advertised namespaces — and the field test's tourist reasonably concluded the
+filter existed and then invented `tag=` for it (demo-queries §9.1.9). Either ship
+the feature or stop advertising it; the surfaces come back, unchanged, the moment
+one video is tagged.
+
+The tradeoff, deliberately: **a column the caller explicitly named is never
+dropped.** `list-videos fields="video_id,tags"` still returns the `tags` column
+over an untagged corpus, empty, exactly like the documented `cues`/`frames`
+columns (§4.2). Silently dropping a requested column is the same failure as
+silently accepting an unknown one, and §3.5 has just forbidden the second. The
+rule is therefore: *the server volunteers tags only when there are tags; the
+caller may always ask.* `vidtheque://context` splits on the same line — the
+namespaces are published when tags are in use (in-use ones first, then the
+reserved list) **or** when this deployment registers `tag-video` and the caller
+could create one. A read-only demo of an untagged corpus publishes none.
+
+The probe is free: the rollup and the per-row tag map are already fetched by the
+surfaces that print them, so "does this corpus have tags" is answered by the data
+in hand and costs no extra query.
+
 ### 3.8 Error contract
 
 Errors are typed, actionable, and returned with `isError: true` so the model
@@ -243,6 +288,32 @@ next: index-video url="https://youtu.be/kCc8FmEb1nY" to add it (takes ~2-6 min),
 {"code":"E_UNKNOWN_VIDEO","message":"Video \"kCc8FmEb1nY\" is not in the corpus.",
  "next":"index-video url=…","retry_after_s":null}
 ```
+
+**A `next:` may only name a tool this deployment registers.** The read-only
+public deployment masks the write tools entirely — they are absent from
+`tools/list`, not present-and-refusing (demo-site.md §1.1) — and the copy did not
+follow: `vidtheque://guide` taught `index-video → job-status`, `E_UNKNOWN_VIDEO`
+offered to index the id, and `job-status` closed on `force_reindex=true`. Every
+dead end in the demo pointed at the one tool the demo does not have
+(demo-queries §9.1.8). The mask is therefore resolved at construction and handed
+to the tools (`Deps.hidden_tools`, set by `tools.register` from
+`public/readonly.py`), and every hint that names a write tool goes through
+`Deps.hint(tool, hint, otherwise)`. On a read-only server the remedy degrades to
+what the caller *can* do, and says why:
+
+```
+error: E_UNKNOWN_VIDEO
+Video "kCc8FmEb1nY" is not in the corpus.
+next: list-videos to browse what is indexed — this server is read-only and cannot add videos, so a video that is not listed cannot be answered from.
+```
+
+The affected copy: the guide's "Adding to the library" line and its
+"the answer is index-video" rule, `E_UNKNOWN_VIDEO`, `E_NOT_INDEXED`,
+`list-videos`' incomplete-coverage footer, `corpus-summary`'s empty-corpus
+`next_best_query`, `search`'s empty-corpus hint, and every `next:` in
+`job-status`. There is no second list to keep in sync: the masked set is derived
+from the `readOnlyHint` annotations, so a tenth tool is covered the day it is
+added.
 
 | Code | HTTP | When | `next:` hint |
 |---|---|---|---|
@@ -636,6 +707,10 @@ columnar shapes); titles truncated at 120 chars per cell; response cap applies.
 Bounded independently of `limit`: the coverage rollup is read from denormalized
 per-video counters, not computed by joining cue/frame tables per row.
 
+The incomplete-coverage footer names `index-video`, and degrades on a deployment
+that masks it (§3.8): *"3 video(s) have incomplete coverage. The channels they do
+have are searchable; this server cannot re-index them."*
+
 **Status — the `cues` and `frames` columns are blank.** Those two opt-in `fields`
 are fed by the per-video counters above, and the schema does not carry them
 (index-schema §1.2 has no such columns). The alternative — a `COUNT(*)` over `cues`
@@ -739,7 +814,8 @@ Recently indexed:
 Gaps:
   4 videos have transcript but no OCR (indexed before OCR was enabled)
   1 video failed: HcQ8pL3vN1s — "yt-dlp: video unavailable (private)" on 2026-08-05
-  0 videos currently indexing
+  0 video(s) mid-pipeline (index_state=indexing)
+  5 indexing job(s) queued or running: 5 job(s) deferred until 2026-08-09T22:00:00Z, nothing running
 
 next_best_query: search q="<topic>" limit=5 — or list-videos channel="GPU MODE" to browse that channel.
 ```
@@ -749,11 +825,61 @@ model guessing:
 
 | value | meaning |
 |---|---|
-| `ok` | corpus populated, no active jobs |
+| `ok` | corpus populated, nothing queued, nothing missing |
 | `empty` | nothing indexed yet → `next:` is `index-video` |
-| `indexing` | ≥1 job in flight; counts are a moving target → `next:` is `job-status` |
+| `indexing` | work is **happening or imminent**: ≥1 job running, ≥1 queued job the runner may claim now, or ≥1 video `index_state='indexing'`; counts are a moving target → `next:` is `job-status` |
+| `deferred` | the queue is non-empty and **none of it can run yet**: every queued job sits behind a future `jobs.not_before`. Counts are *not* moving; they will move at `deferred_until` |
 | `partial` | ≥1 video indexed with missing channels (transcript-only, no frames) |
 | `degraded` | ≥1 job failed in the last 24h, **or** ≥1 video is waiting to be re-embedded after an embedding-model change; results may be incomplete |
+
+Precedence is worst-first: `empty` → `indexing` → `degraded` → `deferred` →
+`partial` → `ok`. `degraded` outranks `deferred` deliberately, because a
+deferral is often the backoff *after* a failure and "data is missing now" beats
+"work is scheduled for later"; the queue clause below still prints in both cases.
+
+**`deferred` is an extension of this vocabulary, added 2026-08-09, not a fifth
+one.** dashboard.md §4.5 forbids a new consumer inventing its own words, and this
+is the opposite move: one word added to the *shared* vocabulary, in the one place
+it is derived (`tools/corpus_state.py`), and read by all three surfaces that
+print `data_status`. It exists because the state it names was being reported as
+`indexing`, which was false in the most visible payload in the product — the
+first call of a session (demo-queries §9.1.4):
+
+```
+resource vidtheque://context     → "active_jobs": 5, "data_status": "indexing"
+call corpus-summary '{}'         → data_status: indexing  /  0 videos currently indexing
+call search '{"q":"🔥"}'          → data_status: ok (… index fresh)
+```
+
+Five jobs were queued with `not_before` in the future. Nothing was running,
+nothing was about to, and the queue was correctly non-empty — the deferral was
+real, the jobs resumed that night, and there was no word for it. `jobs.not_before`
+is the column that reconciles the three payloads, `_JOB_SQL` has selected it
+(with `defer_s`, the remainder) since the jobs view landed, and nothing read it
+back.
+
+**Two counters, one name each** — the other half of that finding. `corpus-summary`
+printed a headline driven by rows in `jobs` two lines above a Gaps line counting
+videos in `index_state='indexing'`, both called "indexing", and they disagreed
+without either being wrong. They are now named apart everywhere:
+
+- `gaps.indexing` / "N video(s) mid-pipeline (index_state=indexing)" — **videos**.
+- `gaps.jobs_active` / `jobs_running` / `jobs_deferred` / `jobs_deferred_until`
+  and the "N indexing job(s) queued or running" line — **rows in `jobs`**.
+
+Whenever the queue is not idle the header carries the same clause the other
+surfaces use:
+
+```
+data_status: deferred
+queue: 5 job(s) deferred until 2026-08-09T22:00:00Z, nothing running
+```
+
+The split (running vs ready vs deferred) needs the rows themselves, so it reads a
+bounded page of the active queue (25 jobs, `QUEUE_PAGE_CAP`); the *count* comes
+from the exact aggregate. A queue deeper than the page prints the count and no
+split — a queue that deep is unambiguously working — rather than a split it did
+not read.
 
 **The re-embed window is a `degraded`, and it says so in words too.** Changing
 the embedding model rebuilds the vector tables and sets the `text_embed` /
@@ -1316,11 +1442,26 @@ job still running needs another poll, not a re-index — force_reindex is for a 
 that actually reported "failed".
 ```
 
-The last sentence is a counterweight, not a nicety: the list-mode footer prints
-`next: index-video url="…" force_reindex=true to retry a failed job` even when
-the only job is running normally, and a bench agent read that as an instruction
-to re-index a job at 57% (`research/mcp-design-bench-2026-08-09.md` §D5). The
-real fix is to make that hint state-aware in `tools/indexing.py`; it is deferred.
+The last sentence is a counterweight, and the hint it counterweighted is now
+state-aware. The list-mode footer printed `next: index-video url="…"
+force_reindex=true to retry a failed job` even when the only job was running
+normally, and a bench agent read that as an instruction to re-index a job at 57%
+(`research/mcp-design-bench-2026-08-09.md` §D5); in the read-only demo it named a
+tool that is not registered at all (demo-queries §9.1.8). It now prints only when
+the listed page actually contains a failed job, degrades per §3.8 when
+`index-video` is masked, and otherwise points at this tool's own single-job view.
+The same treatment applies to every `next:` in single-job mode (`done` with
+nothing indexed, `failed`, `cancelled`) and to the `fix:` line under a degraded
+job.
+
+**A `queued` job says whether it is waiting for a slot or for a clock.** `queued`
+covered both, and five jobs held behind `jobs.not_before` read as five jobs
+indexing (§4.3, demo-queries §9.1.4). A deferred job now says so on its own line —
+*"deferred until 2026-08-09T22:00:00Z (1794s to go) — this job is queued and is
+not running; nothing is being indexed for it right now"* — the list mode carries
+`deferred until …` per row and counts them in its header, and the structured
+payload carries `deferred` and `defer_s` per job. Both come from `_JOB_SQL`'s
+`not_before` / `defer_s`, computed on the clock the column was written against.
 
 **Parameters:**
 
@@ -1348,10 +1489,10 @@ next: job-status job_id="job_7f3a29b1c04d" again in ~60s.
 **Return shape (list mode):**
 
 ```
-Jobs: 3 active, 1 failed in the last 24h
+Jobs: 3 active, 1 failed (filter state=active) · 1 of the active jobs are deferred, 2 running
 job_7f3a29b1c04d  transcribing  41%  Qk7mF2xLp0A  Flash Attention 3 walkthrough
 job_2b81c40dd7e9  embedding     88%  9dRk2XcVbNw  Speculative decoding, explained
-job_c19aa4e2b530  queued         0%  (playlist, 12 videos)
+job_c19aa4e2b530  queued         0%  (playlist, 12 videos)  deferred until 2026-08-09T22:00:00Z
 job_5d0e77af1cc2  failed         —   HcQ8pL3vN1s  yt-dlp: video unavailable (private)
 next: index-video url="…" force_reindex=true to retry a failed job.
 ```
@@ -1546,8 +1687,11 @@ when it fails.
     "first_published": "2019-04-02",
     "last_published": "2026-08-02",
     "last_indexed": "2026-08-07T19:41:03Z",
-    "active_jobs": 1,
-    "data_status": "indexing"
+    "active_jobs": 5,
+    "running_jobs": 0,
+    "deferred_jobs": 5,
+    "deferred_until": "2026-08-09T22:00:00Z",
+    "data_status": "deferred"
   },
   "channels_top": ["GPU MODE", "Yannic Kilcher", "3Blue1Brown", "Andrej Karpathy"],
   "tag_namespaces": ["topic", "person", "project", "source", "lang", "series"],
@@ -1573,6 +1717,21 @@ when it fails.
 }
 ```
 
+`active_jobs` used to be the only job number here, and `data_status` was derived
+locally as "`indexing` if `active_jobs` else `ok`" — one of the three
+contradicting answers §4.3 documents. Four numbers replace it: `active` is
+queued + running, `running_jobs` is what is executing, `deferred_jobs` is the
+subset held behind a future `jobs.not_before`, and `deferred_until` is when the
+earliest of them resumes (`null` when none are). `data_status` is the same word
+`corpus-summary` prints, from the same derivation — this resource is the first
+call of most sessions, so it is the payload that can least afford its own
+opinion.
+
+`tag_namespaces` is **conditional** (§3.7): the namespaces in use first, then the
+reserved list, or the reserved list alone when this deployment registers
+`tag-video`. An untagged corpus on a read-only server omits the key rather than
+advertising six namespaces nothing can filter on.
+
 `resources` and `limits` were added 2026-08-09. Both exist because the clamps are
 silent by contract (§3.4) and a caller cannot tell a clamp from a complete answer
 after the fact: a bench agent asked `search` for `limit=500`, got 50, and had no
@@ -1585,6 +1744,14 @@ binds is the other half, and is deferred.
 
 `mimeType: text/markdown`. Copied nearly verbatim in *shape* from
 `screenpipe://guide`, which is the single most transferable artefact in that repo.
+
+**Two of its sentences are deployment-dependent** (§3.8). The text below is the
+full deployment's; a server that masks the write tools swaps the "Adding to the
+library" paragraph for *"This server is read-only: it exposes no tool that adds,
+re-indexes or tags a video…"* and the "the answer is index-video" rule for
+*"…say so plainly — this read-only server cannot add it, and a plausible answer
+from memory is not an answer from this corpus."* Nothing else changes;
+`tools/resources.py` renders both from one template so they cannot drift.
 
 ```markdown
 # Using vidtheque
@@ -1648,7 +1815,9 @@ you asked for.
 - Two time axes: `published_after`/`published_before` choose videos by upload
   date; `t_start`/`t_end` choose seconds inside a video. They are not
   interchangeable, and neither is the pagination `offset`.
-- `channel` and `video_title` are case-insensitive substrings.
+- `channel` and `video_title` are case-insensitive substrings. The tag filter is
+  `tags=` — plural, comma-separated, AND semantics. `tag=` is not a parameter and
+  is dropped silently like any other unknown name.
 - Ordering defaults to relevance. Pass `order=recency` only if the user asked for
   "latest" or "newest".
 - Start with `limit=5` and `max_text_chars=500`. Raise them when the first page
@@ -1658,7 +1827,10 @@ you asked for.
   proper nouns. Prefer two or three words over an exact long phrase, and check
   `get-segment-context` before quoting anything verbatim.
 - Every timestamped result carries a `https://youtu.be/<id>?t=<s>` link. Give the
-  user the link, not just the timestamp.
+  user the link, not just the timestamp. The link is deliberately **2 s early**:
+  `?t=` is the result's start minus a lead, so the player has seeked by the time
+  the words begin. `start:` in the payload is the true position; the two
+  disagreeing by 2 s is the lead, not a bug.
 - `search` never returns images. Frame ids do; `get-frames` turns them into URLs.
 - Read the pagination line: `Results: 10/~40+ (use offset=10 for more)` tells you
   your next call.

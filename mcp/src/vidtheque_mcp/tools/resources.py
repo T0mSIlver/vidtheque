@@ -36,8 +36,8 @@ ADDING = "{{ADDING}}"
 MISSING = "{{MISSING}}"
 
 _ADDING_WRITABLE = (
-    'Adding to the library: index-video → job-status. Nothing is searchable\n'
-    'until the job reports "done".'
+    "Adding to the library: index-video → job-status. Nothing is searchable until the\n"
+    'job reports "done".'
 )
 _ADDING_READONLY = (
     "This server is **read-only**: it exposes no tool that adds, re-indexes or\n"
@@ -156,12 +156,21 @@ you asked for.
 """
 
 
-def guide(deps: Deps) -> str:
-    """`vidtheque://guide`, resolved against what this deployment registers."""
-    writable = deps.offers("index-video")
+def _render_guide(writable: bool) -> str:
     return GUIDE_TEMPLATE.replace(
         ADDING, _ADDING_WRITABLE if writable else _ADDING_READONLY
     ).replace(MISSING, _MISSING_WRITABLE if writable else _MISSING_READONLY)
+
+
+# The full deployment's guide, resolved once. Kept as a module constant because
+# it is the canonical text — `docs/design/tool-surface.md` §5.3 quotes it.
+GUIDE = _render_guide(writable=True)
+GUIDE_READONLY = _render_guide(writable=False)
+
+
+def guide(deps: Deps) -> str:
+    """`vidtheque://guide`, resolved against what this deployment registers."""
+    return GUIDE if deps.offers("index-video") else GUIDE_READONLY
 
 
 async def corpus_resource(deps: Deps) -> str:

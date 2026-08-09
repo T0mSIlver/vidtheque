@@ -28,12 +28,34 @@ class Deps:
     runner: PipelineRunner | None = None
     search_semaphore: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(2))
 
+    # Which tools this deployment does not register (``public/readonly.py``),
+    # set once by ``tools.register`` — the one place the deployment's policy
+    # meets the tool surface. It is here rather than in each tool because the
+    # strings that recommend a tool are written all over the surface: the demo
+    # masks `index-video`, and the guide, `E_UNKNOWN_VIDEO` and `job-status`
+    # all went on recommending it anyway (demo-queries §9.1.8). A `next:` that
+    # names a tool the caller cannot see is a dead end with a signpost.
+    hidden_tools: frozenset[str] = frozenset()
+
     # None = not yet probed. Set False the first time the worker 404s
     # /v1/embeddings/frame-query (it predates the endpoint) or answers it in
     # the wrong dimension, so we stop paying for a call that cannot work; a
     # worker that gains the encoder is picked up on the next restart. Transient
     # outages do NOT set this — they must not be cached. See embed_query.
     frame_text_encoder: bool | None = None
+
+    def offers(self, tool: str) -> bool:
+        """Is ``tool`` part of *this* deployment's surface?"""
+        return tool not in self.hidden_tools
+
+    def hint(self, tool: str, hint: str, otherwise: str) -> str:
+        """``hint`` when ``tool`` is registered here, ``otherwise`` when it is not.
+
+        Every `next:` line and error remedy that names a write tool goes through
+        this, so a read-only deployment degrades to what the caller *can* do
+        instead of pointing at a tool that is absent from `tools/list`.
+        """
+        return hint if self.offers(tool) else otherwise
 
     async def embed_query(
         self,
@@ -198,15 +220,26 @@ def normalize_video_ids(value: str | list[str] | None, limit: int, param: str = 
     return ids
 
 
-def require_known_videos(known: dict[str, int], requested: Sequence[str]) -> None:
-    """`E_UNKNOWN_VIDEO` names *which* ids were unknown."""
+def require_known_videos(
+    known: dict[str, int], requested: Sequence[str], deps: Deps | None = None
+) -> None:
+    """`E_UNKNOWN_VIDEO` names *which* ids were unknown.
+
+    ``deps`` is optional only so a caller with no deployment context still gets
+    the error; pass it wherever there is one, so the remedy degrades on a
+    server that masks `index-video`.
+    """
     missing = [v for v in requested if v not in known]
     if not missing:
         return
+    can_index = deps is None or deps.offers("index-video")
     if len(missing) == 1:
-        raise unknown_video(missing[0])
+        raise unknown_video(missing[0], can_index=can_index)
     raise ToolError(
         "E_UNKNOWN_VIDEO",
         f"These video ids are not in the corpus: {', '.join(missing)}.",
-        "list-videos to browse what is indexed, or index-video to add them.",
+        "list-videos to browse what is indexed, or index-video to add them."
+        if can_index
+        else "list-videos to browse what is indexed — this server is read-only "
+        "and cannot add videos.",
     )

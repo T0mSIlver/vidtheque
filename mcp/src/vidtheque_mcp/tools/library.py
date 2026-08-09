@@ -17,6 +17,7 @@ from ..text import (
     duration_clock,
     iso_day,
     iso_minute,
+    iso_z,
     middle_truncate,
     pagination_line,
     split_csv,
@@ -24,6 +25,7 @@ from ..text import (
     validate_tag,
 )
 from ..timeparse import parse_corpus_time, parse_offset
+from . import corpus_state
 from .base import Deps, handle_errors, normalize_video_ids, require_known_videos, text_result
 
 LIST_FIELDS = ("video_id", "title", "channel", "published", "duration", "coverage",
@@ -117,13 +119,17 @@ async def list_videos(
     page = rows[:limit]
     tag_map = await deps.db.read(lambda c: queries.video_tags(c, [int(r["id"]) for r in page]))
 
-    wanted = [f.strip() for f in (fields or DEFAULT_LIST_FIELDS).split(",") if f.strip()][:12]
-    unknown = [f for f in wanted if f not in LIST_FIELDS]
+    # Validate every name the caller wrote, *then* cap at twelve. The slice used
+    # to run first, so a typo in the thirteenth position was dropped as silently
+    # as the blank column §9.1.9 filed against `search`.
+    asked = [f.strip() for f in (fields or DEFAULT_LIST_FIELDS).split(",") if f.strip()]
+    unknown = [f for f in asked if f not in LIST_FIELDS]
     if unknown:
         raise bad_param(
             f"unknown field(s): {', '.join(unknown)}.",
             f"available fields: {', '.join(LIST_FIELDS)}.",
         )
+    wanted = asked[:12]
 
     records = [_list_record(deps, r, tag_map, max_text_chars) for r in page]
     filter_line = " · ".join(
@@ -162,7 +168,13 @@ async def list_videos(
             # is also a filter parameter on this very tool, so the old wording
             # read as a missing YouTube channel name (smoke §4.6).
             f"{len(missing)} video(s) have incomplete coverage. "
-            f'next: index-video url="https://youtu.be/{example["video_id"]}" force_reindex=true'
+            + deps.hint(
+                "index-video",
+                f'next: index-video url="https://youtu.be/{example["video_id"]}" '
+                "force_reindex=true",
+                "The channels they do have are searchable; this server cannot "
+                "re-index them.",
+            )
         )
     if records:
         footer.append(f'next: video-summary video_id="{records[0]["video_id"]}" for chapters and key texts.')
@@ -260,23 +272,12 @@ async def corpus_summary(
     backlog = await deps.db.read(queries.embed_backlog)
 
     total = int(rollup["videos_ready"]) + int(rollup["videos_pending"])
-    if total == 0:
-        status = "empty"
-    elif gap_info["active_jobs"]:
-        status = "indexing"
-    elif gap_info["recent_failed_jobs"]:
-        status = "degraded"
-    elif backlog["text"] or backlog["frame"]:
-        # An embedder swap rebuilds both vec tables empty and sets the embed
-        # stages back to `pending` (migration 0004). The corpus is complete and
-        # searchable, and its semantic half is not — which is what `degraded`
-        # already means here. Reusing the word rather than inventing a fifth
-        # vocabulary is dashboard.md §4.5's rule.
-        status = "degraded"
-    elif gap_info["transcript_no_ocr"]:
-        status = "partial"
-    else:
-        status = "ok"
+    # `data_status` is derived in exactly one place for all three surfaces that
+    # print it (tools/corpus_state.py). `indexing` used to be "the jobs table is
+    # not empty", which is how five deferred jobs made this line contradict the
+    # Gaps block eight lines below it (demo-queries §9.1.4).
+    state = await corpus_state.read_corpus_state(deps, total, gap_info, backlog)
+    status = state.word
 
     hours = float(rollup["hours"] or 0.0)
     lines = [
@@ -287,6 +288,9 @@ async def corpus_summary(
         f"{iso_minute(rollup['last_indexed'])}",
         f"data_status: {status}",
     ]
+    queue_phrase = state.queue.phrase()
+    if queue_phrase:
+        lines.append(f"queue: {queue_phrase}")
     structured: dict[str, Any] = {
         "videos": total,
         "hours": hours,
@@ -327,10 +331,17 @@ async def corpus_summary(
 
     if include_tags:
         rows = await deps.db.read(lambda c: queries.tag_rollup(c, pool, max_tags))
-        all_tags, _ = await deps.db.read(queries.tag_count)
-        lines.append("")
-        lines.append(f"Tags (top {len(rows)} of {all_tags}):")
+        # `Tags (top 0 of 1)` was the corpus advertising a feature nothing in it
+        # used: `tag_count` counts the `tags` table, the rollup counts tags
+        # *attached to videos*, and a tag attached to nothing made the two
+        # disagree in one line (demo-queries §9.1.9). The section is printed
+        # when the pool has tags — which is also the cheapest possible probe,
+        # since the rollup is the answer — and it comes back the moment anyone
+        # tags a video.
         if rows:
+            all_tags, _ = await deps.db.read(queries.tag_count)
+            lines.append("")
+            lines.append(f"Tags (top {len(rows)} of {all_tags}):")
             lines.append("  " + " · ".join(f"{r['full']} {int(r['n'])}" for r in rows))
         structured["tags"] = {str(r["full"]): int(r["n"]) for r in rows}
 
@@ -355,18 +366,34 @@ async def corpus_summary(
             lines.append(
                 f"  failed: {row['public_id']} — \"{(row['error'] or 'unknown error')[:120]}\""
             )
-        lines.append(f"  {gap_info['indexing']} videos currently indexing")
+        # Two counters, each with one name. `indexing` counts *videos* whose
+        # index_state says mid-pipeline; the job line counts *rows in `jobs`*.
+        # Printing both as "indexing" is what let the headline and this block
+        # disagree without either of them being wrong (§9.1.4).
+        lines.append(f"  {state.queue.videos_indexing} video(s) mid-pipeline (index_state=indexing)")
+        if state.queue.active:
+            lines.append(f"  {state.queue.active} indexing job(s) queued or running: {queue_phrase}")
         structured["gaps"] = {
             "transcript_no_ocr": gap_info["transcript_no_ocr"],
-            "indexing": gap_info["indexing"],
+            "indexing": state.queue.videos_indexing,
             "failed": len(gap_info["failed"]),
+            "jobs_active": state.queue.active,
+            "jobs_running": state.queue.running,
+            "jobs_deferred": state.queue.deferred,
+            "jobs_deferred_until": iso_z(state.queue.deferred_until),
         }
 
     if include_guidance:
         lines.append("")
         if total == 0:
             lines.append(
-                'next_best_query: index-video url="https://youtu.be/…" to add your first video.'
+                deps.hint(
+                    "index-video",
+                    'next_best_query: index-video url="https://youtu.be/…" to add '
+                    "your first video.",
+                    "next_best_query: none — this read-only server has no videos "
+                    "indexed and no tool that can add one.",
+                )
             )
         else:
             lines.append(
@@ -410,14 +437,19 @@ async def video_summary(
 
     row = await deps.db.read(lambda c: queries.lookup_video(c, video_id))
     if row is None:
-        raise unknown_video(video_id)
+        raise unknown_video(video_id, can_index=deps.offers("index-video"))
     vid = int(row["id"])
 
     if row["index_state"] == "pending":
         raise ToolError(
             "E_NOT_INDEXED",
             f'Video "{video_id}" is in the corpus but the pipeline never ran.',
-            'index-video force_reindex=true to build it.',
+            deps.hint(
+                "index-video",
+                "index-video force_reindex=true to build it.",
+                "nothing in it is queryable, and this read-only server cannot "
+                "build it. list-videos has=all shows what is complete.",
+            ),
         )
     if row["index_state"] == "indexing":
         from ..jobs import store as jobs_store
@@ -559,7 +591,7 @@ async def tag_video(
         )
 
     known = await deps.db.read(lambda c: queries.lookup_video_ids(c, ids))
-    require_known_videos(known, ids)  # partial batches do not apply
+    require_known_videos(known, ids, deps)  # partial batches do not apply
     internal = [known[i] for i in ids]
 
     result = await deps.db.write(
