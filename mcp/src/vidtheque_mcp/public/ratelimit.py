@@ -63,6 +63,16 @@ class Bucket:
             return float(self.window_s or 1.0)
         return (1.0 - self.tokens) / rate
 
+    def give_back(self) -> None:
+        """Return one token — a charge for something that never happened.
+
+        Refilled first, so the credit lands on the current level rather than on
+        a stale one, and capped like every other refill: a bucket can never
+        hold more than its capacity, however many refunds arrive.
+        """
+        self._refill(time.monotonic())
+        self.tokens = min(float(self.capacity), self.tokens + 1.0)
+
     @property
     def remaining(self) -> int:
         return int(self.tokens)
@@ -96,6 +106,12 @@ class RateLimiter:
             bucket = self._buckets[key] = Bucket(capacity, window)
         wait = bucket.take()
         return wait == 0.0, wait, capacity, bucket.remaining
+
+    def refund(self, name: str, client: str) -> None:
+        """Give back one charge, if that bucket still exists."""
+        bucket = self._buckets.get((name, client))
+        if bucket is not None:
+            bucket.give_back()
 
     def _sweep(self) -> None:
         """Drop full buckets first: a full bucket is a client we can forget.
@@ -132,6 +148,29 @@ def client_key(scope: Scope, trusted_header: str) -> str:
 
 BucketFor = Callable[[str], str | None]
 
+# Where the middleware leaves what it charged, so a handler downstream can hand
+# a charge back. A scope key rather than an app attribute: the charge belongs to
+# the request, and the handler must never be able to refund somebody else's.
+CHARGES_SCOPE_KEY = "vidtheque.rate_charges"
+
+
+def refund(scope: Scope, *names: str) -> None:
+    """Give back this request's charge against `names`, if it was charged.
+
+    The limiter charges before the handler runs — it has to, that is what makes
+    it cheap — so a request that turns out to have cost nothing (an upstream
+    that never answered, a body that was never valid) is refunded here rather
+    than counted a second time somewhere else.
+    """
+    charged = scope.get(CHARGES_SCOPE_KEY)
+    if not charged:
+        return
+    limiter, entries = charged
+    wanted = set(names)
+    for name, key in entries:
+        if name in wanted:
+            limiter.refund(name, key)
+
 
 class RateLimitMiddleware:
     """Charge matching requests against a bucket, or answer 429."""
@@ -164,11 +203,18 @@ class RateLimitMiddleware:
             return
 
         client = client_key(scope, self.trusted_header)
+        charged: list[tuple[str, str]] = []
         for name, key in [(bucket, client), *((b, "@global") for b in self.extra_buckets(path))]:
             allowed, wait, limit, remaining = self.limiter.check(name, key)
             if not allowed:
+                # A refused request costs nothing anywhere: the buckets already
+                # charged for it are handed back before the 429 goes out.
+                for done_name, done_key in charged:
+                    self.limiter.refund(done_name, done_key)
                 await _refused(send, name, limit, wait)
                 return
+            charged.append((name, key))
+        scope[CHARGES_SCOPE_KEY] = (self.limiter, tuple(charged))
         await self.app(scope, receive, send)
 
 

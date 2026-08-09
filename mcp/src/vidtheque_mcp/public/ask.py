@@ -30,9 +30,10 @@ import httpx2 as httpx
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from ..text import clock
+from ..text import clock, deeplink, middle_truncate
 from ..tools import search, segment
 from ..tools.base import Deps
+from .ratelimit import refund
 from .settings import PublicSettings
 
 logger = logging.getLogger(__name__)
@@ -446,6 +447,26 @@ def _answer(
 
 
 async def ask_endpoint(request: Request) -> JSONResponse:
+    """The endpoint, plus the one thing the limiter cannot know on its own.
+
+    The daily budget is charged before this runs (§4), which is right for an
+    ask that reaches the model and wrong for one that does not. Launch day is
+    exactly when a free tier flaps: without this, one visitor retrying through
+    503s spends the whole 50/day in ten minutes and every *other* visitor is
+    locked out until the bucket trickles back. So a non-200 gives the day's
+    token back — the request cost no upstream tokens, so it costs no budget.
+
+    Only ``ask_global`` is refunded. The per-IP minute bucket is the anti-hammer
+    guard, not the cost control: someone retrying a broken upstream five times a
+    minute should still be slowed down.
+    """
+    response = await _ask(request)
+    if response.status_code != 200:
+        refund(request.scope, "ask_global")
+    return response
+
+
+async def _ask(request: Request) -> JSONResponse:
     deps: Deps = request.app.state.assembled.deps
     public: PublicSettings = request.app.state.public_settings
     llm: OpenRouter | None = request.app.state.openrouter

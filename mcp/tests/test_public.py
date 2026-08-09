@@ -700,3 +700,99 @@ def test_ask_citations_carry_the_evidence_the_model_was_shown(tmp_path: Path) ->
     assert first["text"], "a citation without its snippet is a bare title"
     assert first["source"] in {"transcript", "ocr", "frame", "transcript+ocr"}
     assert "max_text_chars" not in first["text"]
+
+
+# ------------------------------- 7. the seams a launch day actually finds
+
+
+class Flapping:
+    """An upstream that fails `fails` times and then works.
+
+    The launch-day shape: a free/cheap tier that 5xxs for a few minutes while
+    visitors keep pressing the button, then comes back.
+    """
+
+    def __init__(self, fails: int, then: dict) -> None:
+        self.left = fails
+        self.then = then
+        self.requests: list[dict[str, Any]] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(json.loads(request.content))
+        if self.left > 0:
+            self.left -= 1
+            return httpx.Response(503, json={"error": {"message": "upstream is down"}})
+        return httpx.Response(200, json=self.then)
+
+
+def _ask(client: TestClient, ip: str = "1.1.1.1") -> Any:
+    return client.post("/api/ask", json={"q": "what?"}, headers={"CF-Connecting-IP": ip})
+
+
+def test_an_upstream_flap_does_not_spend_the_global_daily_budget(tmp_path: Path) -> None:
+    """The failure mode that locks every visitor out, and the reason for the refund.
+
+    The limiter charges before the handler runs, so without a refund one
+    visitor retrying through a flap burns the whole day for everybody — and
+    each reclaimed token then trickles back over ~28 minutes.
+    """
+    upstream = Flapping(fails=3, then=_completion("fine."))
+    settings = PublicSettings(
+        enabled=True, openrouter_key="sk-or-test", ask_per_min=50, ask_per_day=2
+    )
+    with make_client(tmp_path, settings, upstream) as client:
+        for _ in range(3):
+            assert _ask(client).status_code == 503
+        # The budget is untouched: both of the day's asks are still there.
+        assert _ask(client).status_code == 200
+        assert _ask(client, "2.2.2.2").status_code == 200
+        spent = _ask(client, "3.3.3.3")
+    assert spent.status_code == 429
+    assert spent.json()["bucket"] == "ask_global", "and the budget is still enforced"
+
+
+def test_a_request_that_never_reaches_the_model_costs_no_budget(tmp_path: Path) -> None:
+    """A malformed body: rejected before the loop, so it spent nothing."""
+    settings = PublicSettings(
+        enabled=True, openrouter_key="sk-or-test", ask_per_min=50, ask_per_day=1
+    )
+    upstream = Upstream(_completion("fine."))
+    with make_client(tmp_path, settings, upstream) as client:
+        assert client.post("/api/ask", json={}).status_code == 400
+        assert client.post("/api/ask", json={}).status_code == 400
+        assert _ask(client).status_code == 200, "the day's single ask survived them"
+
+
+def test_an_unconfigured_ask_costs_no_budget_either(tmp_path: Path) -> None:
+    """No key at all: the page hides the toggle, but a direct POST still 503s."""
+    keyless = PublicSettings(enabled=True, ask_per_min=50, ask_per_day=1)
+    with make_client(tmp_path, keyless) as client:
+        assert _ask(client).status_code == 503  # not_configured
+        assert _ask(client).status_code == 503, "still 503, never 429 on a spent budget"
+
+
+def test_the_per_ip_bucket_still_throttles_a_retry_storm(tmp_path: Path) -> None:
+    """The refund gives back the *cost* control, never the anti-hammer guard."""
+    upstream = Flapping(fails=10, then=_completion("unused"))
+    settings = PublicSettings(
+        enabled=True, openrouter_key="sk-or-test", ask_per_min=2, ask_per_day=50
+    )
+    with make_client(tmp_path, settings, upstream) as client:
+        assert _ask(client).status_code == 503
+        assert _ask(client).status_code == 503
+        throttled = _ask(client)
+    assert throttled.status_code == 429
+    assert throttled.json()["bucket"] == "ask"
+    assert len(upstream.requests) == 2, "the throttled one never reached the upstream"
+
+
+def test_a_refused_request_is_not_charged_to_the_buckets_that_let_it_through() -> None:
+    limiter = RateLimiter({"ask": (5, 60.0), "ask_global": (0, 86_400.0)})
+    assert limiter.check("ask", "1.1.1.1")[0] is True
+    assert limiter.check("ask_global", "@global")[0] is False
+    limiter.refund("ask", "1.1.1.1")
+    assert limiter._buckets[("ask", "1.1.1.1")].tokens == pytest.approx(5.0, abs=0.01)
+    # A refund can never mint tokens the bucket never had.
+    limiter.refund("ask", "1.1.1.1")
+    assert limiter._buckets[("ask", "1.1.1.1")].tokens <= 5.0
+    limiter.refund("ask", "9.9.9.9")  # a bucket that does not exist is a no-op

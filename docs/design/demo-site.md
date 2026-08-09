@@ -310,6 +310,17 @@ the request reaches this code. One mechanism, one place — a second budget
 counter inside the loop would be a second thing to keep in sync. The page
 treats a 429 like the degraded case, with the `Retry-After` in the message.
 
+**A 503 gives the day's token back.** Charging before the handler runs is what
+makes the limiter cheap, and it is right for an ask that reaches the model —
+but every row of the table above is a request that cost no model tokens at all.
+Since the table's normal case is "the free tier is unavailable", and the day it
+is *most* unavailable is launch day, without a refund one impatient visitor
+retrying through a flap spends all 50 asks in ten minutes and every other
+visitor gets `429 ask_global` with ~28 minutes per reclaimed token. So the
+endpoint refunds `ask_global` on any non-200 (§4.4). Only the global one: the
+per-IP minute bucket is the anti-hammer guard, not the cost control, and
+someone retrying a broken upstream should still be slowed down.
+
 Body, in every 503 case, the same shape:
 
 ```json
@@ -415,6 +426,27 @@ env var exists so the other one is one line away.
 Keys are `(bucket, client)`. The dict is swept when it exceeds
 `VIDTHEQUE_RATE_MAX_KEYS` (default 10,000): full buckets are dropped first,
 because a full bucket is indistinguishable from a client that was never seen.
+
+### 4.4 Refunds — the one thing charging-up-front gets wrong
+
+Charging before the handler runs is what keeps the limiter a middleware instead
+of a decorator on every route. The cost is that a request which turns out to
+have consumed nothing has still been billed, and for `ask_global` — a *daily*
+budget, 50 tokens trickling back over 24 hours — that is the difference between
+a bad minute and a bad day (§3.4).
+
+So the middleware records what it charged on the request scope, and
+`ratelimit.refund(scope, …)` hands a charge back. Two callers, both narrow:
+
+- **The middleware itself**, when a *later* bucket refuses: `/api/ask` charges
+  per-IP and then global, and a request refused by the second must not stay
+  charged to the first. A refused request costs nothing, anywhere.
+- **`ask_endpoint`**, on any non-200. Nothing else refunds anything; a search
+  that returns zero rows is still a search that ran.
+
+A refund refills first and is capped at capacity, so it can never mint a token
+the bucket never had, and refunding a bucket that no longer exists (swept) is a
+no-op rather than a resurrection.
 
 ---
 
