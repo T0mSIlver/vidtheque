@@ -1098,3 +1098,57 @@ Real forks. Everything above is a recommendation I will defend.
    batching, and not as a phase-1/phase-3 requirement.** The phase-3 index form
    stays simple (URL/playlist/channel, split into jobs of ten); replacing
    `scripts/mcp_call.py` for 100+-item batch work is the roadmap item above.
+
+---
+
+## 11. The copy cull (Tom, 2026-08-10)
+
+**The order.** The dashboard "shouldn't try to sell you anything, or have
+leftover comment-like content". An earlier external review proposed this and was
+told it needed Tom's call; this is the call. Every template was swept for prose
+where the page narrates or justifies itself — vocabulary lessons, hedges,
+editorial asides, and paragraphs arguing for a decision the reader did not ask
+about. What stays: labels, values, states, and the empty-state contract
+(DESIGN.md, **The empty state** — name the absence, name the cause, name the
+move, one line each).
+
+**Nothing was destroyed.** Every removed sentence carried either no fact at all
+or a fact this document already records. The table is the audit; the right-hand
+column is where the fact lives now.
+
+| page | removed | the fact, and where it lives |
+|---|---|---|
+| every page (footer) | "This is the management surface. The corpus itself is served at `/mcp`." and the `· a self-hosted video-corpus MCP server` tagline | §2.6 has the URL structure. The tagline goes on the same argument that took the rubric out of the rail (DESIGN.md, **The brand lockup**): a tagline is a persuasion move |
+| overview | ledger note "the unit a search hit points at" | §5.1. Replaced by a value — the video count the cues are spread across |
+| overview | storage notes "summed from the column, not walked on disk" / "one SQLite file, one writer" | §5.1 already specifies the byte total as a column read, not a directory walk |
+| overview | declared-models note, four sentences on `config` vs. the worker | §4.1 caveat 2. The panel is already a diff: declared on the left, the live pills on the right |
+| overview | drift banner's "Meaning is ranked by words here, not by embeddings." | restates the sentence before it |
+| videos | header "Every row is one video and what the pipeline made of it. Counts live on the detail page…" | §4.2 and §5.2: coverage booleans instead of per-row counts |
+| videos | the empty notice's advice paragraphs | §5.2. The notice now names the filter that narrowed it, in one line, and links out |
+| video detail | "There is no scenes table: a shot is a group of keyframes sharing a `shot_id`…" | §4.3, in full, with the schema citation |
+| video detail | the Provenance note — a dash means "not recorded", the names are declared and not a worker report, only `fetch` records a build version, `stage_version` is never incremented | §4.1, all four, as caveats 1–4. The dash in the `model_key` cell is now the whole statement, and `test_the_detail_page_is_honest_about_a_failed_stage` asserts the cell rather than the gloss |
+| video detail | the OCR note — boxes normalised 0–1 at write time, hover lights the pair, the searchable unit is the whole frame | §5.3, both facts, with citations. A hover that works needs no instructions |
+| video detail | the transcript note — what a chunk is, why `words_json` is not printed | §5.3 and its "Does not show" list. The `.chunkmark` row labels the chunk; "What was stored" already counts the cues with word timings |
+| video detail | re-index advice ("better served by submitting it on the index form without forcing…") and the tag note's "the refusals are `tag-video`'s own" | §5.5. The control says what it does; it does not coach |
+| jobs | header "What the pipeline is doing, what it is waiting on…" and the wall-clock paragraph | §5.4, and the job page's own figure-notes say `created → finished` / `first claim → finished` |
+| job detail | the "What it cost" paragraph on `started_at` being the first claim | §5.4 and §8's phase-2 row. The item error tally survives as data, under a label |
+| job detail | "Whether a failure will retry is not a column…" | §4.4: `ItemFailed.retryable` is not persisted |
+| job detail | the backoff note ("the source's own `retry_after`, otherwise `VIDTHEQUE_RATE_LIMIT_BACKOFF_S`, otherwise 5 s") | §4.4, with the defaults |
+| job detail | "a deferral that is not `E_RATE_LIMIT` is recorded here and nowhere else" | §4.4. The log is printed; printing it and describing it are not both needed |
+| job detail | the degraded panel's four sentences | trimmed to one: only `fetch` and `stt` are essential, re-index restores the rest (§4.4) |
+| index form | "This runs the same `index-video` the MCP surface runs, with the same clamps…", the split justification, and the closing paragraph on why there is no delete | §2.2 (one service layer), §10.7 (the split), §5.2 (`jobs.kind='delete'` has no pipeline) |
+| login | the header paragraph on cookies vs. headers, and "A script does not need this page at all" | §3.1–§3.3. The page names the env var that holds the secret and stops |
+| error | "That code is the same string the MCP surface answers with…" | §2.2 |
+
+**The fence.** Two tests replace the one that pinned "There is no scenes table"
+(`test_the_scene_timeline_is_positions_not_a_query_per_shot`, which now asserts
+the band's caption is a count):
+
+- `test_no_dashboard_page_narrates_itself` renders every template — anonymous,
+  owner and demo — and asserts each removed phrase is absent. A regression pin.
+- `test_every_prose_slot_stays_inside_its_ceiling` bounds each prose slot by
+  sentences and characters. The failure mode is not any one sentence; it is a
+  paragraph growing back one clause at a time, and only a measure catches that.
+  Page copy gets two sentences and 170 characters; `field-help` and
+  `check-note`, which DESIGN.md sanctions as control documentation, get 240; a
+  ledger `figure-note` gets one sentence and 56 characters.

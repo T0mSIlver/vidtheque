@@ -753,6 +753,15 @@ control. It underlines instead. The same lockup repeats once in the footer at
 rather than merely credited, and so the serif reads as a decision made twice
 rather than as one odd word in a rail.
 
+*Amended 2026-08-10, the copy cull (Tom).* The footer is now the lockup and the
+version and nothing else. The tagline that trailed it — "a self-hosted
+video-corpus MCP server" — and the line under it naming this the management
+surface are gone, on exactly the argument that took the rubric out of the rail:
+a tagline is a persuasion move, and an Operate surface owes the operator where
+they are, not what the product is for. A signature is a name and a version. If
+a third element ever wants into that line it has to be a fact about *this*
+deployment, not a sentence about the product.
+
 ### The ledger band (signature, `/dashboard` overview)
 A single ruled band across the full content column: a 2px `--rule` on top, a hairline
 under, and N equal columns divided by hairlines. Each column is an 11px

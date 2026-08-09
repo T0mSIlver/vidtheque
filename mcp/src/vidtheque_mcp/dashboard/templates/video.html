@@ -49,11 +49,7 @@
 {% if summary_error %}
 <section class="notice">
   <h2 class="notice-title">{{ summary_error.message }}</h2>
-  <p class="notice-detail">
-    <code>{{ summary_error.code }}</code> is <code>video-summary</code>
-    refusing, verbatim. The panels below read the index directly, so they still
-    say what exists.
-  </p>
+  <p class="notice-detail"><code>{{ summary_error.code }}</code></p>
   {% if summary_error.next %}<p class="notice-next">{{ summary_error.next }}</p>{% endif %}
 </section>
 {% endif %}
@@ -69,8 +65,7 @@
 <p class="stage-alarm">
   <span class="pill tone-bad">failed</span>
   {% for stage in failed_stages %}<code>{{ stage.stage }}</code>{{ ", " if not loop.last }}{% endfor %}
-  did not finish. <a href="#provenance">What it recorded, and what the video
-  still has, is below</a>.
+  did not finish. <a href="#provenance">Provenance</a>.
 </p>
 {% endif %}
 
@@ -111,8 +106,6 @@
   <div class="timeband-foot">
     <p class="panel-note">
       {{ shots | length }} shot(s){{ ", capped: the video has more" if shots_capped }}.
-      There is no scenes table: a shot is a group of keyframes sharing a
-      <code>shot_id</code>. Follow one to its first frame below.
     </p>
     {# The hatch is the only mark on this page whose meaning is not written next
        to it, so it gets written here. Both swatches are the bars' own fills. #}
@@ -124,10 +117,7 @@
   {% else %}
   <div class="empty">
     <p class="empty-lead">No keyframes were captured, so this video has no shots.</p>
-    <p class="empty-note">
-      The <code>keyframe</code> row in Provenance below says whether the stage
-      ran, failed or never started.
-    </p>
+    <p class="empty-note">The <code>keyframe</code> row in Provenance says why.</p>
   </div>
   {% endif %}
 </section>
@@ -211,17 +201,10 @@
       </tbody>
     </table>
   </div>
-  <p class="panel-note">
-    Provenance records what <em>succeeded</em>. A failed, skipped or
-    re-invalidated stage has its <code>model_key</code> set to NULL, so a dash
-    here means "not recorded", never "unknown model". The names are the
-    corpus's declared models, not a report from the worker; the live check is
-    the vector state on the <a href="{{ root }}">corpus page</a>. Only
-    <code>fetch</code> records a build version (<code>yt-dlp-&lt;version&gt;</code>);
-    <code>stt</code> records <code>large-v3</code>, not the whisperX release.
-    <code>stage_version</code> is declared in the schema and never incremented,
-    so it is not shown.
-  </p>
+  {# The four caveats this paragraph used to spell out (a dash is "not
+     recorded", the names are declared and not a worker report, only `fetch`
+     records a build version, `stage_version` is never incremented) moved to
+     docs/design/dashboard.md §5.3 on 2026-08-10. #}
 </section>
 
 <section class="panel" aria-labelledby="frames-title" id="frames">
@@ -270,8 +253,7 @@
   <div class="empty">
     <p class="empty-lead">No keyframes on this page of the strip.</p>
     <p class="empty-note">
-      The <code>keyframes</code> figure above says how many exist in total; if
-      it is zero, the <code>keyframe</code> stage is the row to read.
+      The <code>keyframes</code> figure above says how many exist in total.
     </p>
   </div>
   {% endif %}
@@ -307,20 +289,14 @@
     </figure>
     {% endfor %}
   </div>
-  <p class="panel-note">
-    Boxes are the OCR engine's own, normalised 0–1 at write time, drawn over
-    the frame at whatever width it is rendered. Point at a line to light its
-    box, or at a box to light its line. The searchable unit is the whole frame,
-    all of its lines joined in reading order, which is why a phrase that wraps
-    across two lines is findable.
-  </p>
+  {# The box provenance (normalised 0–1 at write time) and the searchable-unit
+     rule moved to docs/design/dashboard.md §5.3 on 2026-08-10. #}
   {% else %}
   <div class="empty">
     <p class="empty-lead">None of the frames on this page carry on-screen text.</p>
     <p class="empty-note">
-      Frames dropped as near-duplicates are never read, so <code>skipped</code>
-      in the strip above is a deduplication result and not an OCR failure. A
-      frame that was read and held nothing says <code>empty</code>.
+      <code>skipped</code> in the strip means deduplicated and never read;
+      <code>empty</code> means read and blank.
     </p>
   </div>
   {% endif %}
@@ -356,19 +332,15 @@
     {% endif %}
   </nav>
   {% endif %}
-  <p class="panel-note">
-    The rule down the left marks a chunk, the span of cues that became one
-    embedding. Word-level timings are stored for
-    {{ counts['cues_with_words'] | count }} of {{ counts['cues'] | count }} cues
-    and are not printed: they are about a tenth of the whole index and nothing
-    a person reads.
-  </p>
+  {# The chunk rule is labelled by the `.chunkmark` row itself and the word
+     timings are a figure-note in "What was stored", so the paragraph that
+     restated both is gone (2026-08-10); why `words_json` is never printed is
+     docs/design/dashboard.md §5.3, "Does not show". #}
   {% else %}
   <div class="empty">
     <p class="empty-lead">No transcript cues on this page.</p>
     <p class="empty-note">
-      The <code>stt</code> row in Provenance says whether one was ever produced,
-      and the <code>cues</code> figure says how many exist in total.
+      The <code>stt</code> row in Provenance says whether one was produced.
     </p>
   </div>
   {% endif %}
@@ -402,10 +374,7 @@
       <h3 class="label">Re-index</h3>
       <p class="empty-note">
         Runs <code>index-video</code> with <code>force_reindex</code> on this
-        one URL. Every stage runs again and the old rows are invalidated first,
-        so a video whose only problem is one failed stage is better served by
-        submitting it on the index form without forcing: that resumes at the
-        outstanding stage and re-downloads nothing.
+        one URL: every stage runs again, and the old rows are invalidated first.
       </p>
       <form class="rowform" method="post" action="{{ root }}/videos/{{ video.video_id }}/reindex">
         <button type="submit"{{ ' disabled' if not writes_allowed }}>Re-index this video</button>
@@ -418,9 +387,7 @@
     <div class="manage-action">
       <h3 class="label">Tags</h3>
       <p class="empty-note">
-        <code>namespace:value</code>, lowercase, comma separated. Ten per
-        field. The rules and the refusals are <code>tag-video</code>'s own — a
-        tag this rejects is one the MCP tool rejects, in the same words.
+        <code>namespace:value</code>, lowercase, comma separated. Ten per field.
       </p>
       <form class="tagform" method="post" action="{{ root }}/videos/{{ video.video_id }}/tags">
         <div class="field field-wide">

@@ -51,11 +51,8 @@
     <strong data-field="job-defer-clock">{{ job.text.defer }}</strong>.
     {% if job.error_code %}The backoff was set after <code>{{ job.error_code }}</code>.{% endif %}
   </p>
-  <p class="notice-next">
-    The delay is the source's own <code>retry_after</code> when it sends one,
-    otherwise <code>VIDTHEQUE_RATE_LIMIT_BACKOFF_S</code> for rate limiting and
-    5 s for anything else retryable.
-  </p>
+  {# Where the delay comes from (`retry_after`, else the backoff env, else 5 s)
+     is docs/design/dashboard.md §5.4 as of 2026-08-10, not page copy. #}
 </section>
 {% endif %}
 
@@ -65,10 +62,7 @@
   {% if job.error_message %}
   <p class="notice-detail"><span class="errtext">{{ job.error_message }}</span></p>
   {% elif redacted %}
-  <p class="notice-detail">
-    The code is published; the message is not, because the pipeline's error strings
-    carry the operator's own configuration.
-  </p>
+  <p class="notice-detail">The message is not published on this instance.</p>
   {% endif %}
 </section>
 {% endif %}
@@ -100,17 +94,16 @@
       </dd>
     </div>
   </dl>
+  {# The three clocks say what they are in their own figure-notes; the
+     paragraph that re-explained them went 2026-08-10 and the `started_at`
+     semantics live in docs/design/dashboard.md §5.4. The error tally stays: it
+     is data, and it is on no other row of this page. #}
+  {% if error_counts %}
   <p class="panel-note">
-    <code>started_at</code> is the <em>first</em> claim, not the most recent one:
-    a deferred job that is claimed again keeps its original start, so "on the
-    runner" stays honest across a backoff and the gap between the two figures is
-    time this job spent waiting. Wall clock is the number to quote for "what
-    does indexing cost".
-    {% if error_counts %}
-    Item error codes on this job:
-    {% for code, n in error_counts.items() %}<code>{{ code }}</code> ×{{ n }}{{ ", " if not loop.last }}{% endfor %}.
-    {% endif %}
+    <span class="label">item error codes</span>
+    {% for code, n in error_counts.items() %}<code>{{ code }}</code> ×{{ n }}{{ ", " if not loop.last }}{% endfor %}
   </p>
+  {% endif %}
 </section>
 
 <section class="panel" aria-labelledby="items">
@@ -176,16 +169,13 @@
       </tbody>
     </table>
   </div>
-  <p class="panel-note">
-    Whether a failure will retry is not a column: <code>retryable</code> is
-    decided where the error is raised and never written down. What a row can say
-    is <code>attempts</code> against <code>max_attempts</code>, and what the job
-    can say is whether it is being held off. Together those are the whole of
-    "is this coming back".
-    {% if items_capped %}Only the first {{ items | length }} items are listed.{% endif %}
-  </p>
+  {# Why `retryable` is not a column is docs/design/dashboard.md §4.4, not page
+     copy (2026-08-10). The cap is a fact about this table and stays. #}
+  {% if items_capped %}
+  <p class="panel-note">Only the first {{ items | length }} items are listed.</p>
+  {% endif %}
   {% else %}
-  <p class="empty-note">This job has no items, which the schema should not allow.</p>
+  <p class="empty-note">This job has no items.</p>
   {% endif %}
 </section>
 
@@ -215,15 +205,12 @@
       </tbody>
     </table>
   </div>
+  {% if focus.video_id %}
   <p class="panel-note">
-    The seven internal stages for the item this job is on: the running one, or
-    the last one to finish. <code>job-status</code> collapses these into five
-    wire stages for a model; a human gets the seven and the clock on each, which
-    is the honest answer to what a video costs. Every other item's stages are on
-    its own
-    {% if focus.video_id %}<a href="{{ root }}/videos/{{ focus.video_id }}">video page</a>{% else %}video page{% endif %},
-    one query rather than seven per row.
+    <a href="{{ root }}/videos/{{ focus.video_id }}">This item's video page</a>.
+    Every other item's stages are on its own.
   </p>
+  {% endif %}
 </section>
 {% endif %}
 
@@ -244,11 +231,8 @@
     {% endfor %}
   </ul>
   <p class="panel-note">
-    These items are <code>done</code> and this job counts them as successes,
-    because only <code>fetch</code> and <code>stt</code> are essential: any other
-    stage can fail without taking the video down. Then the item is
-    <code>done</code>, <code>n_failed</code> is 0, and a search channel is simply
-    missing. Re-indexing those videos is what gets it back.
+    Only <code>fetch</code> and <code>stt</code> are essential, so these count
+    as <code>done</code>. Re-index to get the missing channel back.
   </p>
 </section>
 {% endif %}
@@ -270,16 +254,11 @@
   {% else %}
   <p class="empty-note">Nothing has been logged for this job.</p>
   {% endif %}
+  {# That a non-`E_RATE_LIMIT` deferral is recorded here and nowhere else is
+     docs/design/dashboard.md §4.4 as of 2026-08-10; the page prints the log. #}
   <p class="panel-note">
-    Newest first, {{ events | length }} shown. A deferral that is not
-    <code>E_RATE_LIMIT</code> is recorded <em>here and nowhere else</em>: only
-    rate limiting is sticky on the job row, so for every other retry this log is
-    the only timeline there is.
-    {% if redacted %}
-    Message text is not published on this instance, because it carries submitted
-    URLs and the pipeline's raw error strings. What is shown is when each event
-    happened, how loud it was, and which stage it came from.
-    {% endif %}
+    Newest first, {{ events | length }} shown.
+    {% if redacted %}Message text is not published on this instance.{% endif %}
   </p>
 </section>
 

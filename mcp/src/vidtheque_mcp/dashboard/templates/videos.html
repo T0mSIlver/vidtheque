@@ -44,11 +44,6 @@ q={{ filters.q | urlencode }}&amp;channel={{ filters.channel | urlencode }}&amp;
       <span class="fact">ordered by <span class="mono">{{ filters.order }}</span></span>
     </p>
   </div>
-  <p class="pagehead-meta">
-    Every row is one video and what the pipeline made of it. Counts live on the
-    detail page, so this table stays cheap by showing coverage rather than
-    totals.
-  </p>
 </div>
 
 {# A real GET form: the filters are the URL, so a filtered table is a link
@@ -139,23 +134,22 @@ q={{ filters.q | urlencode }}&amp;channel={{ filters.channel | urlencode }}&amp;
 {% elif not rows %}
 <section class="notice">
   <h2 class="notice-title">Nothing matches those filters.</h2>
+  {# One line, naming the filter that is doing the narrowing — the date range
+     first when it is set, because its two ends live in a fieldset and neither
+     is a word in the query box. The move is the link below. #}
   <p class="notice-detail">
     {% set dated = filters.published_after or filters.published_before
                    or filters.indexed_after or filters.indexed_before %}
     {% if dated %}
-    {# Named first when it is set, because a date range is the filter a reader
-       is least likely to still have in mind: the two ends live in a fieldset
-       above and neither of them is a word in the query box. #}
-    A date range is narrowing this table. Clear the
+    The
     {{ "published" if filters.published_after or filters.published_before else "indexed" }}
-    range, or widen it — the corpus header on the overview says the span the
-    whole index covers.
+    date range is narrowing it.
     {% elif filters.index_state != 'all' %}
-    The state filter is on <code>{{ filters.index_state }}</code>, and most
-    videos in a healthy corpus are <code>ready</code>.
+    The state filter is on <code>{{ filters.index_state }}</code>.
+    {% elif filters.has != 'any' %}
+    The coverage filter is <code>has={{ filters.has }}</code>.
     {% else %}
-    Widen the query, or drop the coverage filter: <code>has={{ filters.has }}</code>
-    only matches videos whose pipeline finished that leg.
+    The text, channel and tag boxes are what narrowed it.
     {% endif %}
   </p>
   <p class="notice-next"><a href="{{ root }}/videos">Show everything</a></p>

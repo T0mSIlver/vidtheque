@@ -12,11 +12,7 @@
       {% endif %}
     </p>
   </div>
-  <p class="pagehead-meta">
-    A video, a playlist or a channel. This runs the same
-    <code>index-video</code> the MCP surface runs, with the same clamps, so
-    nothing here can ask the pipeline for something an agent could not.
-  </p>
+  <p class="pagehead-meta">A video, a playlist or a channel.</p>
 </div>
 
 {% if not writes_allowed %}
@@ -28,10 +24,7 @@
   <p class="notice-detail">
     The corpus config and the vector tables disagree: {{ vectors.reason }}
   </p>
-  <p class="notice-next">
-    Fix the config or dimension mismatch and restart. Search still works, and
-    every page on this surface still reads.
-  </p>
+  <p class="notice-next">Fix the config or dimension mismatch and restart.</p>
 </section>
 {% endif %}
 
@@ -52,9 +45,7 @@
     <span class="mono">{{ result.urls }}</span> URL(s)
     {% if result.split %}
     split into <span class="mono">{{ result.batches }}</span> jobs of at most
-    <span class="mono">{{ urls_per_job }}</span>. The cap belongs to the MCP
-    tool, which a model calls; this form is not that surface, so it splits
-    rather than refuses.
+    <span class="mono">{{ urls_per_job }}</span>.
     {% else %}
     in one job.
     {% endif %}
@@ -110,7 +101,7 @@
                 placeholder="https://youtu.be/kCc8FmEb1nY&#10;kCc8FmEb1nY&#10;https://www.youtube.com/playlist?list=…"
                 {{ 'disabled' if not writes_allowed }}>{{ form.urls }}</textarea>
       <p class="field-help">
-        One per line, or separated by spaces or commas. A bare 11-character id
+        One per line, or separated by spaces or commas; a bare 11-character id
         works. Up to <span class="mono">{{ max_form_urls }}</span> per
         submission, queued as jobs of <span class="mono">{{ urls_per_job }}</span>.
       </p>
@@ -189,14 +180,9 @@
     </div>
   </form>
 
-  <p class="panel-note">
-    Nothing from a video is searchable until its job reports
-    <code>done</code>. Stages run download, transcribe, keyframes, OCR, embed,
-    and each writes as it finishes, so a job that fails late keeps what it
-    already built. There is no delete here: <code>jobs.kind='delete'</code> is
-    in the schema and has no pipeline behind it, and a button that queues a
-    failing job is worse than no button.
-  </p>
+  {# Why there is no delete control (`jobs.kind='delete'` has no pipeline
+     behind it) is docs/design/dashboard.md §5.5 as of 2026-08-10; a page does
+     not owe the reader an argument for a button it does not have. #}
 </section>
 
 {% endblock %}

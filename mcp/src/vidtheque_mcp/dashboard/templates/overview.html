@@ -46,8 +46,7 @@
   {% if readonly %}
   <h2 class="notice-title" id="drift">Vector search is off on this instance</h2>
   <p class="notice-next">
-    Search still answers from full-text, and every response says so. Meaning is
-    ranked by words here, not by embeddings.
+    Search still answers from full-text, and every response says so.
   </p>
   {% else %}
   <h2 class="notice-title" id="drift">The corpus and the worker disagree</h2>
@@ -86,7 +85,7 @@
     <div class="figure">
       <dt>transcript cues</dt>
       <dd>{{ corpus.cues | count }}</dd>
-      <dd class="figure-note">the unit a search hit points at</dd>
+      <dd class="figure-note">across {{ corpus.videos | count }} videos</dd>
     </div>
     <div class="figure">
       <dt>keyframes</dt>
@@ -96,7 +95,7 @@
     <div class="figure">
       <dt>on-screen lines</dt>
       <dd>{{ rollup['ocr_lines'] | count }}</dd>
-      <dd class="figure-note">read off those frames</dd>
+      <dd class="figure-note">read off those keyframes</dd>
     </div>
   </dl>
 </section>
@@ -132,8 +131,7 @@
     </ul>
     {% else %}
     <p class="empty-note">
-      Nothing has finished indexing yet. Add a video with the
-      <code>index-video</code> tool and this list is where it lands.
+      Nothing has finished indexing yet. Add one with <code>index-video</code>.
     </p>
     {% endif %}
   </section>
@@ -203,12 +201,10 @@
         <div class="figure">
           <dt>keyframe JPEGs</dt>
           <dd>{{ storage.keyframes | bytes_human }}</dd>
-          <dd class="figure-note">summed from the column, not walked on disk</dd>
         </div>
         <div class="figure">
           <dt>index</dt>
           <dd>{{ storage.database | bytes_human }}</dd>
-          <dd class="figure-note">one SQLite file, one writer</dd>
         </div>
       </dl>
     </section>
@@ -289,11 +285,6 @@
         <span class="label">live</span>
         <span class="pill tone-{{ 'ok' if vectors.enabled else 'bad' }}">{{ "vector legs on" if vectors.enabled else "vector legs off" }}</span>
         <span class="pill tone-{{ 'ok' if writes_allowed else 'bad' }}">{{ "indexing allowed" if writes_allowed else "indexing refused" }}</span>
-      </p>
-      <p class="panel-note">
-        These are what the <em>corpus</em> was built with: the <code>config</code>
-        table, written by migrations and read once at boot. They are not a report
-        from the worker. The live check is the pair of states above.
       </p>
     </div>
   </div>

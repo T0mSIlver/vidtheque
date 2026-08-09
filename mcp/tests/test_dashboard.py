@@ -518,7 +518,7 @@ def test_the_detail_page_carries_all_seven_stages(client: TestClient) -> None:
     # A stage with no row is `absent`, not silently missing: this corpus was
     # seeded without a fetch row.
     assert ">absent<" in body
-    assert "Provenance records what" in body
+    assert '<h2 class="panel-title" id="provenance">Provenance</h2>' in body
 
 
 def test_the_detail_page_is_honest_about_a_failed_stage(client: TestClient) -> None:
@@ -528,9 +528,11 @@ def test_the_detail_page_is_honest_about_a_failed_stage(client: TestClient) -> N
     assert "E_INDEXING" in body
     assert ">failed<" in body
     assert "yt-dlp-2026.07.04" in body  # the stage that did succeed
-    # …and the one that did not records no model at all.
+    # …and the one that did not records no model at all. The dash is the whole
+    # statement — the paragraph that used to gloss it as "not recorded" was
+    # culled 2026-08-10, so the cell itself has to carry the fact.
     assert "Sign in to confirm you are not a bot" in body
-    assert "not recorded" in body
+    assert '<td class="col-model"><span class="muted">—</span></td>' in body
 
 
 def test_the_detail_page_counts_are_bounded_and_per_video(client: TestClient) -> None:
@@ -551,7 +553,10 @@ def test_the_scene_timeline_is_positions_not_a_query_per_shot(
     assert body.count("#frame-") >= len(bars)
     # The shot whose only frame was deduplicated is dimmed, not hidden.
     assert "is-dedup" in body
-    assert "There is no scenes table" in body
+    # The band's own caption is a count and nothing else. The paragraph that
+    # used to explain that shots are a `GROUP BY shot_id` rather than a table
+    # was culled 2026-08-10 (Tom); the fact lives in dashboard.md §4.3.
+    assert "3 shot(s)." in body
 
 
 def test_the_keyframe_strip_uses_the_derived_cache_and_never_base64(
@@ -575,7 +580,10 @@ def test_the_ocr_browser_draws_the_boxes_it_stored(client: TestClient) -> None:
         values = [float(v) for v in box.split(",")]
         assert len(values) == 4 and all(0.0 <= v <= 1.0 for v in values)
     assert "paged kv cache" in body
-    assert "normalised 0–1 at write time" in body
+    # The boxes are drawn over the frame from those same coordinates, as
+    # percentages. That the page says so in prose is no longer the assertion:
+    # the paragraph went in the 2026-08-10 cull, the geometry is the claim.
+    assert re.search(r'class="ocrbox" aria-hidden="true"\s+style="left:[\d.]+%', body)
 
 
 def test_the_transcript_browser_shows_the_chunk_boundaries(client: TestClient) -> None:
@@ -672,9 +680,11 @@ def test_the_deferred_job_explains_itself(client: TestClient) -> None:
     body = page(client, f"{ROOT}/jobs/job_deferred01")
     assert "Waiting, not stuck" in body
     assert "E_RATE_LIMIT" in body
-    # The event tail is the only place a non-rate-limit deferral exists at all.
+    # The event tail is the only place a non-rate-limit deferral exists at all,
+    # which is why the log is printed rather than described (the sentence that
+    # said so went in the 2026-08-10 cull; dashboard.md §4.4 keeps the fact).
     assert "retrying in 300s after E_RATE_LIMIT" in body
-    assert "here and nowhere else" in body
+    assert 'class="events" data-events' in body
 
 
 def test_an_unknown_job_is_a_typed_404(client: TestClient) -> None:
@@ -928,6 +938,123 @@ def test_no_dashboard_module_builds_html_from_data() -> None:
             assert sink not in script, f"{module.name} reaches for {sink}"
         assert "safeUrl(" in script, f"{module.name} filters URLs"
         assert "textContent" in script
+
+
+# --- the copy cull (Tom, 2026-08-10)
+#
+# The dashboard "shouldn't try to sell you anything, or have leftover
+# comment-like content". These two tests are the fence around that: the first
+# pins the phrases that were removed so they cannot walk back in, the second
+# bounds how much prose a slot may hold at all, because the failure mode is not
+# any one sentence — it is a paragraph growing back one clause at a time.
+
+# Exact strings the 2026-08-10 cull deleted. Every one of them was the page
+# narrating or justifying itself; where the sentence carried a real fact, the
+# fact moved to `docs/design/dashboard.md` and is cited in the commit.
+CULLED_NARRATION = (
+    "There is no scenes table",
+    "Provenance records what",
+    "not a report from the worker",
+    "the unit a search hit points at",
+    "one SQLite file, one writer",
+    "summed from the column",
+    "This is the management surface",
+    "a self-hosted video-corpus MCP server",
+    "Every row is one video",
+    "normalised 0–1 at write time",
+    "which is why a phrase that wraps",
+    "nothing a person reads",
+    "here and nowhere else",
+    "is worse than no button",
+    "that is the healthy state",
+    "which the schema should not allow",
+    "the whole of",
+    "A script does not need this page",
+    "so it is the one worth quoting",
+    "an agent could not",
+    "rather than refuses",
+)
+
+# The prose slots, and the ceiling on each. The tight group is page copy; the
+# loose group is control documentation, which DESIGN.md sanctions as a
+# `--prose`-capped sentence under a control and which genuinely needs to spell
+# out a format. Neither ceiling is a style preference — both are the point at
+# which a note becomes an essay.
+PROSE_SLOTS = {
+    "panel-note": (2, 170),
+    "notice-detail": (2, 170),
+    "notice-next": (2, 170),
+    "empty-note": (2, 170),
+    "empty-lead": (2, 170),
+    "stage-alarm": (2, 170),
+    "deployment-why": (2, 170),
+    "field-help": (2, 240),
+    "check-note": (2, 170),
+    # A ledger column's third element. Six words, by construction.
+    "figure-note": (1, 56),
+}
+
+
+def _prose_blocks(body: str) -> list[tuple[str, str]]:
+    """Every rendered prose slot on a page, as (slot, plain text).
+
+    `<dd>` as well as `<p>`, because a ledger column's note is the third
+    element of a `<div class="figure">` and is exactly the slot most likely to
+    grow a sentence.
+    """
+    out = []
+    for _tag, classes, inner in re.findall(
+        r'<(p|dd) class="([^"]*)">(.*?)</\1>', body, re.S
+    ):
+        for slot in classes.split():
+            if slot not in PROSE_SLOTS:
+                continue
+            text = re.sub(r"<[^>]+>", "", inner)
+            out.append((slot, " ".join(text.split())))
+    return out
+
+
+def _every_dashboard_page(tmp_path: Path) -> list[tuple[str, str]]:
+    """One rendering of every template this surface has, as (label, html)."""
+    pages = []
+    with make_client(tmp_path) as anon:
+        for path in (
+            "", "/videos", "/videos?published_after=2099-01-01",
+            "/videos/kCc8FmEb1nY", "/videos/aaaaaaaaaaa", "/videos/zduSFxRajkE",
+            "/jobs", "/jobs?state=failed", "/jobs/job_finished01",
+            "/jobs/job_deferred01", "/jobs/job_running001",
+        ):
+            pages.append((path or "/", page(anon, ROOT + path)))
+        pages.append(("404", page(anon, f"{ROOT}/videos/nosuchvideo", status=404)))
+    with owner_client(tmp_path) as owner:
+        pages.append(("/login", page(owner, f"{ROOT}/login")))
+        sign_in(owner)
+        pages.append(("/index", page(owner, f"{ROOT}/index")))
+    with make_client(tmp_path, public=PublicSettings(enabled=True)) as demo:
+        for path in ("/jobs", "/jobs/job_finished01"):
+            pages.append((f"demo {path}", page(demo, ROOT + path)))
+    return pages
+
+
+def test_no_dashboard_page_narrates_itself(tmp_path: Path) -> None:
+    """The sentences Tom ordered removed stay removed."""
+    for label, body in _every_dashboard_page(tmp_path):
+        for phrase in CULLED_NARRATION:
+            assert phrase not in body, f"{label} narrates itself: {phrase!r}"
+
+
+def test_every_prose_slot_stays_inside_its_ceiling(tmp_path: Path) -> None:
+    """A note may state a fact. It may not argue for the page it is on."""
+    for label, body in _every_dashboard_page(tmp_path):
+        for slot, text in _prose_blocks(body):
+            sentences, chars = PROSE_SLOTS[slot]
+            found = len(re.findall(r"[.!?](?:\s|$)", text))
+            assert found <= sentences, (
+                f"{label} .{slot} runs to {found} sentences: {text!r}"
+            )
+            assert len(text) <= chars, (
+                f"{label} .{slot} is {len(text)} chars: {text!r}"
+            )
 
 
 def test_the_pages_carry_no_inline_script(client: TestClient) -> None:
@@ -1789,7 +1916,10 @@ OPERATOR_STRINGS = (
     "Qwen/Qwen3-VL-Embedding-2B",
     "Declared models",
     "keyframe JPEGs",
-    "one SQLite file, one writer",
+    # The storage panel itself. It used to be pinned by a figure-note that read
+    # "one SQLite file, one writer"; that note was self-narration and went in
+    # the 2026-08-10 cull, so the panel is pinned by its own heading now.
+    'id="storage">Storage',
     "auth=",
     "VIDTHEQUE_AUTH",
 )

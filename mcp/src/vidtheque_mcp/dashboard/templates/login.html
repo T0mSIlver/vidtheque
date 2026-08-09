@@ -14,11 +14,6 @@
       <span class="fact">auth <span class="mono">{{ auth_mode }}</span></span>
     </p>
   </div>
-  <p class="pagehead-meta">
-    The read views are already open to whoever holds this instance's
-    credential. This is the same session, kept in a cookie, so the write side
-    stops asking for a header a browser cannot send.
-  </p>
 </div>
 
 <section class="signin panel" aria-labelledby="signin">
@@ -49,21 +44,17 @@
     </div>
   </form>
 
+  {# Which env var holds the secret, and nothing else: a sign-in page that
+     explains the auth design is a page arguing with the person locked out. #}
   <p class="panel-note">
     {% if accepts_password and accepts_token %}
-    Either secret works: <code>VIDTHEQUE_PASSWORD</code> is the one a human
-    types, <code>VIDTHEQUE_TOKEN</code> the one scripts already hold.
+    Either <code>VIDTHEQUE_PASSWORD</code> or <code>VIDTHEQUE_TOKEN</code>.
     {% elif accepts_token %}
-    This instance runs <code>VIDTHEQUE_AUTH=token</code> with no
-    <code>VIDTHEQUE_PASSWORD</code> set, so the token is the secret. Set a
-    password in <code>.env</code> to type something shorter.
+    No <code>VIDTHEQUE_PASSWORD</code> is set, so the secret is
+    <code>VIDTHEQUE_TOKEN</code>.
     {% else %}
-    The password is <code>VIDTHEQUE_PASSWORD</code> from this deployment's
-    <code>.env</code>. There is no reset and no second account: one owner, one
-    secret.
+    <code>VIDTHEQUE_PASSWORD</code>, from this deployment's <code>.env</code>.
     {% endif %}
-    A script does not need this page at all, and should not use it: send
-    <code>Authorization: Bearer</code> and skip the cookie.
   </p>
 </section>
 

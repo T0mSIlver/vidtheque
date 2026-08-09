@@ -12,11 +12,6 @@
       <span class="sep">·</span><span class="fact">refresh <span class="mono">{{ (poll_ms / 1000) | round | int }}s</span></span>
     </p>
   </div>
-  <p class="pagehead-meta">
-    What the pipeline is doing, what it is waiting on, and what finished with
-    something missing. Rows with live work refresh on that interval and stop
-    when nothing is running.
-  </p>
 </div>
 
 {# A real GET form: the filter is the URL. Nothing here needs JavaScript. #}
@@ -45,11 +40,10 @@
   <h2 class="notice-title" id="nojobs">No jobs to show.</h2>
   <p class="notice-detail">
     {% if filters.state != 'all' %}
-    The filter is on <code>{{ filters.state }}</code>. A quiet instance has no
-    active jobs, and that is the healthy state.
+    The filter is on <code>{{ filters.state }}</code>.
     {% else %}
-    Nothing has ever been queued on this instance. A job is created by
-    <code>index-video</code>, one per call, with one item per URL.
+    Nothing has ever been queued on this instance.
+    <code>index-video</code> creates one.
     {% endif %}
   </p>
   {% if filters.state != 'all' %}
@@ -136,17 +130,15 @@
 </nav>
 {% endif %}
 
+{# What "wall clock" means is a figure-note on the job's own page; the
+   paragraph that restated it here went 2026-08-10. What survives is the one
+   line a reader of the demo cannot get anywhere else — what this deployment
+   does not publish. #}
+{% if redacted %}
 <p class="panel-note">
-  Wall clock is <code>created</code> → <code>finished</code>: what the job cost
-  the queue, waiting included. Time on the runner is smaller and lives on the
-  job's own page, because <code>started_at</code> is the <em>first</em> claim.
-  A job that was deferred and re-claimed still reports when it first began
-  rather than when it was last picked up.
-  {% if redacted %}
-  This instance publishes states, codes, counts and clocks; source URLs and
-  error text stay on the owner's side.
-  {% endif %}
+  Source URLs and error text are not published on this instance.
 </p>
+{% endif %}
 {% endif %}
 
 {% endblock %}
