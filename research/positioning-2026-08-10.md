@@ -911,3 +911,484 @@ with the knowledge of all the builders and creators." The rejected framings
 stay in this document as evidence only. **The contract now lives at
 `docs/design/positioning.md`** — that file contains only what we ship and
 carries the amendment rule. All surfaces align to it from here.
+
+---
+
+## Post-lock kit (positioning agent, 2026-08-10) — messaging, pages, stress-tests, do-not list
+
+**Read `docs/design/positioning.md` first; it is the contract and this section
+is subordinate to it.** Everything below is *application* of the lock: copy in
+the locked voice, page by page, plus the objections the lock has to survive and
+the failure modes it rules out. Where a line here disagrees with the contract,
+the contract wins and this section is the bug.
+
+Written after the lock, from the same evidence base as §1–§6 above, so the
+reference analysis in §1 is the source for every voice and layout call.
+
+**Corpus facts as of this writing** (`public/static/lab/assets/corpus.json`, the
+harvest record behind the lab pages): **78 talks · 97,538 s (27.1 h) · 17,138
+cues · 264,392 words · 61,198 OCR lines over 2,931 OCR'd frames · 4,736
+keyframes · one channel (AI Engineer)**. These are *today's* numbers and are
+already different from §2.4's. They are cited so copy can be drafted against a
+real shape — **no surface hardcodes them** (PRODUCT.md; §1.5's stat band is the
+mechanism).
+
+---
+
+### 7. The messaging kit
+
+#### 7.1 Headline candidates (10, locked voice)
+
+Ranked. Tom's own phrases are canon, so most of these are variations on his
+three: *"you don't have time to watch everything — thanks to vidtheque, your
+agent does"*, *"follow the builders"*, *"empowering AI with the knowledge of the
+builders and creators"*.
+
+| # | Headline | Register / where it wins |
+|---|---|---|
+| **1** | **You don't have time to watch everything. Your agent does.** | **My pick for the H1.** Tom's line, tightened by two words. Two sentences, a problem and a turn, no product noun, no jargon; the reader is in the first word and the product's reason to exist is in the second sentence. Survives being read aloud, and survives being quoted without the site around it. |
+| 2 | Follow the builders. Your agent watches. | The pillar-1 headline. Best if the corpus-growth story leads (README, a launch post about following channels). Softer problem statement than #1. |
+| 3 | The knowledge of the builders, on tap. | Tom's canon almost verbatim. Beautiful as a **kicker** above #1, or as the og:title. Weak alone as an H1: it states a supply, not a reader's problem. |
+| 4 | Your agent watched it. Here's the second it happened. | The receipt headline. Strongest for a **share card** (§8.3) because it can sit over a real moment card and be literally true of the image beneath it. |
+| 5 | Knowledge is announced on video. vidtheque puts it on tap. | The market claim from round 1b ("untapped discourse") in two beats. Good as the **README's first line**, where a market claim is expected and a hero headline would read as marketing. |
+| 6 | Nobody has time to watch it all. That's what your agent is for. | #1 with more shoulder. Use if #1 tests as too clipped. Do not use both. |
+| 7 | The field talks. Your stack listens. | Round 1's candidate, kept. Elegant, memorable, and slightly *too* clever — it hides who is talking, and "the builders" is the whole point of the lock. Demote to a section header. |
+| 8 | Empowering AI with the knowledge of the builders and creators. | The position stated flat. **This is the `<meta name="description">` and the elevator sentence, not an H1** — it is about vidtheque, and an H1 must be about the reader. |
+| 9 | Follow the builders. Get the sentence, the slide, and the second. | Pillars 1 and 3 in one line. The best headline for the **corpus grid section** (§8.1 beat 3), directly above `+ follow a channel`. |
+| 10 | Your agent watched every talk. Ask it what they said. | Explicit demo invitation. Correct on the demo page *only* if ask mode is live and funded (§7.4); "ask it **anything**" would be the overclaim — "what they said" is bounded and true. |
+
+**Rejected during drafting, on the record so nobody re-proposes them:** "Watch
+once. Find it forever." (the memory promise — inward flow, killed by the
+inversion); "It read the slides, too." (survives *only* as the annotated
+specimen's caption, §4.3 — as an H1 it leads with a mechanism and hides the
+builders); anything containing "archive", "search engine", "second brain",
+"unlock" or "AI-powered".
+
+#### 7.2 Sublines
+
+Pair-matched to the headline above them. All three pillars must be reachable
+within the first screen, so whatever the H1 does not carry, the subline does.
+
+**For #1 (recommended pairing):**
+> vidtheque turns the channels that matter into solid, timestamped knowledge —
+> every sentence spoken, every line that crossed the screen, every frame — on
+> tap for you and your agents, with receipts: the sentence, the slide, and the
+> second it happened.
+
+That is the contract's own paragraph and it should ship close to verbatim. If a
+shorter one is needed above the fold:
+
+> Point it at the builders you trust. It watches every talk, keeps every
+> sentence and every slide, and answers with the second it happened.
+
+**For #2 (`Follow the builders. Your agent watches.`):**
+> A conference, a channel, a creator — vidtheque keeps watching so you don't
+> have to, and hands your agent the sentence, the slide, and the second.
+
+**For #5 (README):**
+> Conference talks, streams and deep-dives are where the state of the art shows
+> up first and evaporates fastest. vidtheque watches them once and keeps
+> everything — the words, the on-screen text, the frames — on tap for you and
+> your agents, every answer carrying the link that lands on the second.
+
+**For #10 (demo, ask mode live):**
+> 78 talks from AI Engineer 2026, watched down to the second. Ask what the state
+> of the art is; get the sentence, the slide, and the link that proves it.
+> *(the number comes from `/api/meta`, never from the HTML)*
+
+#### 7.3 The feature hierarchy
+
+Mirrors the contract's three pillars, then the mechanism, then ownership, then
+the protocol at **#6** — the position screenpipe puts its own MCP surface in
+(§1.1), which is the empirical justification for the rule, not a preference.
+
+1. **Follow the builders.** Point vidtheque at a conference, a channel, a
+   creator. Their knowledge compounds into your corpus. *(Today: on-demand
+   channel indexing. The standing subscription is the roadmap line — say "keeps
+   watching" only where that roadmap is visible; see §10.)*
+2. **Your agent watched it.** The corpus is consumable mid-task: ask for the
+   state of the art while you are building, get what was said on stage three
+   weeks ago.
+3. **Receipts, always.** Every answer is a moment: the verbatim sentence, the
+   real slide with its OCR box, and the `youtu.be/…?t=` link that lands on the
+   second. A summary you cannot check is not an answer.
+4. **It watched the screen, too.** `owl:FunctionalProperty` appears exactly once
+   in 78 talks — on a slide, at 18:56, and nobody ever said it out loud. Same
+   for a span name inside a trace-tree screenshot, a CVE number on an NVD page,
+   a CLI invocation nobody read aloud. *(The mechanism proof. It sits at 4
+   because it answers "how", and 1–3 answer "why".)*
+5. **Yours, on your box.** One compose file, one SQLite file, no build step, no
+   runtime network dependency, runs the CPU half on a Pi. MIT.
+6. **Any agent can drink from it.** One line to add the corpus to Claude, Codex
+   or anything that speaks MCP: `claude mcp add --transport http vidtheque <url>`.
+
+#### 7.4 The demo CTA — "Ask the corpus", and the guard that makes it safe
+
+**Pick: `Ask the corpus`.** The argument, and then the caveat that has to ship
+with it.
+
+*Why not "Try it".* "Try it" is a request for the visitor's patience — it names
+no object, promises no outcome, and implies evaluation labour ("try", then
+judge). Every site in §1 avoids it: screenpipe says `Download for free`, herdr
+ships a copyable `curl`, uploadthing says `Get Started for Free`. **All three
+name the act, not the trial.**
+
+*Why "Ask the corpus" specifically.* Four reasons, in order of weight.
+1. It is the **only** CTA that performs pillar 2 in two words. "Your agent
+   watched it" is a claim; asking is the reader doing it.
+2. `corpus` is blessed vocabulary and `archive` is banned — the CTA is a free
+   place to teach the noun the rest of the site uses.
+3. It sets the right expectation for what comes back. A visitor who clicks
+   "Search" expects ten blue links and is mildly surprised by moments with
+   frames; a visitor who clicks "Ask" expects an answer and is *delighted* by an
+   answer with receipts attached. Same page, better delta.
+4. It scales off the demo: `Ask the AI Engineer corpus →` works as a link label
+   in the README, in a post, and on a share card, and it survives the corpus
+   changing.
+
+*The caveat, and it is not optional.* Ask mode costs money, can run ~90 s, and
+is capped at 5/min and 50/day (`demo-site.md` §3–§4). A front page from Hacker
+News spends the daily budget in minutes. So the CTA ships with three guards:
+
+- **It never fires on load.** `?ask=1` arrives in ask mode with the question
+  loaded and *unfired* — `demo-site.md` §6.2 already legislates this; the CTA
+  inherits it. One click spends budget; a shared link never does.
+- **It degrades by relabelling, not by erroring.** When the day's asks are gone,
+  the primary button becomes `Search the corpus` and a mono line under it says
+  so plainly ("the model is rested until 00:00 UTC — search still works, and the
+  receipts don't need it"). A disabled primary button on a first visit reads as
+  a broken product; a relabelled one reads as an honest one.
+- **The cheap path is always one click away.** The five verified example chips
+  sit directly under the box (`demo-site.md` §6.1), so a visitor who arrives
+  during a rate-limit still gets the flagship demo — `owl:FunctionalProperty`,
+  1/1, never spoken — for free.
+
+Secondary CTA, everywhere: the copyable one-liner in a mono box with a `COPY`
+button welded to its edge (herdr's device, §1.5) — `docker compose up -d` on the
+demo page, `claude mcp add --transport http vidtheque <mcp_url>` in the
+feature-6 section. Never a third button.
+
+#### 7.5 Microcopy voice
+
+Extended from §1's family reading and the repo's existing rules (state the
+mechanism, admit the gap, every state is a word as well as a colour). Three
+constants: **short declaratives; the corpus is the subject of the sentence, not
+"we"; and every failure names what still works.**
+
+| state | copy | why |
+|---|---|---|
+| **Nothing matched** | *"Nobody said that, and nobody put it on a slide."* + the widening that exists (a button back to `all` if a channel is pinned; otherwise "try fewer words") | Names both text legs, which teaches the model of the product in one sentence, and is *specific* — the family's failure states are always specific. Never "no results found". |
+| **Nothing matched, `frame` pinned** | *"Nothing in 4,736 frames looks like that. Try describing what you'd see, not what you'd read."* | The frame leg needs a different repair instruction; a pinned-channel empty state that gives transcript advice is wrong advice. Count comes from the index. |
+| **Empty corpus** (`data_status: empty`) | *"Nothing followed yet. Point vidtheque at a builder and it starts watching."* | Pillar 1 as the empty state. A fresh instance must never blame the visitor's query (`demo-site.md` §6.1). |
+| **Mid-index** (`data_status: indexing`) | *"Still watching. N talks are in the queue; what's already in is already answerable."* | Admit the gap, and say what works anyway. |
+| **404 / unknown moment** | *"No such moment. The corpus only answers for seconds it actually watched."* + a link to the corpus grid | The one-line statement of the whole ethic. Do not make a joke here; the family's 404s are flat. |
+| **429** | *"The corpus is answering someone else. N seconds."* with the number ticking and the button disabled until zero | `demo-site.md` §6.1 already specifies the countdown; this is its wording. Never a status code. |
+| **503, ask mode** | *"The model is out of reach. Search still works — the receipts don't need it."* + `Search instead` | The degradation line that also teaches that the receipts are not model output. Best sentence in the kit. |
+| **Ask activity log** | machine register, mono, present progressive: `searching on-screen text…` · `reading 4 moments…` · `checking the slide at 18:56…` | The log is the machine talking; two-channel rule. Never first-person plural, never "thinking". |
+| **Frame with no text** | *"Nothing readable on screen here — the frame is the evidence."* | `demo-site.md` §6.3's rule, said out loud rather than implied by styling. |
+| **Truncation marker** | *"…N chars trimmed — ask for the full text with `max_text_chars=0`."* | Keeps the escape hatch documented in the payload, per the token-discipline invariant. |
+| **Footer** | *"The videos belong to the people who made them. vidtheque watched them, kept the timestamps, and sends you back to the source."* + repo link + the early-development line | Extends the existing footer ethic into the locked voice, and it is the sentence §9.1's objection gets answered with. |
+| **Early-development line** | mono, small, beside the install box: *"early development · no releases yet · schemas can still change"* | In this reference family, printing your own caveat reads as confidence (herdr prints its licence in the hero meta line). |
+
+**Two words that must never appear in microcopy:** "oops" and "sorry". The
+corpus does not apologise; it states what happened and what still works.
+
+---
+
+### 8. Page-by-page application
+
+#### 8.1 The demo landing — five beats
+
+The lock's surface implication is *"the knowledge of AI Engineer 2026, on tap —
+ask it something,"* with the corpus visible and an agent visibly consuming it.
+Five beats, in order, each naming the reference device it borrows.
+
+**Beat 1 — Hero.** Kicker (mono uppercase, wide tracking, short rule before it —
+herdr's device): `——— THE KNOWLEDGE OF THE BUILDERS, ON TAP`. H1 = candidate #1.
+Subline = §7.2's short pairing. Search box directly beneath, autofocused, primary
+button labelled `Ask the corpus`, the five verified chips under it. Ground is
+textured, never flat (§1.6 rule 5) — and the natural texture here is **the corpus
+itself**: the 78 cover frames at very low opacity behind the hero, which is what
+`lab/hero.html` is already prototyping. One accent (burnt amber), on exactly
+three things: one word of the H1, the primary button, the active chip.
+
+**Beat 2 — Proof: the annotated specimen.** The `owl:FunctionalProperty` moment
+at 18:56, full width, with amber annotation tabs in mono uppercase (§4.3,
+impeccable's device). Caption — and this is where the demoted line lives:
+*"It watched the screen, too."* One paragraph beneath, no more: nobody said this
+out loud; the speaker told the room to look at the slides, and vidtheque did.
+Immediately under it, the **stat ledger band** (herdr's device, §1.5): four
+cells, hairline-divided, fed by `/api/meta` — `TALKS · HOURS WATCHED · MOMENTS ·
+LINES READ OFF THE SCREEN`, tabular figures, mono uppercase labels. **This band
+is the only place a number appears in chrome, and it is live.**
+
+**Beat 3 — The corpus grid.** Header = headline candidate #9 (*Follow the
+builders. Get the sentence, the slide, and the second.*). The 78 cover frames as
+a wall — `lab/grid.html` already builds it (6×13, closing as a rectangle at both
+ends of the responsive range, with the hover loupe). Totals written as a
+sentence rather than a stat row, so it does not compete with beat 2's band. The
+wall ends on the roadmap affordance the contract names: **`+ follow a channel`**
+— a real cell in the grid, dashed hairline, amber, and honest about being next
+(a click opens a short note: "today, point `index-video` at a channel; next, it
+keeps watching"). **The affordance is the position made visible; it must not
+look like a shipped button.**
+
+**Beat 4 — The agent-transcript beat.** The claim "your agent watched it" needs a
+shown artifact, not a sentence (round 1's proof obligation). The artifact exists:
+the 2026-08-09 field test, four Sonnet agents driving the live stack over the
+real protocol — `tourist` (13 calls), `researcher` (13), **`synthesist` (21 —
+answered cross-video questions properly, with citations)**, `adversary` (37),
+all recorded in `demo-queries-2026-08-09.md` §9. Render the synthesist's exchange
+the way herdr renders its terminal (§1.5): a real transcript, mono, in a bordered
+panel, calls and results interleaved. Header: *"Your agent watched it."* Sub:
+*"An agent, on the real protocol, answering a question no single talk answers —
+and citing five speakers."* Use §4.1's disagreement question or §1.8's
+contamination question (five talks, five positions, one call). **Do not
+dramatise or re-record it; a real transcript with a real caveat in it is worth
+more than a clean fake.**
+
+**Beat 5 — Quickstart.** Two mono boxes with `COPY` buttons, in this order:
+`docker compose up -d` (run your own), then `claude mcp add --transport http
+vidtheque <mcp_url>` (point your agent at *this* corpus). The protocol word
+appears here and nowhere above it. Beneath: `macOS · Linux · MIT · runs the CPU
+half on a Pi` in mono — herdr's meta-line shape — plus the early-development
+line, then the footer sentence (§7.5).
+
+**Removed from the old plan on purpose:** no testimonial wall (nothing to quote,
+and the family's version of this is earned, not staged), no pricing, no "Trust
+center", no privacy section — there is no surveillance debt to defend (§9, twin
+line), and building a privacy section would import screenpipe's obligation along
+with its shape.
+
+#### 8.2 The README's first screen
+
+The contract: *twin line early, pillars as sections, quickstart before any
+protocol word.* Concretely, in order, above the first `##`:
+
+1. `# vidtheque`
+2. One-sentence definition in the locked voice — headline candidate #5's shape:
+   *"Knowledge is announced on video. vidtheque puts it on tap."* — followed by
+   the mechanism sentence: *"Point it at the builders whose experience you trust
+   — a conference, a channel, a creator — and it watches every talk: every
+   sentence spoken, every line that crossed the screen, every frame, all
+   answerable with the second it happened (`youtu.be/ID?t=123`)."*
+3. **The twin line**, as a blockquote, verbatim from the contract. It is the
+   fastest way to place vidtheque for a reader who already knows screenpipe, and
+   most of GitHub does.
+4. The early-development callout (already there; keep the wording).
+5. **Quickstart** — `git clone`, `cp .env.example .env`, `docker compose up -d`.
+6. Only then the three pillars as `##` sections; the architecture diagram and
+   the word MCP live inside pillar-adjacent prose, below the fold.
+
+The current README opens *"Self-hosted MCP server that turns videos you've
+watched into a searchable multimodal corpus"* — **that sentence violates the
+lock three times in fourteen words** (protocol-first identity; "searchable"
+doing the work of the banned "search engine"; "multimodal"). It is the
+highest-value rewrite in the repo and it is one paragraph.
+
+#### 8.3 The share card (og:image) and its caption
+
+The card **is a moment**. `lab/moment.html` already renders a true 1200×630
+og:image of one search result as a designed artifact, in two treatments
+(PLATE/SIGNAL) across four moment shapes, including one with nothing on screen.
+Use the slide moment — a real frame with its OCR boxes drawn from
+`ocr_lines.x0/y0/x1/y1` — because the card has to *be* a receipt, not describe
+one.
+
+- **`og:title`** — `The knowledge of the builders, on tap.` (candidate #3; a
+  supply statement, which is right for a card whose image supplies the proof).
+- **`og:description`** — `You don't have time to watch everything. Thanks to
+  vidtheque, your agent does.` Tom's line unabridged; a description has room for
+  the turn.
+- **Caption line burned into the card image** — one line, mono uppercase, under
+  the frame: `THE SENTENCE, THE SLIDE, AND THE SECOND IT HAPPENED.` It is the
+  pillar-3 formula, it is literally true of the three elements drawn above it,
+  and it works with no context at all in a timeline.
+- The video id and timestamp render **verbatim, case preserved** (word law) — a
+  card that title-cases `Sir59K8ZDPU` is a broken promise in the most-shared
+  artifact the project has.
+- No `og:image` on the *page* until the card exists; a wrong one is worse than
+  none (`demo-site.md` §6 already says this).
+
+---
+
+### 9. Stress-tests — the three hardest objections, answered in the locked voice
+
+Written as if a skeptical reader is top comment on Hacker News. Each answer is
+one paragraph, shippable close to verbatim in a FAQ, a README section, or a
+reply.
+
+#### 9.1 "This strip-mines creators' work to feed AI. Did the speakers consent?"
+
+**The hardest one, and the one the lock's own words invite** — "empowering AI
+with the knowledge of the builders" is, read uncharitably, a description of
+taking. The honest answer has four parts and a limit.
+
+> vidtheque doesn't host or redistribute anything. It downloads a video, reads
+> it, and **deletes the file** — what stays is a transcript with timestamps, the
+> text that was on screen, and keyframes kept as evidence. Every answer is a
+> quotation with the speaker's name and a link that lands on the second it was
+> said, which sends the reader *to the original*, on the creator's channel,
+> where the view counts. That is the opposite of a summary standing in for its
+> source: a vidtheque answer is unusable without the source, by construction.
+> And "follow the builders" means the corpus is a subscription its operator
+> chooses — a self-hosted instance indexes what its owner would have watched
+> anyway, which is closer to taking notes than to scraping. **The one place that
+> argument doesn't cover is the public demo**, where indexing becomes
+> publishing: for that corpus we ask the organisers first, credit them on the
+> page, and take a channel out on request — one row, one command, and we say so
+> publicly. If a creator would rather not be followed, that is a complete reason
+> and there is no appeal to make.
+
+**Repo-side obligations this answer creates** — list them so nobody ships the
+copy without the substance:
+
+- The footer ethic (§7.5) is promoted from footer to a named section.
+- The organisers get asked **before** the demo is announced (open question #3 in
+  §5, now load-bearing rather than optional).
+- An unfollow/remove path exists and is documented. Deleting a channel's rows is
+  already possible; it needs to be a *stated* operation with a runbook line in
+  `docs/deploy-public.md`.
+- No answer, anywhere, ships without its citation — including ask mode, the
+  share card, and any screenshot used in a post.
+- A public instance never indexes a paywalled, unlisted or private source, and
+  the go-public checklist says so.
+
+#### 9.2 "Isn't this just RAG over YouTube transcripts?"
+
+> The transcript leg is exactly that, and we're not going to pretend otherwise —
+> FTS5 and vectors fused with RRF is 2024 technology and it works. Two of the
+> three legs aren't. vidtheque reads **the screen**: on-screen text with its box
+> coordinates, which is how `owl:FunctionalProperty` comes back as the only hit
+> in 78 talks, from a slide at 18:56 that nobody read aloud — along with a span
+> name inside a screenshot of a trace tree, a CVE number off an NVD page, and a
+> CLI invocation with its flags. A transcript index cannot answer any of those,
+> at any quality of retrieval, because the string is not in the transcript. The
+> third leg embeds the frames, so *"a photo of a person on stage at a podium"*
+> returns podium shots with no text in them at all. Then there's the part that
+> isn't retrieval at all: word-level forced alignment, so the link lands
+> mid-sentence instead of at the top of a chunk. We surveyed thirty-odd projects
+> in this space before building — the ones with an index have no vision, the
+> ones with vision have no index, and nobody was embedding frames behind an
+> agent-callable surface. That gap is written down with dates and star counts,
+> and it is the only reason this exists.
+
+#### 9.3 "Why not just ask the model? It already knows — and it can watch video now."
+
+> If the model knows, don't use vidtheque. That's the honest boundary, and it's
+> narrower than it sounds: the weights were frozen before the talk happened. The
+> knowledge worth chasing here is three weeks old, said once, on a stage, by the
+> person who shipped the thing — and it is exactly the knowledge a model answers
+> about most confidently and least reliably. Frontier models can watch a video
+> you hand them; they cannot watch seventy-eight and hold them, and re-watching
+> per question is the design every video tool in this space currently ships — no
+> persistence, so every question pays for the video again. vidtheque watches
+> once, keeps everything, and answers in milliseconds off a SQLite file. The
+> difference that matters isn't speed, though. Ask a model what a speaker said
+> and you get a plausible paragraph with nothing to check it against. Ask
+> vidtheque and you get the sentence, the slide, and the second — and if it's
+> wrong, you can see that it's wrong in one click. **A summary you can't check
+> isn't an answer, and that's the whole product.**
+
+**A fourth objection worth pre-writing, lower heat:** *"Whisper hallucinates and
+OCR is noisy — your 'receipts' are machine output."* True, and already handled by
+the product's own honesty rules: the transcript is auto-generated and the guide
+tells agents to check `get-segment-context` before quoting; whisperX renders
+"Qwen3 4B" as "coin 3.54b" in this very corpus and we use that as a demo caveat
+rather than hiding it; OCR reads a pipe character as `I` and the query still
+lands. The receipt is not "the machine is right" — the receipt is **the link**,
+which a human verifies in one click. Say it that way.
+
+---
+
+### 10. What the lock rules out — the mechanical do-not list
+
+Obeyable without judgement. If a surface violates one of these it is wrong even
+if it reads well. Grouped by what they protect.
+
+**Words (the contract's ban list, operationalised).**
+
+1. Never `MCP`, `archive`, `RAG`, `index` (as a noun in copy), `second brain` or
+   `search engine` in an `<h1>`, hero, `og:title`, tagline, nav label, README
+   first screen, or share-card caption. MCP appears at feature #6, in the
+   quickstart, in the docs area of the nav, and in `<meta name="description">`.
+2. Never "everything you've *seen*". Always **watched**.
+3. Never uppercase, title-case or otherwise mangle a case-sensitive identifier —
+   video ids, frame ids, `model_key`, error codes. Not in headings, not in
+   labels, not on the share card.
+4. Never `AI-powered`, `unlock`, `supercharge`, `revolutionise`, `seamless`,
+   `effortless`, `multimodal`, `hybrid retrieval`, `embeddings` or `vector` in
+   marketing copy. State the mechanism instead (PRODUCT.md voice rule).
+5. Never "oops" or "sorry" in an error state.
+6. Never describe the demo as "an archive of AI Engineer 2026". It is **the
+   first shelf**, and the copy must imply more shelves.
+
+**Claims.**
+
+7. Never print a number that is not read out of the index at render time. The 78
+   talks in this document will be wrong next week.
+8. Never claim automatic, continuous or passive capture. "Follow" is a
+   subscription the operator sets; standing subscriptions are roadmap. "Keeps
+   watching" is allowed **only** adjacent to a visible roadmap affordance.
+9. Never claim "any site yt-dlp supports" or local files until one is exercised
+   end to end.
+10. Never ship testimonials, user counts, benchmarks or star badges until they
+    exist. The family leans on these; we have live corpus numbers instead, which
+    is a better version of the same move.
+11. Never present an answer — page, post, screenshot, share card — without its
+    citation visible. A screenshot of a summary with the receipts cropped out is
+    a lie about the product.
+12. Never imply the corpus is the visitor's own memory or their own screen
+    (direction A and screenpipe's flow, both killed by the inversion).
+13. Never lead with the protocol, the tool count or the token discipline
+    (direction C, rejected). They are craft, and craft goes in posts and docs.
+14. Never say "private" or "local-first" as the *headline* benefit. Self-hosting
+    is stated once, as ownership, not as a defence — there is no surveillance
+    debt, and importing screenpipe's privacy section would manufacture one.
+15. Never denigrate screenpipe. The twin line is a contrast device between
+    neighbours; it is public-usable precisely because it is fair to them.
+
+**Surfaces.**
+
+16. Never fire an ask on page load, and never let the primary CTA dead-end when
+    the budget is spent — it relabels to `Search the corpus` (§7.4).
+17. Never use an OCR example that isn't single-line-matchable until migration
+    0003 lands (`demo-queries` §0). Every demo chip is verified against the live
+    stack before it ships, or it doesn't ship.
+18. Never let the dashboard sell. It is the instrument; its charisma is receipts
+    rendered perfectly (contract, Surface implications).
+19. Never more than one accent colour on a public surface, and never a gradient,
+    a 3D render, a stock illustration, a faux-CRT, a film sprocket or a
+    clapperboard (`DESIGN.md` bans the last three; the family bans the rest by
+    example).
+20. Never a pricing page, an enterprise tier, a "Trust center", a waitlist or a
+    newsletter capture. MIT, self-hosted, one owner.
+21. Never more than two CTAs in one beat: one action, one copyable line.
+22. Never a hero image that isn't the product's own material — a real frame, a
+    real moment card, a real terminal. Zero abstract illustration (§1.6 rule 6).
+
+**Process.**
+
+23. `docs/design/positioning.md` is the contract; this file is evidence. Any
+    change to the position changes the contract file in the same commit, with a
+    reason — and lands here as a new append-only section, never as an edit to an
+    existing one.
+
+---
+
+### 11. What I'd want Tom to decide tonight
+
+Only the questions that block building the demo page.
+
+1. **Headline #1 vs #6** — clipped or shouldered. Everything else in §8.1 is
+   unaffected either way.
+2. **`Ask the corpus` — is ask mode funded for launch week?** If not, the
+   primary CTA ships as `Search the corpus` from day one and beat 4 (the agent
+   transcript) carries the "your agent watched it" claim alone. That is still a
+   good page; it just has to be decided before the copy is cut.
+3. **The organisers** (§9.1). Now a dependency of the demo announcement rather
+   than a nicety — the objection has a good answer only if the answer is true.
+4. **A second channel before launch?** The contract says the demo is the first
+   shelf, not the library. One more builder's channel — even a small one — makes
+   that sentence visibly true instead of aspirational, and kills the "this is a
+   conference site" read. It costs GPU hours and nothing else.
