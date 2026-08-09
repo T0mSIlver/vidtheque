@@ -358,7 +358,9 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
         pages = _by_index(body.get("data", []), len(images), "/v1/ocr", "image")
         # An image with no text legitimately omits `items` — the worker's schema
         # requires `index`, not `items`. A *missing index* is the failure.
-        results = [[_ocr_line(item) for item in pages[i].get("items", [])] for i in range(len(images))]
+        results = [
+            [_ocr_line(item) for item in (page.get("items") or [])] for page in pages
+        ]
         return results, body.get("model") or body.get("backend")
 
     async def embed_images(
