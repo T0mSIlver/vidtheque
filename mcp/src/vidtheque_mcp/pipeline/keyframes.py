@@ -495,13 +495,18 @@ def extract_from_shots(
 def _open_capture(video_path: Path, decode_threads: int) -> Any:
     import cv2
 
-    capture = cv2.VideoCapture(str(video_path))
+    if decode_threads > 0:
+        # Must ride the constructor: on OpenCV 5.0.0 `capture.set(N_THREADS)`
+        # returns False after open and the property stays at its default
+        # (bench 2026-08-09, research/pipeline-perf §9). Advisory either way:
+        # nothing downstream may depend on it having been applied.
+        capture = cv2.VideoCapture(
+            str(video_path), cv2.CAP_FFMPEG, [cv2.CAP_PROP_N_THREADS, decode_threads]
+        )
+    else:
+        capture = cv2.VideoCapture(str(video_path))
     if not capture.isOpened():
         raise RuntimeError(f"cannot open {video_path} for frame extraction")
-    if decode_threads > 0:
-        # Advisory: the FFmpeg backend honours it, others ignore it silently.
-        # Nothing downstream may depend on it having been applied.
-        capture.set(cv2.CAP_PROP_N_THREADS, float(decode_threads))
     return capture
 
 
