@@ -413,6 +413,25 @@ def test_a_download_403_is_classified_as_throttling_not_an_internal_error() -> N
     assert _is_unavailable(members)
 
 
+def test_the_bot_check_is_throttling_not_an_unsupported_source() -> None:
+    """Observed live (overnight batch, wave 2): four of ten videos failed with
+    the bot-check while six extracted fine — a soft intermittent gate that a
+    cool-off clears. It settled E_UNSUPPORTED_SOURCE (final), so no defer
+    fired and the driver kept submitting into it."""
+    from vidtheque_mcp.pipeline.sources import _is_rate_limit, _is_unavailable
+
+    bot = (
+        "ERROR: [youtube] _PdK6x7PQNM: Sign in to confirm you’re not a bot. "
+        "Use --cookies-from-browser or --cookies for the authentication."
+    )
+    assert _is_rate_limit(bot)  # curly apostrophe, as yt-dlp actually prints it
+    assert _is_rate_limit("Sign in to confirm you're not a bot")  # straight, too
+    # The AGE gate is a different sentence and genuinely final.
+    age = "ERROR: Sign in to confirm your age. This video may be inappropriate."
+    assert not _is_rate_limit(age)
+    assert _is_unavailable(age)
+
+
 async def test_a_403_on_the_media_download_defers_the_job(
     settings: Settings, clip: Path
 ) -> None:

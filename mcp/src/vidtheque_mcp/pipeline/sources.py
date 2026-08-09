@@ -665,6 +665,15 @@ def _is_rate_limit(message: str) -> bool:
     lowered = message.lower()
     if "429" in lowered or "too many requests" in lowered:
         return True
+    # YouTube's bot-check IS throttling in its modern costume. Observed live
+    # (overnight batch, wave 2, 2026-08-09 01:08): four of ten videos failed
+    # with "Sign in to confirm you're not a bot" while the other six extracted
+    # fine — a soft, intermittent gate that a cool-off clears and hammering
+    # escalates. It was classified E_UNSUPPORTED_SOURCE (final), so no defer
+    # fired and the driver kept submitting. Distinct from the age gate, which
+    # _is_unavailable claims and no waiting fixes.
+    if "confirm you're not a bot" in lowered or "confirm you’re not a bot" in lowered:
+        return True
     return "403" in lowered and any(
         marker in lowered
         for marker in ("unable to download", "fragment", "giving up after", "video data")
