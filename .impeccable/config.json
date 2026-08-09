@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "mcp/src/vidtheque_mcp/dashboard/templates/video.html"
+        ],
+        "createdAt": "2026-08-09T14:25:01.442Z",
+        "reason": "Lightbox dialog img is src-less until JS assigns a keyframe on click; src is released on close"
+      }
+    ]
+  }
+}

@@ -44,4 +44,7 @@ bench/*.json
 *.swp
 .idea/
 .vscode/
-.impeccable/
+# impeccable: shared config.json is committed (reviewable suppressions);
+# the machine-local cache and local overrides are not.
+.impeccable/hook.cache.json
+.impeccable/config.local.json
