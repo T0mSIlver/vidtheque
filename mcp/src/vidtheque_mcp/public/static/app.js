@@ -22,7 +22,8 @@ const state = {
   seq: 0, // a stale response must never overwrite a newer one
   abort: null,
   countdown: null,
-  lastRows: 0, // how tall the last page of results actually was
+  lastShape: null, // moments per video card, the last time results landed
+  cards: new Map(), // video_id -> the card on screen, so page 2 merges into it
 };
 
 // --------------------------------------------------------------------- utils
@@ -87,28 +88,36 @@ const showEmptyState = (on) => {
 };
 
 // Reserve the space the results will occupy, so nothing below them moves when
-// they land: one row per expected result, each the height of a typical hit
-// (thumbnail box, title, meta, two lines of snippet).
+// they land. Results are cards — a video header and its moments — so the shape
+// to reserve is a list of moment counts, one entry per card.
 //
-// How many to expect is a guess, and a full page is the wrong one on a small
-// corpus: reserving ten for a query that returns three shifts everything below
-// by seven rows, which on a three-video demo is the common case and not the
-// edge. The best evidence available is what the last search actually returned,
-// so that is what the next one reserves — the first search of a session still
-// guesses a full page.
-const showSkeleton = (rows = state.lastRows || PAGE_SIZE) => {
+// What to expect is a guess, and a full page of one-moment cards is the wrong
+// one on a small corpus: reserving ten headers for a query that returns ten
+// moments across three videos shifts everything below it. The best evidence
+// available is what the *last* search actually returned, so that is the shape
+// the next one reserves; the first search of a session guesses this, which is
+// a ten-hit page spread over three talks — the demo corpus's usual answer.
+const DEFAULT_SHAPE = [4, 3, 3];
+
+const showSkeleton = (shape = state.lastShape || DEFAULT_SHAPE) => {
   const results = $("results");
   results.replaceChildren();
   results.setAttribute("aria-busy", "true");
-  for (let i = 0; i < rows; i += 1) {
-    const row = el("div", "hit skel");
-    row.append(el("div", "hit-thumb skel-block"));
-    const body = el("div", "hit-body");
-    for (const width of ["w-70", "w-40", "w-90", "w-60"]) {
-      body.append(el("div", `skel-line skel-block ${width}`));
+  for (const moments of shape) {
+    const card = el("div", "vcard skel");
+    const head = el("div", "vcard-head");
+    head.append(el("div", "hit-thumb skel-block"));
+    const id = el("div", "vcard-id");
+    id.append(el("div", "skel-line skel-block w-70"));
+    id.append(el("div", "skel-line skel-block w-40"));
+    head.append(id);
+    card.append(head);
+    const list = el("div", "moments");
+    for (let i = 0; i < moments; i += 1) {
+      list.append(el("div", "moment-skel skel-line skel-block w-90"));
     }
-    row.append(body);
-    results.append(row);
+    card.append(list);
+    results.append(card);
   }
 };
 
@@ -117,6 +126,7 @@ const clearResults = () => {
   $("results").replaceChildren();
   $("results").removeAttribute("aria-busy");
   $("results-foot").replaceChildren();
+  state.cards.clear();
 };
 
 // ----------------------------------------------------------------- in flight
@@ -401,6 +411,122 @@ const hitRow = (hit, query, n) => {
   return row;
 };
 
+// ------------------------------------------------------ results, by video
+//
+// Ten flat rows are usually three talks. Grouped, the page answers the question
+// a visitor actually has — *which videos cover this, and where* — instead of
+// making them read the same title four times.
+//
+// One card per video: a header (frame, title, channel, moment count) and under
+// it that video's moments, each a timestamp, its source badges and one line of
+// snippet, each linking to youtu.be at that second. Grouping is per *page*: the
+// server ranks and paginates, and re-ordering across pages here would mean a
+// video quietly climbing the list because page 2 arrived.
+
+const groupByVideo = (hits) => {
+  const order = [];
+  const byId = new Map();
+  for (const hit of hits) {
+    const key = hit.video_id || "";
+    let group = byId.get(key);
+    if (!group) {
+      group = { key, hits: [] };
+      byId.set(key, group);
+      order.push(group);
+    }
+    group.hits.push(hit);
+  }
+  return order;
+};
+
+// The video itself, not the moment: the same link with the `?t=` taken off.
+// A hit with no deep link (a source that is not YouTube) has no honest video
+// URL either, and gets a title that is text rather than a link that guesses.
+const videoUrl = (hit) => {
+  const link = safeUrl(hit.link);
+  if (!link) return null;
+  const url = new URL(link);
+  url.search = "";
+  return url.href;
+};
+
+const momentCount = (n) => `${n} moment${n === 1 ? "" : "s"}`;
+
+// One moment: when, from which channel, and what it says. The snippet is
+// clamped to a line — this is a list to skim, and the whole hit is one click
+// away in the video itself.
+const momentRow = (hit, query) => {
+  const item = el("li", isFrameHit(hit) ? "moment is-frame" : "moment");
+  // A frame hit carries its own picture into the list: the image is the
+  // evidence, and the card's header frame is a different second of the talk.
+  if (isFrameHit(hit) && hit.thumb) item.append(thumbCell(hit));
+
+  const link = momentLink(hit, "moment-link");
+  link.append(el("span", "at", hit.timestamp || "0:00"));
+  link.append(badgesFor(hit.source));
+  const snippet = snippetFor(hit, query);
+  if (snippet) link.append(snippet);
+  item.append(link);
+  return item;
+};
+
+const videoCard = (group) => {
+  const node = el("div", "vcard");
+  const head = el("div", "vcard-head");
+  // Source-agnostic: whichever moment of this video has a frame behind it. The
+  // header says *which talk*, so it does not care which leg found it.
+  const cover = group.hits.find((hit) => hit.thumb) || group.hits[0];
+  head.append(thumbCell(cover));
+
+  const id = el("div", "vcard-id");
+  const title = el("h3", "vcard-title");
+  const href = videoUrl(cover);
+  if (href) {
+    const link = el("a", null, cover.title || cover.video_id);
+    link.href = href;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    title.append(link);
+  } else {
+    title.append(cover.title || cover.video_id);
+  }
+  id.append(title);
+
+  const meta = el("div", "vcard-meta");
+  meta.append(document.createTextNode(cover.channel || "unknown"));
+  meta.append(document.createTextNode(" · "));
+  const count = el("span", "vcard-count", momentCount(0));
+  meta.append(count);
+  id.append(meta);
+  head.append(id);
+  node.append(head);
+
+  const moments = el("ol", "moments");
+  node.append(moments);
+  return { node, moments, count, shown: 0 };
+};
+
+// Render a page of hits into cards. A second page appends into the card a video
+// already has rather than opening a duplicate header — the merge is one Map
+// lookup, and a page 2 that repeats a title reads as the list restarting.
+const renderGroups = (hits, query) => {
+  const results = $("results");
+  const shape = [];
+  for (const group of groupByVideo(hits)) {
+    let card = state.cards.get(group.key);
+    if (!card) {
+      card = videoCard(group);
+      state.cards.set(group.key, card);
+      results.append(card.node);
+    }
+    for (const hit of group.hits) card.moments.append(momentRow(hit, query));
+    card.shown += group.hits.length;
+    card.count.textContent = momentCount(card.shown);
+    shape.push(group.hits.length);
+  }
+  return shape;
+};
+
 // -------------------------------------------------------------------- search
 
 // A search is a URL, so a result is shareable and the back button works.
@@ -578,7 +704,13 @@ async function runSearch(append = false) {
   }
 
   const results = $("results");
-  if (!append) results.replaceChildren();
+  if (!append) {
+    results.replaceChildren();
+    // The cards on screen are the ones a *later* page merges into; a fresh
+    // search has none, and keeping the old map would merge page 1 of this
+    // search into a card that is no longer in the document.
+    state.cards.clear();
+  }
 
   const hits = payload.results || [];
   if (!append && !hits.length) {
@@ -586,8 +718,9 @@ async function runSearch(append = false) {
     renderNoResults(q, payload.data_status);
     return;
   }
-  if (!append) state.lastRows = hits.length;
-  for (const hit of hits) results.append(hitRow(hit, q));
+  const shape = renderGroups(hits, q);
+  // What the next search reserves: the shape this one actually had.
+  if (!append) state.lastShape = shape.length ? shape : null;
 
   const page = payload.pagination || {};
   const shown = state.offset + hits.length;

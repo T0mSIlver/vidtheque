@@ -765,26 +765,97 @@ def test_hostile_ocr_text_comes_back_as_data_never_as_markup(tmp_path: Path) -> 
     assert len(text) <= 400 + 80
 
 
-def test_the_facade_rewrites_the_mcp_only_truncation_hint(tmp_path: Path) -> None:
-    """`pass max_text_chars=0` is advice no browser can take (demo-site.md §2)."""
+def test_the_facade_humanises_the_mcp_only_truncation_hint(tmp_path: Path) -> None:
+    """`pass max_text_chars=0` is advice no browser can take (demo-site.md §2.4)."""
     with make_client(tmp_path, PUBLIC) as client:
         _inject_hostile_ocr(tmp_path)
         payload = client.get("/api/search?q=xsspayload&content_type=ocr").json()
-    cut = [h["text"] for h in payload["results"] if "chars cut" in (h["text"] or "")]
+    cut = [h["text"] for h in payload["results"] if "…" in (h["text"] or "")]
     assert cut, "the padded line is long enough to be truncated"
     assert all("max_text_chars" not in text for text in cut)
+    assert all("truncated" not in text for text in cut)
 
 
-def test_demo_text_leaves_an_untruncated_snippet_alone() -> None:
-    from vidtheque_mcp.public.api import demo_text
+# ------------------------------------------------ 6b. the humanising layer
+
+
+def test_humanise_replaces_the_marker_with_one_ellipsis() -> None:
+    from vidtheque_mcp.public import humanize
     from vidtheque_mcp.text import middle_truncate
 
-    assert demo_text("a plain sentence") == "a plain sentence"
-    assert demo_text(None) is None
+    assert humanize.snippet("a plain sentence") == "a plain sentence"
+    assert humanize.snippet(None) is None
+    assert humanize.snippet("") == ""
+
     marked = middle_truncate("x" * 200, 40)
     assert "max_text_chars" in marked, "the marker is still the tool's"
-    assert "max_text_chars" not in demo_text(marked)
-    assert "chars cut" in demo_text(marked)
+    human = humanize.snippet(marked)
+    assert "max_text_chars" not in human
+    assert human.count("…") == 1, human
+    assert human.startswith("x") and human.endswith("x")
+
+    # A cut that lands next to text which already trailed off is one ellipsis
+    # to a reader, not two.
+    from vidtheque_mcp.text import TRUNCATION_MARKER
+
+    doubled = f"and it trails off …{TRUNCATION_MARKER.format(n=12)}the rest of it"
+    assert humanize.snippet(doubled) == "and it trails off …the rest of it"
+
+    # Newlines are a line break to a tool's text block and a run of whitespace
+    # to a page that renders one line per moment.
+    assert humanize.snippet("two\n  lines") == "two lines"
+
+
+def test_humanise_drops_the_frame_leg_stand_in_text() -> None:
+    """A frame that matched on imagery has no text — and says so with none."""
+    from vidtheque_mcp.public import humanize
+
+    assert humanize.snippet(humanize.FRAME_WITHOUT_TEXT, "frame") is None
+    # Only for the leg that emits it: an OCR line is a line, whatever it says.
+    assert humanize.snippet(humanize.FRAME_WITHOUT_TEXT, "ocr") == humanize.FRAME_WITHOUT_TEXT
+
+
+def test_the_frame_leg_stand_in_string_is_still_the_one_search_emits() -> None:
+    """The one retyped string here, checked against its source (humanize.py).
+
+    `search.py` does not export it, so this is the guard that keeps the two in
+    step: the day the leg says something else, this fails instead of the page
+    quietly printing a sentence where a picture is the evidence.
+    """
+    from pathlib import Path as _Path
+
+    from vidtheque_mcp.public import humanize
+    from vidtheque_mcp.tools import search as search_tool
+
+    source = _Path(search_tool.__file__).read_text()
+    assert humanize.FRAME_WITHOUT_TEXT in source
+
+
+def test_humanise_turns_a_note_into_a_sentence() -> None:
+    from vidtheque_mcp.public import humanize
+
+    assert humanize.note("note: the frame leg was skipped.") == (
+        "The frame leg was skipped."
+    )
+    assert humanize.note(None) is None
+    assert humanize.note("note:   ") is None
+    # A line that is already a sentence keeps its words, whitespace and all
+    # collapsed onto one line.
+    assert humanize.note("already human.\n  still human.") == (
+        "Already human. still human."
+    )
+    assert humanize.notes(["note: one.", "note:", "note: two."]) == ["One.", "Two."]
+
+
+def test_the_facade_prints_notes_without_the_agent_prefix(public_client: TestClient) -> None:
+    """A `note:` prefix is machinery; the page renders notes in their own line."""
+    # No word of this query is in the corpus, which is the note the demo hits
+    # most: the vector legs are not queried at all.
+    payload = public_client.get("/api/search?q=zzzqqqwww").json()
+    assert payload["notes"], "this query should skip the semantic legs, and say so"
+    for line in payload["notes"]:
+        assert not line.lower().startswith("note:")
+        assert line[0].isupper(), line
 
 
 def test_ask_citations_carry_the_evidence_the_model_was_shown(tmp_path: Path) -> None:

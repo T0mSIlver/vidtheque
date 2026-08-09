@@ -162,7 +162,7 @@ class Evidence:
 
     def record(self, hit: dict[str, Any]) -> int:
         """Return the `[n]` for this hit, deduplicated on (video, second)."""
-        from .api import demo_text
+        from . import humanize
 
         video_id = str(hit.get("video_id") or "")
         t = int(hit.get("start") or 0)
@@ -181,7 +181,9 @@ class Evidence:
                 link=hit.get("link"),
                 frame_id=hit.get("frame_id"),
                 source=hit.get("source"),
-                text=demo_text(hit.get("text")),
+                # The citation is rendered as a search row, so it is humanised
+                # like one — the *model* still sees the tool's own text.
+                text=humanize.snippet(hit.get("text"), hit.get("source")),
             )
         )
         return n

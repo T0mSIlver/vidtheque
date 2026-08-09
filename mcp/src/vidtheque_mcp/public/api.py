@@ -20,7 +20,6 @@ Two rules it exists to keep:
 from __future__ import annotations
 
 import json
-import re
 import sqlite3
 from typing import Any
 
@@ -31,9 +30,10 @@ from starlette.routing import Route
 from .. import __version__
 from ..db import queries
 from ..errors import HTTP_STATUS
-from ..text import TRUNCATION_MARKER, clamp, clock
+from ..text import clamp, clock
 from ..tools import library, search
 from ..tools.base import Deps
+from . import humanize
 from .settings import REPO_URL, PublicSettings
 
 # 96×54 CSS pixels at 2x DPR — now that /frames actually applies w, this is
@@ -81,20 +81,6 @@ def thumb_url(deps: Deps, frame_id: str | None, width: int = THUMB_WIDTH) -> str
     return url
 
 
-# The tool's truncation marker ends in advice only an MCP client can take
-# ("pass max_text_chars=0"), and the facade deliberately has no such opt-out
-# (§2). Built from the template rather than retyped, so a change in `text.py`
-# cannot leave a stale pattern behind that silently matches nothing.
-_TRUNCATED = re.compile(re.escape(TRUNCATION_MARKER).replace(re.escape("{n}"), r"(\d+)"))
-
-
-def demo_text(text: str | None) -> str | None:
-    """The tool's snippet, with the marker rewritten for a reader with no API."""
-    if not text:
-        return text
-    return _TRUNCATED.sub(lambda m: f"…[{m.group(1)} chars cut]…", text)
-
-
 def _error_response(structured: dict[str, Any] | None, fallback: str) -> JSONResponse:
     payload = structured or {}
     code = str(payload.get("code") or "E_INTERNAL")
@@ -122,7 +108,7 @@ def _decorate_hit(deps: Deps, hit: dict[str, Any]) -> dict[str, Any]:
     # `token`/`oauth` it has to be signed here, because the page cannot sign a
     # width of its own (which is the point: the clamp is the server's).
     row["thumb_large"] = thumb_url(deps, hit.get("frame_id"), LIGHTBOX_WIDTH)
-    row["text"] = demo_text(hit.get("text"))
+    row["text"] = humanize.snippet(hit.get("text"), hit.get("source"))
     return row
 
 
@@ -165,7 +151,10 @@ async def search_endpoint(request: Request) -> JSONResponse:
             "content_type": content_type,
             "results": [_decorate_hit(deps, hit) for hit in payload.get("results", [])],
             "pagination": payload.get("pagination", {}),
-            "notes": payload.get("notes", []),
+            # The `note:` prefix marks a line as machinery for a model reading
+            # the text block. The page renders notes in their own muted line,
+            # which says the same thing without the prefix.
+            "notes": humanize.notes(payload.get("notes")),
             # Only the tool's empty path sets this, and it is the difference
             # between "nothing matched" and "nothing is indexed" — which a
             # `?q=` link to a fresh instance would otherwise report as a bad

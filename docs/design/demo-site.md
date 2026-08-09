@@ -107,14 +107,10 @@ Facade rules:
   is a *URL*, not bytes: the enlarged frame is fetched only if a visitor opens
   one (§6.4), and it is built here because the width has to be clamped (and,
   under `token`/`oauth`, signed) server-side.
-- **One string is rewritten, and only one.** `text.TRUNCATION_MARKER` ends in
-  "pass `max_text_chars=0` for full text" — advice a browser cannot take, since
-  the facade has no such opt-out. `api.demo_text()` rewrites it to
-  `…[N chars cut]…` for `/api` consumers. The pattern is built from the
-  template, not retyped, so a change in `text.py` cannot leave it silently
-  matching nothing. Nothing else about the tool's text is touched: in
-  particular the facade does **not** sanitise, because the page never parses
-  corpus text as HTML (§6).
+- **Agent text is humanised here, and only here.** The tool's text is written
+  for a model and stays that way; the facade translates it for a reader on the
+  way out, through one small module (§2.4). The facade still does **not**
+  sanitise, because the page never parses corpus text as HTML (§6).
 
 ### 2.1 `GET /api/search`
 
@@ -214,6 +210,34 @@ disagree. The page never hardcodes a hostname.
 
 `ask_enabled` is false when no `OPENROUTER_API_KEY` is configured; the page
 then hides the Ask toggle instead of offering a button that 503s.
+
+### 2.4 The humanising layer
+
+The MCP payload is written for a model, and that is a *contract*: it carries
+markers a client can act on (`pass max_text_chars=0`), stand-in strings that keep
+a field non-null, and `note:` prefixes that mark a line as machinery. None of it
+moves — `tool-surface.md` owns it, and an agent keying on a `note:` prefix is
+doing a supported thing.
+
+The demo's reader has no API, so the translation happens at the facade. It is
+`public/humanize.py` rather than three expressions inside `api.py` because the
+dashboard is the second caller: a humanised snippet should read the same
+wherever it is rendered. Three rules, all of them small:
+
+| what | why |
+|---|---|
+| `TRUNCATION_MARKER` → a plain `…` | The marker's advice ("pass `max_text_chars=0` for full text") is for a client that has the parameter, and `/api` deliberately does not (§2). To a reader the marker means one thing: words are missing here. The pattern is built from the template in `text.py`, never retyped, so an edit there cannot leave it silently matching nothing — and two ellipses that meet collapse into one. |
+| the frame leg's `visual match, no text hit` → `None` | The string keeps `text` non-null for a model reading a fixed shape. On the page it is a sentence pretending to be evidence, in the one place where the evidence is the picture (§6.3), so the snippet is dropped instead. This is the one literal that *is* retyped — the tool does not export it — and a test asserts the two still agree. |
+| the `note:` prefix → dropped, sentence capitalised | The prefix tells a model "this line is machinery"; a reader gets that from the muted line it is rendered in. |
+
+Whitespace is collapsed while it is in there, which is what makes a one-line
+moment row (§6.5) a line.
+
+What it deliberately does **not** do is rewrite the *body* of a note. Those
+sentences are the query layer's own English, and a second copy of its vocabulary
+kept here would drift silently the day someone edits a leg. Some of them still
+name a parameter a browser has no way to pass; that is a query-layer wording
+question, flagged in §7, not something to paper over with a lookup table.
 
 ---
 
@@ -560,12 +584,14 @@ Layout, top to bottom:
    hidden entirely when `ask_enabled` is false. In ask mode the filter chips
    are hidden rather than disabled: the model picks the channel, so a filter
    there would be a control that does nothing.
-4. **Results** — one row per hit, hairline-separated: thumbnail (or a muted
-   placeholder naming the channel the hit came from), title · channel, the
-   timestamped snippet with the query terms marked, and `[mm:ss] ↗ youtu.be`
-   opening the video at the moment in a new tab. The text is one `<a>`, so
-   middle-click works; the thumbnail is its own button and opens the frame full
-   size (§6.4). What the row says about *where the hit came from* is §6.3.
+4. **Results** — one card per *video*, hairline-separated (§6.5): a header with
+   the frame, the title, the channel and the moment count, and under it that
+   video's moments — timestamp, source badges, one line of snippet, each a link
+   into youtu.be at that second. The text is always inside a real `<a>`, so
+   middle-click works; the thumbnails are their own buttons and open the frame
+   full size (§6.4). What a row says about *where the hit came from* is §6.3.
+   The answer's Sources list keeps the flat row: a citation is one moment, not a
+   video.
 5. **Ask pane** (ask mode) — the answer as prose with `[n]` markers rendered as
    superscript links to the moment they cite, followed by the same result rows
    numbered to match. A 503 replaces the pane with the degradation message and
@@ -605,17 +631,18 @@ A demo is judged on the four screens that are not "ten results came back".
   exploring) reads as the corpus breaking, not the chrome. The next attempt
   clears the foot before it starts, so a retry can never layer fresh rows under
   a stale error box either.
-- **Loading** is a skeleton of *one row per expected result*, each with a
-  result's geometry — thumbnail box, title, meta, two lines of snippet — so the
-  space is reserved before the rows land and nothing below them moves. The rows
-  fade out down the list so a full page of grey reads as a reserve rather than
-  a wall. *How many to expect* is a guess with no honest source: the count is
-  not known until the response lands, so a full page reserved for a query that
-  returns three shifts everything below it (measured: 0.20) — which on a
-  three-video demo corpus is the common case, not the edge. The best evidence
-  available is what the **last** search returned, so that is what the next one
-  reserves; the first search of a session still guesses a full page. CLS is 0
-  on the steady state and on any page that comes back full, not unconditionally.
+- **Loading** is a skeleton with the results' own geometry — a card header
+  (thumbnail box, title, channel) and one grey line per moment under it — so the
+  space is reserved before the cards land and nothing below them moves. They
+  fade down the list so a page of grey reads as a reserve rather than a wall.
+  *What to expect* is a guess with no honest source: nothing is known until the
+  response lands, and reserving the wrong shape shifts everything below it
+  (measured: 0.20) — which on a three-video demo corpus is the common case, not
+  the edge. Since results are grouped, the guess is now a **shape** — moments
+  per card — and the best evidence available is the shape the **last** search
+  had, so that is what the next one reserves. The first search of a session
+  guesses `[4, 3, 3]`: ten hits over three talks, which is what this corpus
+  usually answers. CLS is 0 on the steady state, not unconditionally.
 
 Requests are spent on **Enter or a click, never on a keystroke**: a
 search-as-you-type box against a shared 30/min bucket would refuse a visitor
@@ -728,6 +755,45 @@ The dialog lives in `index.html` as empty markup and is filled per click, and
 it is filled the way everything else is: text nodes only, `safeUrl()` on the
 image `src` and the link `href`.
 
+### 6.5 Grouped by video
+
+Ten flat rows are usually three talks, and a visitor reading the same title four
+times is doing the grouping in their head. So a page of results is a **card per
+video**: a header — frame, title, channel, `N moments` — and under it that
+video's moments, each one a timestamp, its source badges (§6.3) and a single
+line of snippet, each linking to `youtu.be` at that second.
+
+The moment snippet is clamped to one line on purpose. This is a list to skim;
+the sentence in full is one click away, in the video, at the second it was said.
+
+Three properties worth stating, because each is a thing that could have gone
+wrong:
+
+- **Grouping is per page.** The server ranks and paginates; the page groups what
+  it was handed and nothing else. Re-ranking across pages here would mean a
+  video climbing the list because page 2 happened to arrive — the ordering
+  contract is the query layer's (`relevance` first, `order` explicit), and a
+  renderer must not quietly hold a second opinion. `has_more` and "More results"
+  are untouched.
+- **A second page merges into the card the video already has**, by a `Map` from
+  `video_id` to the card on screen — one lookup, and a page 2 that repeats a
+  title reads as the list restarting. The map is cleared on every fresh search,
+  because a card that is no longer in the document is not a card to merge into.
+- **A frame moment carries its own picture.** The header frame is *a* frame of
+  the talk; a frame hit matched on a specific one, and the image is the evidence
+  (§6.3), so it appears in the row rather than being represented by a header
+  thumbnail from a different second.
+
+The header is source-agnostic — it is whichever of the video's hits has a frame
+behind it — because the header answers "which talk", not "which leg". Its title
+links to the video itself, which is the moment link with the `?t=` taken off; a
+hit with no deep link (a source that is not YouTube) gets a title in plain text
+rather than a URL the page guessed.
+
+The empty, no-results, rate-limited and failed-page states are unchanged: they
+replace or annotate the results region as they always did, and a failed "More
+results" still leaves the cards a visitor already has on screen (§6.1).
+
 ---
 
 ## 7. Open, for Tom
@@ -761,6 +827,13 @@ image `src` and the link `href`.
    commit and both legs are green again. Worth noting only as evidence that a
    browser hitting the read surface finds things nine tool descriptions do
    not — which is half of why the demo is useful internally.
+8. **Some `note:` bodies name things a browser cannot do.** The facade drops the
+   prefix and leaves the sentence (§2.4), and a few of those sentences are
+   written for an operator — "the frame leg needs … `POST
+   /v1/embeddings/frame-query` answered 404", "`min_chars`/`max_chars` are text
+   filters". They are *true* and they are rare on the demo's paths, and a lookup
+   table of nicer phrasings here would drift the day a leg is edited. The fix, if
+   it is worth one, is in the query layer's wording, not in the page.
 4. **`/api` is public-mode-only.** A private deployment that wants the JSON
    facade for its own tooling has to set the flag, which also masks its write
    tools. If that combination is ever wanted, the flag splits in two; it is not

@@ -263,6 +263,62 @@ button.linky {
 
 .more { margin: 1.25rem 0 0; }
 
+/* ------------------------------------------------------- results, by video */
+
+/* One card per video: a header that says *which talk*, and under it the
+   moments inside it. Same hairline rhythm as the flat rows it replaced. */
+.vcard { padding: 1rem 0; border-top: 1px solid var(--line); }
+
+.vcard-head { display: flex; gap: 0.9rem; align-items: flex-start; }
+.vcard-id { flex: 1 1 auto; min-width: 0; }
+
+.vcard-title { margin: 0; font-size: 1rem; font-weight: 600; }
+.vcard-title a { text-decoration: none; }
+.vcard-title a:hover { color: var(--accent); }
+
+.vcard-meta { margin-top: 0.1rem; color: var(--muted); font-size: 0.82rem; }
+
+/* Indented to the header's text column, so the moments read as belonging to
+   the title above them rather than as a second list. */
+.moments {
+  margin: 0.5rem 0 0;
+  padding: 0 0 0 calc(96px + 0.9rem);
+  list-style: none;
+}
+
+.moment { display: flex; gap: 0.6rem; align-items: flex-start; padding: 0.2rem 0; }
+
+.moment-link {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 0.5rem;
+  align-items: baseline;
+  text-decoration: none;
+  color: inherit;
+}
+
+.moment-link:hover .snip { color: var(--accent); }
+.moment .at { flex: 0 0 auto; font-size: 0.82rem; }
+.moment .badge { flex: 0 0 auto; margin-right: 0; }
+
+/* One line, and the line is the point: this is a list to skim, and the moment
+   itself is one click away in the video. */
+.moment .snip {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding-left: 0;
+  border-left: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* A frame moment brings its own picture: the image is what matched. */
+.moment .hit-shot { align-self: center; }
+.moment .hit-thumb { width: 128px; height: 72px; }
+
 /* -------------------------------------------------------------- provenance */
 
 /* Three sources, three kinds of evidence, said in a word. The label carries
@@ -321,15 +377,19 @@ button.linky {
 
 /* ------------------------------------------------- loading and empty results */
 
-/* Ten rows of grey is a wall; ten rows that fade out read as "about this much
+/* A page of grey is a wall; a page that fades down reads as "about this much
    is coming". The height reserve is identical either way. */
 .skel { pointer-events: none; }
-.skel:nth-child(n + 4) { opacity: 0.65; }
-.skel:nth-child(n + 7) { opacity: 0.4; }
-.skel:nth-child(n + 9) { opacity: 0.22; }
+.skel:nth-child(n + 2) { opacity: 0.62; }
+.skel:nth-child(n + 3) { opacity: 0.36; }
+.skel:nth-child(n + 4) { opacity: 0.2; }
 
 .skel-line { height: 0.75rem; border-radius: 3px; }
 .skel-line + .skel-line { margin-top: 0.5rem; }
+
+/* One grey line per moment, on the moment list's own indent and rhythm, so the
+   reserve is the height the moments will take. */
+.moment-skel { height: 0.9rem; margin-top: 0.45rem; }
 .w-40 { width: 40%; }
 .w-60 { width: 60%; }
 .w-70 { width: 70%; }
@@ -540,10 +600,19 @@ footer p { margin: 0 0 0.4rem; }
   .controls { justify-content: flex-start; }
   .modes { margin-left: 0; }
 
-  .hit { gap: 0.7rem; padding: 0.9rem 0; }
+  .hit,
+  .vcard-head { gap: 0.7rem; }
+  .hit { padding: 0.9rem 0; }
+  .vcard { padding: 0.9rem 0; }
   .hit-thumb { width: 80px; height: 45px; }
   .hit.is-frame .hit-thumb { width: 120px; height: 68px; }
   .hit-title { font-size: 0.95rem; }
+
+  /* No room to indent under a 80px thumbnail on a 375px screen: the moments
+     take the full width instead, which is what keeps a one-line snippet a
+     line and not three words. */
+  .moments { padding-left: 0; }
+  .moment .hit-thumb { width: 96px; height: 54px; }
   .snip { font-size: 0.9rem; }
   .snip-screen,
   .snip-frame { font-size: 0.82rem; }
