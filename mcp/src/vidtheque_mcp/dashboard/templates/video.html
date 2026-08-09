@@ -16,8 +16,15 @@
     <p class="pagehead-meta">
       <span class="pill tone-{{ video.index_state | tone }}">{{ video.index_state }}</span>
       {# video-summary's own word, verbatim (§4.5). Shown only when it says
-         something `index_state` did not, which for a failed video it does not. #}
+         something `index_state` did not, which for a failed video it does not.
+
+         It is labelled, because the two pills come from two different
+         vocabularies and §4.5 says the four are deliberately not unified: a
+         bare `ready` beside a bare `no_frames` reads as the page contradicting
+         itself, and naming the second one's source is the difference between a
+         contradiction and two facts. #}
       {% if data_status and data_status != video.index_state %}
+      <span class="label">data_status</span>
       <span class="pill tone-{{ data_status | tone }}">{{ data_status }}</span>
       {% endif %}
     </p>
@@ -49,6 +56,22 @@
   </p>
   {% if summary_error.next %}<p class="notice-next">{{ summary_error.next }}</p>{% endif %}
 </section>
+{% endif %}
+
+{# The root cause, named where the eye already is. The stage that failed is in
+   the provenance table, which on a phone is a five-column grid inside a
+   sideways-scrolling wrapper — so "this video is mid-pipeline" was legible and
+   "stt failed" was two swipes away. This says which stage, in its tone, and
+   points at the row rather than repeating the error string that is already
+   printed once below. #}
+{% set failed_stages = stages | selectattr("state", "equalto", "failed") | list %}
+{% if failed_stages %}
+<p class="stage-alarm">
+  <span class="pill tone-bad">failed</span>
+  {% for stage in failed_stages %}<code>{{ stage.stage }}</code>{{ ", " if not loop.last }}{% endfor %}
+  did not finish. <a href="#provenance">What it recorded, and what the video
+  still has, is below</a>.
+</p>
 {% endif %}
 
 {# The spine. DESIGN.md calls this "a full-width horizontal band under the

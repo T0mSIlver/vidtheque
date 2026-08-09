@@ -12,6 +12,10 @@
     <h1>Job <code>{{ job.job_id }}</code></h1>
     <p class="pagehead-meta">
       <span class="pill tone-{{ job.state | tone }}" data-field="job-state">{{ job.state }}</span>
+      {# dashboard.md §5.4 asks for the countdown "with `error_code` beside it".
+         The code was only in the notice further down, so on a deferred job the
+         header said how long the wait had left and never said what set it. #}
+      {% if job.error_code %}<span class="pill pill-small tone-bad">{{ job.error_code }}</span>{% endif %}
       {% if job.cancel_requested %}<span class="pill pill-small tone-warn">cancel requested</span>{% endif %}
       {# `not_before`, read back at last. It ticks between polls and is reset by
          each one, so a page left open says how long the wait still has to run. #}

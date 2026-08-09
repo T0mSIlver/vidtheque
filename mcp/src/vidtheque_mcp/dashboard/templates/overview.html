@@ -60,7 +60,7 @@
       <dd class="figure-note">
         {{ rollup['videos_ready'] | count }} ready
         {% if rollup['videos_pending'] %}
-        · <a href="{{ root }}/videos?index_state=all&amp;order=indexed_at">{{ rollup['videos_pending'] | count }} not</a>
+        · <a href="{{ root }}/videos?index_state=all&amp;order=indexed_at">{{ rollup['videos_pending'] | count }} not ready</a>
         {% endif %}
       </dd>
     </div>

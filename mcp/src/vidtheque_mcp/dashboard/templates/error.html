@@ -30,14 +30,18 @@
      presentation decision, so the template makes it rather than the view. #}
   <p class="empty-lead">{{ error.next[0] | upper }}{{ error.next[1:] }}</p>
   {% endif %}
-  <p class="empty-note">
-    Every surface this index has is in the rail: what is in the corpus, every
-    video and what the pipeline made of it, and what the queue is doing.
-  </p>
+  {# Two links, not three. The rail is already on the page with all three
+     destinations in it, so a full second nav here is the same choice offered
+     twice; what a refusal owes the operator is the list the thing they asked
+     for should have been in. `page` is the chrome's own idea of where this
+     request belonged, so the primary link is that one. #}
   <p class="pager">
+    {% if page == 'jobs' %}
+    <a class="ghostlink" href="{{ root }}/jobs">Every job this index has run</a>
+    {% else %}
+    <a class="ghostlink" href="{{ root }}/videos">Everything that is indexed</a>
+    {% endif %}
     <a class="ghostlink" href="{{ root }}">Corpus overview</a>
-    <a class="ghostlink" href="{{ root }}/videos">Videos</a>
-    <a class="ghostlink" href="{{ root }}/jobs">Jobs</a>
   </p>
 </section>
 

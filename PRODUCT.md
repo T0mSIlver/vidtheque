@@ -152,9 +152,20 @@ time axis.
   **word** as well as a colour — that is an accessibility rule and a voice rule
   at the same time.
 - **The drawn film-frame favicon** (an inline SVG, not an emoji) is already
-  shared by both surfaces so they read as one product in a tab strip.
+  shared by both surfaces so they read as one product in a tab strip. Since
+  2026-08-09 the same drawing — path for path — is also the mark at the top of
+  the dashboard's rail and the thing the wordmark sits beside, rendered as
+  inline SVG that takes its two colours from the scheme tokens (a `data:`
+  favicon cannot). One drawn object, three places, no new asset.
+- **The wordmark is set in a face of its own** (Instrument Serif 400, vendored,
+  OFL) and that face sets the string `vidtheque` and nothing else on
+  `/dashboard`. How it looks is `DESIGN.md`'s business — see **The
+  Wordmark-Only Rule** — but the *commitment* belongs here: the product's name
+  gets a voice, and no other string on the management surface borrows it.
 - **[undecided]** Nothing has been committed about a logo, a marketing site, or
-  any external brand asset. None exists; do not invent one.
+  any external brand asset. None exists; do not invent one. The rail mark above
+  is not an exception to this: it is the favicon `demo-site.md` already
+  specified, reused rather than designed.
 
 ## Evidence on Hand
 

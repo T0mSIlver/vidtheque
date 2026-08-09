@@ -732,7 +732,15 @@ the highest-value line on that page.
   No sparklines, no progress rings, no soft-shadowed rectangles standing in for
   content.
 - **Don't** ship a card, a shadow, a gradient, glass, or a coloured `border-left`
-  above 1px.
+  above 1px. *Gradient* here means a **tonal ramp used as decoration** — a
+  surface that fades because fading looks expensive. It does not mean the CSS
+  function: the deduplicated shot's hatch is a `repeating-linear-gradient`, and
+  it is two flat colours at a fixed 2px/6px pitch encoding a fact the index
+  stores. (An external review, 2026-08-09, read the rule literally and was
+  right to ask; the answer is that the rule is about ramps, not about syntax. A
+  hatch drawn as an SVG mask would satisfy the letter and change nothing about
+  the pixels, which is how you can tell the letter was not the point.) A second
+  pattern needs the same argument this one has: it must be encoding something.
 - **Don't** reach for film sprockets, clapperboards, reel icons or faux-CRT.
   "Cutting room" is a derivation, not a decoration; if it starts looking like a
   movie poster it has failed. The single 24px `.brandmark` in the rail (and its

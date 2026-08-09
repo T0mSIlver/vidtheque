@@ -47,6 +47,15 @@
         ],
         "createdAt": "2026-08-09T17:47:30.196Z",
         "reason": "Same as the videos route: the job detail page prints an em-dash for an item stage that has none and for every clock a stage never recorded, which is dashboard.md 4.1's rule applied to job items. The prose on this page was rewritten to drop its five em-dashes rather than waived."
+      },
+      {
+        "rule": "overused-font",
+        "value": "instrument serif",
+        "files": [
+          "mcp/src/vidtheque_mcp/dashboard/static/dashboard.css"
+        ],
+        "createdAt": "2026-08-09T18:13:03.356Z",
+        "reason": "Named by the research memo, not reached for: Instrument Serif is the display face research/dashboard-design-research-2026-08-09.md 1.2 gives Direction A, and Tom authorised mixing A's brand voice into Direction C for the wordmark. The rule's premise is that a familiar face makes a whole interface feel generic; here the face sets one 8-glyph string twice per page and DESIGN.md's Wordmark-Only Rule forbids a third selector, so it never touches a heading, a label, a figure or a cell. The identity it belongs to is carried by the drawn film-frame mark beside it, the mono/sans provenance split and the ledger, none of which any other product has. Newsreader was the considered alternative from the same memo and was rejected: it is a text serif, and at 20px lowercase it reads as book type rather than as a mark."
       }
     ]
   }
