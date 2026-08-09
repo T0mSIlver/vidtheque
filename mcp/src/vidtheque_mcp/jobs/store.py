@@ -494,10 +494,21 @@ def _count(state: str) -> str:
 # `n_done`/`n_failed` are read back off the items rather than off the trigger
 # rollup, so the four terminal counts and `n_items` always add up in the
 # payload — a job that reads `done` with nothing done has to say so in numbers.
+#
+# `not_before` is selected as both the raw stamp and `defer_s`, the seconds
+# still to run on the backoff. `defer_job` has always written that column and
+# `claim_next` has always honoured it, and until the dashboard's jobs view
+# nothing ever *read* it: during the overnight batch "this job is deferred for
+# another 240 seconds" was true and unobservable from every surface vidtheque
+# has (dashboard.md §4.4). Computing the remainder in SQL keeps it on the one
+# clock `not_before` was written against, and `MAX(0, …)` means a past deferral
+# reads as 0 rather than as a negative number a page would have to interpret.
 _JOB_SQL = f"""
-SELECT j.id, j.public_id, j.state, j.kind, j.n_items,
+SELECT j.id, j.public_id, j.state, j.kind, j.n_items, j.priority,
        j.cancel_requested, j.error_code, j.error_message,
        j.created_at, j.started_at, j.finished_at, j.heartbeat_at,
+       j.not_before,
+       MAX(0, j.not_before - unixepoch()) AS defer_s,
        {_count('done')} AS n_done,
        {_count('failed')} AS n_failed,
        {_count('skipped')} AS n_skipped,
@@ -525,7 +536,16 @@ def latest_job_for_video(conn: sqlite3.Connection, video_id: int) -> sqlite3.Row
     ).fetchone()
 
 
-def list_jobs(conn: sqlite3.Connection, state: str, limit: int) -> list[sqlite3.Row]:
+def list_jobs(
+    conn: sqlite3.Connection, state: str, limit: int, offset: int = 0
+) -> list[sqlite3.Row]:
+    """A page of jobs, newest first.
+
+    ``offset`` defaults to 0, which is every caller that existed before the
+    dashboard: `job-status` shows one page of active work and never pages. The
+    jobs view asks for ``limit + 1`` and slices, so it prints `has_more`
+    instead of counting the table (CLAUDE.md).
+    """
     clause = {
         "all": "",
         "active": " WHERE j.state IN ('queued','running')",
@@ -533,7 +553,8 @@ def list_jobs(conn: sqlite3.Connection, state: str, limit: int) -> list[sqlite3.
         "done": " WHERE j.state = 'done'",
     }.get(state, " WHERE j.state IN ('queued','running')")
     return conn.execute(
-        _JOB_SQL + clause + " ORDER BY j.created_at DESC LIMIT ?", (limit,)
+        _JOB_SQL + clause + " ORDER BY j.created_at DESC, j.id DESC LIMIT ? OFFSET ?",
+        (limit, offset),
     ).fetchall()
 
 
@@ -568,6 +589,58 @@ def degraded_items(conn: sqlite3.Connection, job_id: int, limit: int = 20) -> li
         ORDER BY i.seq, s.stage LIMIT ?
         """,
         (job_id, limit),
+    ).fetchall()
+
+
+def degraded_counts(conn: sqlite3.Connection, job_ids: Sequence[int]) -> dict[int, int]:
+    """How many items of each job finished `done` on a video with a failed stage.
+
+    The list view's half of :func:`degraded_items`, as **one** grouped query for
+    the whole page rather than one probe per row — a table that fans out per row
+    is exactly what dashboard.md §6.3 exists to forbid. The detail page still
+    calls `degraded_items` for the stages and the reasons; this only answers
+    "does this row need the badge".
+    """
+    if not job_ids:
+        return {}
+    rows = conn.execute(
+        """
+        SELECT i.job_id AS job_id, COUNT(DISTINCT i.id) AS n
+        FROM job_items i
+        JOIN video_stages s ON s.video_id = i.video_id AND s.state = 'failed'
+        WHERE i.job_id IN (SELECT value FROM json_each(?)) AND i.state = 'done'
+        GROUP BY i.job_id
+        """,
+        (json.dumps([int(j) for j in job_ids]),),
+    ).fetchall()
+    return {int(row["job_id"]): int(row["n"]) for row in rows}
+
+
+def job_event_page(
+    conn: sqlite3.Connection,
+    job_id: int,
+    item_id: int | None = None,
+    limit: int = 50,
+) -> list[sqlite3.Row]:
+    """The tail of a job's event log, newest first, on `job_events_by_job`.
+
+    The only place a non-rate-limit deferral exists at all: `defer_job` writes
+    `not_before` and, for anything but `E_RATE_LIMIT`, the runner writes the
+    reason nowhere else (`"retrying in {delay}s after {code}: {message}"`,
+    dashboard.md §4.4). Newest first because a live page is read from the top —
+    the event that explains what the job is doing *now* is the last one written.
+
+    ``item_id`` narrows to one item's history; ``None`` is the whole job,
+    job-level rows (requeues, reclaims) included.
+    """
+    clause = " AND item_id = ?" if item_id is not None else ""
+    params: tuple[Any, ...] = (
+        (job_id, item_id, limit) if item_id is not None else (job_id, limit)
+    )
+    return conn.execute(
+        "SELECT id, item_id, at, level, stage, message FROM job_events "
+        "WHERE job_id = ?" + clause + " ORDER BY id DESC LIMIT ?",
+        params,
     ).fetchall()
 
 
