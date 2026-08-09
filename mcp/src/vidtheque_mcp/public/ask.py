@@ -5,7 +5,7 @@ answering from timestamped evidence. It is a bounded loop against OpenRouter's
 OpenAI-compatible ``/chat/completions``, with two internal tools, a hard round
 cap, and a forced final answer.
 
-Two properties are load-bearing and tested:
+Three properties are load-bearing and tested:
 
 * **Citations cannot be fabricated.** Every result the loop shows the model is
   recorded under an index; the response's citations are drawn from that record,
@@ -14,6 +14,11 @@ Two properties are load-bearing and tested:
 * **Nothing upstream leaks.** Not the key, not the provider's response body, not
   the status line, not an ``httpx2`` exception string. The operator gets those
   in the log; the visitor gets one of five reasons and "use search".
+* **The work is visible while it happens.** The loop is an *event stream*
+  (§3.5): every tool call it makes becomes one human-readable line, emitted
+  before the tool runs and completed with what the tool actually returned. The
+  answer is not streamed — it arrives whole, as the last event. The
+  non-streaming POST is the same generator, drained.
 """
 
 from __future__ import annotations
@@ -23,20 +28,29 @@ import json
 import logging
 import re
 import time
+from collections.abc import AsyncIterator
+from contextlib import aclosing
 from dataclasses import dataclass, field
 from typing import Any
 
 import httpx2 as httpx
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response, StreamingResponse
+from starlette.types import Scope
 
 from ..text import clock, deeplink, middle_truncate
 from ..tools import search, segment
 from ..tools.base import Deps
+from . import humanize
 from .ratelimit import refund
 from .settings import PublicSettings
 
 logger = logging.getLogger(__name__)
+
+# One JSON object per line. Not SSE: the request is a POST with a JSON body, so
+# `EventSource` was never on the table, and framing the payload by hand on top of
+# `fetch` buys nothing over `JSON.parse` on each line (§3.5).
+NDJSON_MEDIA_TYPE = "application/x-ndjson"
 
 MAX_QUESTION_CHARS = 400
 MAX_TOOL_CALLS_PER_ROUND = 6
@@ -162,8 +176,6 @@ class Evidence:
 
     def record(self, hit: dict[str, Any]) -> int:
         """Return the `[n]` for this hit, deduplicated on (video, second)."""
-        from . import humanize
-
         video_id = str(hit.get("video_id") or "")
         t = int(hit.get("start") or 0)
         key = (video_id, t)
@@ -255,7 +267,34 @@ class OpenRouter:
 async def run_ask(
     deps: Deps, public: PublicSettings, llm: OpenRouter, question: str
 ) -> dict[str, Any]:
-    """The loop. Returns the answer payload, or raises :class:`AskUnavailable`."""
+    """The loop, drained. Returns the answer payload, or raises `AskUnavailable`.
+
+    The POST-and-wait path (§3) is the stream (§3.5) with the activity events
+    thrown away, so the two can never answer differently: there is one loop, and
+    the only question is whether anybody is watching it work.
+    """
+    async with aclosing(ask_events(deps, public, llm, question)) as events:
+        async for event in events:
+            if event.get("event") == "answer":
+                return event["payload"]
+    # Unreachable: the generator either yields an answer or raises.
+    raise AskUnavailable("upstream_unavailable")  # pragma: no cover
+
+
+async def ask_events(
+    deps: Deps, public: PublicSettings, llm: OpenRouter, question: str
+) -> AsyncIterator[dict[str, Any]]:
+    """The loop, as the events a visitor can watch (§3.5).
+
+    Yields one `activity` event per tool call *before* it runs and a second when
+    it lands, then exactly one `answer` event carrying the payload the JSON path
+    returns. Raises :class:`AskUnavailable` instead of yielding an error, so the
+    two transports each say "unavailable" in their own vocabulary — a 503 body,
+    or a terminal `error` event — from one raise.
+
+    Nothing here is fabricated: a line is built from the arguments the model
+    actually sent and finished with what the tool actually returned.
+    """
     deadline = time.monotonic() + public.ask_timeout_s
     evidence = Evidence()
     messages: list[dict[str, Any]] = [
@@ -263,6 +302,7 @@ async def run_ask(
         {"role": "user", "content": question},
     ]
     rounds = 0
+    step = 0
 
     for _ in range(max(1, public.ask_max_rounds)):
         payload = await llm.complete(
@@ -279,14 +319,22 @@ async def run_ask(
         if not calls:
             content = (message.get("content") or "").strip()
             if content:
-                return _answer(deps, content, evidence, rounds, public)
+                yield {"event": "answer", "payload": _answer(deps, content, evidence, rounds, public)}
+                return
             break
 
         rounds += 1
         batch = _with_ids(calls[:MAX_TOOL_CALLS_PER_ROUND], rounds)
         messages.append(_assistant_turn(message, batch))
         for call in batch:
-            messages.append(await _run_tool(deps, call, evidence))
+            step += 1
+            # Announced *before* the tool runs — the line is what the model
+            # asked for, which is all that is known yet, and the visitor is
+            # watching the slow part happen rather than a spinner.
+            yield {"event": "activity", "id": step, "phase": "start", "text": _asked(call, evidence)}
+            result, summary = await _run_tool(deps, call, evidence)
+            messages.append(result)
+            yield {"event": "activity", "id": step, "phase": "done", "result": summary}
         if len(calls) > MAX_TOOL_CALLS_PER_ROUND:
             # A parallel-tool-call storm on a free model is how the daily budget
             # dies; the model is told rather than silently short-changed.
@@ -324,7 +372,7 @@ async def run_ask(
     if not content:
         logger.warning("ask: model produced no answer after %s rounds", rounds)
         raise AskUnavailable("upstream_unavailable")
-    return _answer(deps, content, evidence, rounds, public)
+    yield {"event": "answer", "payload": _answer(deps, content, evidence, rounds, public)}
 
 
 def _first_message(payload: dict[str, Any]) -> dict[str, Any]:
@@ -368,25 +416,95 @@ def _assistant_turn(message: dict[str, Any], calls: list[dict[str, Any]]) -> dic
     }
 
 
-async def _run_tool(
-    deps: Deps, call: dict[str, Any], evidence: Evidence
-) -> dict[str, Any]:
-    """Run one internal tool and shape its result as a `tool` message."""
+# ------------------------------------------------------------ activity lines
+#
+# One tool call, one line a person can read. Every word of it comes from what
+# the model asked for or what the tool answered — there is no phrase here that
+# claims something the loop did not do, because the line is the visitor's only
+# window onto the ninety seconds the model spends inside the corpus (§3.5).
+
+# The same three words the page uses for the filter chips, so a visitor reads
+# "on-screen text" in both places for the same leg.
+_CHANNEL = {
+    "all": "the corpus",
+    "transcript": "the transcript",
+    "ocr": "on-screen text",
+    "frame": "the frames",
+}
+
+# A query or a title in an activity line is corpus/model text on one line: long
+# enough to identify what was searched, short enough not to wrap three times.
+_QUERY_CHARS = 80
+_TITLE_CHARS = 60
+
+
+def _call_args(call: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """The tool name and its arguments, however mangled the model's JSON is."""
     function = call.get("function") or {}
-    name = function.get("name") or ""
+    name = str(function.get("name") or "")
     try:
         args = json.loads(function.get("arguments") or "{}")
     except ValueError:
         args = {}
-    if not isinstance(args, dict):
-        args = {}
+    return name, args if isinstance(args, dict) else {}
+
+
+def _asked(call: dict[str, Any], evidence: Evidence) -> str:
+    """What this tool call is about to do, in one line."""
+    name, args = _call_args(call)
+    if name == "search":
+        query = humanize.clip(str(args.get("query") or ""), _QUERY_CHARS)
+        content_type = args.get("content_type")
+        where = _CHANNEL.get(content_type if content_type in _CHANNEL else "all")
+        return f"Searching {where} for “{query}”" if query else f"Searching {where}"
+    if name == "get_segment_context":
+        video_id = str(args.get("video_id") or "")
+        try:
+            at = clock(float(args.get("t")))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            at = None
+        title = humanize.clip(evidence.describe(video_id)[0], _TITLE_CHARS)
+        # The title is only known if an earlier hit carried it; a drill-down
+        # into a video the loop has not seen names the id rather than inventing
+        # a title for it.
+        which = f"“{title}”" if title else f"video {video_id}" if video_id else "a video"
+        return f"Reading the transcript around {at} in {which}" if at else (
+            f"Reading the transcript in {which}"
+        )
+    # A tool that does not exist is still work the model did, and hiding it
+    # would make the round it happened in look like a stall.
+    return f"Asking for “{humanize.clip(name, _TITLE_CHARS)}”" if name else "An empty tool call"
+
+
+def _hits_summary(hits: list[dict[str, Any]]) -> str:
+    """What a search actually found — counted, never estimated."""
+    if not hits:
+        return "nothing matched"
+    talks = len({str(hit.get("video_id") or "") for hit in hits})
+    return (
+        f"{len(hits)} hit{'' if len(hits) == 1 else 's'} "
+        f"in {talks} talk{'' if talks == 1 else 's'}"
+    )
+
+
+async def _run_tool(
+    deps: Deps, call: dict[str, Any], evidence: Evidence
+) -> tuple[dict[str, Any], str]:
+    """Run one internal tool. Returns its `tool` message and one line about it.
+
+    Two consumers, one call: the message is the model's evidence, the line is
+    the visitor's. Neither is derived from the other — the model keeps the
+    tool's own text, and the line is counted from the same result.
+    """
+    name, args = _call_args(call)
 
     if name == "search":
-        text = await _tool_search(deps, args, evidence)
+        text, summary = await _tool_search(deps, args, evidence)
     elif name == "get_segment_context":
-        text = await _tool_context(deps, args, evidence)
+        text, summary = await _tool_context(deps, args, evidence)
     else:
         text = f"error: no tool named {name!r}. Use search or get_segment_context."
+        summary = "no such tool"
 
     return {
         # `_with_ids` ran over this batch, so the id exists and is unique.
@@ -394,13 +512,15 @@ async def _run_tool(
         "tool_call_id": call["id"],
         "name": name,
         "content": text,
-    }
+    }, summary
 
 
-async def _tool_search(deps: Deps, args: dict[str, Any], evidence: Evidence) -> str:
+async def _tool_search(
+    deps: Deps, args: dict[str, Any], evidence: Evidence
+) -> tuple[str, str]:
     query = str(args.get("query") or "").strip()[:512]
     if not query:
-        return "error: search needs a query."
+        return "error: search needs a query.", "the search had no query"
     content_type = args.get("content_type")
     if content_type not in search.CONTENT_TYPES:
         content_type = "all"
@@ -414,11 +534,17 @@ async def _tool_search(deps: Deps, args: dict[str, Any], evidence: Evidence) -> 
     )
     if result.is_error:
         payload = result.structured_content or {}
-        return f"error: {payload.get('code')} — {payload.get('message')}"
+        # The model gets the typed code; the visitor gets the fact that this
+        # leg came back empty-handed, without a code to look up.
+        return (
+            f"error: {payload.get('code')} — {payload.get('message')}",
+            "that search could not run",
+        )
 
     hits = (result.structured_content or {}).get("results", [])
     if not hits:
-        return f'No results for "{query}". Try different words.'
+        return f'No results for "{query}". Try different words.', _hits_summary(hits)
+    summary = _hits_summary(hits)
     lines = [f'{len(hits)} results for "{query}":']
     for hit in hits:
         n = evidence.record(hit)
@@ -431,17 +557,25 @@ async def _tool_search(deps: Deps, args: dict[str, Any], evidence: Evidence) -> 
             f"({hit.get('video_id')} at {clock(hit.get('start'))}, t={int(hit.get('start') or 0)})"
         )
         lines.append(f"    {str(hit.get('text') or '')}")
-    return "\n".join(lines)
+    return "\n".join(lines), summary
 
 
-async def _tool_context(deps: Deps, args: dict[str, Any], evidence: Evidence) -> str:
+async def _tool_context(
+    deps: Deps, args: dict[str, Any], evidence: Evidence
+) -> tuple[str, str]:
     video_id = str(args.get("video_id") or "").strip()
     if not video_id:
-        return "error: get_segment_context needs a video_id from a search hit."
+        return (
+            "error: get_segment_context needs a video_id from a search hit.",
+            "that read named no video",
+        )
     try:
         t = float(args.get("t"))  # type: ignore[arg-type]
     except (TypeError, ValueError):
-        return "error: t must be a number of seconds, as given by a search hit."
+        return (
+            "error: t must be a number of seconds, as given by a search hit.",
+            "that read named no moment",
+        )
     result = await segment.run(
         deps,
         video_id=video_id,
@@ -452,7 +586,10 @@ async def _tool_context(deps: Deps, args: dict[str, Any], evidence: Evidence) ->
     )
     payload = result.structured_content or {}
     if result.is_error:
-        return f"error: {payload.get('code')} — {payload.get('message')}"
+        return (
+            f"error: {payload.get('code')} — {payload.get('message')}",
+            "that moment could not be read",
+        )
     block = result.content[0]
     text = getattr(block, "text", "")
 
@@ -481,7 +618,14 @@ async def _tool_context(deps: Deps, args: dict[str, Any], evidence: Evidence) ->
             }
         )
         text = f"This window is [{n}] — cite [{n}] for anything you take from it.\n{text}"
-    return text
+    # Counted from the cues the window actually returned, so "no transcript
+    # there" is a fact about the corpus rather than a guess about the read.
+    summary = (
+        f"{len(cues)} line{'' if len(cues) == 1 else 's'} of transcript"
+        if cues
+        else "no transcript there"
+    )
+    return text, summary
 
 
 # A citation marker *with the horizontal space that flanks it*, so dropping one
@@ -570,7 +714,7 @@ def _answer(
 # ------------------------------------------------------------------- endpoint
 
 
-async def ask_endpoint(request: Request) -> JSONResponse:
+async def ask_endpoint(request: Request) -> Response:
     """The endpoint, plus the one thing the limiter cannot know on its own.
 
     The daily budget is charged before this runs (§4), which is right for an
@@ -583,6 +727,13 @@ async def ask_endpoint(request: Request) -> JSONResponse:
     Only ``ask_global`` is refunded. The per-IP minute bucket is the anti-hammer
     guard, not the cost control: someone retrying a broken upstream five times a
     minute should still be slowed down.
+
+    A **stream** is always a 200 — the status line is written before the model
+    has done anything — so the refund for that path cannot live here. It lives
+    where the outcome is actually known, in :func:`_stream`, and the rule is the
+    same one stated in words rather than in status codes: an ask that produced
+    no answer gives the day's token back. Exactly one of the two runs for any
+    request, so a failed stream is refunded once, not twice.
     """
     response = await _ask(request)
     if response.status_code != 200:
@@ -590,7 +741,56 @@ async def ask_endpoint(request: Request) -> JSONResponse:
     return response
 
 
-async def _ask(request: Request) -> JSONResponse:
+def _wants_stream(request: Request) -> bool:
+    """Content negotiation, so the JSON contract survives untouched (§3.5).
+
+    A client that does not ask for the stream — curl, a script, a browser with
+    no `ReadableStream` — gets exactly the body it got before. The page asks,
+    because the page is the one consumer that has ninety seconds to fill.
+    """
+    return NDJSON_MEDIA_TYPE in request.headers.get("accept", "")
+
+
+async def _stream(
+    scope: Scope, deps: Deps, public: PublicSettings, llm: OpenRouter, question: str
+) -> AsyncIterator[bytes]:
+    """The loop's events as NDJSON, and the budget accounting that goes with it.
+
+    Two things this owes the rest of the system:
+
+    * **The refund.** ``ask_endpoint`` refunds on a non-200 and a stream is a
+      200 whatever happens inside it, so the accounting moves here: no `answer`
+      event, no charge. ``finally`` rather than an ``except`` branch, because
+      the ways a stream dies without an error event are the interesting ones —
+      the visitor closing the tab, a mode switch aborting the fetch, the loop
+      being cancelled — and every one of them cost no model tokens either.
+    * **The terminal event.** ``AskUnavailable`` is a 503 body on the JSON path
+      and an `error` event here, built from the same words, so the page's
+      degraded pane renders the same either way.
+    """
+    answered = False
+    try:
+        async with aclosing(ask_events(deps, public, llm, question)) as events:
+            async for event in events:
+                answered = answered or event.get("event") == "answer"
+                yield _ndjson(event)
+    except AskUnavailable as exc:
+        yield _ndjson(_error_event(exc.reason, exc.retry_after_s))
+    except Exception:  # pragma: no cover - last resort, still no leak
+        logger.exception("ask: unexpected failure mid-stream")
+        yield _ndjson(_error_event("upstream_unavailable", 30))
+    finally:
+        if not answered:
+            refund(scope, "ask_global")
+
+
+def _ndjson(event: dict[str, Any]) -> bytes:
+    """One event, one line. `json.dumps` escapes every newline in the payload,
+    so a corpus title with a line break in it can never split a frame."""
+    return (json.dumps(event, ensure_ascii=False) + "\n").encode("utf-8")
+
+
+async def _ask(request: Request) -> Response:
     deps: Deps = request.app.state.assembled.deps
     public: PublicSettings = request.app.state.public_settings
     llm: OpenRouter | None = request.app.state.openrouter
@@ -616,6 +816,22 @@ async def _ask(request: Request) -> JSONResponse:
         )
     question = question[:MAX_QUESTION_CHARS]
 
+    if _wants_stream(request):
+        # Everything that can be refused *before* the model is reached has been
+        # refused above, with a status code. From here the answer is worth
+        # watching, so the status line goes out now and the rest is events.
+        return StreamingResponse(
+            _stream(request.scope, deps, public, llm, question),
+            media_type=NDJSON_MEDIA_TYPE,
+            headers={
+                "Cache-Control": "no-store",
+                # nginx buffers a proxied response by default, which would hold
+                # every activity line until the answer landed — i.e. exactly the
+                # ninety seconds of silence this exists to remove.
+                "X-Accel-Buffering": "no",
+            },
+        )
+
     try:
         payload = await asyncio.wait_for(
             run_ask(deps, public, llm, question), timeout=public.ask_timeout_s + 5
@@ -631,15 +847,32 @@ async def _ask(request: Request) -> JSONResponse:
     return JSONResponse(payload)
 
 
+def _degraded_body(reason: str, retry_after_s: int) -> dict[str, Any]:
+    """The one body both transports say "unavailable" with (§3.4).
+
+    Written once so a stream's terminal event and a 503's body cannot drift: the
+    page renders the same degraded pane from either, and neither carries the
+    upstream's status line, body or exception text.
+    """
+    return {
+        "error": "llm_unavailable",
+        "reason": reason,
+        "message": "LLM mode unavailable — use search.",
+        "retry_after_s": retry_after_s or None,
+    }
+
+
+def _error_event(reason: str, retry_after_s: int) -> dict[str, Any]:
+    """A stream's terminal event, carrying the status it *would* have been."""
+    return {
+        "event": "error",
+        "status": 503,
+        "payload": _degraded_body(reason, retry_after_s),
+    }
+
+
 def _unavailable(reason: str, retry_after_s: int) -> JSONResponse:
     headers = {"Retry-After": str(retry_after_s)} if retry_after_s else {}
     return JSONResponse(
-        {
-            "error": "llm_unavailable",
-            "reason": reason,
-            "message": "LLM mode unavailable — use search.",
-            "retry_after_s": retry_after_s or None,
-        },
-        status_code=503,
-        headers=headers,
+        _degraded_body(reason, retry_after_s), status_code=503, headers=headers
     )

@@ -229,6 +229,7 @@ wherever it is rendered. Three rules, all of them small:
 | `TRUNCATION_MARKER` → a plain `…` | The marker's advice ("pass `max_text_chars=0` for full text") is for a client that has the parameter, and `/api` deliberately does not (§2). To a reader the marker means one thing: words are missing here. The pattern is built from the template in `text.py`, never retyped, so an edit there cannot leave it silently matching nothing — and two ellipses that meet collapse into one. |
 | the frame leg's `visual match, no text hit` → `None` | The string keeps `text` non-null for a model reading a fixed shape. On the page it is a sentence pretending to be evidence, in the one place where the evidence is the picture (§6.3), so the snippet is dropped instead. This is the one literal that *is* retyped — the tool does not export it — and a test asserts the two still agree. |
 | the `note:` prefix → dropped, sentence capitalised | The prefix tells a model "this line is machinery"; a reader gets that from the muted line it is rendered in. |
+| `clip(text, n)` — one line, cut at the end | The fourth caller is the activity line (§3.5), which puts a *query* or a *talk's title* inside a sentence. That is a label, not a snippet: it is cut at the end rather than in the middle, because the front of a title is the part that identifies it, and it collapses whitespace for the same reason a moment row does. |
 
 Whitespace is collapsed while it is in there, which is what makes a one-line
 moment row (§6.5) a line.
@@ -251,6 +252,11 @@ A server-side agent loop against OpenRouter's OpenAI-compatible
 `/api/v1/chat/completions`, with **two** internal tools and a hard round cap.
 It exists to show the thing the corpus is actually for — an agent that answers
 from timestamped evidence — to a visitor who has not wired up an MCP client.
+
+The same POST also speaks a stream, to a client that sends
+`Accept: application/x-ndjson` (§3.5), narrating the loop's tool calls while it
+runs. The body below is what a plain POST returns and what the stream's final
+event carries — one loop, one payload.
 
 ```json
 {
@@ -413,6 +419,94 @@ there is no version of it that helps a visitor.
 The frontend renders the `message` verbatim in the answer pane with a "search
 instead" button, and keeps the query in the box.
 
+### 3.5 The stream — making ninety seconds of work visible
+
+The loop above can spend a minute and a half inside the corpus, and the page had
+one static line to show for it ("reading the corpus…"). A visitor cannot tell
+that from a hang. So the same loop is also an **event stream**: every tool call
+it makes becomes one line a person can read, sent as it happens.
+
+**What is not streamed: the answer.** Tom's call (2026-08-09) — no token
+streaming, so no streaming-markdown renderer, no half-written prose that
+rewrites itself, and no citation marker rendered before the citation it names
+exists. The answer arrives whole, as the last event, exactly the payload §3
+already specifies. What streams is the *work*, which is the part that is
+otherwise invisible.
+
+**Transport: NDJSON over the same POST.** One JSON object per line,
+`Content-Type: application/x-ndjson`. Not SSE: `EventSource` is GET-only and the
+ask is a POST with a body, so the browser side is `fetch` + a reader either way
+— and on top of `fetch`, SSE's `event:`/`data:` framing is a parser to write
+where NDJSON is `JSON.parse` per line. `json.dumps` escapes every newline in a
+payload, so a corpus title with a line break in it cannot split a frame.
+
+**Negotiation, not a second endpoint.** A request that sends
+`Accept: application/x-ndjson` gets the stream; anything else gets the JSON body
+byte for byte as before. `/api/ask` stays one route with one contract, curl and
+any script written against it keep working, and the MCP surface is untouched.
+The page asks for the stream only when the browser has `ReadableStream` and
+`TextDecoder` — the fallback is not a worse answer, it is the same answer with
+nothing to watch on the way.
+
+The vocabulary is three events, and every one of them is built from data the
+server already had:
+
+| event | when | fields |
+|---|---|---|
+| `activity` … `"phase": "start"` | before a tool call runs | `id`, `text` — "Searching on-screen text for “CVE”", "Reading the transcript around 12:34 in “…”" |
+| `activity` … `"phase": "done"` | when it lands | `id`, `result` — "6 hits in 2 talks", "5 lines of transcript", "nothing matched" |
+| `answer` | once, last | `payload`: the §3 body, unchanged |
+| `error` | once, last, instead | `status: 503` and `payload`: the §3.4 body, unchanged |
+
+`id` pairs a `done` with its `start` — that pairing is what lets the page mark
+exactly one line as the one still running. It is **not** a citation `[n]`; the
+two numbering schemes never meet.
+
+Two rules keep the lines honest, and they are the reason this is not just a
+progress bar:
+
+- **A line is derived from the call, not written about it.** The channel named
+  is the `content_type` the model actually passed, mapped through the same three
+  words the page's filter chips use. The talk named in a drill-down is a title
+  the loop has *already seen* in a hit; a drill-down into a video it has not seen
+  says `video kCc8FmEb1nY` rather than inventing a title for it.
+- **A result is counted, never estimated.** "6 hits in 2 talks" is `len(hits)`
+  and the distinct `video_id`s in them; "5 lines of transcript" is the cues the
+  window returned. A tool that failed says the leg came back empty-handed and
+  keeps the typed `E_*` code for the model, where it is useful.
+
+An unknown tool name is narrated too ("Asking for “delete_everything”" → "no such
+tool"), because a round in which the model did something the loop refused is not
+a round that stalled, and a gap in the log would read as one.
+
+**What a stream owes the budget.** §4.4's refund keys on a non-200, and a stream
+is a 200 the moment its first byte is written — before the model has done
+anything. So the accounting moves to where the outcome is known: **no `answer`
+event, no charge.** It is a `finally`, not an error branch, because the ways a
+stream ends without an error event are the interesting ones — the visitor closing
+the tab, a mode switch aborting the fetch, the loop being cancelled — and every
+one of them cost the same zero upstream tokens as a 503 did. Exactly one of the
+two rules runs for any given request, so a failed stream is refunded once.
+
+**A disconnect stops the work.** Starlette's streaming response fails its next
+write once the client is gone, which closes the generator, which cancels the
+upstream call that was in flight. Verified end to end against a real socket: a
+visitor who abandons a stream after the first activity line costs no budget *and*
+no second completion. What cannot be cancelled is a call already in flight at the
+moment they leave; that one runs to its deadline and is thrown away.
+
+**Refusals stay status codes.** Everything that can be refused before the model
+is reached — a 429 from the limiter with its `Retry-After`, a 503 for a missing
+key, a 400 for a bodyless request — happens *before* a byte of stream exists and
+comes back as it always did, JSON and all. That is what keeps the page's
+countdown working: a refusal delivered as an event inside a 200 would have to
+reinvent the header. Only a request that reached the loop streams, and once it
+streams it is committed to 200 with a terminal event.
+
+`Cache-Control: no-store` and `X-Accel-Buffering: no` ride along: nginx buffers a
+proxied response by default, which would hold every activity line until the
+answer landed — that is, exactly the ninety seconds of silence this removes.
+
 ---
 
 ## 4. Rate limiting
@@ -514,6 +608,11 @@ So the middleware records what it charged on the request scope, and
   charged to the first. A refused request costs nothing, anywhere.
 - **`ask_endpoint`**, on any non-200. Nothing else refunds anything; a search
   that returns zero rows is still a search that ran.
+- **The ask *stream*, on any run that produced no answer** (§3.5). Not a third
+  rule, the same one: a stream's status line is written before the model has
+  done anything, so "non-200" cannot express it and "no answer, no charge" does.
+  Exactly one of the two runs per request — a streamed request is a 200 — so a
+  failed stream is refunded once, never twice.
 
 A refund refills first and is capped at capacity, so it can never mint a token
 the bucket never had, and refunding a bucket that no longer exists (swept) is a

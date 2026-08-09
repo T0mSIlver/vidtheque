@@ -65,6 +65,20 @@ def snippet(text: str | None, source: str | None = None) -> str | None:
     return cleaned or None
 
 
+def clip(text: str | None, limit: int) -> str:
+    """One line of at most ``limit`` characters, cut at the end.
+
+    For the places where a *label* is built out of corpus text — an activity
+    line naming a query or a talk (§3.5) — rather than for a snippet. The cut is
+    at the end, not in the middle, because the front of a title or a query is
+    the part that identifies it and the line is read while it scrolls past.
+    """
+    cleaned = _WHITESPACE.sub(" ", text or "").strip()
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[: max(1, limit - 1)].rstrip() + ELLIPSIS
+
+
 def note(text: str | None) -> str | None:
     """A `note:` line, as a sentence.
 

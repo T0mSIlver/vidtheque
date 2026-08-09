@@ -9,6 +9,7 @@ without a key, a model, or a request leaving the process.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any, Callable
@@ -831,7 +832,17 @@ def test_the_frame_leg_stand_in_string_is_still_the_one_search_emits() -> None:
     assert humanize.FRAME_WITHOUT_TEXT in source
 
 
-def test_humanise_turns_a_note_into_a_sentence() -> None:
+def test_humanise_clips_a_label_at_the_end() -> None:
+    """An activity line names a query or a talk, on one line (§2.4, §3.5)."""
+    from vidtheque_mcp.public import humanize
+
+    assert humanize.clip("kv cache", 80) == "kv cache"
+    assert humanize.clip("  two\n lines  ", 80) == "two lines"
+    assert humanize.clip(None, 10) == ""
+    # Cut at the end, not in the middle: the front of a title identifies it.
+    clipped = humanize.clip("a" * 40 + " tail", 10)
+    assert clipped == "a" * 9 + "…"
+    assert len(clipped) == 10
     from vidtheque_mcp.public import humanize
 
     assert humanize.note("note: the frame leg was skipped.") == (
@@ -1111,6 +1122,258 @@ def test_an_empty_corpus_says_so_rather_than_blaming_the_query(tmp_path: Path) -
         payload = client.get("/api/search?q=cache").json()
     assert payload["results"] == []
     assert payload["data_status"] == "empty"
+
+
+# ------------------------------------------------- 8. the stream (§3.5, §6.6)
+
+
+NDJSON = {"Accept": "application/x-ndjson"}
+
+
+def _events(response: Any) -> list[dict[str, Any]]:
+    """The stream, parsed. One JSON object per line, and every line complete."""
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+    return [json.loads(line) for line in response.text.splitlines() if line.strip()]
+
+
+def _stream_ask(client: TestClient, q: str = "what?", ip: str = "1.1.1.1") -> Any:
+    return client.post(
+        "/api/ask", json={"q": q}, headers={**NDJSON, "CF-Connecting-IP": ip}
+    )
+
+
+def _two_tool_script() -> Upstream:
+    return Upstream(
+        _completion(
+            tool_calls=[_tool_call("c1", "search", {"query": "kv cache", "content_type": "ocr"})]
+        ),
+        _completion(
+            tool_calls=[
+                _tool_call("c2", "get_segment_context", {"video_id": "kCc8FmEb1nY", "t": 12})
+            ]
+        ),
+        _completion("The cache trades memory for time [1]."),
+    )
+
+
+def test_the_stream_narrates_every_tool_call_then_answers(tmp_path: Path) -> None:
+    """n tool calls → 2n activity events, then exactly one answer (§3.5)."""
+    with make_client(tmp_path, PUBLIC_WITH_KEY, _two_tool_script()) as client:
+        response = _stream_ask(client)
+    assert response.status_code == 200
+    events = _events(response)
+
+    kinds = [e["event"] for e in events]
+    assert kinds == ["activity"] * 4 + ["answer"], kinds
+    # Every start is paired with its own done, in order, by id — that pairing is
+    # what lets the page mark exactly one line as the one still running.
+    assert [(e["id"], e["phase"]) for e in events[:4]] == [
+        (1, "start"),
+        (1, "done"),
+        (2, "start"),
+        (2, "done"),
+    ]
+    # The answer is not streamed: it arrives whole, once, at the end.
+    assert events[-1]["payload"]["answer"] == "The cache trades memory for time [1]."
+    assert events[-1]["payload"]["citations"]
+
+
+def test_a_streamed_answer_is_the_same_payload_as_the_json_one(tmp_path: Path) -> None:
+    """One loop, two transports. The page must not get a second-class answer."""
+    with make_client(tmp_path / "a", PUBLIC_WITH_KEY, _two_tool_script()) as client:
+        streamed = _events(_stream_ask(client))[-1]["payload"]
+    with make_client(tmp_path / "b", PUBLIC_WITH_KEY, _two_tool_script()) as client:
+        plain = client.post("/api/ask", json={"q": "what?"}).json()
+    assert streamed == plain
+
+
+def test_a_client_that_does_not_ask_for_the_stream_gets_the_old_shape(
+    tmp_path: Path,
+) -> None:
+    """Content negotiation, not a new endpoint: curl's contract is untouched."""
+    with make_client(tmp_path, PUBLIC_WITH_KEY, _two_tool_script()) as client:
+        response = client.post("/api/ask", json={"q": "what?"})
+    assert response.headers["content-type"].startswith("application/json")
+    assert set(response.json()) == {"answer", "citations", "rounds", "model"}
+
+
+def test_the_activity_lines_say_what_was_searched_and_what_came_back(
+    tmp_path: Path,
+) -> None:
+    """Every word of a line comes from the call's args or the tool's result.
+
+    The line is the visitor's only window onto the ninety seconds the model
+    spends inside the corpus, so it has to be honest twice: the channel it
+    names is the one the model asked for, and the count is counted.
+    """
+    with make_client(tmp_path, PUBLIC_WITH_KEY, _two_tool_script()) as client:
+        events = _events(_stream_ask(client))
+    lines = {(e["id"], e["phase"]): e for e in events if e["event"] == "activity"}
+
+    # The channel is the page's own word for that leg, not `content_type=ocr`.
+    assert lines[(1, "start")]["text"] == "Searching on-screen text for “kv cache”"
+    assert re.fullmatch(r"\d+ hits? in \d+ talks?", lines[(1, "done")]["result"])
+
+    # The drill-down names the talk, because an earlier hit carried its title.
+    assert lines[(2, "start")]["text"].startswith("Reading the transcript around 0:12 in “")
+    assert "Let's build GPT" in lines[(2, "start")]["text"]
+    assert re.fullmatch(r"\d+ lines? of transcript", lines[(2, "done")]["result"])
+
+
+def test_a_drill_down_into_an_unseen_video_names_the_id_not_a_title(
+    tmp_path: Path,
+) -> None:
+    """No title has been seen for it, so none is invented."""
+    upstream = Upstream(
+        _completion(
+            tool_calls=[
+                _tool_call("c1", "get_segment_context", {"video_id": "kCc8FmEb1nY", "t": 12})
+            ]
+        ),
+        _completion("It says the price is memory."),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        events = _events(_stream_ask(client))
+    start = next(e for e in events if e.get("phase") == "start")
+    assert start["text"] == "Reading the transcript around 0:12 in video kCc8FmEb1nY"
+
+
+def test_an_unknown_tool_call_is_narrated_rather_than_hidden(tmp_path: Path) -> None:
+    """A round that did something the loop refused is not a round that stalled."""
+    upstream = Upstream(
+        _completion(tool_calls=[_tool_call("c1", "delete_everything", {})]),
+        _completion("I only have search."),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        events = _events(_stream_ask(client))
+    assert next(e for e in events if e.get("phase") == "start")["text"] == (
+        "Asking for “delete_everything”"
+    )
+    assert next(e for e in events if e.get("phase") == "done")["result"] == "no such tool"
+
+
+def test_a_search_that_matched_nothing_says_so(tmp_path: Path) -> None:
+    """A round that found nothing reads as nothing found, not as a hit count."""
+    upstream = Upstream(
+        _completion(tool_calls=[_tool_call("c1", "search", {"query": "zzzqqqwww"})]),
+        _completion("Nothing in the corpus covers it."),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        events = _events(_stream_ask(client))
+    assert next(e for e in events if e.get("phase") == "start")["text"] == (
+        "Searching the corpus for “zzzqqqwww”"
+    )
+    assert next(e for e in events if e.get("phase") == "done")["result"] == "nothing matched"
+
+
+def test_a_stream_that_dies_mid_way_ends_in_a_terminal_error_event(
+    tmp_path: Path,
+) -> None:
+    """No partial answer, ever: the page gets the degraded pane, not prose."""
+    upstream = Upstream(
+        _completion(tool_calls=[_tool_call("c1", "search", {"query": "kv cache"})]),
+        httpx.Response(429, json={"error": {"message": "quota for key sk-or-REALKEY"}}),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        response = _stream_ask(client)
+    events = _events(response)
+    assert [e["event"] for e in events] == ["activity", "activity", "error"]
+    terminal = events[-1]
+    assert terminal["status"] == 503
+    # The same body a 503 would have carried, so one renderer serves both.
+    assert terminal["payload"] == {
+        "error": "llm_unavailable",
+        "reason": "upstream_rate_limited",
+        "message": "LLM mode unavailable — use search.",
+        "retry_after_s": 60,
+    }
+    # And a stream leaks no more than a status code does.
+    assert "sk-or" not in response.text and "quota" not in response.text
+
+
+def test_a_stream_that_dies_mid_way_gives_the_day_back(tmp_path: Path) -> None:
+    """The refund cannot key on the status: a stream is a 200 whatever happens.
+
+    This is the launch-day failure again (§4.4). The POST path refunds on a
+    non-200; a stream that got as far as one tool call and then lost the
+    upstream has already sent `200 OK`, so the accounting has to be about the
+    outcome — no answer, no charge.
+    """
+    upstream = Upstream(
+        _completion(tool_calls=[_tool_call("c1", "search", {"query": "kv cache"})]),
+        httpx.Response(503, json={"error": {"message": "upstream is down"}}),
+    )
+    settings = PublicSettings(
+        enabled=True, openrouter_key="sk-or-test", ask_per_min=50, ask_per_day=2
+    )
+    with make_client(tmp_path, settings, upstream) as client:
+        for _ in range(3):
+            assert _events(_stream_ask(client))[-1]["event"] == "error"
+        # Both of the day's asks are still there.
+        upstream.scripted = [_completion("fine.")]
+        assert _events(_stream_ask(client))[-1]["event"] == "answer"
+        assert _events(_stream_ask(client, ip="2.2.2.2"))[-1]["event"] == "answer"
+        spent = _stream_ask(client, ip="3.3.3.3")
+    assert spent.status_code == 429
+    assert spent.json()["bucket"] == "ask_global"
+
+
+def test_a_completed_stream_is_charged_exactly_once(tmp_path: Path) -> None:
+    """The other half: an answer that landed costs the day a token, like a POST."""
+    settings = PublicSettings(
+        enabled=True, openrouter_key="sk-or-test", ask_per_min=50, ask_per_day=1
+    )
+    with make_client(tmp_path, settings, Upstream(_completion("fine."))) as client:
+        assert _events(_stream_ask(client))[-1]["event"] == "answer"
+        spent = _stream_ask(client, ip="2.2.2.2")
+    assert spent.status_code == 429, "a streamed answer spends the budget like any other"
+    assert spent.json()["bucket"] == "ask_global"
+
+
+def test_a_refused_stream_is_a_status_code_not_an_event(tmp_path: Path) -> None:
+    """429 happens in the middleware, before a byte of stream exists.
+
+    Which is what keeps the page's countdown working: `Retry-After` is a header
+    on a refused request, and a refusal that arrived as an event inside a 200
+    would have to reinvent all of it.
+    """
+    settings = PublicSettings(
+        enabled=True, openrouter_key="sk-or-test", ask_per_min=1, ask_per_day=50
+    )
+    with make_client(tmp_path, settings, Upstream(_completion("fine."))) as client:
+        assert _stream_ask(client).status_code == 200
+        refused = _stream_ask(client)
+    assert refused.status_code == 429
+    assert refused.headers["content-type"].startswith("application/json")
+    assert int(refused.headers["retry-after"]) >= 1
+    assert refused.json()["bucket"] == "ask"
+
+
+def test_a_failure_before_the_loop_stays_a_status_code_even_for_a_stream(
+    tmp_path: Path,
+) -> None:
+    """Nothing is committed to a 200 until the model is actually reachable."""
+    keyless = PublicSettings(enabled=True, ask_per_min=50, ask_per_day=50)
+    with make_client(tmp_path / "a", keyless) as client:
+        unconfigured = _stream_ask(client)
+    with make_client(tmp_path / "b", PUBLIC_WITH_KEY, Upstream(_completion("unused"))) as client:
+        empty = client.post("/api/ask", json={}, headers=NDJSON)
+    assert unconfigured.status_code == 503
+    assert unconfigured.headers["content-type"].startswith("application/json")
+    assert unconfigured.json()["reason"] == "not_configured"
+    assert empty.status_code == 400
+    assert empty.json()["error"] == "E_BAD_PARAM"
+
+
+def test_the_stream_survives_a_corpus_string_with_a_newline_in_it(
+    tmp_path: Path,
+) -> None:
+    """A line break in a title must not split one event into two frames."""
+    from vidtheque_mcp.public.ask import _ndjson
+
+    line = _ndjson({"event": "activity", "text": "a title\nwith a break"})
+    assert line.count(b"\n") == 1 and line.endswith(b"\n")
+    assert json.loads(line)["text"] == "a title\nwith a break"
 
 
 def test_the_second_page_can_be_refused_while_the_first_stands(tmp_path: Path) -> None:

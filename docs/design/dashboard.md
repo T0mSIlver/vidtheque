@@ -779,12 +779,10 @@ overview displays: they are read from where they already live.
 
 Real forks. Everything above is a recommendation I will defend.
 
-1. **The auth story (§3).** My pick: token-or-session, `none` mode serves
-   read-only, empty-by-default trusted CIDRs. The alternatives are reverse-proxy
-   only (zero code, footgun), OAuth only (correct, heavy for a LAN), or trusted
-   CIDRs defaulting to RFC1918 (frictionless, and it silently grants indexing to
-   everyone on your network). This is the decision the rest of the write side
-   hangs on.
+1. **Resolved (Tom, 2026-08-09): token-or-session as specified in §3.** The
+   existing owner login sets the existing session cookie; bearer
+   `VIDTHEQUE_TOKEN` for scripts; `none` mode serves read-only only;
+   trusted CIDRs stay empty by default.
 
 2. **Resolved (Tom, 2026-08-09): server-rendered HTML per page, plain ES
    modules for the interactive bits.** The dashboard is mostly documents; real
@@ -797,9 +795,8 @@ Real forks. Everything above is a recommendation I will defend.
    then a real build toolchain — each adopted per-page when a concrete page
    demands it, not by default.
 
-3. **URL structure.** `/dashboard` (my pick), `/admin`, or dashboard at `/` with
-   the welcome page moving to `/demo`. The last one is the most honest about what
-   the product *is* and the most disruptive to every link already shared.
+3. **Resolved (Tom, 2026-08-09): `/dashboard`.** The welcome page stays at `/`
+   and every already-shared link keeps working.
 
 4. **Resolved (Tom, 2026-08-09): the demo keeps the jobs view.** Its stated
    purpose is to show a visitor what indexing a video actually costs in time, so
@@ -808,20 +805,24 @@ Real forks. Everything above is a recommendation I will defend.
    and counts only, §2.4), never the clocks. Submitting to the index stays
    absent from the demo in every form.
 
-5. **`video_stages.worker_version`, and `stage_version`.** Do you want "which
-   build produced this row"? It is one nullable column and one write (§4.1
-   caveat 4). Related: `stage_version` is declared and never incremented — wire
-   it, or drop it from the schema and the panel.
+5. **Half-resolved (Tom, 2026-08-09): add `video_stages.worker_version`** — one
+   nullable column, one write (§4.1 caveat 4). Still open: `stage_version` is
+   declared and never incremented — wire it, or drop it from the schema and the
+   panel.
 
 6. **The four `data_status` vocabularies (§4.5).** A fifth consumer is the moment
    to decide whether one enum was ever wanted. Unifying touches four call sites
    and the tool payloads that models already read; leaving it means the dashboard
    renders four vocabularies verbatim and never gets to colour them consistently.
 
-7. **The ten-URL cap vs a real batch (§5.5).** `index-video` rejects more than
-   ten `urls`, and the overnight handoff's own retry instruction passes sixteen.
-   Does the form split into jobs of ten, or does the cap move? (The cap is there
-   for the model, and a form is not a model.)
+7. **Resolved (Tom, 2026-08-09): the cap stays; batching bypasses the MCP tool
+   — roadmap.** `index-video`'s ten-URL cap protects the model surface and does
+   not move. Real batch indexing (playlist, channel, straggler retries) becomes
+   a dashboard capability that calls the job store through the service layer
+   directly — no MCP tool in the path, so no cap and no payload rendered for a
+   model that isn't there. Until that ships, the index form splits submissions
+   into jobs of ten server-side (the 2026-08-09 straggler run did this split by
+   hand: 64 videos → 7 jobs).
 
 8. **Resolved (Tom, 2026-08-09): the owner bypasses `ask_global`.** The daily
    guard exists to stop anonymous visitors burning the OpenRouter budget; the
@@ -831,7 +832,7 @@ Real forks. Everything above is a recommendation I will defend.
    the owner. The per-IP limiter keeps not applying to authenticated owner
    requests for the same reason.
 
-9. **Does the dashboard replace `scripts/mcp_call.py` as how you actually drive
-   indexing?** If yes, the index form needs to be as good as the CLI for a
-   116-item batch, and phase 3 is more work than it looks. If no, it is a
-   convenience and can stay simple.
+9. **Resolved (Tom, 2026-08-09): yes, eventually — via §10.7's service-layer
+   batching, and not as a phase-1/phase-3 requirement.** The phase-3 index form
+   stays simple (URL/playlist/channel, split into jobs of ten); replacing
+   `scripts/mcp_call.py` for 100+-item batch work is the roadmap item above.
