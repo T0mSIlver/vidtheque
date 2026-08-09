@@ -116,8 +116,13 @@ def add_cue(
 
 
 def add_ocr(
-    conn: sqlite3.Connection, video_id: int, ordinal: int, t_s: float, text: str
+    conn: sqlite3.Connection, video_id: int, ordinal: int, t_s: float, *lines: str
 ) -> int:
+    """One keyframe and its OCR — `*lines` because a slide is several of them.
+
+    Writes `ocr_lines` (the truth) and `ocr_frames` (the FTS content table),
+    exactly as `pipeline/store.py::write_ocr` does.
+    """
     cur = conn.execute(
         "INSERT INTO keyframes (video_id, ord, t_s, shot_id, shot_start_s, shot_end_s, phash, "
         "sharpness, width, height, jpeg_path, jpeg_bytes, ocr_state) "
@@ -125,10 +130,15 @@ def add_ocr(
         (video_id, ordinal, t_s, t_s, t_s + 1, 1000 + ordinal, f"k/{video_id}-{ordinal}.jpg"),
     )
     kf = int(cur.lastrowid or 0)
+    for line_no, line in enumerate(lines):
+        conn.execute(
+            "INSERT INTO ocr_lines (keyframe_id, video_id, t_s, line_no, text, conf, "
+            "x0, y0, x1, y1) VALUES (?, ?, ?, ?, ?, 0.9, 0, 0, 1, 1)",
+            (kf, video_id, t_s, line_no, line),
+        )
     conn.execute(
-        "INSERT INTO ocr_lines (keyframe_id, video_id, t_s, line_no, text, conf, x0, y0, x1, y1) "
-        "VALUES (?, ?, ?, 0, ?, 0.9, 0, 0, 1, 1)",
-        (kf, video_id, t_s, text),
+        "INSERT INTO ocr_frames (keyframe_id, video_id, t_s, text) VALUES (?, ?, ?, ?)",
+        (kf, video_id, t_s, queries.OCR_FRAME_SEPARATOR.join(lines)),
     )
     return kf
 
@@ -385,6 +395,136 @@ async def test_ocr_length_filter_end_to_end(assembled: Assembled) -> None:
     )
     hits = (result.structured_content or {})["results"]
     assert hits == [], hits
+
+
+# ------------------------- #20: OCR search is frame-granular, never line-granular
+
+# The slide the old index could not find. Three lines, and no single one of them
+# holds both `vector` and `retrieval`.
+SLIDE = [
+    "Vector databases",
+    "for retrieval augmented generation",
+    "pgvector · qdrant · faiss",
+]
+
+
+def _line_level_hits(lines: list[str], q: str) -> int:
+    """What a line-granular OCR index answers — the shape #20 replaced.
+
+    Same tokenizer, same query expression the leg binds; one document per line
+    instead of one per frame. It is built here rather than left in the schema
+    because the point of the fix is that there is only one OCR index now.
+    """
+    probe = sqlite3.connect(":memory:")
+    try:
+        probe.execute(
+            "CREATE VIRTUAL TABLE line_fts USING fts5(text, "
+            "tokenize=\"unicode61 remove_diacritics 2 tokenchars '_-./'\", prefix='2 3')"
+        )
+        probe.executemany("INSERT INTO line_fts(text) VALUES (?)", [(line,) for line in lines])
+        expression = queries.expand_prefix_fts(q)
+        return int(
+            probe.execute(
+                "SELECT COUNT(*) FROM line_fts WHERE line_fts MATCH ?", (expression,)
+            ).fetchone()[0]
+        )
+    finally:
+        probe.close()
+
+
+def test_two_terms_on_different_lines_of_one_slide_match(corpus: Corpus) -> None:
+    """The headline case: the legs AND their terms, so a line-granular index
+    answered `vector retrieval` with silence on the slide that says both."""
+
+    def build(conn: sqlite3.Connection) -> None:
+        vid = add_video(conn, "slidevideo0")
+        add_ocr(conn, vid, 0, 30.0, *SLIDE)
+
+    corpus.write(build)
+    conn = corpus.read
+
+    assert _line_level_hits(SLIDE, "vector retrieval") == 0, "the recall hole, reproduced"
+
+    rows = queries.search_ocr(
+        conn, queries.SearchParams(q="vector retrieval", video_ids=pool(conn), limit=10)
+    )
+    assert len(rows) == 1
+    assert str(rows[0]["frame_id"]) == "slidevideo0-00000"
+    assert float(rows[0]["t_s"]) == 30.0
+    matched = str(rows[0]["matched_text"]).lower()
+    assert "vector" in matched and "retrieval" in matched, matched
+
+
+def test_one_term_on_one_line_still_matches_and_still_cites_the_frame(
+    corpus: Corpus,
+) -> None:
+    """The single-line case the line index got right, unchanged — including a
+    `tokenchars` identifier, which is why OCR does not get `porter`."""
+
+    def build(conn: sqlite3.Connection) -> None:
+        vid = add_video(conn, "slidevideo0")
+        add_ocr(conn, vid, 0, 30.0, *SLIDE)
+        add_ocr(conn, vid, 1, 90.0, "$ nvidia-smi", "18304MiB / 24564MiB")
+
+    corpus.write(build)
+    conn = corpus.read
+    ids = pool(conn)
+
+    rows = queries.search_ocr(conn, queries.SearchParams(q="nvidia-smi", video_ids=ids, limit=10))
+    assert [str(r["frame_id"]) for r in rows] == ["slidevideo0-00001"]
+    assert "nvidia-smi" in str(rows[0]["matched_text"])
+
+    rows = queries.search_ocr(conn, queries.SearchParams(q="qdrant", video_ids=ids, limit=10))
+    assert [str(r["frame_id"]) for r in rows] == ["slidevideo0-00000"]
+
+
+def test_a_term_repeated_down_a_slide_is_one_result_not_five(corpus: Corpus) -> None:
+    """A frame is one document, so a word in five bullets is one hit at one
+    timestamp — the line index spent five of `max_per_video` on the same slide."""
+
+    def build(conn: sqlite3.Connection) -> None:
+        vid = add_video(conn, "slidevideo0")
+        add_ocr(conn, vid, 0, 30.0, *[f"bullet {i} about the kv cache" for i in range(5)])
+
+    corpus.write(build)
+    conn = corpus.read
+
+    rows = queries.search_ocr(
+        conn, queries.SearchParams(q="cache", video_ids=pool(conn), limit=10)
+    )
+    assert len(rows) == 1
+    assert float(rows[0]["t_s"]) == 30.0
+
+
+async def test_a_multi_line_slide_answers_a_multi_term_query_end_to_end(
+    assembled: Assembled,
+) -> None:
+    """Through the tool: the hit cites the frame and the timestamped link, and
+    the text it shows carries both terms."""
+    result = await search.run(
+        assembled.deps, q="paged fragmentation", content_type="ocr", limit=5
+    )
+    hits = (result.structured_content or {})["results"]
+    assert len(hits) == 1, hits
+    hit = hits[0]
+    assert hit["source"] == "ocr"
+    assert hit["frame_id"] == "zduSFxRajkE-00000"
+    assert hit["link"].startswith("https://youtu.be/zduSFxRajkE?t=")
+    assert "paged" in hit["text"] and "fragmentation" in hit["text"]
+    # And the whole frame, in reading order, is what `max_text_chars=0` means.
+    assert "block table" in hit["text"]
+
+
+async def test_max_text_chars_zero_still_means_the_whole_frame(
+    assembled: Assembled,
+) -> None:
+    """The documented opt-out is "no truncation, give me everything" — for OCR
+    that is the frame's every line, not the snippet window."""
+    result = await search.run(
+        assembled.deps, q="paged", content_type="ocr", max_text_chars=0, limit=5
+    )
+    hits = (result.structured_content or {})["results"]
+    assert [h["text"] for h in hits] == ["paged kv cache | block table | 4% fragmentation"]
 
 
 # ------------------------------------------------------ F4: the speaker filter

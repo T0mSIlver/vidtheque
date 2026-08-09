@@ -182,8 +182,97 @@ def test_ocr_tokenizer_keeps_identifiers_whole(fresh: sqlite3.Connection) -> Non
         "VALUES (?, ?, 0, 0, 'nvidia-smi torch.compile', 0, 0, 1, 1)",
         (kf, vid),
     )
-    hits = fresh.execute("SELECT COUNT(*) FROM ocr_fts WHERE ocr_fts MATCH '\"nvidia-smi\"'").fetchone()[0]
+    # The OCR index is over `ocr_frames`, one document per keyframe (§2.5).
+    fresh.execute(
+        "INSERT INTO ocr_frames (keyframe_id, video_id, t_s, text) "
+        "VALUES (?, ?, 0, 'nvidia-smi torch.compile')",
+        (kf, vid),
+    )
+    hits = fresh.execute(
+        "SELECT COUNT(*) FROM ocr_frames_fts WHERE ocr_frames_fts MATCH '\"nvidia-smi\"'"
+    ).fetchone()[0]
     assert hits == 1
+
+
+def _migrate_up_to(conn: sqlite3.Connection, version: int, staging: Path) -> None:
+    """Apply the shipped migrations up to `version`, from a staged copy.
+
+    The copies are byte-identical, so the checksums the audit trail records are
+    the shipped ones and the rest of the run applies normally afterwards.
+    """
+    staging.mkdir(exist_ok=True)
+    for migration in migrations.discover():
+        if migration.version <= version:
+            (staging / f"{migration.version:04d}_{migration.name}.sql").write_text(
+                migration.sql, encoding="utf-8"
+            )
+    migrations.migrate(conn, staging)
+
+
+def test_ocr_frame_index_backfills_from_the_lines_already_indexed(
+    fresh: sqlite3.Connection, tmp_path: Path
+) -> None:
+    """0003 upgrades an existing 886 MB index in place: the frame documents are
+    built from `ocr_lines`, so no keyframe is re-read and no worker is called."""
+    _migrate_up_to(fresh, 2, tmp_path / "staged")
+    fresh.execute("INSERT INTO videos (source_id, url, title) VALUES ('v', 'https://v', 'T')")
+    vid = fresh.execute("SELECT id FROM videos").fetchone()[0]
+    fresh.execute(
+        "INSERT INTO keyframes (video_id, ord, t_s, shot_id, shot_start_s, shot_end_s, phash, "
+        "sharpness, width, height, jpeg_path, jpeg_bytes) "
+        "VALUES (?, 0, 30.0, 0, 30.0, 31.0, 1, 1, 1, 1, 'p', 1)",
+        (vid,),
+    )
+    kf = fresh.execute("SELECT id FROM keyframes").fetchone()[0]
+    # Deliberately out of insertion order: `line_no` is reading order, not rowid.
+    for line_no, text in ((1, "for retrieval augmented generation"), (0, "Vector databases")):
+        fresh.execute(
+            "INSERT INTO ocr_lines (keyframe_id, video_id, t_s, line_no, text, x0, y0, x1, y1) "
+            "VALUES (?, ?, 30.0, ?, ?, 0, 0, 1, 1)",
+            (kf, vid, line_no, text),
+        )
+
+    assert migrations.migrate(fresh) == [3]
+
+    row = fresh.execute("SELECT video_id, t_s, text FROM ocr_frames").fetchone()
+    assert (row[0], row[1]) == (vid, 30.0)
+    assert row[2] == "Vector databases | for retrieval augmented generation"
+    # The terms are on different lines; only a frame-granular index matches.
+    matched = fresh.execute(
+        "SELECT COUNT(*) FROM ocr_frames_fts WHERE ocr_frames_fts MATCH 'vector AND retrieval'"
+    ).fetchone()[0]
+    assert matched == 1
+    assert fresh.execute("SELECT COUNT(*) FROM ocr_frames_fts_docsize").fetchone()[0] == 1
+    fresh.execute("INSERT INTO ocr_frames_fts(ocr_frames_fts) VALUES('integrity-check')")
+    # The line index and its triggers are gone — one OCR index, not two.
+    left = fresh.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE name IN ('ocr_fts','ocr_ai','ocr_ad','ocr_au')"
+    ).fetchone()[0]
+    assert left == 0
+
+
+def test_deleting_a_video_clears_the_frame_index_too(fresh: sqlite3.Connection) -> None:
+    """The cascade reaches `ocr_frames` through `keyframes`, and its delete
+    trigger is what keeps the FTS index from keeping postings for dead text."""
+    migrations.migrate(fresh)
+    fresh.execute("INSERT INTO videos (source_id, url, title) VALUES ('v', 'https://v', 'T')")
+    vid = fresh.execute("SELECT id FROM videos").fetchone()[0]
+    fresh.execute(
+        "INSERT INTO keyframes (video_id, ord, t_s, shot_id, shot_start_s, shot_end_s, phash, "
+        "sharpness, width, height, jpeg_path, jpeg_bytes) "
+        "VALUES (?, 0, 1.0, 0, 1.0, 2.0, 1, 1, 1, 1, 'p', 1)",
+        (vid,),
+    )
+    kf = fresh.execute("SELECT id FROM keyframes").fetchone()[0]
+    fresh.execute(
+        "INSERT INTO ocr_frames (keyframe_id, video_id, t_s, text) VALUES (?, ?, 1.0, 'a slide')",
+        (kf, vid),
+    )
+    assert fresh.execute("SELECT COUNT(*) FROM ocr_frames_fts_docsize").fetchone()[0] == 1
+    fresh.execute("DELETE FROM videos WHERE id = ?", (vid,))
+    assert fresh.execute("SELECT COUNT(*) FROM ocr_frames").fetchone()[0] == 0
+    assert fresh.execute("SELECT COUNT(*) FROM ocr_frames_fts_docsize").fetchone()[0] == 0
+    fresh.execute("INSERT INTO ocr_frames_fts(ocr_frames_fts) VALUES('integrity-check')")
 
 
 def test_cascade_delete_clears_fts_and_vectors(fresh: sqlite3.Connection) -> None:

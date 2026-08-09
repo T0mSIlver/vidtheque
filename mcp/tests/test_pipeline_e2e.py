@@ -216,6 +216,70 @@ async def test_the_indexed_content_is_searchable(indexed: Harness) -> None:
     assert "[ocr]" in body(on_screen)
 
 
+async def test_a_slide_the_pipeline_wrote_matches_across_its_own_lines(
+    settings: Settings, clip: Path
+) -> None:
+    """The write path's half of #20: `write_ocr` stores the lines AND the frame
+    document, so a query whose terms sit on different lines of the slide the
+    worker just read comes back — with the frame it is on."""
+    worker = FakeWorker(ocr_text="Vector databases | for retrieval augmented generation")
+    parts = await harness(settings, clip, worker=worker)
+    try:
+        await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+
+        frames = await parts.rows("SELECT keyframe_id, text FROM ocr_frames")
+        assert frames
+        assert all(
+            row["text"] == "Vector databases | for retrieval augmented generation"
+            for row in frames
+        )
+        lines = await parts.rows("SELECT line_no FROM ocr_lines ORDER BY keyframe_id, line_no")
+        assert len(lines) == 2 * len(frames), "two lines per slide, kept as lines"
+
+        result = await search.run(parts.deps, q="vector retrieval", content_type="ocr", limit=5)
+        hits = structured(result)["results"]
+        assert hits, body(result)
+        assert hits[0]["frame_id"].startswith("aB3dEfG7hIj-")
+        assert "retrieval" in hits[0]["text"]
+    finally:
+        await parts.db.close()
+        parts.parts.auth.close()
+
+
+async def test_re_reading_a_frame_leaves_no_postings_for_the_old_text(
+    indexed: Harness,
+) -> None:
+    """`INSERT OR REPLACE` would not fire the delete trigger (recursive_triggers
+    is off), so the frame index would keep postings for text no longer on
+    screen. `write_ocr` deletes explicitly; this is the test that says so."""
+    from vidtheque_mcp.pipeline import store
+    from vidtheque_mcp.pipeline.worker_client import OcrLine
+
+    frame = await indexed.one("SELECT id, video_id, t_s FROM keyframes WHERE ocr_state = 'done'")
+    assert frame is not None
+    await indexed.db.write(
+        lambda c: store.write_ocr(
+            c,
+            int(frame["video_id"]),
+            int(frame["id"]),
+            float(frame["t_s"]),
+            [OcrLine(text="paged attention", confidence=0.9, bbox=(0.0, 0.0, 10.0, 10.0))],
+            100,
+            100,
+        )
+    )
+    rows = await indexed.rows("SELECT text FROM ocr_frames WHERE keyframe_id = ?", (frame["id"],))
+    assert [str(r["text"]) for r in rows] == ["paged attention"]
+    stale = await indexed.rows(
+        "SELECT rowid AS rid FROM ocr_frames_fts WHERE ocr_frames_fts MATCH '\"nvidia-smi\"'"
+    )
+    assert all(int(r["rid"]) != int(frame["id"]) for r in stale)
+    await indexed.db.write(
+        lambda c: c.execute("INSERT INTO ocr_frames_fts(ocr_frames_fts) VALUES('integrity-check')")
+    )
+
+
 async def test_tags_from_the_job_are_applied(indexed: Harness) -> None:
     rows = await indexed.rows("SELECT t.full FROM video_tags vt JOIN tags t ON t.id = vt.tag_id")
     assert [row["full"] for row in rows] == ["topic:attention"]
