@@ -306,7 +306,18 @@ def extract_from_shots(
             # `relative` is what the row stores (relative to $VIDTHEQUE_DATA_DIR);
             # the bytes go under the directory we were handed, by the same name.
             absolute = out_dir / Path(relative).name
-            cv2.imwrite(str(absolute), frame, [int(cv2.IMWRITE_JPEG_QUALITY), int(quality)])
+            written = cv2.imwrite(
+                str(absolute), frame, [int(cv2.IMWRITE_JPEG_QUALITY), int(quality)]
+            )
+            # `imwrite` reports failure by returning False — a full disk, a
+            # read-only mount, an encoder that refused the frame. Unchecked, the
+            # next line raised `FileNotFoundError` from `stat()` two hundred
+            # frames in and the reason was gone.
+            if not written or not absolute.exists() or absolute.stat().st_size == 0:
+                raise RuntimeError(
+                    f"could not write keyframe {ordinal} to {absolute} "
+                    "(cv2.imwrite failed — out of disk?)"
+                )
             height, width = frame.shape[:2]
             stored, bits = _hashes(absolute)
             draft = KeyframeDraft(

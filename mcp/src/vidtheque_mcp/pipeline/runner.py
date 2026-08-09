@@ -37,10 +37,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import random
+import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from secrets import token_hex
 from typing import Any, Sequence
 
 from ..db import Database
@@ -659,6 +662,12 @@ class IndexingPipeline:
         await run.ctx.record("keyframe", 0.0)
         source_id = run.meta.source_id
         out_dir = self.layout.keyframes_dir(source_id)
+        # Whatever a previous run was killed in the middle of. Safe because one
+        # runner drives one item at a time (multi-process fencing is a separate,
+        # deferred, question).
+        for leftover in self.layout.keyframes_leftovers(source_id):
+            await asyncio.to_thread(_rmtree, leftover)
+        staging = self.layout.keyframes_staging_dir(source_id)
         loop = asyncio.get_running_loop()
 
         def report(fraction: float) -> None:
@@ -666,10 +675,12 @@ class IndexingPipeline:
             asyncio.run_coroutine_threadsafe(run.ctx.record("keyframe", fraction * 0.9), loop)
 
         try:
+            # Into staging, never into the served directory: extraction writes
+            # two hundred JPEGs over minutes and can fail at any one of them.
             drafts: list[KeyframeDraft] = await asyncio.to_thread(
                 extract_keyframes,
                 run.media,
-                out_dir,
+                staging,
                 lambda ordinal, t_s: self.layout.keyframe_relpath(source_id, ordinal, t_s),
                 kind=self.settings.detector,
                 max_shot_seconds=self.settings.max_shot_seconds,
@@ -680,17 +691,33 @@ class IndexingPipeline:
                 phash_threshold=self.settings.phash_threshold,
                 progress=report,
             )
-        except Exception as exc:  # decode failures, unreadable container
+        except Exception as exc:  # decode failures, unreadable container, full disk
+            await asyncio.to_thread(_rmtree, staging)
             await self._soft_fail(run, "keyframe", f"frame extraction failed: {exc}")
             return
 
         video_id = run.video_id
-        await self.db.write(lambda c: store.replace_keyframes(c, video_id, drafts))
+        try:
+            # Rows first: if the insert fails, the previous generation is still
+            # whole and the staged bytes are simply thrown away. Then publish,
+            # which is a rename — the old directory is retired, the staged one
+            # takes its place, and anything the new rows do not name is removed.
+            await self.db.write(lambda c: store.replace_keyframes(c, video_id, drafts))
+            orphans = await asyncio.to_thread(
+                _publish_keyframes, staging, out_dir, {Path(d.relpath).name for d in drafts}
+            )
+        except Exception as exc:
+            await asyncio.to_thread(_rmtree, staging)
+            await self._soft_fail(run, "keyframe", f"could not publish the keyframes: {exc}")
+            return
+
         duplicates = sum(1 for d in drafts if d.dup_of is not None)
         await self._stage_done(run, "keyframe", model_key)
         await run.ctx.record("keyframe", 1.0)
         await run.ctx.log(
-            f"{len(drafts)} keyframes ({duplicates} near-duplicates kept as dup_of)",
+            f"{len(drafts)} keyframes ({duplicates} near-duplicates kept as dup_of"
+            + (f", {orphans} orphan file(s) removed" if orphans else "")
+            + ")",
             "info",
             stage="keyframe",
         )
@@ -1015,6 +1042,42 @@ def _note_force_applied(conn: Any, job_id: int, video_id: int) -> None:
     applied.add(int(video_id))
     args["force_applied"] = sorted(applied)
     conn.execute("UPDATE jobs SET args_json = ? WHERE id = ?", (json.dumps(args), job_id))
+
+
+def _publish_keyframes(staging: Path, final: Path, keep: set[str]) -> int:
+    """Swap the staged directory into place, then remove what no row names.
+
+    Two renames on one filesystem. The window between them is the only moment
+    the served directory does not exist, and it is bounded by a `rename(2)`;
+    before this, the run overwrote deterministic filenames in place, so a rerun
+    that produced fewer or shifted frames left permanent orphans, and a crash
+    mid-extraction left the previous generation's rows pointing at bytes the new
+    run had already replaced.
+
+    Returns the number of orphan files removed. The reconciliation is a
+    belt-and-braces pass over the published directory — after the swap it should
+    contain exactly the staged frames — because the rows are the authority on
+    what exists and this is the one place that can prove it.
+    """
+    final.parent.mkdir(parents=True, exist_ok=True)
+    retired = final.with_name(f"{final.name}.retired-{token_hex(4)}")
+    if final.exists():
+        os.replace(final, retired)
+    os.replace(staging, final)
+    _rmtree(retired)
+    removed = 0
+    for path in sorted(final.iterdir()):
+        if path.is_file() and path.name not in keep:
+            _unlink(path)
+            removed += 1
+    return removed
+
+
+def _rmtree(path: Path) -> None:
+    try:
+        shutil.rmtree(path, ignore_errors=True)
+    except OSError as exc:  # pragma: no cover - permissions
+        logger.warning("could not remove %s: %s", path, exc)
 
 
 def _not_yet(exc: NotYetAvailable) -> ItemFailed:

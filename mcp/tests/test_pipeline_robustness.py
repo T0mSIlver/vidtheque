@@ -15,8 +15,11 @@ from pathlib import Path
 import pytest
 
 from vidtheque_mcp.config import Settings
+from vidtheque_mcp.pipeline import keyframes as keyframes_module
+from vidtheque_mcp.pipeline import runner as runner_module
 from vidtheque_mcp.pipeline.runner import LIFECYCLE_RETRY_S
 from vidtheque_mcp.pipeline.settings import PipelineSettings
+from vidtheque_mcp.tools import indexing
 
 from .pipeline_fakes import INFO, VIDEO_URL, FakeWorker, canned_source
 from .test_job_recovery import close
@@ -103,6 +106,102 @@ async def test_keep_source_none_releases_the_audio_once_stt_has_settled(
         assert (await parts.stages())["stt"]["state"] == "done"
         assert audio_files(parts) == []
         assert media_files(parts) == []
+    finally:
+        await close(parts)
+
+
+# ===================================================================== keyframes
+
+
+def staging_dirs(parts: Harness, source_id: str = "aB3dEfG7hIj") -> list[Path]:
+    parent = parts.parts.settings.data_dir / "keyframes"
+    return [p for p in parent.glob(f"{source_id}.*") if p.is_dir()]
+
+
+async def test_a_failure_part_way_through_extraction_publishes_nothing(
+    settings: Settings, clip: Path
+) -> None:
+    """200 JPEGs went straight into the served directory, then the decode failed.
+
+    The rows were never written, so the files belonged to nobody — and on a
+    reindex the same deterministic names had already overwritten the previous
+    generation's bytes underneath rows that still pointed at them.
+    """
+    parts = await harness(settings, clip)
+    pipeline = parts.parts.runner.pipeline
+    real = keyframes_module.extract_keyframes
+    seen: dict[str, Path] = {}
+
+    def fail_after_some(video_path, out_dir, relpath_for, **kwargs):  # type: ignore[no-untyped-def]
+        seen["out_dir"] = out_dir
+        real(video_path, out_dir, relpath_for, **kwargs)
+        raise RuntimeError("the disk filled up on frame 137")
+
+    monkey = pytest.MonkeyPatch()
+    monkey.setattr(runner_module, "extract_keyframes", fail_after_some)
+    try:
+        await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+
+        stages = await parts.stages()
+        assert stages["keyframe"]["state"] == "failed"
+        assert "disk filled up" in str(stages["keyframe"]["error"])
+        # It wrote into staging, and staging was cleaned up.
+        assert ".staging-" in str(seen["out_dir"])
+        assert staging_dirs(parts) == []
+        assert not await parts.rows("SELECT id FROM keyframes")
+    finally:
+        monkey.undo()
+        await close(parts)
+
+
+async def test_a_rerun_leaves_no_orphans_from_the_previous_generation(
+    settings: Settings, clip: Path
+) -> None:
+    """Deterministic names were overwritten in place, so a rerun producing
+    fewer or shifted frames left permanent orphans nothing referenced."""
+    parts = await harness(settings, clip)
+    try:
+        await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+        first = {p.name for p in keyframe_files(parts)}
+        assert first
+
+        # A file from a generation nobody remembers, and one from a run that
+        # died between the extraction and the swap.
+        published = parts.parts.settings.data_dir / "keyframes" / "aB3dEfG7hIj"
+        (published / "99999-999999999.jpg").write_bytes(b"orphan")
+        leftover = parts.parts.settings.data_dir / "keyframes" / "aB3dEfG7hIj.staging-dead"
+        leftover.mkdir()
+        (leftover / "00000-000000000.jpg").write_bytes(b"abandoned")
+
+        await indexing.index_video(parts.deps, url=VIDEO_URL, force_reindex=True)
+        assert await parts.run() is True
+
+        on_disk = {p.name for p in keyframe_files(parts)}
+        rows = {
+            Path(str(r["jpeg_path"])).name
+            for r in await parts.rows("SELECT jpeg_path FROM keyframes")
+        }
+        assert on_disk == rows, "the directory and the rows disagree"
+        assert "99999-999999999.jpg" not in on_disk
+        assert staging_dirs(parts) == [], "scratch directories were left behind"
+    finally:
+        await close(parts)
+
+
+async def test_every_published_frame_exists_and_every_file_has_a_row(
+    settings: Settings, clip: Path
+) -> None:
+    parts = await harness(settings, clip)
+    try:
+        await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+        rows = await parts.rows("SELECT jpeg_path FROM keyframes ORDER BY ord")
+        assert rows
+        for row in rows:
+            assert (parts.parts.settings.data_dir / str(row["jpeg_path"])).exists()
+        assert len(keyframe_files(parts)) == len(rows)
     finally:
         await close(parts)
 

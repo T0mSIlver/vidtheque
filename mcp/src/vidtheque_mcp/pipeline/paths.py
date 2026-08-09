@@ -14,8 +14,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from secrets import token_hex
 
 AUDIO_EXT = {"opus": "opus", "wav": "wav", "flac": "flac"}
+
+# Scratch directories live beside the published one and are never served: a
+# source id is 11 URL-safe characters, so a dot cannot appear in a real one.
+SCRATCH_MARKERS = (".staging-", ".retired-")
+
+
+def _is_scratch(name: str) -> bool:
+    return any(marker in name for marker in SCRATCH_MARKERS)
 
 
 @dataclass(frozen=True)
@@ -33,6 +42,29 @@ class Layout:
     def keyframe_relpath(self, source_id: str, ordinal: int, t_s: float) -> str:
         """The value stored in ``keyframes.jpeg_path`` — relative, always."""
         return f"keyframes/{source_id}/{ordinal:05d}-{int(round(t_s * 1000)):09d}.jpg"
+
+    def keyframes_staging_dir(self, source_id: str) -> Path:
+        """Where a run writes before it has earned the real directory.
+
+        A sibling of the published directory, so publishing is a rename on the
+        same filesystem. Extraction writes 200 JPEGs over minutes and can fail —
+        decode, disk-full, a killed process — at any frame; writing them
+        straight into place left them there with no rows referring to them, and
+        overwrote the previous generation's bytes underneath rows that still
+        pointed at them.
+        """
+        return self.data_dir / "keyframes" / f"{source_id}.staging-{token_hex(4)}"
+
+    def keyframes_leftovers(self, source_id: str) -> list[Path]:
+        """Staging and retired directories a previous run did not get to clean."""
+        parent = self.data_dir / "keyframes"
+        if not parent.exists():
+            return []
+        return sorted(
+            path
+            for path in parent.glob(f"{source_id}.*")
+            if path.is_dir() and _is_scratch(path.name)
+        )
 
     # -------------------------------------------------------------------- media
 
