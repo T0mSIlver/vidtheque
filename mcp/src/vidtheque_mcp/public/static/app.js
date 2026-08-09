@@ -860,18 +860,59 @@ const renderDegraded = (message, retryAfter) => {
   pane.hidden = false;
 };
 
-// The stream is NDJSON — one JSON object per line — over the same POST. A
-// browser without `ReadableStream` never asks for it and gets the plain JSON
-// body instead, which is the same answer arriving in one piece (§3.5).
+// The stream comes over the same POST in one of two framings (§3.5). SSE is
+// asked for first and is what the deployment actually uses: Cloudflare buffers
+// every proxied response *except* `text/event-stream`, so through the tunnel
+// the NDJSON variant arrived as ninety seconds of silence and then a burst —
+// which is the exact failure the stream exists to remove. NDJSON stays as the
+// second preference for anything in front of a proxy that does not care.
+//
+// Either way this is `fetch` plus a reader, not `EventSource`: the ask is a
+// POST with a body, and `EventSource` is GET-only. SSE here is a wire format.
+const SSE = "text/event-stream";
 const NDJSON = "application/x-ndjson";
 const CAN_STREAM =
   typeof ReadableStream === "function" && typeof TextDecoder === "function";
 
-// Read the body line by line, handing each complete line to `onEvent`. A chunk
-// boundary can land mid-line and mid-character, which is what the buffer and
+// One JSON object per event in both framings, so the difference is only where
+// it sits on the wire: a bare line in NDJSON, the `data:` field of a
+// blank-line-terminated block in SSE. `json.dumps` escapes newlines server-side,
+// so an event is always exactly one line of JSON — which is what lets one
+// reader handle both by looking for the payload rather than counting frames.
+const parseFrame = (chunk) => {
+  for (const raw of chunk.split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    // SSE's own lines: `event:` is redundant (the payload names itself) and a
+    // `:` comment is the server keeping the connection flowing. Both skipped.
+    if (line.startsWith(":") || line.startsWith("event:") || line.startsWith("id:")) continue;
+    // `data: {…}` — the single space after the colon is optional and stripped
+    // by the spec, which `trim()` already does. NDJSON has no prefix at all.
+    const payload = line.startsWith("data:") ? line.slice(5).trim() : line;
+    if (!payload) continue;
+    // A payload that does not parse is a truncated stream, not an event. It is
+    // skipped; with no terminal event the caller falls through to the degraded
+    // pane, which is the honest end for a stream that stopped.
+    try {
+      return JSON.parse(payload);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+};
+
+// Read the body frame by frame, handing each complete one to `onEvent`. A chunk
+// boundary can land mid-frame and mid-character, which is what the buffer and
 // `{stream: true}` are for. `stale()` is checked per event, not only per fetch:
 // a mode switch aborts the request, and nothing it sends afterwards may draw.
+//
+// The separator is the framing's: a newline for NDJSON, a blank line for SSE.
+// Both are found by the same scan, because a single "\n" never terminates an
+// SSE block and "\n\n" never appears inside an NDJSON line.
 const readEvents = async (response, stale, onEvent) => {
+  const sse = (response.headers.get("content-type") || "").includes(SSE);
+  const separator = sse ? "\n\n" : "\n";
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -879,24 +920,16 @@ const readEvents = async (response, stale, onEvent) => {
   for (;;) {
     const { value, done } = await reader.read();
     buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
-    while ((cut = buffer.indexOf("\n")) !== -1) {
-      const line = buffer.slice(0, cut).trim();
-      buffer = buffer.slice(cut + 1);
-      if (!line) continue;
+    while ((cut = buffer.indexOf(separator)) !== -1) {
+      const chunk = buffer.slice(0, cut);
+      buffer = buffer.slice(cut + separator.length);
+      if (!chunk.trim()) continue;
       if (stale()) {
         await reader.cancel();
         return;
       }
-      // A line that does not parse is a truncated stream, not an event. It is
-      // skipped; with no terminal event the caller falls through to the
-      // degraded pane, which is the honest end for a stream that stopped.
-      let event;
-      try {
-        event = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      onEvent(event);
+      const event = parseFrame(chunk);
+      if (event) onEvent(event);
     }
     if (done) return;
   }
@@ -929,7 +962,9 @@ async function runAsk() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Accept: CAN_STREAM ? `${NDJSON}, application/json;q=0.9` : "application/json",
+        Accept: CAN_STREAM
+          ? `${SSE}, ${NDJSON};q=0.9, application/json;q=0.8`
+          : "application/json",
       },
       body: JSON.stringify({ q }),
       signal,
@@ -957,7 +992,10 @@ async function runAsk() {
       return;
     }
 
-    const streamed = (response.headers.get("content-type") || "").includes(NDJSON);
+    // Whichever framing the server picked — or neither, if it answered the
+    // plain JSON body to a client that asked for a stream it does not serve.
+    const type = response.headers.get("content-type") || "";
+    const streamed = type.includes(SSE) || type.includes(NDJSON);
     if (!streamed || !response.body) {
       const payload = await response.json().catch(() => ({}));
       if (stale()) return;

@@ -1449,7 +1449,186 @@ def test_the_second_page_can_be_refused_while_the_first_stands(tmp_path: Path) -
     assert int(second.headers["retry-after"]) >= 1
 
 
-# ---------------------------- 9. the daily budget survives a restart (§4.2)
+# ------------------------------------ 9. SSE framing (§3.5), the same events
+
+
+SSE = {"Accept": "text/event-stream"}
+
+
+def _sse_events(response: Any) -> list[dict[str, Any]]:
+    """The SSE stream, parsed — and the framing asserted while parsing it.
+
+    The framing is the entire point of this variant: a CDN keys on the media
+    type, and a block that is not `event:` / `data:` / blank line is not SSE
+    however valid its JSON is.
+    """
+    assert response.headers["content-type"].startswith("text/event-stream")
+    events: list[dict[str, Any]] = []
+    for block in response.text.split("\n\n"):
+        if not block.strip():
+            continue
+        lines = block.split("\n")
+        if lines[0].startswith(":"):  # the opening flush comment
+            continue
+        assert lines[0].startswith("event: "), block
+        assert len(lines) == 2, "a payload must never span two data lines"
+        assert lines[1].startswith("data: "), block
+        event = json.loads(lines[1][len("data: ") :])
+        assert event["event"] == lines[0][len("event: ") :], "the name names the payload"
+        events.append(event)
+    return events
+
+
+def _sse_ask(client: TestClient, q: str = "what?", ip: str = "1.1.1.1") -> Any:
+    return client.post("/api/ask", json={"q": q}, headers={**SSE, "CF-Connecting-IP": ip})
+
+
+def test_sse_carries_the_same_events_as_the_ndjson_stream(tmp_path: Path) -> None:
+    """One vocabulary, two framings. A second event language would be a second
+    contract to keep in step with §3.5, and it would drift."""
+    with make_client(tmp_path / "a", PUBLIC_WITH_KEY, _two_tool_script()) as client:
+        framed = _sse_events(_sse_ask(client))
+    with make_client(tmp_path / "b", PUBLIC_WITH_KEY, _two_tool_script()) as client:
+        lines = _events(_stream_ask(client))
+    assert framed == lines
+
+
+def test_the_sse_stream_opens_with_something_to_forward(tmp_path: Path) -> None:
+    """A comment line before the first completion, so a proxy deciding whether
+    to buffer has bytes in hand rather than an idle socket."""
+    with make_client(tmp_path, PUBLIC_WITH_KEY, _two_tool_script()) as client:
+        body = _sse_ask(client).text
+    assert body.startswith(": ok\n\n")
+
+
+@pytest.mark.parametrize(
+    "accept, expected",
+    [
+        ("text/event-stream", "text/event-stream"),
+        ("application/x-ndjson", "application/x-ndjson"),
+        # Both offered: SSE wins, because it is the one that survives a CDN.
+        ("text/event-stream, application/x-ndjson;q=0.9", "text/event-stream"),
+        ("application/x-ndjson, text/event-stream;q=0.9", "text/event-stream"),
+        # The page's real header, and the two shapes that must stay untouched.
+        (
+            "text/event-stream, application/x-ndjson;q=0.9, application/json;q=0.8",
+            "text/event-stream",
+        ),
+        ("application/json", "application/json"),
+        ("*/*", "application/json"),
+    ],
+)
+def test_the_accept_header_picks_the_framing(
+    tmp_path: Path, accept: str, expected: str
+) -> None:
+    """`/api/ask` stays one route with one contract: `Accept` is the whole
+    difference, and a client that asks for neither stream is byte for byte
+    where it was before either existed."""
+    with make_client(tmp_path, PUBLIC_WITH_KEY, _two_tool_script()) as client:
+        response = client.post("/api/ask", json={"q": "what?"}, headers={"Accept": accept})
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(expected)
+
+
+def test_an_sse_answer_is_the_same_payload_as_the_json_one(tmp_path: Path) -> None:
+    """The page must not get a second-class answer for choosing a framing."""
+    with make_client(tmp_path / "a", PUBLIC_WITH_KEY, _two_tool_script()) as client:
+        framed = _sse_events(_sse_ask(client))[-1]["payload"]
+    with make_client(tmp_path / "b", PUBLIC_WITH_KEY, _two_tool_script()) as client:
+        plain = client.post("/api/ask", json={"q": "what?"}).json()
+    assert framed == plain
+
+
+def test_an_sse_stream_that_dies_mid_way_ends_in_a_terminal_error_event(
+    tmp_path: Path,
+) -> None:
+    """No partial answer in this framing either, and no leak in the frames."""
+    upstream = Upstream(
+        _completion(tool_calls=[_tool_call("c1", "search", {"query": "kv cache"})]),
+        httpx.Response(429, json={"error": {"message": "quota for key sk-or-REALKEY"}}),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        response = _sse_ask(client)
+    events = _sse_events(response)
+    assert [e["event"] for e in events] == ["activity", "activity", "error"]
+    assert events[-1]["payload"]["reason"] == "upstream_rate_limited"
+    assert "sk-or" not in response.text and "quota" not in response.text
+
+
+def test_an_sse_stream_that_dies_mid_way_gives_the_day_back(tmp_path: Path) -> None:
+    """§4.4's rule is about the outcome, not the framing: no answer, no charge.
+
+    The NDJSON mirror is `test_a_stream_that_dies_mid_way_gives_the_day_back`.
+    Both exist because the refund lives in a `finally` inside the generator, and
+    a framing that grew its own copy of that generator would grow its own copy
+    of the bug — so the framing is a parameter and this proves it stayed one.
+    """
+    upstream = Upstream(
+        _completion(tool_calls=[_tool_call("c1", "search", {"query": "kv cache"})]),
+        httpx.Response(503, json={"error": {"message": "upstream is down"}}),
+    )
+    settings = PublicSettings(
+        enabled=True, openrouter_key="sk-or-test", ask_per_min=50, ask_per_day=2
+    )
+    with make_client(tmp_path, settings, upstream) as client:
+        for _ in range(3):
+            assert _sse_events(_sse_ask(client))[-1]["event"] == "error"
+        # Both of the day's asks are still there.
+        upstream.scripted = [_completion("fine.")]
+        assert _sse_events(_sse_ask(client))[-1]["event"] == "answer"
+        assert _sse_events(_sse_ask(client, ip="2.2.2.2"))[-1]["event"] == "answer"
+        spent = _sse_ask(client, ip="3.3.3.3")
+    assert spent.status_code == 429
+    assert spent.json()["bucket"] == "ask_global"
+
+
+def test_a_completed_sse_stream_is_charged_exactly_once(tmp_path: Path) -> None:
+    settings = PublicSettings(
+        enabled=True, openrouter_key="sk-or-test", ask_per_min=50, ask_per_day=1
+    )
+    with make_client(tmp_path, settings, Upstream(_completion("fine."))) as client:
+        assert _sse_events(_sse_ask(client))[-1]["event"] == "answer"
+        spent = _sse_ask(client, ip="2.2.2.2")
+    assert spent.status_code == 429, "a framing is not a way to get a free ask"
+
+
+def test_a_refused_sse_request_is_a_status_code_not_an_event(tmp_path: Path) -> None:
+    """A 429 is a header and a JSON body in every framing: it happens in the
+    middleware, before a byte of stream exists."""
+    settings = PublicSettings(
+        enabled=True, openrouter_key="sk-or-test", ask_per_min=1, ask_per_day=50
+    )
+    with make_client(tmp_path, settings, Upstream(_completion("fine."))) as client:
+        assert _sse_ask(client).status_code == 200
+        refused = _sse_ask(client)
+    assert refused.status_code == 429
+    assert refused.headers["content-type"].startswith("application/json")
+    assert int(refused.headers["retry-after"]) >= 1
+
+
+def test_an_sse_frame_cannot_be_split_by_a_newline_in_the_corpus() -> None:
+    """SSE reads a bare newline as the end of a field: a corpus title with a
+    line break in it would arrive as two `data:` lines and one broken frame."""
+    from vidtheque_mcp.public.ask import _sse
+
+    frame = _sse({"event": "activity", "text": "a title\nwith a break"})
+    assert frame.endswith(b"\n\n")
+    head, data, blank, tail = frame.decode().split("\n")
+    assert (head, blank, tail) == ("event: activity", "", "")
+    assert json.loads(data[len("data: ") :])["text"] == "a title\nwith a break"
+
+
+def test_an_sse_event_name_can_never_frame_itself() -> None:
+    """Defence in depth: the vocabulary is three literals in `ask.py`, and a
+    name carrying a newline would still be header injection in miniature."""
+    from vidtheque_mcp.public.ask import _sse
+
+    frame = _sse({"event": "activity\ndata: {}", "x": 1}).decode()
+    assert frame.startswith("event: activitydata: {}\n")
+    assert len(frame.rstrip("\n").split("\n")) == 2, "still exactly two lines"
+
+
+# --------------------------- 10. the daily budget survives a restart (§4.2)
 
 
 def _budget_rows(tmp_path: Path) -> dict[tuple[str, str, str], int]:
@@ -1516,22 +1695,28 @@ def test_a_refund_decrements_the_persisted_count_too(tmp_path: Path) -> None:
         assert _ask(client, "4.4.4.4").status_code == 429, "still enforced, still 2/day"
 
 
-def test_the_mid_stream_refund_reaches_the_row(tmp_path: Path) -> None:
+@pytest.mark.parametrize("headers", [NDJSON, SSE], ids=["ndjson", "sse"])
+def test_the_mid_stream_refund_reaches_the_row_in_both_framings(
+    tmp_path: Path, headers: dict[str, str]
+) -> None:
     """The refund that cannot key on a status code (§3.5) is also the one that
     has to survive a restart, and it fires from a `finally` inside a generator —
-    so it is synchronous all the way down to the row's delta."""
+    so it is synchronous all the way down to the row's delta, in both framings.
+    """
     upstream = Upstream(
         _completion(tool_calls=[_tool_call("c1", "search", {"query": "kv cache"})]),
         httpx.Response(503, json={"error": {"message": "upstream is down"}}),
     )
     with make_client(tmp_path, PAID, upstream) as client:
         for _ in range(3):
-            assert _events(_stream_ask(client))[-1]["event"] == "error"
+            response = client.post("/api/ask", json={"q": "what?"}, headers=headers)
+            assert response.status_code == 200
+            assert response.text.rstrip().endswith("}"), "a terminal event, not an answer"
     assert _budget_rows(tmp_path) == {("ask_global", "@global", _today()): 0}
 
     with make_client(tmp_path, PAID, upstream, fresh=False) as client:
         upstream.scripted = [_completion("fine.")]
-        assert _events(_stream_ask(client))[-1]["event"] == "answer"
+        assert client.post("/api/ask", json={"q": "?"}, headers=headers).status_code == 200
     assert _budget_rows(tmp_path) == {("ask_global", "@global", _today()): 1}
 
 

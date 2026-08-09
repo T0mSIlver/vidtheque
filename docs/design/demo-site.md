@@ -282,9 +282,9 @@ It exists to show the thing the corpus is actually for — an agent that answers
 from timestamped evidence — to a visitor who has not wired up an MCP client.
 
 The same POST also speaks a stream, to a client that sends
-`Accept: application/x-ndjson` (§3.5), narrating the loop's tool calls while it
-runs. The body below is what a plain POST returns and what the stream's final
-event carries — one loop, one payload.
+`Accept: text/event-stream` or `Accept: application/x-ndjson` (§3.5), narrating
+the loop's tool calls while it runs. The body below is what a plain POST returns
+and what either stream's final event carries — one loop, one payload.
 
 ```json
 {
@@ -461,20 +461,66 @@ exists. The answer arrives whole, as the last event, exactly the payload §3
 already specifies. What streams is the *work*, which is the part that is
 otherwise invisible.
 
-**Transport: NDJSON over the same POST.** One JSON object per line,
-`Content-Type: application/x-ndjson`. Not SSE: `EventSource` is GET-only and the
-ask is a POST with a body, so the browser side is `fetch` + a reader either way
-— and on top of `fetch`, SSE's `event:`/`data:` framing is a parser to write
-where NDJSON is `JSON.parse` per line. `json.dumps` escapes every newline in a
-payload, so a corpus title with a line break in it cannot split a frame.
+**Transport: two framings over the same POST, one event vocabulary.** NDJSON —
+one JSON object per line, `Content-Type: application/x-ndjson` — came first and
+is the better parse. `json.dumps` escapes every newline in a payload, so a
+corpus title with a line break in it cannot split a frame.
 
-**Negotiation, not a second endpoint.** A request that sends
-`Accept: application/x-ndjson` gets the stream; anything else gets the JSON body
-byte for byte as before. `/api/ask` stays one route with one contract, curl and
-any script written against it keep working, and the MCP surface is untouched.
-The page asks for the stream only when the browser has `ReadableStream` and
-`TextDecoder` — the fallback is not a worse answer, it is the same answer with
-nothing to watch on the way.
+**Amended 2026-08-09: SSE is the second framing, and the page's default.** The
+original reasoning against SSE was about the *client* — `EventSource` is GET-only
+and the ask is a POST with a body, so the browser side is `fetch` + a reader
+either way, and on top of `fetch` SSE's framing is a parser to write where
+NDJSON is `JSON.parse` per line. All of that is still true and none of it was
+the deciding factor, because the deciding factor turned out to be a middlebox:
+**Cloudflare buffers every proxied response except `text/event-stream`.**
+Through the tunnel, the NDJSON stream arrived as ninety seconds of silence and
+then a burst — precisely the failure this whole section exists to remove, and
+invisible in local testing because there is no CDN in front of `localhost`.
+
+So the media type is load-bearing infrastructure, not a taste question, and the
+page asks for the one that survives the deployment. SSE here is a *wire format*,
+not `EventSource`: the same `fetch` reader parses both, splitting on a blank
+line instead of a newline and taking the payload off the `data:` field.
+
+```
+event: activity
+data: {"event":"activity","id":1,"phase":"start","text":"Searching the corpus for “kv cache”"}
+
+```
+
+The `data:` payload is the whole event object, byte for byte the NDJSON line, so
+the vocabulary below is stated once and no framing can drift from another. The
+`event:` name is redundant to a reader that looks at `data.event` — it is there
+because it is what makes this SSE, and it is stripped of CR/LF before it is
+written, because a name that could frame itself is header injection in
+miniature. The stream opens with a `: ok` comment: legal SSE, ignored by every
+parser, and bytes in hand for a proxy that is deciding whether to buffer.
+
+No keep-alive heartbeat, deliberately: the loop's own wall-clock budget
+(`VIDTHEQUE_ASK_TIMEOUT_S`, 90 s) is inside Cloudflare's idle timeout, so a
+stream that emits nothing at all still ends before anything upstream gives up on
+it. Raise the timeout past ~100 s and that stops being true.
+
+**Negotiation, not a second endpoint.** One route, one contract; `Accept` is the
+whole difference:
+
+| `Accept` contains | response |
+|---|---|
+| `text/event-stream` | SSE frames, `Content-Type: text/event-stream` |
+| `application/x-ndjson` | NDJSON lines, `Content-Type: application/x-ndjson` |
+| both | **SSE** — it is checked first, because it is the one that survives a CDN |
+| neither (`application/json`, `*/*`, absent) | the §3 JSON body, byte for byte as before |
+
+curl and any script written against the JSON body keep working, and the MCP
+surface is untouched. The page asks for the stream only when the browser has
+`ReadableStream` and `TextDecoder`, and sends
+`text/event-stream, application/x-ndjson;q=0.9, application/json;q=0.8` — the
+fallback is not a worse answer, it is the same answer with nothing to watch on
+the way.
+
+**Do not test this through `trycloudflare.com`.** The quick-tunnel hostnames do
+not support SSE; a stream that works through a named tunnel will look broken
+there, and the conclusion "SSE does not help" is the wrong one to draw twice.
 
 The vocabulary is three events, and every one of them is built from data the
 server already had:
@@ -531,9 +577,18 @@ countdown working: a refusal delivered as an event inside a 200 would have to
 reinvent the header. Only a request that reached the loop streams, and once it
 streams it is committed to 200 with a terminal event.
 
-`Cache-Control: no-store` and `X-Accel-Buffering: no` ride along: nginx buffers a
-proxied response by default, which would hold every activity line until the
-answer landed — that is, exactly the ninety seconds of silence this removes.
+`Cache-Control: no-store` and `X-Accel-Buffering: no` ride along on both
+framings: nginx buffers a proxied response by default, which would hold every
+activity line until the answer landed — that is, exactly the ninety seconds of
+silence this removes.
+
+**`X-Accel-Buffering` is an nginx header and nothing else reads it.** It is kept
+because nginx is a plausible thing to put in front of this, not because it does
+anything for the deployment that actually exists. Cloudflare decides on the
+content type, which is why the fix for the tunnel was a second *framing* and not
+a third header. Adding more buffering-hint headers in the hope that one of them
+lands is how this file grows folklore; if a proxy buffers, find out what that
+proxy keys on.
 
 ---
 
@@ -704,9 +759,10 @@ Two properties make that exact rather than approximate:
   visitor closes the tab — a budget that needed to `await` to be given back is a
   budget that leaks on exactly the disconnect it was written for.
 
-The rule is identical across both transports, because they share one generator
-and one accounting block: the JSON POST refunds on a non-200 and the stream
-refunds on "no answer emitted", and exactly one of the two runs per request.
+The rule is identical across all three transports: the JSON POST, the NDJSON
+stream and the SSE stream share one generator and one accounting block, and the
+tests for the mid-stream refund are mirrored across both framings for that
+reason.
 
 ---
 

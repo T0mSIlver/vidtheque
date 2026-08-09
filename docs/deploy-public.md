@@ -810,44 +810,55 @@ and confirm `tools/list` shows the **seven** read tools with `index-video` and
 Cloudflare Tunnel passes through unbuffered — this is the one streaming path
 that is fine by construction.
 
-### 7.3 The ask stream — expect it to be broken, and decide
+### 7.3 The ask stream — fixed 2026-08-09, verify it stayed fixed
 
-**Known gap, found while writing this runbook.** Cloudflare Tunnel buffers a
-proxied response **unless the origin sends `Content-Type: text/event-stream`**
+**The gap this section was written for.** Cloudflare Tunnel buffers a proxied
+response **unless the origin sends `Content-Type: text/event-stream`**
 (<https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/troubleshoot-tunnels/common-errors/>).
-The ask activity stream sends `application/x-ndjson` (`public/ask.py:823-832`,
-`NDJSON_MEDIA_TYPE` at `:53`), deliberately: `demo-site.md` §3.5 chose NDJSON
-over SSE because `EventSource` is GET-only and ask is a POST. The response also
-sets `X-Accel-Buffering: no`, which is an **nginx** directive — cloudflared does
-not honour it, and no `originRequest` option controls buffering either.
+The ask activity stream sent `application/x-ndjson`, deliberately — `demo-site.md`
+§3.5 chose NDJSON over SSE because `EventSource` is GET-only and ask is a POST —
+so through the tunnel the visitor saw nothing for up to
+`VIDTHEQUE_ASK_TIMEOUT_S` (90s) and then the whole log and the answer at once.
+Not a hang (Cloudflare's Proxy Read Timeout is 125s, so a 90s budget stays
+inside), but "ninety seconds of work made visible" is exactly the thing that
+stopped working.
 
-So the expected behaviour through the tunnel is: the visitor sees nothing for up
-to `VIDTHEQUE_ASK_TIMEOUT_S` (90s), then the whole activity log and the answer
-land at once. Not a hang — Cloudflare's Proxy Read Timeout is **125s** and a
-524 only fires past it, so a 90s budget stays inside — but "ninety seconds of
-work made visible" is exactly the thing that stops working, which is what §3.5
-exists to provide.
+`X-Accel-Buffering: no` does not help and never did: it is an **nginx**
+directive, cloudflared does not honour it, and no `originRequest` option
+controls buffering. It is still sent, for the nginx that might one day be in
+front of this, and it is not a lever to pull here.
 
-Test it and record the result:
+**The fix that shipped (Tom's call, 2026-08-09 evening):** `/api/ask` now serves
+the *same* event stream in a second framing, negotiated by `Accept` —
+`text/event-stream` gets SSE frames, `application/x-ndjson` gets the NDJSON
+lines unchanged, anything else gets the plain JSON body. The page asks for SSE
+first. `demo-site.md` §3.5 carries the negotiation matrix; the events, the
+payloads and the budget accounting are identical across framings by
+construction, because there is one generator and the framing is a parameter.
+
+Verify through the tunnel — the timestamps are the assertion:
 
 ```bash
 curl -N -sS -X POST https://vidtheque.example.com/api/ask \
-  -H 'Accept: application/x-ndjson' -H 'Content-Type: application/json' \
+  -H 'Accept: text/event-stream' -H 'Content-Type: application/json' \
   -d '{"q":"what did people say about evals?"}' \
   | while IFS= read -r line; do printf '%s  %s\n' "$(date +%T)" "${line:0:80}"; done
 ```
 
-If the timestamps are spread across the run, the tunnel is streaming and this
-gap is theoretical. If they all share one timestamp at the end, it is real.
-**Where a fix would go, for whoever picks it up:** `public/ask.py:823`, changing
-`media_type` to `text/event-stream` and reframing the body as SSE events — which
-is legal on a POST response (the client reads the body itself rather than using
-`EventSource`) but is a change to the `demo-site.md` §3.5 contract and to
-`app.js`'s reader, so it is a design decision, not a one-liner. Do not implement
-it during the go-live session. The cheap alternative, if the stream is buffered
-and ask ships anyway, is the honest one: the page already has a non-streaming
-path, and a visitor who waits 90s with a spinner is a worse demo than a visitor
-who was never offered ask mode at all (§1.1's option (c)).
+Spread across the run: the tunnel is streaming, as intended. All sharing one
+timestamp at the end: something in front of the origin is still buffering, and
+the next thing to check is what *that* keys on — not another buffering-hint
+header. Confirm the content type came back as `text/event-stream` before
+concluding anything (`curl -sSD- -o/dev/null` on the same request).
+
+**Do not run this against a quick tunnel** — §6.5: `trycloudflare.com` buffers
+`text/event-stream` itself, so it will report the fix as broken. A named tunnel
+or nothing.
+
+If the stream is somehow still buffered and ask ships anyway, the fallback is
+unchanged and honest: the page already has a non-streaming path, and a visitor
+who waits 90s with a spinner is a worse demo than a visitor who was never
+offered ask mode at all (§1.1's option (c)).
 
 ### 7.4 The rest
 

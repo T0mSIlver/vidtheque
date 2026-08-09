@@ -93,8 +93,11 @@ originRequest:
   # There is NO originRequest key that controls response buffering. Cloudflare
   # Tunnel buffers a proxied response unless the origin sends
   # `Content-Type: text/event-stream`. That is why `/mcp` streams fine (the MCP
-  # SDK sends exactly that) and why the ask activity stream does not (it sends
-  # `application/x-ndjson`) — runbook, "what breaks behind a proxy".
+  # SDK sends exactly that), and it is why the ask activity stream grew an SSE
+  # framing on 2026-08-09: it sent `application/x-ndjson` and arrived as 90s of
+  # silence and then a burst. The page now asks for `text/event-stream` and the
+  # NDJSON variant is still there for whatever wants it (demo-site.md §3.5,
+  # runbook §7.3). Nothing to configure here — the fix was the media type.
 
 # --------------------------------------------------------------------------
 # The rest of these are documented as CLI flags. The flag->key mapping holds

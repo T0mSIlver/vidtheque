@@ -18,7 +18,9 @@ Three properties are load-bearing and tested:
   (§3.5): every tool call it makes becomes one human-readable line, emitted
   before the tool runs and completed with what the tool actually returned. The
   answer is not streamed — it arrives whole, as the last event. The
-  non-streaming POST is the same generator, drained.
+  non-streaming POST is the same generator, drained, and the two streaming
+  framings (NDJSON and SSE) are the same generator, framed — so no transport
+  can answer differently or bill differently from another.
 """
 
 from __future__ import annotations
@@ -31,7 +33,7 @@ import time
 from collections.abc import AsyncIterator
 from contextlib import aclosing
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 import httpx2 as httpx
 from starlette.requests import Request
@@ -47,10 +49,20 @@ from .settings import PublicSettings
 
 logger = logging.getLogger(__name__)
 
-# One JSON object per line. Not SSE: the request is a POST with a JSON body, so
-# `EventSource` was never on the table, and framing the payload by hand on top of
-# `fetch` buys nothing over `JSON.parse` on each line (§3.5).
+# Two framings, one event vocabulary (§3.5).
+#
+# NDJSON came first and is the better parse: one JSON object per line, and
+# `EventSource` was never on the table because the ask is a POST with a body.
+# What it is not is *recognisable*. Cloudflare buffers a proxied response unless
+# its content type is `text/event-stream`, so through the tunnel the whole point
+# of the stream — ninety seconds of visible work — arrived as ninety seconds of
+# silence and then a burst. Measured on Tom's deployment, 2026-08-09.
+#
+# So SSE is the second framing and the page's default: same events, same JSON,
+# `event:`/`data:` around it, negotiated by `Accept`. Both are read by the same
+# `fetch` reader on the page — SSE here is a wire format, not `EventSource`.
 NDJSON_MEDIA_TYPE = "application/x-ndjson"
+SSE_MEDIA_TYPE = "text/event-stream"
 
 MAX_QUESTION_CHARS = 400
 MAX_TOOL_CALLS_PER_ROUND = 6
@@ -741,22 +753,80 @@ async def ask_endpoint(request: Request) -> Response:
     return response
 
 
-def _wants_stream(request: Request) -> bool:
-    """Content negotiation, so the JSON contract survives untouched (§3.5).
+@dataclass(frozen=True)
+class Framing:
+    """How one event becomes bytes, and what the transport needs before the first.
 
-    A client that does not ask for the stream — curl, a script, a browser with
-    no `ReadableStream` — gets exactly the body it got before. The page asks,
-    because the page is the one consumer that has ninety seconds to fill.
+    The loop, the events and the budget accounting are shared; a framing is the
+    only thing that differs between the two streaming variants, which is what
+    makes it impossible for them to answer differently or to bill differently.
     """
-    return NDJSON_MEDIA_TYPE in request.headers.get("accept", "")
+
+    media_type: str
+    frame: Callable[[dict[str, Any]], bytes]
+    preamble: bytes = b""
+
+
+def _ndjson(event: dict[str, Any]) -> bytes:
+    """One event, one line. `json.dumps` escapes every newline in the payload,
+    so a corpus title with a line break in it can never split a frame."""
+    return (json.dumps(event, ensure_ascii=False) + "\n").encode("utf-8")
+
+
+def _sse(event: dict[str, Any]) -> bytes:
+    """The same event, SSE-framed: a named event and one `data:` line.
+
+    `data` carries the *whole* object, identical to the NDJSON line, so the page
+    parses one shape either way and the vocabulary in §3.5 stays stated once.
+    The `event:` line is redundant to a reader that looks at `data.event` — it
+    is there because it is what makes this SSE, for `EventSource`, for a proxy,
+    and for anyone reading the wire with curl.
+
+    SSE's newline rule is what has to be respected here: a payload containing a
+    newline would be read as two `data:` lines and one broken frame. It cannot
+    contain one — `json.dumps` escapes every newline, the same property NDJSON
+    relies on — and the event name is stripped of CR/LF regardless, because a
+    name that could frame itself is header injection in miniature.
+    """
+    name = str(event.get("event") or "message").replace("\r", "").replace("\n", "")
+    return f"event: {name}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n".encode("utf-8")
+
+
+# A comment line: legal SSE, ignored by every parser, and the first bytes of the
+# body. It exists so the response is *flowing* before the first completion comes
+# back — a proxy deciding whether to buffer has something to forward at once.
+NDJSON_STREAM = Framing(NDJSON_MEDIA_TYPE, _ndjson)
+SSE_STREAM = Framing(SSE_MEDIA_TYPE, _sse, b": ok\n\n")
+
+
+def _negotiate(request: Request) -> Framing | None:
+    """Which framing this client asked for, or `None` for the JSON body (§3.5).
+
+    SSE is checked first, so a client that lists both gets the one that survives
+    a CDN. A client that asks for neither — curl, a script, a browser with no
+    `ReadableStream` — gets exactly the body it got before: `/api/ask` is still
+    one route with one contract and negotiation is the only difference.
+    """
+    accept = request.headers.get("accept", "")
+    if SSE_MEDIA_TYPE in accept:
+        return SSE_STREAM
+    if NDJSON_MEDIA_TYPE in accept:
+        return NDJSON_STREAM
+    return None
 
 
 async def _stream(
-    scope: Scope, deps: Deps, public: PublicSettings, llm: OpenRouter, question: str
+    scope: Scope,
+    deps: Deps,
+    public: PublicSettings,
+    llm: OpenRouter,
+    question: str,
+    framing: Framing,
 ) -> AsyncIterator[bytes]:
-    """The loop's events as NDJSON, and the budget accounting that goes with it.
+    """The loop's events, framed, and the budget accounting that goes with it.
 
-    Two things this owes the rest of the system:
+    Two things this owes the rest of the system, and both are owed identically
+    by every framing — which is why there is one of these and not two:
 
     * **The refund.** ``ask_endpoint`` refunds on a non-200 and a stream is a
       200 whatever happens inside it, so the accounting moves here: no `answer`
@@ -767,27 +837,28 @@ async def _stream(
     * **The terminal event.** ``AskUnavailable`` is a 503 body on the JSON path
       and an `error` event here, built from the same words, so the page's
       degraded pane renders the same either way.
+
+    The ``finally`` runs on a cancelled generator, and the refund it makes is
+    deliberately synchronous all the way down to the counter — a budget that
+    needed to `await` to be given back is a budget that leaks on exactly the
+    disconnect this exists to handle.
     """
     answered = False
     try:
+        if framing.preamble:
+            yield framing.preamble
         async with aclosing(ask_events(deps, public, llm, question)) as events:
             async for event in events:
                 answered = answered or event.get("event") == "answer"
-                yield _ndjson(event)
+                yield framing.frame(event)
     except AskUnavailable as exc:
-        yield _ndjson(_error_event(exc.reason, exc.retry_after_s))
+        yield framing.frame(_error_event(exc.reason, exc.retry_after_s))
     except Exception:  # pragma: no cover - last resort, still no leak
         logger.exception("ask: unexpected failure mid-stream")
-        yield _ndjson(_error_event("upstream_unavailable", 30))
+        yield framing.frame(_error_event("upstream_unavailable", 30))
     finally:
         if not answered:
             refund(scope, "ask_global")
-
-
-def _ndjson(event: dict[str, Any]) -> bytes:
-    """One event, one line. `json.dumps` escapes every newline in the payload,
-    so a corpus title with a line break in it can never split a frame."""
-    return (json.dumps(event, ensure_ascii=False) + "\n").encode("utf-8")
 
 
 async def _ask(request: Request) -> Response:
@@ -816,18 +887,22 @@ async def _ask(request: Request) -> Response:
         )
     question = question[:MAX_QUESTION_CHARS]
 
-    if _wants_stream(request):
+    framing = _negotiate(request)
+    if framing is not None:
         # Everything that can be refused *before* the model is reached has been
         # refused above, with a status code. From here the answer is worth
         # watching, so the status line goes out now and the rest is events.
         return StreamingResponse(
-            _stream(request.scope, deps, public, llm, question),
-            media_type=NDJSON_MEDIA_TYPE,
+            _stream(request.scope, deps, public, llm, question, framing),
+            media_type=framing.media_type,
             headers={
                 "Cache-Control": "no-store",
                 # nginx buffers a proxied response by default, which would hold
                 # every activity line until the answer landed — i.e. exactly the
-                # ninety seconds of silence this exists to remove.
+                # ninety seconds of silence this exists to remove. It is an
+                # *nginx* header and nothing else reads it: Cloudflare decides
+                # on the content type, which is why there is an SSE framing and
+                # not a third header here.
                 "X-Accel-Buffering": "no",
             },
         )
