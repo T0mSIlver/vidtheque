@@ -381,6 +381,79 @@ def threading_probe(path: Path, kind: str, modes: Sequence[str]) -> dict[str, An
     return out
 
 
+def extract_workers_probe(
+    path: Path,
+    kind: str,
+    counts: Sequence[int],
+    decode_threads: Sequence[int],
+    work_dir: Path,
+) -> dict[str, Any]:
+    """Pass 2's lever: how many threads seek, and how many threads each decode.
+
+    Detection runs once and every configuration extracts from the *same* shot
+    list, so the only variable is the extractor. Like ``threading_probe``, this
+    reports the answer next to the time: pass 2 parallelises across shots only
+    because ``_sharpest_in`` seeks absolutely, and a configuration whose drafts
+    differ from the serial baseline has broken that assumption rather than
+    earned a speedup.
+
+    The baseline (1 worker, OpenCV's own thread default) is always run first and
+    is what everything else is compared against.
+    """
+    spans, duration = detect_spans(path, kind=kind)
+    shots = thin(subdivide(spans, duration, MAX_SHOT_SECONDS), BUDGET)
+    print(f"  [workers] {len(shots)} shots from {len(spans)} detected scenes")
+
+    runs: list[dict[str, Any]] = []
+    baseline: list[KeyframeDraft] | None = None
+    for threads in decode_threads:
+        for workers in counts:
+            target = work_dir / f"workers-{workers}-t{threads}"
+            if target.exists():
+                shutil.rmtree(target)
+            timing, drafts = Timing.measure(
+                extract_from_shots,
+                path,
+                shots,
+                target,
+                lambda ordinal, t_s: f"{ordinal:05d}-{int(round(t_s * 1000)):09d}.jpg",
+                candidates_per_shot=CANDIDATES,
+                workers=workers,
+                decode_threads=threads,
+            )
+            if baseline is None:
+                baseline = drafts
+            same = pair_keyframes(baseline, drafts)
+            entry = {
+                "workers": workers,
+                "decode_threads": threads,
+                **timing.as_dict(),
+                "keyframes": len(drafts),
+                "identical_to_baseline": (
+                    len(drafts) == len(baseline)
+                    and same["matched"] == len(baseline)
+                    and same["identical_frames"] == len(baseline)
+                ),
+                "vs_baseline": same,
+            }
+            runs.append(entry)
+            print(
+                f"  [workers] w={workers} t={threads}: {timing.wall:.1f}s wall, "
+                f"{timing.cpu:.1f}s cpu, {len(drafts)} keyframes, "
+                f"identical={entry['identical_to_baseline']}"
+            )
+    best = min(runs, key=lambda r: r["wall"])
+    return {
+        "shots": len(shots),
+        "runs": runs,
+        "baseline_wall_s": runs[0]["wall"],
+        "best": {"workers": best["workers"], "decode_threads": best["decode_threads"]},
+        "best_speedup": round(runs[0]["wall"] / best["wall"], 2) if best["wall"] else None,
+        # The only line that decides whether this ships.
+        "all_identical": all(r["identical_to_baseline"] for r in runs),
+    }
+
+
 def nvdec_probe(path: Path, seconds: float) -> dict[str, Any]:
     """What the 3090 would do with the same decode, measured with ffmpeg alone.
 
@@ -441,6 +514,20 @@ def main() -> int:
         help="comma-separated PyAV thread modes to compare on the full file, e.g. NONE,AUTO",
     )
     parser.add_argument(
+        "--extract-workers",
+        metavar="COUNTS",
+        help="comma-separated pass-2 thread counts to compare, e.g. 1,2,4,8 "
+        "(VIDTHEQUE_KEYFRAME_EXTRACT_WORKERS). Detection runs once; every count "
+        "extracts from the same shots and is diffed against the 1-worker answer.",
+    )
+    parser.add_argument(
+        "--decode-threads",
+        metavar="COUNTS",
+        default="0",
+        help="comma-separated cv2.CAP_PROP_N_THREADS values to cross with "
+        "--extract-workers (VIDTHEQUE_KEYFRAME_DECODE_THREADS). 0 = OpenCV's default.",
+    )
+    parser.add_argument(
         "--no-dual",
         action="store_true",
         help="skip the single-vs-dual comparison (for a threading-only run)",
@@ -487,6 +574,17 @@ def main() -> int:
             modes = [m.strip().upper() for m in args.threading.split(",") if m.strip()]
             entry["threading"] = threading_probe(full, args.kind, modes)
             print(f"  identical cut lists: {entry['threading']['identical_cut_lists']}")
+        if args.extract_workers:
+            counts = [int(c) for c in args.extract_workers.split(",") if c.strip()]
+            threads = [int(c) for c in args.decode_threads.split(",") if c.strip()]
+            entry["extract_workers"] = extract_workers_probe(
+                full, args.kind, counts, threads, work_dir
+            )
+            print(
+                f"  best pass-2 config: {entry['extract_workers']['best']} "
+                f"(x{entry['extract_workers']['best_speedup']} on the pass), "
+                f"all identical: {entry['extract_workers']['all_identical']}"
+            )
         if args.no_dual:
             if args.nvdec_probe:
                 entry["nvdec"] = nvdec_probe(full, args.nvdec_probe)

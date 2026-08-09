@@ -139,3 +139,112 @@ def test_frame_threading_does_not_move_the_cuts(clip: Path) -> None:
         ]
 
     assert cuts("AUTO") == cuts("NONE")
+
+
+# ------------------------------------------------------- pass 2 parallelism
+
+
+def _fingerprint(drafts: list[keyframes.KeyframeDraft]) -> list[tuple]:
+    """Everything that reaches the database, in the order it reaches it."""
+    return [
+        (
+            d.ordinal,
+            d.t_s,
+            d.shot.index,
+            round(d.shot.start_s, 3),
+            round(d.shot.end_s, 3),
+            d.sharpness,
+            d.width,
+            d.height,
+            d.relpath,
+            d.jpeg_bytes,
+            d.phash,
+            d.dup_of,
+        )
+        for d in drafts
+    ]
+
+
+def test_pooled_extraction_returns_exactly_what_the_serial_pass_returns(
+    clip: Path, tmp_path: Path
+) -> None:
+    """The claim that lets `VIDTHEQUE_KEYFRAME_EXTRACT_WORKERS` stay out of the
+    stage's model_key: threads change when frames are *found*, never which
+    frames are found or what order they are committed in.
+
+    `max_shot_seconds=1.0` is what makes this worth running — it puts ~8 shots
+    through a chunk size of 2x2, so the pool refills and the committer has to
+    keep the ordering across chunk boundaries rather than inside one batch.
+    """
+    serial = _extract(clip, tmp_path / "serial", max_shot_seconds=1.0, workers=1)
+    pooled = _extract(clip, tmp_path / "pooled", max_shot_seconds=1.0, workers=2)
+
+    assert len(serial) > 4, "the fixture should produce enough shots to span chunks"
+    assert _fingerprint(pooled) == _fingerprint(serial)
+    # Same bytes on disk too, not merely the same recorded size.
+    for one, other in zip(serial, pooled):
+        assert one.absolute is not None and other.absolute is not None
+        assert one.absolute.read_bytes() == other.absolute.read_bytes()
+
+
+def test_the_pool_still_commits_in_shot_order(clip: Path, tmp_path: Path) -> None:
+    """Ordinals are assigned by the committer, so out-of-order completion must
+    not leak into them: `<ord>-<t_ms>.jpg` has to stay sortable into time order
+    and `UNIQUE(video_id, t_s)` has to keep holding."""
+    drafts = _extract(clip, tmp_path, max_shot_seconds=1.0, workers=4)
+    assert [d.ordinal for d in drafts] == list(range(len(drafts)))
+    stamps = [d.t_s for d in drafts]
+    assert stamps == sorted(stamps)
+    assert len(set(stamps)) == len(stamps)
+    for draft in drafts:
+        assert Path(draft.relpath).name.startswith(f"{draft.ordinal:05d}-")
+
+
+def test_a_worker_pool_of_one_never_builds_a_pool(clip: Path, tmp_path: Path, monkeypatch) -> None:
+    """The default must be the old code path, not a one-thread pool wearing it."""
+    import concurrent.futures
+
+    def refuse(*args, **kwargs):  # pragma: no cover - the assertion is that it is not hit
+        raise AssertionError("workers=1 should not construct a ThreadPoolExecutor")
+
+    monkeypatch.setattr(concurrent.futures, "ThreadPoolExecutor", refuse)
+    assert _extract(clip, tmp_path, workers=1)
+
+
+def test_decode_threads_do_not_move_the_frames(clip: Path, tmp_path: Path) -> None:
+    """`CAP_PROP_N_THREADS` is a scheduling knob; H.264 decode is deterministic
+    and `CAP_PROP_POS_MSEC` is read back from the frame that actually arrived,
+    so frame threading must not shift a single timestamp. Asserted because a
+    drifting POS_MSEC would silently produce wrong deep links, which is the
+    product."""
+    plain = _extract(clip, tmp_path / "plain", max_shot_seconds=1.0)
+    threaded = _extract(clip, tmp_path / "threaded", max_shot_seconds=1.0, decode_threads=4)
+    assert _fingerprint(threaded) == _fingerprint(plain)
+
+
+def test_extract_worker_counts_are_validated_at_boot() -> None:
+    """A pool size of 0 raises inside ThreadPoolExecutor minutes into a job,
+    which is the worst possible place to find a typo."""
+    import pytest
+
+    from vidtheque_mcp.config import ConfigError
+    from vidtheque_mcp.pipeline.settings import PipelineSettings
+
+    assert PipelineSettings().extract_workers == 1
+    assert PipelineSettings().extract_decode_threads == 0
+    with pytest.raises(ConfigError, match="EXTRACT_WORKERS"):
+        PipelineSettings(extract_workers=0).validate()
+    with pytest.raises(ConfigError, match="DECODE_THREADS"):
+        PipelineSettings(extract_decode_threads=-1).validate()
+
+
+def test_the_stage_model_key_ignores_the_thread_knobs() -> None:
+    """Both knobs promise the same output, so neither may invalidate a stage —
+    a corpus-wide reindex for a thread count would be the opposite of a win."""
+    import inspect
+
+    from vidtheque_mcp.pipeline import runner
+
+    source = inspect.getsource(runner.IndexingPipeline._keyframe_model_key)
+    assert "extract_workers" not in source
+    assert "extract_decode_threads" not in source

@@ -754,6 +754,11 @@ class IndexingPipeline:
                 quality=self.settings.keyframe_quality,
                 budget=self.settings.max_keyframes,
                 phash_threshold=self.settings.phash_threshold,
+                # Not in `_keyframe_model_key()` on purpose: both knobs are
+                # meant to produce the same frames faster, so putting them in
+                # the key would reindex the whole corpus for a thread count.
+                workers=self.settings.extract_workers,
+                decode_threads=self.settings.extract_decode_threads,
                 progress=report,
             )
         except Exception as exc:  # decode failures, unreadable container, full disk

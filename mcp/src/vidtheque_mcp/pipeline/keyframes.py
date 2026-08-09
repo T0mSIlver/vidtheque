@@ -236,6 +236,8 @@ def extract_keyframes(
     quality: int = 92,
     budget: int = 600,
     phash_threshold: int = 24,
+    workers: int = 1,
+    decode_threads: int = 0,
     progress: Callable[[float], None] | None = None,
 ) -> list[KeyframeDraft]:
     """Pass 1 decodes the video end to end; pass 2 seeks ~9 times per shot.
@@ -245,6 +247,11 @@ def extract_keyframes(
     research/keyframe-decode-bench-2026-08-08.md, the rest being pass 2's ~1,100
     seeks. Both passes are worth attacking; only one of them has a fix that does
     not change the output.
+
+    Across the 75-video corpus that split fits
+    ``6.7 s x video-minutes + 1.04 s x shots`` (R^2 0.79,
+    research/pipeline-perf-2026-08-09.md §2), so pass 2 is ~34% of the stage —
+    and `workers` is the part of it that parallelises without moving a frame.
     """
     shots = thin(detect_shots(video_path, kind=kind, max_shot_seconds=max_shot_seconds), budget)
     return extract_from_shots(
@@ -256,6 +263,8 @@ def extract_keyframes(
         max_width=max_width,
         quality=quality,
         phash_threshold=phash_threshold,
+        workers=workers,
+        decode_threads=decode_threads,
         progress=progress,
     )
 
@@ -270,57 +279,68 @@ def extract_from_shots(
     max_width: int = 1280,
     quality: int = 92,
     phash_threshold: int = 24,
+    workers: int = 1,
+    decode_threads: int = 0,
     progress: Callable[[float], None] | None = None,
 ) -> list[KeyframeDraft]:
     """Pass 2 on its own: seek, score, write, hash.
 
     Split out of ``extract_keyframes`` so the two passes can be timed — and
     compared across detection runs — independently (``bench/keyframe_decode.py``).
+
+    ``workers`` > 1 runs the *search* half — nine seeks and nine Laplacians per
+    shot — on a thread pool with one ``VideoCapture`` each, and leaves the
+    *commit* half (the `seen_ms` guard, the ordinal, the JPEG, the hashes)
+    exactly where it was: a single thread, walking the shots in order. That
+    division is the whole reason this is safe. Ordinals, filenames, the
+    first-wins dedup and the collision guard all depend on the order shots are
+    committed in, and none of them depend on the order they were *searched* in,
+    because ``_sharpest_in`` seeks absolutely and reads nothing but the file.
+
+    The pool is fed a chunk at a time rather than the whole list, because a
+    1080p BGR frame is 6 MB and a 600-shot video handed to ``map`` at once would
+    hold 3.6 GB of them waiting for the committer. At ``2 x workers`` in flight
+    the ceiling is ~50 MB at four workers, and the committer (~40 ms of JPEG and
+    phash against ~1 s of seeking) is never the thing anyone waits for.
     """
     import cv2
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    capture = cv2.VideoCapture(str(video_path))
-    if not capture.isOpened():
-        raise RuntimeError(f"cannot open {video_path} for frame extraction")
-
     drafts: list[KeyframeDraft] = []
     seen_ms: set[int] = set()
-    try:
-        for position, shot in enumerate(shots):
-            best = _sharpest_in(capture, shot, candidates_per_shot)
-            if best is None:
-                continue
-            score, frame, seconds = best
-            # UNIQUE(video_id, t_s): two shots whose sample seeks land on the
-            # same decodable frame would collide on insert.
-            stamp = int(round(seconds * 1000))
-            if stamp in seen_ms:
-                continue
-            seen_ms.add(stamp)
 
-            frame = _cap_width(frame, max_width)
-            ordinal = len(drafts)
-            relative = relpath_for(ordinal, seconds)
-            # `relative` is what the row stores (relative to $VIDTHEQUE_DATA_DIR);
-            # the bytes go under the directory we were handed, by the same name.
-            absolute = out_dir / Path(relative).name
-            written = cv2.imwrite(
-                str(absolute), frame, [int(cv2.IMWRITE_JPEG_QUALITY), int(quality)]
+    def commit(position: int, shot: Shot, best: tuple[float, Any, float] | None) -> None:
+        if best is None:
+            return
+        score, frame, seconds = best
+        # UNIQUE(video_id, t_s): two shots whose sample seeks land on the
+        # same decodable frame would collide on insert.
+        stamp = int(round(seconds * 1000))
+        if stamp in seen_ms:
+            return
+        seen_ms.add(stamp)
+
+        frame = _cap_width(frame, max_width)
+        ordinal = len(drafts)
+        relative = relpath_for(ordinal, seconds)
+        # `relative` is what the row stores (relative to $VIDTHEQUE_DATA_DIR);
+        # the bytes go under the directory we were handed, by the same name.
+        absolute = out_dir / Path(relative).name
+        written = cv2.imwrite(str(absolute), frame, [int(cv2.IMWRITE_JPEG_QUALITY), int(quality)])
+        # `imwrite` reports failure by returning False — a full disk, a
+        # read-only mount, an encoder that refused the frame. Unchecked, the
+        # next line raised `FileNotFoundError` from `stat()` two hundred
+        # frames in and the reason was gone.
+        if not written or not absolute.exists() or absolute.stat().st_size == 0:
+            raise RuntimeError(
+                f"could not write keyframe {ordinal} to {absolute} "
+                "(cv2.imwrite failed — out of disk?)"
             )
-            # `imwrite` reports failure by returning False — a full disk, a
-            # read-only mount, an encoder that refused the frame. Unchecked, the
-            # next line raised `FileNotFoundError` from `stat()` two hundred
-            # frames in and the reason was gone.
-            if not written or not absolute.exists() or absolute.stat().st_size == 0:
-                raise RuntimeError(
-                    f"could not write keyframe {ordinal} to {absolute} "
-                    "(cv2.imwrite failed — out of disk?)"
-                )
-            height, width = frame.shape[:2]
-            stored, bits = _hashes(absolute)
-            draft = KeyframeDraft(
+        height, width = frame.shape[:2]
+        stored, bits = _hashes(absolute)
+        drafts.append(
+            KeyframeDraft(
                 ordinal=ordinal,
                 t_s=round(seconds, 3),
                 shot=Shot(index=position, start_s=shot.start_s, end_s=shot.end_s),
@@ -333,14 +353,92 @@ def extract_from_shots(
                 absolute=absolute,
                 _bits=bits,
             )
-            drafts.append(draft)
-            if progress is not None and shots:
-                progress((position + 1) / len(shots))
-    finally:
-        capture.release()
+        )
+        if progress is not None and shots:
+            progress((position + 1) / len(shots))
+
+    if workers > 1 and len(shots) > 1:
+        _extract_pooled(
+            video_path, shots, candidates_per_shot, workers, decode_threads, commit
+        )
+    else:
+        capture = _open_capture(video_path, decode_threads)
+        try:
+            for position, shot in enumerate(shots):
+                commit(position, shot, _sharpest_in(capture, shot, candidates_per_shot))
+        finally:
+            capture.release()
 
     mark_duplicates(drafts, phash_threshold)
     return drafts
+
+
+def _open_capture(video_path: Path, decode_threads: int) -> Any:
+    import cv2
+
+    capture = cv2.VideoCapture(str(video_path))
+    if not capture.isOpened():
+        raise RuntimeError(f"cannot open {video_path} for frame extraction")
+    if decode_threads > 0:
+        # Advisory: the FFmpeg backend honours it, others ignore it silently.
+        # Nothing downstream may depend on it having been applied.
+        capture.set(cv2.CAP_PROP_N_THREADS, float(decode_threads))
+    return capture
+
+
+def _extract_pooled(
+    video_path: Path,
+    shots: Sequence[Shot],
+    candidates_per_shot: int,
+    workers: int,
+    decode_threads: int,
+    commit: Callable[[int, Shot, "tuple[float, Any, float] | None"], None],
+) -> None:
+    """Search on ``workers`` threads, commit on this one, in shot order.
+
+    Every capture is opened **here, serially, before a thread exists**. OpenCV's
+    FFmpeg backend guards ``open()`` with a global mutex and documents that
+    concurrent opens can return an unopened capture with no error
+    (``cap_ffmpeg_impl.hpp``); opening lazily inside the workers would have made
+    that a rare, load-dependent "cannot open" several minutes into a job. Opened
+    once and held for the life of the pool, since re-opening per shot would
+    spend the win on container parsing.
+
+    Each thread then owns exactly one capture for the whole run — the supported
+    pattern is one ``VideoCapture`` per thread, never one shared between them —
+    and the main thread releases them all after the pool has joined, which is
+    the only moment at which no worker can still be inside ``read()``.
+    """
+    import queue
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    workers = min(workers, len(shots))
+    captures = [_open_capture(video_path, decode_threads) for _ in range(workers)]
+    unclaimed: queue.Queue[Any] = queue.Queue()
+    for capture in captures:
+        unclaimed.put(capture)
+    local = threading.local()
+
+    def search(shot: Shot) -> "tuple[float, Any, float] | None":
+        capture = getattr(local, "capture", None)
+        if capture is None:
+            # One claim per thread, and the pool never has more threads than
+            # captures, so this cannot block.
+            capture = unclaimed.get_nowait()
+            local.capture = capture
+        return _sharpest_in(capture, shot, candidates_per_shot)
+
+    chunk = max(1, workers * 2)
+    try:
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="keyframe") as pool:
+            for start in range(0, len(shots), chunk):
+                window = list(shots[start : start + chunk])
+                for offset, best in enumerate(pool.map(search, window)):
+                    commit(start + offset, window[offset], best)
+    finally:
+        for capture in captures:
+            capture.release()
 
 
 def _sharpest_in(capture: Any, shot: Shot, candidates: int) -> tuple[float, Any, float] | None:

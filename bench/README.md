@@ -96,6 +96,22 @@ uv run --no-sync python bench/keyframe_decode.py \
     --out bench/results/raw/keyframe-decode.json
 ```
 
+`--extract-workers` is the same question asked of the stage's *second* pass —
+the nine seeks per shot, which the corpus fit puts at ~34% of the stage
+(`research/pipeline-perf-2026-08-09.md`). Detection runs once and every
+configuration extracts from the same shot list, so the only variable is the
+extractor; each run is diffed against the 1-worker answer, and
+`all_identical: true` is the line that decides whether
+`VIDTHEQUE_KEYFRAME_EXTRACT_WORKERS` may be raised on a real box. `--no-dual`
+skips the 360p comparison, so this needs only the one file:
+
+```bash
+uv run --no-sync python bench/keyframe_decode.py \
+    --pair full=/scratch/ID-1080p.mp4,detect=/scratch/ID-1080p.mp4 --no-dual \
+    --extract-workers 1,2,4,8 --decode-threads 0,2 \
+    --out bench/results/raw/keyframe-workers.json
+```
+
 `pipeline_bench.py` answers the operator's version of the question the other
 three take apart: **what does the GPU buy you end to end.** It indexes one video
 through the real `index-video` → `job-status: done` loop once per configuration

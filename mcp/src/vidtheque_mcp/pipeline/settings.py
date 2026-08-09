@@ -60,6 +60,17 @@ class PipelineSettings:
     max_shot_seconds: float = 25.0
     candidates_per_shot: int = 9
     phash_threshold: int = 24
+    # Pass 2 (seek -> score -> JPEG -> phash) is a third of the keyframe stage
+    # and ~115 ms of it goes into *each* of the nine candidate seeks, because
+    # every seek decodes forward from a keyframe at full resolution
+    # (research/pipeline-perf-2026-08-09.md §3). Shots are independent, so the
+    # pass parallelises across threads with one `cv2.VideoCapture` each for a
+    # bit-identical answer. Default 1 — today's exact code path, no pool.
+    extract_workers: int = 1
+    # `cv2.CAP_PROP_N_THREADS` on those captures: frame threading for the
+    # decode-forward, the same lever `threading_mode="AUTO"` is for pass 1.
+    # 0 leaves OpenCV's own default alone.
+    extract_decode_threads: int = 0
 
     # -------------------------------------------------------------- worker load
     ocr_batch: int = 8
@@ -120,6 +131,8 @@ class PipelineSettings:
             max_shot_seconds=_float_env("VIDTHEQUE_MAX_SHOT_SECONDS", 25.0),
             candidates_per_shot=_int_env("VIDTHEQUE_SHOT_CANDIDATES", 9),
             phash_threshold=_int_env("VIDTHEQUE_PHASH_THRESHOLD", 24),
+            extract_workers=_int_env("VIDTHEQUE_KEYFRAME_EXTRACT_WORKERS", 1),
+            extract_decode_threads=_int_env("VIDTHEQUE_KEYFRAME_DECODE_THREADS", 0),
             ocr_batch=_int_env("VIDTHEQUE_OCR_BATCH", 8),
             ocr_min_confidence=_float_env("VIDTHEQUE_OCR_MIN_CONFIDENCE", 0.5),
             embed_batch=_int_env("VIDTHEQUE_EMBED_BATCH", 32),
@@ -153,6 +166,19 @@ class PipelineSettings:
         ):
             if value not in allowed:
                 raise ConfigError(f"{name} must be one of {'|'.join(allowed)}, got {value!r}")
+        # A pool of zero extracts nothing and a negative one raises inside
+        # ThreadPoolExecutor several minutes into a job, which is the worst
+        # place to learn about a typo. Refuse it at boot, like every other knob.
+        if self.extract_workers < 1:
+            raise ConfigError(
+                "VIDTHEQUE_KEYFRAME_EXTRACT_WORKERS must be >= 1, "
+                f"got {self.extract_workers}"
+            )
+        if self.extract_decode_threads < 0:
+            raise ConfigError(
+                "VIDTHEQUE_KEYFRAME_DECODE_THREADS must be >= 0 (0 = OpenCV's "
+                f"own default), got {self.extract_decode_threads}"
+            )
 
     # ------------------------------------------------------------------ derived
 
