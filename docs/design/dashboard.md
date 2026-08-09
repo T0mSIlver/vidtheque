@@ -786,24 +786,16 @@ Real forks. Everything above is a recommendation I will defend.
    everyone on your network). This is the decision the rest of the write side
    hangs on.
 
-2. **Frontend approach as the surface grows.** demo-site.md §6's no-framework
-   rule — three files, no build step, no external requests — is exactly right for
-   one search page and is a genuine bet at five stateful pages with tables,
-   filters, polling and a lightbox. Honestly:
-   *(a)* **server-rendered HTML per page, plain ES modules for the interactive
-   bits.** The dashboard is mostly documents; real `<a>` links, a page per route,
-   ~100 lines of JS for polling and the lightbox. My pick — with the gap named:
-   the repo has no HTML templating story at all today (the only server-rendered
-   HTML is the f-string OAuth login page, `auth/login.py:29-53`), so this phase
-   introduces one.
-   *(b)* **client-rendered from `/dashboard/api/*`**, scaling today's pattern.
-   `app.js` is already 736 lines for one page; five pages of hand-built DOM nodes
-   is where that stops being cheap.
-   *(c)* **a build step or htmx.** htmx is the interesting middle — no build,
-   server fragments, polling for free — but it means assembling HTML strings
-   server-side, which is precisely the XSS surface the current design does not
-   have. That trade is the reason I did not pick it.
-   This is as much your aesthetic call as a technical one.
+2. **Resolved (Tom, 2026-08-09): server-rendered HTML per page, plain ES
+   modules for the interactive bits.** The dashboard is mostly documents; real
+   `<a>` links, a page per route, ~100 lines of JS for polling and the
+   lightbox. This phase introduces the repo's HTML templating story (today the
+   only server-rendered HTML is the f-string OAuth login page,
+   `auth/login.py:29-53`) — Jinja2, with autoescape on, as a deliberate
+   dependency commit. Kept in reserve, in order, if a page outgrows this:
+   vendored Preact+htm islands (no build step, committed to the tree), and only
+   then a real build toolchain — each adopted per-page when a concrete page
+   demands it, not by default.
 
 3. **URL structure.** `/dashboard` (my pick), `/admin`, or dashboard at `/` with
    the welcome page moving to `/demo`. The last one is the most honest about what
@@ -831,10 +823,13 @@ Real forks. Everything above is a recommendation I will defend.
    Does the form split into jobs of ten, or does the cap move? (The cap is there
    for the model, and a form is not a model.)
 
-8. **Owner ask, and the daily budget.** When search and ask move in (phase 5),
-   does the owner's ask spend `ask_global` — the 50/day guard that exists to stop
-   anonymous visitors burning the OpenRouter budget? Exempting the owner is
-   obviously right and removes the only cost control that exists on the path.
+8. **Resolved (Tom, 2026-08-09): the owner bypasses `ask_global`.** The daily
+   guard exists to stop anonymous visitors burning the OpenRouter budget; the
+   owner can already spend their own key by other means, so metering them there
+   protects nothing. Owner asks are still written to the same spend ledger —
+   the corpus-stats page reports total spend honestly, it just never *refuses*
+   the owner. The per-IP limiter keeps not applying to authenticated owner
+   requests for the same reason.
 
 9. **Does the dashboard replace `scripts/mcp_call.py` as how you actually drive
    indexing?** If yes, the index form needs to be as good as the CLI for a
