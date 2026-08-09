@@ -19,8 +19,19 @@ import time
 from pathlib import Path
 
 # A full-suite run leaves ~1 GB behind and agent sessions run many; a day of
-# retention hit 44 GB on 2026-08-09. Two hours outlives any live run.
+# retention hit 44 GB on 2026-08-09 — twice, because the sweep window alone
+# can't keep up with concurrent agents. So: a passing run deletes its own
+# directory on exit (a failing one keeps it for debugging), and the sweep
+# below is the backstop for crashed runs.
 _SWEEP_AFTER_S = 2 * 3600
+
+
+def pytest_sessionfinish(session, exitstatus) -> None:
+    if exitstatus != 0:
+        return
+    base = getattr(session.config.option, "basetemp", None)
+    if base and Path(base).name.startswith("run-"):
+        shutil.rmtree(base, ignore_errors=True)
 
 
 def pytest_configure(config) -> None:
