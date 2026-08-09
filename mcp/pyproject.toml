@@ -42,6 +42,16 @@ dependencies = [
     # of opencv) lives on the worker, so this image needs no libGL. Pinned
     # below 0.8 as the project's own docs instruct (§4.1).
     "scenedetect-headless[pyav]==0.7.1",
+    # PyAV, already installed by the `[pyav]` extra above, is now *imported* by
+    # the pipeline rather than only used through PySceneDetect's backend: pass 1
+    # subclasses `VideoStreamAv` and drives a persistent
+    # `av.video.reformatter.VideoReformatter` so the colour conversion happens at
+    # 256 px instead of 1080p (research/pipeline-perf-2026-08-09.md §3.3). A
+    # direct import gets a direct dependency — otherwise dropping the extra, or
+    # scenedetect changing which backends it pulls, breaks the keyframe stage
+    # with an ImportError and nothing in this file explains why. Same 18.0.0 the
+    # extra resolves to; no new wheel enters the image.
+    "av>=18.0,<19.0",
     # phash/dhash for near-duplicate keyframes (§4.4). Pure Python over
     # Pillow + numpy + scipy.
     "ImageHash==4.3.2",
