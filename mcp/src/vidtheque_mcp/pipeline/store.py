@@ -448,16 +448,30 @@ def append_items(conn: sqlite3.Connection, job_id: int, urls: Sequence[str]) -> 
     """
     if not urls:
         return 0
+    # Idempotent across the commit/finish crash window: expansion can commit
+    # 116 children and die before the container item is marked `skipped`, and
+    # the reclaim then re-expands. Without this the same 116 URLs are appended
+    # again — 116 more probes, and 116 more downloads for anything not yet
+    # indexed.
+    seen = {
+        str(row["source_url"])
+        for row in conn.execute(
+            "SELECT source_url FROM job_items WHERE job_id = ?", (job_id,)
+        ).fetchall()
+    }
     start = int(
         conn.execute(
             "SELECT COALESCE(MAX(seq), -1) + 1 FROM job_items WHERE job_id = ?", (job_id,)
         ).fetchone()[0]
     )
     added = 0
-    for offset, url in enumerate(urls):
+    for url in urls:
+        if url in seen:
+            continue
+        seen.add(url)
         conn.execute(
             "INSERT INTO job_items (job_id, seq, source_url, video_id) VALUES (?, ?, ?, NULL)",
-            (job_id, start + offset, url),
+            (job_id, start + added, url),
         )
         added += 1
     conn.execute("UPDATE jobs SET n_items = n_items + ? WHERE id = ?", (added, job_id))
