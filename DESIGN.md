@@ -146,10 +146,24 @@ components:
     height: "2.125rem"
   table-row-hover:
     backgroundColor: "{colors.row-hover}"
+  nav-rail:
+    backgroundColor: "{colors.panel}"
+    width: "15rem"
+  nav-group:
+    textColor: "{colors.muted}"
+    typography: "{typography.label}"
+    padding: "0.75rem 1rem 0.25rem"
   nav-link:
+    backgroundColor: "transparent"
     textColor: "{colors.muted}"
     typography: "{typography.cell}"
+    padding: "0.5rem 1rem"
+    height: "2.125rem"
+  nav-link-hover:
+    backgroundColor: "{colors.row-hover}"
+    textColor: "{colors.fg}"
   nav-link-active:
+    backgroundColor: "{colors.bg}"
     textColor: "{colors.accent}"
   ledger-figure:
     backgroundColor: "{colors.bg}"
@@ -242,14 +256,18 @@ is not a dependency.
   that separates without announcing. Pinned.
 - **Card Stock** (`--raised`, #ffffff light / #1a1a19 dark): inputs, the
   lightbox. Pinned.
-- **Bench** (`--panel`, Radix `sand-3`): the second ground — sticky table heads
-  and the filter bar. What separates a dense grid from the page it sits on.
+- **Bench** (`--panel`, Radix `sand-3`): the second ground — sticky table heads,
+  the filter bar, and (layout v2) the nav rail. What separates a dense grid, or
+  the chassis, from the page it sits on.
 - **Pointed-At** (`--row-hover`, Radix `sand-2`): the ground of the row under
   the pointer. Deliberately lighter than the bench.
 - **Score** (`--rule`, Radix `sand-7`): the one rule heavier than a hairline —
   the top of the ledger band and the underline of a sticky head.
 - **Graphite** (`--mark`, Radix `sand-9`): non-text marks only. Hatching on a
-  deduplicated shot, the `·` separators. **Never type.** It measures 3.20:1.
+  deduplicated shot, the `·` separators. **Never type.** It measures 3.20:1 on
+  the page ground — and **2.93:1 on `--panel`**, under the 3:1 floor, which is
+  why the rail foot lists one fact per line instead of separating them with
+  dots. A `·` is only allowed on `--bg`.
 - **Scrim** (`scrim`): the lightbox `::backdrop` only. Deliberately a literal
   black alpha rather than a scheme token — a modal scrim has to darken whatever
   is behind it, in both schemes, and a token that flips with the scheme would
@@ -312,7 +330,7 @@ this surface include YouTube ids like `kCc8FmEb1nY`.
 - **Title** (590, 15px, 1.35): panel headings that carry a sentence, and notice
   titles.
 - **Body** (400, 14px, 1.5): prose, list rows, notes. Measure capped at
-  `--prose` (46rem); the scanning grid gets `--measure` (74rem).
+  `--prose` (46rem); the scanning grid takes the full content column.
 - **Cell** (400, 13px, 1.4): table cells, minirows, chips, buttons, inputs.
 - **Label** (510, 11px, 1.4, 0.07em, uppercase): panel titles, ledger labels,
   table heads, field labels, the stacked-cell prefixes on mobile. One idiom, so
@@ -345,9 +363,44 @@ those two features are not in the file and setting them is a silent no-op.
 
 ## Layout
 
-One centred column, two widths: `--measure` (74rem) for anything you scan and
-`--prose` (46rem) for anything you read. The masthead, `main` and the footer all
-sit on `--measure`; every paragraph of explanation is capped at `--prose`.
+**The app shell** (layout v2, 2026-08-09). A persistent rail on the left and a
+fluid content column taking everything else:
+
+```
+.shell   grid: [--rail 15rem] [minmax(0, 1fr)]
+  .rail  sticky, 100dvh, --panel ground, hairline on its right edge
+  .col   the page: main + footer, padded --s6, capped at --wide
+```
+
+Phase 1 centred everything on a 74rem `--measure`, which is the demo page's
+chassis: right for a document, wrong for a surface you operate. At 1920 it left
+a third of the screen empty either side of a table that wanted the width, and
+the nav was three links in a masthead you scrolled away from. So `--measure` is
+gone. What replaced it:
+
+- **The rail is `position: sticky`, not `fixed`** — sticky stays in flow, so the
+  grid track reserves its width and the content needs no matching margin. It is
+  exactly `100dvh` tall, because a stretched full-height element has nothing to
+  stick to and its hairline would stop where the viewport did.
+- **The content column is fluid** and capped only by `--wide` (110rem / 1760px),
+  which is an ultra-wide backstop rather than a measure: past it the eye starts
+  losing the row it is reading across. Every zone track is `minmax(0, …)` so a
+  too-wide table scrolls inside its own wrapper instead of widening the grid.
+- **`--prose` (46rem) survives unchanged** and is the only measure left. Prose
+  is capped; grids are not. A paragraph of explanation next to a full-width
+  table is still 46rem wide.
+
+**Zones.** A full-bleed column needs panels side by side, because a three-line
+list stretched across 1600px is a sentence with 1400px of nothing after it.
+There are two shapes and no more: `.split` (equal halves) and `.split-main`
+(2:1, the dense thing and the short answers beside it). Both collapse to one
+column at 60rem.
+
+**The page header band** (`.pagehead`) is the content column's own top edge:
+full width, hairline under, title at the left. `.pagehead-line` puts the states
+a page is in on the right of that same baseline. It is deliberately **not
+sticky** — a 30px title band pinned to the top of an operator surface spends the
+scarce dimension on something you read once.
 
 **Spacing is a 4px grid** (`--s1` 4px through `--s12` 48px) and a value off it
 is a new primitive. Sections are separated by `--s8` (32px) plus a hairline;
@@ -360,13 +413,21 @@ than a border (`border-collapse: collapse` drops a sticky cell's own border).
 **Breakpoints**, and what each one is for:
 
 - **76rem** — the five-column ledger becomes three columns, still one band.
-- **60rem** — the two-column `.split` becomes one column.
+- **60rem** — **the rail reflows.** Below this there is no room for 240px of
+  navigation beside the content, so the rail stops being a column and becomes
+  the strip across the top that phase 1 shipped: brand, a wrapping row of links
+  with the current one underlined in `--accent`, deployment state on its own
+  line. No drawer, no scrim, no checkbox — a three-item nav that fits on one
+  line has nothing to gain from being hidden behind a control, and the control
+  is the part of that pattern that costs the keyboard and the screen reader.
+  The zones (`.split`, `.split-main`) collapse to one column at the same width.
 - **52rem** — **pinned by test** (`test_both_schemes_and_a_mobile_viewport_are_declared`).
   The videos and jobs tables stop being tables: each row becomes a stacked block
   with the column name in front of the value. Every *other* grid stays a table
   and scrolls inside its own `.tablewrap`; the page body never scrolls sideways.
 - **40rem** — the page gutter drops to 16px, h1 drops to 20px, the ledger goes
-  to two columns with a full-width last cell, the keyframe strip and OCR grid
+  to two columns with a full-width last cell, a row's far-end fact
+  (`.row-when`) wraps onto its own line, and the keyframe strip and OCR grid
   reflow.
 
 **Every URL is relative or root-relative.** `@font-face src` is
@@ -391,11 +452,16 @@ containers. Depth is tonal and one step deep: the page ground (`--bg`), a second
 ground for heads and the filter bar (`--panel`), and a card stock for inputs and
 the lightbox (`--raised`). Everything else is separated by a 1px hairline.
 
-Three shadows exist and none of them is decoration:
+Four shadows exist and none of them is decoration:
 
 - `inset 0 -1px 0 var(--rule)` — the sticky table head's underline, an inset
   because a collapsed border vanishes when the cell detaches.
 - `inset 1px 0 0 var(--accent)` — the 1px edge on a hovered row.
+- `inset 2px 0 0 var(--accent)` — the active nav item's edge (layout v2). An
+  inset rather than a `border-left` because the item is full-bleed and a border
+  would move its text by 2px between states; 2px rather than 1px because it is
+  read across a rail, not inside a row you are already pointing at. It is not a
+  fifth **2px rule** in the alarm sense — nothing here is bordered.
 - `rgb(0 0 0 / 0.66)` on the lightbox `::backdrop` — a real modal scrim.
 
 ### Named Rules
@@ -451,15 +517,33 @@ the filter bar (`--panel` ground, `--line` border, 5px) and the lightbox
   table rows and result rows, not only on form controls.
 - **Placeholder:** `--muted` at full opacity.
 
-### Navigation
-- **Style:** a horizontal row in the masthead, 13px at weight 510, `--muted`,
-  2px transparent bottom border. Hover goes to `--fg`; the current page goes to
-  `--accent` with the bottom border in `--accent` and `aria-current="page"`.
-- **Mobile:** it stays a row and wraps; the deployment strip drops to its own
-  full-width line under it.
+### Navigation (the rail)
+- **Shape:** a 15rem (`--rail`) sticky column on `--panel`, hairline on its
+  right edge, holding three things in order — the wordmark block, one or more
+  `.nav-group` label + `.navlist` pairs, and a `.rail-foot` pinned to the bottom
+  carrying what this deployment is allowed to do (`auth=…`, read-only, indexing
+  refused). Environment state belongs to the chassis, not to a page header.
+- **Item:** full-bleed to the rail's edges (padding on the item, not the rail),
+  `--row` tall — a nav item and a table row are the same 34px, which is what
+  stops the rail feeling like a different product from the grid beside it. 13px
+  at weight 510 in `--muted`.
+- **Hover:** ground `--row-hover`, text `--fg`. Deliberately *lighter* than the
+  rail in light and *darker* in dark; the same pair the table rows use.
+- **Active:** the item takes the **content** ground (`--bg`) with its text in
+  `--accent` and a `inset 2px 0 0 var(--accent)` edge, so it reads as a tab
+  notched into the page rather than a pill floating on the rail — and the accent
+  lands on type that measures ≥4.5:1, which it would not on `--panel` (4.41:1).
+  Always with `aria-current="page"`.
+- **Groups:** `.nav-group` is the one label idiom — 11px tracked uppercase, the
+  same as a ledger label. A second group (search, settings) costs one more of
+  these and nothing else. A dead link is not room, so nothing is listed before
+  it exists.
+- **Mobile (≤60rem):** the whole rail becomes a horizontal strip. Items lose the
+  ground and the edge and take a 2px `--accent` bottom border instead —
+  phase 1's masthead nav, unchanged.
 
 ### The ledger band (signature, `/dashboard` overview)
-A single ruled band across the full measure: a 2px `--rule` on top, a hairline
+A single ruled band across the full content column: a 2px `--rule` on top, a hairline
 under, and N equal columns divided by hairlines. Each column is an 11px
 uppercase label, a 30px mono tabular figure, and a 12px sans note. It reads as
 one line in a log, which is what it is. It is **not** a row of stat cards, and

@@ -280,8 +280,21 @@
   --r-md: 5px;
   --r-lg: 8px;
 
-  --measure: 74rem;  /* the grid this surface scans */
-  --prose: 46rem;    /* the column it reads */
+  /* Layout v2, the app shell. The content column is *fluid* — an Operate
+     surface reads left to right across whatever width the operator gave it —
+     so there is no `--measure` any more. What survives is `--prose`, because
+     a sentence still has a comfortable line length whatever the window does.
+     `--wide` is the ultra-wide backstop, not a document measure: past 1760px
+     a table row stops being scannable because the eye loses the row. */
+  --rail: 15rem;     /* 240px — the nav rail; 34px items, same as a table row */
+  --wide: 110rem;    /* 1760px — the backstop the content column stops growing at */
+  --prose: 46rem;    /* the column it reads, at 14px body */
+  /* The same measure for *small* prose. `--prose` is calibrated for 14px body
+     (~92 characters); the same 736px at 12px is 120 characters, which is well
+     past the point where the eye loses the line on the way back. Character
+     units rather than a second rem value, because the whole point is that the
+     cap tracks the font size. */
+  --prose-meta: 60ch;
   --row: 2.125rem;   /* 34px — the table row */
 }
 
@@ -308,7 +321,7 @@ html { -webkit-text-size-adjust: 100%; }
 
 body {
   margin: 0;
-  padding: 0 var(--s5) calc(4rem + env(safe-area-inset-bottom));
+  padding: 0;
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-sans);
@@ -317,7 +330,50 @@ body {
   line-height: var(--lh-body);
 }
 
-main, .masthead, footer { max-width: var(--measure); margin: 0 auto; }
+/* ------------------------------------------------------------- 3b. the shell */
+
+/* The chassis, and the one thing layout v2 changed. Phase 1 inherited the demo
+   page's centred 74rem document column, which is right for a page you read and
+   wrong for a surface you operate: at 1920 it left a third of the screen empty
+   on either side of a table that wanted the width. So: a persistent rail on the
+   left, and a fluid column that takes everything else.
+   The rail is `position: sticky` rather than `fixed` because sticky keeps it in
+   flow — the grid track reserves its width, nothing needs a matching margin on
+   the content, and the column scrolls under it for free. */
+.shell {
+  display: grid;
+  grid-template-columns: var(--rail) minmax(0, 1fr);
+  min-height: 100dvh;
+}
+
+.rail {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  /* Exactly one viewport tall, so it sticks (a stretched track-height element
+     has nothing to stick to) and its hairline runs the full height of the
+     window however long the page under it gets. */
+  height: 100dvh;
+  overflow-y: auto;
+  padding-bottom: calc(var(--s4) + env(safe-area-inset-bottom));
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+}
+
+/* The content column. `minmax(0, 1fr)` above and `min-width: 0` here are what
+   let a too-wide table scroll inside its own wrapper instead of pushing the
+   grid track wider — The No-Sideways Rule, restated in grid terms. */
+.col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0 var(--s6) calc(var(--s10) + env(safe-area-inset-bottom));
+}
+
+.col > main { flex: 1 1 auto; }
+.col > main, .col > footer { width: 100%; max-width: var(--wide); }
 
 a { color: inherit; }
 a:hover { color: var(--accent); }
@@ -362,7 +418,11 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
 
 .muted { color: var(--muted); }
 .sep { padding: 0 var(--s1); color: var(--mark); }
-.unit { font-size: 0.62em; font-weight: var(--w-regular); color: var(--muted); letter-spacing: 0; }
+/* The suffix on a figure: 0.62em of a 30px ledger number is 18.6px, which is
+   the intent — but 0.62em of a 12.5px minirow figure is 7.75px, which is
+   unreadable. The floor is the label size, so a `vid` next to a count is never
+   smaller than the column label above it. */
+.unit { font-size: max(var(--t-micro), 0.62em); font-weight: var(--w-regular); color: var(--muted); letter-spacing: 0; }
 .num { text-align: right; }
 
 /* A label: 11px, tracked, muted, sans. Used above every ledger figure and in
@@ -382,6 +442,10 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
 
 .sr-only {
   position: absolute;
+  /* Screen-reader-only text has no visual size, so it must not inherit one:
+     the coverage glyphs are 11px and their hidden explanations were inheriting
+     that, which reads to any type audit as 11px body text in a 1px box. */
+  font-size: var(--t-body);
   width: 1px; height: 1px;
   margin: -1px; padding: 0;
   overflow: hidden;
@@ -411,18 +475,12 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
   .skip { transition: none; }
 }
 
-/* ------------------------------------------------------------------ header */
+/* -------------------------------------------------------------- the rail */
 
-.masthead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--s3) var(--s6);
-  padding: var(--s6) 0 var(--s3);
+.rail-brand {
+  padding: var(--s5) var(--s4) var(--s4);
   border-bottom: 1px solid var(--line);
 }
-
-.brand { flex: 0 0 auto; }
 
 .wordmark {
   margin: 0;
@@ -434,23 +492,57 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
 
 .rubric { margin: 0; color: var(--muted); font-size: var(--t-meta); }
 
-.nav { display: flex; gap: var(--s5); }
+.nav { padding: var(--s2) 0; }
 
-.nav a {
-  padding-bottom: var(--s1);
+/* A group label, in the one label idiom this surface has: the same 11px
+   tracked uppercase that sits above a ledger figure and in front of a stacked
+   table cell. A second group (search, settings) costs one more of these. */
+.nav-group { margin: var(--s3) 0 var(--s1); padding: 0 var(--s4); }
+.nav-group + .navlist { margin-top: 0; }
+
+.navlist { margin: 0; padding: 0; list-style: none; }
+
+/* Full-bleed to the rail's edges, so the active item's accent edge lands on
+   the boundary and the item reads as a tab notched into the content ground
+   rather than as a pill floating on the rail. Height is `--row`: a nav item
+   and a table row are the same 34px, which is what stops the rail feeling
+   like a different product from the grid beside it. */
+.navlist a {
+  display: block;
+  padding: var(--s2) var(--s4);
   font-size: var(--t-cell);
   font-weight: var(--w-medium);
+  line-height: var(--lh-cell);
   color: var(--muted);
   text-decoration: none;
-  border-bottom: 2px solid transparent;
 }
-.nav a:hover { color: var(--fg); }
-.nav a[aria-current="page"] { color: var(--accent); border-bottom-color: var(--accent); }
+.navlist a:hover { color: var(--fg); background: var(--row-hover); }
+
+/* You-are-here: the item takes the *content* ground, so the rail opens onto
+   the page at exactly that row, with the one signal as its edge. The 2px inset
+   is the fourth shadow on this surface and the only one that is navigation —
+   see DESIGN.md, Elevation. */
+.navlist a[aria-current="page"] {
+  color: var(--accent);
+  background: var(--bg);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* Pinned to the bottom of the rail: what this deployment is allowed to do is
+   true of every page, so it belongs to the chassis and not to a page header. */
+.rail-foot {
+  margin-top: auto;
+  padding: var(--s4) var(--s4) 0;
+  border-top: 1px solid var(--line);
+}
 
 .deployment {
-  margin: 0 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
   color: var(--muted);
   font-size: var(--t-meta);
+  line-height: var(--lh-cell);
 }
 
 /* -------------------------------------------------------------- page heads */
@@ -458,7 +550,28 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
 .crumbs { margin: var(--s5) 0 0; color: var(--muted); font-size: var(--t-meta); }
 .crumbs a { text-decoration: none; }
 
-.pagehead { padding: var(--s8) 0 var(--s5); }
+/* The page header band. It is the content column's own top edge — full width,
+   hairline under, the title left and whatever states the page is in on the
+   right. It is not sticky: a 30px title band pinned to the top of an operator
+   surface spends the scarce dimension (height) on something you read once. */
+.pagehead {
+  padding: var(--s6) 0 var(--s4);
+  /* Clear of whatever the page opens with. The ledger band's own 2px top rule
+     lands 8px under this hairline otherwise, and two rules that close together
+     read as one thick rule that means nothing. */
+  margin-bottom: var(--s6);
+  border-bottom: 1px solid var(--line);
+}
+/* Title and states on one baseline, wrapping to two lines when the title is a
+   video title rather than a word. Pages whose second line is a *sentence*
+   leave the meta outside this element and get the plain block. */
+.pagehead-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s2) var(--s6);
+}
 .pagehead h1 {
   margin: 0;
   font-size: var(--t-h1);
@@ -471,9 +584,17 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
    string, and a flex container swallows the spaces between them. */
 .pagehead-meta {
   margin: var(--s2) 0 0;
+  max-width: var(--prose-meta);
   color: var(--muted);
   font-size: var(--t-meta);
 }
+/* Inside the title line the meta is a state strip, not a paragraph: it sits on
+   the title's baseline at the far end of the band and never wraps early. */
+.pagehead-line > .pagehead-meta { margin: 0; text-align: right; }
+/* One fact — a label and the machine string it names — is one unbreakable
+   unit, so a strip that runs out of room wraps between facts and never through
+   `2025-06-15 15:06`. */
+.fact { white-space: nowrap; }
 .pagehead-meta .mono { color: var(--fg); }
 .pagehead-meta a { color: var(--accent); }
 
@@ -502,19 +623,27 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
 
 .panel-note {
   margin: var(--s3) 0 0;
-  max-width: var(--prose);
+  max-width: var(--prose-meta);
   color: var(--muted);
   font-size: var(--t-meta);
 }
 
 .empty-note {
   margin: 0;
-  max-width: var(--prose);
+  max-width: var(--prose-meta);
   color: var(--muted);
   font-size: var(--t-cell);
 }
 
-.split { display: grid; grid-template-columns: 1fr 1fr; gap: 0 var(--s10); }
+/* Zones. A full-bleed column needs a way to put two or three panels side by
+   side, because a three-line list stretched across 1600px is not "using the
+   width" — it is a sentence with 1400px of nothing after it. Three shapes and
+   no more: equal halves, a 2:1 main-and-aside, and equal thirds. Every track
+   is `minmax(0, …)` so a table inside one scrolls in its wrapper instead of
+   widening the zone. */
+.split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--s10); }
+.split-main { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+.split > * { min-width: 0; }
 .split > .panel:nth-child(2) { margin-top: var(--s8); }
 
 /* ------------------------------------------------------------- the ledger */
@@ -598,6 +727,7 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
 
 .row {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--s3);
   align-items: flex-start;
   padding: var(--s2) 0;
@@ -613,6 +743,18 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
   margin: 2px 0 0;
   color: var(--muted);
   font-size: var(--t-meta);
+}
+
+/* The far end of a row: one fact, right-aligned, so a wide column reads as a
+   column of clocks rather than as a ragged list of sentences. */
+.row-when {
+  flex: 0 0 auto;
+  margin: 0 0 0 auto;
+  padding-left: var(--s3);
+  color: var(--muted);
+  font-size: var(--t-meta);
+  text-align: right;
+  white-space: nowrap;
 }
 
 .minirow {
@@ -739,7 +881,10 @@ span.tone-bad { color: var(--tone-bad); }
 .field { display: flex; flex-direction: column; gap: var(--s1); }
 .field-wide { flex: 1 1 16rem; min-width: 0; }
 .field-narrow { flex: 0 0 5rem; }
-.field-actions { flex-direction: row; gap: var(--s2); align-items: center; margin-left: auto; }
+/* The buttons pack at the end of the controls, not at the far end of the band.
+   A two-field filter bar on a 1900px screen used to put Apply 1400px away from
+   the select it applies to. */
+.field-actions { flex-direction: row; gap: var(--s2); align-items: center; }
 
 .field input, .field select {
   padding: var(--s1) var(--s2);
@@ -832,7 +977,12 @@ button[disabled] { opacity: 0.5; cursor: default; }
 
 .videos .col-shot { width: 96px; padding-right: 0; }
 .videos .col-title { min-width: 16rem; }
-.videos .row-meta { font-size: var(--t-micro); }
+/* The second line of a video row is a channel name and an id — a sentence and
+   a machine string, not a column label — so it stays at the 12px meta size.
+   11px is the *label* size and this is body text at a glance-legibility floor:
+   `hasDirectText && fontSize < 12` is exactly what the tiny-text rule catches,
+   and it is right to. */
+.videos .row-meta { font-size: var(--t-meta); }
 .videos time { white-space: nowrap; }
 
 .stages .col-model { max-width: 22rem; }
@@ -1133,14 +1283,14 @@ button[disabled] { opacity: 0.5; cursor: default; }
 }
 .notice-detail {
   margin: var(--s2) 0 0;
-  max-width: var(--prose);
+  max-width: var(--prose-meta);
   font-family: var(--font-mono);
   font-size: var(--t-machine);
   font-variant-ligatures: none;
   color: var(--muted);
   overflow-wrap: anywhere;
 }
-.notice-next { margin: var(--s2) 0 0; max-width: var(--prose); font-size: var(--t-cell); }
+.notice-next { margin: var(--s2) 0 0; max-width: var(--prose-meta); font-size: var(--t-cell); }
 
 /* ---------------------------------------------------------------- lightbox */
 
@@ -1209,7 +1359,7 @@ footer {
   font-size: var(--t-meta);
   color: var(--muted);
 }
-footer p { margin: 0; max-width: var(--prose); }
+footer p { margin: 0; max-width: var(--prose-meta); }
 
 /* ------------------------------------------------------------------ mobile */
 
@@ -1221,8 +1371,49 @@ footer p { margin: 0; max-width: var(--prose); }
   .ledger > .figure:nth-child(n + 4) { border-top: 1px solid var(--line); }
 }
 
+/* The rail reflow. Below 60rem there is no room for 240px of navigation beside
+   the content, so the rail stops being a column and becomes the strip across
+   the top that phase 1 shipped: brand, a wrapping row of three links with the
+   current one underlined, and the deployment state on its own line. No drawer,
+   no scrim, no checkbox — a three-item nav that fits on one line has nothing to
+   gain from being hidden behind a control, and the control is the part of the
+   pattern that costs the keyboard and the screen reader. */
 @media (max-width: 60rem) {
-  .split { grid-template-columns: 1fr; gap: 0; }
+  .shell { grid-template-columns: minmax(0, 1fr); }
+
+  .rail {
+    position: static;
+    height: auto;
+    overflow: visible;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--s2) var(--s6);
+    padding: var(--s5) var(--s4) var(--s3);
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .rail-brand { padding: 0; border-bottom: 0; }
+  .nav { padding: 0; }
+  .nav-group { display: none; }
+
+  .navlist { display: flex; flex-wrap: wrap; gap: 0 var(--s5); }
+  .navlist a {
+    padding: 0 0 var(--s1);
+    border-bottom: 2px solid transparent;
+  }
+  .navlist a:hover { background: transparent; }
+  .navlist a[aria-current="page"] {
+    background: transparent;
+    box-shadow: none;
+    border-bottom-color: var(--accent);
+  }
+
+  .rail-foot { margin: 0 0 0 auto; padding: 0; border-top: 0; }
+  .deployment { flex-direction: row; flex-wrap: wrap; gap: 0 var(--s3); }
+
+  .split { grid-template-columns: minmax(0, 1fr); gap: 0; }
 }
 
 @media (max-width: 52rem) {
@@ -1276,12 +1467,12 @@ footer p { margin: 0; max-width: var(--prose); }
 }
 
 @media (max-width: 40rem) {
-  body { padding: 0 var(--s4) calc(3rem + env(safe-area-inset-bottom)); }
+  .col { padding: 0 var(--s4) calc(var(--s8) + env(safe-area-inset-bottom)); }
 
-  .masthead { gap: var(--s2) var(--s4); padding: var(--s5) 0 var(--s3); }
-  .deployment { margin-left: 0; flex-basis: 100%; }
+  .rail { gap: var(--s2) var(--s4); }
+  .rail-foot { margin-left: 0; flex-basis: 100%; }
 
-  .pagehead { padding: var(--s6) 0 var(--s4); }
+  .pagehead { padding: var(--s5) 0 var(--s3); }
   .pagehead h1 { font-size: var(--t-h2); }
   .panel { margin-top: var(--s6); }
 
@@ -1296,6 +1487,16 @@ footer p { margin: 0; max-width: var(--prose); }
 
   .figures { grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr)); gap: var(--s4) var(--s5); }
   .figure > dd { font-size: var(--t-h2); }
+
+  /* The row's far-end fact wraps to its own line and lines up under the title
+     rather than squeezing it: at 375px a clock on the right turns a four-word
+     title into five lines. */
+  .row-when {
+    flex: 1 1 100%;
+    margin: 2px 0 0;
+    padding-left: calc(96px + var(--s3));
+    text-align: left;
+  }
 
   .filters { padding: var(--s3); }
   .field-wide { flex-basis: 100%; }

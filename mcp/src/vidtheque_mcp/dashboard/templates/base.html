@@ -34,8 +34,14 @@
   STORY: the operator arrives mid-batch, reads the ledger band in one glance,
   and clicks the number next to the thing that is wrong.
 
-  FIRST VIEWPORT: masthead hairline, page title, then a full-width ruled
-  ledger of five mono figures; gaps as sentences directly beneath.
+  FIRST VIEWPORT: a persistent left rail naming the three surfaces, then a
+  full-bleed content column — page header band, a full-width ruled ledger of
+  five mono figures, and the gaps as sentences beside the arrivals.
+
+  CHASSIS: layout v2 (2026-08-09). The centred 74rem document column was
+  inherited from the demo page and made an Operate surface read as an article.
+  The world — tokens, both faces, warm paper and one amber — is unchanged; only
+  the chassis moved. DESIGN.md §Layout is normative.
 
   FORM: pinned by the brief, so no concept roll — a user-pinned direction beats
   the roll.
@@ -46,33 +52,60 @@
 
 <a class="skip" href="#main">Skip to content</a>
 
-<header class="masthead">
-  <div class="brand">
+<div class="shell">
+
+{# The rail. Persistent, its own ground, hairline against the content column,
+   and it holds the two things that are true of every page: where you are, and
+   what this deployment is allowed to do. Below 60rem the whole thing reflows
+   to a horizontal strip — no drawer, no checkbox, no JavaScript, because a
+   nav of three items does not need to be hidden behind a control. #}
+<header class="rail">
+  <div class="rail-brand">
     <p class="wordmark"><a href="{{ root }}">vidtheque</a></p>
     <p class="rubric">the index, explaining itself</p>
   </div>
+
   <nav class="nav" aria-label="Sections">
-    <a href="{{ root }}"{% if page == 'corpus' %} aria-current="page"{% endif %}>Corpus</a>
-    <a href="{{ root }}/videos"{% if page == 'videos' %} aria-current="page"{% endif %}>Videos</a>
-    <a href="{{ root }}/jobs"{% if page == 'jobs' %} aria-current="page"{% endif %}>Jobs</a>
+    <p class="nav-group">The index</p>
+    <ul class="navlist">
+      <li><a href="{{ root }}"{% if page == 'corpus' %} aria-current="page"{% endif %}>Overview</a></li>
+      <li><a href="{{ root }}/videos"{% if page == 'videos' %} aria-current="page"{% endif %}>Videos</a></li>
+      <li><a href="{{ root }}/jobs"{% if page == 'jobs' %} aria-current="page"{% endif %}>Jobs</a></li>
+    </ul>
+    {# Room, deliberately left: search (dashboard.md §5.6) and settings arrive
+       as a second `<p class="nav-group">` + `<ul class="navlist">` pair right
+       here. The CSS already carries the group label, the gap between groups
+       and the active state; nothing new has to be invented for them. A dead
+       link is not "room", so neither is listed until it exists. #}
   </nav>
-  <p class="deployment">
-    <span title="VIDTHEQUE_AUTH">auth={{ auth_mode }}</span>
-    {% if readonly %}<span class="sep">·</span><span>read-only</span>{% endif %}
-    {% if not writes_allowed %}<span class="sep">·</span><span class="tone-bad">indexing refused</span>{% endif %}
-  </p>
+
+  <div class="rail-foot">
+    {# One fact per line in the rail, a row when the rail is a strip. The `·`
+       separators the masthead used are gone on purpose: `--mark` measures
+       2.93:1 on `--panel`, under the 3:1 floor for a non-text mark, and a
+       column 240px wide had nowhere to put them anyway. #}
+    <p class="deployment">
+      <span title="VIDTHEQUE_AUTH">auth={{ auth_mode }}</span>
+      {% if readonly %}<span>read-only</span>{% endif %}
+      {% if not writes_allowed %}<span class="tone-bad">indexing refused</span>{% endif %}
+    </p>
+  </div>
 </header>
 
-<main id="main">
-{% block main %}{% endblock %}
-</main>
+<div class="col">
+  <main id="main">
+  {% block main %}{% endblock %}
+  </main>
 
-<footer>
-  <p>
-    vidtheque <code>{{ version }}</code> — a self-hosted video-corpus MCP server.
-    This is the management surface; the corpus itself is served at <code>/mcp</code>.
-  </p>
-</footer>
+  <footer>
+    <p>
+      vidtheque <code>{{ version }}</code> — a self-hosted video-corpus MCP server.
+      This is the management surface; the corpus itself is served at <code>/mcp</code>.
+    </p>
+  </footer>
+</div>
+
+</div>
 
 {% block dialog %}{% endblock %}
 <script type="module" src="{{ root }}/static/dashboard.js"></script>
