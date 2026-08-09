@@ -738,8 +738,12 @@ the filter bar (`--panel` ground, `--line` border, 5px) and the lightbox
   phase 1's masthead nav, unchanged.
 
 ### The brand lockup (chassis, every page)
-The mark and the word on one baseline, 8px apart, at the top of the rail, with
-the rubric under it in `--muted` at 12px. The mark is a 24px drawn film frame in
+The mark and the word on one baseline, 8px apart, at the top of the rail, and
+nothing under them: the rubric ("the index, explaining itself") was removed
+2026-08-09 — a tagline is a persuasion move, and the rail of an Operate surface
+owes the operator where they are, not what the product is for. The band keeps
+its `--s5`/`--s4` padding, which reads balanced around the single lockup row.
+The mark is a 24px drawn film frame in
 `--accent` with a `--bg` gate; the word is `vidtheque`, always lower case, in
 `--font-display` at 20px/400. It is a link to the overview and it is the only
 link on the surface whose hover does **not** go amber — the mark beside it is
