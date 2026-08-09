@@ -15,7 +15,10 @@ timestamped citations (`youtu.be/ID?t=123`). Owner: Tom Vaucourt. MIT.
    specifics); the survey/deep-dive docs carry the receipts, most of them
    paid for by screenpipe's issue tracker. Research docs are append-only:
    add clearly-headed sections, never rewrite others' findings.
-3. This file — conventions only. When it disagrees with a design doc, the
+3. `DESIGN.md` (+ `PRODUCT.md`) — **the visual contract** for the web
+   surfaces: normative tokens, the two-channel type rule, the amendment rule.
+   `docs/design/*.md` still wins on function, data and copy.
+4. This file — conventions only. When it disagrees with a design doc, the
    design doc wins.
 
 ## The invariants (don't relitigate without Tom)

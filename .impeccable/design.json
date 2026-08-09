@@ -1,0 +1,257 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-09T15:45:00.000Z",
+  "title": "Design System: vidtheque dashboard",
+  "extensions": {
+    "colorMeta": {
+      "bg": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "#fbfaf9",
+        "dark": "#131313",
+        "note": "Pinned: asserted equal to public/static/style.css.",
+        "tonalRamp": ["#111110", "#191918", "#222221", "#2a2a28", "#494844", "#8d8d86", "#e2e1de", "#fdfdfc"]
+      },
+      "fg": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#1b1a19",
+        "dark": "#e9e6e3",
+        "note": "Pinned.",
+        "tonalRamp": ["#111110", "#21201c", "#31312e", "#494844", "#63635e", "#8d8d86", "#cfceca", "#f9f9f8"]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Pencil",
+        "canonical": "#6b6764",
+        "dark": "#97918c",
+        "note": "5.37:1 on paper, 4.92:1 on panel.",
+        "tonalRamp": ["#191918", "#2a2a28", "#494844", "#63635e", "#82827c", "#bcbbb5", "#e9e8e6", "#fdfdfc"]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#e3dfdb",
+        "dark": "#2b2927",
+        "note": "Pinned. Non-text only.",
+        "tonalRamp": ["#222221", "#31312e", "#494844", "#8d8d86", "#cfceca", "#dad9d6", "#f1f0ef", "#fdfdfc"]
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Burnt Amber",
+        "canonical": "#b45309",
+        "dark": "#f0a55a",
+        "note": "Pinned. The one signal: 'this is the moment you are pointing at'. 4.82:1 on paper.",
+        "tonalRamp": ["#16120c", "#302008", "#4f3422", "#8a5a00", "#b45309", "#e2a336", "#ffc53d", "#fff7c2"]
+      },
+      "raised": {
+        "role": "neutral",
+        "displayName": "Card Stock",
+        "canonical": "#ffffff",
+        "dark": "#1a1a19",
+        "note": "Pinned. Inputs and the lightbox only."
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "Bench",
+        "canonical": "#f1f0ef",
+        "dark": "#222221",
+        "note": "Radix sand-3. Sticky table heads and the filter bar."
+      },
+      "row-hover": {
+        "role": "neutral",
+        "displayName": "Pointed-At",
+        "canonical": "#f9f9f8",
+        "dark": "#191918",
+        "note": "Radix sand-2. Lighter than the bench so --accent inside it stays at 4.77:1."
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Score",
+        "canonical": "#cfceca",
+        "dark": "#494844",
+        "note": "Radix sand-7. The one rule heavier than a hairline."
+      },
+      "mark": {
+        "role": "neutral",
+        "displayName": "Graphite",
+        "canonical": "#8d8d86",
+        "dark": "#6f6d66",
+        "note": "Radix sand-9. Non-text marks only — 3.20:1. Never type."
+      },
+      "tone-ok": {
+        "role": "tertiary",
+        "displayName": "Grass",
+        "canonical": "#2a7e3b",
+        "dark": "#71d083",
+        "note": "Radix grass-11. done / ready / present / allowed."
+      },
+      "tone-warn": {
+        "role": "tertiary",
+        "displayName": "Burnt Gold",
+        "canonical": "#8a5a00",
+        "dark": "#ffca16",
+        "note": "The system's one hand-held colour. Radix amber-11 measures 4.42:1 on paper and 4.43:1 on amber-2 — under the floor in the light scheme only. Dark stays on the scale."
+      },
+      "tone-bad": {
+        "role": "tertiary",
+        "displayName": "Signal Red",
+        "canonical": "#ce2c31",
+        "dark": "#ff9592",
+        "note": "Radix red-11. failed / refused / drifted / degraded."
+      },
+      "tone-work": {
+        "role": "tertiary",
+        "displayName": "Instrument Blue",
+        "canonical": "#0d74ce",
+        "dark": "#70b8ff",
+        "note": "Radix blue-11. running / indexing / mid-pipeline."
+      },
+      "tone-wait": {
+        "role": "tertiary",
+        "displayName": "Slate",
+        "canonical": "#63635e",
+        "dark": "#b5b3ad",
+        "note": "Radix sand-11. queued / skipped / absent / unrecognised."
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display / h1", "purpose": "The page title. Exactly one per page." },
+      "headline": { "displayName": "Headline / h2", "purpose": "A section heading that is not a panel title. Rare." },
+      "title": { "displayName": "Title", "purpose": "Panel headings that carry a sentence, and notice titles." },
+      "body": { "displayName": "Body", "purpose": "Prose, list rows, notes. Capped at --prose (46rem)." },
+      "cell": { "displayName": "Cell", "purpose": "Table cells, minirows, chips, buttons, inputs." },
+      "label": { "displayName": "Label", "purpose": "Panel titles, ledger labels, table heads, field labels, mobile stacked-cell prefixes. Uppercase, 0.07em." },
+      "machine": { "displayName": "Machine", "purpose": "The mono channel: ids, model keys, error codes, timecodes, durations, clocks, counts, byte figures. Tabular, ligatures off." },
+      "figure": { "displayName": "Figure", "purpose": "A ledger number. Mono, tabular, 30px at weight 510." }
+    },
+    "shadows": [
+      { "name": "sticky-head-underline", "value": "inset 0 -1px 0 var(--rule)", "purpose": "The sticky table head's underline. Inset because border-collapse drops a sticky cell's own border." },
+      { "name": "row-hover-edge", "value": "inset 1px 0 0 var(--accent)", "purpose": "The 1px accent edge on the row under the pointer." },
+      { "name": "lightbox-scrim", "value": "rgb(0 0 0 / 0.66)", "purpose": "The dialog ::backdrop. The only real scrim in the system." }
+    ],
+    "motion": [
+      { "name": "skip-link", "value": "top 160ms ease-out", "purpose": "The skip link sliding into view on focus. Disabled under prefers-reduced-motion." },
+      { "name": "live-pulse", "value": "pulse 2s ease-in-out infinite", "purpose": "The jobs view's live dot. Disabled under prefers-reduced-motion." }
+    ],
+    "breakpoints": [
+      { "name": "ledger", "value": "76rem" },
+      { "name": "split", "value": "60rem" },
+      { "name": "table", "value": "52rem" },
+      { "name": "gutter", "value": "40rem" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one committing action on a page — Apply on the filter bar.",
+      "html": "<button class=\"ds-btn-primary\">Apply</button>",
+      "css": ".ds-btn-primary { font-family: var(--font-sans); font-size: 0.8125rem; font-weight: 510; color: var(--bg); background: var(--fg); border: 1px solid var(--fg); border-radius: 3px; padding: 0.25rem 0.75rem; cursor: pointer; } .ds-btn-primary:hover { background: var(--accent); border-color: var(--accent); } .ds-btn-primary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Reset, and every secondary action. Never fills.",
+      "html": "<button class=\"ds-btn-ghost\">Reset</button>",
+      "css": ".ds-btn-ghost { font-family: var(--font-sans); font-size: 0.8125rem; font-weight: 510; color: var(--fg); background: transparent; border: 1px solid var(--sand-7); border-radius: 3px; padding: 0.25rem 0.75rem; cursor: pointer; } .ds-btn-ghost:hover { color: var(--accent); border-color: var(--accent); background: transparent; } .ds-btn-ghost:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }"
+    },
+    {
+      "name": "State Pill",
+      "kind": "chip",
+      "refersTo": "pill",
+      "description": "Every state on this surface. Always carries its own word; the colour reinforces and never carries the message.",
+      "html": "<span class=\"ds-pill ds-tone-ok\">ready</span> <span class=\"ds-pill ds-tone-work\">indexing</span> <span class=\"ds-pill ds-tone-bad\">failed</span>",
+      "css": ".ds-pill { display: inline-block; font-family: var(--font-sans); font-size: 0.6875rem; font-weight: 510; letter-spacing: 0.04em; padding: 1px 0.5rem; border-radius: 3px; color: var(--tone); background: var(--tone-bg); border: 1px solid var(--tone-line); white-space: nowrap; } .ds-tone-ok { --tone: var(--tone-ok); --tone-bg: var(--tone-ok-bg); --tone-line: var(--tone-ok-line); } .ds-tone-work { --tone: var(--tone-work); --tone-bg: var(--tone-work-bg); --tone-line: var(--tone-work-line); } .ds-tone-bad { --tone: var(--tone-bad); --tone-bg: var(--tone-bad-bg); --tone-line: var(--tone-bad-line); }"
+    },
+    {
+      "name": "Tag Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "A namespaced tag with its count. The count is machine text, so it is mono.",
+      "html": "<a class=\"ds-chip\" href=\"#\">topic:attention <span class=\"ds-chip-n\">3</span></a>",
+      "css": ".ds-chip { display: inline-flex; gap: 0.5rem; align-items: baseline; font-family: var(--font-sans); font-size: 0.75rem; color: var(--muted); text-decoration: none; padding: 2px 0.5rem; border: 1px solid var(--line); border-radius: 3px; } .ds-chip:hover { color: var(--fg); background: var(--row-hover); border-color: var(--accent-line); } .ds-chip-n { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 0.6875rem; font-weight: 510; color: var(--fg); }"
+    },
+    {
+      "name": "Search Input",
+      "kind": "input",
+      "refersTo": "input-text",
+      "description": "A filter field with its uppercase label above.",
+      "html": "<span class=\"ds-field\"><label class=\"ds-label\" for=\"ds-q\">title, channel or description</label><input class=\"ds-input\" id=\"ds-q\" placeholder=\"attention, tokenizer...\"></span>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 0.25rem; } .ds-label { font-family: var(--font-sans); font-size: 0.6875rem; font-weight: 510; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); } .ds-input { font-family: var(--font-sans); font-size: 0.8125rem; color: var(--fg); background: var(--raised); border: 1px solid var(--sand-7); border-radius: 3px; padding: 0.25rem 0.5rem; } .ds-input::placeholder { color: var(--muted); opacity: 1; } .ds-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }"
+    },
+    {
+      "name": "Section Navigation",
+      "kind": "nav",
+      "refersTo": "nav-link",
+      "description": "The masthead's three routes. The current page is the only amber thing in the header.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Sections\"><a href=\"#\" aria-current=\"page\">Corpus</a><a href=\"#\">Videos</a><a href=\"#\">Jobs</a></nav>",
+      "css": ".ds-nav { display: flex; gap: 1.25rem; } .ds-nav a { font-family: var(--font-sans); font-size: 0.8125rem; font-weight: 510; color: var(--muted); text-decoration: none; padding-bottom: 0.25rem; border-bottom: 2px solid transparent; } .ds-nav a:hover { color: var(--fg); } .ds-nav a[aria-current=\"page\"] { color: var(--accent); border-bottom-color: var(--accent); }"
+    },
+    {
+      "name": "Ledger Band",
+      "kind": "custom",
+      "refersTo": "ledger-figure",
+      "description": "The signature of the overview: one ruled band of mono tabular figures, divided by hairlines. Not a row of stat cards.",
+      "html": "<dl class=\"ds-ledger\"><div class=\"ds-figure\"><dt>videos</dt><dd>1,204</dd><dd class=\"ds-figure-note\">1,198 ready</dd></div><div class=\"ds-figure\"><dt>transcript cues</dt><dd>91,406</dd><dd class=\"ds-figure-note\">the unit a search hit points at</dd></div><div class=\"ds-figure\"><dt>keyframes</dt><dd>38,022</dd><dd class=\"ds-figure-note\">after near-duplicate removal</dd></div></dl>",
+      "css": ".ds-ledger { display: grid; grid-template-columns: repeat(3, 1fr); margin: 0; border-top: 2px solid var(--rule); border-bottom: 1px solid var(--line); } .ds-figure { padding: 1rem 1rem 1rem 1rem; border-left: 1px solid var(--line); min-width: 0; } .ds-figure:first-child { border-left: 0; padding-left: 0; } .ds-figure > dt { font-family: var(--font-sans); font-size: 0.6875rem; font-weight: 510; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); } .ds-figure > dd { margin: 0.25rem 0 0; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-variant-ligatures: none; font-size: 1.875rem; font-weight: 510; line-height: 1.2; letter-spacing: -0.02em; color: var(--fg); } .ds-figure > dd.ds-figure-note { margin-top: 0.25rem; font-family: var(--font-sans); font-size: 0.75rem; font-weight: 400; letter-spacing: 0; line-height: 1.4; color: var(--muted); }"
+    },
+    {
+      "name": "Data Table Row",
+      "kind": "custom",
+      "refersTo": "table-row",
+      "description": "34px rows, 13px cells, sticky head on the bench ground, a 1px accent edge on hover.",
+      "html": "<table class=\"ds-grid\"><thead><tr><th>stage</th><th>model</th><th class=\"ds-num\">dim</th></tr></thead><tbody><tr><th scope=\"row\">transcript embeddings</th><td><code class=\"ds-mono\">Qwen/Qwen3-Embedding-0.6B</code></td><td class=\"ds-num\">1024</td></tr><tr><th scope=\"row\">frame embeddings</th><td><code class=\"ds-mono\">google/siglip2-so400m-patch16-naflex</code></td><td class=\"ds-num\">1152</td></tr></tbody></table>",
+      "css": ".ds-grid { width: 100%; border-collapse: collapse; font-family: var(--font-sans); font-size: 0.8125rem; line-height: 1.4; color: var(--fg); } .ds-grid thead th { position: sticky; top: 0; padding: 0.5rem; text-align: left; white-space: nowrap; font-size: 0.6875rem; font-weight: 510; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); background: var(--panel); box-shadow: inset 0 -1px 0 var(--rule); } .ds-grid tbody th, .ds-grid tbody td { height: 2.125rem; padding: 0.5rem; text-align: left; vertical-align: top; font-weight: 400; border-bottom: 1px solid var(--line); } .ds-grid tbody th[scope=\"row\"] { font-weight: 510; } .ds-grid .ds-num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-variant-ligatures: none; font-size: 0.78125rem; } .ds-grid tbody tr:hover { background: var(--row-hover); box-shadow: inset 1px 0 0 var(--accent); } .ds-mono { font-family: var(--font-mono); font-variant-ligatures: none; font-size: 0.78125rem; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The cutting room",
+    "overview": "The world is derived from what this product actually handles: timecode, shot boundaries, contact sheets, and the log a lab keeps of what it processed. It is warm paper under a single tungsten-amber signal — not the achromatic console every developer tool ships, and not a movie poster either. \"Cutting room\" is a derivation, never a decoration: it shows up as the mono/sans truth split, the ruled ledger band, the shot timeline and the contact-sheet gutters. It must never show up as film sprockets, clapperboard icons or faux-CRT.\n\nThe surface is dense because the operator is scanning sixty rows at 03:00 over an SSH tunnel, and quiet because everything on it is either a fact from the index or a state the index is in. There are no cards, no shadows and no charts. Separation is done with hairlines and whitespace; emphasis is done with weight, size and one accent. The page is a document that happens to contain tables, and it should read like a lab's processing log — because that is what it is.\n\nThe single most important decision is not a colour. It is that the surface has two typographic channels, and which channel a string is in tells you where it came from.",
+    "keyCharacteristics": [
+      "Two faces, one meaning each: Inter for human text, JetBrains Mono for machine text.",
+      "Warm paper and one burnt amber, on vendored 12-step Radix sand and amber.",
+      "Hairlines, never cards. No shadow anywhere except the lightbox backdrop.",
+      "Every state is a word as well as a colour.",
+      "4px grid, 34px table rows, 13px cells, tabular numerals everywhere a number appears.",
+      "Both schemes are peers; the dark scheme is not an afterthought.",
+      "Zero layout shift: every image has explicit dimensions or a fixed-aspect box."
+    ],
+    "rules": [
+      { "name": "The Word-and-Colour Rule", "body": "Every state prints its own word. Colour is reinforcement, never the message. A state you can only read by seeing hue is a bug, and the four state vocabularies in this product are deliberately not unified — no surface may invent a fifth.", "section": "colors" },
+      { "name": "The One Signal Rule", "body": "--accent means exactly one thing: this is the moment you are pointing at. The playhead, the selected shot, the focus ring, the active nav item, the number worth clicking. If everything is amber, nothing is.", "section": "colors" },
+      { "name": "The Step-2 Rule", "body": "A tone's subtle ground is its scale's step 2, not step 3. Radix's own contract is that step 11 reads >=4.5:1 on steps 1 and 2; measured against step 3 the work pill lands at 4.25:1.", "section": "colors" },
+      { "name": "The Measured Exception", "body": "--tone-warn is the one hand-held colour in the system: Radix amber-11 measures 4.42:1 on this page ground and 4.43:1 on its own step 2 — under the floor in both places, in the light scheme only. Light keeps the incumbent #8a5a00 (5.69:1); dark stays on the scale. If you find a second exception, measure it and write it here.", "section": "colors" },
+      { "name": "The Two-Channel Rule", "body": "Mono means the machine said it; sans means a human wrote it. Every timecode, duration, id, model_key, error_code, count, clock, confidence and byte figure is mono and tabular. Every title, channel name, description, label and sentence is Inter. This is not mono-as-costume-for-technical — it is information architecture wearing a typeface.", "section": "typography" },
+      { "name": "The No-Display-Face Rule", "body": "/dashboard gets no serif, no display cut, no second personality. The editorial voice belongs to /, which is Persuade.", "section": "typography" },
+      { "name": "The Dead-Feature Rule", "body": "Do not set font-feature-settings: \"cv01\" 1, \"ss03\" 1. The vendored Inter subset's GSUB is calt ccmp dnom frac locl numr pnum tnum — those two features are not in the file and setting them is a silent no-op. tabular-nums (tnum) is there and is the one that matters.", "section": "typography" },
+      { "name": "The No-Sideways Rule", "body": "The page body never scrolls horizontally at any width. A table too wide to stack scrolls inside its own wrapper.", "section": "layout" },
+      { "name": "The Fixed-Box Rule", "body": "Every image ships explicit width/height or lives in a fixed aspect-ratio box that owns the geometry. CLS 0 is a shipped property of this project and a strip of forty keyframes is the easiest place to lose it.", "section": "layout" },
+      { "name": "The No-Card Rule", "body": "A panel is a heading and a hairline. Nested boxes are how a dashboard stops being scannable. If something needs to stand out, give it a 2px rule in a tone — not a border, a fill and a radius.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do put every timecode, duration, id, model_key, error_code, count, clock and byte figure in var(--font-mono) with tabular-nums and ligatures off.",
+      "Do print the word for every state, in its tone. Colour reinforces.",
+      "Do separate with hairlines and whitespace.",
+      "Do keep --accent for \"this is the moment you are pointing at\", and let a zero be muted.",
+      "Do give every image explicit width/height or a fixed-aspect box.",
+      "Do write var(--token). If the token does not exist, amend DESIGN.md in the same commit.",
+      "Do keep both schemes green in the contrast sweep: body and label text >=4.5:1, non-text marks >=3:1, in light and dark.",
+      "Do clamp lists server-side and print has_more, never a total."
+    ],
+    "donts": [
+      "Don't change --bg, --fg, --muted, --line, --accent or --raised without changing public/static/style.css in the same commit and widening the palette test.",
+      "Don't add an inline <script>. The pages stay CSP-ready.",
+      "Don't build a chart with a time axis, a sparkline, a progress ring, or a soft-shadowed rectangle standing in for content.",
+      "Don't ship a card, a shadow, a gradient, glass, or a coloured border-left above 1px.",
+      "Don't reach for film sprockets, clapperboards, reel icons or faux-CRT.",
+      "Don't put a raw colour, an off-ladder font size or an off-4px spacing value in a stylesheet.",
+      "Don't build an absolute asset URL from PUBLIC_URL. Relative or root-relative, fonts included.",
+      "Don't inline a frame as base64 by default.",
+      "Don't rename the product's words: cue, chunk, shot, keyframe, dup_of, stage, model_key, job item, not_before, index_state, data_status.",
+      "Don't import a colour package, add a build step, or make a runtime request to anything off this box."
+    ]
+  }
+}
