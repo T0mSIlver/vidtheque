@@ -31,6 +31,12 @@ STATIC_DIR = Path(__file__).parent / "static"
 # Long enough that a reload is cheap, short enough that a redeploy is visible.
 _STATIC_CACHE = "public, max-age=300"
 
+# `/dashboard/login`, per IP, per minute. A constant rather than a knob, for the
+# same reason the jobs view's poll interval is one: a number somebody can raise
+# is a number somebody raises, and this one is the difference between a password
+# form and an oracle.
+LOGIN_PER_MIN = 10
+
 
 def public_routes() -> list[Route]:
     """`/api/*`, the demo page at `/`, and its two static files.
@@ -105,6 +111,13 @@ def public_middleware(
         )
     if dashboard_per_min is not None:
         limits["dashboard"] = (dashboard_per_min, 60.0)
+        # The sign-in page is the one path on this surface where a request is a
+        # guess at a secret, so it gets its own, much tighter bucket. Not an env
+        # var and deliberately not derived from the loose one: a login rate a
+        # deployment can raise is a login rate somebody raises. Ten a minute is
+        # more than a human typing a password ever needs and is four orders of
+        # magnitude short of useful against even a weak one.
+        limits["dashboard_login"] = (LOGIN_PER_MIN, 60.0)
     if not limits:
         return []
 
@@ -112,9 +125,11 @@ def public_middleware(
 
     def bucket_for(path: str) -> str | None:
         # `/dashboard/api/*` is matched before `/api/*`, so the owner's JSON is
-        # charged to the loose bucket rather than to the anonymous one.
+        # charged to the loose bucket rather than to the anonymous one — and
+        # the sign-in page is matched before both, because it is the only path
+        # here where a request is a guess.
         if "dashboard" in limits and path.startswith("/dashboard"):
-            return "dashboard"
+            return "dashboard_login" if path == "/dashboard/login" else "dashboard"
         if "search" not in limits:
             return None
         if path == "/api/ask":

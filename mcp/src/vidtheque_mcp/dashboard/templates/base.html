@@ -91,11 +91,21 @@
       <li><a href="{{ root }}/videos"{% if page == 'videos' %} aria-current="page"{% endif %}>Videos</a></li>
       <li><a href="{{ root }}/jobs"{% if page == 'jobs' %} aria-current="page"{% endif %}>Jobs</a></li>
     </ul>
-    {# Room, deliberately left: search (dashboard.md §5.6) and settings arrive
-       as a second `<p class="nav-group">` + `<ul class="navlist">` pair right
-       here. The CSS already carries the group label, the gap between groups
-       and the active state; nothing new has to be invented for them. A dead
-       link is not "room", so neither is listed until it exists. #}
+    {# The write side, as the second group the phase-1 chassis left room for.
+       It appears exactly when the routes behind it are registered — in the
+       demo projection and in `AUTH=none` there is no group here at all, rather
+       than a link to a page that 404s (dashboard.md §2.3, §3.2 rule 3). A dead
+       link is not room. #}
+    {% if write_side %}
+    <p class="nav-group">Manage</p>
+    <ul class="navlist">
+      <li><a href="{{ root }}/index"{% if page == 'index' %} aria-current="page"{% endif %}>Add to the index</a></li>
+    </ul>
+    {% endif %}
+    {# Room still left: search (dashboard.md §5.6) and settings arrive as one
+       more `<p class="nav-group">` + `<ul class="navlist">` pair. The CSS
+       already carries the group label, the gap between groups and the active
+       state; nothing new has to be invented for them. #}
   </nav>
 
   <div class="rail-foot">
@@ -107,7 +117,30 @@
       <span title="VIDTHEQUE_AUTH">auth={{ auth_mode }}</span>
       {% if readonly %}<span>read-only</span>{% endif %}
       {% if not writes_allowed %}<span class="tone-bad">indexing refused</span>{% endif %}
+      {% if not write_side and not readonly %}<span>no write side</span>{% endif %}
     </p>
+    {# §3.2 rule 3 asks the `none`-mode dashboard to say *why* it is read-only
+       and give the one-line fix. DESIGN.md gives the rail foot the job of
+       carrying what this deployment is allowed to do, so the sentence lives
+       here rather than as a banner on a page that would then carry it on every
+       page. It is absent in the demo projection, where the answer is not a
+       misconfiguration but the mode. #}
+    {% if not write_side and not readonly %}
+    <p class="deployment-why">
+      Adding to the index needs a credential to check. Set
+      <code>VIDTHEQUE_AUTH=token</code> and <code>VIDTHEQUE_TOKEN</code>, then
+      restart.
+    </p>
+    {% endif %}
+    {% if signed_in %}
+    {# The only control in the chassis, and it is a POST — signing out changes
+       state, and §3.3 has no state-changing GET in it. It shows when there is
+       a cookie to drop and not merely when the write side exists: a bearer
+       holder has nothing to sign out of. #}
+    <form class="signout" method="post" action="{{ root }}/logout">
+      <button class="ghost" type="submit">Sign out</button>
+    </form>
+    {% endif %}
   </div>
 </header>
 

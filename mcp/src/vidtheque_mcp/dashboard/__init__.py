@@ -29,8 +29,15 @@ from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Re
 from starlette.routing import Route
 
 from ..public.api import OWNER_CLAMPS, api_routes
-from . import views
-from .access import WRITE_ROUTES, credential, origin_ok, require_write, sign_in_hint
+from . import views, writes
+from .access import (
+    WRITE_ROUTES,
+    credential,
+    origin_ok,
+    require_write,
+    sign_in_hint,
+    write_side_enabled,
+)
 from .settings import ROOT, DashboardSettings
 
 __all__ = [
@@ -41,6 +48,7 @@ __all__ = [
     "dashboard_routes",
     "origin_ok",
     "require_write",
+    "write_side_enabled",
 ]
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -60,8 +68,16 @@ _MEDIA = {".css": "text/css", ".js": "text/javascript", ".woff2": "font/woff2"}
 _FONT_CACHE = "public, max-age=31536000, immutable"
 
 
-def dashboard_routes() -> list[Route]:
-    """The route group. Order matters only against ``Mount("/")`` in app.py."""
+def dashboard_routes(*, write_side: bool = False) -> list[Route]:
+    """The route group. Order matters only against ``Mount("/")`` in app.py.
+
+    ``write_side`` is :func:`~.access.write_side_enabled`, resolved once by the
+    caller from the auth mode and ``VIDTHEQUE_PUBLIC_READONLY``. When it is
+    false **none of the write routes and no login page are in this list** —
+    they 404 through the ``Mount("/")`` fallback like any other path this
+    server does not serve, which is §2.3's rule and demo-site.md §1.1's
+    argument: a route that exists and refuses is a route somebody probes.
+    """
 
     def guarded(handler, json: bool = False):
         """Read access: whatever `/frames/*` accepts, minus the signed URL.
@@ -82,11 +98,13 @@ def dashboard_routes() -> list[Route]:
                     {
                         "error": "E_AUTH_REQUIRED",
                         "message": "The dashboard needs the owner's token or session.",
-                        "next": sign_in_hint(mode),
+                        # `write_side` rather than a constant: the sign-in page
+                        # is not registered in every deployment that refuses.
+                        "next": sign_in_hint(mode, login=write_side),
                     },
                     status_code=401,
                 )
-            return views.sign_in_page(request, mode)
+            return views.sign_in_page(request, mode, login=write_side)
 
         wrapper.__name__ = getattr(handler, "__name__", "guarded")
         return wrapper
@@ -122,11 +140,46 @@ def dashboard_routes() -> list[Route]:
         query = request.url.query
         return RedirectResponse(f"{ROOT}?{query}" if query else ROOT, status_code=308)
 
+    # The write side, or nothing at all. Declared here rather than inline so
+    # the list and `WRITE_ROUTES` can be asserted against each other: a write
+    # route that forgets to declare itself fails the suite (§2.5.4).
+    write_routes: list[Route] = (
+        [
+            # The login page is a write route by the same predicate as the
+            # rest, and for the same reason (§3.2 rule 3): it is the only GET
+            # in the group that would exist purely to be probed.
+            Route(f"{ROOT}/login", writes.login, methods=["GET", "POST"]),
+            Route(f"{ROOT}/logout", writes.logout, methods=["POST"]),
+            # The form itself is a read and takes the read gate, so an
+            # unauthenticated browser gets the sign-in page rather than a page
+            # of controls it cannot use.
+            Route(f"{ROOT}/index", guarded(writes.index_form), methods=["GET"]),
+            Route(f"{ROOT}/index", writes.index_submit, methods=["POST"]),
+            Route(
+                f"{ROOT}/videos/{{video_id}}/reindex",
+                writes.reindex,
+                methods=["POST"],
+            ),
+            Route(
+                f"{ROOT}/videos/{{video_id}}/tags",
+                writes.set_tags,
+                methods=["POST"],
+            ),
+        ]
+        if write_side
+        else []
+    )
+
     return [
         # Static first: it is the one path under the prefix that carries no
         # corpus data, and it must load even on the 401 page.
         Route(f"{ROOT}/static/{{asset:path}}", asset, methods=["GET"]),
         Route(f"{ROOT}/", trailing_slash, methods=["GET"]),
+        # Ahead of the read pages. `/videos/{video_id}` and
+        # `/videos/{video_id}/reindex` differ in segment count so neither can
+        # shadow the other today, but the ordering means a future read route
+        # with a greedier converter cannot quietly swallow a POST either.
+        *write_routes,
         # The same handlers `/api/*` uses, under owner clamps — and behind the
         # same gate as the pages, because JSON that skips the credential check
         # is the hole the pages were guarded against.

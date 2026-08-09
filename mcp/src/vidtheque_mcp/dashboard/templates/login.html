@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block main %}
+
+{# The one page on this surface with a single job, so it gets the one layout
+   that is not a full-bleed grid: a `--prose`-wide column with the page header
+   band above it, exactly as the error page is a header band and one panel.
+   Nothing here is a card — the field group sits under the same hairline every
+   other panel sits under. #}
+
+<div class="pagehead">
+  <div class="pagehead-line">
+    <h1>Sign in</h1>
+    <p class="pagehead-meta">
+      <span class="fact">auth <span class="mono">{{ auth_mode }}</span></span>
+    </p>
+  </div>
+  <p class="pagehead-meta">
+    The read views are already open to whoever holds this instance's
+    credential. This is the same session, kept in a cookie, so the write side
+    stops asking for a header a browser cannot send.
+  </p>
+</div>
+
+<section class="signin panel" aria-labelledby="signin">
+  <h2 class="panel-title" id="signin">
+    {% if accepts_password and accepts_token %}Owner password, or the API token
+    {% elif accepts_token %}The API token
+    {% else %}Owner password{% endif %}
+  </h2>
+
+  {% if error %}
+  {# In the tone, with the word: a refusal is a state like any other on this
+     surface, and the pill contract says a state prints its own word. #}
+  <p class="signin-error"><span class="pill tone-bad">refused</span> {{ error }}</p>
+  {% endif %}
+
+  <form class="signin-form" method="post" action="{{ root }}/login">
+    <input type="hidden" name="next" value="{{ next_url }}">
+    <div class="field field-wide">
+      <label for="secret">
+        {% if accepts_token and not accepts_password %}VIDTHEQUE_TOKEN
+        {% else %}VIDTHEQUE_PASSWORD{% endif %}
+      </label>
+      <input id="secret" name="password" type="password" autocomplete="current-password"
+             autofocus required spellcheck="false">
+    </div>
+    <div class="field field-actions">
+      <button type="submit">Sign in</button>
+    </div>
+  </form>
+
+  <p class="panel-note">
+    {% if accepts_password and accepts_token %}
+    Either secret works: <code>VIDTHEQUE_PASSWORD</code> is the one a human
+    types, <code>VIDTHEQUE_TOKEN</code> the one scripts already hold.
+    {% elif accepts_token %}
+    This instance runs <code>VIDTHEQUE_AUTH=token</code> with no
+    <code>VIDTHEQUE_PASSWORD</code> set, so the token is the secret. Set a
+    password in <code>.env</code> to type something shorter.
+    {% else %}
+    The password is <code>VIDTHEQUE_PASSWORD</code> from this deployment's
+    <code>.env</code>. There is no reset and no second account: one owner, one
+    secret.
+    {% endif %}
+    A script does not need this page at all, and should not use it: send
+    <code>Authorization: Bearer</code> and skip the cookie.
+  </p>
+</section>
+
+{% endblock %}

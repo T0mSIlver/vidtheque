@@ -203,6 +203,32 @@ components:
     rounded: "{rounded.sm}"
     padding: "0.25rem 0.5rem"
     typography: "{typography.machine}"
+  input-textarea:
+    backgroundColor: "{colors.raised}"
+    textColor: "{colors.fg}"
+    rounded: "{rounded.sm}"
+    padding: "0.5rem"
+    typography: "{typography.machine}"
+    minHeight: "8.5rem"
+  checkbox-row:
+    backgroundColor: "transparent"
+    textColor: "{colors.fg}"
+    borderColor: "{colors.line}"
+    padding: "0.5rem 0"
+    typography: "{typography.cell}"
+  checkbox-row-note:
+    textColor: "{colors.muted}"
+    typography: "{typography.body}"
+  field-help:
+    textColor: "{colors.muted}"
+    typography: "{typography.cell}"
+  row-action:
+    backgroundColor: "transparent"
+    textColor: "{colors.fg}"
+    rounded: "{rounded.sm}"
+    padding: "0 0.5rem"
+    height: "1.5rem"
+    typography: "{typography.label}"
 ---
 
 # Design System: vidtheque dashboard
@@ -587,6 +613,40 @@ markup: how many rows arrived and whether there are more, on the left, with the
 figure in mono because it came from a count; and on jobs a `.live` badge at the
 far right — a `--tone-work` dot **and the word "live"**, because a pulse alone
 is a state told in colour only.
+
+### The write side (phase 3): forms, and the four primitives they needed
+Added 2026-08-09 with `/dashboard/index`, `/dashboard/login` and the row
+actions. Nothing here is a new visual idea — the buttons are the buttons, the
+fields are the fields, a form is a `.panel` under a hairline like every other
+section on the surface. Four primitives are new because a read-only surface
+never needed them, and each one is the existing system extended rather than a
+second one:
+
+- **Textarea** (`input-textarea`): the input's ground, border and radius, at
+  four table rows tall, **set in the machine face**. The Two-Channel Rule,
+  applied where it pays most: JetBrains Mono was chosen for one measurable
+  property — it draws `0`/`O` and `1`/`l`/`I` apart — and a pasted column of ids
+  like `kCc8FmEb1nY` is exactly the string that property was bought for. The
+  tag fields stay sans, as siblings of the filter bar's inputs.
+- **Checkbox row** (`checkbox-row`): a hairline-separated row, the box at 16px
+  in `--accent`, a 13px word at weight 510 and a 12px muted note beside it.
+  Every option says what it turns on; a checkbox with only a label is a
+  question the operator has to answer from memory. The `<fieldset>` keeps its
+  semantics and loses its border — the No-Card Rule holds inside a form.
+- **Field help** (`field-help`): a `--prose`-capped sentence in `--muted` under
+  a control. Not a `title` and not a placeholder, both of which are text you
+  have to go and find.
+- **Row action** (`row-action`): a ghost button one step down from the 34px
+  chassis height (24px, 11px label type) so two of them fit inside a table row
+  without touching its rules. The column is deliberately narrow: a table of
+  sixty rows with a wide action column reads as a control panel, and the row is
+  still the thing you came for.
+
+The sign-out control is the one control in the chassis, full-bleed in the rail
+foot like a nav item, and it is a `<form method="post">` — signing out changes
+state, and `docs/design/dashboard.md` §3.3 has no state-changing GET in it.
+Every control on this surface is real HTML for the same reason the shot
+timeline is a real `<a href>`: the write side works with JavaScript off.
 
 ### Containers
 There are none. See **The No-Card Rule**. The two exceptions with a real box are

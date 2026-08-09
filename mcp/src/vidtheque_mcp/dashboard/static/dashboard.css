@@ -1629,6 +1629,201 @@ button[disabled] { opacity: 0.5; cursor: default; }
    flash: it survives being scrolled past, which an animation does not. */
 .event.is-new { margin-left: calc(var(--s2) * -1); padding-left: var(--s2); border-left: 1px solid var(--accent); }
 
+/* -------------------------------------------------------------- write side */
+
+/* Phase 3. Everything below draws a control that changes state, and every one
+   of them is a real `<form method="post">` — the pages keep working with
+   JavaScript off, which is the same argument the shot timeline's `<a href>`
+   made, and the reason there is no fetch() anywhere in this surface's script.
+
+   Nothing here is a new visual idea. The buttons are the buttons, the fields
+   are the fields, the panels are panels under a hairline. What is new is four
+   primitives a read-only surface never needed: a textarea, a checkbox row, a
+   help line under a field, and the sign-out control in the chassis. */
+
+/* The rail foot's second job (§3.2 rule 3): when the write side is off in a
+   private deployment, say why and give the one-line fix. It sits under the
+   `auth=…` line in the same 12px muted register, because it is the same kind
+   of fact — what this deployment is allowed to do. */
+.deployment-why {
+  margin: var(--s2) 0 0;
+  color: var(--muted);
+  font-size: var(--t-meta);
+  line-height: var(--lh-cell);
+}
+
+.signout { margin: var(--s3) 0 0; }
+/* Full-bleed in the rail, like a nav item: it is the one control in the
+   chassis and it should read as part of the column rather than as a widget
+   dropped into it. */
+.signout button { width: 100%; }
+
+/* ---- the row action cell (videos table) */
+
+/* Two controls, on one line, at the row's own height. The column is narrow on
+   purpose: a table of sixty rows with a wide action column reads as a control
+   panel, and the row is still the thing you came for. */
+.col-actions { white-space: nowrap; }
+.col-actions > * { vertical-align: middle; }
+.rowform { display: inline; margin: 0; }
+/* Both controls sit one step down from the 34px chassis height, because two of
+   them inside a 34px row would touch its rules. */
+.col-actions button, .col-actions .ghostlink {
+  height: var(--s6);
+  padding: 0 var(--s2);
+  font-size: var(--t-micro);
+}
+.col-actions .ghostlink { margin-left: var(--s1); }
+
+/* ---- fields the read-only surface never needed */
+
+/* A field that owns its own line rather than sharing a flex row. */
+.field-block { display: flex; flex-direction: column; gap: var(--s1); }
+
+/* The paste box is machine text and is set as machine text: the Two-Channel
+   Rule, applied where it pays most. JetBrains Mono was picked for one
+   measurable property — it draws 0/O and 1/l/I apart — and a column of YouTube
+   ids like `kCc8FmEb1nY` is precisely the string that property was bought for.
+   The tag fields stay sans, with the filter bar's inputs they are siblings
+   of. */
+.field textarea {
+  /* Four table rows tall — the paste box is the page's subject and it should
+     look like it holds a list, not like an input that grew. */
+  min-height: calc(var(--row) * 4);
+  padding: var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--t-machine);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "liga" 0, "calt" 0;
+  line-height: var(--lh-body);
+  color: inherit;
+  background: var(--raised);
+  border: 1px solid var(--sand-7);
+  border-radius: var(--r-sm);
+  resize: vertical;
+}
+.field textarea::placeholder { color: var(--muted); opacity: 1; }
+.field textarea:hover { border-color: var(--sand-8); }
+.field :disabled { opacity: 0.5; cursor: default; }
+
+/* The sentence under a control, in body voice. Not a `title` and not a
+   placeholder: both of those are text you have to go and find, and this is the
+   half of the contract the label has no room for. */
+.field-help {
+  margin: var(--s2) 0 0;
+  max-width: var(--prose);
+  color: var(--muted);
+  font-size: var(--t-cell);
+  line-height: var(--lh-body);
+}
+
+/* ---- checkbox rows */
+
+/* Not a fieldset with a box: the No-Card Rule holds here too, so the group is
+   a label and its rows, and the browser's own border is removed. */
+.checks {
+  margin: var(--s5) 0 0;
+  padding: 0;
+  border: 0;
+}
+.checks > legend { padding: 0; color: var(--muted); }
+
+.check {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0 var(--s2);
+  align-items: baseline;
+  padding: var(--s2) 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+.check:last-child { border-bottom: 0; }
+.check input {
+  grid-row: 1 / 3;
+  align-self: center;
+  width: var(--s4);
+  height: var(--s4);
+  accent-color: var(--accent);
+}
+.check-word { font-size: var(--t-cell); font-weight: var(--w-medium); }
+.check-note { color: var(--muted); font-size: var(--t-meta); line-height: var(--lh-cell); }
+
+/* ---- the index form */
+
+/* One column, measured. A form is prose with controls in it — the reader goes
+   down it once, top to bottom — so it takes `--prose` like every other
+   sentence on this surface, and not the full-bleed width the scanning grids
+   take. A 1150px paste box above a 736px explanation of it is two objects
+   pretending to be one field. */
+.indexform { margin-top: var(--s3); max-width: var(--prose); }
+/* One wrapping row of controls, the filter bar's metrics without the filter
+   bar's ground: this is the page's subject, not a strip above a table, so it
+   sits on the page rather than in a panel of its own. */
+.formrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s3) var(--s4);
+  margin-top: var(--s5);
+}
+.indexform .field-actions { margin-top: var(--s5); }
+
+/* ---- the receipt */
+
+.receipt .joblist { margin: var(--s3) 0 0; padding: 0; list-style: none; }
+.receipt .joblist > li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--s3);
+  align-items: baseline;
+  padding: var(--s2) 0;
+  border-top: 1px solid var(--line);
+}
+.receipt .empty-lead { margin-top: var(--s4); }
+
+/* ---- sign-in */
+
+/* The one page on this surface with a single job. The panel keeps the
+   full-width hairline every other panel has — a rule that stops two thirds of
+   the way across reads as an unfinished page — and the *content* is capped,
+   which is the rule everywhere else here: prose is measured, grids are not. */
+.signin-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s3) var(--s4);
+  margin-top: var(--s4);
+  max-width: var(--prose);
+}
+/* A password field is a short string and should look like one: stretched to
+   the measure it reads as a paste box. 20rem is roughly where the filter bar's
+   own wide inputs settle at this column width. */
+.signin-form .field-wide { flex: 0 1 20rem; }
+.signin-error {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s2);
+  align-items: baseline;
+  margin: var(--s3) 0 0;
+  font-size: var(--t-cell);
+}
+
+/* ---- the manage panel (video detail) */
+
+.manage-action > .label { display: block; margin: 0 0 var(--s2); color: var(--muted); }
+.manage-action > .rowform { display: block; margin-top: var(--s3); }
+.tagform {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s3) var(--s4);
+  margin-top: var(--s3);
+}
+.manage .split > .manage-action:nth-child(2) { margin-top: 0; }
+@media (max-width: 60rem) {
+  .manage .split > .manage-action:nth-child(2) { margin-top: var(--s6); }
+}
+
 /* ----------------------------------------------------------------- notices */
 
 /* Not a card: a band under a rule that is thick enough to be the loudest thing
@@ -1812,6 +2007,11 @@ footer p { margin: 0; max-width: var(--prose-meta); }
 
   .rail-foot { margin: 0 0 0 auto; padding: 0; border-top: 0; }
   .deployment { flex-direction: row; flex-wrap: wrap; gap: 0 var(--s3); }
+  /* In the strip the foot is a row of facts, so its one control stops being a
+     full-bleed rail item and goes back to being a button. */
+  .signout { margin: var(--s2) 0 0; }
+  .signout button { width: auto; }
+  .deployment-why { margin-top: var(--s1); }
 
   .split { grid-template-columns: minmax(0, 1fr); gap: 0; }
 }

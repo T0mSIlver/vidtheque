@@ -101,11 +101,22 @@ def build_auth(settings: Settings) -> AuthBundle:
 
     if settings.auth_mode == "token":
         assert settings.static_token
+        # `token` mode carries a session store too, from phase 3 of the
+        # dashboard (dashboard.md §3.2 rule 2). The cookie is the *existing*
+        # `vidtheque_session` in the *existing* `login_sessions` table — what
+        # changed is that this mode now has somewhere to write one, so a human
+        # can type the secret into a login page once instead of holding a
+        # bearer header a browser has no way to send. Nothing else in this mode
+        # moves: the bearer is still the verifier, and a cookie that is not in
+        # the table is not a credential.
+        token_store = AuthStore(settings.auth_db_path)
+        token_store.purge_expired()
         return AuthBundle(
             mode="token",
             token_verifier=StaticTokenVerifier(settings.static_token, resource),
             auth_settings=auth_settings,
             frame_signer=signer,
+            store=token_store,
         )
 
     store = AuthStore(settings.auth_db_path)

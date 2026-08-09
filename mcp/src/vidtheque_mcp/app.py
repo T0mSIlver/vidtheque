@@ -36,7 +36,7 @@ from starlette.routing import Mount
 
 from .auth.modes import AuthBundle, build_auth
 from .config import Settings
-from .dashboard import DashboardSettings, dashboard_routes
+from .dashboard import DashboardSettings, dashboard_routes, write_side_enabled
 from .db import Database
 from .embeddings import EmbeddingClient
 from .http import frames_routes, health_routes
@@ -183,7 +183,17 @@ def assemble(
         *auth.routes,
         *frames_routes(settings, db, auth),
         *(public_routes() if public.enabled else []),
-        *(dashboard_routes() if dashboard.enabled else []),
+        # The write side is resolved here, once, beside every other mode
+        # decision: read-only mode and `AUTH=none` each register no write
+        # routes and no login page at all (dashboard.md §2.3, §3.2 rule 3) —
+        # the same discipline as `hidden_tools` above, for the same reason.
+        *(
+            dashboard_routes(
+                write_side=write_side_enabled(settings.auth_mode, public.enabled)
+            )
+            if dashboard.enabled
+            else []
+        ),
         # Mount("/") matches everything — it must be last.
         Mount("/", app=mcp_app),
     ]

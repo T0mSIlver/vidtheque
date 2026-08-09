@@ -85,18 +85,34 @@ def _render(name: str, context: dict[str, Any], status: int = 200) -> HTMLRespon
 
 def _chrome(request: Request, page: str) -> dict[str, Any]:
     """What every page needs: where it is, and what the deployment is."""
+    from ..auth.login import SESSION_COOKIE
+    from .access import write_side_enabled
+
     assembled = request.app.state.assembled
+    mode = assembled.settings.auth_mode
+    readonly = assembled.public.enabled
     return {
         "root": ROOT,
         "page": page,
         "version": __version__,
-        "auth_mode": assembled.settings.auth_mode,
-        "readonly": assembled.public.enabled,
+        "auth_mode": mode,
+        "readonly": readonly,
         "writes_allowed": assembled.db.writes_allowed,
+        # Whether this deployment registered a write side at all (§2.3, §3.2
+        # rule 3). Every affordance that would POST is behind this, so the demo
+        # projection and an `AUTH=none` instance render pages with no controls
+        # rather than pages with controls that 404 — the same discipline
+        # `hidden_tools` applies to the tool list.
+        "write_side": write_side_enabled(mode, readonly),
+        # Is there a cookie to sign out of? Deliberately the cookie's presence
+        # rather than "is this request authenticated": a bearer holder has
+        # nothing to sign out of, and a stale cookie is exactly the thing the
+        # button should still be there to clear.
+        "signed_in": SESSION_COOKIE in request.cookies,
     }
 
 
-def sign_in_page(request: Request, mode: str) -> Response:
+def sign_in_page(request: Request, mode: str, *, login: bool = True) -> Response:
     """The 401 an unauthenticated browser gets — a page, not a JSON blob."""
     from .access import sign_in_hint
 
@@ -108,8 +124,11 @@ def sign_in_page(request: Request, mode: str) -> Response:
             "error": {
                 "code": "E_AUTH_REQUIRED",
                 "message": "The dashboard needs the owner's token or session.",
-                "next": sign_in_hint(mode),
+                "next": sign_in_hint(mode, login=login),
             },
+            # The refusal's own way back, when there is one: the page that can
+            # actually resolve it.
+            "back": {"href": f"{ROOT}/login", "label": "Sign in"} if login else None,
         },
         status=401,
     )

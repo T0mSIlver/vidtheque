@@ -389,6 +389,64 @@
 </section>
 {% endif %}
 
+{# The write side, last on the page and only where it is registered (§2.4).
+   Two actions and no third: `jobs.kind='delete'` is in the schema with no
+   pipeline behind it, so a delete button here would queue a job that fails
+   (§5.2). #}
+{% if write_side %}
+<section class="panel manage" id="manage" aria-labelledby="manage-title">
+  <h2 class="panel-title" id="manage-title">Manage this video</h2>
+
+  <div class="split">
+    <div class="manage-action">
+      <h3 class="label">Re-index</h3>
+      <p class="empty-note">
+        Runs <code>index-video</code> with <code>force_reindex</code> on this
+        one URL. Every stage runs again and the old rows are invalidated first,
+        so a video whose only problem is one failed stage is better served by
+        submitting it on the index form without forcing: that resumes at the
+        outstanding stage and re-downloads nothing.
+      </p>
+      <form class="rowform" method="post" action="{{ root }}/videos/{{ video.video_id }}/reindex">
+        <button type="submit"{{ ' disabled' if not writes_allowed }}>Re-index this video</button>
+      </form>
+      {% if not writes_allowed %}
+      <p class="empty-note">Indexing is refused on this instance: the corpus config and the vector tables disagree.</p>
+      {% endif %}
+    </div>
+
+    <div class="manage-action">
+      <h3 class="label">Tags</h3>
+      <p class="empty-note">
+        <code>namespace:value</code>, lowercase, comma separated. Ten per
+        field. The rules and the refusals are <code>tag-video</code>'s own — a
+        tag this rejects is one the MCP tool rejects, in the same words.
+      </p>
+      <form class="tagform" method="post" action="{{ root }}/videos/{{ video.video_id }}/tags">
+        <div class="field field-wide">
+          <label for="tag-add">Add</label>
+          <input id="tag-add" name="add" type="text" placeholder="topic:attention" autocomplete="off">
+        </div>
+        <div class="field field-wide">
+          <label for="tag-remove">Remove</label>
+          <input id="tag-remove" name="remove" type="text"
+                 placeholder="{{ video.tags[0] if video.tags else 'series:zero-to-hero' }}" autocomplete="off">
+        </div>
+        <div class="field field-actions">
+          <button type="submit">Apply</button>
+        </div>
+      </form>
+      {% if video.tags %}
+      <p class="empty-note">
+        On this video now:
+        {% for tag in video.tags %}<code>{{ tag }}</code>{{ ", " if not loop.last }}{% endfor %}.
+      </p>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
 {% endblock %}
 
 {% block dialog %}

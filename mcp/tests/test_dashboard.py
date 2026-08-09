@@ -290,12 +290,15 @@ def test_the_demo_facade_is_unchanged_by_the_refactor(tmp_path: Path) -> None:
 def test_none_mode_serves_the_read_only_subset(client: TestClient) -> None:
     """`none` is already open through /mcp and /frames; a gate here is theatre.
 
-    What `none` does *not* get is a write side — and phase 1 registers none at
-    all, which is the same discipline stated twice.
+    What `none` does *not* get is a write side. Phase 1 registered none at all
+    because there were none; phase 3 registers none *because the mode has no
+    credential to check* — an unauthenticated instance behind a tunnel with a
+    live "index this URL" button is remote-yt-dlp-as-a-service (§3.2 rule 3).
     """
     for path in (ROOT, f"{ROOT}/videos", f"{ROOT}/videos/kCc8FmEb1nY"):
         assert client.get(path).status_code == 200
-    assert WRITE_ROUTES == ()
+    registered = {str(getattr(r, "path", "")) for r in client.app.routes}
+    assert not (registered & set(WRITE_ROUTES))
 
 
 def test_token_mode_refuses_the_pages_and_the_json(tmp_path: Path) -> None:
@@ -320,33 +323,45 @@ def test_token_mode_accepts_the_bearer(tmp_path: Path) -> None:
 
 
 def test_token_mode_accepts_the_existing_session_cookie(tmp_path: Path) -> None:
-    """The owner login mints it today; the dashboard mints nothing new (§3.2)."""
+    """The same cookie, the same table — and, from phase 3, a place to write it.
+
+    `token` mode had no `AuthStore` at all in phase 1, so a cookie could not be
+    a credential there however valid it looked. It has one now (§3.2 rule 2),
+    because the login page needs somewhere to put a `login_sessions` row — and
+    a value that is not in that table is still not a credential.
+    """
     import time
 
     from vidtheque_mcp.auth.login import SESSION_COOKIE
-    from vidtheque_mcp.auth.store import AuthStore
 
-    settings = _settings(tmp_path, auth_mode="token", static_token="s3cret")
+    with make_client(tmp_path, auth_mode="token", token="s3cret") as client:
+        store = client.app.state.assembled.auth.store
+        assert store is not None  # phase 3: `token` mode carries the session store
+        client.cookies.set(SESSION_COOKIE, "anything")
+        assert client.get(ROOT).status_code == 401
 
-    # `token` mode builds no AuthStore of its own, so a cookie is not a
-    # credential there until one exists — which is both halves of §3.2 rule 2.
-    with make_client(tmp_path, auth_mode="token", token="s3cret") as bare:
-        assert bare.app.state.assembled.auth.store is None
-        bare.cookies.set(SESSION_COOKIE, "anything")
-        assert bare.get(ROOT).status_code == 401
-
-    store = AuthStore(settings.auth_db_path)
-    try:
         store.save_session("sid-1", "owner", int(time.time()) + 600)
-        with make_client(tmp_path, auth_mode="token", token="s3cret") as client:
-            client.app.state.assembled.auth.store = store
-            client.cookies.set(SESSION_COOKIE, "sid-1")
-            assert client.get(ROOT).status_code == 200
-            client.cookies.set(SESSION_COOKIE, "sid-nope")
-            assert client.get(ROOT).status_code == 401
-            client.app.state.assembled.auth.store = None
-    finally:
-        store.close()
+        client.cookies.set(SESSION_COOKIE, "sid-1")
+        assert client.get(ROOT).status_code == 200
+        client.cookies.set(SESSION_COOKIE, "sid-nope")
+        assert client.get(ROOT).status_code == 401
+
+
+def test_an_expired_session_is_not_a_credential(tmp_path: Path) -> None:
+    """§9's `VIDTHEQUE_DASHBOARD_SESSION_TTL_S`, from the far side of it."""
+    import time
+
+    from vidtheque_mcp.auth.login import SESSION_COOKIE
+
+    with make_client(tmp_path, auth_mode="token", token="s3cret") as client:
+        store = client.app.state.assembled.auth.store
+        assert store is not None
+        store.save_session("fresh", "owner", int(time.time()) + 600)
+        store.save_session("stale", "owner", int(time.time()) - 1)
+        client.cookies.set(SESSION_COOKIE, "fresh")
+        assert client.get(ROOT).status_code == 200
+        client.cookies.set(SESSION_COOKIE, "stale")
+        assert client.get(ROOT).status_code == 401
 
 
 def test_no_dashboard_route_is_state_changing(client: TestClient) -> None:
@@ -1063,3 +1078,679 @@ def test_no_page_issues_a_query_per_row(client: TestClient) -> None:
     one = _count_reads(client, f"{ROOT}/videos?limit=1")
     many = _count_reads(client, f"{ROOT}/videos?limit=100")
     assert one == many < 10, f"{one} reads for 1 row, {many} for 100"
+
+
+# ------------------------------------------------- 8. the write side (phase 3)
+
+# The private deployment the write side is *for*: a credential to check, and
+# the demo flag off. Everything in this section is measured against it, or
+# against the two deployments that must not have a write side at all.
+PASSWORD = "correct-horse"
+TOKEN = "s3cret"
+BEARER = {"Authorization": f"Bearer {TOKEN}"}
+SAME_ORIGIN = {"Origin": "http://localhost:8080"}
+
+
+def owner_client(
+    tmp_path: Path, *, readonly: bool = False, password: str | None = PASSWORD, **kwargs
+) -> TestClient:
+    """`token` mode with a password — the deployment phase 3 is written for."""
+    settings = _settings(
+        tmp_path, auth_mode="token", static_token=TOKEN, password=password
+    )
+    app = build_app(
+        settings,
+        embeddings=FakeEmbeddings(),
+        run_pipeline=False,
+        public=PublicSettings(enabled=readonly),
+        dashboard=kwargs.pop("dashboard", None) or DashboardSettings(),
+        **kwargs,
+    )
+    return TestClient(app, base_url="http://localhost:8080", **kwargs.pop("client", {}))
+
+
+def sign_in(client: TestClient, secret: str = PASSWORD) -> None:
+    response = client.post(
+        f"{ROOT}/login",
+        data={"password": secret},
+        headers=SAME_ORIGIN,
+        follow_redirects=False,
+    )
+    assert response.status_code == 303, response.text
+
+
+WRITE_POSTS = (
+    f"{ROOT}/index",
+    f"{ROOT}/logout",
+    f"{ROOT}/videos/kCc8FmEb1nY/reindex",
+    f"{ROOT}/videos/kCc8FmEb1nY/tags",
+)
+
+
+# --- 8.1 what is registered, and where it is not
+
+
+def test_the_write_side_is_absent_in_none_mode_not_merely_refused(
+    tmp_path: Path,
+) -> None:
+    """§3.2 rule 3, as a status code: **404, not 403**.
+
+    An unauthenticated instance behind a tunnel with a live "index this URL"
+    button is remote-yt-dlp-as-a-service pointed at the operator's residential
+    IP. `none` is the mode with no credential to check, so it gets no write
+    routes — and no login page either, because a sign-in that grants nothing is
+    a probe magnet with a password field on it.
+    """
+    with make_client(tmp_path) as client:  # auth=none
+        for path in WRITE_POSTS:
+            assert client.post(path).status_code == 404, path
+        assert client.get(f"{ROOT}/index").status_code == 404
+        assert client.get(f"{ROOT}/login").status_code == 404
+        # And every read page is still open, which is the other half of the rule.
+        assert client.get(ROOT).status_code == 200
+
+
+def test_a_refusal_never_points_at_a_page_that_is_not_registered(
+    tmp_path: Path,
+) -> None:
+    """The read gate's 401 offers the sign-in page only where there is one.
+
+    Read-only plus `token` is a real deployment — a credentialed public mirror
+    — and it gates its reads while having no write side at all. A refusal that
+    sent that reader to `/dashboard/login` would be telling them a second
+    untruth on the way out.
+    """
+    with owner_client(tmp_path) as private:
+        refused = private.get(ROOT)
+        assert refused.status_code == 401
+        assert f"{ROOT}/login" in refused.text
+        assert f"{ROOT}/login" in private.get(f"{ROOT}/api/videos").json()["next"]
+
+    with owner_client(tmp_path, readonly=True) as demo:
+        refused = demo.get(ROOT)
+        assert refused.status_code == 401
+        assert f"{ROOT}/login" not in refused.text
+        assert "Bearer" in refused.text
+        assert "login" not in demo.get(f"{ROOT}/api/videos").json()["next"]
+
+
+def test_the_write_side_is_absent_in_readonly_mode_not_merely_refused(
+    tmp_path: Path,
+) -> None:
+    """§2.3, with a credential configured — so the *flag* is doing the work.
+
+    This is the deployment Tom ships publicly: welcome page plus the read-only
+    projection through a tunnel. The write side must be missing, not refusing.
+    """
+    with owner_client(tmp_path, readonly=True) as demo:
+        assert demo.get(f"{ROOT}/videos", headers=BEARER).status_code == 200
+        for path in WRITE_POSTS:
+            assert demo.post(path, headers={**BEARER, **SAME_ORIGIN}).status_code == 404
+        assert demo.get(f"{ROOT}/index", headers=BEARER).status_code == 404
+        assert demo.get(f"{ROOT}/login", headers=BEARER).status_code == 404
+        # No affordance survives the projection either (§2.4's table).
+        table = demo.get(f"{ROOT}/videos", headers=BEARER).text
+        assert "Re-index" not in table
+        assert "Add to the index" not in table
+
+
+def test_the_write_routes_are_declared_and_post_only(tmp_path: Path) -> None:
+    """§2.5.4: one list, declared once, and it is the whole non-GET surface.
+
+    A tenth write route that forgets to declare itself fails here rather than
+    shipping unguarded — the equivalent of `public/readonly.py` deriving the
+    masked tool set instead of listing it by hand.
+    """
+    with owner_client(tmp_path) as client:
+        routes = [
+            r for r in client.app.routes if str(getattr(r, "path", "")).startswith(ROOT)
+        ]
+        writing = {str(r.path) for r in routes if set(r.methods or ()) - {"GET", "HEAD"}}
+        assert writing == set(WRITE_ROUTES)
+        for route in routes:
+            extra = set(route.methods or ()) - {"GET", "HEAD", "POST"}
+            assert not extra, f"{route.path} answers {extra}"
+
+
+def test_no_write_is_reachable_by_a_get(tmp_path: Path) -> None:
+    """§3.3: `SameSite=Lax` sends the cookie on a top-level GET navigation, so
+    an `<img src="…/reindex">` in any page the owner opens would fire."""
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        for path in (
+            f"{ROOT}/logout",
+            f"{ROOT}/videos/kCc8FmEb1nY/reindex",
+            f"{ROOT}/videos/kCc8FmEb1nY/tags",
+        ):
+            # 404 rather than 405: `Mount("/")` is a full match for the path,
+            # so the router never falls back to the method-mismatch answer the
+            # POST-only route would have given. Either way nothing fires.
+            assert client.get(path).status_code in (404, 405), path
+        # `/index` has a GET and it is the form, which reads and never writes.
+        assert client.get(f"{ROOT}/index").status_code == 200
+
+
+# --- 8.2 the auth matrix
+
+
+def test_the_write_gate_takes_the_bearer_the_cookie_and_nothing_else(
+    tmp_path: Path,
+) -> None:
+    path = f"{ROOT}/videos/kCc8FmEb1nY/tags"
+    with owner_client(tmp_path) as client:
+        # No credential at all: the typed 401.
+        anonymous = client.post(path, data={"add": "topic:gate"}, headers=SAME_ORIGIN)
+        assert anonymous.status_code == 401
+        assert anonymous.json()["error"] == "E_AUTH_REQUIRED"
+
+        # The script path.
+        assert client.post(
+            path, data={"add": "topic:gate"}, headers=BEARER, follow_redirects=False
+        ).status_code == 303
+
+        # A wrong bearer is not a credential.
+        assert client.post(
+            path,
+            data={"add": "topic:gate"},
+            headers={"Authorization": "Bearer nope", **SAME_ORIGIN},
+        ).status_code == 401
+
+        # The browser path.
+        sign_in(client)
+        assert client.post(
+            path,
+            data={"remove": "topic:gate"},
+            headers=SAME_ORIGIN,
+            follow_redirects=False,
+        ).status_code == 303
+
+
+def test_a_cookie_write_needs_positive_same_origin_evidence(tmp_path: Path) -> None:
+    """The CSRF posture, in one test (§3.3 as phase 3 amends it).
+
+    The write side is HTML forms, so "a cross-site form POST cannot reach the
+    handler" is no longer true on its own. The rule that replaces it is
+    asymmetric on purpose: the **ambient** credential needs a browser to vouch
+    for the request, and a bearer — which no browser attaches by itself — does
+    not.
+    """
+    path = f"{ROOT}/videos/kCc8FmEb1nY/tags"
+    body = {"add": "topic:csrf"}
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        for headers in (SAME_ORIGIN, {"Sec-Fetch-Site": "same-origin"}):
+            assert client.post(
+                path, data=body, headers=headers, follow_redirects=False
+            ).status_code == 303
+
+        for headers in (
+            {"Origin": "https://evil.example"},
+            # The browser's own answer outranks a header the page chose itself.
+            {"Sec-Fetch-Site": "cross-site", **SAME_ORIGIN},
+        ):
+            refused = client.post(path, data=body, headers=headers)
+            assert refused.status_code == 403
+            assert refused.json()["error"] == "E_BAD_ORIGIN"
+
+        # Neither header, with the cookie: refused. That is the shape a
+        # cross-site form POST would have if SameSite ever failed to hold it.
+        assert client.post(path, data=body).status_code == 403
+
+    with owner_client(tmp_path) as script:
+        # Neither header, with a bearer: allowed. curl is not a CSRF victim.
+        assert script.post(
+            path, data=body, headers=BEARER, follow_redirects=False
+        ).status_code == 303
+
+
+def test_trusted_cidrs_are_empty_by_default_and_are_the_socket_peer(
+    tmp_path: Path,
+) -> None:
+    """§3.2's escape hatch, and §3.4's reason for shipping it switched off."""
+    import ipaddress
+
+    from vidtheque_mcp.dashboard.settings import DashboardSettings as DS
+
+    assert DS().trusted_cidrs == ()
+    assert DS.from_env().trusted_cidrs == ()
+
+    lan = DS(trusted_cidrs=(ipaddress.ip_network("10.0.0.0/8"),))
+    assert lan.trusts("10.4.4.4")
+    assert not lan.trusts("192.168.1.1")
+    assert not lan.trusts(None)
+    assert not lan.trusts("not-an-address")
+
+    def lan_app() -> object:
+        # A fresh app per client: an MCP session manager's lifespan runs once.
+        return build_app(
+            _settings(tmp_path, auth_mode="token", static_token=TOKEN),
+            embeddings=FakeEmbeddings(),
+            run_pipeline=False,
+            public=PublicSettings(enabled=False),
+            dashboard=DashboardSettings(trusted_cidrs=lan.trusted_cidrs),
+        )
+
+    path = f"{ROOT}/videos/kCc8FmEb1nY/tags"
+    inside = TestClient(
+        lan_app(), base_url="http://localhost:8080", client=("10.9.9.9", 4444)
+    )
+    with inside:
+        assert inside.post(
+            path, data={"add": "topic:lan"}, headers=SAME_ORIGIN, follow_redirects=False
+        ).status_code == 303
+
+    outside = TestClient(
+        lan_app(), base_url="http://localhost:8080", client=("203.0.113.7", 4444)
+    )
+    with outside:
+        forged = outside.post(
+            path,
+            data={"add": "topic:lan"},
+            headers={
+                **SAME_ORIGIN,
+                # The rate limiter trusts this header. Authorization must not:
+                # any client can send it (demo-site.md §4.3).
+                "CF-Connecting-IP": "10.9.9.9",
+                "X-Forwarded-For": "10.9.9.9",
+            },
+        )
+        assert forged.status_code == 401, "a header is not an address"
+
+
+def test_the_env_vars_this_phase_adds_are_documented() -> None:
+    """CLAUDE.md: an env var without an entry in `deploy/.env.example` is a bug."""
+    import os
+
+    example = (Path(__file__).resolve().parents[2] / "deploy/.env.example").read_text()
+    for var in ("VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS", "VIDTHEQUE_DASHBOARD_SESSION_TTL_S"):
+        assert var in example, var
+
+    # And the TTL is read, which is the half `config.py` was missing — the
+    # session lifetime was hard-coded while every other tunable had a reader.
+    os.environ["VIDTHEQUE_DASHBOARD_SESSION_TTL_S"] = "600"
+    try:
+        assert Settings.from_env().login_session_ttl_s == 600
+    finally:
+        del os.environ["VIDTHEQUE_DASHBOARD_SESSION_TTL_S"]
+
+
+# --- 8.3 the login page
+
+
+def test_the_login_page_mints_the_existing_cookie_and_no_new_system(
+    tmp_path: Path,
+) -> None:
+    """§3.2 rule 2: same cookie name, same `login_sessions` row, same flags."""
+    from vidtheque_mcp.auth.login import SESSION_COOKIE
+
+    with owner_client(tmp_path) as client:
+        form = client.get(f"{ROOT}/login")
+        assert form.status_code == 200
+        assert "VIDTHEQUE_PASSWORD" in form.text
+        assert "kCc8FmEb1nY" not in form.text, "the sign-in page leaks no corpus"
+
+        wrong = client.post(
+            f"{ROOT}/login", data={"password": "hunter2"}, headers=SAME_ORIGIN
+        )
+        assert wrong.status_code == 401
+        # One message for both secrets: naming which one was wrong is a hint
+        # about which one this deployment has.
+        assert "does not match this instance" in wrong.text
+        assert not client.cookies.get(SESSION_COOKIE)
+
+        good = client.post(
+            f"{ROOT}/login",
+            data={"password": PASSWORD, "next": f"{ROOT}/jobs"},
+            headers=SAME_ORIGIN,
+            follow_redirects=False,
+        )
+        assert good.status_code == 303
+        assert good.headers["location"] == f"{ROOT}/jobs"
+        cookie = good.headers["set-cookie"]
+        assert cookie.startswith(f"{SESSION_COOKIE}=")
+        assert "HttpOnly" in cookie and "SameSite=lax" in cookie and "Path=/" in cookie
+        assert "Secure" not in cookie  # PUBLIC_URL is http in this fixture
+
+        # A row in the table the OAuth login already writes, not a parallel one.
+        sid = client.cookies.get(SESSION_COOKIE)
+        store = client.app.state.assembled.auth.store
+        assert store is not None and store.load_session(sid) == "owner"
+
+        # And it is now a credential for the read pages too, with no bearer.
+        assert client.get(ROOT).status_code == 200
+
+
+def test_the_login_refuses_an_open_redirect_and_a_cross_origin_post(
+    tmp_path: Path,
+) -> None:
+    with owner_client(tmp_path) as client:
+        for away in ("https://evil.example/steal", "//evil.example", "/etc/passwd"):
+            response = client.post(
+                f"{ROOT}/login",
+                data={"password": PASSWORD, "next": away},
+                headers=SAME_ORIGIN,
+                follow_redirects=False,
+            )
+            assert response.headers["location"] == ROOT, away
+
+    with owner_client(tmp_path) as other:
+        cross = other.post(
+            f"{ROOT}/login",
+            data={"password": PASSWORD},
+            headers={"Origin": "https://evil.example"},
+        )
+        assert cross.status_code == 403
+        assert "another origin" in cross.text
+
+
+def test_the_token_is_the_secret_when_no_password_is_set(tmp_path: Path) -> None:
+    """The curl path, typed once into a browser (§3.2 rule 2)."""
+    with owner_client(tmp_path, password=None) as client:
+        assert "VIDTHEQUE_TOKEN" in client.get(f"{ROOT}/login").text
+        assert client.post(
+            f"{ROOT}/login",
+            data={"password": TOKEN},
+            headers=SAME_ORIGIN,
+            follow_redirects=False,
+        ).status_code == 303
+        assert client.get(ROOT).status_code == 200
+
+
+def test_signing_out_drops_the_row_not_just_the_cookie(tmp_path: Path) -> None:
+    from vidtheque_mcp.auth.login import SESSION_COOKIE
+
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        sid = client.cookies.get(SESSION_COOKIE)
+        store = client.app.state.assembled.auth.store
+        assert store is not None and store.load_session(sid) == "owner"
+
+        out = client.post(f"{ROOT}/logout", headers=SAME_ORIGIN, follow_redirects=False)
+        assert out.status_code == 303
+        assert store.load_session(sid) is None, "a replayed cookie must be dead"
+
+        # Replaying it by hand does not get back in.
+        client.cookies.set(SESSION_COOKIE, sid)
+        assert client.get(ROOT).status_code == 401
+
+
+def test_an_expired_browser_session_is_sent_back_to_the_login(tmp_path: Path) -> None:
+    """A form POST from a page whose cookie died gets a page, not a JSON blob."""
+    with owner_client(tmp_path) as client:
+        refused = client.post(
+            f"{ROOT}/videos/kCc8FmEb1nY/reindex",
+            headers={**SAME_ORIGIN, "Accept": "text/html"},
+            follow_redirects=False,
+        )
+        assert refused.status_code == 303
+        assert refused.headers["location"].startswith(f"{ROOT}/login?next=")
+
+
+# --- 8.4 the index form
+
+
+def test_the_index_form_splits_a_paste_into_jobs_of_ten(tmp_path: Path) -> None:
+    """§10.7, resolved: the ten-URL cap stays on the MCP surface and the form
+    splits server-side — which is what the 2026-08-09 straggler run did by
+    hand, 64 videos into 7 jobs."""
+    from vidtheque_mcp.dashboard.writes import URLS_PER_JOB
+
+    ids = [f"vid{n:08d}" for n in range(23)]  # 11 characters, as YouTube ids are
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        response = client.post(
+            f"{ROOT}/index", data={"urls": "\n".join(ids)}, headers=SAME_ORIGIN
+        )
+        assert response.status_code == 200
+        job_ids = set(re.findall(rf"{ROOT}/jobs/(job_[A-Za-z0-9_-]+)", response.text))
+        assert len(job_ids) == 3, response.text[-2000:]
+        # And the page says so: a split the operator cannot see is a job count
+        # they cannot explain.
+        assert "split into" in response.text
+
+        counts = sorted(
+            client.get(f"{ROOT}/api/jobs/{job}").json()["job"]["n_items"]
+            for job in job_ids
+        )
+        assert counts == [3, 10, 10]
+        assert max(counts) == URLS_PER_JOB
+
+
+def test_a_single_url_goes_straight_to_its_job(tmp_path: Path) -> None:
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        response = client.post(
+            f"{ROOT}/index",
+            data={"urls": "https://youtu.be/solo0000001"},
+            headers=SAME_ORIGIN,
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert response.headers["location"].startswith(f"{ROOT}/jobs/job_")
+
+
+def test_the_index_form_is_bounded_like_every_other_input(tmp_path: Path) -> None:
+    """The paste box is an input, not an instruction (§6.1)."""
+    from vidtheque_mcp.dashboard.writes import MAX_FORM_URLS
+
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        empty = client.post(f"{ROOT}/index", data={"urls": "  \n "}, headers=SAME_ORIGIN)
+        assert empty.status_code == 400
+        assert "E_BAD_PARAM" in empty.text
+
+        before = len(client.get(f"{ROOT}/api/jobs").json()["jobs"])
+        flood = "\n".join(f"vid{n:08d}" for n in range(MAX_FORM_URLS + 1))
+        refused = client.post(f"{ROOT}/index", data={"urls": flood}, headers=SAME_ORIGIN)
+        assert refused.status_code == 413
+        assert str(MAX_FORM_URLS) in refused.text
+        # Nothing was queued: the cap is checked before the first job.
+        assert len(client.get(f"{ROOT}/api/jobs").json()["jobs"]) == before
+
+
+def test_the_index_form_passes_the_tools_refusal_through_verbatim(
+    tmp_path: Path,
+) -> None:
+    """The form adds no policy (§5.5): a bad tag is `index-video`'s refusal, in
+    its own words, on the page that submitted it."""
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        response = client.post(
+            f"{ROOT}/index",
+            data={"urls": "vid00000042", "tags": "NotATag"},
+            headers=SAME_ORIGIN,
+        )
+        assert response.status_code == 409
+        assert "E_BAD_PARAM" in response.text
+        assert "namespace" in response.text
+        # The typed URLs come back with it: a refusal that empties the box is a
+        # refusal that costs the operator the paste.
+        assert "vid00000042" in response.text
+
+
+def test_the_index_form_refuses_honestly_when_indexing_is_disabled(
+    tmp_path: Path,
+) -> None:
+    """§5.5: disabled with the reason, not accepting a doomed submission."""
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        client.app.state.assembled.db.writes_allowed = False
+        try:
+            form = client.get(f"{ROOT}/index")
+            assert "Indexing is disabled" in form.text
+            assert "disabled" in form.text  # the controls, not only the banner
+            refused = client.post(
+                f"{ROOT}/index", data={"urls": "vid00000043"}, headers=SAME_ORIGIN
+            )
+            assert refused.status_code == 409
+            assert "E_FEATURE_DISABLED" in refused.text
+        finally:
+            client.app.state.assembled.db.writes_allowed = True
+
+
+def test_nothing_on_the_write_side_offers_a_delete(tmp_path: Path) -> None:
+    """§5.2: `jobs.kind='delete'` has no pipeline, so it gets no button."""
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        for path in (f"{ROOT}/index", f"{ROOT}/videos", f"{ROOT}/videos/kCc8FmEb1nY"):
+            body = page(client, path)
+            assert "/delete" not in body
+            assert ">Delete<" not in body
+        assert client.post(
+            f"{ROOT}/videos/kCc8FmEb1nY/delete", headers=SAME_ORIGIN
+        ).status_code == 404
+
+
+# --- 8.5 the row actions
+
+
+def test_re_index_queues_a_forced_job_for_this_video_only(tmp_path: Path) -> None:
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        queued = client.post(
+            f"{ROOT}/videos/zduSFxRajkE/reindex",
+            headers=SAME_ORIGIN,
+            follow_redirects=False,
+        )
+        assert queued.status_code == 303
+        job = queued.headers["location"].rsplit("/", 1)[-1]
+        payload = client.get(f"{ROOT}/api/jobs/{job}").json()
+        # It is one video, not the playlist the URL happened to be in.
+        assert payload["job"]["kind"] == "reindex"
+        assert payload["job"]["n_items"] == 1
+
+
+def test_re_indexing_a_video_a_live_job_holds_is_the_tools_refusal(
+    tmp_path: Path,
+) -> None:
+    """`kCc8FmEb1nY` is mid-`stt` in the fixture's running job.
+
+    The button does not get to override that, and the page does not invent its
+    own wording for it: this is `index-video`'s `E_INDEXING`, verbatim, with a
+    way back to the video it was pressed on.
+    """
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        held = client.post(f"{ROOT}/videos/kCc8FmEb1nY/reindex", headers=SAME_ORIGIN)
+        assert held.status_code == 409
+        assert "E_INDEXING" in held.text
+        assert f"{ROOT}/videos/kCc8FmEb1nY" in held.text
+
+
+def test_re_indexing_an_unknown_video_is_a_typed_404(tmp_path: Path) -> None:
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        missing = client.post(f"{ROOT}/videos/nope/reindex", headers=SAME_ORIGIN)
+        assert missing.status_code == 404
+        assert "E_UNKNOWN_VIDEO" in missing.text
+
+
+def test_tagging_calls_the_tool_and_keeps_its_rules(tmp_path: Path) -> None:
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        detail = f"{ROOT}/videos/kCc8FmEb1nY"
+
+        added = client.post(
+            f"{detail}/tags",
+            data={"add": "topic:attention, series:zero-to-hero"},
+            headers=SAME_ORIGIN,
+            follow_redirects=False,
+        )
+        assert added.status_code == 303
+        assert added.headers["location"] == f"{detail}#manage"
+        body = page(client, detail)
+        assert ">topic:attention<" in body and ">series:zero-to-hero<" in body
+
+        removed = client.post(
+            f"{detail}/tags",
+            data={"remove": "topic:attention"},
+            headers=SAME_ORIGIN,
+            follow_redirects=False,
+        )
+        assert removed.status_code == 303
+        assert ">topic:attention<" not in page(client, detail)
+
+        # The tool's namespace rule, verbatim, and nothing applied.
+        bad = client.post(
+            f"{detail}/tags", data={"add": "Shouty:Tag"}, headers=SAME_ORIGIN
+        )
+        assert bad.status_code == 400
+        assert "E_BAD_PARAM" in bad.text
+        assert "namespace" in bad.text
+
+        # An empty submission is not an error; it is a no-op that goes back.
+        assert client.post(
+            f"{detail}/tags", data={}, headers=SAME_ORIGIN, follow_redirects=False
+        ).status_code == 303
+
+
+def test_tagging_an_unknown_video_refuses_before_it_writes(tmp_path: Path) -> None:
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        missing = client.post(
+            f"{ROOT}/videos/nope/tags", data={"add": "topic:x"}, headers=SAME_ORIGIN
+        )
+        assert missing.status_code == 404
+        assert "E_UNKNOWN_VIDEO" in missing.text
+
+
+# --- 8.6 the surface stays itself
+
+
+def test_the_sign_in_page_has_its_own_much_tighter_bucket(tmp_path: Path) -> None:
+    """The one path on this surface where a request is a guess at a secret.
+
+    The loose `dashboard` bucket is written for a human clicking plus a polling
+    tab; charging a password form against it would leave 120 guesses a minute
+    on a box that is reachable through a tunnel.
+    """
+    from vidtheque_mcp.public import LOGIN_PER_MIN
+
+    assert LOGIN_PER_MIN < 60
+    with owner_client(tmp_path) as client:
+        codes = [
+            client.post(
+                f"{ROOT}/login", data={"password": "guess"}, headers=SAME_ORIGIN
+            ).status_code
+            for _ in range(LOGIN_PER_MIN + 2)
+        ]
+        assert codes[0] == 401
+        assert codes[-1] == 429
+        # The read pages are on the loose bucket and are not collateral.
+        assert client.get(f"{ROOT}/videos").status_code in (200, 401)
+
+
+def test_the_write_pages_carry_no_inline_script_and_no_corpus_markup(
+    tmp_path: Path,
+) -> None:
+    """The two rules the whole surface is asserted against, on the new pages."""
+    module = f'<script type="module" src="{ROOT}/static/dashboard.js"></script>'
+    with owner_client(tmp_path) as client:
+        assert "<script" not in client.get(f"{ROOT}/login").text.replace(module, "")
+        sign_in(client)
+        for path in (f"{ROOT}/index", f"{ROOT}/videos/aaaaaaaaaaa"):
+            body = page(client, path)
+            assert "<script" not in body.replace(module, ""), path
+            assert "<script>alert" not in body
+            assert "<img src=x" not in body
+
+
+def test_the_write_affordances_appear_only_with_the_write_side(
+    tmp_path: Path,
+) -> None:
+    """The controls and the routes are the same decision, made once (§2.4)."""
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        assert "Add to the index" in page(client, ROOT)
+        assert "Re-index" in page(client, f"{ROOT}/videos")
+        assert 'id="manage"' in page(client, f"{ROOT}/videos/kCc8FmEb1nY")
+        assert "Sign out" in page(client, ROOT)
+
+    with make_client(tmp_path) as none_mode:  # auth=none
+        overview = page(none_mode, ROOT)
+        assert "Add to the index" not in overview
+        assert "Sign out" not in overview
+        # …and it says why, with the one-line fix (§3.2 rule 3).
+        assert "VIDTHEQUE_AUTH=token" in overview
+        assert "Re-index" not in page(none_mode, f"{ROOT}/videos")
+        assert 'id="manage"' not in page(none_mode, f"{ROOT}/videos/kCc8FmEb1nY")

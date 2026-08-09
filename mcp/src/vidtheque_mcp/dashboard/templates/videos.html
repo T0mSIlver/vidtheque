@@ -131,6 +131,11 @@
       <th scope="col">Coverage</th>
       <th scope="col">Tags</th>
       <th scope="col"{% if sorted_col == 'indexed' %} aria-sort="{{ sorted_dir }}"{% endif %}><a href="{{ sort_link('indexed_at') }}">Indexed</a></th>
+      {# Present in a private deployment, absent in the demo projection — the
+         §2.4 table, and the same list of routes that decides it (§2.3). Not a
+         disabled column: a control that cannot work is worse UI than no
+         column. #}
+      {% if write_side %}<th scope="col" class="col-actions">Actions</th>{% endif %}
     </tr>
   </thead>
   <tbody>
@@ -171,6 +176,19 @@
         {% else %}<span class="muted">—</span>{% endif %}
       </td>
       <td data-label="Indexed"><time>{{ row.indexed_at }}</time></td>
+      {# One POST button and one link. Re-index is a single decision and fits a
+         34px row; tagging needs two text fields and lives on the detail page,
+         where there is room for the namespace rules beside it. Both are real
+         HTML — the button is a form, not a fetch, so the table works with
+         JavaScript off exactly as the filters and the pager do. #}
+      {% if write_side %}
+      <td class="col-actions" data-label="Actions">
+        <form class="rowform" method="post" action="{{ root }}/videos/{{ row.video_id }}/reindex">
+          <button class="ghost" type="submit"{{ ' disabled' if not writes_allowed }}>Re-index</button>
+        </form>
+        <a class="ghostlink" href="{{ root }}/videos/{{ row.video_id }}#manage">Tag</a>
+      </td>
+      {% endif %}
     </tr>
     {% endfor %}
   </tbody>

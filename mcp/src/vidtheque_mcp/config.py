@@ -212,6 +212,12 @@ class Settings:
             frame_url_ttl_s=_int_env("VIDTHEQUE_FRAME_URL_TTL", 86_400),
             access_token_ttl_s=_int_env("VIDTHEQUE_ACCESS_TOKEN_TTL", 3_600),
             refresh_token_ttl_s=_int_env("VIDTHEQUE_REFRESH_TOKEN_TTL", 30 * 86_400),
+            # One cookie, one table, one lifetime — so one env var, whichever
+            # of the two pages minted it (dashboard.md §9). It is named for the
+            # dashboard because that is the surface a human keeps open; the
+            # OAuth consent screen's session is the same row and honours the
+            # same number rather than a second one nobody would think to set.
+            login_session_ttl_s=_int_env("VIDTHEQUE_DASHBOARD_SESSION_TTL_S", 12 * 3_600),
             response_max_chars=_int_env("VIDTHEQUE_RESPONSE_MAX_CHARS", 60_000),
             candidate_cap=_int_env("VIDTHEQUE_CANDIDATE_CAP", 5_000),
             vec_max_distance=_float_env("VIDTHEQUE_VEC_MAX_DISTANCE", 1.0),

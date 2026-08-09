@@ -36,6 +36,13 @@
      for should have been in. `page` is the chrome's own idea of where this
      request belonged, so the primary link is that one. #}
   <p class="pager">
+    {# A refusal that came from a form has one obvious destination — the page
+       whose form it was — and it goes first, because "back to the thing I was
+       editing" outranks the two standing links the rail already carries. It is
+       only ever set by a write handler; a read page's 404 has no such page. #}
+    {% if back is defined and back %}
+    <a class="ghostlink" href="{{ back.href }}">{{ back.label }}</a>
+    {% endif %}
     {% if page == 'jobs' %}
     <a class="ghostlink" href="{{ root }}/jobs">Every job this index has run</a>
     {% else %}

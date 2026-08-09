@@ -1,7 +1,7 @@
 # The management dashboard — the primary surface for the index
 
-**Status: REVIEWED (Tom, 2026-08-09). Phases 1 and 2 are implemented; phases
-3–5 are not.** Written 2026-08-09 against the tree at `7dc8226`; every fact about the
+**Status: REVIEWED (Tom, 2026-08-09). Phases 1, 2 and 3 are implemented; phases
+4–5 are not.** Written 2026-08-09 against the tree at `7dc8226`; every fact about the
 code was checked and is cited with a path. The open questions in §10 were real
 forks and are now mostly resolved inline. §8 records what each phase actually
 delivered as it lands.
@@ -267,6 +267,15 @@ dashboard's write routes. Accepted credentials:
    Tom's residential IP. In `none` mode the dashboard serves the read-only
    projection and says why, with the one-line fix (`VIDTHEQUE_AUTH=token`).
 
+   *Amended in phase 3 (2026-08-09): **absent, not refused.*** `none` mode
+   registers no write routes **and no login page**, exactly as
+   `VIDTHEQUE_PUBLIC_READONLY=1` does, so the whole write side 404s rather than
+   403s. §2.3's argument — a route that exists and refuses is a route somebody
+   probes — applies with more force to a sign-in form that could never grant
+   anything. The "says why" survives, in the rail foot, which DESIGN.md already
+   gives the job of carrying what a deployment is allowed to do. §8's phase 3
+   table has the rest.
+
 The escape hatch for the home-lab case: `VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS`,
 **default empty**, matched against the **socket peer address only — never
 `VIDTHEQUE_TRUSTED_IP_HEADER`**. That header is documented as
@@ -289,6 +298,18 @@ Both are cheap now and expensive later:
   which the config already builds and the OAuth `resource` already depends on
   (`config.resource_url`). JSON-only bodies mean no cross-site form POST can
   reach a handler in the first place.
+
+*Amended in phase 3 (2026-08-09): **the bodies are HTML forms, so the Origin
+check carries the weight.*** §10.2 resolved this surface as server-rendered
+documents that work with JavaScript off, and a write side reachable only by
+`fetch` would not be that. So the check became asymmetric: an **ambient**
+credential (the session cookie) requires *positive* same-origin evidence, and a
+request carrying neither `Sec-Fetch-Site` nor `Origin` is refused; a bearer
+token, or a trusted peer, is not ambient, so absent headers still pass and
+`curl` needs no ceremony. The no-state-changing-GET rule is unchanged and is
+asserted. **There is no CSRF token and none is planned** — it would need
+server-side state or a signed cookie pair to guard a surface that already
+refuses every request a cross-site page can generate.
 
 ### 3.4 Alternatives I did not pick
 
@@ -744,7 +765,10 @@ the same commit — CLAUDE.md's contract rule.
 **Two pre-existing bugs this work makes visible**, both backlog rather than
 scope: `list-videos`'s `cues`/`frames` fields are declared and always empty
 (`tools/library.py:190-191`), and `login_session_ttl_s` is hard-coded with no env
-reader (`config.py:92`) while every other tunable has one.
+reader (`config.py:92`) while every other tunable has one. **The second is
+fixed in phase 3** — it is `VIDTHEQUE_DASHBOARD_SESSION_TTL_S`, and the OAuth
+login's session honours the same number, because it is the same cookie and the
+same row.
 
 ---
 
@@ -824,10 +848,38 @@ takes the parameter; no page passes it), `args_json`'s parsed fields, and the
 "degraded across all recent jobs" roll-up — the badge is per job, and the
 corpus overview already answers the corpus-wide version.
 
-**Phase 3 — the write side.** Session login (bearer → the existing
-`vidtheque_session` cookie), POST-only + `Origin` discipline, the index form,
-re-index and tag actions, `VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS`. New env vars land
-in `deploy/.env.example` in the same commit.
+**Phase 3 — the write side. ✅ SHIPPED 2026-08-09.** Session login (password or
+bearer → the existing `vidtheque_session` cookie), POST-only + `Origin`
+discipline, the index form with server-side batching, re-index and tag actions,
+`VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS` and `VIDTHEQUE_DASHBOARD_SESSION_TTL_S`.
+
+What landed, against what this document specified:
+
+| §  | promised | shipped |
+|---|---|---|
+| 2.3 | in read-only mode the write routes are not registered | as specified, and asserted as **404 rather than 403** on every one of them, including the login page. The predicate is one function, `access.write_side_enabled(auth_mode, readonly)`, resolved once in `app.py` beside every other mode decision |
+| 3.2 rule 3 | `none` mode serves the read-only projection and says why | same predicate, so `none` mode registers no write routes *and no login page* — **this document said "refused"; the implementation says "absent"**. A sign-in that grants nothing is the same probe magnet as a button that 403s, and the argument §2.3 makes for one makes it for the other. `require_write()` still refuses in `none` mode and is still tested: the registration decision is made far from the handler, and a handler that trusted it would be one refactor away from being wrong. The *why* lives in the rail foot, which DESIGN.md already gives the job of carrying what a deployment is allowed to do |
+| 3.2 rule 2 | a login form that takes the credential once and mints the existing cookie | `GET|POST /dashboard/login`. Same cookie name, same `login_sessions` row, same flags read from the same place as `auth/login.py`. **One thing this document did not anticipate:** `token` mode built no `AuthStore` at all, so the cookie it promised could not have been minted or read there. `build_auth` now creates one in `token` mode as well — no new table, no new hashing, one more file open at boot. The secret is `VIDTHEQUE_PASSWORD` when set and, in `token` mode, `VIDTHEQUE_TOKEN` as well, so a token-only deployment still has a browser path in; both comparisons always run, because a short-circuit would leak by timing which secret exists |
+| 3.2 | `VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS`, socket peer only | as specified, empty by default, parsed with `ipaddress` and **never** `VIDTHEQUE_TRUSTED_IP_HEADER` — asserted with a request that forges both `CF-Connecting-IP` and `X-Forwarded-For` from outside the network and is refused. An unparseable entry is dropped with a warning rather than failing the boot: this is an authorization *widening*, so a typo must not fail open, and a silent drop is a write side the operator thinks is reachable and is not |
+| 3.3 | no state-changing GET | as specified. Every write is POST, and a GET to one is a 404 (`Mount("/")` is a full match, so the router never reaches the POST-only route's 405) |
+| 3.3 | Origin on every write; **JSON-only bodies** | **Diverged, deliberately.** The write side is HTML forms, not JSON — §10.2 resolved this surface as server-rendered documents, and phase 1 already shipped a timeline that navigates with JavaScript off. So "no cross-site form POST can reach a handler in the first place" stops being true on its own, and the Origin rule carries the weight instead: it is now **asymmetric**. A `session` credential is ambient, so it needs *positive* same-origin evidence and a request with neither `Sec-Fetch-Site` nor `Origin` is refused; a bearer, or a trusted peer, is not ambient, so absent headers still pass and `curl -H 'Authorization: Bearer …'` needs no ceremony. That plus `SameSite=Lax` is the whole CSRF posture — **no token, and none is planned**: a per-form token needs server-side state or a signed cookie pair, and it would guard a surface that already refuses every request a cross-site page can generate |
+| 5.5 | the index form: URL(s), `expand`, `max_items`, `tags`, `channels`, `priority`, `force_reindex`, all clamped by the tool | as specified. `channels` is three checkboxes that submit the tool's own word `all` when they are all ticked, rather than a three-item CSV meaning the same thing. `force_reindex` is its own `<fieldset>` — it is not a channel, and a checkbox under the wrong legend is a wrong answer to a screen reader as well as to a reader |
+| 5.5 | refuses honestly when `db.writes_allowed` is false | the controls render `disabled` with the vector-state reason above them, and a submission that gets through anyway comes back as the tool's `E_FEATURE_DISABLED`, verbatim |
+| 5.5 / 10.7 | the form splits a paste into jobs of ten server-side | as specified, with **two bounds this document did not name**: the paste is capped at 200 URLs (`max_items`' own ceiling, so the form and the tool refuse at the same number), and the batch size is `min(10, max_items)` — `index_video` truncates its URL list to `max_items`, so a batch bigger than that would have dropped the tail silently. The split is printed on the receipt: a split the operator cannot see is a job count they cannot explain |
+| 5.5 | POST → job id → redirect to the job | one job and nothing to explain redirects (303) to `/dashboard/jobs/{job_id}`. Anything else — a split, an already-indexed video, a refusal — renders a receipt above the form, because that outcome is worth reading and a reload must not re-submit it |
+| 5.2 / 2.4 | row actions: re-index and tag, present in private, absent in demo | re-index is a one-click POST on both the table and the detail page; tagging is a form on the detail page, reached from the table by a link, because two text fields do not fit a 34px row and the namespace rules want room beside them. Both call the same `index_video` / `tag_video` the tools call, and both render the tool's refusal verbatim with a link back to the video |
+| 5.2 | **no delete button** | none, and asserted: no `/delete` string on any write page, and the path 404s. `jobs.kind='delete'` is still schema with no pipeline behind it |
+| 2.5.4 | one declared list of write routes | `WRITE_ROUTES`, now five paths, asserted **equal** to the set of registered non-GET routes — so a sixth that forgets to declare itself fails the suite rather than shipping unguarded |
+| 9 | `VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS`, `VIDTHEQUE_DASHBOARD_SESSION_TTL_S` in `deploy/.env.example` | both, in the same commit, and the TTL closes the gap §7 logged: `login_session_ttl_s` was hard-coded at `config.py:92` while every other tunable had a reader. One cookie, one table, one lifetime — the OAuth consent screen's session honours the same number rather than a second one nobody would think to set |
+| — | *(not in this document)* | **A dedicated `dashboard_login` rate bucket, 10/min per IP, fixed.** The loose `dashboard` bucket is written for a human clicking beside a polling tab; charging a password form against it leaves 120 guesses a minute on a box reachable through a tunnel. It is a constant for the same reason the poll interval is one |
+| — | *(not in this document)* | **`POST /dashboard/logout`**, which deletes the `login_sessions` row rather than only clearing the cookie — a cleared cookie leaves a live row anything holding a copy could replay |
+| DESIGN.md | forms as full members of the system | four new `components:` entries (textarea, checkbox row, field help, row action) added to `DESIGN.md` in the same commit as the CSS, per its amendment rule. No new colour, no off-ladder size, no off-grid spacing. The paste box is set in the machine face — the Two-Channel Rule applied where it pays most, since JetBrains Mono was chosen for drawing `0`/`O` and `1`/`l`/`I` apart and a pasted column of ids is exactly that string |
+
+**Deferred out of phase 3, deliberately:** `delete_video` (the pipeline job
+first — §5.2, and phase 5 owns it), service-layer batching that bypasses the
+tool for 100+-item runs (§10.7's roadmap half; the form's 200-URL cap is where
+that becomes the answer), a CSRF token (see the §3.3 row — the posture is
+deliberate, not pending), and per-video job history on the table.
 
 **Phase 4 — the demo becomes the subset.** `VIDTHEQUE_PUBLIC_READONLY=1` serves
 the welcome page plus the read-only projection; the demo page keeps its search

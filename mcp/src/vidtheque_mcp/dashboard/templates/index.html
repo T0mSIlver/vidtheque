@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block main %}
+
+<div class="pagehead">
+  <div class="pagehead-line">
+    <h1>Add to the index</h1>
+    <p class="pagehead-meta">
+      {% if writes_allowed %}
+      <span class="fact">queued in jobs of <span class="mono">{{ urls_per_job }}</span></span>
+      {% else %}
+      <span class="pill tone-bad">indexing refused</span>
+      {% endif %}
+    </p>
+  </div>
+  <p class="pagehead-meta">
+    A video, a playlist or a channel. This runs the same
+    <code>index-video</code> the MCP surface runs, with the same clamps, so
+    nothing here can ask the pipeline for something an agent could not.
+  </p>
+</div>
+
+{% if not writes_allowed %}
+{# §5.5: refuse honestly. The form renders disabled with the reason, rather
+   than accepting a submission that comes back E_FEATURE_DISABLED after the
+   operator has typed sixty URLs into it. #}
+<section class="notice notice-bad">
+  <h2 class="notice-title">Indexing is disabled on this instance.</h2>
+  <p class="notice-detail">
+    The corpus config and the vector tables disagree: {{ vectors.reason }}
+  </p>
+  <p class="notice-next">
+    Fix the config or dimension mismatch and restart. Search still works, and
+    every page on this surface still reads.
+  </p>
+</section>
+{% endif %}
+
+{% if error %}
+<section class="notice notice-bad">
+  <h2 class="notice-title">{{ error.message }}</h2>
+  <p class="notice-detail"><code>{{ error.code }}</code></p>
+  {% if error.next %}<p class="notice-next">{{ error.next }}</p>{% endif %}
+</section>
+{% endif %}
+
+{% if result %}
+{# The receipt. It is above the form and not instead of it, because the next
+   thing an operator does after queueing a batch is queue another one. #}
+<section class="panel receipt" aria-labelledby="queued">
+  <h2 class="panel-title" id="queued">What that submission did</h2>
+  <p class="panel-note">
+    <span class="mono">{{ result.urls }}</span> URL(s)
+    {% if result.split %}
+    split into <span class="mono">{{ result.batches }}</span> jobs of at most
+    <span class="mono">{{ urls_per_job }}</span>. The cap belongs to the MCP
+    tool, which a model calls; this form is not that surface, so it splits
+    rather than refuses.
+    {% else %}
+    in one job.
+    {% endif %}
+  </p>
+
+  {% if result.jobs %}
+  <ul class="joblist">
+    {% for job in result.jobs %}
+    <li>
+      <a class="mono" href="{{ root }}/jobs/{{ job.job_id }}">{{ job.job_id }}</a>
+      <span class="row-meta"><span class="mono">{{ job.items }}</span> video(s) queued</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if result.already %}
+  <p class="empty-lead">
+    <span class="mono">{{ result.already | length }}</span> already indexed and
+    left alone.
+  </p>
+  <p class="empty-note">
+    {% for id in result.already[:10] %}<a class="mono" href="{{ root }}/videos/{{ id }}">{{ id }}</a>{{ ", " if not loop.last }}{% endfor %}{% if result.already | length > 10 %} and more{% endif %}.
+    Tick <em>force re-index</em> to rebuild one.
+  </p>
+  {% endif %}
+
+  {% for refusal in result.errors %}
+  <p class="signin-error">
+    <span class="pill tone-bad">{{ refusal.code }}</span> {{ refusal.message }}
+  </p>
+  <p class="empty-note">
+    {% for url in refusal.urls %}<code>{{ url }}</code>{{ " " if not loop.last }}{% endfor %}
+    {% if refusal.next %}<br>{{ refusal.next }}{% endif %}
+  </p>
+  {% endfor %}
+
+  {% if result.jobs %}
+  <p class="pager">
+    <a class="ghostlink" href="{{ root }}/jobs?state=active">Watch the queue</a>
+  </p>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="panel" aria-labelledby="submit">
+  <h2 class="panel-title" id="submit">The submission</h2>
+
+  <form class="indexform" method="post" action="{{ root }}/index">
+    <div class="field field-block">
+      <label for="urls">URLs</label>
+      <textarea id="urls" name="urls" rows="6" spellcheck="false" autocomplete="off"
+                placeholder="https://youtu.be/kCc8FmEb1nY&#10;kCc8FmEb1nY&#10;https://www.youtube.com/playlist?list=…"
+                {{ 'disabled' if not writes_allowed }}>{{ form.urls }}</textarea>
+      <p class="field-help">
+        One per line, or separated by spaces or commas. A bare 11-character id
+        works. Up to <span class="mono">{{ max_form_urls }}</span> per
+        submission, queued as jobs of <span class="mono">{{ urls_per_job }}</span>.
+      </p>
+    </div>
+
+    <div class="formrow">
+      <div class="field">
+        <label for="expand">Expand</label>
+        <select id="expand" name="expand" {{ 'disabled' if not writes_allowed }}>
+          {% for value in expansions %}
+          <option value="{{ value }}"{{ ' selected' if form.expand == value }}>{{ value }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field field-narrow">
+        <label for="max_items">Max items</label>
+        <input id="max_items" name="max_items" type="number" min="1" max="200"
+               inputmode="numeric" value="{{ form.max_items }}"
+               {{ 'disabled' if not writes_allowed }}>
+      </div>
+      <div class="field">
+        <label for="priority">Priority</label>
+        <select id="priority" name="priority" {{ 'disabled' if not writes_allowed }}>
+          <option value="normal"{{ ' selected' if form.priority == 'normal' }}>normal</option>
+          <option value="high"{{ ' selected' if form.priority == 'high' }}>high</option>
+        </select>
+      </div>
+      <div class="field field-wide">
+        <label for="tags">Tags</label>
+        <input id="tags" name="tags" type="text" value="{{ form.tags }}"
+               placeholder="topic:attention, series:zero-to-hero" autocomplete="off"
+               {{ 'disabled' if not writes_allowed }}>
+      </div>
+    </div>
+    <p class="field-help">
+      <em>Expand</em> decides what a playlist or channel URL means:
+      <code>none</code> indexes the one video,
+      <code>playlist</code> takes the list it is in,
+      <code>channel_recent</code> takes the channel's latest. <em>Max items</em>
+      caps that expansion, and caps each job.
+    </p>
+
+    <fieldset class="checks">
+      <legend class="label">Channels to build</legend>
+      {% for name, label, note in channel_boxes %}
+      <label class="check">
+        <input type="checkbox" name="channel_{{ name }}" value="1"
+               {{ 'checked' if not form.channels or name in form.channels }}
+               {{ 'disabled' if not writes_allowed }}>
+        <span class="check-word">{{ label }}</span>
+        <span class="check-note">{{ note }}</span>
+      </label>
+      {% endfor %}
+    </fieldset>
+
+    {# Its own group: forcing a rebuild is not a channel, and a checkbox filed
+       under the wrong legend is a wrong answer to a screen reader as well as
+       to a reader. #}
+    <fieldset class="checks">
+      <legend class="label">If it is already indexed</legend>
+      <label class="check">
+        <input type="checkbox" name="force_reindex" value="1"
+               {{ 'checked' if form.force_reindex }}
+               {{ 'disabled' if not writes_allowed }}>
+        <span class="check-word">Force re-index</span>
+        <span class="check-note">
+          rebuild every stage. Without this, an incomplete video resumes at its
+          outstanding stages and a finished one is left alone.
+        </span>
+      </label>
+    </fieldset>
+
+    <div class="field field-actions">
+      <button type="submit" {{ 'disabled' if not writes_allowed }}>Queue the job</button>
+      <a class="ghostlink" href="{{ root }}/jobs">Jobs</a>
+    </div>
+  </form>
+
+  <p class="panel-note">
+    Nothing from a video is searchable until its job reports
+    <code>done</code>. Stages run download, transcribe, keyframes, OCR, embed,
+    and each writes as it finishes, so a job that fails late keeps what it
+    already built. There is no delete here: <code>jobs.kind='delete'</code> is
+    in the schema and has no pipeline behind it, and a button that queues a
+    failing job is worse than no button.
+  </p>
+</section>
+
+{% endblock %}

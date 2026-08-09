@@ -177,6 +177,16 @@ class AuthStore:
             (sid, subject, expires_at),
         )
 
+    def delete_session(self, sid: str | None) -> None:
+        """Sign out: the row goes, so the cookie is dead even if it is replayed.
+
+        Clearing the cookie alone would leave a live `login_sessions` row that
+        anything holding a copy of the value could still present.
+        """
+        if not sid:
+            return
+        self._conn.execute("DELETE FROM login_sessions WHERE sid = ?", (sid,))
+
     def load_session(self, sid: str | None) -> str | None:
         if not sid:
             return None
