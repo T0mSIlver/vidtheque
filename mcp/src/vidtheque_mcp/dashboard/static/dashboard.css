@@ -550,8 +550,6 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
   letter-spacing: -0.01em;
 }
 
-.rubric { margin: var(--s1) 0 0; color: var(--muted); font-size: var(--t-meta); }
-
 .nav { padding: var(--s2) 0; }
 
 /* A group label, in the one label idiom this surface has: the same 11px
