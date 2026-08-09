@@ -1,0 +1,176 @@
+[
+ {
+  "id": "goldfish",
+  "kind": "text_in_image",
+  "query": "slide saying LLMs have the memory of a goldfish",
+  "relevant": [2725],
+  "note": "large slide type; the phrase appears nowhere else in the pool"
+ },
+ {
+  "id": "back-channels",
+  "kind": "text_in_image",
+  "query": "chart of private data leaked by channel, inter-agent messages 68.8 percent",
+  "relevant": [4410],
+  "note": "small body text inside a browser window inside the frame"
+ },
+ {
+  "id": "typescript-catch",
+  "kind": "text_in_image",
+  "query": "typescript try catch where the type system has no idea what pipeline can throw",
+  "relevant": [1972],
+  "note": "syntax-highlighted code card, comment text is the discriminator"
+ },
+ {
+  "id": "dspy-signature",
+  "kind": "text_in_image",
+  "query": "python code defining a dspy Signature class for extracting taxes from an invoice",
+  "relevant": [3733, 3728],
+  "note": "3728 shows def extract_taxes, 3733 the full dspy module"
+ },
+ {
+  "id": "ast-grep-json",
+  "kind": "text_in_image",
+  "query": "terminal running ast-grep piped through jq printing orpc-unmigrated-procedure warnings",
+  "relevant": [2973],
+  "note": "terminal, monospace, JSON output"
+ },
+ {
+  "id": "dear-llm-vuln",
+  "kind": "text_in_image",
+  "query": "slide asking dear LLM can you find and exploit the vulnerability, with strcpy buffer overflow code",
+  "relevant": [1472],
+  "note": "mixed C code and prose on one slide"
+ },
+ {
+  "id": "agent-pull-request",
+  "kind": "text_in_image",
+  "query": "pull request opened by an agent titled guard todo_update against in-progress items",
+  "relevant": [3285],
+  "note": "distractor risk: id 225 is also a pull request screenshot"
+ },
+ {
+  "id": "astro-upgrade-pr",
+  "kind": "text_in_image",
+  "query": "github pull request to upgrade astro to v7.0.5 with build verification and manual steps",
+  "relevant": [225],
+  "note": "the other PR screenshot; the two must not be interchangeable"
+ },
+ {
+  "id": "tokens-to-cells",
+  "kind": "text_in_image",
+  "query": "title slide From Tokens to Cells, foundation models for single-cell biology",
+  "relevant": [4455]
+ },
+ {
+  "id": "musically-tiktok",
+  "kind": "text_in_image",
+  "query": "slide that says Musical.ly was about to rebrand to TikTok",
+  "relevant": [3346]
+ },
+ {
+  "id": "data-mixture-piecharts",
+  "kind": "text_in_image",
+  "query": "table of source families with unique tokens and training tokens next to two pie charts of the data mixture",
+  "relevant": [1623],
+  "note": "dense paper figure; needs both the table and the charts"
+ },
+ {
+  "id": "business-insider-amazon",
+  "kind": "text_in_image",
+  "query": "business insider headline about amazon ordering a 90 day reset after code mishaps",
+  "relevant": [90]
+ },
+ {
+  "id": "dex-horthy-card",
+  "kind": "text_in_image",
+  "query": "speaker name card for Dex Horthy, co-founder and CEO of humanlayer",
+  "relevant": [3762]
+ },
+ {
+  "id": "dont-break-cache",
+  "kind": "text_in_image",
+  "query": "slide titled don't break the cache with a bar chart comparing baseline inference cost to TokenPilot",
+  "relevant": [4403]
+ },
+ {
+  "id": "calc-baml-editor",
+  "kind": "text_in_image",
+  "query": "code editor with calc.baml open and 18 problems in the file, tokenizer written in typescript",
+  "relevant": [1968]
+ },
+ {
+  "id": "task-file-tree",
+  "kind": "text_in_image",
+  "query": "file tree listing instruction.md, task.toml, Dockerfile, solve.sh and test.sh",
+  "relevant": [3365]
+ },
+ {
+  "id": "eval-building-roles",
+  "kind": "text_in_image",
+  "query": "slide titled eval building describing builder, critic and tester roles",
+  "relevant": [2213]
+ },
+ {
+  "id": "election-map-personas",
+  "kind": "text_in_image",
+  "query": "grid of red and blue united states election maps compared across prompt personas",
+  "relevant": [4161],
+  "note": "the discriminator is the picture, the caption is tiny"
+ },
+ {
+  "id": "cake-recipe-chat",
+  "kind": "text_in_image",
+  "query": "chat assistant returning a non-dairy vanilla birthday cake recipe with photos of cakes",
+  "relevant": [1297]
+ },
+ {
+  "id": "agent-traces-title",
+  "kind": "text_in_image",
+  "query": "Snorkel title slide, from agent traces to agent simulations",
+  "relevant": [3061]
+ },
+ {
+  "id": "panel-on-stools",
+  "kind": "visual",
+  "query": "wide shot of a panel of people sitting on high stools on a blue-lit conference stage",
+  "relevant": [737, 788, 557],
+  "note": "three genuinely similar wide panel shots; any is correct"
+ },
+ {
+  "id": "fireside-armchairs",
+  "kind": "visual",
+  "query": "two men in black talking in armchairs in front of a sponsor logo wall with a leafy plant",
+  "relevant": [1107, 1110]
+ },
+ {
+  "id": "podium-cap",
+  "kind": "visual",
+  "query": "a speaker wearing a baseball cap standing behind a lectern in front of a blue curtain",
+  "relevant": [489]
+ },
+ {
+  "id": "two-at-lectern",
+  "kind": "visual",
+  "query": "two presenters standing together at a lectern on stage, one holding a laptop",
+  "relevant": [3251]
+ },
+ {
+  "id": "bearded-closeup",
+  "kind": "visual",
+  "query": "close up of a bearded man in a black polo shirt gesturing with both hands while speaking",
+  "relevant": [579]
+ },
+ {
+  "id": "three-seated-gesturing",
+  "kind": "visual",
+  "query": "three seated panelists in dark clothing, the middle one gesturing with his hand raised",
+  "relevant": [890]
+ },
+ {
+  "id": "worlds-fair-logo-card",
+  "kind": "text_in_image",
+  "query": "the AI Engineer World's Fair logo card alone on a black background",
+  "relevant": [3955, 305, 4040],
+  "note": "three near-identical bumper frames; any is correct"
+ }
+]
