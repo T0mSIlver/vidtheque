@@ -507,23 +507,47 @@ A demo is judged on the four screens that are not "ten results came back".
   is editing one list in the HTML.
 - **Nothing matched** names the query, and offers the widening that exists: if a
   content-type filter is on, a button back to `all`; otherwise fewer words, and
-  the reminder that a phrase from a slide will not be in the spoken words.
+  the reminder that a phrase from a slide will not be in the spoken words. When
+  the facade's `data_status` says `empty` (§2.1) it says *that* instead: an
+  instance with nothing indexed is not a query the visitor got wrong.
 - **Refused or broken** — a 429 renders the limiter's `Retry-After` as a
   *ticking* countdown with the retry disabled until it reaches zero; a failed
   fetch says the server could not be reached and offers the same retry; a 503
   in ask mode keeps its "search instead" button and counts down too. No error
   ever shows a status code or an upstream message.
-- **Loading** is a skeleton of *one row per requested result*, each with a
+  **A failed "More results" is a row-level notice, not a wipe:** the error
+  renders into the foot, under the rows already on screen, and the count line
+  goes back to counting them. The rows a visitor has are theirs — losing ten of
+  them to a rate-limit hiccup on page two (30/min is easy to spend while
+  exploring) reads as the corpus breaking, not the chrome. The next attempt
+  clears the foot before it starts, so a retry can never layer fresh rows under
+  a stale error box either.
+- **Loading** is a skeleton of *one row per expected result*, each with a
   result's geometry — thumbnail box, title, meta, two lines of snippet — so the
-  space is reserved before the rows land and nothing below them moves
-  (measured: CLS 0 on the results render; three tidier rows cost 0.20). The
-  rows fade out down the list so a full page of grey reads as a reserve rather
-  than a wall.
+  space is reserved before the rows land and nothing below them moves. The rows
+  fade out down the list so a full page of grey reads as a reserve rather than
+  a wall. *How many to expect* is a guess with no honest source: the count is
+  not known until the response lands, so a full page reserved for a query that
+  returns three shifts everything below it (measured: 0.20) — which on a
+  three-video demo corpus is the common case, not the edge. The best evidence
+  available is what the **last** search returned, so that is what the next one
+  reserves; the first search of a session still guesses a full page. CLS is 0
+  on the steady state and on any page that comes back full, not unconditionally.
 
 Requests are spent on **Enter or a click, never on a keystroke**: a
 search-as-you-type box against a shared 30/min bucket would refuse a visitor
-mid-word. A search in flight is aborted when a newer one starts, and responses
-carry a sequence number, so a slow reply cannot overwrite a fast one.
+mid-word.
+
+**One in-flight discipline, across both modes.** A request aborts the one
+before it and takes the next sequence number; a reply is rendered only if it is
+still the newest **and** the mode it was issued in is still the mode on screen.
+Switching mode is itself a cancellation — of the request *and* of its
+half-drawn loading state, because a skeleton belongs to a search that is now
+never going to land. The mode half is not theoretical: an ask can run for 90s
+against a free tier, which is plenty of time for a visitor to give up and
+search, and a late answer that reopens the answer pane over those results (or a
+late search dropping rows under an answer) is the one failure a stranger will
+blame on the corpus rather than on the chrome.
 
 ### 6.2 The floor
 

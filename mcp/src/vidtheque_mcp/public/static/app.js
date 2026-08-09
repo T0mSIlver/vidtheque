@@ -22,6 +22,7 @@ const state = {
   seq: 0, // a stale response must never overwrite a newer one
   abort: null,
   countdown: null,
+  lastRows: 0, // how tall the last page of results actually was
 };
 
 // --------------------------------------------------------------------- utils
@@ -57,6 +58,13 @@ const setStatus = (text, notes = []) => {
   for (const note of notes) status.append(el("span", "note", note));
 };
 
+// "10 results of ~38", notes and all, kept aside while a *second* page is in
+// flight: if that page fails, the count of what is still on screen is the
+// truth, not "loading more…" frozen forever.
+const statusNodes = () => Array.from($("status").childNodes, (node) => node.cloneNode(true));
+
+const restoreStatus = (nodes) => $("status").replaceChildren(...(nodes || []));
+
 // A ticking "try again in Ns" beats a frozen number: the wait is short and
 // seeing it move is the difference between "broken" and "busy".
 const setCountdown = (seconds, render) => {
@@ -79,10 +87,16 @@ const showEmptyState = (on) => {
 };
 
 // Reserve the space the results will occupy, so nothing below them moves when
-// they land: one row per requested result, each the height of a typical hit
-// (thumbnail box, title, meta, two lines of snippet). Fewer, shorter rows look
-// tidier and cost a page-long jump the moment the real ones arrive.
-const showSkeleton = (rows = PAGE_SIZE) => {
+// they land: one row per expected result, each the height of a typical hit
+// (thumbnail box, title, meta, two lines of snippet).
+//
+// How many to expect is a guess, and a full page is the wrong one on a small
+// corpus: reserving ten for a query that returns three shifts everything below
+// by seven rows, which on a three-video demo is the common case and not the
+// edge. The best evidence available is what the last search actually returned,
+// so that is what the next one reserves — the first search of a session still
+// guesses a full page.
+const showSkeleton = (rows = state.lastRows || PAGE_SIZE) => {
   const results = $("results");
   results.replaceChildren();
   results.setAttribute("aria-busy", "true");
@@ -103,6 +117,43 @@ const clearResults = () => {
   $("results").replaceChildren();
   $("results").removeAttribute("aria-busy");
   $("results-foot").replaceChildren();
+};
+
+// ----------------------------------------------------------------- in flight
+
+// One in-flight discipline for both modes (§6.1). A request aborts the one
+// before it and takes the next sequence number; a reply renders only if it is
+// still the newest **and** the mode it was issued in is still the mode on
+// screen. The mode half is load-bearing: an ask can run for 90s, which is
+// plenty of time to give up and search, and a late answer that reopens the
+// answer pane over those results reads as the page being broken.
+const beginRequest = () => {
+  stopCountdown();
+  state.abort?.abort();
+  const abort = new AbortController();
+  state.abort = abort;
+  const seq = (state.seq += 1);
+  const askMode = state.askMode;
+  return {
+    signal: abort.signal,
+    // Called bare after an await, or with the rejection an abort produced.
+    stale: (error) =>
+      error?.name === "AbortError" || seq !== state.seq || askMode !== state.askMode,
+  };
+};
+
+// Switching mode cancels whatever the other mode had in flight — and takes its
+// half-drawn loading state with it, because the skeleton belongs to a search
+// that is now never going to land.
+const cancelInFlight = () => {
+  stopCountdown();
+  state.abort?.abort();
+  state.abort = null;
+  state.seq += 1;
+  const results = $("results");
+  results.removeAttribute("aria-busy");
+  for (const row of results.querySelectorAll(".skel")) row.remove();
+  $("go").disabled = false;
 };
 
 // Mark query terms in a snippet. Built with DOM nodes, never innerHTML: the
@@ -229,8 +280,24 @@ const CHANNEL_NAME = {
 // Nothing matched. Say what was searched, and offer the widening that is
 // actually available — the other two channels are the usual reason a phrase
 // misses (it was on a slide, not in the words).
-const renderNoResults = (q) => {
+const renderNoResults = (q, dataStatus) => {
   const box = el("div", "notice");
+  // "Nothing matched" is a lie when there is nothing to match: an instance
+  // that has not indexed anything yet says so instead of blaming the query.
+  // `data_status` is the search tool's own word for it, forwarded by /api.
+  if (dataStatus === "empty") {
+    box.append(el("p", "notice-title", "Nothing is indexed yet."));
+    box.append(
+      el(
+        "p",
+        "notice-detail",
+        "This instance has an empty corpus, so no query can match. Index a " +
+          "video and the same search will work.",
+      ),
+    );
+    $("results").replaceChildren(box);
+    return;
+  }
   box.append(el("p", "notice-title", `Nothing matched “${q}”.`));
   const tips = el("ul", "notice-tips");
   if (state.contentType !== "all") {
@@ -256,7 +323,12 @@ const renderNoResults = (q) => {
   $("results").replaceChildren(box);
 };
 
-const renderError = (title, detail, retry) => {
+// `append` is the whole difference between a hiccup and a wipe. A failed
+// "More results" must not cost the visitor the ten rows they already have: the
+// notice goes into the foot, under the list, where the button that asked for
+// page 2 was. The next attempt clears the foot before it starts, so a retry
+// cannot layer new rows *below* a stale error box either.
+const renderError = (title, detail, retry, append = false) => {
   const box = el("div", "notice notice-bad");
   box.append(el("p", "notice-title", title));
   if (detail) box.append(el("p", "notice-detail", detail));
@@ -265,14 +337,15 @@ const renderError = (title, detail, retry) => {
     button.addEventListener("click", retry);
     box.append(button);
   }
-  $("results").replaceChildren(box);
+  if (append) $("results-foot").replaceChildren(box);
+  else $("results").replaceChildren(box);
   return box;
 };
 
 // 429 from the limiter: the honest answer is "in N seconds", counted down.
-const renderRateLimited = (payload, headerRetry, retry) => {
+const renderRateLimited = (payload, headerRetry, retry, append = false) => {
   const seconds = Number(payload?.retry_after_s) || Number(headerRetry) || 60;
-  const box = renderError("Too many requests.", "…", retry);
+  const box = renderError("Too many requests.", "…", retry, append);
   const detail = box.querySelector(".notice-detail");
   const button = box.querySelector("button");
   if (button) button.disabled = true;
@@ -299,12 +372,9 @@ async function runSearch(append = false) {
   showEmptyState(false);
   if (!append) state.offset = 0;
 
-  stopCountdown();
-  state.abort?.abort();
-  const abort = new AbortController();
-  state.abort = abort;
-  const seq = (state.seq += 1);
-  const stale = () => seq !== state.seq;
+  const { signal, stale } = beginRequest();
+  // What the count line said before "loading more…" replaced it.
+  const priorStatus = append ? statusNodes() : null;
 
   setStatus(append ? "loading more…" : "searching…");
   if (!append) showSkeleton();
@@ -316,19 +386,24 @@ async function runSearch(append = false) {
     limit: String(PAGE_SIZE),
     offset: String(state.offset),
   });
+  // A failed page is a failed *page*: in append mode the list and its count
+  // survive it, and only the foot changes.
+  const failed = () => (append ? restoreStatus(priorStatus) : setStatus(""));
+
   let response;
   let payload;
   try {
-    response = await fetch(`/api/search?${params}`, { signal: abort.signal });
+    response = await fetch(`/api/search?${params}`, { signal });
     payload = await response.json();
   } catch (error) {
-    if (stale() || error?.name === "AbortError") return;
-    setStatus("");
+    if (stale(error)) return;
+    failed();
     $("results").removeAttribute("aria-busy");
     renderError(
       "Could not reach the server.",
       "The demo may be restarting, or the connection dropped.",
       () => runSearch(append),
+      append,
     );
     return;
   }
@@ -336,14 +411,22 @@ async function runSearch(append = false) {
   $("results").removeAttribute("aria-busy");
 
   if (response.status === 429) {
-    setStatus("");
-    renderRateLimited(payload, response.headers.get("Retry-After"), () => runSearch(append));
+    failed();
+    renderRateLimited(
+      payload,
+      response.headers.get("Retry-After"),
+      () => runSearch(append),
+      append,
+    );
     return;
   }
   if (!response.ok) {
-    setStatus("");
-    renderError(payload?.message || "Search failed.", payload?.next || "", () =>
-      runSearch(append),
+    failed();
+    renderError(
+      payload?.message || "Search failed.",
+      payload?.next || "",
+      () => runSearch(append),
+      append,
     );
     return;
   }
@@ -354,9 +437,10 @@ async function runSearch(append = false) {
   const hits = payload.results || [];
   if (!append && !hits.length) {
     setStatus("", payload.notes || []);
-    renderNoResults(q);
+    renderNoResults(q, payload.data_status);
     return;
   }
+  if (!append) state.lastRows = hits.length;
   for (const hit of hits) results.append(hitRow(hit, q));
 
   const page = payload.pagination || {};
@@ -447,7 +531,7 @@ const renderDegraded = (message, retryAfter) => {
 async function runAsk() {
   const q = $("q").value.trim();
   if (!q) return;
-  stopCountdown();
+  const { signal, stale } = beginRequest();
   showEmptyState(false);
   const pane = $("answer");
   pane.replaceChildren(el("p", "thinking", "reading the corpus…"));
@@ -463,8 +547,13 @@ async function runAsk() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ q }),
+      signal,
     });
     const payload = await response.json().catch(() => ({}));
+    // The visitor may have switched to search — or asked something else —
+    // while this was upstream. Every render below reopens the answer pane, so
+    // a stale one would plant it over whatever is on screen now.
+    if (stale()) return;
     if (response.status === 429) {
       renderDegraded(
         payload.message || "Too many questions for now — search still works.",
@@ -478,17 +567,26 @@ async function runAsk() {
     } else {
       renderAnswer(payload);
     }
-  } catch {
+  } catch (error) {
+    if (stale(error)) return;
     renderDegraded("Could not reach the server. Search still works once it is back.", 0);
   } finally {
-    pane.removeAttribute("aria-busy");
-    $("go").disabled = false;
+    // Only the newest request owns the controls: an aborted one must not
+    // un-busy the pane the request that replaced it is still filling.
+    if (!stale()) {
+      pane.removeAttribute("aria-busy");
+      $("go").disabled = false;
+    }
   }
 }
 
 // -------------------------------------------------------------------- wiring
 
 function setAskMode(on) {
+  // The switch itself ends whatever the mode being left had in flight. Without
+  // this an ask and a search overlap, and the slower one lands in a page that
+  // is no longer showing its mode.
+  if (on !== state.askMode) cancelInFlight();
   state.askMode = on;
   for (const mode of document.querySelectorAll("#modes .chip")) {
     const selected = (mode.dataset.mode === "ask") === on;
