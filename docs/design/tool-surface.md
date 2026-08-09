@@ -145,6 +145,12 @@ loses the payoff of a transcript sentence; both ends carry signal.
 - Marker: `…[N chars truncated — pass max_text_chars=0 for full text]…`
 - The `0` opt-out is **tested**. screenpipe once shipped a build where `0`
   returned *only* the truncation marker.
+- **The OCR leg shows a window, not a truncation.** An OCR hit is a whole
+  keyframe (index-schema §2.5), so its text is FTS5's snippet around the matched
+  terms — 64 tokens, line separators (` | `) intact — rather than the whole
+  slide middle-truncated, which is as likely to cut the match out as to keep it.
+  `max_text_chars=0` still means everything: the frame's every line, in reading
+  order. `get-frames` on the `frame_id` in the hit shows the frame itself.
 
 Truncation is the second cap, never the only one. Each tool also caps item counts
 (§ per-tool "token discipline" blocks), and the **response as a whole** is capped
@@ -302,6 +308,15 @@ screenpipe's `deduplicate_ocr_and_ui` upgrades OCR text when the accessibility
 text is longer, same principle. Provenance becomes `[transcript+ocr]` so the model
 still knows both channels fired without a second query.
 
+**The OCR leg matches whole frames.** On-screen text is indexed one document per
+keyframe, not per OCR line (index-schema §2.5), because the text legs AND their
+terms and a slide is a dozen lines: `vector retrieval` has to be able to match
+the slide that titles "Vector databases" and bullets "…for retrieval augmented
+generation". Consequences a caller can see: a term repeated down a slide is one
+result rather than five at the same timestamp; a phrase wrapped across two lines
+is findable; `min_chars`/`max_chars` measure the whole frame; and the text shown
+is the matched window of it (§3.3).
+
 **Cross-modal fusion.** BM25 scores and cosine similarities are not comparable, so
 `content_type=all` fuses the three legs with **Reciprocal Rank Fusion**
 (`score = Σ 1/(k + rank)`, k=60) rather than a hand-tuned weighted sum. RRF needs
@@ -391,7 +406,7 @@ substring-based.
 | `published_after` / `published_before` | string | — | §3.2 normalizer | Corpus axis. |
 | `offset_start` / `offset_end` | number \| string | — | §3.2; seconds ≥ 0 | Intra-video axis. |
 | `speaker` | string | — | ≤ 128 chars | Case-insensitive partial. Transcript leg only → other legs skipped with a `note:`. `E_FEATURE_DISABLED` if diarization is off corpus-wide. |
-| `min_chars` / `max_chars` | int | — | 0..100000 | Filter by matched-segment text length. Text legs only. |
+| `min_chars` / `max_chars` | int | — | 0..100000 | Filter by matched-segment text length. Text legs only. On the OCR leg the segment is the **frame** — all of its lines (index-schema §2.5) — so "short" means a sparse slide, not a short line. |
 | `max_per_video` | int | `3` | clamped 1..20 | Diversity cap (§3.10). |
 | `cluster_gap` | number | `8` | clamped 0..60 | Seconds; `0` disables clustering (returns raw cues). |
 | `max_text_chars` | int | `1000` | `0` or 120..20000 | §3.3. |

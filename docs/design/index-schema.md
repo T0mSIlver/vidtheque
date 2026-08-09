@@ -471,6 +471,33 @@ the worker's `OCRItemOut` answers with an axis-aligned `bbox` only, so there is 
 quad to carry across the HTTP seam. The column stays for the day the worker returns
 one; nothing reads it meanwhile.
 
+### 1.7b `ocr_frames` — the searchable unit of on-screen text
+
+```sql
+CREATE TABLE ocr_frames (
+  keyframe_id INTEGER PRIMARY KEY REFERENCES keyframes(id) ON DELETE CASCADE,
+  video_id    INTEGER NOT NULL   REFERENCES videos(id)     ON DELETE CASCADE,
+  t_s         REAL    NOT NULL,
+  text        TEXT    NOT NULL
+) STRICT;
+CREATE INDEX ocr_frames_time ON ocr_frames(video_id, t_s);
+```
+
+One row per keyframe: that frame's `ocr_lines`, in `line_no` (reading) order,
+joined with ` | ` — exactly `group_concat(text, ' | ' ORDER BY line_no)`, the same
+string `get-frames`, `video-summary` and `get-segment-context` already print. It
+exists because **OCR search is frame-granular** (§2.5): a line is too small a
+document to hold a multi-term query. `ocr_lines` is unchanged and stays the truth
+— boxes, confidences, per-line order, and every display path read it; this table
+is its concatenation, materialized so FTS5 has a content table to point at.
+
+`video_id`/`t_s` are denormalized for the same reason as §1.7's: the OCR
+candidate CTE filters by video and bounds by time and must not join `keyframes`
+to do it. Written by `pipeline/store.py::write_ocr` in the same transaction as
+the lines (delete-then-insert, never `INSERT OR REPLACE` — REPLACE fires the
+delete trigger only under `recursive_triggers`, which is off, and a missed
+`'delete'` leaves postings for text that is no longer on screen).
+
 ### 1.8 Tags and collections
 
 Two different things that get conflated. **Tags are labels** (`topic:attention`);
@@ -825,7 +852,9 @@ Switching SigLIP checkpoints does not change a single column — it invalidates
 
 ## 2. FTS5
 
-Three external-content tables: `cues_fts`, `ocr_fts`, `videos_fts`.
+Three external-content tables: `cues_fts`, `ocr_frames_fts`, `videos_fts`. The
+OCR one indexes **frames, not lines** — §2.5 is why, and it is the one place
+where the indexed document is not simply a base-table row.
 
 ### 2.1 Why external content, not standalone
 
@@ -853,10 +882,10 @@ CREATE VIRTUAL TABLE cues_fts USING fts5(
   prefix='2 3'
 );
 
-CREATE VIRTUAL TABLE ocr_fts USING fts5(
+CREATE VIRTUAL TABLE ocr_frames_fts USING fts5(
   text,
-  content='ocr_lines',
-  content_rowid='id',
+  content='ocr_frames',
+  content_rowid='keyframe_id',
   tokenize="unicode61 remove_diacritics 2 tokenchars '_-./'",
   prefix='2 3'
 );
@@ -933,8 +962,9 @@ CREATE TRIGGER cues_au AFTER UPDATE OF text ON cues BEGIN
 END;
 ```
 
-`ocr_lines`/`ocr_fts` and `videos`/`videos_fts` follow identically (`videos_fts`
-carries three columns and `coalesce(…,'')` on the nullable ones).
+`ocr_frames`/`ocr_frames_fts` and `videos`/`videos_fts` follow identically
+(`ocr_frames`'s rowid is `keyframe_id`; `videos_fts` carries three columns and
+`coalesce(…,'')` on the nullable ones).
 
 Three things that are easy to get wrong:
 
@@ -950,6 +980,11 @@ Three things that are easy to get wrong:
   deleting one `videos` row cascaded to 300 cues and left `cues` and
   `cues_fts_docsize` at identical counts. This is the load-bearing fact behind the
   whole delete story — if it were false, every cascade would leave orphaned postings.
+  It is also what makes `ocr_frames` safe: the delete path is `videos` →
+  `keyframes` → `ocr_frames` → trigger, and nothing in the pipeline has to
+  remember to clean the frame index. **`INSERT OR REPLACE` does *not* fire the
+  delete trigger** unless `PRAGMA recursive_triggers` is on, which it is not —
+  so every rewrite of a frame's OCR is an explicit `DELETE` then `INSERT`.
 
 **Count the shadow table, not the index.** `SELECT COUNT(*) FROM cues_fts` reads
 straight through to `cues` — that is what `content='cues'` *means*, and it is the
@@ -957,7 +992,7 @@ same number whether the index is in sync, empty, or rotted, so it asserts nothin
 The index's own row count lives in `cues_fts_docsize`, and that is the one to
 compare against the content table. It is also the count that shows the `WHEN
 new.text <> ''` guard working: a corpus with one empty cue has one more row in
-`cues` than in `cues_fts_docsize`, on purpose. (`ocr_fts_docsize` and
+`cues` than in `cues_fts_docsize`, on purpose. (`ocr_frames_fts_docsize` and
 `videos_fts_docsize` likewise.)
 
 `INSERT INTO cues_fts(cues_fts) VALUES('integrity-check')` — which does inspect the
@@ -968,6 +1003,61 @@ index proper — runs in the test suite after every destructive-path test.
 `'optimize'` measured at 0.1 s over the fixture — cheap enough to run after each
 video's indexing transaction rather than on a schedule. Follow screenpipe's other
 half too: `PRAGMA optimize` on the periodic WAL checkpoint tick (§5.1).
+
+### 2.5 The OCR document is a frame, not a line
+
+*(Migration 0003. Until then the OCR index was `ocr_fts`, `content='ocr_lines'`.)*
+
+**A line is too small a document to hold a query.** The OCR leg ANDs its terms
+(§4.6, `expand_prefix_fts`), and a keyframe is about a dozen lines — measured on
+the live corpus, **41,138 OCR lines across 3,460 keyframes**. So a slide titled
+"Vector databases" with "…for retrieval augmented generation" in a bullet
+answered `vector retrieval` with **silence**: the terms were both on screen,
+both indexed, and no document contained both. No `note:`, no way to ask for it
+differently — a pure recall hole, in exactly the slide-shaped content OCR is
+best at. (Backlog #20; the fixture had hidden it, because its "multi-line" frame
+was a single line containing ` | `.)
+
+The unit of OCR search is therefore the **frame**: `ocr_frames` (§1.7b) holds one
+document per keyframe and `ocr_frames_fts` indexes it, same tokenizer as the line
+index it replaced. The terms only have to share a frame — which is also the thing
+the result cites (`frame_id` + `t_s`), so the granularity of matching and the
+granularity of citation finally agree.
+
+**Why not keep both indexes.** Two indexes over the same text means two write
+paths to keep honest, ~14 MB (§3.4) for the smaller one, and one of them still
+answering `vector retrieval` with nothing. Derived tables are rebuilt, never
+migrated (§1.10): going back is a `DROP`, a `CREATE` and a sub-second rebuild.
+
+**Why a materialized table rather than standalone FTS5 over the concatenation.**
+§2.1's delete-path measurement (~420×) is the whole reason the other indexes are
+external-content, and it applies here more strongly, not less — one document per
+frame is ~12× fewer `'delete'` commands per cascaded video than the line index
+cost. The duplicated text is paid for by dropping `ocr_fts`.
+
+Three consequences, all deliberate:
+
+- **A phrase wrapped across two lines now matches.** ` | ` tokenizes to nothing
+  under `unicode61`, so the last token of one line is positionally adjacent to
+  the first of the next: `"retrieval augmented"` finds the slide that breaks the
+  title across two lines. The same mechanism means a phrase query *can* match a
+  coincidental line boundary; on slide text that trade is strongly positive.
+- **A term repeated down a slide is one result, not five.** The line index spent
+  five of `max_per_video` on one frame at one timestamp.
+- **`min_chars`/`max_chars` on the OCR leg measure the frame's whole on-screen
+  text**, because that is what the document is. "Short" now means a sparse
+  slide, not a short line.
+
+**Citations keep the line-level detail available.** A hit shows FTS5's own
+`snippet()` over the frame document — the window that holds the terms, ` | `
+separators intact — rather than the whole slide, because middle-truncating a
+full slide to `max_text_chars` is as likely to cut the match out as to keep it.
+`max_text_chars=0` (the documented opt-out) still returns the whole frame, and
+`ocr_lines` still has every line with its box for anything that wants to draw
+one. The snippet window is 64 tokens (FTS5's own maximum) and is computed for
+the page's rows only — one rowid-restricted lookup each, never for the candidate
+set: measured **145 ms vs 1,068 ms** on a 200,000-frame fixture where every frame
+matched.
 
 ---
 
@@ -1083,6 +1173,15 @@ Fixture: 500 videos × 20 min, 150,000 cues, 18,500 chunks, 40,000 keyframes,
 | `ocr_fts` (data + docsize) | 14.0 | 3% |
 | `keyframes` | 3.8 | 1% |
 | `videos_fts`, `chapters`, indexes, rest | ~22 | 5% |
+
+The `ocr_fts` row is the **pre-0003** measurement, kept because it is the number
+the frame index is judged against. 0003 replaces it with `ocr_frames` (the same
+text again, one row per keyframe rather than per line) plus `ocr_frames_fts`
+(the same tokens, ~17× fewer documents, so a much smaller docsize shadow). The
+fixture has not been regenerated since, so the honest statement is that the OCR
+half of the file grows by roughly the size of the text itself — call it +10 MB
+on a 420 MB file — and no re-measurement is claimed here. The FTS half of a
+`delete_video` gets *cheaper*: 400 line documents become ~80 frame documents.
 
 **Vectors are two-thirds of the database.** The lever is quantization:
 
@@ -1421,16 +1520,26 @@ clamped, and bounded independently of `limit` (tool-surface §4.1 token discipli
 
 ```sql
 WITH ocr_cand AS MATERIALIZED (
-  SELECT o.id, o.video_id, o.t_s, o.text, o.keyframe_id, f.rank AS bm25
-  FROM ocr_fts f
-  JOIN ocr_lines o ON o.id = f.rowid
-  WHERE ocr_fts MATCH :q
+  SELECT o.keyframe_id, o.video_id, o.t_s, o.text, f.rank AS bm25
+  FROM ocr_frames_fts f
+  JOIN ocr_frames o ON o.keyframe_id = f.rowid
+  WHERE ocr_frames_fts MATCH :q
   ORDER BY f.rank
   LIMIT :candidate_cap
 )
-SELECT o.*
-FROM ocr_cand o;
+-- …scope/time/length predicates, rank, per-video cap, page slice…
+SELECT p.*, (SELECT snippet(x.ocr_frames_fts, 0, '', '', ' … ', 64)
+               FROM ocr_frames_fts x
+              WHERE x.ocr_frames_fts MATCH :q AND x.rowid = p.keyframe_id) AS matched_text
+FROM page p;
 ```
+
+**The document is the frame** (§2.5), which is what makes `vector retrieval`
+match a slide that says "vector" in the title and "retrieval" in a bullet. The
+snippet is computed *outside* the page CTE, one rowid-restricted lookup per
+returned row: inside the `MATERIALIZED` candidate CTE it would run
+`candidate_cap` times instead of `limit` times (1,068 ms vs 145 ms on a
+200,000-frame fixture).
 
 **Dedup is not in this query.** It was: a `NOT EXISTS` against a `txt_cand` CTE
 dropped any OCR line a longer transcript cue matching the same query overlapped

@@ -20,7 +20,7 @@ from vidtheque_mcp.app import Assembled, assemble
 from vidtheque_mcp.config import Settings
 from vidtheque_mcp.db import migrations
 from vidtheque_mcp.db.connection import open_write_connection
-from vidtheque_mcp.db.queries import pack_f32
+from vidtheque_mcp.db.queries import OCR_FRAME_SEPARATOR, pack_f32
 
 TEXT_DIM = 1024
 FRAME_DIM = 1152
@@ -109,7 +109,10 @@ VIDEOS = [
         # deliberately: the first five cues are contiguous, the sixth is 400 s
         # later so the clustering bound has something to bind on.
         "cue_times": [(0.0, 2.8), (3.0, 5.8), (6.0, 8.8), (9.0, 11.8), (12.0, 14.8), (420.0, 423.0)],
-        "ocr": [(5.0, "kv cache size = 2 * n_layers * n_heads"), (430.0, "nvidia-smi 18304MiB")],
+        "ocr": [
+            (5.0, ["kv cache size = 2 * n_layers * n_heads"]),
+            (430.0, ["nvidia-smi 18304MiB"]),
+        ],
     },
     {
         "source_id": "zduSFxRajkE",
@@ -124,7 +127,10 @@ VIDEOS = [
             "caching is the whole trick here",
         ],
         "cue_times": [(10.0, 13.0), (13.5, 16.0), (200.0, 203.0)],
-        "ocr": [(12.0, "paged kv cache | block table | 4% fragmentation")],
+        # Three real lines, not one line that happens to contain ' | ': the
+        # frame reads the same either way, but only this shape can show that
+        # `paged fragmentation` matches ACROSS lines of one slide.
+        "ocr": [(12.0, ["paged kv cache", "block table", "4% fragmentation"])],
     },
     {
         "source_id": "eMlx5fFNoYc",
@@ -220,7 +226,12 @@ def _seed_video(
 
     frame_dir = keyframes_dir / spec["source_id"]
     frame_dir.mkdir(parents=True, exist_ok=True)
-    for ordinal, (t_s, text) in enumerate(spec["ocr"]):
+    for ordinal, (t_s, lines) in enumerate(spec["ocr"]):
+        # A frame's OCR is a LIST of lines — because the thing OCR search has to
+        # get right is a query whose terms sit on different lines of one slide.
+        # `screen_text` is what every display path renders and what
+        # `ocr_frames.text` holds.
+        screen_text = OCR_FRAME_SEPARATOR.join(lines)
         relative = f"keyframes/{spec['source_id']}/{ordinal:05d}-{int(t_s * 1000):09d}.jpg"
         payload = _fake_jpeg(ordinal)
         (keyframes_dir.parent / relative).write_bytes(payload)
@@ -231,15 +242,20 @@ def _seed_video(
             (vid, ordinal, t_s, ordinal, t_s, t_s + 5, 1234 + ordinal, 10.0, relative, len(payload)),
         )
         kf = int(cur.lastrowid or 0)
+        for line_no, line in enumerate(lines):
+            conn.execute(
+                "INSERT INTO ocr_lines (keyframe_id, video_id, t_s, line_no, text, conf, "
+                "x0, y0, x1, y1) VALUES (?, ?, ?, ?, ?, 0.9, 0, 0, 1, 1)",
+                (kf, vid, t_s, line_no, line),
+            )
         conn.execute(
-            "INSERT INTO ocr_lines (keyframe_id, video_id, t_s, line_no, text, conf, "
-            "x0, y0, x1, y1) VALUES (?, ?, ?, 0, ?, 0.9, 0, 0, 1, 1)",
-            (kf, vid, t_s, text),
+            "INSERT INTO ocr_frames (keyframe_id, video_id, t_s, text) VALUES (?, ?, ?, ?)",
+            (kf, vid, t_s, screen_text),
         )
         if with_vectors and "frame_embed" in spec["stages"]:
             conn.execute(
                 "INSERT INTO vec_frames (keyframe_id, video_id, t_s, embedding) VALUES (?, ?, ?, ?)",
-                (kf, vid, t_s, pack_f32(vector_for(text, FRAME_DIM))),
+                (kf, vid, t_s, pack_f32(vector_for(screen_text, FRAME_DIM))),
             )
 
 

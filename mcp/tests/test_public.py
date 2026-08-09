@@ -639,20 +639,35 @@ def test_the_page_builds_no_html_from_data(public_client: TestClient) -> None:
 
 
 # A line of OCR is untrusted input by construction. This is the shape of it.
+# The padding has to run past the facade's 400-char budget *after* the OCR leg's
+# snippet window (64 tokens, index-schema §2.5), which is why it is wordy.
 HOSTILE_OCR = (
     "xsspayload <script>alert(document.cookie)</script> "
     '<img src=x onerror=alert(1)> "><svg onload=alert(1)> javascript:alert(1) '
-) + ("padding so the line runs past the facade's 400-char budget. " * 12)
+) + (
+    "padding_that_keeps_running_past_the_facade_budget so the truncation "
+    "marker has something to mark. " * 12
+)
 
 
 def _inject_hostile_ocr(tmp_path: Path) -> None:
-    """Put an adversarial OCR line in the corpus, the way a slide would."""
+    """Put an adversarial OCR line in the corpus, the way a slide would.
+
+    Both tables, because a slide is one searchable document (`ocr_frames`) made
+    of lines (`ocr_lines`) — the upsert here also exercises the frame index's
+    UPDATE trigger.
+    """
     conn = sqlite3.connect(tmp_path / "data" / "vidtheque.db")
     try:
         row = conn.execute("SELECT id, video_id, t_s FROM keyframes LIMIT 1").fetchone()
         conn.execute(
             "INSERT INTO ocr_lines (keyframe_id, video_id, t_s, line_no, text, conf, "
             "x0, y0, x1, y1) VALUES (?, ?, ?, 9, ?, 0.9, 0, 0, 1, 1)",
+            (row[0], row[1], row[2], HOSTILE_OCR),
+        )
+        conn.execute(
+            "INSERT INTO ocr_frames (keyframe_id, video_id, t_s, text) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(keyframe_id) DO UPDATE SET text = text || ' | ' || excluded.text",
             (row[0], row[1], row[2], HOSTILE_OCR),
         )
         conn.commit()

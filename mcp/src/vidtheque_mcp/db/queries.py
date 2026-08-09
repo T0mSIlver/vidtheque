@@ -24,6 +24,24 @@ from typing import Any, Iterable, Sequence
 RRF_K = 60.0
 CLUSTER_MAX_SECONDS = 120.0
 
+# One frame's OCR lines, joined in reading order, are one document — for FTS5
+# (`ocr_frames.text`, §2.5) and for every display path that prints "what is on
+# screen". The separator is the same string the `group_concat(o.text, ' | '
+# ORDER BY o.line_no)` expressions below produce, and the pipeline writes
+# `ocr_frames` with it (`pipeline/store.py::write_ocr`) so the two agree by
+# construction. It tokenizes to nothing under `unicode61`, which is the point:
+# it is a reading aid, not a term, and a phrase wrapped across two lines stays
+# findable.
+OCR_FRAME_SEPARATOR = " | "
+
+# FTS5 `snippet()` window, in tokens (its own hard maximum is 64). The OCR leg
+# shows the matched region of a frame rather than the whole slide: at frame
+# granularity the document is every line on screen, and middle-truncating that
+# to `max_text_chars` is exactly as likely to hide the matched terms as to show
+# them. Bounded work either way — the snippet is computed for the page's rows
+# only, never for the candidate set.
+OCR_SNIPPET_TOKENS = 64
+
 # --- the vector legs' relevance floor -------------------------------------
 #
 # KNN always returns k rows. It has no notion of "nothing here matched": ask
@@ -292,7 +310,8 @@ def footing_fts(query: str) -> str:
 # at the first posting rather than counting a corpus-wide term.
 _FOOTING_SQL = """
 SELECT (SELECT COUNT(*) FROM (SELECT 1 FROM cues_fts   WHERE cues_fts   MATCH :q LIMIT 1))
-     + (SELECT COUNT(*) FROM (SELECT 1 FROM ocr_fts    WHERE ocr_fts    MATCH :q LIMIT 1))
+     + (SELECT COUNT(*) FROM (SELECT 1 FROM ocr_frames_fts
+                               WHERE ocr_frames_fts MATCH :q LIMIT 1))
      + (SELECT COUNT(*) FROM (SELECT 1 FROM videos_fts WHERE videos_fts MATCH :q LIMIT 1))
 """
 
@@ -776,33 +795,43 @@ def probe_transcript(conn: sqlite3.Connection, params: SearchParams, headroom: i
 # it runs over `limit x a small constant` rows — so there is nothing to buy
 # here.
 
+#
+# The unit of this leg is the FRAME, not the OCR line (§2.5, migration 0003).
+# `expand_prefix_fts` ANDs the query's terms, and a keyframe is ~12 lines, so a
+# line-granular index could only match a multi-term query when every term landed
+# on the same line: a slide titled "Vector databases" with "…for retrieval" in a
+# bullet answered `vector retrieval` with silence. `ocr_frames` is one document
+# per keyframe — its lines concatenated in reading order — so the terms only
+# have to share a frame, which is also the thing the result cites.
+
 _OCR_SQL = """
 WITH ocr_cand AS MATERIALIZED (
   -- Scope, time AND length predicates inside the candidate CTE, before the cap
   -- and before the rank — same rule as the transcript legs. min_chars/max_chars
   -- used to be missing here entirely: the tool disabled the frame leg for them,
   -- printed a note, and then let OCR answer `min_chars=100` with a ten-character
-  -- line.
-  SELECT o.id, o.video_id, o.t_s, o.text, o.keyframe_id, f.rank AS bm25
-  FROM ocr_fts f
-  JOIN ocr_lines o ON o.id = f.rowid
-  WHERE f.ocr_fts MATCH :q
+  -- line. They measure the frame's whole on-screen text now, because that is
+  -- what the document is.
+  SELECT o.keyframe_id, o.video_id, o.t_s, o.text, f.rank AS bm25
+  FROM ocr_frames_fts f
+  JOIN ocr_frames o ON o.keyframe_id = f.rowid
+  WHERE f.ocr_frames_fts MATCH :q
     AND o.video_id IN (SELECT value FROM json_each(:video_ids))
     AND (:t_start   IS NULL OR o.t_s >= :t_start)
     AND (:t_end     IS NULL OR o.t_s <= :t_end)
     AND (:min_chars IS NULL OR length(o.text) >= :min_chars)
     AND (:max_chars IS NULL OR length(o.text) <= :max_chars)
-  ORDER BY f.rank, o.id
+  ORDER BY f.rank, o.keyframe_id
   LIMIT :candidate_cap
 ),
 scoped AS (
-  SELECT o.*, ROW_NUMBER() OVER (ORDER BY o.bm25, o.id) AS r FROM ocr_cand o
+  SELECT o.*, ROW_NUMBER() OVER (ORDER BY o.bm25, o.keyframe_id) AS r FROM ocr_cand o
 ),
 capped AS (
-  SELECT *, ROW_NUMBER() OVER (PARTITION BY video_id ORDER BY r, id) AS rn
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY video_id ORDER BY r, keyframe_id) AS rn
   FROM scoped
 )
-SELECT c.id, c.video_id, c.t_s, c.text, c.keyframe_id, c.r,
+SELECT c.keyframe_id, c.video_id, c.t_s, c.text, c.r,
        1.0 / (:rrf_k + c.r) AS score,
        k.ord AS ord,
        -- The public id, built exactly as the frame leg builds it (§3.1). Built
@@ -815,7 +844,27 @@ JOIN videos    v ON v.id = c.video_id
 WHERE c.rn <= :max_per_video
 """
 
-_OCR_PAGE = _OCR_SQL + "\nORDER BY c.r LIMIT :limit OFFSET :offset"
+# `matched_text` is FTS5's own snippet over the frame document: the window that
+# holds the query's terms, with ' | ' line separators intact so the shape of the
+# slide survives. It is computed OUTSIDE the page CTE, one rowid-restricted
+# lookup per returned row (<= limit+1, and `limit` is server-clamped at 50).
+# Computing it in the candidate CTE instead is the obvious spelling and the
+# wrong one: MATERIALIZED means it would run for every candidate up to
+# `candidate_cap` — measured 1,068 ms vs 145 ms on a 200,000-frame fixture where
+# every frame matched.
+_OCR_PAGE = (
+    "WITH page AS MATERIALIZED (\n"
+    + _OCR_SQL
+    + "\nORDER BY c.r LIMIT :limit OFFSET :offset\n)\n"
+    "SELECT p.*, COALESCE((\n"
+    "  SELECT snippet(x.ocr_frames_fts, 0, '', '', ' … ', "
+    + str(OCR_SNIPPET_TOKENS)
+    + ")\n"
+    "  FROM ocr_frames_fts x\n"
+    "  WHERE x.ocr_frames_fts MATCH :q AND x.rowid = p.keyframe_id\n"
+    "), p.text) AS matched_text\n"
+    "FROM page p ORDER BY p.r"
+)
 _OCR_PROBE = "WITH probe AS (" + _OCR_SQL + " LIMIT :ceiling) SELECT COUNT(*) FROM probe"
 
 

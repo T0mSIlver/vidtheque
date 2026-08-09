@@ -268,6 +268,7 @@ async def run(
                 fetch_n,
                 settings.count_probe_headroom,
                 settings.frame_max_distance,
+                max_text_chars,
             )
         )
 
@@ -357,6 +358,7 @@ def _run_legs(
     fetch_n: int,
     headroom: int,
     frame_max_distance: float,
+    max_text_chars: int,
 ) -> tuple[list[Hit], dict[str, int], int, bool]:
     hits: list[Hit] = []
     counts = {"transcript": 0, "ocr": 0, "frame": 0}
@@ -401,7 +403,15 @@ def _run_legs(
                     published_at=None,
                     start_s=float(row["t_s"]),
                     end_s=None,
-                    text=str(row["text"] or ""),
+                    # The leg matches whole frames now (§2.5), so `text` is the
+                    # snippet FTS5 picked around the terms rather than every
+                    # line on the slide: middle-truncating a full slide to
+                    # `max_text_chars` is as likely to cut the match out as to
+                    # keep it, and the dedup below compares this text against
+                    # transcript cues. `max_text_chars=0` is the documented
+                    # "give me everything" opt-out, so it still means the whole
+                    # frame — and the frame id is in the hit either way.
+                    text=str((row["text"] if max_text_chars == 0 else row["matched_text"]) or ""),
                     score=float(row["score"]),
                     cue_ids=[],
                     frame_id=str(row["frame_id"]),

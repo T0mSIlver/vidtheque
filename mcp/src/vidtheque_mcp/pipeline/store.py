@@ -16,7 +16,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any, Sequence
 
-from ..db.queries import pack_f32
+from ..db.queries import OCR_FRAME_SEPARATOR, pack_f32
 from .captions import CueDraft
 from .chunking import ChunkDraft
 from .keyframes import KeyframeDraft
@@ -341,9 +341,20 @@ def write_ocr(
     answers in source pixels, and the consumers of this table (layout
     reasoning, drawing a box on a thumbnail) all want the fraction. Stored
     normalized, the row survives a re-encode at another resolution.
+
+    The `ocr_frames` row is written in the same statement batch, from the same
+    lines, because it is the FTS5 content table for OCR search (§2.5): search
+    matches whole frames so a query whose terms sit on different lines of one
+    slide can match at all. Line rows stay the truth for boxes and display; the
+    frame row is their concatenation in reading order.
     """
     conn.execute("DELETE FROM ocr_lines WHERE keyframe_id = ?", (keyframe_id,))
+    # Explicit DELETE, never INSERT OR REPLACE: REPLACE only fires the delete
+    # trigger under `PRAGMA recursive_triggers`, which is off, and a missed
+    # 'delete' command leaves postings for text that no longer exists.
+    conn.execute("DELETE FROM ocr_frames WHERE keyframe_id = ?", (keyframe_id,))
     written = 0
+    kept: list[str] = []
     span_x = float(width or 1)
     span_y = float(height or 1)
     for line_no, line in enumerate(lines):
@@ -368,6 +379,12 @@ def write_ocr(
             ),
         )
         written += 1
+        kept.append(text)
+    if kept:
+        conn.execute(
+            "INSERT INTO ocr_frames (keyframe_id, video_id, t_s, text) VALUES (?, ?, ?, ?)",
+            (keyframe_id, video_id, float(t_s), OCR_FRAME_SEPARATOR.join(kept)),
+        )
     conn.execute(
         "UPDATE keyframes SET ocr_state = ? WHERE id = ?",
         ("done" if written else "empty", keyframe_id),
