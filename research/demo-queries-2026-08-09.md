@@ -821,3 +821,36 @@ the demo; derive `_empty_result`'s reason line from `legs`; encode "never
 expires" as `null`; and either make the probe total page-independent or stop
 printing it as a total. These are small, and together they are the difference
 between a server an agent trusts and one it double-checks.
+
+---
+
+## §10 — Disposition (2026-08-09, evening): every §7/§9 item resolved or placed
+
+Three fix agents closed the field test's findings the same evening. Where each
+item went:
+
+- **Search/ranking/citations** (commits `aef305d`..`69aaa26`): the root cause of
+  §9.3–9.5 and §7.5–7.11 was one bug — every leg fetched `offset+limit` rows, so
+  ranking, fusion, clustering and counts were functions of the page. Ranking now
+  runs over a fixed 400-row-per-leg candidate pool; citations anchor to the
+  best-scoring matched cue (`match_start` in structured content); the tiebreak is
+  fused score → exact phrase → term coverage → leg agreement, alphabetical last;
+  `max_per_video` backfills; the probe totals are gone in favour of a
+  page-independent count + `pool_exhausted`; phash dedup collapses identical
+  frames across legs.
+- **get-frames** (`a76ed45`, `ed584cd`, `3dd123b`): named ids are never narrowed
+  by `limit` (§9's ship-blocker), `max_text_chars` exists with the `0` opt-out,
+  request order preserved, `expires_at` is null-for-never.
+- **Status honesty** (`f5e0364`): one derivation (`tools/corpus_state.py`) for
+  all three status surfaces; `data_status` gains `deferred` (queue non-empty,
+  none of it runnable, until-when printed); every write-tool hint degrades via
+  `Deps.hint()` when the tool is masked; tags are volunteered only when one
+  exists; bogus TSV fields are rejected naming the valid set.
+- **Deferred with reasons**: `frame_max_distance` recalibration (bench item —
+  the threshold shipped open pending the unified-embedding re-embed);
+  §9.1.9's `Query:` echo truncation and filter-echo on empty pages (minor,
+  unclaimed); the migration-0002 items (§7.1) resolve at deploy time.
+
+The §9 recommendation to "clear the 5 stale job rows" was wrong and was not
+done — those rows are the deferred straggler batch (`not_before` 23:00
+2026-08-09) and the `deferred` vocabulary now describes them truthfully.
