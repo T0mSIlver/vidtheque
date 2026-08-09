@@ -220,6 +220,28 @@ def test_search_facade_keeps_token_discipline(public_client: TestClient) -> None
     assert all(len(hit["text"]) <= 400 + 80 for hit in payload["results"])
 
 
+def test_the_public_clamp_policy_is_the_numbers_the_demo_ships() -> None:
+    """The demo's bounds are contract-frozen (demo-site.md §2.1, §2.2).
+
+    They moved into a policy object so `/dashboard/api/*` could reuse the same
+    handlers (dashboard.md §2.5.1). This asserts the move changed no number:
+    the refactor is allowed to add a second policy, never to widen this one.
+    """
+    from vidtheque_mcp.public.api import PUBLIC_CLAMPS
+
+    assert PUBLIC_CLAMPS.search_max_limit == 20
+    assert PUBLIC_CLAMPS.search_default_limit == 10
+    assert PUBLIC_CLAMPS.search_text_chars == 400  # forced; no `0` opt-out
+    assert PUBLIC_CLAMPS.videos_max_limit == 50
+    assert PUBLIC_CLAMPS.videos_default_limit == 24
+    assert PUBLIC_CLAMPS.offset_max == 1_000
+
+
+def test_the_public_meta_names_its_own_policy(public_client: TestClient) -> None:
+    clamps = public_client.get("/api/meta").json()["clamps"]
+    assert clamps == {"policy": "public", "search_max_limit": 20, "videos_max_limit": 50}
+
+
 def test_search_facade_maps_typed_errors_onto_status_codes(public_client: TestClient) -> None:
     response = public_client.get("/api/search")  # no q, no filter
     assert response.status_code == 400

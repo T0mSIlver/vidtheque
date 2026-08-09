@@ -15,12 +15,20 @@ Two rules it exists to keep:
 * **Typed errors survive.** ``errors.HTTP_STATUS`` already maps every `E_*`
   code to a status; the facade returns that status with the same code, message
   and `next:` hint. One table, two consumers.
+
+Those bounds are a :class:`ClampPolicy` rather than module constants because
+there are now two callers with two answers to "how much may you ask for"
+(dashboard.md §2.5.1): anonymous traffic on `/api/*` and the owner on
+`/dashboard/api/*`. One set of handlers, two policies, still no second query
+layer — and the policy is chosen by *which route group the request arrived
+through*, never by anything in the request.
 """
 
 from __future__ import annotations
 
 import json
 import sqlite3
+from dataclasses import dataclass
 from typing import Any
 
 from starlette.requests import Request
@@ -30,7 +38,7 @@ from starlette.routing import Route
 from .. import __version__
 from ..db import queries
 from ..errors import HTTP_STATUS
-from ..text import clamp, clock
+from ..text import clamp, clamp_text_chars, clock
 from ..tools import library, search
 from ..tools.base import Deps
 from . import humanize
@@ -48,13 +56,63 @@ FRAME_THUMB_WIDTH = 320
 LIGHTBOX_WIDTH = 960
 THUMB_QUALITY = 70
 
-SEARCH_MAX_LIMIT = 20
-SEARCH_DEFAULT_LIMIT = 10
-SEARCH_TEXT_CHARS = 400
-VIDEOS_MAX_LIMIT = 50
-VIDEOS_DEFAULT_LIMIT = 24
-
 CONTENT_TYPES = ("all", "transcript", "ocr", "frame")
+
+
+# --------------------------------------------------------------------- policy
+
+
+@dataclass(frozen=True)
+class ClampPolicy:
+    """How much one route group may ask the service layer for.
+
+    Every number here is a *second* cap under the tool's own: the tool clamps
+    `limit` to 1..50 whatever this says, so a policy can only ever be tighter,
+    never a way around the service layer. That asymmetry is the point — it is
+    why two surfaces can share one set of handlers without either of them
+    becoming the loophole in the other's discipline.
+
+    ``search_text_chars=None`` means "pass the caller's ``max_text_chars``
+    through, clamped by the tool" — including the documented ``0`` opt-out.
+    An integer means the surface forces that width and the opt-out does not
+    exist, which is demo-site.md §2's rule for anonymous traffic.
+    """
+
+    name: str
+    search_max_limit: int
+    search_default_limit: int
+    search_text_chars: int | None
+    videos_max_limit: int
+    videos_default_limit: int
+    offset_max: int
+
+
+# demo-site.md §2.1/§2.2, unchanged: these are the numbers the demo ships and
+# `test_public.py` asserts.
+PUBLIC_CLAMPS = ClampPolicy(
+    name="public",
+    search_max_limit=20,
+    search_default_limit=10,
+    search_text_chars=400,
+    videos_max_limit=50,
+    videos_default_limit=24,
+    offset_max=1_000,
+)
+
+# dashboard.md §5.2: wider, still server-side. `?limit=100000` is clamped, not
+# honoured — the owner gets a bigger page, not an unbounded one. The search
+# leg's ceilings are the tool's own (50 items, and `max_text_chars` honoured
+# so a full transcript is one request away), because the owner *is* the
+# "owner's agent" the escape hatch was written for.
+OWNER_CLAMPS = ClampPolicy(
+    name="owner",
+    search_max_limit=50,
+    search_default_limit=20,
+    search_text_chars=None,
+    videos_max_limit=100,
+    videos_default_limit=50,
+    offset_max=10_000,
+)
 
 
 # --------------------------------------------------------------------- shared
@@ -115,7 +173,9 @@ def _decorate_hit(deps: Deps, hit: dict[str, Any]) -> dict[str, Any]:
 # ------------------------------------------------------------------ endpoints
 
 
-async def search_endpoint(request: Request) -> JSONResponse:
+async def search_endpoint(
+    request: Request, policy: ClampPolicy = PUBLIC_CLAMPS
+) -> JSONResponse:
     deps: Deps = request.app.state.assembled.deps
     params = request.query_params
     content_type = params.get("content_type") or "all"
@@ -129,8 +189,17 @@ async def search_endpoint(request: Request) -> JSONResponse:
             status_code=400,
         )
 
-    limit = _int_param(request, "limit", 1, SEARCH_MAX_LIMIT, SEARCH_DEFAULT_LIMIT)
-    offset = _int_param(request, "offset", 0, 1_000, 0)
+    limit = _int_param(
+        request, "limit", 1, policy.search_max_limit, policy.search_default_limit
+    )
+    offset = _int_param(request, "offset", 0, policy.offset_max, 0)
+    if policy.search_text_chars is None:
+        # The tool's own clamp, `0` opt-out included (text.clamp_text_chars).
+        text_chars = clamp_text_chars(
+            params.get("max_text_chars"), 120, 20_000, 1_000  # type: ignore[arg-type]
+        )
+    else:
+        text_chars = policy.search_text_chars
     result = await search.run(
         deps,
         q=params.get("q"),
@@ -139,7 +208,7 @@ async def search_endpoint(request: Request) -> JSONResponse:
         offset=offset,
         channel=params.get("channel"),
         video_id=params.get("video_id"),
-        max_text_chars=SEARCH_TEXT_CHARS,
+        max_text_chars=text_chars,
     )
     if result.is_error:
         return _error_response(result.structured_content, "search failed")
@@ -164,11 +233,15 @@ async def search_endpoint(request: Request) -> JSONResponse:
     )
 
 
-async def videos_endpoint(request: Request) -> JSONResponse:
+async def videos_endpoint(
+    request: Request, policy: ClampPolicy = PUBLIC_CLAMPS
+) -> JSONResponse:
     deps: Deps = request.app.state.assembled.deps
     params = request.query_params
-    limit = _int_param(request, "limit", 1, VIDEOS_MAX_LIMIT, VIDEOS_DEFAULT_LIMIT)
-    offset = _int_param(request, "offset", 0, 1_000, 0)
+    limit = _int_param(
+        request, "limit", 1, policy.videos_max_limit, policy.videos_default_limit
+    )
+    offset = _int_param(request, "offset", 0, policy.offset_max, 0)
     q = params.get("q")
     result = await library.list_videos(
         deps,
@@ -215,7 +288,9 @@ def _cover_frames(conn: sqlite3.Connection, public_ids: list[str]) -> dict[str, 
     return {str(r["public_id"]): f"{r['public_id']}-{int(r['ord']):05d}" for r in rows}
 
 
-async def meta_endpoint(request: Request) -> JSONResponse:
+async def meta_endpoint(
+    request: Request, policy: ClampPolicy = PUBLIC_CLAMPS
+) -> JSONResponse:
     assembled = request.app.state.assembled
     deps: Deps = assembled.deps
     public: PublicSettings = request.app.state.public_settings
@@ -231,6 +306,13 @@ async def meta_endpoint(request: Request) -> JSONResponse:
             "ask_enabled": public.ask_enabled,
             "ask_model": public.openrouter_model if public.ask_enabled else None,
             "videos": int(rollup["videos_ready"] or 0),
+            # Which policy answered, so a caller can see what it is allowed to
+            # ask for rather than discovering it by being clamped.
+            "clamps": {
+                "policy": policy.name,
+                "search_max_limit": policy.search_max_limit,
+                "videos_max_limit": policy.videos_max_limit,
+            },
             "limits": {
                 "search_per_min": public.search_per_min,
                 "ask_per_min": public.ask_per_min,
@@ -241,12 +323,33 @@ async def meta_endpoint(request: Request) -> JSONResponse:
     )
 
 
-def api_routes() -> list[Route]:
-    from .ask import ask_endpoint
+def api_routes(
+    policy: ClampPolicy = PUBLIC_CLAMPS, prefix: str = "", *, ask: bool = True
+) -> list[Route]:
+    """The read facade, under ``{prefix}/api/*``, bounded by ``policy``.
 
-    return [
-        Route("/api/search", search_endpoint, methods=["GET"]),
-        Route("/api/videos", videos_endpoint, methods=["GET"]),
-        Route("/api/meta", meta_endpoint, methods=["GET"]),
-        Route("/api/ask", ask_endpoint, methods=["POST"]),
+    ``prefix`` is what makes the dashboard's JSON the same handlers rather than
+    a second implementation: ``api_routes(OWNER_CLAMPS, "/dashboard")`` is the
+    whole of dashboard.md §2.5.1. ``ask=False`` leaves the LLM route out, which
+    is how the dashboard gets JSON without also getting a spend surface.
+    """
+
+    async def search_route(request: Request) -> JSONResponse:
+        return await search_endpoint(request, policy)
+
+    async def videos_route(request: Request) -> JSONResponse:
+        return await videos_endpoint(request, policy)
+
+    async def meta_route(request: Request) -> JSONResponse:
+        return await meta_endpoint(request, policy)
+
+    routes = [
+        Route(f"{prefix}/api/search", search_route, methods=["GET"]),
+        Route(f"{prefix}/api/videos", videos_route, methods=["GET"]),
+        Route(f"{prefix}/api/meta", meta_route, methods=["GET"]),
     ]
+    if ask:
+        from .ask import ask_endpoint
+
+        routes.append(Route(f"{prefix}/api/ask", ask_endpoint, methods=["POST"]))
+    return routes
