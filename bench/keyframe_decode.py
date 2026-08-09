@@ -442,13 +442,13 @@ def extract_workers_probe(
                 f"{timing.cpu:.1f}s cpu, {len(drafts)} keyframes, "
                 f"identical={entry['identical_to_baseline']}"
             )
-    best = min(runs, key=lambda r: r["wall"])
+    best = min(runs, key=lambda r: r["wall_s"])
     return {
         "shots": len(shots),
         "runs": runs,
-        "baseline_wall_s": runs[0]["wall"],
+        "baseline_wall_s": runs[0]["wall_s"],
         "best": {"workers": best["workers"], "decode_threads": best["decode_threads"]},
-        "best_speedup": round(runs[0]["wall"] / best["wall"], 2) if best["wall"] else None,
+        "best_speedup": round(runs[0]["wall_s"] / best["wall_s"], 2) if best["wall_s"] else None,
         # The only line that decides whether this ships.
         "all_identical": all(r["identical_to_baseline"] for r in runs),
     }
