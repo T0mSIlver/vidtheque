@@ -87,6 +87,37 @@ def upsert_video(conn: sqlite3.Connection, meta: VideoMeta) -> int:
     return int(row["id"])
 
 
+def video_for_source_id(conn: sqlite3.Connection, source_id: str) -> sqlite3.Row | None:
+    """The video a URL names, resolved without asking the source who it is.
+
+    The same resolution `index-video` already does when it decides whether a
+    URL is a video the corpus holds (`tools/indexing._lookup`): the id out of
+    the URL against `videos.source_id`, which is half of the unique key. The
+    columns are exactly the ones `runner._meta_from_row` rebuilds a `VideoMeta`
+    from — the probe's *identity* answers, none of its inventory.
+    """
+    return conn.execute(
+        "SELECT id, source, source_id, url, title, description, channel_id, "
+        "channel_name, published_at, duration_s, language FROM videos "
+        "WHERE source_id = ?",
+        (source_id,),
+    ).fetchone()
+
+
+def mark_indexing(conn: sqlite3.Connection, video_id: int) -> None:
+    """What `upsert_video` writes about state, for a row that needs no upsert.
+
+    An item that resolved out of the index still holds the video for the length
+    of its pass, and `data_status`, the `index_state` filter and
+    `_settle_video`'s unwind all read that flag — so the two resolution paths
+    must leave it saying the same thing.
+    """
+    conn.execute(
+        "UPDATE videos SET index_state = 'indexing', updated_at = unixepoch() WHERE id = ?",
+        (video_id,),
+    )
+
+
 def replace_chapters(conn: sqlite3.Connection, video_id: int, meta: VideoMeta) -> None:
     conn.execute("DELETE FROM chapters WHERE video_id = ?", (video_id,))
     conn.executemany(

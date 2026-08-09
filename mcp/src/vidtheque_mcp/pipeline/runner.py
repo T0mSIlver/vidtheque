@@ -21,6 +21,12 @@ query rather than a rewrite (index-schema §1.3).
     ocr          worker /v1/ocr -> ocr_lines
     frame_embed  worker /v1/embeddings/image -> vec_frames
 
+**The cheapest fetch is the one that never happens.** An item whose URL names a
+video the index already holds, with no outstanding stage that needs fresh
+metadata or media, is resolved out of SQLite — no politeness sleep, no round
+trip, the claim taken all the same (`_resolve_locally`). A pure re-embed is
+local work from end to end and now costs what local work costs.
+
 **Failure is per stage.** A stage that fails records its own failure and leaves
 every completed stage alone, so resume means "re-run the failed stages", not
 "start again". Only `fetch` and `stt` are load-bearing enough to abort the item:
@@ -70,6 +76,7 @@ from .sources import (
     looks_like_container,
     parse_info,
     playlist_entries,
+    source_id_of,
 )
 from .worker_client import OcrPage, WorkerAPI, WorkerRejected, WorkerUnavailable
 
@@ -281,7 +288,102 @@ class IndexingPipeline:
 
     # ------------------------------------------------------------------ fetch
 
+    async def _resolve_locally(self, run: ItemRun) -> bool:
+        """URL → video out of the index, for an item with nothing to fetch.
+
+        `_stage_fetch` is the *resolver* as well as the downloader, and it used
+        to resolve the only way it knew how: sleep out the politeness gap, then
+        ask YouTube who this URL is. For a pure re-embed — `text_embed` and
+        `frame_embed` pending, every other stage `done` and current — that is a
+        ~90 s sleep and a real round trip to learn an identity `videos` already
+        holds, in front of ~15 s of entirely local work. Measured on the
+        2026-08-10 re-embed: 78 videos took 2.5 h instead of ~20 min, and cost
+        78 needless requests from a box YouTube already rate-limits.
+
+        This is the `want_media` principle (`:349`) one stage earlier. The probe
+        is an input like the mp4 is an input, so it is bought when a stage that
+        consumes it is going to run, and not "in case". Its consumers are
+        exactly three, and each is asked the same question the stage itself will
+        ask later:
+
+        * **`fetch`** — if its own recorded key is stale (a yt-dlp upgrade) or
+          the row is not `done`, then this item *is* a fetch and the probe is
+          the work, not an overhead on it.
+        * **`stt`** — a transcript that will re-run needs either the audio or
+          the subtitle inventory, and both come out of the info dict. Asked with
+          the worker *assumed healthy*, deliberately: `_stage_transcript`
+          re-probes and a worker that comes back mid-item can flip that clause
+          to True, and a fast path taken on the strength of a momentarily
+          unreachable worker would leave whisperX with no audio and the caption
+          fallback with no inventory to try.
+        * **`keyframe`** — `want_media` itself, unchanged.
+
+        Everything downstream of those reads SQLite and the JPEGs already on
+        disk. `force_reindex` is excluded wholesale (it invalidates the intended
+        stages, so it *is* a fetch), and so is a container URL: `_maybe_expand`
+        screens those first on syntax, and the belt-and-braces check here is for
+        the shapes that carry both — `/playlist?list=…&v=<id>` names a video id
+        inside a URL whose meaning is "fan me out".
+
+        Returns True when it resolved the item, having taken the claim exactly
+        as `_land_metadata` would. Only the sleep and the round trip are skipped.
+        """
+        url = run.ctx.source_url
+        if run.force or looks_like_container(url):
+            return False
+        source_id = source_id_of(url)
+        if source_id is None:
+            return False
+        row = await self.db.read(lambda c: store.video_for_source_id(c, source_id))
+        if row is None:
+            return False
+
+        video_id = int(row["id"])
+        run.stages = await self.db.read(lambda c: store.stage_map(c, video_id))
+        wants_remote = (
+            self._should_run(run, "fetch", getattr(self.source, "version", "yt-dlp"))
+            or (
+                run.wants_transcript
+                and self._should_run(
+                    run,
+                    "stt",
+                    self.db.config.get("stt.model", "whisperx"),
+                    worker_ok=True,
+                )
+            )
+            or (
+                run.wants_frames
+                and self._should_run(run, "keyframe", self._keyframe_model_key())
+            )
+        )
+        if wants_remote:
+            # The slow path reads the stage map again once it has landed the
+            # metadata; leaving a half-built `run` behind would be a trap.
+            run.stages = {}
+            return False
+
+        await run.ctx.record("fetch", 0.0)
+        run.meta = _meta_from_row(row)
+        claimed, claim = await self.db.write(
+            lambda c: _claim_indexed(c, video_id, run.ctx.item_id)
+        )
+        run.video_id = _claimed(claimed, claim, source_id)
+        # The `fetch` stage row is deliberately not re-recorded: it is already
+        # `done` with this key — that is half of why we are here — and touching
+        # `finished_at` would claim a stage ran that did not.
+        self._note_worker(run, await self._worker_healthy())
+        await run.ctx.log(
+            f'{source_id} "{run.meta.title}" resolved locally; nothing to fetch — '
+            "its metadata came from the index, not YouTube",
+            "info",
+            stage="fetch",
+        )
+        await run.ctx.record("fetch", 1.0)
+        return True
+
     async def _stage_fetch(self, run: ItemRun) -> None:
+        if await self._resolve_locally(run):
+            return
         await self._between_videos()
         await run.ctx.record("fetch", 0.0)
         url = run.ctx.source_url
@@ -316,26 +418,7 @@ class IndexingPipeline:
         video_id, claim = await self.db.write(
             lambda c: _land_metadata(c, meta, run.ctx.item_id)
         )
-        if video_id is None:
-            if claim.same_job:
-                # A playlist listing the same video twice: bookkeeping, not an
-                # error, and the other item is doing the work.
-                raise ItemSkipped(
-                    f"{meta.source_id} is already an item of this job",
-                    code="E_DUPLICATE_ITEM",
-                )
-            # Another *job* holds the claim. Before the crash sweep existed
-            # this was silently skipped, and a job whose only item skipped read
-            # as `done` with nothing fetched. It is a typed failure now.
-            holder = claim.job_public_id or "another job"
-            raise ItemFailed(
-                "E_INDEXING",
-                f"{meta.source_id} is already claimed by {holder}; nothing was "
-                "indexed by this item. Wait for that job, or cancel it and retry "
-                "with force_reindex=true.",
-                retryable=False,
-            )
-        run.video_id = video_id
+        run.video_id = video_id = _claimed(video_id, claim, meta.source_id)
         run.stages = await self.db.read(lambda c: store.stage_map(c, video_id))
         await self._apply_force(run)
         await run.ctx.log(
@@ -1154,7 +1237,9 @@ class IndexingPipeline:
             stage="fetch",
         )
 
-    def _should_run(self, run: ItemRun, stage: str, model_key: str | None) -> bool:
+    def _should_run(
+        self, run: ItemRun, stage: str, model_key: str | None, *, worker_ok: bool | None = None
+    ) -> bool:
         """Resume: re-run failed and out-of-date stages, leave finished ones.
 
         Two stages get an extra clause, both for the same underlying reason —
@@ -1191,6 +1276,11 @@ class IndexingPipeline:
         a model swap does not touch, so a re-embed re-downloads nothing and
         re-transcribes nothing. Asserted in
         `test_pipeline_e2e.py::test_a_re_embed_fetches_no_media`.
+
+        `worker_ok` overrides the health this run has observed, for the one
+        caller that has to answer "would stt run *later*" rather than "is stt
+        running now": `_resolve_locally` passes True so a worker that is down
+        this second can never talk it into skipping a probe stt will need.
         """
         if run.force_active:
             return True
@@ -1199,7 +1289,8 @@ class IndexingPipeline:
             return True
         recorded = row["model_key"]
         if stage == "stt":
-            return bool(recorded != model_key and run.worker_ok and self.settings.wants_whisperx)
+            healthy = run.worker_ok if worker_ok is None else worker_ok
+            return bool(recorded != model_key and healthy and self.settings.wants_whisperx)
         if stage == "keyframe":
             return _stage_contract(recorded) != _stage_contract(model_key)
         return recorded != model_key
@@ -1386,6 +1477,69 @@ def _land_metadata(
     store.replace_chapters(conn, video_id, meta)
     claim = store.attach_video(conn, item_id, video_id)
     return (video_id if claim.ok else None), claim
+
+
+def _claim_indexed(conn: Any, video_id: int, item_id: int) -> tuple[int | None, store.Claim]:
+    """`_land_metadata` for a video the index already holds.
+
+    Same transaction, same claim, same return shape — minus the upsert, because
+    there is no new answer to write: nothing was fetched. What survives is the
+    part that is not about metadata at all. The per-video claim is what stops
+    two jobs embedding one video at once, and it is taken here exactly as the
+    slow path takes it, or this fast path would be a race with a speed-up
+    bolted on.
+    """
+    claim = store.attach_video(conn, item_id, video_id)
+    if claim.ok:
+        store.mark_indexing(conn, video_id)
+    return (video_id if claim.ok else None), claim
+
+
+def _claimed(video_id: int | None, claim: store.Claim, source_id: str) -> int:
+    """The claim outcome, read the same way whoever resolved the video."""
+    if video_id is not None:
+        return video_id
+    if claim.same_job:
+        # A playlist listing the same video twice: bookkeeping, not an error,
+        # and the other item is doing the work.
+        raise ItemSkipped(f"{source_id} is already an item of this job", code="E_DUPLICATE_ITEM")
+    # Another *job* holds the claim. Before the crash sweep existed this was
+    # silently skipped, and a job whose only item skipped read as `done` with
+    # nothing fetched. It is a typed failure now.
+    holder = claim.job_public_id or "another job"
+    raise ItemFailed(
+        "E_INDEXING",
+        f"{source_id} is already claimed by {holder}; nothing was indexed by this "
+        "item. Wait for that job, or cancel it and retry with force_reindex=true.",
+        retryable=False,
+    )
+
+
+def _meta_from_row(row: Any) -> VideoMeta:
+    """`VideoMeta` rebuilt from the `videos` row, for an item that fetched nothing.
+
+    Deliberately partial, and deliberately never written back: `chapters`,
+    `links` and `subtitles` are answers the *probe* gives, and this run did not
+    ask. Empty tuples are the honest value — the alternative, inventing an
+    inventory, is how a caption fallback would come to believe in tracks nobody
+    enumerated. Nothing reachable from the fast path reads them: the stages that
+    do (`stt`, and the caption inventory behind it) are exactly the ones whose
+    running sends the item down the slow path. What downstream *does* read is
+    here — `source_id` for the keyframe layout and `_retention`, `url` and
+    `title` for the log and for whisperX's language hint.
+    """
+    return VideoMeta(
+        source_id=str(row["source_id"]),
+        url=str(row["url"]),
+        title=str(row["title"] or row["source_id"]),
+        source=str(row["source"] or "youtube"),
+        description=row["description"],
+        channel_id=row["channel_id"],
+        channel_name=row["channel_name"],
+        published_at=row["published_at"],
+        duration_s=float(row["duration_s"] or 0.0),
+        language=row["language"],
+    )
 
 
 def _dimension_mismatch(

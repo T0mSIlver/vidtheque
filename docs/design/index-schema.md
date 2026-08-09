@@ -244,6 +244,38 @@ the cheaper half — the probe is one request, the download is hundreds of megab
 so the CHECK keeps its seven values and the runner reports progress *inside* the
 stage instead (0.0 → 0.25 once the info dict is in → 1.0).
 
+**Both halves are bought per consumer, not per item.** The media download has
+always been: the mp4 is fetched only when the `keyframe` stage it feeds is
+actually going to run. The probe is now held to the same rule. An item whose URL
+names a video `videos` already holds resolves **out of the index** — the id in
+the URL against `videos.source_id`, the same resolution `index-video` does — and
+neither probes nor waits out the politeness gap, provided all three of the
+stages that consume the info dict are current:
+
+| consumer | why it needs the probe |
+|---|---|
+| `fetch` | its own `model_key` is stale (a yt-dlp upgrade) or its row is not `done` — then this item *is* a fetch |
+| `stt` | a transcript that will re-run needs the audio or the subtitle inventory, both of which only the info dict carries |
+| `keyframe` | the media download itself |
+
+The `stt` question is asked **with the worker assumed healthy**: its `_should_run`
+clause is "only re-transcribe when we can do better", so a momentarily
+unreachable worker would otherwise read as "stt will not run" and buy a fast path
+that a worker returning mid-item then needs the probe for.
+
+A container URL (`/playlist?list=…&v=<id>` names a video id inside a URL meaning
+"fan me out") and any `force_reindex` are excluded outright. Everything else is
+unchanged, and that is the point — the **claim is still taken** (`E_INDEXING`
+across jobs, `E_DUPLICATE_ITEM` within one), the video still reads `indexing` for
+the length of the pass, and the `fetch` row is left alone rather than re-stamped
+with a `finished_at` for a stage that did not run. The job log says where the
+metadata came from: `resolved locally; nothing to fetch`, never `fetched
+metadata for …`. Measured on the 2026-08-10 re-embed, before the rule was
+extended: 78 already-indexed videos, each paying ~90 s of politeness sleep and
+one YouTube round trip in front of ~15 s of purely local work — 2.5 hours
+instead of ~20 minutes, and 78 requests spent from a rate-limited box to learn
+78 identities the file already held.
+
 `model_key` records the `config` value in force when the stage ran. The reindex
 planner is one query:
 
