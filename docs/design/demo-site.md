@@ -262,9 +262,15 @@ progressive disclosure:
 | `search` | `query`, `content_type?` | `tools/search.run` | `limit=6`, `max_text_chars=300`, `max_per_video=2` |
 | `get_segment_context` | `video_id`, `t` | `tools/segment.run` | `window=45`, `max_text_chars=1200` |
 
-Both are handed to the model as the **text** block the tool already renders —
-the model-readable form the whole contract is tuned for — never a JSON dump and
-never a full transcript. The caps above are the facade's, tighter than the MCP
+`get_segment_context` is handed to the model as the **text** block the tool
+already renders — the model-readable form the whole contract is tuned for —
+never a JSON dump and never a full transcript. `search` composes numbered lines
+from the tool's structured hits, because the `[n]` the whole citation contract
+rests on is the loop's, not the tool's; each line carries the hit's **source**
+(`transcript` / `ocr` / `frame` / `transcript+ocr`) for the same reason the page
+badges it — without the label, the prompt's "say which channel this came from"
+asks the model to distinguish a slide from a sentence with nothing in front of
+it that says which. The caps above are the facade's, tighter than the MCP
 defaults, and they are server-side: the model cannot ask for more.
 
 `get_segment_context` is the second tool for one reason: a search hit is a
@@ -312,9 +318,16 @@ system + user
   comes back as `"the block table is"` and `"see [9]."` does not become
   `"see ."`. An answer is the thing a visitor screenshots; a typo in one is
   worth the twenty lines.
-- The system prompt is short and says the two things that matter: answer only
-  from tool results, and mark each claim with the `[n]` of the result it came
-  from.
+- The system prompt is short and says the things that matter: answer only from
+  tool results, mark each claim with the `[n]` of the result it came from, and
+  — since the hits are labelled — *say which channel* a fact came from, with one
+  hard rule for the case that fails silently: a frame is a visual match, so
+  describe what it shows and never quote text from one. That last part is
+  **encouragement, not a template**: no phrasing is dictated, because an answer
+  that reads like a form is worse than one that reads like a person who watched
+  the talk. It is worth its ~30 tokens because the alternative is prose that
+  flattens "he said", "the slide read" and "the screen showed" into one voice —
+  which is exactly the distinction the corpus exists to keep.
 - One overall wall-clock budget (`VIDTHEQUE_ASK_TIMEOUT_S`, default 90) across
   the whole loop, not per request. A free-tier queue that stalls turns into a
   clean 503, not a held connection.
@@ -502,9 +515,12 @@ If the flag is combined with `token`/`oauth`, `frame_signer` exists and the
 facade signs its thumbnails exactly as `get-frames` does, using the same
 `FrameUrlSigner.url()`. One helper, both callers, no second signing scheme.
 
-Thumbnails are requested at `w=320&q=70` — the route clamps `w` to 128..1280
-and re-serves the stored JPEG; it does **not** resize (there is no image
-pipeline on this path). The width is a hint the frontend also applies in CSS.
+Thumbnails are requested at `w=192&q=70` — 96×54 CSS pixels at 2x — and the
+route *does* resize now, through the byte-capped `derived/` cache
+(index-schema §6), clamping `w` server-side to 64..1280. A **frame** hit asks
+for `w=320` instead: it matched on its image, the page renders it at 160×90, and
+the width follows at the same 2x. Both are the facade's choice of a size the
+route already allows; neither is a limit the browser gets to set.
 
 ---
 
@@ -540,10 +556,11 @@ Layout, top to bottom:
    are hidden rather than disabled: the model picks the channel, so a filter
    there would be a control that does nothing.
 4. **Results** — one row per hit, hairline-separated: thumbnail (or a muted
-   placeholder naming the channel the hit came from — `spoken` / `screen` /
-   `frame`), title · channel, the timestamped snippet with the query terms
-   marked, and `[mm:ss] ↗ youtu.be` opening the video at the moment in a new
-   tab. The whole row is one `<a>`, so middle-click works.
+   placeholder naming the channel the hit came from), title · channel, the
+   timestamped snippet with the query terms marked, and `[mm:ss] ↗ youtu.be`
+   opening the video at the moment in a new tab. The whole row is one `<a>`, so
+   middle-click works. What the row says about *where the hit came from* is
+   §6.3.
 5. **Ask pane** (ask mode) — the answer as prose with `[n]` markers rendered as
    superscript links to the moment they cite, followed by the same result rows
    numbered to match. A 503 replaces the pane with the degradation message and
@@ -643,6 +660,34 @@ middle-click opens — the two things a search engine is expected to do.
 
 No inline `<script>` beyond a nonce-free module tag — the page is static files
 served from disk, so a CSP could be added later without rewriting it.
+
+### 6.3 Provenance — three sources, three kinds of evidence
+
+`hit.source` flows end to end (`/api/search` hits and `/api/ask` citations
+alike) and the page is *specific* about it, because the three are not
+interchangeable and a snippet that does not say which one it is quietly claims
+to be speech:
+
+| `source` | badge(s) | how the snippet reads |
+|---|---|---|
+| `transcript` | `spoken` | a verbatim quotation of speech — set in quotation marks |
+| `ocr` | `on-screen` | text that was *visible*, not said — monospaced behind a dashed rule |
+| `frame` | `frame` | **no quotable text.** The image is the evidence, so it is rendered larger (160×90, `w=320`); any text is what happened to be visible in the frame, muted and never quoted |
+| `transcript+ocr` | `spoken` + `on-screen` | both channels agreed; the text is whichever was longer, so it is presented as neither — plain, with both badges |
+
+Two rules the styling obeys. **The word carries the meaning**: border style
+(solid / dashed) and font (sans / mono) differ alongside the colour, so a badge
+is still legible on a monochrome screen and to a colour-blind visitor — and the
+label is a real word, not an icon. **Both schemes**: the badges use the same six
+custom properties as everything else, so light and dark follow for free.
+
+A `source` the page has never heard of still gets a badge with its own name.
+Dropping provenance silently is the one failure that is worse than an ugly
+badge — it is `all` means `all`, applied to a row.
+
+The same treatment is in the answer's Sources list, because that list *is* a
+list of search rows (one `hitRow`, two callers). The ask prompt asks for the
+same distinction in prose (§3.3).
 
 ---
 

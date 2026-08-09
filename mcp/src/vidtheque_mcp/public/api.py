@@ -39,6 +39,9 @@ from .settings import REPO_URL, PublicSettings
 # 96×54 CSS pixels at 2x DPR — now that /frames actually applies w, this is
 # the honest size (was 320 when the param was decorative; ~2x page weight).
 THUMB_WIDTH = 192
+# A frame hit matched on its *image*, so the page renders it at 160×90 CSS
+# pixels instead of 96×54; the width follows, at the same 2x.
+FRAME_THUMB_WIDTH = 320
 THUMB_QUALITY = 70
 
 SEARCH_MAX_LIMIT = 20
@@ -109,7 +112,8 @@ def _decorate_hit(deps: Deps, hit: dict[str, Any]) -> dict[str, Any]:
     """The only two fields the facade adds, both from data already returned."""
     row = dict(hit)
     row["timestamp"] = clock(hit.get("start"))
-    row["thumb"] = thumb_url(deps, hit.get("frame_id"))
+    width = FRAME_THUMB_WIDTH if hit.get("source") == "frame" else THUMB_WIDTH
+    row["thumb"] = thumb_url(deps, hit.get("frame_id"), width)
     row["text"] = demo_text(hit.get("text"))
     return row
 

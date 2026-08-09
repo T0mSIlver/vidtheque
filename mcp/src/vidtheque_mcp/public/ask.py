@@ -54,7 +54,16 @@ SYSTEM_PROMPT = (
     "provided. Never answer from your own knowledge: if the tools return "
     "nothing useful, say the corpus does not cover it. Search first; use "
     "get_segment_context when a hit needs its surrounding sentences. Every "
-    "claim must carry the [n] marker of the search result it came from. Keep "
+    "claim must carry the [n] marker of the search result it came from. "
+    # Each hit says which channel it came from, and the three are different
+    # kinds of evidence. Encouraged, not templated: an answer that says "the
+    # slide reads" where the slide is the source is worth more than one that
+    # flattens speech, screen text and imagery into a single voice — and a
+    # frame is the case that goes wrong silently, because there is nothing in
+    # it to quote.
+    "Hits are labelled transcript (said aloud), ocr (on-screen text) or frame "
+    "(a visual match): say which in your prose. Describe what a frame shows; "
+    "never quote text from one. Keep "
     "the answer under 150 words and write plain prose, no headings."
 )
 
@@ -409,8 +418,12 @@ async def _tool_search(deps: Deps, args: dict[str, Any], evidence: Evidence) -> 
     lines = [f'{len(hits)} results for "{query}":']
     for hit in hits:
         n = evidence.record(hit)
+        # The label is what makes the prompt's "say which channel" actionable:
+        # without it the model is asked to distinguish speech from a slide with
+        # nothing in front of it that says which one this line is.
         lines.append(
-            f"[{n}] {hit.get('title')} — {hit.get('channel') or 'unknown'} "
+            f"[{n}] {hit.get('source') or 'transcript'} · {hit.get('title')} — "
+            f"{hit.get('channel') or 'unknown'} "
             f"({hit.get('video_id')} at {clock(hit.get('start'))}, t={int(hit.get('start') or 0)})"
         )
         lines.append(f"    {str(hit.get('text') or '')}")

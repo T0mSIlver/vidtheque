@@ -173,6 +173,23 @@ def test_search_facade_emits_thumbnail_urls_for_frame_hits(public_client: TestCl
     assert public_client.get(thumb).status_code == 200
 
 
+def test_a_frame_hit_asks_for_the_wider_thumbnail(public_client: TestClient) -> None:
+    """A frame hit matched on its *image*, so the page shows it bigger (§6.3).
+
+    The width follows the CSS box at 2x, and it is the facade that picks it —
+    the browser never gets to ask the route for a size.
+    """
+    from vidtheque_mcp.public.api import _decorate_hit
+
+    deps = public_client.app.state.assembled.deps
+    frame = _decorate_hit(deps, {"source": "frame", "frame_id": "kCc8FmEb1nY-00000"})
+    spoken = _decorate_hit(deps, {"source": "transcript", "frame_id": "kCc8FmEb1nY-00000"})
+    assert frame["thumb"].endswith("?w=320&q=70")
+    assert spoken["thumb"].endswith("?w=192&q=70")
+    # Both widths are ones the route already serves, clamp and byte cap intact.
+    assert public_client.get(frame["thumb"]).status_code == 200
+
+
 def test_search_facade_keeps_token_discipline(public_client: TestClient) -> None:
     """The facade's bounds are tighter than the tool's, and server-side."""
     payload = public_client.get("/api/search?q=cache&limit=999&max_text_chars=0").json()
@@ -402,6 +419,32 @@ def test_ask_runs_the_tool_loop_and_cites_real_results(tmp_path: Path) -> None:
         "content"
     ].startswith("1 results for") or "results for" in tool_message["content"]
     assert len(tool_message["content"]) < 4000
+
+
+def test_the_model_is_told_which_channel_each_hit_came_from(tmp_path: Path) -> None:
+    """Provenance in the prose needs provenance in the evidence (§3.2, §3.3)."""
+    upstream = Upstream(
+        _completion(tool_calls=[_tool_call("c1", "search", {"query": "kv cache"})]),
+        _completion("The slide reads it out [1]."),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        client.post("/api/ask", json={"q": "what does the kv cache cost?"})
+
+    tool_message = next(
+        m for m in upstream.requests[1]["messages"] if m.get("role") == "tool"
+    )
+    labels = {"transcript", "ocr", "frame", "transcript+ocr"}
+    numbered = [
+        line for line in tool_message["content"].splitlines() if line.startswith("[")
+    ]
+    assert numbered, "the search tool answers with numbered hits"
+    for line in numbered:
+        assert line.split(" · ")[0].split("] ")[1] in labels, line
+
+    # And the prompt asks for the distinction rather than templating it — the
+    # frame rule especially, which is the one that fails silently.
+    system = upstream.requests[0]["messages"][0]["content"]
+    assert "frame" in system and "never quote text from one" in system
 
 
 def test_ask_offers_exactly_two_tools(tmp_path: Path) -> None:

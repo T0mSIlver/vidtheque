@@ -216,6 +216,10 @@ button.linky {
   background: var(--line);
 }
 
+/* A frame hit is a *visual* match: the picture is the evidence, so it gets the
+   room a piece of evidence deserves rather than a decorative thumbnail. */
+.hit.is-frame .hit-thumb { width: 160px; height: 90px; }
+
 .hit-thumb.placeholder {
   display: flex;
   align-items: center;
@@ -234,15 +238,19 @@ button.linky {
 .hit-meta { color: var(--muted); font-size: 0.82rem; margin-top: 0.1rem; }
 .hit-meta .at { color: var(--accent); font-variant-numeric: tabular-nums; }
 
-.hit-text { margin-top: 0.35rem; font-size: 0.94rem; overflow-wrap: anywhere; }
-.hit-text mark { background: transparent; color: var(--accent); font-weight: 600; }
+.more { margin: 1.25rem 0 0; }
 
-.hit-source {
+/* -------------------------------------------------------------- provenance */
+
+/* Three sources, three kinds of evidence, said in a word. The label carries
+   the meaning: border style and font differ as well as colour, so nothing here
+   depends on being able to see the accent (§6.2). */
+.badge {
   display: inline-block;
   margin-right: 0.4rem;
   padding: 0 0.35rem;
-  font-size: 0.7rem;
-  letter-spacing: 0.03em;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--muted);
   border: 1px solid var(--line);
@@ -250,7 +258,43 @@ button.linky {
   vertical-align: 1px;
 }
 
-.more { margin: 1.25rem 0 0; }
+/* Speech. */
+.badge-spoken { border-style: solid; }
+
+/* Text that was on the screen — dashed and monospaced, like the snippet. */
+.badge-screen {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  border-style: dashed;
+}
+
+/* A visual match: the image is the evidence, so this one is the accent. */
+.badge-frame { color: var(--accent); border-color: var(--accent); }
+
+/* The snippet, presented as what it is evidence of. */
+.snip { margin-top: 0.35rem; font-size: 0.94rem; overflow-wrap: anywhere; }
+.snip mark { background: transparent; color: var(--accent); font-weight: 600; }
+
+/* Spoken: a verbatim quotation of what was said, marked as one. */
+.snip-spoken::before { content: "\201C"; color: var(--muted); }
+.snip-spoken::after { content: "\201D"; color: var(--muted); }
+
+/* On screen: this was *visible*, not said. Monospaced behind a dashed rule, so
+   it can never be misread as a quotation of speech. */
+.snip-screen,
+.snip-frame {
+  padding-left: 0.6rem;
+  border-left: 2px dashed var(--line);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.86rem;
+}
+
+/* A frame hit matched on the picture. Whatever text came with it is what
+   happened to be visible, not the thing that matched — muted, never quoted. */
+.snip-frame { color: var(--muted); }
+
+/* Both channels agreed and the longer text won, so it is neither a clean quote
+   of speech nor a clean read of the screen. Plain, and both badges say so. */
+.snip-mixed { font-style: normal; }
 
 /* ------------------------------------------------- loading and empty results */
 
@@ -417,8 +461,11 @@ footer p { margin: 0 0 0.4rem; }
 
   .hit { gap: 0.7rem; padding: 0.9rem 0; }
   .hit-thumb { width: 80px; height: 45px; }
+  .hit.is-frame .hit-thumb { width: 120px; height: 68px; }
   .hit-title { font-size: 0.95rem; }
-  .hit-text { font-size: 0.9rem; }
+  .snip { font-size: 0.9rem; }
+  .snip-screen,
+  .snip-frame { font-size: 0.82rem; }
 
   .answer { padding: 0.9rem; }
   .copyrow { flex-wrap: wrap; }

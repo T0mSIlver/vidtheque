@@ -191,9 +191,68 @@ const highlight = (text, query) => {
   return frag;
 };
 
+// -------------------------------------------------------------- provenance
+//
+// Three sources are three different kinds of evidence, and the page says which
+// one it is showing rather than letting the snippet imply it:
+//
+//   transcript      someone *said* this — a verbatim quotation of speech.
+//   ocr             this was *on the screen* — text that was visible, not said.
+//   frame           the *image* matched. There is no quotable text at all; any
+//                   text carried along is what happened to be visible in it.
+//   transcript+ocr  both channels agreed; the text is whichever was longer, so
+//                   it is presented as neither a quote nor screen text.
+//
+// The word carries the meaning. Colour and border only reinforce it, so the
+// badges still read on a monochrome screen and for a colour-blind visitor.
+const SOURCE_BADGES = {
+  transcript: ["spoken"],
+  ocr: ["on-screen"],
+  frame: ["frame"],
+  "transcript+ocr": ["spoken", "on-screen"],
+};
+
+const BADGE_CLASS = {
+  spoken: "badge badge-spoken",
+  "on-screen": "badge badge-screen",
+  frame: "badge badge-frame",
+};
+
+// An unknown source (a fourth leg, one day) still gets a badge with its own
+// name: dropping the provenance silently is the one thing that must not happen.
+const badgesFor = (source) => {
+  const frag = document.createDocumentFragment();
+  for (const label of SOURCE_BADGES[source] || (source ? [source] : [])) {
+    frag.append(el("span", BADGE_CLASS[label] || "badge", label));
+  }
+  return frag;
+};
+
+const SNIPPET_CLASS = {
+  transcript: "snip snip-spoken",
+  ocr: "snip snip-screen",
+  frame: "snip snip-frame",
+  "transcript+ocr": "snip snip-mixed",
+};
+
+// The snippet, presented as what it is evidence of. A frame hit whose text the
+// server dropped (there was none — the match was visual) gets no snippet at
+// all rather than a sentence standing in for one.
+const snippetFor = (hit, query) => {
+  if (!hit.text) return null;
+  const node = el("div", SNIPPET_CLASS[hit.source] || "snip");
+  node.append(highlight(hit.text, query));
+  return node;
+};
+
+// A frame hit *is* its image: the picture is the evidence, so it is rendered
+// bigger than the decorative thumbnail a transcript hit carries.
+const isFrameHit = (hit) => hit.source === "frame";
+
 const thumbFor = (hit) => {
   const src = safeUrl(hit.thumb);
   if (src) {
+    const wide = isFrameHit(hit);
     const img = el("img", "hit-thumb");
     img.src = src;
     // The row's own link text says the title and the timestamp, so a verbose
@@ -202,8 +261,10 @@ const thumbFor = (hit) => {
     img.alt = `Frame from ${hit.title || hit.video_id} at ${hit.timestamp || "0:00"}`;
     img.loading = "lazy";
     img.decoding = "async";
-    img.width = 160;
-    img.height = 90;
+    // Mirrors the CSS box at 2x, so the row keeps its height before the bytes
+    // arrive — the wide box for a frame hit included.
+    img.width = wide ? 320 : 160;
+    img.height = wide ? 180 : 90;
     img.addEventListener("error", () => img.replaceWith(placeholder(hit)));
     return img;
   }
@@ -212,23 +273,16 @@ const thumbFor = (hit) => {
 
 // No keyframe for this hit (or the image failed to load): say which channel it
 // came from rather than showing a broken frame.
-const PLACEHOLDER_LABEL = {
-  transcript: "spoken",
-  "transcript+ocr": "spoken",
-  ocr: "screen",
-  frame: "frame",
-};
-
 const placeholder = (hit) => {
   const box = el("div", "hit-thumb placeholder");
-  box.append(el("span", null, PLACEHOLDER_LABEL[hit.source] || "video"));
+  box.append(el("span", null, (SOURCE_BADGES[hit.source] || [])[0] || "video"));
   box.setAttribute("aria-hidden", "true");
   return box;
 };
 
 // The whole row is one <a>, so middle-click and "open in new tab" work.
 const hitRow = (hit, query, n) => {
-  const row = el("a", "hit");
+  const row = el("a", isFrameHit(hit) ? "hit is-frame" : "hit");
   row.href = safeUrl(hit.link) || `https://youtu.be/${encodeURIComponent(hit.video_id || "")}`;
   row.target = "_blank";
   row.rel = "noopener noreferrer";
@@ -239,18 +293,15 @@ const hitRow = (hit, query, n) => {
   body.append(el("div", "hit-title", hit.title || hit.video_id));
 
   const meta = el("div", "hit-meta");
-  if (hit.source) meta.append(el("span", "hit-source", hit.source));
+  meta.append(badgesFor(hit.source));
   meta.append(document.createTextNode(hit.channel || "unknown"));
   meta.append(document.createTextNode(" · "));
   meta.append(el("span", "at", hit.timestamp || "0:00"));
   meta.append(document.createTextNode(" · youtu.be ↗"));
   body.append(meta);
 
-  if (hit.text) {
-    const snippet = el("div", "hit-text");
-    snippet.append(highlight(hit.text, query));
-    body.append(snippet);
-  }
+  const snippet = snippetFor(hit, query);
+  if (snippet) body.append(snippet);
   row.append(body);
   return row;
 };
