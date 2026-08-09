@@ -1,16 +1,20 @@
 # vidtheque
 
-Self-hosted MCP server that turns videos you've watched into a searchable
-multimodal corpus — transcript, on-screen text, and frame search with
-timestamped citations.
+Knowledge is announced on video. vidtheque puts it on tap.
+
+**You don't have time to watch everything — your agent does.** Follow the
+builders whose talks, streams and deep-dives matter: vidtheque turns them into
+solid, timestamped knowledge for you and your agents — every sentence spoken,
+every line that crossed the screen, every frame — and every answer comes with
+its receipt: the sentence, the slide, and the second it happened
+(`https://youtu.be/ID?t=123`).
 
 Point it at a video, a channel, or a playlist; it transcribes with word-level
-timestamps, OCRs what is on screen, embeds keyframes, and keeps the whole thing
-in a local index. Your MCP client then searches across everything you have ever
-indexed and cites answers with deep links that land on the exact second
-(`https://youtu.be/ID?t=123`). A built-in web demo and a management dashboard
-ride in the same process: search and ask for visitors, a browsable index —
-videos, shot timelines, OCR overlays, provenance, live jobs — for the operator.
+timestamps, reads what is on screen, embeds keyframes, and keeps the whole
+thing in a local index you own. Self-hosted; your agents plug in over MCP. A
+built-in web demo and a management dashboard ride in the same process: search
+and ask for visitors, a browsable index — videos, shot timelines, OCR
+overlays, provenance, live jobs — for the operator.
 
 > **Early development.** Working end to end — the pipeline, the MCP tool
 > surface, the demo site and the dashboard are all functional and tested — but
