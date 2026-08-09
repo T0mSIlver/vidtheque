@@ -1969,9 +1969,13 @@ you asked for.
   `get-segment-context` before quoting anything verbatim.
 - Every timestamped result carries a `https://youtu.be/<id>?t=<s>` link. Give the
   user the link, not just the timestamp. The link is deliberately **2 s early**:
-  `?t=` is the result's start minus a lead, so the player has seeked by the time
-  the words begin. `start:` in the payload is the true position; the two
-  disagreeing by 2 s is the lead, not a bug.
+  `?t=` is the matched moment minus a lead, so the player has seeked by the time
+  the words begin. The two-second disagreement with the payload's own numbers is
+  the lead, not a bug.
+- A `search` transcript result is a *segment*: `start`–`end` is the passage,
+  `match at` (`match_start`) is the moment inside it that matched, and that is
+  what the link points at. Quote from around `match_start`, not from the top of
+  the segment. It does not move when you change `limit`.
 - `search` never returns images. Frame ids do; `get-frames` turns them into URLs.
 - Read the pagination line: `Results: 10/~40+ (use offset=10 for more)` tells you
   your next call.
