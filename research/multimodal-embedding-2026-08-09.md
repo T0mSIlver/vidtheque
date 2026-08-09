@@ -886,3 +886,139 @@ its own `youtu.be/ID?t=` deep link. The sampler in
 against them. Not this document's problem, but `_sharpest_in` choosing a black
 frame as the sharpest in its shot is a keyframe-selection question somebody
 should ask.
+
+---
+
+## Addendum 3 — "the frame leg is CPU-bound at ~15 s per batch": it is not (2026-08-09, late)
+
+Append-only; nothing above is edited. This exists so tomorrow's post-restart
+validation has a before/after target that is a measurement rather than an
+inference — and because the hypothesis it was written to confirm did not
+survive being measured.
+
+**The report.** `Qwen3VLEmbedBackend.embed_images` was said to deliver one
+batch-of-8 per ~15 s wall, of which ~1.5 s is GPU forward; the other ~13 s being
+JPEG decode plus the Qwen3-VL processor's resize/patchify, running
+single-threaded inside each request and serialising the card to ~10% duty. A
+video re-embed was said to cost ~2 min instead of ~15 s.
+
+**The verdict: there is no 13-second CPU sink.** The frame leg runs at
+**~1.2–1.3 s per batch of 8, with the card at 99–100%**, and CPU preprocessing
+is **~165 ms of that**. The ~15 s cadence is the interval between *bursts* — the
+pipeline and its driver between videos — not the time inside a request.
+
+### What was measured, and how (no GPU work was run for this)
+
+The live stack was observed read-only while a re-embed drained: `/proc/<pid>/stat`
+for CPU, `nvidia-smi --query-gpu`/`--query-compute-apps` for the card, and the
+worker's own access log tailed with a one-second clock. Nothing was submitted to
+the worker, nothing was restarted, and the corpus was not touched.
+
+**Two bursts caught, 2026-08-09 CEST:**
+
+| window | `/v1/embeddings/image` completions | per request | GPU util | worker CPU |
+|---|---:|---:|---:|---:|
+| 23:50:35 – 23:50:48 | 11 | **~1.27 s** | 99–100%, one dip per batch | — |
+| 23:54:36 – 23:54:39 | 3 | **~1.2 s** | 99–100% | 108–182% of one core |
+| between (23:50:48 – 23:52:39) | 0 | — | **0%** | **0.1%** |
+
+At `VIDTHEQUE_FRAME_EMBED_BATCH=8` (the default; not overridden in the live
+env) that is **~6.3 img/s** — *above* Addendum 2's standalone 5.38 img/s, which
+is consistent, because that bench shared the 3090 with an 8.5 GB co-tenant and
+this run did not. `--query-compute-apps` showed exactly one process on the card
+throughout (the worker, 6,446 MB): **no llama.cpp co-tenant, and the lease hooks
+are unset in the live environment**, so nothing would have bracketed one if there
+had been.
+
+The worker at **108–182% of one core** is the other half of the disproof: the
+preprocessing that was supposed to be single-threaded is already using more than
+one core, because `Qwen2VLImageProcessorFast` is a torch/torchvision-v2
+implementation that batches the whole group of images through `F.interpolate`
+under torch's ten threads.
+
+### The preprocessing path, timed on its own (CPU only, no weights)
+
+The exact call `SentenceTransformer.encode(list[PIL.Image])` makes for this
+checkpoint — `Qwen3VLProcessor.apply_chat_template(..., tokenize=True)` — run
+against eight synthetic 1280x720 JPEGs at ~135 KiB, on the reference box's CPU
+with the processor loaded alone (a few MB, no model weights, no CUDA):
+
+| stage | batch of 8 |
+|---|---:|
+| PIL open + `convert("RGB")`, serial | **17.3 ms** |
+| processor: resize, patchify, tokenize | **150 ms** (min 136) |
+| **decode + processor, end to end** | **165 ms** (min 154) |
+| processor, batch of 1 | 14.8 ms (so the batch call is ~20% better than 8 × 1) |
+
+Shapes confirm Addendum 2's token count independently: `input_ids (8, 902)`,
+`pixel_values (28160, 1536)` → 3,520 patches/frame → **880 merged visual tokens,
+902 with the prompt**.
+
+So the split of a ~1,250 ms batch is roughly **165 ms CPU / ~1,085 ms GPU** —
+**~13% preprocessing, not ~87%**. The reported ratio was inverted.
+
+### What was changed anyway, and what it is worth
+
+Two things, both small and both honest about their size.
+
+**1. The batch's JPEG decode is fanned out** (`_decode_all`). Not because it is
+the sink, but because it is *unoverlapped* dead time: this whole call runs inside
+the lifecycle manager's GPU critical section — one queue consumer, one
+`_gpu_lock`, decode and forward together inside one `asyncio.to_thread` — so
+every millisecond of decode is a millisecond the card is idle. Pillow drops the
+GIL in its C decoder, so threads are the whole trick. Measured, with the pool's
+construction inside the timed region:
+
+| frames | serial | pooled | |
+|---:|---:|---:|---|
+| 1 | 1.8 ms | 2.6 ms | the pool *loses* — hence a serial fast path under 2 |
+| 8 | 16.7 ms | 5.7 ms | 2.95x |
+| 16 | 51.4 ms | 10.4 ms | 4.94x |
+| 64 | 223.9 ms | 32.1 ms | 6.97x (`MAX_IMAGE_EMBED_BATCH`) |
+
+**Expected effect: ~11 ms off a ~1,250 ms batch of 8, i.e. ~0.9%.** At the
+endpoint's cap of 64 it would be ~190 ms. It is worth having and it is not worth
+calling a fix.
+
+**2. The frame leg now logs its own split** — `image embed: N frames batch=B
+decode=Xms encode=Yms (Z img/s)`, at INFO, one line per request. The query legs
+log at DEBUG, because one line per search would drown the indexing throughput
+the log exists to explain. This is the part that matters for tomorrow: the
+numbers above were reconstructed from an access log with no timestamps and a
+one-second sampler, and they should not have to be.
+
+### What was *not* changed, and why
+
+- **No double-buffering, no preprocess/GPU pipelining.** With
+  `VIDTHEQUE_FRAME_EMBED_BATCH=8` and `IMAGE_EMBED_BATCH_SIZE=8`, one request is
+  exactly one `encode` chunk, so there is no second chunk to prefetch against;
+  overlapping across *requests* would mean lifting decode out of the job the
+  lifecycle manager serialises, which trades a documented contract and the typed
+  400's locality for ~13% of a stage that is not the pipeline's bottleneck.
+- **No change to the batch default.** Addendum 2's own curve is flat from 4
+  (5.30 img/s) to 8 (5.38); the fix does not move it, because decode was never
+  what the curve was measuring. `VIDTHEQUE_FRAME_EMBED_BATCH=8` and
+  `IMAGE_EMBED_BATCH_SIZE=8` stay, and `deploy/.env.example` is unchanged.
+- **`embed_text` / `embed_texts` were checked for the same pattern and do not
+  have it.** There is no decode on the text legs, and Addendum 2 already puts a
+  warm single query at 11.8 ms.
+
+### The before/after target for the post-restart run
+
+The restart carries the log line, so the check is one `grep`:
+
+- **Expected: `decode=` in the 4–7 ms range at 8 frames** (16–18 ms would mean
+  the fan-out did not take effect), **`encode=` around 1,050–1,200 ms**, and
+  **~6–7 img/s**.
+- **If a batch really does take ~15 s**, `decode=`/`encode=` says immediately
+  which half, and the first thing to check is not this backend but
+  `nvidia-smi --query-compute-apps`: a llama.cpp co-tenant on the 3090 is the
+  only mechanism found tonight that could plausibly cost a 10x, and nothing
+  brackets it, because `GPU_ACQUIRE_CMD`/`GPU_RELEASE_CMD` are unset in the live
+  environment.
+- **The ~2 min per video is still unexplained and is not the frame leg.** 88
+  frames at 1.27 s per batch of 8 is ~14 s. The rest is somewhere else in the
+  pipeline — OCR is the standing candidate at 3.4 frames/s on CPU (Addendum 2,
+  §2) — or in the driver's own pacing between videos. Measuring the *stage* that
+  actually owns those two minutes is the next thing worth doing, and it is an
+  `mcp/` question, not a `worker/` one.

@@ -57,6 +57,9 @@ from __future__ import annotations
 
 import io
 import logging
+import os
+import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from .base import (
@@ -226,16 +229,33 @@ class Qwen3VLEmbedBackend(BaseBackend):
         """Keyframes, bare — the document side takes no instruction.
 
         No patch budget: `IMAGE_EMBED_MAX_PATCHES` was NaFlex's knob. This model
-        takes the frame at its stored resolution (1280x720 -> ~1,176 visual
-        tokens), which the paper's own sweep puts at the knee of its scaling
-        curve — there is nothing to tune and nothing to under-feed.
+        takes the frame at its stored resolution (1280x720 -> ~880 merged visual
+        tokens, 902 input tokens measured), which the paper's own sweep puts at
+        the knee of its scaling curve — there is nothing to tune and nothing to
+        under-feed.
+
+        Decode is fanned out (:func:`_decode_all`) and then timed against the
+        encode, because this call runs *inside* the lifecycle manager's GPU
+        critical section: every millisecond spent here is a millisecond the card
+        is idle, and until this logged the split it was guesswork which half was
+        which (`research/multimodal-embedding-2026-08-09.md`, appendix
+        2026-08-09).
         """
-        frames = [_decode(blob, index) for index, blob in enumerate(images)]
-        return self._encode(
-            frames,
-            instruction=None,
-            batch_size=int(kwargs.get("batch_size", self.image_batch_size)),
+        started = time.perf_counter()
+        frames = _decode_all(images)
+        decoded = time.perf_counter()
+        batch_size = int(kwargs.get("batch_size", self.image_batch_size))
+        result = self._encode(frames, instruction=None, batch_size=batch_size)
+        finished = time.perf_counter()
+        log.info(
+            "image embed: %d frames batch=%d decode=%.0fms encode=%.0fms (%.2f img/s)",
+            len(images),
+            max(1, batch_size),
+            (decoded - started) * 1000,
+            (finished - decoded) * 1000,
+            len(images) / max(finished - started, 1e-9),
         )
+        return result
 
     # -- the one encode ----------------------------------------------------
     def _encode(
@@ -246,6 +266,7 @@ class Qwen3VLEmbedBackend(BaseBackend):
         encode_kwargs: dict[str, Any] = {}
         if instruction:
             encode_kwargs["prompt"] = instruction
+        started = time.perf_counter()
         raw = self._model.encode(
             items,
             batch_size=max(1, batch_size),
@@ -253,6 +274,16 @@ class Qwen3VLEmbedBackend(BaseBackend):
             convert_to_numpy=True,
             show_progress_bar=False,
             **encode_kwargs,
+        )
+        # DEBUG, not INFO: the frame leg already logs its own line and the text
+        # leg is the *query* path — one line per search is noise in a log whose
+        # job is to explain indexing throughput.
+        log.debug(
+            "encode: %d items batch=%d instruction=%s in %.0fms",
+            len(items),
+            max(1, batch_size),
+            bool(instruction),
+            (time.perf_counter() - started) * 1000,
         )
         vectors = [[float(x) for x in row] for row in raw]
         dims = self._dims or (len(vectors[0]) if vectors else 0)
@@ -296,6 +327,65 @@ def _reported_dims(model: Any, truncate_dim: int | None) -> int | None:
 # tests patch its own module's `_open_rgb` to force the decoder's failure modes
 # without a real PIL. A shared function would make one of those two suites lie.
 # --------------------------------------------------------------------------
+
+
+MAX_DECODE_WORKERS = 8
+"""Ceiling on the JPEG-decode fan-out inside one image batch.
+
+Not a knob: the pool is sized `min(len(images), cpu_count, MAX_DECODE_WORKERS)`
+per call, so it never outgrows either the batch or the box, and there is no env
+var to get wrong — one less thing in `deploy/.env.example` to set wrong on a box
+whose core count nobody here knows."""
+
+
+def _decode_all(images: list[bytes]) -> list[Any]:
+    """Decode a batch's uploads, in parallel, in order.
+
+    **Why a pool at all.** This runs inside the lifecycle manager's GPU critical
+    section: one queue consumer, one `_gpu_lock`, and the whole closure —
+    decode *and* forward — inside one `asyncio.to_thread`. Serial decode is
+    therefore not overlapped with anything; it is dead time on the card.
+    Measured on the reference box (10 cores, 1280x720 keyframes at ~135 KiB),
+    serial -> pooled: 16.7 -> 5.7 ms at 8 frames, 51.4 -> 10.4 at 16, 223.9 ->
+    32.1 at 64 (`MAX_IMAGE_EMBED_BATCH`). Pillow drops the GIL inside its C
+    decoder, so threads — not processes — are the whole trick.
+
+    **Why the serial fast path.** At one image the pool *loses*: 1.8 ms serial
+    against 2.6 ms pooled, because spinning up a worker thread costs more than
+    the decode. `/v1/embeddings/image` takes single-frame requests, so that case
+    is not hypothetical.
+
+    **Order and which failure wins.** Results come back by position, and the
+    raised error is the *lowest-indexed* failure — not the first thread to
+    finish. `mcp/` halves a refused batch to find the offender
+    (`runner._call_per_frame`), so a batch with two bad frames must name the
+    same index it named when this was a list comprehension, or that search walks
+    the wrong half.
+    """
+    if len(images) < 2:
+        return [_decode(blob, index) for index, blob in enumerate(images)]
+
+    workers = min(len(images), os.cpu_count() or 1, MAX_DECODE_WORKERS)
+    with ThreadPoolExecutor(
+        max_workers=workers, thread_name_prefix="vidtheque-decode"
+    ) as pool:
+        futures = [
+            pool.submit(_decode, blob, index) for index, blob in enumerate(images)
+        ]
+        frames: list[Any] = []
+        failure: BaseException | None = None
+        for future in futures:
+            try:
+                frame = future.result()
+            except BaseException as exc:  # noqa: BLE001 - re-raised below, in order
+                if failure is None:
+                    failure = exc
+                continue
+            if failure is None:
+                frames.append(frame)
+    if failure is not None:
+        raise failure
+    return frames
 
 
 def _decode(blob: bytes, index: int) -> Any:

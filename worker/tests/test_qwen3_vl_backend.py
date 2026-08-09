@@ -9,7 +9,9 @@ keyframe is still a typed 400 rather than a bare 500.
 from __future__ import annotations
 
 import io
+import logging
 import sys
+import threading
 from types import ModuleType, SimpleNamespace
 from typing import Any
 
@@ -261,3 +263,153 @@ def test_a_missing_pillow_is_the_worker_being_broken_not_the_upload(monkeypatch)
     monkeypatch.setattr(mod, "_open_rgb", explode)
     with pytest.raises(BackendUnavailable):
         mod._decode(b"anything", 0)
+
+
+# --------------------------------------------------------------------------
+# decoding a *batch*: fanned out, but with the serial contract intact
+#
+# The fan-out exists because this whole call runs inside the lifecycle
+# manager's GPU critical section, so decode time is time the card is idle
+# (`research/multimodal-embedding-2026-08-09.md`, appendix 2026-08-09). None of
+# these tests time anything — a timing assertion on a shared CI box is a
+# flake — they assert the *structure* that makes the overlap possible and the
+# three behaviours that must survive it: order, which failure is reported, and
+# the 400/503 split.
+# --------------------------------------------------------------------------
+
+
+def test_a_batch_decodes_concurrently(monkeypatch):
+    """A barrier is the deterministic version of "these ran at the same time".
+
+    Every decode waits for all four to arrive before any returns, so a serial
+    implementation deadlocks into the timeout and fails; only genuine overlap
+    passes. No sleeps, no wall-clock thresholds.
+    """
+    barrier = threading.Barrier(4, timeout=5)
+
+    def decode(blob: bytes, index: int) -> str:
+        barrier.wait()
+        return f"image-{index}"
+
+    monkeypatch.setattr(mod, "_decode", decode)
+    assert mod._decode_all([b"a", b"b", b"c", b"d"]) == [
+        "image-0",
+        "image-1",
+        "image-2",
+        "image-3",
+    ]
+
+
+def test_one_image_is_decoded_on_the_calling_thread(monkeypatch):
+    """The pool loses at n=1 (measured 1.8 ms serial against 2.6 ms pooled:
+    starting a thread costs more than the decode), and single-frame requests
+    are a real shape on `/v1/embeddings/image`."""
+    seen: list[str] = []
+
+    monkeypatch.setattr(
+        mod,
+        "_decode",
+        lambda blob, index: seen.append(threading.current_thread().name) or "frame",
+    )
+    mod._decode_all([b"a"])
+    assert seen == [threading.current_thread().name]
+
+
+def test_a_batch_keeps_upload_order_when_decodes_finish_out_of_order(monkeypatch):
+    """Vectors come back in upload order or `mcp/` writes the wrong frame's
+    vector against the wrong timestamp — silently, since both are floats."""
+    release = [threading.Event() for _ in range(3)]
+
+    def decode(blob: bytes, index: int) -> str:
+        # Finish last-to-first: index 2 frees 1, which frees 0.
+        if index < 2:
+            release[index].wait(timeout=5)
+        result = f"image-{index}"
+        if index:
+            release[index - 1].set()
+        return result
+
+    monkeypatch.setattr(mod, "_decode", decode)
+    assert mod._decode_all([b"a", b"b", b"c"]) == ["image-0", "image-1", "image-2"]
+
+
+def test_the_lowest_index_failure_is_the_one_reported(monkeypatch):
+    """`mcp/` halves a refused batch to find the offender
+    (`runner._call_per_frame`). Reporting whichever thread failed first would
+    send that search down the wrong half, so the index has to be the same one a
+    serial decode would have raised on."""
+
+    def decode(blob: bytes, index: int) -> str:
+        if index in (1, 3):
+            raise InvalidImageError(f"image {index} could not be decoded", index=index)
+        return f"image-{index}"
+
+    monkeypatch.setattr(mod, "_decode", decode)
+    with pytest.raises(InvalidImageError) as raised:
+        mod._decode_all([b"a", b"b", b"c", b"d"])
+    assert raised.value.index == 1
+
+
+def test_a_broken_worker_still_beats_a_broken_upload(monkeypatch):
+    """A `BackendUnavailable` (503) from a *later* position must not be
+    downgraded to the earlier position's 400: the two answers send `mcp/` in
+    opposite directions — retry the batch, or discard the frame."""
+
+    def decode(blob: bytes, index: int) -> str:
+        raise (
+            InvalidImageError("bad upload", index=index)
+            if index
+            else BackendUnavailable("pillow is not installed")
+        )
+
+    monkeypatch.setattr(mod, "_decode", decode)
+    with pytest.raises(BackendUnavailable):
+        mod._decode_all([b"a", b"b"])
+
+
+def test_the_pool_never_outgrows_the_batch_or_the_box(monkeypatch):
+    """Sized per call, so a 64-image request does not start 64 threads and a
+    two-image one does not start eight. There is no env var here on purpose."""
+    captured: dict[str, Any] = {}
+    real = mod.ThreadPoolExecutor
+
+    def spy(*args: Any, **kwargs: Any):
+        captured.update(kwargs)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(mod, "ThreadPoolExecutor", spy)
+    monkeypatch.setattr(mod, "_decode", lambda blob, index: index)
+    monkeypatch.setattr(mod.os, "cpu_count", lambda: 4)
+
+    mod._decode_all([b"x"] * 64)
+    assert captured["max_workers"] == 4, "capped by the box"
+
+    mod._decode_all([b"x"] * 2)
+    assert captured["max_workers"] == 2, "capped by the batch"
+
+    monkeypatch.setattr(mod.os, "cpu_count", lambda: 64)
+    mod._decode_all([b"x"] * 64)
+    assert captured["max_workers"] == mod.MAX_DECODE_WORKERS, "capped by the ceiling"
+
+
+def test_the_frame_leg_logs_the_decode_encode_split(st, monkeypatch, caplog):
+    """The whole point of the fan-out is that decode is dead time on the card,
+    and the only way tomorrow's restart can be validated against tonight's
+    numbers is if the worker says which half went where."""
+    backend = loaded(st)
+    monkeypatch.setattr(mod, "_decode", lambda blob, index: f"image-{index}")
+    with caplog.at_level(logging.INFO, logger=mod.__name__):
+        backend.embed_images([b"a", b"b"])
+    line = "\n".join(caplog.messages)
+    assert "image embed: 2 frames" in line
+    assert "decode=" in line and "encode=" in line and "img/s" in line
+
+
+def test_the_query_legs_do_not_log_at_info(st, caplog):
+    """One line per search would drown the indexing throughput this log exists
+    to explain."""
+    backend = loaded(st)
+    with caplog.at_level(logging.INFO, logger=mod.__name__):
+        backend.embed_texts(["kv cache"], input_type="query")
+        backend.embed_text(["a slide showing a kv-cache diagram"])
+    assert caplog.messages == []
