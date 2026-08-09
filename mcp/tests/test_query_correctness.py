@@ -1463,6 +1463,28 @@ async def test_one_frame_found_by_two_legs_is_one_result(tool_corpus) -> None:
     assert rows[0]["score"] == pytest.approx(2 / 61, abs=5e-5)
 
 
+async def test_a_narrated_slide_does_not_come_back_as_a_frame_as_well(
+    tool_corpus,
+) -> None:
+    """The three-leg case: the OCR hit collapses into the narration it repeats,
+    and the frame leg's copy of that same keyframe must join it rather than
+    appear beside it as a second sighting of one picture."""
+
+    def make(conn: sqlite3.Connection) -> None:
+        vid = add_video(conn, "narratedvid")
+        add_cue(conn, vid, 0, 38.0, 44.0, "an architecture diagram with boxes and arrows")
+        kf = add_ocr(conn, vid, 0, 40.0, "architecture diagram with boxes and arrows")
+        add_frame_vector(conn, kf, vid, 40.0, "architecture diagram with boxes and arrows")
+
+    parts = await tool_corpus(make)
+    rows = rows_of(
+        await search.run(parts.deps, q="architecture diagram with boxes and arrows", limit=5)
+    )
+    assert len(rows) == 1, rows
+    assert rows[0]["source"] == "transcript+ocr+frame"
+    assert rows[0]["frame_id"] == "narratedvid-00000"
+
+
 # ----------------------------------------------------- §7.11: OCR min_chars
 
 

@@ -723,11 +723,16 @@ def _collapse_same_frame(hits: list[Hit]) -> list[Hit]:
     `phash`; this is the cross-leg half, and like the OCR/transcript collapse it
     is a fusion event: the survivor keeps both legs' RRF contributions, because
     two channels agreeing is the corroboration RRF exists to reward.
+
+    It runs AFTER the OCR/transcript collapse, so a slide already absorbed into
+    a narrated passage claims its frame id too — otherwise the picture came back
+    once as `[transcript+ocr]` and again as `[frame]`, which is the same bug
+    wearing the fix for the neighbouring one.
     """
     survivors: list[Hit] = []
     by_frame: dict[str, Hit] = {}
     for hit in hits:
-        if hit.frame_id is None or hit.source not in ("ocr", "frame"):
+        if hit.frame_id is None or hit.source == "transcript":
             survivors.append(hit)
             continue
         first = by_frame.get(hit.frame_id)
@@ -737,7 +742,7 @@ def _collapse_same_frame(hits: list[Hit]) -> list[Hit]:
             continue
         first.score += hit.score
         first.n_legs += 1
-        first.source = "ocr+frame"
+        first.source = f"{first.source}+{hit.source}"
         # The OCR leg's text is the matched window of the slide; the frame
         # leg's is "visual match, no text hit" or the whole slide. Keep the
         # one that says something.

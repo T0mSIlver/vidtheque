@@ -458,7 +458,10 @@ collapse, on the identity the keyframe stage already computed: `phash` within a
 leg (in SQL, so the pool is not spent on duplicates), `frame_id` across the two
 legs (in the fusion step, where the RRF contributions add — two channels
 agreeing is corroboration, and the provenance becomes `[ocr+frame]`). Keyframes
-with `dup_of` set never reach either leg.
+with `dup_of` set never reach either leg. The frame collapse runs *after* the
+OCR-vs-transcript one, so a slide already absorbed into the narration it repeats
+claims its frame id too and the picture cannot come back a second time as
+`[frame]`; that is the `[transcript+ocr+frame]` provenance.
 
 **OCR-vs-transcript dedup.** A slide usually says what the speaker is saying. Two
 hits, same second, same claim. Within one video, an OCR hit whose frame timestamp
@@ -518,7 +521,7 @@ same list.
 
 **Provenance prefixes** (so the model never needs a second, narrower query just to
 learn where a hit came from): `[transcript]`, `[ocr]`, `[frame]`, `[transcript+ocr]`,
-`[ocr+frame]`, `[description]`.
+`[ocr+frame]`, `[transcript+ocr+frame]`, `[description]`.
 
 ---
 
