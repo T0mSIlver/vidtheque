@@ -578,15 +578,40 @@ class YtDlpSource:
         dest_dir.mkdir(parents=True, exist_ok=True)
         height = max(240, int(max_height))
         opts = self._base_opts() | {
-            "format": (
-                f"bv*[vcodec^=avc1][height<={height}]/bv*[height<={height}]/b[height<={height}]"
-            ),
+            "format": _video_format(height),
             "merge_output_format": "mp4",
             "outtmpl": {"default": "%(id)s.%(ext)s"},
             "paths": {"home": str(dest_dir), "temp": str(dest_dir / "tmp")},
         }
         self._run(opts, url, download=True)
         return MediaFile(path=_first_match(dest_dir, source_id))
+
+
+def _video_format(height: int) -> str:
+    """The height cap, then a ladder above it, then anything at all.
+
+    The cap is a bandwidth decision, not a requirement: 4K VP9 is 2.9 GB for one
+    lecture and 99.9% of those pixels are discarded (research §5.3). But a
+    live-stream VOD or an odd upload can expose *no* format under the cap, or
+    formats with no usable height metadata, and then a selector that only knows
+    `height<=N` matches nothing, `download_video` raises, and — before the fetch
+    split — the whole item died with it, transcript included.
+
+    The ladder climbs in standard rungs so the *smallest* format above the cap
+    wins rather than the best one, and the bare `b` at the end catches formats
+    that declare no height. `merge_output_format=mp4` normalises whatever comes
+    out of it into something the decoder handles.
+    """
+    rungs = [rung for rung in (height, 1440, 2160, 4320) if rung >= height]
+    branches: list[str] = []
+    for rung in rungs:
+        branches += [
+            f"bv*[vcodec^=avc1][height<={rung}]",
+            f"bv*[height<={rung}]",
+            f"b[height<={rung}]",
+        ]
+    branches += ["bv*", "b"]
+    return "/".join(branches)
 
 
 def _first_match(directory: Path, source_id: str) -> Path:

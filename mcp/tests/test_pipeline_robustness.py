@@ -23,7 +23,7 @@ from vidtheque_mcp.tools import indexing
 
 from .pipeline_fakes import INFO, VIDEO_URL, FakeWorker, canned_source
 from .test_job_recovery import close
-from .test_pipeline_e2e import FAST, Harness, harness
+from .test_pipeline_e2e import FAST, Harness, harness, structured
 
 
 def media_files(parts: Harness, source_id: str = "aB3dEfG7hIj") -> list[Path]:
@@ -106,6 +106,67 @@ async def test_keep_source_none_releases_the_audio_once_stt_has_settled(
         assert (await parts.stages())["stt"]["state"] == "done"
         assert audio_files(parts) == []
         assert media_files(parts) == []
+    finally:
+        await close(parts)
+
+
+# ================================================================== frame source
+
+
+def test_the_format_selector_falls_back_above_the_cap() -> None:
+    """A VOD exposing nothing under 1080p matched no branch, so the download
+    raised, `fetch` failed, and a usable transcript went with it."""
+    from vidtheque_mcp.pipeline.sources import _video_format
+
+    selector = _video_format(1080)
+    branches = selector.split("/")
+    assert branches[0] == "bv*[vcodec^=avc1][height<=1080]"  # the cap still wins
+    # Then a ladder, so the *smallest* format above the cap is taken, not the best.
+    assert branches.index("bv*[height<=1440]") < branches.index("bv*[height<=2160]")
+    # And a bare fallback for formats that declare no height at all.
+    assert branches[-1] == "b"
+    assert "b[height<=1080]" in branches
+
+
+async def test_a_frame_source_failure_does_not_discard_the_transcript(
+    settings: Settings, clip: Path
+) -> None:
+    """`fetch` is an essential stage, so raising there killed the whole item —
+    including the transcript legs, which do not need the video file at all."""
+
+    class NoVideoFormat:
+        def __init__(self, inner) -> None:  # type: ignore[no-untyped-def]
+            self._inner = inner
+
+        def __getattr__(self, name: str):  # type: ignore[no-untyped-def]
+            return getattr(self._inner, name)
+
+        def download_video(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            from vidtheque_mcp.pipeline.sources import SourceError
+
+            raise SourceError("Requested format is not available")
+
+    parts = await harness(settings, clip)
+    parts.parts.runner.pipeline.source = NoVideoFormat(canned_source(clip))
+    try:
+        job_id = await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+
+        job = await parts.one("SELECT state FROM jobs WHERE public_id = ?", (job_id,))
+        assert job["state"] == "done"
+        stages = await parts.stages()
+        # The transcript legs are unharmed…
+        for name in ("fetch", "stt", "chunk", "text_embed"):
+            assert stages[name]["state"] == "done", name
+        assert await parts.rows("SELECT id FROM cues")
+        # …and the frame legs record the failure rather than a deliberate skip.
+        assert stages["keyframe"]["state"] == "failed"
+        assert "frame source could not be downloaded" in str(stages["keyframe"]["error"])
+        assert (await parts.one("SELECT index_state FROM videos"))["index_state"] == "ready"
+
+        status = structured(await indexing.job_status(parts.deps, job_id=job_id))
+        assert status["n_degraded"] == 1
+        assert "keyframe" in status["degraded_stages"]
     finally:
         await close(parts)
 

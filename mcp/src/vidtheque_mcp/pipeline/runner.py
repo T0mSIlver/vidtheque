@@ -107,6 +107,9 @@ class ItemRun:
     # whisperX never got its chance. If captions then fail too, that is the
     # worker's fault and not the video's.
     stt_deferred_to_captions: bool = False
+    # The frame source could not be downloaded. Only the frame stages care,
+    # and they record it as a failure rather than a deliberate skip.
+    media_error: str | None = None
 
     @property
     def force(self) -> bool:
@@ -353,15 +356,35 @@ class IndexingPipeline:
             if need_audio:
                 run.audio = await self._fetch_audio(run)
                 await run.ctx.record("fetch", 0.5)
-            if want_media:
-                run.media = await self._fetch_media(run)
-                await run.ctx.record("fetch", 0.95)
         except RateLimited as exc:
             await self._stage_failed(run, "fetch", str(exc))
             raise _rate_limited(exc, str(exc)) from exc
         except (SourceError, OSError) as exc:
             await self._stage_failed(run, "fetch", str(exc))
             raise ItemFailed("E_INTERNAL", f"download failed: {exc}", retryable=True) from exc
+
+        if want_media:
+            # The *frame* source is a separate fetch from the metadata and audio,
+            # because it is a separate answer. A VOD that exposes no usable video
+            # format used to raise here, fail `fetch` — an essential stage — and
+            # discard a perfectly good transcript along with the frames. Only the
+            # frame stages depend on this file, so only they fail.
+            try:
+                run.media = await self._fetch_media(run)
+                await run.ctx.record("fetch", 0.95)
+            except RateLimited as exc:
+                # Throttling is about this box, not this file: back the whole
+                # item off rather than indexing half of it during a block.
+                await self._stage_failed(run, "fetch", str(exc))
+                raise _rate_limited(exc, str(exc)) from exc
+            except (SourceError, OSError) as exc:
+                run.media_error = str(exc)
+                await run.ctx.log(
+                    f"the frame source could not be downloaded: {exc}. The transcript "
+                    "legs continue; the frame stages will record the failure.",
+                    "warn",
+                    stage="fetch",
+                )
 
         audio_rel = _relative(run.audio, self.layout.data_dir)
         media_rel = _relative(run.media, self.layout.data_dir)
@@ -655,7 +678,14 @@ class IndexingPipeline:
         if not self._should_run(run, "keyframe", model_key):
             return
         if run.media is None or not run.media.exists():
-            await self._skip(run, "keyframe", "the source video is not on disk")
+            if run.media_error:
+                await self._soft_fail(
+                    run,
+                    "keyframe",
+                    f"the frame source could not be downloaded: {run.media_error}",
+                )
+            else:
+                await self._skip(run, "keyframe", "the source video is not on disk")
             return
 
         await self._stage_running(run, "keyframe")
