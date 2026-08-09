@@ -1007,3 +1007,131 @@ Stated plainly so nobody inherits a guess as a fact.
    `ss03` axes** exposed the way Linear uses them. Inter supports the features;
    whether a given Fontsource subset build preserves them needs a check against
    the actual file.
+
+---
+
+# Appendix B — reference dashboards, and what layout v2 stole from them (2026-08-09, layout-v2 agent)
+
+**Why this section exists.** Tom reviewed the Direction C overview and said: *"It
+looks better but still not like a real dashboard. Take more liberty to depart
+from the original frontend implementation — I'd expect a dashboard to take up
+the full width of the page and use it efficiently, with a sidebar on the left
+probably."* That is a chassis complaint, not a world complaint: the centred
+74rem document column was inherited from the demo page. This appendix records
+the reference pass that preceded the rebuild, so the next agent can see which
+patterns were taken deliberately and which were refused.
+
+**Method.** `@playwright/cli` (npx, chromium-1237, `.playwright/cli.config.json`
+supplies `channel: chromium` — run it from the repo root or it defaults to a
+Chrome that is not installed). Viewport 1600×1000, real page loads, no login
+anywhere. Screenshots are in the agent's scratchpad, not committed.
+
+## B.1 What was actually reachable
+
+| reference | URL | login-free? | what it was read for |
+|---|---|---|---|
+| Grafana Play — home | `play.grafana.org` | yes | sidebar anatomy, top bar |
+| Grafana Play — list | `play.grafana.org/dashboards` | yes | page header, filter bar, full-width table |
+| shadcn/ui blocks — sidebar | `ui.shadcn.com/blocks/sidebar` | yes | `sidebar-01`/`-04`: rail width, groups, inset content |
+| ClickHouse Play | `play.clickhouse.com/play?user=play` | yes | the icon-rail extreme; full-bleed dense surface |
+| Sentry sandbox | `sandbox.sentry.io/issues/` | email gate | two-tier rail + list toolbar, legible through the modal blur |
+| Tabler admin preview | `preview.tabler.io` | yes | **negative reference** (see B.5) |
+| Uptime Kuma demo | `demo.uptime.kuma.pet:27000` | — | did not resolve from this box; not used |
+
+## B.2 Sidebar anatomy — the measurements that mattered
+
+- **Width.** Grafana's rail is ~320px at 1600 (20% of the window); shadcn's
+  `sidebar-01` is a flat **16rem / 256px**; Sentry runs a **78px icon rail plus
+  a ~240px secondary panel**. The cluster is 240–320px, and nothing in that
+  cluster scales with the window. **Taken:** a fixed `--rail: 15rem` (240px) —
+  the bottom of the cluster, because this product has three destinations, not
+  Grafana's nine.
+- **Grouping.** Everybody groups. Grafana uses chevron sections; shadcn uses a
+  small muted **group label** with the items indented under a 1px left rail.
+  **Taken:** the group label, in the label idiom this surface already has (11px
+  tracked uppercase). Not taken: the indent rail — a second vertical hairline
+  240px from a first vertical hairline is noise.
+- **Active state.** Grafana: a filled pill *plus* a solid left accent bar.
+  shadcn: a filled pill only. **Taken:** the two-part treatment, rebuilt in this
+  system's terms — the item takes the **content ground** (`--bg`) with the label
+  in `--accent` and an `inset 2px 0 0 var(--accent)` edge, so it reads as a tab
+  notched into the page. This also solved a contrast problem: `--accent` on
+  `--panel` is 4.41:1, under the floor, and on `--bg` it is 9.06:1.
+- **Item height.** Grafana ~32px, shadcn ~32px. **Taken:** `--row` (34px), which
+  this project already uses for a table row — so a nav item and a data row are
+  the same object height and the rail does not read as a different product.
+- **What lives at the bottom.** Grafana, Sentry and every shadcn variant park
+  account/environment state at the foot of the rail. **Taken:** the deployment
+  strip (`auth=…`, read-only, indexing refused) moved out of the masthead and
+  into a `.rail-foot`. It is true of every page, so it belongs to the chassis.
+- **Collapse.** Grafana has a collapse toggle; shadcn ships an icon-only
+  collapsed rail; ClickHouse Play *is* the icon rail. **Refused.** An icon rail
+  needs an icon language, and this design system deliberately has none — an
+  invented icon set is a much bigger new primitive than a breakpoint. Below
+  60rem the rail reflows to the horizontal strip phase 1 already shipped, which
+  costs no control, no `aria-expanded` we cannot set without script, and no
+  inline `<script>` (forbidden by `test_dashboard.py:898`).
+
+## B.3 Full-width content — what the good ones do with the space
+
+- **Nothing is centred.** Grafana's list page runs edge to edge with a ~32px
+  gutter; there is no document measure anywhere in the frame. **Taken:** the
+  content column is fluid, gutter `--s6`, with `--wide` (110rem) only as an
+  ultra-wide backstop. `--measure` (74rem) is deleted.
+- **Prose is still capped.** Grafana's page subtitle is one short line; nobody
+  runs a paragraph across 1600px. **Taken:** `--prose` survives for 14px body,
+  and layout v2 adds `--prose-meta` (60ch) because the same 736px at 12px is
+  120 characters — the impeccable `line-length` rule caught exactly this.
+- **The page header is a band.** Grafana: eyebrow/title left, actions right,
+  rule under. Tabler: an uppercase eyebrow above the title, buttons right.
+  **Taken:** `.pagehead` is a full-width band with a hairline under it, and
+  `.pagehead-line` puts the page's states at the right of the title's baseline.
+  **Refused:** making it sticky. A 30px title pinned to the top of an operator
+  surface spends the scarce dimension on something you read once.
+- **The filter bar is a full-width band, but the controls pack left.** Grafana's
+  search row spans the frame with its controls at the left and only view-mode
+  toggles at the right. **Taken:** `.field-actions` lost `margin-left: auto` —
+  on a 1900px window the jobs page had Apply sitting 1400px away from the select
+  it applies to.
+- **Dense tables take the whole width and put the timestamp column last.**
+  Grafana, Sentry and the ClickHouse result grid all do this. **Already true**
+  of this surface's tables; what changed is that they now *get* the width.
+- **Zones.** Nobody stacks full-width short lists. **Taken:** `.split-main`
+  (2fr/1fr) for "what arrived" beside "what is wrong / what it costs", and
+  `.split` for equal halves. A three-line gap list stretched across 1600px is a
+  sentence with 1400px of nothing after it.
+
+## B.4 Two smaller steals
+
+- **A row's far-end fact.** Sentry's issue rows and Grafana's list rows put one
+  right-aligned column at the end so the eye can scan it as a column. **Taken:**
+  `.row-when` — the arrival clock moved to the end of the recently-indexed row,
+  which turns that list into a column of times you can read without reading a
+  single title. Below 40rem it wraps onto its own line, because at 375px a clock
+  on the right turns a four-word title into five lines.
+- **Naming.** Grafana's nav item and page title are the same word. **Taken:**
+  the rail says "Overview" and the page now says "Corpus overview"; it used to
+  say "Corpus", which made the operator check which page they were on.
+
+## B.5 The negative reference
+
+`preview.tabler.io` is the shape `DESIGN.md` forbids and it is worth naming:
+same-size stat cards with drop shadows, sparklines standing in for content, a
+donut gauge, a choropleth, and coloured icon chips. It is the "SaaS admin panel"
+this project's north star refuses. The one thing worth taking from it — the
+eyebrow label above the page title — Grafana does more quietly, and this surface
+already has the ledger band doing that job.
+
+## B.6 Honesty notes
+
+- The Sentry sandbox screenshot is **behind its email-capture modal**; the page
+  under it is blurred. Everything claimed about it above is structure (rail
+  widths, column order), which the blur preserves — nothing is claimed about its
+  type or colour.
+- No pixel was copied from any reference. Every number above was translated into
+  a token that already existed in `DESIGN.md`, or (twice: `--rail`, `--wide`,
+  plus `--prose-meta`) into a new one documented in the same commit.
+- Grafana Play and the shadcn blocks pages are live third-party sites; they will
+  drift. The screenshots that back this section are in the agent's scratchpad
+  and are not committed — regenerate rather than trust the description if a
+  future decision turns on a detail.
