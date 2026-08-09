@@ -246,6 +246,19 @@ components:
   text-tone:
     textColor: "{colors.tone-warn}"
     typography: "{typography.body}"
+  scrub-preview:
+    backgroundColor: "{colors.raised}"
+    borderColor: "{colors.line}"
+    rounded: "{rounded.sm}"
+    padding: "{spacing.s1}"
+    width: "12rem"
+  scrub-preview-span:
+    textColor: "{colors.fg}"
+    typography: "{typography.machine}"
+  scrub-preview-meta:
+    textColor: "{colors.muted}"
+    fontFamily: "{typography.machine.fontFamily}"
+    fontSize: "0.6875rem"
 ---
 
 # Design System: vidtheque dashboard
@@ -791,7 +804,59 @@ Hovering either the timeline or the keyframe strip lights the other.
 
 Like the ledger band it carries only an `.sr-only` heading: a band of bars over
 a counter running 0:00 to the runtime does not need a caption saying it is a
-timeline. Under it sit two things. **The footage counter** (`.timeline-scale`)
+timeline.
+
+**The scrub preview** (`.scrubpreview`, added 2026-08-10). Point anywhere along
+the band and the shot under the pointer shows its own first keyframe in a box
+that follows the cursor, the way a video player previews a seek. It is the one
+place on this surface where a picture appears because you pointed at something,
+and it earns that because the band's whole argument is that a bar's position is
+a fact — the preview is that argument made visible without a navigation.
+
+Five decisions, each one a fence:
+
+- **It is a data surface, not a card.** Card stock, a hairline and the 3px
+  radius the frames themselves use — the lightbox's smaller sibling, built from
+  the two exceptions the No-Card Rule already allows a real box. **No shadow.**
+  It is above the page because of `z-index` and because `--raised` is lighter
+  than `--bg`, not because it is pretending to float.
+- **It reports the shot, not the pointer.** Two lines, both machine strings in
+  mono: the shot's span (`0:12–0:31`) at Machine size in `--fg`, and
+  `shot 7 · 4/5 kept` at 11px in `--muted` — mono at 11px being what a chip's
+  count already is. A clock derived from where the cursor sits would be a
+  number the index never wrote, and a fiction the moment the arrow keys are
+  driving instead of a mouse. Where the pointer is on the runtime is what the
+  footage counter below the band is for. (The keyframe's *own* `t_s` is not
+  available here: `shot_timeline` groups by `shot_id` and carries the shot's
+  boundaries, not the first frame's sample time. The span is the timestamp the
+  index has at this granularity, and printing it is honest where inventing the
+  other would not be.)
+- **The frame is the strip's width, not a fourth one.** 192px, `--r-sm`, in a
+  fixed 16:9 box (**The Fixed-Box Rule** — a frame still loading leaves the
+  ground behind and nothing moves). A new width is a new JPEG per keyframe in a
+  byte-capped cache, and 192×108 is the scale a scrub preview is read at
+  anyway. The box is a fixed 12rem for the same reason it is fixed: a preview
+  that resizes with its content jumps as you sweep.
+- **It is an enhancement, and the band degrades to what it was.** The server
+  sends the box empty and `hidden`; every bar is still a real `<a href>` to
+  `#frame-N` and still carries the `title` the band has always had. The script
+  strips that `title` when it binds, because a native tooltip under a real
+  preview is the same sentence told twice and a second late.
+- **The keyboard gets the same box.** Arrow keys step shots when the band has
+  focus — moving focus between the anchors that were already there rather than
+  inventing a selection model beside them, so whatever the arrows land on,
+  Enter follows. Focus places the preview at the bar's own centre. The box is
+  `aria-hidden`: every string in it is already in the bar's `.sr-only`
+  description, and a second voice for the thing you just focused is noise.
+
+**Not on the jobs page.** The same hover was considered for the per-item
+progress meter and refused. A meter's x-axis is percent-complete, and
+`stage_pct` is progress through a *stage* — so a frame previewed at 42% of that
+bar would claim to be 42% of the runtime, which is exactly the lie this band's
+minimum bar width exists to prevent. A preview belongs on an axis that means
+time.
+
+Under the band sit two things. **The footage counter** (`.timeline-scale`)
 is five quarter marks, each a 4px `--rule` tick and its clock, positioned at its
 true percentage rather than spaced by flexbox — a band whose whole argument is
 that position is a fact cannot carry a scale that is only approximately right.

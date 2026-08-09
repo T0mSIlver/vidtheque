@@ -622,7 +622,7 @@ async def video_detail(request: Request) -> Response:
             "stages": _stage_rows(stages),
             "counts": counts,
             "origins": origins,
-            "shots": _shot_bars(shots, duration, frame_page),
+            "shots": _shot_bars(deps, video_id, shots, duration, frame_page),
             "shots_capped": len(shots) >= SHOT_CAP,
             "frames": _frame_cards(deps, video_id, frame_rows, ocr_lines),
             "frame_page": frame_page,
@@ -690,7 +690,11 @@ def _stage_rows(stages: list[sqlite3.Row]) -> list[dict[str, Any]]:
 
 
 def _shot_bars(
-    shots: list[sqlite3.Row], duration: float, frame_page: int
+    deps: Deps,
+    video_id: str,
+    shots: list[sqlite3.Row],
+    duration: float,
+    frame_page: int,
 ) -> list[dict[str, Any]]:
     """Shots as percentages of the runtime, each pointing at its first frame.
 
@@ -698,6 +702,22 @@ def _shot_bars(
     the shot's first keyframe — `ord` is dense per video, so the offset is
     arithmetic rather than another query. Clicking a shot works with JavaScript
     off, which is the difference between a timeline and a decoration.
+
+    Each bar also carries the URL of its own first keyframe, which is what the
+    scrub preview shows on hover. Three things about that URL are decisions:
+
+    * it is **`STRIP_WIDTH`**, not a fourth entry in the width set (§6.4). A
+      new width is a new JPEG per keyframe in a cache that is capped in bytes,
+      and 192x108 is the scale a scrub preview is read at anyway — YouTube's
+      own storyboard tiles are 158x90. For a shot whose first frame is on the
+      strip below, the preview is the *same* file the page already fetched.
+    * it is emitted for every shot rather than fetched on demand, because the
+      alternative is a request per hover against the process that also holds
+      the only SQLite writer. Nothing is fetched until a pointer asks: the
+      markup carries a URL, the browser carries the bytes.
+    * it is derived from `first_ord` with no extra query — the frame id is
+      `<public_id>-<ord:05d>` (`http/frames.py`), the same string
+      `_frame_cards` builds.
     """
     span = duration if duration > 0 else max(
         (float(s["end_s"] or 0.0) for s in shots), default=1.0
@@ -720,6 +740,7 @@ def _shot_bars(
                 "ocr_done": int(shot["ocr_done"]),
                 "first_ord": first_ord,
                 "frame_offset": (first_ord // frame_page) * frame_page,
+                "preview": _thumb(deps, f"{video_id}-{first_ord:05d}", STRIP_WIDTH),
             }
         )
     return bars

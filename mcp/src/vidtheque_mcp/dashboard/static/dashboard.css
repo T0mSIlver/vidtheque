@@ -438,6 +438,8 @@ time,
 .badge-screen,
 .deployment,
 .timeline-scale,
+.scrubspan,
+.scrubmeta,
 .shot-caption {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -1219,7 +1221,11 @@ button[disabled] { opacity: 0.5; cursor: default; }
    first thing after the header, and it is not a `.panel`: it has no heading
    above it because it does not need one, and its label sits under it with the
    scale, where a film strip's footage counter goes. */
-.timeband { margin: 0; }
+/* `relative` so the scrub preview has something to be absolute against, and
+   the band's own top edge is that box's origin — see `.scrubpreview`. The
+   height is a custom property because the preview's flipped position is the
+   bottom of the band, and two places writing `3rem` is two places to forget. */
+.timeband { position: relative; margin: 0; --timeline-h: 3rem; }
 /* No rule under it: the next `.panel` brings its own hairline 32px later, and
    two rules that close together read as one thick rule that means nothing. */
 .timeband-foot {
@@ -1269,7 +1275,7 @@ button[disabled] { opacity: 0.5; cursor: default; }
    standing in for content. */
 .timeline {
   position: relative;
-  height: 3rem;
+  height: var(--timeline-h, 3rem);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1321,6 +1327,82 @@ button[disabled] { opacity: 0.5; cursor: default; }
     repeating-linear-gradient(135deg, var(--mark) 0 2px, transparent 2px 6px),
     var(--bg);
 }
+
+/* ---- the scrub preview
+
+   Point anywhere along the band and the shot under the pointer shows its own
+   first keyframe. It is the lightbox's smaller sibling and it is built from
+   the same two exceptions the No-Card Rule already allows a real box: card
+   stock, a hairline, the 3px radius the frames themselves use. No shadow — it
+   is above the page because of `z-index` and because card stock is lighter
+   than paper, not because it is pretending to float.
+
+   It reports the *shot*, not the pointer: the span and the kept ratio are
+   index facts and read the same whether a mouse or the arrow keys got here,
+   where a cursor-derived clock would be a number the index never wrote and a
+   fiction the moment the keyboard is driving. Where the pointer is on the
+   runtime is what the footage counter under the band is for.
+
+   `top: 0` is the band's own top edge, and the transform lifts the whole box
+   above it, so the preview never covers the bars it is describing. The script
+   sets `left` in pixels and clamps it inside the band. `pointer-events: none`
+   because a box that follows the pointer must never be the thing the pointer
+   is over. */
+.scrubpreview {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  /* 12rem — the served frame is 192px and the box is 192px border-box, so the
+     picture lands at 182 and is very slightly downscaled, which is the right
+     direction to be wrong in. A scrub preview is read at a glance and this is
+     the scale YouTube's own storyboard tiles are. Fixed, because a preview
+     that resizes with its content jumps as you sweep. */
+  width: 12rem;
+  padding: var(--s1);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  transform: translate(-50%, calc(-100% - var(--s2)));
+  pointer-events: none;
+}
+.scrubpreview[hidden] { display: none; }
+/* Scrolled until the band is near the top of the viewport there is no room
+   above it, and a preview clipped by the window edge is worse than one under
+   the scale. The script measures and sets this; `--timeline-h` is the band's
+   own height, so the two cannot drift apart. */
+.scrubpreview.is-below {
+  top: var(--timeline-h);
+  transform: translate(-50%, var(--s2));
+}
+
+/* The Fixed-Box Rule: the box owns the geometry, so a keyframe that is still
+   loading or has gone missing leaves the ground behind and nothing moves. */
+.scrubshot {
+  display: block;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--sand-4);
+  border-radius: var(--r-sm);
+  line-height: 0;
+}
+.scrubshot img { width: 100%; height: 100%; object-fit: cover; }
+
+/* Both lines are machine strings — a span the index wrote and a count — so
+   both are in the two-channel rule's own selector list above, tabular by
+   construction. A span whose digits shift width as you sweep the band is the
+   one thing a scrub preview must not do. The meta line is mono at 11px, which
+   the chip's count already is. */
+.scrubspan,
+.scrubmeta {
+  display: block;
+  margin-top: var(--s1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scrubspan { font-size: var(--t-machine); color: var(--fg); }
+.scrubmeta { font-size: var(--t-micro); color: var(--muted); }
 
 /* The footage counter. Five marks at the quarters, each one a hairline tick and
    the clock it stands at, positioned at its true percentage rather than spaced

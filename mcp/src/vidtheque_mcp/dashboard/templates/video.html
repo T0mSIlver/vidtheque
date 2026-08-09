@@ -83,9 +83,17 @@
 <section class="timeband{{ '' if shots else ' panel' }}" aria-labelledby="timeline">
   <h2 class="{{ 'sr-only' if shots else 'panel-title' }}" id="timeline">Scene timeline</h2>
   {% if shots %}
+  {# The bars carry what the scrub preview reads: the span, the kept ratio and
+     the URL of the shot's own first keyframe. The `title` stays in the markup
+     — with JavaScript off it is the only hover this band has — and the script
+     strips it on bind, because a native tooltip under a real preview is the
+     same sentence told twice, a second late. #}
   <ol class="timeline" aria-label="Shots across the runtime">
     {% for shot in shots %}
     <li class="shotbar{{ ' is-dedup' if shot.kept == 0 }}" data-shot="{{ shot.shot_id }}"
+        data-span="{{ shot.start_s | clock }}–{{ shot.end_s | clock }}"
+        data-kept="{{ shot.kept }}/{{ shot.frames }} kept"
+        {% if shot.preview %}data-preview="{{ shot.preview }}"{% endif %}
         style="left:{{ shot.left }}%;width:{{ shot.width }}%">
       <a href="{{ nav_link(shot.frame_offset, cue_offset, 'frame-' ~ shot.first_ord) }}"
          title="shot {{ shot.shot_id }}, {{ shot.start_s | clock }} to {{ shot.end_s | clock }}, {{ shot.kept }}/{{ shot.frames }} frames kept">
@@ -95,6 +103,17 @@
     </li>
     {% endfor %}
   </ol>
+  {# Empty and hidden as served: the preview is the enhancement layer and owns
+     no facts of its own, so with JavaScript off there is nothing here to see
+     and the band is exactly what it was — a row of real links. `aria-hidden`
+     because every string it will hold is already in the bar's own `.sr-only`
+     description, and a live region that duplicates the thing you just focused
+     is noise. #}
+  <div class="scrubpreview" id="scrub" aria-hidden="true" hidden>
+    <span class="scrubshot"><img alt="" width="192" height="108" decoding="async"></span>
+    <span class="scrubspan"></span>
+    <span class="scrubmeta"></span>
+  </div>
   {# Quarter marks at their true percentage, not spaced by flexbox: the band
      above is an argument that a bar's position is a fact, and a scale whose
      labels are only approximately where they claim would undercut it. #}
@@ -136,7 +155,7 @@
     <div class="figure">
       <dt>chunks</dt>
       <dd>{{ counts['chunks'] | count }}</dd>
-      <dd class="figure-note">the embedding unit</dd>
+      <dd class="figure-note">from {{ counts['cues'] | count }} cues</dd>
     </div>
     <div class="figure">
       <dt>keyframes</dt>

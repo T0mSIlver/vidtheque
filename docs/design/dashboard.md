@@ -1120,6 +1120,7 @@ column is where the fact lives now.
 |---|---|---|
 | every page (footer) | "This is the management surface. The corpus itself is served at `/mcp`." and the `· a self-hosted video-corpus MCP server` tagline | §2.6 has the URL structure. The tagline goes on the same argument that took the rubric out of the rail (DESIGN.md, **The brand lockup**): a tagline is a persuasion move |
 | overview | ledger note "the unit a search hit points at" | §5.1. Replaced by a value — the video count the cues are spread across |
+| video detail | ledger note "the embedding unit" | §5.3, and §4.3's chunk definition. Replaced by a value: how many cues the chunks were built from |
 | overview | storage notes "summed from the column, not walked on disk" / "one SQLite file, one writer" | §5.1 already specifies the byte total as a column read, not a directory walk |
 | overview | declared-models note, four sentences on `config` vs. the worker | §4.1 caveat 2. The panel is already a diff: declared on the left, the live pills on the right |
 | overview | drift banner's "Meaning is ranked by words here, not by embeddings." | restates the sentence before it |

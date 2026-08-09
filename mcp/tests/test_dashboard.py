@@ -538,7 +538,10 @@ def test_the_detail_page_is_honest_about_a_failed_stage(client: TestClient) -> N
 def test_the_detail_page_counts_are_bounded_and_per_video(client: TestClient) -> None:
     body = page(client, f"{ROOT}/videos/kCc8FmEb1nY")
     assert "What was stored" in body
-    assert "the embedding unit" in body
+    # Every ledger note is a value. "the embedding unit" — a vocabulary lesson
+    # in the slot beside a figure — went in the 2026-08-10 cull; what a chunk
+    # is made of is a number the page already has.
+    assert re.search(r"<dd class=\"figure-note\">from \d+ cues</dd>", body)
     assert "kept of" in body  # keyframes kept vs captured — the dedup story
     assert "whisperx" in body  # where the transcript came from
 
@@ -557,6 +560,61 @@ def test_the_scene_timeline_is_positions_not_a_query_per_shot(
     # used to explain that shots are a `GROUP BY shot_id` rather than a table
     # was culled 2026-08-10 (Tom); the fact lives in dashboard.md §4.3.
     assert "3 shot(s)." in body
+
+
+def test_the_scrub_preview_is_markup_the_band_can_lose(client: TestClient) -> None:
+    """The hover preview, and the no-JavaScript page it has to leave alone.
+
+    The band is a row of real links and stays one: everything the preview needs
+    rides on the bars as data, and the box the script fills is served empty.
+    """
+    body = page(client, f"{ROOT}/videos/kCc8FmEb1nY")
+    # Served empty and hidden. Nothing in it is a fact the page would lose.
+    assert '<div class="scrubpreview" id="scrub" aria-hidden="true" hidden>' in body
+    assert '<span class="scrubspan"></span>' in body
+    assert '<span class="scrubmeta"></span>' in body
+    # …and the bars are still what they were, `title` included, because that is
+    # the only hover a reader with the script blocked gets.
+    bars = re.findall(r'<li class="shotbar[^"]*"(.*?)</li>', body, re.S)
+    assert len(bars) == 3
+    for bar in bars:
+        assert re.search(r'data-span="\d+:\d\d–\d+:\d\d"', bar)
+        assert re.search(r'data-kept="\d+/\d+ kept"', bar)
+        assert "<a href=" in bar and "title=" in bar and "#frame-" in bar
+
+
+def test_the_scrub_preview_costs_no_new_cache_variant(client: TestClient) -> None:
+    """§6.4: three widths per keyframe in `derived/`, and the preview is one of
+    the three. A fourth width is a fourth JPEG per frame in a byte-capped
+    cache, so the preview reuses the strip's."""
+    body = page(client, f"{ROOT}/videos/kCc8FmEb1nY")
+    previews = re.findall(r'data-preview="([^"]+)"', body)
+    assert len(previews) == 3, "one per shot, from `first_ord`, with no extra query"
+    for url in previews:
+        assert url.startswith("/frames/"), "relative, like every asset here"
+        assert re.search(r"\?w=192&(?:amp;)?q=70", url), "the strip's own width"
+    # The shot that opens the video previews the frame the strip opens with.
+    assert "/frames/kCc8FmEb1nY-00000.jpg?w=192" in previews[0]
+    # Still exactly three variants across the whole page.
+    assert set(re.findall(r"/frames/[\w:-]+\.jpg\?w=(\d+)&(?:amp;)?q=70", body)) == {
+        "192", "512", "1280",
+    }
+
+
+def test_the_scrub_preview_reads_the_bars_and_writes_only_text(client: TestClient) -> None:
+    """The script half: no markup from data, no unfiltered URL, and the
+    keyboard gets the same box the pointer does."""
+    script = (STATIC / "dashboard.js").read_text()
+    assert "safeUrl(bar.dataset.preview)" in script, "the frame URL is filtered"
+    # `test_no_dashboard_module_builds_html_from_data` owns the sink list; this
+    # only asserts the two lines the preview writes are text nodes.
+    assert "shotSpan.textContent =" in script and "shotMeta.textContent =" in script
+    # Loaded once, then cached in the page; a sweep is not a request per shot.
+    assert "fetched.has(url)" in script and "setTimeout" in script
+    # Arrow keys move focus between the anchors that were already there.
+    for key in ("ArrowRight", "ArrowLeft", "Home", "End"):
+        assert key in script
+    assert 'link.removeAttribute("title")' in script, "no tooltip under a preview"
 
 
 def test_the_keyframe_strip_uses_the_derived_cache_and_never_base64(
@@ -956,6 +1014,7 @@ CULLED_NARRATION = (
     "Provenance records what",
     "not a report from the worker",
     "the unit a search hit points at",
+    "the embedding unit",
     "one SQLite file, one writer",
     "summed from the column",
     "This is the management surface",
