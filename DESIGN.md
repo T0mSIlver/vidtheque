@@ -32,6 +32,12 @@ colors:
   tone-wait-line: "#dad9d6"
   scrim: "rgb(0 0 0 / 0.66)"
 typography:
+  brand:
+    fontFamily: "Instrument Serif, Georgia, Times New Roman, serif"
+    fontSize: "1.25rem"
+    fontWeight: 400
+    lineHeight: 1.2
+    letterSpacing: "-0.01em"
   display:
     fontFamily: "Inter Variable, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif"
     fontSize: "1.875rem"
@@ -149,6 +155,13 @@ components:
   nav-rail:
     backgroundColor: "{colors.panel}"
     width: "15rem"
+  wordmark:
+    textColor: "{colors.fg}"
+    typography: "{typography.brand}"
+  brandmark:
+    backgroundColor: "{colors.accent}"
+    textColor: "{colors.bg}"
+    rounded: "{rounded.lg}"
   nav-group:
     textColor: "{colors.muted}"
     typography: "{typography.label}"
@@ -220,7 +233,8 @@ The single most important decision is not a colour. It is that the surface has
 it came from.
 
 **Key Characteristics:**
-- Two faces, one meaning each: Inter for human text, JetBrains Mono for machine text.
+- Three faces, one meaning each: Inter for human text, JetBrains Mono for
+  machine text, Instrument Serif for the product's own name and nothing else.
 - Warm paper and one burnt amber, on vendored 12-step Radix `sand` and `amber`.
 - Hairlines, never cards. No shadow anywhere except the lightbox backdrop.
 - Every state is a word as well as a colour.
@@ -310,12 +324,12 @@ second exception, measure it and write it here.
 
 **Body Font:** Inter Variable (with the platform sans as fallback)
 **Label/Mono Font:** JetBrains Mono Variable (with `ui-monospace` as fallback)
-**Display Font:** none. Hierarchy comes from weight, size and colour, never from
-a second personality.
+**Brand Font:** Instrument Serif, 400, for the word `vidtheque` and nothing
+else. Inside the page, hierarchy still comes from weight, size and colour and
+never from a second personality — see **The Wordmark-Only Rule**.
 
-Both are vendored, latin subset, variable, SIL OFL 1.1, at
-`dashboard/static/fonts/` with their licence texts and a `PROVENANCE.md`. Only
-the text face is preloaded.
+All three are vendored, latin subset, SIL OFL 1.1, at `dashboard/static/fonts/`
+with their licence texts and a `PROVENANCE.md`. Only the text face is preloaded.
 
 **Character:** Inter is the neutral workhorse whose number forms survive a dense
 table. JetBrains Mono is chosen for one measurable property: it draws `0`/`O`
@@ -353,8 +367,32 @@ then the page reads itself. This is not mono-as-costume-for-technical — it is
 information architecture wearing a typeface, and it is a promotion of the rule
 `demo-site.md` §6.3 already applied to OCR text.
 
-**The No-Display-Face Rule.** `/dashboard` gets no serif, no display cut, no
-second personality. The editorial voice belongs to `/`, which is Persuade.
+**The Wordmark-Only Rule.** (Amended 2026-08-09; it replaces the
+No-Display-Face Rule, which said `/dashboard` gets no serif at all.) The serif
+sets the string `vidtheque` and nothing else, ever. Exactly two selectors may
+name `--font-display` — `.wordmark` in the rail and `.footmark` in the footer —
+and a third is a bug, not a variation. No heading, no notice title, no empty
+state, no figure, no label and no cell may reach for it, because the moment the
+serif touches a data surface it stops being an identity and becomes a costume.
+
+The reasoning, so the next agent does not relitigate it. Direction A ("the
+archive slip") was rejected *for the surface* and it was right to be: a display
+serif and 48px section gaps are the wrong answer for a table you scan sixty rows
+of, and the research memo says so in §1.3. But the product's own name is not a
+data surface. It is the one string on this page that the index did not produce —
+not a fact, not a state, not a machine string — and setting it in the voice of a
+library's accession record is exactly what the mono/sans split already does for
+everything else: **the typeface says where the string came from.** Machine text
+is mono, human text is sans, and the one thing that is neither is the name of
+the thing itself. Tom authorised the mix on 2026-08-09; this rule is the fence
+around it.
+
+The mark beside it is the favicon's own drawing at rail scale — the same film
+frame, path for path, with its two colours taken from `--accent` and `--bg` so
+it flips with the scheme. This is the one sanctioned exception to *don't reach
+for film sprockets*: that ban is about decoration on data surfaces, and this is
+one 26px mark that appears once per page in the chassis. A second drawn object
+anywhere on this surface needs a new argument.
 
 **The Dead-Feature Rule.** Do not set `font-feature-settings: "cv01" 1, "ss03" 1`.
 The vendored Inter subset's GSUB is `calt ccmp dnom frac locl numr pnum tnum` —
@@ -519,7 +557,7 @@ the filter bar (`--panel` ground, `--line` border, 5px) and the lightbox
 
 ### Navigation (the rail)
 - **Shape:** a 15rem (`--rail`) sticky column on `--panel`, hairline on its
-  right edge, holding three things in order — the wordmark block, one or more
+  right edge, holding three things in order — the brand lockup, one or more
   `.nav-group` label + `.navlist` pairs, and a `.rail-foot` pinned to the bottom
   carrying what this deployment is allowed to do (`auth=…`, read-only, indexing
   refused). Environment state belongs to the chassis, not to a page header.
@@ -541,6 +579,18 @@ the filter bar (`--panel` ground, `--line` border, 5px) and the lightbox
 - **Mobile (≤60rem):** the whole rail becomes a horizontal strip. Items lose the
   ground and the edge and take a 2px `--accent` bottom border instead —
   phase 1's masthead nav, unchanged.
+
+### The brand lockup (chassis, every page)
+The mark and the word on one baseline, 8px apart, at the top of the rail, with
+the rubric under it in `--muted` at 12px. The mark is a 24px drawn film frame in
+`--accent` with a `--bg` gate; the word is `vidtheque`, always lower case, in
+`--font-display` at 20px/400. It is a link to the overview and it is the only
+link on the surface whose hover does **not** go amber — the mark beside it is
+already amber, and a wordmark that changes colour under the pointer reads as a
+control. It underlines instead. The same lockup repeats once in the footer at
+15px (`.footmark`) with the version beside it in mono, so the page is signed
+rather than merely credited, and so the serif reads as a decision made twice
+rather than as one odd word in a rail.
 
 ### The ledger band (signature, `/dashboard` overview)
 A single ruled band across the full content column: a 2px `--rule` on top, a hairline
@@ -607,7 +657,11 @@ the highest-value line on that page.
   above 1px.
 - **Don't** reach for film sprockets, clapperboards, reel icons or faux-CRT.
   "Cutting room" is a derivation, not a decoration; if it starts looking like a
-  movie poster it has failed.
+  movie poster it has failed. The single 24px `.brandmark` in the rail (and its
+  identical twin in the tab strip) is the one sanctioned exception, and **The
+  Wordmark-Only Rule** is the fence around it.
+- **Don't** put `--font-display` on a second element. Two selectors, both named
+  in that rule, and a third is a bug.
 - **Don't** put a raw colour, an off-ladder font size or an off-4px spacing value
   in a stylesheet.
 - **Don't** build an absolute asset URL from `PUBLIC_URL`. Relative or

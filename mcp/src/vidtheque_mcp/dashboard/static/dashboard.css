@@ -41,6 +41,23 @@
     U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
+/* The brand face, and only the brand face. One static 400 weight, 21 KB, and
+   the whole of its job on this surface is the word `vidtheque` in the rail and
+   the same word in the footer — DESIGN.md, **The Wordmark-Only Rule**. It is
+   not preloaded: eight glyphs twice a page do not earn a request that competes
+   with the text face, and the lockup reserves its height either way, so the
+   swap moves nothing. */
+@font-face {
+  font-family: "Instrument Serif";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("fonts/instrument-serif-latin-400-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 @font-face {
   font-family: "JetBrains Mono Variable";
   font-style: normal;
@@ -240,6 +257,12 @@
     Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo,
     Consolas, monospace;
+  /* The brand voice. Direction A's display serif, borrowed into Direction C's
+     chassis for the one thing on this surface that is neither a fact from the
+     index nor a state the index is in: the product's own name. Two selectors
+     are allowed to name it — `.wordmark` and `.footmark` — and DESIGN.md says
+     so normatively. */
+  --font-display: "Instrument Serif", Georgia, "Times New Roman", serif;
 
   /* Three weights, and no fourth. 510 is the working weight of a dense
      surface: heavier than body, lighter than a heading, and only a variable
@@ -482,15 +505,43 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
   border-bottom: 1px solid var(--line);
 }
 
+/* The lockup: the drawn film frame, then the word, on one baseline. The mark is
+   the favicon's own geometry at rail scale — the same object in the tab strip
+   and at the top of the rail, which is the cheapest kind of brand there is.
+   `align-items: center` and not `baseline`: the mark is a square, and hanging a
+   square off a serif baseline puts it a pixel low at every size. */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  text-decoration: none;
+  color: var(--fg);
+}
+/* The one place on this surface where hover does not go amber: the mark is
+   already amber, and a wordmark that changes colour under the pointer reads as
+   a control. It underlines instead. */
+.brand:hover { color: var(--fg); }
+.brand:hover .wordmark { text-decoration: underline; text-underline-offset: 3px; }
+
+/* Fixed box, like every other image here: the mark is drawn, so it cannot fail
+   to load, but the wordmark beside it swaps faces and the row must not move. */
+.brandmark { display: block; flex: 0 0 auto; }
+.bm-plate { fill: var(--accent); }
+.bm-gate { fill: var(--bg); }
+.bm-perf { fill: var(--accent); }
+
+/* The brand voice, and the only place Direction A's serif is allowed on an
+   Operate surface. 400 weight because there is no other weight in the file. */
 .wordmark {
   margin: 0;
-  font-size: var(--t-lead);
-  font-weight: var(--w-strong);
-  letter-spacing: -0.02em;
+  font-family: var(--font-display);
+  font-size: var(--t-h2);
+  font-weight: 400;
+  line-height: var(--lh-tight);
+  letter-spacing: -0.01em;
 }
-.wordmark a { text-decoration: none; }
 
-.rubric { margin: 0; color: var(--muted); font-size: var(--t-meta); }
+.rubric { margin: var(--s1) 0 0; color: var(--muted); font-size: var(--t-meta); }
 
 .nav { padding: var(--s2) 0; }
 
@@ -1360,6 +1411,27 @@ footer {
   color: var(--muted);
 }
 footer p { margin: 0; max-width: var(--prose-meta); }
+
+/* The signature. The same lockup as the rail, once more at the bottom of the
+   page, so the surface is signed rather than merely credited — and so the
+   serif reads as a decision made twice rather than as one odd word in a rail.
+   The version sits inside it in mono, because the version is a machine string
+   and the name is not: the two-channel rule, at 1:1 scale, on the brand. */
+.footline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--s2);
+  margin: 0 0 var(--s1);
+}
+.footmark {
+  font-family: var(--font-display);
+  font-size: var(--t-lead);
+  font-weight: 400;
+  line-height: var(--lh-tight);
+  letter-spacing: -0.01em;
+  color: var(--fg);
+}
 
 /* ------------------------------------------------------------------ mobile */
 

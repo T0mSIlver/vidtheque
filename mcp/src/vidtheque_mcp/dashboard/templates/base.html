@@ -16,7 +16,10 @@
 <link rel="preload" href="{{ root }}/static/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 {# The demo page's drawn film frame, so the two surfaces are one product in a
    tab strip. An emoji favicon renders as a different glyph on every platform
-   and vanishes in monochrome. #}
+   and vanishes in monochrome. It is the *same drawing* as `.brandmark` in the
+   rail below, path for path — the tab and the top of the rail are one object,
+   and the only difference is that the rail's copy takes its two colours from
+   the scheme tokens while a `data:` favicon cannot. #}
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23b45309'/><rect x='6' y='9' width='20' height='14' rx='1.5' fill='%23fbfaf9'/><g fill='%23b45309'><rect x='8.5' y='11' width='3' height='3' rx='0.6'/><rect x='8.5' y='18' width='3' height='3' rx='0.6'/><rect x='20.5' y='11' width='3' height='3' rx='0.6'/><rect x='20.5' y='18' width='3' height='3' rx='0.6'/></g></svg>">
 </head>
 <body>
@@ -60,8 +63,24 @@
    to a horizontal strip — no drawer, no checkbox, no JavaScript, because a
    nav of three items does not need to be hidden behind a control. #}
 <header class="rail">
+  {# The lockup. The mark is the favicon's own drawing at rail scale — same
+     geometry, same two colours, drawn from tokens so it flips with the scheme —
+     and the word beside it is the one place on this Operate surface that gets a
+     display face. DESIGN.md, The Wordmark-Only Rule. #}
   <div class="rail-brand">
-    <p class="wordmark"><a href="{{ root }}">vidtheque</a></p>
+    <a class="brand" href="{{ root }}">
+      <svg class="brandmark" width="24" height="24" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+        <rect class="bm-plate" width="32" height="32" rx="7"/>
+        <rect class="bm-gate" x="6" y="9" width="20" height="14" rx="1.5"/>
+        <g class="bm-perf">
+          <rect x="8.5" y="11" width="3" height="3" rx="0.6"/>
+          <rect x="8.5" y="18" width="3" height="3" rx="0.6"/>
+          <rect x="20.5" y="11" width="3" height="3" rx="0.6"/>
+          <rect x="20.5" y="18" width="3" height="3" rx="0.6"/>
+        </g>
+      </svg>
+      <span class="wordmark">vidtheque</span>
+    </a>
     <p class="rubric">the index, explaining itself</p>
   </div>
 
@@ -97,10 +116,20 @@
   {% block main %}{% endblock %}
   </main>
 
+  {# Signed, not merely credited: the same lockup as the rail, once more at the
+     foot of the page. The version is mono because a version is a machine
+     string and a name is not — the two-channel rule applied to the brand
+     itself. #}
   <footer>
+    <p class="footline">
+      <span class="footmark">vidtheque</span>
+      <code>{{ version }}</code>
+      <span class="sep">·</span> a self-hosted video-corpus MCP server
+    </p>
     <p>
-      vidtheque <code>{{ version }}</code> — a self-hosted video-corpus MCP server.
-      This is the management surface; the corpus itself is served at <code>/mcp</code>.
+      This is the management surface. The corpus itself is served at
+      <code>/mcp</code>, and every answer it gives carries the second of the
+      video it came from.
     </p>
   </footer>
 </div>
