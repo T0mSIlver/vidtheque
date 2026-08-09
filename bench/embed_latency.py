@@ -262,6 +262,37 @@ def measure_latency(
     return out
 
 
+def measure_worker_baseline(worker: str, queries: Sequence[str], repeats: int) -> dict[str, Any]:
+    """Today's two query legs, measured today, through HTTP.
+
+    `research/gpu-validation-2026-08-08.md` §3 has 15 ms (text) and 10 ms (frame)
+    for these, but the number this bench produces for the 2B is in-process — no
+    HTTP, no queue, no admission control. Quoting one against the other would
+    flatter the new model by exactly the transport it hasn't been asked to pay,
+    so both legs get re-measured here the same way they are actually called.
+    """
+    import requests
+
+    out: dict[str, Any] = {"worker": worker}
+    legs = {
+        "text_qwen3_0.6b": (f"{worker}/v1/embeddings", lambda q: {"input": q, "input_type": "query"}),
+        "frame_siglip2": (f"{worker}/v1/embeddings/frame-query", lambda q: {"input": q}),
+    }
+    for name, (url, body) in legs.items():
+        for query in queries[:2]:  # warm the route and the backend
+            requests.post(url, json=body(query), timeout=120)
+        samples = []
+        for _ in range(repeats):
+            for query in queries:
+                start = time.perf_counter()
+                response = requests.post(url, json=body(query), timeout=120)
+                response.raise_for_status()
+                samples.append(time.perf_counter() - start)
+        out[name] = Latencies(samples).summary() | {"dims": response.json()["dimensions"]}
+        print(f"  [worker] {name}: {out[name]['median_ms']} ms median")
+    return out
+
+
 def pick_frames(frames_dir: Path, count: int, seed: int = 11) -> list[Path]:
     paths = sorted(frames_dir.glob("*/*.jpg"))
     if not paths:
@@ -350,7 +381,8 @@ def measure_tokens(embedder: Any, frames: Sequence[Path], queries: Sequence[str]
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("latency", "throughput", "all"))
+    parser.add_argument("mode", choices=("latency", "throughput", "baseline", "all"))
+    parser.add_argument("--worker", default="http://127.0.0.1:8081")
     parser.add_argument("--repeats", type=int, default=20)
     parser.add_argument("--frames-dir", type=Path, default=Path("/home/dev/vidtheque-data/keyframes"))
     parser.add_argument("--frames", type=int, default=100)
@@ -376,14 +408,26 @@ def main() -> int:
         "vram_before_load": vram(),
     }
 
+    queries = list(DEFAULT_QUERIES)
+    mrl_dims = [int(d) for d in args.mrl_dims.split(",") if d.strip()]
+
+    # Before anything of ours is on the card: the deployed legs, as deployed.
+    if args.mode in ("baseline", "all"):
+        envelope["worker_baseline"] = measure_worker_baseline(args.worker, queries, args.repeats)
+    if args.mode == "baseline":
+        envelope["finished_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        if args.out:
+            args.out.parent.mkdir(parents=True, exist_ok=True)
+            args.out.write_text(json.dumps(envelope, indent=2))
+        else:
+            print(json.dumps(envelope, indent=2))
+        return 0
+
     embedder, snapshot, load_wall = load_embedder(args.dtype, args.attn)
     envelope["snapshot"] = str(snapshot)
     envelope["load_wall_s"] = round(load_wall, 2)
     envelope["vram_after_load"] = vram()
     print(f"loaded in {load_wall:.1f}s; {envelope['vram_after_load']}")
-
-    queries = list(DEFAULT_QUERIES)
-    mrl_dims = [int(d) for d in args.mrl_dims.split(",") if d.strip()]
 
     if args.mode in ("latency", "all"):
         envelope["latency"] = measure_latency(embedder, queries, args.repeats, mrl_dims)

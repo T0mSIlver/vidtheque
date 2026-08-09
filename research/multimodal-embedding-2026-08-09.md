@@ -690,3 +690,196 @@ full precision, both revisitable on evidence.**
   at 2048/bf16 — the number nobody has published; (2) the frame-leg quality
   spot-check against SigLIP on our own slides/terminal frames; (3) only if
   either disappoints: MRL@1024 and/or a quantized checkpoint.
+
+## Addendum 2 — the three numbers, measured (2026-08-09, GPU window)
+
+Append-only; nothing above is edited. The addendum above asked for three things
+in order. All three are below, plus the MRL@1024 comparison that was held in
+reserve. **The unified plan survives the bench, and the reason it survives is
+not quite the reason §3 predicted.**
+
+Headline, in the order Tom asked:
+
+| | asked | measured |
+|---|---|---|
+| 1. single-query latency, 2048/bf16 | "over ~150 ms warm and the unified plan is in trouble" | **11.8 ms warm** (median, n=100). Not in trouble. |
+| | VRAM loaded | **4,059 MB** weights, **4,318 MB** of card, **6,504 MB** peak at batch 8 |
+| 2. frame throughput | — | **5.38 img/s**; **9.5 min** to re-embed the corpus |
+| 3. frame quality vs SigLIP | the number that decides §3 | **MRR 0.87 vs 0.84** overall; **0.93 vs 0.85** on text-in-image; **0.68 vs 0.79** on natural-visual |
+| 4. MRL@1024 | deferred | costs **nothing** measurable here — and scored *higher* on this set |
+
+### Method, and what it is not
+
+`bench/embed_latency.py` and `bench/frame_retrieval_spotcheck.py`, both new,
+both run on Tom's box against the live demo stack:
+
+- **Qwen3-VL-Embedding-2B** loaded through the loader Qwen ships inside the
+  checkpoint (`scripts/qwen3_vl_embedding.py`), bf16, `sdpa`, native 2048 dims,
+  no quantization — Tom's configuration exactly. torch 2.8.0+cu128,
+  transformers 4.57.1, RTX 3090.
+- **SigLIP 2 is the deployed one**, reached over HTTP at the worker's own
+  `/v1/embeddings/image` and `/v1/embeddings/frame-query`, at the production
+  patch budget (`IMAGE_EMBED_MAX_PATCHES=256`; the pipeline sends no override).
+  Not a fresh checkpoint configured to taste.
+- Frames are real corpus keyframes, opened read-only. The corpus has grown since
+  §1: **3,060 non-duplicate keyframes** (4,586 rows including `dup_of`),
+  75 videos.
+
+**The quality half is a spot check, not a benchmark.** 27 hand-written queries,
+50 hand-labelled frames, one judge (me, looking at the frames), 200 unlabelled
+distractor frames in the ranking pool. It can say "one model is obviously better
+at X"; it cannot produce a number worth quoting next to MTEB. The per-query
+table below is the evidence; the aggregate is one decimal place of false
+precision on 27 samples.
+
+### 1. Query latency: the objection evaporates
+
+Everything measured in the same hour, on this box:
+
+| | median | p90 | notes |
+|---|---:|---:|---|
+| **Qwen3-VL-Embedding-2B, one text query** | **11.78 ms** | 12.21 ms | in-process, n=100, 32 input tokens |
+| Qwen3-Embedding-0.6B (deployed today) | 15.12 ms | 15.84 ms | through the worker, over HTTP |
+| SigLIP 2 text tower (deployed today) | 5.75 ms | 6.05 ms | through the worker, over HTTP |
+| loopback HTTP floor (`/healthz`) | 0.58 ms | 0.66 ms | so the two rows above are essentially all model |
+| 2B, **both legs in one batched forward** | 15.16 ms | 15.83 ms | §4.3's "they can be batched" — 15 ms for the pair, not 2 x 11.8 |
+| 2B, first call after load | **916 ms** | — | second call 12.9 ms; this is what `EMBED_RESIDENT` hides |
+
+§4.3 estimated 15–40 ms and set the trouble line at 150 ms. The answer is
+**11.8 ms**, which is *below the deployed 0.6B leg's own end-to-end number* — not
+because a 2B is faster than a 0.6B in the abstract, but because at 32 input
+tokens neither model is compute-bound, and the 0.6B's number includes the
+`sentence-transformers` and worker path that the 2B would inherit too. The
+honest statement: **swapping the text leg for this model does not cost
+measurable query latency**, and §7's "if it comes back over ~150 ms the hybrid
+is the answer" is settled in the unified plan's favour.
+
+Cold start earns its own line: **916 ms for the first call after load**, then
+11–13 ms forever. `EMBED_RESIDENT=1` was already the right call; with this model
+it also buys away a near-second first-search stall, which is a worse thing to
+show a user than a load hidden behind a spinner.
+
+### VRAM: it fits, and it replaces more than it costs
+
+| | |
+|---|---:|
+| weights, bf16 (`torch.memory_allocated`) | **4,059 MB** |
+| the card's view of the process (`nvidia-smi`) | **4,318 MB** |
+| peak, frame batch 8 | 5,444 MB allocated / 6,188 MB reserved / **6,504 MB** process |
+| load, warm HF cache | **3.5 s** |
+
+Against what it retires — the worker's own estimates, `qwen3-embedding` 2,000 MB
+resident plus `siglip2` 3,200 MB on demand — **one model at 4.3 GB resident is
+cheaper than the two it replaces**, and its 6.5 GB indexing peak still sits well
+under whisperX's 8 GB slot. §4.1 holds: whisperX still owns the envelope, and
+the ~12 GB llama.cpp lease is untouched by any of this.
+
+### 2. Frame throughput, and the re-embed
+
+| batch | img/s | ms/img | corpus (3,060 frames) |
+|---:|---:|---:|---:|
+| 1 | 4.02 | 249 | 12.7 min |
+| 4 | 5.30 | 189 | 9.6 min |
+| **8** | **5.38** | **186** | **9.5 min** |
+
+Batching past 4 buys nothing — one 880-token frame already saturates the card.
+For scale, in the same run the deployed SigLIP did the same 250 frames at
+**~93 img/s including HTTP**, so **the 2B is ~17x slower per frame**. That is the
+real cost of the swap, and it is affordable exactly because frame embedding was
+never the expensive stage: §5.3's "minutes, not hours" survives at **~10 minutes
+for a full re-embed** (~14 min if every `dup_of` row is re-embedded too), against
+RapidOCR's 3.4 frames/s, which would take **15 hours** over the same frames.
+
+**§4.5's token estimate was 34% high.** The shipped processor gives a 1280x720
+keyframe a grid of `[1, 44, 80]` → **880 visual tokens, 902 with the prompt** —
+not the ~1,176 estimated from a 28 px merged patch, because the loader's
+`IMAGE_FACTOR` is 32. So we sit a little lower on the paper's Figure 7 curve than
+§4.5 claimed: still in its top band, still no downsampling, with slightly more
+headroom before the regression at the very top than we thought.
+
+### 3. The frame leg, head to head — and a correction to §3
+
+27 queries against a 250-frame pool (50 labelled + 200 unlabelled distractors),
+`sim = q · f`, both spaces L2-normalised.
+
+| | overall MRR | top-1 | text-in-image MRR (21 q) | natural-visual MRR (6 q) |
+|---|---:|---:|---:|---:|
+| SigLIP 2 @256 patches (deployed) | 0.838 | 21/27 | 0.851 | **0.792** |
+| Qwen3-VL-Embedding-2B @2048 | 0.874 | 21/27 | **0.929** | 0.681 |
+| Qwen3-VL-Embedding-2B @MRL 1024 | **0.901** | **22/27** | **0.952** | 0.722 |
+
+Nominal wins: **5 Qwen / 5 SigLIP / 17 ties.** The wins are not the same size,
+and three of SigLIP's five are artefacts of my labelling — I opened every one to
+check:
+
+| query (abbreviated) | SigLIP rank | 2B rank | what actually happened |
+|---|---:|---:|---|
+| "code editor with calc.baml open and 18 problems in the file" | **19** | **1** | the clearest result in the set: SigLIP cannot read the filename or the problem count and ranks 18 other screenshots above it |
+| "terminal running ast-grep piped through jq printing orpc-unmigrated-procedure warnings" | 7 | **1** | SigLIP's top-1 was a different code screenshot; the 2B read the terminal |
+| "file tree listing instruction.md, task.toml, Dockerfile, solve.sh and test.sh" | 3 | **1** | filenames are the only signal in the frame |
+| "slide titled eval building describing builder, critic and tester roles" | 3 | **1** | SigLIP's top-1 was an unrelated dense slide |
+| "GitHub PR to upgrade astro **to v7.0.5**" | **1** | 2 | a real SigLIP win, and a narrow one: the 2B's top-1 is the *other* astro-upgrade PR in the corpus (v5.18.0) — right in every respect but the version string |
+| "speaker wearing **a baseball cap** behind a lectern" | **1** | 2 | a real SigLIP win: the 2B returned a lectern shot with no cap. Fine-grained visual attributes are a dual encoder's home ground |
+| "slide that says Musical.ly was about to rebrand to TikTok" | 1 | 2 | **not a loss** — the 2B's top-1 is the *same slide* 60 s later, which my labels did not list |
+| "the AI Engineer World's Fair logo card on black" | 1 | 2 | **not a loss** — the 2B's top-1 is the same bumper card in a different video |
+| "three seated panelists, the middle one gesturing" | 2 | 4 | **not a loss either** — both models' top-1 is a correct unlabelled frame from the same panel |
+
+**What this says about §3, honestly:**
+
+- **§3's direction is confirmed on our own corpus; its magnitude is not.** The
+  published gap it quotes (24.09 vs 87.84, text→visual-document) is measured
+  against SigLIP **1**. Here, against SigLIP **2** at 256 patches, the frame leg
+  is *already good*: 0.85 MRR on text-in-image queries, 17/21 top-1. §3.1 flagged
+  exactly this risk — "nobody has published SigLIP 2 on any screenshot
+  benchmark" — and flagging it was right.
+- **Where SigLIP 2 fails, it fails hard, and the 2B repairs it.** Rank 19 → 1 and
+  7 → 1 are the shape of the win: not a uniform lift, but a fix for the cases
+  where the query turns on *small* text — a filename, a flag, a count — that a
+  256-patch view of a 1280x720 screenshot has physically destroyed. Those are
+  real vidtheque queries.
+- **The 2B is measurably worse on natural-visual queries** (0.68 vs 0.79), which
+  §3 did not predict — the literature said "equal on natural images". Six queries
+  is barely a signal, but it points the same way as the two legitimate SigLIP
+  wins.
+- **Ties dominate: 17 of 27.** Anyone expecting a step change in *everyday*
+  frame search from this swap should expect instead: the same answers, plus the
+  screenshots you previously could not find at all.
+
+### 4. MRL@1024, the deferred question
+
+Truncating to 1024 and renormalising **cost nothing on this set and scored
+slightly higher** (MRR 0.901 vs 0.874; 22 vs 21 top-1). On 27 queries that
+difference is noise; the finding is the *absence of a penalty*, which is what the
+question asked.
+
+It buys nothing at query time, and it is worth saying why: MRL is a **slice on
+the way out** of the same forward pass — 0.02 ms — so end-to-end at 1024 is
+12.09 ms against 2048's 11.78 ms, i.e. identical. **The saving is entirely in
+`sqlite-vec`**: half the vector bytes, half the distance work. Tom's decision
+stands on its own terms — start at 2048 because the model costs the same either
+way, and keep 1024 as the lever to pull if *search* rather than embedding turns
+out to be slow.
+
+### What is still not measured
+
+- **The text leg's retrieval quality.** Everything above about text is latency.
+  The +2.48 MMTEB claim over the 0.6B is still someone else's corpus, and open
+  question 2 (MMTEB is multilingual, we are English) is untouched.
+- **Anything at 8B.** Open question 7 stands.
+- **int8 storage.** The paper's QAT claim (§4.4) is unverified here; with a
+  re-embed costing 10 minutes it is cheap to test against the 2048-dim baseline
+  that now exists.
+- **transformers ≥ 4.57 against the worker's lock** (open question 4). This bench
+  ran in a throwaway venv at 4.57.1 precisely so it would not touch the live
+  stack — which proves the model works at 4.57 and proves nothing about whether
+  `uv.lock` can get there.
+
+### One thing found on the way, for the pipeline
+
+**190 of the 3,060 keyframes carry no OCR text at all, and every one sampled was
+a fade-to-black transition** — pure black frames, kept as keyframes, each with
+its own `youtu.be/ID?t=` deep link. The sampler in
+`frame_retrieval_spotcheck.py` grew a mean-luma filter to stop scoring retrieval
+against them. Not this document's problem, but `_sharpest_in` choosing a black
+frame as the sharpest in its shot is a keyframe-selection question somebody
+should ask.
