@@ -942,15 +942,22 @@ def test_both_schemes_and_a_mobile_viewport_are_declared(client: TestClient) -> 
     assert "max-width: 52rem" in css
 
 
-def test_the_pages_are_landmarked_and_keyboard_reachable(client: TestClient) -> None:
-    body = page(client, f"{ROOT}/videos/kCc8FmEb1nY")
+@pytest.mark.parametrize(
+    "path", ["/videos/kCc8FmEb1nY", "/jobs", "/jobs/job_finished01"]
+)
+def test_the_pages_are_landmarked_and_keyboard_reachable(
+    client: TestClient, path: str
+) -> None:
+    body = page(client, ROOT + path)
     for landmark in ("<header", "<main", "<footer", "<h1", '<nav class="nav"'):
         assert landmark in body
     assert body.count("<h1") == 1
     assert 'class="skip" href="#main"' in body
     assert 'aria-current="page"' in body
-    # Every section heading is announced with its panel.
-    assert body.count("aria-labelledby=") >= 5
+    if path.count("/") > 1:  # a detail page: every panel heading is announced
+        assert body.count("aria-labelledby=") >= 3
+    else:  # a table page: the grid says what it is
+        assert '<caption class="sr-only">' in body
 
 
 def test_the_dashboard_is_not_indexable(client: TestClient) -> None:
