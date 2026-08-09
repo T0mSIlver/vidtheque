@@ -48,3 +48,4 @@ bench/*.json
 # the machine-local cache and local overrides are not.
 .impeccable/hook.cache.json
 .impeccable/config.local.json
+.playwright/
