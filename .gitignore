@@ -49,3 +49,9 @@ bench/*.json
 .impeccable/hook.cache.json
 .impeccable/config.local.json
 .playwright/
+# @playwright/cli writes snapshots, console logs and screenshots here.
+.playwright-cli/
+# The detector's URL scan does `import('puppeteer')`, which resolves from the
+# skill's own directory — so a design agent links the npx-cached copy in beside
+# it. Never a real install, never committed.
+node_modules/
