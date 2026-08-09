@@ -228,6 +228,18 @@ WHERE s.state = 'done' AND s.model_key IS NOT c.value;
 keyframes were *deliberately* not built — distinguishable from `pending`, so
 `coverage t,o,f` and `data_status` never report a deliberate choice as missing data.
 
+**`error` is set on `done` rows too**, and only there does it mean "finished, but
+not on all of it". The case that produces it is a frame the worker refuses as
+undecodable (`invalid_image`, worker/openapi.json): one corrupt keyframe out of
+six hundred is skipped and named, rather than costing the video its OCR or its
+frame vectors — but a stage that finished having dropped work must say so
+somewhere that outlives the process, and this column is that place. Every query
+that reads a failure reads `state`, never the presence of `error` (`degraded_items`,
+the resume plan, the `failed` rollup in §4), so a note here degrades nothing. A
+stage where *every* frame was refused is `failed`, not `done`: `has_ocr` and
+`has_frames` are "the stage is done", and a done stage that wrote nothing would
+advertise a search channel that answers nothing.
+
 ```sql
 CREATE TABLE chapters (
   id       INTEGER PRIMARY KEY,
@@ -406,6 +418,13 @@ CREATE INDEX keyframes_live ON keyframes(video_id, t_s) WHERE dup_of IS NULL;
   ever apply it to an already-capped candidate set — never as a table-scan
   predicate. Near-duplicate collapse at index time happens in the pipeline, in
   Python; `phash` is stored for "find frames that look like this one" later.
+- `ocr_state` distinguishes the four ways a frame ends up without text: `empty` is
+  a frame that was read and had none, `skipped` is a near-duplicate that was never
+  sent (`dup_of`), `failed` is a frame that was sent and did not come back —
+  either the whole batch failed, or the worker refused this one image as
+  undecodable. Only `failed` is retried: the OCR stage claims `pending` and
+  `failed` frames, so `empty` is never re-read and a corrupt frame is never
+  recorded as a slide with nothing written on it.
 - `dup_of` keeps near-duplicates rather than deleting them: the row is provenance
   (this shot really did appear again at 14:22) and `keyframes_live` is a partial
   index so every query path that wants distinct visuals gets one for free.

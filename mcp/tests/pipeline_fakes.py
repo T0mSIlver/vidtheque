@@ -23,7 +23,15 @@ from typing import Any, Sequence
 import pytest
 
 from vidtheque_mcp.pipeline.sources import RecordedSource
-from vidtheque_mcp.pipeline.worker_client import OcrLine
+from vidtheque_mcp.pipeline.worker_client import OcrLine, OcrPage, WorkerRejected
+
+
+def _ordinal(path: Path) -> int:
+    """The keyframe ordinal a JPEG's name starts with (`00003-000012345.jpg`)."""
+    try:
+        return int(path.name.split("-", 1)[0])
+    except ValueError:  # pragma: no cover - the audio/subtitle fixtures
+        return -1
 
 # --------------------------------------------------------------- canned yt-dlp
 
@@ -261,7 +269,18 @@ class FakeWorker:
         ocr_text: str = "nvidia-smi 18304MiB / 24576MiB",
         fail: set[str] | None = None,
         on_transcribe: Any = None,
+        unreadable: set[int] | None = None,
+        reject: set[str] | None = None,
     ) -> None:
+        # Calls answered with an *untyped* 4xx — FastAPI's bare
+        # `{"detail": ...}`, which carries no `error.type`. Nothing may be
+        # skipped on the strength of it: the stage fails.
+        self.reject = reject or set()
+        # Keyframe ordinals (the `00003` in `00003-000012345.jpg`) this worker
+        # refuses as undecodable, exactly the way the real one does: /v1/ocr
+        # answers per file inside a 200, /v1/embeddings/image fails the whole
+        # request with a typed 400 naming the file (worker commit c1895be).
+        self.unreadable = unreadable or set()
         # Lets a test reach in mid-item — the only way to exercise a
         # cancellation that arrives *between stages* rather than before one.
         self.on_transcribe = on_transcribe
@@ -292,17 +311,42 @@ class FakeWorker:
     async def ocr(self, images: Sequence[Path], *, min_confidence=None):
         self.calls.append(f"ocr:{len(images)}")
         self._maybe_fail("ocr")
-        return (
-            [
-                [OcrLine(text=self.ocr_text, confidence=0.94, bbox=(10.0, 20.0, 300.0, 60.0))]
-                for _ in images
-            ],
-            "rapidocr-default",
-        )
+        return [self._page(path) for path in images], "rapidocr-default"
+
+    def _page(self, path: Path) -> OcrPage:
+        """One `data` entry — the text, or the per-file refusal in its place.
+
+        `ocr_text` may carry ' | ', in which case the page comes back as
+        several stacked lines: a real slide is many lines, and the frame-level
+        OCR index (index-schema §2.5) is only interesting when it is.
+        """
+        if _ordinal(path) in self.unreadable:
+            return OcrPage(
+                lines=[],
+                error=f"cannot identify image file {path.name!r}",
+                code="invalid_image",
+            )
+        lines = [
+            OcrLine(
+                text=text,
+                confidence=0.94,
+                bbox=(10.0, 20.0 + 50.0 * row, 300.0, 60.0 + 50.0 * row),
+            )
+            for row, text in enumerate(self.ocr_text.split(" | "))
+        ]
+        return OcrPage(lines=lines)
 
     async def embed_images(self, images: Sequence[Path], *, model=None, max_num_patches=None):
         self.calls.append(f"embed_images:{len(images)}")
         self._maybe_fail("embed_images")
+        for path in images:
+            if _ordinal(path) in self.unreadable:
+                # The whole request fails, as a typed 400 naming one file: there
+                # is no vector to put in a failed slot.
+                raise WorkerRejected(
+                    f"/v1/embeddings/image: 400 cannot identify image file (file {path.name!r})",
+                    code="invalid_image",
+                )
         return (
             [unit_vector(str(path.name), self.frame_dim) for path in images],
             self.frame_model,
@@ -329,6 +373,8 @@ class FakeWorker:
 
         if name in self.fail:
             raise WorkerUnavailable(f"fake worker refuses {name}")
+        if name in self.reject:
+            raise WorkerRejected(f"/v1/{name}: 400 fake worker refuses {name}", code=None)
 
 
 def unit_vector(text: str, dim: int) -> list[float]:

@@ -54,6 +54,30 @@ FRAME_QUERY_PATH = "/v1/embeddings/frame-query"
 
 RETRYABLE_STATUS = {429, 502, 503, 504}
 
+# How a typed 4xx maps onto a *stage* outcome.
+#
+# The worker names every handled refusal in the `{"error": {message, type}}`
+# envelope (worker/openapi.json — the only place this side is allowed to read
+# the contract). Three of those codes are 400s meaning "the payload is the
+# problem, re-sending it will fail identically", and the difference between them
+# is which payload:
+#
+#   invalid_image  *one file* in the batch is undecodable. The request fails
+#                  whole — there is no vector to put in a failed slot, and a
+#                  short response is refused here — but the other 63 frames are
+#                  fine, so the caller drops that frame and carries on.
+#   invalid_media  the audio/video handed to STT cannot be decoded. It is the
+#                  request's only payload, so there is nothing left to carry on
+#                  with: the stage fails, and not retryably.
+#   invalid_input  the *request* is wrong — a batch over the cap, a parameter
+#                  out of domain, a model this worker does not serve. No subset
+#                  of it would be accepted either, so dropping items would only
+#                  hide it. The stage fails.
+#
+# Untyped 4xx (FastAPI's bare `{"detail": ...}`) and every 5xx keep the old
+# behaviour: `WorkerRejected` with no code, which is a stage failure.
+PER_ITEM_CODES = frozenset({"invalid_image"})
+
 
 class WorkerUnavailable(EmbeddingUnavailable):
     """The worker could not be reached, or gave up after its retries.
@@ -65,7 +89,26 @@ class WorkerUnavailable(EmbeddingUnavailable):
 
 class WorkerRejected(RuntimeError):
     """A 4xx that retrying cannot fix: a file the worker will not accept, a
-    batch over its cap, a model it does not serve."""
+    batch over its cap, a model it does not serve.
+
+    ``code`` is the worker's ``error.type`` when it typed the refusal, and
+    ``None`` when it did not — a guessed code would be worse than no code, since
+    ``per_item`` decides whether a caller may drop one input and continue.
+    """
+
+    def __init__(self, message: str, *, code: str | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+
+    @property
+    def per_item(self) -> bool:
+        """The worker blamed one uploaded file, not the request.
+
+        The batch it was in is lost either way — this is a 400, not a partial
+        200 — but a caller that knows which inputs it sent can re-send the rest
+        and skip the offender. See ``PER_ITEM_CODES``.
+        """
+        return self.code in PER_ITEM_CODES
 
 
 @dataclass(frozen=True)
@@ -73,6 +116,22 @@ class OcrLine:
     text: str
     confidence: float | None
     bbox: tuple[float, float, float, float] | None
+
+
+@dataclass(frozen=True)
+class OcrPage:
+    """One image's OCR result: its lines, or the reason there are none.
+
+    ``/v1/ocr`` fails **per file** — an entry carrying `error` still satisfies
+    "exactly one result per input", so one unreadable keyframe costs the other
+    63 in the batch nothing. Reading such an entry as an empty page (which is
+    what the caller did before this type existed) records a corrupt frame as a
+    silent `ocr_state = 'empty'`, indistinguishable from a slide with no text.
+    """
+
+    lines: list[OcrLine]
+    error: str | None = None
+    code: str | None = None
 
 
 @runtime_checkable
@@ -92,7 +151,7 @@ class WorkerAPI(Protocol):
 
     async def ocr(
         self, images: Sequence[Path], *, min_confidence: float | None = None
-    ) -> tuple[list[list[OcrLine]], str | None]: ...
+    ) -> tuple[list[OcrPage], str | None]: ...
 
     async def embed_images(
         self,
@@ -216,7 +275,10 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
                 attempt += 1
                 continue
             if response.status_code >= 400:
-                raise WorkerRejected(f"{path}: {response.status_code} {_detail(response)}")
+                raise WorkerRejected(
+                    f"{path}: {response.status_code} {_detail(response)}",
+                    code=_error_code(response),
+                )
             try:
                 body = response.json()
             except Exception as exc:
@@ -342,9 +404,14 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
 
     async def ocr(
         self, images: Sequence[Path], *, min_confidence: float | None = None
-    ) -> tuple[list[list[OcrLine]], str | None]:
+    ) -> tuple[list[OcrPage], str | None]:
         """``POST /v1/ocr``. CPU on the worker side — no GPU lease involved, so
-        this never contends with a transcription in flight."""
+        this never contends with a transcription in flight.
+
+        One ``OcrPage`` per image, in upload order, including for the images the
+        worker could not read: those come back with `error` set rather than as a
+        400, and the caller marks that frame instead of the whole batch.
+        """
         if not images:
             return [], None
         data: dict[str, Any] = {}
@@ -358,9 +425,7 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
         pages = _by_index(body.get("data", []), len(images), "/v1/ocr", "image")
         # An image with no text legitimately omits `items` — the worker's schema
         # requires `index`, not `items`. A *missing index* is the failure.
-        results = [
-            [_ocr_line(item) for item in (page.get("items") or [])] for page in pages
-        ]
+        results = [_ocr_page(page) for page in pages]
         return results, body.get("model") or body.get("backend")
 
     async def embed_images(
@@ -486,6 +551,23 @@ def _vectors(
     return vectors, body.get("model"), dimensions
 
 
+def _ocr_page(page: dict[str, Any]) -> OcrPage:
+    """One `data` entry, with the worker's per-file refusal kept rather than
+    flattened into "this image had no text on it"."""
+    error = page.get("error")
+    message: str | None = None
+    code: str | None = None
+    if isinstance(error, dict):
+        message = str(error.get("message") or "the worker could not read this image")
+        kind = error.get("type")
+        code = kind if isinstance(kind, str) and kind else None
+    return OcrPage(
+        lines=[_ocr_line(item) for item in (page.get("items") or [])],
+        error=message,
+        code=code,
+    )
+
+
 def _ocr_line(item: dict[str, Any]) -> OcrLine:
     bbox = item.get("bbox")
     box: tuple[float, float, float, float] | None = None
@@ -505,8 +587,33 @@ def _detail(response: Any) -> str:
     except Exception:
         return (getattr(response, "text", "") or "")[:200]
     if isinstance(body, dict):
+        error = body.get("error")
+        if isinstance(error, dict) and error.get("message"):
+            # The worker's own envelope is `{"error": {message, type}}`, *not*
+            # FastAPI's `{"detail": ...}` — a reader that knows only `detail`
+            # prints the whole dict at whoever has to act on it.
+            return str(error["message"])[:200]
         return str(body.get("detail") or body)[:200]
     return str(body)[:200]
+
+
+def _error_code(response: Any) -> str | None:
+    """``error.type`` from the worker's envelope, when it typed the refusal.
+
+    Only the typed envelope counts. FastAPI's own 400s — an empty batch, a
+    parameter out of domain — carry no code, and inferring one from the status
+    or the prose would turn a request-level mistake into a silently dropped
+    frame.
+    """
+    try:
+        body = response.json()
+    except Exception:
+        return None
+    error = body.get("error") if isinstance(body, dict) else None
+    if not isinstance(error, dict):
+        return None
+    code = error.get("type")
+    return code if isinstance(code, str) and code else None
 
 
 def _parse_retry_after(value: str | None) -> float | None:

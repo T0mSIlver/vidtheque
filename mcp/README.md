@@ -105,6 +105,14 @@ and `stt` abort the item: without a video row there is nothing to attach to, and
 without cues there is nothing to search. A video with no OCR is still a video
 you can find by what was said in it, and `data_status` says which.
 
+**Below the stage, failure is per frame.** The worker types its refusals in
+`{"error": {message, type}}`: `invalid_image` blames one uploaded file, so that
+keyframe is skipped (`ocr_state = 'failed'`, no vector) and the stage finishes
+for the rest; `invalid_input` and `invalid_media` blame the request, so they fail
+the stage, as does an untyped 4xx and a batch where every frame was refused. The
+skip is written to the stage row and the job log — `done` never quietly means
+"most of it".
+
 **The zero-GPU path is real.** With the worker unreachable and the policy
 allowing it, the pipeline never downloads the audio, indexes YouTube's
 auto-captions (whose `json3` track carries per-word offsets, so deep links stay

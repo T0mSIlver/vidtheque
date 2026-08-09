@@ -143,6 +143,50 @@ async def test_a_4xx_is_not_retried(tmp_path: Path) -> None:
     assert "batch too large" in str(caught.value)
 
 
+async def test_a_typed_400_carries_the_code_the_caller_branches_on(tmp_path: Path) -> None:
+    """`{"error": {message, type}}` is the worker's envelope, not `{"detail": …}`.
+
+    `per_item` is the whole point of reading it: `invalid_image` blames one
+    uploaded file and the caller may re-send the rest without it, while
+    `invalid_input` and `invalid_media` blame the request and no subset of it
+    would be accepted either.
+    """
+    cases = {
+        "invalid_image": True,
+        "invalid_input": False,
+        "invalid_media": False,
+    }
+    for code, per_item in cases.items():
+
+        def handler(request: httpx.Request, code=code) -> httpx.Response:
+            return httpx.Response(
+                400, json={"error": {"message": f"bad bytes ({code})", "type": code}}
+            )
+
+        client, _ = make_client(handler)
+        with pytest.raises(WorkerRejected) as caught:
+            await client.embed_images([_jpeg(tmp_path)])
+        assert caught.value.code == code
+        assert caught.value.per_item is per_item
+        # The message is read out of the envelope, not printed as a raw dict.
+        assert str(caught.value).endswith(f"400 bad bytes ({code})")
+
+
+async def test_an_untyped_400_carries_no_code_and_is_never_per_item(tmp_path: Path) -> None:
+    """FastAPI's own 400s say nothing about *which* input was wrong. Inferring a
+    code from the status would turn a request-level mistake into a dropped
+    frame."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"detail": "max_num_patches must be between 1 and 1024"})
+
+    client, _ = make_client(handler)
+    with pytest.raises(WorkerRejected) as caught:
+        await client.embed_images([_jpeg(tmp_path)])
+    assert caught.value.code is None
+    assert caught.value.per_item is False
+
+
 async def test_a_connect_failure_becomes_unavailable_not_a_crash(tmp_path: Path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused")
@@ -232,7 +276,7 @@ async def test_an_idempotent_call_still_retries_a_read_timeout(tmp_path: Path) -
 
     client, _ = make_client(handler, retries=2)
     results, _model = await client.ocr([_jpeg(tmp_path)])
-    assert results == [[]]
+    assert [page.lines for page in results] == [[]]
     assert len(attempts) == 2
 
 
@@ -285,9 +329,9 @@ async def test_ocr_results_come_back_aligned_with_the_frames_sent(tmp_path: Path
     client, _ = make_client(handler)
     results, model = await client.ocr([_jpeg(tmp_path, "a"), _jpeg(tmp_path, "b")])
     assert model == "rapidocr-v2"
-    assert [line.text for page in results for line in page] == ["first", "second"]
-    assert results[0][0].bbox == (1.0, 2.0, 3.0, 4.0)
-    assert results[1][0].bbox is None
+    assert [line.text for page in results for line in page.lines] == ["first", "second"]
+    assert results[0].lines[0].bbox == (1.0, 2.0, 3.0, 4.0)
+    assert results[1].lines[0].bbox is None
 
 
 async def test_an_empty_batch_never_reaches_the_wire() -> None:
@@ -352,8 +396,38 @@ async def test_a_page_with_no_text_is_still_a_valid_result(tmp_path: Path) -> No
 
     client, _ = make_client(handler)
     results, model = await client.ocr([_jpeg(tmp_path, "a"), _jpeg(tmp_path, "b")])
-    assert results == [[], []]
+    assert [page.lines for page in results] == [[], []]
+    assert [page.error for page in results] == [None, None]
     assert model == "rapidocr-default"
+
+
+async def test_an_image_the_worker_refused_is_a_page_that_says_so(tmp_path: Path) -> None:
+    """/v1/ocr fails per file, inside a 200: the entry carries `error` and no
+    items. Reading it as an empty page records a corrupt keyframe as a slide
+    with no text on it — the same lie, one row lower down."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "model": "rapidocr-default",
+                "data": [
+                    {"index": 0, "items": [{"text": "readable", "confidence": 0.9}]},
+                    {
+                        "index": 1,
+                        "items": [],
+                        "error": {"message": "cannot identify image file", "type": "invalid_image"},
+                    },
+                ],
+            },
+        )
+
+    client, _ = make_client(handler)
+    results, _model = await client.ocr([_jpeg(tmp_path, "a"), _jpeg(tmp_path, "b")])
+    assert results[0].error is None and results[0].lines[0].text == "readable"
+    assert results[1].lines == []
+    assert results[1].error == "cannot identify image file"
+    assert results[1].code == "invalid_image"
 
 
 async def test_short_embedding_responses_are_refused_rather_than_written(

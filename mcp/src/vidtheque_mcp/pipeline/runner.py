@@ -28,6 +28,11 @@ without a video row there is nothing to attach to, and without cues there is
 nothing to search. Everything downstream degrades — a video with no OCR is a
 video you can still find by what was said in it, and `data_status` says which.
 
+**Below the stage, failure is per frame.** A keyframe the worker refuses as
+undecodable is skipped and named (`_call_per_frame`, `_note_skipped_frames`); the
+stage finishes for the other 599. A refusal about the *request* rather than one
+file, and a stage where every frame was refused, still fail the stage.
+
 **Cancellation is honoured between stages**, which is what `job-status` promises
 ("the job stops at the next stage boundary"). Nothing is rolled back: the stages
 that finished stay finished.
@@ -44,7 +49,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from secrets import token_hex
-from typing import Any, Sequence
+from typing import Any, Awaitable, Callable, Sequence
 
 from ..db import Database
 from ..jobs.runner import ItemCancelled, ItemContext, ItemFailed, ItemSkipped
@@ -66,7 +71,7 @@ from .sources import (
     parse_info,
     playlist_entries,
 )
-from .worker_client import WorkerAPI, WorkerRejected, WorkerUnavailable
+from .worker_client import OcrPage, WorkerAPI, WorkerRejected, WorkerUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -488,6 +493,11 @@ class IndexingPipeline:
                 errors.append(f"{kind}: {exc}")
                 continue
             except (WorkerRejected, SourceError) as exc:
+                # `invalid_media` lands here: the audio the decoder could not
+                # read *was* this attempt's whole payload, so unlike a frame
+                # there is nothing to drop and continue with. The loop falls
+                # through to captions, and if those fail too the stage fails
+                # non-retryably — re-sending the same file fails identically.
                 errors.append(f"{kind}: {exc}")
                 continue
             if result is None:
@@ -799,29 +809,52 @@ class IndexingPipeline:
         await self._stage_running(run, "ocr")
         batch_size = max(1, self.settings.ocr_batch)
         lines_written = 0
+        read = 0
+        skipped: list[tuple[Any, str]] = []
         for offset in range(0, len(frames), batch_size):
             batch = frames[offset : offset + batch_size]
-            paths = [self.layout.absolute(str(row["jpeg_path"])) for row in batch]
             try:
-                results, _served = await self.worker.ocr(
-                    paths, min_confidence=self.settings.ocr_min_confidence
-                )
+                kept, pages, _served, refused = await self._call_per_frame(batch, self._ocr_call)
             except (WorkerUnavailable, WorkerRejected) as exc:
                 ids = [int(row["id"]) for row in batch]
                 await self.db.write(lambda c: store.set_ocr_state(c, ids, "failed"))
                 await self._soft_fail(run, "ocr", str(exc))
                 return
-            for row, lines in zip(batch, results, strict=True):
+            unreadable = list(refused)
+            for row, page in zip(kept, pages, strict=True):
+                if page.error is not None:
+                    # The worker read the batch and refused *this* image. Its
+                    # rows are left alone and the frame is marked `failed`, not
+                    # `empty`: a re-run picks failed frames back up, and nothing
+                    # downstream gets to conclude the slide had no text on it.
+                    unreadable.append((row, page.error))
+                    continue
+                read += 1
                 video_id = run.video_id
                 keyframe_id = int(row["id"])
                 t_s = float(row["t_s"])
                 width, height = int(row["width"]), int(row["height"])
                 lines_written += await self.db.write(
-                    lambda c: store.write_ocr(c, video_id, keyframe_id, t_s, lines, width, height)
+                    lambda c: store.write_ocr(
+                        c, video_id, keyframe_id, t_s, page.lines, width, height
+                    )
                 )
+            if unreadable:
+                ids = [int(row["id"]) for row, _ in unreadable]
+                await self.db.write(lambda c: store.set_ocr_state(c, ids, "failed"))
+                skipped.extend(unreadable)
             await run.ctx.record("ocr", min(1.0, (offset + len(batch)) / len(frames)))
+        if skipped and not read:
+            # Not one frame came back. `done` here would claim OCR coverage the
+            # video has none of (`has_ocr` is "the stage is done"), so this is
+            # the case that stays a stage failure.
+            await self._soft_fail(
+                run, "ocr", _all_unreadable(len(skipped), skipped[0][1])
+            )
+            return
         await self._stage_done(run, "ocr", model)
         await run.ctx.log(f"read {lines_written} on-screen lines", "info", stage="ocr")
+        await self._note_skipped_frames(run, "ocr", model, skipped)
 
     # ------------------------------------------------------------ frame_embed
 
@@ -848,32 +881,132 @@ class IndexingPipeline:
         await self._stage_running(run, "frame_embed")
         batch_size = max(1, self.settings.frame_embed_batch)
         written = 0
+        skipped: list[tuple[Any, str]] = []
         for offset in range(0, len(frames), batch_size):
             batch = frames[offset : offset + batch_size]
-            paths = [self.layout.absolute(str(row["jpeg_path"])) for row in batch]
             try:
-                vectors, served, dims = await self.worker.embed_images(
-                    paths,
-                    model=model or None,
-                    max_num_patches=self.settings.frame_embed_max_patches,
+                kept, vectors, extra, refused = await self._call_per_frame(
+                    batch, lambda paths: self._embed_images_call(paths, model)
                 )
             except (WorkerUnavailable, WorkerRejected) as exc:
                 await self._soft_fail(run, "frame_embed", str(exc))
                 return
+            skipped.extend(refused)
+            served, dims = extra if extra is not None else (None, None)
             mismatch = _dimension_mismatch(vectors, dims, self.db.frame_dim, served, model)
             if mismatch:
                 await self._skip(run, "frame_embed", mismatch)
                 return
             rows = [
                 (int(row["id"]), float(row["t_s"]), vector)
-                for row, vector in zip(batch, vectors, strict=True)
+                for row, vector in zip(kept, vectors, strict=True)
             ]
             video_id = run.video_id
             await self.db.write(lambda c: store.write_frame_vectors(c, video_id, rows))
             written += len(rows)
             await run.ctx.record("frame_embed", min(1.0, (offset + len(batch)) / len(frames)))
+        if skipped and not written:
+            # `has_frames` is "the frame_embed stage is done", so a done stage
+            # with no vectors would advertise a search channel that answers
+            # nothing. Every frame refused is a stage failure.
+            await self._soft_fail(
+                run, "frame_embed", _all_unreadable(len(skipped), skipped[0][1])
+            )
+            return
         await self._stage_done(run, "frame_embed", model)
         await run.ctx.log(f"embedded {written} frames", "info", stage="frame_embed")
+        await self._note_skipped_frames(run, "frame_embed", model, skipped)
+
+    # ----------------------------------------------------- per-frame refusals
+
+    async def _ocr_call(self, paths: list[Path]) -> tuple[list[OcrPage], str | None]:
+        assert self.worker is not None
+        return await self.worker.ocr(paths, min_confidence=self.settings.ocr_min_confidence)
+
+    async def _embed_images_call(
+        self, paths: list[Path], model: str
+    ) -> tuple[list[list[float]], tuple[str | None, int | None]]:
+        assert self.worker is not None
+        vectors, served, dims = await self.worker.embed_images(
+            paths, model=model or None, max_num_patches=self.settings.frame_embed_max_patches
+        )
+        return vectors, (served, dims)
+
+    async def _call_per_frame(
+        self,
+        rows: Sequence[Any],
+        call: Callable[[list[Path]], Awaitable[tuple[list[Any], Any]]],
+    ) -> tuple[list[Any], list[Any], Any, list[tuple[Any, str]]]:
+        """One worker call over these frames, with the ones it refuses cut out.
+
+        `invalid_image` is the worker saying *one* of these files is not an
+        image — a truncated JPEG, a zero-pixel frame, bytes no decoder takes
+        (worker/openapi.json; `PER_ITEM_CODES`). The request fails whole, and the
+        wire error names no index, so the offender is found by halving the batch
+        and re-sending: ~2·log₂(n) extra calls for a batch that contains a bad
+        frame, none at all for a batch that does not. The alternative is what
+        this used to do — one corrupt keyframe out of six hundred failed the
+        whole stage, and the video lost its frame search entirely.
+
+        Every other refusal propagates untouched: `invalid_input` and
+        `invalid_media` are about the request, not one file in it, and no subset
+        of the batch would be accepted either.
+
+        Returns `(kept_rows, results, extra, skipped)` — `results` lines up with
+        `kept_rows`, `extra` is whatever the call carries alongside (the served
+        model, dimensions), and `skipped` pairs each refused row with the reason.
+        """
+        paths = [self.layout.absolute(str(row["jpeg_path"])) for row in rows]
+        try:
+            results, extra = await call(paths)
+        except WorkerRejected as exc:
+            if not exc.per_item:
+                raise
+            if len(rows) <= 1:
+                return [], [], None, [(row, str(exc)) for row in rows]
+            half = len(rows) // 2
+            left = await self._call_per_frame(rows[:half], call)
+            right = await self._call_per_frame(rows[half:], call)
+            return (
+                [*left[0], *right[0]],
+                [*left[1], *right[1]],
+                # Both halves answer with the same model; keep whichever half
+                # actually reached a live worker.
+                left[2] if left[2] is not None else right[2],
+                [*left[3], *right[3]],
+            )
+        return list(rows), list(results), extra, []
+
+    async def _note_skipped_frames(
+        self, run: ItemRun, stage: str, model_key: str, skipped: Sequence[tuple[Any, str]]
+    ) -> None:
+        """Frames the worker refused, on a stage that finished anyway.
+
+        The stage is `done` because it did its job for the other 599 frames, but
+        "done" must not read as "all of them". The count and the first reason go
+        into the job log *and* onto the stage row, which is the record that
+        outlives the process — `video_stages.error` beside `state='done'` is
+        exactly "what this stage could not do", and no query treats a non-null
+        error as a failure (`degraded_items` and the resume plan both filter on
+        `state`).
+        """
+        if not skipped:
+            return
+        ordinals = [int(row["ord"]) for row, _ in skipped]
+        shown = ", ".join(str(o) for o in ordinals[:5])
+        if len(ordinals) > 5:
+            shown += f", … (+{len(ordinals) - 5})"
+        note = (
+            f"{len(skipped)} frame(s) skipped: the worker could not read them "
+            f"(ord {shown}). First: {skipped[0][1]}"
+        )
+        video_id = run.video_id
+        await self.db.write(
+            lambda c: store.stage_finished(c, video_id, stage, "done", model_key, note)
+        )
+        run.stages = await self.db.read(lambda c: store.stage_map(c, video_id))
+        await run.ctx.log(note, "warn", stage=stage)
+        run.degraded.append(f"{stage} skipped {len(skipped)} unreadable frame(s)")
 
     # --------------------------------------------------------------- finalize
 
@@ -1133,6 +1266,14 @@ def _rmtree(path: Path) -> None:
         shutil.rmtree(path, ignore_errors=True)
     except OSError as exc:  # pragma: no cover - permissions
         logger.warning("could not remove %s: %s", path, exc)
+
+
+def _all_unreadable(count: int, first: str) -> str:
+    """Every frame in the stage was refused: there is nothing partial to keep."""
+    return (
+        f"the worker could not read any of the {count} frame(s) sent, so nothing "
+        f"was written. First: {first}"
+    )
 
 
 def _not_yet(exc: NotYetAvailable) -> ItemFailed:

@@ -669,3 +669,120 @@ async def test_keep_source_originals_keeps_everything(
         assert audio_files(parts)
     finally:
         await close(parts)
+
+
+# ============================================== frames the worker cannot read
+
+
+async def test_one_undecodable_frame_is_skipped_and_the_rest_still_index(
+    settings: Settings, clip: Path
+) -> None:
+    """A corrupt keyframe costs its own row, not the video's frame search.
+
+    The worker types its refusals: `invalid_image` blames one uploaded file
+    (worker/openapi.json). /v1/ocr says so per file inside a 200; the image
+    embedder has no vector to put in a failed slot, so it fails the request with
+    a 400 — and the pipeline halves the batch to find the offender rather than
+    losing the other frames with it. Before this, either shape failed the whole
+    stage and the video lost its on-screen text and its frame vectors.
+    """
+    worker = FakeWorker(unreadable={1})
+    parts = await harness(settings, clip, worker=worker)
+    try:
+        await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+
+        stages = await parts.stages()
+        assert stages["ocr"]["state"] == "done"
+        assert stages["frame_embed"]["state"] == "done"
+
+        frames = {int(row["ord"]): row for row in await parts.rows("SELECT * FROM keyframes")}
+        # `failed`, never `empty`: a frame nobody could read is not a slide with
+        # no text on it, and `failed` is what a later OCR run picks back up.
+        assert frames[1]["ocr_state"] == "failed"
+        assert frames[0]["ocr_state"] == "done" and frames[2]["ocr_state"] == "done"
+
+        embedded = {
+            int(row["keyframe_id"])
+            for row in await parts.rows("SELECT keyframe_id FROM vec_frames")
+        }
+        assert embedded == {int(frames[0]["id"]), int(frames[2]["id"])}
+        read = {
+            int(row["keyframe_id"])
+            for row in await parts.rows("SELECT keyframe_id FROM ocr_lines")
+        }
+        assert read == {int(frames[0]["id"]), int(frames[2]["id"])}
+
+        # The skip is recorded, not swallowed: on the stage row that outlives
+        # the process, and in the job log.
+        for stage in ("ocr", "frame_embed"):
+            assert "1 frame(s) skipped" in str(stages[stage]["error"])
+            assert "ord 1" in str(stages[stage]["error"])
+        assert sum("1 frame(s) skipped" in message for message in await parts.events()) == 2
+
+        # Three frames sent, then halved around the bad one: 3 -> [0,1] -> [0],
+        # [1] -> [2]. The good frames are never dropped to find the bad one.
+        assert worker.calls.count("embed_images:3") == 1
+        assert worker.calls.count("embed_images:1") >= 2
+    finally:
+        await close(parts)
+
+
+async def test_an_untyped_worker_400_still_fails_the_whole_stage(
+    settings: Settings, clip: Path
+) -> None:
+    """No `error.type`, no skipping.
+
+    FastAPI's own 400s — an empty batch, a parameter out of domain — carry
+    `{"detail": ...}` and blame the *request*. No subset of it would be accepted
+    either, so dropping frames one at a time would only hide the mistake.
+    """
+    worker = FakeWorker(reject={"embed_images"})
+    parts = await harness(settings, clip, worker=worker)
+    try:
+        await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+
+        stages = await parts.stages()
+        assert stages["ocr"]["state"] == "done"
+        assert stages["frame_embed"]["state"] == "failed"
+        assert not await parts.rows("SELECT keyframe_id FROM vec_frames")
+        # One call, not a bisection: nothing about a request-level refusal gets
+        # better by sending halves of it.
+        assert worker.calls.count("embed_images:3") == 1
+        assert "embed_images:1" not in worker.calls
+    finally:
+        await close(parts)
+
+
+async def test_a_stage_whose_every_frame_is_unreadable_fails_rather_than_lying(
+    settings: Settings, clip: Path
+) -> None:
+    """`has_ocr` / `has_frames` are "the stage is done".
+
+    A `done` stage that wrote nothing would advertise a search channel that
+    answers nothing, so the one case that stays a stage failure is the one with
+    no partial success to protect.
+    """
+    worker = FakeWorker(unreadable=set(range(64)))
+    parts = await harness(settings, clip, worker=worker)
+    try:
+        await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+
+        stages = await parts.stages()
+        assert stages["ocr"]["state"] == "failed"
+        assert stages["frame_embed"]["state"] == "failed"
+        assert "could not read any of the 3 frame(s)" in str(stages["ocr"]["error"])
+        assert not await parts.rows("SELECT keyframe_id FROM vec_frames")
+        # A failed stage is a resumable one, and the frames it could not read
+        # are the ones a retry will try again.
+        states = {
+            str(row["ocr_state"])
+            for row in await parts.rows(
+                "SELECT ocr_state FROM keyframes WHERE dup_of IS NULL"
+            )
+        }
+        assert states == {"failed"}
+    finally:
+        await close(parts)

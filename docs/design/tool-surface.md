@@ -1251,6 +1251,16 @@ A stage that failed now prints `failed` on the row it failed, and the payload
 carries **`n_degraded`** and **`degraded_stages`** beside the four counts —
 `n_done` alone cannot tell "indexed" from "indexed without its frame search".
 
+**One unreadable frame is not a failed stage.** The worker types its refusals
+(`{"error": {message, type}}`, worker/openapi.json): `invalid_image` blames one
+uploaded file, `invalid_input` and `invalid_media` blame the request. A frame the
+worker cannot decode is skipped and the stage carries on `done` — the other 599
+frames keep their on-screen text and their vectors — with the count and the
+ordinals recorded on the stage row and in the job log, so `done` never quietly
+means "most of it". A request-level refusal, an untyped 4xx, or a batch where
+*every* frame was refused still fails the stage, because there is no partial
+success there to protect.
+
 A degraded video is **not** "already indexed" for `index-video`: resubmitting it
 without `force_reindex` creates a job that re-runs its failed stages and leaves
 the finished ones alone (that is `_should_run`, unchanged), and the response
