@@ -42,6 +42,9 @@ text tower, on /v1/embeddings/frame-query — never through /v1/embeddings.
 
 
 def build_manager(settings: Settings) -> LifecycleManager:
+    # Before any backend exists, let alone loads: HF_HOME is read at import
+    # time by parts of huggingface_hub.
+    settings.apply_process_env()
     return LifecycleManager(
         build_backends(settings),
         idle_unload_seconds=settings.idle_unload_seconds,

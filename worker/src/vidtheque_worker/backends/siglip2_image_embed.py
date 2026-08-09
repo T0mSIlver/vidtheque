@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import io
 import logging
+import math
 from typing import Any
 
 from .base import (
@@ -69,14 +70,43 @@ TEXT_CONTEXT_TOKENS = 64
 """Trained context of the text tower. Everything past it is dropped, quietly."""
 
 
+RESIDENT_VRAM_MB = 2500
+"""Measured just after load, patch budget irrelevant: the weights."""
+
+BASELINE_PATCHES = 256
+"""The budget ``default_vram_mb`` was measured at."""
+
+
+def estimate_vram_mb(max_num_patches: int, *, base: int = 3200) -> int:
+    """Admission estimate for a configured patch budget.
+
+    ``base`` is the measured 256-patch figure; everything above
+    :data:`RESIDENT_VRAM_MB` in it is activation, and activation is what the
+    budget multiplies. So the weights stay put and the rest scales.
+
+    Only ever *upward*: a smaller budget than the measured one keeps the
+    measured estimate rather than inventing a smaller one from an
+    extrapolation nobody has run on hardware.
+
+    Without this, an operator setting ``IMAGE_EMBED_MAX_PATCHES=1024`` — which
+    the config invites, and which is ~4x the work per image — left admission
+    control believing 3200 MB. The load is admitted, the first big batch OOMs
+    mid-inference, the slot unloads, the client retries the same input into the
+    same OOM, and the job dies 30 seconds at a time.
+    """
+    activation = max(0, base - RESIDENT_VRAM_MB)
+    scale = max(1.0, float(max_num_patches) / BASELINE_PATCHES)
+    return RESIDENT_VRAM_MB + int(math.ceil(activation * scale))
+
+
 class SigLIP2Backend(BaseBackend):
     name = "siglip2"
     task = "image_embed"
     # Measured on an RTX 3090 (research/gpu-validation-2026-08-08.md): 2489 MB
     # right after load, 2870 MB peak at 44 frames/request and 256 patches. The
     # old 5000 MB estimate was 1.7x the real peak and bought nothing but
-    # avoidable evictions. IMAGE_EMBED_MAX_PATCHES=1024 is ~4x the work per
-    # image and was not measured — raise this alongside it.
+    # avoidable evictions. Budgets above 256 scale this — see
+    # `estimate_vram_mb`, which is what the constructor uses.
     default_vram_mb = 3200
 
     def __init__(
@@ -89,6 +119,17 @@ class SigLIP2Backend(BaseBackend):
         vram_estimate_mb: int | None = None,
     ) -> None:
         super().__init__(model_id, vram_estimate_mb=vram_estimate_mb)
+        if vram_estimate_mb is None:
+            self._vram_estimate_mb = estimate_vram_mb(
+                max_num_patches, base=self.default_vram_mb
+            )
+        if max_num_patches not in PATCH_BUDGETS:
+            log.warning(
+                "IMAGE_EMBED_MAX_PATCHES=%d is outside the trained set %s; "
+                "the model loads but is off-distribution",
+                max_num_patches,
+                PATCH_BUDGETS,
+            )
         self.device = device
         self.max_num_patches = max_num_patches
         self.batch_size = batch_size

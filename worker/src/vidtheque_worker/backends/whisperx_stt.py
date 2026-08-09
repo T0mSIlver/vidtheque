@@ -12,9 +12,18 @@ imports fine without the ``gpu`` extra installed.
 from __future__ import annotations
 
 import logging
+from collections import OrderedDict
 from typing import Any
 
-from .base import BackendUnavailable, BaseBackend, Segment, Transcription, Word
+from .base import (
+    BackendUnavailable,
+    BaseBackend,
+    InvalidMediaError,
+    Segment,
+    Transcription,
+    Word,
+    looks_like_device_failure,
+)
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +41,34 @@ def normalize_language(tag: str | None) -> str | None:
         return None
     primary = tag.replace("_", "-").split("-", 1)[0].strip().lower()
     return primary if 2 <= len(primary) <= 3 and primary.isalpha() else None
+
+
+BASELINE_BATCH = 16
+"""The batch size ``default_vram_mb`` was measured at."""
+
+PER_BATCH_VRAM_MB = 216
+"""Slope through the two measured points, 5352 MB at batch 4 and 7941 at 16
+(research/gpu-validation-2026-08-08.md). An extrapolation, and labelled one."""
+
+MAX_ALIGN_MODELS = 3
+"""Alignment models kept warm. Each is a Wav2Vec2 checkpoint of a few hundred
+MB that admission control never sees — the estimate covers the *default* one
+only — so an unbounded cache is a VRAM leak with the length of the corpus's
+language list. Three keeps a bilingual channel from reloading on every video."""
+
+
+def estimate_vram_mb(batch_size: int, *, base: int = 8000) -> int:
+    """Admission estimate for a configured STT batch size.
+
+    Upward only, from the measured 16 figure: a smaller batch keeps the
+    measured number rather than trusting a straight line drawn through two
+    points to hold at the bottom of the range. Raising ``STT_BATCH_SIZE`` used
+    to leave admission believing 8000 MB — documented as such in
+    ``.env.example``, which is not the same as safe.
+    """
+    if batch_size <= BASELINE_BATCH:
+        return base
+    return base + PER_BATCH_VRAM_MB * (batch_size - BASELINE_BATCH)
 
 
 class WhisperXBackend(BaseBackend):
@@ -55,12 +92,16 @@ class WhisperXBackend(BaseBackend):
         vram_estimate_mb: int | None = None,
     ) -> None:
         super().__init__(model_id, vram_estimate_mb=vram_estimate_mb)
+        if vram_estimate_mb is None:
+            self._vram_estimate_mb = estimate_vram_mb(
+                batch_size, base=self.default_vram_mb
+            )
         self.device = device
         self.compute_type = compute_type
         self.batch_size = batch_size
         self.align_default = align
         self._model: Any = None
-        self._align_cache: dict[str, tuple[Any, Any]] = {}
+        self._align_cache: OrderedDict[str, tuple[Any, Any]] = OrderedDict()
 
     # -- lifecycle ---------------------------------------------------------
     def _load(self) -> None:
@@ -102,7 +143,17 @@ class WhisperXBackend(BaseBackend):
 
         do_align = self.align_default if align is None else align
         language = normalize_language(language)
-        audio = whisperx.load_audio(audio_path)
+        try:
+            audio = whisperx.load_audio(audio_path)
+        except Exception as exc:
+            if looks_like_device_failure(exc):
+                raise
+            # ffmpeg refusing the container is the upload's problem, and it
+            # raises a plain RuntimeError. Untyped, that used to unload the
+            # model (5.8 s) and answer 503, which the client reads as
+            # backpressure — so it replayed the same unreadable file until its
+            # 1800 s budget was gone.
+            raise InvalidMediaError(f"the audio could not be decoded: {exc}") from exc
         duration = float(len(audio)) / 16000.0
 
         try:
@@ -139,12 +190,30 @@ class WhisperXBackend(BaseBackend):
         return _to_transcription(result.get("segments", []), detected, duration)
 
     def _alignment_model(self, language: str) -> tuple[Any, Any]:
+        """One alignment model per language, at most :data:`MAX_ALIGN_MODELS`.
+
+        The cache used to grow for the life of the process. Every entry is a
+        few hundred MB of device that admission control cannot see — the 8000
+        MB estimate is measured with the *default* alignment model warm — so a
+        polyglot corpus quietly ate the headroom until a transcription OOMed
+        with no evictable candidate on the card (every model there is the
+        resident STT slot). Eviction is oldest-first: a video is one language,
+        and a channel is rarely more than two or three.
+        """
         import whisperx
 
-        if language not in self._align_cache:
-            self._align_cache[language] = whisperx.load_align_model(
-                language_code=language, device=self.device
-            )
+        if language in self._align_cache:
+            self._align_cache[language] = self._align_cache.pop(language)  # refresh
+            return self._align_cache[language]
+
+        while len(self._align_cache) >= MAX_ALIGN_MODELS:
+            evicted, _ = self._align_cache.popitem(last=False)
+            log.info("evicting the %s alignment model (cache is full)", evicted)
+            self._empty_cuda_cache()
+
+        self._align_cache[language] = whisperx.load_align_model(
+            language_code=language, device=self.device
+        )
         return self._align_cache[language]
 
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from vidtheque_worker.backends.registry import (
@@ -136,6 +138,54 @@ def test_the_frame_embedder_is_the_biggest_model():
     assert (
         backends["image_embed"].vram_estimate_mb > backends["embed"].vram_estimate_mb
     )
+
+
+def test_the_frame_estimate_follows_the_configured_patch_budget():
+    """The knob the config invites you to turn: 1024 patches is ~4x the work
+    per image. With a static estimate, admission still believed the 256-patch
+    figure, admitted the load, and the first real batch OOMed mid-inference —
+    then the client retried the same input into the same OOM, 30 s at a time,
+    until the job died."""
+    at_256 = build_backends(settings(device="cuda"))["image_embed"]
+    at_1024 = build_backends(
+        settings(device="cuda", image_embed_max_patches=1024)
+    )["image_embed"]
+    assert at_256.vram_estimate_mb == 3200, "the measured 256-patch figure"
+    assert at_1024.vram_estimate_mb > at_256.vram_estimate_mb * 1.5
+
+
+def test_a_smaller_patch_budget_does_not_shrink_the_estimate():
+    """Scaling is upward only: nobody has measured the bottom of the range,
+    and an under-estimate is an OOM while an over-estimate is an eviction."""
+    small = build_backends(
+        settings(device="cuda", image_embed_max_patches=128)
+    )["image_embed"]
+    assert small.vram_estimate_mb == 3200
+
+
+def test_the_stt_estimate_follows_the_configured_batch_size():
+    at_16 = build_backends(settings(device="cuda"))["stt"]
+    at_64 = build_backends(settings(device="cuda", stt_batch_size=64))["stt"]
+    at_4 = build_backends(settings(device="cuda", stt_batch_size=4))["stt"]
+    assert at_16.vram_estimate_mb == 8000, "measured peak at the default batch"
+    assert at_64.vram_estimate_mb > at_16.vram_estimate_mb
+    assert at_4.vram_estimate_mb == 8000, "upward only, same as the patch budget"
+
+
+def test_hf_home_reaches_the_environment_the_libraries_read(monkeypatch):
+    """pydantic-settings fills this object and stops there; transformers,
+    huggingface_hub and ctranslate2 all read os.environ. Parsed-and-dropped
+    meant weights landed in ~/.cache/huggingface however the operator set it,
+    and every container rebuild re-downloaded several GB."""
+    monkeypatch.delenv("HF_HOME", raising=False)
+    settings(hf_home="/hf-cache").apply_process_env()
+    assert os.environ["HF_HOME"] == "/hf-cache"
+
+
+def test_an_unset_hf_home_leaves_the_environment_alone(monkeypatch):
+    monkeypatch.setenv("HF_HOME", "/somewhere/else")
+    Settings(_env_file=None, hf_home=None).apply_process_env()
+    assert os.environ["HF_HOME"] == "/somewhere/else"
 
 
 def test_unknown_backend_name_lists_the_alternatives():

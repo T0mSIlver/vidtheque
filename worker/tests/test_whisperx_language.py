@@ -14,7 +14,12 @@ import types
 
 import pytest
 
-from vidtheque_worker.backends.whisperx_stt import WhisperXBackend, normalize_language
+from vidtheque_worker.backends.base import InvalidMediaError, looks_like_device_failure
+from vidtheque_worker.backends.whisperx_stt import (
+    MAX_ALIGN_MODELS,
+    WhisperXBackend,
+    normalize_language,
+)
 
 
 @pytest.mark.parametrize(
@@ -86,3 +91,99 @@ def test_infer_does_not_loop_when_autodetect_itself_raises(stub_whisperx) -> Non
     with pytest.raises(ValueError):
         backend.infer(str(stub_whisperx), language=None, align=False)
     assert backend._model.calls == [None]  # no retry storm
+
+
+# --------------------------------------------------------------------------
+# unreadable media
+# --------------------------------------------------------------------------
+
+
+def test_media_ffmpeg_cannot_read_is_a_typed_input_error(monkeypatch, tmp_path):
+    """ffmpeg refusing a container raises a plain RuntimeError. Untyped, that
+    unloaded the model and answered 503 — which mcp/ reads as backpressure, so
+    it replayed the same unreadable file until the 1800 s budget was gone."""
+    def explode(path):
+        raise RuntimeError(f"Failed to load audio: ffmpeg: {path}: Invalid data")
+
+    monkeypatch.setitem(
+        sys.modules, "whisperx", types.SimpleNamespace(load_audio=explode)
+    )
+    audio = tmp_path / "a.webm"
+    audio.write_bytes(b"\0")
+    backend = WhisperXBackend(align=False)
+    backend._model = _FakeModel(reject=set())
+
+    with pytest.raises(InvalidMediaError):
+        backend.infer(str(audio), align=False)
+    assert not looks_like_device_failure(
+        InvalidMediaError("the audio could not be decoded")
+    )
+
+
+def test_a_device_failure_while_loading_audio_still_propagates(monkeypatch, tmp_path):
+    def explode(path):
+        raise RuntimeError("CUDA error: out of memory")
+
+    monkeypatch.setitem(
+        sys.modules, "whisperx", types.SimpleNamespace(load_audio=explode)
+    )
+    audio = tmp_path / "a.webm"
+    audio.write_bytes(b"\0")
+    backend = WhisperXBackend(align=False)
+    backend._model = _FakeModel(reject=set())
+
+    with pytest.raises(RuntimeError) as raised:
+        backend.infer(str(audio), align=False)
+    assert not isinstance(raised.value, InvalidMediaError)
+
+
+# --------------------------------------------------------------------------
+# the alignment-model cache
+# --------------------------------------------------------------------------
+
+
+def test_the_alignment_cache_is_bounded_and_evicts_the_oldest(monkeypatch):
+    """Each entry is a few hundred MB of device that admission control never
+    sees — the 8000 MB estimate is measured with the *default* alignment model
+    warm. Unbounded, a polyglot corpus ate the headroom until a transcription
+    OOMed with nothing evictable on the card."""
+    loaded: list[str] = []
+
+    def load_align_model(language_code, device):  # noqa: ANN001
+        loaded.append(language_code)
+        return (f"model-{language_code}", {"language": language_code})
+
+    monkeypatch.setitem(
+        sys.modules,
+        "whisperx",
+        types.SimpleNamespace(load_align_model=load_align_model),
+    )
+    backend = WhisperXBackend()
+
+    for language in ("en", "fr", "de"):
+        backend._alignment_model(language)
+    assert list(backend._align_cache) == ["en", "fr", "de"]
+    assert loaded == ["en", "fr", "de"]
+
+    # A cache hit reloads nothing and moves that language to the back...
+    assert backend._alignment_model("en")[0] == "model-en"
+    assert loaded == ["en", "fr", "de"]
+    assert list(backend._align_cache) == ["fr", "de", "en"]
+
+    # ...so the fourth language evicts `fr`, the least recently used.
+    backend._alignment_model("es")
+    assert list(backend._align_cache) == ["de", "en", "es"]
+    assert len(backend._align_cache) == MAX_ALIGN_MODELS
+
+
+def test_unloading_still_drops_every_alignment_model(monkeypatch):
+    monkeypatch.setitem(
+        sys.modules,
+        "whisperx",
+        types.SimpleNamespace(load_align_model=lambda language_code, device: (1, 2)),
+    )
+    backend = WhisperXBackend()
+    backend._loaded = True
+    backend._alignment_model("en")
+    backend.unload()
+    assert backend._align_cache == {}

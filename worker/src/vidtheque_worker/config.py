@@ -8,6 +8,7 @@ compose file. All of them are documented in ``deploy/.env.example``.
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 
 from pydantic import AliasChoices, Field
@@ -121,6 +122,22 @@ class Settings(BaseSettings):
 
     # --- caches -----------------------------------------------------------
     hf_home: str | None = Field(default=None, validation_alias=AliasChoices("HF_HOME"))
+    """Weight cache directory. Applied by :func:`apply_process_env`, because
+    the libraries that honour it read ``os.environ``, not this object."""
+
+    def apply_process_env(self) -> None:
+        """Push the settings that libraries read from the environment back into it.
+
+        pydantic-settings reads ``.env`` into *this object* and stops there,
+        but ``transformers``, ``huggingface_hub`` and ``ctranslate2`` all look
+        at ``os.environ["HF_HOME"]``. So the documented local-dev path — put
+        ``HF_HOME`` in ``.env`` — silently cached several GB of weights in
+        ``~/.cache/huggingface`` instead of where the operator asked for them
+        (in the container, the mounted volume), and a rebuild re-downloaded
+        them. Called before any backend is constructed.
+        """
+        if self.hf_home:
+            os.environ["HF_HOME"] = self.hf_home
 
     def resolved_device(self) -> str:
         """Resolve ``auto`` against whatever torch says, without importing it eagerly."""
