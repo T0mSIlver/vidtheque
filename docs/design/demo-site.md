@@ -539,18 +539,26 @@ answer landed — that is, exactly the ninety seconds of silence this removes.
 
 ## 4. Rate limiting
 
-App-level, in-process, token bucket. On `/api/*` and `/frames/*`, in public
-mode only.
+App-level, in-process. On `/api/*` and `/frames/*`, in public mode only. Two
+shapes, because two different things are being guarded: **token buckets in
+memory** for the per-minute rates, and **a UTC-day counter written to SQLite**
+for the daily `ask` budget.
 
 **In-memory, single process, deliberately.** vidtheque is one uvicorn process
 holding one SQLite writer; there is no second replica for a shared counter to
 be shared with. If this ever grows a replica, the limiter is the first thing
 that needs Redis — and that is a bigger change than swapping a backend, because
 the SQLite writer would need to move first. Stated here so nobody reads the
-in-memory dict as an oversight. It is also the reason the daily `ask` cap is
-approximate across a restart: the buckets are reset by a redeploy. For a budget
-guard on a free tier, that is acceptable; for anything where money is at stake,
-it would not be.
+in-memory dict as an oversight. A redeploy resets the minute buckets and that
+costs nothing: they guard against hammering, and nobody hammers across a
+restart they did not know happened.
+
+**Amended 2026-08-09 (Tom): the daily budget is not one of those.** This section
+used to end "the daily `ask` cap is approximate across a restart… for a budget
+guard on a free tier that is acceptable; for anything where money is at stake it
+would not be." The model behind `/api/ask` is paid now, and on a launch day a
+redeploy happens several times an hour — so a 50/day cap in a Python dict was
+guarding money only until the next deploy. It is persisted; §4.2 is how.
 
 ### 4.1 The buckets
 
@@ -558,7 +566,7 @@ it would not be.
 |---|---|---|---|
 | `search` | `/api/search`, `/api/videos`, `/api/meta` | 30/min per IP | `VIDTHEQUE_RATE_SEARCH_PER_MIN` |
 | `ask` | `/api/ask` | 5/min per IP | `VIDTHEQUE_RATE_ASK_PER_MIN` |
-| `ask_global` | `/api/ask` | 50/day, whole server | `VIDTHEQUE_RATE_ASK_PER_DAY` |
+| `ask_global` | `/api/ask` | 50/UTC day, whole server, **persisted** | `VIDTHEQUE_RATE_ASK_PER_DAY` |
 | `frames` | `/frames/*` | 120/min per IP | `VIDTHEQUE_RATE_FRAMES_PER_MIN` |
 
 `frames` is loose on purpose: one screen of results is ~10 thumbnails, so a
@@ -585,8 +593,38 @@ Capacity doubles as the burst allowance: 30/min means a visitor arriving cold
 can fire 30 requests immediately and then one every two seconds. That is what a
 search-as-you-type frontend needs, and the page debounces anyway.
 
-The daily bucket is the same maths with `window = 86400`, so the budget trickles
-back through the day instead of everything unblocking at UTC midnight.
+**The daily bucket is not a bucket.** It used to be the same maths with
+`window = 86400`, so the budget trickled back through the day instead of
+everything unblocking at UTC midnight — nicer behaviour, and unimplementable
+durably. A refilling bucket's state is `tokens` plus a `time.monotonic()`
+reading, and a monotonic clock has no meaning across a process boundary; writing
+wall-clock instead would make the rate limiter depend on the system clock being
+sane, which is a worse trade than the one made here.
+
+A *daily budget* has a durable form that a rate does not: how much of today has
+been spent. So `ask_global` is a counter — `spent` against a capacity, keyed on
+`(bucket, client, UTC day)` — and the consequences are all visible:
+
+- **A restart resumes the day.** The count is read back at boot; the process
+  that comes up after a redeploy knows what the one before it spent.
+- **The reset is midnight, not a trickle.** A spent day unblocks at 00:00 UTC.
+  `Retry-After` on a refused `ask_global` is the seconds until then, which can be
+  hours. That is the honest answer for a budget that resets by the date changing,
+  and saying less would invite the retry the 429 exists to stop.
+- **Nothing else changed.** The per-minute buckets are still continuous-refill
+  buckets, still in memory, still reset by a redeploy. `ask_per_day` still means
+  what it said; only the shape of the refill moved.
+
+**In-memory stays the fast path.** The counter in the dict is what decides every
+request, exactly as before — SQLite is the *record*, not the gate. Today's rows
+are read once at boot and the deltas (`+1` on a charge, `-1` on a refund) are
+queued and written behind the request by a single drain task, because the
+limiter is a synchronous ASGI middleware and the mcp process owns exactly one
+write connection (index-schema §5). A visitor never waits on the writer. An
+orderly shutdown drains before the database closes; a `kill -9` can lose
+whatever was in flight, which is one ask, not the day. The table is
+`ask_budget` — index-schema §1.11 — pruned to the last 30 days at boot, which
+leaves the operator a month of "what did the demo cost".
 
 Response on refusal:
 
@@ -645,6 +683,30 @@ So the middleware records what it charged on the request scope, and
 A refund refills first and is capped at capacity, so it can never mint a token
 the bucket never had, and refunding a bucket that no longer exists (swept) is a
 no-op rather than a resurrection.
+
+**A refund reaches the row, not only the dict** (§4.2). `ask_global` is the
+bucket that is written down and it is also the only one that is ever refunded,
+so the two features are the same feature: a `-1` delta is queued exactly where
+the `+1` was, floored at zero by the same rule that caps a bucket at capacity.
+Without it, a launch-day flap that costs nothing in memory would cost the day on
+the next restart — the failure this refund exists to prevent, deferred by one
+deploy instead of fixed.
+
+Two properties make that exact rather than approximate:
+
+- **The charge and its refund name the same UTC day.** The day is read once per
+  request and carried on the scope beside what was charged, so a ninety-second
+  ask that starts at 23:59:30 gives its token back to the day it took it from.
+  Yesterday's refund never lands on today's counter, which would otherwise hand
+  out one free ask a day at midnight.
+- **The refund path is synchronous all the way down to the delta.** It fires
+  from a `finally` inside the stream's generator, which is the path taken when a
+  visitor closes the tab — a budget that needed to `await` to be given back is a
+  budget that leaks on exactly the disconnect it was written for.
+
+The rule is identical across both transports, because they share one generator
+and one accounting block: the JSON POST refunds on a non-200 and the stream
+refunds on "no answer emitted", and exactly one of the two runs per request.
 
 ---
 

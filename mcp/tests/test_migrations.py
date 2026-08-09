@@ -37,7 +37,9 @@ def test_migrations_are_idempotent(fresh: sqlite3.Connection) -> None:
 def test_user_version_is_the_authority(fresh: sqlite3.Connection) -> None:
     migrations.migrate(fresh)
     # Someone edited the file by hand: user_version and the audit trail disagree.
-    fresh.execute("PRAGMA user_version = 5")
+    # One *past* the last shipped migration, computed rather than written down —
+    # a literal here turns into a real version the day it is added (it did: 5).
+    fresh.execute(f"PRAGMA user_version = {migrations.current_version(fresh) + 1}")
     with pytest.raises(migrations.MigrationError, match="edited by hand"):
         migrations.migrate(fresh)
 
@@ -236,7 +238,9 @@ def test_ocr_frame_index_backfills_from_the_lines_already_indexed(
             (kf, vid, line_no, text),
         )
 
-    assert migrations.migrate(fresh) == [3, 4]
+    # Staged at 2, so 0003 is the next one to run. Everything after it rides
+    # along; this test is about what 0003 does, not about how many exist.
+    assert migrations.migrate(fresh)[:2] == [3, 4]
 
     row = fresh.execute("SELECT video_id, t_s, text FROM ocr_frames").fetchone()
     assert (row[0], row[1]) == (vid, 30.0)

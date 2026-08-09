@@ -14,12 +14,13 @@ from starlette.responses import FileResponse, Response
 from starlette.routing import Route
 
 from .api import api_routes
-from .ratelimit import RateLimiter, RateLimitMiddleware
+from .ratelimit import BudgetStore, RateLimiter, RateLimitMiddleware, SqliteBudgetStore
 from .readonly import WRITE_TOOLS, hidden_tools
 from .settings import PublicSettings
 
 __all__ = [
     "PublicSettings",
+    "SqliteBudgetStore",
     "WRITE_TOOLS",
     "hidden_tools",
     "public_middleware",
@@ -76,7 +77,9 @@ def public_routes() -> list[Route]:
 
 
 def public_middleware(
-    public: PublicSettings, dashboard_per_min: int | None = None
+    public: PublicSettings,
+    dashboard_per_min: int | None = None,
+    budget: BudgetStore | None = None,
 ) -> list[Middleware]:
     """The limiter, as a Starlette middleware spec.
 
@@ -103,8 +106,11 @@ def public_middleware(
             {
                 "search": (public.search_per_min, 60.0),
                 "ask": (public.ask_per_min, 60.0),
-                # The same maths with a 24h window, so the budget trickles back
-                # through the day instead of unblocking at UTC midnight.
+                # A window of a day or more makes this a *daily budget* rather
+                # than a rate: `RateLimiter` counts it per UTC day and writes it
+                # down, because it is the one bucket that guards money
+                # (demo-site.md §4.2). The others reset on a redeploy, and
+                # should — a minute bucket means nothing across a restart.
                 "ask_global": (public.ask_per_day, 86_400.0),
                 "frames": (public.frames_per_min, 60.0),
             }
@@ -121,7 +127,11 @@ def public_middleware(
     if not limits:
         return []
 
-    limiter = RateLimiter(limits, max_keys=public.rate_max_keys)
+    # The store is handed in already-constructed (and opened in the app's
+    # lifespan, after the database is): the middleware stack is built before
+    # anything is connected, and a limiter that opened its own connection would
+    # be a second writer on a file that documents having exactly one.
+    limiter = RateLimiter(limits, max_keys=public.rate_max_keys, budget=budget)
 
     def bucket_for(path: str) -> str | None:
         # `/dashboard/api/*` is matched before `/api/*`, so the owner's JSON is

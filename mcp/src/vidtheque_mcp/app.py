@@ -42,7 +42,13 @@ from .embeddings import EmbeddingClient
 from .http import frames_routes, health_routes
 from .jobs.runner import Pipeline, PipelineRunner
 from .pipeline import PipelineSettings, WorkerAPI, build_pipeline, worker_client
-from .public import PublicSettings, hidden_tools, public_middleware, public_routes
+from .public import (
+    PublicSettings,
+    SqliteBudgetStore,
+    hidden_tools,
+    public_middleware,
+    public_routes,
+)
 from .public.ask import OpenRouter
 from .server import build_mcp_server
 from .tools import Deps
@@ -159,9 +165,17 @@ def assemble(
     elif public_http is not None:  # an injected client with no key: still closed
         http = public_http
 
+    # The daily ask budget's durable half. Public mode only — it is the only
+    # mode with a daily bucket to persist — and constructed here rather than
+    # inside the limiter so its lifecycle hangs off the same lifespan the
+    # database's does, in the right order (demo-site.md §4.2).
+    budget = SqliteBudgetStore(db) if public.enabled else None
+
     @contextlib.asynccontextmanager
     async def lifespan(_: Starlette) -> AsyncIterator[None]:
         await db.open()
+        if budget is not None:
+            await budget.open()
         if not db.vectors.enabled:
             logger.warning("vector legs disabled: %s", db.vectors.reason)
         async with mcp.session_manager.run():
@@ -175,6 +189,10 @@ def assemble(
                 await client.aclose()
                 if http is not None:
                     await http.aclose()
+                # Before the database: the drain has deltas to write and it
+                # writes them through the connection closed on the next line.
+                if budget is not None:
+                    await budget.close()
                 await db.close()
                 auth.close()
 
@@ -204,7 +222,9 @@ def assemble(
     app = Starlette(
         routes=routes,
         middleware=public_middleware(
-            public, dashboard.rate_per_min if dashboard.enabled else None
+            public,
+            dashboard.rate_per_min if dashboard.enabled else None,
+            budget=budget,
         ),
         lifespan=lifespan,
     )

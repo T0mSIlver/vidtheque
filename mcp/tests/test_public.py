@@ -21,6 +21,7 @@ from starlette.testclient import TestClient
 import vidtheque_mcp.public
 from vidtheque_mcp.app import build_app
 from vidtheque_mcp.config import Settings
+from vidtheque_mcp.public import ratelimit
 from vidtheque_mcp.public.ratelimit import Bucket, RateLimiter, client_key
 from vidtheque_mcp.public.readonly import WRITE_TOOLS, hidden_tools
 from vidtheque_mcp.public.settings import PublicSettings
@@ -41,10 +42,11 @@ READ_TOOLS = {
 # --------------------------------------------------------------------- setup
 
 
-def _settings(tmp_path: Path) -> Settings:
+def _settings(tmp_path: Path, fresh: bool = True) -> Settings:
     data = tmp_path / "data"
-    (data / "keyframes").mkdir(parents=True)
-    seed(data / "vidtheque.db", data / "keyframes")
+    if fresh:
+        (data / "keyframes").mkdir(parents=True)
+        seed(data / "vidtheque.db", data / "keyframes")
     return Settings(
         data_dir=data,
         public_url="http://localhost:8080",
@@ -63,10 +65,13 @@ def make_client(
     tmp_path: Path,
     public: PublicSettings,
     handler: Callable[[httpx.Request], httpx.Response] | None = None,
+    fresh: bool = True,
 ) -> TestClient:
+    """`fresh=False` reopens the data directory a previous client left behind —
+    a restart, which is the only way to observe what the process wrote down."""
     http = httpx.AsyncClient(transport=httpx.MockTransport(handler)) if handler else None
     app = build_app(
-        _settings(tmp_path),
+        _settings(tmp_path, fresh),
         embeddings=FakeEmbeddings(),
         run_pipeline=False,
         public=public,
@@ -1442,3 +1447,185 @@ def test_the_second_page_can_be_refused_while_the_first_stands(tmp_path: Path) -
     assert second.status_code == 429
     assert second.json()["bucket"] == "search"
     assert int(second.headers["retry-after"]) >= 1
+
+
+# ---------------------------- 9. the daily budget survives a restart (§4.2)
+
+
+def _budget_rows(tmp_path: Path) -> dict[tuple[str, str, str], int]:
+    """The `ask_budget` table, read the way an operator would."""
+    conn = sqlite3.connect(tmp_path / "data" / "vidtheque.db")
+    try:
+        return {
+            (row[0], row[1], row[2]): row[3]
+            for row in conn.execute("SELECT bucket, client, day, spent FROM ask_budget")
+        }
+    finally:
+        conn.close()
+
+
+def _today() -> str:
+    return ratelimit.utc_day()
+
+
+PAID = PublicSettings(
+    enabled=True, openrouter_key="sk-or-test", ask_per_min=50, ask_per_day=2
+)
+
+
+def test_the_days_budget_is_written_down_as_it_is_spent(tmp_path: Path) -> None:
+    """One row per (bucket, client, UTC day), counting up. `ask_global` is
+    charged to the literal '@global' because that is the limiter's own key."""
+    with make_client(tmp_path, PAID, Upstream(_completion("fine."))) as client:
+        assert _ask(client).status_code == 200
+    assert _budget_rows(tmp_path) == {("ask_global", "@global", _today()): 1}
+
+
+def test_the_days_budget_resumes_after_a_restart(tmp_path: Path) -> None:
+    """The whole point (Tom, 2026-08-09): the model is paid, and a redeploy used
+    to hand the day's cap back. Two asks a day, one spent, then a restart — the
+    second process must know there is exactly one left."""
+    with make_client(tmp_path, PAID, Upstream(_completion("fine."))) as client:
+        assert _ask(client).status_code == 200
+
+    with make_client(tmp_path, PAID, Upstream(_completion("fine.")), fresh=False) as client:
+        assert _ask(client, "2.2.2.2").status_code == 200, "the second of the two"
+        spent = _ask(client, "3.3.3.3")
+    assert spent.status_code == 429
+    assert spent.json()["bucket"] == "ask_global"
+    # And Retry-After is the rollover, which is the honest answer for a budget
+    # that resets by the date changing rather than by trickling back.
+    assert 1 <= int(spent.headers["retry-after"]) <= 86_400
+    assert _budget_rows(tmp_path) == {("ask_global", "@global", _today()): 2}
+
+
+def test_a_refund_decrements_the_persisted_count_too(tmp_path: Path) -> None:
+    """§4.4's refund has to reach the row, or a flap survives the restart it
+    caused: three 503s that cost nothing in memory would cost three on disk."""
+    upstream = Flapping(fails=3, then=_completion("fine."))
+    with make_client(tmp_path, PAID, upstream) as client:
+        for _ in range(3):
+            assert _ask(client).status_code == 503
+    assert _budget_rows(tmp_path) == {("ask_global", "@global", _today()): 0}, (
+        "charged and given back, three times, and the row says so"
+    )
+
+    with make_client(tmp_path, PAID, upstream, fresh=False) as client:
+        assert _ask(client, "2.2.2.2").status_code == 200
+        assert _ask(client, "3.3.3.3").status_code == 200
+        assert _ask(client, "4.4.4.4").status_code == 429, "still enforced, still 2/day"
+
+
+def test_the_mid_stream_refund_reaches_the_row(tmp_path: Path) -> None:
+    """The refund that cannot key on a status code (§3.5) is also the one that
+    has to survive a restart, and it fires from a `finally` inside a generator —
+    so it is synchronous all the way down to the row's delta."""
+    upstream = Upstream(
+        _completion(tool_calls=[_tool_call("c1", "search", {"query": "kv cache"})]),
+        httpx.Response(503, json={"error": {"message": "upstream is down"}}),
+    )
+    with make_client(tmp_path, PAID, upstream) as client:
+        for _ in range(3):
+            assert _events(_stream_ask(client))[-1]["event"] == "error"
+    assert _budget_rows(tmp_path) == {("ask_global", "@global", _today()): 0}
+
+    with make_client(tmp_path, PAID, upstream, fresh=False) as client:
+        upstream.scripted = [_completion("fine.")]
+        assert _events(_stream_ask(client))[-1]["event"] == "answer"
+    assert _budget_rows(tmp_path) == {("ask_global", "@global", _today()): 1}
+
+
+def test_a_new_utc_day_starts_the_budget_again(tmp_path: Path) -> None:
+    """Rollover is the reset. A day-keyed counter has no trickle to give back,
+    so the row for tomorrow is a different row and it starts empty."""
+    tight = PublicSettings(
+        enabled=True, openrouter_key="sk-or-test", ask_per_min=50, ask_per_day=1
+    )
+    with make_client(tmp_path, tight, Upstream(_completion("fine."))) as client:
+        assert _ask(client).status_code == 200
+        assert _ask(client, "2.2.2.2").status_code == 429
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(ratelimit, "utc_day", lambda now=None: "2099-01-01")
+            assert _ask(client, "3.3.3.3").status_code == 200, "a new day, a new budget"
+    assert _budget_rows(tmp_path) == {
+        ("ask_global", "@global", _today()): 1,
+        ("ask_global", "@global", "2099-01-01"): 1,
+    }
+
+
+def test_only_the_daily_bucket_is_written_down(tmp_path: Path) -> None:
+    """The minute buckets stay in memory and should: they guard against
+    hammering, they cost nothing, and nobody hammers across a restart."""
+    with make_client(tmp_path, PublicSettings(enabled=True)) as client:
+        assert client.get("/api/search?q=cache").status_code == 200
+        assert client.get("/api/meta").status_code == 200
+    assert _budget_rows(tmp_path) == {}
+
+
+# ------------------------------------- 10.1 the counter, without a database
+
+
+class FakeBudget:
+    """A `BudgetStore` that is a dict, so the day maths can be tested directly."""
+
+    def __init__(self, rows: dict[tuple[str, str, str], int] | None = None) -> None:
+        self.rows = dict(rows or {})
+
+    def spent(self, bucket: str, client: str, day: str) -> int:
+        return self.rows.get((bucket, client, day), 0)
+
+    def record(self, bucket: str, client: str, day: str, delta: int) -> None:
+        key = (bucket, client, day)
+        self.rows[key] = max(0, self.rows.get(key, 0) + delta)
+
+
+def test_a_limiter_resumes_the_day_from_what_the_store_already_holds() -> None:
+    today = ratelimit.utc_day()
+    store = FakeBudget({("ask_global", "@global", today): 4})
+    limiter = RateLimiter({"ask_global": (5, 86_400.0)}, budget=store)
+
+    allowed, wait, limit, remaining = limiter.check("ask_global", "@global")
+    assert (allowed, limit, remaining) == (True, 5, 0), "the fifth of five"
+    allowed, wait, _, _ = limiter.check("ask_global", "@global")
+    assert allowed is False
+    # The wait is the rollover, not a trickle: this budget resets by date.
+    assert 0 < wait <= 86_400
+    assert store.rows[("ask_global", "@global", today)] == 5
+
+
+def test_a_refund_credits_the_day_the_charge_was_made_on() -> None:
+    """A ninety-second ask that starts at 23:59:30 must give its token back to
+    the day it took it from — not to a fresh day that would then be one short."""
+    store = FakeBudget()
+    limiter = RateLimiter({"ask_global": (5, 86_400.0)}, budget=store)
+    assert limiter.check("ask_global", "@global", "2026-08-09")[0] is True
+    # Midnight passes under the in-flight request; a new day's charge lands on
+    # its own row and the live counter is now a cache of *that* day.
+    assert limiter.check("ask_global", "@global", "2026-08-10")[3] == 4
+    limiter.refund("ask_global", "@global", "2026-08-09")
+    assert store.rows[("ask_global", "@global", "2026-08-09")] == 0
+    assert store.rows[("ask_global", "@global", "2026-08-10")] == 1, "today is untouched"
+
+
+def test_a_persisted_refund_can_never_mint_budget() -> None:
+    """The bucket caps a refill at capacity; the counter floors a refund at
+    zero. Same rule, and the row is floored by the same `max(0, …)`."""
+    store = FakeBudget()
+    limiter = RateLimiter({"ask_global": (5, 86_400.0)}, budget=store)
+    day = ratelimit.utc_day()
+    limiter.check("ask_global", "@global")
+    for _ in range(4):
+        limiter.refund("ask_global", "@global")
+    assert store.rows[("ask_global", "@global", day)] == 0
+    assert limiter._counters[("ask_global", "@global")].spent == 0
+
+
+def test_a_counter_for_a_stale_day_is_dropped_rather_than_rolled() -> None:
+    """The live counter is a cache of today and nothing else: a new day builds a
+    new one from the store, and yesterday's is forgotten instead of reused."""
+    store = FakeBudget({("ask_global", "@global", "2026-08-10"): 3})
+    limiter = RateLimiter({"ask_global": (5, 86_400.0)}, budget=store)
+    limiter.check("ask_global", "@global", "2026-08-09")
+    assert limiter._counters[("ask_global", "@global")].spent == 1
+    assert limiter.check("ask_global", "@global", "2026-08-10")[3] == 1, "5 - 3 - 1"
+    assert len(limiter._counters) == 1, "yesterday's counter is not kept"

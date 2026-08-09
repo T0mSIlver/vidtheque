@@ -947,6 +947,43 @@ file; `config['pipeline.version']` describes the *semantics of its contents*.
 Switching SigLIP checkpoints does not change a single column — it invalidates
 40,000 vectors. Conflating them means either pointless migrations or silent staleness.
 
+### 1.11 `ask_budget` — the one table that is not about the corpus
+
+Added by 0005. The public demo's daily `ask` cap, on disk, because the model
+behind it is paid and an in-memory counter resets on every redeploy
+(demo-site.md §4.2 is the decision and the mechanism).
+
+```sql
+CREATE TABLE ask_budget (
+  bucket     TEXT    NOT NULL,      -- the limiter's bucket name, e.g. 'ask_global'
+  client     TEXT    NOT NULL,      -- the limiter's client key; '@global' for a server-wide one
+  day        TEXT    NOT NULL,      -- UTC 'YYYY-MM-DD'
+  spent      INTEGER NOT NULL DEFAULT 0 CHECK (spent >= 0),
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  PRIMARY KEY (bucket, client, day)
+) WITHOUT ROWID, STRICT;
+```
+
+`(bucket, client)` is the rate limiter's own key, so a per-IP daily bucket would
+need no migration to persist; today only `ask_global` writes here. One row per
+day per bucket, pruned to the last 30 days at boot — a month of "what did the
+demo cost" for a table nothing ever scans.
+
+**It does not belong to the corpus, and it is here anyway.** The credentials
+store gets its own file so a corpus rebuild never touches it (§7.2 of the auth
+research); the opposite argument applies to a budget. It is not a secret, it is
+one row a day, and this process already owns exactly one write connection to
+this file (§5) — a second writable file would be a second thing to back up and a
+second thing to forget. It does mean a `DROP` of the corpus hands the day's
+budget back, which is correct: that is a new deployment.
+
+**Access is deliberately lopsided.** Reads happen once, at boot, to seed the
+in-memory counters; writes are `+1`/`-1` deltas queued from the ASGI middleware
+and applied by one drain task through the single writer. Nothing on the request
+path waits on this table, and nothing about a request's *outcome* depends on it —
+the in-memory counter is still the gate. That is why a lost delta is survivable
+and a lost row is not a correctness bug, only a cheaper day.
+
 ---
 
 ## 2. FTS5
