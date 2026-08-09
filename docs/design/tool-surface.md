@@ -526,6 +526,20 @@ The corpus does contain 41 hits for "flash attention" with no date filter.
 next: retry with published_after omitted, or search q="flash attention" limit=5.
 ```
 
+**`data_status` here is the activity axis only, and it is derived, not asserted.**
+"index fresh" was a hard-coded string: it printed while five jobs sat in the
+queue, and was the third of three contradicting answers about the same queue in
+one session (demo-queries §9.1.4). The word and the clause now come from the one
+derivation `corpus-summary` and `vidtheque://context` read
+(`tools/corpus_state.py`), narrowed to `ok` | `empty` | `indexing` | `deferred` —
+this line answers "is the index settled?", so the coverage words (`partial`,
+`degraded`) stay with `corpus-summary`, which prints both axes. What the three
+surfaces may never again disagree about is whether anything is being indexed.
+
+**`fields` is validated against the columns this tool can emit** (§3.5), before
+the search runs: an unknown name is `E_BAD_PARAM` listing the valid fields, not a
+header with a blank cell under every row.
+
 **Token discipline.**
 - `limit` clamped 1..50 server-side; `max_text_chars` default 1000 with a tested
   `0` opt-out; whole-response cap 60,000 chars (§3.3).
@@ -1090,7 +1104,7 @@ epoch second the signature dies, or `null` when URLs never expire (auth `none`),
 matching the footer prose exactly. A `limit` passed alongside `frame_ids` adds:
 
 ```
-note: limit bounds the video_id span mode; all 5 named frame_ids were fetched (the cap on named ids is 12).
+note: limit bounds the video_id span mode; all 5 named frame_ids were looked up (the cap on named ids is 12) — the count above is what came back.
 ```
 
 Signed URLs, not bearer-protected paths: the renderer that fetches the image is

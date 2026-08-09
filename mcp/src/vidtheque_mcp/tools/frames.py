@@ -87,7 +87,8 @@ async def run(
         if asked_limit is not None and clamp(asked_limit, 1, MAX_FRAME_IDS, 3) < len(frame_ids):
             notes.append(
                 f"note: limit bounds the video_id span mode; all {len(frame_ids)} named "
-                f"frame_ids were fetched (the cap on named ids is {MAX_FRAME_IDS})."
+                f"frame_ids were looked up (the cap on named ids is {MAX_FRAME_IDS}) — "
+                "the count above is what came back."
             )
     else:
         assert video_id is not None
