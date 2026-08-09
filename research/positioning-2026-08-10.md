@@ -848,3 +848,17 @@ specimen's caption.
 
 **Status: awaiting Tom's confirmation of B′ before landing-page versions are
 built against it.**
+
+### Round 1b — Tom's vision statement (2026-08-10, ~01:25, verbatim in substance)
+
+"Today we're working on AI Engineer; tomorrow we could add Theo Browne or
+David Ondrej's channel — channels from builders who share their experience
+and advice mainly through video. **A lot of the AI engineering discourse
+lives on YouTube and is mainly untapped.**"
+
+Positioning consequences: the corpus story is *channels of practitioners*,
+not one conference — "follow the builders." The demo is the first shelf, not
+the library. "Untapped discourse" is the market claim: the knowledge exists,
+is public, and nobody has made it usable — vidtheque is the tap. This slots
+directly into B′'s roadmap line (follow channels; it keeps watching) and
+names the growth motion: each added channel compounds the corpus's value.
