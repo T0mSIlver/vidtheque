@@ -805,7 +805,15 @@ no framework, no external requests. `index.html` + `app.js` + `style.css`,
 shipped inside the wheel (hatchling includes package data under the package
 directory).
 
-The aesthetic target is a **search engine, not a dashboard**: a column of text
+**Amended 2026-08-10 (Tom's voice cull).** The surface keeps labels, values and
+one-line states; it no longer explains its mechanics or argues for its design.
+The implementation facts removed from the page remain in this contract: the
+endpoint is read-only (§1), exposes seven read tools (§1), and returns people
+to the original talks (§6 item 4); the videos remain their creators' work. The
+public framing now follows the locked positioning contract directly: the
+knowledge of AI Engineer 2026, on tap; your agent watched it.
+
+The aesthetic target is a **search surface, not a dashboard**: a column of text
 on a plain ground, one accent colour, system fonts, no cards-with-shadows, no
 sidebar, no charts. The corpus is the content; the chrome should be nearly
 invisible. Dark mode via `prefers-color-scheme` with both palettes defined as
@@ -820,11 +828,12 @@ different glyph on every platform and disappears in a monochrome tab strip.
 
 Layout, top to bottom:
 
-1. **Header** — wordmark (the page's `<h1>`) and one line of what it is, and —
+1. **Header** — wordmark (the page's `<h1>`) and the positioning line, “The
+   knowledge of AI Engineer 2026, on tap. Your agent watched it.”, and —
    *added in dashboard phase 4 (2026-08-09)* — **one link**, right-aligned on
    the wordmark's baseline: `Browse the corpus →`, into the dashboard's
    read-only projection (`dashboard.md` §2.4). One link and not a nav: this
-   page is a search engine and the search box is its one primary action, so the
+   page is a search surface and the search box is its one primary action, so the
    link is a quiet outline rather than a second filled control beside it. It is
    hidden until `/api/meta` reports `browse` (§2.3). Below ~30rem it wraps to
    its own line under the tagline rather than squeezing it.
@@ -850,23 +859,23 @@ Layout, top to bottom:
    numbered to match, and the log folded underneath. A 503 replaces the pane
    with the degradation message and a "search instead" button; a 429 says how
    long to wait.
-6. **"Add this corpus to your own agent"** — the `mcp_url` from `/api/meta`, a
-   copy button, and the one-liner:
-   `claude mcp add --transport http vidtheque <mcp_url>`. This is the panel
-   that makes the demo a demo *of an MCP server* rather than of a search box.
-7. **Footer** — "a vidtheque demo — self-hosted video-corpus MCP server", the
-   GitHub link, and the sentence that matters legally and ethically: results
-   link to the original talks on YouTube; vidtheque indexes what it watched and
-   sends you back to the source.
+6. **"Add this corpus to your own agent"** — the label `MCP endpoint`, the
+   `mcp_url` from `/api/meta`, a copy button, and the one-liner:
+   `claude mcp add --transport http vidtheque <mcp_url>`.
+7. **Footer** — the vidtheque name, the GitHub link, and one muted line
+   that never gets culled: “The videos belong to the people who made
+   them.” — the attribution ethic is page-visible wherever creators’
+   content is served (positioning stress-test obligation), not only in
+   this contract.
 
 ### 6.1 The states
 
 A demo is judged on the four screens that are not "ten results came back".
 
-- **Before the first search** the page teaches instead of sitting blank: a
-  handful of clickable example queries — real ones, tailored to the corpus, and
-  written in `index.html` because they are copy — a sentence saying what a
-  result *is*, and the list of videos actually indexed, from `/api/videos`.
+- **Before the first search** the page offers a handful of clickable example
+  queries — real ones, tailored to the corpus, and written in `index.html`
+  because they are copy — and the list of videos actually indexed, from
+  `/api/videos`.
   Editing the examples is editing one list in the HTML.
 
   *Amended 2026-08-09: five, from the verified set, and one of them names its
@@ -895,16 +904,16 @@ A demo is judged on the four screens that are not "ten results came back".
   `architecture diagram with boxes and arrows` (frame),
   `small towns in Bavaria` (transcript — a paraphrase, not a keyword),
   `slop` (all).
-- **Nothing matched** names the query, and offers the widening that exists: if a
-  content-type filter is on, a button back to `all`; otherwise fewer words, and
-  the reminder that a phrase from a slide will not be in the spoken words. When
+- **Nothing matched** names the query, offers `Search all` when a content-type
+  filter is on, and otherwise says `Try fewer words.` When
   the facade's `data_status` says `empty` (§2.1) it says *that* instead: an
   instance with nothing indexed is not a query the visitor got wrong.
 - **Refused or broken** — a 429 renders the limiter's `Retry-After` as a
   *ticking* countdown with the retry disabled until it reaches zero; a failed
   fetch says the server could not be reached and offers the same retry; a 503
-  in ask mode keeps its "search instead" button and counts down too. No error
-  ever shows a status code or an upstream message.
+  in ask mode keeps its "search instead" button and counts down too. The
+  countdown says only when to try again; it does not explain the limiter. No
+  error ever shows a status code or an upstream message.
   **A failed "More results" is a row-level notice, not a wipe:** the error
   renders into the foot, under the rows already on screen, and the count line
   goes back to counting them. The rows a visitor has are theirs — losing ten of
@@ -976,7 +985,7 @@ loaded but **does not fire**: an answer costs a slice of the daily model budget,
 and a shared link (or a crawler) must not spend it on page load. One click does.
 
 A real `<form>` and a real `<a href>` on every result, so Enter submits and
-middle-click opens — the two things a search engine is expected to do. (The
+middle-click opens — the two things a search page is expected to do. (The
 thumbnail is the one exception, and it is a `<button>` for a reason: §6.4.)
 
 No inline `<script>` beyond a nonce-free module tag — the page is static files

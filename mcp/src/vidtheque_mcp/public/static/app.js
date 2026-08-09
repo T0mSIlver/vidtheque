@@ -560,14 +560,6 @@ const renderNoResults = (q, dataStatus) => {
   // `data_status` is the search tool's own word for it, forwarded by /api.
   if (dataStatus === "empty") {
     box.append(el("p", "notice-title", "Nothing is indexed yet."));
-    box.append(
-      el(
-        "p",
-        "notice-detail",
-        "This instance has an empty corpus, so no query can match. Index a " +
-          "video and the same search will work.",
-      ),
-    );
     $("results").replaceChildren(box);
     return;
   }
@@ -575,22 +567,14 @@ const renderNoResults = (q, dataStatus) => {
   const tips = el("ul", "notice-tips");
   if (state.contentType !== "all") {
     const li = el("li");
-    li.append(`You are searching only ${CHANNEL_NAME[state.contentType]}. `);
-    const widen = el("button", "linky", "Search all three channels");
+    li.append(`${CHANNEL_NAME[state.contentType]} only · `);
+    const widen = el("button", "linky", "Search all");
     widen.addEventListener("click", () => selectContentType("all", true));
     li.append(widen);
     tips.append(li);
   }
   tips.append(
-    el("li", null, "Try fewer words: two or three carry further than a sentence."),
-  );
-  tips.append(
-    el(
-      "li",
-      null,
-      "The corpus has three channels — the spoken transcript, the text that was " +
-        "on screen, and the frames. A phrase from a slide will not be in the words.",
-    ),
+    el("li", null, "Try fewer words."),
   );
   box.append(tips);
   $("results").replaceChildren(box);
@@ -624,9 +608,9 @@ const renderRateLimited = (payload, headerRetry, retry, append = false) => {
   if (button) button.disabled = true;
   setCountdown(seconds, (left) => {
     if (left > 0) {
-      detail.textContent = `The demo allows a burst then a steady trickle. Try again in ${left}s.`;
+      detail.textContent = `Try again in ${left}s.`;
     } else {
-      detail.textContent = "You can search again now.";
+      detail.textContent = "Try again.";
       if (button) button.disabled = false;
     }
   });
@@ -674,7 +658,7 @@ async function runSearch(append = false) {
     $("results").removeAttribute("aria-busy");
     renderError(
       "Could not reach the server.",
-      "The demo may be restarting, or the connection dropped.",
+      "",
       () => runSearch(append),
       append,
     );
@@ -833,7 +817,7 @@ const renderAnswer = (payload, log) => {
   // Sources are the evidence; the log is how it was found. Under both, folded.
   if (log && !log.empty) pane.append(workDisclosure(log));
   if (payload.model) {
-    pane.append(el("p", "answer-foot", `Answered from the corpus by ${payload.model}.`));
+    pane.append(el("p", "answer-foot", `Model · ${payload.model}`));
   }
   pane.hidden = false;
 };
@@ -848,7 +832,7 @@ const renderDegraded = (message, retryAfter) => {
   if (retryAfter) {
     pane.append(wait);
     setCountdown(retryAfter, (left) => {
-      wait.textContent = left > 0 ? `Ask is back in ${left}s.` : "You can ask again now.";
+      wait.textContent = left > 0 ? `Try again in ${left}s.` : "Try again.";
     });
   }
   const fallback = el("button", "ghost", "Search instead");
@@ -983,8 +967,8 @@ async function runAsk() {
       renderDegraded(
         payload.message ||
           (response.status === 429
-            ? "Too many questions for now — search still works."
-            : "LLM mode unavailable — use search."),
+            ? "Too many questions for now."
+            : "Ask unavailable."),
         Number(payload.retry_after_s) ||
           Number(response.headers.get("Retry-After")) ||
           (response.status === 429 ? 60 : 0),
@@ -1027,15 +1011,15 @@ async function runAsk() {
     if (answer) renderAnswer(answer, log);
     else if (failure) {
       renderDegraded(
-        failure.message || "LLM mode unavailable — use search.",
+        failure.message || "Ask unavailable.",
         Number(failure.retry_after_s) || 0,
       );
     } else {
-      renderDegraded("The answer was cut off. Search still works.", 0);
+      renderDegraded("Answer interrupted.", 0);
     }
   } catch (error) {
     if (stale(error)) return;
-    renderDegraded("Could not reach the server. Search still works once it is back.", 0);
+    renderDegraded("Could not reach the server.", 0);
   } finally {
     // Only the newest request owns the controls: an aborted one must not
     // un-busy the pane the request that replaced it is still filling.

@@ -296,7 +296,8 @@ def test_the_demo_page_is_served_at_the_root(public_client: TestClient) -> None:
     assert "vidtheque" in body
     assert "/static/app.js" in body
     assert "Add this corpus to your own agent" in body
-    assert "youtube" in body.lower() or "YouTube" in body
+    assert "Source on GitHub" in body
+    assert "Results link to the original talks" not in body
 
 
 def test_the_enlarge_dialog_is_a_real_dialog(public_client: TestClient) -> None:
@@ -686,7 +687,10 @@ def _page(client: TestClient) -> str:
 def test_the_page_declares_an_identity_worth_unfurling(public_client: TestClient) -> None:
     """Title, description, the OG pair, viewport, favicon, a theme per scheme."""
     body = _page(public_client)
-    assert "<title>vidtheque — search inside a video corpus</title>" in body
+    assert "<title>vidtheque — AI Engineer 2026, on tap</title>" in body
+    assert body.count("The knowledge of AI Engineer 2026, on tap.") == 3
+    assert body.count("Your agent watched it") == 3
+    assert "talks you have watched" not in body
     assert '<meta name="description"' in body
     assert 'property="og:title"' in body
     assert 'property="og:description"' in body

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>vidtheque — search inside a video corpus</title>
-<meta name="description" content="A live demo of vidtheque, a self-hosted MCP server that turns talks you have watched into a searchable corpus: the spoken words, the on-screen text and the frames, each linked back to the second it came from.">
+<title>vidtheque — AI Engineer 2026, on tap</title>
+<meta name="description" content="The knowledge of AI Engineer 2026, on tap. Your agent watched it — ask it something.">
 <meta name="color-scheme" content="light dark">
 <!-- The browser chrome follows the page, in both schemes. -->
 <meta name="theme-color" content="#fbfaf9" media="(prefers-color-scheme: light)">
@@ -12,8 +12,8 @@
 <!-- Unfurls. No og:image yet — a wrong one is worse than none. -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="vidtheque">
-<meta property="og:title" content="vidtheque — search inside a video corpus">
-<meta property="og:description" content="Search the spoken words, the on-screen text and the frames of a video corpus. Every hit links back to the second it came from. It is a read-only MCP server: point your own agent at it.">
+<meta property="og:title" content="vidtheque — AI Engineer 2026, on tap">
+<meta property="og:description" content="The knowledge of AI Engineer 2026, on tap. Your agent watched it — ask it something.">
 <meta name="twitter:card" content="summary">
 <link rel="stylesheet" href="/static/style.css">
 <!-- A film frame, drawn rather than an emoji: emoji favicons render as a
@@ -25,9 +25,9 @@
 <header class="masthead">
   <div class="masthead-brand">
     <h1 class="wordmark"><a href="/">vidtheque</a></h1>
-    <p class="tagline">Search what was said, what was on the screen, and the frames themselves.</p>
+    <p class="tagline">The knowledge of AI Engineer 2026, on tap. Your agent watched it.</p>
   </div>
-  <!-- The one link out (dashboard.md §2.4). This page is the search engine and
+  <!-- The one link out (dashboard.md §2.4). This page is the search surface and
        stays one; the browsable corpus behind it — every video, how each was
        indexed, what the pipeline made of it — is the dashboard's read-only
        projection. Hidden until /api/meta says the route group is registered, so
@@ -85,11 +85,6 @@
       <li><button type="button" class="chip example" data-type="transcript">small towns in Bavaria</button></li>
       <li><button type="button" class="chip example">slop</button></li>
     </ul>
-    <p class="hint">
-      A result is one moment in one talk — a sentence that was spoken, text that
-      was on a slide, or what the frame showed. Follow it and the video opens at
-      that second.
-    </p>
     <div id="corpus" class="corpus" hidden>
       <h3>In this corpus</h3>
       <ul id="corpus-list"></ul>
@@ -103,12 +98,7 @@
 
   <section class="connect">
     <h2>Add this corpus to your own agent</h2>
-    <p>
-      Point an MCP client at the endpoint below and your agent gets seven
-      read-only tools over these talks — search them, pull the transcript around
-      a moment, read the frames — so it can answer from the corpus and cite the
-      second it came from.
-    </p>
+    <p>MCP endpoint</p>
     <div class="copyrow">
       <code id="mcp-url">…</code>
       <button type="button" id="copy" class="ghost">Copy</button>
@@ -120,13 +110,10 @@
 
 <footer>
   <p>
-    A <strong>vidtheque</strong> demo — a self-hosted video-corpus MCP server.
-    <a id="repo" href="https://github.com/T0mSIlver/vidtheque">Source on GitHub</a>.
+    <strong>vidtheque</strong> ·
+    <a id="repo" href="https://github.com/T0mSIlver/vidtheque">Source on GitHub</a>
   </p>
-  <p class="muted">
-    Results link to the original talks on YouTube, at the second they were said.
-    vidtheque indexes what it watched; the videos belong to the people who made them.
-  </p>
+  <p class="muted">The videos belong to the people who made them.</p>
 </footer>
 
 <!-- Click a frame and it opens here, big enough to read the slide. A native
