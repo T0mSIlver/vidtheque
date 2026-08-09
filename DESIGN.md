@@ -30,6 +30,7 @@ colors:
   tone-wait: "#63635e"
   tone-wait-bg: "#f9f9f8"
   tone-wait-line: "#dad9d6"
+  scrim: "rgb(0 0 0 / 0.66)"
 typography:
   display:
     fontFamily: "Inter Variable, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif"
@@ -249,6 +250,10 @@ is not a dependency.
   the top of the ledger band and the underline of a sticky head.
 - **Graphite** (`--mark`, Radix `sand-9`): non-text marks only. Hatching on a
   deduplicated shot, the `·` separators. **Never type.** It measures 3.20:1.
+- **Scrim** (`scrim`): the lightbox `::backdrop` only. Deliberately a literal
+  black alpha rather than a scheme token — a modal scrim has to darken whatever
+  is behind it, in both schemes, and a token that flips with the scheme would
+  brighten the page it is meant to suppress.
 
 ### Tertiary — the state hues
 

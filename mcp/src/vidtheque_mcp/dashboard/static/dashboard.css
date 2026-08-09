@@ -981,7 +981,7 @@ button[disabled] { opacity: 0.5; cursor: default; }
 .ocrbox {
   position: absolute;
   border: 1px solid var(--accent);
-  border-radius: 2px;
+  border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
@@ -1058,7 +1058,7 @@ button[disabled] { opacity: 0.5; cursor: default; }
   vertical-align: 1px;
   overflow: hidden;
   background: var(--sand-5);
-  border-radius: 2px;
+  border-radius: var(--r-sm);
 }
 .meter-wide { width: 12rem; }
 .meter-fill { display: block; height: 100%; background: var(--accent); }

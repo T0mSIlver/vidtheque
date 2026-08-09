@@ -11,6 +11,15 @@
         ],
         "createdAt": "2026-08-09T14:25:01.442Z",
         "reason": "Lightbox dialog img is src-less until JS assigns a keyframe on click; src is released on close"
+      },
+      {
+        "rule": "overused-font",
+        "value": "Inter",
+        "files": [
+          "mcp/src/vidtheque_mcp/dashboard/static/dashboard.css"
+        ],
+        "createdAt": "2026-08-09T15:50:00.000Z",
+        "reason": "Inter Variable is pinned by the brief, not reached for: Tom chose Direction C from research/dashboard-design-research-2026-08-09.md, which names it for the human-text channel. This is an Operate surface where a workhorse UI face is the correct register, the file is vendored latin-subset with its OFL text, and there is no display face anywhere on this surface for it to be doing double duty as."
       }
     ]
   }
