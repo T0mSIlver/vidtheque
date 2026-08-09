@@ -92,6 +92,10 @@ class ItemRun:
     # `force` is what the caller asked for; `force_active` is whether this
     # attempt is the one that threw the recorded stages away.
     force_active: bool = False
+    # The audio download was skipped because the worker looked unreachable, so
+    # whisperX never got its chance. If captions then fail too, that is the
+    # worker's fault and not the video's.
+    stt_deferred_to_captions: bool = False
 
     @property
     def force(self) -> bool:
@@ -310,10 +314,23 @@ class IndexingPipeline:
             and self._should_run(run, "stt", self.db.config.get("stt.model", "whisperx"))
         )
 
-        if need_audio and not run.worker_ok and self.settings.captions_allowed:
+        if (
+            need_audio
+            and not run.worker_ok
+            and self.settings.captions_allowed
+            and self._caption_candidate(run) is not None
+        ):
             # Zero-GPU path: nothing to send the audio to, and the captions the
             # metadata pass already inventoried carry word timings.
+            #
+            # The candidate check is the whole point. Skipping the download
+            # because captions are *allowed* — without checking one exists —
+            # left an uncaptioned video with no audio and no captions: whisperX
+            # returned None, captions returned None, the error list was empty,
+            # and an empty error list settled the item as a permanent
+            # `E_UNSUPPORTED_SOURCE`. One flaky health probe was enough.
             need_audio = False
+            run.stt_deferred_to_captions = True
             run.degraded.append(
                 "the inference worker was unreachable, so this video was indexed CPU-only"
             )
@@ -391,6 +408,12 @@ class IndexingPipeline:
 
     async def _stage_transcript(self, run: ItemRun) -> None:
         assert run.meta is not None
+        # The fetch-time probe is minutes old by now and it decided whether the
+        # audio was even downloaded. If it said "down", ask again before acting
+        # on it: a worker that came back mid-item can still do the better job,
+        # and `_should_run`'s stt clause wants a current answer too.
+        if not run.worker_ok and self.settings.wants_whisperx:
+            self._note_worker(run, await self._worker_healthy())
         stt_model = self.db.config.get("stt.model", "whisperx")
         if not self._should_run(run, "stt", stt_model):
             run.cues = []  # already on disk; chunking will skip too
@@ -407,6 +430,7 @@ class IndexingPipeline:
 
         errors: list[str] = []
         throttled: RateLimited | None = None
+        worker_down = run.stt_deferred_to_captions
         for kind in attempts:
             try:
                 if kind == "whisperx":
@@ -421,7 +445,13 @@ class IndexingPipeline:
                 throttled = exc
                 errors.append(f"{kind}: {exc}")
                 continue
-            except (WorkerUnavailable, WorkerRejected, SourceError) as exc:
+            except WorkerUnavailable as exc:
+                # The worker, not the video. Retryable, and typed as such rather
+                # than inferred from whether the word "worker" is in the string.
+                worker_down = True
+                errors.append(f"{kind}: {exc}")
+                continue
+            except (WorkerRejected, SourceError) as exc:
                 errors.append(f"{kind}: {exc}")
                 continue
             if result is None:
@@ -453,16 +483,35 @@ class IndexingPipeline:
             raise _rate_limited(
                 throttled, f"rate-limited fetching a transcript for {run.meta.source_id}: {detail}"
             )
+        if worker_down:
+            # Including the case where the *fetch* stage skipped the audio
+            # because the worker looked unreachable: whisperX never got its
+            # chance, so "this video has no transcript" is not a conclusion this
+            # attempt is entitled to draw.
+            raise ItemFailed(
+                "E_WORKER_UNAVAILABLE",
+                f"no transcript for {run.meta.source_id} because the inference worker "
+                f"was unavailable: {detail}",
+                retryable=True,
+            )
         raise ItemFailed(
             "E_UNSUPPORTED_SOURCE",
             f"no usable transcript for {run.meta.source_id}: {detail}",
-            retryable=any("worker" in e.lower() for e in errors),
+            retryable=False,
         )
 
     async def _transcribe_whisperx(self, run: ItemRun) -> tuple[list[CueDraft], str, str] | None:
         if not self.settings.wants_whisperx or self.worker is None:
             return None
         if run.audio is None or not run.audio.exists():
+            if not self.settings.captions_allowed:
+                # `whisperx_only` and no audio: there is no other path, and
+                # returning None here is what produced the empty error list that
+                # settled the item permanently.
+                raise WorkerUnavailable(
+                    "no audio was downloaded for this video, so whisperX had nothing "
+                    "to transcribe"
+                )
             return None
         assert run.meta is not None
         model = self.db.config.get("stt.model")
@@ -893,6 +942,17 @@ class IndexingPipeline:
             lambda c: store.stage_finished(c, video_id, stage, "skipped", None, reason)
         )
         await run.ctx.log(f"{stage} skipped: {reason}", "info", stage=stage)
+
+    def _caption_candidate(self, run: ItemRun) -> Any:
+        """A caption track the STT stage could actually use, auto or manual."""
+        if run.meta is None:
+            return None
+        langs = self.settings.subtitle_langs
+        for automatic in (True, False):
+            track = run.meta.track(langs, automatic=automatic)
+            if track is not None:
+                return track
+        return None
 
     def _note_worker(self, run: ItemRun, healthy: bool) -> None:
         run.worker_ok = healthy

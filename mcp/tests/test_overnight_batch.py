@@ -657,7 +657,12 @@ async def test_the_force_marker_is_per_video_not_per_job(
 async def test_a_video_with_no_transcript_at_all_is_still_final(
     settings: Settings, clip: Path
 ) -> None:
-    """The other half of the same branch: no 429, no retry, no pretending."""
+    """The other half of the same branch: no 429, no retry, no pretending.
+
+    The worker is *up* and returns an empty transcript, and the caption track is
+    genuinely broken. Both paths had their chance, so "this video has no
+    transcript" is a conclusion this attempt is entitled to draw.
+    """
 
     class NoCaptions:
         def __init__(self, inner) -> None:  # type: ignore[no-untyped-def]
@@ -671,7 +676,9 @@ async def test_a_video_with_no_transcript_at_all_is_still_final(
 
             raise SourceError("no such track")
 
-    parts = await harness(settings, clip, worker=FakeWorker(healthy=False))
+    parts = await harness(
+        settings, clip, worker=FakeWorker(transcript={"segments": []})
+    )
     parts.parts.runner.pipeline.source = NoCaptions(canned_source(clip))
     try:
         job_id = await parts.index(url=VIDEO_URL, channels="transcript")

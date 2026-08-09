@@ -17,7 +17,7 @@ import pytest
 from vidtheque_mcp.config import Settings
 from vidtheque_mcp.pipeline.settings import PipelineSettings
 
-from .pipeline_fakes import VIDEO_URL, FakeWorker, canned_source
+from .pipeline_fakes import INFO, VIDEO_URL, FakeWorker, canned_source
 from .test_job_recovery import close
 from .test_pipeline_e2e import FAST, Harness, harness
 
@@ -102,6 +102,119 @@ async def test_keep_source_none_releases_the_audio_once_stt_has_settled(
         assert (await parts.stages())["stt"]["state"] == "done"
         assert audio_files(parts) == []
         assert media_files(parts) == []
+    finally:
+        await close(parts)
+
+
+# ================================================================= stt fallback
+
+
+NO_CAPTIONS = {
+    **{k: v for k, v in INFO.items() if k not in ("subtitles", "automatic_captions")},
+}
+
+
+def uncaption(parts: Harness) -> None:
+    """Give the harness the same video with an empty caption inventory.
+
+    The review's trigger: `prefer_whisperx`, no caption track, one failed
+    health probe. Both the pipeline and the harness must see the same source
+    object, or `downloads` counts the wrong one.
+    """
+    source = canned_source(parts.parts.runner.pipeline.source.clip)
+    source.infos = dict(source.infos)
+    source.infos[VIDEO_URL] = NO_CAPTIONS
+    parts.parts.runner.pipeline.source = source
+    parts.source = source
+
+
+async def test_an_uncaptioned_video_keeps_its_audio_when_the_probe_fails(
+    settings: Settings, clip: Path
+) -> None:
+    """One flaky `/healthz` used to permanently fail an uncaptioned video.
+
+    Fetch suppressed the audio download because captions were *allowed*, never
+    checking one existed. whisperX then had nothing to transcribe and returned
+    None, captions returned None, and an empty error list made the STT failure
+    non-retryable. The video settled `failed` for good — with its mp4 left
+    behind, since `channels=all` had already downloaded it.
+    """
+    worker = FakeWorker(healthy=False)
+    parts = await harness(settings, clip, worker=worker)
+    uncaption(parts)
+    try:
+        await parts.index(url=VIDEO_URL, channels="transcript")
+        # The probe says down, but there are no captions to fall back to, so the
+        # audio is fetched anyway and whisperX is given its chance.
+        worker._healthy = True
+        assert await parts.run() is True
+
+        assert "audio" in parts.source.downloads
+        stages = await parts.stages()
+        assert stages["stt"]["state"] == "done"
+        assert stages["stt"]["model_key"] == "large-v3"  # whisperX, not captions
+        assert (await parts.one("SELECT index_state FROM videos"))["index_state"] == "ready"
+    finally:
+        await close(parts)
+
+
+async def test_a_captioned_video_still_skips_the_audio_when_the_worker_is_down(
+    settings: Settings, clip: Path
+) -> None:
+    """The zero-GPU shortcut is unchanged where it was always right."""
+    parts = await harness(settings, clip, worker=FakeWorker(healthy=False))
+    try:
+        await parts.index(url=VIDEO_URL, channels="transcript")
+        assert await parts.run() is True
+        assert "audio" not in parts.source.downloads
+        stages = await parts.stages()
+        assert stages["stt"]["state"] == "done"
+        assert stages["stt"]["model_key"] == "youtube-asr-en"
+    finally:
+        await close(parts)
+
+
+async def test_a_worker_outage_is_retryable_not_an_unsupported_source(
+    settings: Settings, clip: Path
+) -> None:
+    """The item must not conclude "this video has no transcript" from an outage."""
+    worker = FakeWorker(healthy=False, fail={"transcribe"})
+    parts = await harness(settings, clip, worker=worker)
+    uncaption(parts)
+    try:
+        job_id = await parts.index(url=VIDEO_URL, channels="transcript")
+        assert await parts.run() is True  # the worker stays down all run
+
+        job = await parts.one("SELECT * FROM jobs WHERE public_id = ?", (job_id,))
+        assert job["state"] == "queued"  # deferred for another attempt
+        item = await parts.one("SELECT state, error_code FROM job_items")
+        assert item["state"] == "queued"
+        events = await parts.events()
+        assert any("E_WORKER_UNAVAILABLE" in message for message in events)
+    finally:
+        await close(parts)
+
+
+async def test_the_worker_is_probed_again_at_stt_time(
+    settings: Settings, clip: Path
+) -> None:
+    """The fetch-time probe is minutes old and decided whether audio exists."""
+    worker = FakeWorker(healthy=False)
+    parts = await harness(settings, clip, worker=worker)
+    pipeline = parts.parts.runner.pipeline
+    probes: list[bool] = []
+    original = pipeline._worker_healthy
+
+    async def counted() -> bool:
+        result = await original()
+        probes.append(result)
+        return result
+
+    pipeline._worker_healthy = counted  # type: ignore[method-assign]
+    try:
+        await parts.index(url=VIDEO_URL, channels="transcript")
+        assert await parts.run() is True
+        assert len(probes) == 2, "the stt stage trusted a stale fetch-time probe"
     finally:
         await close(parts)
 
