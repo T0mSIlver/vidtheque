@@ -619,12 +619,27 @@ drift.
 
 ```sql
 UPDATE jobs
-   SET state = 'running', started_at = unixepoch(), heartbeat_at = unixepoch()
+   SET state = 'running',
+       started_at = COALESCE(started_at, unixepoch()),
+       heartbeat_at = unixepoch()
  WHERE id = (SELECT id FROM jobs
               WHERE state = 'queued' AND not_before <= unixepoch()
               ORDER BY priority, id LIMIT 1)
 RETURNING id, public_id, kind, args_json;
 ```
+
+`started_at` is **first claim, not latest claim**, and the `COALESCE` is the
+whole of that promise. Re-claiming is the normal path: `defer_job` returns a
+rate-limited job to the queue behind a `not_before`, so a job that meets
+`E_RATE_LIMIT` twice per item across ten items is claimed ~20 times. A plain
+`unixepoch()` made the field mean "most recently claimed" — an overnight job
+that had been grinding for 1h32m rendered as `started` 92 minutes late in
+`job-status`, i.e. as freshly started, which reads as healthy. `heartbeat_at`
+does move on every claim: it is the liveness stamp the staleness sweep reads.
+`job_items.started_at` takes the same `COALESCE` for the same reason one level
+down — `attempts` counts the tries, `started_at` spans them. Neither needs a
+reset path: a job row is never reused, so a forced reindex is a new row with
+both stamps NULL.
 
 **The in-flight guard is the partial unique index**, not application logic:
 `job_items_one_inflight` makes a second `index-video` on an already-queued video an

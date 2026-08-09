@@ -1,9 +1,10 @@
-"""The 116-video overnight run, and the six ways it could have lied about itself.
+"""The 116-video overnight run, and the seven ways it could have lied about itself.
 
 A correctness review of the job runner (2026-08-09, ahead of the first
 unattended batch) found that a run could finish *looking* healthy while videos
-or whole search channels were missing. Every test here is one of those
-sequences, replayed:
+or whole search channels were missing. The audit of the run that followed found
+one more, in the report rather than the work (7). Every test here is one of
+those sequences, replayed:
 
 1. a rate limit answered in the same millisecond, three times, then again
    against every URL behind it — and erased from the payload if any sibling
@@ -16,7 +17,9 @@ sequences, replayed:
    video on every retry (§force);
 5. an orderly `stop()` that left a fresh claim wedged for the full staleness
    window (§stop);
-6. progress that walked backwards on a retry (§progress).
+6. progress that walked backwards on a retry (§progress);
+7. a 1h32m job reporting itself as started 92 minutes late, because every
+   backoff expiry re-stamped `started_at` (§the clock).
 
 Nothing here reaches the network or a GPU: same fakes as `test_pipeline_e2e`.
 """
@@ -35,6 +38,7 @@ from vidtheque_mcp.config import Settings
 from vidtheque_mcp.jobs import store as jobs_store
 from vidtheque_mcp.jobs.runner import ItemFailed
 from vidtheque_mcp.pipeline.sources import RateLimited
+from vidtheque_mcp.text import iso_z
 from vidtheque_mcp.tools import indexing
 
 from .pipeline_fakes import SECOND_URL, VIDEO_URL, FakeWorker, canned_source
@@ -214,6 +218,102 @@ async def test_a_local_hiccup_does_not_stick_to_the_finished_job(
 
     job = await job_row(assembled, job_id)
     assert (job["state"], job["error_code"]) == ("done", None)
+
+
+# ================================================================== the clock
+
+
+async def backdate_start(parts, public_id: str, seconds: int = 3600) -> int:
+    """Push this job's (and its items') start back, without sleeping through it."""
+    await parts.db.write(
+        lambda c: c.execute(
+            "UPDATE jobs SET started_at = started_at - ? WHERE public_id = ?",
+            (seconds, public_id),
+        )
+    )
+    await parts.db.write(
+        lambda c: c.execute(
+            "UPDATE job_items SET started_at = started_at - ? WHERE job_id = "
+            "(SELECT id FROM jobs WHERE public_id = ?) AND started_at IS NOT NULL",
+            (seconds, public_id),
+        )
+    )
+    return int((await job_row(parts, public_id))["started_at"])
+
+
+async def test_a_deferred_job_still_reports_the_clock_it_started(
+    assembled: Assembled,
+) -> None:
+    """`started` is when the job started, not when it was last picked up.
+
+    Live (2026-08-09): a batch that ran 1h32m printed `started` 92 minutes late
+    — the moment its tenth item was claimed. `claim_next` stamped
+    `started_at = unixepoch()` unconditionally, and deferral is the *normal*
+    path here, so every expiry of a 300s backoff reset the one field a reader
+    consults to answer "how long has this been going?". The longer the job
+    struggled, the fresher it looked.
+    """
+    runner = assembled.runner
+    runner.pipeline = Throttled({URL_A: 1})
+    runner.rate_limit_backoff_s = 300
+    job_id = await queue(assembled, URL_A)
+
+    assert await runner.run_once() is True  # 429 → deferred, back to `queued`
+    assert (await job_row(assembled, job_id))["state"] == "queued"
+    started = await backdate_start(assembled, job_id)  # an hour of grinding
+
+    await open_the_gate(assembled)
+    assert await runner.run_once() is True
+
+    job = await job_row(assembled, job_id)
+    assert job["state"] == "done"
+    assert job["started_at"] == started  # not the second claim's timestamp
+    item = (await items_of(assembled, job_id))[0]
+    assert (item["attempts"], item["started_at"]) == (2, started)
+
+    # And the payload says so: the hour is on the wire, not just in the row.
+    assert f"started {iso_z(started)}" in body(
+        await indexing.job_status(assembled.deps, job_id=job_id)
+    )
+
+
+async def test_a_reclaim_keeps_started_at_and_still_bumps_the_heartbeat(
+    assembled: Assembled,
+) -> None:
+    """The two stamps mean different things, and only one of them may move.
+
+    `started_at` is the span; `heartbeat_at` is the most recent sign of life,
+    which is what `stale_claims` sweeps on — freezing it too would wedge every
+    reclaimed job at the staleness threshold forever.
+    """
+    db = assembled.db
+    job_id = await queue(assembled, URL_A)
+    claimed = await db.write(jobs_store.claim_next)
+    assert claimed is not None
+    row_id = int(claimed["id"])
+    item = await db.write(lambda c: jobs_store.claim_item(c, row_id))
+    assert item is not None
+    started = await backdate_start(assembled, job_id)
+
+    await db.write(lambda c: jobs_store.defer_job(c, row_id, 0, "E_RATE_LIMIT", "429"))
+    await db.write(lambda c: jobs_store.requeue_item(c, int(item["id"])))
+    # A stale heartbeat on a queued job is not a state the runner produces —
+    # it is the one that would let a COALESCE on the wrong column hide here.
+    await db.write(
+        lambda c: c.execute(
+            "UPDATE jobs SET heartbeat_at = unixepoch() - 3600 WHERE id = ?", (row_id,)
+        )
+    )
+
+    again = await db.write(jobs_store.claim_next)
+    assert again is not None and int(again["id"]) == row_id
+    reclaimed_item = await db.write(lambda c: jobs_store.claim_item(c, row_id))
+    assert reclaimed_item is not None and int(reclaimed_item["attempts"]) == 2
+
+    job = await job_row(assembled, job_id)
+    assert job["started_at"] == started
+    assert job["heartbeat_at"] == pytest.approx(job["now"], abs=2)
+    assert (await items_of(assembled, job_id))[0]["started_at"] == started
 
 
 # ------------------------------------------------------- 429 on the caption leg

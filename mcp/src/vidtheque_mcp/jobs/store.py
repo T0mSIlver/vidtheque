@@ -124,11 +124,30 @@ def create_job(
 
 
 def claim_next(conn: sqlite3.Connection) -> sqlite3.Row | None:
-    """Claiming is one statement — UPDATE … RETURNING (SQLite 3.35+)."""
+    """Claiming is one statement — UPDATE … RETURNING (SQLite 3.35+).
+
+    ``started_at`` is set on the *first* claim only. Re-claiming is the normal
+    path here, not an edge case: `defer_job` puts a rate-limited job back on the
+    queue with a `not_before`, and every expiry of that backoff is a fresh
+    claim. Stamping `unixepoch()` unconditionally made `started_at` mean "most
+    recently claimed", so `job-status` printed a 92-minute-old overnight job as
+    freshly started — healthiest-looking exactly when it was least healthy.
+
+    ``heartbeat_at`` keeps moving on every claim: that one genuinely means "most
+    recent sign of life", and `stale_claims` is what wants it.
+
+    There is no reset path and none is needed — a job row is never reused. A
+    forced reindex is a new `jobs` row (`create_job` is the only INSERT), so it
+    starts NULL and clocks itself, the same reason `_HIGH_WATER` can key on
+    `created_at`. A crash-reclaimed job deliberately *keeps* its original start:
+    the wall-clock it has been costing did not restart with the process.
+    """
     return conn.execute(
         """
         UPDATE jobs
-           SET state = 'running', started_at = unixepoch(), heartbeat_at = unixepoch()
+           SET state = 'running',
+               started_at = COALESCE(started_at, unixepoch()),
+               heartbeat_at = unixepoch()
          WHERE id = (SELECT id FROM jobs
                       WHERE state = 'queued' AND not_before <= unixepoch()
                       ORDER BY priority, id LIMIT 1)
@@ -138,10 +157,19 @@ def claim_next(conn: sqlite3.Connection) -> sqlite3.Row | None:
 
 
 def claim_item(conn: sqlite3.Connection, job_id: int) -> sqlite3.Row | None:
+    """One item, claimed. `started_at` on the first attempt only.
+
+    Same reason as `claim_next`, one level down: `requeue_item` hands a
+    retryable item back to the queue, so an item on `attempts: 3` used to report
+    the span of its third attempt (~49s) rather than the twelve minutes it had
+    actually occupied. `attempts` is the count; `started_at` is the span.
+    """
     return conn.execute(
         """
         UPDATE job_items
-           SET state = 'running', started_at = unixepoch(), attempts = attempts + 1
+           SET state = 'running',
+               started_at = COALESCE(started_at, unixepoch()),
+               attempts = attempts + 1
          WHERE id = (SELECT id FROM job_items
                       WHERE job_id = ? AND state = 'queued'
                       ORDER BY seq LIMIT 1)
@@ -442,10 +470,12 @@ _STAGE_ORDINAL = "CASE i.stage " + " ".join(
 # started over — the job's percentage fell back to the terminal siblings and
 # climbed the same ground twice.
 #
-# Keyed on `jobs.created_at`, not `started_at`: `claim_next` rewrites
-# `started_at` on every claim, and stages a *previous* job left behind are not
-# this job's progress. `_invalidate_stages` nulls `finished_at`, so a forced
-# reindex starts from zero exactly as it should.
+# Keyed on `jobs.created_at`, not `started_at`: stages a *previous* job left
+# behind are not this job's progress, and `created_at` is the one stamp no claim
+# can move. (`claim_next` used to rewrite `started_at` on every claim, which is
+# what made the distinction load-bearing; it now sets it once, but `created_at`
+# remains the earlier and stabler of the two.) `_invalidate_stages` nulls
+# `finished_at`, so a forced reindex starts from zero exactly as it should.
 _HIGH_WATER = (
     "(SELECT COUNT(*) FROM video_stages s WHERE s.video_id = i.video_id "
     "AND s.state IN ('done','skipped') AND COALESCE(s.finished_at, 0) >= j.created_at)"
