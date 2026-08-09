@@ -1,10 +1,44 @@
 {% extends "base.html" %}
 {% block main %}
-<section class="notice notice-bad" aria-labelledby="err">
-  <h1 class="notice-title" id="err">{{ error.message }}</h1>
-  <p class="notice-detail"><code>{{ error.code }}</code></p>
+
+{# A refusal is a page, not a stack trace pinned to the top of a blank column.
+   It gets the same header band every other page gets, so the surface still
+   looks like itself when it is saying no: the message is the title, the code is
+   a state beside it in its tone, and the recovery is a panel with somewhere to
+   click. That also gives the page a real type ladder — 30px title, 15px panel
+   heading, 13px body — which is what the previous version, a 15px notice alone
+   on the page, did not have. #}
+
+<div class="pagehead">
+  <div class="pagehead-line">
+    <h1>{{ error.message }}</h1>
+    <p class="pagehead-meta">
+      <span class="pill tone-bad">{{ error.code }}</span>
+    </p>
+  </div>
+  <p class="pagehead-meta">
+    That code is the same string the MCP surface answers with for the same
+    request, so it is the one worth quoting.
+  </p>
+</div>
+
+<section class="panel" aria-labelledby="recover">
+  <h2 class="panel-title" id="recover">Where to go from here</h2>
   {% if error.next %}
-  <p class="notice-next">{{ error.next }}</p>
+  {# The server writes these as sentence fragments that used to trail a colon.
+     Standing on their own under a heading they want a capital, and that is a
+     presentation decision, so the template makes it rather than the view. #}
+  <p class="empty-lead">{{ error.next[0] | upper }}{{ error.next[1:] }}</p>
   {% endif %}
+  <p class="empty-note">
+    Every surface this index has is in the rail: what is in the corpus, every
+    video and what the pipeline made of it, and what the queue is doing.
+  </p>
+  <p class="pager">
+    <a class="ghostlink" href="{{ root }}">Corpus overview</a>
+    <a class="ghostlink" href="{{ root }}/videos">Videos</a>
+    <a class="ghostlink" href="{{ root }}/jobs">Jobs</a>
+  </p>
 </section>
+
 {% endblock %}
