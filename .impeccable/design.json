@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-09T15:45:00.000Z",
+  "generatedAt": "2026-08-09T17:55:00.000Z",
   "title": "Design System: vidtheque dashboard",
   "extensions": {
     "colorMeta": {
@@ -116,6 +116,7 @@
       }
     },
     "typographyMeta": {
+      "brand": {"displayName": "Brand", "purpose": "The product's own name, and nothing else on this surface. Instrument Serif 400 at 20px in the rail (.wordmark) and 15px in the footer (.footmark). See DESIGN.md, The Wordmark-Only Rule."},
       "display": { "displayName": "Display / h1", "purpose": "The page title. Exactly one per page." },
       "headline": { "displayName": "Headline / h2", "purpose": "A section heading that is not a panel title. Rare." },
       "title": { "displayName": "Title", "purpose": "Panel headings that carry a sentence, and notice titles." },

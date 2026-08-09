@@ -278,6 +278,12 @@
   --t-body: 0.875rem;     /* 14px — body, list rows */
   --t-lead: 0.9375rem;    /* 15px — panel headings, notice titles */
   --t-h2: 1.25rem;        /* 20px — section headings that are not panels */
+  /* 24px — the page title below 40rem. It used to drop all the way to --t-h2,
+     which put the largest type on a phone 1.8× the smallest and made the whole
+     ladder read flat: at 390 the title, a section heading and a notice title
+     were 20 / 20 / 15, and the page had no top. One step, so the drop is still
+     a drop and the title still fits two lines of a video name. */
+  --t-h1-sm: 1.5rem;
   --t-h1: 1.875rem;       /* 30px — page title */
   --t-figure: 1.875rem;   /* 30px — a ledger number */
 
@@ -454,8 +460,7 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
 .panel-title,
 .figure > dt,
 .field label,
-.grid thead th,
-.chunkmark {
+.grid thead th {
   font-size: var(--t-micro);
   font-weight: var(--w-medium);
   text-transform: uppercase;
@@ -631,6 +636,18 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
   letter-spacing: -0.02em;
   text-wrap: balance;
 }
+/* A machine string inside a page title — `Job job_deferred01`. Mono is smaller
+   than Inter for the same nominal size at the *label* end of the ladder and
+   optically larger at the *display* end, so a `code` left at `--t-machine`
+   inside a 30px heading reads as a footnote attached to the word "Job". At
+   0.78em it is the same visual weight as the sans beside it, which is the
+   point: the id is the title, and "Job" is the noun in front of it. */
+.pagehead h1 code {
+  font-size: 0.78em;
+  font-weight: var(--w-medium);
+  color: var(--fg);
+  letter-spacing: -0.01em;
+}
 /* Deliberately not a flex row: half of this line is sentence, half is machine
    string, and a flex container swallows the spaces between them. */
 .pagehead-meta {
@@ -679,12 +696,30 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
   font-size: var(--t-meta);
 }
 
+/* The empty state, and it has a voice: **name the absence, name the cause, name
+   the move.** An operator who opens a panel that has nothing in it is asking
+   one question — is this broken, or is this correct? — and "No keyframes." does
+   not answer it. So the lead sentence states the absence in the foreground ink
+   at cell size, and the note under it, in muted, says which row of which panel
+   explains why. It is the same discipline as the state pills: never a colour or
+   an absence on its own, always a word. */
+.empty { padding: var(--s1) 0 var(--s2); }
+
+.empty-lead {
+  margin: 0;
+  max-width: var(--prose-meta);
+  font-size: var(--t-cell);
+  font-weight: var(--w-medium);
+  color: var(--fg);
+}
+
 .empty-note {
   margin: 0;
   max-width: var(--prose-meta);
   color: var(--muted);
   font-size: var(--t-cell);
 }
+.empty-lead + .empty-note { margin-top: var(--s1); }
 
 /* Zones. A full-bleed column needs a way to put two or three panels side by
    side, because a three-line list stretched across 1600px is not "using the
@@ -937,19 +972,35 @@ span.tone-bad { color: var(--tone-bad); }
    the select it applies to. */
 .field-actions { flex-direction: row; gap: var(--s2); align-items: center; }
 
+/* Every control in the bar is exactly `--row` tall — the same 34px as a table
+   row and a nav item — so the filter band reads as one object instead of as
+   four widgets the platform drew at four heights. A `<select>` left on its
+   default metrics is 2px taller than a text input next to it, and that 2px is
+   the difference between "a form" and "a strip of controls". */
 .field input, .field select {
-  padding: var(--s1) var(--s2);
+  height: var(--row);
+  padding: 0 var(--s2);
   font-family: var(--font-sans);
   font-size: var(--t-cell);
+  line-height: var(--lh-cell);
   color: inherit;
   background: var(--raised);
   border: 1px solid var(--sand-7);
   border-radius: var(--r-sm);
 }
+/* Room for the platform's own disclosure arrow. The arrow itself stays the
+   platform's: a hand-drawn caret would be the first glyph of an icon language
+   this design system deliberately does not have (Appendix B.2). */
+.field select { padding-right: var(--s5); }
 .field input::placeholder { color: var(--muted); opacity: 1; }
+.field input:hover, .field select:hover { border-color: var(--sand-8); }
 
 button {
-  padding: var(--s1) var(--s3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--row);
+  padding: 0 var(--s3);
   font-family: var(--font-sans);
   font-size: var(--t-cell);
   font-weight: var(--w-medium);
@@ -965,7 +1016,10 @@ button.ghost:hover { color: var(--accent); background: transparent; border-color
 button[disabled] { opacity: 0.5; cursor: default; }
 
 .ghostlink {
-  padding: var(--s1) var(--s3);
+  display: inline-flex;
+  align-items: center;
+  height: var(--row);
+  padding: 0 var(--s3);
   font-size: var(--t-cell);
   text-decoration: none;
   border: 1px solid var(--sand-7);
@@ -975,7 +1029,42 @@ button[disabled] { opacity: 0.5; cursor: default; }
 
 /* ------------------------------------------------------------------ tables */
 
-.tablecount { margin: var(--s5) 0 var(--s1); color: var(--muted); font-size: var(--t-meta); }
+/* The strip that says what the table below is: how many rows arrived, whether
+   there are more, and — on jobs — whether the page is still being patched. It
+   is the table's caption in everything but markup, so it sits on the table's
+   own left edge and its number is mono, because the number came from a count
+   and not from a sentence. */
+.tablecount {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 var(--s4);
+  margin: var(--s5) 0 var(--s1);
+  color: var(--muted);
+  font-size: var(--t-meta);
+}
+/* The sentence is one flex item, not five: a flex container makes an item of
+   every text run between elements, and `of ~<span>4</span>.` came out as
+   `of ~ 4 .` with a gap either side of the number. */
+.tablecount > * { min-width: 0; }
+.tablecount .shown {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--t-machine);
+  font-weight: var(--w-medium);
+  color: var(--fg);
+}
+
+/* "This page is still moving." A dot and the word, in the work tone, at the far
+   end of the strip — the same word-and-colour contract every state on this
+   surface keeps, so a reader who cannot see the pulse still reads "live". */
+.live {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--s1);
+  color: var(--tone-work);
+}
 
 .tablewrap { overflow-x: auto; }
 
@@ -1002,6 +1091,18 @@ button[disabled] { opacity: 0.5; cursor: default; }
   box-shadow: inset 0 -1px 0 var(--sand-7);
 }
 .grid thead th.num { text-align: right; }
+/* The column the table is actually ordered by. No caret glyph: this surface has
+   no icon language and inventing one for a sort arrow is a much bigger new
+   primitive than a colour. Instead the head's own inset underline — the one
+   that already exists because a collapsed border vanishes when the cell
+   detaches — is redrawn in the signal, and the label goes to the foreground.
+   The One Signal Rule holds: this *is* the moment you are pointing at, because
+   you asked for it in the URL. `aria-sort` carries it for the screen reader. */
+.grid thead th[aria-sort] {
+  color: var(--fg);
+  box-shadow: inset 0 -1px 0 var(--accent);
+}
+.grid thead th[aria-sort] a { color: var(--fg); }
 .grid thead a { text-decoration: none; color: inherit; }
 /* To the foreground, not the accent: the head sits on --panel, where --accent
    measures 4.41:1 and this label is 11px. */
@@ -1038,6 +1139,12 @@ button[disabled] { opacity: 0.5; cursor: default; }
 
 .stages .col-model { max-width: 22rem; }
 .stages tr.is-bad th[scope="row"] code { color: var(--tone-bad); }
+/* "An `absent` stage is a dimmed rule, not a missing row" (DESIGN.md, the stage
+   rail). A stage with no `video_stages` row never ran, which is a different
+   fact from a stage that ran and produced nothing — so the row stays, at the
+   full seven, and recedes. The pill inside it still carries the word. */
+.stages tr.is-absent th[scope="row"] code,
+.stages tr.is-absent td { color: var(--muted); }
 
 .stage-error td { padding-top: 0; border-bottom: 1px solid var(--line); }
 .stage-error .label { color: var(--tone-bad); }
@@ -1046,6 +1153,55 @@ button[disabled] { opacity: 0.5; cursor: default; }
 .pager { display: flex; gap: var(--s2); margin-top: var(--s4); }
 
 /* ---------------------------------------------------------------- timeline */
+
+/* The spine. DESIGN.md calls the shot timeline "a full-width horizontal band
+   under the header", and until now it was the third panel down, under a counts
+   grid and a seven-row provenance table — which is to say the one thing on this
+   page that no other product has was below the fold on a laptop. It is now the
+   first thing after the header, and it is not a `.panel`: it has no heading
+   above it because it does not need one, and its label sits under it with the
+   scale, where a film strip's footage counter goes. */
+.timeband { margin: 0; }
+/* No rule under it: the next `.panel` brings its own hairline 32px later, and
+   two rules that close together read as one thick rule that means nothing. */
+.timeband-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s1) var(--s6);
+  margin: var(--s2) 0 0;
+}
+.timeband-foot .panel-note { margin: 0; }
+
+/* The hatch is the one mark on this page whose meaning is not written beside
+   it, so the band carries a two-item key. Both swatches are literally the bars'
+   own fills at bar scale, which is the only way a key is honest. */
+.timeband-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s4);
+  margin: 0;
+  color: var(--muted);
+  /* 12px, not the 11px label size: `every frame deduplicated` is a sentence in
+     sentence case, and 11px sentence case is body text below the legibility
+     floor. 11px on this surface is the *label* idiom, uppercase and tracked. */
+  font-size: var(--t-meta);
+  white-space: nowrap;
+}
+.swatch {
+  display: inline-block;
+  width: var(--s6);
+  height: var(--s3);
+  margin-right: var(--s2);
+  vertical-align: -2px;
+  border-radius: 1px;
+}
+.swatch-kept { background: var(--accent); opacity: 0.75; }
+.swatch-dedup {
+  background: repeating-linear-gradient(135deg, var(--mark) 0 2px, transparent 2px 6px), var(--panel);
+  opacity: 0.55;
+}
 
 /* One bar per shot, positioned as a percentage of the runtime. Real data, so
    it earns the pixels: this is the video's cut structure, not a sparkline
@@ -1091,13 +1247,41 @@ button[disabled] { opacity: 0.5; cursor: default; }
   );
 }
 
+/* The footage counter. Five marks at the quarters, each one a hairline tick and
+   the clock it stands at, positioned at its true percentage rather than spaced
+   evenly by flexbox — a scale whose labels are only approximately where they
+   say they are is worse than no scale, because the whole point of the band
+   above is that a bar's *position* is the fact. */
 .timeline-scale {
-  display: flex;
-  justify-content: space-between;
+  position: relative;
+  height: 1.25rem;
   margin: var(--s1) 0 0;
   color: var(--muted);
   font-size: var(--t-micro);
 }
+
+.tick {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  padding-top: var(--s2);
+  white-space: nowrap;
+}
+.tick::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 1px;
+  height: var(--s1);
+  background: var(--rule);
+}
+/* The ends label the ends: a centred `0:00` would hang half of itself off the
+   left of the band, and its tick belongs on the band's own edge. */
+.tick:first-child { transform: none; }
+.tick:first-child::before { left: 0; }
+.tick:last-child { transform: translateX(-100%); }
+.tick:last-child::before { left: 100%; }
 
 /* ------------------------------------------------------------------ frames */
 
@@ -1151,7 +1335,6 @@ button[disabled] { opacity: 0.5; cursor: default; }
 .at:hover { text-decoration: underline; }
 
 .dupnote {
-  font-size: var(--t-micro);
   color: var(--muted);
   border-bottom: 1px dashed var(--line);
 }
@@ -1196,6 +1379,44 @@ button[disabled] { opacity: 0.5; cursor: default; }
   border-left: 1px dashed var(--line);
 }
 
+/* Hover a line, light its box; hover a box, light its line. DESIGN.md has
+   promised this since the OCR overlay was written and nothing implemented it —
+   and it is the whole difference between "OCR read three strings off this
+   frame" and "*that* string is *there*".
+   It is done in CSS, not in `dashboard.js`, on purpose: the correspondence is
+   positional (the nth box is the nth line, because the server renders both from
+   one ordered list), so `:has()` can state it without a listener, and a page
+   with JavaScript off keeps it. Eight is the cap — eight explicit pairs rather
+   than a loop — because eight lines is a busy slide and the ninth line simply
+   does not light. A silently missing highlight is a fair price for not shipping
+   a rule per possible line. */
+.ocrframe:has(.ocrlines > li:nth-child(1):hover) .ocrbox:nth-of-type(1),
+.ocrframe:has(.ocrlines > li:nth-child(2):hover) .ocrbox:nth-of-type(2),
+.ocrframe:has(.ocrlines > li:nth-child(3):hover) .ocrbox:nth-of-type(3),
+.ocrframe:has(.ocrlines > li:nth-child(4):hover) .ocrbox:nth-of-type(4),
+.ocrframe:has(.ocrlines > li:nth-child(5):hover) .ocrbox:nth-of-type(5),
+.ocrframe:has(.ocrlines > li:nth-child(6):hover) .ocrbox:nth-of-type(6),
+.ocrframe:has(.ocrlines > li:nth-child(7):hover) .ocrbox:nth-of-type(7),
+.ocrframe:has(.ocrlines > li:nth-child(8):hover) .ocrbox:nth-of-type(8),
+.ocrbox:hover {
+  border-color: var(--accent);
+  border-width: 2px;
+  background: color-mix(in srgb, var(--accent) 34%, transparent);
+}
+.ocrframe:has(.ocrbox:nth-of-type(1):hover) .ocrlines > li:nth-child(1),
+.ocrframe:has(.ocrbox:nth-of-type(2):hover) .ocrlines > li:nth-child(2),
+.ocrframe:has(.ocrbox:nth-of-type(3):hover) .ocrlines > li:nth-child(3),
+.ocrframe:has(.ocrbox:nth-of-type(4):hover) .ocrlines > li:nth-child(4),
+.ocrframe:has(.ocrbox:nth-of-type(5):hover) .ocrlines > li:nth-child(5),
+.ocrframe:has(.ocrbox:nth-of-type(6):hover) .ocrlines > li:nth-child(6),
+.ocrframe:has(.ocrbox:nth-of-type(7):hover) .ocrlines > li:nth-child(7),
+.ocrframe:has(.ocrbox:nth-of-type(8):hover) .ocrlines > li:nth-child(8),
+.ocrline:hover {
+  border-left-color: var(--accent);
+  border-left-style: solid;
+  background: var(--row-hover);
+}
+
 .ocrtext { flex: 1 1 auto; min-width: 0; font-size: var(--t-machine); overflow-wrap: anywhere; }
 
 .conf { flex: 0 0 auto; color: var(--muted); font-size: var(--t-micro); }
@@ -1218,10 +1439,20 @@ button[disabled] { opacity: 0.5; cursor: default; }
    embedding. */
 .cue.in-chunk, .chunkmark { border-left-color: var(--line); }
 
+/* A chunk marker is a machine string — a sequence number, two timecodes and a
+   character count — so by the Two-Channel Rule it is mono, and it was wrong to
+   set it in the uppercase label idiom: `chunk 0 · 0:00–7:03 · 297 chars` is a
+   sentence-length run of text, and uppercasing a sentence-length run is exactly
+   what the all-caps rule catches. It is right to. */
 .chunkmark {
   margin-top: var(--s2);
   padding: 2px 0 2px var(--s3);
   border-left: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-variant-ligatures: none;
+  font-size: var(--t-machine);
+  color: var(--muted);
 }
 
 .cuetext { flex: 1 1 20rem; min-width: 0; }
@@ -1261,16 +1492,34 @@ button[disabled] { opacity: 0.5; cursor: default; }
   background: var(--sand-5);
   border-radius: var(--r-sm);
 }
-.meter-wide { width: 12rem; }
+/* On the job's own page the meter is not a cell decoration, it is the page's
+   one figure of how far along this is — so it gets `--s2` of height rather than
+   the 4px hairline the table row can afford. */
+.meter-wide { width: 12rem; height: var(--s2); }
 .meter-fill { display: block; height: 100%; background: var(--accent); }
 .meter-label { margin-left: var(--s1); font-size: var(--t-machine); color: var(--muted); }
+
+/* The job page's own progress line: the bar and its number on one row, centred
+   on each other rather than hung off a text baseline the 8px bar has no
+   business sharing. */
+.progressline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+.progressline .meter-label, .progressline .stale-note { margin-left: 0; }
 
 /* The countdown. It is the highest-value line on that page — "deferred for
    another 240s" was true and invisible on every surface vidtheque had — so it
    is set as machine text at working weight, not as another muted pill. */
+/* 4px of vertical inset, not 1px: a 12.5px string with a border 1px from its
+   own ascenders is the cramped-padding finding, and this is the line the jobs
+   page exists for. It is now a notch taller than the state pill beside it,
+   which is correct — "held 3m 41s more" outranks "queued". */
 .countdown {
   display: inline-block;
-  padding: 1px var(--s2);
+  padding: var(--s1) var(--s2);
   font-size: var(--t-machine);
   color: var(--tone-warn);
   background: var(--tone-warn-bg);
@@ -1310,7 +1559,15 @@ button[disabled] { opacity: 0.5; cursor: default; }
   font-size: var(--t-cell);
 }
 .event:last-child { border-bottom: 0; }
-.event .at { flex: 0 0 auto; }
+/* The clocks are a column, not the first word of a sentence. A fixed basis is
+   what turns an event log into something you can read down: at 03:00 the
+   question is "when did the deferrals start", and the answer is the shape of
+   the left edge. 9rem holds `2026-08-09 17:12` at 12.5px mono with room to
+   spare, and the level pill lands at the same x on every row under it. */
+.event .at { flex: 0 0 9rem; }
+/* The level pill is a fixed column too, for the same reason: `warn` and `error`
+   are three characters apart and a ragged second column undoes the first. */
+.event > .pill { flex: 0 0 4.5rem; text-align: center; }
 .eventtext { flex: 1 1 22rem; min-width: 0; font-size: var(--t-machine); overflow-wrap: anywhere; }
 /* An event that arrived while the page was open. A left rule rather than a
    flash: it survives being scrolled past, which an animation does not. */
@@ -1357,7 +1614,19 @@ button[disabled] { opacity: 0.5; cursor: default; }
 
 .shot::backdrop { background: rgb(0 0 0 / 0.66); }
 
-.shot-inner { position: relative; padding: var(--s3); }
+.shot-inner { padding: var(--s3); }
+
+/* The caption and the close control belong above the picture, not on top of it.
+   The close button used to be absolutely positioned over the frame's top-right
+   corner, which is where a slide puts its title — so the one control in the
+   dialog sat on the one part of the image somebody opened the dialog to read. */
+.shot-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin-bottom: var(--s2);
+}
 
 /* The stage owns the geometry, so a box can never land outside the picture and
    the dialog does not resize under the pointer while the bytes arrive. */
@@ -1390,16 +1659,7 @@ button[disabled] { opacity: 0.5; cursor: default; }
 .shot-link { color: var(--accent); font-size: var(--t-cell); text-decoration: none; }
 .shot-link:hover { text-decoration: underline; }
 
-.shot-close {
-  position: absolute;
-  top: var(--s5);
-  right: var(--s5);
-  padding: var(--s1) var(--s2);
-  font-size: var(--t-meta);
-  color: var(--fg);
-  background: var(--bg);
-  border: 1px solid var(--line);
-}
+.shot-close { flex: 0 0 auto; }
 
 /* ------------------------------------------------------------------ footer */
 
@@ -1424,6 +1684,8 @@ footer p { margin: 0; max-width: var(--prose-meta); }
   gap: 0 var(--s2);
   margin: 0 0 var(--s1);
 }
+/* The separator's own padding on top of the flex gap put 24px around a `·`. */
+.footline .sep { padding: 0; }
 .footmark {
   font-family: var(--font-display);
   font-size: var(--t-lead);
@@ -1492,7 +1754,16 @@ footer p { margin: 0; max-width: var(--prose-meta); }
   /* The table stops being a table. Each row becomes its own stacked block
      with the column name in front of the value, which is the only shape that
      fits eight columns on a 375px screen without a horizontal scroll. */
-  :is(.grid.videos, .grid.jobs) thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  /* The head goes away entirely rather than into a 1px visually-hidden box.
+     Once `display: block` has taken the table apart there is no table left for
+     a screen reader to associate a `<th scope="col">` with, and every cell in
+     the stack prints its own column name in front of its value — so a
+     clipped-to-1px header row is a phantom: three sticky cells and four sort
+     links stacked on top of each other inside a box the size of a full stop,
+     which reads to any geometry check as links buried under a thumbnail
+     (because that is exactly what it looks like). Sorting is not lost with it:
+     `order` is a select in the filter bar above, on every width. */
+  :is(.grid.videos, .grid.jobs) thead { display: none; }
   :is(.grid.videos, .grid.jobs),
   :is(.grid.videos, .grid.jobs) tbody,
   :is(.grid.videos, .grid.jobs) tr,
@@ -1545,14 +1816,16 @@ footer p { margin: 0; max-width: var(--prose-meta); }
   .rail-foot { margin-left: 0; flex-basis: 100%; }
 
   .pagehead { padding: var(--s5) 0 var(--s3); }
-  .pagehead h1 { font-size: var(--t-h2); }
+  .pagehead h1 { font-size: var(--t-h1-sm); }
   .panel { margin-top: var(--s6); }
 
   /* Two columns, and the fifth figure takes the full width rather than
-     sitting alone next to a hole. */
+     sitting alone next to a hole. The right column keeps 12px between the
+     divider and its label: the `3n + 1` rule below was the three-column
+     arrangement's, and at two columns it left every even figure with a
+     hairline 0px from its own text. */
   .ledger { grid-template-columns: repeat(2, 1fr); }
-  .ledger > .figure { padding: var(--s3) var(--s3) var(--s3) 0; }
-  .ledger > .figure:nth-child(3n + 1) { border-left: 1px solid var(--line); padding-left: var(--s3); }
+  .ledger > .figure { padding: var(--s3); }
   .ledger > .figure:nth-child(odd) { border-left: 0; padding-left: 0; }
   .ledger > .figure:nth-child(n + 3) { border-top: 1px solid var(--line); }
   .ledger > .figure:last-child:nth-child(odd) { grid-column: 1 / -1; }
@@ -1579,5 +1852,4 @@ footer p { margin: 0; max-width: var(--prose-meta); }
   .ocrgrid { grid-template-columns: 1fr; }
 
   .shot { width: 96vw; max-width: 96vw; }
-  .shot-close { top: var(--s4); right: var(--s4); }
 }

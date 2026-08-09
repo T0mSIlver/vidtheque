@@ -183,6 +183,26 @@ components:
     textColor: "{colors.fg}"
     typography: "{typography.figure}"
     padding: "1rem"
+  empty-lead:
+    textColor: "{colors.fg}"
+    typography: "{typography.cell}"
+  empty-note:
+    textColor: "{colors.muted}"
+    typography: "{typography.cell}"
+  table-head-sorted:
+    backgroundColor: "{colors.panel}"
+    textColor: "{colors.fg}"
+    borderColor: "{colors.accent}"
+    typography: "{typography.label}"
+  live-badge:
+    textColor: "{colors.tone-work}"
+    typography: "{typography.label}"
+  countdown:
+    backgroundColor: "{colors.tone-warn-bg}"
+    textColor: "{colors.tone-warn}"
+    rounded: "{rounded.sm}"
+    padding: "0.25rem 0.5rem"
+    typography: "{typography.machine}"
 ---
 
 # Design System: vidtheque dashboard
@@ -338,7 +358,11 @@ this surface include YouTube ids like `kCc8FmEb1nY`.
 
 ### Hierarchy
 
-- **Display / h1** (590, 30px, 1.2, −0.02em): the page title. One per page.
+- **Display / h1** (590, 30px, 1.2, −0.02em): the page title. One per page. It
+  steps down to **24px** below 40rem (`--t-h1-sm`) and no further: dropping it
+  all the way to the 20px headline size put a phone's largest type 1.8× its
+  smallest and flattened the whole ladder, which the type detector reads as a
+  page with no top and which it is right about.
 - **Headline / h2** (590, 20px, 1.2, −0.01em): a section heading that is not a
   panel title. Rare.
 - **Title** (590, 15px, 1.35): panel headings that carry a sentence, and notice
@@ -461,9 +485,14 @@ than a border (`border-collapse: collapse` drops a sticky cell's own border).
   The zones (`.split`, `.split-main`) collapse to one column at the same width.
 - **52rem** — **pinned by test** (`test_both_schemes_and_a_mobile_viewport_are_declared`).
   The videos and jobs tables stop being tables: each row becomes a stacked block
-  with the column name in front of the value. Every *other* grid stays a table
-  and scrolls inside its own `.tablewrap`; the page body never scrolls sideways.
-- **40rem** — the page gutter drops to 16px, h1 drops to 20px, the ledger goes
+  with the column name in front of the value, and the head is `display: none`
+  rather than visually hidden — once `display: block` has taken the table apart
+  there is no table for a `<th scope="col">` to be associated with, and a
+  clipped-to-1px header row is three sticky cells and four sort links stacked
+  inside a box the size of a full stop. `order` stays reachable in the filter
+  bar. Every *other* grid stays a table and scrolls inside its own
+  `.tablewrap`; the page body never scrolls sideways.
+- **40rem** — the page gutter drops to 16px, h1 drops to 24px, the ledger goes
   to two columns with a full-width last cell, a row's far-end fact
   (`.row-when`) wraps onto its own line, and the keyframe strip and OCR grid
   reflow.
@@ -542,6 +571,23 @@ decoration.
   The count inside sits in mono at 11px in `--fg`.
 - **Hover:** `--row-hover` ground, `--fg` text, `--accent-line` border.
 
+### Tables — the sorted column, and the strip above
+The head of the column the rows are actually ordered by takes `aria-sort` and
+redraws its own inset underline in `--accent`, with the label in `--fg`. **No
+caret glyph**: this system has no icon language and a sort arrow is not where
+one should start (Appendix B.2 refused an icon rail for the same reason). The
+One Signal Rule holds — the sorted column *is* the moment you are pointing at,
+because you asked for it in the URL. The direction printed is the direction the
+query uses, not a guess: titles are ascending, everything else descending, and
+there is no opposite variant to toggle to, so a head is a statement rather than
+a switch.
+
+Above every grid, `.tablecount` is the table's caption in everything but
+markup: how many rows arrived and whether there are more, on the left, with the
+figure in mono because it came from a count; and on jobs a `.live` badge at the
+far right — a `--tone-work` dot **and the word "live"**, because a pulse alone
+is a state told in colour only.
+
 ### Containers
 There are none. See **The No-Card Rule**. The two exceptions with a real box are
 the filter bar (`--panel` ground, `--line` border, 5px) and the lightbox
@@ -601,13 +647,38 @@ turning it into cards — separate boxes, shadows, individual borders — destro
 the only thing it is for.
 
 ### The shot timeline (signature, video detail)
-A full-width horizontal band under the header, one absolutely-positioned bar per
-shot across the true duration, on a `--panel` ground inside a hairline. Kept
+A full-width horizontal band **directly under the header** (`.timeband`, and
+"directly" is the point: it spent phase 2 as the third panel down, under a
+counts grid and a seven-row table, which put the one artefact no neighbouring
+product has below the fold on a laptop). One absolutely-positioned bar per shot
+across the true duration, on a `--panel` ground inside a hairline. Kept
 keyframes solid `--accent` at 0.75 opacity; a shot whose every frame was
 deduplicated is hatched in `--mark` at 0.4, so it reads as "captured, then
 dropped" rather than as empty video. Minimum bar width 3px — the bar's
 *position* is the fact, and a mark you cannot see lies about the cut structure.
 Hovering either the timeline or the keyframe strip lights the other.
+
+Like the ledger band it carries only an `.sr-only` heading: a band of bars over
+a counter running 0:00 to the runtime does not need a caption saying it is a
+timeline. Under it sit two things. **The footage counter** (`.timeline-scale`)
+is five quarter marks, each a 4px `--rule` tick and its clock, positioned at its
+true percentage rather than spaced by flexbox — a band whose whole argument is
+that position is a fact cannot carry a scale that is only approximately right.
+The ends label the ends: `0:00` is left-aligned on the band's own edge and the
+runtime is right-aligned on the other. **The key** (`.timeband-legend`) names
+the two fills in 12px muted, with `.swatch` marks that are literally the bars'
+own backgrounds at 24×12 — the hatch is the only mark on the page whose meaning
+is not written beside it, and a key drawn any other way would be a claim rather
+than a sample.
+
+### The empty state
+Three sentences' worth of contract in two elements: `.empty-lead` states the
+absence in `--fg` at cell size and weight 510, `.empty-note` says in `--muted`
+which row of which panel explains it. **Name the absence, name the cause, name
+the move.** An operator opening a panel with nothing in it is asking one
+question — is this broken, or is this correct — and "No keyframes." does not
+answer it. It is the pill contract applied to a whole panel: never an absence on
+its own, always a word.
 
 ### The OCR overlay (signature, video detail)
 Normalised 0–1 boxes drawn over the keyframe inside a fixed 16:9 stage with
