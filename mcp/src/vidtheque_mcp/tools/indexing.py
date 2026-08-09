@@ -21,13 +21,25 @@ from ..db import queries
 from ..errors import ToolError, bad_param, unknown_job
 from ..jobs import store as jobs_store
 from ..jobs.store import DuplicateInFlight
-from ..text import clamp, duration_clock, iso_z, split_csv, validate_tag
+from ..text import (
+    clamp,
+    duration_clock,
+    iso_z,
+    middle_truncate,
+    split_csv,
+    validate_tag,
+)
 from .base import Deps, handle_errors, text_result
 
 _YT_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 _URL = re.compile(r"^https?://", re.I)
 EXPANSIONS = ("none", "playlist", "channel_recent")
 CHANNEL_SETS = ("all", "transcript", "ocr", "frames")
+# Every error string on this surface goes through `middle_truncate` at this
+# budget. A bare tail slice used to print `utu.be/O-CBZ3JtRvo` — 55 characters
+# over budget, and it spent all 55 on the scheme of the only URL in the line —
+# while a head slice dropped the tail with nothing to say it had. Both ends of a
+# failure carry signal: the sentence naming what happened, and the remedy.
 MAX_ERROR_CHARS = 400
 
 
@@ -430,7 +442,7 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
     failed = [i for i in items if i["state"] == "failed"]
     if failed:
         first = failed[0]
-        message = str(first["error_message"] or "")[-MAX_ERROR_CHARS:]
+        message = middle_truncate(str(first["error_message"] or ""), MAX_ERROR_CHARS)
         lines.append("")
         lines.append(f"error: {first['error_code']} — {message}")
     elif str(row["error_code"] or "") == "E_RATE_LIMIT":
@@ -439,7 +451,8 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
         # decides whether the *next* job should start now.
         lines.append("")
         lines.append(
-            "rate-limited: " + str(row["error_message"] or "")[-MAX_ERROR_CHARS:]
+            "rate-limited: "
+            + middle_truncate(str(row["error_message"] or ""), MAX_ERROR_CHARS)
         )
 
     if degraded:
@@ -452,7 +465,7 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
         )
         for entry in degraded[:5]:
             label = entry["public_id"] or entry["source_url"]
-            reason = str(entry["error"] or "")[:MAX_ERROR_CHARS]
+            reason = middle_truncate(str(entry["error"] or ""), MAX_ERROR_CHARS)
             lines.append(f"  {label} {entry['stage']}: {reason}")
         lines.append(
             'fix: index-video url="…" (no force_reindex) re-runs only the failed '
@@ -542,7 +555,7 @@ def _aside(n_failed: int, n_skipped: int, n_cancelled: int, n_degraded: int = 0)
 def _skipped_note(items: Sequence[sqlite3.Row]) -> str | None:
     """Name what was skipped and why, from the rows themselves."""
     reasons = [
-        f"  {i['source_url']}: {str(i['error_message'])[:MAX_ERROR_CHARS]}"
+        f"  {i['source_url']}: {middle_truncate(str(i['error_message']), MAX_ERROR_CHARS)}"
         for i in items
         if i["state"] in ("skipped", "cancelled") and i["error_message"]
     ]

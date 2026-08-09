@@ -1,10 +1,10 @@
-"""The 116-video overnight run, and the seven ways it could have lied about itself.
+"""The 116-video overnight run, and the eight ways it could have lied about itself.
 
 A correctness review of the job runner (2026-08-09, ahead of the first
 unattended batch) found that a run could finish *looking* healthy while videos
 or whole search channels were missing. The audit of the run that followed found
-one more, in the report rather than the work (7). Every test here is one of
-those sequences, replayed:
+two more, both in the report rather than the work (7 and 8). Every test here is
+one of those sequences, replayed:
 
 1. a rate limit answered in the same millisecond, three times, then again
    against every URL behind it — and erased from the payload if any sibling
@@ -19,7 +19,9 @@ those sequences, replayed:
    window (§stop);
 6. progress that walked backwards on a retry (§progress);
 7. a 1h32m job reporting itself as started 92 minutes late, because every
-   backoff expiry re-stamped `started_at` (§the clock).
+   backoff expiry re-stamped `started_at` (§the clock);
+8. `error: E_RATE_LIMIT — utu.be/…`, a tail slice eating the scheme off the
+   only URL in the line, with nothing to say it had cut (§the error line).
 
 Nothing here reaches the network or a GPU: same fakes as `test_pipeline_e2e`.
 """
@@ -456,6 +458,101 @@ async def test_a_clean_job_says_nothing_about_degradation(
         assert "degraded" not in body(status)
     finally:
         await close(parts)
+
+
+# ================================================================= the error line
+
+
+# The message from the live run, at its real length (455 chars against a 400
+# budget — 55 over, and the old tail slice spent all 55 on the front of the line).
+LONG_ERROR = (
+    "YouTube rate-limited this box while fetching https://youtu.be/O-CBZ3JtRvo: "
+    "ERROR: [youtube] O-CBZ3JtRvo: Sign in to confirm you're not a bot. Use "
+    "--cookies-from-browser or --cookies for the authentication. See "
+    "https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp "
+    "for how to manually pass cookies. Also see "
+    "https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies "
+    "for tips on effectively exporting YouTube cookies."
+)
+NAMED_URL = "https://youtu.be/O-CBZ3JtRvo"
+
+
+def assert_truncated_not_decapitated(text: str) -> None:
+    """Both halves of the contract: the head survives, and the cut is admitted."""
+    assert len(LONG_ERROR) > indexing.MAX_ERROR_CHARS  # the premise
+    assert NAMED_URL in text  # it printed `utu.be/O-CBZ3JtRvo` — not a URL
+    assert "utu.be/O-CBZ3JtRvo" not in text.replace(NAMED_URL, "")
+    assert "chars truncated" in text  # and it never admitted the cut at all
+
+
+async def finish(
+    parts,
+    public_id: str,
+    item_state: str,
+    item_error: tuple[str, str] | None = None,
+    job_error: tuple[str, str] | None = None,
+) -> None:
+    """Land a one-item job in a terminal state, through the store's own writers."""
+    item = (await items_of(parts, public_id))[0]
+    job = await job_row(parts, public_id)
+    await parts.db.write(
+        lambda c: jobs_store.finish_item(
+            c, int(item["id"]), item_state, *(item_error or ())
+        )
+    )
+    await parts.db.write(
+        lambda c: jobs_store.finish_job(c, int(job["id"]), "done", *(job_error or ()))
+    )
+
+
+async def test_a_long_item_error_keeps_the_url_it_names(assembled: Assembled) -> None:
+    """The failure line is head-and-tail, not tail-only.
+
+    Live (2026-08-09): `job-status` printed `error: E_RATE_LIMIT — utu.be/…`.
+    The `[-400:]` slice ate `https://yo`, spending the budget on yt-dlp's FAQ
+    boilerplate and dropping the sentence that said what had happened to which
+    video — while the `structured` block beside it carried the URL intact.
+    """
+    job_id = await queue(assembled, URL_A)
+    await finish(assembled, job_id, "failed", item_error=("E_RATE_LIMIT", LONG_ERROR))
+
+    text = body(await indexing.job_status(assembled.deps, job_id=job_id))
+    assert "error: E_RATE_LIMIT — " in text
+    assert_truncated_not_decapitated(text)
+
+
+async def test_the_recovered_rate_limit_line_is_truncated_the_same_way(
+    assembled: Assembled,
+) -> None:
+    """Nothing failed, so this is the only line naming the video. Same rule."""
+    job_id = await queue(assembled, URL_A)
+    await finish(assembled, job_id, "done", job_error=("E_RATE_LIMIT", LONG_ERROR))
+
+    text = body(await indexing.job_status(assembled.deps, job_id=job_id))
+    assert "rate-limited: " in text
+    assert_truncated_not_decapitated(text)
+
+
+async def test_a_long_skip_reason_admits_what_it_dropped(assembled: Assembled) -> None:
+    """The head slices were the milder half of the same bug: no marker."""
+    job_id = await queue(assembled, URL_A)
+    await finish(assembled, job_id, "skipped", item_error=("E_SKIPPED", LONG_ERROR))
+
+    text = body(await indexing.job_status(assembled.deps, job_id=job_id))
+    assert "skipped:" in text
+    assert_truncated_not_decapitated(text)
+
+
+async def test_a_long_degraded_reason_admits_what_it_dropped(degraded) -> None:
+    parts, job_id = degraded
+    await parts.db.write(
+        lambda c: c.execute(
+            "UPDATE video_stages SET error = ? WHERE stage = 'ocr'", (LONG_ERROR,)
+        )
+    )
+    text = body(await indexing.job_status(parts.deps, job_id=job_id))
+    assert "degraded: 1 video(s)" in text
+    assert_truncated_not_decapitated(text)
 
 
 # =================================================================== mixed waves
