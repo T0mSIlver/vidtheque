@@ -63,8 +63,40 @@ def test_live_and_private_videos_are_refused_before_anything_is_downloaded() -> 
     for field, value in (("live_status", "is_live"), ("availability", "private")):
         info = dict(INFO)
         info[field] = value
-        with pytest.raises(sources.Unavailable):
+        with pytest.raises(sources.SourceError):
             sources.parse_info(info, VIDEO_URL)
+
+
+def test_a_lifecycle_state_is_a_later_and_a_private_video_is_a_never() -> None:
+    """Both were `Unavailable`, so a premiere permanently failed like a takedown."""
+    for status in ("is_live", "is_upcoming", "post_live"):
+        info = dict(INFO) | {"live_status": status}
+        with pytest.raises(sources.NotYetAvailable):
+            sources.parse_info(info, VIDEO_URL)
+
+    for availability in ("private", "needs_auth", "subscriber_only"):
+        info = dict(INFO) | {"availability": availability}
+        with pytest.raises(sources.Unavailable) as caught:
+            sources.parse_info(info, VIDEO_URL)
+        assert not isinstance(caught.value, sources.NotYetAvailable)
+
+
+def test_a_premiere_carries_its_own_countdown() -> None:
+    import time
+
+    info = dict(INFO) | {
+        "live_status": "is_upcoming",
+        "release_timestamp": int(time.time()) + 900,
+    }
+    with pytest.raises(sources.NotYetAvailable) as caught:
+        sources.parse_info(info, VIDEO_URL)
+    assert caught.value.retry_after_s == pytest.approx(900, abs=5)
+
+    # A release time in the past says nothing useful; the caller's default wins.
+    info["release_timestamp"] = int(time.time()) - 900
+    with pytest.raises(sources.NotYetAvailable) as caught:
+        sources.parse_info(info, VIDEO_URL)
+    assert caught.value.retry_after_s is None
 
 
 def test_subtitle_inventory_prefers_the_word_timed_format() -> None:

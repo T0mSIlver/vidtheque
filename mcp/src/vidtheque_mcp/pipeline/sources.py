@@ -46,7 +46,25 @@ class RateLimited(SourceError):
 
 
 class Unavailable(SourceError):
-    """Live, upcoming, private or removed — nothing to index, ever."""
+    """Private, removed, members-only, age-gated — nothing to index, ever."""
+
+
+class NotYetAvailable(SourceError):
+    """A lifecycle state, not a verdict: it will be indexable, just not now.
+
+    A premiere, a stream in progress, or the `post_live` window while YouTube
+    finishes processing the VOD. These used to be `Unavailable` too, which made
+    them `E_UNSUPPORTED_SOURCE` with `retryable=False` — a video permanently
+    settled `failed` tonight for the crime of being published this afternoon.
+
+    ``retry_after_s`` is the source's own answer when it gave one
+    (``release_timestamp`` on a premiere); the caller supplies a default
+    otherwise.
+    """
+
+    def __init__(self, message: str, retry_after_s: int | None = None) -> None:
+        super().__init__(message)
+        self.retry_after_s = retry_after_s
 
 
 # ---------------------------------------------------------------------- records
@@ -279,9 +297,11 @@ def parse_info(
     """Normalize one info dict. Pure; the fixtures in the tests are real ones."""
     live_status = str(info.get("live_status") or "")
     if live_status in ("is_live", "is_upcoming", "post_live"):
-        raise Unavailable(
+        raise NotYetAvailable(
             f"{info.get('id') or fallback_url} is {live_status.replace('_', ' ')}; "
-            "there is nothing stable to index yet."
+            "there is nothing stable to index yet — this is a lifecycle state, "
+            "so the item comes back rather than failing.",
+            retry_after_s=_seconds_until_release(info),
         )
     availability = info.get("availability")
     if availability not in (None, "public", "unlisted"):
@@ -468,6 +488,8 @@ class YtDlpSource:
                     )
                     self._sleeper(delay + random.uniform(0, 1.0))
                     continue
+                if _is_not_yet(message):
+                    raise NotYetAvailable(message) from exc
                 if _is_unavailable(message):
                     raise Unavailable(message) from exc
                 raise SourceError(message) from exc
@@ -574,9 +596,34 @@ def _first_match(directory: Path, source_id: str) -> Path:
     return matches[0]
 
 
+def _seconds_until_release(info: dict[str, Any]) -> int | None:
+    """How long a premiere says it has left. yt-dlp gives an epoch, or nothing."""
+    release = info.get("release_timestamp")
+    if not isinstance(release, (int, float)):
+        return None
+    remaining = int(release) - int(time.time())
+    return max(0, remaining) if remaining > 0 else None
+
+
 def _is_rate_limit(message: str) -> bool:
     lowered = message.lower()
     return "429" in lowered or "too many requests" in lowered
+
+
+def _is_not_yet(message: str) -> bool:
+    """yt-dlp's prose for the same lifecycle states, when it errors instead of
+    returning an info dict with `live_status`."""
+    lowered = message.lower()
+    return any(
+        marker in lowered
+        for marker in (
+            "this live event will begin",
+            "premieres in",
+            "premiere will begin",
+            "is not available yet",
+            "live stream recording is not available",
+        )
+    )
 
 
 def _is_unavailable(message: str) -> bool:

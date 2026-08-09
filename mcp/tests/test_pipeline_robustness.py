@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from vidtheque_mcp.config import Settings
+from vidtheque_mcp.pipeline.runner import LIFECYCLE_RETRY_S
 from vidtheque_mcp.pipeline.settings import PipelineSettings
 
 from .pipeline_fakes import INFO, VIDEO_URL, FakeWorker, canned_source
@@ -102,6 +103,77 @@ async def test_keep_source_none_releases_the_audio_once_stt_has_settled(
         assert (await parts.stages())["stt"]["state"] == "done"
         assert audio_files(parts) == []
         assert media_files(parts) == []
+    finally:
+        await close(parts)
+
+
+# ==================================================================== lifecycle
+
+
+async def test_a_premiere_is_deferred_rather_than_permanently_failed(
+    settings: Settings, clip: Path
+) -> None:
+    """`is_upcoming` settled the item `failed` for good, tonight.
+
+    It is a lifecycle state — the video exists, it is just not a video yet — and
+    treating it like a takedown means a channel backfill run at 9pm permanently
+    loses whatever was premiering at 9pm.
+    """
+    import time as _time
+
+    parts = await harness(settings, clip)
+    source = parts.parts.runner.pipeline.source
+    source.infos = dict(source.infos)
+    source.infos[VIDEO_URL] = dict(INFO) | {
+        "live_status": "is_upcoming",
+        "release_timestamp": int(_time.time()) + 900,
+    }
+    try:
+        job_id = await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+
+        job = await parts.one(
+            "SELECT *, unixepoch() AS now FROM jobs WHERE public_id = ?", (job_id,)
+        )
+        assert job["state"] == "queued"
+        assert job["not_before"] - job["now"] == pytest.approx(900, abs=10)
+        item = await parts.one("SELECT state, attempts FROM job_items")
+        assert (item["state"], item["attempts"]) == ("queued", 1)
+        assert any("E_NOT_READY_YET" in message for message in await parts.events())
+    finally:
+        await close(parts)
+
+
+async def test_post_live_waits_the_default_window(settings: Settings, clip: Path) -> None:
+    """No `release_timestamp`, so the pipeline's own window applies."""
+    parts = await harness(settings, clip)
+    source = parts.parts.runner.pipeline.source
+    source.infos = dict(source.infos)
+    source.infos[VIDEO_URL] = dict(INFO) | {"live_status": "post_live"}
+    try:
+        job_id = await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+        job = await parts.one(
+            "SELECT *, unixepoch() AS now FROM jobs WHERE public_id = ?", (job_id,)
+        )
+        assert job["not_before"] - job["now"] == pytest.approx(LIFECYCLE_RETRY_S, abs=10)
+    finally:
+        await close(parts)
+
+
+async def test_a_private_video_still_fails_immediately_and_finally(
+    settings: Settings, clip: Path
+) -> None:
+    """Permanent unavailability must not inherit the lifecycle retry."""
+    parts = await harness(settings, clip)
+    source = parts.parts.runner.pipeline.source
+    source.infos = dict(source.infos)
+    source.infos[VIDEO_URL] = dict(INFO) | {"availability": "private"}
+    try:
+        job_id = await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+        job = await parts.one("SELECT state, error_code FROM jobs WHERE public_id = ?", (job_id,))
+        assert (job["state"], job["error_code"]) == ("failed", "E_UNSUPPORTED_SOURCE")
     finally:
         await close(parts)
 

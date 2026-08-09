@@ -52,6 +52,7 @@ from .keyframes import KeyframeDraft, extract_keyframes
 from .paths import Layout
 from .settings import PipelineSettings
 from .sources import (
+    NotYetAvailable,
     RateLimited,
     Source,
     SourceError,
@@ -65,6 +66,13 @@ from .sources import (
 from .worker_client import WorkerAPI, WorkerRejected, WorkerUnavailable
 
 logger = logging.getLogger(__name__)
+
+# How long a lifecycle state waits when the source did not name a time: long
+# enough that a `post_live` VOD has finished processing, short enough that three
+# attempts still cover an evening. The cap keeps a premiere three days out from
+# parking its claim for three days — it retires with a clear reason instead.
+LIFECYCLE_RETRY_S = 1_800
+LIFECYCLE_RETRY_MAX_S = 6 * 3_600
 
 CONTAINER_HINT = (
     "index-video expand=playlist (or channel_recent) to fan that URL out into "
@@ -257,6 +265,8 @@ class IndexingPipeline:
                 added = await self.db.write(lambda c: store.append_items(c, run.ctx.job_id, urls))
                 raise ItemSkipped(f"expanded into {added} item(s)", code="E_EXPANDED")
             meta = parse_info(info, url, getattr(self.source, "version", None))
+        except NotYetAvailable as exc:
+            raise _not_yet(exc) from exc
         except Unavailable as exc:
             raise ItemFailed("E_UNSUPPORTED_SOURCE", str(exc), retryable=False) from exc
         except RateLimited as exc:
@@ -998,6 +1008,22 @@ def _note_force_applied(conn: Any, job_id: int, video_id: int) -> None:
     applied.add(int(video_id))
     args["force_applied"] = sorted(applied)
     conn.execute("UPDATE jobs SET args_json = ? WHERE id = ?", (json.dumps(args), job_id))
+
+
+def _not_yet(exc: NotYetAvailable) -> ItemFailed:
+    """A premiere or a stream still finishing is a *later*, not a *never*.
+
+    The item is deferred by the runner's backoff machinery — the source's own
+    `release_timestamp` when it named one, `LIFECYCLE_RETRY_S` otherwise, capped
+    so a premiere three days out does not park a claim for three days.
+    """
+    delay = exc.retry_after_s if exc.retry_after_s is not None else LIFECYCLE_RETRY_S
+    return ItemFailed(
+        "E_NOT_READY_YET",
+        str(exc),
+        retryable=True,
+        retry_after_s=min(max(int(delay), 60), LIFECYCLE_RETRY_MAX_S),
+    )
 
 
 def _rate_limited(exc: Exception, message: str) -> ItemFailed:
