@@ -729,6 +729,90 @@ button[disabled] { opacity: 0.5; cursor: default; }
   border-style: dashed;
 }
 
+/* -------------------------------------------------------------------- jobs */
+
+.jobs .col-title { min-width: 11rem; }
+.jobs time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.jobitems .col-title { min-width: 14rem; }
+
+/* Progress as a rule, not a widget: the same hairline the tables are made of,
+   filled to the fraction the job already computed. The number beside it is the
+   accessible answer — the bar is aria-hidden and adds nothing but a glance. */
+.meter {
+  display: inline-block;
+  width: 4.5rem;
+  height: 4px;
+  vertical-align: 1px;
+  overflow: hidden;
+  background: var(--line);
+  border-radius: 2px;
+}
+.meter-wide { width: 12rem; }
+.meter-fill { display: block; height: 100%; background: var(--accent); }
+.meter-label {
+  margin-left: 0.4rem;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+/* The countdown. It is the highest-value line on this page — "deferred for
+   another 240s" was true and invisible on every surface vidtheque had — so it
+   is set in the interface font at working weight, not as another muted pill. */
+.countdown {
+  display: inline-block;
+  padding: 0.05rem 0.4rem;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--tone-warn);
+  border: 1px dashed var(--tone-warn);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.livedot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin: 0 0.35rem 0 0.5rem;
+  vertical-align: 1px;
+  background: var(--tone-work);
+  border-radius: 50%;
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse { 50% { opacity: 0.25; } }
+
+.stale-note { margin-left: 0.75rem; font-size: 0.85rem; color: var(--muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  .livedot { animation: none; }
+}
+
+/* The event log. Monospaced, because every line is machine output and the
+   deferral timeline reads as a column of clocks. */
+.events { margin: 0; padding: 0; list-style: none; }
+.event {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.6rem;
+  align-items: baseline;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.85rem;
+}
+.event:last-child { border-bottom: 0; }
+.event .at { flex: 0 0 auto; }
+.eventtext {
+  flex: 1 1 22rem;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+/* An event that arrived while the page was open. A left rule rather than a
+   flash: it survives being scrolled past, which an animation does not. */
+.event.is-new { margin-left: -0.6rem; padding-left: 0.5rem; border-left: 2px solid var(--accent); }
+
 /* ----------------------------------------------------------------- notices */
 
 .notice {
@@ -821,26 +905,30 @@ footer p { margin: 0; max-width: var(--prose); }
   /* The table stops being a table. Each row becomes its own stacked block
      with the column name in front of the value, which is the only shape that
      fits eight columns on a 375px screen without a horizontal scroll. */
-  .grid.videos thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  .grid.videos, .grid.videos tbody, .grid.videos tr, .grid.videos th, .grid.videos td { display: block; }
+  :is(.grid.videos, .grid.jobs) thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  :is(.grid.videos, .grid.jobs),
+  :is(.grid.videos, .grid.jobs) tbody,
+  :is(.grid.videos, .grid.jobs) tr,
+  :is(.grid.videos, .grid.jobs) th,
+  :is(.grid.videos, .grid.jobs) td { display: block; }
 
-  .grid.videos tr {
+  :is(.grid.videos, .grid.jobs) tr {
     padding: 0.85rem 0;
     border-bottom: 1px solid var(--line);
   }
-  .grid.videos tr:hover { background: none; }
+  :is(.grid.videos, .grid.jobs) tr:hover { background: none; }
 
-  .grid.videos th, .grid.videos td {
+  :is(.grid.videos, .grid.jobs) th, :is(.grid.videos, .grid.jobs) td {
     padding: 0.1rem 0;
     border-bottom: 0;
   }
 
-  .grid.videos td[data-label]:not(.col-shot) {
+  :is(.grid.videos, .grid.jobs) td[data-label]:not(.col-shot) {
     display: flex;
     gap: 0.6rem;
     align-items: baseline;
   }
-  .grid.videos td[data-label]:not(.col-shot)::before {
+  :is(.grid.videos, .grid.jobs) td[data-label]:not(.col-shot)::before {
     content: attr(data-label);
     flex: 0 0 5.5rem;
     font-size: 0.68rem;
@@ -849,15 +937,16 @@ footer p { margin: 0; max-width: var(--prose); }
     letter-spacing: 0.05em;
     color: var(--muted);
   }
-  .grid.videos td.num { text-align: left; }
+  :is(.grid.videos, .grid.jobs) td.num { text-align: left; }
   .grid.videos .col-shot { width: auto; margin-bottom: 0.4rem; }
-  .grid.videos .col-title { min-width: 0; margin-bottom: 0.35rem; }
+  :is(.grid.videos, .grid.jobs) .col-title { min-width: 0; margin-bottom: 0.35rem; }
 
   /* The other grids stay tables and scroll inside their own wrapper. A five
      column provenance table squeezed into 375px breaks `text_embed` across
-     three lines, which is worse than a swipe. The page body still never
-     scrolls sideways — the wrapper does. */
-  .grid:not(.videos) { min-width: 34rem; }
+     three lines, which is worse than a swipe — and the items table carries a
+     colspan error row that stacking would tear off its own item. The page body
+     still never scrolls sideways; the wrapper does. */
+  .grid:not(.videos, .jobs) { min-width: 34rem; }
 }
 
 @media (max-width: 40rem) {

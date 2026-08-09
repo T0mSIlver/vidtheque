@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% macro page_link(offset) -%}
+{{ root }}/jobs?state={{ filters.state }}&amp;limit={{ filters.limit }}&amp;offset={{ offset }}
+{%- endmacro %}
+{% block main %}
+
+<div class="pagehead">
+  <h1>Jobs</h1>
+  <p class="pagehead-meta">
+    What the pipeline is doing, what it is waiting on, and what finished with
+    something missing. Rows with live work refresh every
+    {{ (poll_ms / 1000) | round | int }} seconds and stop when nothing is running.
+  </p>
+</div>
+
+{# A real GET form: the filter is the URL. Nothing here needs JavaScript. #}
+<form class="filters" method="get" action="{{ root }}/jobs">
+  <div class="field">
+    <label for="f-jobstate">State</label>
+    <select id="f-jobstate" name="state">
+      {% for value in states %}
+      <option value="{{ value }}"{{ ' selected' if filters.state == value }}>{{ value }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="field field-narrow">
+    <label for="f-joblimit">Rows</label>
+    <input id="f-joblimit" name="limit" type="number" min="1" max="100" value="{{ filters.limit }}"
+           inputmode="numeric">
+  </div>
+  <div class="field field-actions">
+    <button type="submit">Apply</button>
+    <a class="ghostlink" href="{{ root }}/jobs">Reset</a>
+  </div>
+</form>
+
+{% if not jobs %}
+<section class="notice">
+  <h2 class="notice-title">No jobs to show.</h2>
+  <p class="notice-detail">
+    {% if filters.state != 'all' %}
+    The filter is on <code>{{ filters.state }}</code>. A quiet instance has no
+    active jobs, and that is the healthy state.
+    {% else %}
+    Nothing has ever been queued on this instance. A job is created by
+    <code>index-video</code>, one per call, with one item per URL.
+    {% endif %}
+  </p>
+  {% if filters.state != 'all' %}
+  <p class="notice-next"><a href="{{ root }}/jobs?state=all">Show every job</a></p>
+  {% endif %}
+</section>
+{% else %}
+
+<p class="tablecount" role="status">
+  {{ jobs | length }} shown{% if pagination.has_more %}, more available{% endif %}.
+  {% if live %}<span class="livedot" aria-hidden="true"></span>live{% endif %}
+</p>
+
+<div class="tablewrap" data-poll="{{ root }}/api/jobs?state={{ filters.state }}&amp;limit={{ filters.limit }}&amp;offset={{ pagination.offset }}"
+     data-interval="{{ poll_ms }}" data-live="{{ 'yes' if live else 'no' }}">
+<table class="grid jobs">
+  <caption class="sr-only">Jobs, newest first, with what each one is waiting on</caption>
+  <thead>
+    <tr>
+      <th scope="col">job</th>
+      <th scope="col">state</th>
+      <th scope="col">progress</th>
+      <th scope="col">items</th>
+      <th scope="col">created</th>
+      <th scope="col" class="num">wall clock</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for job in jobs %}
+    <tr data-job="{{ job.job_id }}">
+      <th scope="row" class="col-title" data-label="Job">
+        <a class="row-title" href="{{ root }}/jobs/{{ job.job_id }}"><code>{{ job.job_id }}</code></a>
+        <span class="row-meta">
+          {{ job.kind }}<span class="sep">·</span>priority {{ job.priority }}
+          {% if job.degraded %}
+          <span class="sep">·</span><span class="tone-bad">{{ job.degraded }} degraded</span>
+          {% endif %}
+        </span>
+      </th>
+      <td data-label="State">
+        <span class="pill tone-{{ job.state | tone }}" data-field="job-state">{{ job.state }}</span>
+        {% if job.cancel_requested %}<span class="pill pill-small tone-warn">cancel requested</span>{% endif %}
+        {% if job.error_code %}
+        <span class="pill pill-small tone-bad">{{ job.error_code }}</span>
+        {% endif %}
+        {# The line that was missing: `defer_job` writes `not_before`, nothing
+           read it back, and "deferred for another 240s" was true and invisible
+           on every surface (§4.4). #}
+        <span class="countdown" data-field="job-defer" data-defer="{{ job.defer_s }}"
+              {{ 'hidden' if not job.defer_s }}>
+          held <span data-field="job-defer-clock">{{ job.text.defer }}</span> more
+        </span>
+      </td>
+      <td data-label="Progress">
+        <span class="meter" aria-hidden="true"><span class="meter-fill" data-field="job-meter"
+              style="width:{{ job.progress }}%"></span></span>
+        <span class="meter-label" data-field="job-progress">{{ job.text.progress }}</span>
+      </td>
+      <td data-label="Items"><span data-field="job-counts">{{ job.text.counts }}</span></td>
+      <td data-label="Created"><time>{{ job.created_at | minute }}</time></td>
+      <td class="num" data-label="Wall clock" data-field="job-wall">{{ job.text.wall }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% if pagination.offset or pagination.has_more %}
+<nav class="pager" aria-label="Pagination">
+  {% if pagination.offset %}
+  <a class="ghostlink" href="{{ page_link([pagination.offset - pagination.limit, 0] | max) }}">← Newer</a>
+  {% endif %}
+  {% if pagination.has_more %}
+  <a class="ghostlink" href="{{ page_link(pagination.offset + pagination.limit) }}">Older {{ pagination.limit }} →</a>
+  {% endif %}
+</nav>
+{% endif %}
+
+<p class="panel-note">
+  Wall clock is <code>created</code> → <code>finished</code>: what the job cost
+  the queue, waiting included. Time on the runner is smaller and lives on the
+  job's own page, because <code>started_at</code> is the <em>first</em> claim —
+  a job that was deferred and re-claimed still reports when it first began
+  rather than when it was last picked up.
+  {% if redacted %}
+  This instance publishes states, codes, counts and clocks; source URLs and
+  error text stay on the owner's side.
+  {% endif %}
+</p>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ root }}/static/jobs.js"></script>
+{% endblock %}

@@ -11,6 +11,10 @@ detail page, plus `/dashboard/api/*` — the same handlers `/api/*` uses, under
 owner clamps, which is also the JSON facade a private deployment could not have
 before (demo-site.md §7.4).
 
+Phase 2 adds the jobs view and its poll target, still read-only: `not_before`
+as a live countdown, `attempts`, the degraded list and the `job_events` tail
+(§5.4), redacted to codes, counts and clocks in demo mode (§2.4).
+
 It lives inside the mcp server because all state does (CLAUDE.md), and it never
 speaks MCP: it calls `tools/*` and `db/queries.py` directly, exactly as `/api`
 already does.
@@ -21,7 +25,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse, Response
+from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Route
 
 from ..public.api import OWNER_CLAMPS, api_routes
@@ -94,10 +98,23 @@ def dashboard_routes() -> list[Route]:
             headers={"Cache-Control": _STATIC_CACHE},
         )
 
+    async def trailing_slash(request: Request) -> Response:
+        """`/dashboard/` is `/dashboard`, not a 404.
+
+        Starlette's own `redirect_slashes` never fires here: `Mount("/")` is
+        the last route and it matches everything, so the router finds a handler
+        for `/dashboard/` before it ever considers a redirect. Typing the slash
+        is not a mistake worth a 404 — and an unguarded redirect leaks nothing,
+        so it sits outside the credential check with the stylesheet.
+        """
+        query = request.url.query
+        return RedirectResponse(f"{ROOT}?{query}" if query else ROOT, status_code=308)
+
     return [
         # Static first: it is the one path under the prefix that carries no
         # corpus data, and it must load even on the 401 page.
         Route(f"{ROOT}/static/{{asset:path}}", asset, methods=["GET"]),
+        Route(f"{ROOT}/", trailing_slash, methods=["GET"]),
         # The same handlers `/api/*` uses, under owner clamps — and behind the
         # same gate as the pages, because JSON that skips the credential check
         # is the hole the pages were guarded against.
@@ -105,7 +122,20 @@ def dashboard_routes() -> list[Route]:
             Route(route.path, guarded(route.endpoint, json=True), methods=["GET"])
             for route in api_routes(OWNER_CLAMPS, ROOT, ask=False)
         ],
+        # The jobs view's own poll target. Not one of `api_routes`' handlers
+        # because `/api/*` answers questions about the *corpus* and this one
+        # answers a question about the machine — but the same prefix, the same
+        # gate and the same clamps, because a JSON route that skips either is
+        # the hole the pages were guarded against.
+        Route(f"{ROOT}/api/jobs", guarded(views.jobs_json, json=True), methods=["GET"]),
+        Route(
+            f"{ROOT}/api/jobs/{{job_id}}",
+            guarded(views.job_json, json=True),
+            methods=["GET"],
+        ),
         Route(ROOT, guarded(views.overview), methods=["GET"]),
         Route(f"{ROOT}/videos", guarded(views.videos), methods=["GET"]),
         Route(f"{ROOT}/videos/{{video_id}}", guarded(views.video_detail), methods=["GET"]),
+        Route(f"{ROOT}/jobs", guarded(views.jobs), methods=["GET"]),
+        Route(f"{ROOT}/jobs/{{job_id}}", guarded(views.job_detail), methods=["GET"]),
     ]

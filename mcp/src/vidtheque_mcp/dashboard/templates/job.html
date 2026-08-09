@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+{% block main %}
+
+<p class="crumbs"><a href="{{ root }}/jobs">Jobs</a> <span aria-hidden="true">/</span> <code>{{ job.job_id }}</code></p>
+
+<div class="pagehead" data-poll="{{ root }}/api/jobs/{{ job.job_id }}"
+     data-interval="{{ poll_ms }}" data-live="{{ 'yes' if live else 'no' }}">
+  <h1>{{ job.kind }} <code>{{ job.job_id }}</code></h1>
+  <p class="pagehead-meta">
+    <span class="pill tone-{{ job.state | tone }}" data-field="job-state">{{ job.state }}</span>
+    {% if job.cancel_requested %}<span class="pill pill-small tone-warn">cancel requested</span>{% endif %}
+    {# `not_before`, read back at last. It ticks between polls and is reset by
+       each one, so a page left open says how long the wait still has to run. #}
+    <span class="countdown" data-field="job-defer" data-defer="{{ job.defer_s }}"
+          {{ 'hidden' if not job.defer_s }}>
+      held <span data-field="job-defer-clock">{{ job.text.defer }}</span> more
+    </span>
+    <span class="sep">·</span>priority {{ job.priority }}
+    <span class="sep">·</span><span data-field="job-counts">{{ job.text.counts }}</span>
+  </p>
+  <p class="pagehead-meta">
+    <span class="meter meter-wide" aria-hidden="true"><span class="meter-fill" data-field="job-meter"
+          style="width:{{ job.progress }}%"></span></span>
+    <span class="meter-label" data-field="job-progress">{{ job.text.progress }}</span>
+    <span class="stale-note" data-field="job-stale" hidden>this job has finished — reload for the final record</span>
+  </p>
+</div>
+
+{% if job.defer_s %}
+<section class="notice" aria-labelledby="deferred">
+  <h2 class="notice-title" id="deferred">Waiting, not stuck</h2>
+  <p class="notice-detail">
+    The job is <code>queued</code> with a <code>not_before</code> in the future,
+    so <code>claim_next</code> will not pick it up for another
+    <strong data-field="job-defer-clock">{{ job.text.defer }}</strong>.
+    {% if job.error_code %}The backoff was set after <code>{{ job.error_code }}</code>.{% endif %}
+  </p>
+  <p class="notice-next">
+    The delay is the source's own <code>retry_after</code> when it sends one,
+    otherwise <code>VIDTHEQUE_RATE_LIMIT_BACKOFF_S</code> for rate limiting and
+    5 s for anything else retryable.
+  </p>
+</section>
+{% endif %}
+
+{% if job.error_code and not job.defer_s %}
+<section class="notice notice-bad" aria-labelledby="joberr">
+  <h2 class="notice-title" id="joberr"><code>{{ job.error_code }}</code></h2>
+  {% if job.error_message %}
+  <p class="notice-detail"><span class="errtext">{{ job.error_message }}</span></p>
+  {% elif redacted %}
+  <p class="notice-detail">
+    The code is published; the message is not — the pipeline's error strings
+    carry the operator's own configuration.
+  </p>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="panel" aria-labelledby="clocks">
+  <h2 class="panel-title" id="clocks">What it cost</h2>
+  <dl class="figures">
+    <div class="figure">
+      <dt>wall clock</dt>
+      <dd data-field="job-wall">{{ job.text.wall }}</dd>
+      <dd class="figure-note">created → {{ "finished" if job.finished_at else "now" }}</dd>
+    </div>
+    <div class="figure">
+      <dt>on the runner</dt>
+      <dd data-field="job-ran">{{ job.text.ran }}</dd>
+      <dd class="figure-note">first claim → {{ "finished" if job.finished_at else "now" }}</dd>
+    </div>
+    <div class="figure">
+      <dt>queued for</dt>
+      <dd>{{ job.text.waited }}</dd>
+      <dd class="figure-note">created → first claim</dd>
+    </div>
+    <div class="figure">
+      <dt>items</dt>
+      <dd>{{ job.n_items | count }}</dd>
+      <dd class="figure-note">
+        {% for state, n in counts.items() %}{{ n }} {{ state }}{{ " · " if not loop.last }}{% endfor %}
+        {% if not counts %}none{% endif %}
+      </dd>
+    </div>
+  </dl>
+  <p class="panel-note">
+    <code>started_at</code> is the <em>first</em> claim, not the most recent one:
+    a deferred job that is claimed again keeps its original start, so "on the
+    runner" stays honest across a backoff and the gap between the two figures is
+    time this job spent waiting. Wall clock is the number to quote for "what
+    does indexing cost".
+    {% if error_counts %}
+    Item error codes on this job:
+    {% for code, n in error_counts.items() %}<code>{{ code }}</code> ×{{ n }}{{ ", " if not loop.last }}{% endfor %}.
+    {% endif %}
+  </p>
+</section>
+
+<section class="panel" aria-labelledby="items">
+  <h2 class="panel-title" id="items">Items</h2>
+  {% if items %}
+  <div class="tablewrap">
+    <table class="grid jobitems">
+      <caption class="sr-only">Each video in this job, its state and its retry counter</caption>
+      <thead>
+        <tr>
+          <th scope="col" class="num">#</th>
+          <th scope="col">video</th>
+          <th scope="col">state</th>
+          <th scope="col">stage</th>
+          <th scope="col" class="num">attempts</th>
+          <th scope="col" class="num">took</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr data-item="{{ item.item_id }}" class="{{ 'is-bad' if item.state == 'failed' else '' }}">
+          <td class="num" data-label="#">{{ item.seq }}</td>
+          <th scope="row" class="col-title" data-label="Video">
+            {% if item.video_id %}
+            <a class="row-title" href="{{ root }}/videos/{{ item.video_id }}">{{ item.title or item.video_id }}</a>
+            <span class="row-meta">
+              {% if item.channel %}{{ item.channel }}<span class="sep">·</span>{% endif %}
+              {% if item.duration_s %}{{ item.duration_s | duration }}<span class="sep">·</span>{% endif %}
+              <code>{{ item.video_id }}</code>
+            </span>
+            {% elif item.source_url %}
+            <span class="row-title">{{ item.source_url }}</span>
+            <span class="row-meta">never resolved to a video</span>
+            {% else %}
+            <span class="row-title muted">a submitted URL</span>
+            <span class="row-meta">never resolved to a video, and not published here</span>
+            {% endif %}
+          </th>
+          <td data-label="State"><span class="pill tone-{{ item.state | tone }}" data-field="item-state">{{ item.state }}</span></td>
+          <td data-label="Stage">
+            {% if item.stage %}<code data-field="item-stage">{{ item.text.stage }}</code>
+            {% else %}<span class="muted" data-field="item-stage">—</span>{% endif %}
+          </td>
+          <td class="num" data-label="Attempts" data-field="item-attempts">{{ item.text.attempts }}</td>
+          <td class="num" data-label="Took" data-field="item-took">{{ item.text.took }}</td>
+        </tr>
+        {% if item.error_code %}
+        <tr class="stage-error">
+          <td colspan="6">
+            <span class="label">{{ item.error_code }}</span>
+            {% if item.error_message %}
+            <span class="errtext">{{ item.error_message }}</span>
+            {% elif redacted %}
+            <span class="errtext">message not published on this instance</span>
+            {% endif %}
+            {% if item.state == 'queued' and item.retries_left %}
+            <span class="muted">— {{ item.retries_left }} attempt(s) left, so it is queued to try again</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="panel-note">
+    Whether a failure will retry is not a column: <code>retryable</code> is
+    decided where the error is raised and never written down. What a row can say
+    is <code>attempts</code> against <code>max_attempts</code>, and what the job
+    can say is whether it is being held off — together those are the whole of
+    "is this coming back".
+    {% if items_capped %}Only the first {{ items | length }} items are listed.{% endif %}
+  </p>
+  {% else %}
+  <p class="empty-note">This job has no items, which the schema should not allow.</p>
+  {% endif %}
+</section>
+
+{% if focus %}
+<section class="panel" aria-labelledby="focus">
+  <h2 class="panel-title" id="focus">Stage by stage{% if focus.title or focus.video_id %} — {{ focus.title or focus.video_id }}{% endif %}</h2>
+  <div class="tablewrap">
+    <table class="grid stages">
+      <caption class="sr-only">The seven pipeline stages for the item this job is on</caption>
+      <thead>
+        <tr>
+          <th scope="col">stage</th>
+          <th scope="col">state</th>
+          <th scope="col">started</th>
+          <th scope="col" class="num">took</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for stage in stages %}
+        <tr class="{{ 'is-bad' if stage.state == 'failed' else '' }}">
+          <th scope="row"><code>{{ stage.stage }}</code></th>
+          <td><span class="pill tone-{{ stage.state | tone }}">{{ stage.state }}</span></td>
+          <td>{% if stage.started_at %}{{ stage.started_at | minute }}{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td class="num">{{ stage.took_s | span }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="panel-note">
+    The seven internal stages for the item this job is on — the running one, or
+    the last one to finish. <code>job-status</code> collapses these into five
+    wire stages for a model; a human gets the seven and the clock on each, which
+    is the honest answer to what a video costs. Every other item's stages are on
+    its own
+    {% if focus.video_id %}<a href="{{ root }}/videos/{{ focus.video_id }}">video page</a>{% else %}video page{% endif %},
+    one query rather than seven per row.
+  </p>
+</section>
+{% endif %}
+
+{% if degraded %}
+<section class="panel" aria-labelledby="degraded">
+  <h2 class="panel-title" id="degraded">Finished with something missing</h2>
+  <ul class="rowlist tight">
+    {% for entry in degraded %}
+    <li class="minirow">
+      <span>
+        {% if entry.video_id %}
+        <a href="{{ root }}/videos/{{ entry.video_id }}"><code>{{ entry.video_id }}</code></a>
+        {% else %}<code class="muted">item {{ entry.seq }}</code>{% endif %}
+        <span class="sep">·</span><code>{{ entry.stage }}</code> failed
+      </span>
+      {% if entry.error %}<span class="errtext">{{ entry.error }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  <p class="panel-note">
+    These items are <code>done</code> and this job counts them as successes,
+    because only <code>fetch</code> and <code>stt</code> are essential: any other
+    stage can fail without taking the video down. Then the item is
+    <code>done</code>, <code>n_failed</code> is 0, and a search channel is simply
+    missing. Re-indexing those videos is what gets it back.
+  </p>
+</section>
+{% endif %}
+
+<section class="panel" aria-labelledby="events">
+  <h2 class="panel-title" id="events">Event log</h2>
+  {% if events %}
+  <ol class="events" data-events>
+    {% for event in events %}
+    <li class="event" data-event="{{ event.id }}">
+      <span class="at">{{ event.at | minute }}</span>
+      <span class="pill pill-small tone-{{ event.level | tone }}">{{ event.level }}</span>
+      {% if event.stage %}<code>{{ event.stage }}</code>{% endif %}
+      {% if event.message %}<span class="eventtext">{{ event.message }}</span>
+      {% else %}<span class="eventtext muted">message not published on this instance</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+  {% else %}
+  <p class="empty-note">Nothing has been logged for this job.</p>
+  {% endif %}
+  <p class="panel-note">
+    Newest first, {{ events | length }} shown. A deferral that is not
+    <code>E_RATE_LIMIT</code> is recorded <em>here and nowhere else</em>: only
+    rate limiting is sticky on the job row, so for every other retry this log is
+    the only timeline there is.
+    {% if redacted %}
+    Message text is not published on this instance — it carries submitted URLs
+    and the pipeline's raw error strings — so what is shown is when each event
+    happened, how loud it was, and which stage it came from.
+    {% endif %}
+  </p>
+</section>
+
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ root }}/static/jobs.js"></script>
+{% endblock %}

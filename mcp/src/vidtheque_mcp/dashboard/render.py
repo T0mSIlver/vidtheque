@@ -48,6 +48,15 @@ _TONES = {
     "no_frames": "warn",
     "partial": "warn",
     "degraded": "bad",
+    # jobs.state and job_items.state — the same five words plus `cancelled`,
+    # which is not a failure and must not be coloured as one.
+    "queued": "wait",
+    "cancelled": "neutral",
+    # job_events.level
+    "warn": "warn",
+    "error": "bad",
+    "info": "neutral",
+    "debug": "neutral",
 }
 
 
@@ -68,6 +77,27 @@ def bytes_human(value: int | float | None) -> str:
     return f"{size:.1f} TB"  # pragma: no cover - unreachable, the loop returns
 
 
+def span(seconds: int | float | None) -> str:
+    """A number of seconds as a clock a human reads. ``—`` for "not known".
+
+    One formatter for every duration on this surface: how long a stage took,
+    how long a job has been running, how much of a backoff is left. They are
+    the same unit and they must not read as three different ones.
+    """
+    if seconds is None:
+        return "—"
+    total = int(seconds)
+    if total < 0:
+        return "—"
+    if total < 60:
+        return f"{total}s"
+    minutes, secs = divmod(total, 60)
+    if minutes < 60:
+        return f"{minutes}m {secs:02d}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h {minutes:02d}m"
+
+
 def elapsed(start: int | None, finish: int | None) -> str:
     """How long a stage took, from the two timestamps it stores.
 
@@ -77,14 +107,7 @@ def elapsed(start: int | None, finish: int | None) -> str:
     """
     if not start or not finish or finish < start:
         return "—"
-    seconds = int(finish) - int(start)
-    if seconds < 60:
-        return f"{seconds}s"
-    minutes, secs = divmod(seconds, 60)
-    if minutes < 60:
-        return f"{minutes}m {secs:02d}s"
-    hours, minutes = divmod(minutes, 60)
-    return f"{hours}h {minutes:02d}m"
+    return span(int(finish) - int(start))
 
 
 def count(value: int | float | None) -> str:
@@ -121,6 +144,7 @@ def build_environment() -> Environment:
         count=count,
         dash=dash,
         tone=tone,
+        span=span,
     )
     env.globals.update(elapsed=elapsed)
     return env

@@ -26,6 +26,7 @@
   <nav class="nav" aria-label="Sections">
     <a href="{{ root }}"{% if page == 'corpus' %} aria-current="page"{% endif %}>Corpus</a>
     <a href="{{ root }}/videos"{% if page == 'videos' %} aria-current="page"{% endif %}>Videos</a>
+    <a href="{{ root }}/jobs"{% if page == 'jobs' %} aria-current="page"{% endif %}>Jobs</a>
   </nav>
   <p class="deployment">
     <span title="VIDTHEQUE_AUTH">auth {{ auth_mode }}</span>
@@ -47,5 +48,9 @@
 
 {% block dialog %}{% endblock %}
 <script type="module" src="{{ root }}/static/dashboard.js"></script>
+{# A page that needs more than the shared module says so here, and gets its own
+   file rather than an inline block: the pages stay CSP-ready, and a page that
+   does not poll never downloads the poller. #}
+{% block scripts %}{% endblock %}
 </body>
 </html>
