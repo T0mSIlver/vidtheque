@@ -59,6 +59,7 @@ services:
       # lifecycle
       IDLE_UNLOAD_SECONDS: ${IDLE_UNLOAD_SECONDS:-300}
       EMBED_RESIDENT: ${EMBED_RESIDENT:-0}
+      SHUTDOWN_GRACE_SECONDS: ${SHUTDOWN_GRACE_SECONDS:-30}
       VRAM_HEADROOM_MB: ${VRAM_HEADROOM_MB:-512}
       # GPU lease hooks — run inside this container, so whatever they call must
       # be reachable from here (an HTTP endpoint on the host is the usual answer).
