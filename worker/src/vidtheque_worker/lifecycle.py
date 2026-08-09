@@ -489,10 +489,21 @@ class LifecycleManager:
         try:
             started = self._clock()
             await asyncio.to_thread(slot.backend.load)
-        except BaseException:
+        except BaseException as exc:
             if acquired_here and not self._any_lease_holder():
                 await self._release_lease()
-            raise
+            # Same rule as a failed inference, one step earlier: a load that
+            # OOMs is the card being full *now* (503, worth retrying), and
+            # anything else is typed so the caller gets an error.type instead
+            # of FastAPI's bare 500. Nothing is unloaded — `load()` only marks
+            # the slot loaded on success.
+            if isinstance(exc, BackendError) or not isinstance(exc, Exception):
+                raise
+            if looks_like_device_failure(exc):
+                raise BackendCrashed(
+                    f"loading {task} failed on the device, retry: {exc}"
+                ) from exc
+            raise BackendError(f"loading {task} failed: {exc}") from exc
         slot.loaded_at = self._clock()
         slot.last_used = slot.loaded_at
         slot.load_count += 1

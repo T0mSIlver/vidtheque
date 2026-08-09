@@ -844,6 +844,27 @@ async def test_a_typed_backend_error_keeps_its_type(recorder):
         await manager.stop()
 
 
+async def test_a_load_that_ooms_is_retryable_and_a_broken_load_is_typed(recorder):
+    """A load-time OOM is the card being full now, which is worth retrying; a
+    load that fails for any other reason at least says so with an error.type
+    rather than arriving as FastAPI's bare 500."""
+    backends = make_backends(recorder)
+    backends["stt"].load_error = RuntimeError("CUDA out of memory during load")
+    backends["embed"].load_error = OSError("no such file: model.bin")
+    manager = await make_manager(backends, recorder)
+    try:
+        with pytest.raises(BackendCrashed):
+            await manager.submit("stt", lambda b: b.infer("a.wav"))
+        with pytest.raises(BackendError) as raised:
+            await manager.submit("embed", lambda b: b.infer(["hi"]))
+        assert not isinstance(raised.value, BackendCrashed)
+        assert isinstance(raised.value.__cause__, OSError)
+        # Neither slot was ever loaded, so neither can have been unloaded.
+        assert recorder.names("unload") == []
+    finally:
+        await manager.stop()
+
+
 async def test_load_failure_releases_the_lease(recorder):
     backends = make_backends(recorder)
     backends["embed"].load_error = RuntimeError("no weights")
