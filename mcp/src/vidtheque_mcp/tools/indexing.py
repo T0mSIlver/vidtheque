@@ -21,6 +21,7 @@ from ..db import queries
 from ..errors import ToolError, bad_param, unknown_job
 from ..jobs import store as jobs_store
 from ..jobs.store import DuplicateInFlight
+from ..pipeline.sources import source_id_of
 from ..text import (
     clamp,
     duration_clock,
@@ -56,11 +57,6 @@ def normalize_url(raw: str) -> str:
             "or a bare 11-character video id.",
         )
     return candidate
-
-
-def source_id_of(url: str) -> str | None:
-    match = re.search(r"(?:youtu\.be/|v=|/shorts/|/embed/)([A-Za-z0-9_-]{11})", url)
-    return match.group(1) if match else None
 
 
 @handle_errors

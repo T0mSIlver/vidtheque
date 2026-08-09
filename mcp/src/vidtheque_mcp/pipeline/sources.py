@@ -309,6 +309,23 @@ def looks_like_container(url: str) -> bool:
     return path.endswith(_CONTAINER_TAILS)
 
 
+_SOURCE_ID_RE = re.compile(r"(?:youtu\.be/|v=|/shorts/|/embed/)([A-Za-z0-9_-]{11})")
+
+
+def source_id_of(url: str) -> str | None:
+    """The video id a URL names, judged syntactically — no request, no guess.
+
+    Lives here beside `looks_like_container` because it is the same kind of
+    knowledge: what a URL *says* before anything asks the source. Two callers
+    need it and neither wants a round trip — `index-video` deciding whether a
+    URL is a video the corpus already holds, and the pipeline's local
+    resolution (`runner._resolve_locally`) deciding whether it needs the probe
+    at all. One regex, so the two can never disagree about what a URL means.
+    """
+    match = _SOURCE_ID_RE.search(url)
+    return match.group(1) if match else None
+
+
 def parse_info(
     info: dict[str, Any], fallback_url: str, extractor_version: str | None = None
 ) -> VideoMeta:
