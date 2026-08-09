@@ -118,7 +118,9 @@ OWNER_CLAMPS = ClampPolicy(
 # --------------------------------------------------------------------- shared
 
 
-def thumb_url(deps: Deps, frame_id: str | None, width: int = THUMB_WIDTH) -> str | None:
+def thumb_url(
+    deps: Deps, frame_id: str | None, width: int = THUMB_WIDTH, *, absolute: bool = True
+) -> str | None:
     """A `/frames/…` URL for a keyframe, signed only when signing means anything.
 
     In ``AUTH=none`` — the intended public deployment — ``frame_signer`` is
@@ -128,10 +130,25 @@ def thumb_url(deps: Deps, frame_id: str | None, width: int = THUMB_WIDTH) -> str
     (demo-site.md §5). With ``token``/``oauth`` the signer exists and this uses
     the same ``FrameUrlSigner.url()`` ``get-frames`` does — one signing scheme,
     two callers.
+
+    ``absolute=False`` returns the same URL as a root-relative path, for a page
+    that is already being read from this server and therefore knows its own
+    host better than ``PUBLIC_URL`` does. That is not cosmetic: a dashboard
+    previewed through an SSH tunnel on another port rendered every thumbnail
+    against a ``PUBLIC_URL`` that resolved to nothing (2026-08-09), and a
+    reverse proxy or a port map does the same. **Absolute stays the default and
+    stays the MCP contract** — an agent gets a URL with no page around it to
+    resolve against (dashboard.md §8, phase 2).
+
+    The split lives here rather than in the signer because the signature covers
+    ``frame_id``, ``width``, ``quality`` and the expiry and *not* the origin
+    (``auth/tokens.py:_mac``), so a relative URL verifies exactly as an absolute
+    one does. `/frames/*` also accepts the session cookie and a bearer, which is
+    what a same-origin page carries anyway.
     """
     if not frame_id:
         return None
-    base = deps.settings.public_url.rstrip("/")
+    base = deps.settings.public_url.rstrip("/") if absolute else ""
     signer = deps.frame_signer
     if signer is None:
         return f"{base}/frames/{frame_id}.jpg?w={width}&q={THUMB_QUALITY}"
