@@ -150,9 +150,10 @@ why. They are candidates to fold back into the docs.
    path, the columns are present and blank until counters exist.
 
 5. **The frame leg is live** (resolved in commit `81440e4`). index-schema
-   §4.5's `:q_img_vec` is "the *text* query run through SigLIP's text tower —
-   same shared embedding space, which is the entire point of using SigLIP over
-   a captioning pass". `worker/openapi.json` carries
+   §4.5's `:q_img_vec` is the text query embedded into the frame space — by the
+   unified embedder under its frame-retrieval instruction since migration 0004,
+   by SigLIP 2's text tower with the two-model configuration, and by the same
+   endpoint either way. `worker/openapi.json` carries
    **`POST /v1/embeddings/frame-query`**, `{"input": str | [str], "model"?}`
    answering with the usual `EmbeddingsResponse`;
    `pipeline/worker_client.py::embed_frame_query` speaks it for indexing and

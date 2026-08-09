@@ -41,11 +41,12 @@ Two services, one repo, HTTP between them — never a shared Python import.
                    │   load-on-demand, idle-TTL unload,       │
                    │   NVML VRAM check, acquire/release hooks │
                    │                                          │
-                   │   STTBackend        EmbedBackend         │
-                   │   whisperX          Qwen3-Embedding-0.6B │
+                   │   STTBackend        OCRBackend           │
+                   │   whisperX          RapidOCR             │
                    │                                          │
-                   │   ImageEmbedBackend    OCRBackend        │
-                   │   SigLIP 2 NaFlex      RapidOCR          │
+                   │   EmbedBackend + ImageEmbedBackend       │
+                   │   Qwen3-VL-Embedding-2B — one model,     │
+                   │   one shared slot, both legs             │
                    └──────────────────────────────────────────┘
 
   optional: cloudflared ── tunnels the mcp service to a public hostname
@@ -54,11 +55,17 @@ Two services, one repo, HTTP between them — never a shared Python import.
 
 The worker is a **stateless inference API**. No GPU? Skip the worker service
 entirely and point `WORKER_URL` at any OpenAI-compatible provider — the
-endpoints are the contract, not the implementation. Transcripts, metadata and
-OCR text are embedded by `Qwen3-Embedding-0.6B` (1024 dims); keyframes by
-`SigLIP 2 NaFlex so400m` (1152 dims), whose *text* tower is what turns a
-natural-language query into something comparable to a frame. Two spaces, never
-mixed, which is why they never share an endpoint.
+endpoints are the contract, not the implementation.
+
+Transcripts, metadata, OCR text *and* keyframes are embedded by one model:
+`Qwen3-VL-Embedding-2B` (Apache-2.0, 2048 dims), which reads a slide or a
+terminal as a document rather than as a picture — the axis where a CLIP-style
+dual encoder measures 1.3–3.6× worse, and this corpus is conference talks. It
+serves both legs from one loaded checkpoint in one lifecycle slot, so a cold
+search pays one model load instead of two. `Qwen3-Embedding-0.6B` (1024 dims)
+and `SigLIP 2 NaFlex so400m` (1152 dims) remain selectable for a smaller card;
+that configuration is genuinely two spaces, never mixed — which is why text and
+frame embeddings never share an endpoint under either arrangement.
 
 ## Quickstart
 
