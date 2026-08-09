@@ -426,7 +426,7 @@ async def test_a_degraded_video_can_be_resubmitted_without_force(degraded) -> No
     payload = structured(result)
     assert payload["job_id"] is not None  # not a no-op any more
     assert payload["resuming"] == {VIDEO_URL: ["ocr"]}
-    assert "resuming at the failed stage(s) only: ocr" in body(result)
+    assert "resuming at the outstanding stage(s) only: ocr" in body(result)
 
     calls = len(parts.worker.calls)
     assert await parts.run() is True

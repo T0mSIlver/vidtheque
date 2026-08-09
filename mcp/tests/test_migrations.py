@@ -71,11 +71,13 @@ def test_owner_columns_default_to_one(fresh: sqlite3.Connection) -> None:
 
 
 def test_config_is_seeded_with_the_decided_models(fresh: sqlite3.Connection) -> None:
+    """After 0004 both legs are one model in one space at its native width."""
     migrations.migrate(fresh)
     config = dict(fresh.execute("SELECT key, value FROM config"))
-    assert config["text_embed.model"] == "Qwen/Qwen3-Embedding-0.6B"
-    assert config["text_embed.dim"] == "1024"
-    assert config["frame_embed.dim"] == "1152"
+    assert config["text_embed.model"] == "Qwen/Qwen3-VL-Embedding-2B"
+    assert config["frame_embed.model"] == "Qwen/Qwen3-VL-Embedding-2B"
+    assert config["text_embed.dim"] == "2048"
+    assert config["frame_embed.dim"] == "2048"
     assert config["diarization.enabled"] == "0"
 
 
@@ -122,7 +124,9 @@ def test_the_rename_leaves_a_deliberate_operator_value_alone(
     )
     fresh.commit()
 
-    migrations.migrate(fresh)
+    # Up to 0002 only: 0004 moves the shipped pair to the unified model, and
+    # this test is about 0002's guard.
+    _migrate_up_to(fresh, 2, tmp_path / "staged")
 
     config = dict(fresh.execute("SELECT key, value FROM config"))
     assert config["text_embed.model"] == "BAAI/bge-m3"
@@ -232,7 +236,7 @@ def test_ocr_frame_index_backfills_from_the_lines_already_indexed(
             (kf, vid, line_no, text),
         )
 
-    assert migrations.migrate(fresh) == [3]
+    assert migrations.migrate(fresh) == [3, 4]
 
     row = fresh.execute("SELECT video_id, t_s, text FROM ocr_frames").fetchone()
     assert (row[0], row[1]) == (vid, 30.0)
@@ -296,7 +300,7 @@ def test_cascade_delete_clears_fts_and_vectors(fresh: sqlite3.Connection) -> Non
     chunk = fresh.execute("SELECT id FROM chunks").fetchone()[0]
     fresh.execute(
         "INSERT INTO vec_chunks (chunk_id, video_id, start_s, embedding) VALUES (?, ?, 0.0, ?)",
-        (chunk, vid, pack_f32([0.0] * 1024)),
+        (chunk, vid, pack_f32([0.0] * 2048)),
     )
     fresh.execute("DELETE FROM videos WHERE id = ?", (vid,))
     assert fresh.execute("SELECT COUNT(*) FROM cues_fts_docsize").fetchone()[0] == 0

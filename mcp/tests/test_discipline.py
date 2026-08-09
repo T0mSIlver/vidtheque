@@ -214,7 +214,7 @@ async def test_dimension_mismatch_disables_writes_and_vector_legs(tmp_path: Path
     try:
         assert db.writes_allowed is False
         assert db.vectors.enabled is False
-        assert "vec_chunks declares FLOAT[1024]" in (db.vectors.reason or "")
+        assert "vec_chunks declares FLOAT[2048]" in (db.vectors.reason or "")
         assert "FTS-only" in (db.vectors.note() or "")
     finally:
         await db.close()
@@ -228,7 +228,7 @@ async def test_worker_model_drift_disables_the_vector_leg(tmp_path: Path) -> Non
     await db.open()
     try:
         assert db.vectors.enabled is True
-        db.note_worker_drift("bge-m3", 1024)
+        db.note_worker_drift("bge-m3", 2048)
         assert db.vectors.enabled is False
         assert "bge-m3" in (db.vectors.reason or "")
     finally:

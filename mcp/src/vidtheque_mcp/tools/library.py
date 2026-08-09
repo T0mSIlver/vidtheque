@@ -257,6 +257,7 @@ async def corpus_summary(
     rollup = await deps.db.read(queries.corpus_rollup)
     pool = await deps.db.read(lambda c: queries.resolve_videos(c, flt))
     gap_info = await deps.db.read(queries.gaps)
+    backlog = await deps.db.read(queries.embed_backlog)
 
     total = int(rollup["videos_ready"]) + int(rollup["videos_pending"])
     if total == 0:
@@ -264,6 +265,13 @@ async def corpus_summary(
     elif gap_info["active_jobs"]:
         status = "indexing"
     elif gap_info["recent_failed_jobs"]:
+        status = "degraded"
+    elif backlog["text"] or backlog["frame"]:
+        # An embedder swap rebuilds both vec tables empty and sets the embed
+        # stages back to `pending` (migration 0004). The corpus is complete and
+        # searchable, and its semantic half is not — which is what `degraded`
+        # already means here. Reusing the word rather than inventing a fifth
+        # vocabulary is dashboard.md §4.5's rule.
         status = "degraded"
     elif gap_info["transcript_no_ocr"]:
         status = "partial"
@@ -286,6 +294,20 @@ async def corpus_summary(
         "keyframes": int(rollup["keyframes"]),
         "data_status": status,
     }
+    if backlog["text"] or backlog["frame"]:
+        waiting = " and ".join(
+            f"{backlog[key]} {what}"
+            for key, what in (("text", "transcript"), ("frame", "frame"))
+            if backlog[key]
+        )
+        lines.append(
+            f"note: {waiting} vector set(s) are waiting to be re-embedded after "
+            "an embedding-model change — semantic search covers only the videos "
+            "already re-embedded; keyword search is unaffected. Nothing is "
+            "re-downloaded or re-transcribed by the backfill."
+        )
+        structured["embed_backlog"] = dict(backlog)
+
     note = deps.db.vectors.note()
     if note:
         lines.append(note)

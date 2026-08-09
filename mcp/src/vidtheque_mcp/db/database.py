@@ -164,34 +164,89 @@ class Database:
 
     @property
     def text_dim(self) -> int:
-        return self.config_int("text_embed.dim", 1024)
+        return self.config_int("text_embed.dim", 2048)
 
     @property
     def frame_dim(self) -> int:
-        return self.config_int("frame_embed.dim", 1152)
+        return self.config_int("frame_embed.dim", 2048)
+
+    @property
+    def unified_embedding(self) -> bool:
+        """Do both legs name one checkpoint?
+
+        Not a shortcut anything takes — the two legs stay two legs, two stages,
+        two `config` records and two dimension assertions whatever this says.
+        It exists because one thing genuinely differs: a frame-space model
+        mismatch *is* a text-space model mismatch when there is one model, so
+        the drift check has to cover both spaces instead of only the one it was
+        written for (memo §5.4).
+        """
+        text = (self.config.get("text_embed.model") or "").lower()
+        frame = (self.config.get("frame_embed.model") or "").lower()
+        return bool(text) and text == frame
 
     @property
     def query_prefix(self) -> str:
+        """What indexing assumed for the *text* leg's queries.
+
+        A record, not an input: the worker applies the instruction (the query
+        layer sends `input_type=query` and never prepends this, or it would be
+        applied twice). Compare it against `instructions.query` on the worker's
+        `GET /status` — that is the reconciliation, and it is needed because
+        this key shipped wrong from 0001 and nothing read it loudly enough to
+        notice (pipeline-perf-2026-08-09.md §5).
+        """
         return self.config.get("text_embed.query_prefix", "")
+
+    @property
+    def frame_query_prefix(self) -> str:
+        """The same record for the frame leg, added by migration 0004.
+
+        Empty before it: SigLIP 2's text tower takes no instruction, so there
+        was nothing to record. An instruction-aware unified model has a
+        *different* instruction per leg, and the two are what make one space
+        answer two retrieval tasks."""
+        return self.config.get("frame_embed.query_prefix", "")
 
     @property
     def diarization_enabled(self) -> bool:
         return self.config.get("diarization.enabled", "0") == "1"
 
-    def note_worker_drift(self, model: str | None, dimensions: int | None) -> None:
+    def note_worker_drift(
+        self, model: str | None, dimensions: int | None, space: str = "text"
+    ) -> None:
         """Called with what the worker actually returned for an embedding.
 
         The EmbeddingsResponse carries `model` and `dimensions`; that is the
         authoritative drift check, because it describes the vector we are about
         to compare against stored ones.
+
+        `space` names which leg answered. It used to be checked for the text
+        leg only, and the asymmetry was deliberate and correct while the two
+        spaces came from two checkpoints: a SigLIP model id said nothing about
+        whether the transcript index was still coherent, so a frame-space
+        mismatch could not be allowed to disable the transcript leg.
+
+        With one model serving both, a frame-space model mismatch *is* a
+        text-space model mismatch (memo §5.4), so both spaces are checked now —
+        against their own recorded model and their own recorded width, which is
+        still two independent records even when they happen to be equal. When
+        the two legs name two different checkpoints, disabling both legs on a
+        frame-space mismatch would be the old over-reach; so the *disable* stays
+        whole-index only when the corpus is unified, and otherwise a frame-space
+        mismatch is reported by the frame leg's own dimension check in
+        `Deps.embed_query` and costs the frame leg alone.
         """
-        if dimensions is not None and dimensions != self.text_dim:
+        if space == "frame" and not self.unified_embedding:
+            return
+        want_dim = self.frame_dim if space == "frame" else self.text_dim
+        if dimensions is not None and dimensions != want_dim:
             self.vectors.disable(
-                f"the worker returned {dimensions}-d embeddings but the corpus "
-                f"stores {self.text_dim}-d vectors."
+                f"the worker returned {dimensions}-d embeddings for the {space} "
+                f"leg but the corpus stores {want_dim}-d vectors."
             )
             return
-        want = self.config.get("text_embed.model")
+        want = self.config.get(f"{space}_embed.model")
         if model and want and model.lower() != want.lower():
             self.vectors.disable(
                 f"the worker is serving {model!r} but the corpus was embedded "

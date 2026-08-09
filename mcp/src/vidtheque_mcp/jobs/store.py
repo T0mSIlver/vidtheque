@@ -653,10 +653,21 @@ def job_event_page(
 
 
 def failed_stages(conn: sqlite3.Connection, video_id: int) -> list[str]:
-    """Which stages a `ready` video is missing. The resume plan, in one query."""
+    """Which stages a `ready` video is missing. The resume plan, in one query.
+
+    `pending` counts, not only `failed`. A stage can be outstanding on a
+    finished video two ways: it failed, or something invalidated it — which is
+    what migration 0004 does to `text_embed`/`frame_embed` when the embedding
+    model changes. Both are "ran once, needs to run again", both are what
+    `_should_run` re-runs anyway, and reading only `failed` meant an
+    invalidated video short-circuited as "already indexed" and its re-embed
+    never got a job (the same hole the `failed` clause was added to close).
+
+    `skipped` is deliberately absent: it records a choice, not an omission.
+    """
     rows = conn.execute(
-        "SELECT stage FROM video_stages WHERE video_id = ? AND state = 'failed' "
-        "ORDER BY stage",
+        "SELECT stage FROM video_stages WHERE video_id = ? "
+        "AND state IN ('failed', 'pending') ORDER BY stage",
         (video_id,),
     ).fetchall()
     return [str(row["stage"]) for row in rows]

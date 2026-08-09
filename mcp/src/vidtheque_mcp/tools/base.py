@@ -44,15 +44,25 @@ class Deps:
     ) -> bytes | None:
         """Embed the query for a vector leg, or explain why we did not.
 
-        ``space`` picks the encoder: ``"text"`` for the transcript leg,
-        ``"frame"`` for the frame leg — the query goes through SigLIP's *text*
-        tower, which is the entire point of using SigLIP over a captioning
-        pass. A leg that cannot run prints a `note:`, never a silent narrowing.
+        ``space`` picks the endpoint: ``"text"`` for the transcript leg,
+        ``"frame"`` for the frame leg. A leg that cannot run prints a `note:`,
+        never a silent narrowing.
 
-        The frame leg goes through ``POST /v1/embeddings/frame-query`` (the
-        SigLIP text tower). A worker that predates that endpoint 404s; we
-        remember that (it is a property of the worker build, not a transient),
-        note it, and stop asking until restart.
+        **Two calls, one model, deliberately.** With the unified embedder both
+        legs are one 2048-d space served by one loaded checkpoint, and a
+        `content_type=all` search still embeds the query twice — because the
+        model is instruction-aware and the two legs want different instructions
+        ("retrieve the passage that answers this" vs "retrieve the frame that
+        shows this"). Collapsing them into one call would be one embedding
+        answering two questions. Both calls hit one loaded model, so the cost is
+        a forward pass, not a load.
+
+        The frame leg goes through ``POST /v1/embeddings/frame-query`` — a
+        sibling path rather than a ``space=`` field, so a hosted-provider swap
+        404s loudly instead of answering in the wrong space. A worker that
+        predates the endpoint 404s too; we remember that (it is a property of
+        the worker build, not a transient), note it, and stop asking until
+        restart.
         """
         if not self.db.vectors.enabled:
             note = self.db.vectors.note()
@@ -68,11 +78,14 @@ class Deps:
         want_dim = self.db.frame_dim if space == "frame" else self.db.text_dim
         try:
             if space == "frame":
+                # No `input_type`: this path IS the query side, and the
+                # instruction it applies is the frame-retrieval one recorded as
+                # config['frame_embed.query_prefix'].
                 vectors, got_model, dimensions = await self.embeddings.embed_frame_query(
                     [text], model=model
                 )
             else:
-                # The asymmetric query prefix belongs to whoever runs the
+                # The asymmetric query instruction belongs to whoever runs the
                 # model: `input_type=query` is the worker's switch for it, and
                 # prepending config['text_embed.query_prefix'] here as well
                 # would apply it twice.
@@ -93,15 +106,20 @@ class Deps:
                 notes.append(note)
             return None
 
-        if space == "text":
-            # Only the text space is checked for drift: it is the one whose
-            # vectors this query is about to be compared against by cosine.
-            self.db.note_worker_drift(got_model, dimensions)
-            if not self.db.vectors.enabled:
-                note = self.db.vectors.note()
-                if note:
-                    notes.append(note)
-                return None
+        # Both spaces are checked now. The old asymmetry ("only the text space
+        # is checked for drift") was right while the two spaces came from two
+        # checkpoints: a SigLIP mismatch said nothing about whether the
+        # transcript index was coherent, so letting it disable both legs would
+        # have been over-reach. With one model serving both, a frame-space
+        # mismatch IS a text-space mismatch (memo §5.4) — and `note_worker_drift`
+        # keeps the old restraint by ignoring the frame space when the corpus
+        # names two different checkpoints.
+        self.db.note_worker_drift(got_model, dimensions, space=space)
+        if not self.db.vectors.enabled:
+            note = self.db.vectors.note()
+            if note and note not in notes:
+                notes.append(note)
+            return None
 
         if not vectors or len(vectors[0]) != want_dim:
             if space == "frame":

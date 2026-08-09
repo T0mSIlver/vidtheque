@@ -256,9 +256,11 @@ def pending_chunks(conn: sqlite3.Connection, video_id: int) -> list[sqlite3.Row]
 def write_chunk_vectors(
     conn: sqlite3.Connection, video_id: int, rows: Sequence[tuple[int, float, Sequence[float]]]
 ) -> None:
-    conn.executemany(
-        "INSERT OR REPLACE INTO vec_chunks (chunk_id, video_id, start_s, embedding) "
-        "VALUES (?, ?, ?, ?)",
+    _replace_vectors(
+        conn,
+        "vec_chunks",
+        "chunk_id",
+        "start_s",
         [
             (chunk_id, video_id, float(start_s), pack_f32(vector))
             for chunk_id, start_s, vector in rows
@@ -401,10 +403,47 @@ def set_ocr_state(conn: sqlite3.Connection, keyframe_ids: Sequence[int], state: 
 def write_frame_vectors(
     conn: sqlite3.Connection, video_id: int, rows: Sequence[tuple[int, float, Sequence[float]]]
 ) -> None:
-    conn.executemany(
-        "INSERT OR REPLACE INTO vec_frames (keyframe_id, video_id, t_s, embedding) "
-        "VALUES (?, ?, ?, ?)",
+    _replace_vectors(
+        conn,
+        "vec_frames",
+        "keyframe_id",
+        "t_s",
         [(kf_id, video_id, float(t_s), pack_f32(vector)) for kf_id, t_s, vector in rows],
+    )
+
+
+def _replace_vectors(
+    conn: sqlite3.Connection,
+    table: str,
+    key: str,
+    time_column: str,
+    rows: Sequence[tuple[int, int, float, bytes]],
+) -> None:
+    """Delete-then-insert, because `vec0` does not honour `INSERT OR REPLACE`.
+
+    It looked like it did — the statement parses, and it worked for every write
+    the pipeline had ever made, because every one of them was the *first* write
+    for that id. The second is `OperationalError: UNIQUE constraint failed on
+    vec_chunks primary key`: the conflict resolution never reaches vec0's
+    shadow tables, so `OR REPLACE` is an ordinary `INSERT` wearing a hat.
+
+    Nothing hit it until an embedding-model change made re-embedding an
+    already-embedded video a normal operation. It would have failed the
+    `text_embed` stage of every video in the corpus on the second pass, with a
+    message about a primary key that reads like corruption.
+
+    One `DELETE … IN (…)` per batch, in the same transaction as the insert, so
+    a batch is still all-or-nothing.
+    """
+    if not rows:
+        return
+    ids = [row[0] for row in rows]
+    placeholders = ",".join("?" * len(ids))
+    conn.execute(f"DELETE FROM {table} WHERE {key} IN ({placeholders})", ids)
+    conn.executemany(
+        f"INSERT INTO {table} ({key}, video_id, {time_column}, embedding) "
+        "VALUES (?, ?, ?, ?)",
+        rows,
     )
 
 

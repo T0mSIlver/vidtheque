@@ -1175,6 +1175,22 @@ class IndexingPipeline:
         `want_media` (`:329`) — without it, every already-indexed video touched
         by any later job would re-download its source mp4 before discovering it
         had nothing to do.
+
+        **The embedding stages get neither clause, and that is the point.**
+        `text_embed` and `frame_embed` fall through to the plain rule, so a
+        recorded key that differs from `config['*_embed.model']` re-runs them —
+        which is exactly the trigger an embedder swap needs, and the precise
+        opposite of the `keyframe` forgiveness above. A different checkpoint
+        really is a different vector space; there is no provenance half to
+        forgive, and `PROVENANCE_SEP` must never be extended to these two.
+        Comparing contracts here would leave 1024-d vectors sitting in a 2048-d
+        index's place, marked `done`.
+
+        Re-running them costs a worker call and nothing else: `want_media` and
+        `need_audio` are gated on the `keyframe` and `stt` clauses above, which
+        a model swap does not touch, so a re-embed re-downloads nothing and
+        re-transcribes nothing. Asserted in
+        `test_pipeline_e2e.py::test_a_re_embed_fetches_no_media`.
         """
         if run.force_active:
             return True

@@ -22,8 +22,14 @@ from vidtheque_mcp.db import migrations
 from vidtheque_mcp.db.connection import open_write_connection
 from vidtheque_mcp.db.queries import OCR_FRAME_SEPARATOR, pack_f32
 
-TEXT_DIM = 1024
-FRAME_DIM = 1152
+# One model, one space, one width: `Qwen/Qwen3-VL-Embedding-2B` at its native
+# 2048 dims serves both legs (migration 0004). They stay two named constants
+# because they are still two independently-asserted `config` keys and two
+# independently-staleable stages — the unification is a configuration, not a
+# collapse of the schema.
+TEXT_DIM = 2048
+FRAME_DIM = 2048
+UNIFIED_MODEL = "Qwen/Qwen3-VL-Embedding-2B"
 
 
 class FakeEmbeddings:
@@ -37,12 +43,12 @@ class FakeEmbeddings:
     through.
     """
 
-    FRAME_MODEL = "google/siglip2-so400m-patch16-naflex"
+    FRAME_MODEL = UNIFIED_MODEL
 
     def __init__(
         self,
         dim: int = TEXT_DIM,
-        model: str = "Qwen/Qwen3-Embedding-0.6B",
+        model: str = UNIFIED_MODEL,
         serves_frame_text: bool = True,
     ) -> None:
         self.dim = dim
@@ -328,6 +334,16 @@ def settings(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> Settings:
         worker_url="http://worker:8081",
         auth_mode="none",
         secret="test-secret-not-for-production",
+        # Pinned, and NOT the shipped defaults. The fixture's vectors are
+        # `sin()`-derived stand-ins with no model's geometry, so an absolute
+        # cosine ceiling means nothing here — and the shipped default is
+        # deliberately open (1.0) until the GPU bench recalibrates it for
+        # Qwen3-VL-Embedding's space, which would let junk vectors into every
+        # ranking assertion in the suite. These are the measured SigLIP-era
+        # numbers, used purely as a stable geometry to rank against.
+        # `test_discipline.py` asserts what actually ships.
+        vec_max_distance=0.72,
+        frame_max_distance=0.96,
     )
 
 

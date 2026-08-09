@@ -180,10 +180,10 @@ async def index_video(
     resume_stages = sorted({stage for stages in resuming.values() for stage in stages})
     if resuming:
         lines.append(
-            f"{len(resuming)} already indexed but degraded — resuming at the failed "
-            f"stage(s) only: {', '.join(resume_stages)}. Everything that succeeded "
-            "the first time is left alone, and nothing is re-downloaded for a stage "
-            "that is already current."
+            f"{len(resuming)} already indexed but incomplete — resuming at the "
+            f"outstanding stage(s) only: {', '.join(resume_stages)}. Everything that "
+            "succeeded the first time is left alone, and nothing is re-downloaded "
+            "for a stage that is already current."
         )
     lines.append("Stages: download → transcribe → keyframes → ocr → embed")
     lines.append(f"Queue position {active} · estimated 1-3 minutes per hour of video")
@@ -209,12 +209,14 @@ async def index_video(
 def _resume_plan(
     conn: sqlite3.Connection, items: Sequence[jobs_store.NewItem], force: bool
 ) -> dict[str, list[str]]:
-    """Which queued items are a degraded video coming back for its failed stages.
+    """Which queued items are an incomplete video coming back for its outstanding stages.
 
     Not a new mechanism: `_should_run` has always re-run failed and out-of-date
     stages and left finished ones. What was missing is that the caller was never
     told, because a degraded video short-circuited as "already indexed" and
-    never got a job at all.
+    never got a job at all. `failed_stages` counts `pending` too, so a corpus
+    invalidated by an embedding-model change resumes here rather than needing a
+    `force_reindex` that would re-download and re-transcribe.
     """
     if force:
         return {}
@@ -256,14 +258,22 @@ def _lookup(
     conn: sqlite3.Connection, urls: list[str], *, ready_only: bool
 ) -> dict[str, sqlite3.Row]:
     found: dict[str, sqlite3.Row] = {}
-    # "Current" has to mean every stage that ran, ran. A video whose OCR failed
-    # is `ready` — that is deliberate, it is still searchable by transcript —
-    # but treating it as current is what made the failed stage unreachable:
-    # resubmission short-circuited, and only `force_reindex` would touch it,
-    # which redoes the six stages that were fine.
+    # "Current" has to mean every stage that ran, ran, and still holds. A video
+    # whose OCR failed is `ready` — that is deliberate, it is still searchable
+    # by transcript — but treating it as current is what made the failed stage
+    # unreachable: resubmission short-circuited, and only `force_reindex` would
+    # touch it, which redoes the six stages that were fine.
+    #
+    # `pending` is the same hole with a different cause. Migration 0004 sets
+    # `text_embed`/`frame_embed` back to `pending` when the embedding model
+    # changes, and reading only `failed` would have left the entire re-embed
+    # unreachable except through `force_reindex` — which re-downloads the mp4
+    # and re-transcribes the audio to redo two stages that need neither. The
+    # re-embed is a resume, so it has to look like one.
     clause = (
         " AND index_state = 'ready' AND NOT EXISTS ("
-        "SELECT 1 FROM video_stages s WHERE s.video_id = videos.id AND s.state = 'failed')"
+        "SELECT 1 FROM video_stages s WHERE s.video_id = videos.id "
+        "AND s.state IN ('failed', 'pending'))"
         if ready_only
         else ""
     )

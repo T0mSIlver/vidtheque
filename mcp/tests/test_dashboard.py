@@ -194,6 +194,11 @@ def _settings(tmp_path: Path, **kwargs) -> Settings:
         public_url="http://localhost:8080",
         worker_url="http://worker:8081",
         secret="test-secret",
+        # See mcp/tests/conftest.py: the shipped relevance floors are
+        # deliberately open pending recalibration, and the fixture's
+        # stand-in vectors have no geometry to calibrate against.
+        vec_max_distance=0.72,
+        frame_max_distance=0.96,
         **kwargs,
     )
 
@@ -420,7 +425,7 @@ def test_the_overview_answers_the_first_screen_questions(client: TestClient) -> 
     body = page(client, ROOT)
     # The counts, the declared models, and the live vector state beside them.
     assert "transcript cues" in body and "keyframes" in body
-    assert "Qwen/Qwen3-Embedding-0.6B" in body
+    assert "Qwen/Qwen3-VL-Embedding-2B" in body
     assert "vector legs on" in body and "indexing allowed" in body
     # `data_status` verbatim from corpus-summary, not re-derived.
     assert re.search(r'class="pill tone-\w+">(ok|partial|degraded|indexing|empty)<', body)

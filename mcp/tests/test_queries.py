@@ -12,7 +12,7 @@ from vidtheque_mcp.config import Settings
 from vidtheque_mcp.db import queries
 from vidtheque_mcp.db.connection import open_read_connection, open_write_connection
 
-from .conftest import TEXT_DIM, seed, vector_for
+from .conftest import FRAME_DIM, TEXT_DIM, seed, vector_for
 
 
 @pytest.fixture
@@ -134,7 +134,7 @@ def test_the_ocr_leg_keeps_a_line_the_presenter_also_narrated(
 
 def test_frame_leg_returns_assembled_frame_ids(conn: sqlite3.Connection) -> None:
     pool = ids(conn)
-    qimg = queries.pack_f32(vector_for("kv cache size = 2 * n_layers * n_heads", 1152))
+    qimg = queries.pack_f32(vector_for("kv cache size = 2 * n_layers * n_heads", FRAME_DIM))
     rows = queries.search_frames(
         conn, queries.SearchParams(q="kv cache", video_ids=pool, limit=5), qimg, 20
     )
@@ -223,7 +223,7 @@ def test_per_video_diversity_cap_applies_to_the_frame_leg_too(
     conn: sqlite3.Connection,
 ) -> None:
     pool = ids(conn)
-    qimg = queries.pack_f32(vector_for("kv cache size = 2 * n_layers * n_heads", 1152))
+    qimg = queries.pack_f32(vector_for("kv cache size = 2 * n_layers * n_heads", FRAME_DIM))
     rows = queries.search_frames(
         conn,
         queries.SearchParams(q="kv cache", video_ids=pool, limit=50, max_per_video=1),

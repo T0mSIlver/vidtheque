@@ -70,8 +70,32 @@ OCR_SNIPPET_TOKENS = 64
 #
 # 2. `has_lexical_footing`, below — which is what actually makes the empty
 #    state reachable, and does it on evidence rather than on a magic number.
-VEC_MAX_DISTANCE = 0.72
-FRAME_MAX_DISTANCE = 0.96
+#    **Both numbers were measured in the SigLIP-2 + Qwen3-Embedding-0.6B
+#    spaces and both are now uncalibrated.** Migration 0004 moved both legs
+#    into `Qwen/Qwen3-VL-Embedding-2B`'s 2048-d space, and an absolute cosine
+#    distance means nothing across a change of embedder: a different model
+#    packs its corpus at a different radius, so a ceiling tuned to sit just
+#    above one model's real range can sit *below* another's and silently delete
+#    real recall. That is the failure this whole comment says is the worse one.
+#
+#    So both defaults are deliberately loosened until the GPU bench re-measures
+#    them on this corpus, and the SigLIP-space values are kept beside them as
+#    the documented settings for anyone still running that pair. The
+#    replacement procedure is the one that produced these: embed a set of real
+#    queries and a set of junk queries, look at the best-hit distributions, and
+#    put the ceiling above the whole real range. **Bench item.**
+VEC_MAX_DISTANCE = 1.0
+FRAME_MAX_DISTANCE = 1.0
+
+SIGLIP_FRAME_MAX_DISTANCE = 0.96
+"""The measured ceiling for `google/siglip2-so400m-patch16-naflex`'s 1152-d
+space (real best-hit 0.877-0.919, junk 0.877-0.966, real 20th-nearest 0.946).
+Set `VIDTHEQUE_FRAME_MAX_DISTANCE=0.96` when running that frame backend."""
+
+QWEN3_06B_VEC_MAX_DISTANCE = 0.72
+"""The measured ceiling for `Qwen/Qwen3-Embedding-0.6B`'s 1024-d space (real
+best-hit 0.504-0.576, junk 0.513-0.616, real 20th-nearest 0.664). Set
+`VIDTHEQUE_VEC_MAX_DISTANCE=0.72` when running that text backend."""
 
 # vec0 metadata constraints must be plain comparisons to be pushed into the
 # KNN, so "unbounded" is a sentinel rather than NULL. Video positions are
@@ -1221,6 +1245,52 @@ def recent_indexed(conn: sqlite3.Connection, video_ids: Sequence[int], limit: in
         """,
         (json.dumps(list(video_ids)), limit),
     ).fetchall()
+
+
+_EMBED_BACKLOG_SQL = """
+SELECT
+  (SELECT COUNT(*) FROM video_stages s
+    WHERE s.stage = 'text_embed' AND s.state = 'pending'
+      AND EXISTS (SELECT 1 FROM video_stages c WHERE c.video_id = s.video_id
+                    AND c.stage = 'chunk' AND c.state = 'done')) AS text,
+  (SELECT COUNT(*) FROM video_stages s
+    WHERE s.stage = 'frame_embed' AND s.state = 'pending'
+      AND EXISTS (SELECT 1 FROM video_stages k WHERE k.video_id = s.video_id
+                    AND k.stage = 'keyframe' AND k.state = 'done')) AS frame
+"""
+
+
+def embed_backlog(conn: sqlite3.Connection) -> dict[str, int]:
+    """Videos whose content is indexed but whose vectors are not current.
+
+    The honest half of an embedder swap. Migration 0004 rebuilt both vec tables
+    at a new width and set every `done` embed stage back to `pending`, so for
+    the length of one re-embed the corpus has transcripts and keyframes it
+    cannot answer semantically. Nearest-neighbour search over a half-filled
+    index does not fail — it quietly returns less — so something has to say so,
+    and the vector legs cannot be *disabled* to say it: both embed stages skip
+    themselves when `db.vectors.enabled` is false, which would latch the
+    backfill off forever (memo §5.4, and it is why index-schema §1.10 rule 3's
+    "keeps the vector legs disabled until it finishes" is written the way it is
+    now).
+
+    Derived from `video_stages` rather than from `COUNT(*)` on the vec tables:
+    it is a handful of rows in a `WITHOUT ROWID` table, it updates live as the
+    backfill lands rather than at boot, and it is the same shape `gaps()`
+    already uses for `transcript_no_ocr`.
+
+    **Explicitly `pending`, not "anything that is not done".** The three other
+    states are already someone else's story and folding them in here would
+    re-label existing corpora: `skipped` is a deliberate choice (a video
+    indexed `channels=transcript` never wanted frame vectors), `failed` is
+    reported by `gaps()` and `job-status` with the error attached, and a
+    *missing* row means the stage was never attempted, which is partial
+    coverage and what `data_status: partial` is for. `pending` on a video whose
+    chunks or keyframes are `done` means one thing only: it had vectors, they
+    were invalidated, and it is waiting for new ones.
+    """
+    row = conn.execute(_EMBED_BACKLOG_SQL).fetchone()
+    return {"text": int(row["text"]), "frame": int(row["frame"])}
 
 
 def gaps(conn: sqlite3.Connection) -> dict[str, Any]:

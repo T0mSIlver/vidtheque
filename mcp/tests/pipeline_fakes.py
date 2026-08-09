@@ -259,10 +259,10 @@ class FakeWorker:
         self,
         *,
         healthy: bool = True,
-        text_dim: int = 1024,
-        frame_dim: int = 1152,
-        text_model: str = "Qwen/Qwen3-Embedding-0.6B",
-        frame_model: str = "google/siglip2-so400m-patch16-naflex",
+        text_dim: int = 2048,
+        frame_dim: int = 2048,
+        text_model: str = "Qwen/Qwen3-VL-Embedding-2B",
+        frame_model: str = "Qwen/Qwen3-VL-Embedding-2B",
         transcript: dict[str, Any] | None = None,
         # Screen text nobody says out loud, so an on-screen assertion is about
         # the OCR leg and not about §3.10's OCR-vs-transcript collapse.
@@ -356,7 +356,12 @@ class FakeWorker:
     async def embed(self, texts: Sequence[str], model=None, input_type: str = "query"):
         self.calls.append(f"embed:{input_type}:{len(texts)}")
         self._maybe_fail("embed")
-        if model == self.frame_model:
+        if model == self.frame_model and self.frame_model != self.text_model:
+            # Only a discriminator while the two legs are two checkpoints. With
+            # the unified embedder both ids are the same string, and reading the
+            # requested model as "this is the frame space" made every text_embed
+            # call answer in the frame width — which silently defeated the
+            # dimension-drift tests, because the two widths now agree.
             return [unit_vector(t, self.frame_dim) for t in texts], self.frame_model, self.frame_dim
         return [unit_vector(t, self.text_dim) for t in texts], self.text_model, self.text_dim
 

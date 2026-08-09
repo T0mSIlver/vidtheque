@@ -997,10 +997,18 @@ def test_frame_floor_drops_hits_beyond_the_ceiling(corpus: Corpus) -> None:
     assert queries.search_frames(conn, params, qimg, 20, max_distance=0.0) == []
 
 
-def test_the_configured_floors_are_the_defaults(settings: Settings) -> None:
-    """The knobs are wired, and `deploy/.env.example` documents both."""
-    assert settings.vec_max_distance == queries.VEC_MAX_DISTANCE
-    assert settings.frame_max_distance == queries.FRAME_MAX_DISTANCE
+def test_the_configured_floors_are_the_defaults() -> None:
+    """The knobs are wired, and `deploy/.env.example` documents both.
+
+    Against the class defaults, not the test fixture: the fixture pins the
+    measured SigLIP-era numbers so ranking assertions have a stable geometry,
+    while what SHIPS is deliberately open until the GPU bench recalibrates both
+    for Qwen3-VL-Embedding's 2048-d space (queries.VEC_MAX_DISTANCE)."""
+    shipped = Settings(
+        data_dir=Path("/data"), public_url="http://x", worker_url="http://y"
+    )
+    assert shipped.vec_max_distance == queries.VEC_MAX_DISTANCE == 1.0
+    assert shipped.frame_max_distance == queries.FRAME_MAX_DISTANCE == 1.0
     env = (Path(__file__).resolve().parents[2] / "deploy" / ".env.example").read_text()
     assert "VIDTHEQUE_VEC_MAX_DISTANCE" in env
     assert "VIDTHEQUE_FRAME_MAX_DISTANCE" in env

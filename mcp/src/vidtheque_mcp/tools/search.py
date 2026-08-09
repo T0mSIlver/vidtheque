@@ -225,11 +225,23 @@ async def run(
         qvec = await deps.embed_query(q or "", notes, space="text")
     qimg = None
     if legs["frame"]:
-        # The frame leg runs the *text* query through SigLIP's text tower —
-        # same shared embedding space as the stored frame vectors.
+        # The frame leg runs the text query through the frame model itself,
+        # into the same space as the stored frame vectors. Same weights as the
+        # transcript leg's query with the unified embedder, under a different
+        # instruction; SigLIP's text tower with the two-model pair. Either way
+        # it is /v1/embeddings/frame-query and never /v1/embeddings.
         qimg = await deps.embed_query(q or "", notes, space="frame")
         if qimg is None:
             legs["frame"] = False
+
+    # The vectors these legs are about to search may not be current yet: an
+    # embedder swap rebuilds both vec tables empty and sets the embed stages
+    # back to `pending` (migration 0004). Nearest-neighbour search over a
+    # half-filled index does not fail, it quietly returns less — so say so.
+    # `all` means all, and that includes being honest about what `all` could
+    # not reach.
+    if legs["transcript"] or legs["frame"]:
+        await _note_embed_backlog(deps, legs, notes)
 
     # Per-leg caps are an overfetch bound, not the user's `max_per_video`: the
     # cap the user asked for spans modalities and can only be applied once the
@@ -347,6 +359,34 @@ async def run(
 
 
 # ---------------------------------------------------------------------------
+
+
+async def _note_embed_backlog(
+    deps: Deps, legs: dict[str, bool], notes: list[str]
+) -> None:
+    """One `note:` per degraded vector leg, naming how many videos are waiting.
+
+    Only when a leg actually ran — a leg the caller did not ask for is not
+    degraded, it is absent, and it already has its own note. Costs one query
+    over `video_stages` (a few thousand rows in a `WITHOUT ROWID` table at the
+    500-video projection), and only on searches that use a vector leg.
+    """
+    backlog = await deps.db.read(queries.embed_backlog)
+    for leg, key, what in (
+        ("transcript", "text", "transcript"),
+        ("frame", "frame", "frame"),
+    ):
+        if not legs[leg] or not backlog[key]:
+            continue
+        n = backlog[key]
+        notes.append(
+            f"note: {n} video{'s' if n != 1 else ''} in scope {'are' if n != 1 else 'is'} "
+            f"waiting to be re-embedded after an embedding-model change, so the "
+            f"{what} leg's semantic half searched only the videos that are "
+            "current — keyword matching covered the rest. "
+            'index-video force_reindex=false url="…" (or the overnight batch) '
+            "backfills them; no download or transcription is involved."
+        )
 
 
 def _run_legs(

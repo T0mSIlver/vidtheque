@@ -51,6 +51,11 @@ def _settings(tmp_path: Path) -> Settings:
         worker_url="http://worker:8081",
         auth_mode="none",
         secret="test-secret",
+        # See mcp/tests/conftest.py: the shipped relevance floors are
+        # deliberately open pending recalibration, and the fixture's
+        # stand-in vectors have no geometry to calibrate against.
+        vec_max_distance=0.72,
+        frame_max_distance=0.96,
     )
 
 
