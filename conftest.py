@@ -18,7 +18,9 @@ import tempfile
 import time
 from pathlib import Path
 
-_SWEEP_AFTER_S = 24 * 3600
+# A full-suite run leaves ~1 GB behind and agent sessions run many; a day of
+# retention hit 44 GB on 2026-08-09. Two hours outlives any live run.
+_SWEEP_AFTER_S = 2 * 3600
 
 
 def pytest_configure(config) -> None:
