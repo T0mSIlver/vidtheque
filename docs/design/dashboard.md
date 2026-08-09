@@ -163,7 +163,7 @@ write affordances absent and two fields redacted:
 | corpus overview | full, incl. resolved settings and drift banner | counts, channels, tags, coverage — no settings, no paths |
 | videos table | full, with row actions | full, no actions |
 | video detail | full | full |
-| jobs | full, with source URLs and error text | states, codes and counts only (§5.4) |
+| jobs | full, with source URLs and error text | states, codes, counts and durations — the "what does a video cost" view (§5.4) |
 | index form | yes | **absent** |
 | re-index / delete / tag | yes | **absent** |
 
@@ -809,10 +809,12 @@ Real forks. Everything above is a recommendation I will defend.
    the welcome page moving to `/demo`. The last one is the most honest about what
    the product *is* and the most disruptive to every link already shared.
 
-4. **Does the demo expose a jobs view at all?** I kept it, redacted to codes and
-   counts (§2.4), on demo-site.md's own reasoning for keeping `job-status` in the
-   public tool set. The alternative is to drop it: a stranger does not need to
-   watch your queue, and the redaction is a thing that has to stay correct.
+4. **Resolved (Tom, 2026-08-09): the demo keeps the jobs view.** Its stated
+   purpose is to show a visitor what indexing a video actually costs in time, so
+   per-item and per-stage durations are part of the redacted projection, not a
+   private extra — the redaction drops source URLs and `error_message` (codes
+   and counts only, §2.4), never the clocks. Submitting to the index stays
+   absent from the demo in every form.
 
 5. **`video_stages.worker_version`, and `stage_version`.** Do you want "which
    build produced this row"? It is one nullable column and one write (§4.1
