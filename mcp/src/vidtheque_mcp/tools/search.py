@@ -397,9 +397,12 @@ async def run(
             )
         )
 
-    # The words are nowhere in the transcript — but they may be in a title, and
-    # nothing else in the payload can say so (§9.8). Asked only on that branch.
-    if legs["transcript"] and not browse and leg_counts["transcript_fts"] == 0:
+    # The words are nowhere in the *text* the legs read — but they may be in a
+    # title, and nothing else in the payload can say so (§9.8). The OCR leg is
+    # purely lexical, so a non-zero `ocr` count is lexical footing too: the note
+    # claims "no transcript or on-screen line", and that claim has to be true.
+    lexical = leg_counts["transcript_fts"] or (legs["ocr"] and leg_counts["ocr"])
+    if legs["transcript"] and not browse and not lexical:
         await _note_title_footing(deps, q, video_pool, notes)
 
     meta = await deps.db.read(lambda c: _video_meta(c, [h.video_id for h in hits]))

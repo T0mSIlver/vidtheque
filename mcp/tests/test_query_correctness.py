@@ -1836,6 +1836,9 @@ async def test_a_phrase_that_lives_only_in_a_title_is_named(tool_corpus) -> None
         other = add_video(conn, "othertalk01", title="Separating the task from the model")
         cue2 = add_cue(conn, other, 0, 0.0, 5.0, "self extract and self recheck")
         add_chunk(conn, other, 0, cue2, cue2, "self extract and self recheck", 0.0, 5.0)
+        # A slide that DOES say the words: the OCR leg is purely lexical, so
+        # this is lexical footing and the note's claim would be false.
+        add_ocr(conn, other, 0, 3.0, "slide: the on-call tax, quantified")
 
     parts = await tool_corpus(make)
     result = await search.run(
@@ -1857,6 +1860,13 @@ async def test_a_phrase_that_lives_only_in_a_title_is_named(tool_corpus) -> None
         parts.deps, q="humans burns", content_type="transcript", limit=5
     )
     assert not any("video title" in n for n in spoken.structured_content["notes"])
+
+    # …and neither does one whose words are on a slide: the OCR leg is lexical,
+    # so `ocr 1` IS lexical footing, and "no transcript or on-screen line
+    # contains these words" would be a false claim on that payload.
+    everywhere = await search.run(parts.deps, q="on-call tax", limit=5)
+    assert everywhere.structured_content["leg_counts"]["ocr"] > 0
+    assert not any("video title" in n for n in everywhere.structured_content["notes"])
 
 
 async def test_the_legs_line_names_its_units_and_never_hides_the_band(
