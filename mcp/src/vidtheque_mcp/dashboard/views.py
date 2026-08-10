@@ -61,6 +61,15 @@ CHANNEL_CAP = 12
 TAG_CAP = 24
 RECENT_CAP = 8
 OCR_LINE_CAP = 600
+# How many OCR lines a frame's caption prints before the digest's expander
+# takes over (DESIGN.md, The digest). It is **eight because the stylesheet's
+# box↔line highlight is eight pairs**: the preview is exactly the set of lines
+# the frame above can point at, and the remainder — which never lit a box even
+# before the digest existed — is one click away with a real count on it.
+OCR_PREVIEW_LINES = 8
+# The same bound for the job event log, and the same reason to have one: an
+# overnight batch writes sixty events and the panel printed all of them.
+EVENT_PREVIEW = 8
 
 _ENV = build_environment()
 
@@ -625,6 +634,13 @@ async def video_detail(request: Request) -> Response:
             "shots": _shot_bars(deps, video_id, shots, duration, frame_page),
             "shots_capped": len(shots) >= SHOT_CAP,
             "frames": _frame_cards(deps, video_id, frame_rows, ocr_lines),
+            # The digest's bound, and the honest half of the double cap: when
+            # the *page's* line budget is spent the per-frame counts under-report
+            # by definition, so the panel says so rather than printing a short
+            # list as if it were the whole one.
+            "ocr_preview_lines": OCR_PREVIEW_LINES,
+            "ocr_line_cap": OCR_LINE_CAP,
+            "ocr_lines_capped": sum(len(v) for v in ocr_lines.values()) >= OCR_LINE_CAP,
             "frame_page": frame_page,
             "frame_offset": frame_offset,
             "frames_more": frames_more,
@@ -1075,6 +1091,8 @@ async def job_detail(request: Request) -> Response:
             "title": f"Job {detail['job']['job_id']}",
             "poll_ms": POLL_MS,
             "redacted": redact,
+            # The event log's digest bound (DESIGN.md, The digest).
+            "event_preview": EVENT_PREVIEW,
             **detail,
         },
     )

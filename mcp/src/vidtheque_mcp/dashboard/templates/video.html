@@ -2,6 +2,15 @@
 {% macro nav_link(f_off, c_off, anchor) -%}
 {{ root }}/videos/{{ video.video_id }}?frames={{ frame_page }}&amp;frame_offset={{ f_off }}&amp;cues={{ cue_page }}&amp;cue_offset={{ c_off }}#{{ anchor }}
 {%- endmacro %}
+{# One OCR line: the string the machine read, its box, and how sure it was.
+   Written once because the digest prints it in two lists — the bounded preview
+   and the remainder behind the expander — and the two must be the same row. #}
+{% macro ocr_line(line) -%}
+<li class="ocrline" data-box="{{ line.box[0] }},{{ line.box[1] }},{{ line.box[2] }},{{ line.box[3] }}">
+  <span class="ocrtext">{{ line.text }}</span>
+  {%- if line.conf is not none %}<span class="conf">{{ "%.2f" | format(line.conf) }}</span>{% endif %}
+</li>
+{%- endmacro %}
 {% block main %}
 
 <p class="crumbs"><a href="{{ root }}/videos">Videos</a> <span aria-hidden="true">/</span> <code>{{ video.video_id }}</code></p>
@@ -29,20 +38,26 @@
       {% endif %}
     </p>
   </div>
+  {# The separator belongs to the fact *before* it, not the one after. Written
+     the other way round — whitespace, then `·`, then the fact with no space —
+     the only break opportunity in the strip was in front of the middot, so a
+     wrapped strip started its second line with a dangling `· en · indexed …`
+     (seen at 390 on 2026-08-10). Glued to the left and given room on the
+     right, the line ends with the separator, which is what a separator is
+     for. #}
   <p class="pagehead-meta">
-    {{ video.channel }}
-    <span class="sep">·</span><span class="fact">published <span class="mono">{{ video.published_at | day }}</span></span>
-    <span class="sep">·</span><span class="fact"><span class="mono">{{ video.duration_s | duration }}</span></span>
-    {% if video.language %}<span class="sep">·</span><span class="fact"><span class="mono">{{ video.language }}</span></span>{% endif %}
-    {% if video.indexed_at %}<span class="sep">·</span><span class="fact">indexed <span class="mono">{{ video.indexed_at | minute }}</span></span>
-    {% else %}<span class="sep">·</span>never finished indexing{% endif %}
+    {{ video.channel }}<span class="sep">·</span>
+    <span class="fact">published <span class="mono">{{ video.published_at | day }}</span></span><span class="sep">·</span>
+    <span class="fact"><span class="mono">{{ video.duration_s | duration }}</span></span>{% if video.language %}<span class="sep">·</span>
+    <span class="fact"><span class="mono">{{ video.language }}</span></span>{% endif %}<span class="sep">·</span>
+    {% if video.indexed_at %}<span class="fact">indexed <span class="mono">{{ video.indexed_at | minute }}</span></span>
+    {%- else %}<span class="fact">never finished indexing</span>{% endif %}
   </p>
   <p class="pagehead-meta">
-    <a href="{{ video.url }}" rel="noopener noreferrer" target="_blank">Open on YouTube</a>
-    {% if video.tags %}
-    <span class="sep">·</span>
-    {% for tag in video.tags %}<a class="chip chip-small" href="{{ root }}/videos?tags={{ tag | urlencode }}&amp;index_state=all">{{ tag }}</a>{% endfor %}
-    {% endif %}
+    <a href="{{ video.url }}" rel="noopener noreferrer" target="_blank">Open on YouTube</a>{% if video.tags %}<span class="sep">·</span>
+    <span class="taglist">
+      {%- for tag in video.tags %}<a class="chip chip-small" href="{{ root }}/videos?tags={{ tag | urlencode }}&amp;index_state=all">{{ tag }}</a>{% endfor -%}
+    </span>{% endif %}
   </p>
 </div>
 
@@ -293,23 +308,45 @@
               style="left:{{ (line.box[0] * 100) | round(3) }}%;top:{{ (line.box[1] * 100) | round(3) }}%;width:{{ ((line.box[2] - line.box[0]) * 100) | round(3) }}%;height:{{ ((line.box[3] - line.box[1]) * 100) | round(3) }}%"></span>
         {% endfor %}
       </div>
+      {# The digest (DESIGN.md, The digest). A dense slide is thirty-odd lines,
+         and printed in full four of them made this panel taller than four
+         viewports. The preview is `ocr_preview_lines`, which is the same eight
+         the box↔line highlight can point at — so what you can see is exactly
+         what the frame above can show you — and the remainder is one
+         `<details>` away, in place, with a real count on it. The boxes are all
+         still drawn, and `dashboard.js` still reads every `.ocrline` in this
+         figure for the lightbox, open or closed. #}
       <figcaption>
         <p class="framemeta"><span class="at">{{ frame.t_s | clock }}</span> <span class="muted">#{{ frame.ord }} · {{ frame.lines | length }} line(s)</span></p>
-        <ol class="ocrlines">
-          {% for line in frame.lines %}
-          <li class="ocrline"
-              data-box="{{ line.box[0] }},{{ line.box[1] }},{{ line.box[2] }},{{ line.box[3] }}">
-            <span class="ocrtext">{{ line.text }}</span>
-            {% if line.conf is not none %}<span class="conf">{{ "%.2f" | format(line.conf) }}</span>{% endif %}
-          </li>
-          {% endfor %}
+        <ol class="ocrlines ocrlines-head">
+          {% for line in frame.lines[:ocr_preview_lines] %}{{ ocr_line(line) }}{% endfor %}
         </ol>
+        {% set rest = frame.lines[ocr_preview_lines:] %}
+        {% if rest %}
+        <details class="digest">
+          <summary><span class="digest-count">{{ rest | length }}</span> more line(s)</summary>
+          <ol class="ocrlines ocrlines-rest" start="{{ ocr_preview_lines + 1 }}">
+            {% for line in rest %}{{ ocr_line(line) }}{% endfor %}
+          </ol>
+        </details>
+        {% endif %}
       </figcaption>
     </figure>
     {% endfor %}
   </div>
   {# The box provenance (normalised 0–1 at write time) and the searchable-unit
      rule moved to docs/design/dashboard.md §5.3 on 2026-08-10. #}
+  {# The one thing the per-frame count cannot say: the *page's* line budget ran
+     out, so some frame below is showing fewer lines than it has. A digest whose
+     remainder is honest has to say when the list it is counting was already
+     short (§5.3's double cap). #}
+  {% if ocr_lines_capped %}
+  <p class="panel-note">
+    The page's on-screen-text budget of <span class="mono">{{ ocr_line_cap }}</span>
+    lines is spent, so the last frames in this grid list fewer lines than they
+    hold. Narrow the strip with <code>?frames=</code> to read them.
+  </p>
+  {% endif %}
   {% else %}
   <div class="empty">
     <p class="empty-lead">None of the frames on this page carry on-screen text.</p>

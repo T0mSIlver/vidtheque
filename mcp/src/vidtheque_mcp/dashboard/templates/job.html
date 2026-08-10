@@ -1,4 +1,15 @@
 {% extends "base.html" %}
+{# One event row. Written once because the digest prints it in two lists — the
+   newest few, and the rest behind the expander. #}
+{% macro event_row(event) -%}
+<li class="event" data-event="{{ event.id }}">
+  <span class="at">{{ event.at | minute }}</span>
+  <span class="pill pill-small tone-{{ event.level | tone }}">{{ event.level }}</span>
+  {% if event.stage %}<code>{{ event.stage }}</code>{% endif %}
+  {% if event.message %}<span class="eventtext">{{ event.message }}</span>
+  {% else %}<span class="eventtext muted">message not published on this instance</span>{% endif %}
+</li>
+{%- endmacro %}
 {% block main %}
 
 <p class="crumbs"><a href="{{ root }}/jobs">Jobs</a> <span aria-hidden="true">/</span> <code>{{ job.job_id }}</code></p>
@@ -25,10 +36,12 @@
       </span>
     </p>
   </div>
+  {# Separator glued to the fact before it, so a wrapped strip never starts a
+     line with a middot. See video.html for the finding. #}
   <p class="pagehead-meta">
-    <span class="fact">{{ job.kind }}</span>
-    <span class="sep">·</span><span class="fact">priority <span class="mono">{{ job.priority }}</span></span>
-    <span class="sep">·</span><span class="fact" data-field="job-counts">{{ job.text.counts }}</span>
+    <span class="fact">{{ job.kind }}</span><span class="sep">·</span>
+    <span class="fact">priority <span class="mono">{{ job.priority }}</span></span><span class="sep">·</span>
+    <span class="fact" data-field="job-counts">{{ job.text.counts }}</span>
   </p>
   <p class="pagehead-meta progressline">
     <span class="meter meter-wide" aria-hidden="true"><span class="meter-fill" data-field="job-meter"
@@ -181,7 +194,11 @@
 
 {% if focus %}
 <section class="panel" aria-labelledby="focus">
-  <h2 class="panel-title" id="focus">Stage by stage{% if focus.title or focus.video_id %} — {{ focus.title or focus.video_id }}{% endif %}</h2>
+  {# The heading is a label and the video's name is not one: run through the
+     11px tracked uppercase idiom, a talk title came out as a sentence-length
+     run of capitals, which is exactly what the all-caps rule catches. `.subject`
+     keeps the name in its own case and register inside the heading. #}
+  <h2 class="panel-title" id="focus">Stage by stage{% if focus.title or focus.video_id %} — <span class="subject">{{ focus.title or focus.video_id }}</span>{% endif %}</h2>
   <div class="tablewrap">
     <table class="grid stages">
       <caption class="sr-only">The seven pipeline stages for the item this job is on</caption>
@@ -240,17 +257,24 @@
 <section class="panel" aria-labelledby="events">
   <h2 class="panel-title" id="events">Event log</h2>
   {% if events %}
+  {# The digest (DESIGN.md, The digest). Newest first, so the bounded preview is
+     the half of the log that answers "what just happened"; an overnight batch's
+     other fifty rows are one `<details>` away with a real count. `data-events`
+     stays on the preview list — that is where `jobs.js` prepends an event that
+     arrives while the page is open, so a new event lands at the top of what you
+     are looking at rather than inside a closed drawer. #}
   <ol class="events" data-events>
-    {% for event in events %}
-    <li class="event" data-event="{{ event.id }}">
-      <span class="at">{{ event.at | minute }}</span>
-      <span class="pill pill-small tone-{{ event.level | tone }}">{{ event.level }}</span>
-      {% if event.stage %}<code>{{ event.stage }}</code>{% endif %}
-      {% if event.message %}<span class="eventtext">{{ event.message }}</span>
-      {% else %}<span class="eventtext muted">message not published on this instance</span>{% endif %}
-    </li>
-    {% endfor %}
+    {% for event in events[:event_preview] %}{{ event_row(event) }}{% endfor %}
   </ol>
+  {% set older = events[event_preview:] %}
+  {% if older %}
+  <details class="digest">
+    <summary><span class="digest-count">{{ older | length }}</span> older event(s)</summary>
+    <ol class="events events-rest">
+      {% for event in older %}{{ event_row(event) }}{% endfor %}
+    </ol>
+  </details>
+  {% endif %}
   {% else %}
   <p class="empty-note">Nothing has been logged for this job.</p>
   {% endif %}

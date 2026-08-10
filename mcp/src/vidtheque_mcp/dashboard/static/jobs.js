@@ -125,12 +125,18 @@ function applyItems(items) {
 
 /** New events, prepended as elements — never as markup. The event log is the
  *  only record a non-rate-limit deferral has, so watching one arrive is the
- *  point of the page being live at all. */
+ *  point of the page being live at all.
+ *
+ *  The list is now a digest: the newest few are in `[data-events]` and the rest
+ *  are in a second list behind a `<details>`. A new event still goes to the top
+ *  of the first list, where the reader is looking — but "already on the page"
+ *  has to be asked of the *whole* panel, or every poll would re-prepend the
+ *  events that have scrolled into the expander. */
 function applyEvents(events) {
   const list = document.querySelector("[data-events]");
   if (!list) return;
   const known = new Set(
-    [...list.querySelectorAll("[data-event]")].map((li) => li.dataset.event)
+    [...document.querySelectorAll("[data-event]")].map((li) => li.dataset.event)
   );
   for (const event of [...events].reverse()) {
     if (known.has(String(event.id))) continue;

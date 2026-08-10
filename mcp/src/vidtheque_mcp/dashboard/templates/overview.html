@@ -20,14 +20,15 @@
     <p class="pagehead-meta">
       {# `data_status` is corpus-summary's own word, printed verbatim: the four
          vocabularies are not unified and this page does not invent a fifth. #}
-      <span class="pill tone-{{ corpus.data_status | tone }}">{{ corpus.data_status }}</span>
-      <span class="sep">·</span>
       {# Each fact is one unbreakable unit, so when the strip runs out of room
-         it wraps *between* facts and never through a date range or a clock. #}
+         it wraps *between* facts and never through a date range or a clock —
+         and each separator is glued to the fact *before* it, so the wrap leaves
+         the middot at the end of the line it belongs to instead of dangling at
+         the start of the next one. #}
+      <span class="pill tone-{{ corpus.data_status | tone }}">{{ corpus.data_status }}</span><span class="sep">·</span>
       <span class="fact">published <span class="mono">{{ rollup['oldest_published'] | day }}</span>
       <span class="sep">–</span>
-      <span class="mono">{{ rollup['newest_published'] | day }}</span></span>
-      <span class="sep">·</span>
+      <span class="mono">{{ rollup['newest_published'] | day }}</span></span><span class="sep">·</span>
       {# "indexed", not "last indexed": this is the corpus header, so the clock
          is unambiguous, and the shorter label keeps the strip on two units. #}
       <span class="fact">indexed <span class="mono">{{ rollup['last_indexed'] | minute }}</span></span>
@@ -118,8 +119,12 @@
         </a>
         <div class="row-body">
           <a class="row-title" href="{{ root }}/videos/{{ video.video_id }}">{{ video.title }}</a>
+          {# The break opportunity sits after the separator, not before it: a
+             conference channel name is long enough to wrap, and when it does
+             the runtime should start the next line, not a middot. #}
           <p class="row-meta">
-            {{ video.channel }}<span class="sep">·</span><span class="mono">{{ video.duration_s | duration }}</span>
+            {{ video.channel }}<span class="sep">·</span>
+            <span class="mono">{{ video.duration_s | duration }}</span>
           </p>
         </div>
         {# The clock goes to the far end of the row rather than trailing the

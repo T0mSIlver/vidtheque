@@ -22,25 +22,29 @@ q={{ filters.q | urlencode }}&amp;channel={{ filters.channel | urlencode }}&amp;
        baseline. The form below says what every control is set to; this says
        what the *result set* is, which is the thing you check before you believe
        a row count. #}
+    {# Every separator is glued to the fact before it — no whitespace in front
+       of a `·`, a break opportunity after it — so a strip that runs out of room
+       ends a line with its separator instead of starting the next one with a
+       dangling middot. #}
     <p class="pagehead-meta">
-      {% if filters.index_state != 'all' %}<span class="fact">state <span class="mono">{{ filters.index_state }}</span></span>
-      <span class="sep">·</span>{% endif %}
-      {% if filters.has != 'any' %}<span class="fact">has <span class="mono">{{ filters.has }}</span></span>
-      <span class="sep">·</span>{% endif %}
-      {# An open end is `…`, not a made-up boundary: "published 2025-01-01 …"
+      {% if filters.index_state != 'all' %}<span class="fact">state <span class="mono">{{ filters.index_state }}</span></span><span class="sep">·</span>
+      {% endif %}
+      {%- if filters.has != 'any' %}<span class="fact">has <span class="mono">{{ filters.has }}</span></span><span class="sep">·</span>
+      {% endif %}
+      {#- An open end is `…`, not a made-up boundary: "published 2025-01-01 …"
          says one end is set and the other is not, where "published 2025-01-01 –
          2026-08-09" would be the page inventing a filter nobody applied. The
          days here are the resolved ones, so this line and the query agree. #}
-      {% if filters.published_after or filters.published_before %}
+      {%- if filters.published_after or filters.published_before %}
       <span class="fact">published <span class="mono">{{ filters.published_after or "…" }}</span>
       <span class="sep">–</span>
-      <span class="mono">{{ filters.published_before or "…" }}</span></span>
-      <span class="sep">·</span>{% endif %}
-      {% if filters.indexed_after or filters.indexed_before %}
+      <span class="mono">{{ filters.published_before or "…" }}</span></span><span class="sep">·</span>
+      {% endif %}
+      {%- if filters.indexed_after or filters.indexed_before %}
       <span class="fact">indexed <span class="mono">{{ filters.indexed_after or "…" }}</span>
       <span class="sep">–</span>
-      <span class="mono">{{ filters.indexed_before or "…" }}</span></span>
-      <span class="sep">·</span>{% endif %}
+      <span class="mono">{{ filters.indexed_before or "…" }}</span></span><span class="sep">·</span>
+      {% endif %}
       <span class="fact">ordered by <span class="mono">{{ filters.order }}</span></span>
     </p>
   </div>
