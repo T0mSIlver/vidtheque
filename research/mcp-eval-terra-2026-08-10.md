@@ -1015,3 +1015,377 @@ eval's own queries plus every query whose words appear in a title and nowhere
 else, scored on whether the eponymous talk takes rank 1 — against the control
 that no currently-correct rank 1 moves. Until then the note is the honest half:
 it cannot mis-rank anything, and it cannot be missed.
+
+---
+
+# Round 3 — dual-fleet (2026-08-11 night)
+
+Same orchestrator, same session. Rounds 1 and 2 ran **one** vendor's harness.
+Tom's order for this round was two, on the theory that different model families
+stumble differently and that a cross-model difference is a finding about the
+*surface*, not about the models. It paid for itself in the first two minutes:
+the largest defect in this document was found by a smoke test, before a single
+persona ran, and it is invisible to the entire round-1/round-2 method.
+
+**Fleets.**
+
+| | terra | sonnet |
+|---|---|---|
+| model | `gpt-5.6-terra` | `claude-sonnet` (Claude Code 2.1.226) |
+| harness | Codex CLI `0.144.1`, `model_reasoning_effort=medium` | `claude -p`, `--effort medium` |
+| wiring | `-c mcp_servers.vidtheque.url=…` | `--mcp-config` + `--strict-mcp-config` |
+| fence | `--ignore-user-config`, `-s read-only` (pB: `workspace-write` + loopback) | cwd outside the repo, `--allowedTools` limited to the seven read tools, `--disallowedTools Bash,Read,Glob,Grep,Write,Web*` (pB: `Write` + `Bash(curl:*)`) |
+| runs | 4 | 4 + 1 smoke |
+| MCP calls | 74 | 79 |
+| `E_BUSY` | 0 | 2 (both recovered on the identical retry) |
+
+Neither fleet could read this repo; `index-video` and `tag-video` were fenced
+off on both sides (no new URLs were indexed — batches were running throughout).
+Run dirs, byte-identical prompts shared by both fleets, and full transcripts:
+`…/scratchpad/terra-eval/r3/{prompts,terra,sonnet}/` plus `run_terra.sh`,
+`run_terra_worker.sh`, `run_sonnet.sh`, `trace.py` (terra), `ctrace.py`
+(sonnet), `probe.py`, `mirror.py`, `stats.py`.
+
+**Corpus under test.** 192 → 196 videos across the night · 190–194 queryable ·
+67–69 h · ~44.4k transcript cues · ~8.3k keyframes · one channel (AI Engineer),
+`data_status: indexing` throughout. Counts drift between quoted payloads because
+tranches were landing; where it mattered I re-ran and say so.
+
+**Personas** (the same four on both fleets, from byte-identical prompt files):
+
+| slug | brief | why |
+|---|---|---|
+| `pA-integrate` | Client-integration engineer probing the surface before shipping an unattended pipeline. | The round-2 regression set, condensed into one persona and phrased so the consumer never learns which behaviours were repaired. |
+| `pB-frames` | Coding agent building `frames.md` — four frame receipts, curl-verified. | The frame-receipt workflow; the product's signature artifact. |
+| `pC-briefing` | Eight talks, eight speakers, verbatim quotes, three themes, a disagreement, a tested gap. | A long multi-step task: context economy over 26–30 calls. |
+| `pD-title` | Three half-remembered talks named by phrases from their **titles**. | Round-2 §12's open question, put to a consumer: does the new title `note:` actually help someone recover? |
+
+---
+
+## 13. The cross-model result, in three sentences
+
+Terra reads the payload as prose and reasons from it: it used the `fts 0 cues`
+sub-leg to justify a negative claim, quoted the `unreachable ()` degradation
+note back at me as a shipping risk, and told me in its own words that the title
+`note:` was what rescued its first search. **Sonnet's client never received any
+of that prose** — Claude Code renders `structuredContent` and drops the text
+blocks when a tool returns both, so sonnet was reasoning from JSON that carried
+the results and the pagination but not the notes, not the reasons, and, for
+`video-summary`, not the payload at all. The two fleets agreed on every finding
+that lives in the typed error contract (which is mirrored) and disagreed on
+every finding that lives in a `note:` (which mostly was not) — which is itself
+the finding: **the surface's contract is half in a channel that a major client
+does not read.**
+
+---
+
+## 14. New findings, by severity
+
+### 14.1 HIGH · (a)(b)(d) · A conformant client may render `structuredContent` *instead of* the text block, and half the surface lives in the text block
+
+Found by the sonnet **smoke test** — "how many videos, and the newest title" —
+before any persona ran. What arrived at the model, verbatim from
+`events.jsonl`:
+
+```
+### corpus-summary {}
+  | {"videos":192,"queryable_videos":190,"videos_by_index_state":{...},"hours":67.2,
+     "cues":43549,"keyframes":8062,"data_status":"indexing","channels":[...],
+     "tags":{},"gaps":{...}}
+```
+
+That is the whole tool result. No `Published span:`, no `Recently indexed:`, no
+`next_best_query:` — and no text block at all. Verified against the same server
+by hand (`mirror.py`, which prints each payload's prose lines beside its
+structured keys): the text block **is** sent, and this client drops it.
+
+The contract's §3.5 assumed the other reading — *"structured data goes in
+`structuredContent`, which conformant clients read without spending prose
+tokens"* — i.e. that a client reads the prose and uses the structured half to
+avoid parsing it. At least one major client does the opposite. What that cost,
+tool by tool, all reproduced by hand:
+
+| tool | in `structuredContent` before this round | prose-only, therefore lost |
+|---|---|---|
+| errors | `code`, `message`, `next` | — (**nothing**; this is why every error scored "recoverable" on both fleets) |
+| `search` | `results`, `pagination`, `leg_counts`, `notes` | the `next:`, the `Query:` echo, the empty-state **reason**, the `max_per_video` bound line, the truncation notice |
+| `list-videos` | `videos`, `pagination` (incl. `last_offset`) | **both `note:` lines** — the clamp note (round-2 §4.12) and the queryable reconciliation (round-2 §4.7) — and the `next:` |
+| `corpus-summary` | counts, channels, tags, gaps | the **published span**, the recently-indexed list, `next_best_query:` |
+| `video-summary` | `video_id`, `data_status`, `tags`, `chapters` | **title, channel, published, duration, link, every key text, every on-screen highlight, the `next:`** |
+| `get-segment-context` | `cues[]` (with `link`), `frame_ids`, `chapter`, `window`, `binding_cap` | the header link, the on-screen block, the `next:` |
+
+**Two round-2 repairs were invisible to this fleet, and it re-filed both as live
+defects.** Sonnet's `pA-integrate` report, unprompted:
+
+> **`list-videos` is silent about clamping where `search` is not.** … probe 9
+> confirms it: `list-videos(limit=1000)` returns exactly 100 rows with no
+> `note:` anywhere in the payload.
+
+> **`corpus.videos` (194) vs. every queryable count (192) is a genuine,
+> unreconciled-looking split** … A client that naively diffs "video count" from
+> two different tools will flag a false discrepancy.
+
+Both of those were *fixed* on 2026-08-11 (`4bfdb2d`, and §8's row for §4.7).
+They were fixed in prose. Terra, reading the prose, graded the identical probes
+"Yes" and quoted the reconciliation note back verbatim in the same hour.
+
+**And `video-summary` was consumer-visibly useless to this fleet.** `pD-title`,
+calls 5–10, is the cleanest receipt in this document: sonnet called
+`video-summary` on three videos, got
+
+```
+{"video_id":"vSx5IULvBns","data_status":"ok","tags":[],"chapters":[]}
+```
+
+each time, **re-sent all three with `format:"text"`** trying to shake content
+out of it, got the same four keys again, then abandoned the tool and rebuilt
+what it wanted with `search` scoped by `video_id` plus `get-segment-context`.
+Six calls spent on nothing. Its closing line:
+
+> The one real gap was `video-summary`'s chapters/key-texts coming back empty
+> for all three videos — that tool didn't help at all here, and I had to fall
+> back to reading raw transcript windows via `get-segment-context`.
+
+`vidtheque://guide` sells that tool as step 3 and says *"Step 3 is the one
+people skip."* For this client it was not skippable; it was empty.
+
+**FIXED** — `5b9571c`. §3.5 now states a parity rule: every read tool carries
+`notes: [str]` (verbatim, in order) and `next: str`, `search`'s two zero-result
+payloads carry `reason`, `corpus-summary` carries `published_span` and `recent`,
+and `video-summary` carries its body — title, channel, published, duration,
+link, `key_texts[{start,text,link}]`, `ocr_highlights[{t,frame_id,screen_text,
+link}]`. The test compares the strings rather than their existence
+(`test_every_printed_next_line_is_also_structured`), so a `note:` that is
+printed and not collected is a failure.
+
+**Not verified end-to-end on the live server**, and I am saying so rather than
+implying otherwise: port 8100 was serving a running index batch and the demo,
+and restarting it was not mine to do. The fix is pinned by seven tests against
+the seeded corpus; the consumer-visible half awaits the next restart. The next
+round should re-run the sonnet smoke test first — two minutes, and it is exactly
+the probe that found the defect.
+
+### 14.2 HIGH · (c) · Four different causes of "zero results" returned one indistinguishable payload
+
+Sonnet's `pA-integrate`, its own §1 of "would lead a client astray":
+
+> **Three shapes of "nothing" collapse into one.** An empty `search` result
+> looks byte-for-byte identical whether the *topic* doesn't exist (probe 18),
+> the *date window* is outside the corpus (probe 13), the *channel filter* is a
+> typo (probe 19), or a *tag* is real-but-unpopulated (probe 20). All four
+> return `{"results":[],"pagination":{...,"approx_total":0},"notes":[]}`.
+
+It is right, and the reason is §14.1: the server **does** distinguish them, in a
+sentence that only the text block carried. Reproduced by hand, same server,
+same minute:
+
+```
+$ … call search '{"q":"RAG","tags":"topic:doesnotexist","limit":3}'
+  TEXT:       No indexed video matched the filters, so no leg was queried.
+  STRUCTURED: {"results": [], "pagination": {…}, "notes": [], "data_status": "indexing"}
+
+$ … call search '{"q":"sourdough starter hydration schedule","limit":3}'
+  TEXT:       All three legs were queried and none of them matched.
+  STRUCTURED: {"results": [], "pagination": {…}, "notes": [], "data_status": "indexing"}
+```
+
+Two different diagnoses, one identical structured payload. This is the mechanism
+round-1 §2.4 called the eval's strongest result — p5's four correct refusals ran
+on exactly these sentences — and the structured-only fleet could not reach it.
+Sonnet's verdict names the consequence:
+
+> Ship it, but only if the pipeline treats every empty/zero-count result as
+> "ambiguous — confirm via `corpus-summary` before concluding absence".
+
+**FIXED** — `5b9571c`, as the `reason` key on both zero-result payloads (empty
+and past-the-end).
+
+### 14.3 MEDIUM · (c) · A `tags=` filter over a corpus where nothing is tagged is a silent, successful no-op
+
+Sonnet graded this the worst thing on the surface, and it is a distinct defect
+from §14.2 — it survives even once the reason line is readable, because "no
+video matched the filters" does not say *which* filter, or that this one can
+never match anything:
+
+> **`tags=` is a real, documented, schema-listed parameter that silently does
+> nothing on this corpus.** … A client that filters by `tags=topic:rag` gets a
+> *successful, error-free* empty result — indistinguishable from a real filter
+> that correctly matched nothing. This is the single most dangerous case in the
+> whole surface: it looks like a right call.
+
+Verified: every video in the corpus has `tags: ""`, `corpus-summary`'s
+`tags: {}` is empty, and `search {"q":"RAG","tags":"topic:doesnotexist"}` →
+`Results: 0/0`, `notes: []`, HTTP 200.
+
+Contract §3.7 already carries the governing rule — *"A corpus with no tags does
+not advertise tags … Either ship the feature or stop advertising it"* — and
+applies it to three **display** surfaces. Nobody had applied it to the
+**filter**. (§3.7's clause on `vidtheque://context` publishing `tag_namespaces`
+when the deployment registers `tag-video` is contract-correct as written, and is
+not this finding; sonnet's separate complaint that the namespaces are advertised
+is answered by design.)
+
+**FIXED** — `e482faa`. On the branch where a `tags=` filter has already emptied
+the video pool, one bounded existence probe (`db/queries.py::any_video_tagged`)
+buys the distinction, and the payload says *"no video in this corpus carries any
+tag, so `tags=…` could not match — this is an empty feature, not a misspelt
+tag."* Asked nowhere else.
+
+### 14.4 MEDIUM · (c) · `E_FEATURE_DISABLED` on `speaker=` is correct and a dead end, and a consumer paid six calls to learn it
+
+Terra's `pC-briefing` was asked for eight talks by eight named speakers. Calls
+11–16, consecutively:
+
+```
+### [11] search {"speaker": "Phil Hetzel", "q": "eval", …}          → E_FEATURE_DISABLED
+### [12] search {"speaker": "Aparna Dhinakaran", "q": "evaluation"} → E_FEATURE_DISABLED
+### [13] search {"speaker": "Maor Bril", "q": "evaluat", …}         → E_FEATURE_DISABLED
+### [14] search {"speaker": "Jason Lopatecki", "q": "eval", …}      → E_FEATURE_DISABLED
+### [15] search {"speaker": "Nick Heiner", "q": "benchmark", …}     → E_FEATURE_DISABLED
+### [16] search {"speaker": "Brendan Rappazzo", "q": "evaluation"}  → E_FEATURE_DISABLED
+```
+
+Each one:
+
+```
+speaker= needs diarization, which is off for this corpus.
+next: omit speaker=. See the deployment docs for DIARIZE=1.
+```
+
+Both sentences are true and neither is wrong; the consumer still re-sent six
+times. Round-2 P6 recorded the opposite behaviour ("p5 dropped the filter and
+moved on in one turn") from a persona that did not *want* per-speaker search.
+This one did, and the error offered it no route to the thing it wanted — while a
+route exists: on a conference corpus the speaker's name is in the title, and
+`video_title=` is a real case-insensitive substring filter. This is the §9.7
+`E_BUSY` lesson in a second place: **naming the wrong move is not the same as
+naming the right one.**
+
+**FIXED** — `e482faa`. The message now says a re-send is refused identically,
+and the remedy names `video_title="<the name they sent>"` and `q=`.
+
+### 14.5 LOW-MEDIUM · (a) · A degraded search names its degradation and not its cause: `unreachable ()`
+
+Terra's `pA-integrate`, on a year-filtered search that returned normal-looking
+hits:
+
+```
+Legs: transcript 400 segments (fts 3731 cues · vec 0 chunks) · ocr 400 · frame 25 (vec 25/800)
+note: the embedding worker is unreachable () — the vector leg was skipped for this search.
+```
+
+It filed this as its top "would lead a client astray" item, correctly:
+
+> A successful filtered search can be materially degraded. … An unattended
+> client must inspect `notes` and leg counts; `isError:false` is not sufficient.
+
+The empty parenthetical is the defect. `embeddings.py` raises
+`EmbeddingUnavailable(str(exc))`, and `str(exc)` is **empty** for a bare httpx
+timeout — which is what a worker under indexing load produces. Terra's own
+"could not determine" list leads with *"whether the embedding-worker failure is
+transient"*: the note had the answer and threw it away.
+
+**FIXED** — `e482faa`: the raise sites carry `type(exc).__name__` when the
+exception has no message, and `tools/base.py` guards the empty case anyway.
+
+### 14.6 LOW · (b) · The `fts` sub-leg diagnostic works as prose and not as an integer
+
+Both fleets had `leg_counts.transcript_fts` (it is mirrored). Only terra used
+it. Terra's `pC-briefing`, on the gap section it was asked to test:
+
+> The search returned **zero keyword transcript matches and zero OCR matches**;
+> it returned only semantic near-matches … So I did not find a library talk that
+> treats metamorphic testing as an evaluation method.
+
+Sonnet, given the same task and the same numbers, reasoned from the *content* of
+the results instead and hedged:
+
+> treat it as untested by this pass, not confirmed absent, since I only ran two
+> query phrasings.
+
+Sonnet's answer is the more cautious one and arguably the better epistemics; the
+observation is that the diagnostic §4.2 and §9.2 exist to provide was *used* by
+the fleet that read `fts 0 cues` in a labelled line and *not* by the fleet that
+read `"transcript_fts": 0` in a JSON object. A number in a payload is not a
+diagnostic until something says what it licenses. Filed, not fixed: the honest
+repair is a clause in `vidtheque://guide` (which sonnet did read) rather than
+another key, and it belongs with the §9.2 units work.
+
+**DEFERRED** — one guide clause, next fix pass. No code.
+
+### 14.7 LOW · (c) · Harness fact: Claude Code defers MCP tools behind a search step, and keeps kebab-case
+
+Round 1 recorded that Codex renames kebab-case tools to snake_case
+(`corpus_summary`) while every `next:` line prints `corpus-summary`. Claude Code
+does the opposite on both counts: it keeps the kebab names verbatim
+(`mcp__vidtheque__corpus-summary`, so our `next:` lines are literally correct),
+but the tools are **deferred** — the model sees names only, and must spend a
+`ToolSearch` call to load their schemas before it can call any of them. Every
+sonnet run opens with one or two such calls. Neither behaviour cost a run in
+these eight; both are recorded because they are the kind of client-side
+assumption §14.1 shows we cannot afford to guess about.
+
+**DEFERRED (record only)** — no action.
+
+### 14.8 PASS · (e) · What both fleets got right
+
+| # | Probe | Response | Why it counts |
+|---|---|---|---|
+| P17 | The typed error contract, whole | Both fleets graded **every** typed error "recoverable": `E_BAD_PARAM` near-miss with units, `E_BAD_TIME_FORMAT` with the accepted set, `E_UNKNOWN_VIDEO` in both shapes, `E_UNKNOWN_FRAME` with the real ordinal range, `E_BUSY` | Errors already carried `code`/`message`/`next` in `structuredContent`. They are the one part of the surface that was **already at §3.5 parity**, and the one part that survived a client which reads nothing else. That is the whole argument for `5b9571c` in one row. |
+| P18 | `E_BUSY`, sonnet, twice | *"Retried the identical call 1 turn later → succeeded immediately. **Advice worked exactly as stated.**"* | Round 1: 0 of 1 consumers repeated the identical call. Round 2: 2 of 3. Round 3: 2 of 2, on a fleet that had never seen the round-1 wording. §9.7's repair holds across vendors. |
+| P19 | The title `note:` — round-2 §12's open question | **Both** fleets found the eponymous talk and **both** credited the note. Terra: *"only found it via the server's title-match note — not the transcript, so the server pointed me there."* Sonnet: *"the server also flagged in a `note:` that the phrase lives in the video's title."* | The note reached sonnet **because `search` mirrors `notes` into `structuredContent`** and the other tools did not. The one round-2 repair that was safe from §14.1 is the one that had already been written into the structured half. Answer to §12: **yes, it helps, on both model families.** |
+| P20 | `pB-frames`, both fleets | Four sections, four talks, every frame URL `curl -sI`-verified `200 image/jpeg`; **both** flagged garbled OCR instead of guessing. Sonnet: *"the OCR on this frame is unreliable for the small box labels."* Terra: *"the server's OCR becomes unreliable on small diagram labels, so I visually checked the returned frames and explicitly flagged the affected OCR."* | The frame-receipt path is the product's signature artifact and now has two independent vendors' deliverables behind it. No fabricated frame ids, no indexing, no unresolvable URL. One difference worth keeping: terra opened the images (`return="image"`, 4 inline); sonnet described them from OCR text alone and never tried image mode — the landscape survey's §4 reason for defaulting to URLs, observed from the other side. |
+| P21 | `pC-briefing`, both fleets | Terra: 9 speakers, 9 distinct links, quotes verbatim. Sonnet: 8 teams, distinct links, quotes verbatim. Both produced a **real** disagreement pair and both scoped their own confidence unprompted. | 30 and 26 calls respectively, no context collapse, no invented link, and every quote I spot-checked at `max_text_chars=0` was exact. Round 1's `get-segment-context` citation defect (§4.4) is structurally gone across two model families. |
+| P22 | `list-videos` past the end, both fleets | `{"videos":[],"pagination":{…,"approx_total":192,"last_offset":180}}` — sonnet used `last_offset` to page back; terra quoted `(past the last page)` | §9.1's repair works in **both** channels: the prose for terra, `last_offset` for sonnet. The one round-2 repair that shipped into both halves is the one neither fleet stumbled on. |
+
+---
+
+## 15. What I could not verify, round 3
+
+- **The `5b9571c` parity fix, against the live server.** Port 8100 was serving a
+  running index batch and the demo; restarting it was not mine to do. Pinned by
+  seven tests, unverified through a real client.
+- **Whether any *other* MCP client drops the text block.** Two clients tested,
+  one does. Whether that is Claude Code's reading of the spec or a common one is
+  not something eight runs can tell me, and it changes how much of §14.1 is a
+  bug in us versus a bug in the assumption.
+- **Whether `video-summary`'s emptiness cost sonnet's `pC-briefing` anything.**
+  `pD-title` shows it abandoning the tool after six calls; `pC-briefing` never
+  called it at all and went straight from `search` to `get-segment-context`. I
+  cannot tell whether that was the guide's step ordering, the model's habit, or
+  a lesson learned in a different run.
+- **`E_BUSY` frequency**, for the third round and the same reason: I ran hand
+  probes against a `Semaphore(2)` shared with the running batches. Terra saw 0
+  and sonnet saw 2, which is scheduling noise, not a fleet difference.
+- **Whether terra's six `speaker=` retries were reasoning or batching.** Codex
+  issues them serially and each error was returned before the next call, so it
+  saw all six; whether it *read* all six is not in the transcript.
+
+---
+
+## 16. Round-3 repairs — what shipped, and what did not
+
+| § | Severity | Shipped | Where |
+|---|---|---|---|
+| 14.1 | HIGH | §3.5 parity rule: `notes[]` + `next` on every read tool, verbatim; `corpus-summary` gains `published_span` + `recent`; `video-summary` gains title/channel/published/duration/link/`key_texts`/`ocr_highlights` with their deep links. 7 tests, string equality not existence. | `5b9571c` — `tools/library.py`, `tools/search.py`, `tools/segment.py`, contract §3.5 / §4.1–§4.5 |
+| 14.2 | HIGH | `reason` on both zero-result `search` payloads — the sentence that says *which* empty state this is. | `5b9571c` — `tools/search.py`, contract §4.1 |
+| 14.3 | MEDIUM | A `tags=` filter over an untagged corpus says so, off one bounded existence probe on the already-empty branch. | `e482faa` — `db/queries.py::any_video_tagged`, `tools/search.py::_note_untagged_corpus`, contract §3.7 |
+| 14.4 | MEDIUM | `E_FEATURE_DISABLED` says a re-send is refused identically and names `video_title=` as the filter that does work. | `e482faa` — `tools/search.py`, contract §3.8 |
+| 14.5 | LOW-MED | `unreachable ()` carries the exception class when there is no message. | `e482faa` — `embeddings.py`, `tools/base.py` |
+| 14.6 | LOW | **DEFERRED** — a guide clause saying what `fts 0` licenses, to ride with the §9.2 units work. No code. | — |
+| 14.7 | LOW | **DEFERRED (record only)** — harness facts, no action. | — |
+
+### 16.1 The lesson §14.1 actually carries
+
+Rounds 1 and 2 improved this surface by writing better sentences into payloads:
+the reconciliation note, the clamp note, the empty-state reason, the axis
+warning, the `E_BUSY` remedy, the title note. Every one of those is a genuine
+improvement, and every one of them was, on the night it shipped, **invisible to
+an entire class of consumer** — including the consumer built by the same vendor
+as the model this project is developed with.
+
+The rule that comes out of it is not "write fewer notes". It is that a payload
+has two channels, the contract has to be satisfied in both, and the client picks
+which one the model sees without telling you which it picked. The typed error
+contract had been built that way from the start, and it is the only part of the
+surface that came through round 3 without a scratch on either fleet.

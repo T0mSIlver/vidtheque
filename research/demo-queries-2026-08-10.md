@@ -803,3 +803,111 @@ answer only exists ACROSS talks.
   (`[29 transcript]` → empty citations array; fixed in `ccc35e4`); second run
   on the fixed loop returned 7 resolvable citations; receipt spot-check
   `xIt_mTQp6mY?t=423` lands inside the loop-engineering opening as expected.
+
+
+## 13. Round-3 pairs — from the dual-fleet eval (2026-08-11, ~194 talks)
+
+Found by consumers that had never seen this repo, then re-verified by hand at
+`max_text_chars=0`. Method and receipts: `mcp-eval-terra-2026-08-10.md` §13-§16.
+
+### 13.1 ★★ "Can you trust a model to judge how good the writing is?"
+
+**The replacement for §11.5.** The round-1/round-2 disagreement pairs were
+reachable only through query wording that shares vocabulary with the answer
+(`"human annotation calibrate LLM judge"` — nobody types that). This one is a
+sentence a person says out loud, shares **no content words** with either side,
+and puts *both* sides of the argument on one page:
+
+```
+$ … call search '{"q":"can you trust a model to judge how good the writing is",
+                  "content_type":"transcript","limit":6,"max_per_video":1,"max_text_chars":160}'
+
+Results: 6/139 (use offset=6 for more)
+Legs: transcript 342 segments (fts 0 cues · vec 800/800 chunks) · ocr 0 · frame 0 (fused, RRF k=60)
+  rank 2  When Will The Benchmaxxing Plague End? — Nick Heiner, Surge AI (-npY6XjM8CQ)  15:18–15:44
+  rank 3  The maturity phases of running evals — Phil Hetzel, Braintrust (FB-MLPhL9Ms)  10:13–11:49
+```
+
+`fts 0 cues` and `vec 800/800`: a pure-semantic answer over an un-narrowed pool,
+which is precisely the shape §9.6's always-print repair exists to make visible.
+Then the two positions, both verified verbatim through `get-segment-context`:
+
+| Phil Hetzel, Braintrust | Nick Heiner, Surge AI |
+|---|---|
+| *"I would embrace LLM as judge, but also perform a lot of evals on the LLM as judge so that it's very aligned with what a human would decide in the same circumstance."* | *"And LLM as a judge doesn't really work either because LLMs don't have good taste in writing."* |
+| [17:49](https://youtu.be/FB-MLPhL9Ms?t=1067) · cue 39141 | [16:01](https://youtu.be/-npY6XjM8CQ?t=959) · cue 4860 |
+
+Heiner's next line is the reason, and it is the better slide: *"this is sort of
+the you can't expand the frontier from within the frontier situation"*
+([16:05](https://youtu.be/-npY6XjM8CQ?t=963)) — followed by what Surge did
+instead, *"created a workforce of thousands of professional writers"*
+([16:10](https://youtu.be/-npY6XjM8CQ?t=968)). Hetzel's is a live Q&A answer:
+the payload's chapter for Heiner reads *"Human eval and a higher standard"*,
+which is `get-segment-context` handing over the section title for free.
+
+**Why it demos better than §11.5.** Two speakers who would actually argue, found
+from a plain question, each citable on its own second. Terra's `pC-briefing`
+built this pair unprompted from nine talks; sonnet's built a different one from
+the same corpus (Heiner vs Philipp Schmid, DeepMind, at
+[15:08](https://youtu.be/0vphxNt4wyk?t=908)) — **two independent vendors' agents
+converged on Heiner as the dissent**, which is a stronger claim about the corpus
+than either deliverable alone.
+
+### 13.2 ★ "I remember a talk about the 'on-call tax'" — the title note, from both fleets
+
+The §12 open question, answered by consumers rather than by us. Same query as
+round 2, now with two witnesses:
+
+```
+$ … call search '{"q":"on-call tax","content_type":"transcript","limit":3,"max_text_chars":100}'
+Results: 3/4
+Legs: transcript 7 segments (fts 0 cues · vec 4/800 chunks) · ocr 0 · frame 0
+note: no transcript or on-screen line contains these words (fts 0), but 1 video title does:
+  "Always-on agents run production without the on-call tax — Justin Smith, Resolve AI"
+  (vSx5IULvBns). Titles are not in the searched index, so a title match cannot rank a moment
+  and did not rank one here. search video_title="…" filters by title; video-summary
+  video_id="vSx5IULvBns" opens the first one.
+```
+
+Terra, unprompted, in its deliverable: *"`search(q="on-call tax")` only found it
+via the server's title-match note — not the transcript, so the server pointed me
+there … The reliability takeaway: an obvious exact-phrase search did not retrieve
+the phrase from the searchable transcript; it was rescued by a title-match hint
+outside the ranked moment results."* Sonnet, separately: *"the server also
+flagged in a `note:` that the phrase lives in the video's title."*
+
+**Demo it as a recovery, not as a hit.** The interesting frame is not "we found
+the talk"; it is that the payload knew what it could not do and said which
+parameter does it. Note the honest wrinkle for a live demo: as the corpus grew
+the auto-caption *"without the on-call text"* (tax → text) started matching, so
+`fts` is no longer reliably 0 on this exact phrase — the note fires on the
+`fts 0` branch only. If it has stopped firing by demo time, `content_type=ocr`
+still reproduces it, or pick any title phrase nobody says aloud.
+
+### 13.3 The frame-receipt deliverable, twice, from two vendors
+
+Both round-3 `pB-frames` consumers produced a four-section `frames.md` from four
+different talks, every image URL `curl -sI`-verified `200 image/jpeg`, and
+**both refused to transcribe garbled OCR**. Sonnet, on a Docling pipeline
+diagram (`4TxOBhDRRCM-00008`): *"The OCR text on several pipeline boxes is
+garbled (e.g., 'PFipeline,' 'Pommmatc,' 'Piupeline') — the OCR on this frame is
+unreliable for the small box labels, so treat those as approximate, not
+verbatim."* Terra, having opened the images in `return="image"` mode: *"the
+server's OCR becomes unreliable on small diagram labels, so I visually checked
+the returned frames and explicitly flagged the affected OCR rather than
+guessing."*
+
+Round-2 §9.2's demo ("an independent agent's deliverable, as the demo") now has
+a second, independent instance from a different model family. The pair of them
+is the demo: *two agents from two vendors, same tool, same honesty about what
+the OCR could not read.* Frame receipts worth showing, all verified:
+
+| frame | talk | what is on it |
+|---|---|---|
+| `0RNNfxpdbQk-00020` | Medic for Apache Spark — Drasko Profirovic, Pinterest | *"From single Agent to Multi Agent architecture"* flowchart: parser → intent classifier → supervisor → triage branch |
+| `96G7FLab8xc-00036` | Your MCP Server is Bad (and you should feel bad) — Jeremiah Lowin, Prefect | a `server.py` slide marked with a red X, three `@mcp.tool` functions, *"The 'REST Wrapper' Starting Point"* |
+| `jt1Pbr_n6oU-00034` | Your Moat Is Your Data Model — Mike Phipps, Gates Foundation | a four-domain graph, *"One graph. Four systems. One query."* |
+| `ZyIoTOAbRfs-00019` | State of Data — Sean Cai | *"BENCHMARKS — You're hillclimbing imaginary mountains"*, Goodhart's-law callout |
+
+The Lowin frame is the strongest single slide for this project's own pitch: a
+talk about bad MCP servers, found in a video index, quoted by its slide.
