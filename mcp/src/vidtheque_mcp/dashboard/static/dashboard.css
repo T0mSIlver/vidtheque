@@ -1,24 +1,29 @@
-/* vidtheque dashboard — "the cutting room".
-   Direction C, research/dashboard-design-research-2026-08-09.md §1.2.
-   The normative version of everything below is DESIGN.md at the repo root.
+/* vidtheque dashboard — the projection room at its minimalist end.
+   The normative version of everything below is DESIGN.md at the repo root;
+   docs/design/dashboard.md wins on function, data, clamps and copy.
 
-   The one rule this surface is built on: **mono means the machine said it,
-   sans means a human wrote it.** Titles, channel names, prose and labels are
-   Inter. Every timecode, duration, id, model key, error code, byte count and
-   clock is JetBrains Mono and tabular. It is not a costume for "technical" —
-   it is the surface's information architecture wearing a typeface, and it is a
-   promotion of a rule this project already had (demo-site.md §6.3 sets OCR text
-   in mono behind a dashed rule, because OCR text is what a machine read).
+   Two rules carry this surface:
 
-   The world stays the incumbent one: warm paper, one burnt-amber signal. What
-   changed is that six hand-picked values became two vendored Radix scales plus
-   three state scales, so hover / selected / subtle-fill finally exist in both
-   schemes instead of being invented per component.
+   * **mono means the machine said it, sans means a human wrote it.** Titles,
+     channel names and sentences are Archivo. Every timecode, duration, id,
+     model key, error code, byte count, state word and clock is JetBrains Mono
+     and tabular. Micro-labels are mono too: a column name is the machine's own
+     vocabulary.
+   * **every state is a word as well as a colour.** The five tones reinforce;
+     they never carry the message.
+
+   What this surface spends, out of the whole system: the ground scale, the
+   hairlines, the two faces, zero radius, gold kept scarce (the active nav item,
+   the focus ring, the sorted column, a timecode worth clicking, the hovered
+   row's edge) and lime kept for the one thing it means — what the machine read
+   off the screen, which on this surface is the OCR overlay and its lines and
+   nowhere else. What it does not spend: display type, imagery as decoration,
+   shadows, spectacle, motion that is not a machine working.
 
    The first six custom properties are asserted equal to public/static/style.css
    (test_dashboard.py::test_the_dashboard_palette_matches_the_demos) — the thing
-   that stops the two surfaces drifting into two visual worlds. They are pinned.
-   Everything the dashboard adds is added *around* them, never on top of them.
+   that stops the two surfaces drifting into two visual worlds. They are pinned
+   aliases and carry no value of their own.
 
    Fonts are vendored, latin subset, relative `src` — static/fonts/PROVENANCE.md
    has the sizes, the licences and the two things checked inside the files. */
@@ -26,42 +31,26 @@
 /* ------------------------------------------------------------------ fonts */
 
 /* Relative, not `{{ root }}`-absolute and never PUBLIC_URL: this stylesheet is
-   loaded from an SSH tunnel on a port nobody predicted, and a dead font URL is
-   a worse version of the dead thumbnail phase 2 already shipped and fixed
-   (docs/design/dashboard.md §8). */
+   loaded from an SSH tunnel on a port nobody predicted. The copies here are
+   byte-identical to public/static/fonts/, which is the document of record —
+   `public/static/*` is only routed under VIDTHEQUE_PUBLIC_READONLY=1, so a
+   dashboard font served from there 404s in a private deployment. */
 
 @font-face {
-  font-family: "Inter Variable";
+  font-family: "Archivo VF";
   font-style: normal;
-  font-display: swap;
+  font-display: block;
   font-weight: 100 900;
-  src: url("fonts/inter-latin-wght-normal.woff2") format("woff2-variations");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
-    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
-    U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
-/* The brand face, and only the brand face. One static 400 weight, 21 KB, and
-   the whole of its job on this surface is the word `vidtheque` in the rail and
-   the same word in the footer — DESIGN.md, **The Wordmark-Only Rule**. It is
-   not preloaded: eight glyphs twice a page do not earn a request that competes
-   with the text face, and the lockup reserves its height either way, so the
-   swap moves nothing. */
-@font-face {
-  font-family: "Instrument Serif";
-  font-style: normal;
-  font-display: swap;
-  font-weight: 400;
-  src: url("fonts/instrument-serif-latin-400-normal.woff2") format("woff2");
+  src: url("fonts/archivo-latin-wght-normal.woff2") format("woff2-variations");
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
     U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
     U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 @font-face {
-  font-family: "JetBrains Mono Variable";
+  font-family: "JetBrains Mono VF";
   font-style: normal;
-  font-display: swap;
+  font-display: block;
   font-weight: 100 800;
   src: url("fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2-variations");
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
@@ -69,227 +58,137 @@
     U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
-/* ------------------------------------------------- 1. the vendored palette */
+/* ------------------------------------------------------------- 1. the world */
 
-/* Radix Colors 3.0.0, MIT, values copied in — not the package, because "no
-   build step" is a shipped constraint and a colour scale is data, not code.
-   https://www.radix-ui.com/colors · sRGB hex only; the display-p3 half of the
-   distribution is dropped because it doubles the file to move colours nobody
-   on this surface can see the difference in.
+/* One scheme. `color-scheme: dark` is declared, there is no light palette, no
+   `prefers-color-scheme` block and no toggle — a projection room does not have
+   a day mode (DESIGN.md).
 
-   Each step has a declared job and this project uses them as declared:
-     1–2  page and panel grounds        3  subtle component background
-     4–5  hovered / pressed component   6  subtle border
-     7    component border              8  strong border, focus
-     9    solid fill                   10  hovered solid
-    11    low-contrast text (≥4.5:1)   12  high-contrast text
-
-   `sand` is the neutral, not `slate` or `sage`: the memo offered those for
-   Direction C, but the identity kept from the incumbent is *warm* paper, and a
-   cool grey sitting one pixel from #fbfaf9 reads as a mistake rather than as a
-   system. Warm ground wants the warm scale. `amber` carries the signal; the
-   three state scales are here at every step so a later page never has to
-   invent one. */
+   The six pinned role properties come first, together, so they read as the
+   contract they are. The palette test resolves each one through its aliases and
+   compares the two surfaces as mappings, so they are held to the same *colour*
+   without either file being forced into the other's spelling or ordering.
+   Adding a seventh here means adding it to public/static/style.css in the same
+   commit — which is exactly the friction it exists to create. */
 
 :root {
-  --sand-1: #fdfdfc;
-  --sand-2: #f9f9f8;
-  --sand-3: #f1f0ef;
-  --sand-4: #e9e8e6;
-  --sand-5: #e2e1de;
-  --sand-6: #dad9d6;
-  --sand-7: #cfceca;
-  --sand-8: #bcbbb5;
-  --sand-9: #8d8d86;
-  --sand-10: #82827c;
-  --sand-11: #63635e;
-  --sand-12: #21201c;
+  color-scheme: dark;
 
-  --amber-1: #fefdfb;
-  --amber-2: #fefbe9;
-  --amber-3: #fff7c2;
-  --amber-4: #ffee9c;
-  --amber-5: #fbe577;
-  --amber-6: #f3d673;
-  --amber-7: #e9c162;
-  --amber-8: #e2a336;
-  --amber-9: #ffc53d;
-  --amber-10: #ffba18;
-  --amber-11: #ab6400;
-  --amber-12: #4f3422;
+  --bg: var(--pitch);
+  --fg: #f3f0ea;
+  --muted: var(--fg2);
+  --line: var(--seam);
+  --accent: var(--gold);
+  --raised: var(--plate);
 
-  --grass-2: #f5fbf5;
-  --grass-3: #e9f6e9;
-  --grass-6: #b2ddb5;
-  --grass-9: #46a758;
-  --grass-11: #2a7e3b;
+  /* ---- the ground. A depth scale, not a set of options: a thing sits one
+     plate above what contains it, and no further (The Plate Rule). */
+  --pitch: #040405;      /* the page */
+  --void: #08080a;       /* the rail, the one step off the page that is a band */
+  --console: #0a0a0e;    /* a surface the machine writes into — a field, a log */
+  --plate: #0e0e12;      /* a real box's ground */
+  --plate2: #141419;     /* the head or foot band inside a box */
+  --plate3: #1a1a20;     /* the topmost plate; inert fills. Nothing sits above */
+  --seam: #242429;       /* the hairline that separates without announcing */
+  --seam2: #33333b;      /* the edge of a real box, one step louder */
+  --black: #000;         /* the ground *behind a frame*. Image boxes only */
+  --edge-in: rgba(255, 255, 255, .06);
+  --scrim: rgb(0 0 0 / 0.66);
 
-  --red-2: #fff7f7;
-  --red-3: #feebec;
-  --red-6: #fdbdbe;
-  --red-9: #e5484d;
-  --red-11: #ce2c31;
+  /* ---- the ink. `--fg3` is 3.60:1 on the page: over the 3:1 non-text floor,
+     under the 4.5:1 text floor, so it is atmosphere and a mark — never the only
+     carrier of a fact. On this surface label ink is `--fg2`. */
+  --fg2: #9d968c;
+  --fg3: #6b665e;
 
-  --blue-2: #f4faff;
-  --blue-3: #e6f4fe;
-  --blue-6: #acd8fc;
-  --blue-9: #0090ff;
-  --blue-11: #0d74ce;
-}
+  /* ---- gold, the one accent: *this is the moment you are pointing at*. */
+  --gold: #e7b455;
+  --gold-hi: #f6cd78;
+  --gold-ink: #120c02;
+  --gold-6: rgba(231, 180, 85, .06);
+  --gold-12: rgba(231, 180, 85, .12);
+  --gold-44: rgba(231, 180, 85, .44);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --sand-1: #111110;
-    --sand-2: #191918;
-    --sand-3: #222221;
-    --sand-4: #2a2a28;
-    --sand-5: #31312e;
-    --sand-6: #3b3a37;
-    --sand-7: #494844;
-    --sand-8: #62605b;
-    --sand-9: #6f6d66;
-    --sand-10: #7c7b74;
-    --sand-11: #b5b3ad;
-    --sand-12: #eeeeec;
+  /* ---- lime, the seen channel. The Lime Rule: it marks evidence the machine
+     read off the screen and nothing else. On this surface that is the OCR
+     detection boxes, the on-screen-text lines they point at, and the legend
+     that names them. There is no lime on any other dashboard page. */
+  --seen: #c9f938;
+  --seen-24: rgba(201, 249, 56, .24);
+  --seen-48: rgba(201, 249, 56, .48);
 
-    --amber-1: #16120c;
-    --amber-2: #1d180f;
-    --amber-3: #302008;
-    --amber-4: #3f2700;
-    --amber-5: #4d3000;
-    --amber-6: #5c3d05;
-    --amber-7: #714f19;
-    --amber-8: #8f6424;
-    --amber-9: #ffc53d;
-    --amber-10: #ffd60a;
-    --amber-11: #ffca16;
-    --amber-12: #ffe7b3;
+  /* ---- the state tones. One hex each; the ground and the border are mixed
+     from the ink, so a tone is one decision and not three. This is the surface
+     the five tones exist for. */
+  --tone-ok: #71d083;
+  --tone-ok-bg: color-mix(in srgb, var(--tone-ok) 10%, var(--plate));
+  --tone-ok-line: color-mix(in srgb, var(--tone-ok) 26%, var(--plate));
+  --tone-warn: #ffa057;
+  --tone-warn-bg: color-mix(in srgb, var(--tone-warn) 10%, var(--plate));
+  --tone-warn-line: color-mix(in srgb, var(--tone-warn) 26%, var(--plate));
+  --tone-bad: #ff9592;
+  --tone-bad-bg: color-mix(in srgb, var(--tone-bad) 10%, var(--plate));
+  --tone-bad-line: color-mix(in srgb, var(--tone-bad) 26%, var(--plate));
+  --tone-work: #70b8ff;
+  --tone-work-bg: color-mix(in srgb, var(--tone-work) 10%, var(--plate));
+  --tone-work-line: color-mix(in srgb, var(--tone-work) 26%, var(--plate));
+  /* A waiting state is the absence of a colour, not a fifth one. */
+  --tone-wait: var(--fg2);
+  --tone-wait-bg: color-mix(in srgb, var(--fg2) 10%, var(--plate));
+  --tone-wait-line: color-mix(in srgb, var(--fg2) 26%, var(--plate));
+  --tone-neutral: var(--tone-wait);
+  --tone-neutral-bg: var(--tone-wait-bg);
+  --tone-neutral-line: var(--tone-wait-line);
 
-    --grass-2: #141a15;
-    --grass-3: #1b2a1e;
-    --grass-6: #2d5736;
-    --grass-9: #46a758;
-    --grass-11: #71d083;
-
-    --red-2: #201314;
-    --red-3: #3b1219;
-    --red-6: #72232d;
-    --red-9: #e5484d;
-    --red-11: #ff9592;
-
-    --blue-2: #111927;
-    --blue-3: #0d2847;
-    --blue-6: #104d87;
-    --blue-9: #0090ff;
-    --blue-11: #70b8ff;
-  }
-}
-
-/* ------------------------------------------------- 2. the semantic palette */
-
-/* The six pinned properties come first and in this order, both schemes: the
-   palette test reads them positionally out of `:root { … }`. Adding one here
-   means adding it to public/static/style.css in the same commit and widening
-   that test — which is exactly the friction it exists to create. */
-
-:root {
-  --bg: #fbfaf9;
-  --fg: #1b1a19;
-  --muted: #6b6764;
-  --line: #e3dfdb;
-  --accent: #b45309;
-  --raised: #ffffff;
-
-  /* Second ground: table heads and the filter bar. What separates a dense grid
-     from the page it is sitting on. */
-  --panel: var(--sand-3);
-  /* A hovered row is deliberately a *lighter* ground than the head. Measured:
-     --accent on sand-3 is 4.41:1 and on sand-2 is 4.77:1, and a hovered row is
-     exactly where a link is about to be clicked. The 1px accent edge (see
-     `.grid tbody tr:hover`) is what makes the fainter fill legible. */
-  --row-hover: var(--sand-2);
-  /* A rule that has to be seen across a full-width band, where --line is the
-     hairline that must not be. */
-  --rule: var(--sand-7);
-  /* Non-text marks only — hatching, an empty thumbnail's fill. Never type. */
-  --mark: var(--sand-9);
-
-  /* The signal. --accent is the ink (links, the focus ring, the playhead);
-     these are the fills and borders it needs to also be a *state*. */
-  --accent-bg: var(--amber-3);
-  --accent-line: var(--amber-7);
-  --accent-solid: var(--amber-9);
-
-  /* Every state is a word as well as a colour, so these reinforce and never
-     carry the message. Step 11 is the ink, step 2 its ground, step 6 its
-     border. Step *2*, not 3: Radix's own contract is "step 11 reads ≥4.5:1 on
-     steps 1 and 2", and measured against step 3 the blue pill lands at 4.25:1.
-     One deviation, and it is deliberate — see --tone-warn. */
-  --tone-ok: var(--grass-11);
-  --tone-ok-bg: var(--grass-2);
-  --tone-ok-line: var(--grass-6);
-  /* The one hand-held colour in the system, and the reason is measured, not
-     aesthetic: Radix `amber-11` is the weakest step 11 in the whole set and
-     lands at 4.42:1 on this page ground and 4.43:1 on its own step 2 — under
-     the floor in both places, in the light scheme only. This is the warn ink
-     the dashboard already shipped, it sits between amber-11 and amber-12 in
-     the same hue, and it measures 5.69:1. The dark scheme has no such problem
-     and stays on the scale. */
-  --tone-warn: #8a5a00;
-  --tone-warn-bg: var(--amber-2);
-  --tone-warn-line: var(--amber-6);
-  --tone-bad: var(--red-11);
-  --tone-bad-bg: var(--red-2);
-  --tone-bad-line: var(--red-6);
-  --tone-work: var(--blue-11);
-  --tone-work-bg: var(--blue-2);
-  --tone-work-line: var(--blue-6);
-  --tone-wait: var(--sand-11);
-  --tone-wait-bg: var(--sand-2);
-  --tone-wait-line: var(--sand-6);
-  --tone-neutral: var(--sand-11);
-  --tone-neutral-bg: var(--sand-2);
-  --tone-neutral-line: var(--sand-6);
+  /* The remaining two role aliases. `--panel` is the band inside a box (a table
+     head); `--rule` is the edge of a real box; `--mark` is a non-text mark. */
+  --panel: var(--plate2);
+  --rule: var(--seam2);
+  --mark: var(--fg3);
 
   /* --------------------------------------------------------------- type */
 
-  --font-sans: "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI",
-    Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo,
-    Consolas, monospace;
-  /* The brand voice. Direction A's display serif, borrowed into Direction C's
-     chassis for the one thing on this surface that is neither a fact from the
-     index nor a state the index is in: the product's own name. Two selectors
-     are allowed to name it — `.wordmark` and `.footmark` — and DESIGN.md says
-     so normatively. */
-  --font-display: "Instrument Serif", Georgia, "Times New Roman", serif;
+  --font-sans: "Archivo VF", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono VF", ui-monospace, SFMono-Regular, monospace;
 
-  /* Three weights, and no fourth. 510 is the working weight of a dense
-     surface: heavier than body, lighter than a heading, and only a variable
-     font can hold it. */
-  --w-regular: 400;
-  --w-medium: 510;
-  --w-strong: 590;
+  /* The weight law: five sans rungs and no sixth. A value within ±20 of a rung
+     is an optical tweak on a variable face and needs no amendment. */
+  --w-display: 210;
+  --w-body: 340;
+  --w-strong: 520;
+  --w-action: 600;
+  --w-label: 600;
+  --w-tag: 700;
 
-  --t-micro: 0.6875rem;   /* 11px — column labels, coverage glyphs */
-  --t-meta: 0.75rem;      /* 12px — table heads, row meta, footnotes */
-  --t-machine: 0.78125rem;/* 12.5px — ids, model keys, error codes, clocks */
-  --t-cell: 0.8125rem;    /* 13px — table cells */
-  --t-body: 0.875rem;     /* 14px — body, list rows */
-  --t-lead: 0.9375rem;    /* 15px — panel headings, notice titles */
-  --t-h2: 1.25rem;        /* 20px — section headings that are not panels */
-  /* 24px — the page title below 40rem. It used to drop all the way to --t-h2,
-     which put the largest type on a phone 1.8× the smallest and made the whole
-     ladder read flat: at 390 the title, a section heading and a notice title
-     were 20 / 20 / 15, and the page had no top. One step, so the drop is still
-     a drop and the title still fits two lines of a video name. */
-  --t-h1-sm: 1.5rem;
-  --t-h1: 1.875rem;       /* 30px — page title */
-  --t-figure: 1.875rem;   /* 30px — a ledger number */
+  /* The ladder, and only the ladder. Sans: `headline` is used at its floor on
+     this surface — a corpus string at 3.5vw is four lines of video title and
+     the metric here is information per screen (docs/design/dashboard.md §5.6).
+     Everything under it drops immediately to cell / label / machine. */
+  --t-headline: 1.9rem;   /* 30.4px — the page title */
+  --t-question: 1.5rem;   /* 24px — the page title below --bp-hand */
+  --t-cell: 0.875rem;     /* 14px — cells, rows, sentences, the body default */
+  --t-machine: 0.8125rem; /* 13px — ids, model keys, error codes, clocks */
+  --t-query: 0.84375rem;  /* 13.5px — what a human types into a field */
+  --t-log: 0.78125rem;    /* 12.5px — an error string, an event message */
+  --t-machine-sm: 0.6875rem; /* 11px — a confidence, a scale tick */
+  --t-label: 0.625rem;    /* 10px — a column name, a state word, a nav group */
+  --t-label-sm: 0.59375rem; /* 9.5px — a ledger column name */
+  --t-figure: clamp(1.6rem, 2.5vw, 2.5rem); /* a ledger number */
 
-  --lh-tight: 1.2;
+  --lh-tight: 1.1;
   --lh-cell: 1.4;
-  --lh-body: 1.5;
+  --lh-body: 1.55;
+  --lh-log: 1.85;
+
+  /* ---------------------------------------------------------- the lockup */
+
+  /* The Font-Logo Rule. The logo is the word and nothing else: `vidtheque` in
+     lower case, in the text face, with the full stop in gold — the receipt's
+     full stop, because the product's whole argument is that an answer ends in a
+     citation. v5's numbers are the contract. */
+  --brand-size: 16.5px;
+  --brand-weight: 500;
+  --brand-track: -0.035em;
 
   /* ------------------------------------------------------------- metrics */
 
@@ -305,50 +204,30 @@
   --s10: 2.5rem;
   --s12: 3rem;
 
-  --r-sm: 3px;
-  --r-md: 5px;
-  --r-lg: 8px;
-
-  /* Layout v2, the app shell. The content column is *fluid* — an Operate
-     surface reads left to right across whatever width the operator gave it —
-     so there is no `--measure` any more. What survives is `--prose`, because
-     a sentence still has a comfortable line length whatever the window does.
-     `--wide` is the ultra-wide backstop, not a document measure: past 1760px
-     a table row stops being scannable because the eye loses the row. */
+  /* The app shell. The content column is fluid — an Operate surface reads left
+     to right across whatever width the operator gave it — with an ultra-wide
+     backstop, because past 1760px a table row stops being scannable. */
   --rail: 15rem;     /* 240px — the nav rail; 34px items, same as a table row */
-  --wide: 110rem;    /* 1760px — the backstop the content column stops growing at */
-  --prose: 46rem;    /* the column it reads, at 14px body */
-  /* The same measure for *small* prose. `--prose` is calibrated for 14px body
-     (~92 characters); the same 736px at 12px is 120 characters, which is well
-     past the point where the eye loses the line on the way back. Character
-     units rather than a second rem value, because the whole point is that the
-     cap tracks the font size. */
-  --prose-meta: 60ch;
-  --row: 2.125rem;   /* 34px — the table row */
+  --wide: 110rem;    /* 1760px — where the content column stops growing */
+  --prose: 70ch;     /* running text */
+  --note: 74ch;      /* a machine note, a sentence about a state */
+  --row: 2.125rem;   /* 34px — the table row, the nav item, every control */
   /* The width the column name takes when a table row becomes a stacked block
-     below 52rem. One value, because the label's basis and the indent a wrapped
-     value needs to line up under the other values are the same number. */
+     below 52rem: the label's basis and the indent a wrapped value needs to line
+     up under the other values are the same number. */
   --stacked-label: 5.5rem;
+
+  /* Colour only, and only at --t-fast: hover may move a ground, an ink, a
+     border or an image filter. It may never move geometry. */
+  --t-fast: 0.16s;
+  --t-state: 0.25s;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #131313;
-    --fg: #e9e6e3;
-    --muted: #97918c;
-    --line: #2b2927;
-    --accent: #f0a55a;
-    --raised: #1a1a19;
+/* ---------------------------------------------------------------- 2. base */
 
-    /* Dark has no amber problem: `amber-11` measures 12.13:1 on this ground,
-       so the warn ink goes back on the scale where it belongs. */
-    --tone-warn: var(--amber-11);
-  }
-}
-
-/* ---------------------------------------------------------------- 3. base */
-
-* { box-sizing: border-box; }
+/* Shape: there is no radius. A frame has square corners, and every box on this
+   surface is a frame, a plate or a rule. */
+* { box-sizing: border-box; border-radius: 0; }
 [hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 
@@ -358,68 +237,51 @@ body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-sans);
-  font-size: var(--t-body);
-  font-weight: var(--w-regular);
+  font-size: var(--t-cell);
+  font-weight: var(--w-body);
   line-height: var(--lh-body);
+  letter-spacing: -0.004em;
 }
-
-/* ------------------------------------------------------------- 3b. the shell */
-
-/* The chassis, and the one thing layout v2 changed. Phase 1 inherited the demo
-   page's centred 74rem document column, which is right for a page you read and
-   wrong for a surface you operate: at 1920 it left a third of the screen empty
-   on either side of a table that wanted the width. So: a persistent rail on the
-   left, and a fluid column that takes everything else.
-   The rail is `position: sticky` rather than `fixed` because sticky keeps it in
-   flow — the grid track reserves its width, nothing needs a matching margin on
-   the content, and the column scrolls under it for free. */
-.shell {
-  display: grid;
-  grid-template-columns: var(--rail) minmax(0, 1fr);
-  min-height: 100dvh;
-}
-
-.rail {
-  position: sticky;
-  top: 0;
-  align-self: start;
-  display: flex;
-  flex-direction: column;
-  /* Exactly one viewport tall, so it sticks (a stretched track-height element
-     has nothing to stick to) and its hairline runs the full height of the
-     window however long the page under it gets. */
-  height: 100dvh;
-  overflow-y: auto;
-  padding-bottom: calc(var(--s4) + env(safe-area-inset-bottom));
-  background: var(--panel);
-  border-right: 1px solid var(--line);
-}
-
-/* The content column. `minmax(0, 1fr)` above and `min-width: 0` here are what
-   let a too-wide table scroll inside its own wrapper instead of pushing the
-   grid track wider — The No-Sideways Rule, restated in grid terms. */
-.col {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  padding: 0 var(--s6) calc(var(--s10) + env(safe-area-inset-bottom));
-}
-
-.col > main { flex: 1 1 auto; }
-.col > main, .col > footer { width: 100%; max-width: var(--wide); }
 
 a { color: inherit; }
 a:hover { color: var(--accent); }
 
-h1, h2, h3 { font-weight: var(--w-strong); letter-spacing: -0.01em; }
+h1, h2, h3 { font-weight: var(--w-strong); letter-spacing: -0.02em; }
+
+::selection { background: var(--accent); color: var(--gold-ink); }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.skip {
+  position: absolute;
+  left: var(--s2); top: -3rem;
+  z-index: 5;
+  padding: var(--s2) var(--s3);
+  background: var(--plate);
+  border: 1px solid var(--seam2);
+}
+/* No slide. A skip link appearing is not a machine working, and decorative
+   motion is banned outright (DESIGN.md, the Motion Law). */
+.skip:focus { top: var(--s2); }
+
+.sr-only {
+  position: absolute;
+  /* Screen-reader-only text has no visual size, so it must not inherit one. */
+  font-size: var(--t-cell);
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 
 /* ------------------------------------------------- the two-channel rule */
 
-/* Everything the machine produced, in one selector list. A count, a clock, a
-   duration, an id, a model key, an error string, a byte figure. Tabular by
-   construction (the face is monospaced) and ligature-free, because in
-   `error_code` and `t=1234` the literal characters are the information —
-   JetBrains Mono ships `calt` and would otherwise draw `->` as an arrow. */
+/* Everything the machine produced, in one selector list: a count, a clock, a
+   duration, an id, a model key, an error string, a byte figure, a state word.
+   Tabular by construction and ligature-free, because in `error_code` and
+   `t=1234` the literal characters are the information — JetBrains Mono ships
+   `calt` and would otherwise draw `->` as an arrow. */
 .mono,
 code,
 time,
@@ -436,7 +298,7 @@ time,
 .errtext,
 .eventtext,
 .ocrtext,
-.badge-screen,
+.badge,
 .deployment,
 .timeline-scale,
 .scrubspan,
@@ -447,162 +309,163 @@ time,
   font-variant-ligatures: none;
 }
 
-/* Mono runs optically larger than Inter at the same size; inline machine
-   strings inside a sentence are set down one notch so the line does not
-   step up around them. */
-code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
+/* Mono runs optically larger than the sans at the same size; an inline machine
+   string inside a sentence is set down one notch so the line does not step up
+   around it. */
+code { font-size: var(--t-machine); overflow-wrap: anywhere; }
 
 /* Every machine string long enough to be a paragraph breaks anywhere, wherever
-   it is printed. This used to be scoped to `.stage-error .errtext`, so the same
-   class in the degraded list on the jobs page — the one place it is a flex item
-   next to a mono id — did not wrap at all. A yt-dlp traceback is one token as
-   often as it is a sentence; the rule belongs to the string, not to the table
-   one copy of it happens to sit in. */
+   it is printed: a yt-dlp traceback is one token as often as it is a sentence,
+   and the rule belongs to the string rather than to the table one copy of it
+   happens to sit in. */
 .errtext, .eventtext { overflow-wrap: anywhere; }
 
 .muted { color: var(--muted); }
 .sep { padding: 0 var(--s1); color: var(--mark); }
-/* The suffix on a figure: 0.62em of a 30px ledger number is 18.6px, which is
-   the intent — but 0.62em of a 12.5px minirow figure is 7.75px, which is
-   unreadable. The floor is the label size, so a `vid` next to a count is never
-   smaller than the column label above it. */
-.unit { font-size: max(var(--t-micro), 0.62em); font-weight: var(--w-regular); color: var(--muted); letter-spacing: 0; }
+/* The suffix on a figure. The floor is the label size, so a `vid` next to a
+   count is never smaller than the column label above it. `--fg2` and not
+   `--fg3`, because a unit is half of what the number means. Gold is reserved
+   for the *ledger's* units below — that is the system's `ledger-figure`
+   component and it is the page's signature object; a `vid` in a channel row is
+   not a moment anybody is pointing at. */
+.unit {
+  font-size: max(var(--t-label), 0.62em);
+  font-weight: var(--w-body);
+  color: var(--muted);
+  letter-spacing: 0;
+}
 .num { text-align: right; }
 
-/* A label: 11px, tracked, muted, sans. Used above every ledger figure and in
-   front of every stacked table cell on mobile, so the two read as one idiom. */
+/* A label: 10px mono, tracked, uppercase, in `--fg2` — the machine's own
+   vocabulary for a column name, a group, a field. One idiom, used above every
+   ledger figure, over every table column and in front of every stacked cell. */
 .label,
 .panel-title,
 .figure > dt,
 .field label,
+.field-range > legend,
+.checks > legend,
 .grid thead th {
-  font-size: var(--t-micro);
-  font-weight: var(--w-medium);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  font-weight: var(--w-label);
+  line-height: var(--lh-cell);
   text-transform: uppercase;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.19em;
+  font-variant-ligatures: none;
   color: var(--muted);
 }
 
-.sr-only {
-  position: absolute;
-  /* Screen-reader-only text has no visual size, so it must not inherit one:
-     the coverage glyphs are 11px and their hidden explanations were inheriting
-     that, which reads to any type audit as 11px body text in a 1px box. */
-  font-size: var(--t-body);
-  width: 1px; height: 1px;
-  margin: -1px; padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
+/* ------------------------------------------------------------- 3. the shell */
+
+/* A persistent rail on the left and a fluid column that takes everything else.
+   The rail is `position: sticky` rather than `fixed` because sticky keeps it in
+   flow — the grid track reserves its width, nothing needs a matching margin,
+   and the column scrolls under it for free. */
+.shell {
+  display: grid;
+  grid-template-columns: var(--rail) minmax(0, 1fr);
+  min-height: 100dvh;
 }
 
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: var(--r-sm);
+.rail {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  /* Exactly one viewport tall, so it sticks and its hairline runs the full
+     height of the window however long the page under it gets. */
+  height: 100dvh;
+  overflow-y: auto;
+  padding-bottom: calc(var(--s4) + env(safe-area-inset-bottom));
+  background: var(--void);
+  border-right: 1px solid var(--seam);
 }
 
-.skip {
-  position: absolute;
-  left: var(--s2); top: -3rem;
-  z-index: 5;
-  padding: var(--s2) var(--s3);
-  background: var(--raised);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  transition: top 160ms ease-out;
-}
-.skip:focus { top: var(--s2); }
-
-@media (prefers-reduced-motion: reduce) {
-  .skip { transition: none; }
+/* `minmax(0, 1fr)` above and `min-width: 0` here are what let a too-wide table
+   scroll inside its own wrapper instead of pushing the grid track wider. */
+.col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0 var(--s6) calc(var(--s10) + env(safe-area-inset-bottom));
 }
 
-/* -------------------------------------------------------------- the rail */
+.col > main { flex: 1 1 auto; }
+.col > main, .col > footer { width: 100%; max-width: var(--wide); }
+
+/* -------------------------------------------------------------- the lockup */
 
 .rail-brand {
   padding: var(--s5) var(--s4) var(--s4);
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--seam);
 }
 
-/* The lockup: the drawn film frame, then the word, on one baseline. The mark is
-   the favicon's own geometry at rail scale — the same object in the tab strip
-   and at the top of the rail, which is the cheapest kind of brand there is.
-   `align-items: center` and not `baseline`: the mark is a square, and hanging a
-   square off a serif baseline puts it a pixel low at every size. */
-.brand {
+/* `display: flex; align-items: baseline; gap: 12px` — the gap is for whatever
+   sits *beside* the word, never for a drawing. There is no drawn mark in the
+   lockup: the identity is carried by the word (The Font-Logo Rule), and the
+   film-frame favicon is a tab icon, not a brandmark. */
+.mark {
   display: flex;
-  align-items: center;
-  gap: var(--s2);
+  align-items: baseline;
+  gap: var(--s3);
   text-decoration: none;
   color: var(--fg);
 }
-/* The one place on this surface where hover does not go amber: the mark is
-   already amber, and a wordmark that changes colour under the pointer reads as
-   a control. It underlines instead. */
-.brand:hover { color: var(--fg); }
-.brand:hover .wordmark { text-decoration: underline; text-underline-offset: 3px; }
-
-/* Fixed box, like every other image here: the mark is drawn, so it cannot fail
-   to load, but the wordmark beside it swaps faces and the row must not move. */
-.brandmark { display: block; flex: 0 0 auto; }
-.bm-plate { fill: var(--accent); }
-.bm-gate { fill: var(--bg); }
-.bm-perf { fill: var(--accent); }
-
-/* The brand voice, and the only place Direction A's serif is allowed on an
-   Operate surface. 400 weight because there is no other weight in the file. */
-.wordmark {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: var(--t-h2);
-  font-weight: 400;
+.mark b {
+  font-family: var(--font-sans);
+  font-size: var(--brand-size);
+  font-weight: var(--brand-weight);
   line-height: var(--lh-tight);
-  letter-spacing: -0.01em;
+  letter-spacing: var(--brand-track);
 }
+/* The period is the receipt's full stop. It inherits everything else. */
+.mark i { font-style: normal; color: var(--accent); }
+/* The one place hover does not go gold: a wordmark that changes colour under
+   the pointer reads as a control. It underlines instead. */
+.mark:hover { color: var(--fg); }
+.mark:hover b { text-decoration: underline; text-underline-offset: 3px; }
+
+/* ---------------------------------------------------------------- the nav */
 
 .nav { padding: var(--s2) 0; }
 
-/* A group label, in the one label idiom this surface has: the same 11px
-   tracked uppercase that sits above a ledger figure and in front of a stacked
-   table cell. A second group (search, settings) costs one more of these. */
-.nav-group { margin: var(--s3) 0 var(--s1); padding: 0 var(--s4); }
+.nav-group { margin: var(--s3) 0 var(--s1); padding: 0 var(--s4); color: var(--fg3); }
 .nav-group + .navlist { margin-top: 0; }
 
 .navlist { margin: 0; padding: 0; list-style: none; }
 
-/* Full-bleed to the rail's edges, so the active item's accent edge lands on
-   the boundary and the item reads as a tab notched into the content ground
-   rather than as a pill floating on the rail. Height is `--row`: a nav item
-   and a table row are the same 34px, which is what stops the rail feeling
-   like a different product from the grid beside it. */
+/* Full-bleed to the rail's edges, so the active item's gold edge lands on the
+   boundary and the item reads as a notch into the content ground rather than as
+   a pill floating on the rail. Height is `--row`: a nav item and a table row
+   are the same 34px, which is what stops the rail feeling like a different
+   product from the grid beside it. */
 .navlist a {
   display: block;
   padding: var(--s2) var(--s4);
   font-size: var(--t-cell);
-  font-weight: var(--w-medium);
   line-height: var(--lh-cell);
   color: var(--muted);
   text-decoration: none;
+  transition: color var(--t-fast), background-color var(--t-fast);
 }
-.navlist a:hover { color: var(--fg); background: var(--row-hover); }
+.navlist a:hover { color: var(--fg); background: var(--plate); }
 
-/* You-are-here: the item takes the *content* ground, so the rail opens onto
-   the page at exactly that row, with the one signal as its edge. The 2px inset
-   is the fourth shadow on this surface and the only one that is navigation —
-   see DESIGN.md, Elevation. */
+/* You-are-here: the item takes the *page* ground, so the rail opens onto the
+   content at exactly that row, with the one signal as its edge. */
 .navlist a[aria-current="page"] {
   color: var(--accent);
-  background: var(--bg);
+  background: var(--pitch);
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
-/* Pinned to the bottom of the rail: what this deployment is allowed to do is
-   true of every page, so it belongs to the chassis and not to a page header. */
+/* What this deployment is allowed to do is true of every page, so it belongs to
+   the chassis and not to a page header. */
 .rail-foot {
   margin-top: auto;
   padding: var(--s4) var(--s4) 0;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--seam);
 }
 
 .deployment {
@@ -610,30 +473,36 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
   flex-direction: column;
   margin: 0;
   color: var(--muted);
-  font-size: var(--t-meta);
+  font-size: var(--t-machine-sm);
   line-height: var(--lh-cell);
 }
 
+.deployment-why {
+  margin: var(--s2) 0 0;
+  color: var(--muted);
+  font-size: var(--t-cell);
+  line-height: var(--lh-cell);
+}
+
+.signout { margin: var(--s3) 0 0; }
+/* Full-bleed in the rail, like a nav item: it is the one control in the chassis
+   and it should read as part of the column, not as a widget dropped into it. */
+.signout button { width: 100%; }
+
 /* -------------------------------------------------------------- page heads */
 
-.crumbs { margin: var(--s5) 0 0; color: var(--muted); font-size: var(--t-meta); }
+.crumbs { margin: var(--s5) 0 0; color: var(--muted); font-size: var(--t-machine-sm); }
 .crumbs a { text-decoration: none; }
 
-/* The page header band. It is the content column's own top edge — full width,
-   hairline under, the title left and whatever states the page is in on the
-   right. It is not sticky: a 30px title band pinned to the top of an operator
-   surface spends the scarce dimension (height) on something you read once. */
+/* The content column's own top edge — full width, hairline under, the title
+   left and whatever states the page is in on the right. Not sticky: a title
+   band pinned to the top of an operator surface spends the scarce dimension on
+   something you read once. */
 .pagehead {
   padding: var(--s6) 0 var(--s4);
-  /* Clear of whatever the page opens with. The ledger band's own 2px top rule
-     lands 8px under this hairline otherwise, and two rules that close together
-     read as one thick rule that means nothing. */
   margin-bottom: var(--s6);
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--seam);
 }
-/* Title and states on one baseline, wrapping to two lines when the title is a
-   video title rather than a word. Pages whose second line is a *sentence*
-   leave the meta outside this element and get the plain block. */
 .pagehead-line {
   display: flex;
   flex-wrap: wrap;
@@ -643,30 +512,23 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
 }
 .pagehead h1 {
   margin: 0;
-  font-size: var(--t-h1);
-  font-weight: var(--w-strong);
+  font-size: var(--t-headline);
+  font-weight: var(--w-display);
   line-height: var(--lh-tight);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.034em;
   text-wrap: balance;
-  /* A page title is a corpus string: it is whatever the uploader typed, and
-     one of them is a 78-character identifier with no space in it. Without
-     this, that title painted straight off the right edge and took the *page*
-     sideways with it — 1445px of document at a 1440px viewport, measured
-     2026-08-10, and 960px at 390. `anywhere` rather than `break-word` because
-     only `anywhere` also reports a zero min-content width, which is what stops
-     the flex header band being widened by the same string. The break is a last
-     resort either way: a title with spaces in it still breaks at the spaces. */
+  /* A page title is a corpus string — one of them is a 78-character identifier
+     with no space in it. `anywhere` rather than `break-word` because only
+     `anywhere` also reports a zero min-content width, which is what stops the
+     flex header band being widened by the same string. */
   overflow-wrap: anywhere;
 }
-/* A machine string inside a page title — `Job job_deferred01`. Mono is smaller
-   than Inter for the same nominal size at the *label* end of the ladder and
-   optically larger at the *display* end, so a `code` left at `--t-machine`
-   inside a 30px heading reads as a footnote attached to the word "Job". At
-   0.78em it is the same visual weight as the sans beside it, which is the
-   point: the id is the title, and "Job" is the noun in front of it. */
+/* A machine string inside a page title — `Job job_deferred01`. At 0.72em the id
+   carries the same visual weight as the sans beside it, which is the point: the
+   id is the title and `Job` is the noun in front of it. */
 .pagehead h1 code {
-  font-size: 0.78em;
-  font-weight: var(--w-medium);
+  font-size: 0.72em;
+  font-weight: 400;
   color: var(--fg);
   letter-spacing: -0.01em;
 }
@@ -674,47 +536,36 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
    string, and a flex container swallows the spaces between them. */
 .pagehead-meta {
   margin: var(--s2) 0 0;
-  max-width: var(--prose-meta);
+  max-width: var(--note);
   color: var(--muted);
-  font-size: var(--t-meta);
+  font-size: var(--t-machine-sm);
 }
-/* Inside the title line the meta is a state strip, not a paragraph: it sits on
-   the title's baseline at the far end of the band and never wraps early.
-   The *box* goes to the far end (`space-between` on the line does that); the
-   text inside it is not right-aligned, because the line wraps at more widths
-   than a media query can name — at 390 on the overview, at 1024 on the
-   overview, at every width on a video whose title fills the line — and a strip
-   that has dropped to its own line under a left-aligned title, still setting
-   its last line hard against the right margin, reads as a stray. Left-aligned
-   text in a shrink-to-fit box is identical for the one-line case (which is
-   most of them) and correct for both of the others. */
+/* Inside the title line the meta is a state strip, not a paragraph. The *box*
+   goes to the far end; the text inside it stays left-aligned, because the line
+   wraps at more widths than a media query can name and a strip that has dropped
+   under a left-aligned title still setting itself hard right reads as a stray. */
 .pagehead-line > .pagehead-meta { margin: 0; max-width: 100%; }
-/* One fact — a label and the machine string it names — is one unbreakable
-   unit, so a strip that runs out of room wraps between facts and never through
-   `2025-06-15 15:06`. */
+/* One fact — a label and the machine string it names — is one unbreakable unit,
+   so a strip that runs out of room wraps between facts. */
 .fact { white-space: nowrap; }
 .pagehead-meta .mono { color: var(--fg); }
 .pagehead-meta a { color: var(--accent); }
 
 /* ------------------------------------------------------------------ panels */
 
-/* A panel is a heading and a hairline, not a card. Nested boxes are how a
+/* A panel is a label and a hairline, not a card. Nested boxes are how a
    dashboard stops being scannable, and no rule on this surface is thicker than
-   1px except the two that mean something: the ledger's top rule and a notice
-   that has gone bad. */
-.panel { margin-top: var(--s8); padding-top: var(--s3); border-top: 1px solid var(--line); }
+   1px except the one that means something: a panel whose halves disagree. */
+.panel { margin-top: var(--s8); padding-top: var(--s3); border-top: 1px solid var(--seam); }
 .panel-title { margin: 0 0 var(--s3); }
-/* A panel heading is a label — 11px, tracked, uppercase — and a video title is
-   not. "Stage by stage — Every slide in one hour: a very fast talk" put a
-   sentence-length corpus string through the all-caps idiom, which is the thing
-   `.chunkmark` already has a paragraph about. The subject keeps its own case
-   and its own register inside the heading: the label names the panel, the name
-   names the thing. */
+/* A panel heading is a label; a video title is not. The subject keeps its own
+   case and its own register inside the heading. */
 .panel-title .subject {
+  font-family: var(--font-sans);
   text-transform: none;
-  letter-spacing: 0;
+  letter-spacing: -0.012em;
   font-size: var(--t-cell);
-  font-weight: var(--w-medium);
+  font-weight: var(--w-strong);
   color: var(--fg);
 }
 
@@ -734,88 +585,66 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
 
 .panel-note {
   margin: var(--s3) 0 0;
-  max-width: var(--prose-meta);
+  max-width: var(--note);
   color: var(--muted);
-  font-size: var(--t-meta);
+  font-size: var(--t-cell);
 }
 
 /* ------------------------------------------------------------- the digest */
 
 /* A bounded preview and an honest expander, for the blocks whose length is a
-   property of the corpus rather than of the design. A slide of dense small
-   print is one keyframe with thirty-four OCR lines under it; an overnight
-   batch is sixty job events. Both used to print in full, and both turned a
-   panel into a column of text taller than four viewports — on the fixture's
-   dense talk the video page measured 8,758px at 1440 and 20,297px at 390
-   (2026-08-10).
+   property of the corpus rather than of the design. The contract is the whole
+   primitive: the preview is a documented number of items; the expander names a
+   real remainder counted from the same list; it expands in place, because on
+   this surface the full text is the receipt; and it is `<details>`, so the
+   collapsed state is readable markup and the control is the platform's.
 
-   The contract, and it is the whole primitive:
-
-   * the preview is a **documented** number of items, not an arbitrary one;
-   * the expander names a **real remainder** — `12 more line(s)`, counted from
-     the same list, never "show more";
-   * it expands **in place**, and the full text stays on the page, because on
-     this surface the full text is the receipt;
-   * it is `<details>`. No script, no checkbox hack: the collapsed state is
-     readable markup, the control is the platform's, keyboard and screen reader
-     come free, and with CSS off the whole list is simply there.
-
-   The marker is `+` and `−`, two characters, not a caret: this surface has no
-   icon language (DESIGN.md, Appendix B.2) and the brief for the control was
-   already written as "+ N more lines". */
+   The marker is `+` and `−`, two characters: this surface has no icon
+   language. */
 .digest { margin: var(--s2) 0 0; }
 
 .digest > summary {
   display: inline-block;
-  /* Both halves of removing the platform's triangle: `list-style` for Firefox
-     and the modern engines, the pseudo-element for older WebKit. */
   list-style: none;
   padding: 1px 0;
   color: var(--muted);
-  font-size: var(--t-meta);
-  border-bottom: 1px dashed var(--line);
+  font-size: var(--t-machine-sm);
+  border-bottom: 1px dashed var(--seam2);
   cursor: pointer;
+  transition: color var(--t-fast), border-color var(--t-fast);
 }
 .digest > summary::-webkit-details-marker { display: none; }
 .digest > summary::before { content: "+ "; }
 .digest[open] > summary::before { content: "\2212 "; }
-.digest > summary:hover { color: var(--fg); border-bottom-color: var(--accent); }
+.digest > summary:hover { color: var(--fg); border-bottom-color: var(--gold-44); }
 
-/* The count came from a count. Two-Channel Rule; the selector is in the mono
-   list above with every other machine string. */
-.digest-count { font-weight: var(--w-medium); color: var(--fg); }
+.digest-count { color: var(--fg); }
 
-/* The empty state, and it has a voice: **name the absence, name the cause, name
-   the move.** An operator who opens a panel that has nothing in it is asking
-   one question — is this broken, or is this correct? — and "No keyframes." does
-   not answer it. So the lead sentence states the absence in the foreground ink
-   at cell size, and the note under it, in muted, says which row of which panel
-   explains why. It is the same discipline as the state pills: never a colour or
-   an absence on its own, always a word. */
+/* The empty state, and it has a voice: name the absence, name the cause, name
+   the move. An operator who opens a panel with nothing in it is asking one
+   question — is this broken, or is this correct? */
 .empty { padding: var(--s1) 0 var(--s2); }
 
 .empty-lead {
   margin: 0;
-  max-width: var(--prose-meta);
+  max-width: var(--note);
   font-size: var(--t-cell);
-  font-weight: var(--w-medium);
+  font-weight: var(--w-strong);
   color: var(--fg);
 }
 
 .empty-note {
   margin: 0;
-  max-width: var(--prose-meta);
+  max-width: var(--note);
   color: var(--muted);
   font-size: var(--t-cell);
 }
 .empty-lead + .empty-note { margin-top: var(--s1); }
 
 /* Zones. A full-bleed column needs a way to put two or three panels side by
-   side, because a three-line list stretched across 1600px is not "using the
-   width" — it is a sentence with 1400px of nothing after it. Three shapes and
-   no more: equal halves, a 2:1 main-and-aside, and equal thirds. Every track
-   is `minmax(0, …)` so a table inside one scrolls in its wrapper instead of
-   widening the zone. */
+   side; a three-line list stretched across 1600px is a sentence with 1400px of
+   nothing after it. Every track is `minmax(0, …)` so a table inside one scrolls
+   in its wrapper instead of widening the zone. */
 .split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--s10); }
 .split-main { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
 .split > * { min-width: 0; }
@@ -824,23 +653,38 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
 /* ------------------------------------------------------------- the ledger */
 
 /* The overview's signature, and the reason this page is not a grid of stat
-   cards: one ruled band across the full measure, five columns divided by
-   hairlines, the figures in mono at 30px. It reads as a line in a log because
-   that is what it is — the corpus, counted, at this second. */
+   cards: one plate across the full measure, five columns divided by hairlines,
+   the figures in mono. It reads as a line in a log because that is what it is —
+   the corpus, counted, at this second. */
 .ledger {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   margin: 0;
-  border-top: 2px solid var(--rule);
-  border-bottom: 1px solid var(--line);
+  background: var(--plate);
+  border: 1px solid var(--seam2);
 }
 
-.ledger > .figure {
-  padding: var(--s4) var(--s4) var(--s4) 0;
-  border-left: 1px solid var(--line);
-  padding-left: var(--s4);
+/* The corner tick: a 12×1px and a 1×12px gold rule meeting at the top-left
+   corner. It is the mark of a plate on a light table, it costs no box, and it
+   is the system's one ornament — once per page, on the page's signature
+   object, and nowhere else on this surface. */
+.ledger::before,
+.ledger::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  background: var(--accent);
 }
-.ledger > .figure:first-child { border-left: 0; padding-left: 0; }
+.ledger::before { width: 12px; height: 1px; }
+.ledger::after { width: 1px; height: 12px; }
+
+.ledger > .figure {
+  padding: var(--s5);
+  border-left: 1px solid var(--seam);
+}
+.ledger > .figure:first-child { border-left: 0; }
 
 .figures {
   display: grid;
@@ -850,51 +694,59 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
 }
 
 .figure { min-width: 0; }
+.ledger > .figure > dt { font-size: var(--t-label-sm); letter-spacing: 0.17em; }
+.ledger > .figure > dd { font-size: var(--t-figure); }
+.ledger .unit { color: var(--accent); }
 
+/* A figure outside the ledger — "what was stored", the storage panel — takes
+   the same rung at its floor. The ledger is the one band on the surface whose
+   numbers are the point of the page; six counts under a panel label are a
+   reading, not a headline, and matching them would flatten the two. */
 .figure > dd {
-  margin: var(--s1) 0 0;
-  font-size: var(--t-figure);
-  font-weight: var(--w-medium);
-  line-height: var(--lh-tight);
-  letter-spacing: -0.02em;
+  margin: var(--s2) 0 0;
+  font-size: 1.6rem;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: -0.045em;
+  color: var(--fg);
 }
 
 .figure > dd.figure-note {
-  margin-top: var(--s1);
+  margin-top: var(--s2);
   font-family: var(--font-sans);
-  font-size: var(--t-meta);
-  font-weight: var(--w-regular);
+  font-size: var(--t-cell);
+  font-weight: var(--w-body);
   line-height: var(--lh-cell);
-  letter-spacing: 0;
+  letter-spacing: -0.004em;
   color: var(--muted);
 }
 .figure-note a { color: var(--accent); }
 
 /* -------------------------------------------------------------------- gaps */
 
-/* Sentences with a number in them, not a chart. The number is the link,
-   because the number is the thing you want to go and look at. */
-.gaplist { margin: 0; padding: 0; list-style: none; font-size: var(--t-body); }
+/* Sentences with a number in them, not a chart. The number is the link, because
+   the number is the thing you want to go and look at — and a zero is good news,
+   so it does not wear the accent. */
+.gaplist { margin: 0; padding: 0; list-style: none; font-size: var(--t-cell); }
 .gaplist li {
   display: flex;
   gap: var(--s3);
   align-items: baseline;
   padding: var(--s2) 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--seam);
 }
 .gaplist li:last-child { border-bottom: 0; }
 .gaplist a {
   flex: 0 0 3.5rem;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: var(--t-cell);
-  font-weight: var(--w-medium);
+  font-size: var(--t-machine);
   text-align: right;
   color: var(--accent);
   text-decoration: none;
 }
 .gaplist a:hover { text-decoration: underline; }
-.gaplist a.gap-none { color: var(--muted); font-weight: var(--w-regular); }
+.gaplist a.gap-none { color: var(--muted); }
 
 /* -------------------------------------------------------------------- rows */
 
@@ -906,28 +758,22 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
   gap: var(--s3);
   align-items: flex-start;
   padding: var(--s2) 0;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--seam);
 }
 .rowlist > .row:first-child { border-top: 0; }
 
 .row-shot { flex: 0 0 auto; line-height: 0; text-decoration: none; }
-/* Basis `0`, not `auto`. Flex line-breaking uses an item's *hypothetical* main
-   size — flex-basis before any shrinking — so with `auto` the body's basis is
-   its max-content width, and a row whose title is a long conference title
-   exceeded the line on its own and pushed the thumbnail onto a line of its
-   own, with the arrival clock stranded on a third. Measured on the overview at
-   every width from 390 to 1920 (2026-08-10). `min-width: 0` was already here
-   and never helped: it governs shrinking *within* a line, not whether the item
-   gets one. With basis 0 the body takes the space the fixed items leave, which
-   is what it was doing on every row that fit anyway. */
+/* Basis `0`, not `auto`. Flex line-breaking uses an item's hypothetical main
+   size, so with `auto` a long conference title exceeded the line on its own and
+   pushed the thumbnail onto a line of its own with the clock stranded on a
+   third. With basis 0 the body takes the space the fixed items leave. */
 .row-body { flex: 1 1 0; min-width: 0; }
-/* Corpus string, same argument as the page title. */
-.row-title { font-weight: var(--w-medium); text-decoration: none; overflow-wrap: anywhere; }
+.row-title { font-weight: var(--w-strong); text-decoration: none; overflow-wrap: anywhere; }
 .row-meta {
   display: block;
   margin: 2px 0 0;
   color: var(--muted);
-  font-size: var(--t-meta);
+  font-size: var(--t-machine-sm);
 }
 
 /* The far end of a row: one fact, right-aligned, so a wide column reads as a
@@ -937,49 +783,46 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
   margin: 0 0 0 auto;
   padding-left: var(--s3);
   color: var(--muted);
-  font-size: var(--t-meta);
+  font-size: var(--t-machine-sm);
   text-align: right;
   white-space: nowrap;
 }
 
-/* `wrap`, because one of these rows carries an error string. Unwrapped, the
-   degraded list on the jobs page squeezed its first column — a video id and a
-   stage name, both mono — down to one character per line at 390 and 768, and
-   took the page 182px sideways doing it (2026-08-10). The error is the wide
-   thing, so the error is what moves to its own line. */
+/* `wrap`, because one of these rows carries an error string: unwrapped, the
+   degraded list squeezed a video id down to one character per line and took the
+   page sideways doing it. The error is the wide thing, so the error is what
+   moves to its own line. */
 .minirow {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--s3);
   padding: var(--s1) 0;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--seam);
   font-size: var(--t-cell);
 }
-/* 18rem is the width below which the message stops being readable beside its
-   id, so that is where it takes the line instead. */
-.minirow > .errtext { flex: 1 1 18rem; min-width: 0; font-size: var(--t-machine); }
+.minirow > .errtext { flex: 1 1 18rem; min-width: 0; font-size: var(--t-log); }
 .rowlist.tight > .minirow:first-child { border-top: 0; }
 .minirow > :first-child { flex: 1 1 auto; min-width: 0; }
 .minirow a { text-decoration: none; }
 .minirow a:hover { text-decoration: underline; }
 .minirow-figure { flex: 0 0 auto; font-size: var(--t-machine); }
 
-/* A chapter row leads with its timestamp, so the title — not the clock — is
-   the thing that takes the width. */
+/* A chapter row leads with its timestamp, so the title — not the clock — is the
+   thing that takes the width. */
 .minirow > .at:first-child { flex: 0 0 auto; }
 .minirow > .at:first-child + span { flex: 1 1 auto; min-width: 0; }
 
-/* Fixed box, mirrored in the img attributes: a row keeps its height whether
-   the frame has loaded, failed, or never existed. CLS 0 is a shipped property
-   of this project and a keyframe strip is the easiest place to lose it. */
+/* Fixed box, mirrored in the img attributes: a row keeps its height whether the
+   frame has loaded, failed, or never existed. Black is the ground behind a
+   frame, so a still that has not decoded yet leaves black rather than a plate. */
 .thumb {
   display: block;
   width: 96px;
   height: 54px;
   object-fit: cover;
-  border-radius: var(--r-sm);
-  background: var(--sand-4);
+  background: var(--black);
+  box-shadow: inset 0 0 0 1px var(--edge-in);
 }
 
 .thumb-empty {
@@ -987,59 +830,59 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
   align-items: center;
   justify-content: center;
   color: var(--muted);
-  font-size: var(--t-micro);
-  letter-spacing: 0.04em;
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.19em;
+  text-transform: uppercase;
 }
 
 /* ------------------------------------------------------------------- chips */
 
 .chiplist { display: flex; flex-wrap: wrap; gap: var(--s1); margin: 0; padding: 0; list-style: none; }
 
-/* One line, like the pill and the badge it is a sibling of. A chip is a whole
-   object — `series:a-conference-series-with-a-long-slug-2026-edition` is one
-   filter, not a paragraph — and left to wrap in a squeezed table cell it became
-   a four-line 79px box with its text hard against a border built for 17px
-   (the detector's cramped-padding, on `/dashboard/videos` at 1280). It is not
-   truncated: the slug *is* the link, and a chip that says `series:a-conf…` is a
-   filter you cannot read. The cell it widens is inside `.tablewrap`, which is
-   what that wrapper is for. */
+/* A chip is a whole object — `series:a-conference-series-with-a-long-slug` is
+   one filter, not a paragraph — and it is never truncated: the slug *is* the
+   link, and a chip that says `series:a-conf…` is a filter you cannot read. The
+   cell it widens is inside `.tablewrap`, which is what that wrapper is for. */
 .chip {
   display: inline-flex;
   gap: var(--s2);
   align-items: baseline;
   padding: 2px var(--s2);
-  font-size: var(--t-meta);
+  font-size: var(--t-machine-sm);
   color: var(--muted);
   text-decoration: none;
   white-space: nowrap;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
+  border: 1px solid var(--seam);
+  transition: color var(--t-fast), border-color var(--t-fast);
 }
-.chip:hover { color: var(--fg); border-color: var(--accent-line); background: var(--row-hover); }
-.chip-n { font-size: var(--t-micro); font-weight: var(--w-medium); color: var(--fg); }
-.chip-small { padding: 0 var(--s1); font-size: var(--t-micro); }
+.chip:hover { color: var(--fg); border-color: var(--gold-44); }
+.chip-n { font-size: var(--t-label); color: var(--fg); }
+.chip-small { padding: 0 var(--s1); font-size: var(--t-label); }
 
 .taglist { display: inline-flex; flex-wrap: wrap; gap: var(--s1); }
 
 /* ------------------------------------------------------------------ states */
 
-/* Every pill carries its own word, so the colour is reinforcement and never
-   the message. Ground + hairline + ink, all three from one Radix scale at its
-   declared steps, which is the whole reason the scales are vendored. */
+/* Every pill carries its own word, so the colour is reinforcement and never the
+   message. Ink, ground and hairline all come from one tone, and the ground and
+   the border are mixed from the ink. */
 .pill {
   display: inline-block;
   padding: 1px var(--s2);
-  font-size: var(--t-micro);
-  font-weight: var(--w-medium);
-  letter-spacing: 0.04em;
+  font-family: var(--font-mono);
+  font-size: var(--t-label-sm);
+  font-weight: var(--w-label);
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+  font-variant-ligatures: none;
   color: var(--tone, var(--tone-neutral));
   background: var(--tone-bg, var(--tone-neutral-bg));
   border: 1px solid var(--tone-line, var(--tone-neutral-line));
-  border-radius: var(--r-sm);
   vertical-align: 1px;
   white-space: nowrap;
 }
-.pill-small { font-size: var(--t-micro); }
+.pill-small { font-size: var(--t-label-sm); }
 
 .tone-ok      { --tone: var(--tone-ok);      --tone-bg: var(--tone-ok-bg);      --tone-line: var(--tone-ok-line); }
 .tone-warn    { --tone: var(--tone-warn);    --tone-bg: var(--tone-warn-bg);    --tone-line: var(--tone-warn-line); }
@@ -1048,9 +891,9 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
 .tone-wait    { --tone: var(--tone-wait);    --tone-bg: var(--tone-wait-bg);    --tone-line: var(--tone-wait-line); }
 .tone-neutral { --tone: var(--tone-neutral); --tone-bg: var(--tone-neutral-bg); --tone-line: var(--tone-neutral-line); }
 
-/* A tone on a run of text rather than on a pill: the word inside a sentence
-   that the sentence is about. Only two exist because only two are ever the
-   subject of one — something is wrong, or something is waiting. */
+/* A tone on a run of text rather than on a pill: the word inside a sentence that
+   the sentence is about. Only two exist, because only two are ever the subject
+   of one — something is wrong, or something is waiting. */
 span.tone-bad { color: var(--tone-bad); }
 span.tone-warn { color: var(--tone-warn); }
 
@@ -1064,48 +907,41 @@ span.tone-warn { color: var(--tone-warn); }
   justify-content: center;
   width: 1.25rem;
   height: 1.25rem;
-  font-size: var(--t-micro);
-  font-weight: var(--w-medium);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
+  font-size: var(--t-label);
+  font-weight: var(--w-label);
+  border: 1px solid var(--seam);
 }
-.cov-on { color: var(--bg); background: var(--tone-ok); border-color: var(--tone-ok); }
+.cov-on { color: var(--tone-ok); background: var(--tone-ok-bg); border-color: var(--tone-ok-line); }
 .cov-off { color: var(--muted); border-style: dashed; text-decoration: line-through; }
 
 /* ----------------------------------------------------------------- filters */
 
+/* The control strip: a plate on the page, with each field an inset well the
+   machine writes into. Pitch → plate → console, one step at a time. */
 .filters {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: var(--s3) var(--s4);
   padding: var(--s3) var(--s4);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
+  background: var(--plate);
+  border: 1px solid var(--seam2);
 }
 
 .field { display: flex; flex-direction: column; gap: var(--s1); }
 .field-wide { flex: 1 1 16rem; min-width: 0; }
 .field-narrow { flex: 0 0 5rem; }
+/* A field that owns its own line rather than sharing a flex row. */
+.field-block { display: flex; flex-direction: column; gap: var(--s1); }
 
 /* A range is one question asked with two inputs, so it is a fieldset — and the
-   browser's own box around it goes, like every other box on this surface (the
-   No-Card Rule). The legend then has to be dragged back onto the label ladder
-   by hand: `<legend>` does not inherit the `.field label` selector and ships
-   with padding of its own. */
+   browser's own box around it goes, like every other box here. The legend is
+   dragged back onto the label ladder by hand: `<legend>` ships with padding of
+   its own and does not inherit the `.field label` selector. */
 .field-range { min-width: 0; margin: 0; padding: 0; border: 0; }
-.field-range > legend {
-  padding: 0;
-  font-size: var(--t-micro);
-  font-weight: var(--w-medium);
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--muted);
-}
-/* The two dates read as one control: an en dash between them, at the same
-   34px height as everything else in the band, and the pair wraps as a unit
-   rather than leaving one end of a range on the line below the other. */
+.field-range > legend { padding: 0; }
+/* The two dates read as one control: an en dash between them, at the same 34px
+   height as everything else in the band, wrapping as a unit. */
 .field-range > .range {
   display: flex;
   align-items: center;
@@ -1113,84 +949,81 @@ span.tone-warn { color: var(--tone-warn); }
   margin-top: var(--s1);
 }
 .range-sep { color: var(--mark); }
-/* The buttons pack at the end of the controls, not at the far end of the band.
-   A two-field filter bar on a 1900px screen used to put Apply 1400px away from
-   the select it applies to. */
+/* The buttons pack at the end of the controls, not at the far end of the band:
+   a two-field filter bar on a 1900px screen must not put Apply 1400px from the
+   select it applies to. */
 .field-actions { flex-direction: row; gap: var(--s2); align-items: center; }
 
 /* Every control in the bar is exactly `--row` tall — the same 34px as a table
-   row and a nav item — so the filter band reads as one object instead of as
-   four widgets the platform drew at four heights. A `<select>` left on its
-   default metrics is 2px taller than a text input next to it, and that 2px is
-   the difference between "a form" and "a strip of controls". */
+   row and a nav item — so the band reads as one object instead of as four
+   widgets the platform drew at four heights. The ground is `--console`: a field
+   is a surface the machine writes into, and it sits one step *under* the plate
+   around it rather than one step above. Every value in this bar is the
+   machine's own vocabulary (`ready`, `E_RATE_LIMIT`, `2026-08-09`, a video id),
+   so the controls are mono. */
 .field input, .field select {
   height: var(--row);
-  padding: 0 var(--s2);
-  font-family: var(--font-sans);
-  font-size: var(--t-cell);
+  padding: 0 var(--s3);
+  font-family: var(--font-mono);
+  font-size: var(--t-query);
+  font-variant-ligatures: none;
   line-height: var(--lh-cell);
-  color: inherit;
-  background: var(--raised);
-  border: 1px solid var(--sand-7);
-  border-radius: var(--r-sm);
+  color: var(--fg);
+  background: var(--console);
+  border: 1px solid var(--seam2);
+  transition: border-color var(--t-fast);
 }
-/* Room for the platform's own disclosure arrow. The arrow itself stays the
-   platform's: a hand-drawn caret would be the first glyph of an icon language
-   this design system deliberately does not have (Appendix B.2). */
+/* Room for the platform's own disclosure arrow. The arrow stays the platform's:
+   a hand-drawn caret would be the first glyph of an icon language this system
+   deliberately does not have. */
 .field select { padding-right: var(--s5); }
-.field input::placeholder { color: var(--muted); opacity: 1; }
-.field input:hover, .field select:hover { border-color: var(--sand-8); }
-/* A date input carries the platform's calendar button inside its own box, so
-   it takes a width the picker fits in and gives back the right padding a text
-   field wants. Fixed rather than `auto`: the two ends of a range must be the
-   same width whether or not either of them has a value in it, or an empty
-   "to" collapses and the dash stops reading as a range. Set after the shared
-   metrics above, because it is overriding one of them. */
+.field input::placeholder { color: var(--fg3); opacity: 1; }
+.field input:hover, .field select:hover { border-color: var(--gold-44); }
+/* A date input carries the platform's calendar button inside its own box. Fixed
+   width rather than `auto`: the two ends of a range must be the same width
+   whether or not either has a value, or an empty "to" collapses and the dash
+   stops reading as a range. */
 .field-range input {
   width: 8.5rem;
   padding-right: var(--s1);
   font-variant-numeric: tabular-nums;
 }
 
-button {
+/* Controls are labels, not sentences: 10px tracked mono in a 34px box, which is
+   the system's `button-ghost`. Nothing on this surface is a gold fill — gold
+   here means the active nav item, the focus ring, the sorted column, a timecode
+   worth clicking and the hovered row's edge, and a filled Apply button would
+   make it mean "a button" as well. */
+button, .ghostlink {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   height: var(--row);
   padding: 0 var(--s3);
-  font-family: var(--font-sans);
-  font-size: var(--t-cell);
-  font-weight: var(--w-medium);
-  color: var(--bg);
-  background: var(--fg);
-  border: 1px solid var(--fg);
-  border-radius: var(--r-sm);
-  cursor: pointer;
-}
-button:hover { background: var(--accent); border-color: var(--accent); }
-button.ghost { color: var(--fg); background: transparent; border-color: var(--sand-7); }
-button.ghost:hover { color: var(--accent); background: transparent; border-color: var(--accent); }
-button[disabled] { opacity: 0.5; cursor: default; }
-
-.ghostlink {
-  display: inline-flex;
-  align-items: center;
-  height: var(--row);
-  padding: 0 var(--s3);
-  font-size: var(--t-cell);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  font-weight: var(--w-label);
+  letter-spacing: 0.19em;
+  text-transform: uppercase;
+  font-variant-ligatures: none;
+  color: var(--fg);
+  background: var(--plate3);
+  border: 1px solid var(--seam2);
   text-decoration: none;
-  border: 1px solid var(--sand-7);
-  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: color var(--t-fast), border-color var(--t-fast), background-color var(--t-fast);
 }
-.ghostlink:hover { border-color: var(--accent); }
+button:hover, .ghostlink:hover { color: var(--accent); border-color: var(--gold-44); }
+/* The secondary of the pair: the same control with no ground under it. */
+button.ghost, .ghostlink { color: var(--muted); background: transparent; }
+button.ghost:hover, .ghostlink:hover { color: var(--accent); background: transparent; }
+button[disabled] { color: var(--fg3); border-color: var(--seam); cursor: default; }
+button[disabled]:hover { color: var(--fg3); border-color: var(--seam); }
 
 /* ------------------------------------------------------------------ tables */
 
 /* The strip that says what the table below is: how many rows arrived, whether
-   there are more, and — on jobs — whether the page is still being patched. It
-   is the table's caption in everything but markup, so it sits on the table's
-   own left edge and its number is mono, because the number came from a count
-   and not from a sentence. */
+   there are more, and — on jobs — whether the page is still being patched. */
 .tablecount {
   display: flex;
   flex-wrap: wrap;
@@ -1199,7 +1032,7 @@ button[disabled] { opacity: 0.5; cursor: default; }
   gap: 0 var(--s4);
   margin: var(--s5) 0 var(--s1);
   color: var(--muted);
-  font-size: var(--t-meta);
+  font-size: var(--t-machine-sm);
 }
 /* The sentence is one flex item, not five: a flex container makes an item of
    every text run between elements, and `of ~<span>4</span>.` came out as
@@ -1209,31 +1042,39 @@ button[disabled] { opacity: 0.5; cursor: default; }
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--t-machine);
-  font-weight: var(--w-medium);
   color: var(--fg);
 }
 
-/* "This page is still moving." A dot and the word, in the work tone, at the far
-   end of the strip — the same word-and-colour contract every state on this
-   surface keeps, so a reader who cannot see the pulse still reads "live". */
+/* "This page is still moving." The word, in the work tone — the same
+   word-and-colour contract every state on this surface keeps. The mark beside
+   it is a square that does not move: a pulsing dot is banned outright, and a
+   dot that breathes reports nothing a word does not already say. */
 .live {
   display: inline-flex;
   align-items: baseline;
   gap: var(--s1);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  font-weight: var(--w-label);
+  letter-spacing: 0.19em;
+  text-transform: uppercase;
   color: var(--tone-work);
 }
+.livedot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin: 0 var(--s1) 0 var(--s2);
+  vertical-align: 1px;
+  background: var(--tone-work);
+}
 
-/* `position: relative` is not decoration, it is the clip.
-   `.sr-only` is `position: absolute` with no offsets, so it takes its static
-   position but its *containing block* is the nearest positioned ancestor —
-   and inside a table there was none, which made it the initial containing
-   block. An out-of-flow box whose containing block is the page is not clipped
-   by a scroll container it merely sits inside, so the coverage column's hidden
-   descriptions, 1px wide and invisible, still extended the *document's*
-   scrollable area: the videos table at 1024 scrolled the whole page 185px
-   sideways with nothing visible out there to explain it (measured 2026-08-10).
-   One `relative` here makes the wrapper the containing block, and the No-
-   Sideways Rule holds again: the wrapper scrolls, the page does not. */
+/* `position: relative` is not decoration, it is the clip. `.sr-only` is
+   `position: absolute` with no offsets, so its containing block is the nearest
+   positioned ancestor — and inside a table there was none, which made it the
+   page, and an out-of-flow box whose containing block is the page is not
+   clipped by a scroll container it merely sits inside. The coverage column's
+   invisible descriptions scrolled the whole videos page 185px sideways. */
 .tablewrap { position: relative; overflow-x: auto; }
 
 .grid {
@@ -1249,31 +1090,28 @@ button[disabled] { opacity: 0.5; cursor: default; }
   position: sticky;
   top: 0;
   z-index: 1;
-  padding: var(--s2) var(--s2);
+  padding: var(--s2);
   text-align: left;
   white-space: nowrap;
   background: var(--panel);
   /* An inset shadow, not a border: `border-collapse: collapse` drops a sticky
      cell's own border the moment it detaches, and a head with no underline
      floating over rows is worse than no sticky head at all. */
-  box-shadow: inset 0 -1px 0 var(--sand-7);
+  box-shadow: inset 0 -1px 0 var(--seam2);
 }
 .grid thead th.num { text-align: right; }
-/* The column the table is actually ordered by. No caret glyph: this surface has
-   no icon language and inventing one for a sort arrow is a much bigger new
-   primitive than a colour. Instead the head's own inset underline — the one
-   that already exists because a collapsed border vanishes when the cell
-   detaches — is redrawn in the signal, and the label goes to the foreground.
-   The One Signal Rule holds: this *is* the moment you are pointing at, because
-   you asked for it in the URL. `aria-sort` carries it for the screen reader. */
+/* The column the table is ordered by. No caret glyph: this surface has no icon
+   language, and inventing one for a sort arrow is a much bigger new primitive
+   than a colour. The head's own inset underline is redrawn in the signal and
+   the label goes to the foreground. This *is* the moment you are pointing at,
+   because you asked for it in the URL; `aria-sort` carries it for the screen
+   reader. */
 .grid thead th[aria-sort] {
   color: var(--fg);
   box-shadow: inset 0 -1px 0 var(--accent);
 }
 .grid thead th[aria-sort] a { color: var(--fg); }
 .grid thead a { text-decoration: none; color: inherit; }
-/* To the foreground, not the accent: the head sits on --panel, where --accent
-   measures 4.41:1 and this label is 11px. */
 .grid thead a:hover { color: var(--fg); text-decoration: underline; }
 
 .grid tbody th, .grid tbody td {
@@ -1281,74 +1119,59 @@ button[disabled] { opacity: 0.5; cursor: default; }
   padding: var(--s2);
   text-align: left;
   vertical-align: top;
-  border-bottom: 1px solid var(--line);
-  font-weight: var(--w-regular);
+  border-bottom: 1px solid var(--seam);
+  font-weight: var(--w-body);
 }
 .grid tbody td.num { text-align: right; font-size: var(--t-machine); }
-.grid tbody th[scope="row"] { font-weight: var(--w-medium); }
+.grid tbody th[scope="row"] { font-weight: var(--w-strong); }
 
-/* The row you are pointing at: a light fill and a 1px accent edge in the
-   gutter. The edge, not the fill, is what makes it readable at a glance — and
-   the lighter fill is what keeps a link inside it above 4.5:1. */
+/* The row you are pointing at: one plate up, and a 1px gold edge in the gutter.
+   The edge, not the fill, is what makes it readable at a glance. */
 .grid tbody tr:hover {
-  background: var(--row-hover);
+  background: var(--plate);
   box-shadow: inset 1px 0 0 var(--accent);
 }
 
 .videos .col-shot { width: 96px; padding-right: 0; }
 .videos .col-title { min-width: 16rem; }
-/* The second line of a video row is a channel name and an id — a sentence and
-   a machine string, not a column label — so it stays at the 12px meta size.
-   11px is the *label* size and this is body text at a glance-legibility floor:
-   `hasDirectText && fontSize < 12` is exactly what the tiny-text rule catches,
-   and it is right to. */
-.videos .row-meta { font-size: var(--t-meta); }
+.videos .row-meta { font-size: var(--t-machine-sm); }
 .videos time { white-space: nowrap; }
+
+/* ------------------------------------------------------------------ stages */
 
 .stages .col-model { max-width: 22rem; }
 .stages tr.is-bad th[scope="row"] code { color: var(--tone-bad); }
-/* "An `absent` stage is a dimmed rule, not a missing row" (DESIGN.md, the stage
-   rail). A stage with no `video_stages` row never ran, which is a different
-   fact from a stage that ran and produced nothing — so the row stays, at the
-   full seven, and recedes. The pill inside it still carries the word. */
+/* An `absent` stage is a dimmed rule, not a missing row: a stage with no
+   `video_stages` row never ran, which is a different fact from a stage that ran
+   and produced nothing — so the row stays, at the full seven, and recedes. The
+   pill inside it still carries the word. */
 .stages tr.is-absent th[scope="row"] code,
 .stages tr.is-absent td { color: var(--muted); }
 
 /* One line, directly under the header, naming the stage that failed. Not a
    `.notice`: a notice's 2px rule is the alarm on this surface and the failed
-   stage already has one in the table below, so a second would be two alarms
-   for one fact. This is a sentence with a pill in it, on the page ground. */
-/* A paragraph with a pill in it, not a flex row: a flex container makes an item
-   of every text run between elements, so the sentence wraps *between* its
-   clauses and a line can start with a comma. `.pill` is inline-block and flows
-   correctly on its own. */
+   stage already has one in the table below. */
 .stage-alarm {
   margin: var(--s4) 0 0;
-  max-width: var(--prose-meta);
+  max-width: var(--note);
   font-size: var(--t-cell);
   line-height: var(--lh-body);
 }
 .stage-alarm a { color: var(--accent); }
 
-.stage-error td { padding-top: 0; border-bottom: 1px solid var(--line); }
+.stage-error td { padding-top: 0; border-bottom: 1px solid var(--seam); }
 .stage-error .label { color: var(--tone-bad); }
-.stage-error .errtext { font-size: var(--t-machine); }
+.stage-error .errtext { font-size: var(--t-log); }
 
 .pager { display: flex; gap: var(--s2); margin-top: var(--s4); }
 
 /* ---------------------------------------------------------------- timeline */
 
-/* The spine. DESIGN.md calls the shot timeline "a full-width horizontal band
-   under the header", and until now it was the third panel down, under a counts
-   grid and a seven-row provenance table — which is to say the one thing on this
-   page that no other product has was below the fold on a laptop. It is now the
-   first thing after the header, and it is not a `.panel`: it has no heading
-   above it because it does not need one, and its label sits under it with the
-   scale, where a film strip's footage counter goes. */
-/* `relative` so the scrub preview has something to be absolute against, and
-   the band's own top edge is that box's origin — see `.scrubpreview`. The
-   height is a custom property because the preview's flipped position is the
-   bottom of the band, and two places writing `3rem` is two places to forget. */
+/* The spine, and the first thing after the header: one bar per shot across the
+   video's duration, positioned as a percentage of the runtime. Real data, so it
+   earns the pixels — this is the video's cut structure, not a sparkline
+   standing in for content. It is not a `.panel`: its label sits under it with
+   the scale, where a film strip's footage counter goes. */
 .timeband { position: relative; margin: 0; --timeline-h: 3rem; }
 /* No rule under it: the next `.panel` brings its own hairline 32px later, and
    two rules that close together read as one thick rule that means nothing. */
@@ -1362,19 +1185,16 @@ button[disabled] { opacity: 0.5; cursor: default; }
 }
 .timeband-foot .panel-note { margin: 0; }
 
-/* The hatch is the one mark on this page whose meaning is not written beside
-   it, so the band carries a two-item key. Both swatches are literally the bars'
-   own fills at bar scale, which is the only way a key is honest. */
+/* The hatch is the one mark here whose meaning is not written beside it, so the
+   band carries a two-item key. Both swatches are literally the bars' own fills
+   at bar scale, which is the only way a key is honest. */
 .timeband-legend {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s1) var(--s4);
   margin: 0;
   color: var(--muted);
-  /* 12px, not the 11px label size: `every frame deduplicated` is a sentence in
-     sentence case, and 11px sentence case is body text below the legibility
-     floor. 11px on this surface is the *label* idiom, uppercase and tracked. */
-  font-size: var(--t-meta);
+  font-size: var(--t-cell);
   white-space: nowrap;
 }
 .swatch {
@@ -1383,29 +1203,22 @@ button[disabled] { opacity: 0.5; cursor: default; }
   height: var(--s3);
   margin-right: var(--s2);
   vertical-align: -2px;
-  /* No radius. A shot bar has none — the band it sits in has the 3px, not the
-     bars — so a sample with rounded corners would be a sample of something the
-     page does not draw. It also put a fourth radius on a three-radius scale. */
 }
-.swatch-kept { background: var(--accent); opacity: 0.85; }
+.swatch-kept { background: var(--fg2); }
 .swatch-dedup {
   background:
     repeating-linear-gradient(135deg, var(--mark) 0 2px, transparent 2px 6px),
-    var(--bg);
+    var(--console);
 }
 
-/* One bar per shot, positioned as a percentage of the runtime. Real data, so
-   it earns the pixels: this is the video's cut structure, not a sparkline
-   standing in for content. */
 .timeline {
   position: relative;
   height: var(--timeline-h, 3rem);
   margin: 0;
   padding: 0;
   list-style: none;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
+  background: var(--console);
+  border: 1px solid var(--seam2);
   overflow: hidden;
 }
 
@@ -1414,109 +1227,88 @@ button[disabled] { opacity: 0.5; cursor: default; }
    cannot see is a mark that lies about the cut structure. */
 .shotbar { position: absolute; top: 0; bottom: 0; min-width: 3px; }
 
-/* 0.85, not 0.75. Measured: --accent at 0.75 over --panel is 2.98:1, two
-   hundredths under the 3:1 floor a non-text mark has to clear, and this mark is
-   the page's whole argument. 0.85 measures 3.48:1 in light and 4.96:1 in dark,
-   and still leaves the step to full opacity that hover and focus use. */
+/* The bars are neutral and the one you are pointing at is gold. A band of sixty
+   gold bars would be sixty moments you are pointing at, which is none. */
 .shotbar a {
   display: block;
   height: 100%;
-  background: var(--accent);
-  opacity: 0.85;
-  border-right: 1px solid var(--bg);
+  background: var(--fg2);
+  border-right: 1px solid var(--console);
+  transition: background-color var(--t-fast);
 }
-.shotbar a:hover, .shotbar a:focus-visible { opacity: 1; }
+.shotbar a:hover, .shotbar a:focus-visible { background: var(--accent); }
 .shotbar:focus-within { z-index: 1; }
 
-/* The timeline and the strip are two views of one thing; hovering either end
+/* The timeline and the strip are two views of one thing; pointing at either end
    lights the other, which is the only way that link is visible at all. */
-.shotbar.is-linked a { opacity: 1; }
+.shotbar.is-linked a { background: var(--accent); }
 .framecard.is-linked .framebtn img { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* A shot whose every frame was deduplicated: hatched, so it is legible as
-   "captured, then dropped" and not as an empty stretch of video.
-
-   The bar paints its own `--bg` ground and hatches at full strength on top of
-   it, instead of hatching the band's `--panel` at 0.4 opacity. That is a
-   contrast fix with a measurement behind it: `--mark` on `--panel` is 2.93:1 at
-   *full* strength — DESIGN.md already records this, which is why the rail foot
-   has no `·` separators — so a 0.4 hatch of it (1.47:1) could never reach the
-   3:1 floor a non-text mark has to clear, whatever opacity it was given. On
-   `--bg` the same graphite measures 3.59:1 light and 3.66:1 dark. It also reads
-   better: paper with a scratch on it, which is exactly "captured, then
-   dropped", and unmistakably a bar rather than a gap between bars. */
+/* A shot whose every frame was deduplicated: hatched, so it reads as "captured,
+   then dropped" and not as an empty stretch of video. The bar paints its own
+   ground and hatches at full strength on top of it — a 0.4 hatch of `--mark`
+   could never reach the 3:1 floor a non-text mark has to clear. */
 .shotbar.is-dedup a {
-  opacity: 1;
   background:
     repeating-linear-gradient(135deg, var(--mark) 0 2px, transparent 2px 6px),
-    var(--bg);
+    var(--console);
+}
+.shotbar.is-dedup a:hover, .shotbar.is-dedup a:focus-visible {
+  background:
+    repeating-linear-gradient(135deg, var(--accent) 0 2px, transparent 2px 6px),
+    var(--console);
 }
 
 /* ---- the scrub preview
 
    Point anywhere along the band and the shot under the pointer shows its own
-   first keyframe. It is the lightbox's smaller sibling and it is built from
-   the same two exceptions the No-Card Rule already allows a real box: card
-   stock, a hairline, the 3px radius the frames themselves use. No shadow — it
-   is above the page because of `z-index` and because card stock is lighter
-   than paper, not because it is pretending to float.
+   first keyframe. It reports the *shot*, not the pointer: the span and the kept
+   ratio are index facts and read the same whether a mouse or the arrow keys got
+   here, where a cursor-derived clock would be a number the index never wrote.
 
-   It reports the *shot*, not the pointer: the span and the kept ratio are
-   index facts and read the same whether a mouse or the arrow keys got here,
-   where a cursor-derived clock would be a number the index never wrote and a
-   fiction the moment the keyboard is driving. Where the pointer is on the
-   runtime is what the footage counter under the band is for.
-
-   `top: 0` is the band's own top edge, and the transform lifts the whole box
-   above it, so the preview never covers the bars it is describing. The script
-   sets `left` in pixels and clamps it inside the band. `pointer-events: none`
-   because a box that follows the pointer must never be the thing the pointer
-   is over. */
+   `top: 0` is the band's own top edge and the transform lifts the box above it,
+   so the preview never covers the bars it is describing. `pointer-events: none`
+   because a box that follows the pointer must never be the thing the pointer is
+   over. */
 .scrubpreview {
   position: absolute;
   top: 0;
   left: 0;
   z-index: 2;
-  /* 12rem — the served frame is 192px and the box is 192px border-box, so the
-     picture lands at 182 and is very slightly downscaled, which is the right
-     direction to be wrong in. A scrub preview is read at a glance and this is
-     the scale YouTube's own storyboard tiles are. Fixed, because a preview
-     that resizes with its content jumps as you sweep. */
+  /* 12rem — the served frame is 192px, so the picture lands very slightly
+     downscaled, which is the right direction to be wrong in. Fixed, because a
+     preview that resizes with its content jumps as you sweep. */
   width: 12rem;
   padding: var(--s1);
-  background: var(--raised);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
+  background: var(--plate);
+  border: 1px solid var(--seam2);
   transform: translate(-50%, calc(-100% - var(--s2)));
   pointer-events: none;
 }
 .scrubpreview[hidden] { display: none; }
 /* Scrolled until the band is near the top of the viewport there is no room
    above it, and a preview clipped by the window edge is worse than one under
-   the scale. The script measures and sets this; `--timeline-h` is the band's
-   own height, so the two cannot drift apart. */
+   the scale. `--timeline-h` is the band's own height, so the two cannot drift. */
 .scrubpreview.is-below {
   top: var(--timeline-h);
   transform: translate(-50%, var(--s2));
 }
 
-/* The Fixed-Box Rule: the box owns the geometry, so a keyframe that is still
-   loading or has gone missing leaves the ground behind and nothing moves. */
+/* The box owns the geometry, so a keyframe still loading or gone missing leaves
+   the ground behind and nothing moves. */
 .scrubshot {
   display: block;
   aspect-ratio: 16 / 9;
   overflow: hidden;
-  background: var(--sand-4);
-  border-radius: var(--r-sm);
+  background: var(--black);
+  box-shadow: inset 0 0 0 1px var(--edge-in);
   line-height: 0;
 }
 .scrubshot img { width: 100%; height: 100%; object-fit: cover; }
 
-/* Both lines are machine strings — a span the index wrote and a count — so
-   both are in the two-channel rule's own selector list above, tabular by
-   construction. A span whose digits shift width as you sweep the band is the
-   one thing a scrub preview must not do. The meta line is mono at 11px, which
-   the chip's count already is. */
+/* Both lines are machine strings — a span the index wrote and a count — so both
+   are tabular by construction. A span whose digits shift width as you sweep the
+   band is the one thing a scrub preview must not do. */
 .scrubspan,
 .scrubmeta {
   display: block;
@@ -1526,19 +1318,18 @@ button[disabled] { opacity: 0.5; cursor: default; }
   text-overflow: ellipsis;
 }
 .scrubspan { font-size: var(--t-machine); color: var(--fg); }
-.scrubmeta { font-size: var(--t-micro); color: var(--muted); }
+.scrubmeta { font-size: var(--t-machine-sm); color: var(--muted); }
 
-/* The footage counter. Five marks at the quarters, each one a hairline tick and
-   the clock it stands at, positioned at its true percentage rather than spaced
+/* The footage counter. Five marks at the quarters, each a hairline tick and the
+   clock it stands at, positioned at its true percentage rather than spaced
    evenly by flexbox — a scale whose labels are only approximately where they
-   say they are is worse than no scale, because the whole point of the band
-   above is that a bar's *position* is the fact. */
+   say they are is worse than no scale. */
 .timeline-scale {
   position: relative;
   height: 1.25rem;
   margin: var(--s1) 0 0;
   color: var(--muted);
-  font-size: var(--t-micro);
+  font-size: var(--t-machine-sm);
 }
 
 .tick {
@@ -1555,9 +1346,6 @@ button[disabled] { opacity: 0.5; cursor: default; }
   left: 50%;
   width: 1px;
   height: var(--s1);
-  /* `--mark`, not `--rule`: this is a mark that points at a position, not a
-     rule that separates two things. Measured, that is also the difference
-     between 1.51:1 and 3.59:1 on the page ground. */
   background: var(--mark);
 }
 /* The ends label the ends: a centred `0:00` would hang half of itself off the
@@ -1569,11 +1357,8 @@ button[disabled] { opacity: 0.5; cursor: default; }
 
 /* ------------------------------------------------------------------ frames */
 
-/* 9rem cells, not 11rem: a page of the strip is 24 frames, and at 11rem that
-   was four desktop rows of contact sheet between the provenance table and the
-   OCR overlay — which docs/design/dashboard.md §5.3 calls "the single most
-   convincing thing on the page". A contact sheet is meant to be scanned in
-   bulk; the extra 2rem per cell bought nothing and cost a whole row. */
+/* A contact sheet is meant to be scanned in bulk, so the cells are 9rem and a
+   page of the strip is 24 frames. */
 .strip {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
@@ -1587,35 +1372,35 @@ button[disabled] { opacity: 0.5; cursor: default; }
 
 /* The frame a shot bar sent you to keeps a mark on it. `:target` rather than a
    click handler: the timeline's bars are real links to `#frame-N`, so the
-   selection the operator made survives the navigation, the back button and a
-   reload, and it costs no JavaScript. The hover link between the band and the
-   strip is momentary; this is the one that persists. */
+   selection survives the navigation, the back button and a reload, and it costs
+   no JavaScript. */
 .framecard:target .framebtn img {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-.framecard:target .at { color: var(--accent); }
+.framecard:target .at { color: var(--gold-hi); }
 
 /* The box, not the image, owns the geometry: a keyframe file that has gone
-   missing leaves a grey rectangle where it was, and nothing below it moves. */
+   missing leaves black where it was, and nothing below it moves. */
 .framebtn {
   display: block;
   width: 100%;
   aspect-ratio: 16 / 9;
   padding: 0;
   overflow: hidden;
-  background: var(--sand-4);
+  background: var(--black);
   border: 0;
-  border-radius: var(--r-sm);
+  box-shadow: inset 0 0 0 1px var(--edge-in);
   line-height: 0;
   cursor: zoom-in;
 }
-.framebtn:hover { background: var(--sand-4); }
 
-.framebtn img { width: 100%; height: 100%; object-fit: cover; }
+.framebtn img { width: 100%; height: 100%; object-fit: cover; transition: filter var(--t-fast); }
 
-.framecard.is-dup .framebtn img { opacity: 0.45; }
-.framecard.is-dup:hover .framebtn img { opacity: 0.8; }
+/* A deduplicated frame is dimmed, not hidden. Pointing at it brings it back:
+   a filter change is the one thing hover is allowed to move. */
+.framecard.is-dup .framebtn img { filter: brightness(.42) saturate(.7); }
+.framecard.is-dup:hover .framebtn img { filter: none; }
 
 .framemeta {
   display: flex;
@@ -1623,12 +1408,12 @@ button[disabled] { opacity: 0.5; cursor: default; }
   align-items: baseline;
   gap: var(--s1);
   margin: var(--s1) 0 0;
-  font-size: var(--t-meta);
+  font-size: var(--t-machine-sm);
 }
 
+/* The timecode worth clicking — one of the five things gold means here. */
 .at {
   font-size: var(--t-machine);
-  font-weight: var(--w-medium);
   color: var(--accent);
   text-decoration: none;
 }
@@ -1636,48 +1421,48 @@ button[disabled] { opacity: 0.5; cursor: default; }
 
 .dupnote {
   color: var(--muted);
-  border-bottom: 1px dashed var(--line);
+  border-bottom: 1px dashed var(--seam2);
 }
 
 /* --------------------------------------------------------------------- ocr */
+
+/* The Lime Rule, and this panel is the whole of it on this surface: `--seen`
+   marks what the machine read off the screen — the detection box, the line it
+   points at, and the legend that names them. It is not a second accent and it
+   appears on no other dashboard page. */
 
 .ocrgrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
   gap: var(--s6);
-  /* Each card owns its own height. A grid row is as tall as its tallest cell,
-     so before the digest a 34-line slide left ~500px of nothing beside its
-     one-line neighbours; with the preview bounded the row is near-uniform
-     again, and when one card is expanded it is that card that grows rather
-     than three empty ones stretching with it. */
+  /* Each card owns its own height: a grid row is as tall as its tallest cell,
+     so an expanded card grows rather than stretching three empty ones with it. */
   align-items: start;
 }
 
 .ocrframe { margin: 0; min-width: 0; }
 
-/* The boxes are the point of this panel: it is the difference between "OCR
+/* The boxes are the point of this panel: they are the difference between "OCR
    ran" and "here is what it read, and where". */
 .ocrstage {
   position: relative;
   aspect-ratio: 16 / 9;
   overflow: hidden;
   line-height: 0;
-  background: var(--sand-4);
-  border-radius: var(--r-sm);
+  background: var(--black);
+  box-shadow: inset 0 0 0 1px var(--edge-in);
 }
 
 .ocrstage img { width: 100%; height: 100%; object-fit: cover; }
 
 .ocrbox {
   position: absolute;
-  border: 1px solid var(--accent);
-  border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid var(--seen-24);
+  transition: border-color var(--t-fast), background-color var(--t-fast);
 }
 
-/* `--lh-cell`, not the 1.5 body rhythm: this is a transcription of a slide, and
-   a wrapped line of it should read as one entry rather than as two. Twelve
-   lines of it save a row of the contact sheet below. */
+/* A transcription of a slide, so a wrapped line reads as one entry rather than
+   as two. */
 .ocrlines {
   margin: var(--s2) 0 0;
   padding: 0;
@@ -1685,9 +1470,9 @@ button[disabled] { opacity: 0.5; cursor: default; }
   font-size: var(--t-cell);
   line-height: var(--lh-cell);
 }
-/* The remainder, once the expander is open. It is the same list continued —
-   same rule down the left, same rhythm — with `start` on the `<ol>` so the
-   numbering the markup carries stays true even though nothing draws it. */
+/* The remainder, once the expander is open: the same list continued, same rule
+   down the left, with `start` on the `<ol>` so the numbering the markup carries
+   stays true even though nothing draws it. */
 .ocrlines-rest { margin-top: var(--s1); }
 
 .ocrline {
@@ -1695,30 +1480,23 @@ button[disabled] { opacity: 0.5; cursor: default; }
   gap: var(--s2);
   align-items: baseline;
   padding: 2px 0 2px var(--s2);
-  border-left: 1px dashed var(--line);
+  /* One step louder than the box at rest: a 1px rule down the left of a text
+     line has a fraction of a detection box's perimeter to be seen in, and this
+     rule is what says "the machine read this off the screen" for a reader who
+     never points at anything. */
+  border-left: 1px solid var(--seen-48);
+  transition: border-color var(--t-fast), background-color var(--t-fast);
 }
 
-/* Hover a line, light its box; hover a box, light its line. DESIGN.md has
-   promised this since the OCR overlay was written and nothing implemented it —
-   and it is the whole difference between "OCR read three strings off this
-   frame" and "*that* string is *there*".
-   It is done in CSS, not in `dashboard.js`, on purpose: the correspondence is
-   positional (the nth box is the nth line, because the server renders both from
-   one ordered list), so `:has()` can state it without a listener, and a page
-   with JavaScript off keeps it. Eight is the cap — eight explicit pairs rather
-   than a loop — because eight lines is a busy slide and the ninth line simply
-   does not light. A silently missing highlight is a fair price for not shipping
-   a rule per possible line.
-
-   That cap is now also the digest's preview length, and the two numbers are the
-   same number on purpose: **the preview is exactly the set of lines the frame
-   can point at.** The pairs are matched against `.ocrlines:not(.ocrlines-rest)`
-   so that `nth-child` counts inside the preview list only — the remainder
-   restarts its own numbering, and a rule that let line 9 (child 1 of the second
-   list) light box 1 would be worse than the missing highlight it replaced: a
-   wrong pointer, not an absent one. The selector still matches a plain
-   `.ocrlines` with no modifier, so a cached page rendered before the digest
-   keeps the behaviour it shipped with. */
+/* Point at a line, light its box; point at a box, light its line. It is done in
+   CSS on purpose: the correspondence is positional (the nth box is the nth
+   line, because the server renders both from one ordered list), so `:has()` can
+   state it without a listener and a page with JavaScript off keeps it. Eight is
+   the cap — eight explicit pairs rather than a loop — and it is also the
+   digest's preview length, deliberately the same number: **the preview is
+   exactly the set of lines the frame can point at.** The pairs are scoped away
+   from the remainder list, because a rule that let line 9 light box 1 would be
+   a *wrong* pointer rather than an absent one. */
 .ocrframe:has(.ocrlines:not(.ocrlines-rest) > li:nth-child(1):hover) .ocrbox:nth-of-type(1),
 .ocrframe:has(.ocrlines:not(.ocrlines-rest) > li:nth-child(2):hover) .ocrbox:nth-of-type(2),
 .ocrframe:has(.ocrlines:not(.ocrlines-rest) > li:nth-child(3):hover) .ocrbox:nth-of-type(3),
@@ -1728,9 +1506,9 @@ button[disabled] { opacity: 0.5; cursor: default; }
 .ocrframe:has(.ocrlines:not(.ocrlines-rest) > li:nth-child(7):hover) .ocrbox:nth-of-type(7),
 .ocrframe:has(.ocrlines:not(.ocrlines-rest) > li:nth-child(8):hover) .ocrbox:nth-of-type(8),
 .ocrbox:hover {
-  border-color: var(--accent);
-  border-width: 2px;
-  background: color-mix(in srgb, var(--accent) 34%, transparent);
+  border-color: var(--seen);
+  border-width: 1.5px;
+  background: color-mix(in srgb, var(--seen) 12%, transparent);
 }
 .ocrframe:has(.ocrbox:nth-of-type(1):hover) .ocrlines:not(.ocrlines-rest) > li:nth-child(1),
 .ocrframe:has(.ocrbox:nth-of-type(2):hover) .ocrlines:not(.ocrlines-rest) > li:nth-child(2),
@@ -1741,21 +1519,19 @@ button[disabled] { opacity: 0.5; cursor: default; }
 .ocrframe:has(.ocrbox:nth-of-type(7):hover) .ocrlines:not(.ocrlines-rest) > li:nth-child(7),
 .ocrframe:has(.ocrbox:nth-of-type(8):hover) .ocrlines:not(.ocrlines-rest) > li:nth-child(8),
 .ocrline:hover {
-  border-left-color: var(--accent);
-  border-left-style: solid;
-  background: var(--row-hover);
+  border-left-color: var(--seen);
+  background: color-mix(in srgb, var(--seen) 6%, transparent);
 }
 
 .ocrtext { flex: 1 1 auto; min-width: 0; font-size: var(--t-machine); overflow-wrap: anywhere; }
 
-.conf { flex: 0 0 auto; color: var(--muted); font-size: var(--t-micro); }
+.conf { flex: 0 0 auto; color: var(--muted); font-size: var(--t-machine-sm); }
 
 /* Confidence inside the OCR digest, de-emphasised but never dropped: it is part
    of the receipt, and it is the one number a reader needs when a word looks
-   wrong. A fixed basis so thirty of them read as a column instead of thirty
-   numbers each ending wherever its own line happened to; `align-self: start`
-   with the baseline nudged back so it sits against the *first* line of a
-   wrapped entry, which is the line it is about. */
+   wrong. A fixed basis so thirty of them read as a column; `align-self: start`
+   so it sits against the *first* line of a wrapped entry, which is the line it
+   is about. */
 .ocrline > .conf { flex: 0 0 2.25rem; align-self: start; padding-top: 3px; text-align: right; }
 
 /* -------------------------------------------------------------- transcript */
@@ -1769,22 +1545,20 @@ button[disabled] { opacity: 0.5; cursor: default; }
   align-items: baseline;
   padding: var(--s1) 0 var(--s1) var(--s3);
   border-left: 1px solid transparent;
-  font-size: var(--t-body);
+  font-size: var(--t-cell);
 }
 
 /* The rule down the left is the chunk — the span of cues that became one
    embedding. */
-.cue.in-chunk, .chunkmark { border-left-color: var(--line); }
+.cue.in-chunk, .chunkmark { border-left-color: var(--seam); }
 
 /* A chunk marker is a machine string — a sequence number, two timecodes and a
-   character count — so by the Two-Channel Rule it is mono, and it was wrong to
-   set it in the uppercase label idiom: `chunk 0 · 0:00–7:03 · 297 chars` is a
-   sentence-length run of text, and uppercasing a sentence-length run is exactly
-   what the all-caps rule catches. It is right to. */
+   character count — so it is mono, and it is not uppercased: a sentence-length
+   run of text never goes through the label idiom. */
 .chunkmark {
   margin-top: var(--s2);
   padding: 2px 0 2px var(--s3);
-  border-left: 1px solid var(--line);
+  border-left: 1px solid var(--seam);
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-variant-ligatures: none;
@@ -1793,23 +1567,24 @@ button[disabled] { opacity: 0.5; cursor: default; }
 }
 
 .cuetext { flex: 1 1 20rem; min-width: 0; }
-.cue .speaker { font-size: var(--t-meta); color: var(--muted); }
+.cue .speaker { font-size: var(--t-machine-sm); color: var(--muted); }
 
 /* Three sources, three kinds of evidence, said in a word — the demo's own
-   vocabulary, so a badge means the same thing on both surfaces. */
+   vocabulary, so a badge means the same thing on both surfaces. Not lime: a
+   caption track is not something the machine read off the screen. */
 .badge {
   display: inline-block;
   padding: 0 var(--s1);
-  font-size: var(--t-micro);
-  letter-spacing: 0.04em;
+  font-size: var(--t-label);
+  font-weight: var(--w-label);
+  letter-spacing: 0.19em;
   text-transform: uppercase;
   color: var(--muted);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
+  border: 1px solid var(--seam);
   vertical-align: 1px;
   white-space: nowrap;
 }
-.badge-screen { text-transform: none; border-style: dashed; }
+.badge-screen { text-transform: none; letter-spacing: 0; border-style: dashed; }
 
 /* -------------------------------------------------------------------- jobs */
 
@@ -1818,27 +1593,30 @@ button[disabled] { opacity: 0.5; cursor: default; }
 .jobitems .col-title { min-width: 14rem; }
 
 /* Progress as a rule, not a widget: the same hairline the tables are made of,
-   filled to the fraction the job already computed. The number beside it is the
-   accessible answer — the bar is aria-hidden and adds nothing but a glance. */
+   filled to the fraction the job already computed, in the work tone — because
+   what it reports is a machine working. The number beside it is the accessible
+   answer; the bar is aria-hidden and adds nothing but a glance. The width
+   transition is the one animation on this surface that is not a colour, and it
+   is sanctioned: it moves when and only when a real job advances. */
 .meter {
   display: inline-block;
   width: 4.5rem;
   height: 4px;
   vertical-align: 1px;
   overflow: hidden;
-  background: var(--sand-5);
-  border-radius: var(--r-sm);
+  background: var(--plate3);
 }
-/* On the job's own page the meter is not a cell decoration, it is the page's
-   one figure of how far along this is — so it gets `--s2` of height rather than
-   the 4px hairline the table row can afford. */
+/* On the job's own page the meter is the page's one figure of how far along
+   this is, so it gets `--s2` of height rather than the table row's hairline. */
 .meter-wide { width: 12rem; height: var(--s2); }
-.meter-fill { display: block; height: 100%; background: var(--accent); }
+.meter-fill {
+  display: block;
+  height: 100%;
+  background: var(--tone-work);
+  transition: width var(--t-state) linear;
+}
 .meter-label { margin-left: var(--s1); font-size: var(--t-machine); color: var(--muted); }
 
-/* The job page's own progress line: the bar and its number on one row, centred
-   on each other rather than hung off a text baseline the 8px bar has no
-   business sharing. */
 .progressline {
   display: flex;
   flex-wrap: wrap;
@@ -1847,13 +1625,11 @@ button[disabled] { opacity: 0.5; cursor: default; }
 }
 .progressline .meter-label, .progressline .stale-note { margin-left: 0; }
 
-/* The countdown. It is the highest-value line on that page — "deferred for
-   another 240s" was true and invisible on every surface vidtheque had — so it
-   is set as machine text at working weight, not as another muted pill. */
-/* 4px of vertical inset, not 1px: a 12.5px string with a border 1px from its
-   own ascenders is the cramped-padding finding, and this is the line the jobs
-   page exists for. It is now a notch taller than the state pill beside it,
-   which is correct — "held 3m 41s more" outranks "queued". */
+/* The countdown — the highest-value line on that page, because "deferred for
+   another 240s" was true and invisible on every surface vidtheque had. It is
+   set as machine text at working weight, not as another muted pill, and it is a
+   notch taller than the state pill beside it: "held 3m 41s more" outranks
+   "queued". */
 .countdown {
   display: inline-block;
   padding: var(--s1) var(--s2);
@@ -1861,27 +1637,10 @@ button[disabled] { opacity: 0.5; cursor: default; }
   color: var(--tone-warn);
   background: var(--tone-warn-bg);
   border: 1px dashed var(--tone-warn-line);
-  border-radius: var(--r-sm);
   white-space: nowrap;
 }
 
-.livedot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin: 0 var(--s1) 0 var(--s2);
-  vertical-align: 1px;
-  background: var(--tone-work);
-  border-radius: 50%;
-  animation: pulse 2s ease-in-out infinite;
-}
-@keyframes pulse { 50% { opacity: 0.25; } }
-
-.stale-note { margin-left: var(--s3); font-size: var(--t-meta); color: var(--muted); }
-
-@media (prefers-reduced-motion: reduce) {
-  .livedot { animation: none; }
-}
+.stale-note { margin-left: var(--s3); font-size: var(--t-machine-sm); color: var(--muted); }
 
 /* The event log. Machine text end to end, and the deferral timeline reads as a
    column of clocks. */
@@ -1892,57 +1651,30 @@ button[disabled] { opacity: 0.5; cursor: default; }
   gap: var(--s1) var(--s2);
   align-items: baseline;
   padding: var(--s1) 0;
-  border-bottom: 1px solid var(--line);
-  font-size: var(--t-cell);
+  border-bottom: 1px solid var(--seam);
+  font-size: var(--t-log);
+  line-height: var(--lh-log);
 }
 .event:last-child { border-bottom: 0; }
-/* The clocks are a column, not the first word of a sentence. A fixed basis is
-   what turns an event log into something you can read down: at 03:00 the
+/* The clocks are a column, not the first word of a sentence. At 03:00 the
    question is "when did the deferrals start", and the answer is the shape of
-   the left edge. 9rem holds `2026-08-09 17:12` at 12.5px mono with room to
-   spare, and the level pill lands at the same x on every row under it. */
-.event .at { flex: 0 0 9rem; }
-/* The level pill is a column too, for the same reason: `info` and `error` are
-   a character apart and a ragged second column undoes the first. A *minimum*,
-   not a fixed basis: `flex: 0 0 4.5rem` stretched the pill itself to 72px, so
-   the one badge on the page that is 30px of word inside a 72px box read as a
-   different primitive from every other pill on the surface. 3.5rem is 56px and
-   `debug` — the widest of the four level words — measures 54.2px at the pill's
-   own metrics, so the column still lines up and the pill still hugs. */
+   the left edge. */
+.event .at { flex: 0 0 9rem; color: var(--muted); }
+/* The level pill is a column too, for the same reason. A *minimum*, not a fixed
+   basis: a fixed one stretched the pill itself and made the one badge on the
+   page that is 30px of word inside a 72px box read as a different primitive. */
 .event > .pill { flex: 0 0 auto; min-width: 3.5rem; text-align: center; }
-.eventtext { flex: 1 1 22rem; min-width: 0; font-size: var(--t-machine); overflow-wrap: anywhere; }
+.eventtext { flex: 1 1 22rem; min-width: 0; font-size: var(--t-log); }
 /* An event that arrived while the page was open. A left rule rather than a
    flash: it survives being scrolled past, which an animation does not. */
 .event.is-new { margin-left: calc(var(--s2) * -1); padding-left: var(--s2); border-left: 1px solid var(--accent); }
 
 /* -------------------------------------------------------------- write side */
 
-/* Phase 3. Everything below draws a control that changes state, and every one
-   of them is a real `<form method="post">` — the pages keep working with
-   JavaScript off, which is the same argument the shot timeline's `<a href>`
-   made, and the reason there is no fetch() anywhere in this surface's script.
-
-   Nothing here is a new visual idea. The buttons are the buttons, the fields
-   are the fields, the panels are panels under a hairline. What is new is four
-   primitives a read-only surface never needed: a textarea, a checkbox row, a
-   help line under a field, and the sign-out control in the chassis. */
-
-/* The rail foot's second job (§3.2 rule 3): when the write side is off in a
-   private deployment, say why and give the one-line fix. It sits under the
-   `auth=…` line in the same 12px muted register, because it is the same kind
-   of fact — what this deployment is allowed to do. */
-.deployment-why {
-  margin: var(--s2) 0 0;
-  color: var(--muted);
-  font-size: var(--t-meta);
-  line-height: var(--lh-cell);
-}
-
-.signout { margin: var(--s3) 0 0; }
-/* Full-bleed in the rail, like a nav item: it is the one control in the
-   chassis and it should read as part of the column rather than as a widget
-   dropped into it. */
-.signout button { width: 100%; }
+/* Every control below is a real `<form method="post">` — the pages keep working
+   with JavaScript off, which is why there is no fetch() anywhere in this
+   surface's script. Nothing here is a new visual idea: the buttons are the
+   buttons, the fields are the fields, the panels are panels under a hairline. */
 
 /* ---- the row action cell (videos table) */
 
@@ -1957,40 +1689,35 @@ button[disabled] { opacity: 0.5; cursor: default; }
 .col-actions button, .col-actions .ghostlink {
   height: var(--s6);
   padding: 0 var(--s2);
-  font-size: var(--t-micro);
+  font-size: var(--t-label-sm);
+  letter-spacing: 0.17em;
 }
 .col-actions .ghostlink { margin-left: var(--s1); }
 
 /* ---- fields the read-only surface never needed */
 
-/* A field that owns its own line rather than sharing a flex row. */
-.field-block { display: flex; flex-direction: column; gap: var(--s1); }
-
-/* The paste box is machine text and is set as machine text: the Two-Channel
-   Rule, applied where it pays most. JetBrains Mono was picked for one
-   measurable property — it draws 0/O and 1/l/I apart — and a column of YouTube
-   ids like `kCc8FmEb1nY` is precisely the string that property was bought for.
-   The tag fields stay sans, with the filter bar's inputs they are siblings
-   of. */
+/* The paste box is machine text and is set as machine text: JetBrains Mono was
+   picked for one measurable property — it draws 0/O and 1/l/I apart — and a
+   column of YouTube ids like `kCc8FmEb1nY` is precisely the string that
+   property was bought for. */
 .field textarea {
   /* Four table rows tall — the paste box is the page's subject and it should
      look like it holds a list, not like an input that grew. */
   min-height: calc(var(--row) * 4);
-  padding: var(--s2);
+  padding: var(--s3);
   font-family: var(--font-mono);
   font-size: var(--t-machine);
   font-variant-numeric: tabular-nums;
-  font-feature-settings: "liga" 0, "calt" 0;
+  font-variant-ligatures: none;
   line-height: var(--lh-body);
-  color: inherit;
-  background: var(--raised);
-  border: 1px solid var(--sand-7);
-  border-radius: var(--r-sm);
+  color: var(--fg);
+  background: var(--console);
+  border: 1px solid var(--seam2);
   resize: vertical;
 }
-.field textarea::placeholder { color: var(--muted); opacity: 1; }
-.field textarea:hover { border-color: var(--sand-8); }
-.field :disabled { opacity: 0.5; cursor: default; }
+.field textarea::placeholder { color: var(--fg3); opacity: 1; }
+.field textarea:hover { border-color: var(--gold-44); }
+.field :disabled { color: var(--fg3); cursor: default; }
 
 /* The sentence under a control, in body voice. Not a `title` and not a
    placeholder: both of those are text you have to go and find, and this is the
@@ -2005,14 +1732,14 @@ button[disabled] { opacity: 0.5; cursor: default; }
 
 /* ---- checkbox rows */
 
-/* Not a fieldset with a box: the No-Card Rule holds here too, so the group is
-   a label and its rows, and the browser's own border is removed. */
+/* Not a fieldset with a box: the group is a label and its rows, and the
+   browser's own border is removed. */
 .checks {
   margin: var(--s5) 0 0;
   padding: 0;
   border: 0;
 }
-.checks > legend { padding: 0; color: var(--muted); }
+.checks > legend { padding: 0; }
 
 .check {
   display: grid;
@@ -2020,7 +1747,7 @@ button[disabled] { opacity: 0.5; cursor: default; }
   gap: 0 var(--s2);
   align-items: baseline;
   padding: var(--s2) 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--seam);
   cursor: pointer;
 }
 .check:last-child { border-bottom: 0; }
@@ -2031,20 +1758,17 @@ button[disabled] { opacity: 0.5; cursor: default; }
   height: var(--s4);
   accent-color: var(--accent);
 }
-.check-word { font-size: var(--t-cell); font-weight: var(--w-medium); }
-.check-note { color: var(--muted); font-size: var(--t-meta); line-height: var(--lh-cell); }
+.check-word { font-size: var(--t-cell); font-weight: var(--w-strong); }
+.check-note { color: var(--muted); font-size: var(--t-cell); line-height: var(--lh-cell); }
 
 /* ---- the index form */
 
 /* One column, measured. A form is prose with controls in it — the reader goes
-   down it once, top to bottom — so it takes `--prose` like every other
-   sentence on this surface, and not the full-bleed width the scanning grids
-   take. A 1150px paste box above a 736px explanation of it is two objects
-   pretending to be one field. */
+   down it once, top to bottom — so it takes `--prose` like every other sentence
+   here, and not the full-bleed width the scanning grids take. */
 .indexform { margin-top: var(--s3); max-width: var(--prose); }
 /* One wrapping row of controls, the filter bar's metrics without the filter
-   bar's ground: this is the page's subject, not a strip above a table, so it
-   sits on the page rather than in a panel of its own. */
+   bar's ground: this is the page's subject, not a strip above a table. */
 .formrow {
   display: flex;
   flex-wrap: wrap;
@@ -2063,16 +1787,16 @@ button[disabled] { opacity: 0.5; cursor: default; }
   gap: 0 var(--s3);
   align-items: baseline;
   padding: var(--s2) 0;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--seam);
 }
 .receipt .empty-lead { margin-top: var(--s4); }
 
 /* ---- sign-in */
 
-/* The one page on this surface with a single job. The panel keeps the
-   full-width hairline every other panel has — a rule that stops two thirds of
-   the way across reads as an unfinished page — and the *content* is capped,
-   which is the rule everywhere else here: prose is measured, grids are not. */
+/* The one page here with a single job. The panel keeps the full-width hairline
+   every other panel has — a rule that stops two thirds of the way across reads
+   as an unfinished page — and the *content* is capped, which is the rule
+   everywhere else: prose is measured, grids are not. */
 .signin-form {
   display: flex;
   flex-wrap: wrap;
@@ -2081,9 +1805,7 @@ button[disabled] { opacity: 0.5; cursor: default; }
   margin-top: var(--s4);
   max-width: var(--prose);
 }
-/* A password field is a short string and should look like one: stretched to
-   the measure it reads as a paste box. 20rem is roughly where the filter bar's
-   own wide inputs settle at this column width. */
+/* A password field is a short string and should look like one. */
 .signin-form .field-wide { flex: 0 1 20rem; }
 .signin-error {
   display: flex;
@@ -2096,7 +1818,7 @@ button[disabled] { opacity: 0.5; cursor: default; }
 
 /* ---- the manage panel (video detail) */
 
-.manage-action > .label { display: block; margin: 0 0 var(--s2); color: var(--muted); }
+.manage-action > .label { display: block; margin: 0 0 var(--s2); }
 .manage-action > .rowform { display: block; margin-top: var(--s3); }
 .tagform {
   display: flex;
@@ -2106,61 +1828,55 @@ button[disabled] { opacity: 0.5; cursor: default; }
   margin-top: var(--s3);
 }
 .manage .split > .manage-action:nth-child(2) { margin-top: 0; }
-@media (max-width: 60rem) {
-  .manage .split > .manage-action:nth-child(2) { margin-top: var(--s6); }
-}
 
 /* ----------------------------------------------------------------- notices */
 
-/* Not a card: a band under a rule that is thick enough to be the loudest thing
-   on the page, in the tone of what went wrong. */
+/* Not a card: a band under a rule thick enough to be the loudest thing on the
+   page, in the tone of what went wrong. */
 .notice {
   margin-top: var(--s6);
   padding: var(--s3) 0 var(--s4);
-  border-top: 2px solid var(--tone-line, var(--line));
+  border-top: 2px solid var(--tone-line, var(--seam2));
 }
 .notice-bad { --tone: var(--tone-bad); --tone-line: var(--tone-bad); }
 .notice-title {
   margin: 0;
-  font-size: var(--t-lead);
+  font-size: var(--t-cell);
   font-weight: var(--w-strong);
   color: var(--tone, var(--fg));
 }
 /* Sans, not mono. This paragraph is a sentence a human wrote about what went
    wrong; the machine's contribution to it — the `error_code`, the tool name,
-   the env var — arrives inside `<code>` or `.errtext` and is mono there. Setting
-   the whole paragraph in the machine face broke the Two-Channel Rule on the one
-   surface whose entire premise is that the face tells you who is speaking, and
-   it read as a terminal transcript on pages where nothing had crashed. */
+   the env var — arrives inside `<code>` or `.errtext` and is mono there. */
 .notice-detail {
   margin: var(--s2) 0 0;
-  max-width: var(--prose-meta);
+  max-width: var(--note);
   font-size: var(--t-cell);
   color: var(--muted);
   overflow-wrap: anywhere;
 }
-.notice-next { margin: var(--s2) 0 0; max-width: var(--prose-meta); font-size: var(--t-cell); }
+.notice-next { margin: var(--s2) 0 0; max-width: var(--note); font-size: var(--t-cell); }
 
 /* ---------------------------------------------------------------- lightbox */
 
+/* The one thing on this surface that has been lifted off the wall, so it is the
+   one thing that casts a shadow. */
 .shot {
   width: min(96vw, 72rem);
   max-width: min(96vw, 72rem);
   padding: 0;
   color: var(--fg);
-  background: var(--raised);
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
+  background: var(--plate);
+  border: 1px solid var(--seam2);
+  box-shadow: 0 40px 90px -24px rgba(0, 0, 0, .94);
 }
 
-.shot::backdrop { background: rgb(0 0 0 / 0.66); }
+.shot::backdrop { background: var(--scrim); }
 
 .shot-inner { padding: var(--s3); }
 
-/* The caption and the close control belong above the picture, not on top of it.
-   The close button used to be absolutely positioned over the frame's top-right
-   corner, which is where a slide puts its title — so the one control in the
-   dialog sat on the one part of the image somebody opened the dialog to read. */
+/* The caption and the close control belong above the picture, not on top of it:
+   the top-right corner of a frame is where a slide puts its title. */
 .shot-head {
   display: flex;
   align-items: baseline;
@@ -2176,14 +1892,14 @@ button[disabled] { opacity: 0.5; cursor: default; }
   aspect-ratio: 16 / 9;
   overflow: hidden;
   line-height: 0;
-  background: var(--sand-4);
-  border-radius: var(--r-md);
+  background: var(--black);
+  box-shadow: inset 0 0 0 1px var(--edge-in);
 }
 
 .shot-img { display: block; width: 100%; height: 100%; object-fit: contain; }
 
 .shot-boxes { position: absolute; inset: 0; }
-.shot-boxes .ocrbox { border-width: 2px; }
+.shot-boxes .ocrbox { border-color: var(--seen); border-width: 1.5px; }
 .shot-boxes[hidden] { display: none; }
 
 .shot-foot {
@@ -2196,8 +1912,19 @@ button[disabled] { opacity: 0.5; cursor: default; }
 }
 
 .shot-caption { margin: 0; font-size: var(--t-machine); }
-.shot-toggle { display: flex; gap: var(--s1); align-items: center; color: var(--muted); font-size: var(--t-meta); }
-.shot-link { color: var(--accent); font-size: var(--t-cell); text-decoration: none; }
+.shot-toggle {
+  display: flex;
+  gap: var(--s2);
+  align-items: center;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  font-weight: var(--w-label);
+  letter-spacing: 0.19em;
+  text-transform: uppercase;
+}
+.shot-toggle input { accent-color: var(--seen); }
+.shot-link { color: var(--accent); font-size: var(--t-machine); text-decoration: none; }
 .shot-link:hover { text-decoration: underline; }
 
 .shot-close { flex: 0 0 auto; }
@@ -2207,59 +1934,55 @@ button[disabled] { opacity: 0.5; cursor: default; }
 footer {
   margin-top: var(--s12);
   padding-top: var(--s5);
-  border-top: 1px solid var(--line);
-  font-size: var(--t-meta);
+  border-top: 1px solid var(--seam);
+  font-size: var(--t-machine-sm);
   color: var(--muted);
 }
-footer p { margin: 0; max-width: var(--prose-meta); }
+footer p { margin: 0; max-width: var(--note); }
 
-/* The signature. The same lockup as the rail, once more at the bottom of the
-   page, so the surface is signed rather than merely credited — and so the
-   serif reads as a decision made twice rather than as one odd word in a rail.
-   The version sits inside it in mono, because the version is a machine string
-   and the name is not: the two-channel rule, at 1:1 scale, on the brand. */
+/* The signature: the same lockup as the rail, once more at the foot of the
+   page, so the surface is signed rather than merely credited. It stays at rail
+   scale — the system's large footer signature is a landing-page gesture, and
+   this surface's whole brief is that it does not make gestures. The version
+   sits beside it in mono, because a version is a machine string and a name is
+   not: the two-channel rule, at 1:1 scale, on the brand. */
 .footline {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0 var(--s2);
+  gap: 0 var(--s3);
   margin: 0 0 var(--s1);
 }
-/* The separator's own padding on top of the flex gap put 24px around a `·`. */
 .footline .sep { padding: 0; }
-.footmark {
-  font-family: var(--font-display);
-  font-size: var(--t-lead);
-  font-weight: 400;
+.fmark {
+  font-family: var(--font-sans);
+  font-size: var(--brand-size);
+  font-weight: var(--brand-weight);
   line-height: var(--lh-tight);
-  letter-spacing: -0.01em;
+  letter-spacing: var(--brand-track);
   color: var(--fg);
 }
+.fmark i { font-style: normal; color: var(--accent); }
 
-/* ------------------------------------------------------------------ mobile */
+/* -------------------------------------------------------------- 4. widths */
 
-@media (max-width: 76rem) {
-  /* Five ledger columns stop fitting before the table does. Two rows of the
-     same band, not five stacked cards. */
-  .ledger { grid-template-columns: repeat(3, 1fr); }
-  .ledger > .figure:nth-child(3n + 1) { border-left: 0; padding-left: 0; }
-  .ledger > .figure:nth-child(n + 4) { border-top: 1px solid var(--line); }
-}
+/* Two of the system's breakpoints and one of the dashboard's own, which is the
+   allowance DESIGN.md gives a surface for a real structural change. In order:
+   `--bp-stack` 1120px (the rail becomes a strip, the zones stack), the
+   dashboard's 52rem (a table stops being a table), `--bp-hand` 780px (chrome
+   tightens for a hand). */
 
-/* The rail reflow. Below 60rem there is no room for 240px of navigation beside
-   the content, so the rail stops being a column and becomes the strip across
-   the top that phase 1 shipped: brand, a wrapping row of three links with the
-   current one underlined, and the deployment state on its own line. No drawer,
-   no scrim, no checkbox — a three-item nav that fits on one line has nothing to
-   gain from being hidden behind a control, and the control is the part of the
-   pattern that costs the keyboard and the screen reader. */
-@media (max-width: 60rem) {
-  /* `auto 1fr`, explicitly. The shell keeps `min-height: 100dvh`, and once the
-     rail is a row rather than a column both rows are implicit and `auto`, so
-     the browser hands each of them a share of the leftover viewport height. On
-     a short page — the 404, an empty jobs table — that opened a 107px hole
-     between the nav strip and the page title, measured at 390×844. The rail
-     hugs its content and the column takes the remainder. */
+@media (max-width: 70rem) {
+  /* 1120px — `--bp-stack`. There is no room for 240px of navigation beside the
+     content, so the rail stops being a column and becomes a strip across the
+     top: the word, a wrapping row of links with the current one underlined, and
+     the deployment state on its own line. No drawer, no scrim, no checkbox — a
+     nav of three items that fits on one line has nothing to gain from being
+     hidden behind a control, and the control is the part of that pattern that
+     costs the keyboard and the screen reader. */
+  /* `auto 1fr`, explicitly: with both rows implicit the browser hands each a
+     share of the leftover viewport height, which opened a 107px hole between
+     the strip and the page title on a short page. */
   .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
 
   .rail {
@@ -2272,7 +1995,7 @@ footer p { margin: 0; max-width: var(--prose-meta); }
     gap: var(--s2) var(--s6);
     padding: var(--s5) var(--s4) var(--s3);
     border-right: 0;
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid var(--seam);
   }
 
   .rail-brand { padding: 0; border-bottom: 0; }
@@ -2300,21 +2023,24 @@ footer p { margin: 0; max-width: var(--prose-meta); }
   .deployment-why { margin-top: var(--s1); }
 
   .split { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .manage .split > .manage-action:nth-child(2) { margin-top: var(--s6); }
+
+  /* Five ledger columns stop fitting: two rows of the same band, not five
+     stacked cards. */
+  .ledger { grid-template-columns: repeat(3, 1fr); }
+  .ledger > .figure:nth-child(3n + 1) { border-left: 0; }
+  .ledger > .figure:nth-child(n + 4) { border-top: 1px solid var(--seam); }
 }
 
 @media (max-width: 52rem) {
-  /* The table stops being a table. Each row becomes its own stacked block
-     with the column name in front of the value, which is the only shape that
-     fits eight columns on a 375px screen without a horizontal scroll. */
-  /* The head goes away entirely rather than into a 1px visually-hidden box.
-     Once `display: block` has taken the table apart there is no table left for
+  /* The dashboard's own breakpoint. Each row becomes its own stacked block with
+     the column name in front of the value, which is the only shape that fits
+     eight columns on a 375px screen without a horizontal scroll. */
+  /* The head goes away entirely rather than into a 1px visually-hidden box:
+     once `display: block` has taken the table apart there is no table left for
      a screen reader to associate a `<th scope="col">` with, and every cell in
-     the stack prints its own column name in front of its value — so a
-     clipped-to-1px header row is a phantom: three sticky cells and four sort
-     links stacked on top of each other inside a box the size of a full stop,
-     which reads to any geometry check as links buried under a thumbnail
-     (because that is exactly what it looks like). Sorting is not lost with it:
-     `order` is a select in the filter bar above, on every width. */
+     the stack prints its own column name. Sorting is not lost with it — `order`
+     is a select in the filter bar above, at every width. */
   :is(.grid.videos, .grid.jobs) thead { display: none; }
   :is(.grid.videos, .grid.jobs),
   :is(.grid.videos, .grid.jobs) tbody,
@@ -2324,9 +2050,9 @@ footer p { margin: 0; max-width: var(--prose-meta); }
 
   :is(.grid.videos, .grid.jobs) tr {
     padding: var(--s3) 0;
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid var(--seam);
   }
-  :is(.grid.videos, .grid.jobs) tr:hover { background: none; }
+  :is(.grid.videos, .grid.jobs) tr:hover { background: none; box-shadow: none; }
 
   :is(.grid.videos, .grid.jobs) th, :is(.grid.videos, .grid.jobs) td {
     height: auto;
@@ -2336,10 +2062,8 @@ footer p { margin: 0; max-width: var(--prose-meta); }
 
   /* The value group wraps. Without this the jobs row put `queued`,
      `E_RATE_LIMIT` and the countdown on one unwrappable line beside a fixed
-     label, and at 390 the countdown — "held 3m 19s more", the single line
-     dashboard.md §4.4 says this page exists for — was pushed clean off the
-     right edge of its own cell. A state that only fits on a laptop is not a
-     state the 03:00 test can be passed with. */
+     label, and at 390 the countdown — the single line this page exists for —
+     was pushed clean off the right edge of its own cell. */
   :is(.grid.videos, .grid.jobs) td[data-label]:not(.col-shot) {
     display: flex;
     flex-wrap: wrap;
@@ -2347,7 +2071,7 @@ footer p { margin: 0; max-width: var(--prose-meta); }
     align-items: baseline;
   }
   /* A wrapped value starts a new flex line at the cell's left edge, so it is
-     indented to the column the labels leave, and the values stay a column. */
+     indented to the column the labels leave and the values stay a column. */
   :is(.grid.videos, .grid.jobs) td[data-label] > .countdown {
     flex: 0 0 auto;
     margin-left: calc(var(--stacked-label) + var(--s2));
@@ -2355,48 +2079,46 @@ footer p { margin: 0; max-width: var(--prose-meta); }
   :is(.grid.videos, .grid.jobs) td[data-label]:not(.col-shot)::before {
     content: attr(data-label);
     flex: 0 0 var(--stacked-label);
-    font-family: var(--font-sans);
-    font-size: var(--t-micro);
-    font-weight: var(--w-medium);
+    font-family: var(--font-mono);
+    font-size: var(--t-label);
+    font-weight: var(--w-label);
     text-transform: uppercase;
-    letter-spacing: 0.07em;
+    letter-spacing: 0.19em;
     color: var(--muted);
   }
   :is(.grid.videos, .grid.jobs) td.num { text-align: left; }
   .grid.videos .col-shot { width: auto; margin-bottom: var(--s1); }
   :is(.grid.videos, .grid.jobs) .col-title { min-width: 0; margin-bottom: var(--s1); }
 
-  /* The other grids stay tables and scroll inside their own wrapper. A five
-     column provenance table squeezed into 375px breaks `text_embed` across
-     three lines, which is worse than a swipe — and the items table carries a
+  /* The other grids stay tables and scroll inside their own wrapper: a
+     five-column provenance table squeezed into 375px breaks `text_embed` across
+     three lines, which is worse than a swipe, and the items table carries a
      colspan error row that stacking would tear off its own item. The page body
      still never scrolls sideways; the wrapper does. */
   .grid:not(.videos, .jobs) { min-width: 34rem; }
 }
 
-@media (max-width: 40rem) {
+@media (max-width: 48.75rem) {
+  /* 780px — `--bp-hand`. */
   .col { padding: 0 var(--s4) calc(var(--s8) + env(safe-area-inset-bottom)); }
 
   .rail { gap: var(--s2) var(--s4); }
   .rail-foot { margin-left: 0; flex-basis: 100%; }
+  .mark b, .fmark { font-size: 15px; }
 
   .pagehead { padding: var(--s5) 0 var(--s3); }
-  .pagehead h1 { font-size: var(--t-h1-sm); }
+  .pagehead h1 { font-size: var(--t-question); font-weight: 250; letter-spacing: -0.028em; }
   .panel { margin-top: var(--s6); }
 
-  /* Two columns, and the fifth figure takes the full width rather than
-     sitting alone next to a hole. The right column keeps 12px between the
-     divider and its label: the `3n + 1` rule below was the three-column
-     arrangement's, and at two columns it left every even figure with a
-     hairline 0px from its own text. */
+  /* Two columns, and the fifth figure takes the full width rather than sitting
+     alone next to a hole. */
   .ledger { grid-template-columns: repeat(2, 1fr); }
-  .ledger > .figure { padding: var(--s3); }
-  .ledger > .figure:nth-child(odd) { border-left: 0; padding-left: 0; }
-  .ledger > .figure:nth-child(n + 3) { border-top: 1px solid var(--line); }
+  .ledger > .figure { padding: var(--s4); }
+  .ledger > .figure:nth-child(odd) { border-left: 0; }
+  .ledger > .figure:nth-child(n + 3) { border-top: 1px solid var(--seam); }
   .ledger > .figure:last-child:nth-child(odd) { grid-column: 1 / -1; }
 
   .figures { grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr)); gap: var(--s4) var(--s5); }
-  .figure > dd { font-size: var(--t-h2); }
 
   /* The row's far-end fact wraps to its own line and lines up under the title
      rather than squeezing it: at 375px a clock on the right turns a four-word
@@ -2417,4 +2139,21 @@ footer p { margin: 0; max-width: var(--prose-meta); }
   .ocrgrid { grid-template-columns: 1fr; }
 
   .shot { width: 96vw; max-width: 96vw; }
+}
+
+/* --------------------------------------------------------------- 5. motion */
+
+/* The Motion Law: movement only where the machine is working. The whole
+   inventory of this surface is a hover changing a colour at `--t-fast` and a
+   progress meter's width advancing as a real job advances — there is no pulse,
+   no drift, no entrance, no spinner and no hover transform anywhere above.
+
+   Freezing means painting the end state, never dropping the content. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

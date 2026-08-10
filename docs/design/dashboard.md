@@ -1167,3 +1167,99 @@ the band's caption is a count):
   Page copy gets two sentences and 170 characters; `field-help` and
   `check-note`, which DESIGN.md sanctions as control documentation, get 240; a
   ledger `figure-note` gets one sentence and 56 characters.
+
+---
+
+## 12. The identity rebuild (2026-08-10)
+
+**The order (Tom).** "Let the dashboard be a true minimalist and informative
+control surface. Keep the global same aesthetic, the logo." `DESIGN.md` was
+rewritten the same night — the warm-paper system is gone and the projection
+room is the contract — and the per-surface section there makes this surface the
+**minimalist end** of that system: density, restraint, information first, the
+state tones doing the talking, no spectacle. `positioning.md` says the same
+thing shorter: the dashboard is the instrument, and its charisma is receipts
+rendered perfectly.
+
+**Nothing about function moved.** Five routes, the same reads, the same clamps,
+the same `has_more`, the same redactions, the same write side. Every class name
+in the templates survived except the three the lockup retired (below). What
+changed is the skin and the discipline: fewer rules, fewer boxes, hairline
+seams, mono for everything the machine said and sans for what a human wrote.
+
+### 12.1 What was stripped, and what was sharpened
+
+| | |
+|---|---|
+| **stripped** | the pulsing `.livedot` (the Motion Law bans a breathing dot outright — the word `live` in the work tone was always the thing carrying it, and the square beside it now just sits there); the `.skip` link's slide-in; every border radius (`* { border-radius: 0 }` is the reset); the drawn `.brandmark` in the rail; the third font face; the light scheme and the whole vendored Radix light/dark pair; the `--r-sm/-md/-lg` scale; two of the four breakpoints; the row-hover fill's second job (a plate step now, not a lighter paper) |
+| **sharpened** | the ledger became a real plate with the system's one corner tick, and it is the only ornament on the surface; the shot bars stopped being accent-coloured and are neutral until you point at one; the OCR overlay moved from gold to `--seen`, which is the Lime Rule's whole point and the one place lime appears; the state pills went to the five dark tones with grounds mixed from the ink; every control in the filter bar is one 34px `button-ghost`/`input-text` family; frames sit on `--black` behind a 1px inset hairline instead of a grey plate |
+
+### 12.2 Six judgement calls, so nobody re-derives them
+
+1. **The page title is `headline` at its floor (1.9rem), not its clamp.**
+   DESIGN.md's per-surface note says the dashboard's ladder "starts at
+   `headline`"; the rung's clamp reaches 50px at 1440, and the video detail
+   page's `<h1>` is a corpus string — a 78-character conference title at 50px
+   is four lines before the operator has read anything. 1.9rem is the rung's own
+   floor, so it is on the ladder, and it is one step above everything under it,
+   which is what a page top is for. Below `--bp-hand` it drops to `question`'s
+   ceiling (1.5rem), the same step the old surface took.
+2. **The footer signature stays at rail scale**, not the system's
+   `clamp(2.2rem, 4.4vw, 4rem)`. That size is described in DESIGN.md as "a
+   signature, at the end, after the argument" — a landing-page gesture. This
+   surface makes no argument, so the word appears twice at the same 16.5px and
+   the brand is a whisper on both ends.
+3. **No gold fill on any control.** DESIGN.md lists what gold means here and it
+   is five things: the active nav item, the focus ring, the sorted column's
+   underline, a timecode worth clicking, and the hovered row's inset edge. A
+   gold *Apply* button would quietly add "a button" to that list, so the whole
+   button family is `button-ghost` — 34px, `label` typography, `--plate3` or
+   transparent, gold only on hover. The one exception is `accent-color` on a
+   native checkbox, where the alternative is the browser's blue, which would be
+   a second accent for real.
+4. **Every control in the filter bar is mono.** Its values are the machine's own
+   vocabulary — `ready`, `E_RATE_LIMIT`, `2026-08-09`, `kCc8FmEb1nY`, a row
+   count — and the Two-Channel Rule does not stop at the edge of an `<input>`.
+   They sit on `--console` inside a `--plate` band: pitch → plate → console is
+   the Plate Rule, and a field is a surface the machine writes into.
+5. **The corner tick is used once per page and only on the ledger.** Panels on
+   this surface are a label and a hairline, not plates, and a tick belongs to a
+   plate. The overview's ledger is the only real box on the surface, so it is
+   the only thing that gets one.
+6. **Four breakpoints became three**, which is the allowance DESIGN.md gives:
+   `--bp-stack` (70rem — the rail becomes a strip, the zones stack, the ledger
+   goes to three columns), the dashboard's own **52rem** (a table stops being a
+   table — unchanged, and still the one structural break this surface is allowed
+   to invent), and `--bp-hand` (48.75rem — chrome tightens, the ledger goes to
+   two columns). The old 76rem and 60rem were taste breaks for the same two
+   changes and are folded into the system's own.
+
+### 12.3 The lockup, the favicon and the fonts
+
+The rail and footer marks are the **word and nothing else** — `vidtheque` with
+the full stop in gold, one `<b>` with an `<i>` around the period (DESIGN.md,
+The Font-Logo Rule). `.brandmark` / `.wordmark` / `.footmark` are retired and
+replaced by `.mark` and `.fmark`, the two selectors the contract names. The
+drawn film frame stays as the **favicon only**, redrawn gold on pitch with
+square corners; it never appears inside a page.
+
+`dashboard/static/fonts/` keeps its byte-identical copy of the two vendored
+faces and loses the two it no longer serves — Inter and Instrument Serif, with
+their licence texts. `PROVENANCE.md` records what went and why. The `src` stays
+relative for the SSH-tunnel reason §8 already gives.
+
+### 12.4 The two pinned tests
+
+DESIGN.md's migration notes named them, and this rebuild is where they moved:
+
+- `test_the_dashboard_palette_matches_the_demos` — **six** role properties, not
+  twelve, because there is one scheme. The two files must still agree, which is
+  what stops the surfaces becoming two visual worlds; what changed is that each
+  role is now resolved through its `var(--…)` alias chain and the two are
+  compared as **mappings**. The six are aliases (`--bg: var(--pitch)`), and two
+  stylesheets written independently group and order their tokens differently
+  without either being wrong. The colour is the contract; the spelling is not.
+- `test_both_schemes_and_a_mobile_viewport_are_declared` — one `theme-color`
+  (`#040405`), `content="dark"`, `color-scheme: dark` in the stylesheet, and an
+  assertion that **no** `@media (prefers-color-scheme` block exists. The name is
+  left as DESIGN.md's migration note cites it; the docstring carries the truth.

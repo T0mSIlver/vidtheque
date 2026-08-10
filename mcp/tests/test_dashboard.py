@@ -1134,31 +1134,59 @@ def test_the_pages_carry_no_inline_script(client: TestClient) -> None:
 
 def test_the_dashboard_palette_matches_the_demos() -> None:
     """The demo page is not registered in private mode, so the dashboard ships
-    its own copy of the six custom properties. This is the thing that stops the
-    copy drifting into a second visual world."""
+    its own copy of the six role properties. This is the thing that stops the
+    copy drifting into a second visual world.
 
-    def palette(css: str) -> list[tuple[str, str]]:
-        blocks = re.findall(r":root \{(.*?)\}", css, re.S)
-        out = []
-        for block in blocks:
+    Retargeted 2026-08-10 with the projection-room system (DESIGN.md, migration
+    notes). Two things changed. The system is **single-scheme** — dark only, no
+    `prefers-color-scheme` block and no toggle — so the expected count is six
+    rather than twelve. And the six are **aliases**: DESIGN.md's frontmatter
+    declares `bg: {colors.pitch}`, `accent: {colors.gold}` and so on, and an
+    alias never carries its own value. So each one is resolved through its
+    `var(--…)` chain and the two files are compared as *mappings*: what has to
+    agree is the colour each role resolves to, not the spelling and not the
+    order the six happen to be declared in. The old positional read was written
+    when both files were six literal hexes at the top; with a ground scale under
+    them the two surfaces group their tokens differently (the demo declares
+    `--fg` with the ink, the dashboard with the roles) and neither is wrong.
+    """
+
+    ROLES = ("bg", "fg", "muted", "line", "accent", "raised")
+
+    def palette(css: str) -> dict[str, str]:
+        declared: dict[str, str] = {}
+        for block in re.findall(r":root \{(.*?)\}", css, re.S):
             for name, value in re.findall(r"--([\w-]+):\s*([^;]+);", block):
-                if name in ("bg", "fg", "muted", "line", "accent", "raised"):
-                    out.append((name, value.strip()))
-        return out
+                declared[name] = value.strip()
+
+        def resolve(value: str, depth: int = 0) -> str:
+            alias = re.fullmatch(r"var\(--([\w-]+)\)", value)
+            if alias and depth < 8:
+                return resolve(declared.get(alias.group(1), value), depth + 1)
+            return value
+
+        return {name: resolve(declared[name]) for name in ROLES if name in declared}
 
     demo = palette((DEMO_STATIC / "style.css").read_text())
     dash = palette((STATIC / "dashboard.css").read_text())
-    assert demo and len(demo) == 12  # six properties, two schemes
-    assert dash[: len(demo)] == demo
+    assert len(demo) == 6, "six roles, one scheme"  # not twelve: dark only now
+    assert dash == demo
 
 
 def test_both_schemes_and_a_mobile_viewport_are_declared(client: TestClient) -> None:
+    """The name is the one DESIGN.md's migration notes cite; there is one scheme
+    now. A projection room does not have a day mode, so the page declares dark
+    and stops: one `theme-color`, `color-scheme: dark`, and no light palette to
+    switch to.
+    """
     body = page(client, ROOT)
-    assert body.count('name="theme-color"') == 2
-    assert 'content="light dark"' in body
+    assert body.count('name="theme-color"') == 1
+    assert 'content="#040405"' in body
+    assert 'content="dark"' in body
     assert "width=device-width" in body
     css = (STATIC / "dashboard.css").read_text()
-    assert "prefers-color-scheme: dark" in css
+    assert "color-scheme: dark" in css
+    assert "@media (prefers-color-scheme" not in css, "dark only: no second scheme"
     assert "prefers-reduced-motion: reduce" in css
     # The table stops being a table rather than scrolling the page sideways.
     assert "max-width: 52rem" in css

@@ -5,52 +5,47 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{{ title }} — vidtheque</title>
 <meta name="robots" content="noindex, nofollow">
-<meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#fbfaf9" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#131313" media="(prefers-color-scheme: dark)">
+{# One scheme. There is no light palette, no `prefers-color-scheme` block and no
+   toggle: a projection room does not have a day mode (DESIGN.md). #}
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#040405">
 <link rel="stylesheet" href="{{ root }}/static/dashboard.css">
 {# The text face only. Preloading the mono too costs more bytes up front than
    the swap it would prevent, and the mono's first paint is a timecode in a
    column that is already tabular in the fallback. Root-relative like every
    other asset on this surface, never built from PUBLIC_URL. #}
-<link rel="preload" href="{{ root }}/static/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-{# The demo page's drawn film frame, so the two surfaces are one product in a
-   tab strip. An emoji favicon renders as a different glyph on every platform
-   and vanishes in monochrome. It is the *same drawing* as `.brandmark` in the
-   rail below, path for path: the tab and the top of the rail are one object,
-   and the only difference is that the rail's copy takes its two colours from
-   the scheme tokens while a `data:` favicon cannot. #}
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23b45309'/><rect x='6' y='9' width='20' height='14' rx='1.5' fill='%23fbfaf9'/><g fill='%23b45309'><rect x='8.5' y='11' width='3' height='3' rx='0.6'/><rect x='8.5' y='18' width='3' height='3' rx='0.6'/><rect x='20.5' y='11' width='3' height='3' rx='0.6'/><rect x='20.5' y='18' width='3' height='3' rx='0.6'/></g></svg>">
+<link rel="preload" href="{{ root }}/static/fonts/archivo-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+{# The drawn film frame, redrawn in gold on pitch. It is a favicon and not a
+   brandmark: the lockup in the rail is the word alone (DESIGN.md, The
+   Font-Logo Rule), and this drawing never appears inside a page. An emoji
+   favicon renders as a different glyph on every platform and vanishes in
+   monochrome, which is why it is drawn at all. Square corners, like every
+   other box in this system. #}
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%23040405'/><rect x='6' y='9' width='20' height='14' fill='%23e7b455'/><g fill='%23040405'><rect x='8.5' y='11' width='3' height='3'/><rect x='8.5' y='18' width='3' height='3'/><rect x='20.5' y='11' width='3' height='3'/><rect x='20.5' y='18' width='3' height='3'/></g></svg>">
 </head>
 <body>
 <!--
-  DIRECTION: "the cutting room" — research/dashboard-design-research-2026-08-09.md
-  §1.2 Direction C, chosen by Tom 2026-08-09. Normative tokens: /DESIGN.md.
+  DIRECTION: "the projection room" — /DESIGN.md, normative. Tom picked it
+  2026-08-10; this surface is its minimalist end.
 
-  THESIS: the index explaining itself in the vernacular of the room that cut
-  the footage. It refuses the SaaS admin panel of same-size stat cards.
+  THESIS: the instrument. It sells nothing and narrates nothing; its charisma
+  is receipts rendered perfectly.
 
-  OWN-WORLD: warm paper (#fbfaf9) and one burnt amber (#b45309) on vendored
-  Radix sand + amber; hairlines only, no cards, no shadows; Inter for human
-  text, JetBrains Mono for every machine string.
+  OWN-WORLD: near-black ground, one gold accent kept scarce, lime spent only on
+  what the machine read off the screen; Archivo for human text, JetBrains Mono
+  for every machine string; hairlines and plates, zero radius, no cards, no
+  shadow on anything that has not been lifted off the wall.
 
-  STORY: the operator arrives mid-batch, reads the ledger band in one glance,
-  and clicks the number next to the thing that is wrong.
+  STORY: the operator arrives mid-batch at 03:00 over an SSH tunnel, reads the
+  ledger band in one glance, and clicks the number next to the thing that is
+  wrong.
 
-  FIRST VIEWPORT: a persistent left rail naming the three surfaces, then a
-  full-bleed content column — page header band, a full-width ruled ledger of
-  five mono figures, and the gaps as sentences beside the arrivals.
+  FIRST VIEWPORT: a persistent left rail carrying the wordmark and the three
+  surfaces, then a full-bleed content column — page header band, a full-width
+  ledger of five mono figures, and the gaps as sentences beside the arrivals.
 
-  CHASSIS: layout v2 (2026-08-09). The centred 74rem document column was
-  inherited from the demo page and made an Operate surface read as an article.
-  The world — tokens, both faces, warm paper and one amber — is unchanged; only
-  the chassis moved. DESIGN.md §Layout is normative.
-
-  FORM: pinned by the brief, so no concept roll — a user-pinned direction beats
-  the roll.
-
-  FINISH: unreviewed and undocumented is unfinished; this build ends with the
-  finish review, the verdict, and DESIGN.md.
+  MOTION: a hover changing a colour, and a progress meter advancing while a
+  real job advances. Nothing else moves, because nothing else is working.
 -->
 
 <a class="skip" href="#main">Skip to content</a>
@@ -63,24 +58,13 @@
    to a horizontal strip — no drawer, no checkbox, no JavaScript, because a
    nav of three items does not need to be hidden behind a control. #}
 <header class="rail">
-  {# The lockup. The mark is the favicon's own drawing at rail scale: same
-     geometry, same two colours, drawn from tokens so it flips with the scheme,
-     and the word beside it is the one place on this Operate surface that gets a
-     display face. DESIGN.md, The Wordmark-Only Rule. #}
+  {# The lockup, and it is the word and nothing else: `vidtheque` in the text
+     face with the full stop in gold — the receipt's full stop, because the
+     product's whole argument is that an answer ends in a citation. One string,
+     so it is a `<b>` with an `<i>` around the period, not an image and not an
+     SVG. DESIGN.md, The Font-Logo Rule. #}
   <div class="rail-brand">
-    <a class="brand" href="{{ root }}">
-      <svg class="brandmark" width="24" height="24" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-        <rect class="bm-plate" width="32" height="32" rx="7"/>
-        <rect class="bm-gate" x="6" y="9" width="20" height="14" rx="1.5"/>
-        <g class="bm-perf">
-          <rect x="8.5" y="11" width="3" height="3" rx="0.6"/>
-          <rect x="8.5" y="18" width="3" height="3" rx="0.6"/>
-          <rect x="20.5" y="11" width="3" height="3" rx="0.6"/>
-          <rect x="20.5" y="18" width="3" height="3" rx="0.6"/>
-        </g>
-      </svg>
-      <span class="wordmark">vidtheque</span>
-    </a>
+    <a class="mark" href="{{ root }}"><b>vidtheque<i>.</i></b></a>
   </div>
 
   <nav class="nav" aria-label="Sections">
@@ -174,14 +158,13 @@
   </main>
 
   {# Signed, not merely credited: the same lockup as the rail, once more at the
-     foot of the page. The version is mono because a version is a machine
-     string and a name is not. The two-channel rule, applied to the brand
-     itself. The tagline that used to follow it is gone (2026-08-10), on the
-     same argument that took the rubric out of the rail: a tagline is a
-     persuasion move, and this surface owes the operator facts. #}
+     foot of the page, and at the same scale — the system's large footer
+     signature is a landing-page gesture and this surface does not make
+     gestures. The version is mono because a version is a machine string and a
+     name is not. The two-channel rule, applied to the brand itself. #}
   <footer>
     <p class="footline">
-      <span class="footmark">vidtheque</span>
+      <span class="fmark">vidtheque<i>.</i></span>
       <code>{{ version }}</code>
     </p>
   </footer>
