@@ -15,13 +15,24 @@
    column that is already tabular in the fallback. Root-relative like every
    other asset on this surface, never built from PUBLIC_URL. #}
 <link rel="preload" href="{{ root }}/static/fonts/archivo-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-{# The drawn film frame, redrawn in gold on pitch. It is a favicon and not a
-   brandmark: the lockup in the rail is the word alone (DESIGN.md, The
-   Font-Logo Rule), and this drawing never appears inside a page. An emoji
-   favicon renders as a different glyph on every platform and vanishes in
-   monochrome, which is why it is drawn at all. Square corners, like every
-   other box in this system. #}
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%23040405'/><rect x='6' y='9' width='20' height='14' fill='%23e7b455'/><g fill='%23040405'><rect x='8.5' y='11' width='3' height='3'/><rect x='8.5' y='18' width='3' height='3'/><rect x='20.5' y='11' width='3' height='3'/><rect x='20.5' y='18' width='3' height='3'/></g></svg>">
+{# **The v.** (Tom picked it, 2026-08-10.) The favicon is the wordmark's own
+   `v` and the receipt's full stop beside it — the mark is the word, so at 16px
+   the mark is the word's first letter and the dot it ends on, and not a second
+   drawing. It replaces the film frame, which was a picture of the medium
+   rather than of the product's argument.
+
+   Two things about how it is drawn, both load-bearing. There is **no ground**:
+   the glyph floats on transparency, so it sits on whatever the browser's tab
+   strip is and needs no `prefers-color-scheme` variant — this surface has one
+   scheme and the tab strip does not. And the gold is cored inside a 1-unit
+   `--gold-ink` keyline, which is what keeps the shape readable when the strip
+   underneath it is light: the outline is the same ink DESIGN.md puts *on* gold.
+   Square corners and mitred joins, like every other box in this system.
+
+   Inline `data:` rather than a file, as it always was, so the tab has its icon
+   with no second request on a tunnelled port; the path data is comma-separated
+   for the same reason the old icon's coordinates were. #}
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 16 16'><path d='M2,4L5,4L6.5,9.2L8,4L11,4L7.5,13L5.5,13Z' fill='%23120c02' stroke='%23120c02' stroke-width='2' stroke-linejoin='miter' stroke-miterlimit='2'/><rect x='11' y='9' width='5' height='5' fill='%23120c02'/><path d='M2,4L5,4L6.5,9.2L8,4L11,4L7.5,13L5.5,13Z' fill='%23e7b455'/><rect x='12' y='10' width='3' height='3' fill='%23e7b455'/></svg>">
 </head>
 <body>
 <!--

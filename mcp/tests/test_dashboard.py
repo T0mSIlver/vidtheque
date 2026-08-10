@@ -34,6 +34,7 @@ from vidtheque_mcp.public.settings import PublicSettings
 from .conftest import FakeEmbeddings, seed
 
 STATIC = Path(__file__).resolve().parents[1] / "src/vidtheque_mcp/dashboard/static"
+TEMPLATES = Path(__file__).resolve().parents[1] / "src/vidtheque_mcp/dashboard/templates"
 DEMO_STATIC = Path(__file__).resolve().parents[1] / "src/vidtheque_mcp/public/static"
 
 # What was on someone's screen, and what yt-dlp said about it. Both are corpus
@@ -3400,3 +3401,29 @@ def test_the_videos_masthead_drops_the_order_and_prints_only_narrowing(
     # The last fact carries no separator, whichever one it turns out to be.
     assert strip.rstrip().endswith("</span>")
     assert not re.search(r'<span class="sep">·</span>\s*$', strip.rstrip())
+
+
+def test_the_favicon_is_the_v_and_carries_no_ground() -> None:
+    """Tom picked the mark on 2026-08-10: the wordmark's `v`, and the dot.
+
+    The film frame is gone — it drew the medium rather than the product's
+    argument. Two properties of the replacement are load-bearing rather than
+    stylistic, so both are pinned: there is no background rectangle, which is
+    what lets one drawing sit on a light *and* a dark tab strip without a
+    `prefers-color-scheme` variant this single-scheme surface has no business
+    carrying; and the gold is cored inside a keyline in `--gold-ink`, which is
+    what keeps the shape readable when the strip under it is light.
+
+    It stays an inline `data:` URI: a tab on a tunnelled port gets its icon
+    with no second request.
+    """
+    head = (TEMPLATES / "base.html").read_text()
+    icon = re.search(r'<link rel="icon" href="(data:image/svg\+xml,[^"]+)"', head)
+    assert icon, "an inline data: icon"
+    svg = icon.group(1)
+    assert "%23e7b455" in svg, "the gold core"
+    assert "%23120c02" in svg and "stroke-width='2'" in svg, "the gold-ink keyline"
+    assert "%23040405" not in svg, "no pitch ground — the glyph floats"
+    assert "<rect width='32' height='32'" not in svg, "…and no ground rect at all"
+    path = re.search(r"d='([^']+)'", svg).group(1)
+    assert " " not in path, "comma-separated path data, as the old icon's was"
