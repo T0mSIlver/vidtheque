@@ -56,6 +56,21 @@ _TEXTUAL = frozenset({".css", ".js", ".html", ".svg"})
 # stylesheet does not, so they get the cache the page cannot have.
 _ASSET_CACHE = "public, max-age=31536000, immutable"
 
+# Top-level names under `static/` that this route refuses, whatever they hold.
+#
+# `static/lab/` is the landing workshop — competing prototypes of a page that
+# has not shipped, ~13 MB of them, with their own asset trees. The route serves
+# *any* file under `static/` by suffix, so without this the whole lab answers at
+# `https://<host>/static/lab/versions/v5.html` the moment a tunnel opens
+# (`research/release-staging-2026-08-11.md` §9, finding 1).
+#
+# A prefix denial rather than moving the files: the landing graduates *out* of
+# `lab/` later, so the directory keeps existing and keeps being worked in; dev
+# use is a local preview server, not this app; and a denied prefix covers a new
+# prototype directory nobody remembered to think about, which a one-time `git mv`
+# does not. Matched on the resolved path, so `../lab/…` cannot walk back in.
+_DENIED_SUBTREES = frozenset({"lab"})
+
 # `/dashboard/login`, per IP, per minute. A constant rather than a knob, for the
 # same reason the jobs view's poll interval is one: a number somebody can raise
 # is a number somebody raises, and this one is the difference between a password
@@ -81,8 +96,10 @@ def public_routes() -> list[Route]:
         name = request.path_params["asset"]
         path = (STATIC_DIR / name).resolve()
         try:  # never serve anything outside the packaged static directory
-            path.relative_to(STATIC_DIR.resolve())
+            inside = path.relative_to(STATIC_DIR.resolve())
         except ValueError:
+            return Response(status_code=404)
+        if inside.parts and inside.parts[0] in _DENIED_SUBTREES:
             return Response(status_code=404)
         if not path.is_file():
             return Response(status_code=404)

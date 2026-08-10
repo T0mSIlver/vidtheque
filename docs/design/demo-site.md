@@ -883,6 +883,21 @@ no framework, no external requests. `index.html` + `app.js` + `style.css`,
 shipped inside the wheel (hatchling includes package data under the package
 directory).
 
+**The asset route serves that directory, minus a denylist (2026-08-11).**
+`/static/{asset:path}` resolves under the packaged `static/` root, refuses
+anything that escapes it, and types the response by suffix — so *every* file
+under `static/` is public the moment the demo is. That is one file too generous:
+`static/lab/` is the landing workshop, ~13 MB of competing prototypes of a page
+that has not shipped, and it answered at `/static/lab/versions/v5.html`
+(`research/release-staging-2026-08-11.md` §9, finding 1). The route now refuses
+the `lab/` subtree by prefix, checked on the *resolved* path so `../lab/…` is
+covered by the same line. Denied rather than moved on purpose: the landing
+graduates out of `lab/` later, the directory keeps being worked in (through a
+local preview server, never through this app), and a prefix covers the next
+prototype directory that nobody remembers to think about. Adding a top-level
+name to `_DENIED_SUBTREES` is the amendment; adding a *file* to `static/` is
+publishing it.
+
 **Amended 2026-08-10 (Tom's voice cull).** The surface keeps labels, values and
 one-line states; it no longer explains its mechanics or argues for its design.
 The implementation facts removed from the page remain in this contract: the

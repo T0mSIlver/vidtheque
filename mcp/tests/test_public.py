@@ -324,6 +324,39 @@ def test_the_page_assets_are_served_and_confined(public_client: TestClient) -> N
     assert public_client.get("/static/nope.css").status_code == 404
 
 
+def test_the_landing_workshop_is_not_on_the_public_surface(
+    public_client: TestClient,
+) -> None:
+    """`static/lab/` is unreleased work and must 404 through the demo route.
+
+    The asset route serves anything under `static/` whose suffix it knows, and
+    `static/lab/` holds the landing prototypes — competing versions of a page
+    that has not shipped. Left alone they answer at
+    `/static/lab/versions/v5.html` the moment a tunnel opens
+    (`research/release-staging-2026-08-11.md` §9, finding 1). The demo's own
+    three files and its fonts are unaffected — that is the other half of the
+    assertion and the reason this is a prefix denial rather than a `git mv`.
+    """
+    for path in (
+        "/static/lab/versions/v5.html",
+        "/static/lab/hero.html",
+        "/static/lab/versions/v1.html",
+        # …and by prefix, so a prototype directory added later is covered too.
+        "/static/lab/anything/at/all.css",
+        # The traversal-normalised spelling resolves into `lab/` and is refused
+        # by the same check, not by the containment one above it.
+        "/static/fonts/../lab/versions/v5.html",
+    ):
+        assert public_client.get(path).status_code == 404, path
+    # The demo still works.
+    assert public_client.get("/static/style.css").status_code == 200
+    assert public_client.get("/static/app.js").status_code == 200
+    assert (
+        public_client.get("/static/fonts/archivo-latin-wght-normal.woff2").status_code
+        == 200
+    )
+
+
 def test_the_two_faces_are_served_as_fonts(public_client: TestClient) -> None:
     """A face typed as `text/javascript` loads only until something says nosniff.
 
