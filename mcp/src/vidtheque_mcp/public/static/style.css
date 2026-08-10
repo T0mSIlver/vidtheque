@@ -875,20 +875,31 @@ a:hover > .rcpt,
 
 /* ────────────────────────────────────────────────────────────── the answer */
 
+/* The pane *is* the measure, and the prose fills it.
+   `--prose` used to sit on the paragraph inside a plate at the full 1120px
+   chassis: 620px of text in a 947px box, so every line broke two thirds of the
+   way across a bordered plate and read as a wrap bug rather than as a measure
+   (Tom, 2026-08-11). The cap belongs to the container — this pane holds one
+   thing, running prose — so it is written here, in the prose's own font size,
+   which is what makes `ch` resolve against the face the paragraph is set in.
+   The pane then lands at the working column's width, under a query bar it is
+   the answer to, and nothing inside it has to guess a second measure. */
 .answer {
+  --answer-pad: clamp(18px, 2.2vw, 26px);
   margin-top: var(--s6);
-  padding: clamp(18px, 2.2vw, 26px);
+  padding: var(--answer-pad);
+  font-size: 15.5px;
+  max-width: calc(var(--prose) + 2 * var(--answer-pad));
   background: var(--plate);
   border: 1px solid var(--seam2);
 }
 
-/* The answer is prose a human reads, so it is the human face, capped at a
-   readable measure. The markers are the only gold in it. */
+/* The answer is prose a human reads, so it is the human face at the measure its
+   container carries. The markers are the only gold in it. */
 .answer p {
   font-size: 15.5px;
   line-height: 1.68;
   color: var(--fg);
-  max-width: var(--prose);
 }
 
 .answer p + p { margin-top: var(--s3); }
@@ -908,6 +919,14 @@ a:hover > .rcpt,
 .degraded-wait { color: var(--tone-warn); }
 
 .thinking { color: var(--fg2); font-family: var(--mono); font-size: 12.5px; }
+
+/* The idle line while a tool call owns the caret: gone from the screen and from
+   the accessibility tree, still holding its line. `visibility` and not
+   `display`, because a line that leaves the flow six times an ask is a document
+   that changes height six times an ask — which a reader parked at the bottom of
+   the page reads as the page jumping under them. Nothing here moves; one line
+   of console ground goes quiet. */
+.thinking.is-parked { visibility: hidden; }
 
 /* The one moving thing on this page, and it reports real work: a gold block
    that blinks while the machine is actually inside the corpus. It is the
@@ -938,22 +957,39 @@ a:hover > .rcpt,
   color: var(--fg2);
 }
 
-/* A cited moment is a search row: same evidence, same badges, same receipt. */
+/* A cited moment is a search row: same evidence, same badges, same receipt.
+
+   A grid, not a flex row: as a wrapping flex line the row's shape was a
+   function of how long the talk's title happened to be — a short title sat
+   beside its frame, a long one pushed the whole text column onto a second flex
+   line *under* the frame, and the receipt onto a third (Tom, 2026-08-11). The
+   corpus's titles run from 20 to 120 characters, so that is a row that changes
+   layout per talk. Three columns instead: the marker, the frame at the fixed
+   box `.hit-thumb` already reserves, and everything else — with every child
+   placed by name, so a row rendered without its `[n]` (a search row, one day)
+   collapses the first column rather than shifting the other two. */
 .hit {
-  display: flex;
-  gap: var(--s4);
-  align-items: flex-start;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  column-gap: var(--s4);
+  row-gap: var(--s3);
+  align-items: start;
   padding: var(--s4) 0;
   border-bottom: 1px solid var(--seam);
 }
 
 .hit:last-child { border-bottom: 0; }
-.hit .rcpt { margin-left: auto; }
+.hit > .cite-n { grid-column: 1; grid-row: 1; }
+.hit > .hit-shot,
+.hit > .hit-thumb { grid-column: 2; grid-row: 1; }
+.hit > .hit-link { grid-column: 3; grid-row: 1; }
+/* Under the text it belongs to, never under the frame: the receipt ends the
+   row the way it ends a moment, and it is the widest fixed thing here — on the
+   same line it would eat the title's column at the answer's measure. */
+.hit > .rcpt { grid-column: 3; grid-row: 2; justify-self: end; }
 .hit .snip { display: block; }
 
 .cite-n {
-  flex: none;
   width: 1.6rem;
   font-family: var(--mono);
   font-size: 11px;
@@ -962,9 +998,24 @@ a:hover > .rcpt,
   font-variant-numeric: tabular-nums;
 }
 
-.hit-link { flex: 1 1 auto; min-width: 0; }
+.hit-link { min-width: 0; }
 .hit-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.hit-title { font-size: 14px; font-weight: 520; letter-spacing: -.02em; overflow-wrap: anywhere; }
+
+/* Two lines, then an ellipsis. The title is the row's label, not its content:
+   the evidence is the snippet under it and the receipt beside it, and the whole
+   thing is one click from the second it happened. */
+.hit-title {
+  font-size: 14px;
+  font-weight: 520;
+  letter-spacing: -.02em;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
 .hit-link:hover .hit-title { color: var(--gold); }
 
 .hit-meta {
@@ -1230,6 +1281,10 @@ footer { background: var(--void); border-top: 1px solid var(--seam); padding: va
   .fgrid { grid-template-columns: 1fr; gap: var(--s6); }
   .fmark { justify-content: flex-start; }
   .hit { gap: var(--s3); }
+  /* The receipt is wider than the text column a 390px screen leaves, and a
+     truncated receipt proves nothing — so it takes the whole row rather than
+     hanging out of one third of it. The frame and the text keep their columns. */
+  .hit > .rcpt { grid-column: 1 / -1; }
   .shot { width: 96vw; max-width: 96vw; }
 }
 

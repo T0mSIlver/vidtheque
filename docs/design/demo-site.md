@@ -951,6 +951,17 @@ Layout, top to bottom:
    numbered to match, and the log folded underneath. A 503 replaces the pane
    with the degradation message and a "search instead" button; a 429 says how
    long to wait.
+
+   *Amended 2026-08-11: the pane carries the measure, and the prose fills it.*
+   `--prose` (70ch, DESIGN.md's cap on running text) sat on the paragraph
+   inside a plate at the full `--bp-stack` column: 620px of text in a 947px
+   bordered box at 1440, so every line broke two thirds of the way across and
+   read as a wrap bug rather than as a measure. The cap belongs to the
+   container — this pane holds one thing, running prose — so it is written on
+   the pane, in the prose's own font size, which is what makes `ch` resolve
+   against the face the paragraph is set in. The pane lands at ~673px, under
+   the query bar it is the answer to (`--query-w`, 704px), and nothing inside
+   it has to guess a second measure. Sources rows and the log narrow with it.
 6. **"Add this corpus to your own agent"** — the label `MCP endpoint`, the
    `mcp_url` from `/api/meta`, a copy button, and the one-liner:
    `claude mcp add --transport http vidtheque <mcp_url>`. *Amended 2026-08-10:*
@@ -1243,6 +1254,21 @@ The empty, no-results, rate-limited and failed-page states are unchanged: they
 replace or annotate the results region as they always did, and a failed "More
 results" still leaves the cards a visitor already has on screen (§6.1).
 
+**A source row's shape does not depend on how long the title is** (*amended
+2026-08-11*). The answer's Sources row is a three-column grid — the `[n]`, the
+frame at the box `.hit-thumb` already reserves, and everything else — with every
+child placed by name, so a row rendered without its marker collapses the first
+column instead of shifting the other two. As a wrapping flex row it was the
+opposite: a short title sat beside its frame and a long one pushed the whole
+text column onto a second line *under* the frame, with the receipt on a third.
+On a corpus whose titles run from 20 to 120 characters that is a different
+layout per talk. The title is clamped to two lines and ellipsised — it is the
+row's label, not its content; the evidence is the snippet under it and the
+receipt beside it, and the receipt is the thing that must never be truncated.
+The receipt sits under the text it belongs to (and takes the whole row below
+`--bp-hand`, where it is wider than a third of a 390px screen). The video card's
+header (§6.5) never had the bug — it does not wrap — and is unchanged.
+
 ### 6.6 "Show its work" — the activity log
 
 An ask used to be one line of copy and a spinner for up to ninety seconds. The
@@ -1265,7 +1291,20 @@ Four decisions worth stating:
   landing's caret* — a gold block that blinks while the machine is inside the
   corpus, which is the Motion Law's own vocabulary for "the agent is asking"
   (and it stops, painted, under `prefers-reduced-motion`). Same rule, one
-  mark, and no rotating ring anywhere in the system.
+  mark, and no rotating ring anywhere in the system. *Amended 2026-08-11: the
+  idle line steps aside **in the flow**.* Taking it out (`hidden`, i.e.
+  `display: none`) shortened the document by one line at the start of every
+  tool call and grew it back at the end, so a reader parked near the bottom of
+  the page had their scroll position clamped down and anchored back up six or
+  more times an ask — the page stuttering under them while the model worked.
+  It is `visibility` now: gone from the screen and from the accessibility tree,
+  still holding its line. Measured on the stub at 1440, hiding moved the page
+  39px per tool call; parking moves it 0.
+- **Nothing the page appends may move what is above it.** The log grows
+  downward, the pane's height only increases while the loop runs, and there is
+  no auto-scroll anywhere in the page: a scroll position is the reader's. The
+  one height change left is the answer arriving, which is the event the reader
+  is waiting for.
 - **The result is a text node with its arrow in it**, not a `::before`. The
   arrow is chrome, but a log a visitor copies out of the page should still read
   as a log, and so should one whose stylesheet never arrived.

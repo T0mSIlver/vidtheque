@@ -988,6 +988,13 @@ async function runAsk() {
   // idle line under it. Exactly one spinner is on screen at any moment — the
   // idle line steps aside while a tool call is running, because the honest
   // place for it is whichever line is the current work.
+  // It never leaves the flow. Hiding it outright (`[hidden]` → `display:none`)
+  // shortened the document by one line at the start of every tool call and
+  // grew it back at the end, and a reader parked near the bottom of the page
+  // had their scroll position clamped down and anchored back up on each one —
+  // the page stuttering under them while the model worked (Tom, 2026-08-11).
+  // Parked, it keeps its line box: the caret moves to the running work and
+  // nothing on the page moves at all.
   const idle = el("p", "thinking", "reading the corpus…");
   pane.replaceChildren(log.node, idle);
   pane.hidden = false;
@@ -1052,10 +1059,10 @@ async function runAsk() {
       if (event.event === "activity") {
         if (event.phase === "start") {
           log.start(event.id, event.text);
-          idle.hidden = true;
+          idle.classList.add("is-parked");
         } else {
           log.done(event.id, event.result);
-          idle.hidden = false;
+          idle.classList.remove("is-parked");
         }
       } else if (event.event === "answer") {
         answer = event.payload || {};

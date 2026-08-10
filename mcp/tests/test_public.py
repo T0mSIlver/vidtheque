@@ -687,7 +687,7 @@ def test_the_drilled_window_names_the_talk_it_came_from(tmp_path: Path) -> None:
     assert "name the talk or the speaker" in window["content"]
 
 
-def test_a_drill_down_into_an_unseen_video_names_its_id_not_a_title(
+def test_a_drilled_window_into_an_unseen_video_names_the_id(
     tmp_path: Path,
 ) -> None:
     """No earlier hit carried a title, so the window names the id rather than
@@ -939,6 +939,76 @@ def test_an_example_that_needs_a_channel_pins_it(public_client: TestClient) -> N
 
     script = (STATIC / "app.js").read_text()
     assert 'selectContentType(example.dataset.type || "all", false)' in script
+
+
+def _rule(css: str, selector: str) -> str:
+    """One rule's body, by its exact selector line."""
+    match = re.search(
+        rf"(?m)^{re.escape(selector)} \{{(.*?)^\}}", css, re.S
+    ) or re.search(rf"(?m)^{re.escape(selector)} \{{(.*?)\}}", css, re.S)
+    assert match, f"{selector} is not a rule in style.css"
+    return match.group(1)
+
+
+def test_the_answer_pane_carries_the_measure_and_the_prose_fills_it() -> None:
+    """DESIGN.md caps running text at `--prose`; the cap belongs to the box.
+
+    On the paragraph, inside a plate at the full 1120px chassis, it read as a
+    wrap bug: 620px of text in a 947px bordered box, every line breaking two
+    thirds of the way across (Tom, 2026-08-11). The pane holds one thing —
+    running prose — so the measure is the pane's, written in the prose's own
+    font size so `ch` resolves against the face the paragraph is set in.
+    """
+    css = (STATIC / "style.css").read_text()
+    pane = _rule(css, ".answer")
+    assert "max-width: calc(var(--prose) + 2 * var(--answer-pad))" in pane
+    assert "font-size: 15.5px" in pane, "`ch` has to resolve at the prose's size"
+    paragraph = _rule(css, ".answer p")
+    assert "font-size: 15.5px" in paragraph
+    assert "max-width" not in paragraph, "a second measure inside the first"
+
+
+def test_a_source_row_is_a_grid_so_a_long_title_cannot_drop_under_the_frame() -> None:
+    """demo-site.md §6.5: the row's shape is fixed, not a function of the title.
+
+    As a wrapping flex row it was the latter — a short title sat beside its
+    frame and a long one pushed the whole text column onto a second line under
+    it, which on a corpus whose titles run 20 to 120 characters is a different
+    layout per talk.
+    """
+    css = (STATIC / "style.css").read_text()
+    row = _rule(css, ".hit")
+    assert "display: grid" in row
+    assert "grid-template-columns: auto auto minmax(0, 1fr)" in row
+    assert "flex-wrap" not in row, "the wrap is what dropped the title under the frame"
+    # Every child is placed by name, so a row without its `[n]` collapses the
+    # first column instead of shifting the other two.
+    for placed in (
+        ".hit > .cite-n { grid-column: 1; grid-row: 1; }",
+        ".hit > .hit-link { grid-column: 3; grid-row: 1; }",
+    ):
+        assert placed in css, placed
+    assert "grid-column: 2; grid-row: 1;" in css, "the frame keeps its own column"
+    # And the title is a label, clamped, because the receipt is the evidence.
+    title = _rule(css, ".hit-title")
+    assert "-webkit-line-clamp: 2" in title and "line-clamp: 2" in title
+
+
+def test_the_idle_line_is_parked_in_the_flow_never_taken_out_of_it() -> None:
+    """The stutter Tom saw while an answer generated (2026-08-11).
+
+    `hidden` on the idle line took it out of the flow at the start of every tool
+    call and put it back at the end: the document lost and regained a line six
+    or more times an ask, and a reader parked near the bottom had their scroll
+    position clamped and anchored back on each one. Measured on the stub at
+    1440: hiding moved the page 39px per tool call, parking moves it 0.
+    """
+    css = (STATIC / "style.css").read_text()
+    assert ".thinking.is-parked { visibility: hidden; }" in css
+    script = (STATIC / "app.js").read_text()
+    assert 'idle.classList.add("is-parked")' in script
+    assert 'idle.classList.remove("is-parked")' in script
+    assert "idle.hidden" not in script, "back to a display toggle is back to the stutter"
 
 
 def test_the_page_and_its_assets_are_cacheable(public_client: TestClient) -> None:
