@@ -259,6 +259,19 @@ components:
     textColor: "{colors.muted}"
     fontFamily: "{typography.machine.fontFamily}"
     fontSize: "0.6875rem"
+  digest-more:
+    backgroundColor: "transparent"
+    textColor: "{colors.muted}"
+    borderColor: "{colors.line}"
+    padding: "0.0625rem 0"
+    typography: "{typography.body}"
+  digest-count:
+    textColor: "{colors.fg}"
+    fontFamily: "{typography.machine.fontFamily}"
+    fontSize: "0.75rem"
+  panel-title-subject:
+    textColor: "{colors.fg}"
+    typography: "{typography.cell}"
 ---
 
 # Design System: vidtheque dashboard
@@ -563,6 +576,50 @@ phase 2 already shipped and fixed.
 
 **The No-Sideways Rule.** The page body never scrolls horizontally at any
 width. A table too wide to stack scrolls inside its own wrapper.
+
+Two ways it was being broken, both fixed 2026-08-10 and both worth knowing,
+because neither is visible in a screenshot:
+
+- **A corpus string is not a design decision.** A title is whatever the
+  uploader typed, an error is whatever yt-dlp printed, and one of each in the
+  index is a 78-character token with no space in it. Every slot that prints one
+  — `.pagehead h1`, `.row-title`, `.errtext`, `.eventtext`, `code` — carries
+  `overflow-wrap: anywhere`. **`anywhere`, not `break-word`:** only `anywhere`
+  also reports a zero min-content width, which is what stops a flex or grid
+  parent being *widened* by the same string. The break is still a last resort;
+  a title with spaces in it breaks at the spaces.
+- **An out-of-flow box needs a containing block, or it escapes the clip.**
+  `.sr-only` is `position: absolute` with no offsets. With no positioned
+  ancestor its containing block is the page, and a scroll container it merely
+  sits inside does not clip it — so the videos table's invisible coverage
+  descriptions dragged the whole document 185px sideways at 1024 with nothing
+  visible out there to explain it. **Any element that scrolls its own overflow
+  is `position: relative`.**
+
+**Flex line-breaking reads the hypothetical size, not the shrunk one.** A flex
+item with `flex-basis: auto` claims its max-content width when the browser
+decides which line it goes on; `min-width: 0` governs shrinking *within* a line
+and does nothing about it. So a growing item that must never force a wrap takes
+`flex: 1 1 0` — that is why `.row-body` does, and why a long conference title
+no longer pushes the thumbnail off its own row.
+
+**A separator belongs to the fact before it.** In a wrapping strip
+(`.pagehead-meta`, `.row-meta`) the markup is `…fact</span><span class="sep">·
+</span>` with **no whitespace in front of the middot** and the break opportunity
+after it. Written the other way round the strip wraps *before* the separator and
+the second line opens with a dangling `· en · indexed 2025-08-03`. Same reason
+`.fact` is `white-space: nowrap`: a strip wraps between facts, never through a
+clock. The strip inside `.pagehead-line` is pushed to the far end by the line's
+`space-between` and its **text is not right-aligned** — the line wraps at more
+widths than a media query can name, and a strip that has dropped under a
+left-aligned title while still setting its last line hard against the right
+margin reads as a stray.
+
+**A chip is one line.** `.chip`, like `.pill` and `.badge`, is `white-space:
+nowrap`. A tag slug is a whole filter, not a paragraph; left to wrap in a
+squeezed cell it becomes a four-line box with its text against a border built
+for 17px. It is not truncated either — a chip reading `series:a-conf…` is a
+filter you cannot read — so the cell it widens scrolls in its `.tablewrap`.
 
 **The Fixed-Box Rule.** Every image ships explicit `width`/`height` or lives in
 a fixed `aspect-ratio` box that owns the geometry. CLS 0 is a shipped property
@@ -883,12 +940,74 @@ border with a 14% accent fill via `color-mix`. Hovering a line in the list
 lights its box and vice versa. This is the single most convincing thing on the
 page and it gets the room it needs.
 
+The list under it is a **digest** (below). Its preview is **eight lines, and
+eight is not a taste call**: the box↔line highlight is eight explicit `:has()`
+pairs, so the preview is exactly the set of lines the frame above can point at,
+and the remainder — which never lit a box even before the digest existed — sits
+behind the expander. The pairs are scoped to `.ocrlines:not(.ocrlines-rest)` so
+an expanded line 9 cannot light box 1: a *wrong* pointer is worse than a missing
+one. Every box is still drawn on the still, open or closed, and the lightbox
+still reads every `.ocrline` in the figure. Confidence is de-emphasised, never
+dropped — muted 11px in a fixed 2.25rem column against the first line of a
+wrapped entry, because it is part of the receipt and it is the number you want
+when a word looks wrong. Two columns of lines at wide viewports was considered
+and rejected: the grid's own `minmax(20rem, 1fr)` means a card is 20–26rem, and
+two columns of 12.5px mono inside that is nine characters wide.
+
+### The digest (bounded preview, honest expander)
+For any block whose length is a property of the **corpus** rather than of the
+design. Two exist: the OCR line list on video detail, and the job event log.
+The contract is four rules and it is normative:
+
+1. **A documented preview.** The bound is a named constant with a reason
+   (`OCR_PREVIEW_LINES = 8` because the highlight is eight pairs;
+   `EVENT_PREVIEW = 8` for the same rhythm), never an arbitrary "a few".
+2. **A real remainder.** The summary reads `<n> more line(s)` / `<n> older
+   event(s)`, counted off the same list, with the count in mono
+   (`.digest-count`) because a count came from a count. Never "show more".
+3. **In place, and the full text stays.** It expands where it sits; on this
+   surface the full text is the receipt and nothing may be a link away.
+   Where a *server-side* cap has already shortened the list the panel says so
+   in a `.panel-note` — a remainder counted off a truncated list is a lie by
+   arithmetic.
+4. **`<details>`, and no script.** The collapsed state is readable markup, the
+   control is the platform's, keyboard and screen reader come free, and with
+   CSS off the whole list is simply there. The marker is `+` / `−` on
+   `summary::before` — two characters, not a caret; this surface still has no
+   icon language.
+
+Visually the summary is the surface's existing quiet-affordance idiom, not a
+button: 12px muted with a 1px dashed `--line` underline, foreground on hover
+with the underline in `--accent`. It never gets the `--accent` ink itself,
+because the accent means *this is the moment you are pointing at* and a drawer
+is not a moment.
+
+**Blocks already bounded, and left alone:** the transcript (server-paginated at
+50 cues with a real pager), the keyframe strip (24 per page), the job items
+table (capped with a note), the provenance table (seven rows, always). Bounding
+those again would be a second cap over an honest one.
+
 ### The stage rail (video detail) and the event log (jobs)
 Both read as processing logs, because both are. Seven stages in pipeline order,
 each a state word in its tone, a `model_key` in mono and an elapsed clock in
 mono; an `absent` stage is a dimmed rule, not a missing row. The job event tail
 is hairline-ruled rows of mono, with `not_before` as a live mono countdown —
-the highest-value line on that page.
+the highest-value line on that page. The tail is a **digest**: the newest eight,
+then a real count of the older ones.
+
+Both columns of the event row are columns, and neither is a stretched box. The
+clock takes a fixed 9rem basis so the log reads down the left edge; the level
+pill takes `min-width: 3.5rem`, a *minimum* and not a basis — a fixed basis
+stretched the pill itself to 72px and made the one badge on the page that is
+30px of word inside a 72px box read as a different primitive from every other
+pill on the surface.
+
+### A panel heading is a label, and a name is not
+`.panel-title` is the 11px tracked uppercase label idiom. When a heading has to
+carry a corpus string — "Stage by stage — <the video's title>" — the string goes
+in `.panel-title .subject`, which resets `text-transform` and drops to cell size
+at weight 510. Uppercasing a sentence-length run is what the all-caps rule
+catches, and it is right to.
 
 ## Do's and Don'ts
 

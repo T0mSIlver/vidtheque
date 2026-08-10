@@ -432,6 +432,7 @@ time,
 .conf,
 .countdown,
 .meter-label,
+.digest-count,
 .errtext,
 .eventtext,
 .ocrtext,
@@ -450,6 +451,14 @@ time,
    strings inside a sentence are set down one notch so the line does not
    step up around them. */
 code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
+
+/* Every machine string long enough to be a paragraph breaks anywhere, wherever
+   it is printed. This used to be scoped to `.stage-error .errtext`, so the same
+   class in the degraded list on the jobs page — the one place it is a flex item
+   next to a mono id — did not wrap at all. A yt-dlp traceback is one token as
+   often as it is a sentence; the rule belongs to the string, not to the table
+   one copy of it happens to sit in. */
+.errtext, .eventtext { overflow-wrap: anywhere; }
 
 .muted { color: var(--muted); }
 .sep { padding: 0 var(--s1); color: var(--mark); }
@@ -639,6 +648,15 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
   line-height: var(--lh-tight);
   letter-spacing: -0.02em;
   text-wrap: balance;
+  /* A page title is a corpus string: it is whatever the uploader typed, and
+     one of them is a 78-character identifier with no space in it. Without
+     this, that title painted straight off the right edge and took the *page*
+     sideways with it — 1445px of document at a 1440px viewport, measured
+     2026-08-10, and 960px at 390. `anywhere` rather than `break-word` because
+     only `anywhere` also reports a zero min-content width, which is what stops
+     the flex header band being widened by the same string. The break is a last
+     resort either way: a title with spaces in it still breaks at the spaces. */
+  overflow-wrap: anywhere;
 }
 /* A machine string inside a page title — `Job job_deferred01`. Mono is smaller
    than Inter for the same nominal size at the *label* end of the ladder and
@@ -661,8 +679,16 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
   font-size: var(--t-meta);
 }
 /* Inside the title line the meta is a state strip, not a paragraph: it sits on
-   the title's baseline at the far end of the band and never wraps early. */
-.pagehead-line > .pagehead-meta { margin: 0; text-align: right; }
+   the title's baseline at the far end of the band and never wraps early.
+   The *box* goes to the far end (`space-between` on the line does that); the
+   text inside it is not right-aligned, because the line wraps at more widths
+   than a media query can name — at 390 on the overview, at 1024 on the
+   overview, at every width on a video whose title fills the line — and a strip
+   that has dropped to its own line under a left-aligned title, still setting
+   its last line hard against the right margin, reads as a stray. Left-aligned
+   text in a shrink-to-fit box is identical for the one-line case (which is
+   most of them) and correct for both of the others. */
+.pagehead-line > .pagehead-meta { margin: 0; max-width: 100%; }
 /* One fact — a label and the machine string it names — is one unbreakable
    unit, so a strip that runs out of room wraps between facts and never through
    `2025-06-15 15:06`. */
@@ -678,6 +704,19 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
    that has gone bad. */
 .panel { margin-top: var(--s8); padding-top: var(--s3); border-top: 1px solid var(--line); }
 .panel-title { margin: 0 0 var(--s3); }
+/* A panel heading is a label — 11px, tracked, uppercase — and a video title is
+   not. "Stage by stage — Every slide in one hour: a very fast talk" put a
+   sentence-length corpus string through the all-caps idiom, which is the thing
+   `.chunkmark` already has a paragraph about. The subject keeps its own case
+   and its own register inside the heading: the label names the panel, the name
+   names the thing. */
+.panel-title .subject {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: var(--t-cell);
+  font-weight: var(--w-medium);
+  color: var(--fg);
+}
 
 /* A panel whose two halves stopped agreeing. The rule is the alarm; the words
    under it still say what happened, because colour is never the message. */
@@ -699,6 +738,52 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
   color: var(--muted);
   font-size: var(--t-meta);
 }
+
+/* ------------------------------------------------------------- the digest */
+
+/* A bounded preview and an honest expander, for the blocks whose length is a
+   property of the corpus rather than of the design. A slide of dense small
+   print is one keyframe with thirty-four OCR lines under it; an overnight
+   batch is sixty job events. Both used to print in full, and both turned a
+   panel into a column of text taller than four viewports — on the fixture's
+   dense talk the video page measured 8,758px at 1440 and 20,297px at 390
+   (2026-08-10).
+
+   The contract, and it is the whole primitive:
+
+   * the preview is a **documented** number of items, not an arbitrary one;
+   * the expander names a **real remainder** — `12 more line(s)`, counted from
+     the same list, never "show more";
+   * it expands **in place**, and the full text stays on the page, because on
+     this surface the full text is the receipt;
+   * it is `<details>`. No script, no checkbox hack: the collapsed state is
+     readable markup, the control is the platform's, keyboard and screen reader
+     come free, and with CSS off the whole list is simply there.
+
+   The marker is `+` and `−`, two characters, not a caret: this surface has no
+   icon language (DESIGN.md, Appendix B.2) and the brief for the control was
+   already written as "+ N more lines". */
+.digest { margin: var(--s2) 0 0; }
+
+.digest > summary {
+  display: inline-block;
+  /* Both halves of removing the platform's triangle: `list-style` for Firefox
+     and the modern engines, the pseudo-element for older WebKit. */
+  list-style: none;
+  padding: 1px 0;
+  color: var(--muted);
+  font-size: var(--t-meta);
+  border-bottom: 1px dashed var(--line);
+  cursor: pointer;
+}
+.digest > summary::-webkit-details-marker { display: none; }
+.digest > summary::before { content: "+ "; }
+.digest[open] > summary::before { content: "\2212 "; }
+.digest > summary:hover { color: var(--fg); border-bottom-color: var(--accent); }
+
+/* The count came from a count. Two-Channel Rule; the selector is in the mono
+   list above with every other machine string. */
+.digest-count { font-weight: var(--w-medium); color: var(--fg); }
 
 /* The empty state, and it has a voice: **name the absence, name the cause, name
    the move.** An operator who opens a panel that has nothing in it is asking
@@ -826,8 +911,18 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
 .rowlist > .row:first-child { border-top: 0; }
 
 .row-shot { flex: 0 0 auto; line-height: 0; text-decoration: none; }
-.row-body { flex: 1 1 auto; min-width: 0; }
-.row-title { font-weight: var(--w-medium); text-decoration: none; }
+/* Basis `0`, not `auto`. Flex line-breaking uses an item's *hypothetical* main
+   size — flex-basis before any shrinking — so with `auto` the body's basis is
+   its max-content width, and a row whose title is a long conference title
+   exceeded the line on its own and pushed the thumbnail onto a line of its
+   own, with the arrival clock stranded on a third. Measured on the overview at
+   every width from 390 to 1920 (2026-08-10). `min-width: 0` was already here
+   and never helped: it governs shrinking *within* a line, not whether the item
+   gets one. With basis 0 the body takes the space the fixed items leave, which
+   is what it was doing on every row that fit anyway. */
+.row-body { flex: 1 1 0; min-width: 0; }
+/* Corpus string, same argument as the page title. */
+.row-title { font-weight: var(--w-medium); text-decoration: none; overflow-wrap: anywhere; }
 .row-meta {
   display: block;
   margin: 2px 0 0;
@@ -847,14 +942,23 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
   white-space: nowrap;
 }
 
+/* `wrap`, because one of these rows carries an error string. Unwrapped, the
+   degraded list on the jobs page squeezed its first column — a video id and a
+   stage name, both mono — down to one character per line at 390 and 768, and
+   took the page 182px sideways doing it (2026-08-10). The error is the wide
+   thing, so the error is what moves to its own line. */
 .minirow {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: var(--s3);
   padding: var(--s1) 0;
   border-top: 1px solid var(--line);
   font-size: var(--t-cell);
 }
+/* 18rem is the width below which the message stops being readable beside its
+   id, so that is where it takes the line instead. */
+.minirow > .errtext { flex: 1 1 18rem; min-width: 0; font-size: var(--t-machine); }
 .rowlist.tight > .minirow:first-child { border-top: 0; }
 .minirow > :first-child { flex: 1 1 auto; min-width: 0; }
 .minirow a { text-decoration: none; }
@@ -891,6 +995,14 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
 
 .chiplist { display: flex; flex-wrap: wrap; gap: var(--s1); margin: 0; padding: 0; list-style: none; }
 
+/* One line, like the pill and the badge it is a sibling of. A chip is a whole
+   object — `series:a-conference-series-with-a-long-slug-2026-edition` is one
+   filter, not a paragraph — and left to wrap in a squeezed table cell it became
+   a four-line 79px box with its text hard against a border built for 17px
+   (the detector's cramped-padding, on `/dashboard/videos` at 1280). It is not
+   truncated: the slug *is* the link, and a chip that says `series:a-conf…` is a
+   filter you cannot read. The cell it widens is inside `.tablewrap`, which is
+   what that wrapper is for. */
 .chip {
   display: inline-flex;
   gap: var(--s2);
@@ -899,6 +1011,7 @@ code, .badge-screen { font-size: var(--t-machine); overflow-wrap: anywhere; }
   font-size: var(--t-meta);
   color: var(--muted);
   text-decoration: none;
+  white-space: nowrap;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
 }
@@ -1110,7 +1223,18 @@ button[disabled] { opacity: 0.5; cursor: default; }
   color: var(--tone-work);
 }
 
-.tablewrap { overflow-x: auto; }
+/* `position: relative` is not decoration, it is the clip.
+   `.sr-only` is `position: absolute` with no offsets, so it takes its static
+   position but its *containing block* is the nearest positioned ancestor —
+   and inside a table there was none, which made it the initial containing
+   block. An out-of-flow box whose containing block is the page is not clipped
+   by a scroll container it merely sits inside, so the coverage column's hidden
+   descriptions, 1px wide and invisible, still extended the *document's*
+   scrollable area: the videos table at 1024 scrolled the whole page 185px
+   sideways with nothing visible out there to explain it (measured 2026-08-10).
+   One `relative` here makes the wrapper the containing block, and the No-
+   Sideways Rule holds again: the wrapper scrolls, the page does not. */
+.tablewrap { position: relative; overflow-x: auto; }
 
 .grid {
   width: 100%;
@@ -1208,7 +1332,7 @@ button[disabled] { opacity: 0.5; cursor: default; }
 
 .stage-error td { padding-top: 0; border-bottom: 1px solid var(--line); }
 .stage-error .label { color: var(--tone-bad); }
-.stage-error .errtext { font-size: var(--t-machine); overflow-wrap: anywhere; }
+.stage-error .errtext { font-size: var(--t-machine); }
 
 .pager { display: flex; gap: var(--s2); margin-top: var(--s4); }
 
@@ -1521,6 +1645,12 @@ button[disabled] { opacity: 0.5; cursor: default; }
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
   gap: var(--s6);
+  /* Each card owns its own height. A grid row is as tall as its tallest cell,
+     so before the digest a 34-line slide left ~500px of nothing beside its
+     one-line neighbours; with the preview bounded the row is near-uniform
+     again, and when one card is expanded it is that card that grows rather
+     than three empty ones stretching with it. */
+  align-items: start;
 }
 
 .ocrframe { margin: 0; min-width: 0; }
@@ -1545,7 +1675,20 @@ button[disabled] { opacity: 0.5; cursor: default; }
   background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
-.ocrlines { margin: var(--s2) 0 0; padding: 0; list-style: none; font-size: var(--t-cell); }
+/* `--lh-cell`, not the 1.5 body rhythm: this is a transcription of a slide, and
+   a wrapped line of it should read as one entry rather than as two. Twelve
+   lines of it save a row of the contact sheet below. */
+.ocrlines {
+  margin: var(--s2) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--t-cell);
+  line-height: var(--lh-cell);
+}
+/* The remainder, once the expander is open. It is the same list continued —
+   same rule down the left, same rhythm — with `start` on the `<ol>` so the
+   numbering the markup carries stays true even though nothing draws it. */
+.ocrlines-rest { margin-top: var(--s1); }
 
 .ocrline {
   display: flex;
@@ -1565,28 +1708,38 @@ button[disabled] { opacity: 0.5; cursor: default; }
    with JavaScript off keeps it. Eight is the cap — eight explicit pairs rather
    than a loop — because eight lines is a busy slide and the ninth line simply
    does not light. A silently missing highlight is a fair price for not shipping
-   a rule per possible line. */
-.ocrframe:has(.ocrlines > li:nth-child(1):hover) .ocrbox:nth-of-type(1),
-.ocrframe:has(.ocrlines > li:nth-child(2):hover) .ocrbox:nth-of-type(2),
-.ocrframe:has(.ocrlines > li:nth-child(3):hover) .ocrbox:nth-of-type(3),
-.ocrframe:has(.ocrlines > li:nth-child(4):hover) .ocrbox:nth-of-type(4),
-.ocrframe:has(.ocrlines > li:nth-child(5):hover) .ocrbox:nth-of-type(5),
-.ocrframe:has(.ocrlines > li:nth-child(6):hover) .ocrbox:nth-of-type(6),
-.ocrframe:has(.ocrlines > li:nth-child(7):hover) .ocrbox:nth-of-type(7),
-.ocrframe:has(.ocrlines > li:nth-child(8):hover) .ocrbox:nth-of-type(8),
+   a rule per possible line.
+
+   That cap is now also the digest's preview length, and the two numbers are the
+   same number on purpose: **the preview is exactly the set of lines the frame
+   can point at.** The pairs are matched against `.ocrlines:not(.ocrlines-rest)`
+   so that `nth-child` counts inside the preview list only — the remainder
+   restarts its own numbering, and a rule that let line 9 (child 1 of the second
+   list) light box 1 would be worse than the missing highlight it replaced: a
+   wrong pointer, not an absent one. The selector still matches a plain
+   `.ocrlines` with no modifier, so a cached page rendered before the digest
+   keeps the behaviour it shipped with. */
+.ocrframe:has(.ocrlines:not(.ocrlines-rest) > li:nth-child(1):hover) .ocrbox:nth-of-type(1),
+.ocrframe:has(.ocrlines:not(.ocrlines-rest) > li:nth-child(2):hover) .ocrbox:nth-of-type(2),
+.ocrframe:has(.ocrlines:not(.ocrlines-rest) > li:nth-child(3):hover) .ocrbox:nth-of-type(3),
+.ocrframe:has(.ocrlines:not(.ocrlines-rest) > li:nth-child(4):hover) .ocrbox:nth-of-type(4),
+.ocrframe:has(.ocrlines:not(.ocrlines-rest) > li:nth-child(5):hover) .ocrbox:nth-of-type(5),
+.ocrframe:has(.ocrlines:not(.ocrlines-rest) > li:nth-child(6):hover) .ocrbox:nth-of-type(6),
+.ocrframe:has(.ocrlines:not(.ocrlines-rest) > li:nth-child(7):hover) .ocrbox:nth-of-type(7),
+.ocrframe:has(.ocrlines:not(.ocrlines-rest) > li:nth-child(8):hover) .ocrbox:nth-of-type(8),
 .ocrbox:hover {
   border-color: var(--accent);
   border-width: 2px;
   background: color-mix(in srgb, var(--accent) 34%, transparent);
 }
-.ocrframe:has(.ocrbox:nth-of-type(1):hover) .ocrlines > li:nth-child(1),
-.ocrframe:has(.ocrbox:nth-of-type(2):hover) .ocrlines > li:nth-child(2),
-.ocrframe:has(.ocrbox:nth-of-type(3):hover) .ocrlines > li:nth-child(3),
-.ocrframe:has(.ocrbox:nth-of-type(4):hover) .ocrlines > li:nth-child(4),
-.ocrframe:has(.ocrbox:nth-of-type(5):hover) .ocrlines > li:nth-child(5),
-.ocrframe:has(.ocrbox:nth-of-type(6):hover) .ocrlines > li:nth-child(6),
-.ocrframe:has(.ocrbox:nth-of-type(7):hover) .ocrlines > li:nth-child(7),
-.ocrframe:has(.ocrbox:nth-of-type(8):hover) .ocrlines > li:nth-child(8),
+.ocrframe:has(.ocrbox:nth-of-type(1):hover) .ocrlines:not(.ocrlines-rest) > li:nth-child(1),
+.ocrframe:has(.ocrbox:nth-of-type(2):hover) .ocrlines:not(.ocrlines-rest) > li:nth-child(2),
+.ocrframe:has(.ocrbox:nth-of-type(3):hover) .ocrlines:not(.ocrlines-rest) > li:nth-child(3),
+.ocrframe:has(.ocrbox:nth-of-type(4):hover) .ocrlines:not(.ocrlines-rest) > li:nth-child(4),
+.ocrframe:has(.ocrbox:nth-of-type(5):hover) .ocrlines:not(.ocrlines-rest) > li:nth-child(5),
+.ocrframe:has(.ocrbox:nth-of-type(6):hover) .ocrlines:not(.ocrlines-rest) > li:nth-child(6),
+.ocrframe:has(.ocrbox:nth-of-type(7):hover) .ocrlines:not(.ocrlines-rest) > li:nth-child(7),
+.ocrframe:has(.ocrbox:nth-of-type(8):hover) .ocrlines:not(.ocrlines-rest) > li:nth-child(8),
 .ocrline:hover {
   border-left-color: var(--accent);
   border-left-style: solid;
@@ -1596,6 +1749,14 @@ button[disabled] { opacity: 0.5; cursor: default; }
 .ocrtext { flex: 1 1 auto; min-width: 0; font-size: var(--t-machine); overflow-wrap: anywhere; }
 
 .conf { flex: 0 0 auto; color: var(--muted); font-size: var(--t-micro); }
+
+/* Confidence inside the OCR digest, de-emphasised but never dropped: it is part
+   of the receipt, and it is the one number a reader needs when a word looks
+   wrong. A fixed basis so thirty of them read as a column instead of thirty
+   numbers each ending wherever its own line happened to; `align-self: start`
+   with the baseline nudged back so it sits against the *first* line of a
+   wrapped entry, which is the line it is about. */
+.ocrline > .conf { flex: 0 0 2.25rem; align-self: start; padding-top: 3px; text-align: right; }
 
 /* -------------------------------------------------------------- transcript */
 
@@ -1741,9 +1902,14 @@ button[disabled] { opacity: 0.5; cursor: default; }
    the left edge. 9rem holds `2026-08-09 17:12` at 12.5px mono with room to
    spare, and the level pill lands at the same x on every row under it. */
 .event .at { flex: 0 0 9rem; }
-/* The level pill is a fixed column too, for the same reason: `warn` and `error`
-   are three characters apart and a ragged second column undoes the first. */
-.event > .pill { flex: 0 0 4.5rem; text-align: center; }
+/* The level pill is a column too, for the same reason: `info` and `error` are
+   a character apart and a ragged second column undoes the first. A *minimum*,
+   not a fixed basis: `flex: 0 0 4.5rem` stretched the pill itself to 72px, so
+   the one badge on the page that is 30px of word inside a 72px box read as a
+   different primitive from every other pill on the surface. 3.5rem is 56px and
+   `debug` — the widest of the four level words — measures 54.2px at the pill's
+   own metrics, so the column still lines up and the pill still hugs. */
+.event > .pill { flex: 0 0 auto; min-width: 3.5rem; text-align: center; }
 .eventtext { flex: 1 1 22rem; min-width: 0; font-size: var(--t-machine); overflow-wrap: anywhere; }
 /* An event that arrived while the page was open. A left rule rather than a
    flash: it survives being scrolled past, which an animation does not. */
