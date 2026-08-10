@@ -36,11 +36,26 @@ POLL_INTERVAL_S = 2.0
 # not say. YouTube's 429s are measured in minutes, not seconds, and the point of
 # a backoff is to stop *this* box asking — retrying in the same millisecond is
 # how a soft block becomes a long one (research §5.5).
-DEFAULT_RATE_LIMIT_BACKOFF_S = 300
+#
+# 90 minutes, up from five (research/ytdlp-usage-audit-2026-08-10.md §1). The
+# failure this catches is not really a 429: it is a bot-check, i.e. an IP-level
+# block on logged-out access, and the waves measured on the reference box ran
+# 60-90 minutes. At 300 s an item's whole retry budget fitted inside eleven
+# minutes of that, so it retired without ever reaching YouTube while YouTube was
+# answering. An estimate from observed waves, not an upstream constant.
+DEFAULT_RATE_LIMIT_BACKOFF_S = 5400
 
 # Every other retryable failure is a local hiccup (a worker restart, a disk
 # blip); it gets a short pause so the loop cannot spin, not a cool-off.
 DEFAULT_RETRY_BACKOFF_S = 5
+
+# The most attempts a single item may be granted when — and only when — the
+# ones it already spent went to `E_RATE_LIMIT`. See `_extend_for_rate_limit`:
+# the schema ships three attempts, so this is three ordinary tries plus up to
+# three the box's block paid for, and 6 x DEFAULT_RATE_LIMIT_BACKOFF_S is 7.5
+# hours — comfortably longer than the 60-90 minute waves the audit measured,
+# and still a number rather than "forever".
+RATE_LIMIT_ATTEMPT_CEILING = 6
 
 NOT_IMPLEMENTED_MESSAGE = (
     "the indexing pipeline is not implemented in this build: download, "
@@ -318,6 +333,10 @@ class PipelineRunner:
         job_id = int(item["job_id"])
         attempts = int(item["attempts"])
         max_attempts = int(item["max_attempts"])
+        if failure.code == "E_RATE_LIMIT" and attempts >= max_attempts:
+            max_attempts = await self._extend_for_rate_limit(
+                job_id, item_id, attempts, max_attempts
+            )
         if failure.retryable and attempts < max_attempts:
             delay = self._backoff_for(failure)
             await self.db.write(lambda c: store.requeue_item(c, item_id))
@@ -342,6 +361,51 @@ class PipelineRunner:
             lambda c: store.log(c, job_id, f"{failure.code}: {failure.message}", "error", item_id)
         )
         return False
+
+    async def _extend_for_rate_limit(
+        self, job_id: int, item_id: int, attempts: int, max_attempts: int
+    ) -> int:
+        """Grant an exhausted item one more attempt, *because* it was the box.
+
+        The retry budget answers "is this video indexable?". A rate-limit
+        deferral does not answer that question — every other item in the queue
+        is failing the same way at the same moment — so spending the budget on
+        it retires videos for something they did not do. That is exactly what
+        the 2026-08-09 waves did: the old 300 s cool-off fitted three attempts
+        into 11 minutes of a 60-90 minute block, and items came out `failed`
+        having never once reached YouTube while it was answering
+        (research/ytdlp-usage-audit-2026-08-10.md §1).
+
+        An item must be able to outlive a wave, so the extension is granted
+        lazily — only when the ordinary budget is spent, only for
+        `E_RATE_LIMIT`, and only up to `RATE_LIMIT_ATTEMPT_CEILING`. Bounded,
+        because "retry until it works" is how a soft block becomes a long one,
+        and because the deferral is the job's countdown too: at the shipped
+        5400 s cool-off, six attempts span 7.5 hours of wave.
+
+        It moves `max_attempts` rather than refunding `attempts` on purpose.
+        The counter the dashboard renders (§4.4) stays a truthful count of
+        tries; what changes is the allowance, which is the thing that actually
+        changed. A row that reads `4 / 4` says "this waited out three cool-offs
+        and is still trying", which a refunded `3 / 3` would have hidden.
+        """
+        if max_attempts >= RATE_LIMIT_ATTEMPT_CEILING:
+            return max_attempts
+        granted = max_attempts + 1
+        await self.db.write(lambda c: store.set_max_attempts(c, item_id, granted))
+        await self.db.write(
+            lambda c: store.log(
+                c,
+                job_id,
+                f"the source rate-limited this box on attempt {attempts} of "
+                f"{max_attempts}; that is the box's fault and not this video's, so "
+                f"the item gets attempt {granted} of {granted} rather than being "
+                f"retired mid-block (ceiling {RATE_LIMIT_ATTEMPT_CEILING})",
+                "warn",
+                item_id,
+            )
+        )
+        return granted
 
     def _backoff_for(self, failure: ItemFailed) -> int:
         if failure.retry_after_s is not None:

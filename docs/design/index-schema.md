@@ -785,6 +785,20 @@ down — `attempts` counts the tries, `started_at` spans them. Neither needs a
 reset path: a job row is never reused, so a forced reindex is a new row with
 both stamps NULL.
 
+**`max_attempts` is a per-row allowance, not the constant 3 the DEFAULT makes
+it look like.** One failure class may raise it: an item that has spent its
+budget on `E_RATE_LIMIT` is granted one more attempt at a time, up to a ceiling
+of 6 (`_extend_for_rate_limit`, `jobs/runner.py`; each grant writes a
+`job_events` warn row). The reasoning is the same "attempts counts the tries"
+rule read the other way — a rate-limit deferral is a statement about the box,
+not about whether this video is indexable, so charging it to the video's budget
+retires videos for something they did not do. Measured, 2026-08-09: a 60-90
+minute bot-check wave against a five-minute cool-off exhausted three attempts
+in eleven minutes and failed items that had never reached YouTube while it was
+answering (research/ytdlp-usage-audit-2026-08-10.md §1). Readers of the column
+should treat it as data — the retry budget is `attempts < max_attempts`, both
+read from the row, as `job-status` and the dashboard already do.
+
 **The in-flight guard is the partial unique index**, not application logic:
 `job_items_one_inflight` makes a second `index-video` on an already-queued video an
 `IntegrityError` the API turns into "already indexing, here is the job id"

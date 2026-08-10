@@ -38,7 +38,7 @@ import pytest
 from vidtheque_mcp.app import Assembled
 from vidtheque_mcp.config import Settings
 from vidtheque_mcp.jobs import store as jobs_store
-from vidtheque_mcp.jobs.runner import ItemFailed
+from vidtheque_mcp.jobs.runner import RATE_LIMIT_ATTEMPT_CEILING, ItemFailed
 from vidtheque_mcp.pipeline.sources import RateLimited
 from vidtheque_mcp.text import iso_z
 from vidtheque_mcp.tools import indexing
@@ -164,13 +164,22 @@ async def test_rate_limiting_survives_a_partially_successful_job(
     runner.rate_limit_backoff_s = 60
     job_id = await queue(assembled, URL_A, URL_B)
 
-    for _ in range(3):  # three attempts, each behind its own backoff
+    # Six attempts, each behind its own backoff: three from the schema, then
+    # three the rate limiter paid for. `_extend_for_rate_limit` grants them one
+    # at a time up to `RATE_LIMIT_ATTEMPT_CEILING`, because a block is a fact
+    # about the box and retiring a video for it indexes nothing (audit §1).
+    for _ in range(RATE_LIMIT_ATTEMPT_CEILING):
         await open_the_gate(assembled)
         assert await runner.run_once() is True
 
     job = await job_row(assembled, job_id)
     assert job["state"] == "done"  # a sibling did get indexed
     assert job["error_code"] == "E_RATE_LIMIT"  # and the job still says so
+    items = await items_of(assembled, job_id)
+    assert (items[0]["attempts"], items[0]["max_attempts"]) == (
+        RATE_LIMIT_ATTEMPT_CEILING,
+        RATE_LIMIT_ATTEMPT_CEILING,
+    )
 
     status = await indexing.job_status(assembled.deps, job_id=job_id)
     payload = structured(status)

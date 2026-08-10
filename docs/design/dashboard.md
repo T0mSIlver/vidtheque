@@ -521,7 +521,14 @@ From `jobs`, `job_items`, `job_events` (`0001_initial.sql:260-320`):
   every surface vidtheque has. Surfacing it is a read change, not a schema
   change, and it is the single highest-value line on the jobs page.
 - `job_items.attempts` / `max_attempts` (default 3) is the retry counter,
-  incremented in `claim_item` (`:159-179`).
+  incremented in `claim_item` (`:159-179`). **`max_attempts` is not constant per
+  item**: an item whose budget was spent on `E_RATE_LIMIT` is granted one more,
+  lazily, up to `RATE_LIMIT_ATTEMPT_CEILING` (6) — `_extend_for_rate_limit`,
+  `jobs/runner.py`. A block is a fact about the box, not about the video, so
+  spending the retry budget on it retires videos for something they did not do
+  (research/ytdlp-usage-audit-2026-08-10.md §1). The page needs no change — it
+  renders both numbers — but "4 / 4" is now a state a row can be in, and each
+  grant writes its own `job_events` warn row saying why.
 - The deferral **reason** is sticky on `jobs.error_code` **only for
   `E_RATE_LIMIT`** (`_sticky_error`, `jobs/runner.py:353-365`); every other
   deferral writes nothing to `jobs` and exists only as a `job_events` warn row,
@@ -534,8 +541,10 @@ From `jobs`, `job_items`, `job_events` (`0001_initial.sql:260-320`):
   `state='queued'` with the job's `not_before` in the future, and "retrying"
   from `attempts < max_attempts`.
 - Backoff values: source-supplied `retry_after_s`, else
-  `VIDTHEQUE_RATE_LIMIT_BACKOFF_S` (default 300) for `E_RATE_LIMIT`, else 5 s
-  (`jobs/runner.py:346-351`).
+  `VIDTHEQUE_RATE_LIMIT_BACKOFF_S` (default 5400 — 90 minutes, the measured
+  bot-check wave; it was 300 until the 2026-08-10 audit) for `E_RATE_LIMIT`,
+  else 5 s (`jobs/runner.py:346-351`). The countdown line matters more at this
+  scale, not less: a deferral is now an hour and a half of a job looking idle.
 - **`degraded_items`** (`jobs/store.py:553-571`) — items that finished `done` on
   a video with a `failed` stage. Its own docstring names the silent loss: the
   item is `done`, the job is `done`, `n_failed` is 0, and a search channel is

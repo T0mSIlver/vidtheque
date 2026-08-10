@@ -205,6 +205,19 @@ def finish_item(
     )
 
 
+def set_max_attempts(conn: sqlite3.Connection, item_id: int, max_attempts: int) -> None:
+    """Raise one item's retry allowance. Only the rate-limit path calls this.
+
+    `attempts` is left alone deliberately: it counts tries and the dashboard
+    renders it as such (dashboard §4.4). What a cool-off changes is how many
+    tries the item is owed, which is this column.
+    """
+    conn.execute(
+        "UPDATE job_items SET max_attempts = ? WHERE id = ?",
+        (max_attempts, item_id),
+    )
+
+
 def requeue_item(conn: sqlite3.Connection, item_id: int) -> None:
     conn.execute(
         "UPDATE job_items SET state = 'queued', stage = NULL, stage_pct = 0.0 WHERE id = ?",
