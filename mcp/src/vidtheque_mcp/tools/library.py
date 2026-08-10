@@ -445,9 +445,18 @@ async def corpus_summary(
             f"  {gap_info['transcript_no_ocr']} videos have transcript but no OCR"
         )
         for row in gap_info["failed"][:5]:
-            lines.append(
-                f"  failed: {row['public_id']} — \"{(row['error'] or 'unknown error')[:120]}\""
-            )
+            if deps.offers("index-video"):
+                lines.append(
+                    f"  failed: {row['public_id']} — "
+                    f"\"{(row['error'] or 'unknown error')[:120]}\""
+                )
+            else:
+                # `video_stages.error` is the pipeline's own prose — yt-dlp
+                # output, worker URLs, operator paths. A reader of a read-only
+                # deployment can act on *which* video is incomplete, and there
+                # is nothing they can do with the reason. (2026-08-10 audit,
+                # F-4: the same redaction the dashboard applies, applied here.)
+                lines.append(f"  failed: {row['public_id']}")
         # Two counters, each with one name. `indexing` counts *videos* whose
         # index_state says mid-pipeline; the job line counts *rows in `jobs`*.
         # Printing both as "indexing" is what let the headline and this block

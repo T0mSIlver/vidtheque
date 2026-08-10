@@ -434,6 +434,7 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
     if row["cancel_requested"]:
         lines.append("cancel requested — the job stops at the next stage boundary.")
 
+    redacted = _redacted(deps)
     running = next((i for i in items if i["state"] == "running"), None)
     current = running or (items[0] if items else None)
     if current is not None:
@@ -441,7 +442,7 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
             f"{current['public_id']} \"{current['title']}\" — {current['channel_name']} "
             f"({duration_clock(current['duration_s'])})"
             if current["public_id"]
-            else str(current["source_url"])
+            else (UNIDENTIFIED if redacted else str(current["source_url"]))
         )
         lines.append(f"Video: {label}")
         positions = {
@@ -466,16 +467,24 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
     failed = [i for i in items if i["state"] == "failed"]
     if failed:
         first = failed[0]
-        message = middle_truncate(str(first["error_message"] or ""), MAX_ERROR_CHARS)
         lines.append("")
-        lines.append(f"error: {first['error_code']} — {message}")
+        if redacted:
+            # The code is the part a reader can act on; the prose is yt-dlp's,
+            # and it carries cookie-file paths, player-client configuration and
+            # /home/… straight out of the operator's box.
+            lines.append(f"error: {first['error_code']}")
+        else:
+            message = middle_truncate(str(first["error_message"] or ""), MAX_ERROR_CHARS)
+            lines.append(f"error: {first['error_code']} — {message}")
     elif str(row["error_code"] or "") == "E_RATE_LIMIT":
         # No item ended up failing, so nothing above would have said it: the
         # source throttled this box mid-job and the retry got through. It still
         # decides whether the *next* job should start now.
         lines.append("")
         lines.append(
-            "rate-limited: "
+            "rate-limited"
+            if redacted
+            else "rate-limited: "
             + middle_truncate(str(row["error_message"] or ""), MAX_ERROR_CHARS)
         )
 
@@ -488,6 +497,10 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
             f"({', '.join(degraded_stages)}) — that search channel is missing."
         )
         for entry in degraded[:5]:
+            if redacted:
+                label = entry["public_id"] or UNIDENTIFIED
+                lines.append(f"  {label} {entry['stage']}")
+                continue
             label = entry["public_id"] or entry["source_url"]
             reason = middle_truncate(str(entry["error"] or ""), MAX_ERROR_CHARS)
             lines.append(f"  {label} {entry['stage']}: {reason}")
@@ -505,7 +518,7 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
     n_failed = int(row["n_failed"])
     n_skipped = int(row["n_skipped"])
     n_cancelled = int(row["n_cancelled"])
-    skipped_note = _skipped_note(items)
+    skipped_note = _skipped_note(items, redacted)
 
     lines.append("")
     if row["state"] == "done":
@@ -562,9 +575,40 @@ async def _single(deps: Deps, row: sqlite3.Row) -> CallToolResult:
             "n_degraded": n_degraded,
             "degraded_stages": degraded_stages,
             "error_code": row["error_code"],
-            "note": row["error_message"] if row["state"] == "done" else None,
+            # The code survives redaction; the prose behind it does not. A
+            # structured field is read by an agent, which is exactly the client
+            # that would repeat it somewhere else.
+            "note": (
+                None
+                if redacted
+                else (row["error_message"] if row["state"] == "done" else None)
+            ),
         },
     )
+
+
+def _redacted(deps: Deps) -> bool:
+    """Is this caller anonymous, i.e. is the deployment read-only?
+
+    The same projection the dashboard applies to its jobs view (dashboard.md
+    §10.4), applied on this side of the house. It was not, and the two views
+    read the same rows: `/dashboard/jobs` renders job ids as links and drops
+    the submitted URL and the error prose, then `job-status` handed both back
+    through `/mcp` to anyone who quoted an id off that page. The runbook's
+    §2.5 greps could never catch it — they only ever read dashboard HTML.
+
+    Keyed on the tool surface rather than on a flag, because that is what
+    "anonymous" actually means here: a deployment that offers `index-video` has
+    a credential in front of it or is not public at all. (2026-08-10 audit,
+    F-4.)
+    """
+    return not deps.offers("index-video")
+
+
+# What a redacted view says instead of a URL it will not print. The video has
+# no `public_id` yet — it failed or was rejected before it was identified —
+# and the submitted URL is exactly the operator detail being withheld.
+UNIDENTIFIED = "(not yet identified)"
 
 
 def _reindex_hint(deps: Deps, purpose: str) -> str:
@@ -604,15 +648,23 @@ def _aside(n_failed: int, n_skipped: int, n_cancelled: int, n_degraded: int = 0)
     return f" ({', '.join(parts)})" if parts else ""
 
 
-def _skipped_note(items: Sequence[sqlite3.Row]) -> str | None:
-    """Name what was skipped and why, from the rows themselves."""
+def _skipped_note(items: Sequence[sqlite3.Row], redacted: bool = False) -> str | None:
+    """Name what was skipped and why, from the rows themselves.
+
+    Redacted, this becomes a count rather than a list: both halves of a line
+    here are withheld data — the submitted URL and the reason prose.
+    """
+    skipped = [
+        i for i in items if i["state"] in ("skipped", "cancelled") and i["error_message"]
+    ]
+    if not skipped:
+        return None
+    if redacted:
+        return f"skipped: {len(skipped)} item(s)"
     reasons = [
         f"  {i['source_url']}: {middle_truncate(str(i['error_message']), MAX_ERROR_CHARS)}"
-        for i in items
-        if i["state"] in ("skipped", "cancelled") and i["error_message"]
+        for i in skipped
     ]
-    if not reasons:
-        return None
     return "skipped:\n" + "\n".join(reasons[:5])
 
 

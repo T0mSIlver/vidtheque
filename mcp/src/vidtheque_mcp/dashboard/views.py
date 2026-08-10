@@ -642,7 +642,7 @@ async def video_detail(request: Request) -> Response:
             "data_status": summary_payload.get("data_status"),
             "summary_error": summary_error,
             "chapters": summary_payload.get("chapters", []),
-            "stages": _stage_rows(stages),
+            "stages": _stage_rows(stages, _redacted(request)),
             "counts": counts,
             "origins": origins,
             "shots": _shot_bars(deps, video_id, shots, duration, frame_page),
@@ -705,12 +705,20 @@ def _video_header(row: sqlite3.Row, tags: list[str]) -> dict[str, Any]:
     }
 
 
-def _stage_rows(stages: list[sqlite3.Row]) -> list[dict[str, Any]]:
+def _stage_rows(stages: list[sqlite3.Row], redacted: bool = False) -> list[dict[str, Any]]:
     """All seven stages, with the ones that never ran said out loud.
 
     `job-status` collapses these into five *wire* stages for a model's benefit
     (`jobs/store.WIRE_STAGES`). A human wants the seven, and wants the absent
     ones present as `absent` rather than silently missing from the list.
+
+    ``redacted`` drops the two fields that are the operator's console rather
+    than the corpus: `model_key`, which is a declared model id and therefore a
+    setting by §2.4's own argument, and `error`, which is the pipeline's raw
+    prose. The states, the versions and the clocks stay — they are what a
+    reader can act on, and dropping them would leave an empty shell.
+    The jobs view has redacted since phase 4; this page had not.
+    (2026-08-10 audit, F-4.)
     """
     by_stage = {str(s["stage"]): s for s in stages}
     rows = []
@@ -725,11 +733,11 @@ def _stage_rows(stages: list[sqlite3.Row]) -> list[dict[str, Any]]:
             {
                 "stage": stage,
                 "state": str(row["state"]),
-                "model_key": row["model_key"],
+                "model_key": None if redacted else row["model_key"],
                 "stage_version": row["stage_version"],
                 "started_at": row["started_at"],
                 "finished_at": row["finished_at"],
-                "error": row["error"],
+                "error": None if redacted else row["error"],
             }
         )
     return rows

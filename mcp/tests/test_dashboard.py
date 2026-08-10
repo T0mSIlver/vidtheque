@@ -16,6 +16,7 @@ bounded server-side however the URL asks.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -31,7 +32,7 @@ from vidtheque_mcp.db.connection import open_write_connection
 from vidtheque_mcp.public.api import OWNER_CLAMPS, PUBLIC_CLAMPS
 from vidtheque_mcp.public.settings import PublicSettings
 
-from .conftest import FakeEmbeddings, seed
+from .conftest import FakeEmbeddings, rpc, rpc_headers, seed
 
 STATIC = Path(__file__).resolve().parents[1] / "src/vidtheque_mcp/dashboard/static"
 TEMPLATES = Path(__file__).resolve().parents[1] / "src/vidtheque_mcp/dashboard/templates"
@@ -867,6 +868,52 @@ def test_the_jobs_pages_do_not_fan_out_per_row(client: TestClient) -> None:
     assert one == many <= 4, f"{one} reads for 1 job, {many} for 100"
     detail = _count_reads(client, f"{ROOT}/jobs/job_finished01")
     assert detail <= 8, f"{detail} reads for one job page"
+
+
+def test_the_same_secrets_do_not_come_back_through_the_mcp_tools(
+    tmp_path: Path,
+) -> None:
+    """The redaction the test below asserts, defeated by quoting a job id.
+
+    The jobs view renders its ids as links, deliberately — and `job-status` is
+    annotated read-only, so the public mask keeps it registered. A visitor read
+    an id off `/dashboard/jobs`, called the tool through `/mcp`, and got back
+    exactly the two fields the page had just withheld. `corpus-summary` did the
+    same with `video_stages.error`.
+
+    Nothing tested this pairing, which is why it survived: §2.5's greps only
+    ever read dashboard HTML. This is the missing half. (2026-08-10 audit, F-4.)
+    """
+    secrets = (
+        "youtu.be/failedvideo",
+        "Sign in to confirm you are not a bot",
+        "cookiefile",
+        "worker returned 503",
+        "retrying in 300s",
+    )
+
+    def tool(client: TestClient, name: str, arguments: dict) -> str:
+        body = rpc("tools/call", {"name": name, "arguments": arguments})
+        response = client.post(
+            "/mcp", json=body, headers=rpc_headers("tools/call", name=name)
+        )
+        assert response.status_code == 200, response.text
+        return json.dumps(response.json())
+
+    with make_client(tmp_path, public=PublicSettings(enabled=True)) as demo:
+        printed = tool(demo, "job-status", {"job_id": "job_finished01"})
+        for secret in secrets:
+            assert secret not in printed, f"{secret} leaked through job-status"
+        # The code is what a reader can act on, and it stays.
+        assert "E_SOURCE" in printed
+        gaps = tool(demo, "corpus-summary", {"include_gaps": True})
+        for secret in secrets:
+            assert secret not in gaps, f"{secret} leaked through corpus-summary"
+
+    # The owner's instance is the contrast: the tool exists to say this.
+    with make_client(tmp_path) as owner:
+        printed = tool(owner, "job-status", {"job_id": "job_finished01"})
+        assert "Sign in to confirm you are not a bot" in printed
 
 
 def test_the_demo_projection_keeps_the_clocks_and_drops_the_rest(
