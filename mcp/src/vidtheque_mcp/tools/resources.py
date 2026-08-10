@@ -114,8 +114,9 @@ you asked for.
   date; `t_start`/`t_end` choose seconds inside a video. They are not
   interchangeable, and neither is the pagination `offset`.
 - `channel` and `video_title` are case-insensitive substrings. The tag filter is
-  `tags=` — plural, comma-separated, AND semantics. `tag=` is not a parameter and
-  is dropped silently like any other unknown name.
+  `tags=` — plural, comma-separated, AND semantics. `tag=` is not a parameter,
+  and like any other unknown name it is a typed `E_BAD_PARAM` that tells you the
+  right one.
 - Ordering defaults to relevance. Pass `order=recency` only if the user asked for
   "latest" or "newest".
 - Start with `limit=5` and `max_text_chars=500`. Raise them when the first page
@@ -143,11 +144,14 @@ you asked for.
   your next call.
 - A `note:` line means a leg was skipped and why. `all` always means all: a
   missing leg is always announced, never silently dropped.
-- Read the `Legs:` counts. `transcript 0` next to on-screen hits usually means
+- Read the `Legs:` counts, and the sub-legs in the parentheses:
+  `transcript 24 (fts 9 · vec 15/800)`. **`fts 0`** next to on-screen hits means
   the phrasing differs, not that the topic is unspoken — slides write
   `hasFather`, `owl:FunctionalProperty`, `CVE-2026-22812`; speech says "has
   father", "functional property". Re-search the spoken phrasing, or open
-  `get-segment-context` at the top on-screen hit.
+  `get-segment-context` at the top on-screen hit. `vec 15/800` is the semantic
+  sub-leg: 15 of the 800 nearest chunks were near enough to this query to be
+  ranked at all — the other 785 were "nearest", not "near".
 - **On-screen text is a flat reading-order join, and it is capped per frame.**
   Tables, code, bullet lists and quote/attribution pairs come back unscrambled
   from the layout that made them readable, and OCR mangles digits and bullet
@@ -160,8 +164,10 @@ you asked for.
   fetched, up to 12, in the order you asked for; a bad one comes back on a
   `failed:` line rather than vanishing.
 - Use only parameter names a payload printed or the tool schema lists. An
-  unknown parameter is dropped silently, so a call that "worked" may have
-  ignored the filter you thought you applied.
+  unknown name is rejected with `E_BAD_PARAM`, which names the parameter you
+  probably meant and lists the tool's full set — so a call that returns results
+  applied every argument you sent, and a call that did not says which one it
+  could not.
 """
 
 

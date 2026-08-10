@@ -255,6 +255,32 @@ two standards (demo-queries §9.1.9). The valid sets are `search`'s
 `TSV_FIELDS` (the keys of a result row) and `list-videos`' `LIST_FIELDS`; a
 `fields` list is never silently narrowed, in either direction.
 
+**An unknown *parameter* name is `E_BAD_PARAM` too** (amended 2026-08-10), and
+it names the near miss. `search {"q":"context engineering","tag":"topic:test",
+"sort_by":"recency"}` used to return a 200 and neither the filter nor the sort —
+one tool, three standards, since the two neighbouring classes above were already
+typed errors. The reply now is *"Unknown parameters for search: tag=, sort_by=.
+They were rejected, not applied — a filter you think you passed was not."* with
+*"did you mean tag= → tags=, sort_by= → order=?"* and the tool's full parameter
+list. `t_start`/`t_end` on a tool that has no intra-video axis additionally get
+the §3.2 sentence, because that one is an axis confusion rather than a typo.
+Two details this cost:
+
+- **It cannot be enforced inside a tool.** The SDK validates `tools/call`
+  arguments against a pydantic model built from the handler signature, and that
+  model ignores extras, so the name is gone before the handler runs. The guard
+  wraps `MCPServer.call_tool`, the last place the raw arguments exist
+  (`tools/params.py`, wired by `tools.register`).
+- **Keys beginning with `_` are left alone.** That namespace is the protocol's
+  and the client vendor's (`_meta` and friends); a server that 400s a client's
+  own bookkeeping is a worse failure than the silence being fixed here.
+
+`vidtheque://guide` documented the silence as intended (*"`tag=` … is dropped
+silently like any other unknown name"*), which made it a contract choice rather
+than a bug; the evidence retired the choice. Two independent consumers filed it
+in one week — the terra eval §4.5, and a stress-testing agent that reached the
+same conclusion without ever seeing this document.
+
 ### 3.6 Deep links
 
 **Every timestamped item in every payload carries `https://youtu.be/<id>?t=<int>`.**
@@ -393,7 +419,7 @@ added.
 | Code | HTTP | When | `next:` hint |
 |---|---|---|---|
 | `E_BAD_TIME_FORMAT` | 400 | unparseable time value | echoes accepted formats with an example |
-| `E_BAD_PARAM` | 400 | wrong type / out-of-domain enum | names the parameter and its domain |
+| `E_BAD_PARAM` | 400 | wrong type / out-of-domain enum / unknown `fields` name / unknown parameter name (§3.5) | names the parameter and its domain, and the near miss for an unknown name |
 | `E_EMPTY_QUERY` | 400 | `search` with no `q` and no filters | "pass `q`, or use `list-videos` to browse" |
 | `E_ORDER_SCOPE` | 400 | `order=video_time` without a single-video scope | "add `video_id=…`, or use `order=relevance`" |
 | `E_UNKNOWN_VIDEO` | 404 | video not in corpus | `index-video` / `list-videos` |
@@ -635,7 +661,8 @@ substring-based.
 
 **Return shape.** One `text` block; `structuredContent` mirrors it as
 `{results: [...], pagination: {limit, offset, has_more, approx_total,
-pool_exhausted, last_offset?}, notes: [...], related_tags?: {...}}`. Each result
+pool_exhausted, last_offset?}, leg_counts: {...}, notes: [...],
+related_tags?: {...}}`. Each result
 carries `{source, video_id, title, channel, start, end, match_start,
 match_cue_id, text, link, cue_ids, frame_id, score}` — `match_start` is the
 anchor the `link` points at (§3.6), equal to `start` for the point-in-time legs;
@@ -646,7 +673,7 @@ which is the whole point of that tool.
 ```
 Results: 10/~40+ (use offset=10 for more)
 Query: "kv cache" · content_type=all · order=relevance · max_per_video=3
-Legs: transcript 24 · ocr 9 · frame 7 (fused, RRF k=60; 5000-candidate cap not reached)
+Legs: transcript 24 (fts 9 · vec 15/800) · ocr 9 · frame 7 (vec 11/800) (fused, RRF k=60; 5000-candidate cap not reached)
 
 [transcript] Let's build GPT: from scratch — Andrej Karpathy (kCc8FmEb1nY)
   1:12:03–1:12:47 · match at 1:12:21 · https://youtu.be/kCc8FmEb1nY?t=4339
@@ -694,6 +721,50 @@ A leg-skip note looks like this, on the line under `Legs:`:
 ```
 note: speaker= applies to the transcript leg only — ocr and frame legs were not queried for this call.
 ```
+
+**The `Legs:` line prints sub-legs, and the semantic ones print what they kept
+(2026-08-10).** The leading number per leg is the fused contribution to the
+ranking. The parenthetical behind it is the *candidate* count per sub-leg, in
+each sub-leg's own unit — cues for `fts`, chunks for the transcript `vec`,
+frames for the frame leg — and `a/b` is kept-of-considered, printed only when
+the relevance band below actually cut something.
+
+It exists because the guide tells callers to read this line, and a *merged*
+count cannot carry the rule it teaches: a nearest-neighbour sub-leg always
+returns its `k`, so `transcript` never reads `0` and "nine talks say this" is
+indistinguishable from "the KNN returned its k". A terra consumer asked for a
+complete inventory read `transcript 400` and shipped "the server returned 143
+distinct talks" about `eval` as a fact
+(`research/mcp-eval-terra-2026-08-10.md` §4.2). `fts 0` says it in one token.
+`structuredContent.leg_counts` carries the same keys (`transcript`, `ocr`,
+`frame`, `transcript_fts`, `transcript_vec`, `transcript_vec_knn`, `frame_vec`,
+`frame_knn`) for clients that do not parse prose.
+
+**The relevance floor on the two vector legs is RELATIVE, and it is
+server-side.** A hit is dropped before fusion when its cosine distance exceeds
+either the absolute ceiling (`VIDTHEQUE_VEC_MAX_DISTANCE` /
+`VIDTHEQUE_FRAME_MAX_DISTANCE`) *or* `best_hit_distance + margin`, where the
+margin is `VIDTHEQUE_VEC_MAX_MARGIN` (0.20) and `VIDTHEQUE_FRAME_MAX_MARGIN`
+(0.10), clamped to `0..2` on the way in. It is not a tool parameter and there is
+no way to widen it from a prompt.
+
+The band is relative because an absolute cosine distance does not survive a
+change of embedder — a model that packs its corpus at a different radius turns a
+ceiling that sat above one real range into one that cuts through another, which
+is why the absolute defaults ship open at `1.0` and why they stayed open through
+two embedder swaps. "Within `m` of this query's own best hit" needs no knowledge
+of that radius. Both margins are the calibrated pair's numbers re-expressed
+relative to their own best hit (real 20th-nearest sat 0.16 text / 0.069 frame
+from the best hit; `research/multimodal-embedding-2026-08-09.md`), re-checked
+against the shipped space on the live corpus in
+`research/vec-floor-calibration-2026-08-10.md`.
+
+Without it, §1.3's *relevance first* was not true of the shipped server: with
+`k=800` and a ceiling of `1.0`, `q="turbopuffer"` answered `Results: 5/121` over
+a 154-video corpus and a talk about neither turbopuffer nor the query's topic
+took rank 1 — every score an RRF rank-1 tie
+(`research/mcp-eval-terra-2026-08-10.md` §4.1). The cut is announced, never
+silent: that is what `vec 15/800` on the `Legs:` line is for.
 
 **Status — the frame leg, and how it degrades.** The frame leg needs the query in
 the *frame* embedding space, which means the query text through the frame model
@@ -2022,8 +2093,9 @@ you asked for.
   date; `t_start`/`t_end` choose seconds inside a video. They are not
   interchangeable, and neither is the pagination `offset`.
 - `channel` and `video_title` are case-insensitive substrings. The tag filter is
-  `tags=` — plural, comma-separated, AND semantics. `tag=` is not a parameter and
-  is dropped silently like any other unknown name.
+  `tags=` — plural, comma-separated, AND semantics. `tag=` is not a parameter,
+  and like any other unknown name it is a typed `E_BAD_PARAM` that tells you the
+  right one.
 - Ordering defaults to relevance. Pass `order=recency` only if the user asked for
   "latest" or "newest".
 - Start with `limit=5` and `max_text_chars=500`. Raise them when the first page
@@ -2051,11 +2123,14 @@ you asked for.
   your next call.
 - A `note:` line means a leg was skipped and why. `all` always means all: a
   missing leg is always announced, never silently dropped.
-- Read the `Legs:` counts. `transcript 0` next to on-screen hits usually means
+- Read the `Legs:` counts, and the sub-legs in the parentheses:
+  `transcript 24 (fts 9 · vec 15/800)`. **`fts 0`** next to on-screen hits means
   the phrasing differs, not that the topic is unspoken — slides write
   `hasFather`, `owl:FunctionalProperty`, `CVE-2026-22812`; speech says "has
   father", "functional property". Re-search the spoken phrasing, or open
-  `get-segment-context` at the top on-screen hit.
+  `get-segment-context` at the top on-screen hit. `vec 15/800` is the semantic
+  sub-leg: 15 of the 800 nearest chunks were near enough to this query to be
+  ranked at all — the other 785 were "nearest", not "near".
 - **On-screen text is a flat reading-order join, and it is capped per frame.**
   Tables, code, bullet lists and quote/attribution pairs come back unscrambled
   from the layout that made them readable, and OCR mangles digits and bullet
@@ -2068,8 +2143,10 @@ you asked for.
   fetched, up to 12, in the order you asked for; a bad one comes back on a
   `failed:` line rather than vanishing.
 - Use only parameter names a payload printed or the tool schema lists. An
-  unknown parameter is dropped silently, so a call that "worked" may have
-  ignored the filter you thought you applied.
+  unknown name is rejected with `E_BAD_PARAM`, which names the parameter you
+  probably meant and lists the tool's full set — so a call that returns results
+  applied every argument you sent, and a call that did not says which one it
+  could not.
 ```
 
 **This block is now the shipped text, synced 2026-08-09** — it used to drift

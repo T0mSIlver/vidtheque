@@ -156,6 +156,67 @@ def test_a_typed_error_comes_back_as_is_error(client: TestClient) -> None:
     assert result["content"][0]["text"].startswith("error: E_UNKNOWN_VIDEO")
 
 
+def test_an_unknown_parameter_name_is_a_typed_error(client: TestClient) -> None:
+    """terra eval §4.5: `tag=` and `sort_by=` were dropped, and the call 200'd.
+
+    The same tool has always been strict about the two neighbouring classes
+    (`order="nonesuch"`, `fields="…,not_a_column"`); one tool, three standards
+    is what let a caller believe it had filtered and sorted.
+    """
+    result = call(
+        client,
+        "tools/call",
+        {
+            "name": "search",
+            "arguments": {"q": "cache", "tag": "topic:test", "sort_by": "recency", "limit": 2},
+        },
+    )
+    assert result["isError"] is True
+    payload = result["structuredContent"]
+    assert payload["code"] == "E_BAD_PARAM"
+    assert "tag=" in payload["message"] and "sort_by=" in payload["message"]
+    # …and it names the right parameter for each, rather than only refusing.
+    assert "tag= → tags=" in payload["next"]
+    assert "sort_by= → order=" in payload["next"]
+    assert "content_type" in payload["next"]  # the full domain, as `fields` does
+
+
+def test_the_wrong_time_axis_is_rejected_by_name(client: TestClient) -> None:
+    """§3.2: `t_start` on the corpus-shaped tool is the axis confusion, not a typo."""
+    result = call(
+        client, "tools/call", {"name": "list-videos", "arguments": {"t_start": 2019, "limit": 1}}
+    )
+    assert result["structuredContent"]["code"] == "E_BAD_PARAM"
+    assert "published_after" in result["structuredContent"]["next"]
+
+
+def test_the_return_alias_is_a_known_parameter_name(client: TestClient) -> None:
+    """`return` is the wire name of `return_`; the guard must not reject it."""
+    ok = call(
+        client,
+        "tools/call",
+        {"name": "get-frames", "arguments": {"frame_ids": ["kCc8FmEb1nY-00000"], "return": "url"}},
+    )
+    assert ok["isError"] is False
+    # …and the Python spelling is not a second, undocumented name for it.
+    rejected = call(
+        client,
+        "tools/call",
+        {"name": "get-frames", "arguments": {"frame_ids": ["kCc8FmEb1nY-00000"], "return_": "url"}},
+    )
+    assert rejected["structuredContent"]["code"] == "E_BAD_PARAM"
+
+
+def test_protocol_metadata_keys_are_left_alone(client: TestClient) -> None:
+    """`_`-prefixed keys belong to the protocol and to client vendors."""
+    result = call(
+        client,
+        "tools/call",
+        {"name": "search", "arguments": {"q": "cache", "limit": 1, "_meta": {"trace": "x"}}},
+    )
+    assert result["isError"] is False
+
+
 def test_healthz_is_public_and_reports_the_mode(client: TestClient) -> None:
     payload = client.get("/healthz").json()
     assert payload["status"] == "ok"

@@ -9,14 +9,15 @@ prose tokens.
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+import inspect
+from typing import Annotated, Any, Callable, Mapping
 
 from mcp.server import MCPServer
 from mcp_types import CallToolResult
 from pydantic import Field
 
 from . import frames as frames_tool
-from . import indexing, library, resources, search
+from . import indexing, library, params, resources, search
 from .base import Deps
 from .descriptions import ANNOTATIONS, DESCRIPTIONS
 
@@ -320,6 +321,44 @@ def _register_tools(mcp: MCPServer, deps: Deps, hidden: frozenset[str]) -> None:
 
     if "get-frames" not in hidden:
         _alias_return(mcp)
+
+    _reject_unknown_arguments(
+        mcp, {name: _wire_names(fn) for name, fn in registry if name not in hidden}
+    )
+
+
+def _wire_names(fn: Callable[..., Any]) -> frozenset[str]:
+    """The argument names this handler accepts, as they appear on the wire."""
+    return frozenset(
+        "return" if name == "return_" else name
+        for name, param in inspect.signature(fn).parameters.items()
+        if param.kind not in (param.VAR_KEYWORD, param.VAR_POSITIONAL)
+    )
+
+
+def _reject_unknown_arguments(mcp: MCPServer, known: Mapping[str, frozenset[str]]) -> None:
+    """Make an unknown argument name `E_BAD_PARAM` instead of a silent drop.
+
+    The check cannot live inside a tool: the SDK validates `tools/call`
+    arguments against a pydantic model built from the handler's signature, and
+    that model ignores extras, so `tag="topic:test"` is gone before
+    `search.run` is entered. `MCPServer.call_tool` is the last place the raw
+    arguments exist, and `_handle_call_tool` reaches it through `self`, so
+    wrapping the bound method here covers the whole transport surface. Hidden
+    tools are absent from `known` — and from the registry, so they never reach
+    this at all.
+    """
+    inner = mcp.call_tool
+
+    async def call_tool(
+        name: str, arguments: dict[str, Any], context: Any = None
+    ) -> Any:
+        rejected = params.error_for(name, arguments, known.get(name))
+        if rejected is not None:
+            return rejected.to_result()
+        return await inner(name, arguments, context)
+
+    mcp.call_tool = call_tool  # type: ignore[method-assign]
 
 
 def _alias_return(mcp: MCPServer) -> None:
