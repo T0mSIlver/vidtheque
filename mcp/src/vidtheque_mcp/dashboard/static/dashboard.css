@@ -1458,12 +1458,18 @@ button[disabled]:hover { color: var(--fg3); border-color: var(--seam); }
 
 /* ------------------------------------------------------------------ frames */
 
-/* A contact sheet is meant to be scanned in bulk, so the cells are 9rem and a
-   page of the strip is 24 frames. */
-.strip {
+/* One grid for every keyframe on the page (Tom, 2026-08-10, round 4, item 2).
+   It replaces `.strip` (a 9rem contact sheet of every frame) and `.ocrgrid` (a
+   20rem grid of the frames with text), which by then drew the same frame twice
+   at two sizes. The cell is the size a detection box needs to be pointed at
+   rather than the size a thumbnail wants to be scanned at — this grid is read,
+   not swept — and `align-items: start` so a card holding thirty OCR lines
+   grows without stretching the three empty ones in its row. */
+.frames {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
-  gap: var(--s4) var(--s3);
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: var(--s6) var(--s4);
+  align-items: start;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1482,8 +1488,11 @@ button[disabled]:hover { color: var(--fg3); border-color: var(--seam); }
 .framecard:target .at { color: var(--gold-hi); }
 
 /* The box, not the image, owns the geometry: a keyframe file that has gone
-   missing leaves black where it was, and nothing below it moves. */
+   missing leaves black where it was, and nothing below it moves.
+   `position: relative` arrived with the merge — the detection boxes are drawn
+   inside this button now, where `.ocrstage` used to hold them. */
 .framebtn {
+  position: relative;
   display: block;
   width: 100%;
   /* `height: auto` is load-bearing and was missing (found 2026-08-10, second
@@ -1541,37 +1550,16 @@ button[disabled]:hover { color: var(--fg3); border-color: var(--seam); }
 
 /* --------------------------------------------------------------------- ocr */
 
-/* The Lime Rule, and this panel is the whole of it on this surface: `--seen`
-   marks what the machine read off the screen — the detection box, the line it
-   points at, and the legend that names them. It is not a second accent and it
-   appears on no other dashboard page. */
+/* The Lime Rule, and the frames grid is the whole of it on this surface:
+   `--seen` marks what the machine read off the screen — the detection box, the
+   line it points at, and the legend that names them. It is not a second accent
+   and it appears on no other dashboard page.
 
-.ocrgrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
-  gap: var(--s6);
-  /* Each card owns its own height: a grid row is as tall as its tallest cell,
-     so an expanded card grows rather than stretching three empty ones with it. */
-  align-items: start;
-}
-
-.ocrframe { margin: 0; min-width: 0; }
-
-/* The boxes are the point of this panel: they are the difference between "OCR
-   ran" and "here is what it read, and where". */
-.ocrstage {
-  position: relative;
-  aspect-ratio: 16 / 9;
-  overflow: hidden;
-  line-height: 0;
-  background: var(--black);
-  box-shadow: inset 0 0 0 1px var(--edge-in);
-}
-
-.ocrstage img { width: 100%; height: 100%; object-fit: cover; }
-/* The still in this panel is a `.framebtn` too (2026-08-10): the same frame,
-   the same overlay, the same one click handler as the strip. */
-button.ocrstage { border: 0; padding: 0; cursor: zoom-in; }
+   `.ocrgrid`, `.ocrframe` and `.ocrstage` went with the merge (round 4, item
+   2). There is no second grid, no second card and no second still: the boxes
+   are drawn inside `.framebtn`, which was already a fixed-aspect clipping box
+   on `--black` behind a 1px inset hairline — which is exactly what
+   `.ocrstage` was. */
 
 .ocrbox {
   position: absolute;
@@ -1582,7 +1570,7 @@ button.ocrstage { border: 0; padding: 0; cursor: zoom-in; }
    is a few millimetres of screen, and a pointer aimed at one would only be
    stealing the click that opens the frame. The full-size interaction is the
    overlay's. */
-.ocrstage .ocrbox { pointer-events: none; }
+.framebtn .ocrbox { pointer-events: none; }
 
 /* Every line the machine read, in one continuous list, in a box that scrolls
    (Tom, 2026-08-10). The `+ N more` digest that used to bound this is gone, and
@@ -1641,16 +1629,16 @@ button.ocrstage { border: 0; padding: 0; cursor: zoom-in; }
    pointed at. Gold, because that is exactly "the moment you are pointing at" —
    and an outline rather than a fill, like the hovered table row.
 
-   On the *box*, not on the image inside it: both boxes are `overflow: hidden`
-   with the image filling them exactly, so an offset outline on the image was
-   clipped by the box it sat in and painted nothing at all. See the note beside
-   `.framecard.is-linked` — it was the same bug in three places. */
-.framecard.is-selected .framebtn,
-.ocrframe.is-selected .ocrstage {
+   On the *box*, not on the image inside it: the box is `overflow: hidden` with
+   the image filling it exactly, so an offset outline on the image was clipped
+   by the box it sat in and painted nothing at all. See the note beside
+   `.framecard.is-linked` — it was the same bug in three places. One selector
+   now, not two, because one card is the whole of a frame. */
+.framecard.is-selected .framebtn {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-.framecard.is-selected .at, .ocrframe.is-selected .at { color: var(--gold-hi); }
+.framecard.is-selected .at { color: var(--gold-hi); }
 
 .ocrtext { flex: 1 1 auto; min-width: 0; font-size: var(--t-machine); overflow-wrap: anywhere; }
 
@@ -2438,8 +2426,9 @@ footer p { margin: 0; max-width: var(--note); }
   .field-actions { margin-left: 0; flex-basis: 100%; }
   .field-actions button { flex: 1 1 auto; }
 
-  .strip { grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); }
-  .ocrgrid { grid-template-columns: 1fr; }
+  /* One column on a hand: a card whose still carries detection boxes and whose
+     lines are a scrollbox does not halve. */
+  .frames { grid-template-columns: 1fr; }
 
   .shot { width: 96vw; max-width: 96vw; }
 }

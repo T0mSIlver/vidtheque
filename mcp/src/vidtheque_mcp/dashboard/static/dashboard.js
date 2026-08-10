@@ -34,14 +34,19 @@ function safeUrl(value) {
   }
 }
 
-/** The OCR boxes this frame has, read from the page's own OCR panel.
+/** The OCR boxes this frame has, read from the frame's own card.
  *
  *  The server already rendered them there, normalised 0–1, so the lightbox
- *  needs no second request and the page needs no JSON blob in a script tag. */
+ *  needs no second request and the page needs no JSON blob in a script tag.
+ *
+ *  `[data-ocrframe]` rather than `#ocr-<id>` since the merge (round 4, item 2):
+ *  there is one card per frame now and it carries both identities, so this
+ *  looks the card up by the id it already had rather than by a second element
+ *  that no longer exists. */
 function boxesFor(frameId) {
-  const panel = document.getElementById("ocr-" + frameId);
-  if (!panel) return [];
-  return Array.from(panel.querySelectorAll(".ocrline")).flatMap((line, index) => {
+  const card = document.querySelector(`[data-ocrframe="${CSS.escape(frameId)}"]`);
+  if (!card) return [];
+  return Array.from(card.querySelectorAll(".ocrline")).flatMap((line, index) => {
     const parts = (line.dataset.box || "").split(",").map(Number);
     if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return [];
     const [x0, y0, x1, y1] = parts;
@@ -262,13 +267,10 @@ function selectFrame(ord) {
   card.classList.add("is-selected");
   card.scrollIntoView({ block: "center", behavior: "smooth" });
 
-  // Its OCR figure, if the frame carries on-screen text: the two panels are one
-  // moment seen twice, and a selection that marked only half of it would send
-  // the reader hunting for the other.
+  // One card is the whole of a frame since the merge (round 4, item 2), so
+  // there is no second element to mark: the still, its detection boxes, its
+  // lines and the evidence mark are one object.
   const button = card.querySelector(".framebtn");
-  const frameId = button && button.dataset.frame;
-  const figure = frameId && document.getElementById("ocr-" + frameId);
-  if (figure) figure.classList.add("is-selected");
   if (button) button.focus({ preventScroll: true });
 
   // Same address the navigating path would have produced, minus the reload.

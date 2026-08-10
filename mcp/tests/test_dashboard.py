@@ -608,7 +608,9 @@ def test_a_shot_bar_off_the_current_strip_page_still_lands_on_evidence(
     )
     card = re.search(r'<li class="framecard([^"]*)" id="frame-1"', landing)
     assert card and "is-selected" in card.group(1)
-    assert re.search(r'<figure class="ocrframe is-selected" id="ocr-\w+-00001"', landing)
+    # The card is the frame's still, its detection boxes and its lines, so
+    # marking it marks the evidence whole (round 4, item 2 merged the two).
+    assert 'data-ocrframe="kCc8FmEb1nY-00001"' in _figure(landing, "kCc8FmEb1nY-00001")
 
     # A page nobody selected on marks nothing: `select` has no default, because
     # `0` is a real ordinal and a page that arrives with a keyframe already
@@ -2709,9 +2711,18 @@ def _dense_corpus(tmp_path: Path) -> Path:
 
 
 def _figure(body: str, frame_id: str) -> str:
-    """The one `<figure>` of the OCR grid that belongs to this frame."""
-    start = body.index(f'id="ocr-{frame_id}"')
-    return body[start : body.index("</figure>", start)]
+    """The one card in the frames grid that belongs to this frame.
+
+    Since the merge (round 4, item 2) that is a `<li class="framecard">` and
+    not a `<figure>`: one card is the whole of a frame, and it is found by the
+    `data-ocrframe` it has always carried.
+    """
+    start = body.index(f'data-ocrframe="{frame_id}"')
+    start = body.rindex('<li class="framecard', 0, start)
+    # To the next card, or to the end of the grid: a card's own `</li>` cannot
+    # be found by searching, because the OCR lines inside it are `<li>`s too.
+    after = body.find('<li class="framecard', start + 1)
+    return body[start : after if after != -1 else body.index("</ul>", start)]
 
 
 def test_a_dense_slide_prints_every_line_in_one_scrolling_list(
@@ -2767,21 +2778,31 @@ def test_every_ocr_line_and_its_box_are_paired_by_index(tmp_path: Path) -> None:
     assert ".ocrbox.is-lit" in css and ".ocrline.is-lit" in css
 
 
-def test_the_ocr_frames_open_in_the_same_overlay_as_the_strip(tmp_path: Path) -> None:
-    """§5.3 + Tom, 2026-08-10: a frame in this panel is the same frame.
+def test_a_frame_is_one_card_that_opens_the_one_overlay(tmp_path: Path) -> None:
+    """§5.3 + Tom, 2026-08-10, and the merge that finished the argument.
 
-    It carries the strip's own `data-*`, so the one delegated click handler in
-    `dashboard.js` serves both panels — a second opener would be a second place
-    for the lightbox contract to drift.
+    A frame used to be drawn twice — once in the strip and once in the OCR
+    grid — and the second pass made both open the same overlay. Round 4 merged
+    them: there is one card, it carries the still, the detection boxes, the
+    lines and every `data-*` the lightbox reads, and one delegated click
+    handler serves it. A second opener would be a second place for the lightbox
+    contract to drift; a second *card* was a second place for everything else.
     """
     with make_client(tmp_path) as client:
         body = page(client, f"{ROOT}/videos/kCc8FmEb1nY")
-    figure = _figure(body, "kCc8FmEb1nY-00000")
-    assert 'class="framebtn ocrstage"' in figure
+    card = _figure(body, "kCc8FmEb1nY-00000")
+    assert 'class="framebtn"' in card
     for attribute in ("data-large=", "data-frame=", "data-caption=", "data-link="):
-        assert attribute in figure, attribute
+        assert attribute in card, attribute
     # Still the 512px variant from the fixed width set, never base64.
-    assert re.search(r'src="/frames/[\w.-]+\.jpg\?w=512', figure)
+    assert re.search(r'src="/frames/[\w.-]+\.jpg\?w=512', card)
+
+    # One card per frame on the page, and no trace of the second grid.
+    assert body.count('class="framecard') == body.count("data-ocrframe=")
+    for gone in ("ocrgrid", "ocrstage", "ocrframe ", 'id="ocr-', 'id="ocr"'):
+        assert gone not in body, f"{gone} survived the merge"
+    # The card is still the shot bar's anchor and the evidence mark's target.
+    assert 'id="frame-0"' in card and "data-shot=" in card
 
 
 def test_the_event_log_shows_the_newest_and_counts_the_older(tmp_path: Path) -> None:
@@ -3210,9 +3231,8 @@ def test_the_gold_evidence_mark_is_not_clipped_by_the_frame_it_marks() -> None:
         rule = _rule(css, selector)
         assert "outline: 2px solid var(--accent)" in rule, selector
     # …and nothing puts one back on an image inside a clipping box.
-    assert not re.search(r"^\.(framecard|ocrframe)[^{}]*img[^{}]*\{[^}]*outline:", css, re.M)
-    for box in (".framebtn", ".ocrstage"):
-        assert "overflow: hidden" in _rule(css, box), f"{box} still clips"
+    assert not re.search(r"^\.framecard[^{}]*img[^{}]*\{[^}]*outline:", css, re.M)
+    assert "overflow: hidden" in _rule(css, ".framebtn"), ".framebtn still clips"
 
 
 def test_the_overview_masthead_carries_the_state_and_the_clock_only(

@@ -260,42 +260,92 @@
      docs/design/dashboard.md §5.3 on 2026-08-10. #}
 </section>
 
+{# ONE frames view (Tom, 2026-08-10, round 4, item 2). This panel used to be
+   two — a 192px contact sheet of every keyframe, then a 512px grid of the ones
+   that carried text — and by the end of round 3 they were the same frame drawn
+   twice: clicking either opened the same overlay, and the overlay is where the
+   OCR lines became selectable, which left the grid's copy of the text printed
+   under a still for nobody to do anything with.
+
+   The merge is one grid of every keyframe on this page, at the size the
+   detection boxes need. A frame that carries on-screen text draws its boxes
+   over the still and lists its lines in the same scrollbox as before; a frame
+   that carries none is the same card without that list, with its `ocr_state`
+   pill saying which kind of nothing it is. One card is now the whole of a
+   frame: the shot bar's anchor (`#frame-N`), the evidence mark's target, the
+   lightbox's opener and the box↔line pairing's scope — so `dashboard.js` no
+   longer has to keep two elements in step.
+
+   **Reversible on purpose.** This landed as one commit and nothing but this;
+   the exact revert command is in its message. #}
 <section class="panel" aria-labelledby="frames-title" id="frames">
-  <h2 class="panel-title" id="frames-title">Keyframes</h2>
+  <h2 class="panel-title" id="frames-title">Frames, and what the machine read</h2>
   {% if frames %}
-  <ul class="strip">
+  <ul class="frames">
     {% for frame in frames %}
     {# `is-selected` is server-rendered when `?select=` names this frame — the
        same mark `dashboard.js` paints when the frame was already on the page,
        so a shot bar puts its keyframe into evidence whether the click could be
-       intercepted or had to navigate, and whether or not the script ran. #}
+       intercepted or had to navigate, and whether or not the script ran.
+       `data-ocrframe` is on the card rather than on a second element, because
+       there is no second element any more. #}
     <li class="framecard{{ ' is-dup' if frame.dup_of_ord is not none }}{{ ' is-selected' if frame.ord == selected_ord }}" id="frame-{{ frame.ord }}"
-        data-shot="{{ frame.shot_id }}">
-      {# Pixel size and byte weight moved off the card and into the lightbox's
-         caption. dashboard.md §5.3 asks a card for `t_s`, `ord`, `sharpness`,
-         `ocr_state` and whether it is a duplicate; the other two were three
-         lines of 12px chrome under a 108px picture, and they belong where you
-         are actually looking at the file. #}
+        data-shot="{{ frame.shot_id }}" data-ocrframe="{{ frame.frame_id }}">
+      {# Pixel size and byte weight are the lightbox caption's, not the card's.
+         dashboard.md §5.3 asks a card for `t_s`, `ord`, `sharpness`,
+         `ocr_state` and whether it is a duplicate; the other two belong where
+         you are actually looking at the file.
+
+         The boxes are `pointer-events: none` at this size on purpose: a
+         detection box on a 512px still is a few millimetres of screen, and a
+         pointer aimed at one would only be stealing the click that opens the
+         frame. The full-size two-way interaction is the overlay's. #}
       <button type="button" class="framebtn" data-large="{{ frame.large }}"
               data-frame="{{ frame.frame_id }}"
               data-caption="{{ frame.frame_id }} · {{ frame.t_s | clock }} · {{ frame.width }}×{{ frame.height }} · {{ frame.jpeg_bytes | bytes_human }}"
               data-link="https://youtu.be/{{ video.video_id }}?t={{ frame.t_s | int }}">
-        <img src="{{ frame.thumb }}" alt="Keyframe {{ frame.ord }} at {{ frame.t_s | clock }}"
-             width="192" height="108" loading="lazy" decoding="async">
+        <img src="{{ frame.detail }}" alt="Keyframe {{ frame.ord }} at {{ frame.t_s | clock }}"
+             width="512" height="288" loading="lazy" decoding="async">
+        {% for line in frame.lines %}
+        <span class="ocrbox" aria-hidden="true" data-line="{{ loop.index0 }}"
+              style="left:{{ (line.box[0] * 100) | round(3) }}%;top:{{ (line.box[1] * 100) | round(3) }}%;width:{{ ((line.box[2] - line.box[0]) * 100) | round(3) }}%;height:{{ ((line.box[3] - line.box[1]) * 100) | round(3) }}%"></span>
+        {% endfor %}
       </button>
       <p class="framemeta">
         <span class="at">{{ frame.t_s | clock }}</span>
         <span class="muted">#{{ frame.ord }}</span>
         <span class="pill pill-small tone-{{ frame.ocr_state | tone }}">{{ frame.ocr_state }}</span>
+        {%- if frame.lines %}<span class="muted">{{ frame.lines | length }} line(s)</span>{% endif %}
       </p>
       <p class="framemeta muted">
         shot {{ frame.shot_id }}<span class="sep">·</span>
         {%- if frame.dup_of_ord is not none %}<span class="dupnote">duplicate of #{{ frame.dup_of_ord }}</span>
         {%- else %}sharpness {{ "%.1f" | format(frame.sharpness) }}{% endif %}
       </p>
+      {# Every line the machine read, in one continuous scrollbox, on the card
+         that holds the frame it was read off. The digest that used to bound
+         this is long gone and so is the split it created; what went with the
+         merge is only the *duplicate* still that used to sit above it. #}
+      {% if frame.lines %}
+      <ol class="ocrlines" data-ocrlines>
+        {% for line in frame.lines %}{{ ocr_line(line, loop.index0) }}{% endfor %}
+      </ol>
+      {% endif %}
     </li>
     {% endfor %}
   </ul>
+  {# The box provenance (normalised 0–1 at write time) and the searchable-unit
+     rule are docs/design/dashboard.md §5.3. #}
+  {# The one thing a per-frame count cannot say: the *page's* line budget ran
+     out, so some card below is listing fewer lines than its frame holds
+     (§5.3's double cap). #}
+  {% if ocr_lines_capped %}
+  <p class="panel-note">
+    The page's on-screen-text budget of <span class="mono">{{ ocr_line_cap }}</span>
+    lines is spent, so the last cards in this grid list fewer lines than they
+    hold. Narrow the page with <code>?frames=</code> to read them.
+  </p>
+  {% endif %}
   {% if frame_offset or frames_more %}
   <nav class="pager" aria-label="Keyframe pages">
     {% if frame_offset %}
@@ -308,74 +358,10 @@
   {% endif %}
   {% else %}
   <div class="empty">
-    <p class="empty-lead">No keyframes on this page of the strip.</p>
+    <p class="empty-lead">No keyframes on this page.</p>
     <p class="empty-note">
       The <code>keyframes</code> figure above says how many exist in total.
-    </p>
-  </div>
-  {% endif %}
-</section>
-
-<section class="panel" aria-labelledby="ocr-title" id="ocr">
-  <h2 class="panel-title" id="ocr-title">On-screen text, and where it was</h2>
-  {% set read_frames = frames | selectattr("lines") | list %}
-  {% if read_frames %}
-  <div class="ocrgrid">
-    {% for frame in read_frames %}
-    <figure class="ocrframe{{ ' is-selected' if frame.ord == selected_ord }}" id="ocr-{{ frame.frame_id }}" data-ocrframe="{{ frame.frame_id }}">
-      {# The still is a button now (Tom, 2026-08-10): a frame in this panel
-         opens in the same overlay a keyframe in the strip does, because it is
-         the same frame and a reader who wants to *read* the slide has to be
-         able to. It carries the strip's own `data-*`, so the one click handler
-         in `dashboard.js` serves both panels and neither knows about the
-         other. The boxes are `pointer-events: none` here on purpose: at 512px
-         a detection box is a few millimetres of screen, and the full-size box
-         interaction is what the overlay is for. #}
-      <button type="button" class="framebtn ocrstage" data-large="{{ frame.large }}"
-              data-frame="{{ frame.frame_id }}"
-              data-caption="{{ frame.frame_id }} · {{ frame.t_s | clock }} · {{ frame.width }}×{{ frame.height }} · {{ frame.jpeg_bytes | bytes_human }}"
-              data-link="https://youtu.be/{{ video.video_id }}?t={{ frame.t_s | int }}">
-        <img src="{{ frame.detail }}" alt="Keyframe {{ frame.ord }} at {{ frame.t_s | clock }}"
-             width="512" height="288" loading="lazy" decoding="async">
-        {% for line in frame.lines %}
-        <span class="ocrbox" aria-hidden="true" data-line="{{ loop.index0 }}"
-              style="left:{{ (line.box[0] * 100) | round(3) }}%;top:{{ (line.box[1] * 100) | round(3) }}%;width:{{ ((line.box[2] - line.box[0]) * 100) | round(3) }}%;height:{{ ((line.box[3] - line.box[1]) * 100) | round(3) }}%"></span>
-        {% endfor %}
-      </button>
-      {# One continuous list of every line the machine read, in a scrollbox
-         (Tom, 2026-08-10). The digest that used to bound this — eight lines,
-         then a `+ N more` expander — is gone, and so is the split it created:
-         two `<ol>`s meant the box↔line highlight could only be wired for the
-         first eight, and an opened expander then had lines that pointed at
-         nothing. A fixed-height scroller holds all of them, the numbering is
-         one sequence, and every line links to its box. #}
-      <figcaption>
-        <p class="framemeta"><span class="at">{{ frame.t_s | clock }}</span> <span class="muted">#{{ frame.ord }} · {{ frame.lines | length }} line(s)</span></p>
-        <ol class="ocrlines" data-ocrlines>
-          {% for line in frame.lines %}{{ ocr_line(line, loop.index0) }}{% endfor %}
-        </ol>
-      </figcaption>
-    </figure>
-    {% endfor %}
-  </div>
-  {# The box provenance (normalised 0–1 at write time) and the searchable-unit
-     rule moved to docs/design/dashboard.md §5.3 on 2026-08-10. #}
-  {# The one thing the per-frame count cannot say: the *page's* line budget ran
-     out, so some frame below is showing fewer lines than it has. A digest whose
-     remainder is honest has to say when the list it is counting was already
-     short (§5.3's double cap). #}
-  {% if ocr_lines_capped %}
-  <p class="panel-note">
-    The page's on-screen-text budget of <span class="mono">{{ ocr_line_cap }}</span>
-    lines is spent, so the last frames in this grid list fewer lines than they
-    hold. Narrow the strip with <code>?frames=</code> to read them.
-  </p>
-  {% endif %}
-  {% else %}
-  <div class="empty">
-    <p class="empty-lead">None of the frames on this page carry on-screen text.</p>
-    <p class="empty-note">
-      <code>skipped</code> in the strip means deduplicated and never read;
+      <code>skipped</code> on a card means deduplicated and never read;
       <code>empty</code> means read and blank.
     </p>
   </div>
