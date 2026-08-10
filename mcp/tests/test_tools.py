@@ -469,6 +469,33 @@ async def test_segment_context_returns_the_words(assembled: Assembled) -> None:
     assert structured(result)["frame_ids"] == ["kCc8FmEb1nY-00000"]
 
 
+async def test_segment_context_stamps_every_line_with_its_own_deep_link(
+    assembled: Assembled,
+) -> None:
+    """terra eval §4.4: 24 stamped lines, one link, two claims cited 27 s apart.
+
+    Every transcript and on-screen line carries the compact §3.6 `?t=` (start
+    minus the lead), and `structuredContent.cues[]` carries the whole URL.
+    """
+    result = await segment.run(assembled.deps, video_id="kCc8FmEb1nY", t=6, window=45)
+    text = body(result)
+    assert "TRANSCRIPT (cite one line: https://youtu.be/kCc8FmEb1nY + the ?t=" in text
+    # cue starts 0, 3, 6, 9, 12 → clamped floor minus the 2 s lead
+    assert "[0:00 ?t=0]" in text
+    assert "[0:03 ?t=1]" in text
+    assert "[0:12 ?t=10]" in text
+    # …and the on-screen keyframe at 5.0 s, which had no link at all before.
+    assert "[0:05 ?t=3] kCc8FmEb1nY-00000" in text
+    stamped = [line for line in text.splitlines() if line.startswith("[")]
+    assert len(stamped) >= 5
+    assert all("?t=" in line for line in stamped)
+    cues = structured(result)["cues"]
+    assert {c["link"] for c in cues} == {
+        f"https://youtu.be/kCc8FmEb1nY?t={max(0, int(c['start']) - 2)}" for c in cues
+    }
+    assert len({c["link"] for c in cues}) == len(cues)  # one link per moment
+
+
 async def test_segment_context_double_cap_names_the_binding_one(assembled: Assembled) -> None:
     tight = await segment.run(
         assembled.deps, video_id="kCc8FmEb1nY", t=6, window=300, max_text_chars=200

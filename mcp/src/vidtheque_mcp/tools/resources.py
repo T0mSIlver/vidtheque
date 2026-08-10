@@ -129,6 +129,11 @@ you asked for.
   `?t=` is the matched moment minus a lead, so the player has seeked by the time
   the words begin. The two-second disagreement with the payload's own numbers is
   the lead, not a bug.
+- `video-summary` and `get-segment-context` print the compact form: a bare
+  `?t=<seconds>` beside each chapter, key text, transcript line and on-screen
+  line. The citation for THAT line is the video's `https://youtu.be/<id>` plus
+  THAT `?t=`. Never reuse the window header's link for a line further down the
+  window — that is how a quote ends up 27 s off the words you quoted.
 - A `search` transcript result is a *segment*: `start`–`end` is the passage,
   `match at` (`match_start`) is the moment inside it that matched, and that is
   what the link points at. Quote from around `match_start`, not from the top of

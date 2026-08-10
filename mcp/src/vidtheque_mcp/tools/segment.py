@@ -16,7 +16,7 @@ from mcp_types import CallToolResult
 
 from ..db import queries
 from ..errors import bad_param, unknown_video
-from ..text import clamp, clamp_text_chars, clock, deeplink, middle_truncate
+from ..text import clamp, clamp_text_chars, clock, deeplink, deeplink_t, middle_truncate
 from ..timeparse import parse_offset
 from .base import Deps, handle_errors, text_result
 
@@ -87,6 +87,7 @@ async def run(
         else []
     )
 
+    lead = deps.settings.deeplink_lead_s
     lines = [f"{video_id} · {row['title']} — {row['channel_name']}"]
     if chapter is not None:
         lines.append(
@@ -96,13 +97,20 @@ async def run(
     lo, hi = max(0.0, centre - window), centre + window
     lines.append(
         f"Window: {clock(lo)}-{clock(hi)} (t={int(centre)} ±{int(window)}s) · "
-        f"{deeplink(video_id, centre, deps.settings.deeplink_lead_s)}"
+        f"{deeplink(video_id, centre, lead)}"
     )
     if clamped:
         lines.append(f"note: t was past the end of the video and was clamped to {int(centre)}s.")
 
     lines.append("")
-    lines.append("TRANSCRIPT")
+    # Twenty to forty stamped lines under exactly one link is what made a
+    # consumer cite two different minutes of the same talk with the same
+    # `?t=982` — 27 s wrong on the second, in a product whose third pillar is
+    # "the link that lands on the second" (terra eval §4.4). Every line now
+    # carries its own `?t=`, in the compact §3.6 form: the whole URL on 40 lines
+    # would cost a third of the transcript budget, the seven-character suffix
+    # costs ~2%, and the base URL is on the line above.
+    lines.append(f"TRANSCRIPT (cite one line: https://youtu.be/{video_id} + the ?t= printed on it)")
     used = 0
     printed = 0
     binding = "window"
@@ -112,7 +120,9 @@ async def run(
             binding = "max_text_chars"
             break
         speaker = f" {cue['speaker']}:" if cue["speaker"] else ""
-        lines.append(f"[{clock(cue['start_s'])}]{speaker} {text}")
+        lines.append(
+            f"[{clock(cue['start_s'])} ?t={deeplink_t(cue['start_s'], lead)}]{speaker} {text}"
+        )
         used += len(text)
         printed += 1
     if transcript:
@@ -146,7 +156,8 @@ async def run(
                 break
             ocr_used += len(text)
             lines.append(
-                f"[{clock(frame['t_s'])}] {video_id}-{int(frame['ord']):05d}  "
+                f"[{clock(frame['t_s'])} ?t={deeplink_t(frame['t_s'], lead)}] "
+                f"{video_id}-{int(frame['ord']):05d}  "
                 f"{middle_truncate(text, per_frame)}"
             )
 
@@ -179,6 +190,8 @@ async def run(
                 "end": float(c["end_s"]),
                 "text": str(c["text"]),
                 "speaker": c["speaker"],
+                # One key, and a conformant client never composes a URL at all.
+                "link": deeplink(video_id, c["start_s"], lead),
             }
             for c in transcript[:printed]
         ],

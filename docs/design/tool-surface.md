@@ -1267,23 +1267,23 @@ kCc8FmEb1nY · Let's build GPT: from scratch — Andrej Karpathy
 Chapter: "kv cache and inference-time cost" (1:11:32-1:19:04)
 Window: 1:11:36-1:13:06 (t=4321 ±45s) · https://youtu.be/kCc8FmEb1nY?t=4276
 
-TRANSCRIPT
-[1:11:36] and now if you think about what happens at generation time, you have a
-[1:11:41] prompt, and then you sample one token, and then you feed the whole thing
-[1:11:47] back in. so you are recomputing all of the keys and values for every
-[1:11:52] token you already processed, every single step.
-[1:12:03] so the reason we cache the keys and the values is that at every new token
-[1:12:09] you would otherwise recompute attention over the entire prefix, which is
-[1:12:15] quadratic. the cache makes it linear in the number of new tokens, and the
-[1:12:22] price you pay is memory.
+TRANSCRIPT (cite one line: https://youtu.be/kCc8FmEb1nY + the ?t= printed on it)
+[1:11:36 ?t=4294] and now if you think about what happens at generation time, you have a
+[1:11:41 ?t=4299] prompt, and then you sample one token, and then you feed the whole thing
+[1:11:47 ?t=4305] back in. so you are recomputing all of the keys and values for every
+[1:11:52 ?t=4310] token you already processed, every single step.
+[1:12:03 ?t=4321] so the reason we cache the keys and the values is that at every new token
+[1:12:09 ?t=4327] you would otherwise recompute attention over the entire prefix, which is
+[1:12:15 ?t=4333] quadratic. the cache makes it linear in the number of new tokens, and the
+[1:12:22 ?t=4340] price you pay is memory.
 …
-[1:13:01] which is why long-context inference is a memory-bandwidth problem.
+[1:13:01 ?t=4379] which is why long-context inference is a memory-bandwidth problem.
 (cues 1836-1861 · 1,910 chars, under the 4000 budget)
 
 ON-SCREEN TEXT (3 keyframes)
-[1:11:58] kCc8FmEb1nY-00701  cache = {} ; for k,v in layers: cache[k].append(v)   [code]
-[1:12:26] kCc8FmEb1nY-00703  KV cache: O(n) memory, O(1) recompute per token      [slide]
-[1:12:54] kCc8FmEb1nY-00705  (terminal) nvidia-smi — 18,304MiB / 24,564MiB        [terminal]
+[1:11:58 ?t=4316] kCc8FmEb1nY-00701  cache = {} ; for k,v in layers: cache[k].append(v)   [code]
+[1:12:26 ?t=4344] kCc8FmEb1nY-00703  KV cache: O(n) memory, O(1) recompute per token      [slide]
+[1:12:54 ?t=4372] kCc8FmEb1nY-00705  (terminal) nvidia-smi — 18,304MiB / 24,564MiB        [terminal]
 
 FRAMES: kCc8FmEb1nY-00701, kCc8FmEb1nY-00703, kCc8FmEb1nY-00705
   → get-frames frame_ids=["kCc8FmEb1nY-00703"] to see the slide
@@ -1291,12 +1291,27 @@ FRAMES: kCc8FmEb1nY-00701, kCc8FmEb1nY-00703, kCc8FmEb1nY-00705
 next: if the line you want runs past this window, call again with a larger window= (up to 300) rather than guessing a new t; or search q="memory bandwidth" video_id="kCc8FmEb1nY" to find where else he says this.
 ```
 
+**Every printed line is citable on its own** (amended 2026-08-10). This tool
+prints 20–40 timestamped lines, and it used to print exactly one `youtu.be`
+link: the header's, for the window anchor. A consumer quoting two moments of one
+window has no link for the second and is forbidden (by `vidtheque://guide`) to
+invent one, so it did the only remaining thing — reused the header link for
+both, and shipped a citation 27 s off the words beside it (terra eval §4.4).
+Each transcript and on-screen line therefore carries the compact §3.6 form
+inside its stamp, `[1:12:03 ?t=4321]`, and the `TRANSCRIPT` header names the
+base URL to append it to. The whole URL on 40 lines would spend roughly a third
+of the transcript budget on repetition of one string; the suffix costs ~2%.
+Conformant clients do not compose anything: `structuredContent.cues[]` now
+carries `link` beside `cue_id`/`start`/`end`/`text`.
+
 **Token discipline.** Double-capped: `window` seconds **and** `max_text_chars`,
 whichever binds first, with the binding one named in the payload. OCR capped at
 8 frames / 1200 chars, frame refs at 12 ids — all independent of `window`, so
 `window=300` does not multiply the image-adjacent cost (screenpipe caps the
 analogous `frame-context` at 50 nodes / 2000 chars for the same reason). Never
-returns image content.
+returns image content. The per-line `?t=` is counted against neither cap: it is
+~9 characters of link, not of text, and a budget that shrank the quote to pay
+for its own citation would be the wrong trade.
 
 **Errors:** `E_UNKNOWN_VIDEO`, `E_NOT_INDEXED`, `E_INDEXING`, `E_BAD_PARAM`
 (`cue_id` belonging to a different video names the right video).
@@ -2022,6 +2037,11 @@ you asked for.
   `?t=` is the matched moment minus a lead, so the player has seeked by the time
   the words begin. The two-second disagreement with the payload's own numbers is
   the lead, not a bug.
+- `video-summary` and `get-segment-context` print the compact form: a bare
+  `?t=<seconds>` beside each chapter, key text, transcript line and on-screen
+  line. The citation for THAT line is the video's `https://youtu.be/<id>` plus
+  THAT `?t=`. Never reuse the window header's link for a line further down the
+  window — that is how a quote ends up 27 s off the words you quoted.
 - A `search` transcript result is a *segment*: `start`–`end` is the passage,
   `match at` (`match_start`) is the moment inside it that matched, and that is
   what the link points at. Quote from around `match_start`, not from the top of
