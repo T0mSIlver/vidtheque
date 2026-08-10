@@ -1,97 +1,218 @@
 ---
-name: vidtheque dashboard
-description: The cutting room — a warm-paper operator surface where mono means the machine said it and sans means a human wrote it.
+name: vidtheque
+description: The projection room — a dark, gold-on-black surface where mono means the machine said it, lime means the machine read it off the screen, and nothing moves unless the machine is working.
+scheme: dark-only
 colors:
-  bg: "#fbfaf9"
-  fg: "#1b1a19"
-  muted: "#6b6764"
-  line: "#e3dfdb"
-  accent: "#b45309"
-  raised: "#ffffff"
-  panel: "#f1f0ef"
-  row-hover: "#f9f9f8"
-  rule: "#cfceca"
-  mark: "#8d8d86"
-  accent-bg: "#fff7c2"
-  accent-line: "#e9c162"
-  accent-solid: "#ffc53d"
-  tone-ok: "#2a7e3b"
-  tone-ok-bg: "#f5fbf5"
-  tone-ok-line: "#b2ddb5"
-  tone-warn: "#8a5a00"
-  tone-warn-bg: "#fefbe9"
-  tone-warn-line: "#f3d673"
-  tone-bad: "#ce2c31"
-  tone-bad-bg: "#fff7f7"
-  tone-bad-line: "#fdbdbe"
-  tone-work: "#0d74ce"
-  tone-work-bg: "#f4faff"
-  tone-work-line: "#acd8fc"
-  tone-wait: "#63635e"
-  tone-wait-bg: "#f9f9f8"
-  tone-wait-line: "#dad9d6"
+  # ── the ground, deepest first. Names are v5's own, so CSS ports without translation.
+  pitch: "#040405"
+  void: "#08080a"
+  console: "#0a0a0e"
+  plate: "#0e0e12"
+  plate2: "#141419"
+  plate3: "#1a1a20"
+  seam: "#242429"
+  seam2: "#33333b"
+  black: "#000000"
+  over: "rgba(8,8,11,.92)"
+  seam-over: "rgba(255,255,255,.07)"
+  edge-in: "rgba(255,255,255,.06)"
   scrim: "rgb(0 0 0 / 0.66)"
+  # ── the ink
+  fg: "#f3f0ea"
+  fg2: "#9d968c"
+  fg3: "#6b665e"
+  fg-max: "#ffffff"
+  fg-over: "#c9c2b6"
+  # ── the one accent: gold
+  gold: "#e7b455"
+  gold-hi: "#f6cd78"
+  gold-ink: "#120c02"
+  gold-6: "rgba(231,180,85,.06)"
+  gold-12: "rgba(231,180,85,.12)"
+  gold-24: "rgba(231,180,85,.24)"
+  gold-44: "rgba(231,180,85,.44)"
+  # ── the seen channel: reserved, semantic, never decoration (The Lime Rule)
+  seen: "#c9f938"
+  seen-ink: "#0a1400"
+  seen-10: "rgba(201,249,56,.10)"
+  seen-24: "rgba(201,249,56,.24)"
+  seen-48: "rgba(201,249,56,.48)"
+  # ── the state tones. Ink is a hex; ground and border are mixed from it.
+  tone-ok: "#71d083"
+  tone-ok-bg: "color-mix(in srgb, {colors.tone-ok} 10%, {colors.plate})"
+  tone-ok-line: "color-mix(in srgb, {colors.tone-ok} 26%, {colors.plate})"
+  tone-warn: "#ffa057"
+  tone-warn-bg: "color-mix(in srgb, {colors.tone-warn} 10%, {colors.plate})"
+  tone-warn-line: "color-mix(in srgb, {colors.tone-warn} 26%, {colors.plate})"
+  tone-bad: "#ff9592"
+  tone-bad-bg: "color-mix(in srgb, {colors.tone-bad} 10%, {colors.plate})"
+  tone-bad-line: "color-mix(in srgb, {colors.tone-bad} 26%, {colors.plate})"
+  tone-work: "#70b8ff"
+  tone-work-bg: "color-mix(in srgb, {colors.tone-work} 10%, {colors.plate})"
+  tone-work-line: "color-mix(in srgb, {colors.tone-work} 26%, {colors.plate})"
+  tone-wait: "{colors.fg2}"
+  tone-wait-bg: "color-mix(in srgb, {colors.fg2} 10%, {colors.plate})"
+  tone-wait-line: "color-mix(in srgb, {colors.fg2} 26%, {colors.plate})"
+  tone-neutral: "{colors.tone-wait}"
+  tone-neutral-bg: "{colors.tone-wait-bg}"
+  tone-neutral-line: "{colors.tone-wait-line}"
+  # ── the six pinned role names. Aliases only: an alias never carries its own value.
+  bg: "{colors.pitch}"
+  muted: "{colors.fg2}"
+  line: "{colors.seam}"
+  accent: "{colors.gold}"
+  raised: "{colors.plate}"
+  panel: "{colors.plate2}"
+  rule: "{colors.seam2}"
+  mark: "{colors.fg3}"
+film:
+  rest: "brightness(.52) saturate(.72) contrast(1.05)"
+  dim: "brightness(.13) saturate(.2)"
+  lit: "brightness(1.34) saturate(1.04) contrast(1.02)"
+  band: "saturate(.78) brightness(.7)"
+  full: "none"
 typography:
   brand:
-    fontFamily: "Instrument Serif, Georgia, Times New Roman, serif"
-    fontSize: "1.25rem"
-    fontWeight: 400
-    lineHeight: 1.2
-    letterSpacing: "-0.01em"
+    fontFamily: "Archivo VF, system-ui, -apple-system, sans-serif"
+    fontSize: "16.5px"
+    fontWeight: 500
+    lineHeight: 1.1
+    letterSpacing: "-0.035em"
+  brand-lg:
+    fontFamily: "{typography.brand.fontFamily}"
+    fontSize: "clamp(2.2rem, 4.4vw, 4rem)"
+    fontWeight: 250
+    lineHeight: 0.9
+    letterSpacing: "-0.045em"
   display:
-    fontFamily: "Inter Variable, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif"
-    fontSize: "1.875rem"
-    fontWeight: 590
-    lineHeight: 1.2
-    letterSpacing: "-0.02em"
+    fontFamily: "{typography.brand.fontFamily}"
+    fontSize: "clamp(2.7rem, 5.6vw, 5.6rem)"
+    fontWeight: 200
+    lineHeight: 0.96
+    letterSpacing: "-0.04em"
   headline:
-    fontFamily: "{typography.display.fontFamily}"
-    fontSize: "1.25rem"
-    fontWeight: 590
-    lineHeight: 1.2
-    letterSpacing: "-0.01em"
-  title:
-    fontFamily: "{typography.display.fontFamily}"
-    fontSize: "0.9375rem"
-    fontWeight: 590
-    lineHeight: 1.35
-    letterSpacing: "-0.01em"
+    fontFamily: "{typography.brand.fontFamily}"
+    fontSize: "clamp(1.9rem, 3.5vw, 3.35rem)"
+    fontWeight: 210
+    lineHeight: 1.0
+    letterSpacing: "-0.034em"
+  question:
+    fontFamily: "{typography.brand.fontFamily}"
+    fontSize: "clamp(1.05rem, 1.6vw, 1.5rem)"
+    fontWeight: 250
+    lineHeight: 1.26
+    letterSpacing: "-0.028em"
+  quote:
+    fontFamily: "{typography.brand.fontFamily}"
+    fontSize: "clamp(1rem, 1.24vw, 1.24rem)"
+    fontWeight: 330
+    lineHeight: 1.36
+    letterSpacing: "-0.022em"
+  lede:
+    fontFamily: "{typography.brand.fontFamily}"
+    fontSize: "clamp(0.98rem, 1.12vw, 1.1rem)"
+    fontWeight: 340
+    lineHeight: 1.62
+    letterSpacing: "-0.004em"
   body:
-    fontFamily: "{typography.display.fontFamily}"
-    fontSize: "0.875rem"
-    fontWeight: 400
-    lineHeight: 1.5
-    letterSpacing: "normal"
+    fontFamily: "{typography.brand.fontFamily}"
+    fontSize: "16px"
+    fontWeight: 340
+    lineHeight: 1.55
+    letterSpacing: "-0.004em"
+  prose:
+    fontFamily: "{typography.brand.fontFamily}"
+    fontSize: "15.5px"
+    fontWeight: 340
+    lineHeight: 1.68
+    letterSpacing: "-0.004em"
+  action:
+    fontFamily: "{typography.brand.fontFamily}"
+    fontSize: "15px"
+    fontWeight: 600
+    lineHeight: 1.1
+    letterSpacing: "-0.012em"
   cell:
-    fontFamily: "{typography.display.fontFamily}"
-    fontSize: "0.8125rem"
-    fontWeight: 400
+    fontFamily: "{typography.brand.fontFamily}"
+    fontSize: "14px"
+    fontWeight: 340
     lineHeight: 1.4
-    letterSpacing: "normal"
-  label:
-    fontFamily: "{typography.display.fontFamily}"
-    fontSize: "0.6875rem"
-    fontWeight: 510
+    letterSpacing: "-0.012em"
+  cell-strong:
+    fontFamily: "{typography.brand.fontFamily}"
+    fontSize: "14px"
+    fontWeight: 520
     lineHeight: 1.4
-    letterSpacing: "0.07em"
+    letterSpacing: "-0.02em"
   machine:
-    fontFamily: "JetBrains Mono Variable, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
-    fontSize: "0.78125rem"
+    fontFamily: "JetBrains Mono VF, ui-monospace, SFMono-Regular, monospace"
+    fontSize: "13px"
     fontWeight: 400
     lineHeight: 1.4
+    letterSpacing: "-0.01em"
+    fontFeature: "tabular-nums; ligatures none"
+  query:
+    fontFamily: "{typography.machine.fontFamily}"
+    fontSize: "13.5px"
+    fontWeight: 400
+    lineHeight: 1.2
     letterSpacing: "normal"
-    fontFeature: "tabular-nums; ligatures off"
+    fontFeature: "ligatures none"
+  log:
+    fontFamily: "{typography.machine.fontFamily}"
+    fontSize: "12.5px"
+    fontWeight: 400
+    lineHeight: 1.85
+    letterSpacing: "normal"
+    fontFeature: "tabular-nums; ligatures none"
+  machine-sm:
+    fontFamily: "{typography.machine.fontFamily}"
+    fontSize: "11px"
+    fontWeight: 400
+    lineHeight: 1.55
+    letterSpacing: "0.005em"
+    fontFeature: "tabular-nums; ligatures none"
+  label:
+    fontFamily: "{typography.machine.fontFamily}"
+    fontSize: "10px"
+    fontWeight: 600
+    lineHeight: 1.4
+    letterSpacing: "0.19em"
+    textTransform: "uppercase"
+    fontFeature: "ligatures none"
+  label-sm:
+    fontFamily: "{typography.machine.fontFamily}"
+    fontSize: "9.5px"
+    fontWeight: 600
+    lineHeight: 1.4
+    letterSpacing: "0.17em"
+    textTransform: "uppercase"
+    fontFeature: "ligatures none"
+  tag:
+    fontFamily: "{typography.machine.fontFamily}"
+    fontSize: "8.5px"
+    fontWeight: 700
+    lineHeight: 1.1
+    letterSpacing: "0.14em"
+    textTransform: "uppercase"
+    fontFeature: "ligatures none"
   figure:
     fontFamily: "{typography.machine.fontFamily}"
-    fontSize: "1.875rem"
-    fontWeight: 510
-    lineHeight: 1.2
-    letterSpacing: "-0.02em"
-    fontFeature: "tabular-nums; ligatures off"
+    fontSize: "clamp(1.6rem, 2.5vw, 2.5rem)"
+    fontWeight: 300
+    lineHeight: 1.0
+    letterSpacing: "-0.045em"
+    fontFeature: "tabular-nums; ligatures none"
+weights:
+  display: 200
+  display-2: 250
+  body: 340
+  strong: 500
+  action: 600
+  mono-label: 600
+  mono-tag: 700
 rounded:
-  sm: "3px"
-  md: "5px"
-  lg: "8px"
+  none: "0"
 spacing:
   s1: "0.25rem"
   s2: "0.5rem"
@@ -102,964 +223,869 @@ spacing:
   s8: "2rem"
   s10: "2.5rem"
   s12: "3rem"
+layout:
+  maxw: "1460px"
+  gut: "clamp(20px, 4.2vw, 72px)"
+  beat: "clamp(64px, 7.4vw, 124px)"
+  gap-block: "clamp(34px, 4vw, 58px)"
+  gap-head: "clamp(22px, 2.4vw, 34px)"
+  gap-copy: "clamp(16px, 1.9vw, 26px)"
+  prose: "70ch"
+  lede: "60ch"
+  quote: "58ch"
+  note: "74ch"
+  bp-stack: "1120px"
+  bp-hand: "780px"
+elevation:
+  drop: "0 40px 90px -24px rgba(0,0,0,.94)"
+  drop-sm: "0 22px 50px -18px rgba(0,0,0,.9)"
+  edge: "inset 0 0 0 1px {colors.edge-in}"
+  edge-hit: "inset 0 0 0 2px {colors.gold}"
+motion:
+  ease-lift: "cubic-bezier(.22,.72,.2,1)"
+  ease-acquire: "cubic-bezier(.16,1,.3,1)"
+  t-fast: "0.16s"
+  t-state: "0.25s"
+  t-film: "0.5s"
+  t-veil: "0.55s"
+  t-lift: "0.82s"
+  t-acquire: "0.45s"
+  blink: "1.05s steps(1,end) infinite"
+  drift-gate: "150s ease-in-out infinite alternate"
+  drift-band: "900s linear infinite"
 components:
+  wordmark:
+    textColor: "{colors.fg}"
+    typography: "{typography.brand}"
+    accentGlyph: "{colors.gold}"
+  wordmark-lg:
+    textColor: "{colors.fg}"
+    typography: "{typography.brand-lg}"
+    accentGlyph: "{colors.gold}"
+  kicker:
+    textColor: "{colors.gold}"
+    typography: "{typography.label}"
+    rule: "34px x 1px {colors.gold}, 12px gap"
+  micro-label:
+    textColor: "{colors.fg2}"
+    typography: "{typography.label}"
   button-primary:
-    backgroundColor: "{colors.fg}"
-    textColor: "{colors.bg}"
-    rounded: "{rounded.sm}"
-    padding: "0.25rem 0.75rem"
-    typography: "{typography.cell}"
+    backgroundColor: "{colors.gold}"
+    textColor: "{colors.gold-ink}"
+    borderColor: "{colors.gold}"
+    rounded: "{rounded.none}"
+    padding: "14px 20px 14px 22px"
+    typography: "{typography.action}"
   button-primary-hover:
-    backgroundColor: "{colors.accent}"
-    textColor: "{colors.bg}"
+    backgroundColor: "{colors.gold-hi}"
   button-ghost:
     backgroundColor: "transparent"
-    textColor: "{colors.fg}"
-    rounded: "{rounded.sm}"
-    padding: "0.25rem 0.75rem"
-  button-ghost-hover:
-    textColor: "{colors.accent}"
-  input-text:
-    backgroundColor: "{colors.raised}"
-    textColor: "{colors.fg}"
-    rounded: "{rounded.sm}"
-    padding: "0.25rem 0.5rem"
-    typography: "{typography.cell}"
-  pill:
-    backgroundColor: "{colors.tone-neutral-bg}"
-    textColor: "{colors.tone-wait}"
-    rounded: "{rounded.sm}"
-    padding: "1px 0.5rem"
+    textColor: "{colors.fg2}"
+    borderColor: "{colors.seam2}"
+    rounded: "{rounded.none}"
+    padding: "0 12px"
+    height: "2.125rem"
     typography: "{typography.label}"
+  button-ghost-hover:
+    textColor: "{colors.gold}"
+    borderColor: "{colors.gold-44}"
   chip:
     backgroundColor: "transparent"
-    textColor: "{colors.muted}"
-    rounded: "{rounded.sm}"
-    padding: "2px 0.5rem"
+    textColor: "{colors.fg3}"
+    borderColor: "{colors.seam}"
+    rounded: "{rounded.none}"
+    padding: "0 12px"
+    height: "2.75rem"
+    typography: "{typography.label-sm}"
   chip-hover:
-    backgroundColor: "{colors.row-hover}"
     textColor: "{colors.fg}"
+  chip-on:
+    backgroundColor: "{colors.gold-12}"
+    textColor: "{colors.gold}"
+  input-text:
+    backgroundColor: "{colors.console}"
+    textColor: "{colors.fg}"
+    borderColor: "{colors.seam2}"
+    rounded: "{rounded.none}"
+    padding: "0 13px"
+    height: "2.75rem"
+    typography: "{typography.query}"
+  input-textarea:
+    backgroundColor: "{colors.console}"
+    textColor: "{colors.fg}"
+    borderColor: "{colors.seam2}"
+    rounded: "{rounded.none}"
+    padding: "0.75rem"
+    minHeight: "8.5rem"
+    typography: "{typography.machine}"
+  query-bar:
+    backgroundColor: "{colors.over}"
+    borderColor: "{colors.seam2}"
+    height: "52px"
+    shadow: "{elevation.drop-sm}"
+    typography: "{typography.query}"
+  query-caret:
+    backgroundColor: "{colors.gold}"
+    width: "8px"
+    height: "17px"
+    animation: "{motion.blink}"
+  status-cell:
+    backgroundColor: "{colors.console}"
+    textColor: "{colors.fg3}"
+    borderColor: "{colors.seam}"
+    padding: "0 14px"
+    typography: "{typography.tag}"
+  status-cell-active:
+    backgroundColor: "{colors.gold}"
+    textColor: "{colors.gold-ink}"
+  panel:
+    backgroundColor: "{colors.plate}"
+    borderColor: "{colors.seam2}"
+    rounded: "{rounded.none}"
+    cornerTick: "12px x 1px + 1px x 12px {colors.gold} at the top-left corner"
+  panel-lifted:
+    backgroundColor: "{colors.plate}"
+    borderColor: "{colors.seam2}"
+    shadow: "{elevation.drop}"
+  panel-head:
+    backgroundColor: "{colors.plate2}"
+    borderColor: "{colors.seam}"
+    padding: "9px 14px"
+    minHeight: "32px"
+    typography: "{typography.label}"
+  panel-foot:
+    backgroundColor: "{colors.plate2}"
+    borderColor: "{colors.seam}"
+    padding: "11px 16px"
+    typography: "{typography.label}"
+  panel-note:
+    textColor: "{colors.gold}"
+    typography: "{typography.machine-sm}"
+    prefix: "note: in {colors.fg3}"
+  frame:
+    backgroundColor: "{colors.black}"
+    aspectRatio: "16/9"
+    rounded: "{rounded.none}"
+    shadow: "{elevation.edge}"
+  det-box:
+    borderColor: "{colors.seen-24}"
+    borderWidth: "1px"
+    rounded: "{rounded.none}"
+  det-box-on:
+    borderColor: "{colors.seen}"
+    borderWidth: "1.5px"
+  det-tag:
+    backgroundColor: "{colors.seen}"
+    textColor: "{colors.seen-ink}"
+    padding: "2.5px 6px"
+    typography: "{typography.tag}"
+  receipt:
+    backgroundColor: "{colors.gold-6}"
+    textColor: "{colors.gold}"
+    borderColor: "{colors.gold}"
+    rounded: "{rounded.none}"
+    padding: "9px 0 9px 11px"
+    typography: "{typography.machine}"
+    fontWeight: 600
+  receipt-action:
+    backgroundColor: "{colors.gold}"
+    textColor: "{colors.gold-ink}"
+    padding: "9px 11px"
+    fontWeight: 700
+  receipt-hover:
+    backgroundColor: "{colors.gold-12}"
+  quote-block:
+    textColor: "{colors.fg}"
+    borderLeft: "1px solid {colors.gold}"
+    padding: "0 0 0 14px"
+    typography: "{typography.quote}"
+    maxWidth: "{layout.quote}"
+  ledger:
+    backgroundColor: "{colors.plate}"
+    borderColor: "{colors.seam2}"
+    dividerColor: "{colors.seam}"
+    padding: "20px 22px 22px"
+  ledger-label:
+    textColor: "{colors.fg2}"
+    typography: "{typography.label-sm}"
+  ledger-figure:
+    textColor: "{colors.fg}"
+    typography: "{typography.figure}"
+    unitColor: "{colors.gold}"
+  log:
+    backgroundColor: "{colors.console}"
+    textColor: "{colors.fg2}"
+    borderColor: "{colors.seam2}"
+    padding: "clamp(22px,2.4vw,36px) clamp(18px,2.4vw,36px)"
+    typography: "{typography.log}"
+  log-call:
+    textColor: "{colors.fg}"
+    keyColor: "{colors.gold}"
+    argColor: "{colors.fg2}"
+    typography: "{typography.log}"
+  wall-tile:
+    backgroundColor: "{colors.black}"
+    filter: "{film.band}"
+    shadow: "{elevation.edge}"
+  wall-tile-slug:
+    backgroundColor: "rgba(3,5,8,.72)"
+    textColor: "{colors.fg2}"
+    padding: "2.5px 5px 3px"
+    typography: "{typography.tag}"
+  wall-tile-hit:
+    filter: "{film.lit}"
+    shadow: "{elevation.edge-hit}"
+  pill:
+    backgroundColor: "{colors.tone-neutral-bg}"
+    textColor: "{colors.tone-neutral}"
+    borderColor: "{colors.tone-neutral-line}"
+    rounded: "{rounded.none}"
+    padding: "1px 0.5rem"
+    typography: "{typography.label-sm}"
   table-head:
-    backgroundColor: "{colors.panel}"
-    textColor: "{colors.muted}"
+    backgroundColor: "{colors.plate2}"
+    textColor: "{colors.fg2}"
+    borderColor: "{colors.seam2}"
     typography: "{typography.label}"
     padding: "0.5rem"
-  table-row:
-    backgroundColor: "{colors.bg}"
+  table-head-sorted:
     textColor: "{colors.fg}"
+    borderColor: "{colors.gold}"
+  table-row:
+    backgroundColor: "transparent"
+    textColor: "{colors.fg}"
+    borderColor: "{colors.seam}"
     typography: "{typography.cell}"
     padding: "0.5rem"
     height: "2.125rem"
   table-row-hover:
-    backgroundColor: "{colors.row-hover}"
+    backgroundColor: "{colors.plate}"
+    shadow: "inset 1px 0 0 {colors.gold}"
   nav-rail:
-    backgroundColor: "{colors.panel}"
+    backgroundColor: "{colors.void}"
+    borderColor: "{colors.seam}"
     width: "15rem"
-  wordmark:
-    textColor: "{colors.fg}"
-    typography: "{typography.brand}"
-  brandmark:
-    backgroundColor: "{colors.accent}"
-    textColor: "{colors.bg}"
-    rounded: "{rounded.lg}"
   nav-group:
-    textColor: "{colors.muted}"
+    textColor: "{colors.fg3}"
     typography: "{typography.label}"
     padding: "0.75rem 1rem 0.25rem"
   nav-link:
     backgroundColor: "transparent"
-    textColor: "{colors.muted}"
+    textColor: "{colors.fg2}"
     typography: "{typography.cell}"
     padding: "0.5rem 1rem"
     height: "2.125rem"
   nav-link-hover:
-    backgroundColor: "{colors.row-hover}"
+    backgroundColor: "{colors.plate}"
     textColor: "{colors.fg}"
   nav-link-active:
-    backgroundColor: "{colors.bg}"
-    textColor: "{colors.accent}"
-  ledger-figure:
-    backgroundColor: "{colors.bg}"
-    textColor: "{colors.fg}"
-    typography: "{typography.figure}"
-    padding: "1rem"
+    backgroundColor: "{colors.pitch}"
+    textColor: "{colors.gold}"
+    shadow: "inset 2px 0 0 {colors.gold}"
+  field-help:
+    textColor: "{colors.fg2}"
+    typography: "{typography.machine-sm}"
   empty-lead:
     textColor: "{colors.fg}"
-    typography: "{typography.cell}"
+    typography: "{typography.cell-strong}"
   empty-note:
-    textColor: "{colors.muted}"
+    textColor: "{colors.fg2}"
     typography: "{typography.cell}"
-  table-head-sorted:
-    backgroundColor: "{colors.panel}"
-    textColor: "{colors.fg}"
-    borderColor: "{colors.accent}"
-    typography: "{typography.label}"
-  live-badge:
-    textColor: "{colors.tone-work}"
-    typography: "{typography.label}"
-  countdown:
-    backgroundColor: "{colors.tone-warn-bg}"
-    textColor: "{colors.tone-warn}"
-    rounded: "{rounded.sm}"
-    padding: "0.25rem 0.5rem"
-    typography: "{typography.machine}"
-  input-textarea:
-    backgroundColor: "{colors.raised}"
-    textColor: "{colors.fg}"
-    rounded: "{rounded.sm}"
-    padding: "0.5rem"
-    typography: "{typography.machine}"
-    minHeight: "8.5rem"
-  checkbox-row:
+  next-affordance:
     backgroundColor: "transparent"
-    textColor: "{colors.fg}"
-    borderColor: "{colors.line}"
-    padding: "0.5rem 0"
-    typography: "{typography.cell}"
-  checkbox-row-note:
-    textColor: "{colors.muted}"
-    typography: "{typography.body}"
-  field-help:
-    textColor: "{colors.muted}"
-    typography: "{typography.cell}"
-  row-action:
-    backgroundColor: "transparent"
-    textColor: "{colors.fg}"
-    rounded: "{rounded.sm}"
-    padding: "0 0.5rem"
-    height: "1.5rem"
+    textColor: "{colors.gold}"
+    borderColor: "{colors.gold-44}"
+    borderStyle: "1px dashed, offset -4px"
     typography: "{typography.label}"
-  field-range:
-    backgroundColor: "transparent"
-    borderColor: "transparent"
-    padding: "0"
-    typography: "{typography.label}"
-  field-range-input:
-    backgroundColor: "{colors.raised}"
-    textColor: "{colors.fg}"
-    rounded: "{rounded.sm}"
-    padding: "0 0.25rem 0 0.5rem"
-    width: "8.5rem"
-    typography: "{typography.cell}"
-  field-range-separator:
-    textColor: "{colors.mark}"
-  text-tone:
-    textColor: "{colors.tone-warn}"
-    typography: "{typography.body}"
-  scrub-preview:
-    backgroundColor: "{colors.raised}"
-    borderColor: "{colors.line}"
-    rounded: "{rounded.sm}"
-    padding: "{spacing.s1}"
-    width: "12rem"
-  scrub-preview-span:
-    textColor: "{colors.fg}"
-    typography: "{typography.machine}"
-  scrub-preview-meta:
-    textColor: "{colors.muted}"
-    fontFamily: "{typography.machine.fontFamily}"
-    fontSize: "0.6875rem"
-  digest-more:
-    backgroundColor: "transparent"
-    textColor: "{colors.muted}"
-    borderColor: "{colors.line}"
-    padding: "0.0625rem 0"
-    typography: "{typography.body}"
-  digest-count:
-    textColor: "{colors.fg}"
-    fontFamily: "{typography.machine.fontFamily}"
-    fontSize: "0.75rem"
-  panel-title-subject:
-    textColor: "{colors.fg}"
-    typography: "{typography.cell}"
+  next-affordance-hover:
+    backgroundColor: "{colors.gold-6}"
+  focus-ring:
+    outline: "2px solid {colors.gold}"
+    outlineOffset: "2px"
+  selection:
+    backgroundColor: "{colors.gold}"
+    textColor: "{colors.gold-ink}"
 ---
 
-# Design System: vidtheque dashboard
+# Design System: vidtheque — the projection room
 
-Normative for `/dashboard` (impeccable mode **Operate**). The public demo at `/`
-(mode **Persuade**) shares only the six pinned colours, the type faces and the
-mono-means-machine rule; everything else here is dashboard-only.
+Normative for every **product** web surface: the landing page, the public demo
+at `/`, and the dashboard at `/dashboard`. One world, three densities.
 
-This file does **not** override `docs/design/dashboard.md` or
-`docs/design/demo-site.md` on function, data, clamps or copy. It owns how the
-surface looks, and nothing else.
+This file does **not** override `docs/design/demo-site.md` or
+`docs/design/dashboard.md` on function, data, clamps or copy, and it does not
+override `docs/design/positioning.md` on voice. It owns how the surfaces look,
+and nothing else.
+
+**Reference implementation:** `mcp/src/vidtheque_mcp/public/static/lab/versions/v5.html`
+("projection room"). Tom picked it on 2026-08-10 as the product's visual
+identity. Every token below was read out of v5 as shipped; where a value is an
+extension rather than a readout it says so in the prose. When this file and v5
+disagree, **this file wins** — v5 is a lab piece and may drift; but say why in
+the amending commit, because v5 is the thing Tom actually approved.
 
 **The amendment rule.** The frontmatter tokens above are normative. Any agent
 may **use** any token and may **add** a `components:` entry for a component it
 is the first to build. No agent may introduce a raw colour, a font size outside
-the ladder, or a spacing value off the 4px grid. If a page genuinely needs a new
+the ladder, a font weight off the weight ladder, a non-zero border radius, or a
+layout spacing value off the 4px grid. If a page genuinely needs a new
 primitive, the agent edits this file **in the same commit** as the CSS and says
 why — the same discipline `CLAUDE.md` already requires when an implementation
 diverges from a design contract.
 
-Values live in `mcp/src/vidtheque_mcp/dashboard/static/dashboard.css`. Write
-`var(--token)`, never a hex. The frontmatter carries the **light** value; the
-dark scheme redefines the six pinned properties and `--tone-warn` under
-`@media (prefers-color-scheme: dark)` and every other token follows through the
-Radix scale it points at.
+Write `var(--token)`, never a hex. The system is **dark only**: there is one
+scheme, `color-scheme: dark` is declared, and there is no light palette, no
+`prefers-color-scheme` block and no toggle. A projection room does not have a
+day mode.
+
+**What happened to the warm-paper system.** Removed, 2026-08-10, on Tom's
+order. The previous contract — Radix `sand`/`amber` on paper `#fbfaf9`, Inter +
+Instrument Serif, 3/5/8px radii, light and dark as peers — is replaced in full
+by the palette, faces and rules below. Git history keeps it (`git show
+HEAD~1:DESIGN.md`); nothing here is a deprecated appendix, because a dead
+palette left in the contract is a palette somebody uses. Three ideas survived
+the change and are re-stated below in their new clothes: the Two-Channel Rule,
+the Word-and-Colour Rule and the One Signal Rule.
 
 ## Overview
 
-**Creative North Star: "The cutting room"**
+**Creative North Star: "the projection room."**
 
-The world is derived from what this product actually handles: timecode, shot
-boundaries, contact sheets, and the log a lab keeps of what it processed. It is
-warm paper under a single tungsten-amber signal — not the achromatic console
-every developer tool ships, and not a movie poster either. "Cutting room" is a
-derivation, never a decoration: it shows up as the mono/sans truth split, the
-ruled ledger band, the shot timeline and the contact-sheet gutters. It must
-never show up as film sprockets, clapperboard icons or faux-CRT.
+The room is dark because the corpus is footage and the only lit things in a
+projection room are the ones being looked at. The page ground is near-black,
+the frames are the light, and one gold accent marks the moment you are pointing
+at — the receipt, the CTA, the found frame. A second hue exists and is spent on
+exactly one meaning: lime is what the machine **read off the screen**.
 
-The surface is dense because the operator is scanning sixty rows at 03:00 over
-an SSH tunnel, and quiet because everything on it is either a fact from the
-index or a state the index is in. There are no cards, no shadows and no charts.
-Separation is done with hairlines and whitespace; emphasis is done with weight,
-size and one accent. The page is a document that happens to contain tables, and
-it should read like a lab's processing log — because that is what it is.
+The derivation is the product's own machinery — the gate, the light table, the
+wall of watched frames, the booth log — and it shows up as behaviour, not as
+decoration: the wall drifts because the projector is running, the query types
+itself because the agent is querying, the frame lifts off the wall onto the
+table because that is what "found it" looks like. It must never show up as film
+sprockets, clapperboards, faux-CRT, scan lines or a glow.
 
-The single most important decision is not a colour. It is that the surface has
-**two typographic channels**, and which channel a string is in tells you where
-it came from.
+**Key characteristics:**
 
-**Key Characteristics:**
-- Three faces, one meaning each: Inter for human text, JetBrains Mono for
-  machine text, Instrument Serif for the product's own name and nothing else.
-- Warm paper and one burnt amber, on vendored 12-step Radix `sand` and `amber`.
-- Hairlines, never cards. No shadow anywhere except the lightbox backdrop.
+- Two faces, one meaning each: Archivo for human text, JetBrains Mono for
+  machine text. No third face — the wordmark is the sans, not a serif.
+- Gold on black, one accent; lime reserved for on-screen-text evidence.
+- **Zero radius everywhere.** `*{border-radius:0}` is in the reset.
+- Hairlines and plates, not cards. A shadow means *lifted off the wall*.
 - Every state is a word as well as a colour.
-- 4px grid, 34px table rows, 13px cells, tabular numerals everywhere a number appears.
-- Both schemes are peers; the dark scheme is not an afterthought.
+- Movement only where the machine is working; everything freezes under
+  `prefers-reduced-motion`.
 - Zero layout shift: every image has explicit dimensions or a fixed-aspect box.
 
 ## Colors
 
-Warm neutrals from Radix `sand` with one burnt-amber signal and four state hues,
-all vendored as plain custom properties — the values are copied in, the package
-is not a dependency.
+### The ground
 
-### Primary
+Six plates and two seams, deepest first. They are a depth scale, not a set of
+options: a thing sits one plate above what contains it, and no further.
 
-- **Burnt Amber** (`--accent`, #b45309 light / #f0a55a dark): the one signal.
-  Links, the focus ring, timecodes, the gap counts you are meant to click, the
-  active nav item, the shot bars, the OCR box outlines, the meter fill. It is
-  pinned: `test_dashboard.py::test_the_dashboard_palette_matches_the_demos`
-  asserts it equal to the demo page's.
-- **Lamp Amber** (`--accent-solid`, #ffc53d): the solid fill of the same signal,
-  for a mark that must be seen rather than read. Radix `amber-9`.
-- **Amber Wash / Amber Edge** (`--accent-bg` #fff7c2, `--accent-line` #e9c162):
-  the ground and border a selected or active thing sits on.
+- **Pitch** (`--pitch` #040405) — the page ground.
+- **Void** (`--void` #08080a) — a section band and the footer; the one step off
+  the page ground that separates a beat without a rule.
+- **Console** (`--console` #0a0a0e) — the ground of a log, a terminal, a query
+  field: a surface the machine writes into.
+- **Plate** (`--plate` #0e0e12) — a real box's ground (a panel, the ledger, a
+  copy box).
+- **Plate 2** (`--plate2` #141419) — the head or foot band *inside* a box.
+- **Plate 3** (`--plate3` #1a1a20) — the topmost plate; swatches and inert
+  fills. Nothing sits above it.
+- **Seam** (`--seam` #242429) — the hairline. Every rule and border that
+  separates without announcing.
+- **Seam 2** (`--seam2` #33333b) — the edge of a real box, one step louder.
+- **Black** (`--black` #000) — the ground *behind a frame*. Image boxes only, so
+  a still that has not decoded yet leaves black rather than a coloured plate.
 
-### Neutral
+Three values exist for chrome that floats over imagery, where a plate would
+read as a hole: `--over` (a control's ground), `--seam-over` (a rule), and
+`--edge-in` (the 1px inset hairline that keeps an image from bleeding into the
+page). `--scrim` is the modal `::backdrop` and is deliberately a literal black
+alpha — a scrim has to darken whatever is behind it.
 
-- **Paper** (`--bg`, #fbfaf9 light / #131313 dark): the page ground. Pinned.
-- **Ink** (`--fg`, #1b1a19 light / #e9e6e3 dark): body text. Pinned.
-- **Pencil** (`--muted`, #6b6764 light / #97918c dark): row meta, notes, column
-  labels, the footer. Pinned. Measured 5.37:1 on paper, 4.92:1 on panel.
-- **Hairline** (`--line`, #e3dfdb light / #2b2927 dark): every rule and border
-  that separates without announcing. Pinned.
-- **Card Stock** (`--raised`, #ffffff light / #1a1a19 dark): inputs, the
-  lightbox. Pinned.
-- **Bench** (`--panel`, Radix `sand-3`): the second ground — sticky table heads,
-  the filter bar, and (layout v2) the nav rail. What separates a dense grid, or
-  the chassis, from the page it sits on.
-- **Pointed-At** (`--row-hover`, Radix `sand-2`): the ground of the row under
-  the pointer. Deliberately lighter than the bench.
-- **Score** (`--rule`, Radix `sand-7`): the one rule heavier than a hairline —
-  the top of the ledger band and the underline of a sticky head.
-- **Graphite** (`--mark`, Radix `sand-9`): non-text marks only. Hatching on a
-  deduplicated shot, the `·` separators. **Never type.** It measures 3.20:1 on
-  the page ground — and **2.93:1 on `--panel`**, under the 3:1 floor, which is
-  why the rail foot lists one fact per line instead of separating them with
-  dots. A `·` is only allowed on `--bg`.
-- **Scrim** (`scrim`): the lightbox `::backdrop` only. Deliberately a literal
-  black alpha rather than a scheme token — a modal scrim has to darken whatever
-  is behind it, in both schemes, and a token that flips with the scheme would
-  brighten the page it is meant to suppress.
+### The ink
 
-### Tertiary — the state hues
+- **Fg** (`--fg` #f3f0ea) — body text. 18.02:1 on `--pitch`, 16.94:1 on `--plate`.
+- **Fg2** (`--fg2` / `--muted` #9d968c) — secondary prose, ledes, notes, labels
+  that carry a fact. 7.00:1 on `--pitch`, 6.58:1 on `--plate`.
+- **Fg3** (`--fg3` / `--mark` #6b665e) — **3.60:1 on `--pitch`, 3.38:1 on
+  `--plate`.** Over the 3:1 non-text floor, under the 4.5:1 text floor. It is
+  therefore *atmosphere*: the landing may set decorative micro-labels and
+  non-load-bearing captions in it, and **no label that is the only carrier of a
+  fact may use it on any surface**. On the demo and the dashboard, label ink is
+  `--fg2`. This is the one measured exception in the system; if you find you
+  need a second, measure it and write it here.
+- **Fg-max** (`--fg-max` #fff) — the display headline only. Pure white is the
+  top of the ladder and it is spent on one element per page.
+- **Fg-over** (`--fg-over` #c9c2b6) — body set over imagery, with the text
+  shadow the hero uses. Not for use on a plate.
+
+### Gold — the one accent
+
+**Gold** (`--gold` #e7b455, 10.79:1 on `--pitch`, 10.14:1 on `--plate`) means
+exactly one thing: *this is the moment you are pointing at*. The receipt slab,
+the CTA, the focus ring, the found tile's outline, one word of the H1, the
+active nav item, the timecode worth clicking, the ledger's unit. If everything
+is gold, nothing is.
+
+`--gold-hi` (#f6cd78) is the hover step of a gold fill. `--gold-ink` (#120c02,
+10.25:1 on gold) is the text on it — never `--pitch` and never black. The alpha
+ladder (`--gold-6` / `-12` / `-24` / `-44`) is the accent as a *ground*: a wash
+under a receipt, an active chip, a landing pad, a dashed "next" outline.
+
+### Lime — the seen channel
+
+**Seen** (`--seen` #c9f938, 15.68:1 on `--plate`) with `--seen-ink` (#0a1400,
+15.36:1 on it) and the alpha ladder `--seen-10` / `-24` / `-48`.
+
+### The state tones
 
 Five tones, each with three tokens: `--tone-X` is the ink, `--tone-X-bg` its
-ground, `--tone-X-line` its border. Radix steps 11 / 2 / 6.
+ground, `--tone-X-line` its border. Ground and border are **mixed from the ink**
+— `color-mix(in srgb, var(--tone-X) 10%, var(--plate))` and the same at 26% —
+which is the pattern the gold and seen alpha ladders already use, so a tone
+needs one hex and not three.
 
-- **Grass** (`--tone-ok`): done, ready, present, allowed.
-- **Burnt Gold** (`--tone-warn`): deferred, cancel requested, held.
-- **Signal Red** (`--tone-bad`): failed, refused, drifted, degraded.
-- **Instrument Blue** (`--tone-work`): running, indexing, mid-pipeline.
-- **Slate** (`--tone-wait` / `--tone-neutral`): queued, skipped, absent,
-  unrecognised. Both point at Radix `sand-11`.
+- **Grass** (`--tone-ok` #71d083): done, ready, present, allowed. 10.14:1 on
+  `--plate`, 8.67:1 on its own ground.
+- **Orange** (`--tone-warn` #ffa057): deferred, cancel requested, held. 9.56:1 /
+  8.19:1. **This is the one hand-held colour in the system and the one place the
+  palette is extended rather than read out of v5**, which has no state tones:
+  the obvious pick, the vendored dark `amber-11` #ffca16, sits 7° of hue from
+  `--gold` and would read as the accent, which the One Signal Rule forbids.
+- **Signal Red** (`--tone-bad` #ff9592): failed, refused, drifted, degraded.
+  9.14:1 / 7.86:1. The dark `red-11` already vendored in `dashboard.css`.
+- **Instrument Blue** (`--tone-work` #70b8ff): running, indexing, mid-pipeline.
+  9.16:1 / 7.88:1. The dark `blue-11` already vendored.
+- **Fg2** (`--tone-wait` / `--tone-neutral`): queued, skipped, absent,
+  unrecognised. It is `--fg2` itself — a waiting state is the absence of a
+  colour, not a fifth one.
+
+Provenance, so nobody re-derives it: ok / bad / work are the dark Radix steps
+already vendored in `dashboard/static/dashboard.css` (`grass-11`, `red-11`,
+`blue-11`), carried over unchanged because they were measured for a dark ground
+and this ground is darker still. warn is new and hand-held. wait is ours.
+
+### The film filters
+
+The four looks a still can have are tokens, because "how bright is the wall" is
+a system decision and not a per-page one: `--film-rest` (the wall at rest, the
+projector idling), `--film-dim` (the wall while a query is running — everything
+that is not the answer), `--film-lit` (the found frame, lit *past* the scrim,
+not merely back to normal), `--film-band` (a still in an evidence wall you can
+read ids off). Full brightness (`none`) is the hover of a band tile and the
+resting state of a frame on the light table: a frame you are being shown is
+never dimmed.
 
 ### Named Rules
+
+**The Lime Rule** (hard, like the Two-Channel Rule). `--seen` and its alpha
+ladder mark exactly one thing: **evidence the machine read off the screen** —
+an OCR detection box, its tag, an on-screen-text line, the legend swatch that
+names those, and the `seen` label of the on-screen-text channel. It is never a
+second accent, never a highlight, never a hover, never a link, never a chart
+series, never a "success" green, never a decoration, and never the ground of
+anything larger than a detection box. If lime appears on a surface with no
+on-screen-text evidence on it, that is a bug — delete it, do not re-tint it.
+The whole point is that a viewer learns in one screen that lime = *the machine
+read this off the slide*, which is the product's single hardest claim to make
+in a picture. v3 leaked lime onto a rail dot and a video id; v4 fixed it; the
+fix is now the contract.
+
+**The One Signal Rule.** `--accent` (gold) means *this is the moment you are
+pointing at*. See above. Gold and lime never touch the same object: gold is
+what you asked for, lime is what the machine saw.
 
 **The Word-and-Colour Rule.** Every state prints its own word. Colour is
 reinforcement, never the message. A state you can only read by seeing hue is a
 bug, and the four state vocabularies in this product are deliberately not
 unified — no surface may invent a fifth.
 
-**The One Signal Rule.** `--accent` means exactly one thing: *this is the moment
-you are pointing at*. The playhead, the selected shot, the focus ring, the
-active nav item, the number worth clicking. If everything is amber, nothing is.
-
-**The Step-2 Rule.** A tone's subtle ground is its scale's step **2**, not
-step 3. Radix's own contract is that step 11 reads ≥4.5:1 on steps 1 and 2;
-measured against step 3 the work pill lands at 4.25:1.
-
-**The Measured Exception.** `--tone-warn` is the one hand-held colour in the
-system: Radix `amber-11` measures 4.42:1 on this page ground and 4.43:1 on its
-own step 2 — under the floor in both places, in the light scheme only. Light
-keeps the incumbent #8a5a00 (5.69:1); dark stays on the scale. If you find a
-second exception, measure it and write it here.
+**The Plate Rule.** A thing sits exactly one plate above what contains it:
+`--pitch` page → `--plate` box → `--plate2` band inside the box. Three plates
+of nesting is a card in a card and the answer is a hairline.
 
 ## Typography
 
-**Body Font:** Inter Variable (with the platform sans as fallback)
-**Label/Mono Font:** JetBrains Mono Variable (with `ui-monospace` as fallback)
-**Brand Font:** Instrument Serif, 400, for the word `vidtheque` and nothing
-else. Inside the page, hierarchy still comes from weight, size and colour and
-never from a second personality — see **The Wordmark-Only Rule**.
+**Text / display face:** Archivo VF (variable, `wght` 100–900), with
+`system-ui` as fallback.
+**Machine face:** JetBrains Mono VF (variable, `wght` 100–800), with
+`ui-monospace` as fallback.
+**There is no third face.** The serif is gone: the wordmark is set in Archivo
+(see **The Font-Logo Rule**), so `--font-display` no longer exists as a
+distinct family and Instrument Serif is retired from the product surfaces.
 
-All three are vendored, latin subset, SIL OFL 1.1, at `dashboard/static/fonts/`
-with their licence texts and a `PROVENANCE.md`. Only the text face is preloaded.
+Both faces are vendored, latin subset, SIL OFL 1.1 — see **Fonts** below.
 
-**Character:** Inter is the neutral workhorse whose number forms survive a dense
-table. JetBrains Mono is chosen for one measurable property: it draws `0`/`O`
-and `1`/`l`/`I` apart, which stops being cosmetic when the machine strings on
-this surface include YouTube ids like `kCc8FmEb1nY`.
+**Character.** Archivo is a grotesque with a wide weight axis that stays sturdy
+at 200 across a 90px headline, which is what makes the display voice possible
+without a second family. JetBrains Mono is chosen for one measurable property:
+it draws `0`/`O` and `1`/`l`/`I` apart, which stops being cosmetic when the
+machine strings on these surfaces include YouTube ids like `kCc8FmEb1nY`.
 
-### Hierarchy
+### The ladder
 
-- **Display / h1** (590, 30px, 1.2, −0.02em): the page title. One per page. It
-  steps down to **24px** below 40rem (`--t-h1-sm`) and no further: dropping it
-  all the way to the 20px headline size put a phone's largest type 1.8× its
-  smallest and flattened the whole ladder, which the type detector reads as a
-  page with no top and which it is right about.
-- **Headline / h2** (590, 20px, 1.2, −0.01em): a section heading that is not a
-  panel title. Rare.
-- **Title** (590, 15px, 1.35): panel headings that carry a sentence, and notice
-  titles.
-- **Body** (400, 14px, 1.5): prose, list rows, notes. Measure capped at
-  `--prose` (46rem); the scanning grid takes the full content column.
-- **Cell** (400, 13px, 1.4): table cells, minirows, chips, buttons, inputs.
-- **Label** (510, 11px, 1.4, 0.07em, uppercase): panel titles, ledger labels,
-  table heads, field labels, the stacked-cell prefixes on mobile. One idiom, so
-  a column name reads the same whether it is above the column or in front of it.
-- **Machine** (mono 400, 12.5px, 1.4, tabular, ligatures off): ids, model keys,
-  error codes, timecodes, durations, clocks, counts, byte figures.
-- **Figure** (mono 510, 30px, 1.2, −0.02em, tabular): a ledger number.
+Sans, largest first: **display** (200) → **headline** (210) → **question** (250)
+→ **quote** (330) → **lede** (340) → **body** (340, 16px; 15px below
+`--bp-hand`) → **prose** (340, 15.5px) → **action** (600, 15px) →
+**cell** / **cell-strong** (340 / 520, 14px).
 
-Three weights exist and there is no fourth: 400 regular, **510** working, 590
-strong. 510 is the density weight — heavier than body, lighter than a heading —
-and only a variable font can hold it.
+Mono: **query** (13.5px) → **machine** (13px) → **log** (12.5px) →
+**machine-sm** (11px) → **label** (10px, 0.19em, uppercase) → **label-sm**
+(9.5px, 0.17em) → **tag** (8.5px, 0.14em) → **figure** (300, clamp to 2.5rem,
+tabular).
+
+**The weight law.** Five sans rungs and no sixth: **200** display, **250**
+secondary display, **340** body, **500** strong, **600** action. Mono has
+three: **400** text, **600** label, **700** tag. A variable face makes optical
+adjustment free, so a value **within ±20 of a rung** is an optical tweak and
+needs no amendment — that is what v5's 210 on the h2, 330 on the pulled quote
+and 520/560 inside a line are. Anything further from a rung is a new primitive
+and gets written here.
+
+**The size floor.** 8.5px `tag` and 9.5px `label-sm` exist for marks drawn
+**on top of an image** and for a ledger's column name — strings of two or three
+tracked words that the reader is not asked to parse in sequence. Running text
+never goes below `machine-sm` (11px), and on the dashboard the smallest text
+that carries a fact is `label` (10px) in `--fg2`.
 
 ### Named Rules
 
-**The Two-Channel Rule.** Mono means the machine said it; sans means a human
-wrote it. Every timecode, duration, id, `model_key`, `error_code`, count, clock,
-confidence and byte figure is mono and tabular. Every title, channel name,
-description, label and sentence is Inter. The eye learns this in ten seconds and
-then the page reads itself. This is not mono-as-costume-for-technical — it is
-information architecture wearing a typeface, and it is a promotion of the rule
-`demo-site.md` §6.3 already applied to OCR text.
+**The Two-Channel Rule** (unchanged, and it is still the system). Mono means
+the machine said it; sans means a human wrote it. Every timecode, duration, id,
+`model_key`, `error_code`, count, clock, confidence, byte figure, query string
+and tool call is mono and tabular. Every title, channel name, description,
+sentence and label a human wrote is Archivo. The eye learns this in ten seconds
+and then the page reads itself.
 
-**The Wordmark-Only Rule.** (Amended 2026-08-09; it replaces the
-No-Display-Face Rule, which said `/dashboard` gets no serif at all.) The serif
-sets the string `vidtheque` and nothing else, ever. Exactly two selectors may
-name `--font-display` — `.wordmark` in the rail and `.footmark` in the footer —
-and a third is a bug, not a variation. No heading, no notice title, no empty
-state, no figure, no label and no cell may reach for it, because the moment the
-serif touches a data surface it stops being an identity and becomes a costume.
+Note the one thing that changed shape: micro-labels (`label`, `label-sm`,
+`tag`) are **mono**, because a column name, a channel name like `SEEN`, and a
+status word like `SCANNING` are the machine's own vocabulary. Sentence-length
+human text is never uppercased and never tracked.
 
-The reasoning, so the next agent does not relitigate it. Direction A ("the
-archive slip") was rejected *for the surface* and it was right to be: a display
-serif and 48px section gaps are the wrong answer for a table you scan sixty rows
-of, and the research memo says so in §1.3. But the product's own name is not a
-data surface. It is the one string on this page that the index did not produce —
-not a fact, not a state, not a machine string — and setting it in the voice of a
-library's accession record is exactly what the mono/sans split already does for
-everything else: **the typeface says where the string came from.** Machine text
-is mono, human text is sans, and the one thing that is neither is the name of
-the thing itself. Tom authorised the mix on 2026-08-09; this rule is the fence
-around it.
+**The Font-Logo Rule** (replaces the Wordmark-Only Rule, 2026-08-10). The
+wordmark is set in the text face; there is no separate brand family and no
+drawn mark in the lockup. See **The logo** below. Because the identity is now
+carried by the *word*, the old fence — "exactly two selectors may name
+`--font-display`" — is retired with the serif it fenced.
 
-The mark beside it is the favicon's own drawing at rail scale — the same film
-frame, path for path, with its two colours taken from `--accent` and `--bg` so
-it flips with the scheme. This is the one sanctioned exception to *don't reach
-for film sprockets*: that ban is about decoration on data surfaces, and this is
-one 26px mark that appears once per page in the chassis. A second drawn object
-anywhere on this surface needs a new argument.
+**The Dead-Feature Rule.** Do not set `font-feature-settings` for stylistic
+sets you have not opened the file to confirm. `tabular-nums` (`tnum`) is the
+one that matters and both vendored faces carry it. Every mono context sets
+`font-variant-ligatures: none`, because JetBrains Mono ships `calt` and the
+literal characters of an id are the information.
 
-**The Dead-Feature Rule.** Do not set `font-feature-settings: "cv01" 1, "ss03" 1`.
-The vendored Inter subset's GSUB is `calt ccmp dnom frac locl numr pnum tnum` —
-those two features are not in the file and setting them is a silent no-op.
-`tabular-nums` (`tnum`) *is* there and is the one that matters.
+## The logo
 
-## Layout
+The logo is **the word, and nothing else**: `vidtheque` in lower case, in the
+text face, with the full stop in gold. The period is the receipt's full stop —
+the product's whole argument is that an answer ends in a citation, and the mark
+ends in a dot. It is one string, so it is a `<b>` with an `<i>` around the
+period, not an image and not an SVG.
 
-**The app shell** (layout v2, 2026-08-09). A persistent rail on the left and a
-fluid content column taking everything else:
+The two sizes in the system, both read out of v5 as shipped:
 
-```
-.shell   grid: [--rail 15rem] [minmax(0, 1fr)]
-  .rail  sticky, 100dvh, --panel ground, hairline on its right edge
-  .col   the page: main + footer, padded --s6, capped at --wide
-```
+| slot | face | weight | size | tracking | line-height |
+|---|---|---|---|---|---|
+| **rail / masthead** (`.mark b`) | Archivo VF | **500** | **16.5px** (15px below `--bp-hand`) | **−0.035em** | 1.1 |
+| **footer signature** (`.fmark b`) | Archivo VF | **250** | **clamp(2.2rem, 4.4vw, 4rem)** | **−0.045em** | **0.9** |
 
-Phase 1 centred everything on a 74rem `--measure`, which is the demo page's
-chassis: right for a document, wrong for a surface you operate. At 1920 it left
-a third of the screen empty either side of a table that wanted the width, and
-the nav was three links in a masthead you scrolled away from. So `--measure` is
-gone. What replaced it:
+The period is `--gold`, `font-style: normal` on the `<i>`, and it inherits
+everything else. The lockup is `display:flex; align-items:baseline; gap:12px` —
+the gap is for what sits *beside* the word (a corpus count, a state), never for
+a drawing.
 
-- **The rail is `position: sticky`, not `fixed`** — sticky stays in flow, so the
-  grid track reserves its width and the content needs no matching margin. It is
-  exactly `100dvh` tall, because a stretched full-height element has nothing to
-  stick to and its hairline would stop where the viewport did.
-- **The content column is fluid** and capped only by `--wide` (110rem / 1760px),
-  which is an ultra-wide backstop rather than a measure: past it the eye starts
-  losing the row it is reading across. Every zone track is `minmax(0, …)` so a
-  too-wide table scrolls inside its own wrapper instead of widening the grid.
-- **`--prose` (46rem) survives unchanged** and is the only measure left. Prose
-  is capped; grids are not. A paragraph of explanation next to a full-width
-  table is still 46rem wide.
+**The refinement, so it is not re-relitigated.** v4 shipped the rail mark at
+**460 / 17.5px / −0.028em** with the note "the font logo: the period is the
+receipt's full stop". v5 tightened it to **500 / 16.5px / −0.035em**: heavier
+so the word holds its own against a lit wall behind it, smaller and tighter so
+it reads as a mark rather than as a heading. **v5's numbers are the contract.**
+The footer signature is unchanged between v4 and v5 and is the one place the
+word is allowed to be large — a signature, at the end, after the argument.
 
-**Zones.** A full-bleed column needs panels side by side, because a three-line
-list stretched across 1600px is a sentence with 1400px of nothing after it.
-There are two shapes and no more: `.split` (equal halves) and `.split-main`
-(2:1, the dense thing and the short answers beside it). Both collapse to one
-column at 60rem.
+The film-frame favicon stays as the tab icon, redrawn in `--gold` on `--pitch`.
+It is a favicon and not a brandmark: it never appears inside a page beside the
+word.
 
-**The page header band** (`.pagehead`) is the content column's own top edge:
-full width, hairline under, title at the left. `.pagehead-line` puts the states
-a page is in on the right of that same baseline. It is deliberately **not
-sticky** — a 30px title band pinned to the top of an operator surface spends the
-scarce dimension on something you read once.
+## Motion — the law
 
-**Spacing is a 4px grid** (`--s1` 4px through `--s12` 48px) and a value off it
-is a new primitive. Sections are separated by `--s8` (32px) plus a hairline;
-tight groups use `--s1`/`--s2`. More space above a heading than below it.
+**Movement only where the machine is working.** (Tom, locked 2026-08-10.)
+Motion on these surfaces is an honest signal that something is running; it is
+never atmosphere. If you cannot name the machine work a moving thing is
+reporting, it does not move.
 
-**Density.** Table rows are 34px (`--row`) with 13px cells and 8px padding.
-Table heads are sticky, on `--panel`, underlined with an inset shadow rather
-than a border (`border-collapse: collapse` drops a sticky cell's own border).
+**Sanctioned motion, and what each one reports:**
+
+| motion | what it means | token |
+|---|---|---|
+| the projector gate's slow drift on a wall of stills | the projector is running / the corpus is being watched | `--drift-gate` (150s, alternate) |
+| an evidence wall tracking sideways at a constant few px/s | this corpus was watched, and there is more of it than fits | `--drift-band` (900s linear) |
+| a query typing itself, with a caret that blinks **only while typing** | the agent is asking | `--blink` |
+| the wall dimming and one tile lighting | the search ran and this is the hit | `--t-film`, `--t-state` |
+| a frame lifting off the wall onto the light table | found it — this frame is the evidence | `--t-lift`, `--ease-lift` |
+| detection boxes acquiring, staggered | the machine is reading the screen | `--t-acquire`, `--ease-acquire` |
+| a counter ticking up | counts are counts | — |
+| a panel un-veiling as its data arrives | the answer landed | `--t-veil` |
+
+**Banned outright, with no exception and no "but it's subtle":**
+
+- pulsing or breathing dots, badges or rings;
+- scan lines, CRT flicker, film grain, vignettes that move;
+- ambient glow, halos, glimmer, shimmer, aurora, gradient animation;
+- decorative hover motion — no lift, no scale, no translate, no wiggle, no
+  parallax, no tilt, on anything, ever;
+- entrance animation on scroll (fade-up, stagger-in) for content that is simply
+  there;
+- spinners as decoration. A spinner is allowed only while a real request is in
+  flight, and it is replaced by the word for the state as soon as one is known.
+
+**Hover may change colour, not geometry.** A hovered control may move its
+ground, ink, border or image filter, at `--t-fast`. It may not move, scale or
+shadow-lift. `--film-band` → `none` on a wall tile is the sanctioned example:
+pointing at a still un-dims it, and nothing shifts.
+
+**Everything freezes under `prefers-reduced-motion: reduce`,** and freezing
+means **painting the end state**, never dropping the content: drifts stop,
+carets stop blinking, transitions go to `none`, veiled things are simply
+visible, `scroll-behavior` goes to `auto`. A surface that hides information
+when motion is reduced has failed the rule twice. The lab's `?still=1` switch
+does the same thing for screenshots; a product surface with a demo animation
+must offer the same escape.
+
+## Layout, shape and depth
+
+**Chassis.** A page is a stack of **beats**: full-bleed bands on `--void` or
+`--pitch`, separated by a `--seam` hairline, each padded `--beat` vertically,
+with their content in a `--maxw` (1460px) column at `--gut` gutters. Inside a
+beat: `--gap-head` under a heading block, `--gap-block` before a major object,
+`--gap-copy` between the lines of a copy stack.
+
+**Measures.** Prose is capped and grids are not: `--prose` 70ch for running
+text, `--lede` 60ch for a lede (46ch when it is set over imagery), `--quote`
+58ch for a pulled sentence, `--note` 74ch for a machine note.
+
+**Spacing.** Layout spacing — gaps, tracks, section rhythm — is on the 4px grid
+(`--s1` 4px … `--s12` 48px) or one of the fluid clamps above. **Component
+padding is optical** and lives in the component's own entry (a 52px query bar
+is `0 13px`, a panel head is `9px 14px`): those are read out of v5 and are not
+required to land on the grid, but a *new* component's padding is a new
+primitive and gets written here.
 
 **Breakpoints**, and what each one is for:
 
-- **76rem** — the five-column ledger becomes three columns, still one band.
-- **60rem** — **the rail reflows.** Below this there is no room for 240px of
-  navigation beside the content, so the rail stops being a column and becomes
-  the strip across the top that phase 1 shipped: brand, a wrapping row of links
-  with the current one underlined in `--accent`, deployment state on its own
-  line. No drawer, no scrim, no checkbox — a three-item nav that fits on one
-  line has nothing to gain from being hidden behind a control, and the control
-  is the part of that pattern that costs the keyboard and the screen reader.
-  The zones (`.split`, `.split-main`) collapse to one column at the same width.
-- **52rem** — **pinned by test** (`test_both_schemes_and_a_mobile_viewport_are_declared`).
-  The videos and jobs tables stop being tables: each row becomes a stacked block
-  with the column name in front of the value, and the head is `display: none`
-  rather than visually hidden — once `display: block` has taken the table apart
-  there is no table for a `<th scope="col">` to be associated with, and a
-  clipped-to-1px header row is three sticky cells and four sort links stacked
-  inside a box the size of a full stop. `order` stays reachable in the filter
-  bar. Every *other* grid stays a table and scrolls inside its own
-  `.tablewrap`; the page body never scrolls sideways.
-- **40rem** — the page gutter drops to 16px, h1 drops to 24px, the ledger goes
-  to two columns with a full-width last cell, a row's far-end fact
-  (`.row-when`) wraps onto its own line, and the keyframe strip and OCR grid
-  reflow.
+- **`--bp-stack` 1120px** — two-column hero and split zones become one column;
+  side-by-side plates stack with the still above its text.
+- **`--bp-hand` 780px** — body drops to 15px, the wordmark to 15px, chrome
+  tightens, wall tiles shrink, on-image tags (`typography.tag`) are dropped
+  rather than shrunk, and multi-column grids go to one column.
 
-**Every URL is relative or root-relative.** `@font-face src` is
-`fonts/…woff2`; assets in templates are `{{ root }}/static/…`. Nothing is ever
-built from `PUBLIC_URL` — this surface is served through an SSH tunnel on a port
-nobody predicted, and a dead font URL is a worse version of the dead thumbnail
-phase 2 already shipped and fixed.
+A surface may add **one** breakpoint of its own for a real structural change
+(the dashboard's tables stop being tables somewhere around 52rem) and documents
+it in its own section here. It may not add a third for taste.
 
-### Named Rules
+**The page body never scrolls horizontally at any width.** A grid too wide to
+stack scrolls inside its own wrapper, which is `position: relative` so an
+absolutely-positioned child cannot escape the clip. Every slot that prints a
+corpus string — a title, an error, an id — carries `overflow-wrap: anywhere`
+(`anywhere`, not `break-word`: only `anywhere` also reports a zero min-content
+width, which is what stops a flex or grid parent being *widened* by an
+80-character token).
 
-**The No-Sideways Rule.** The page body never scrolls horizontally at any
-width. A table too wide to stack scrolls inside its own wrapper.
+**Shape: there is no radius.** The reset is `*{border-radius:0}` and a rounded
+corner anywhere is a bug. Nothing is a circle. This is not a style preference —
+a frame has square corners, and every box on these surfaces is either a frame,
+a plate, or a rule.
 
-Two ways it was being broken, both fixed 2026-08-10 and both worth knowing,
-because neither is visible in a screenshot:
+**Borders.** 1px `--seam` is the hairline that separates; 1px `--seam2` is the
+edge of a real box. 2px exists in exactly two places and both are gold: the
+found tile's inset outline and the focus ring. A dashed 1px `--gold-44` at
+`-4px` offset is the one honest-about-being-next affordance (a roadmap slot);
+dashed means nothing else.
 
-- **A corpus string is not a design decision.** A title is whatever the
-  uploader typed, an error is whatever yt-dlp printed, and one of each in the
-  index is a 78-character token with no space in it. Every slot that prints one
-  — `.pagehead h1`, `.row-title`, `.errtext`, `.eventtext`, `code` — carries
-  `overflow-wrap: anywhere`. **`anywhere`, not `break-word`:** only `anywhere`
-  also reports a zero min-content width, which is what stops a flex or grid
-  parent being *widened* by the same string. The break is still a last resort;
-  a title with spaces in it breaks at the spaces.
-- **An out-of-flow box needs a containing block, or it escapes the clip.**
-  `.sr-only` is `position: absolute` with no offsets. With no positioned
-  ancestor its containing block is the page, and a scroll container it merely
-  sits inside does not clip it — so the videos table's invisible coverage
-  descriptions dragged the whole document 185px sideways at 1024 with nothing
-  visible out there to explain it. **Any element that scrolls its own overflow
-  is `position: relative`.**
+**Depth: a shadow means lifted off the wall.** Four things in v5 cast one and
+all four are objects that have been taken *out* of the room and put in front of
+you: the light table, a frame in flight, the booth log, the query bar.
+`--drop` is that gesture; `--drop-sm` is its smaller sibling for a control.
+Everything else — panels, ledgers, table rows, nav, pills, chips — has **no
+shadow at all** and is separated by plate and hairline. `--edge` (a 1px inset
+white hairline) is not elevation; it is the glass in front of a still.
 
-**Flex line-breaking reads the hypothetical size, not the shrunk one.** A flex
-item with `flex-basis: auto` claims its max-content width when the browser
-decides which line it goes on; `min-width: 0` governs shrinking *within* a line
-and does nothing about it. So a growing item that must never force a wrap takes
-`flex: 1 1 0` — that is why `.row-body` does, and why a long conference title
-no longer pushes the thumbnail off its own row.
+The signature detail on a panel is the **corner tick**: a 12×1px and a 1×12px
+gold rule meeting at the top-left corner, drawn with `::before`/`::after`.
+It is the mark of a plate on a light table, it costs no box, and it is the
+system's one ornament. One per panel; never on all four corners.
 
-**A separator belongs to the fact before it.** In a wrapping strip
-(`.pagehead-meta`, `.row-meta`) the markup is `…fact</span><span class="sep">·
-</span>` with **no whitespace in front of the middot** and the break opportunity
-after it. Written the other way round the strip wraps *before* the separator and
-the second line opens with a dangling `· en · indexed 2025-08-03`. Same reason
-`.fact` is `white-space: nowrap`: a strip wraps between facts, never through a
-clock. The strip inside `.pagehead-line` is pushed to the far end by the line's
-`space-between` and its **text is not right-aligned** — the line wraps at more
-widths than a media query can name, and a strip that has dropped under a
-left-aligned title while still setting its last line hard against the right
-margin reads as a stray.
+## Per-surface guidance
 
-**A chip is one line.** `.chip`, like `.pill` and `.badge`, is `white-space:
-nowrap`. A tag slug is a whole filter, not a paragraph; left to wrap in a
-squeezed cell it becomes a four-line box with its text against a border built
-for 17px. It is not truncated either — a chip reading `series:a-conf…` is a
-filter you cannot read — so the cell it widens scrolls in its `.tablewrap`.
+The same world at three densities. Function, data and copy still come from
+`docs/design/*.md`; this section is about how much of the world each surface
+spends.
 
-**The Fixed-Box Rule.** Every image ships explicit `width`/`height` or lives in
-a fixed `aspect-ratio` box that owns the geometry. CLS 0 is a shipped property
-of this project and a strip of forty keyframes is the easiest place to lose it.
+### The landing page — the maximal expression
 
-## Elevation & Depth
+**v5.html is the reference.** Full-bleed imagery, the display ladder at its top
+rungs, the drifting wall, the lift, the light table, the evidence wall, the
+booth log. This is the only surface where a beat may exist purely to make an
+argument, and the only one that may spend a whole viewport on one idea. Motion
+inventory as v5 ships it; nothing is added to it without Tom.
 
-**There is no elevation.** No `box-shadow` on any surface, no cards, no lifted
-containers. Depth is tonal and one step deep: the page ground (`--bg`), a second
-ground for heads and the filter bar (`--panel`), and a card stock for inputs and
-the lightbox (`--raised`). Everything else is separated by a 1px hairline.
+### The demo page — the same world, selling, functional-first
 
-Four shadows exist and none of them is decoration:
+The demo is the landing's continuation, not a second product and not a
+stripped-down clone. It keeps the ground, the gold, the lime, the faces, the
+zero radius, the wordmark, the receipt slab, the frame-and-detection treatment
+and the motion law — a visitor arriving from the landing must not feel a seam.
 
-- `inset 0 -1px 0 var(--rule)` — the sticky table head's underline, an inset
-  because a collapsed border vanishes when the cell detaches.
-- `inset 1px 0 0 var(--accent)` — the 1px edge on a hovered row.
-- `inset 2px 0 0 var(--accent)` — the active nav item's edge (layout v2). An
-  inset rather than a `border-left` because the item is full-bleed and a border
-  would move its text by 2px between states; 2px rather than 1px because it is
-  read across a rail, not inside a row you are already pointing at. It is not a
-  fifth **2px rule** in the alarm sense — nothing here is bordered.
-- `rgb(0 0 0 / 0.66)` on the lightbox `::backdrop` — a real modal scrim.
+What changes is the ratio: **the demo's job is to be used.** The search input,
+the results, the receipts and the frames are the page; imagery serves a result
+rather than a mood. So:
 
-### Named Rules
+- The hero is at most one screen and it contains the working input. No beat
+  exists that a visitor cannot act on.
+- The display ladder is used one rung down from the landing: `headline` for the
+  page's one big line, not `display` at 5.6rem.
+- Motion is only the motion that reports *this visitor's* query running —
+  typing, dimming, lifting, acquiring, counting. The ambient gate drift is a
+  landing move; on the demo, an idle wall is idle.
+- Every result carries its receipt (`youtu.be/ID?t=`), every OCR line carries
+  its lime box, every machine string is mono. The demo's whole persuasion is
+  that the receipts are real.
+- `docs/design/demo-site.md` wins on function, data, clamps and copy —
+  including token discipline: caps, `has_more`, and server-side clamps are not
+  design decisions.
 
-**The No-Card Rule.** A panel is a heading and a hairline. Nested boxes are how
-a dashboard stops being scannable. If something needs to stand out, give it a
-2px rule in a tone — not a border, a fill and a radius.
+### The dashboard — the minimalist end of the same system
 
-## Shapes
+A true minimalist, informative control surface. Same world, no spectacle: the
+operator is scanning sixty rows at 03:00 over an SSH tunnel.
 
-Radii are tight and there are three: `--r-sm` 3px (pills, chips, buttons,
-inputs, thumbnails, frames, the focus ring), `--r-md` 5px (the filter bar, the
-lightbox stage), `--r-lg` 8px (the lightbox itself). Nothing is a circle except
-the live dot and the countdown's pill in the jobs view.
+- **Density first.** 34px table rows, 14px cells, 8px padding, hairline
+  separation, sticky heads on `--plate2`. Information per screen is the metric.
+- **The tones do the talking.** This is the surface the five state tones exist
+  for. Every state is a word in its tone; the pill is the primitive.
+- **Gold stays scarce.** The active nav item, the focus ring, the sorted
+  column's underline, the timecode worth clicking, the hovered row's 1px inset
+  edge. Nothing else.
+- **Lime only where there is on-screen-text evidence** — the OCR overlay and
+  its line list on video detail. On every other dashboard page there is no
+  lime at all. (The Lime Rule.)
+- **No imagery as decoration.** Keyframes appear because they are the data.
+  There is no hero, no wall, no drift, no lift, no scrim. The dashboard's only
+  motion is a live countdown ticking and a real request in flight.
+- **No display type.** The ladder starts at `headline` for a page title and
+  drops immediately to `label`/`cell`/`machine`. The wordmark appears twice —
+  rail and footer — and is the only brand gesture on the surface.
+- **No shadow at all**, corner ticks used at most once per page (the signature
+  panel), and no card ever.
+- `docs/design/dashboard.md` wins on function, data, clamps and copy.
 
-Borders are 1px and `--line` by default. Exactly three things are 2px, and each
-one means something: the ledger's top rule, a panel that has gone `is-drift`,
-and a notice's top rule in its tone. A 2px rule is an alarm; do not spend it on
-decoration.
+## Fonts — one canonical location
 
-## Components
+The two faces are vendored `.woff2`, latin subset, SIL OFL 1.1, with their
+licence texts beside them. **The canonical location is
+`mcp/src/vidtheque_mcp/public/static/fonts/`:**
 
-### Buttons
-- **Shape:** slightly softened corners (3px), 1px border.
-- **Primary:** ink ground, paper text (`--fg` on `--bg`), 4px/12px padding,
-  13px at weight 510.
-- **Hover:** ground and border go to `--accent`.
-- **Ghost:** transparent ground, `--fg` text, `--sand-7` border; hover moves
-  text and border to `--accent` and keeps the ground transparent.
-- **Disabled:** 50% opacity, default cursor. Nothing moves.
+| file | family | axis | bytes |
+|---|---|---|---|
+| `archivo-latin-wght-normal.woff2` | Archivo | `wght` 100–900 | 34,928 |
+| `jetbrains-mono-latin-wght-normal.woff2` | JetBrains Mono | `wght` 100–800 | 40,404 |
 
-### Pills (the state primitive)
-- **Style:** tone ink on the tone's step-2 ground with a step-6 hairline, 3px
-  radius, 11px at weight 510 with 0.04em tracking.
-- **Always carries its word.** `.tone-ok|warn|bad|work|wait|neutral` set the
-  three custom properties; the pill reads them. A pill with no word is invalid.
+with `Archivo-OFL.txt` and `JetBrainsMono-OFL.txt`. Both files are byte-
+identical to the lab's copies under `lab/versions/v5-assets/fonts/`, and the
+JetBrains Mono file is byte-identical to the one the dashboard already shipped
+(`md5 b058178d…`). Provenance: the fontsource variable packages, filenames
+verbatim; the JetBrains Mono entry in
+`dashboard/static/fonts/PROVENANCE.md` covers that file, and Archivo arrived
+with lab v4 (commit `1251269`).
 
-### Chips (tags)
-- **Style:** transparent ground, `--muted` text, `--line` hairline, 3px radius.
-  The count inside sits in mono at 11px in `--fg`.
-- **Hover:** `--row-hover` ground, `--fg` text, `--accent-line` border.
+**Rules for the builders:**
 
-### Tables — the sorted column, and the strip above
-The head of the column the rows are actually ordered by takes `aria-sort` and
-redraws its own inset underline in `--accent`, with the label in `--fg`. **No
-caret glyph**: this system has no icon language and a sort arrow is not where
-one should start (Appendix B.2 refused an icon rail for the same reason). The
-One Signal Rule holds — the sorted column *is* the moment you are pointing at,
-because you asked for it in the URL. The direction printed is the direction the
-query uses, not a guess: titles are ascending, everything else descending, and
-there is no opposite variant to toggle to, so a head is a statement rather than
-a switch.
+1. `public/static/fonts/` is the **document of record**. New face, new subset,
+   new version: it lands there first.
+2. The dashboard keeps a **byte-identical copy** at
+   `dashboard/static/fonts/` — copied, never diverged — because
+   `public/static/*` is only routed under `VIDTHEQUE_PUBLIC_READONLY=1`
+   (`public/__init__.py`) while the dashboard's own asset route is always
+   registered. A dashboard font served from `/static/fonts/…` 404s in a private
+   deployment. Archivo is already copied there; Inter and Instrument Serif are
+   retired and their files and licence texts come out in the rebuild commit.
+3. **`@font-face src` is relative** (`fonts/…woff2`), never built from
+   `PUBLIC_URL`. These surfaces are served through an SSH tunnel on a port
+   nobody predicted.
+4. `font-display: block` for both, matching v5: these faces carry the display
+   voice and a FOUT on a 5.6rem headline is worse than 100ms of nothing. Only
+   the text face is preloaded.
+5. **`public/__init__.py`'s asset route currently types every non-`.css` file as
+   `text/javascript`.** Whoever ships fonts under `/static/fonts/` adds the
+   `.woff2` media type there in the same commit, the way
+   `dashboard/__init__.py` already did.
 
-Above every grid, `.tablecount` is the table's caption in everything but
-markup: how many rows arrived and whether there are more, on the left, with the
-figure in mono because it came from a count; and on jobs a `.live` badge at the
-far right — a `--tone-work` dot **and the word "live"**, because a pulse alone
-is a state told in colour only.
+## Migration notes for the rebuild
 
-### The write side (phase 3): forms, and the four primitives they needed
-Added 2026-08-09 with `/dashboard/index`, `/dashboard/login` and the row
-actions. Nothing here is a new visual idea — the buttons are the buttons, the
-fields are the fields, a form is a `.panel` under a hairline like every other
-section on the surface. Four primitives are new because a read-only surface
-never needed them, and each one is the existing system extended rather than a
-second one:
+The old system is pinned by tests. Whoever gets there first updates them, in
+the same commit as their CSS, and says so:
 
-- **Textarea** (`input-textarea`): the input's ground, border and radius, at
-  four table rows tall, **set in the machine face**. The Two-Channel Rule,
-  applied where it pays most: JetBrains Mono was chosen for one measurable
-  property — it draws `0`/`O` and `1`/`l`/`I` apart — and a pasted column of ids
-  like `kCc8FmEb1nY` is exactly the string that property was bought for. The
-  tag fields stay sans, as siblings of the filter bar's inputs.
-- **Checkbox row** (`checkbox-row`): a hairline-separated row, the box at 16px
-  in `--accent`, a 13px word at weight 510 and a 12px muted note beside it.
-  Every option says what it turns on; a checkbox with only a label is a
-  question the operator has to answer from memory. The `<fieldset>` keeps its
-  semantics and loses its border — the No-Card Rule holds inside a form.
-- **Field help** (`field-help`): a `--prose`-capped sentence in `--muted` under
-  a control. Not a `title` and not a placeholder, both of which are text you
-  have to go and find.
-- **Row action** (`row-action`): a ghost button one step down from the 34px
-  chassis height (24px, 11px label type) so two of them fit inside a table row
-  without touching its rules. The column is deliberately narrow: a table of
-  sixty rows with a wide action column reads as a control panel, and the row is
-  still the thing you came for.
-
-The sign-out control is the one control in the chassis, full-bleed in the rail
-foot like a nav item, and it is a `<form method="post">` — signing out changes
-state, and `docs/design/dashboard.md` §3.3 has no state-changing GET in it.
-Every control on this surface is real HTML for the same reason the shot
-timeline is a real `<a href>`: the write side works with JavaScript off.
-
-### The projection (phase 4): two primitives, and one subtraction
-Added 2026-08-09 with the date filters and the demo's read-only overview.
-
-- **Date range** (`field-range`, `field-range-input`, `field-range-separator`):
-  a range is *one question asked with two inputs*, so it is a `<fieldset>` with
-  a `<legend>` on the Label ladder — a screen reader needs the legend to know
-  the second date belongs to the first, and a sighted reader needs one word
-  above the pair rather than two words beside them. The browser's box goes, the
-  No-Card Rule holding inside the filter bar exactly as it does inside a form.
-  The two inputs are a **fixed** 8.5rem (136px — on the grid, and wide enough
-  for the platform's own calendar button), because two ends of a range that
-  size themselves stop reading as a pair the moment one of them is empty. The
-  separator is an en dash in `--mark`, `aria-hidden`, at the same weight as the
-  hairlines it sits between.
-- **Text tone** (`text-tone`): a state hue on a run of prose rather than on a
-  pill, for the clause inside a sentence that the sentence is about — "2 jobs
-  queued or running, *1 of them waiting on a backoff*". Only `--tone-bad` and
-  `--tone-warn` exist as text: those are the two states that are ever the
-  subject of a sentence, and Every State Is A Word still holds, because the
-  words carry it and the colour only agrees.
-
-**The subtraction** is the demo projection (`docs/design/dashboard.md` §2.4).
-Under `VIDTHEQUE_PUBLIC_READONLY=1` the overview loses the declared-models
-panel, the storage figures and the `auth=…` line in the rail foot, and the rail
-gains one item back to the welcome page. It is the *same template* with panels
-absent, not a second design: nothing changes size, nothing changes colour, and
-the two-column zone below the ledger band closes up because a `.panel` that is
-not rendered takes its `--s8` with it. A projection that needed its own
-stylesheet would be a second surface pretending to be a mode.
-
-### Containers
-There are none. See **The No-Card Rule**. The two exceptions with a real box are
-the filter bar (`--panel` ground, `--line` border, 5px) and the lightbox
-(`--raised`, `--line`, 8px).
-
-### Inputs / Fields
-- **Style:** `--raised` ground, `--sand-7` border, 3px radius, 13px, 4px/8px
-  padding. The label above is the 11px uppercase Label style.
-- **Focus:** the one global ring — `2px solid var(--accent)` with 2px offset.
-  There is exactly one focus treatment on this surface and it is visible on
-  table rows and result rows, not only on form controls.
-- **Placeholder:** `--muted` at full opacity.
-
-### Navigation (the rail)
-- **Shape:** a 15rem (`--rail`) sticky column on `--panel`, hairline on its
-  right edge, holding three things in order — the brand lockup, one or more
-  `.nav-group` label + `.navlist` pairs, and a `.rail-foot` pinned to the bottom
-  carrying what this deployment is allowed to do (`auth=…`, indexing refused,
-  no write side). Environment state belongs to the chassis, not to a page
-  header. *Amended in phase 4:* in the demo projection the foot carries the one
-  line a visitor can act on — `read-only demo` — and none of the environment,
-  because `auth=…` is a variable name and its value on a page a stranger can
-  screenshot (`docs/design/dashboard.md` §2.4).
-- **Item:** full-bleed to the rail's edges (padding on the item, not the rail),
-  `--row` tall — a nav item and a table row are the same 34px, which is what
-  stops the rail feeling like a different product from the grid beside it. 13px
-  at weight 510 in `--muted`.
-- **Hover:** ground `--row-hover`, text `--fg`. Deliberately *lighter* than the
-  rail in light and *darker* in dark; the same pair the table rows use.
-- **Active:** the item takes the **content** ground (`--bg`) with its text in
-  `--accent` and a `inset 2px 0 0 var(--accent)` edge, so it reads as a tab
-  notched into the page rather than a pill floating on the rail — and the accent
-  lands on type that measures ≥4.5:1, which it would not on `--panel` (4.41:1).
-  Always with `aria-current="page"`.
-- **Groups:** `.nav-group` is the one label idiom — 11px tracked uppercase, the
-  same as a ledger label. A second group (search, settings) costs one more of
-  these and nothing else. A dead link is not room, so nothing is listed before
-  it exists.
-- **Mobile (≤60rem):** the whole rail becomes a horizontal strip. Items lose the
-  ground and the edge and take a 2px `--accent` bottom border instead —
-  phase 1's masthead nav, unchanged.
-
-### The brand lockup (chassis, every page)
-The mark and the word on one baseline, 8px apart, at the top of the rail, and
-nothing under them: the rubric ("the index, explaining itself") was removed
-2026-08-09 — a tagline is a persuasion move, and the rail of an Operate surface
-owes the operator where they are, not what the product is for. The band keeps
-its `--s5`/`--s4` padding, which reads balanced around the single lockup row.
-The mark is a 24px drawn film frame in
-`--accent` with a `--bg` gate; the word is `vidtheque`, always lower case, in
-`--font-display` at 20px/400. It is a link to the overview and it is the only
-link on the surface whose hover does **not** go amber — the mark beside it is
-already amber, and a wordmark that changes colour under the pointer reads as a
-control. It underlines instead. The same lockup repeats once in the footer at
-15px (`.footmark`) with the version beside it in mono, so the page is signed
-rather than merely credited, and so the serif reads as a decision made twice
-rather than as one odd word in a rail.
-
-*Amended 2026-08-10, the copy cull (Tom).* The footer is now the lockup and the
-version and nothing else. The tagline that trailed it — "a self-hosted
-video-corpus MCP server" — and the line under it naming this the management
-surface are gone, on exactly the argument that took the rubric out of the rail:
-a tagline is a persuasion move, and an Operate surface owes the operator where
-they are, not what the product is for. A signature is a name and a version. If
-a third element ever wants into that line it has to be a fact about *this*
-deployment, not a sentence about the product.
-
-### The ledger band (signature, `/dashboard` overview)
-A single ruled band across the full content column: a 2px `--rule` on top, a hairline
-under, and N equal columns divided by hairlines. Each column is an 11px
-uppercase label, a 30px mono tabular figure, and a 12px sans note. It reads as
-one line in a log, which is what it is. It is **not** a row of stat cards, and
-turning it into cards — separate boxes, shadows, individual borders — destroys
-the only thing it is for.
-
-### The shot timeline (signature, video detail)
-A full-width horizontal band **directly under the header** (`.timeband`, and
-"directly" is the point: it spent phase 2 as the third panel down, under a
-counts grid and a seven-row table, which put the one artefact no neighbouring
-product has below the fold on a laptop). One absolutely-positioned bar per shot
-across the true duration, on a `--panel` ground inside a hairline. Kept
-keyframes solid `--accent` at **0.85** opacity (0.75 measured 2.98:1 on
-`--panel`, two hundredths under the floor for a non-text mark, and this mark is
-the page's whole argument; 0.85 measures 3.48:1 light / 5.98:1 dark and still
-leaves the step to full opacity that hover and focus use). A shot whose every
-frame was deduplicated paints **its own `--bg` ground** and hatches `--mark` on
-it at full strength, so it reads as "captured, then dropped" rather than as
-empty video — and as paper with a scratch on it rather than as a gap between
-bars. It is not hatched over `--panel`: `--mark` on `--panel` is 2.93:1 at full
-strength, so no opacity of it could ever clear 3:1, while on `--bg` the same
-graphite measures 3.20:1 light / 3.59:1 dark. Minimum bar width 3px — the bar's
-*position* is the fact, and a mark you cannot see lies about the cut structure.
-Hovering either the timeline or the keyframe strip lights the other.
-
-Like the ledger band it carries only an `.sr-only` heading: a band of bars over
-a counter running 0:00 to the runtime does not need a caption saying it is a
-timeline.
-
-**The scrub preview** (`.scrubpreview`, added 2026-08-10). Point anywhere along
-the band and the shot under the pointer shows its own first keyframe in a box
-that follows the cursor, the way a video player previews a seek. It is the one
-place on this surface where a picture appears because you pointed at something,
-and it earns that because the band's whole argument is that a bar's position is
-a fact — the preview is that argument made visible without a navigation.
-
-Five decisions, each one a fence:
-
-- **It is a data surface, not a card.** Card stock, a hairline and the 3px
-  radius the frames themselves use — the lightbox's smaller sibling, built from
-  the two exceptions the No-Card Rule already allows a real box. **No shadow.**
-  It is above the page because of `z-index` and because `--raised` is lighter
-  than `--bg`, not because it is pretending to float.
-- **It reports the shot, not the pointer.** Two lines, both machine strings in
-  mono: the shot's span (`0:12–0:31`) at Machine size in `--fg`, and
-  `shot 7 · 4/5 kept` at 11px in `--muted` — mono at 11px being what a chip's
-  count already is. A clock derived from where the cursor sits would be a
-  number the index never wrote, and a fiction the moment the arrow keys are
-  driving instead of a mouse. Where the pointer is on the runtime is what the
-  footage counter below the band is for. (The keyframe's *own* `t_s` is not
-  available here: `shot_timeline` groups by `shot_id` and carries the shot's
-  boundaries, not the first frame's sample time. The span is the timestamp the
-  index has at this granularity, and printing it is honest where inventing the
-  other would not be.)
-- **The frame is the strip's width, not a fourth one.** 192px, `--r-sm`, in a
-  fixed 16:9 box (**The Fixed-Box Rule** — a frame still loading leaves the
-  ground behind and nothing moves). A new width is a new JPEG per keyframe in a
-  byte-capped cache, and 192×108 is the scale a scrub preview is read at
-  anyway. The box is a fixed 12rem for the same reason it is fixed: a preview
-  that resizes with its content jumps as you sweep.
-- **It is an enhancement, and the band degrades to what it was.** The server
-  sends the box empty and `hidden`; every bar is still a real `<a href>` to
-  `#frame-N` and still carries the `title` the band has always had. The script
-  strips that `title` when it binds, because a native tooltip under a real
-  preview is the same sentence told twice and a second late.
-- **The keyboard gets the same box.** Arrow keys step shots when the band has
-  focus — moving focus between the anchors that were already there rather than
-  inventing a selection model beside them, so whatever the arrows land on,
-  Enter follows. Focus places the preview at the bar's own centre. The box is
-  `aria-hidden`: every string in it is already in the bar's `.sr-only`
-  description, and a second voice for the thing you just focused is noise.
-
-**Not on the jobs page.** The same hover was considered for the per-item
-progress meter and refused. A meter's x-axis is percent-complete, and
-`stage_pct` is progress through a *stage* — so a frame previewed at 42% of that
-bar would claim to be 42% of the runtime, which is exactly the lie this band's
-minimum bar width exists to prevent. A preview belongs on an axis that means
-time.
-
-Under the band sit two things. **The footage counter** (`.timeline-scale`)
-is five quarter marks, each a 4px `--rule` tick and its clock, positioned at its
-true percentage rather than spaced by flexbox — a band whose whole argument is
-that position is a fact cannot carry a scale that is only approximately right.
-The ends label the ends: `0:00` is left-aligned on the band's own edge and the
-runtime is right-aligned on the other. **The key** (`.timeband-legend`) names
-the two fills in 12px muted, with `.swatch` marks that are literally the bars'
-own backgrounds at 24×12 — the hatch is the only mark on the page whose meaning
-is not written beside it, and a key drawn any other way would be a claim rather
-than a sample.
-
-### The empty state
-Three sentences' worth of contract in two elements: `.empty-lead` states the
-absence in `--fg` at cell size and weight 510, `.empty-note` says in `--muted`
-which row of which panel explains it. **Name the absence, name the cause, name
-the move.** An operator opening a panel with nothing in it is asking one
-question — is this broken, or is this correct — and "No keyframes." does not
-answer it. It is the pill contract applied to a whole panel: never an absence on
-its own, always a word.
-
-### The OCR overlay (signature, video detail)
-Normalised 0–1 boxes drawn over the keyframe inside a fixed 16:9 stage with
-`overflow: hidden`, so a box can never escape onto the caption. 1px `--accent`
-border with a 14% accent fill via `color-mix`. Hovering a line in the list
-lights its box and vice versa. This is the single most convincing thing on the
-page and it gets the room it needs.
-
-The list under it is a **digest** (below). Its preview is **eight lines, and
-eight is not a taste call**: the box↔line highlight is eight explicit `:has()`
-pairs, so the preview is exactly the set of lines the frame above can point at,
-and the remainder — which never lit a box even before the digest existed — sits
-behind the expander. The pairs are scoped to `.ocrlines:not(.ocrlines-rest)` so
-an expanded line 9 cannot light box 1: a *wrong* pointer is worse than a missing
-one. Every box is still drawn on the still, open or closed, and the lightbox
-still reads every `.ocrline` in the figure. Confidence is de-emphasised, never
-dropped — muted 11px in a fixed 2.25rem column against the first line of a
-wrapped entry, because it is part of the receipt and it is the number you want
-when a word looks wrong. Two columns of lines at wide viewports was considered
-and rejected: the grid's own `minmax(20rem, 1fr)` means a card is 20–26rem, and
-two columns of 12.5px mono inside that is nine characters wide.
-
-### The digest (bounded preview, honest expander)
-For any block whose length is a property of the **corpus** rather than of the
-design. Two exist: the OCR line list on video detail, and the job event log.
-The contract is four rules and it is normative:
-
-1. **A documented preview.** The bound is a named constant with a reason
-   (`OCR_PREVIEW_LINES = 8` because the highlight is eight pairs;
-   `EVENT_PREVIEW = 8` for the same rhythm), never an arbitrary "a few".
-2. **A real remainder.** The summary reads `<n> more line(s)` / `<n> older
-   event(s)`, counted off the same list, with the count in mono
-   (`.digest-count`) because a count came from a count. Never "show more".
-3. **In place, and the full text stays.** It expands where it sits; on this
-   surface the full text is the receipt and nothing may be a link away.
-   Where a *server-side* cap has already shortened the list the panel says so
-   in a `.panel-note` — a remainder counted off a truncated list is a lie by
-   arithmetic.
-4. **`<details>`, and no script.** The collapsed state is readable markup, the
-   control is the platform's, keyboard and screen reader come free, and with
-   CSS off the whole list is simply there. The marker is `+` / `−` on
-   `summary::before` — two characters, not a caret; this surface still has no
-   icon language.
-
-Visually the summary is the surface's existing quiet-affordance idiom, not a
-button: 12px muted with a 1px dashed `--line` underline, foreground on hover
-with the underline in `--accent`. It never gets the `--accent` ink itself,
-because the accent means *this is the moment you are pointing at* and a drawer
-is not a moment.
-
-**Blocks already bounded, and left alone:** the transcript (server-paginated at
-50 cues with a real pager), the keyframe strip (24 per page), the job items
-table (capped with a note), the provenance table (seven rows, always). Bounding
-those again would be a second cap over an honest one.
-
-### The stage rail (video detail) and the event log (jobs)
-Both read as processing logs, because both are. Seven stages in pipeline order,
-each a state word in its tone, a `model_key` in mono and an elapsed clock in
-mono; an `absent` stage is a dimmed rule, not a missing row. The job event tail
-is hairline-ruled rows of mono, with `not_before` as a live mono countdown —
-the highest-value line on that page. The tail is a **digest**: the newest eight,
-then a real count of the older ones.
-
-Both columns of the event row are columns, and neither is a stretched box. The
-clock takes a fixed 9rem basis so the log reads down the left edge; the level
-pill takes `min-width: 3.5rem`, a *minimum* and not a basis — a fixed basis
-stretched the pill itself to 72px and made the one badge on the page that is
-30px of word inside a 72px box read as a different primitive from every other
-pill on the surface.
-
-### A panel heading is a label, and a name is not
-`.panel-title` is the 11px tracked uppercase label idiom. When a heading has to
-carry a corpus string — "Stage by stage — <the video's title>" — the string goes
-in `.panel-title .subject`, which resets `text-transform` and drops to cell size
-at weight 510. Uppercasing a sentence-length run is what the all-caps rule
-catches, and it is right to.
+- `test_dashboard.py::test_the_dashboard_palette_matches_the_demos` asserts
+  twelve `--bg/--fg/--muted/--line/--accent/--raised` declarations (six per
+  scheme, two schemes) and that the two files agree. The system is now
+  single-scheme, so the expected count is **six**. Keep the assertion that the
+  two files agree — that is what stops the surfaces becoming two visual worlds,
+  and it is the reason the six role aliases exist in the frontmatter above.
+- `test_dashboard.py::test_both_schemes_and_a_mobile_viewport_are_declared`
+  expects two `theme-color` metas and `content="light dark"`. Dark only now:
+  one `theme-color` (`#040405`) and `content="dark"`.
+- Any test asserting a radius, a serif wordmark, `--font-display`, or a
+  warm-paper hex.
+- `.impeccable/design.json` is a generated mirror of this file's frontmatter and
+  is stale until regenerated; it is not a second source of truth.
 
 ## Do's and Don'ts
 
 ### Do:
+
 - **Do** put every timecode, duration, id, `model_key`, `error_code`, count,
-  clock and byte figure in `var(--font-mono)` with `tabular-nums` and ligatures
-  off. **The Two-Channel Rule** is the system.
+  clock and byte figure in the mono face with `tabular-nums` and ligatures off.
+  **The Two-Channel Rule** is the system.
 - **Do** print the word for every state, in its tone. Colour reinforces.
-- **Do** separate with hairlines and whitespace. **The No-Card Rule.**
-- **Do** keep `--accent` for "this is the moment you are pointing at", and let a
-  zero be muted — the accent means *go and look*, and there is nothing to look at.
-- **Do** give every image explicit `width`/`height` or a fixed-aspect box.
+- **Do** keep gold for "this is the moment you are pointing at", and lime for
+  "the machine read this off the screen". Nothing else gets either.
+- **Do** separate with plates and hairlines. A panel is a plate, an edge and a
+  heading.
+- **Do** name the machine work behind anything that moves — and freeze it all
+  under `prefers-reduced-motion`, painting end states.
+- **Do** give every image explicit `width`/`height` or a fixed-aspect box on
+  `--black`.
 - **Do** write `var(--token)`. If the token does not exist, amend this file in
   the same commit.
-- **Do** keep both schemes green in the contrast sweep: body and label text
-  ≥4.5:1, non-text marks ≥3:1, in light **and** dark.
-- **Do** clamp lists server-side and print `has_more`, never a total. The URL is
-  an input, not an instruction.
+- **Do** keep the contrast sweep green: text ≥4.5:1, non-text marks ≥3:1, with
+  `--fg3` the single measured exception and fenced as above.
+- **Do** clamp lists server-side and print `has_more`, never a total.
 
 ### Don't:
-- **Don't** change `--bg`, `--fg`, `--muted`, `--line`, `--accent` or `--raised`
-  without changing `public/static/style.css` in the same commit and widening
-  `test_dashboard.py::test_the_dashboard_palette_matches_the_demos`. Those six
-  are what stop the two surfaces becoming two visual worlds.
-- **Don't** add an inline `<script>`. The pages stay CSP-ready, and that forbids
-  the usual no-flash theme-toggle trick; the three-state toggle is a phase-3
-  server-side cookie, not an inline script.
-- **Don't** build a chart with a time axis. There is no time-series table and
-  `indexed_at` at day resolution would only ever graph when Tom last ran a batch.
-  No sparklines, no progress rings, no soft-shadowed rectangles standing in for
-  content.
-- **Don't** ship a card, a shadow, a gradient, glass, or a coloured `border-left`
-  above 1px. *Gradient* here means a **tonal ramp used as decoration** — a
-  surface that fades because fading looks expensive. It does not mean the CSS
-  function: the deduplicated shot's hatch is a `repeating-linear-gradient`, and
-  it is two flat colours at a fixed 2px/6px pitch encoding a fact the index
-  stores. (An external review, 2026-08-09, read the rule literally and was
-  right to ask; the answer is that the rule is about ramps, not about syntax. A
-  hatch drawn as an SVG mask would satisfy the letter and change nothing about
-  the pixels, which is how you can tell the letter was not the point.) A second
-  pattern needs the same argument this one has: it must be encoding something.
+
+- **Don't** add a border radius. Anywhere. The reset is zero.
+- **Don't** spend lime on anything that is not on-screen-text evidence. **The
+  Lime Rule** is as hard as the type rule.
+- **Don't** add a second accent, a chart palette, or a "success green" beside
+  the tones.
+- **Don't** animate anything you cannot name the machine work for — and never
+  a pulse, a scan line, an ambient glow, or a hover transform.
+- **Don't** ship a shadow on anything that has not been lifted off the wall.
+  No cards, no glass, no gradient used as a tonal ramp for looks. (*Gradient*
+  means a decorative ramp, not the CSS function: the hero scrim is two
+  layered gradients doing a legibility job, and a hatch encoding a fact is
+  fine. A surface that fades because fading looks expensive is not.)
 - **Don't** reach for film sprockets, clapperboards, reel icons or faux-CRT.
-  "Cutting room" is a derivation, not a decoration; if it starts looking like a
-  movie poster it has failed. The single 24px `.brandmark` in the rail (and its
-  identical twin in the tab strip) is the one sanctioned exception, and **The
-  Wordmark-Only Rule** is the fence around it.
-- **Don't** put `--font-display` on a second element. Two selectors, both named
-  in that rule, and a third is a bug.
-- **Don't** put a raw colour, an off-ladder font size or an off-4px spacing value
-  in a stylesheet.
+  "Projection room" is a derivation, not a decoration. The favicon's drawn
+  film frame is the one sanctioned exception and it stays in the tab.
+- **Don't** introduce a third font family, or a serif for the wordmark.
+- **Don't** put a raw colour, an off-ladder font size, an off-ladder weight, or
+  an off-4px layout spacing value in a stylesheet.
 - **Don't** build an absolute asset URL from `PUBLIC_URL`. Relative or
   root-relative, fonts included.
+- **Don't** add an inline `<script>`. The pages stay CSP-ready.
 - **Don't** inline a frame as base64 by default. Frames go by authenticated URL;
   base64 is the opt-in, with the correct mimeType.
 - **Don't** rename the product's words. `cue`, `chunk`, `shot`, `keyframe`,
