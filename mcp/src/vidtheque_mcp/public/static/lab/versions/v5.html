@@ -17,18 +17,41 @@
  lifts off its tile and lands on the light table as the annotated specimen —
  lime boxes on the words the machine read, the sentence being spoken at that
  second, and the youtu.be/…?t= slab. Every beat after keeps the same fiction:
- stills pulled off the wall onto the bench, the wall lit as an index, the
- booth log of the agent that was in here last night.
+ stills pulled off the wall onto the bench, the wall running full width as
+ the index, the booth log of the agent that was in here last night.
+
+ REFINEMENT PASS — Tom's five notes on the winning version, 2026-08-10:
+  1. The lift is the page's signature move, so it is now unmissable: the
+     table's frame slot sits empty (a hairline landing pad) while the frame
+     is in the air, the frame detaches from the wall before it travels, and
+     the flight is one composited transform between two 16:9 rects — no
+     per-frame layout, no squash, nothing clipped. ~1.2 s door to door.
+  2. Where the found frame lights up is geometry, not luck. pickTile() now
+     measures the wall against the light table and against the hero's actual
+     text line boxes (not the copy column's mostly-empty bounding box) and
+     takes the clear tile nearest the table — so all three canned queries
+     land in the same relation to it, the one Tom liked on "the most
+     expensive typo". Stacked layouts get an explicit lane, one tile tall,
+     between the copy and the table. The drift amplitude was cut so that
+     clearance holds through the whole cycle, not just at rest.
+  3. The hero wall is v1's pitch again: fewer, bigger frames (~145 px of
+     viewport per tile, capped at 12 columns) and no gap or hairline between
+     them, so the wall reads as one surface. Dimming and drift unchanged.
+  4. Beat 3 is v4's treatment: the full-width wall of 70 real keyframes,
+     four rows drifting in alternation at a constant 3.2 px/s, every tile
+     carrying its own id and timecode.
+  5. Beat 4 is v4's terminal — v1's look aired out to v2's spacing — with
+     v5's typing-in of the question kept on top of it.
 
  MOTION LAW (Tom, locked): movement only where the machine is working.
  Inventory on this page — the hero wall's slow drift (the projector is
  running), the self-typing query and its caret (blinks only while typing),
  the search dim + the hit tile lighting, the lift of the frame to the table,
- the OCR boxes acquiring, the ledger counting up, the index wall revealing on
- scroll, the booth log typing its question. No pulsing dots, no scan lines,
- no ambient glow, no hover transforms anywhere. Everything paints its end
- state under prefers-reduced-motion: reduce, and ?still=1 does the same for
- screenshots.
+ the OCR boxes acquiring, the ledger counting up, the beat-3 wall drifting
+ (the corpus was watched), the booth log typing its question. No pulsing
+ dots, no scan lines, no ambient glow, no hover transforms anywhere.
+ Everything paints its end state under prefers-reduced-motion: reduce, and
+ ?still=1 does the same for screenshots.
 
  PALETTE: v3's world — gold on black, one brand accent (gold: the CTA, the
  receipt slab, the heard channel, one word of the H1). Lime appears ONLY as
@@ -52,7 +75,9 @@
  as v3) renders every count, frame, box, sentence and id at runtime. The
  three hero searches are v1's canned set, verified against the live corpus
  (research/demo-queries-2026-08-09.md); the booth log is transcribed from the
- same research file, not re-recorded. The page makes zero network requests.
+ same research file, not re-recorded. Beat 3's wall is v1's 70-keyframe
+ monitor-wall set (v5-assets/wall/, copied from v4-assets/), ids and
+ timecodes verbatim. The page makes zero network requests.
 -->
 <style>
 @font-face{font-family:"Archivo VF";src:url("v5-assets/fonts/archivo-latin-wght-normal.woff2") format("woff2");font-weight:100 900;font-display:block;font-style:normal}
@@ -112,22 +137,28 @@ h2 em{font-style:normal;color:var(--gold);font-weight:210}
 /* ── beat 1 · the room ───────────────────────────────────────────── */
 .hero{position:relative;isolation:isolate;min-height:100svh;overflow:hidden;
   display:flex;flex-direction:column;border-bottom:1px solid var(--seam)}
-.wallwrap{position:absolute;inset:-6%;z-index:0;overflow:hidden}
+.wallwrap{position:absolute;inset:-5%;z-index:0;overflow:hidden}
+/* the gate breathes. Amplitude is deliberately small: the lit tile is placed
+   with measured clearance from the copy and the light table, and that
+   clearance has to survive the whole drift cycle. */
 @keyframes drift{
-  0%{transform:translate3d(-1.2%,-.9%,0) scale(1.02)}
-  50%{transform:translate3d(.9%,.6%,0) scale(1.045)}
-  100%{transform:translate3d(-.5%,1.2%,0) scale(1.02)}}
+  0%{transform:translate3d(-.5%,-.4%,0) scale(1.012)}
+  50%{transform:translate3d(.4%,.3%,0) scale(1.024)}
+  100%{transform:translate3d(-.2%,.5%,0) scale(1.012)}}
 .wallwrap{animation:drift 150s ease-in-out infinite alternate}
-.wall{display:grid;width:100%;height:100%;gap:1px;background:#101014;grid-auto-rows:1fr}
+/* v1's wall texture: the frames butt, no gap and no hairline between them —
+   one surface, not a grid of cards (Tom, 2026-08-10). */
+.wall{display:grid;width:100%;height:100%;gap:0;background:#07070a;grid-auto-rows:1fr}
 .wt{position:relative;overflow:hidden;background:#07070a}
 .wt img{width:100%;height:100%;object-fit:cover;
   filter:brightness(.52) saturate(.72) contrast(1.05);
   transition:filter .5s linear}
-.wt::after{content:'';position:absolute;inset:0;pointer-events:none;
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.03)}
 .wall.searching .wt img{filter:brightness(.13) saturate(.2)}
-.wall .wt.hit img{filter:none;transition-duration:.25s}
-.wall .wt.hit::after{box-shadow:inset 0 0 0 2px var(--gold)}
+/* the found tile is under the scrim, so it is lit past it, not just to normal */
+.wall .wt.hit img{filter:brightness(1.34) saturate(1.04) contrast(1.02);transition-duration:.25s}
+.wall .wt.hit{z-index:2}
+.wall .wt.hit::after{content:'';position:absolute;inset:0;pointer-events:none;
+  box-shadow:inset 0 0 0 2px var(--gold)}
 .wall .wt.hit::before{content:'src';position:absolute;left:0;top:0;z-index:2;
   background:var(--gold);color:var(--gold-ink);font-family:var(--mono);font-size:7.5px;
   font-weight:700;letter-spacing:.16em;text-transform:uppercase;padding:2px 5px;line-height:1.2}
@@ -184,9 +215,15 @@ h2 em{font-style:normal;color:var(--gold);font-weight:210}
 /* the light table — where the lifted frame lands */
 .bench{position:relative;width:100%;background:var(--plate);border:1px solid var(--seam2);
   box-shadow:0 44px 90px -28px rgba(0,0,0,.95);opacity:1;transition:opacity .3s linear}
-.bench.idle{opacity:.55}
-/* veiled: laid out at final size but not yet shown — the lift is in flight */
-.bench.veil .frame,.bench.veil .benchsay,.bench.veil .benchfoot{opacity:0}
+/* between questions the table steps back, but not so far that the wall
+   reads through it — the frames behind it are v1-sized now */
+.bench.idle{opacity:.72}
+/* veiled: laid out at final size but not yet shown — the lift is in flight.
+   The frame slot itself stays, empty, as the landing pad; hiding the image
+   and the boxes rather than the figure, because populateBench sets the
+   figure's opacity inline and inline beats a class. */
+.bench.veil .frame>img,.bench.veil .frame .det,
+.bench.veil .benchsay,.bench.veil .benchfoot{opacity:0}
 .bench::before{content:"";position:absolute;left:-1px;top:-1px;width:12px;height:1px;background:var(--gold)}
 .bench::after{content:"";position:absolute;left:-1px;top:-1px;width:1px;height:12px;background:var(--gold)}
 .benchhead{display:flex;align-items:center;gap:12px;padding:9px 14px;
@@ -223,12 +260,20 @@ h2 em{font-style:normal;color:var(--gold);font-weight:210}
 .frame.acq .det{animation:acq .45s cubic-bezier(.16,1,.3,1) backwards;
   animation-delay:calc(var(--i)*46ms + 120ms)}
 
-/* the lift — a frame coming off the wall */
+/* the lift — a frame coming off the wall.
+   Sized at the landing rect and scaled DOWN onto the source tile, so the
+   flight is one composited transform: no per-frame layout, no jitter, and
+   the two rects are both 16:9 so nothing is ever squashed. The outline is
+   counter-scaled at the start so it reads as 2px the whole way. */
 .lift{position:fixed;z-index:60;overflow:hidden;background:#000;pointer-events:none;
+  transform-origin:0 0;will-change:transform;
   outline:2px solid var(--gold);box-shadow:0 40px 90px -20px rgba(0,0,0,.95);
-  transition:left .64s cubic-bezier(.2,.85,.25,1),top .64s cubic-bezier(.2,.85,.25,1),
-    width .64s cubic-bezier(.2,.85,.25,1),height .64s cubic-bezier(.2,.85,.25,1)}
+  transition:transform .82s cubic-bezier(.22,.72,.2,1),
+    outline-width .82s cubic-bezier(.22,.72,.2,1)}
 .lift img{width:100%;height:100%;object-fit:cover}
+/* the landing pad: the table's empty frame slot is drawn while the frame is
+   still in the air, so the lift is visibly going somewhere */
+.bench.veil .frame{outline:1px solid var(--gold-24);outline-offset:-1px}
 
 /* the receipt slab */
 .receipt{display:inline-flex;align-items:stretch;font-family:var(--mono);font-size:13px;
@@ -310,72 +355,83 @@ section.beat{position:relative;background:var(--void);
   letter-spacing:0;margin-left:2px}
 .ledgernote{margin-top:12px}
 
-/* ── beat 3 · the wall, lit ──────────────────────────────────────── */
-.band{position:relative;display:grid;gap:1px;background:var(--seam);
-  border-top:1px solid var(--seam);border-bottom:1px solid var(--seam)}
-.band figure{position:relative;background:#000;overflow:hidden;aspect-ratio:16/9;
-  opacity:0;transition:opacity .5s linear;transition-delay:calc(min(var(--i),44)*22ms)}
-.band.in figure{opacity:1}
-.band img{width:100%;height:100%;object-fit:cover;filter:saturate(.8) brightness(.74)}
-.band figure::after{content:"";position:absolute;inset:0;pointer-events:none;
-  box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}
-.follow{background:var(--pitch);display:flex;align-items:center;justify-content:center;
-  gap:12px;outline:1px dashed var(--gold-44);outline-offset:-4px;padding:8px;
-  text-align:center;transition:background .18s ease;
-  opacity:0;transition:opacity .5s linear;transition-delay:calc(min(var(--i),44)*22ms)}
-.band.in .follow{opacity:1}
+/* ── beat 3 · the wall, full width, drifting (v4's treatment, Tom's pick) ──
+   Alternating rows, a constant few px/s, every tile carrying its own id and
+   timecode. The corpus was watched; the wall moves at reading pace and at
+   nothing else. Class names carry a b- prefix: this page already spends
+   .wt on the hero wall and .slug on the query bar. */
+.wallband{border-top:1px solid var(--seam);border-bottom:1px solid var(--seam);
+  background:var(--pitch);overflow:hidden}
+.wrow{overflow:hidden;border-bottom:1px solid var(--seam)}
+.wrow:last-child{border-bottom:0}
+.wtrack{display:flex;gap:1px;width:max-content;
+  animation:wdrift 900s linear infinite}
+.wtrack.rev{animation-direction:reverse}
+@keyframes wdrift{from{transform:translate3d(0,0,0)}
+  to{transform:translate3d(calc(-1*var(--shift,3000px)),0,0)}}
+.bwt{position:relative;flex:none;width:clamp(132px,13.4vw,200px);aspect-ratio:16/9;
+  overflow:hidden;background:#000}
+.bwt img{width:100%;height:100%;object-fit:cover;filter:saturate(.78) brightness(.7);
+  transition:filter .2s linear}
+.bwt:hover img{filter:none}
+.bwt::after{content:"";position:absolute;inset:0;pointer-events:none;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.045)}
+.bwt .bslug{position:absolute;left:0;right:0;bottom:0;display:flex;
+  justify-content:space-between;gap:6px;padding:2.5px 5px 3px;background:rgba(3,5,8,.72);
+  font-family:var(--mono);font-size:7.5px;line-height:1;letter-spacing:.04em;
+  color:rgba(226,236,246,.66);white-space:nowrap;overflow:hidden;font-variant-ligatures:none}
+.bwt .bslug b{font-weight:600;color:rgba(226,236,246,.45)}
+/* the roadmap affordance: honest about being next — dashed, gold, no fill */
+.follow{display:flex;align-items:center;justify-content:center;gap:12px;
+  outline:1px dashed var(--gold-44);outline-offset:-4px;padding:16px;
+  text-align:center;background:var(--pitch);transition:background .18s ease}
 .follow:hover{background:var(--gold-6)}
-.follow span{font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.1em;
-  text-transform:uppercase;color:var(--gold);line-height:1.35}
+.follow span{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--gold);line-height:1.4}
 .followsub{font-family:var(--mono);font-size:10.5px;color:var(--fg3);letter-spacing:.02em;
   display:block;text-transform:none;font-weight:400;margin-top:4px}
 .bandmeta{display:flex;align-items:baseline;justify-content:space-between;gap:20px;
-  flex-wrap:wrap;padding:14px 0 0}
+  flex-wrap:wrap;padding:16px 0 0}
 
-/* ── beat 4 · the booth log ──────────────────────────────────────── */
-.term{border:1px solid var(--seam2);background:var(--plate);
+/* ── beat 4 · the booth log — v4's terminal (v1's look, v2's air) ──────
+   Tom's pick, 2026-08-10: the transcript reads as a transcript, not as a
+   results table. Only v5's typing-in of the question is kept on top of it,
+   because the motion law's inventory lists it. */
+.term{border:1px solid var(--seam2);background:#0a0a0e;
   box-shadow:0 40px 90px -34px rgba(0,0,0,.9);margin-top:clamp(34px,4vw,58px)}
-.termhead{display:flex;align-items:center;gap:12px;padding:11px 16px;
+.termhead{display:flex;align-items:center;gap:14px;padding:12px 18px;
   border-bottom:1px solid var(--seam);background:var(--plate2);flex-wrap:wrap}
 .termhead .r{margin-left:auto}
-.termbody{padding:clamp(16px,1.7vw,26px) clamp(14px,1.7vw,26px) clamp(20px,2vw,30px);
-  font-family:var(--mono);font-size:12.5px;line-height:1.72;font-variant-ligatures:none;
+.termbody{padding:clamp(22px,2.4vw,36px) clamp(18px,2.4vw,36px) clamp(26px,2.8vw,40px);
+  font-family:var(--mono);font-size:12.5px;line-height:1.85;font-variant-ligatures:none;
   color:var(--fg2);overflow-x:auto}
-.termbody .q{color:var(--fg);font-family:var(--sans);font-size:clamp(1.05rem,1.6vw,1.55rem);
-  font-weight:250;letter-spacing:-.028em;line-height:1.24;max-width:52ch;margin-bottom:6px;
-  min-height:1.3em}
-.termbody .ask{display:flex;gap:13px;align-items:flex-start;padding-bottom:18px;
-  border-bottom:1px solid var(--seam);margin-bottom:18px}
-.termbody .ask .caret2{display:none;width:8px;height:15px;background:var(--gold);flex:none;
-  margin-top:6px}
-.term.typingq .ask .caret2{display:block;animation:blink 1.05s steps(1,end) infinite}
+.termbody .ask{display:flex;gap:13px;align-items:flex-start;padding-bottom:22px;
+  border-bottom:1px solid var(--seam);margin-bottom:24px}
 .termbody .ask .pfx{color:var(--gold);font-weight:700;flex:none;padding-top:5px}
+.termbody .q{color:var(--fg);font-family:var(--sans);font-size:clamp(1.05rem,1.6vw,1.5rem);
+  font-weight:250;letter-spacing:-.028em;line-height:1.26;max-width:52ch;min-height:1.3em}
+.termbody .ask .caret2{display:none;width:8px;height:15px;background:var(--gold);flex:none;
+  margin-top:7px}
+.term.typingq .ask .caret2{display:block;animation:blink 1.05s steps(1,end) infinite}
 .termrest{transition:opacity .55s linear}
 .term.veiled .termrest{opacity:0}
-.call{white-space:pre;color:var(--fg);margin-top:14px}
-.call .k{color:var(--gold)}
+.call{white-space:pre-wrap;word-break:break-word;color:var(--fg);margin:22px 0 2px}
+.call .k{color:var(--gold);font-weight:600}
 .call .arg{color:var(--fg2)}
-.ret{margin-top:3px;padding-left:16px;border-left:1px solid var(--seam2)}
-.ret .meta{color:var(--fg3)}
-.hit{display:grid;grid-template-columns:46px 118px 58px minmax(0,1fr);gap:14px;
-  align-items:baseline;padding:5px 0}
-.hit .rk{color:var(--fg3);font-variant-numeric:tabular-nums;white-space:nowrap}
-.hit .vd{color:var(--seen)}
-.hit .tc{color:var(--gold);font-variant-numeric:tabular-nums}
-.hit .qt{color:var(--fg);font-family:var(--sans);font-size:15px;font-weight:330;
-  letter-spacing:-.016em;line-height:1.42}
-.hit .qt u{text-decoration:none;color:var(--fg3);display:block;margin-top:4px;
-  font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase}
-.idlist{color:var(--seen);padding:5px 0;word-spacing:.2em}
-.answer{margin-top:24px;border-top:1px solid var(--seam);padding-top:22px;
-  display:flex;flex-direction:column;gap:20px}
-.acite{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px 26px;align-items:end}
-.acite p{font-family:var(--sans);font-size:clamp(1rem,1.34vw,1.32rem);font-weight:280;
-  line-height:1.36;letter-spacing:-.024em;color:var(--fg);border-left:1px solid var(--gold);
-  padding-left:16px;max-width:70ch}
-.acite p u{text-decoration:none;display:block;margin-top:7px;font-family:var(--mono);
-  font-size:11px;color:var(--fg3);letter-spacing:.02em}
-.termfoot{border-top:1px solid var(--seam);padding:16px;background:var(--plate2);
+.ret{color:var(--fg3);margin-bottom:6px}
+.say{color:var(--fg);font-family:var(--sans);font-size:15.5px;line-height:1.68;
+  font-weight:340;max-width:70ch;margin:16px 0 18px}
+.say b{font-weight:560}
+.say .id{font-size:.9em;color:var(--fg)}
+.q-cite{border-left:1px solid var(--gold);padding:4px 0 4px 16px;margin:0 0 20px}
+.q-cite p{font-family:var(--sans);font-size:15.5px;line-height:1.55;color:var(--fg);
+  font-weight:340;max-width:70ch}
+.q-cite .who2{margin-top:9px;display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;color:var(--fg3)}
+.q-cite .who2 b{color:var(--fg2);font-weight:600}
+.q-cite .who2 a{color:var(--gold)}
+.q-cite .who2 a:hover{text-decoration:underline}
+.termfoot{border-top:1px solid var(--seam);padding:18px;background:var(--plate2);
   display:flex;flex-direction:column;gap:10px}
 .termfoot .note{max-width:112ch}
 
@@ -413,10 +469,15 @@ footer{background:var(--void);padding:clamp(40px,4.6vw,64px) 0 clamp(44px,5vw,70
 
 /* ── responsive ──────────────────────────────────────────────────── */
 @media (max-width:1120px){
-  .heroin{grid-template-columns:1fr;align-items:start;gap:30px;
+  /* stacked: the lane between the copy and the light table is sized in JS to
+     one wall tile plus air, so the found frame has somewhere clear to sit
+     directly above the table it is about to land on. minmax(0,·) because a
+     bare 1fr lets the table's longest mono token widen the whole hero. */
+  .heroin{grid-template-columns:minmax(0,1fr);align-items:start;
+    row-gap:var(--lane,112px);column-gap:30px;
     padding-top:clamp(76px,10vh,110px)}
-  .herocopy{max-width:44rem}
-  .bench{max-width:640px}
+  .herocopy{max-width:44rem;min-width:0}
+  .bench{max-width:640px;min-width:0}
   .plate{grid-template-columns:36px minmax(0,1fr)}
   .plate .th{grid-column:2;margin-bottom:14px}
   .plate .bd{grid-column:2}
@@ -454,11 +515,11 @@ footer{background:var(--void);padding:clamp(40px,4.6vw,64px) 0 clamp(44px,5vw,70
   .ledger div{border-right:0;border-bottom:1px solid var(--seam);padding:15px 16px 16px}
   .ledger div:last-child{border-bottom:0}
   .ledger dd{font-size:1.9rem}
-  .acite{grid-template-columns:1fr;gap:12px}
-  .acite .receipt{justify-self:start}
-  .hit{grid-template-columns:1fr;gap:2px;padding:7px 0}
-  .hit .rk{display:none}
   .termbody{font-size:11.5px}
+  .say,.q-cite p{font-size:14.5px}
+  /* at 390 the wall band's own tiles carry the id; the slug stays, the
+     hairline goes — same reasoning as the hero wall */
+  .bwt{width:clamp(116px,32vw,150px)}
   .starts{grid-template-columns:1fr}
   .fgrid{grid-template-columns:1fr;gap:26px}
   .fmark{justify-content:flex-start}
@@ -467,11 +528,10 @@ footer{background:var(--void);padding:clamp(40px,4.6vw,64px) 0 clamp(44px,5vw,70
 /* the whole page freezes: end states only */
 @media (prefers-reduced-motion:reduce){
   html{scroll-behavior:auto}
-  .wallwrap{animation:none}
+  .wallwrap,.wtrack{animation:none}
   .slug.typing .caret,.term.typingq .ask .caret2{animation:none}
   .frame.acq .det{animation:none}
-  .wt img,.band figure,.follow,.termrest,.bench,.lift{transition:none}
-  .band figure,.band .follow{opacity:1}
+  .wt img,.bwt img,.follow,.termrest,.bench,.lift{transition:none}
   .term.veiled .termrest{opacity:1}
 }
 </style>
@@ -564,19 +624,23 @@ footer{background:var(--void);padding:clamp(40px,4.6vw,64px) 0 clamp(44px,5vw,70
 <section class="beat" id="corpus" style="padding-bottom:clamp(44px,5vw,84px)">
   <div class="wrap">
     <div class="bhead">
-      <div class="kick"><s></s><span class="ml gold">the wall, lit · one real frame per talk</span></div>
+      <div class="kick"><s></s><span class="ml gold">the wall, running · 70 real keyframes, ids and timecodes verbatim</span></div>
       <h2>Follow the builders. Get the sentence, the slide, and <em>the second.</em></h2>
-      <p class="lede">The same wall the hero dims for atmosphere, lit as an index. Every
-        frame is a talk this corpus has already watched end to end. Point it at a
-        conference, a channel, a creator, and their knowledge compounds into yours.</p>
+      <p class="lede">The same wall the hero dims for atmosphere, running at reading pace.
+        Every frame below was read out of a talk this corpus has already watched all the
+        way through. Point it at a conference, a channel, a creator, and their knowledge
+        compounds into yours.</p>
     </div>
   </div>
-  <div class="band" id="band" style="margin-top:clamp(34px,4vw,58px)"></div>
+  <div class="wallband" id="wallband" style="margin-top:clamp(34px,4vw,58px)"></div>
   <div class="wrap">
     <div class="bandmeta">
       <span class="ml" id="bandLine"></span>
       <span class="ml hide-s" id="bandDates"></span>
     </div>
+    <a class="follow" href="#run" style="margin-top:clamp(20px,2.2vw,30px)">
+      <span>+ follow a channel<span class="followsub">today: point it at a channel. next: it keeps watching.</span></span>
+    </a>
   </div>
 </section>
 
@@ -607,49 +671,41 @@ footer{background:var(--void);padding:clamp(40px,4.6vw,64px) 0 clamp(44px,5vw,70
 
         <div class="termrest">
         <p class="call"><span class="k">call</span> search <span class="arg">{"q":"LLM as a judge","content_type":"transcript","max_per_video":1,"limit":6}</span></p>
-        <div class="ret">
-          <p class="meta">← 5 talks · legs: transcript · relevance-first, one moment per video</p>
-          <div class="hit"><span class="rk">01</span><span class="vd id">-npY6XjM8CQ</span><span class="tc">16:01</span>
-            <span class="qt">“LLM as a judge doesn't really work either because LLMs don't have good taste in writing.”<u>the sceptic</u></span></div>
-          <div class="hit"><span class="rk">02</span><span class="vd id">q2JrUKBMf0w</span><span class="tc">04:07</span>
-            <span class="qt">“Agent as a judge is about adaptive dynamic analysis. LLM as a judge just gives you a fixed rubric.”<u>the successor argument</u></span></div>
-          <p class="idlist"><span class="rk" style="color:var(--fg3)">03–05&nbsp;&nbsp;</span><span
-            class="id">b_PmGocP4rc</span>&nbsp; <span class="id">31GUkCBD-Uc</span>&nbsp; <span
-            class="id">O72p-rBb2bA</span> <span class="meta" style="color:var(--fg3)">— the practitioners who ship it anyway</span></p>
+        <p class="ret">← 6 moments · 6 talks · leg: transcript · relevance-first</p>
+
+        <p class="say">They agree it is the default and disagree about whether it deserves to be.
+          <b>Two positions, and a third group that ships it anyway:</b></p>
+
+        <div class="q-cite">
+          <p>“And LLM as a judge doesn't really work either because LLMs don't have good
+            taste in writing.”</p>
+          <p class="who2"><b>Nick Heiner</b> · Surge AI · When Will The Benchmaxxing Plague End?
+            · 16:01 · <a href="https://youtu.be/-npY6XjM8CQ?t=961" rel="noopener">youtu.be/-npY6XjM8CQ?t=961</a></p>
+        </div>
+        <div class="q-cite">
+          <p>“Agent as a judge is about adaptive dynamic analysis. LLM as a judge just gives you a
+            fixed rubric with these fixed scores.”</p>
+          <p class="who2"><b>Aparna Dhinakaran</b> · Arize AI · The Future of Evals
+            · 4:07 · <a href="https://youtu.be/q2JrUKBMf0w?t=247" rel="noopener">youtu.be/q2JrUKBMf0w?t=247</a></p>
         </div>
 
-        <p class="call"><span class="k">call</span> search <span class="arg">{"q":"benchmark contamination training data leaked","max_per_video":1,"limit":6}</span></p>
-        <div class="ret">
-          <p class="meta">← 5 talks, five positions, one call</p>
-          <p class="idlist id">-npY6XjM8CQ&nbsp; _PdK6x7PQNM&nbsp; jWq-aZIU0kM&nbsp; 1EZdpEhwmNc&nbsp; Yk87oUPVaxU</p>
-        </div>
+        <p class="call"><span class="k">call</span> search <span class="arg">{"q":"LLM as a judge in production","content_type":"transcript","max_per_video":1,"limit":6}</span></p>
+        <p class="ret">← 6 moments · 6 talks · leg: transcript</p>
 
-        <div class="answer">
-          <span class="ml gold">the answer, with its receipts attached</span>
-          <div class="acite">
-            <p>“LLM as a judge doesn't really work either because LLMs don't have good taste in writing.”
-              <u>the sceptic · rank 1 · transcript leg</u></p>
-            <a class="receipt sm" href="https://youtu.be/-npY6XjM8CQ?t=961" rel="noopener">
-              <span>youtu.be/</span><span class="vid id">-npY6XjM8CQ</span><b>?t=961
-              <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"><path d="M3.4 8.6 8.6 3.4M4.6 3.4h4v4"/></svg></b></a>
-          </div>
-          <div class="acite">
-            <p>“Agent as a judge is about adaptive dynamic analysis. LLM as a judge just gives you a fixed rubric.”
-              <u>the successor argument · rank 2 · transcript leg</u></p>
-            <a class="receipt sm" href="https://youtu.be/q2JrUKBMf0w?t=247" rel="noopener">
-              <span>youtu.be/</span><span class="vid id">q2JrUKBMf0w</span><b>?t=247
-              <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"><path d="M3.4 8.6 8.6 3.4M4.6 3.4h4v4"/></svg></b></a>
-          </div>
-        </div>
+        <p class="say" style="margin-bottom:0">And three teams who run it in production regardless — video at
+          <span class="id">b_PmGocP4rc</span> (Character.ai), agent evals at
+          <span class="id">31GUkCBD-Uc</span> (Uber), clinical at
+          <span class="id">O72p-rBb2bA</span> (SonderMind). The disagreement is not
+          “does it work”; it is <b>what it is allowed to be the judge of</b>.</p>
         </div><!-- /.termrest -->
       </div>
       <div class="termfoot">
-        <p class="note">the agent filed a complaint of its own, unprompted: on a second question
-          the link for <span class="id">tJFjeMBKbIY</span> came back <b class="id">?t=1137</b>
-          and the airline story it had just quoted starts at <b>1164 s</b> — 27 seconds of
-          scrubbing. The citation points at the start of the cluster, not at the sentence. Open,
-          logged, and being fixed. A receipt you have to hunt for is a receipt with a bug.</p>
-        <span class="ml">calls, results and the caveat as recorded in research/demo-queries-2026-08-09.md — laid out for width, nothing rewritten</span>
+        <p class="note">the caveat, from the same run: the synthesist quoted an airline story from
+          <span class="id">tJFjeMBKbIY</span> and the link it was handed opened at 18:57 —
+          twenty-seven seconds before the story starts. Filed as a bug: search links point at the
+          cluster start, not at the matched moment. A real transcript with a real caveat in it is
+          worth more than a clean fake.</p>
+        <span class="ml">calls, results and the caveat as recorded in research/demo-queries-2026-08-09.md — condensed for width, nothing rewritten</span>
       </div>
     </div>
   </div>
@@ -802,12 +858,23 @@ footer{background:var(--void);padding:clamp(40px,4.6vw,64px) 0 clamp(44px,5vw,70
     return out;
   })();
   let currentQ = -1;
+  const heroin = document.querySelector('.heroin');
   function buildWall() {
-    const w = innerWidth, h = hero.offsetHeight || innerHeight;
-    const cols = Math.max(4, Math.min(16, Math.round(w / 108)));
-    const tw = (w * 1.12) / cols, th = tw * 9 / 16;
-    const rows = Math.max(4, Math.ceil((h * 1.16) / th) + 1);
+    const w = innerWidth;
+    /* fewer, bigger frames — v1's wall pitch rather than v3's mosaic
+       (Tom, 2026-08-10). One tile is ~145 CSS px of viewport. */
+    const cols = Math.max(4, Math.min(12, Math.round(w / 145)));
+    const tw = (w * 1.10) / cols, th = tw * 9 / 16;
+    /* stacked layouts get a clear lane of exactly one tile plus air between
+       the copy and the light table — measured here, spent by the CSS */
+    heroin.style.setProperty('--lane', Math.round(th + 58) + 'px');
+    const h = hero.offsetHeight || innerHeight;   /* read after the lane is set */
+    const rows = Math.max(4, Math.ceil((h * 1.10) / th) + 1);
     wallEl.style.gridTemplateColumns = `repeat(${cols},1fr)`;
+    /* rows are pinned to the tile height rather than stretched to 1fr: the
+       frames stay 16:9 (they are frames), and the clearance arithmetic that
+       places the found tile is then exact. The wrap clips the remainder. */
+    wallEl.style.gridAutoRows = th.toFixed(2) + 'px';
     wallEl.innerHTML = '';
     const n = cols * rows;
     for (let i = 0; i < n; i++) {
@@ -823,41 +890,81 @@ footer{background:var(--void);padding:clamp(40px,4.6vw,64px) 0 clamp(44px,5vw,70
       if (t) t.classList.add('hit');
     }
   }
+  /* ─── where the found frame is allowed to light up ───────────────────
+     Tom's note, 2026-08-10: "the frame should be near the component on the
+     right, but not overlapping it — 'the most expensive typo' looks the
+     best." So the pick is geometry, not luck: the lit tile must clear the
+     light table AND every actual line of hero text (line boxes, not the
+     copy column's bounding box, which is mostly empty air on its right),
+     and among the tiles that clear, the one nearest the table wins. All
+     three queries therefore land in the same place-relative-to-the-table.
+     Clearance is measured with a margin that also covers the whole drift
+     cycle, so nothing creeps into the copy while you watch. */
+  function obstacles() {
+    const out = [];
+    /* real line boxes for running text — a block's own rect is mostly empty
+       air on its right, and that air is where the found frame belongs */
+    const push = s => { const n = document.querySelector(s); if (!n) return;
+      const rg = document.createRange(); rg.selectNodeContents(n);
+      for (const r of rg.getClientRects()) if (r.width > 1 && r.height > 1) out.push(r); };
+    ['.herocopy .kick', '.herocopy h1', '.herocopy .lede', '.herocopy .canned'].forEach(push);
+    ['#slug', '#askbtn', '#chips', '#bench', '.rail', '.herofoot']
+      .forEach(s => { const n = document.querySelector(s);
+        if (n) out.push(n.getBoundingClientRect()); });
+    return out;
+  }
+  const gapTo = (a, b) => {                       /* 0 when the rects touch/overlap */
+    const dx = Math.max(b.left - a.right, a.left - b.right, 0);
+    const dy = Math.max(b.top - a.bottom, a.top - b.bottom, 0);
+    return Math.hypot(dx, dy);
+  };
+  const over = (a, b, m) => a.left < b.right + m && a.right > b.left - m &&
+                            a.top < b.bottom + m && a.bottom > b.top - m;
   function pickTile(vid) {
-    const cands = [...wallEl.querySelectorAll('.wt')].filter(t => t.dataset.vid === vid);
-    if (!cands.length) return null;
+    const tiles = [...wallEl.querySelectorAll('.wt')];
+    if (!tiles.length) return null;
     const hr = hero.getBoundingClientRect();
-    const cx = hr.left + hr.width * .62, cy = hr.top + hr.height * .42;
-    /* prefer a tile the copy and the table don't cover, so the found frame
-       is visibly lit on the wall before it lifts */
-    const covers = ['.herocopy', '#bench'].map(s => {
-      const n = document.querySelector(s); return n ? n.getBoundingClientRect() : null;
-    }).filter(Boolean);
-    const clear = c => { const r = c.getBoundingClientRect();
-      const x = r.left + r.width / 2, y = r.top + r.height / 2;
-      return !covers.some(v => x > v.left - 8 && x < v.right + 8 && y > v.top - 8 && y < v.bottom + 8) &&
-        y > hr.top + 30 && y < hr.bottom - 30; };
-    const nearest = pool => {
-      let best = pool[0], bd = 1e12;
-      for (const c of pool) {
-        const r = c.getBoundingClientRect();
-        const d = (r.left + r.width/2 - cx) ** 2 + (r.top + r.height/2 - cy) ** 2;
-        if (d < bd) { bd = d; best = c; }
-      }
-      return best;
-    };
-    const clearCands = cands.filter(clear);
-    if (clearCands.length) return nearest(clearCands);
-    /* every copy of that talk sits under the copy or the table: re-slot its
-       cover onto the nearest clear tile so the find is visible on the wall */
-    const anyClear = [...wallEl.querySelectorAll('.wt')].filter(clear);
-    if (anyClear.length) {
-      const t = nearest(anyClear);
-      const g = D.grid.find(x => x.vid === vid);
-      if (g) { t.dataset.vid = vid; t.querySelector('img').src = A + g.img; }
-      return t;
+    const benchR = document.querySelector('#bench').getBoundingClientRect();
+    const obs = obstacles();
+    /* a tile that hangs off the room, or off the viewport, is half a frame:
+       the found frame has to be whole before it can lift */
+    const inHero = r => r.top >= hr.top - 1 && r.bottom <= hr.bottom + 1 &&
+      r.left >= -1 && r.right <= innerWidth + 1;
+    /* the wall drifts: budget for the worst position in the cycle so the
+       clearance Tom sees in a screenshot is the clearance at every moment */
+    const DRIFT = 14, AIR = 10;
+    const air = r => Math.min(...obs.map(o => gapTo(r, o)));
+    let pool = tiles.filter(t => {
+      const r = t.getBoundingClientRect();
+      return inHero(r) && !obs.some(o => over(r, o, AIR + DRIFT));
+    });
+    /* nothing is fully clear (a very short viewport): never touch the table,
+       and take the tile that keeps the most air */
+    if (!pool.length) {
+      let rest = tiles.filter(t => { const r = t.getBoundingClientRect();
+        return inHero(r) && !over(r, benchR, DRIFT); });
+      if (!rest.length) rest = tiles;
+      pool = [rest.reduce((a, b) =>
+        air(b.getBoundingClientRect()) > air(a.getBoundingClientRect()) ? b : a)];
     }
-    return nearest(cands);
+    /* nearest to the table wins — that is the whole point of the note — and
+       near-ties go to whichever of them keeps the most air around it */
+    const dist = t => gapTo(t.getBoundingClientRect(), benchR);
+    pool.sort((a, b) => dist(a) - dist(b) ||
+      air(b.getBoundingClientRect()) - air(a.getBoundingClientRect()));
+    const bd = dist(pool[0]);
+    const near = pool.filter(t => dist(t) <= bd + 40);
+    const best = near.reduce((a, b) =>
+      air(b.getBoundingClientRect()) > air(a.getBoundingClientRect()) ? b : a);
+    /* a tile that already shows this talk wins ties generously, so the wall
+       lights one of its own frames when it can */
+    const own = pool.find(t => t.dataset.vid === vid && dist(t) <= dist(best) * 1.3 + 40);
+    if (own) return own;
+    /* every copy of that talk sits under the copy or the table: re-slot its
+       cover onto the chosen tile so the find is visible on the wall */
+    const g = D.grid.find(x => x.vid === vid);
+    if (g) { best.dataset.vid = vid; best.querySelector('img').src = A + g.img; }
+    return best;
   }
   buildWall();
   if (reduce) wallWrap.style.animation = 'none';   /* ?still=1 freezes the gate too */
@@ -939,15 +1046,31 @@ footer{background:var(--void);padding:clamp(40px,4.6vw,64px) 0 clamp(44px,5vw,70
     if (tile) {
       const from = tile.getBoundingClientRect();
       const to = bench.querySelector('.frame').getBoundingClientRect();
+      /* both rects are 16:9, so the flight is one composited transform:
+         the element is laid out at the landing size and scaled down onto
+         the tile. Nothing re-lays-out mid-flight, so nothing jitters. */
+      const s = from.width / to.width;
+      const dx = from.left - to.left, dy = from.top - to.top;
       const lift = el('div', 'lift', `<img src="${q.img}" alt="">`);
-      lift.style.cssText = `left:${from.left}px;top:${from.top}px;width:${from.width}px;height:${from.height}px`;
+      lift.style.cssText =
+        `left:${to.left}px;top:${to.top}px;width:${to.width}px;height:${to.height}px;` +
+        `outline-width:${(2 / s).toFixed(2)}px;` +
+        `transform:translate3d(${dx}px,${dy}px,0) scale(${s})`;
       document.body.append(lift);
-      await sleep(30);
-      lift.style.left = to.left + 'px'; lift.style.top = to.top + 'px';
-      lift.style.width = to.width + 'px'; lift.style.height = to.height + 'px';
-      await sleep(660); if (tk !== token) { lift.remove(); return; }
+      /* beat one: it comes off the wall — a short, visible detach before the
+         travel, so the lift reads as a lift and not as a cut */
+      await sleep(40); if (tk !== token) { lift.remove(); return; }
+      lift.style.transition = 'transform .24s ease-out,outline-width .24s ease-out';
+      lift.style.transform =
+        `translate3d(${dx - from.width * .04}px,${dy - from.height * .04}px,0) scale(${s * 1.08})`;
+      await sleep(270); if (tk !== token) { lift.remove(); return; }
+      /* beat two: the travel, on the stylesheet's .82s ease */
+      lift.style.transition = '';
+      lift.style.transform = 'translate3d(0,0,0) scale(1)';
+      lift.style.outlineWidth = '2px';
+      await sleep(860); if (tk !== token) { lift.remove(); return; }
       populateBench(q, true); bench.classList.remove('veil');
-      await sleep(40); lift.remove();
+      await sleep(60); lift.remove();
     } else {
       populateBench(q, true); bench.classList.remove('veil');
     }
@@ -1036,49 +1159,80 @@ footer{background:var(--void);padding:clamp(40px,4.6vw,64px) 0 clamp(44px,5vw,70
       num(st.ocr_frames) + ' frames read · counted off vidtheque.db for this build';
   }
 
-  /* ═══ beat 3 — the wall, lit ═══ */
+  /* ═══ beat 3 — the wall: 70 real keyframes, drifting (v4's treatment) ═══
+     v1's monitor-wall set, ids and timecodes verbatim. Alternating rows, a
+     constant few px/s, frozen under reduced motion and ?still=1. */
+  const TILES = [
+    ['t00.jpg','CoEIs6Xm8m8','00:00:45'],['t01.jpg','z0sh8HyTrDo','00:02:55'],
+    ['t02.jpg','b_PmGocP4rc','00:01:12'],['t03.jpg','hacEQHHhu2Q','00:00:35'],
+    ['t04.jpg','s67bE2Ur3bY','00:00:40'],['t05.jpg','Byv311hdoHE','00:00:52'],
+    ['t06.jpg','tJFjeMBKbIY','00:00:35'],['t07.jpg','O-CBZ3JtRvo','00:05:10'],
+    ['t08.jpg','o6U_2vd967Y','00:03:33'],['t09.jpg','tJFjeMBKbIY','00:07:36'],
+    ['t10.jpg','zkX03APVj0M','00:02:26'],['t11.jpg','zkX03APVj0M','00:01:10'],
+    ['t12.jpg','cJ0EOzey--o','00:00:52'],['t13.jpg','-jY2T2PiJBE','00:00:17'],
+    ['t14.jpg','jRCpXUjz4CI','00:00:55'],['t15.jpg','CgsWxRUY5Eo','00:12:46'],
+    ['t16.jpg','AMiyLItEtLA','00:08:41'],['t17.jpg','Byv311hdoHE','00:05:58'],
+    ['t18.jpg','jWq-aZIU0kM','00:05:54'],['t19.jpg','ZFxh7sqbUZo','00:24:35'],
+    ['t20.jpg','Ib5GBkD555M','00:00:18'],['t21.jpg','q2JrUKBMf0w','00:05:45'],
+    ['t22.jpg','GgLQ02aO-hs','00:00:44'],['t23.jpg','QHBjufYK8TA','00:10:43'],
+    ['t24.jpg','FWMJQDH3iK0','00:08:00'],['t25.jpg','J4_jCrTxMkk','00:28:04'],
+    ['t26.jpg','2JX6JYyQG4Y','00:00:28'],['t27.jpg','GgLQ02aO-hs','00:00:37'],
+    ['t28.jpg','2JX6JYyQG4Y','00:00:41'],['t29.jpg','jQDXzEVHMSE','00:00:23'],
+    ['t30.jpg','J4_jCrTxMkk','00:28:37'],['t31.jpg','jQDXzEVHMSE','00:00:19'],
+    ['t32.jpg','2JX6JYyQG4Y','00:00:32'],['t33.jpg','AMiyLItEtLA','00:12:23'],
+    ['t34.jpg','z0sh8HyTrDo','00:04:41'],['t35.jpg','jRCpXUjz4CI','00:18:34'],
+    ['t36.jpg','xIt_mTQp6mY','00:16:34'],['t37.jpg','jRCpXUjz4CI','00:06:38'],
+    ['t38.jpg','LZuWZRze3MU','00:18:28'],['t39.jpg','KhYifX22yhE','00:17:04'],
+    ['t40.jpg','0RNNfxpdbQk','00:00:11'],['t41.jpg','1EZdpEhwmNc','00:07:05'],
+    ['t42.jpg','LZuWZRze3MU','00:10:47'],['t43.jpg','pWXUkLP9uWM','00:02:25'],
+    ['t44.jpg','xIt_mTQp6mY','00:04:36'],['t45.jpg','Sir59K8ZDPU','00:18:56'],
+    ['t46.jpg','zkX03APVj0M','00:10:37'],['t47.jpg','418t26CVz-w','00:05:55'],
+    ['t48.jpg','o6U_2vd967Y','00:18:14'],['t49.jpg','ZyIoTOAbRfs','00:11:41'],
+    ['t50.jpg','3ZMUiFaQ3qg','00:11:46'],['t51.jpg','Yk87oUPVaxU','00:04:27'],
+    ['t52.jpg','AMiyLItEtLA','00:01:48'],['t53.jpg','-I5W5QVAT8E','00:00:40'],
+    ['t54.jpg','LZuWZRze3MU','00:09:23'],['t55.jpg','k35LeKZEhiE','00:17:35'],
+    ['t56.jpg','RVxym6mmIns','00:11:08'],['t57.jpg','s4r6nk5WsZw','00:05:47'],
+    ['t58.jpg','-jY2T2PiJBE','00:03:33'],['t59.jpg','GgLQ02aO-hs','00:00:34'],
+    ['t60.jpg','Sir59K8ZDPU','00:20:26'],['t61.jpg','Sir59K8ZDPU','00:20:10'],
+    ['t62.jpg','Sir59K8ZDPU','00:09:32'],['t63.jpg','Sir59K8ZDPU','00:00:23'],
+    ['t64.jpg','lyL5QhgIOxc','00:17:02'],['t65.jpg','lyL5QhgIOxc','00:11:22'],
+    ['t66.jpg','lyL5QhgIOxc','00:00:40'],['t67.jpg','lyL5QhgIOxc','00:05:56'],
+    ['t68.jpg','pWXUkLP9uWM','00:18:48'],['t69.jpg','pWXUkLP9uWM','00:02:54']
+  ];
   {
-    const band = document.getElementById('band');
-    const G = D.grid;
-    const layout = () => {
-      const w = band.clientWidth || innerWidth;
-      const cell = w < 700 ? 62 : 96;
-      const target = Math.max(3, Math.min(20, Math.round(w / cell)));
-      let cols = target, span = 0, best = 1e9;
-      for (let c = Math.max(3, target - 4); c <= Math.min(22, target + 4); c++) {
-        const s = (c - (G.length % c)) % c || c;
-        if (s < 2 || s > 4) continue;
-        const d = Math.abs(c - target);
-        if (d < best) { best = d; cols = c; span = s; }
-      }
-      if (!span) span = (cols - (G.length % cols)) % cols || cols;
-      band.style.gridTemplateColumns = `repeat(${cols},minmax(0,1fr))`;
-      band.querySelector('.follow').style.gridColumn = 'span ' + span;
-      band.querySelector('.followsub').style.display = span > 2 ? 'block' : 'none';
+    const band = document.getElementById('wallband');
+    const byVid = Object.fromEntries(D.grid.map(g => [g.vid, g]));
+    const ROWS = 4, rows = Array.from({ length: ROWS }, () => []);
+    TILES.forEach((t, i) => rows[i % ROWS].push(t));
+    const cell = ([f, id, tc]) => {
+      const g = byVid[id];
+      const fig = el('figure', 'bwt');
+      fig.title = (g ? g.title + ' — ' + g.speaker + (g.org ? ' (' + g.org + ')' : '') +
+        ' · ' + hms(g.dur) + ' · ' + num(g.cues) + ' spoken lines · ' +
+        num(g.ocr) + ' lines read off the screen · ' : '') + id + ' · ' + tc;
+      fig.innerHTML = `<img src="${A}wall/${f}" alt="${esc(g ? g.title + ' — ' + g.speaker : id)}"` +
+        ` loading="lazy" decoding="async" width="480" height="270">` +
+        `<span class="bslug"><b>${esc(id)}</b><span>${tc}</span></span>`;
+      return fig;
     };
-    G.forEach((g, i) => {
-      const f = el('figure');
-      f.style.setProperty('--i', i);
-      const img = el('img');
-      img.src = A + g.img; img.loading = 'lazy'; img.decoding = 'async';
-      img.alt = g.title + ' — ' + g.speaker;
-      f.title = g.title + ' — ' + g.speaker + (g.org ? ' (' + g.org + ')' : '') +
-        ' · ' + hms(g.dur) + ' · ' + num(g.cues) + ' spoken lines · ' + num(g.ocr) + ' lines read off the screen';
-      f.append(img); band.append(f);
+    rows.forEach((list, r) => {
+      const row = el('div', 'wrow');
+      const track = el('div', 'wtrack' + (r % 2 ? ' rev' : ''));
+      list.forEach(t => track.append(cell(t)));
+      list.forEach(t => track.append(cell(t)));   /* duplicate: seamless loop */
+      row.append(track); band.append(row);
     });
-    const fol = el('a', 'follow',
-      '<span>+ follow a channel<span class="followsub">today: point it at a channel. next: it keeps watching.</span></span>');
-    fol.href = '#run'; fol.style.setProperty('--i', G.length);
-    band.append(fol);
-    layout();
-    addEventListener('resize', layout, { passive: true });
-    if (reduce) band.classList.add('in');
-    else if ('IntersectionObserver' in window) {
-      const io = new IntersectionObserver(es => {
-        es.forEach(e => { if (e.isIntersecting) { band.classList.add('in'); io.disconnect(); } });
-      }, { threshold: .06 });
-      io.observe(band);
-    } else band.classList.add('in');
+    /* the drift speed is a constant few px/s, so duration follows width */
+    const SPEED = 3.2; /* px per second */
+    const pace = () => band.querySelectorAll('.wtrack').forEach(tr => {
+      if (reduce) { tr.style.animation = 'none'; return; }
+      const half = tr.scrollWidth / 2;
+      tr.style.setProperty('--shift', half + 'px');
+      tr.style.animationDuration = (half / SPEED).toFixed(0) + 's';
+    });
+    requestAnimationFrame(pace);
+    let bt; addEventListener('resize', () => { clearTimeout(bt); bt = setTimeout(pace, 200); },
+      { passive: true });
 
     const st = D.stats;
     document.getElementById('bandLine').innerHTML =
