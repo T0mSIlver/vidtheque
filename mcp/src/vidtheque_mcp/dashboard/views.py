@@ -607,6 +607,10 @@ async def video_detail(request: Request) -> Response:
         lambda c: queries.keyframe_page(c, vid, frame_offset, frame_page)
     )
     cue_rows = await db.read(lambda c: queries.cue_page(c, vid, cue_offset, cue_page_size))
+    # The transcript header is totals, not a position (Tom, 2026-08-10, round
+    # 4). Read beside the counts because it answers the same question — how
+    # much of this video is there — and never on a listing page.
+    cue_totals = await db.read(lambda c: queries.cue_text_totals(c, vid))
     tag_map = await db.read(lambda c: queries.video_tags(c, [vid]))
 
     frames_more = len(frame_rows) > frame_page
@@ -656,6 +660,7 @@ async def video_detail(request: Request) -> Response:
             "frames_more": frames_more,
             "selected_ord": selected_ord,
             "cues": _cue_rows(cue_rows, chunks),
+            "cue_totals": cue_totals,
             "cue_page": cue_page_size,
             "cue_offset": cue_offset,
             "cues_more": cues_more,

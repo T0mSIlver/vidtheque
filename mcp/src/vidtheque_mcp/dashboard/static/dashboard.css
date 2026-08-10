@@ -1593,12 +1593,13 @@ button.ocrstage { border: 0; padding: 0; cursor: zoom-in; }
 
 /* -------------------------------------------------------------- transcript */
 
-/* Where you are in the transcript, printed above the box and never scrolled
-   away (Tom, 2026-08-10). It replaces the thing a "Next 50 cues →" button told
-   you by implication and only while you were looking at it: `cues 1–150 of
-   1,203` is the whole of the position, and the second number is the count the
-   "What was stored" band already read — no page issues a second count query for
-   this line. */
+/* How big this transcript is, printed above the box (Tom, 2026-08-10, round
+   4). It used to be where you *are* in it — `cues 1–150 of 1,203` — which the
+   scrollbar was already saying, moved under the reader on every appended batch,
+   and answered nothing a reader wanted. Totals do: the count the "What was
+   stored" band already read, plus words and characters summed server-side with
+   the chunk marker's own definition, so a chunk's `n words` and the video's
+   `words` are the same kind of number. */
 .cuepos {
   margin: 0 0 var(--s2);
   color: var(--muted);

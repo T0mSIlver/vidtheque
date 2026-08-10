@@ -1991,6 +1991,33 @@ def per_video_counts(conn: sqlite3.Connection, video_id: int) -> sqlite3.Row:
     return conn.execute(_PER_VIDEO_COUNTS, {"vid": video_id}).fetchone()
 
 
+def cue_text_totals(conn: sqlite3.Connection, video_id: int) -> dict[str, int]:
+    """Words and characters across a video's whole transcript — detail page only.
+
+    The transcript header prints totals rather than a position (Tom,
+    2026-08-10): `307 cues · 12,480 words · 68,912 chars`. Characters are what
+    the chunker clamps on; words are what a human has an intuition for — the
+    same pair, and the same **definition**, the chunk marker already uses
+    (dashboard.md §12.5 item 9): ``len(text.split())``, which collapses every
+    whitespace run, rather than a SQL space-counting expression that miscounts
+    each newline inside a cue.
+
+    So the split happens here and not in SQLite, which means reading one column
+    of one video's cues. That is the same index range (`cues_time`) the six
+    `COUNT(*)`s beside it already walk, on the one page in this surface that is
+    allowed a per-video read at all, and the text never leaves this function.
+    """
+    words = 0
+    chars = 0
+    for (text,) in conn.execute(
+        "SELECT text FROM cues WHERE video_id = ? ORDER BY seq", (video_id,)
+    ):
+        value = str(text or "")
+        words += len(value.split())
+        chars += len(value)
+    return {"words": words, "chars": chars}
+
+
 def keyframe_bytes_total(conn: sqlite3.Connection) -> int:
     """Keyframe bytes on disk, from the column that already stores them.
 

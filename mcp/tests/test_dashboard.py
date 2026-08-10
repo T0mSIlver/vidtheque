@@ -2952,26 +2952,53 @@ def test_the_video_header_labels_both_states_as_one_object(client: TestClient) -
         assert "statepair-key" in pair and 'class="pill' in pair
 
 
-def test_the_transcript_is_a_scrollbox_with_its_position_printed(
+def test_the_transcript_is_a_scrollbox_headed_by_the_videos_totals(
     client: TestClient,
 ) -> None:
-    """Item 6. No "Next N cues" button as the primary control, and the position
-    is on the page whether or not the reader is at the end of it.
+    """Item 6, amended by round 4's item 4.
 
-    The pager stays in the markup: it is the no-JavaScript path and the
-    appender's own fallback when a fetch is refused. What it is not any more is
-    the thing the reader has to click.
+    No "Next N cues" button as the primary control — the pager stays in the
+    markup as the no-JavaScript path and the appender's own fallback when a
+    fetch is refused, and is not the thing the reader has to click.
+
+    What changed in round 4 is the line above the box. It used to print the
+    *position* (`cues 1–150 of 1,203`), which the scrollbar already said, which
+    moved under the reader on every appended batch, and which answered nothing
+    a reader of a transcript wants. It prints the video's own totals now, and
+    the word count uses the chunk marker's definition so the two agree.
     """
     # `?cues=2` is the only way this fixture has more than one batch: six cues
     # is under the default page, and a scrollbox with nothing to append is not
     # what this test is about.
     body = page(client, f"{ROOT}/videos/kCc8FmEb1nY?cues=2")
     assert 'class="cuebox"' in body and "data-cuelist" in body
-    assert re.search(r'cues <span class="mono" data-field="cue-range">1–2</span>', body)
-    # The count beside it is the one "What was stored" already read — no page
-    # issues a second count query for a position line.
+    assert "cue-range" not in body and "cue-position" not in body
+    header = re.search(
+        r'<p class="cuepos" data-field="cue-totals">(.*?)</p>', body, re.S
+    )
+    assert header, "the totals line"
+    figures = re.findall(r'<span class="mono">([\d,]+)</span>\s*(\w+)', header.group(1))
+    assert [word for _, word in figures] == ["cues", "words", "chars"]
+    counted = {word: int(value.replace(",", "")) for value, word in figures}
+    assert counted["cues"] == 6  # the count "What was stored" already read
+    # The same definition the chunk marker uses — `len(text.split())` — over
+    # the fixture's own six cues, and the characters they are made of.
+    cues = [
+        "we cache the keys and the values at every new token",
+        "otherwise you would recompute attention over the entire prefix",
+        "which is quadratic in the sequence length",
+        "the cache makes it linear in the number of new tokens",
+        "and the price you pay for that is memory",
+        "much later we talk about tokenization instead",
+    ]
+    assert counted["words"] == sum(len(c.split()) for c in cues)
+    assert counted["chars"] == sum(len(c) for c in cues)
+
     assert 'data-cue-total="6"' in body and 'data-cue-more="yes"' in body
     assert "data-cue-pager" in body  # the fallback survives, hidden by the script
+    # And the appender no longer maintains a moving number of its own.
+    script = (STATIC / "dashboard.js").read_text()
+    assert "cue-range" not in script
 
 
 def test_the_transcript_batches_arrive_preformatted(client: TestClient) -> None:

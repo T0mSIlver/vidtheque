@@ -482,8 +482,9 @@ if (timeline && scrub) {
 // The transcript scrollbox. The "Next N cues" button is gone (Tom,
 // 2026-08-10): a click that reloaded the page to move a hundred rows threw the
 // strip, the OCR panel and the scroll position away with it. Nearing the end of
-// the box asks the server for the next batch and appends it, and the sticky
-// line above always says which cues these are out of how many.
+// the box asks the server for the next batch and appends it. The line above
+// the box is the video's own totals and does not move as batches land (round
+// 4): the appender therefore assigns no string of its own outside the rows.
 //
 // Everything here is an enhancement over a page that already works: the server
 // rendered the first batch, the pager under the box is a pair of real links,
@@ -494,11 +495,9 @@ const cuebox = document.querySelector(".cuebox");
 if (cuebox) {
   const list = cuebox.querySelector("[data-cuelist]");
   const loading = cuebox.querySelector("[data-field='cue-loading']");
-  const range = document.querySelector("[data-field='cue-range']");
   const pager = document.querySelector("[data-cue-pager]");
   const source = safeUrl(cuebox.dataset.cues);
   const size = Math.max(1, Number(cuebox.dataset.cuePage) || 50);
-  const first = Number(cuebox.dataset.cueFirst) || 0;
   const videoId = cuebox.dataset.video || "";
   let next = Number(cuebox.dataset.cueNext) || 0;
   let more = cuebox.dataset.cueMore === "yes";
@@ -568,7 +567,6 @@ if (cuebox) {
       for (const cue of payload.cues || []) addCue(cue);
       next += (payload.cues || []).length;
       more = Boolean(payload.has_more);
-      if (range) range.textContent = `${first + 1}–${next}`;
     } catch {
       // A refusal or an offline tab: stop asking and give the reader the links
       // back. The batch already on the page stays on it.

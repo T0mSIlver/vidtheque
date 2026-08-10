@@ -387,19 +387,27 @@
   {% if cues %}
   {# The transcript is a bounded scrollbox that appends the next batch as the
      reader nears the end (Tom, 2026-08-10), not a page with a "Next N cues"
-     button under it. Two things that were true of the button are still true
-     here: the batch is the server's own clamped page, and the *position* is
-     always printed — the sticky line above says which cues these are and how
-     many the video has, so a reader three thousand cues down still knows where
-     they are. What is gone is the reload: a click that threw the strip, the
-     OCR panel and the scroll position away to move a hundred rows.
+     button under it. The one thing that was true of the button and is still
+     true here: the batch is the server's own clamped page. What is gone is the
+     reload — a click that threw the strip, the OCR panel and the scroll
+     position away to move a hundred rows.
 
      With JavaScript off this is exactly what it was: a scrollbox holding the
      first page, and the `<noscript>`-free fallback is the pager below, which
      is still rendered and still works. #}
-  <p class="cuepos" data-field="cue-position" role="status">
-    cues <span class="mono" data-field="cue-range">{{ cue_offset + 1 }}–{{ cue_offset + cues | length }}</span>
-    of <span class="mono">{{ counts['cues'] | count }}</span>
+  {# The line above the box is **totals, not position** (Tom, 2026-08-10, round
+     4). `cues 1–307 of 307` answered a question the scrollbar was already
+     answering, and answered it badly once the box appends: the number moved
+     under the reader every time a batch landed and still said nothing about
+     how much transcript there is. How big is this transcript is the question,
+     and it has three answers — the count the "What was stored" band already
+     read, and the word and character totals, counted server-side with the
+     chunk marker's own definition so a chunk's `n words` and the video's
+     `words` are the same kind of number. #}
+  <p class="cuepos" data-field="cue-totals">
+    <span class="mono">{{ counts['cues'] | count }}</span> cues<span class="sep">·</span>
+    <span class="mono">{{ cue_totals['words'] | count }}</span> words<span class="sep">·</span>
+    <span class="mono">{{ cue_totals['chars'] | count }}</span> chars
   </p>
   <div class="cuebox" data-cues="{{ root }}/api/videos/{{ video.video_id }}/cues"
        data-video="{{ video.video_id }}"
