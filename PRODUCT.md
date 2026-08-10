@@ -11,6 +11,11 @@
 > truth from those files rather than ask. Facts here are cited to a file where
 > the source is not obvious. Anything genuinely undecided is marked
 > **[undecided]** rather than invented.
+>
+> **Aligned 2026-08-10:** `docs/design/positioning.md` is LOCKED and
+> authoritative for framing, voice and vocabulary. Where this file and the
+> positioning contract touch, the contract wins; this revision folds it in
+> (position, word law, surface roles, the wordmark decision).
 
 ## Platform
 
@@ -40,11 +45,15 @@ the dashboard exists (`docs/design/dashboard.md`, opening decision).
 
 ## Product Purpose
 
-vidtheque turns videos you have already watched into a searchable multimodal
-corpus — transcript, on-screen text and frame search — and answers with
-**timestamped citations that land on the exact second**
-(`https://youtu.be/ID?t=123`). It is a self-hosted MCP server: two services
-(`mcp/` on CPU, `worker/` on GPU), one SQLite index, HTTP between them.
+**vidtheque empowers AI with the knowledge of the builders and creators**
+(`positioning.md`, the position). It turns the channels you follow — the
+videos you *didn't have time to watch* — into solid, timestamped knowledge:
+every sentence spoken, every line that crossed the screen, every frame, and it
+answers with **receipts that land on the exact second**
+(`https://youtu.be/ID?t=123`) — the sentence, the slide, and the second. Your
+agent watched it so you didn't have to. It is a self-hosted MCP server: two
+services (`mcp/` on CPU, `worker/` on GPU), one SQLite index, HTTP between
+them.
 
 Success is a question answered with a link that proves it. A vidtheque answer
 that cannot be checked against the source video has failed even when it is
@@ -52,7 +61,13 @@ correct.
 
 ## Positioning
 
-The mechanism a neighbouring product could not truthfully copy:
+**The contract is `docs/design/positioning.md` (LOCKED, Tom, 2026-08-10)** —
+the position, the three pillars (follow the builders · your agent watched it ·
+receipts, always), the twin line, the personas, the blessed and banned
+vocabulary, and the word law (ownership attaches to the *choice*, never the
+viewing; the agent is the one who watched). Every public string on every
+surface answers to it. What belongs here is the substantiation — the mechanism
+a neighbouring product could not truthfully copy:
 
 - **Three channels over one timeline.** Spoken transcript, on-screen text (OCR,
   with the box coordinates kept), and frame embeddings all indexed against the
@@ -83,8 +98,10 @@ The mechanism a neighbouring product could not truthfully copy:
   - `/dashboard` — the management surface. Five routes: corpus overview, videos
     table, video detail, jobs, job detail.
   - `/` — the public demo, a read-only projection of the same corpus, gated by
-    `VIDTHEQUE_PUBLIC_READONLY`. Explicitly *"a search engine, not a
-    dashboard"* (`docs/design/demo-site.md` §6).
+    `VIDTHEQUE_PUBLIC_READONLY`. Its role per the positioning contract: **the
+    proof** — the corpus on tap, ask it something; it searches and answers, it
+    does not manage (`docs/design/demo-site.md` §6, `positioning.md` surface
+    implications).
 - **The GPU is leased.** On Tom's box the worker shares a 3090 with a llama.cpp
   LXC through `GPU_ACQUIRE_CMD`/`GPU_RELEASE_CMD` hooks; public defaults leave
   them unset. Jobs therefore wait for reasons that are real and need to be
@@ -157,15 +174,18 @@ time axis.
   the dashboard's rail and the thing the wordmark sits beside, rendered as
   inline SVG that takes its two colours from the scheme tokens (a `data:`
   favicon cannot). One drawn object, three places, no new asset.
-- **The wordmark is set in a face of its own** (Instrument Serif 400, vendored,
-  OFL) and that face sets the string `vidtheque` and nothing else on
-  `/dashboard`. How it looks is `DESIGN.md`'s business — see **The
-  Wordmark-Only Rule** — but the *commitment* belongs here: the product's name
-  gets a voice, and no other string on the management surface borrows it.
-- **[undecided]** Nothing has been committed about a logo, a marketing site, or
-  any external brand asset. None exists; do not invent one. The rail mark above
-  is not an exception to this: it is the favicon `demo-site.md` already
-  specified, reused rather than designed.
+- **The logo is the wordmark: `vidtheque.` — lowercase, with the period.**
+  Decided 2026-08-10 with the landing-page identity: the gold full stop is the
+  receipt ending the sentence, and it recurs as the timestamp dot. A font
+  logo, nothing drawn. The exact face, weight and tracking are `DESIGN.md`'s
+  business (re-specced in the 2026-08-10 amendment that made the landing's
+  gold-on-black system normative); the *commitment* belongs here: the
+  product's name gets a voice of its own, and no other string on a product
+  surface borrows it.
+- **A landing page exists** (2026-08-10, "projection room" — the maximal
+  expression of the identity; `DESIGN.md` per-surface guidance). It is the
+  only marketing surface; nothing else external exists — do not invent brand
+  assets beyond the wordmark and the shared favicon.
 
 ## Evidence on Hand
 
@@ -204,13 +224,17 @@ surfaces. Layout shift is treated as a defect: every image ships explicit
 
 ## Surfaces and modes
 
-Mode is a property of the surface, not of the product.
+Mode is a property of the surface, not of the product. All three surfaces
+share one identity (the 2026-08-10 `DESIGN.md` system: the landing's world)
+and differ in register, not in world.
 
-- **`/dashboard` — `Operate`.** The visitor is completing a task: reading state,
-  finding the failed thing, opening the frame. Scanability, density and
-  consistency outrank expression; the brand lives in precise details.
-- **`/` (the public demo) — `Persuade`.** It is the page that explains and sells
-  the idea to someone who arrived from a link. **It is out of scope for the
-  2026-08-09 dashboard redesign** and keeps its own warmer, wider, editorial
-  treatment; only the shared palette tokens and the mono-means-machine rule
-  cross between them.
+- **The landing — `Sell`.** The maximal expression: the wall, the lift, the
+  receipts performed. Static by design; the trailer, not the movie.
+- **`/` (the public demo) — `Persuade`, in continuation of the landing.** The
+  proof for someone who arrived from a link: live search, ask-with-citations,
+  the same aesthetic carrying into a working product
+  (`positioning.md`: the demo is the proof).
+- **`/dashboard` — `Operate`.** The minimalist end of the same system: a true,
+  informative control surface. Scanability, density and consistency outrank
+  expression; it sells nothing and narrates nothing (`positioning.md`: the
+  instrument — its charisma is receipts rendered perfectly).
