@@ -1359,6 +1359,51 @@ async def test_the_end_of_the_pool_is_not_the_end_of_the_corpus(
     assert page_of(result)["pool_exhausted"] is True
 
 
+async def test_paging_past_a_full_pool_still_says_the_pool_was_full(
+    tool_corpus, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The 2026-08-09 review's MEDIUM: the two honesty rules have to compose.
+
+    An offset past the end took the early return, which dropped `pool_full` —
+    so the one response that most invites "there is nothing past here" printed
+    a bounded count as a complete one, with no `pool_exhausted` and no note.
+    """
+    parts = await tool_corpus(_six_videos)
+    monkeypatch.setattr(search, "CANDIDATE_POOL", 2)
+    result = await search.run(
+        parts.deps, q="good eval", content_type="transcript", limit=3, offset=50
+    )
+    body = text_of(result)
+    pagination = page_of(result)
+    assert rows_of(result) == []
+    assert pagination["pool_exhausted"] is True
+    assert "ranked pool" in body, "the count describes the pool, not the corpus"
+    assert "deeper matches exist" in body
+    assert pagination["approx_total"] == 2, "the pool, and only the pool"
+    assert f"offset={pagination['last_offset']}" in body
+
+
+async def test_the_pool_is_the_pool_and_not_the_pool_plus_one(
+    tool_corpus, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The review's LOW: the `+1` row is a sentinel, not a result.
+
+    Each leg fetches `pool + 1` to learn whether it had more to give. Keeping
+    that row made the pool one deeper than every sentence in the payload said
+    it was — the leg counts, the total and "the first N candidates per leg" all
+    disagreed with each other by one.
+    """
+    parts = await tool_corpus(_six_videos)
+    monkeypatch.setattr(search, "CANDIDATE_POOL", 2)
+    result = await search.run(
+        parts.deps, q="good eval", content_type="transcript", limit=50
+    )
+    assert "Legs: transcript 2 ·" in text_of(result), "counted after the sentinel goes"
+    assert page_of(result)["approx_total"] == 2
+    assert len(rows_of(result)) == 2, "and the page cannot show a 3rd of 2"
+    assert page_of(result)["pool_exhausted"] is True, "still known to be bounded"
+
+
 async def test_a_filter_that_matches_nothing_still_echoes_the_page(
     tool_corpus,
 ) -> None:

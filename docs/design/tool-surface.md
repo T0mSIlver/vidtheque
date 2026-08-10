@@ -205,7 +205,10 @@ fetch: `5/6` for a query with eighteen matching frames. All three are one bug
 (`research/demo-queries-2026-08-09.md` §7.8, §9.1.6). `search`'s rule instead:
 
 1. Every leg fetches a **candidate pool** (`CANDIDATE_POOL`, default 400) with
-   `LIMIT pool + 1` — the `+1` means "this leg had more to give".
+   `LIMIT pool + 1` — the `+1` means "this leg had more to give". That row is a
+   sentinel: it sets the flag and is then dropped, so the pool really is `pool`
+   deep and the leg counts, `approx_total` and "the first 400 candidates per
+   leg" cannot disagree by one.
 2. The legs are fused, collapsed and capped, and `approx_total` is the length of
    what is left: post-dedup, post-cap, **page-independent**, and a count of
    results a caller can actually reach by paging. Zero extra queries.
@@ -217,7 +220,13 @@ fetch: `5/6` for a query with eighteen matching frames. All three are one bug
 4. Paging past the end is a payload, not a silence: `Results: 0/80 (past the
    last page)`, the offset where the last page starts, and a `next:` back to it.
    It used to print `Results: 0/200` — a "total" equal to the offset — and then
-   two blank lines, strictly less help than an empty search gets (§7.9).
+   two blank lines, strictly less help than an empty search gets (§7.9). Rule 3
+   still applies here, and it is the case that needs it most: past the end of an
+   *exhausted* pool the line reads `Results: 0/400 (past the last page of the
+   ranked pool)`, carries `pool_exhausted: true` and the narrowing `note:`, and
+   says the pool filled rather than implying the corpus ended. Dropping the flag
+   on this path made the one response that most invites "there is nothing past
+   here" the one that printed a bounded count as a complete one.
 
 `list-videos` keeps the probe: it really does page in SQL.
 

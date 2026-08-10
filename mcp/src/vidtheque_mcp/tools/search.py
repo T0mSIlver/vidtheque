@@ -388,6 +388,19 @@ async def run(
     page = hits[offset : offset + limit]
     has_more = total > offset + limit
 
+    if pool_full and not has_more:
+        # Said before the past-the-end branch, not after it: an offset beyond a
+        # full pool is the *most* misleading place to leave this out, because
+        # the payload's only number is then a bounded count printed as if it
+        # were the whole answer (2026-08-09 review).
+        notes.append(
+            f"note: ranking ran over the first {CANDIDATE_POOL} candidates per leg "
+            "(the pool is bounded independently of limit, so the order never moves "
+            "when you page) and the pool was full — deeper matches exist. Narrow "
+            "with channel=, video_id=, published_after= or a more specific query "
+            "to reach them."
+        )
+
     if not hits:
         return await _empty_result(
             deps,
@@ -404,15 +417,7 @@ async def run(
         # blank lines — strictly less help than a genuinely empty search gets
         # (§7.9). Say where the end is and how to get back to it.
         return _past_the_end(
-            q, content_type, order, max_per_video, total, limit, offset, notes
-        )
-    if pool_full and not has_more:
-        notes.append(
-            f"note: ranking ran over the first {CANDIDATE_POOL} candidates per leg "
-            "(the pool is bounded independently of limit, so the order never moves "
-            "when you page) and the pool was full — deeper matches exist. Narrow "
-            "with channel=, video_id=, published_after= or a more specific query "
-            "to reach them."
+            q, content_type, order, max_per_video, total, limit, offset, notes, pool_full
         )
 
     related: dict[str, int] | None = None
@@ -516,12 +521,20 @@ def _run_legs(
     counts = {"transcript": 0, "ocr": 0, "frame": 0}
     # Every leg fetches `pool + 1` rows (SearchParams.bind adds the +1), so a
     # leg that came back with more than the pool is a leg that had more to give.
+    # That extra row is a *sentinel*: it is read for the flag and then dropped
+    # (`_pool`), because keeping it made the pool 401 deep while every sentence
+    # in the payload — the leg counts, `approx_total`, "the first 400
+    # candidates per leg" — said 400 (2026-08-09 review).
     pool_full = False
 
-    if legs["transcript"]:
-        rows = queries.search_transcript(conn, params)
-        counts["transcript"] = len(rows)
+    def _pool(rows: list) -> list:
+        nonlocal pool_full
         pool_full = pool_full or len(rows) > fetch_n
+        return rows[:fetch_n]
+
+    if legs["transcript"]:
+        rows = _pool(queries.search_transcript(conn, params))
+        counts["transcript"] = len(rows)
         for row in rows:
             hits.append(
                 Hit(
@@ -545,9 +558,8 @@ def _run_legs(
             )
 
     if legs["ocr"]:
-        rows = queries.search_ocr(conn, params)
+        rows = _pool(queries.search_ocr(conn, params))
         counts["ocr"] = len(rows)
-        pool_full = pool_full or len(rows) > fetch_n
         for row in rows:
             hits.append(
                 Hit(
@@ -575,9 +587,10 @@ def _run_legs(
             )
 
     if legs["frame"] and qimg is not None:
-        rows = queries.search_frames(conn, params, qimg, _k_for(fetch_n), frame_max_distance)
+        rows = _pool(
+            queries.search_frames(conn, params, qimg, _k_for(fetch_n), frame_max_distance)
+        )
         counts["frame"] = len(rows)
-        pool_full = pool_full or len(rows) > fetch_n
         for row in rows:
             hits.append(
                 Hit(
@@ -1044,6 +1057,7 @@ def _past_the_end(
     limit: int,
     offset: int,
     notes: list[str],
+    pool_full: bool,
 ) -> CallToolResult:
     """`offset` past the last result: say where the end is, do not go quiet.
 
@@ -1051,16 +1065,34 @@ def _past_the_end(
     offset — the query echo, the leg counts, and then two blank lines: strictly
     less help than a genuinely empty search gets
     (research/demo-queries-2026-08-09.md §7.9, §9.1.6).
+
+    ``pool_full`` travels with the count for the reason it does everywhere
+    else: `total` is the length of the **bounded ranked pool**, not of the
+    corpus. This path used to drop the flag, so an offset past a full pool was
+    the one response that printed a bounded count as a complete one, with no
+    `pool_exhausted` and no narrowing note to correct it (2026-08-09 review) —
+    the exact case where a caller is most likely to read "there is nothing
+    past here" as a fact about the corpus.
     """
     last = max(0, ((total - 1) // limit) * limit)
+    end = "past the last page of the ranked pool" if pool_full else "past the last page"
+    holds = (
+        f"The ranked pool holds {total} result{'s' if total != 1 else ''} and it "
+        f"filled, so deeper matches exist; the last page of the pool starts at "
+        f"offset={last}."
+        if pool_full
+        else (
+            f"This query has {total} result{'s' if total != 1 else ''}; the last "
+            f"page starts at offset={last}."
+        )
+    )
     lines = [
-        f"Results: 0/{total} (past the last page)",
+        f"Results: 0/{total} ({end})",
         f'Query: "{q or "*"}" · content_type={content_type} · order={order} · '
         f"max_per_video={max_per_video}",
         *notes,
         "",
-        f"This query has {total} result{'s' if total != 1 else ''}; the last page "
-        f"starts at offset={last}.",
+        holds,
         f"next: re-run with offset={last}, or offset=0 for the top of the ranking.",
     ]
     return text_result(
@@ -1072,6 +1104,7 @@ def _past_the_end(
                 "offset": offset,
                 "has_more": False,
                 "approx_total": total,
+                "pool_exhausted": pool_full,
                 "last_offset": last,
             },
             "notes": notes,
