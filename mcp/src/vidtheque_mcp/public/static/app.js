@@ -833,6 +833,10 @@ const workLog = () => {
       item.append(el("span", "work-what", text || ""));
       lines.set(id, item);
       list.append(item);
+      // The box is a fixed six lines (style.css) so the page does not grow a
+      // line at a time under a reader. Past six the newest work is the one
+      // worth showing, so the box — and only the box — scrolls to it.
+      list.scrollTop = list.scrollHeight;
     },
     // …and what it found. Never a guess: the server counted it. The arrow is a
     // text node rather than a `::before`, so the line still reads as a line
@@ -866,6 +870,11 @@ const renderAnswer = (payload, log) => {
   const pane = $("answer");
   pane.replaceChildren();
 
+  // The prose is one column of the pane, not the pane: above `--bp-wide` the
+  // sources sit beside it and the log spans both. It needs an element of its
+  // own to be that column — the paragraphs are laid out inside it, and the
+  // 70ch measure is written on it rather than on each `<p>`.
+  const prose = el("div", "answer-prose");
   const byNumber = new Map((payload.citations || []).map((c) => [c.n, c]));
   for (const para of (payload.answer || "").split(/\n{2,}/)) {
     const p = el("p");
@@ -887,8 +896,9 @@ const renderAnswer = (payload, log) => {
       index = match.index + match[0].length;
     }
     p.append(para.slice(index));
-    pane.append(p);
+    prose.append(p);
   }
+  pane.append(prose);
 
   if (payload.citations?.length) {
     const sources = el("div", "answer-sources");

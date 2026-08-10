@@ -985,21 +985,126 @@ def _rule(css: str, selector: str) -> str:
 
 
 def test_the_answer_pane_carries_the_measure_and_the_prose_fills_it() -> None:
-    """DESIGN.md caps running text at `--prose`; the cap belongs to the box.
+    """DESIGN.md caps running text at `--prose`; the cap belongs to a box.
 
-    On the paragraph, inside a plate at the full 1120px chassis, it read as a
-    wrap bug: 620px of text in a 947px bordered box, every line breaking two
-    thirds of the way across (Tom, 2026-08-11). The pane holds one thing —
-    running prose — so the measure is the pane's, written in the prose's own
-    font size so `ch` resolves against the face the paragraph is set in.
+    On the paragraph, inside a plate at the full chassis, it read as a wrap
+    bug: 620px of text in a 947px bordered box, every line breaking two thirds
+    of the way across (Tom, 2026-08-11). The measure is a container's, written
+    in the prose's own font size so `ch` resolves against the face the
+    paragraph is set in — the pane while there is nothing to put beside it, and
+    the prose *column* once there is (see the next test).
     """
     css = (STATIC / "style.css").read_text()
     pane = _rule(css, ".answer")
     assert "max-width: calc(var(--prose) + 2 * var(--answer-pad))" in pane
     assert "font-size: 15.5px" in pane, "`ch` has to resolve at the prose's size"
+    assert "max-width: var(--prose)" in _rule(css, ".answer-prose")
     paragraph = _rule(css, ".answer p")
     assert "font-size: 15.5px" in paragraph
     assert "max-width" not in paragraph, "a second measure inside the first"
+
+    # The column exists in the DOM, or the measure has nothing to sit on.
+    script = (STATIC / "app.js").read_text()
+    assert 'el("div", "answer-prose")' in script
+    assert "prose.append(p)" in script and "pane.append(prose)" in script
+
+
+def test_the_chassis_is_the_system_column_not_a_narrower_one() -> None:
+    """demo-site.md §6, amended 2026-08-11: `--maxw`, like every other surface.
+
+    It was `--bp-stack` (1120px), on the argument that this page is read rather
+    than toured. What that bought at 1440 was a third of the screen for the
+    evidence and the rest for margin.
+    """
+    css = (STATIC / "style.css").read_text()
+    assert "max-width: var(--maxw)" in _rule(css, ".wrap")
+    assert "--maxw: 1460px;" in css, "the system's number, not a new one"
+    # The measures inside it are what keep text readable, and are untouched.
+    for measure in ("--prose: 70ch;", "--lede: 60ch;", "--query-w: 44rem;"):
+        assert measure in css, measure
+
+
+def test_the_ask_pane_is_the_page_not_a_strip_down_the_side() -> None:
+    """demo-site.md §6 item 5, amended 2026-08-11 (Tom's second round).
+
+    Capping the *pane* at the measure fixed the paragraph and made the answer,
+    its sources and its log a 670px column down the left of a 1440 screen. So
+    above the demo's one own breakpoint the pane takes the width and spends it
+    on layout: sources beside the answer, the log spanning, the prose still
+    breaking at 70ch because that is what its column is.
+    """
+    css = (STATIC / "style.css").read_text()
+    assert "--bp-wide: 1380px;" in css
+    assert "@media (min-width: 1380px)" in css
+    # Wide when there is something to spend the width on — a live log or an
+    # answer with sources. `> .worklist` is the live one only: the log folded
+    # into the disclosure under a finished answer is not a state.
+    assert ".answer:has(> .worklist)," in css
+    assert ".answer:has(.answer-sources) { max-width: none; }" in css
+    assert "grid-template-columns: minmax(0, var(--prose)) minmax(0, 1fr);" in css
+    # Every child spans unless it is placed by name, so a pane rendered without
+    # its log or its model line cannot shift the two columns.
+    assert ".answer > * { grid-column: 1 / -1; min-width: 0; }" in css
+    for placed in (
+        ".answer:has(.answer-sources) > .answer-prose { grid-column: 1; grid-row: 1; }",
+        ".answer:has(.answer-sources) > .worklog { grid-column: 1; grid-row: 2; }",
+    ):
+        assert placed in css, placed
+    # The evidence spans the rows, which is what puts the model line at the
+    # bottom of the answer's column instead of under two paragraphs.
+    sources = re.search(
+        r"\.answer:has\(\.answer-sources\) > \.answer-sources \{(.*?)\}", css, re.S
+    )
+    assert sources, "the sources column is not placed"
+    body = sources.group(1)
+    assert "grid-column: 2" in body and "grid-row: 1 / 4" in body
+    assert "border-left: 1px solid var(--seam)" in body
+    assert "border-top: 0" in body, "the rule that separated them is now vertical"
+
+
+def test_the_work_log_reserves_its_room_instead_of_growing_into_it() -> None:
+    """The rest of the stutter Tom saw (2026-08-11), after the idle line.
+
+    A list that grows one line per tool call pushes everything under it — the
+    connect band, the footer — down 46px, four to eight times an ask. Measured
+    on the stub at 1440: 4 growth shifts, CLS 0.078, before the answer even
+    arrived; with the box reserved the pane holds 261px from the first event to
+    the last and the page does not move at all while the model works.
+    """
+    css = (STATIC / "style.css").read_text()
+    log = _rule(css, ".answer > .worklist")
+    assert "--log-lines: 6;" in log
+    assert "height: calc(var(--log-lines) * 1.85em + 30px);" in log
+    assert "overflow-y: auto" in log
+    assert "scrollbar-gutter: stable" in log, "a seventh line must not reflow the text"
+    assert "overscroll-behavior: contain" in log, "the log's bottom is not the page's"
+    # Only the live log. The one folded into the disclosure keeps its own
+    # height, because by then nothing is arriving.
+    assert ".worklog .worklist {" not in log
+    script = (STATIC / "app.js").read_text()
+    assert "list.scrollTop = list.scrollHeight;" in script
+
+
+def test_the_page_holds_its_columns_still_while_the_machine_works() -> None:
+    """Three smaller sources of the same stutter, all measured on the stub.
+
+    The scrollbar leaving and returning as an ask empties the results and then
+    fills the pane moved every column 15px sideways and back; the state cell
+    resizing between `ready` and `scanning` shoved the input's right edge; and
+    the mono face, discovered by the stylesheet a round trip after the page had
+    laid itself out, moved the whole machine channel when it landed.
+    """
+    css = (STATIC / "style.css").read_text()
+    assert "scrollbar-gutter: stable" in _rule(css, "html")
+    state = _rule(css, ".st")
+    assert "min-width: 88px" in state and "justify-content: center" in state
+
+    body = (STATIC / "index.html").read_text()
+    preloads = re.findall(r'<link rel="preload" href="([^"]+)"', body)
+    assert sorted(Path(p).name for p in preloads) == [
+        "archivo-latin-wght-normal.woff2",
+        "jetbrains-mono-latin-wght-normal.woff2",
+    ], preloads
 
 
 def test_a_source_row_is_a_grid_so_a_long_title_cannot_drop_under_the_frame() -> None:

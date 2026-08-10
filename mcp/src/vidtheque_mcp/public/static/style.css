@@ -101,7 +101,14 @@
   --query-w: 44rem;
   --lede: 60ch;
   --note: 74ch;
+  --maxw: 1460px;
   --bp-stack: 1120px;
+  /* The demo's one own breakpoint (DESIGN.md allows a surface exactly one, for
+     a real structural change): above it the ask pane puts its sources beside
+     the answer instead of under it. Not a taste threshold — it is the width at
+     which `--prose` plus a source row that can still print a whole receipt
+     both fit inside the plate. */
+  --bp-wide: 1380px;
 
   /* ── spacing, on the 4px grid */
   --s1: 0.25rem;
@@ -134,7 +141,12 @@
 /* `display:flex` on a chip row would otherwise beat the [hidden] attribute. */
 [hidden] { display: none !important; }
 
-html { -webkit-text-size-adjust: 100%; }
+/* The gutter is reserved whether or not there is a scrollbar in it. An ask
+   empties the results, which can shorten the document past one screen, and the
+   answer landing lengthens it again: without this the scrollbar leaves and
+   comes back, and every column on the page moves ~15px sideways and back while
+   the model works (Tom, 2026-08-11). */
+html { -webkit-text-size-adjust: 100%; scrollbar-gutter: stable; }
 
 body {
   background: var(--bg);
@@ -160,10 +172,15 @@ a { color: inherit; text-decoration: none; }
    what stops a flex or grid parent being *widened* by one id. */
 .wrap {
   width: 100%;
-  /* The demo's chassis is one column at the system's `--bp-stack` measure, not
-     the landing's 1460px gallery: this surface is read, not toured. Both
-     numbers are the system's; neither is a new primitive. */
-  max-width: var(--bp-stack);
+  /* The system's chassis (DESIGN.md, Layout): `--maxw` at `--gut` gutters.
+     It used to be `--bp-stack` — 1120px — on the argument that this surface is
+     read rather than toured. What that actually bought was a page where the
+     evidence had a third of a 1440 screen and the browser chrome had the rest,
+     and an ask pane the width of a sidebar (Tom, 2026-08-11). The corpus is
+     the content here, so it gets the column the system already defines; the
+     measures inside it (`--prose`, `--lede`, `--query-w`) are what keep text
+     readable, and they are unchanged. */
+  max-width: var(--maxw);
   margin: 0 auto;
   padding: 0 var(--gut);
 }
@@ -344,7 +361,12 @@ h2.big em { font-style: normal; color: var(--gold); }
 .st {
   display: flex;
   align-items: center;
+  justify-content: center;
   flex: none;
+  /* Wide enough for the longest word it prints (`scanning`, `no reply`), so
+     changing state does not resize the cell and shove the input's right edge
+     — a 13px jiggle on the one control the visitor is looking at. */
+  min-width: 88px;
   padding: 0 14px;
   border-left: 1px solid var(--seam);
   background: var(--console);
@@ -457,6 +479,11 @@ button[disabled] { opacity: .5; cursor: default; }
 .status .note { display: block; max-width: var(--note); color: var(--gold); }
 
 /* ────────────────────────────────────────── the cold page — teach it first */
+
+/* The cold page belongs to the input, not to the results: it sits under the
+   query bar at the query bar's measure, so the four chips and the corpus list
+   read as the box's own suggestions rather than as a very wide empty table. */
+.empty { max-width: var(--query-w); }
 
 .empty h2 { font-size: 14px; font-weight: 520; letter-spacing: -.02em; margin-top: var(--s4); }
 
@@ -828,9 +855,12 @@ a:hover > .rcpt,
 .w-70 { width: 70%; }
 .w-90 { width: 90%; }
 
+/* A dead end, an error or a wait is a sentence, so it is a sentence's width —
+   not a 1300px plate holding six words. */
 .notice {
   margin-top: var(--s4);
   padding: var(--s5) var(--s5) var(--s5);
+  max-width: var(--note);
   background: var(--plate);
   border: 1px solid var(--seam2);
 }
@@ -876,23 +906,87 @@ a:hover > .rcpt,
 
 /* ────────────────────────────────────────────────────────────── the answer */
 
-/* The pane *is* the measure, and the prose fills it.
-   `--prose` used to sit on the paragraph inside a plate at the full 1120px
-   chassis: 620px of text in a 947px box, so every line broke two thirds of the
-   way across a bordered plate and read as a wrap bug rather than as a measure
-   (Tom, 2026-08-11). The cap belongs to the container — this pane holds one
-   thing, running prose — so it is written here, in the prose's own font size,
-   which is what makes `ch` resolve against the face the paragraph is set in.
-   The pane then lands at the working column's width, under a query bar it is
-   the answer to, and nothing inside it has to guess a second measure. */
+/* The ask pane. Two rules hold it together, and they are not the same rule:
+   **prose is capped at `--prose`**, and **the pane is the page's main event.**
+
+   They used to be one. `--prose` sat on the paragraph inside a plate at the
+   full chassis — 620px of text in a 947px box, every line breaking two thirds
+   of the way across a bordered plate, a wrap bug rather than a measure — so
+   the cap moved to the container and the container shrank to the measure
+   (Tom, 2026-08-11). That fixed the paragraph and made the answer, its sources
+   and its work log a 670px strip down the left of a 1440 screen: the thing the
+   page is for, laid out like a sidebar (Tom, same review, one round later).
+
+   So the measure stays on a *column* and the pane gets the width: above
+   `--bp-wide` the sources move beside the answer, the log spans both, and the
+   prose still breaks at 70ch because that is what the column is. Below it,
+   nothing to put beside anything — the pane is the measure, as before. */
 .answer {
   --answer-pad: clamp(18px, 2.2vw, 26px);
+  --answer-gap: clamp(24px, 2.6vw, 40px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
   margin-top: var(--s6);
   padding: var(--answer-pad);
   font-size: 15.5px;
   max-width: calc(var(--prose) + 2 * var(--answer-pad));
   background: var(--plate);
   border: 1px solid var(--seam2);
+}
+
+/* Every child spans, and the two that do not are named below. A row that is
+   placed by name cannot be moved by a row that is missing. */
+.answer > * { grid-column: 1 / -1; min-width: 0; }
+
+.answer-prose { max-width: var(--prose); }
+
+@media (min-width: 1380px) {
+  /* The pane takes the width the moment it has something to spend it on: a
+     live work log, or an answer with sources. A degraded pane — one sentence
+     and a button — stays at the measure, because widening a refusal is the
+     one place the extra room says nothing.
+     The log is the *working* state's whole content, so it is the state that
+     decides: `> .worklist` matches only the live log, never the one folded
+     into the disclosure under a finished answer. Both states are full width,
+     which is why the answer landing changes the pane's *rows* and never its
+     width — one reflow at the one moment that has earned it. */
+  .answer:has(> .worklist),
+  .answer:has(.answer-sources) { max-width: none; }
+
+  /* Three rows, named, because the left column is not just the prose: the
+     answer, then how it was found, then what found it. The evidence spans all
+     three — a source list is nearly always taller than the paragraphs it
+     supports, and letting it set the row heights is what puts the disclosure
+     and the model line at the *bottom* of a 900px column instead of tucked
+     under two paragraphs with 600px of plate under them. */
+  .answer:has(.answer-sources) {
+    grid-template-columns: minmax(0, var(--prose)) minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
+    column-gap: var(--answer-gap);
+  }
+
+  .answer:has(.answer-sources) > .answer-prose { grid-column: 1; grid-row: 1; }
+  .answer:has(.answer-sources) > .worklog { grid-column: 1; grid-row: 2; }
+  .answer:has(.answer-sources) > .answer-foot {
+    grid-column: 1;
+    grid-row: 3;
+    align-self: end;
+  }
+
+  /* Beside the answer, separated by the hairline that would otherwise have
+     been above it. It stretches to the rows it spans, so the rule runs the
+     full height of the pair and reads as a column rule, not a box edge. */
+  .answer:has(.answer-sources) > .answer-sources {
+    grid-column: 2;
+    grid-row: 1 / 4;
+    margin-top: 0;
+    padding-left: var(--answer-gap);
+    border-top: 0;
+    border-left: 1px solid var(--seam);
+  }
+
+  .answer > .answer-sources .sources-title { margin-top: 0; }
 }
 
 /* The answer is prose a human reads, so it is the human face at the measure its
@@ -1052,6 +1146,31 @@ a:hover > .rcpt,
   color: var(--fg2);
   font-variant-ligatures: none;
   overflow-wrap: anywhere;
+}
+
+/* **The live log is a fixed box.** It used to be a list that grew: one line
+   per tool call, and every line pushed the rest of the document — the connect
+   band and the footer — down 46px, four to eight times an ask. That is the
+   stutter Tom kept seeing after the idle line was parked (2026-08-11); the
+   idle line was one symptom of it and the log itself was the rest. Measured on
+   the stub at 1440: 4 growth shifts totalling CLS 0.078 before the answer even
+   arrived.
+
+   So the space the log will need is reserved before it needs it, exactly as
+   the results skeleton reserves the shape of a page of cards (§6.1) — and for
+   the same reason: the page must not move under a reader while the machine
+   works. Six lines is the reservation; a longer run scrolls inside the box and
+   the newest line is scrolled to, which is the one you want to be reading.
+   Nothing outside the box changes height at all until the answer lands.
+   `scrollbar-gutter` so the moment a seventh line appears the text inside does
+   not reflow either, and `overscroll-behavior` so reaching the bottom of the
+   log does not then start scrolling the page. */
+.answer > .worklist {
+  --log-lines: 6;
+  height: calc(var(--log-lines) * 1.85em + 30px);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
 }
 
 .work.is-running { color: var(--fg); }

@@ -973,6 +973,41 @@ Layout, top to bottom:
    against the face the paragraph is set in. The pane lands at ~673px, under
    the query bar it is the answer to (`--query-w`, 704px), and nothing inside
    it has to guess a second measure. Sources rows and the log narrow with it.
+
+   *Amended 2026-08-11, same review, one round later: the measure is a column's
+   and the pane is the page's.* The fix above is correct about the paragraph
+   and wrong about the object: a 673px pane holding the answer, its sources and
+   its work log is the thing this page exists for, laid out as a strip down the
+   left of a 1440 screen with two thirds of the width unused. Long prose is
+   still uncomfortable past ~90ch, so the answer is **layout, not a wider
+   paragraph**:
+
+   - **The chassis is `--maxw` (1460px)**, DESIGN.md's own column, like every
+     other surface in the system. It was `--bp-stack` (1120px) on the argument
+     that this page is read rather than toured; what that bought was margin.
+   - **Above `--bp-wide` (1380px) — the demo's one own breakpoint, which
+     DESIGN.md allows a surface for exactly this kind of structural change —
+     the ask pane takes the full column and spends it on layout.** Two columns:
+     the answer at `--prose` on the left, its Sources beside it on the right,
+     separated by a hairline column rule. `--bp-wide` is not a taste threshold:
+     it is the width at which 70ch of prose *and* a source row that can still
+     print a whole receipt both fit inside the plate. Below it, one column and
+     the pane is the measure, exactly as the previous amendment left it.
+   - **The left column is the answer and how it was made**: the prose, then
+     "Show its work", then the model line, which sits at the bottom of the
+     column because the Sources span all three rows. A source list is nearly
+     always taller than the paragraphs it supports.
+   - **The work log uses the width.** While the model works there are no
+     sources yet, so the pane is one full-width column and the log is the whole
+     of it — a console, at a console's width (§6.6).
+   - The pane is **the same width in both states**, so the answer arriving
+     changes the pane's rows and never its width. A *degraded* pane — one
+     sentence and a button — stays at the measure: widening a refusal is the
+     one place the extra room says nothing.
+
+   Measured at 1440: pane 1319px, prose column 621px, sources column 607px, no
+   horizontal overflow, receipts intact. At 1920 the chassis caps at 1460 and
+   the two columns are 621/604.
 6. **"Add this corpus to your own agent"** — the label `MCP endpoint`, the
    `mcp_url` from `/api/meta`, a copy button, and the one-liner:
    `claude mcp add --transport http vidtheque <mcp_url>`. *Amended 2026-08-10:*
@@ -1107,7 +1142,10 @@ A demo is judged on the four screens that are not "ten results came back".
 - **Loading, in ask mode**, is not a skeleton — there is no shape to reserve,
   because nobody knows what the model will find. It is the activity log (§6.6),
   which is the honest version of the same promise: rather than reserving space
-  for an answer, it shows the work that will produce one.
+  for an answer, it shows the work that will produce one. *Amended 2026-08-11:
+  the log's own box **is** reserved* — six lines, fixed, before the first event
+  — because "we cannot reserve for the answer" was never a licence for the log
+  to grow a line at a time under a reader.
 
 Requests are spent on **Enter or a click, never on a keystroke**: a
 search-as-you-type box against a shared 30/min bucket would refuse a visitor
@@ -1341,11 +1379,35 @@ Four decisions worth stating:
   It is `visibility` now: gone from the screen and from the accessibility tree,
   still holding its line. Measured on the stub at 1440, hiding moved the page
   39px per tool call; parking moves it 0.
-- **Nothing the page appends may move what is above it.** The log grows
-  downward, the pane's height only increases while the loop runs, and there is
-  no auto-scroll anywhere in the page: a scroll position is the reader's. The
-  one height change left is the answer arriving, which is the event the reader
-  is waiting for.
+- **Nothing the page appends may move what is above it.** A scroll position is
+  the reader's, and the page never touches it.
+
+  *Amended 2026-08-11 (Tom: "still stuttering"): the log does not grow either.*
+  Parking the idle line (above) fixed one line of movement and left the real
+  one — the list itself. Every tool call appended a row, the pane grew 46px,
+  and the connect band and the footer under it moved by that much, four to
+  eight times an ask. On the stub at 1440 that measured as four growth shifts,
+  CLS 0.078, *before the answer arrived*. So the live log is a **fixed box of
+  six lines**, reserved before it is needed — the same discipline as the
+  results skeleton (§6.1), for the same reason. A longer run scrolls inside the
+  box, and the box scrolls itself to the newest line, which is the one worth
+  reading; the page does not move at all. This is the one auto-scroll on the
+  surface and it moves a 169px box, never the document.
+
+  Three smaller sources of the same complaint went with it, all measured on the
+  stub: the **scrollbar** leaving as an ask emptied the results and returning as
+  the answer filled the pane, moving every column 15px sideways and back
+  (`scrollbar-gutter: stable`); the **state cell** resizing between `ready` and
+  `scanning`, shoving the input's right edge 13px (a `min-width` for the longest
+  word it prints); and the **mono face**, which the stylesheet discovered a
+  round trip after the page had laid itself out — it is preloaded beside the
+  text face now, because above the fold the machine channel is the rail label,
+  the chips, the state cell, the query and every example.
+
+  What is left, and stays: the pane opening when an ask starts, and the answer
+  arriving. Both are the page answering the visitor. Between them — from the
+  first activity event to the last — the pane holds 261px at 1440 and the
+  document does not move: 2 layout shifts for a whole ask, down from 8.
 - **The result is a text node with its arrow in it**, not a `::before`. The
   arrow is chrome, but a log a visitor copies out of the page should still read
   as a log, and so should one whose stylesheet never arrived.
@@ -1385,17 +1447,17 @@ shown.
    used to offer up a warm amber, a 46rem column and a six-property palette for
    you to overrule. You overruled the whole thing: `DESIGN.md` is the visual
    contract, the demo is the landing's continuation, and this page is one column
-   at the system's `--bp-stack` measure with the query bar and its chips capped
-   at 44rem. What is left open is not the palette but the *ratio* — how much of
+   at the system's chassis with the query bar and its chips capped at 44rem.
+   (That column was `--bp-stack`; it is `--maxw` since 2026-08-11 — §6 item 5.)
+   What is left open is not the palette but the *ratio* — how much of
    the hero the argument gets before the input starts. It is currently: kicker,
    one `headline` line, one lede, then the box.
-6. **The five example queries** on the cold page are corpus-specific copy in
+6. **The four example queries** on the cold page are corpus-specific copy in
    `index.html`, re-drawn 2026-08-10 from the verified harvest (§6.1). They stop
    being useful the day the corpus changes; there is no machinery to keep them
    honest, deliberately, because a generated example is a worse example. The
    thing to re-check when the corpus moves is that `context window costs money
-   tokens` still returns exactly one OCR hit and `FlashAttention-4` still
-   returns none.
+   tokens` still returns exactly one OCR hit.
 7. **A gibberish query still returns results.** The vector leg has no relevance
    floor, so `zzzzqqqq` comes back with the whole corpus, semantically ranked.
    The zero-results state is therefore designed but nearly unreachable in

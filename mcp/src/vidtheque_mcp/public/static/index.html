@@ -14,9 +14,17 @@
 <meta property="og:title" content="vidtheque — AI Engineer 2026, on tap">
 <meta property="og:description" content="The knowledge of AI Engineer 2026, on tap. Your agent watched it — ask it something.">
 <meta name="twitter:card" content="summary">
-<!-- Only the text face is preloaded: it carries the display voice, and a FOUT
-     on the one big line is worse than 100ms of nothing. -->
+<!-- Both faces are preloaded. The text face carries the display voice and a
+     FOUT on the one big line is worse than 100ms of nothing — that was the
+     original argument, and it left the *mono* face to be discovered by the
+     stylesheet. Both are `font-display: block`, and above the fold there is
+     mono in the rail label, the chips, the state cell, the query itself and
+     every example: discovering it one round trip late meant the whole machine
+     channel arrived after the page had already laid itself out, and moved it
+     (Tom, 2026-08-11 — "still stuttering"). 75KB of woff2, both in the first
+     flight, and the page settles once. -->
 <link rel="preload" href="/static/fonts/archivo-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/jetbrains-mono-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/static/style.css">
 <!-- A film frame, drawn rather than an emoji: emoji favicons render as a
      different glyph on every platform and vanish in monochrome tab strips.
