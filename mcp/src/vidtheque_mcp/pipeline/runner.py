@@ -125,6 +125,12 @@ class ItemRun:
     ctx: ItemContext
     args: dict[str, Any]
     meta: VideoMeta | None = None
+    # The probe's raw info dict, kept only for the length of the `fetch` stage:
+    # the audio and frame downloads select their formats out of it instead of
+    # buying an extraction each (audit 2026-08-10 §5). Dropped the moment the
+    # stage ends — it is a megabyte of formats and heatmap, and no later stage
+    # has any business reading it.
+    info: dict[str, Any] | None = None
     video_id: int = 0
     stages: dict[str, Any] = field(default_factory=dict)
     audio: Path | None = None
@@ -423,6 +429,7 @@ class IndexingPipeline:
             ) from exc
 
         run.meta = meta
+        run.info = info
         video_id, claim = await self.db.write(
             lambda c: _land_metadata(c, meta, run.ctx.item_id)
         )
@@ -513,6 +520,10 @@ class IndexingPipeline:
         )
         await self._stage_done(run, "fetch", getattr(self.source, "version", "yt-dlp"))
         await run.ctx.record("fetch", 1.0)
+        # Nothing downstream reads it, and an item can sit in `stt` for an
+        # hour. Everything worth keeping is already in `videos` and its
+        # satellites; this is a megabyte of format URLs that expire anyway.
+        run.info = None
 
     async def _fetch_audio(self, run: ItemRun) -> Path | None:
         assert run.meta is not None
@@ -525,6 +536,7 @@ class IndexingPipeline:
             run.meta.source_id,
             self.layout.audio_dir(),
             self.settings.audio_codec,
+            run.info,
         )
         return media.path
 
@@ -539,6 +551,7 @@ class IndexingPipeline:
             run.meta.source_id,
             self.layout.media_dir(),
             self.settings.max_height,
+            run.info,
         )
         return media.path
 

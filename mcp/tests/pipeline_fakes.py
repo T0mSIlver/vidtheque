@@ -236,18 +236,20 @@ class ClipSource(RecordedSource):
         self.probes.append(url)
         return super().probe(url)
 
-    def download_audio(self, url, source_id, dest_dir, codec):  # type: ignore[no-untyped-def]
+    def download_audio(self, url, source_id, dest_dir, codec, info=None):  # type: ignore[no-untyped-def]
         self.downloads.append("audio")
-        return super().download_audio(url, source_id, dest_dir, codec)
+        return super().download_audio(url, source_id, dest_dir, codec, info)
 
-    def download_video(self, url, source_id, dest_dir, max_height):  # type: ignore[no-untyped-def]
+    def download_video(self, url, source_id, dest_dir, max_height, info=None):  # type: ignore[no-untyped-def]
         from vidtheque_mcp.pipeline.sources import MediaFile
 
         self.downloads.append("video")
+        self.reused_info.append(info is not None)
         dest_dir.mkdir(parents=True, exist_ok=True)
         target = dest_dir / f"{source_id}.mp4"
         if self.clip is None:
-            return super().download_video(url, source_id, dest_dir, max_height)
+            self.reused_info.pop()  # the base class records it instead
+            return super().download_video(url, source_id, dest_dir, max_height, info)
         shutil.copyfile(self.clip, target)
         return MediaFile(path=target)
 

@@ -389,6 +389,35 @@ async def test_every_published_frame_exists_and_every_file_has_a_row(
         await close(parts)
 
 
+# =========================================================== extraction budget
+
+
+async def test_one_probe_feeds_both_media_downloads(
+    settings: Settings, clip: Path
+) -> None:
+    """Audit §5: a normal item used to buy three full YouTube extractions.
+
+    The probe's info dict is handed to both downloads, so the audio and the
+    frame source select their formats out of the extraction that already
+    happened. `YtDlpSource` is where that saves the requests
+    (`test_ytdlp_source.py`); this is the wiring that gets it there — and the
+    proof that what lands on disk is unchanged.
+    """
+    parts = await harness(settings, clip)
+    try:
+        await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+
+        assert parts.source.probes == [VIDEO_URL]  # one extraction cycle
+        assert parts.source.downloads == ["audio", "video"]
+        assert parts.source.reused_info == [True, True]  # both off that one probe
+        # …and the two files still arrived: the audio kept by retention, the
+        # frame source consumed and swept.
+        assert audio_files(parts) and keyframe_files(parts)
+    finally:
+        await close(parts)
+
+
 # ================================================================ 403 throttling
 
 
