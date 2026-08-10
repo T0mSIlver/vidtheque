@@ -158,6 +158,13 @@ you asked for.
   near enough to this query to be ranked at all — the other 677 were "nearest",
   not "near". `vec 800/800` means the relevance band kept every one of them:
   the pool is as wide as the KNN, so read the scores, not the count.
+- **`fts 0` says nothing about titles: the one place `search` cannot find a
+  phrase is the title bar.** Titles, descriptions and channel names are not in
+  the searched index, so a phrase that lives only in a video's title reads
+  `fts 0` and leaves the ranking to the semantic leg — which is how a talk
+  *named* after the phrase you typed can rank below one that is not. When that
+  happens the payload names the matching titles in a `note:`. `video_title=`
+  is the parameter that filters by title, on `search` and on `list-videos`.
 - **On-screen text is a flat reading-order join, and it is capped per frame.**
   Tables, code, bullet lists and quote/attribution pairs come back unscrambled
   from the layout that made them readable, and OCR mangles digits and bullet

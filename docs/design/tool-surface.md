@@ -835,6 +835,42 @@ A leg-skip note looks like this, on the line under `Legs:`:
 note: speaker= applies to the transcript leg only — ocr and frame legs were not queried for this call.
 ```
 
+**A phrase that exists only in a TITLE gets a note too** (added 2026-08-11,
+terra eval §9.8). Titles, descriptions and channel names live in `videos_fts`,
+which no `search` leg reads, so a query whose words are only in a title comes
+back `fts 0` — truthfully — and the semantic leg ranks alone. Live, over a
+corpus containing a talk *named* "…without the on-call tax", `q="on-call tax"`
+put an unrelated talk at rank 1 and the eponymous one at ranks 2-4. **The one
+place `search` cannot find a phrase is the title bar.** When the transcript FTS
+sub-leg is empty and a title in scope does match, the payload says so and names
+up to three:
+
+```
+note: no transcript or on-screen line contains these words (fts 0), but 1 video title does: "Always-on agents run production without the on-call tax" (vSx5IULvBns). Titles are not in the searched index, so a title match cannot rank a moment and did not rank one here. search video_title="…" filters by title; video-summary video_id="vSx5IULvBns" opens the first one.
+```
+
+The alternative — a title sub-leg or a title boost in the fusion — is
+**deliberately not taken in v1**, for two reasons and one condition:
+
+- A `search` result is a **moment with a receipt** (§3.6). A title matches the
+  *video*, not a position in it, so promoting one to a result means either
+  inventing `t=0` — a fabricated moment, which §1's first rule forbids — or a
+  result with no deep link, which nothing downstream is shaped to read.
+- A boost is a **tuned constant over a scored ranking**, the same class of
+  change as the vec floors: it belongs to a bench run with a before/after per
+  encoder (`research/vec-floor-calibration-2026-08-10.md`), not to a hint.
+  `index-schema.md`'s FTS notes already sketch the mechanism
+  (`videos_fts … rank MATCH 'bm25(10.0, 1.0, 3.0)'` weights title over
+  description over channel); what is missing is the measurement, not the SQL.
+- What is *not* deferrable is the silence: §2's *`all` means all* says a leg
+  that cannot answer prints a `note:` and never narrows quietly, and a modality
+  the legs structurally do not cover is the same promise. The note carries the
+  receipt the ranking cannot.
+
+Cost: one bounded FTS lookup (`LIMIT 3`, column-filtered to `title`), asked
+only on the `fts 0` branch — where by definition there is nothing else to
+spend on. It cannot be paid on a query that already has lexical footing.
+
 **The `Legs:` line prints sub-legs, and the semantic ones print what they kept
 (2026-08-10; units and the unbound band, 2026-08-11).** The leading number per
 leg is the fused contribution to the ranking, in *segments*. The parenthetical
@@ -2323,6 +2359,13 @@ you asked for.
   near enough to this query to be ranked at all — the other 677 were "nearest",
   not "near". `vec 800/800` means the relevance band kept every one of them:
   the pool is as wide as the KNN, so read the scores, not the count.
+- **`fts 0` says nothing about titles: the one place `search` cannot find a
+  phrase is the title bar.** Titles, descriptions and channel names are not in
+  the searched index, so a phrase that lives only in a video's title reads
+  `fts 0` and leaves the ranking to the semantic leg — which is how a talk
+  *named* after the phrase you typed can rank below one that is not. When that
+  happens the payload names the matching titles in a `note:`. `video_title=`
+  is the parameter that filters by title, on `search` and on `list-videos`.
 - **On-screen text is a flat reading-order join, and it is capped per frame.**
   Tables, code, bullet lists and quote/attribution pairs come back unscrambled
   from the layout that made them readable, and OCR mangles digits and bullet

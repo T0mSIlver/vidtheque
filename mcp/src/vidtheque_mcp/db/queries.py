@@ -1215,6 +1215,50 @@ def related_tags(
     ).fetchall()
 
 
+# The one place `search` structurally cannot look: the title bar. `videos_fts`
+# carries title, description and channel_name, and the column filter keeps this
+# to titles — a description match is not what the note claims.
+_TITLE_FOOTING_SQL = """
+SELECT v.public_id AS public_id, v.title AS title
+FROM videos_fts f
+JOIN videos v ON v.id = f.rowid
+WHERE f.videos_fts MATCH :q
+  AND v.id IN (SELECT value FROM json_each(:video_ids))
+ORDER BY f.rank
+LIMIT :limit
+"""
+
+
+def title_matches(
+    conn: sqlite3.Connection, video_ids: Sequence[int], q: str | None, limit: int = 3
+) -> list[sqlite3.Row]:
+    """Videos in scope whose TITLE matches the query lexically.
+
+    Asked only when the transcript FTS sub-leg came back empty, and answered in
+    one bounded index lookup (`LIMIT 3` over an FTS5 rank scan). The expression
+    is the legs' own (`sanitize_fts`, AND semantics), so "the same words that
+    found nothing in speech" is literally the same question, asked of the
+    titles — see `tools/search.py::_note_title_footing` for why this is a note
+    and not a leg.
+    """
+    expr = sanitize_fts(q or "")
+    if not expr or not video_ids:
+        return []
+    try:
+        return conn.execute(
+            _TITLE_FOOTING_SQL,
+            {
+                "q": f"title:({expr})",
+                "video_ids": json.dumps(list(video_ids)),
+                "limit": limit,
+            },
+        ).fetchall()
+    except sqlite3.OperationalError:
+        # A diagnostic never breaks the answer it annotates: an expression FTS5
+        # accepts on `cues_fts` but not under a column filter drops the note.
+        return []
+
+
 # ---------------------------------------------------------------------------
 # list-videos
 

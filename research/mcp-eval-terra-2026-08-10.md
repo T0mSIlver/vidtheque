@@ -959,3 +959,59 @@ locked design principle; round 2 found none.
   judge"`). I did not confirm whether that is FTS5 requiring every term or a
   narrower tokenisation, which matters for how strongly §9.2's diagnostic should
   be worded.
+
+---
+
+## 12. Round-2 repairs — what shipped, and what was deliberately left (2026-08-11)
+
+Added by the fix pass, append-only, one line per §9 finding. Every claim below
+is pinned by a test named in the commit; the contract changed in the same commit
+where behaviour did.
+
+| § | Shipped | Where |
+|---|---|---|
+| 9.1 | `pagination_line` past the last page prints the probe total, `(past the last page)` and the last-page offset — the sentence `search` already had. `last_offset` joins `list-videos`' structured pagination. | `text.py`, `tools/library.py`, contract §3.4 |
+| 9.2 | The `Legs:` line names its units: `transcript 130 segments (fts 369 cues · vec 123/800 chunks)`. The guide's example is now a real, non-summing payload and says the three numbers are three units. | `tools/search.py::_legs_line`, guide, contract §4.1 |
+| 9.3 | `page= → offset=` carries *"offset counts ROWS, not pages — page N is offset=(N-1)×limit"*. The alias stays: dropped, the caller falls back to the accepted-names list, which is where they were already going wrong. | `tools/params.py::UNIT_HINTS`, contract §3.5 |
+| 9.4 | A near miss into an enum appends the domain when the value sent is out of it (`content_type must be one of … — 'speech' is not one of them`), silent when the value already fits. Domains resolve from the tools' own tuples. | `tools/params.py::enum_domain`, contract §3.5 |
+| 9.5 | `E_UNKNOWN_VIDEO` on a plausible absent id now **leads with `list-videos`** and puts `index-video` behind a precondition phrased as a test the caller can apply ("came from outside the corpus and is in front of you") rather than an act of introspection ("if it came from memory"). The clauses were right; the order was the finding. | `errors.py::unknown_video`, contract §3.8 |
+| 9.6 | `kept/considered` prints always, including `vec 800/800`. Suppressing it made the un-narrowed pool — the case a caller most needs to notice — read as the tidiest. | `tools/search.py::_legs_line`, contract §4.1 |
+| 9.7 | One more clause, as prescribed: *"retry the IDENTICAL call in 1s — do not reformulate the query, a different one is refused exactly as fast."* The wrong move is named as an instruction instead of implied by the right one. | `errors.py::busy`, contract §3.8 |
+| 9.8 | A `note:` naming up to three matching **titles**, on the `fts 0` branch only. See below. | `tools/search.py::_note_title_footing`, `db/queries.py::title_matches`, guide, contract §4.1 |
+
+### 12.1 §9.8 — why a note and not a leg (and what is filed for Tom)
+
+`search` reads `cues_fts`, `ocr_frames_fts` and the two vector spaces. It never
+reads `videos_fts`, so **the one place `search` cannot find a phrase is the
+title bar** — `fts 0` on `"on-call tax"` is truthful, and the semantic leg then
+ranks alone, which is how the eponymous talk landed at 2-4.
+
+Shipped: when the transcript FTS sub-leg is empty and a title *in scope* matches
+the same expression the legs bind, the payload says so, names up to three titles
+with their `video_id`s, and points at `video_title=`. One bounded FTS lookup
+(`LIMIT 3`, column-filtered to `title` so a description match is never claimed
+as a title match), asked only on the branch where there is nothing else to spend
+on.
+
+Not shipped, and the reasoning, so the decision has a date rather than looking
+like an omission:
+
+1. **Title matches as results.** A `search` result is a moment with a receipt
+   (§3.6). A title matches the video, not a position in it, so a title result
+   would need either an invented `t=0` — the fabrication the guide's first rule
+   forbids — or a result with no deep link.
+2. **A title boost in the RRF fusion.** This is the honest larger fix and it is
+   a *tuned constant over a scored ranking*: the same class as the vec floors,
+   which is to say a bench item with a before/after per encoder
+   (`vec-floor-calibration-2026-08-10.md`). The SQL exists already
+   (`videos_fts … rank MATCH 'bm25(10.0, 1.0, 3.0)'`, index-schema's FTS notes);
+   the measurement does not. Shipping an uncalibrated weight to fix one rank-1
+   is how round 1's rank-1 problem arose in the first place, in the other
+   direction.
+
+**For Tom, one question:** should a title match contribute to the *ranking*, and
+at what weight? A bench design that would settle it: the round-2 corpus, the
+eval's own queries plus every query whose words appear in a title and nowhere
+else, scored on whether the eponymous talk takes rank 1 — against the control
+that no currently-correct rank 1 moves. Until then the note is the honest half:
+it cannot mis-rank anything, and it cannot be missed.

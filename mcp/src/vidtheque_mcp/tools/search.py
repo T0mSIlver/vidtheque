@@ -100,6 +100,10 @@ TSV_FIELDS = (
 # turn: it trades paging depth (400 / 50 = 8 full pages) for candidate-set work.
 CANDIDATE_POOL = 400
 
+# How many title matches the `fts 0` note names before it stops. Three is a
+# receipt; a list is a second results block nobody asked for.
+TITLE_FOOTING_MAX = 3
+
 
 @dataclass
 class Hit:
@@ -393,6 +397,11 @@ async def run(
             )
         )
 
+    # The words are nowhere in the transcript — but they may be in a title, and
+    # nothing else in the payload can say so (§9.8). Asked only on that branch.
+    if legs["transcript"] and not browse and leg_counts["transcript_fts"] == 0:
+        await _note_title_footing(deps, q, video_pool, notes)
+
     meta = await deps.db.read(lambda c: _video_meta(c, [h.video_id for h in hits]))
     for hit in hits:
         info = meta.get(hit.video_id)
@@ -505,6 +514,61 @@ async def run(
 
 
 # ---------------------------------------------------------------------------
+
+
+async def _note_title_footing(
+    deps: Deps, q: str | None, video_pool: Sequence[int], notes: list[str]
+) -> None:
+    """`fts 0`, and the words are in a TITLE: say so, and name the videos.
+
+    A phrase that exists only in a video's title has no lexical footing in any
+    leg — titles, descriptions and channel names are not in `cues_fts` or
+    `ocr_frames_fts` — so `fts 0` is truthful and the semantic leg decides
+    alone. Live: `q="on-call tax"` over a corpus containing a talk *named*
+    "…without the on-call tax" put an unrelated talk at rank 1 and the
+    eponymous one at 2-4 (terra eval §9.8). **The one place `search` cannot
+    find a phrase is the title bar.**
+
+    Why a `note:` and not a leg or a boost (the design call, 2026-08-11):
+
+    - A `search` result is a **moment with a receipt** (§3.6): a timestamp and
+      a `?t=` a user can open. A title matches the *video*, not a moment in it,
+      so promoting it to a result means either inventing `t=0` — a fabricated
+      moment, which §1's first rule forbids — or a result with no deep link,
+      which no consumer of this surface is shaped to read.
+    - A title *boost* into the RRF fusion is the defensible larger fix, and it
+      is a **tuned constant over a scored ranking**, exactly the class of
+      change the vec floors are: measured on a bench, per encoder, with a
+      before/after (`research/vec-floor-calibration-2026-08-10.md`). Shipping
+      an uncalibrated one at 3am to fix a rank-1 is how round 1's "an unrelated
+      talk takes rank 1" happened in the first place, in the other direction.
+    - What is *not* defensible is the silence. §2's `all` means all rule says a
+      filter or content type that cannot apply to a leg prints a `note:` and
+      never narrows quietly; a modality the legs structurally do not cover is
+      the same promise. The note names the videos, so the caller gets the
+      receipt this leg cannot rank, and points at `video_title=` — the
+      parameter that already does this job correctly.
+
+    Cost: one bounded FTS lookup (`LIMIT 3`), and only on a query that already
+    came back `fts 0`, which is where there is nothing else to spend on.
+    """
+    rows = await deps.db.read(
+        lambda c: queries.title_matches(c, video_pool, q, TITLE_FOOTING_MAX)
+    )
+    if not rows:
+        return
+    named = " · ".join(
+        f'"{middle_truncate(str(r["title"]), 90)}" ({r["public_id"]})' for r in rows
+    )
+    many = len(rows) != 1
+    notes.append(
+        f"note: no transcript or on-screen line contains these words (fts 0), but "
+        f"{len(rows)} video title{'s' if many else ''} {'do' if many else 'does'}: "
+        f"{named}. Titles are not in the searched index, so a title match cannot "
+        f"rank a moment and did not rank one here. "
+        f'search video_title="…" filters by title; video-summary video_id="'
+        f'{rows[0]["public_id"]}" opens the first one.'
+    )
 
 
 async def _note_embed_backlog(

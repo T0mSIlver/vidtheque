@@ -1815,6 +1815,50 @@ async def test_a_phrasing_miss_reads_as_fts_zero(tool_corpus) -> None:
     assert "transcript 1 segment " in legs, "…and the fused count still shows the hit"
 
 
+async def test_a_phrase_that_lives_only_in_a_title_is_named(tool_corpus) -> None:
+    """§9.8. The one place `search` cannot find a phrase is the title bar.
+
+    Titles are not in `cues_fts`, so `fts 0` is truthful and the semantic leg
+    ranks alone — live, a talk *named* "…without the on-call tax" came back at
+    ranks 2-4 under an unrelated talk. The ranking is a calibrated change and
+    is deferred; the silence is not, and the note carries the receipt the leg
+    cannot rank.
+    """
+
+    def make(conn: sqlite3.Connection) -> None:
+        named = add_video(
+            conn, "titleonly01", title="Always-on agents without the on-call tax"
+        )
+        cue = add_cue(conn, named, 0, 0.0, 5.0, "we page the humans when it burns")
+        add_chunk(conn, named, 0, cue, cue, "we page the humans when it burns", 0.0, 5.0)
+        # The word lives in another video's DESCRIPTION-shaped text, never its
+        # title: the column filter must not report that as a title match.
+        other = add_video(conn, "othertalk01", title="Separating the task from the model")
+        cue2 = add_cue(conn, other, 0, 0.0, 5.0, "self extract and self recheck")
+        add_chunk(conn, other, 0, cue2, cue2, "self extract and self recheck", 0.0, 5.0)
+
+    parts = await tool_corpus(make)
+    result = await search.run(
+        parts.deps, q="on-call tax", content_type="transcript", limit=5
+    )
+    body = text_of(result)
+    note = next(n for n in result.structured_content["notes"] if "video title" in n)
+    assert note in body, "the note is printed, not only structured"
+    assert "(fts 0)" in note, note
+    assert "1 video title does" in note, note
+    assert "Always-on agents without the on-call tax" in note
+    assert "titleonly01" in note
+    assert 'video_title="…"' in note
+    assert "othertalk01" not in note, "a non-title match must not be claimed as one"
+
+    # A query with lexical footing in speech gets no such note — the diagnostic
+    # only fires where there is nothing else to read.
+    spoken = await search.run(
+        parts.deps, q="humans burns", content_type="transcript", limit=5
+    )
+    assert not any("video title" in n for n in spoken.structured_content["notes"])
+
+
 async def test_the_legs_line_names_its_units_and_never_hides_the_band(
     tool_corpus, monkeypatch: pytest.MonkeyPatch
 ) -> None:
