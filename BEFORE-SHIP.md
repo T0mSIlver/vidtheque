@@ -7,6 +7,16 @@ themselves and is referenced by section rather than copied.
 
 **Nothing here has been executed. Nothing is public.**
 
+**Update, 2026-08-11 ~02:00.** Nothing in Phases 2–7 has been executed and
+nothing is public — but **Appendix A's agent-doable list was worked overnight**
+and nine of its items are done, including both halves of gate **G4**. What that
+changes for the morning: G4a and G4b are ticked below with their commits, the
+repo's front door (README quickstart, `SECURITY.md`, the compose header,
+`worker/README.md`) no longer publishes wrong or unsafe advice, and §2.6's
+crawl arithmetic has been remeasured. Two `[TOM]` items were *created* by that
+work and are listed where they belong: enable GitHub private vulnerability
+reporting, and fill the two blanks in `docs/takedown.md` §1.
+
 Both documents were attacked by an independent reviewer before you read them
 (codex `gpt-5.6-sol`, high effort, web search, read-only over this repo, driven
 in a herdr pane) — 25 findings, 3 of them blockers, all folded in and credited
@@ -109,7 +119,8 @@ organiser.
 
 ### G4 · The public surface holds nothing unfinished
 
-**G4a · `/static/lab/*` is publicly reachable** `[AGENT]` · ~20 min
+**G4a · `/static/lab/*` is publicly reachable** `[AGENT]` · **DONE 2026-08-11**
+(commit `71b8982`)
 
 `Route("/static/{asset:path}")` serves any `.html` under `static/`, and
 `static/lab/` holds **13 MB** of unreleased landing prototypes —
@@ -119,17 +130,27 @@ versions of a page that has not shipped, carrying documented DESIGN.md
 divergences, invented UI (V1's "multiviewer source bar"), and the m41 quote
 whose profanity is still an open call.
 
-- [ ] Decide the mechanism: move `lab/` out of the packaged `static/` tree
-      (cleanest), or gate it behind `VIDTHEQUE_PUBLIC_READONLY`, or refuse
-      `lab/` in the asset route
-- [ ] Whichever: a test asserts `GET /static/lab/versions/v5.html` → 404 in
-      public mode
-- [ ] Same sweep for the repo-root `public/static/lab/` copy (`moment.html`,
-      `grid.html`) — it is a known path accident (`HANDOFF-2026-08-10.md`,
-      01:30) and is not served today, but it should not become served by
-      accident either
+- [x] Mechanism decided: **refuse the `lab/` prefix in the asset route**
+      (`public/__init__.py`, `_DENIED_SUBTREES`), matched on the *resolved*
+      path so `../lab/…` is covered by the same line. Not a `git mv`: the
+      landing graduates out of `lab/` later, dev use is the local preview
+      server rather than this app, and a prefix covers the next prototype
+      directory nobody remembers to think about
+- [x] `test_the_landing_workshop_is_not_on_the_public_surface`
+      (`mcp/tests/test_public.py`) — 404s `v5.html`, `hero.html`, `v1.html`, a
+      hypothetical future `lab/` path and the `../lab/` spelling, while
+      asserting `style.css`, `app.js` and both faces still 200. Confirmed
+      red before the change
+- [x] `docs/design/demo-site.md` §6 carries the rule (same commit)
+- [x] Repo-root `public/static/lab/`: **not served, and cannot become served by
+      accident.** The app mounts no `StaticFiles` anywhere; the only asset route
+      resolves under the packaged `vidtheque_mcp/public/static/` and refuses
+      anything outside it, and `mcp/pyproject.toml` packages only
+      `src/vidtheque_mcp`. If that copy ever moved into the package, the prefix
+      denial would already cover it
 
-**G4b · The removal path we promised** `[TOM]` decides, `[AGENT]` implements · ~45 min
+**G4b · The removal path we promised** `[TOM]` decides, `[AGENT]` implements ·
+**DONE 2026-08-11** (commit `069abaa`) — two `[TOM]` blanks left in the file
 
 The positioning contract commits publicly to *"take a channel out on request —
 one row, one command, and we say so publicly"*, and lists as a repo-side
@@ -138,14 +159,36 @@ runbook line in `docs/deploy-public.md`"*. **Neither exists**: there is no
 `delete_video` / `delete-video` implementation in `mcp/src`, and no takedown
 section in the runbook.
 
-- [ ] Decide the scope for launch: a documented manual SQL + `rm -rf` procedure
-      in `docs/deploy-public.md` is **sufficient** and honest; a tool is not
-      required to make the promise true
-- [ ] Write it. It must cover: the `videos` row, the cascade
-      (`index-schema.md` §"the delete path is `videos` → …"), the keyframe
-      directory, the derived-cache entries, and the FTS/vec integrity check
-      afterwards
-- [ ] The public page's ethic line and any FAQ copy point at it
+- [x] Scope taken as drafted: a documented manual procedure, no tool. Written
+      as **`docs/takedown.md`** — its own file rather than a section of
+      `docs/deploy-public.md`, because the demo page links to it and a runbook
+      about tunnels is the wrong thing to send a creator to. `deploy-public.md`
+      §9 carries the runbook line pointing at it
+- [x] Covers the `videos` row and the full cascade, both FTS index families,
+      both vector tables, `keyframes/`, `derived/`, `audio/`, `media/`, the
+      verification queries, and four things the draft list did not ask for and
+      a removal needs: `VACUUM` (the transcript is recoverable from free pages
+      until then), the Cloudflare edge cache that keeps serving
+      `/frames/*.jpg` for a day after the origin stops, backups, and the fact
+      that nothing stops the next tranche re-indexing it
+- [x] **Rehearsed on a copy of the live database**, not reasoned from the
+      schema — which found that a plain `sqlite3` connection *cannot* perform
+      the delete at all (the cascade runs through the `vec0` triggers, so
+      without `sqlite-vec` loaded it raises `no such module: vec0` and rolls
+      back; and `PRAGMA foreign_keys` defaults **off** outside the app, where
+      it would silently skip every cascade). Measured: **1.78 s** for one
+      70-minute talk — 279 cues, 33 chunks, 126 keyframes, 3,772 OCR lines,
+      122 `ocr_frames`, both vector tables and all three FTS `docsize` tables
+      in lockstep, zero orphans, all three integrity checks clean
+- [x] The public page's ethic line points at it — footer attribution now reads
+      "The videos belong to the people who made them. **Removal on request**.",
+      `demo-site.md` §6 item 7 amended in the same commit, with a test
+- [ ] **`[TOM]`, two blanks in `docs/takedown.md` §1 and they are the only
+      things stopping it being complete:** (a) *where* a creator asks — a
+      public GitHub issue, the organiser thread, or a published address; and
+      (b) the **response time** to promise. Both are marked `[Tom]` in the
+      file. A removal path with no address on it is the same half-promise this
+      gate exists to close
 
 > This is a gate because it is a promise made in the answer to *"did the
 > speakers consent?"*. Publishing the answer without the substance is the one
@@ -326,7 +369,11 @@ Detail and verification queries: `research/release-staging-2026-08-11.md` §5.
       videos stale**
 - [ ] **3.9 Verify before believing it**: `PRAGMA integrity_check`, the FTS
       integrity insert, the four counts against the numbers in 2.1, the
-      `index-schema.md` §3.3 vector-drift query, and
+      `index-schema.md` §3.3 vector-drift query **in its corrected form** (the
+      version printed there before 2026-08-11 reports a standing ~3,800
+      `frame_drift` on a perfectly healthy corpus, because duplicate keyframes
+      are never embedded — a check that always fails is one that gets
+      skipped), and
       `find $DATA/keyframes -type f -name '*.jpg' | wc -l` matching the
       `keyframes` row count. **Use the corrected snippet in
       `research/release-staging-2026-08-11.md` §5.6** — the obvious version is
@@ -632,25 +679,34 @@ second; the running process holds it in memory until restart.
 
 Flagged rather than done, and the reason for each.
 
-| item | why it was not done |
+**Nine of these were done overnight 2026-08-10→11** by the release-readiness
+agent, after Tom's standing order covered shipping work. `make test` green
+afterwards: **1139 passed**. Commits: `71b8982` (lab), `ce5800b` (SECURITY.md),
+`9487ba5` (compose header), `70760ae` (README), `0b0a328` (worker/README),
+`9e89ebc` (§2.6 arithmetic), `069abaa` (takedown). What is left in this table
+is what still needs Tom.
+
+| item | status |
 |---|---|
-| **G4a**, un-serve `/static/lab/*` | touches `mcp/src/vidtheque_mcp/public/`, which sibling agents own tonight — a concurrent edit there is how a commit swallows someone's work |
-| **G4b**, the takedown runbook section | needs Tom's scope decision first (manual procedure vs. a tool), and it is a public promise |
+| **G4a**, un-serve `/static/lab/*` | **DONE** `71b8982` — prefix denial in the asset route, test, `demo-site.md` §6 amended |
+| **G4b**, the takedown runbook section | **DONE** `069abaa` — `docs/takedown.md`, rehearsed on a copy of the live DB. **Two `[Tom]` blanks remain**: the address to ask at, and the response time to promise |
 | **Phase 2.4**, the systemd units | new files in nobody's lane, genuinely agent-doable — deliberately deferred because a unit written against a container that does not exist encodes the wrong paths |
-| **`SECURITY.md`** | genuinely agent-doable and worth doing before the announcement: `.github/` holds only `workflows/`, so there is **no stated way to report a vulnerability** in a server strangers are being invited to point their agents at. Five lines and an address. Left undone because the address is Tom's to choose |
-| `deploy/docker-compose.yml`'s stale stub comment | one-line fix, safe: it claims *"the MCP framework has not been chosen yet (see `mcp/NOTE.md`)"*, the framework **was** chosen (official SDK v2), `mcp/Dockerfile` is real, and **`mcp/NOTE.md` does not exist**. It is the first thing a stranger reads about the deployment the README's quickstart tells them to run |
-| **README quickstart publishes the unsafe deployment** | `README.md` tells strangers to run `TUNNEL_TOKEN=… docker compose --profile tunnel up -d` against the **base** compose file, without the public overlay — which is exactly the silent footgun `docs/deploy-public.md` §6.1 describes: readonly off, write tools registered, port on `0.0.0.0`. Two lines to fix, aimed at exactly the people the announcement brings. Left for Tom only because it is the announcement's front door |
-| **`worker/README.md` documents the retired model topology** | it still describes Qwen3-Embedding-0.6B (1024-d) + SigLIP 2 (1152-d) as two separate spaces; the shipped default is unified `Qwen3-VL-Embedding-2B` at 2048-d in one slot. A self-hoster reading the worker's own doc picks wrong on their first try |
-| **"Any OpenAI-compatible provider" is not true as stated** | full operation also needs `/v1/embeddings/frame-query`, `/v1/embeddings/image` and `/v1/ocr`, which no ordinary provider serves. The honest sentence is "the transcript leg works; frame search and OCR need the worker" |
-| `docs/deploy-public.md` §2.6's crawl arithmetic | models 3,460 keyframes; the corpus is 11,781, so the walk is ~98 min and the derived-cache estimate is ~3.4× low |
-| `bench/` defaults hard-coding `/home/dev/vidtheque-data` | cosmetic; `embed_latency.py:387`, `frame_retrieval_spotcheck.py:53`. Not a secret, just sloppy in a public repo |
-| One README line pointing at `deploy/.env.example` | 48 KB, the document of record, and the best artifact in the repo for a self-hoster — currently reachable only via a comment inside the quickstart |
+| **`SECURITY.md`** | **DONE** `ce5800b` — the address problem is dissolved rather than answered: the channel is **GitHub private vulnerability reporting**, which needs no address from either side, and the file says an email can be added later. **`[TOM]`: enable it** — repo *Settings → Advanced Security → Private vulnerability reporting → Enable*. Until that is on, the "Report a vulnerability" button the file sends people to does not exist |
+| `deploy/docker-compose.yml`'s stale stub comment | **DONE** `9487ba5` — and two adjacent untruths in the same header with it: the `--profile tunnel` usage line now names the public overlay, and the "any OpenAI-compatible provider" claim is corrected |
+| **README quickstart publishes the unsafe deployment** | **DONE** `70760ae` — split into a labelled private path and a public path that carries the overlay, with the failure spelled out under it. **`[TOM]`: it is the announcement's front door — read it once before the link goes out** |
+| **`worker/README.md` documents the retired model topology** | **DONE** `0b0a328` — rewritten as "one vector space, three endpoints": the shared-slot rule, the three instructions and where each applies, `EMBED_DIM` against the corpus's recorded dims, SigLIP's 64-token ceiling and `max_num_patches` marked as belonging to the fallback, and the two retired models kept honestly as the smaller-card option |
+| **"Any OpenAI-compatible provider" is not true as stated** | **DONE** — corrected in all three places it was said: `README.md` architecture (`70760ae`), `deploy/docker-compose.yml` header (`9487ba5`), `worker/README.md` intro (`0b0a328`) |
+| `docs/deploy-public.md` §2.6's crawl arithmetic | **DONE** `9e89ebc` — remeasured against the live DB and the live `derived/` cache: **12,351 keyframes / 199 ready** at 01:45, so the walk is **103 min**, and the five product widths cost ~135 KB per keyframe → **~1.6 GB against a 256 MB cap, ~6.4× over**. Written as a formula with the constant dated, since the count moves until the freeze. Two things added: an edge cache hit is never charged to the per-IP limiter, and `w`/`q` are caller-clamped rather than enumerated, so the real bound on cache thrash is the frames rate limit |
+| `bench/` defaults hard-coding `/home/dev/vidtheque-data` | **not done** — cosmetic, post-launch; `embed_latency.py:387`, `frame_retrieval_spotcheck.py:53`. Not a secret, just sloppy in a public repo |
+| One README line pointing at `deploy/.env.example` | **DONE** `70760ae` — a linked line of its own in the quickstart |
 
 ## Appendix B — Numbers worth having in your head
 
 | | |
 |---|---|
-| corpus | 191 ready, 67.0 h, 1 channel, 43,549 cues, 11,781 keyframes, 184,301 OCR lines |
+| corpus (01:10 baseline) | 191 ready, 67.0 h, 1 channel, 43,549 cues, 11,781 keyframes, 184,301 OCR lines |
+| corpus (01:45, still indexing) | **199 ready + 1 pending**, 70.1 h, 45,826 cues, 7,361 chunks, **12,351 keyframes**, 196,259 OCR lines — the number that matters is the one at the freeze, not either of these |
+| one talk, deleted (measured) | 1.78 s · 279 cues · 33 chunks · 126 keyframes · 3,772 OCR lines (`docs/takedown.md` §2.4) |
 | moves | DB 195 MB + keyframes 1.4 GB (+ audio 1.4 GB) ≈ **3.0 GB** |
 | does not move | `media/` 76 MB, `derived/` 7.8 MB, `run/` 11 MB, `stack.env` |
 | cold embedder | **3.5 s** load + **916 ms** first call, then 11–13 ms |
