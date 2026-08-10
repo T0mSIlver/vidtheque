@@ -405,6 +405,60 @@ async def test_video_summary_unknown_video(assembled: Assembled) -> None:
     assert structured(result)["code"] == "E_UNKNOWN_VIDEO"
 
 
+async def test_a_malformed_video_id_is_not_offered_to_the_indexer(
+    assembled: Assembled,
+) -> None:
+    """terra eval §4.6: the remedy concatenated any input into a youtu.be URL.
+
+    Recommending 2-6 min of GPU on input that cannot be an id is a suggestion a
+    careful client refuses (p6 did, unprompted).
+    """
+    for junk in ("the karpathy tokenizer talk", "kCc8FmEb1nY0", "video 3"):
+        payload = structured(await library.video_summary(assembled.deps, video_id=junk))
+        assert payload["code"] == "E_UNKNOWN_VIDEO", junk
+        assert "is not a video_id" in payload["message"], junk
+        assert "index-video" not in (payload["next"] or ""), junk
+        assert "kCc8FmEb1nY" in payload["next"]  # the shape, by example
+        assert "list-videos" in payload["next"]
+
+
+async def test_a_well_formed_absent_id_names_the_precondition(
+    assembled: Assembled,
+) -> None:
+    """The fix is a shape check plus an honest remedy, not a removal.
+
+    An 11-char id we do not have is indistinguishable from a real one — that is
+    what "not in the corpus" means — so the hint says when it is worth spending
+    the GPU. (`not-a-video` is itself 11 legal characters; it lands here.)
+    """
+    for absent in ("dQw4w9WgXcQ", "not-a-video"):
+        payload = structured(await library.video_summary(assembled.deps, video_id=absent))
+        assert payload["code"] == "E_UNKNOWN_VIDEO"
+        assert f'index-video url="https://youtu.be/{absent}"' in payload["next"]
+        assert "if you copied this id" in payload["next"]
+        assert "If it came from memory" in payload["next"]
+
+
+async def test_a_pasted_url_is_answered_with_the_id_inside_it(
+    assembled: Assembled,
+) -> None:
+    result = await library.video_summary(
+        assembled.deps, video_id="https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=30s"
+    )
+    payload = structured(result)
+    assert 'video_id="dQw4w9WgXcQ"' in payload["next"]
+
+
+async def test_a_batch_with_a_malformed_id_says_which_one(assembled: Assembled) -> None:
+    result = await library.tag_video(
+        assembled.deps, video_id=["kCc8FmEb1nY", "nope", "also/nope"], add=["topic:x"]
+    )
+    payload = structured(result)
+    assert payload["code"] == "E_UNKNOWN_VIDEO"
+    assert "nope" in payload["message"] and "also/nope" in payload["message"]
+    assert "index-video" not in payload["next"]
+
+
 async def test_video_summary_deep_links_carry_the_lead(assembled: Assembled) -> None:
     """§3.6, terra eval §4.3: the three `?t=` columns were the bare floor.
 

@@ -13,7 +13,7 @@ from ..config import Settings
 from ..db import Database, QueryInterrupted
 from ..db import queries
 from ..embeddings import EmbeddingClient, EmbeddingUnavailable, FrameQueryUnsupported
-from ..errors import ToolError, timeout, unknown_video
+from ..errors import ToolError, plausible_video_id, timeout, unknown_video
 from ..jobs.runner import PipelineRunner
 
 
@@ -235,11 +235,25 @@ def require_known_videos(
     can_index = deps is None or deps.offers("index-video")
     if len(missing) == 1:
         raise unknown_video(missing[0], can_index=can_index)
+    # Same shape check as the single-id error (§4.6): a batch that contains
+    # something which cannot be an id is a mis-copied id, not a video to spend
+    # 2-6 min of GPU on.
+    malformed = [v for v in missing if not plausible_video_id(v)]
+    if malformed:
+        remedy = (
+            f"{', '.join(malformed)} cannot be video_id(s) — a video_id is an "
+            "11-char YouTube id (e.g. kCc8FmEb1nY), used exactly as a result "
+            "printed it. list-videos to browse what is indexed."
+        )
+    elif can_index:
+        remedy = "list-videos to browse what is indexed, or index-video to add them."
+    else:
+        remedy = (
+            "list-videos to browse what is indexed — this server is read-only "
+            "and cannot add videos."
+        )
     raise ToolError(
         "E_UNKNOWN_VIDEO",
         f"These video ids are not in the corpus: {', '.join(missing)}.",
-        "list-videos to browse what is indexed, or index-video to add them."
-        if can_index
-        else "list-videos to browse what is indexed — this server is read-only "
-        "and cannot add videos.",
+        remedy,
     )
