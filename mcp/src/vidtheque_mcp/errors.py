@@ -141,13 +141,28 @@ def unknown_video(video_id: str, can_index: bool = True) -> ToolError:
       remedy states its own precondition rather than recommending the spend
       unconditionally: a copied id is worth indexing, a remembered one is the
       fabrication the guide forbids.
+
+    **The ordering is the residual** (amended 2026-08-11, terra eval §9.5).
+    Two stress-testing consumers a week apart graded this "partly" for the same
+    reason: the sentence *led* with `index-video` on the string they had just
+    made up, so what a reader saw first was an offer to spend 2-6 min of GPU on
+    a guess, and the precondition arrived after they had already read the
+    remedy. The clauses are unchanged in substance and reversed in order —
+    `list-videos` first, because it is the recovery that is always right, and
+    `index-video` second, behind a precondition written as a test the caller
+    can actually apply ("in front of you in this conversation", not "not from
+    memory", which asks a model to introspect). A shape check cannot reach
+    this: the string is a legal id, and the only thing that distinguishes a
+    copied one from an invented one lives in the caller.
     """
     if plausible_video_id(video_id):
         remedy = (
-            f'if you copied this id from a YouTube URL or a result, index-video '
-            f'url="https://youtu.be/{video_id}" adds it (~2-6 min of GPU). If it came '
-            "from memory, it is not an id from this corpus — list-videos to browse "
-            "what is indexed."
+            f"list-videos (or the vidtheque://corpus resource) to browse what is "
+            f"indexed — that is the recovery whatever the id turns out to be. "
+            f'index-video url="https://youtu.be/{video_id}" is worth ~2-6 min of GPU '
+            f"ONLY if this id came from outside the corpus and is in front of you — "
+            f"a YouTube URL or page you were given. An id you recalled or assembled "
+            f"is not a video: indexing it fetches nothing, or the wrong thing."
             if can_index
             else "list-videos to browse what is indexed — this server is read-only and "
             "cannot add videos, so a video that is not listed cannot be answered from."
@@ -216,9 +231,17 @@ def busy(retry_after_s: int = 1) -> ToolError:
         # No mention of query cost at all, not even to deny it: the reason this
         # hint misfired is that a consumer took the cheapest-looking clause and
         # acted on it, and a negated one is exactly as available.
-        f"retry the same call in {retry_after_s}s — the limit is on concurrent "
-        "searches, not on what a query costs, so the identical call succeeds as "
-        "soon as a slot frees.",
+        #
+        # "do not reformulate" is the second attempt at the behavioural half
+        # (terra eval §9.7): with the text fixed, 2 of 3 consumers repeated the
+        # identical call and the third re-worded its query twice — reading
+        # "retry the same call" as advice rather than as the instruction. An
+        # imperative naming the wrong move is one clause; if it still does not
+        # land, the answer is a bigger semaphore, not more prose.
+        f"retry the IDENTICAL call in {retry_after_s}s — do not reformulate the "
+        "query, a different one is refused exactly as fast. The limit is on "
+        "concurrent searches, not on what a query costs, so the same call "
+        "succeeds as soon as a slot frees.",
         retry_after_s=retry_after_s,
     )
 

@@ -465,7 +465,7 @@ Shape: one text block, plus `structuredContent`:
 ```
 error: E_UNKNOWN_VIDEO
 Video "kCc8FmEb1nY" is not in the corpus.
-next: if you copied this id from a YouTube URL or a result, index-video url="https://youtu.be/kCc8FmEb1nY" adds it (~2-6 min of GPU). If it came from memory, it is not an id from this corpus — list-videos to browse what is indexed.
+next: list-videos (or the vidtheque://corpus resource) to browse what is indexed — that is the recovery whatever the id turns out to be. index-video url="https://youtu.be/kCc8FmEb1nY" is worth ~2-6 min of GPU ONLY if this id came from outside the corpus and is in front of you — a YouTube URL or page you were given. An id you recalled or assembled is not a video: indexing it fetches nothing, or the wrong thing.
 ```
 
 **The remedy is shape-checked, and it states its precondition** (amended
@@ -485,6 +485,18 @@ different failures live under one code, and they get different answers:
   example, `not-a-video`, is 11 legal characters. So the remedy names the
   condition under which the spend is worth it: a *copied* id is worth indexing,
   a *remembered* one is the fabrication the guide's first rule forbids.
+
+**The order of those two clauses is load-bearing** (amended 2026-08-11, terra
+eval §9.5). Two stress-testing consumers a week apart graded this "partly" for
+the same reason, and neither was reading the shape check: the sentence *led*
+with `index-video` on a string the consumer had just invented, so the offer to
+spend 2-6 min of GPU arrived before the precondition that disqualifies it.
+`list-videos` now leads — it is the recovery that is correct whatever the id
+turns out to be — and `index-video` follows a precondition phrased as a test
+the caller can apply ("came from outside the corpus and is in front of you"),
+not as an act of introspection ("if it came from memory"). No shape check can
+close this one: the string is a legal id, and the only evidence that separates
+a copied id from an invented one is in the caller, not in the request.
 
 ```json
 {"code":"E_UNKNOWN_VIDEO","message":"Video \"kCc8FmEb1nY\" is not in the corpus.",
@@ -530,7 +542,7 @@ added.
 | `E_INDEXING` | 409 | video is mid-pipeline; partial data | `job-status job_id=…`, plus what *is* queryable now |
 | `E_FEATURE_DISABLED` | 409 | filter needs a disabled feature (e.g. `speaker` with diarization off) | "omit `speaker=`" |
 | `E_TIMEOUT` | 408 | 30s query budget exhausted | "narrow the range: add `channel=`, `video_id=`, or a tighter `published_after`" |
-| `E_BUSY` | 503 | admission control full | `retry_after_s: 1`, and *only* that — "retry the same call in 1s; the limit is on concurrent searches, not on what a query costs". The hint used to offer "or narrow the query so it costs less", which cannot work (the semaphore is taken before the query is built) and which a consumer acted on instead of waiting: terra eval §4.9 |
+| `E_BUSY` | 503 | admission control full | `retry_after_s: 1`, and *only* that — "retry the IDENTICAL call in 1s — do not reformulate the query, a different one is refused exactly as fast; the limit is on concurrent searches, not on what a query costs". The hint used to offer "or narrow the query so it costs less", which cannot work (the semaphore is taken before the query is built) and which a consumer acted on instead of waiting (terra eval §4.9). With that removed, 2 of 3 consumers repeated the identical call and the third still re-worded twice, reading "retry the same call" as advice — so the wrong move is now named as an instruction (§9.7). If a third round still shows reformulation, the answer is a bigger semaphore, not more prose |
 | `E_RATE_LIMIT` | 429 | per-client budget | `retry_after_s` |
 | `E_TOO_LARGE` | 413 | request would exceed inline image budget | "use `return=url`, or lower `limit`" |
 | `E_UNSUPPORTED_SOURCE` | 422 | `index-video` URL yt-dlp can't handle | lists supported sources |

@@ -216,8 +216,13 @@ async def test_admission_control_refuses_rather_than_queueing() -> None:
         # (research/mcp-eval-terra-2026-08-10.md §4.9).
         hint = caught.value.next_hint or ""
         assert "narrow" not in hint, hint
-        assert "retry the same call in 1s" in hint
+        assert "retry the IDENTICAL call in 1s" in hint
         assert "limit is on concurrent searches" in hint
+        # §9.7: the text landed, the behaviour half did not — one consumer read
+        # "retry the same call" as advice and re-worded its query twice. The
+        # wrong move is now named as an instruction, not implied by the right
+        # one.
+        assert "do not reformulate the query" in hint
     # Released again afterwards.
     async with admission(sem):
         pass

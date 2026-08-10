@@ -510,7 +510,7 @@ async def test_a_malformed_video_id_is_not_offered_to_the_indexer(
         assert "list-videos" in payload["next"]
 
 
-async def test_a_well_formed_absent_id_names_the_precondition(
+async def test_a_well_formed_absent_id_leads_with_the_browse(
     assembled: Assembled,
 ) -> None:
     """The fix is a shape check plus an honest remedy, not a removal.
@@ -518,13 +518,20 @@ async def test_a_well_formed_absent_id_names_the_precondition(
     An 11-char id we do not have is indistinguishable from a real one — that is
     what "not in the corpus" means — so the hint says when it is worth spending
     the GPU. (`not-a-video` is itself 11 legal characters; it lands here.)
+
+    terra eval §9.5: the *ordering* is the residual. Two stress-testers a week
+    apart graded this "partly" because the sentence opened with an offer to
+    index the string they had just invented, and the precondition arrived after
+    the offer. `list-videos` leads; `index-video` follows its precondition.
     """
     for absent in ("dQw4w9WgXcQ", "not-a-video"):
         payload = structured(await library.video_summary(assembled.deps, video_id=absent))
         assert payload["code"] == "E_UNKNOWN_VIDEO"
-        assert f'index-video url="https://youtu.be/{absent}"' in payload["next"]
-        assert "if you copied this id" in payload["next"]
-        assert "If it came from memory" in payload["next"]
+        hint = payload["next"]
+        assert f'index-video url="https://youtu.be/{absent}"' in hint
+        assert hint.index("list-videos") < hint.index("index-video"), hint
+        assert "ONLY if this id came from outside the corpus" in hint
+        assert "recalled or assembled is not a video" in hint
 
 
 async def test_a_pasted_url_is_answered_with_the_id_inside_it(
