@@ -1456,3 +1456,164 @@ pass and both invisible to the suite:
 
 Both are pinned by tests, because a geometry bug a fixture can hide is exactly
 the kind that comes back.
+
+### 12.6 Tom's review of the rebuild — the third pass (2026-08-10)
+
+Seven items, reviewed on the built pages against the **live corpus** rather
+than the fixture, which is where five of the seven came from. §12.1–§12.5 stay
+as the record of the earlier passes; where this pass overturned something, it
+says so. Item 2 — the merged frames view — is deliberately **not** in this
+section: it landed alone, last, in a commit that is only itself, and is written
+up in §12.7 so that reverting it takes its own documentation with it.
+
+**1. A shot bar puts its keyframe into evidence, and now off-page too.** §12.5
+item 4 wrote down the behaviour and the second pass shipped it; Tom's verdict
+on real data was that clicking a bar "visibly does nothing". Two causes, both
+real, both invisible to the suite.
+
+The first is a **fixture-vs-corpus difference**. The interception is a click
+handler that marks a card already in the document, and `#frame-N` is a
+fragment, which never reaches a server. A seeded video has three keyframes and
+a page of the strip holds twenty-four, so in the suite every bar's frame was
+always on the page and the handler always fired. A real talk has one shot per
+keyframe — 164 of them on the video this was reproduced against — so five bars
+in six navigated instead, and the page they landed on marked nothing. The bars
+carry `select=<ord>` beside the fragment now and the server paints the same
+`is-selected` on the card and on its OCR figure, so both paths end in the same
+picture, with the script blocked as well as with it running. `select` has no
+default, because `0` is a real ordinal and a page that arrives with a keyframe
+already marked reports a click nobody made; the interception writes the same
+address back with `history.replaceState`, so a reload and a copied link agree
+with the navigating case.
+
+The second is that **the mark itself was being clipped**. Every gold mark in
+the frames panels was an `outline` with `outline-offset: 2px` on the `<img>`,
+and `.framebtn` / `.ocrstage` are `overflow: hidden` with the image filling
+them exactly — so the outline was drawn outside the image and therefore inside
+the clip. Painted on every selection since the panel was built, and visible on
+none. Three marks were affected: the timeline↔strip hover link, `:target`, and
+the evidence selection. All three moved onto the box, whose own outline its own
+overflow does not clip, and the negative is pinned too: no rule may put an
+outline back on an image inside one of those boxes.
+
+**3. The overlay's line list scrolls down, and only when it has to.**
+`columns: 2` on a box with a bounded height does not draw two columns and
+scroll down — it paginates the overflow **sideways**. Measured on a real slide,
+the list was 15,501px wide inside a 1,126px scrollport, so a reader was looking
+at one screenful of a horizontal filmstrip. On top of that, `scrollIntoView({
+block: "nearest" })` resolves `inline` to `"nearest"` as well, so in that box
+every reveal was a horizontal jump — including for a line already fully
+visible, which is the symptom Tom reported. The list is a grid now, which
+overflows in the direction the box always claimed, with `overflow: hidden auto`
+so it can never go sideways again; and `revealLine()` measures the line against
+the scrollport and moves `scrollTop` by the smallest amount that puts it
+inside, or does nothing. The cost, stated: the lines read left-to-right and
+then down rather than down one column and then the next.
+
+**4. The transcript header is totals, not position.** §12.5 item 7 printed
+`cues 1–150 of 1,203` and argued the position had to be visible. It answered
+what the scrollbar already answered, moved under the reader every time the box
+appended a batch, and was not a question a reader of a transcript has.
+Overturned: the line is `307 cues · 12,480 words · 68,912 chars`, all three
+server-computed over the whole video. Words and characters come from
+`queries.cue_text_totals`, which uses **the chunk marker's own definition** —
+`len(text.split())` (§12.5 item 9) — so a chunk's `n words` and the video's
+`words` are the same kind of number, and a SQL space count cannot miscount a
+newline inside a cue. It reads one column of one video's cues, on the one page
+in this surface that is allowed a per-video read at all, and the text never
+reaches the template. The lazy append is untouched; what it lost is the moving
+number it maintained.
+
+**5. The overview masthead keeps the state and the clock, and nothing else.**
+Two facts re-homed for two different reasons. The state word wore a bare pill
+on the title's baseline, at a different weight from the machine strings beside
+it, reading as a caption that had drifted — so it takes the `statepair` §12.5
+item 1 settled on, which this page already used once for `indexing allowed`.
+One primitive, worn one way. The published span was never a masthead fact: it
+says what is *in* the corpus rather than what state the corpus is in or when
+this box last worked, so it is a second figure-note under `videos` in the
+ledger, beside the count it is the range of.
+
+*Checked across the whole vocabulary, not the one word that was on screen.*
+`data_status` can print `empty | indexing | degraded | deferred | partial | ok`
+(`tools/corpus_state.status_word`), and Tom hit the misalignment twice, once
+with `degraded` and once with `indexing`. The `statepair` is a fixed-geometry
+object — only the pill's *width* varies with the word — so all six were
+measured in a browser at 1440: identical box top (38px), identical height
+(20px), identical offset between the box's centre and the neighbouring text's
+(1px). The alignment is word-independent by construction, which is what makes
+this a fix rather than a re-tune.
+
+**6. The jobs view says what a job holds, and explains its percentage.**
+
+- **The state filter is this system's own control.** This overturns §12.2's
+  third judgement call, which kept the platform's disclosure arrow rather than
+  start an icon language. What that bought on the operator's machine was a
+  rounded, shaded, OS-accented macOS control in a band of square 34px hairline
+  boxes — the one object on the page that was not this system. `.pick` is
+  `appearance: none` plus the band's own chrome, and the mark is a 6px square
+  with two of its four hairlines in `--fg2`, turned 45°: the same 1px rule
+  every box in the band is edged with, not a glyph. The *list* the control
+  opens stays the platform's, which is the part a surface with no JavaScript
+  cannot draw and should not try to. The sorted column's head keeps its
+  caret-free underline — that argument was about a sort arrow and still holds.
+- **A row says what the job contains.** The first item's video title, `+N more`
+  for the rest, and the channel when every resolved item came from one; the id
+  drops to the meta line beside the kind and the priority, where the other
+  machine strings already were. `queries.job_contents` is one grouped query for
+  the whole page (§6.3) and is deliberately off the poll target, because what a
+  job holds does not change between two ticks. **The submitted URL is not on
+  the row in either mode** — §2.4 redacts it, and the video it resolved to is
+  corpus, published by id and title on two other pages. A job whose items have
+  not been fetched says so with the count it has rather than wearing its own id
+  as a name.
+- **The percentage carries its own breakdown.** Pointing at the figure, or
+  tabbing to it, prints the five item states it is made of — all five, zeroes
+  included, because the point is that they add up to `n_items` — and the rule
+  that turns them into one number: an item still in the pipeline counts the
+  stages it has finished, out of `len(jobs.store.STAGES)`. Both strings are
+  formatted server-side and both are patched by the tick, so a hint held open
+  while a job advances stays true. The `hint` plate carries no shadow: this
+  surface has none, and a plate with a hairline is already one step off the
+  page.
+
+**7. The videos band is the search.** Four parts. The three pickers take the
+control family built for the jobs band. Every field takes its width from the
+band rather than from the platform — a text input sized by `size` and a select
+sized by its own longest option both change width when their contents change,
+and one control resizing re-flows its whole row, which is the shift Tom saw;
+one flexible field remains, so the geometry is a function of the viewport and
+of nothing else (measured at four filter states: zero fields move, the band's
+own top included). Apply stops being the thing you click: a picker submits on
+the spot, a text field 450 ms after the typing stops, and the button stays in
+the markup as the no-JavaScript path exactly as the transcript's pager does,
+hidden only once the script has taken over — with the caret handed back after
+the reload through `sessionStorage`, because which control had focus is not a
+fact about the result set and does not belong in a link. And `ordered by
+<order>` leaves the masthead: everything else in that strip is a *narrowing*,
+an order takes no rows out, and the sort is already stated twice — by the
+picker and by the sorted column's own gold underline. With it gone the strip
+can be empty, so the paragraph is conditional rather than a blank line under
+the title.
+
+**The favicon, in the same pass.** Tom picked "the v." — the wordmark's own `v`
+with the receipt's full stop beside it. The mark is the word, so at 16px the
+mark is the word's first letter and its dot, not a second drawing; the film
+frame §12.3 kept goes with it, because it pictured the medium rather than the
+product's argument. Two properties are load-bearing and both are pinned: the
+glyph **floats** on transparency, so one drawing serves a light and a dark tab
+strip with no `prefers-color-scheme` variant this single-scheme surface has no
+business carrying, and the gold is cored inside a 1-unit keyline in
+`--gold-ink` — the same ink the system puts *on* gold — which keeps the shape
+readable when the strip under it is white.
+
+**How this pass was reviewed, and why it caught what it caught.** Against a
+**read-only copy of the live corpus** — 182 videos, a talk with 164 shots and
+189 OCR lines on one slide — served by a scratch instance on its own port, and
+measured in a real browser rather than asserted in the suite. Items 1, 3, 5, 6
+and 7 are each a bug the fixture cannot express: three keyframes do not page,
+three OCR lines do not overflow a two-column box, and a job with no resolved
+items has no title to print. The tests added with each fix reproduce the
+*shape* of the corpus rather than its size — `?frames=1` makes the seeded video
+a talk with more frames than one page — so they fail on the old code and cost
+the suite nothing.
