@@ -1,0 +1,889 @@
+<!doctype html>
+<html lang="en" data-version="v6">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vidtheque — the transcript is the page</title>
+<meta name="description" content="Empowering AI with the knowledge of the builders and creators.">
+<!--
+ LANDING VERSION 6 — THE TRANSCRIPT IS THE PAGE.
+
+ THESIS: the page behaves like vidtheque's own output — one continuous
+ annotated transcript, typeset as the machine's testimony. Spoken lines sit
+ in the document voice; SEEN lines are lime mono with the frame they were
+ read from attached in evidence; every timestamp in the margin carries the
+ wordmark's period as its dot, because the full stop IS the receipt. The
+ exhibits are chronological inside their own minute: the sentence before,
+ the line that crossed the screen, the sentence after — interleaved by the
+ corpus's own clock, never re-ordered for effect. Mid-scroll, a reader
+ interrogates the document: the canned ask types itself and the record
+ answers in the same typography the exhibits use. The wall and the ledger
+ are the document's appendix; the quickstart is its colophon.
+
+ WHERE IT GOES THAT V1–V3 DIDN'T: no specimen card, no terminal chrome, no
+ monitor wall as scenery. One column, one margin of timecodes, and the
+ moments printed as continuous testimony — V2's evidence-ledger legibility
+ rebuilt in V3's gold-on-black register at editorial density. Beats end on
+ a full stop set at display size: the receipt's full stop, recurring.
+
+ LOCKS HONOURED: H1 verbatim; CTA "Ask the corpus" (canned, restartable);
+ five kit beats (§00 opening · §01 exhibits · §02 interrogation · §03 the
+ corpus · §04 run your own); gold is the single brand accent; lime appears
+ ONLY as the SEEN / on-screen-text channel; font logo only, the period as
+ the receipt's full stop; the m41 profanity verbatim (owner's decision);
+ attribution footer never cullable; protocol word once, in the colophon.
+
+ MOTION LAW: movement only where the machine is working — the interrogation
+ types itself, result rows print, OCR boxes acquire when the frame enters
+ view, the wall's frames reveal, the ledger's counters tick up once. No
+ pulsing dots, no scan lines, no ambient glow, no decorative hover. All of
+ it freezes under prefers-reduced-motion, and ?still=1 paints the end state
+ for screenshots.
+
+ LAB-ONLY DIVERGENCES from DESIGN.md (this piece does not bind the visual
+ contract; judged from screenshots at 1440 and 390):
+  1. Dark ground, gold accent — DESIGN.md's paper/ink palette is the
+     dashboard's; this is V3's own-world register, kept by the brief.
+  2. Lime (--seen) as a second hue — semantic only, the machine-read-the-
+     screen channel; DESIGN.md's one-accent rule is otherwise honoured.
+  3. Timestamps and channel labels set in mono at body scale inside prose —
+     the two-channel rule bent to let machine strings carry the page's
+     rhythm; every human sentence stays in the display face.
+
+ DATA: v6-assets/data.js is v3's corpus readout, harvested read-only from
+ vidtheque.db on 2026-08-10 — frames, boxes, cues, ids and counts are the
+ corpus's own; nothing on this page is hand-written where the db has the
+ number. The interrogation is transcribed from the 2026-08-09 field test
+ (research/demo-queries-2026-08-09.md §4.1, §1.8, §7.5, §9) — laid out for
+ width, not re-recorded, its caveat left in. Zero network requests.
+-->
+<style>
+@font-face{font-family:"Archivo VF";src:url("v6-assets/fonts/archivo-latin-wght-normal.woff2") format("woff2");font-weight:100 900;font-display:block;font-style:normal}
+@font-face{font-family:"JetBrains Mono VF";src:url("v6-assets/fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2");font-weight:100 800;font-display:block;font-style:normal}
+
+:root{
+  /* V3's world: near-black, warm, plates and seams */
+  --void:#08080a; --pitch:#040405; --plate:#0e0e12; --plate2:#141419;
+  --seam:#242429; --seam2:#33333b;
+  --fg:#f3f0ea; --fg2:#9d968c; --fg3:#6b665e;
+  /* the one brand accent — gold. The full stop, the CTA, the receipt. */
+  --gold:#e7b455; --gold-hi:#f6cd78; --gold-ink:#120c02;
+  --gold-6:rgba(231,180,85,.06); --gold-12:rgba(231,180,85,.12);
+  --gold-24:rgba(231,180,85,.24); --gold-44:rgba(231,180,85,.44);
+  /* the SEEN channel — only ever the machine reading the screen */
+  --seen:#c9f938; --seen-ink:#0a1400;
+  --seen-10:rgba(201,249,56,.10); --seen-24:rgba(201,249,56,.24);
+  --sans:"Archivo VF",system-ui,-apple-system,sans-serif;
+  --mono:"JetBrains Mono VF",ui-monospace,SFMono-Regular,monospace;
+  --gut:clamp(18px,4vw,64px);
+  --measure:920px;      /* the text column */
+  --docw:1180px;        /* frames + appendix may reach this */
+  --tcw:104px;          /* the timecode margin */
+  --chw:56px;           /* the channel-label margin */
+}
+*{margin:0;padding:0;box-sizing:border-box;border-radius:0}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{background:var(--void);color:var(--fg);font-family:var(--sans);
+  font-size:16px;line-height:1.55;font-weight:340;letter-spacing:-.004em;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;overflow-x:hidden}
+img{display:block;max-width:100%}
+a{color:inherit;text-decoration:none}
+::selection{background:var(--gold);color:var(--gold-ink)}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
+/* ── atoms ──────────────────────────────────────────────────────────── */
+.wrap{max-width:var(--docw);margin:0 auto;padding:0 var(--gut)}
+.col{max-width:var(--measure);margin:0 auto}
+.mono,.id{font-family:var(--mono);font-variant-ligatures:none}
+.id{text-transform:none}
+.ml{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.19em;
+  text-transform:uppercase;color:var(--fg3);font-variant-ligatures:none;line-height:1.5}
+.ml.gold{color:var(--gold)}
+.ml.seen{color:var(--seen)}
+/* the wordmark's period — the receipt's full stop, everywhere it recurs */
+.fs{font-style:normal;color:var(--gold)}
+h1,h2{font-weight:200;letter-spacing:-.034em;line-height:1.02;text-wrap:balance}
+h1{font-size:clamp(2.7rem,6vw,5.4rem);line-height:.97;letter-spacing:-.04em}
+h2{font-size:clamp(1.8rem,3.3vw,3.1rem);font-weight:215}
+h2 em{font-style:normal;color:var(--gold);font-weight:215}
+.lede{font-size:clamp(.98rem,1.12vw,1.12rem);line-height:1.62;color:var(--fg2);
+  max-width:62ch;font-weight:340}
+.lede b{color:var(--fg);font-weight:500}
+/* the note invariant, printed the way the tool prints it */
+.note{font-family:var(--mono);font-size:11px;line-height:1.6;color:var(--gold);
+  letter-spacing:.005em;font-variant-ligatures:none;max-width:74ch}
+.note::before{content:"note: ";color:var(--fg3)}
+/* the beat-closing device: a full stop at display size */
+.stop{display:flex;justify-content:center;align-items:center;
+  padding:clamp(30px,3.6vw,54px) 0 0}
+.stop i{font-style:normal;font-weight:800;color:var(--gold);font-size:clamp(2rem,3vw,3rem);
+  line-height:.4;letter-spacing:0}
+
+/* ── the running head: wordmark + the index of timestamps ───────────── */
+.rail{position:sticky;top:0;z-index:40;background:rgba(8,8,10,.94);
+  backdrop-filter:blur(6px);border-bottom:1px solid var(--seam)}
+.railin{display:flex;align-items:center;justify-content:space-between;gap:18px;
+  padding:13px 0 12px}
+.mark b{font-weight:500;font-size:16.5px;letter-spacing:-.035em;color:var(--fg)}
+.docnav{border-top:1px solid var(--seam);display:flex;gap:0;overflow-x:auto;
+  scrollbar-width:none}
+.docnav::-webkit-scrollbar{display:none}
+.docnav a{flex:none;display:flex;align-items:baseline;gap:8px;padding:8px 16px 9px;
+  border-right:1px solid var(--seam);font-family:var(--mono);font-size:10px;
+  font-weight:500;letter-spacing:.05em;color:var(--fg3);font-variant-ligatures:none;
+  white-space:nowrap}
+.docnav a:first-child{padding-left:0}
+.docnav a b{font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--fg2)}
+.docnav a:hover b{color:var(--fg)}
+.docnav a .t{color:var(--fg2)}
+.docnav a .t i{font-style:normal;color:var(--gold)}
+
+/* ── beat 0 · the document header ───────────────────────────────────── */
+.opening{padding:clamp(48px,6vw,96px) 0 0}
+.docmeta{display:flex;flex-wrap:wrap;gap:6px 22px;border-top:1px solid var(--seam2);
+  border-bottom:1px solid var(--seam);padding:12px 0;margin-bottom:clamp(28px,3.4vw,48px)}
+.docmeta span{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--fg3);font-variant-ligatures:none}
+.docmeta span b{color:var(--fg);font-weight:700;font-variant-numeric:tabular-nums}
+.opening h1{max-width:14ch;margin-bottom:clamp(18px,2vw,28px)}
+.ctarow{display:flex;align-items:center;gap:20px;flex-wrap:wrap;
+  margin-top:clamp(22px,2.4vw,34px)}
+.cta{display:inline-flex;align-items:center;gap:12px;background:var(--gold);color:var(--gold-ink);
+  font-size:15px;font-weight:600;letter-spacing:-.012em;padding:15px 22px 15px 24px;
+  border:1px solid var(--gold)}
+.cta:hover{background:var(--gold-hi)}
+.cta svg{width:12px;height:12px;flex:none}
+.ctanote{font-family:var(--mono);font-size:10.5px;line-height:1.55;color:var(--fg3);
+  max-width:40ch;letter-spacing:.01em;font-variant-ligatures:none}
+
+/* "the record begins" rule */
+.begin{display:flex;align-items:center;gap:14px;margin:clamp(40px,4.6vw,70px) 0 0}
+.begin s{flex:1;height:1px;background:var(--seam);text-decoration:none}
+.begin span{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--gold);font-variant-ligatures:none}
+
+/* ── the transcript itself ──────────────────────────────────────────── */
+.exh{margin-top:clamp(34px,4vw,56px)}
+.exhead{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
+  border-bottom:1px solid var(--seam2);padding-bottom:10px}
+.exhead .ex{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--gold-ink);background:var(--gold);
+  padding:3px 8px;font-variant-ligatures:none}
+.exhead .ti{font-size:15px;font-weight:520;letter-spacing:-.02em;color:var(--fg)}
+.exhead .who{font-size:13px;color:var(--fg2)}
+.exhead .r{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--fg3);
+  letter-spacing:.05em;font-variant-ligatures:none}
+.exkick{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--fg3);padding:9px 0 0;font-variant-ligatures:none}
+
+.tln{display:grid;grid-template-columns:var(--tcw) var(--chw) minmax(0,1fr);
+  gap:0 20px;padding:9px 0;border-bottom:1px solid var(--seam);align-items:baseline}
+.tln:last-child{border-bottom:0}
+.tc{font-family:var(--mono);font-size:11.5px;font-weight:450;color:var(--fg3);
+  font-variant-numeric:tabular-nums;font-variant-ligatures:none;white-space:nowrap;
+  text-align:right}
+.tc i{font-style:normal;color:var(--gold);font-weight:700}
+.ch{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;font-variant-ligatures:none;padding-top:2px}
+.ch.hd{color:var(--fg3)}
+.ch.sn{color:var(--seen)}
+.ch.rc{color:var(--gold)}
+/* the heard voice: the document voice */
+.said{font-size:clamp(1.02rem,1.28vw,1.26rem);line-height:1.4;font-weight:320;
+  letter-spacing:-.02em;color:var(--fg2);max-width:58ch;text-wrap:pretty}
+.tln.now .said{color:var(--fg);font-weight:380}
+.tln.now .tc{color:var(--fg2)}
+/* the seen voice: lime mono, verbatim, with its confidence */
+.seenrow{display:flex;align-items:baseline;gap:16px;min-width:0}
+.seenrow p{font-family:var(--mono);font-size:13px;line-height:1.55;color:var(--seen);
+  font-variant-ligatures:none;min-width:0;overflow-wrap:anywhere}
+.seenrow .cf{margin-left:auto;font-family:var(--mono);font-size:9.5px;color:var(--fg3);
+  font-variant-numeric:tabular-nums;white-space:nowrap;font-variant-ligatures:none}
+.seenrow .ann{font-family:var(--mono);font-size:9.5px;color:var(--gold);
+  letter-spacing:.06em;white-space:nowrap;font-variant-ligatures:none}
+
+/* the frame, in evidence, boxes at the db's own coordinates */
+.evrow{padding:14px 0 16px;border-bottom:1px solid var(--seam)}
+.ev{max-width:640px;border:1px solid var(--seam2);background:var(--plate)}
+.evhead{display:flex;gap:12px;align-items:center;padding:7px 12px;
+  border-bottom:1px solid var(--seam);background:var(--plate2)}
+.evhead .r{margin-left:auto}
+.frame{position:relative;aspect-ratio:16/9;background:#000;overflow:hidden;isolation:isolate}
+.frame>img{width:100%;height:100%;object-fit:cover}
+.frame::after{content:"";position:absolute;inset:0;pointer-events:none;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+.det{position:absolute;left:var(--x);top:var(--y);width:var(--w);height:var(--h);
+  outline:1px solid var(--seen-24);pointer-events:none;opacity:0}
+.det.on{outline:1.5px solid var(--seen);
+  box-shadow:0 0 0 1px var(--seen-24),0 0 18px 1px rgba(201,249,56,.22)}
+/* acquisition: the machine finding its boxes, when the frame enters view */
+@keyframes acq{from{opacity:0;transform:scale(1.06)}to{opacity:1;transform:none}}
+.ev.lit .det{animation:acq .5s cubic-bezier(.16,1,.3,1) forwards;
+  animation-delay:calc(var(--i)*40ms + 120ms)}
+.det .tab{position:absolute;left:-1.5px;bottom:100%;margin-bottom:3px;
+  background:var(--seen);color:var(--seen-ink);font-family:var(--mono);font-size:8.5px;
+  font-weight:700;letter-spacing:.14em;text-transform:uppercase;padding:2.5px 6px;
+  white-space:nowrap;line-height:1.1}
+
+/* the receipt: the whole promise in one gold slab */
+.receipt{display:inline-flex;align-items:stretch;font-family:var(--mono);font-size:12px;
+  font-weight:600;line-height:1;border:1px solid var(--gold);color:var(--gold);
+  background:var(--gold-6);letter-spacing:-.01em;font-variant-ligatures:none}
+.receipt span{padding:8px 0 8px 10px;display:flex;align-items:center}
+.receipt span.vid{padding-left:0;color:var(--fg)}
+.receipt b{background:var(--gold);color:var(--gold-ink);padding:8px 10px;display:flex;
+  align-items:center;gap:8px;font-weight:700;margin-left:10px}
+.receipt svg{width:9px;height:9px;flex:none}
+.receipt:hover{background:var(--gold-12)}
+
+/* ── beat headers ───────────────────────────────────────────────────── */
+section.beat{padding:clamp(52px,6vw,100px) 0 0}
+.bhead{display:flex;flex-direction:column;gap:18px}
+.bhead h2{max-width:20ch}
+.sech{display:flex;align-items:baseline;gap:14px;margin-bottom:clamp(16px,1.8vw,24px)}
+.sech .no{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.2em;
+  color:var(--gold);font-variant-ligatures:none}
+.sech s{flex:1;height:1px;background:var(--seam);text-decoration:none;align-self:center}
+
+/* ── beat 2 · the interrogation ─────────────────────────────────────── */
+.doc-ask{margin-top:clamp(28px,3.2vw,44px);border-top:1px solid var(--seam2)}
+.askline{display:grid;grid-template-columns:var(--tcw) var(--chw) minmax(0,1fr);
+  gap:0 20px;padding:16px 0;border-bottom:1px solid var(--seam);align-items:baseline}
+.askline .q{font-size:clamp(1.1rem,1.7vw,1.6rem);font-weight:260;letter-spacing:-.028em;
+  line-height:1.24;color:var(--fg);max-width:46ch;min-height:1.3em}
+.caret{display:inline-block;width:9px;height:1.05em;background:var(--gold);
+  vertical-align:text-bottom;margin-left:2px;opacity:0}
+.caret.live{opacity:1;animation:blink 1.05s steps(1,end) infinite}
+@keyframes blink{0%,55%{opacity:1}56%,100%{opacity:0}}
+.st{opacity:0;transform:translateY(6px);
+  transition:opacity .45s cubic-bezier(.16,1,.3,1),transform .45s cubic-bezier(.16,1,.3,1)}
+.st.on{opacity:1;transform:none}
+.callrow .call{font-family:var(--mono);font-size:12px;color:var(--fg);
+  font-variant-ligatures:none;overflow-x:auto;white-space:nowrap;padding-bottom:2px}
+.callrow .call .k{color:var(--gold)}
+.callrow .call .arg{color:var(--fg2)}
+.retmeta{font-family:var(--mono);font-size:10.5px;color:var(--fg3);
+  font-variant-ligatures:none;padding-top:6px}
+.hit{display:grid;grid-template-columns:var(--tcw) var(--chw) minmax(0,1fr);
+  gap:0 20px;padding:10px 0;border-bottom:1px solid var(--seam);align-items:baseline}
+.hit .qt{font-size:clamp(.98rem,1.2vw,1.15rem);font-weight:320;letter-spacing:-.018em;
+  line-height:1.42;color:var(--fg);max-width:58ch}
+.hit .qt u{text-decoration:none;display:block;margin-top:5px;font-family:var(--mono);
+  font-size:10px;color:var(--fg3);letter-spacing:.1em;text-transform:uppercase;
+  font-variant-ligatures:none}
+.hit .qt u b.id{color:var(--fg);font-weight:500;letter-spacing:.02em;text-transform:none}
+.idrow{font-family:var(--mono);font-size:11.5px;color:var(--fg2);word-spacing:.3em;
+  font-variant-ligatures:none;overflow-wrap:anywhere}
+.idrow .id{color:var(--fg)}
+.idrow .mt{color:var(--fg3);word-spacing:normal}
+.ansrow{border-bottom:1px solid var(--seam)}
+.acite{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px 26px;
+  align-items:end;padding:8px 0 14px}
+.acite p{font-size:clamp(1rem,1.3vw,1.28rem);font-weight:290;line-height:1.38;
+  letter-spacing:-.022em;color:var(--fg);border-left:1px solid var(--gold);
+  padding-left:15px;max-width:56ch}
+.acite p u{text-decoration:none;display:block;margin-top:6px;font-family:var(--mono);
+  font-size:10.5px;color:var(--fg3);letter-spacing:.02em;font-variant-ligatures:none}
+.askfoot{padding:14px 0 0;display:flex;flex-direction:column;gap:10px}
+
+/* ── beat 3 · the corpus (appendix) ─────────────────────────────────── */
+.wall{display:grid;grid-template-columns:repeat(13,minmax(0,1fr));gap:1px;
+  background:var(--seam);border:1px solid var(--seam);
+  margin-top:clamp(28px,3.2vw,44px)}
+.wall figure{position:relative;background:#000;aspect-ratio:16/9;overflow:hidden}
+.wall img{width:100%;height:100%;object-fit:cover;filter:saturate(.8) brightness(.72)}
+.wall figure{opacity:0}
+.wall.lit figure{opacity:1;transition:opacity .5s linear;
+  transition-delay:calc(var(--i)*14ms)}
+.follow{grid-column:1/-1;background:var(--pitch);display:flex;align-items:center;
+  justify-content:center;gap:14px;outline:1px dashed var(--gold-44);outline-offset:-4px;
+  padding:16px 12px;text-align:center}
+.follow:hover{background:var(--gold-6)}
+.follow span{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--gold);line-height:1.5;font-variant-ligatures:none}
+.follow span i{font-style:normal;display:block;color:var(--fg3);letter-spacing:.03em;
+  text-transform:none;font-weight:400}
+.bandmeta{display:flex;align-items:baseline;justify-content:space-between;gap:20px;
+  flex-wrap:wrap;padding:12px 0 0}
+.ledger{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+  border:1px solid var(--seam2);background:var(--plate);
+  margin-top:clamp(24px,2.8vw,40px)}
+.ledger>div{padding:18px 20px 20px;border-right:1px solid var(--seam);min-width:0}
+.ledger>div:last-child{border-right:0}
+.ledger dt{font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--fg3);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;font-variant-ligatures:none}
+.ledger dd{font-family:var(--mono);font-size:clamp(1.55rem,2.4vw,2.4rem);font-weight:300;
+  letter-spacing:-.045em;margin-top:9px;font-variant-numeric:tabular-nums;color:var(--fg)}
+.ledger dd u{text-decoration:none;color:var(--gold);font-size:.44em;font-weight:500;
+  letter-spacing:0;margin-left:2px}
+
+/* ── beat 4 · colophon ──────────────────────────────────────────────── */
+.starts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;
+  margin-top:clamp(26px,3vw,40px)}
+.start{display:flex;flex-direction:column;gap:10px;min-width:0}
+.copybox{display:flex;align-items:stretch;border:1px solid var(--seam2);background:var(--plate);min-width:0}
+.copybox code{flex:1 1 0;min-width:0;font-family:var(--mono);font-size:13px;color:var(--fg);
+  padding:13px 15px;overflow-x:auto;white-space:nowrap;font-variant-ligatures:none;
+  letter-spacing:-.01em}
+.copybox code i{font-style:normal;color:var(--fg3)}
+.copybox button{border:0;border-left:1px solid var(--seam2);background:transparent;color:var(--gold);
+  font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.19em;padding:0 15px;
+  cursor:pointer}
+.copybox button:hover{background:var(--gold);color:var(--gold-ink)}
+.startnote{font-family:var(--mono);font-size:11px;color:var(--fg3);letter-spacing:.02em;
+  line-height:1.6;font-variant-ligatures:none}
+.fbase{display:flex;gap:18px;flex-wrap:wrap;align-items:baseline;border-top:1px solid var(--seam);
+  padding-top:14px;margin-top:clamp(22px,2.6vw,34px)}
+.fbase .r{margin-left:auto}
+
+footer{margin-top:clamp(52px,6vw,100px);border-top:1px solid var(--seam);
+  padding:clamp(38px,4.4vw,60px) 0 clamp(44px,5vw,68px)}
+.fgrid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);
+  gap:clamp(24px,3vw,60px);align-items:start}
+.fgrid p{font-size:14.5px;line-height:1.62;color:var(--fg2);max-width:56ch;font-weight:340}
+.fgrid p+p{margin-top:12px}
+.fgrid a.lnk{color:var(--gold);border-bottom:1px solid var(--gold-44)}
+.fmark{display:flex;align-items:flex-end;justify-content:flex-end}
+.fmark b{font-size:clamp(2.2rem,4.4vw,4rem);font-weight:250;letter-spacing:-.045em;
+  color:var(--fg);line-height:.9}
+
+/* ── responsive ─────────────────────────────────────────────────────── */
+@media (max-width:900px){
+  :root{--tcw:74px;--chw:44px}
+  .tln,.hit,.askline{gap:0 12px}
+  .ledger{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .ledger>div:nth-child(2){border-right:0}
+  .ledger>div:nth-child(-n+2){border-bottom:1px solid var(--seam)}
+  .wall{grid-template-columns:repeat(6,minmax(0,1fr))}
+  .fgrid{grid-template-columns:1fr}
+  .fmark{justify-content:flex-start}
+}
+@media (max-width:620px){
+  body{font-size:15px}
+  .tln,.hit{grid-template-columns:minmax(0,1fr);gap:4px 0;padding:10px 0}
+  .tln .tc,.hit .tc{text-align:left}
+  .tln .ch,.hit .ch{display:none}
+  .tln .tc::after,.hit .tc::after{content:attr(data-ch);font-size:8.5px;font-weight:700;
+    letter-spacing:.18em;text-transform:uppercase;color:var(--fg3);margin-left:10px}
+  .tln.sn .tc::after{color:var(--seen)}
+  .tln.rc .tc::after{color:var(--gold)}
+  .askline{grid-template-columns:minmax(0,1fr);gap:6px 0}
+  .askline .tc{text-align:left}
+  .askline .ch{display:none}
+  .hit .vd{text-align:left}
+  .seenrow{flex-wrap:wrap;gap:4px 14px}
+  .seenrow .cf{margin-left:0}
+  .exhead .r{flex-basis:100%;margin-left:0}
+  .acite{grid-template-columns:1fr;gap:10px}
+  .acite .receipt{justify-self:start}
+  .starts{grid-template-columns:1fr}
+  .ledger{grid-template-columns:1fr}
+  .ledger>div{border-right:0;border-bottom:1px solid var(--seam)}
+  .ledger>div:last-child{border-bottom:0}
+  .cta{width:100%;justify-content:space-between}
+  .ctanote{max-width:none}
+  .det .tab{display:none}
+  .docmeta{gap:5px 16px}
+}
+/* the law: everything freezes */
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+  .det{opacity:1}
+  .st{opacity:1;transform:none}
+  .wall figure{opacity:1}
+  .caret{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- running head: the wordmark, and the exhibits' own timestamps as the index -->
+<header class="rail">
+  <div class="wrap">
+    <div class="railin">
+      <div class="mark"><b>vidtheque<i class="fs">.</i></b></div>
+      <span class="ml" id="railMeta"></span>
+    </div>
+    <nav class="docnav" id="docnav" aria-label="Exhibits, by timestamp"></nav>
+  </div>
+</header>
+
+<!-- ══ §00 · THE DOCUMENT HEADER ══════════════════════════════════════ -->
+<section class="opening" id="top">
+  <div class="wrap"><div class="col">
+    <div class="docmeta" id="docmeta"></div>
+    <h1>Builders talk<i class="fs">.</i><br>Your agent listens<i class="fs">.</i></h1>
+    <p class="lede">Point it at the builders you trust. It watches every talk, keeps every
+      sentence and every line that crossed the screen, and files it all as one timestamped
+      record — <b>this page is set the way it comes back</b>: the sentence, the slide, and
+      the second it happened.</p>
+    <div class="ctarow">
+      <a class="cta" href="#ask" id="ctaAsk">Ask the corpus
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="square"><path d="M2.6 6h6.6M6.4 3.2 9.2 6l-2.8 2.8"/></svg></a>
+      <p class="ctanote">canned, recorded 2026-08-09 against the live stack.<br>
+        this page makes no network calls.</p>
+    </div>
+    <div class="begin"><span>the record begins</span><s></s>
+      <span class="ml" style="letter-spacing:.14em">timecodes are each talk's own clock</span></div>
+    <div id="exA"></div>
+  </div></div>
+</section>
+
+<!-- ══ §01 · THE EXHIBITS ═════════════════════════════════════════════ -->
+<section class="beat" id="exhibits">
+  <div class="wrap"><div class="col">
+    <div class="sech"><span class="no">§01 · three more, out of the record</span><s></s></div>
+    <div class="bhead">
+      <h2>You don't have time to watch it all. <em>Your agent does.</em></h2>
+      <p class="lede">Every exhibit is a moment your agent can hand back mid-task, printed
+        in the corpus's own order: what was being said, what crossed the screen while it
+        was said, and the link that lands on the second. When a leg has nothing to give,
+        the record <b>says so</b> — it never quietly narrows.</p>
+    </div>
+    <div id="exRest"></div>
+    <div class="stop" aria-hidden="true"><i>.</i></div>
+  </div></div>
+</section>
+
+<!-- ══ §02 · THE INTERROGATION ════════════════════════════════════════ -->
+<section class="beat" id="ask">
+  <div class="wrap"><div class="col">
+    <div class="sech"><span class="no">§02 · a reader interrogates the record</span><s></s></div>
+    <div class="bhead">
+      <h2>Your agent <em>watched it.</em></h2>
+      <p class="lede">An agent, on the real protocol, asking the record a question no single
+        talk answers — and citing five speakers. Four Sonnet agents drove the live stack for
+        an afternoon on 2026-08-09; this exchange is transcribed, <b>not re-recorded</b>, its
+        caveat left in.</p>
+    </div>
+
+    <div class="doc-ask" id="askdoc">
+      <div class="askline">
+        <span class="tc" data-ch="ask">— <i>.</i> —</span>
+        <span class="ch rc">ask</span>
+        <p class="q"><span id="qtext"></span><span class="caret" id="caret"></span></p>
+      </div>
+
+      <div class="tln rc callrow st" id="st1">
+        <span class="tc" data-ch="call">call<i>.</i>01</span><span class="ch rc">call</span>
+        <div>
+          <p class="call"><span class="k">search</span> <span class="arg">{"q":"LLM as a judge","content_type":"transcript","max_per_video":1,"limit":6}</span></p>
+          <p class="retmeta">&larr; 5 talks · legs: transcript · relevance-first, one moment per video</p>
+        </div>
+      </div>
+      <div class="hit st" id="st2">
+        <span class="tc" data-ch="heard">16<i>.</i>01</span>
+        <span class="ch hd">heard</span>
+        <p class="qt">“LLM as a judge doesn't really work either because LLMs don't have good taste in writing.”<u>rank 01 · the sceptic · <b class="id">-npY6XjM8CQ</b></u></p>
+      </div>
+      <div class="hit st" id="st3">
+        <span class="tc" data-ch="heard">04<i>.</i>07</span>
+        <span class="ch hd">heard</span>
+        <p class="qt">“Agent as a judge is about adaptive dynamic analysis. LLM as a judge just gives you a fixed rubric.”<u>rank 02 · the successor argument · <b class="id">q2JrUKBMf0w</b></u></p>
+      </div>
+      <div class="tln st" id="st4">
+        <span class="tc" data-ch="ranks">03–05</span><span class="ch hd">&nbsp;</span>
+        <p class="idrow"><span class="id">b_PmGocP4rc</span> <span class="id">31GUkCBD-Uc</span> <span class="id">O72p-rBb2bA</span> <span class="mt">— the practitioners who ship it anyway</span></p>
+      </div>
+
+      <div class="tln rc callrow st" id="st5">
+        <span class="tc" data-ch="call">call<i>.</i>02</span><span class="ch rc">call</span>
+        <div>
+          <p class="call"><span class="k">search</span> <span class="arg">{"q":"benchmark contamination training data leaked","max_per_video":1,"limit":6}</span></p>
+          <p class="retmeta">&larr; 5 talks, five positions, one call</p>
+        </div>
+      </div>
+      <div class="tln st" id="st6">
+        <span class="tc" data-ch="ids">01–05</span><span class="ch hd">&nbsp;</span>
+        <p class="idrow"><span class="id">-npY6XjM8CQ</span> <span class="id">_PdK6x7PQNM</span> <span class="id">jWq-aZIU0kM</span> <span class="id">1EZdpEhwmNc</span> <span class="id">Yk87oUPVaxU</span></p>
+      </div>
+
+      <div class="ansrow st" id="st7" style="padding:16px 0 4px">
+        <span class="ml gold">the answer, with its receipts attached</span>
+        <div class="acite">
+          <p>“LLM as a judge doesn't really work either because LLMs don't have good taste in writing.”
+            <u>the sceptic · rank 1 · transcript leg</u></p>
+          <a class="receipt" href="https://youtu.be/-npY6XjM8CQ?t=961" rel="noopener">
+            <span>youtu.be/</span><span class="vid id">-npY6XjM8CQ</span><b>?t=961
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"><path d="M3.4 8.6 8.6 3.4M4.6 3.4h4v4"/></svg></b></a>
+        </div>
+        <div class="acite">
+          <p>“Agent as a judge is about adaptive dynamic analysis. LLM as a judge just gives you a fixed rubric.”
+            <u>the successor argument · rank 2 · transcript leg</u></p>
+          <a class="receipt" href="https://youtu.be/q2JrUKBMf0w?t=247" rel="noopener">
+            <span>youtu.be/</span><span class="vid id">q2JrUKBMf0w</span><b>?t=247
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"><path d="M3.4 8.6 8.6 3.4M4.6 3.4h4v4"/></svg></b></a>
+        </div>
+      </div>
+
+      <div class="askfoot st" id="st8">
+        <p class="note">the agent filed a complaint of its own, unprompted: on a second question
+          the link for <span class="id">tJFjeMBKbIY</span> came back <b class="id">?t=1137</b>
+          and the airline story it had just quoted starts at <b>1164 s</b> — 27 seconds of
+          scrubbing. The citation points at the start of the cluster, not at the sentence.
+          Open, logged, and being fixed. A receipt you have to hunt for is a receipt with a bug.</p>
+        <span class="ml">also verified against the live stack: owl:FunctionalProperty · reward hacking ·
+          a photo of a person on stage at a podium · benchmark contamination training data leaked</span>
+        <span class="ml">calls, results and the caveat as recorded in research/demo-queries-2026-08-09.md — laid out for width, nothing rewritten</span>
+      </div>
+    </div>
+    <div class="stop" aria-hidden="true"><i>.</i></div>
+  </div></div>
+</section>
+
+<!-- ══ §03 · THE CORPUS, IN APPENDIX ══════════════════════════════════ -->
+<section class="beat" id="corpus">
+  <div class="wrap">
+    <div class="col">
+      <div class="sech"><span class="no">§03 · appendix — the record so far</span><s></s></div>
+      <div class="bhead">
+        <h2>Follow the builders. Get the sentence, the slide, and <em>the second.</em></h2>
+        <p class="lede">Every frame below is a talk this corpus has already watched all the way
+          through — one channel followed so far. Point it at a conference, a channel, a creator,
+          and their knowledge compounds into yours.</p>
+      </div>
+    </div>
+    <div class="wall" id="wall"></div>
+    <div class="bandmeta">
+      <span class="ml" id="bandLine"></span>
+      <span class="ml" id="bandDates"></span>
+    </div>
+    <dl class="ledger" id="ledger"></dl>
+    <div class="col"><div class="stop" aria-hidden="true"><i>.</i></div></div>
+  </div>
+</section>
+
+<!-- ══ §04 · COLOPHON ═════════════════════════════════════════════════ -->
+<section class="beat" id="run">
+  <div class="wrap"><div class="col">
+    <div class="sech"><span class="no">§04 · colophon — yours, on your box</span><s></s></div>
+    <div class="bhead">
+      <h2>Run your own. Point your agent at it.</h2>
+      <p class="lede">One compose file, one SQLite file, no build step, no runtime network
+        dependency. It runs the CPU half on a Pi.</p>
+    </div>
+    <div class="starts">
+      <div class="start">
+        <span class="ml">1 · run the corpus</span>
+        <div class="copybox">
+          <code><i>$</i> docker compose up -d</code>
+          <button type="button" data-copy="docker compose up -d">copy</button>
+        </div>
+        <p class="startnote">clone, copy <span class="id">.env.example</span> to <span class="id">.env</span>, and it is up.</p>
+      </div>
+      <div class="start">
+        <span class="ml">2 · hand it to your agent</span>
+        <div class="copybox">
+          <code><i>$</i> claude mcp add --transport http vidtheque &lt;mcp_url&gt;</code>
+          <button type="button" data-copy="claude mcp add --transport http vidtheque <mcp_url>">copy</button>
+        </div>
+        <p class="startnote">one line for Claude, Codex, or anything that speaks the protocol.</p>
+      </div>
+    </div>
+    <div class="fbase">
+      <span class="ml">macOS · Linux · MIT · runs the CPU half on a Pi</span>
+      <span class="ml r" style="color:var(--gold)">early development · no releases yet · schemas can still change</span>
+    </div>
+  </div></div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="fgrid">
+      <div>
+        <span class="ml gold">attribution — never cut from this page</span>
+        <p style="margin-top:12px">The videos belong to the people who made them. vidtheque watched
+          them, kept the timestamps, and sends you back to the source — every answer on this page
+          is a quotation with a link that lands on the second it was said.</p>
+        <p>Nothing is hosted or redistributed here: the file is downloaded, read, and deleted.
+          What stays is the transcript, the text that was on screen, and the keyframes kept as
+          evidence. A creator who would rather not be followed is a complete reason, and there is
+          no appeal to make.</p>
+        <p><a class="lnk" href="https://github.com/tomvaucourt/vidtheque" rel="noopener">the repo</a>
+          · MIT · one owner, self-hosted.</p>
+      </div>
+      <div class="fmark"><b>vidtheque<i class="fs">.</i></b></div>
+    </div>
+    <div class="fbase">
+      <span class="ml">landing v6 · the transcript is the page</span>
+      <span class="ml" id="footStamp"></span>
+      <span class="ml r">numbers read out of the corpus at render time</span>
+    </div>
+  </div>
+</footer>
+
+<script src="v6-assets/data.js"></script>
+<script>
+(() => {
+  const D = window.VT, A = 'v6-assets/';
+  const M = Object.fromEntries(D.moments.map(m => [m.id, m]));
+  const STILL = location.search.includes('still');
+  const REDUCE = STILL || matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const el = (t, c, h) => { const n = document.createElement(t); if (c) n.className = c;
+    if (h != null) n.innerHTML = h; return n; };
+  const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  const pad = n => String(n).padStart(2, '0');
+  const num = n => Math.round(n).toLocaleString('en-US');
+  const mmss = s => { s = Math.floor(s); return pad((s / 60) | 0) + ':' + pad(s % 60); };
+  const hms = s => { s = Math.floor(s); const h = (s / 3600) | 0, m = ((s % 3600) / 60) | 0;
+    return (h ? h + ':' + pad(m) : pad(m)) + ':' + pad(s % 60); };
+  /* the timestamp with the wordmark's period as its dot: 09:19.44 */
+  const tdot = s => { const w = Math.floor(s), f = Math.round((s - w) * 100) % 100;
+    return `${mmss(w)}<i>.</i>${pad(f)}`; };
+  const ARROW = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"><path d="M3.4 8.6 8.6 3.4M4.6 3.4h4v4"/></svg>';
+  const receipt = m =>
+    `<a class="receipt" href="https://youtu.be/${m.video_id}?t=${Math.floor(m.t)}" rel="noopener">` +
+    `<span>youtu.be/</span><span class="vid id">${m.video_id}</span>` +
+    `<b>?t=${Math.floor(m.t)}${ARROW}</b></a>`;
+
+  /* per-exhibit annotations: claims carried over from v3, none invented here */
+  const EXH = [
+    { id: 3285, key: 'A', host: 'exA',
+      ann: { 9: 'never spoken aloud' }, tabs: { 5: 'on-screen text' } },
+    { id: 41,   key: 'B', host: 'exRest', ann: { 3: 'the slide agrees with the speaker' } },
+    { id: 1944, key: 'C', host: 'exRest', ann: { 10: 'a repl, four commands deep' } },
+    { id: 564,  key: 'D', host: 'exRest', ann: {} },
+  ];
+
+  /* ── one exhibit = one stretch of the transcript, in the talk's own order ── */
+  function exhibit(cfg) {
+    const m = M[cfg.id];
+    const box = el('div', 'exh');
+    box.id = 'exh' + cfg.key;
+    box.append(el('div', 'exhead',
+      `<span class="ex">exhibit ${cfg.key}</span>
+       <span class="ti">${esc(m.title)}</span>
+       <span class="who">${esc(m.speaker)}${m.org ? ' · ' + esc(m.org) : ''}</span>
+       <span class="r">video <span class="id">${m.video_id}</span> · ${hms(m.duration)}</span>`));
+    box.append(el('p', 'exkick', esc(m.kick)));
+
+    /* rows in true time order: cues interleaved with the SEEN block at m.t */
+    const rows = m.cues.map((c, i) => ({ s: c.s, kind: 'heard', c, now: i === m.cue_index }));
+    rows.push({ s: m.t, kind: 'seen' });
+    rows.sort((a, b) => a.s - b.s);
+
+    rows.forEach(r => {
+      if (r.kind === 'heard') {
+        const ln = el('div', 'tln' + (r.now ? ' now' : ''));
+        ln.append(el('span', 'tc', tdot(r.s)));
+        ln.lastChild.dataset.ch = 'heard';
+        ln.append(el('span', 'ch hd', 'heard'));
+        ln.append(el('p', 'said', '“' + esc(r.c.t) + '”'));
+        box.append(ln);
+        return;
+      }
+      /* the SEEN block: each machine-read line is a row of its own */
+      if (m.ocr.length) {
+        m.hero.forEach((idx, k) => {
+          const l = m.ocr[idx];
+          const ln = el('div', 'tln sn');
+          ln.append(el('span', 'tc', k === 0 ? tdot(m.t) : '&nbsp;'));
+          if (k === 0) ln.lastChild.dataset.ch = 'seen';
+          ln.append(el('span', 'ch sn', k === 0 ? 'seen' : '&nbsp;'));
+          const sr = el('div', 'seenrow',
+            `<p>${esc(l.t)}</p>` +
+            (cfg.ann[idx] ? `<span class="ann">— ${esc(cfg.ann[idx])}</span>` : '') +
+            `<span class="cf">conf ${l.c.toFixed(2)}</span>`);
+          ln.append(sr);
+          box.append(ln);
+        });
+      } else {
+        const ln = el('div', 'tln sn');
+        ln.append(el('span', 'tc', tdot(m.t)));
+        ln.lastChild.dataset.ch = 'seen';
+        ln.append(el('span', 'ch sn', 'seen'));
+        ln.append(el('p', 'note', `nothing readable on screen here — <b>ocr_state=empty</b>,
+          so this moment stands on the sentence alone, and the frame is the evidence.`));
+        box.append(ln);
+      }
+      /* the frame, in evidence */
+      const evr = el('div', 'tln evrow');
+      evr.style.borderBottom = '1px solid var(--seam)';
+      evr.append(el('span', 'tc', '&nbsp;'), el('span', 'ch', '&nbsp;'));
+      const ev = el('div', 'ev');
+      ev.append(el('div', 'evhead',
+        `<span class="ml seen">${m.ocr.length ? m.ocr.length + ' lines read off this frame' : 'the frame, kept as evidence'}</span>
+         <span class="ml r">keyframe #${m.id} · ord ${m.ord} · ${hms(m.t)} of ${hms(m.duration)}</span>`));
+      const fr = el('figure', 'frame');
+      const img = el('img');
+      img.src = A + m.img; img.loading = 'lazy'; img.decoding = 'async';
+      img.alt = 'Keyframe at ' + hms(m.t) + ' of ' + m.title + ' — ' + m.speaker;
+      fr.append(img);
+      m.ocr.forEach((l, i) => {
+        const on = m.hero.includes(i);
+        const [x0, y0, x1, y1] = l.b;
+        const d = el('div', 'det' + (on ? ' on' : ''));
+        d.style.cssText = `--x:${(x0 * 100).toFixed(2)}%;--y:${(y0 * 100).toFixed(2)}%;` +
+          `--w:${((x1 - x0) * 100).toFixed(2)}%;--h:${((y1 - y0) * 100).toFixed(2)}%;--i:${i}`;
+        if (on && cfg.tabs && cfg.tabs[i]) d.append(el('span', 'tab', cfg.tabs[i]));
+        fr.append(d);
+      });
+      ev.append(fr);
+      evr.append(ev);
+      box.append(evr);
+      /* the receipt closes the moment — the full stop */
+      const rr = el('div', 'tln rc');
+      rr.append(el('span', 'tc', mmss(m.t) + '<i>.</i>'));
+      rr.lastChild.dataset.ch = 'link';
+      rr.append(el('span', 'ch rc', 'link'), el('div', '', receipt(m)));
+      box.append(rr);
+    });
+    document.getElementById(cfg.host).append(box);
+    return box;
+  }
+  const exBoxes = EXH.map(exhibit);
+
+  /* boxes acquire when the frame enters view — the machine finding its lines */
+  if (!REDUCE && 'IntersectionObserver' in window) {
+    const io = new IntersectionObserver(es => es.forEach(e => {
+      if (e.isIntersecting) { e.target.classList.add('lit'); io.unobserve(e.target); }
+    }), { threshold: 0.35 });
+    document.querySelectorAll('.ev').forEach(v => io.observe(v));
+  } else {
+    document.querySelectorAll('.ev').forEach(v => v.classList.add('lit'));
+  }
+
+  /* ── the running head: timestamps as the page's navigation ── */
+  const nav = document.getElementById('docnav');
+  EXH.forEach(cfg => {
+    const m = M[cfg.id];
+    nav.append(el('a', '',
+      `<b>${cfg.key}</b><span class="t">${mmss(m.t).replace(':', '<i>.</i>')}</span><span class="id">${m.video_id}</span>`))
+      && (nav.lastChild.href = '#exh' + cfg.key);
+  });
+  [['ask', '§02', 'the interrogation'], ['corpus', '§03', 'the corpus'], ['run', '§04', 'run your own']]
+    .forEach(([id, no, t]) => {
+      const a = el('a', '', `<b>${no}</b><span class="t">${t}</span>`);
+      a.href = '#' + id; nav.append(a);
+    });
+
+  /* ── the numbers, read out of the readout ── */
+  const st = D.stats;
+  const mins = Math.round(st.seconds / 60);
+  const hh = (mins / 60) | 0, mm = mins % 60;
+  document.getElementById('railMeta').innerHTML =
+    `following <span class="id" style="color:var(--gold)">${esc(st.channel)}</span> · ` +
+    `${num(st.talks)} talks · read-only from vidtheque.db`;
+  document.getElementById('docmeta').innerHTML =
+    `<span>transcript of <b>${num(st.talks)}</b> talks</span>
+     <span>runtime <b>${hh}h${pad(mm)}</b></span>
+     <span>sentences <b>${num(st.cues)}</b></span>
+     <span>lines read off screens <b>${num(st.ocr_lines)}</b></span>
+     <span>frames kept <b>${num(st.keyframes)}</b></span>`;
+  const d0 = new Date(st.first_pub * 1000), d1 = new Date(st.last_pub * 1000);
+  const ymd = d => d.toISOString().slice(0, 10);
+  document.getElementById('bandDates').textContent =
+    'published ' + ymd(d0) + ' → ' + ymd(d1) + ' · one channel followed so far';
+  document.getElementById('bandLine').innerHTML =
+    `${num(st.talks)} talks · ${num(st.cues)} sentences spoken · ${num(st.words)} words · ` +
+    `${num(st.ocr_frames)} frames read`;
+  document.getElementById('footStamp').textContent =
+    'corpus read ' + ymd(d0) + ' → ' + ymd(d1) + ' · ' + num(st.keyframes) + ' keyframes on disk';
+
+  /* ── the wall: 78 frames, revealed as the record they are ── */
+  const wall = document.getElementById('wall');
+  D.grid.forEach((g, i) => {
+    const f = el('figure');
+    f.style.setProperty('--i', i % 13 + ((i / 13) | 0));
+    const img = el('img');
+    img.src = A + g.img; img.loading = 'lazy'; img.decoding = 'async';
+    img.alt = g.title + ' — ' + g.speaker;
+    f.title = g.title + ' — ' + g.speaker + (g.org ? ' (' + g.org + ')' : '') +
+      ' · ' + hms(g.dur) + ' · ' + num(g.cues) + ' spoken lines · ' + num(g.ocr) + ' lines read off the screen';
+    f.append(img); wall.append(f);
+  });
+  const fol = el('a', 'follow',
+    '<span>+ follow a channel<i>today: point it at a channel. next: it keeps watching.</i></span>');
+  fol.href = '#run'; wall.append(fol);
+  if (!REDUCE && 'IntersectionObserver' in window) {
+    const io = new IntersectionObserver(es => es.forEach(e => {
+      if (e.isIntersecting) { wall.classList.add('lit'); io.disconnect(); }
+    }), { threshold: 0.12 });
+    io.observe(wall);
+  } else { wall.classList.add('lit'); }
+
+  /* ── the ledger: counters tick once, then hold ── */
+  const LG = [
+    ['talks', st.talks, v => num(v)],
+    ['hours watched', mins, v => (((v / 60) | 0)) + '<u>h</u> ' + pad(Math.round(v % 60)) + '<u>m</u>'],
+    ['moments kept', st.keyframes, v => num(v)],
+    ['lines read off the screen', st.ocr_lines, v => num(v)],
+  ];
+  const ledger = document.getElementById('ledger');
+  const dds = LG.map(([k, v, f]) => {
+    const d = el('div'); d.append(el('dt', '', k), el('dd', '', REDUCE ? f(v) : f(0)));
+    ledger.append(d); return d.lastChild;
+  });
+  if (!REDUCE && 'IntersectionObserver' in window) {
+    const tick = () => {
+      const t0 = performance.now(), dur = 950;
+      const step = now => {
+        const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+        LG.forEach(([k, v, f], i) => { dds[i].innerHTML = f(v * e); });
+        if (p < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    };
+    const io = new IntersectionObserver(es => es.forEach(e => {
+      if (e.isIntersecting) { tick(); io.disconnect(); }
+    }), { threshold: 0.4 });
+    io.observe(ledger);
+  }
+
+  /* ── the interrogation: the query types itself, the record answers ── */
+  const Q = 'What do speakers disagree about when it comes to LLM as a judge?';
+  const qtext = document.getElementById('qtext');
+  const caret = document.getElementById('caret');
+  const steps = ['st1','st2','st3','st4','st5','st6','st7','st8'].map(id => document.getElementById(id));
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  let token = 0;
+  function freezeAsk() {
+    token++;
+    qtext.textContent = Q;
+    caret.classList.remove('live');
+    steps.forEach(s => s.classList.add('on'));
+  }
+  async function runAsk() {
+    const tk = ++token;
+    qtext.textContent = '';
+    steps.forEach(s => s.classList.remove('on'));
+    caret.classList.add('live');
+    await sleep(420); if (tk !== token) return;
+    for (let i = 0; i < Q.length; i++) {
+      if (tk !== token) return;
+      qtext.textContent = Q.slice(0, i + 1);
+      await sleep(26 + (Q[i] === ' ' ? 14 : 0));
+    }
+    await sleep(340); if (tk !== token) return;
+    caret.classList.remove('live');
+    for (const s of steps) {
+      if (tk !== token) return;
+      s.classList.add('on');
+      await sleep(s.classList.contains('hit') ? 300 : 380);
+    }
+  }
+  if (REDUCE) { freezeAsk(); }
+  else if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver(es => es.forEach(e => {
+      if (e.isIntersecting) { runAsk(); io.disconnect(); }
+    }), { threshold: 0.25 });
+    io.observe(document.getElementById('askdoc'));
+  } else { freezeAsk(); }
+  document.getElementById('ctaAsk').addEventListener('click', () => {
+    if (REDUCE) freezeAsk(); else runAsk();
+  });
+
+  /* ── copy buttons ── */
+  document.querySelectorAll('[data-copy]').forEach(b => {
+    b.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(b.dataset.copy); } catch (e) { /* no clipboard, no drama */ }
+      const was = b.textContent; b.textContent = 'copied';
+      setTimeout(() => { b.textContent = was; }, 1400);
+    });
+  });
+})();
+</script>
+</body>
+</html>
