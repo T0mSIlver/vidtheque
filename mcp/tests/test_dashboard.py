@@ -3182,3 +3182,30 @@ def test_the_overlay_line_list_scrolls_down_and_never_sideways() -> None:
     # …and what does scroll only ever moves the one axis this box has.
     assert "scroller.scrollTop +=" in script
     assert "scrollLeft" not in script
+
+
+def test_the_gold_evidence_mark_is_not_clipped_by_the_frame_it_marks() -> None:
+    """The other half of round 4's item 1, and the reason it read as "nothing".
+
+    Every gold mark in the frames panels was an `outline` with a positive
+    `outline-offset` on the `<img>`. Both boxes that hold one — `.framebtn` and
+    `.ocrstage` — are `overflow: hidden` and the image fills them exactly, so
+    the outline was drawn *outside the image and inside the clip*: painted, and
+    invisible on every screen. An element's own outline is not clipped by its
+    own overflow, so the mark belongs on the box.
+
+    Three marks were affected: the timeline↔strip hover link, `:target`, and
+    the evidence selection a shot bar makes.
+    """
+    css = (STATIC / "dashboard.css").read_text()
+    for selector in (
+        ".framecard.is-linked .framebtn",
+        ".framecard:target .framebtn",
+        ".framecard.is-selected .framebtn",
+    ):
+        rule = _rule(css, selector)
+        assert "outline: 2px solid var(--accent)" in rule, selector
+    # …and nothing puts one back on an image inside a clipping box.
+    assert not re.search(r"^\.(framecard|ocrframe)[^{}]*img[^{}]*\{[^}]*outline:", css, re.M)
+    for box in (".framebtn", ".ocrstage"):
+        assert "overflow: hidden" in _rule(css, box), f"{box} still clips"

@@ -1274,9 +1274,18 @@ button[disabled]:hover { color: var(--fg3); border-color: var(--seam); }
 .shotbar:focus-within { z-index: 1; }
 
 /* The timeline and the strip are two views of one thing; pointing at either end
-   lights the other, which is the only way that link is visible at all. */
+   lights the other, which is the only way that link is visible at all.
+
+   **The mark goes on the frame box, never on the `<img>` inside it** (found in
+   review, 2026-08-10, round 4). `.framebtn` is `overflow: hidden` and its image
+   fills it exactly, so an `outline-offset: 2px` on the image was drawn entirely
+   outside the image's box — that is, entirely inside the clip — and every gold
+   mark in this panel was invisible on every screen. An element's own outline is
+   not clipped by its own `overflow`, so it belongs on the button. Three marks
+   were affected and all three are below: this one, `:target`, and the evidence
+   selection. */
 .shotbar.is-linked a { background: var(--accent); }
-.framecard.is-linked .framebtn img { outline: 2px solid var(--accent); outline-offset: 2px; }
+.framecard.is-linked .framebtn { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* A shot whose every frame was deduplicated: hatched, so it reads as "captured,
    then dropped" and not as an empty stretch of video. The bar paints its own
@@ -1408,7 +1417,7 @@ button[disabled]:hover { color: var(--fg3); border-color: var(--seam); }
    click handler: the timeline's bars are real links to `#frame-N`, so the
    selection survives the navigation, the back button and a reload, and it costs
    no JavaScript. */
-.framecard:target .framebtn img {
+.framecard:target .framebtn {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -1572,9 +1581,14 @@ button.ocrstage { border: 0; padding: 0; cursor: zoom-in; }
 
 /* Selected into evidence: a shot bar was clicked and this is the moment it
    pointed at. Gold, because that is exactly "the moment you are pointing at" —
-   and a 1px inset edge rather than a fill, like the hovered table row. */
-.framecard.is-selected .framebtn img,
-.ocrframe.is-selected .ocrstage img {
+   and an outline rather than a fill, like the hovered table row.
+
+   On the *box*, not on the image inside it: both boxes are `overflow: hidden`
+   with the image filling them exactly, so an offset outline on the image was
+   clipped by the box it sat in and painted nothing at all. See the note beside
+   `.framecard.is-linked` — it was the same bug in three places. */
+.framecard.is-selected .framebtn,
+.ocrframe.is-selected .ocrstage {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
