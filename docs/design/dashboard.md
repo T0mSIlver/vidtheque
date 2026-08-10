@@ -1617,3 +1617,63 @@ items has no title to print. The tests added with each fix reproduce the
 *shape* of the corpus rather than its size — `?frames=1` makes the seeded video
 a talk with more frames than one page — so they fail on the old code and cost
 the suite nothing.
+
+### 12.7 The merged frames view (2026-08-10) — and how to undo it
+
+Round 4's item 2, kept in its own section for one reason: **it is the one
+change in that pass Tom reserved the right to dislike**, so it landed alone, in
+a commit that is only itself, and undoing it is one command.
+
+```
+git revert 1ed6516bc511be54ac29931a9f998271f8a1f8e6
+```
+
+or, if the id has moved under a rebase:
+
+```
+git revert $(git log --format=%H --grep='revert me to restore the split' -1)
+```
+
+Nothing else from round 4 rides in that commit, and it touches no
+documentation, so the revert conflicts with nothing. **If it is reverted, this
+section comes out with it** — by hand, since a revert will not remove it.
+
+**What was wrong with two panels.** §5.3 gave the page a keyframe strip (192px
+thumbnails of every frame) and, under it, an on-screen-text panel (512px stills
+of the frames that had text, with the detection boxes drawn on them). They were
+two views of two different questions and that held until round 3, which
+(§12.5 items 5 and 6) made a still in the OCR panel open the *same* overlay a
+strip keyframe opens, and moved the box↔line interaction into that overlay
+because a detection box on a 512px still is a few millimetres of screen. After
+that the second panel was the first panel's frames a second time, and the OCR
+text printed under each of them was a receipt with nothing left to do: the
+selecting had moved to the overlay.
+
+**What the merge is.** One grid, `.frames`, of every keyframe on this page of
+the strip, at the cell size a detection box needs rather than the cell size a
+thumbnail wants — this grid is read, not swept. Per card: the 512px still with
+its lime boxes over it, the timecode / ordinal / `ocr_state` / line count, the
+shot and either the sharpness or which frame it duplicates, and — only when the
+frame carries text — the same `--ocrbox-h` scrollbox of every line it read.
+`align-items: start`, so a card holding thirty lines grows without stretching
+the empty ones beside it.
+
+**What that bought, beyond one panel instead of two.** One card is now the
+whole of a frame — the shot bar's anchor (`#frame-N`), the evidence mark's
+target, the lightbox's opener, and the scope the box↔line pairing is looked up
+in. `.ocrgrid`, `.ocrframe` and `.ocrstage` are deleted (`.ocrstage` *was*
+`.framebtn`: a fixed-aspect clipping box on `--black` behind a 1px inset
+hairline), `.strip` becomes `.frames`, and `dashboard.js` stops keeping two
+elements in step — `selectFrame` marks one node and `boxesFor` finds the card
+by the `data-ocrframe` it always carried. The page also asks the frame cache
+for **fewer** files than before: twenty-four stills, rather than twenty-four
+thumbnails plus a second copy of every frame that had text.
+
+**What it costs, stated so the revert decision is informed.** The 9rem contact
+sheet is gone, and with it the ability to sweep twenty-four frames in one
+glance at one screenful — four cards a row at 512px is a taller panel. The
+argument for accepting that is that the strip's density was buying a *scan* the
+page no longer needs to offer twice: the scene timeline above it is the thing
+that answers "where in this video", at one bar per shot across the whole
+runtime, and the frames grid answers "what is on this frame", which is a
+reading and not a sweep.
