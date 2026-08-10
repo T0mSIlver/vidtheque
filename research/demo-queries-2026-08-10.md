@@ -781,3 +781,25 @@ Runner-up, and the best two-beat if you have four minutes: **§8.2 → §2.1** �
 ask in plain English why more context hurts, get the spoken sentence; ask what
 it costs, get the slide nobody read out loud; open the image, find the cell OCR
 could not render.
+
+
+## Tom's ask-mode flagship (2026-08-11, post-repair, post-citation-fix)
+
+**"Why does loop engineering look so much like building RLVR environments?"**
+— Tom's own question, and the strongest ask-mode pair yet: a why-question whose
+answer only exists ACROSS talks.
+
+- Call: `POST /api/ask {"q": "Why does loop engineering look so much like building RLVR environments?"}`
+- Search legs on the same phrasing: `fts 0 cues` — pure vector leg, impossible
+  before the embedding repair.
+- Answer (4 rounds, deepseek-v4-flash, 7 citations across 6 talks — Mistele's
+  loop-engineering talk, Will Brown's RLVR talk, TypeSafe on what follows RLHF,
+  long-horizon environments, Factory's forward-deployed verifiers, Snorkel):
+  closes on *"the resemblance is structural: you define goals, build a harness,
+  check outcomes, and feed that signal back into the loop."*
+- Positioning tie: "your agent watched it" — no single talk answers this; the
+  synthesis with receipts is the product.
+- Verification: first run (pre-fix) exposed the annotated-marker citation bug
+  (`[29 transcript]` → empty citations array; fixed in `ccc35e4`); second run
+  on the fixed loop returned 7 resolvable citations; receipt spot-check
+  `xIt_mTQp6mY?t=423` lands inside the loop-engineering opening as expected.
