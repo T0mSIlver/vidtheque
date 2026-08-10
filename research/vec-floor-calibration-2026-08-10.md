@@ -121,7 +121,7 @@ difference is the band:
 | `voice agent interruption latency` | before | 401 (pool full) | 123 | 800/800 | 3021 ms | `CS5Cmz5FssI` (the hub) |
 | | after | 25 | **5** | 189/800 | **709 ms** | same |
 
-Three things to read here. The **counts stop lying**: `turbopuffer` no longer
+Three things to read here (see also §6). The **counts stop lying**: `turbopuffer` no longer
 "matches" 119 of 171 talks, and the candidate pool stops filling, which also
 retires the misleading "deeper matches exist" note on these queries. The band is
 **4× cheaper**, because the fused ranking is built over hundreds of candidates
@@ -129,3 +129,28 @@ instead of the whole `k`. And **rank 1 does not move** — the band drops the ta
 it does not re-rank; two of these three rank 1s are still topically wrong, and
 they will stay wrong until §3's embedding problem is fixed. That is the honest
 split between what a floor can fix and what it cannot.
+
+## 6. §3 was right, and it is worse — the answer is in a sibling doc
+
+Added by the root-cause session that §3 was flagged to (2026-08-10, evening).
+`research/embedding-random-init-2026-08-10.md` has the full write-up; the short
+version, because it changes how §2 and §5 should be read:
+
+`Qwen/Qwen3-VL-Embedding-2B` **has never loaded its weights on this stack.**
+sentence-transformers loads it through `AutoModel`, transformers 4.57.6 cannot
+match any of the checkpoint's 625 tensors to `Qwen3VLModel` (its
+`base_model_prefix` is `""`, which kills the rename branch), so all 625 are
+randomly initialised — with a warning, not an error. Every vector in both
+indexes is a random projection, and because the draw is redone on every model
+load, the corpus is **eleven mutually orthogonal random spaces**.
+
+So: §3's ~0.01 round-trips were not stale vectors, they were vectors from a
+different random draw. §3.2's hub is simply the sub-space the *current* worker
+process happens to share. And §2's distributions — including the complete
+overlap between real and junk best hits that "an absolute ceiling is still
+unsettable" rests on — are properties of a random 2048-d projection over 6,200
+chunks, not of this model over this corpus. The band that shipped is safe
+(it is calibrated on geometry, and geometry is all a random space has), but
+§2's table and §5's before/after must both be re-measured once the corpus is
+re-embedded on real weights. The conclusion that survives untested is the SigLIP-era
+one; this run cannot corroborate it.
