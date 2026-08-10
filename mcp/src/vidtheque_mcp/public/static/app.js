@@ -599,10 +599,30 @@ const CHANNEL_NAME = {
   frame: "frames",
 };
 
-// Nothing matched. Say what was searched, and offer the widening that is
-// actually available — the other two channels are the usual reason a phrase
-// misses (it was on a slide, not in the words).
-const renderNoResults = (q, dataStatus) => {
+// Back to the cold page, with the examples on it. The one action a dead end on
+// this page has to offer, so it is the one the empty state points at.
+const showExamples = () => {
+  $("q").value = "";
+  selectContentType("all", false);
+  clearResults();
+  setStatus("");
+  setState("ready");
+  showEmptyState(true);
+  syncUrl("");
+  $("q").focus();
+};
+
+// Nothing matched. One short sentence and the way back to something that
+// works.
+//
+// It used to name the query back and then advise using fewer words — an
+// apology, a tip nobody takes, and the query repeated in quotes right under
+// the box that still holds it. An empty state is not a place to explain a corpus
+// (Tom, 2026-08-11): it says the corpus does not have this, and points at the
+// four things it does. The widening line survives, and only when a channel is
+// pinned, because that one is not advice — it is the visitor's own filter, and
+// leaving them inside it is how a demo looks broken.
+const renderNoResults = (dataStatus) => {
   const box = el("div", "notice");
   // "Nothing matched" is a lie when there is nothing to match: an instance
   // that has not indexed anything yet says so instead of blaming the query.
@@ -612,7 +632,7 @@ const renderNoResults = (q, dataStatus) => {
     $("results").replaceChildren(box);
     return;
   }
-  box.append(el("p", "notice-title", `Nothing matched “${q}”.`));
+  box.append(el("p", "notice-title", "Nothing in the corpus matches this."));
   const tips = el("ul", "notice-tips");
   if (state.contentType !== "all") {
     const li = el("li");
@@ -622,9 +642,13 @@ const renderNoResults = (q, dataStatus) => {
     li.append(widen);
     tips.append(li);
   }
-  tips.append(
-    el("li", null, "Try fewer words."),
-  );
+  const back = el("li");
+  back.append("Try ");
+  const examples = el("button", "linky", "one of the examples");
+  examples.addEventListener("click", showExamples);
+  back.append(examples);
+  back.append(".");
+  tips.append(back);
   box.append(tips);
   $("results").replaceChildren(box);
 };
@@ -755,7 +779,7 @@ async function runSearch(append = false) {
   if (!append && !hits.length) {
     setStatus("", payload.notes || []);
     setState("no hits");
-    renderNoResults(q, payload.data_status);
+    renderNoResults(payload.data_status);
     return;
   }
   setState("ready");

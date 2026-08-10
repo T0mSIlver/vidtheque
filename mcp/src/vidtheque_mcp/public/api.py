@@ -231,7 +231,7 @@ def _decorate_hit(deps: Deps, hit: dict[str, Any]) -> dict[str, Any]:
 # ------------------------------------------------------------------ endpoints
 
 
-async def search_endpoint(request: Request) -> JSONResponse:
+async def search_endpoint(request: Request, *, demo: bool = False) -> JSONResponse:
     deps: Deps = request.app.state.assembled.deps
     policy = await policy_for(request)
     params = request.query_params
@@ -279,8 +279,9 @@ async def search_endpoint(request: Request) -> JSONResponse:
             "pagination": payload.get("pagination", {}),
             # The `note:` prefix marks a line as machinery for a model reading
             # the text block. The page renders notes in their own muted line,
-            # which says the same thing without the prefix.
-            "notes": humanize.notes(payload.get("notes")),
+            # which says the same thing without the prefix. On the demo, a note
+            # whose whole audience is a model is dropped as well (§6.1).
+            "notes": humanize.notes(payload.get("notes"), demo=demo),
             # Only the tool's empty path sets this, and it is the difference
             # between "nothing matched" and "nothing is indexed" — which a
             # `?q=` link to a fresh instance would otherwise report as a bad
@@ -395,13 +396,28 @@ async def meta_endpoint(request: Request) -> JSONResponse:
     )
 
 
-def api_routes(prefix: str = "", *, ask: bool = True) -> list[Route]:
+async def _demo_search_endpoint(request: Request) -> JSONResponse:
+    """The demo page's own `/api/search` — the same handler, one note fewer.
+
+    A closure and not a ``functools.partial``: Starlette's ``Route`` routes a
+    plain function through ``request_response`` and treats anything else as an
+    ASGI app, and a partial is not a function.
+    """
+    return await search_endpoint(request, demo=True)
+
+
+def api_routes(prefix: str = "", *, ask: bool = True, demo: bool = False) -> list[Route]:
     """The read facade, under ``{prefix}/api/*``, bounded by :func:`policy_for`.
 
     ``prefix`` is what makes the dashboard's JSON the same handlers rather than
     a second implementation: ``api_routes("/dashboard")`` is the whole of
     dashboard.md §2.5.1. ``ask=False`` leaves the LLM route out, which is how
     the dashboard gets JSON without also getting a spend surface.
+
+    ``demo=True`` is the demo page's own group, and the one thing it changes is
+    which `note:` lines reach a reader (§6.1). It defaults to *off* so that
+    every other caller — the dashboard, anything added later — keeps the query
+    layer's full commentary unless it asks not to.
 
     **There is no ``policy`` parameter any more** (phase 5). It was the shape
     of the phase-1 bug: a bound chosen where the route is registered is a bound
@@ -411,7 +427,11 @@ def api_routes(prefix: str = "", *, ask: bool = True) -> list[Route]:
     endpoints themselves.
     """
     routes = [
-        Route(f"{prefix}/api/search", search_endpoint, methods=["GET"]),
+        Route(
+            f"{prefix}/api/search",
+            _demo_search_endpoint if demo else search_endpoint,
+            methods=["GET"],
+        ),
         Route(f"{prefix}/api/videos", videos_endpoint, methods=["GET"]),
         Route(f"{prefix}/api/meta", meta_endpoint, methods=["GET"]),
     ]

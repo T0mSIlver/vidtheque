@@ -1030,14 +1030,44 @@ A demo is judged on the four screens that are not "ten results came back".
      anything, and 08-10 has none.
   4. `human annotation calibrate LLM judge` (**transcript**) — three talks, two
      of them directly contradicting, every quote verbatim (§3.1).
-  5. `FlashAttention-4` (all) — `0/0`, and it names the legs that ran and the
-     one it deliberately did not (§5.1). A demo whose example list contains a
-     refusal is making the product's third pillar in one click; the empty state
-     below is not an edge case here, it is one of the five.
-- **Nothing matched** names the query, offers `Search all` when a content-type
-  filter is on, and otherwise says `Try fewer words.` When
-  the facade's `data_status` says `empty` (§2.1) it says *that* instead: an
-  instance with nothing indexed is not a query the visitor got wrong.
+
+  *Amended 2026-08-11 (Tom's review): there are four, and the refusal is not
+  one of them.* The fifth was `FlashAttention-4` — `0/0`, naming the legs that
+  ran and the one it deliberately did not (§5.1) — and the argument for it was
+  that a demo whose example list contains a refusal makes the product's third
+  pillar in one click. On the page it is the opposite: a stranger clicking the
+  last chip in a row of five gets a screen whose entire payload is the word
+  *nothing*, and the empty state stops being an edge case only by becoming a
+  fifth of the demo. **Honesty is not the thing a demo has to prove** — every
+  chip now returns evidence. The refusal path is unchanged and still one typed
+  query away, and §5.1 remains the receipt for it.
+- **Nothing matched** is one sentence and one way out: `Nothing in the corpus
+  matches this.`, then `Try one of the examples.` — a `.linky` that clears the
+  query, resets the channel and puts the cold page (with its four chips) back.
+  `Search all` survives as a second line, and only when a content-type filter
+  is pinned: that one is not advice but the visitor's own filter, and leaving
+  someone inside `frames only` is how a demo looks broken. When the facade's
+  `data_status` says `empty` (§2.1) it says *that* instead: an instance with
+  nothing indexed is not a query the visitor got wrong.
+
+  *Amended 2026-08-11 (Tom's review).* It used to read `Nothing matched “<q>”.`
+  over `Try fewer words.` Both are gone: the query is quoted back two
+  centimetres under the box that still holds it, and "try fewer words" is a tip
+  nobody takes, phrased as though the visitor had made a mistake. The state
+  says what is true about the corpus and points at the four things that work.
+- **The semantic-legs note never reaches this page.** A query with no lexical
+  footing makes the search tool print `note: no word of this query occurs
+  anywhere in the corpus, so the semantic (nearest-neighbour) legs were not
+  queried — they would have returned their k nearest vectors regardless.` To an
+  agent that is the difference between a genuinely empty answer and an
+  under-searched one, and **the MCP tool keeps saying it** — §2.4's rule that
+  the facade does not rewrite a note's body is intact. What changed
+  (2026-08-11) is that the *demo* drops it whole: under a one-line "nothing
+  matched" it is two clauses of query-layer internals defending a refusal.
+  `humanize.AGENT_ONLY_NOTES` carries the clause it is matched on and
+  `api_routes(demo=True)` is the only caller that asks — the dashboard's JSON
+  and every future consumer keep the full commentary, which is why the flag is
+  opt-in and lives on the route group rather than in `humanize.notes` itself.
 - **Refused or broken** — a 429 renders the limiter's `Retry-After` as a
   *ticking* countdown with the retry disabled until it reaches zero; a failed
   fetch says the server could not be reached and offers the same retry; a 503

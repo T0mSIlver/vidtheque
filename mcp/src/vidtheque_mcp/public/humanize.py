@@ -46,6 +46,24 @@ FRAME_WITHOUT_TEXT = "visual match, no text hit"
 _NOTE_PREFIX = re.compile(r"^\s*note:\s*", re.IGNORECASE)
 _WHITESPACE = re.compile(r"\s+")
 
+# Notes that are an answer to a *model* and machinery to a reader. The demo
+# drops them; every other caller keeps them, and the MCP tool never sees this
+# module at all (demo-site.md §6.1).
+#
+# There is one, and it is the semantic-legs note: "no word of this query occurs
+# anywhere in the corpus, so the semantic (nearest-neighbour) legs were not
+# queried — they would have returned their k nearest vectors regardless." To an
+# agent that is the reason a `0/0` payload is genuinely empty rather than
+# under-searched, which is worth saying. Under a one-line "nothing matched" on a
+# demo it is two clauses of query-layer internals explaining a *refusal*, and a
+# demo does not need to argue about its own honesty (Tom, 2026-08-11).
+#
+# Matched on the clause, not the sentence: the wording belongs to the query
+# layer and may be edited there. `test_public.py` asserts the tool still emits a
+# note this matches, so a rewrite fails a test rather than silently putting the
+# paragraph back on the page.
+AGENT_ONLY_NOTES = ("semantic (nearest-neighbour) legs were not queried",)
+
 
 def snippet(text: str | None, source: str | None = None) -> str | None:
     """One hit's text, as a reader should see it.
@@ -95,6 +113,22 @@ def note(text: str | None) -> str | None:
     return body[0].upper() + body[1:]
 
 
-def notes(values: list[str] | None) -> list[str]:
-    """Every note, humanised, with the empty ones dropped."""
-    return [line for line in (note(v) for v in values or []) if line]
+def is_agent_only(text: str | None) -> bool:
+    """Is this note written for a model rather than for a reader?
+
+    See :data:`AGENT_ONLY_NOTES`. Only the demo asks.
+    """
+    body = _WHITESPACE.sub(" ", text or "")
+    return any(clause in body for clause in AGENT_ONLY_NOTES)
+
+
+def notes(values: list[str] | None, *, demo: bool = False) -> list[str]:
+    """Every note, humanised, with the empty ones dropped.
+
+    ``demo=True`` also drops the ones written for a model (§6.1). It is opt-in
+    rather than the default because the demo page is the one surface with that
+    problem: an operator reading the dashboard's JSON is closer to the agent
+    than to the visitor, and the MCP tool's own payload is untouched either way.
+    """
+    kept = (v for v in values or [] if not (demo and is_agent_only(v)))
+    return [line for line in (note(v) for v in kept) if line]

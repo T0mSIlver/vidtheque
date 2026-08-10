@@ -907,15 +907,21 @@ def test_the_page_declares_an_identity_worth_unfurling(public_client: TestClient
 def test_the_cold_page_teaches_instead_of_showing_a_blank(public_client: TestClient) -> None:
     """Before the first search there is something to click, and it is copy.
 
-    Five examples, drawn from a verified harvest rather than written from
+    Four examples, drawn from a verified harvest rather than written from
     memory (demo-site.md §6.1) — `research/demo-queries-2026-08-10.md` since the
     rebuild, where every pair was checked at click level. The count is not the
     contract and this does not pin it; what is asserted is the *shape* the
     wiring depends on — see the next test for the half that can silently rot.
+
+    What *is* pinned is that no chip is a refusal (amended 2026-08-11): every
+    example returns evidence, because a demo does not spend one of its four
+    buttons proving it can say nothing.
     """
     body = _page(public_client)
     assert body.count('class="example"') >= 3
     assert "context window costs money tokens" in body, "the flagship on-screen example"
+    examples = re.findall(r'class="example"[^>]*>([^<]+)<', body)
+    assert examples and "FlashAttention-4" not in examples, examples
     for landmark in ("<header", "<main>", "<footer>", "<h1"):
         assert landmark in body
     assert 'class="sr-only" for="q"' in body, "the search box has a real label"
@@ -939,6 +945,27 @@ def test_an_example_that_needs_a_channel_pins_it(public_client: TestClient) -> N
 
     script = (STATIC / "app.js").read_text()
     assert 'selectContentType(example.dataset.type || "all", false)' in script
+
+
+def test_the_empty_state_is_one_sentence_and_the_way_back(public_client: TestClient) -> None:
+    """demo-site.md §6.1, amended 2026-08-11.
+
+    The dead end says what is true about the corpus and points at the chips.
+    It does not quote the query back — it is still in the box two centimetres
+    above — and it does not tell the visitor they used too many words.
+    """
+    script = (STATIC / "app.js").read_text()
+    assert '"Nothing in the corpus matches this."' in script
+    assert "Try fewer words" not in script
+    assert "Nothing matched “" not in script
+    # The nudge is a control, not a sentence about one: it clears the query,
+    # unpins the channel and puts the cold page back.
+    assert 'el("button", "linky", "one of the examples")' in script
+    assert "showExamples" in script
+    # And the widening is still there for the visitor who pinned a channel.
+    assert 'el("button", "linky", "Search all")' in script
+    # "Nothing is indexed yet" is a different screen and stays (§2.1).
+    assert '"Nothing is indexed yet."' in script
 
 
 def _rule(css: str, selector: str) -> str:
@@ -1194,14 +1221,48 @@ def test_humanise_clips_a_label_at_the_end() -> None:
 
 
 def test_the_facade_prints_notes_without_the_agent_prefix(public_client: TestClient) -> None:
-    """A `note:` prefix is machinery; the page renders notes in their own line."""
-    # No word of this query is in the corpus, which is the note the demo hits
+    """A `note:` prefix is machinery; a reader gets notes in their own line.
+
+    Read through the *dashboard's* group, which is the same handler with the
+    demo's one suppression turned off (§6.1) — so what is asserted here is the
+    prefix rule and nothing else.
+    """
+    # No word of this query is in the corpus, which is the note this facade hits
     # most: the vector legs are not queried at all.
-    payload = public_client.get("/api/search?q=zzzqqqwww").json()
+    payload = public_client.get("/dashboard/api/search?q=zzzqqqwww").json()
     assert payload["notes"], "this query should skip the semantic legs, and say so"
     for line in payload["notes"]:
         assert not line.lower().startswith("note:")
         assert line[0].isupper(), line
+
+
+def test_the_demo_drops_the_note_that_is_only_an_answer_to_a_model(
+    public_client: TestClient,
+) -> None:
+    """§6.1: the semantic-legs note is for an agent, and the demo is not one.
+
+    Three assertions, and the first two are the ones that matter: the search
+    tool still prints it to an MCP client, and the facade still forwards it
+    everywhere except the demo's own route group. Only `/api/search` — the page
+    — loses it. A `humanize` that started dropping it for everybody would pass
+    the third and fail the first two.
+    """
+    junk = "zzzqqqwww"
+    clause = "semantic (nearest-neighbour) legs were not queried"
+
+    agent = call(
+        public_client, "tools/call", {"name": "search", "arguments": {"q": junk}}
+    )["result"]
+    assert any(clause in n for n in agent["structuredContent"]["notes"]), (
+        "the MCP tool keeps saying it — humanize.AGENT_ONLY_NOTES is matched on "
+        "this clause, and a rewrite in tools/search.py has to fail here"
+    )
+
+    keeps = public_client.get(f"/dashboard/api/search?q={junk}").json()["notes"]
+    assert any(clause in line for line in keeps)
+
+    demo = public_client.get(f"/api/search?q={junk}").json()["notes"]
+    assert not any("nearest-neighbour" in line for line in demo), demo
 
 
 def test_ask_citations_carry_the_evidence_the_model_was_shown(tmp_path: Path) -> None:

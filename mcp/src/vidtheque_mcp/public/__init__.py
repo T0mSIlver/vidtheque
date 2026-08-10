@@ -97,7 +97,7 @@ def public_routes() -> list[Route]:
         )
 
     return [
-        *api_routes(),
+        *api_routes(demo=True),
         Route("/", page, methods=["GET"]),
         Route("/static/{asset:path}", asset, methods=["GET"]),
     ]
