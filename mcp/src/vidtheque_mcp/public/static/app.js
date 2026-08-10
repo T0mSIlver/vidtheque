@@ -60,6 +60,15 @@ const setStatus = (text, notes = []) => {
   for (const note of notes) status.append(el("span", "note", note));
 };
 
+// The query bar's state cell: the machine's own word for what it is doing.
+// The word is the message and the colour only reinforces it (DESIGN.md, the
+// Word-and-Colour Rule), which is why both are set from one call.
+const setState = (word, tone = "ready") => {
+  const cell = $("state");
+  cell.textContent = word;
+  cell.dataset.s = tone;
+};
+
 // "10 results of ~38", notes and all, kept aside while a *second* page is in
 // flight: if that page fails, the count of what is still on screen is the
 // truth, not "loading more…" frozen forever.
@@ -120,6 +129,24 @@ const showSkeleton = (shape = state.lastShape || DEFAULT_SHAPE) => {
     card.append(list);
     results.append(card);
   }
+};
+
+// The receipt, printed rather than described: `youtu.be/<id>` says which talk
+// and `?t=<second>` says which second, and that pair is the product's whole
+// argument. Built from the link the server sent — a hit with no honest deep
+// link gets no receipt rather than a URL the page guessed.
+const receiptEl = (href, className = "rcpt") => {
+  const url = safeUrl(href);
+  if (!url) return null;
+  const parsed = new URL(url);
+  const link = el("a", className);
+  link.href = url;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.append(el("span", "host", `${parsed.host}/`));
+  link.append(el("span", "vid id", parsed.pathname.replace(/^\//, "")));
+  link.append(el("span", "t", `${parsed.search} ↗`));
+  return link;
 };
 
 const clearResults = () => {
@@ -231,12 +258,13 @@ const BADGE_CLASS = {
 
 // An unknown source (a fourth leg, one day) still gets a badge with its own
 // name: dropping the provenance silently is the one thing that must not happen.
+// Null when there is no source at all, so a row does not carry an empty box.
 const badgesFor = (source) => {
-  const frag = document.createDocumentFragment();
-  for (const label of SOURCE_BADGES[source] || (source ? [source] : [])) {
-    frag.append(el("span", BADGE_CLASS[label] || "badge", label));
-  }
-  return frag;
+  const labels = SOURCE_BADGES[source] || (source ? [source] : []);
+  if (!labels.length) return null;
+  const box = el("span", "badges");
+  for (const label of labels) box.append(el("span", BADGE_CLASS[label] || "badge", label));
+  return box;
 };
 
 const SNIPPET_CLASS = {
@@ -251,7 +279,7 @@ const SNIPPET_CLASS = {
 // all rather than a sentence standing in for one.
 const snippetFor = (hit, query) => {
   if (!hit.text) return null;
-  const node = el("div", SNIPPET_CLASS[hit.source] || "snip");
+  const node = el("span", SNIPPET_CLASS[hit.source] || "snip");
   node.append(highlight(hit.text, query));
   return node;
 };
@@ -272,10 +300,11 @@ const thumbFor = (hit) => {
     img.alt = `Frame from ${hit.title || hit.video_id} at ${hit.timestamp || "0:00"}`;
     img.loading = "lazy";
     img.decoding = "async";
-    // Mirrors the CSS box at 2x, so the row keeps its height before the bytes
-    // arrive — the wide box for a frame hit included.
-    img.width = wide ? 320 : 160;
-    img.height = wide ? 180 : 90;
+    // The width the facade actually asked the frame route for (192, or 320 for
+    // a frame hit), so the box is reserved at the real aspect before the bytes
+    // arrive and nothing below it moves. The CSS box is that at 2x.
+    img.width = wide ? 320 : 192;
+    img.height = wide ? 180 : 108;
     // A frame that will not load takes its enlarge button with it: a control
     // that opens a broken image is worse than no control.
     img.addEventListener("error", () =>
@@ -322,10 +351,18 @@ const openShot = (hit, trigger) => {
     .filter(Boolean)
     .join(" · ");
   $("shot-caption").textContent = where;
+  // The receipt again, at full size: the picture is the evidence and this is
+  // where it came from, on the second.
   const link = $("shot-link");
-  link.href =
+  const href =
     safeUrl(hit.link) || `https://youtu.be/${encodeURIComponent(hit.video_id || "")}`;
-  link.textContent = `open at ${hit.timestamp || "0:00"} on YouTube ↗`;
+  const parsed = new URL(href);
+  link.href = href;
+  link.replaceChildren(
+    el("span", "host", `${parsed.host}/`),
+    el("span", "vid id", parsed.pathname.replace(/^\//, "")),
+    el("span", "t", `${parsed.search} ↗`),
+  );
   shotTrigger = trigger || null;
   dialog.showModal();
   // `showModal()` focuses the first focusable thing in the dialog, which is the
@@ -398,17 +435,21 @@ const hitRow = (hit, query, n) => {
   body.append(el("div", "hit-title", hit.title || hit.video_id));
 
   const meta = el("div", "hit-meta");
-  meta.append(badgesFor(hit.source));
+  const badges = badgesFor(hit.source);
+  if (badges) meta.append(badges);
   meta.append(document.createTextNode(hit.channel || "unknown"));
-  meta.append(document.createTextNode(" · "));
   meta.append(el("span", "at", hit.timestamp || "0:00"));
-  meta.append(document.createTextNode(" · youtu.be ↗"));
   body.append(meta);
 
   const snippet = snippetFor(hit, query);
   if (snippet) body.append(snippet);
   link.append(body);
   row.append(link);
+  // The receipt is a second anchor rather than something inside the first: a
+  // link inside a link is neither valid nor operable, which is the same reason
+  // the thumbnail is its own control.
+  const receipt = receiptEl(hit.link, "rcpt lg");
+  if (receipt) row.append(receipt);
   return row;
 };
 
@@ -464,15 +505,21 @@ const momentRow = (hit, query) => {
 
   const link = momentLink(hit, "moment-link");
   link.append(el("span", "at", hit.timestamp || "0:00"));
-  link.append(badgesFor(hit.source));
+  const badges = badgesFor(hit.source);
+  if (badges) link.append(badges);
   const snippet = snippetFor(hit, query);
   if (snippet) link.append(snippet);
   item.append(link);
+  // Every moment ends in its receipt. It sits outside the row's anchor for the
+  // same reason the thumbnail does, and it is the small slab: ten filled gold
+  // blocks down a page would spend the accent on the list instead of the hit.
+  const receipt = receiptEl(hit.link);
+  if (receipt) item.append(receipt);
   return item;
 };
 
 const videoCard = (group) => {
-  const node = el("div", "vcard");
+  const node = el("article", "vcard");
   const head = el("div", "vcard-head");
   // Source-agnostic: whichever moment of this video has a frame behind it. The
   // header says *which talk*, so it does not care which leg found it.
@@ -495,9 +542,11 @@ const videoCard = (group) => {
 
   const meta = el("div", "vcard-meta");
   meta.append(document.createTextNode(cover.channel || "unknown"));
-  meta.append(document.createTextNode(" · "));
   const count = el("span", "vcard-count", momentCount(0));
   meta.append(count);
+  // The talk's own id, in the machine's face: the moments below carry the
+  // second, and the two together are the receipt.
+  if (cover.video_id) meta.append(el("span", "vcard-id-str id", cover.video_id));
   id.append(meta);
   head.append(id);
   node.append(head);
@@ -621,6 +670,7 @@ async function runSearch(append = false) {
   if (!q) {
     clearResults();
     setStatus("");
+    setState("ready");
     showEmptyState(true);
     syncUrl("");
     return;
@@ -634,6 +684,7 @@ async function runSearch(append = false) {
   const priorStatus = append ? statusNodes() : null;
 
   setStatus(append ? "loading more…" : "searching…");
+  setState("scanning", "working");
   if (!append) showSkeleton();
   $("results-foot").replaceChildren();
 
@@ -655,6 +706,7 @@ async function runSearch(append = false) {
   } catch (error) {
     if (stale(error)) return;
     failed();
+    setState("no reply", "refused");
     $("results").removeAttribute("aria-busy");
     renderError(
       "Could not reach the server.",
@@ -669,6 +721,7 @@ async function runSearch(append = false) {
 
   if (response.status === 429) {
     failed();
+    setState("refused", "refused");
     renderRateLimited(
       payload,
       response.headers.get("Retry-After"),
@@ -679,6 +732,7 @@ async function runSearch(append = false) {
   }
   if (!response.ok) {
     failed();
+    setState("refused", "refused");
     renderError(
       payload?.message || "Search failed.",
       payload?.next || "",
@@ -700,9 +754,11 @@ async function runSearch(append = false) {
   const hits = payload.results || [];
   if (!append && !hits.length) {
     setStatus("", payload.notes || []);
+    setState("no hits");
     renderNoResults(q, payload.data_status);
     return;
   }
+  setState("ready");
   const shape = renderGroups(hits, q);
   // What the next search reserves: the shape this one actually had.
   if (!append) state.lastShape = shape.length ? shape : null;
@@ -817,9 +873,10 @@ const renderAnswer = (payload, log) => {
   // Sources are the evidence; the log is how it was found. Under both, folded.
   if (log && !log.empty) pane.append(workDisclosure(log));
   if (payload.model) {
-    pane.append(el("p", "answer-foot", `Model · ${payload.model}`));
+    pane.append(el("p", "answer-foot", `model · ${payload.model}`));
   }
   pane.hidden = false;
+  setState("ready");
 };
 
 // Ask is the mode that is allowed to be unavailable: search always works, and
@@ -827,6 +884,7 @@ const renderAnswer = (payload, log) => {
 const renderDegraded = (message, retryAfter) => {
   const pane = $("answer");
   pane.replaceChildren();
+  setState("refused", "refused");
   pane.append(el("p", "degraded", message));
   const wait = el("p", "degraded-wait");
   if (retryAfter) {
@@ -933,6 +991,7 @@ async function runAsk() {
   const idle = el("p", "thinking", "reading the corpus…");
   pane.replaceChildren(log.node, idle);
   pane.hidden = false;
+  setState("reading", "working");
   // The pane is a live region; `aria-busy` holds the announcement until the
   // answer lands rather than reading out every line as it arrives.
   pane.setAttribute("aria-busy", "true");
@@ -1038,7 +1097,7 @@ function setAskMode(on) {
   // is no longer showing its mode.
   if (on !== state.askMode) cancelInFlight();
   state.askMode = on;
-  for (const mode of document.querySelectorAll("#modes .chip")) {
+  for (const mode of document.querySelectorAll("#modes button")) {
     const selected = (mode.dataset.mode === "ask") === on;
     mode.classList.toggle("is-on", selected);
     mode.setAttribute("aria-pressed", String(selected));
@@ -1046,7 +1105,7 @@ function setAskMode(on) {
   // In ask mode the model picks the channel, so the content-type filter has
   // nothing to act on: hide it rather than leave a control that does nothing.
   $("chips").hidden = on;
-  $("go").textContent = on ? "Ask" : "Search";
+  $("go").textContent = on ? "Ask ✨" : "Search";
   $("q").setAttribute(
     "placeholder",
     on ? "ask a question about these talks…" : "kv cache, nvidia-smi, ontology…",
@@ -1054,6 +1113,7 @@ function setAskMode(on) {
   if (!on) {
     stopCountdown();
     $("answer").hidden = true;
+    setState("ready");
   }
   const url = new URL(location.href);
   if (on) url.searchParams.set("ask", "1");
@@ -1063,7 +1123,7 @@ function setAskMode(on) {
 
 function selectContentType(type, rerun) {
   state.contentType = type;
-  for (const chip of document.querySelectorAll("#chips .chip")) {
+  for (const chip of document.querySelectorAll("#chips button")) {
     const selected = chip.dataset.type === type;
     chip.classList.toggle("is-on", selected);
     chip.setAttribute("aria-pressed", String(selected));
@@ -1079,11 +1139,11 @@ $("search-form").addEventListener("submit", (event) => {
   state.askMode ? runAsk() : runSearch();
 });
 
-for (const mode of document.querySelectorAll("#modes .chip")) {
+for (const mode of document.querySelectorAll("#modes button")) {
   mode.addEventListener("click", () => setAskMode(mode.dataset.mode === "ask"));
 }
 
-for (const chip of document.querySelectorAll("#chips .chip")) {
+for (const chip of document.querySelectorAll("#chips button")) {
   chip.addEventListener("click", () => selectContentType(chip.dataset.type, true));
 }
 
@@ -1106,27 +1166,36 @@ for (const example of document.querySelectorAll(".example")) {
   });
 }
 
-$("copy").addEventListener("click", async () => {
-  const url = $("mcp-url").textContent;
-  let said;
-  try {
-    await navigator.clipboard.writeText(url);
-    said = "Copied";
-  } catch {
-    said = "Select it";
-    const range = document.createRange();
-    range.selectNodeContents($("mcp-url"));
-    const selection = getSelection();
-    selection.removeAllRanges();
-    selection.addRange(range);
-  }
-  $("copy").textContent = said;
-  $("copy-note").textContent = said === "Copied" ? "Endpoint copied to the clipboard." : "";
-  setTimeout(() => {
-    $("copy").textContent = "Copy";
-    $("copy-note").textContent = "";
-  }, 1600);
-});
+// Two things worth copying, one behaviour: the endpoint and the line that
+// hands it to Claude Code. A clipboard that refuses (no permission, no secure
+// context) selects the text instead, so there is always a way to take it.
+const wireCopy = (buttonId, sourceId, said) => {
+  const button = $(buttonId);
+  button.addEventListener("click", async () => {
+    const text = $(sourceId).textContent;
+    let label;
+    try {
+      await navigator.clipboard.writeText(text);
+      label = "copied";
+    } catch {
+      label = "select it";
+      const range = document.createRange();
+      range.selectNodeContents($(sourceId));
+      const selection = getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+    button.textContent = label;
+    $("copy-note").textContent = label === "copied" ? said : "";
+    setTimeout(() => {
+      button.textContent = "copy";
+      $("copy-note").textContent = "";
+    }, 1600);
+  });
+};
+
+wireCopy("copy", "mcp-url", "Endpoint copied to the clipboard.");
+wireCopy("copy-cli", "cli-line", "Command copied to the clipboard.");
 
 // What is actually in here, listed on the cold page — the fastest way to
 // understand a corpus is to see the two talks it is made of.
@@ -1141,7 +1210,7 @@ const renderCorpus = (videos) => {
     link.target = "_blank";
     link.rel = "noopener noreferrer";
     item.append(link);
-    if (video.channel) item.append(el("span", "muted", ` · ${video.channel}`));
+    if (video.channel) item.append(el("span", "who", video.channel));
     list.append(item);
   }
   $("corpus").hidden = false;
@@ -1178,11 +1247,14 @@ const renderCorpus = (videos) => {
       $("browse").href = meta.browse;
       $("browse").hidden = false;
     }
-    if (!q && meta.videos) {
-      setStatus(`${meta.videos} video${meta.videos === 1 ? "" : "s"} indexed.`);
+    // The size of the corpus is a fact about the corpus, not about this
+    // search, so it belongs beside the wordmark and not in the count line.
+    if (meta.videos) {
+      $("corpus-count").textContent = `${meta.videos} talk${meta.videos === 1 ? "" : "s"} watched`;
     }
   } catch {
     setStatus("could not reach the server");
+    setState("no reply", "refused");
     // The endpoint is the server's to state (it is the same string the OAuth
     // `resource` uses), so an unreachable server gets no guessed URL — and a
     // copy button with nothing to copy is disabled rather than lying.

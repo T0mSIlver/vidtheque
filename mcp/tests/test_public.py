@@ -317,6 +317,23 @@ def test_the_page_assets_are_served_and_confined(public_client: TestClient) -> N
     assert public_client.get("/static/nope.css").status_code == 404
 
 
+def test_the_two_faces_are_served_as_fonts(public_client: TestClient) -> None:
+    """A face typed as `text/javascript` loads only until something says nosniff.
+
+    The asset route used to type everything that was not a stylesheet as a
+    script, which browsers forgive because they sniff woff2 — right up until
+    anything in front of this app sets `X-Content-Type-Options: nosniff`. The
+    demo's whole type system rests on these two files (DESIGN.md, Fonts rule 5).
+    """
+    for name in ("archivo-latin-wght-normal", "jetbrains-mono-latin-wght-normal"):
+        response = public_client.get(f"/static/fonts/{name}.woff2")
+        assert response.status_code == 200, name
+        assert response.headers["content-type"] == "font/woff2"
+        assert "immutable" in response.headers.get("cache-control", "")
+    # The licence texts beside them are not assets and are not served as one.
+    assert public_client.get("/static/fonts/Archivo-OFL.txt").status_code == 404
+
+
 def test_the_root_is_not_the_page_outside_public_mode(private_client: TestClient) -> None:
     """`/` falls through to the MCP mount, which has nothing there."""
     assert private_client.get("/").status_code == 404
@@ -686,7 +703,7 @@ def _page(client: TestClient) -> str:
 
 
 def test_the_page_declares_an_identity_worth_unfurling(public_client: TestClient) -> None:
-    """Title, description, the OG pair, viewport, favicon, a theme per scheme."""
+    """Title, description, the OG pair, viewport, favicon, the one scheme."""
     body = _page(public_client)
     assert "<title>vidtheque — AI Engineer 2026, on tap</title>" in body
     assert body.count("The knowledge of AI Engineer 2026, on tap.") == 3
@@ -697,23 +714,28 @@ def test_the_page_declares_an_identity_worth_unfurling(public_client: TestClient
     assert 'property="og:description"' in body
     assert 'name="viewport"' in body and "width=device-width" in body
     assert 'rel="icon"' in body and "image/svg+xml" in body
-    # Both schemes, or the browser chrome fights the page in one of them.
-    assert body.count('name="theme-color"') == 2
-    assert "(prefers-color-scheme: light)" in body
-    assert "(prefers-color-scheme: dark)" in body
+    # Dark only since the projection-room rebuild (DESIGN.md, 2026-08-10): one
+    # scheme, one `theme-color`, and no `prefers-color-scheme` anywhere — a
+    # projection room does not have a day mode, and a second palette left in
+    # the page is a palette somebody uses.
+    assert body.count('name="theme-color"') == 1
+    assert 'name="theme-color" content="#040405"' in body
+    assert 'name="color-scheme" content="dark"' in body
+    assert "prefers-color-scheme" not in body
 
 
 def test_the_cold_page_teaches_instead_of_showing_a_blank(public_client: TestClient) -> None:
     """Before the first search there is something to click, and it is copy.
 
-    Five examples since 2026-08-09, drawn from `research/demo-queries-2026-08-09
-    .md` rather than written from memory (demo-site.md §6.1). The count is not
-    the contract and this does not pin it; what is asserted is the *shape* the
+    Five examples, drawn from a verified harvest rather than written from
+    memory (demo-site.md §6.1) — `research/demo-queries-2026-08-10.md` since the
+    rebuild, where every pair was checked at click level. The count is not the
+    contract and this does not pin it; what is asserted is the *shape* the
     wiring depends on — see the next test for the half that can silently rot.
     """
     body = _page(public_client)
-    assert body.count("class=\"chip example\"") >= 3
-    assert "owl:FunctionalProperty" in body, "the flagship on-screen example"
+    assert body.count('class="example"') >= 3
+    assert "context window costs money tokens" in body, "the flagship on-screen example"
     for landmark in ("<header", "<main>", "<footer>", "<h1"):
         assert landmark in body
     assert 'class="sr-only" for="q"' in body, "the search box has a real label"
@@ -722,15 +744,17 @@ def test_the_cold_page_teaches_instead_of_showing_a_blank(public_client: TestCli
 def test_an_example_that_needs_a_channel_pins_it(public_client: TestClient) -> None:
     """demo-site.md §6.1: `data-type` on an example, honoured by `app.js`.
 
-    `owl:FunctionalProperty` is in this corpus only as text on a slide, so
-    unpinned it is buried by the other legs and the flagship demonstration of
-    "we index frames" demonstrates nothing. The pin is copy, in the HTML beside
-    the query it belongs to; the *reset* is the half that lives in `app.js`, and
-    without it clicking an on-screen example and then a spoken one runs the
-    second query against OCR and reports an empty corpus.
+    The prices in "context window costs money tokens" are in this corpus only as
+    text on a slide — the speaker's whole treatment of it names no figure at all
+    (`research/demo-queries-2026-08-10.md` §2.1) — so unpinned it is buried by
+    the other legs and the flagship demonstration of "we read the screen"
+    demonstrates nothing. The pin is copy, in the HTML beside the query it
+    belongs to; the *reset* is the half that lives in `app.js`, and without it
+    clicking an on-screen example and then a spoken one runs the second query
+    against OCR and reports an empty corpus.
     """
     body = _page(public_client)
-    for pin in ('data-type="ocr">owl:FunctionalProperty', 'data-type="frame"'):
+    for pin in ('data-type="ocr">context window costs money tokens', 'data-type="frame"'):
         assert pin in body
 
     script = (STATIC / "app.js").read_text()

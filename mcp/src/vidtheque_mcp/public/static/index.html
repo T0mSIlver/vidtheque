@@ -5,115 +5,190 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>vidtheque — AI Engineer 2026, on tap</title>
 <meta name="description" content="The knowledge of AI Engineer 2026, on tap. Your agent watched it — ask it something.">
-<meta name="color-scheme" content="light dark">
-<!-- The browser chrome follows the page, in both schemes. -->
-<meta name="theme-color" content="#fbfaf9" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#131313" media="(prefers-color-scheme: dark)">
+<!-- One scheme. A projection room does not have a day mode (DESIGN.md). -->
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#040405">
 <!-- Unfurls. No og:image yet — a wrong one is worse than none. -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="vidtheque">
 <meta property="og:title" content="vidtheque — AI Engineer 2026, on tap">
 <meta property="og:description" content="The knowledge of AI Engineer 2026, on tap. Your agent watched it — ask it something.">
 <meta name="twitter:card" content="summary">
+<!-- Only the text face is preloaded: it carries the display voice, and a FOUT
+     on the one big line is worse than 100ms of nothing. -->
+<link rel="preload" href="/static/fonts/archivo-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/static/style.css">
 <!-- A film frame, drawn rather than an emoji: emoji favicons render as a
-     different glyph on every platform and vanish in monochrome tab strips. -->
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23b45309'/><rect x='6' y='9' width='20' height='14' rx='1.5' fill='%23fbfaf9'/><g fill='%23b45309'><rect x='8.5' y='11' width='3' height='3' rx='0.6'/><rect x='8.5' y='18' width='3' height='3' rx='0.6'/><rect x='20.5' y='11' width='3' height='3' rx='0.6'/><rect x='20.5' y='18' width='3' height='3' rx='0.6'/></g></svg>">
+     different glyph on every platform and vanish in monochrome tab strips.
+     Gold on pitch, square corners — it is a favicon, not a brandmark, and it
+     never appears inside the page beside the word. -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%23040405'/><rect x='6' y='9' width='20' height='14' fill='%23e7b455'/><g fill='%23040405'><rect x='8.5' y='11' width='3' height='3'/><rect x='8.5' y='18' width='3' height='3'/><rect x='20.5' y='11' width='3' height='3'/><rect x='20.5' y='18' width='3' height='3'/></g></svg>">
 </head>
 <body>
 
-<header class="masthead">
-  <div class="masthead-brand">
-    <h1 class="wordmark"><a href="/">vidtheque</a></h1>
-    <p class="tagline">The knowledge of AI Engineer 2026, on tap. Your agent watched it.</p>
+<!-- ───────────────────────────── the rail ───────────────────────────── -->
+<!-- The Font-Logo Rule: the logo is the word, in the text face, with the full
+     stop in gold — the receipt's own punctuation. No drawn mark in the lockup. -->
+<header class="rail">
+  <div class="wrap railin">
+    <h1 class="mark"><a href="/"><b>vidtheque<i>.</i></b></a></h1>
+    <div class="railmeta">
+      <span class="ml" id="corpus-count"></span>
+      <!-- The one link out (dashboard.md §2.4). This page is the search
+           surface and stays one; the browsable corpus behind it is the
+           dashboard's read-only projection. Hidden until /api/meta says the
+           route group is there, so a deployment that turned it off — or an
+           edge rule that 404s it — leaves no invitation to a dead page. -->
+      <!-- The accessible name says the whole thing whatever the rail has room
+           to print: below `--bp-hand` the label is "browse →". -->
+      <a id="browse" class="browse" href="/dashboard" aria-label="Browse the corpus"
+         hidden>browse<span class="hide-s"> the corpus</span> <span aria-hidden="true">→</span></a>
+    </div>
   </div>
-  <!-- The one link out (dashboard.md §2.4). This page is the search surface and
-       stays one; the browsable corpus behind it — every video, how each was
-       indexed, what the pipeline made of it — is the dashboard's read-only
-       projection. Hidden until /api/meta says the route group is registered, so
-       a deployment that turned it off, or an edge rule that 404s it, does not
-       leave an invitation to a dead page in the masthead. -->
-  <a id="browse" class="browse" href="/dashboard" hidden>Browse the corpus <span aria-hidden="true">→</span></a>
 </header>
 
 <main>
-  <form id="search-form" class="searchbar" role="search" autocomplete="off">
-    <label class="sr-only" for="q">Search this video corpus</label>
-    <input id="q" name="q" type="search" placeholder="kv cache, nvidia-smi, ontology…"
-           enterkeyhint="search" spellcheck="false" autofocus>
-    <button type="submit" id="go">Search</button>
-  </form>
 
-  <div class="controls">
-    <div id="chips" class="chips" role="group" aria-label="Search which channel">
-      <button type="button" class="chip is-on" data-type="all" aria-pressed="true">all</button>
-      <button type="button" class="chip" data-type="transcript" aria-pressed="false">transcript</button>
-      <button type="button" class="chip" data-type="ocr" aria-pressed="false">on-screen text</button>
-      <button type="button" class="chip" data-type="frame" aria-pressed="false">frames</button>
+<!-- ──────────────────── beat 1 · the working query ──────────────────── -->
+<section class="hero">
+  <div class="wrap herocopy">
+    <div class="kick"><s></s><span class="ml gold">the proof · ai engineer 2026</span></div>
+    <h2 class="big">The knowledge of AI Engineer 2026, on tap. <em>Ask it something.</em></h2>
+    <p class="lede">Your agent watched it — every sentence spoken, every line that
+      crossed the screen, every frame. Every answer comes back with
+      <b>the sentence, the slide, and the second it happened.</b></p>
+
+    <div class="querybox">
+    <form id="search-form" class="slug" role="search" autocomplete="off">
+      <label class="sr-only" for="q">Search this video corpus</label>
+      <span class="ic" aria-hidden="true">
+        <svg viewBox="0 0 12 12"><path d="M3.6 1.8 L8.2 6 L3.6 10.2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+      </span>
+      <input id="q" name="q" type="search" placeholder="kv cache, nvidia-smi, ontology…"
+             enterkeyhint="search" spellcheck="false" autofocus>
+      <!-- The machine's own word for what it is doing. It prints the word;
+           the colour only reinforces it. -->
+      <span class="st" id="state" data-s="ready">ready</span>
+      <button type="submit" id="go" class="cta">Search</button>
+    </form>
+
+    <div class="controls">
+      <div id="chips" class="chips" role="group" aria-label="Search which channel">
+        <button type="button" class="is-on" data-type="all" aria-pressed="true">all</button>
+        <button type="button" data-type="transcript" aria-pressed="false">transcript</button>
+        <button type="button" data-type="ocr" aria-pressed="false">on-screen text</button>
+        <button type="button" data-type="frame" aria-pressed="false">frames</button>
+      </div>
+      <div id="modes" class="chips modes" role="group" aria-label="Result mode" hidden>
+        <button type="button" class="is-on" data-mode="search" aria-pressed="true">search</button>
+        <button type="button" data-mode="ask" aria-pressed="false">ask ✨</button>
+      </div>
     </div>
-    <div id="modes" class="chips modes" role="group" aria-label="Result mode" hidden>
-      <button type="button" class="chip is-on" data-mode="search" aria-pressed="true">search</button>
-      <button type="button" class="chip" data-mode="ask" aria-pressed="false">ask ✨</button>
+
+    <p id="status" class="status" role="status"></p>
     </div>
   </div>
+</section>
 
-  <p id="status" class="status" role="status"></p>
+<!-- ─────────── beat 1b · what came back (or what to try first) ─────────── -->
+<section class="deck">
+  <div class="wrap">
+    <!-- Before the first search: teach the corpus rather than show a blank
+         page. The examples are copy, so they live here and not in app.js —
+         edit this list when the corpus changes.
 
-  <!-- Before the first search: teach the corpus rather than show a blank page.
-       The examples are copy, so they live here and not in app.js — edit this
-       list when the corpus changes.
+         Two rules, both learned the hard way:
 
-       Two rules, both learned the hard way (research/demo-queries-2026-08-09.md):
+         1. The button's own text *is* the query. What you click is what you
+            searched, so a visitor can read the result back against the words
+            that were sent. Never label one thing and send another — which is
+            also why nothing else may sit inside the button.
+         2. `data-type` pins a channel, and an example with no `data-type`
+            resets to `all` (app.js). Without the reset, clicking an on-screen
+            example and then a spoken one runs the second query against OCR
+            and reports an empty corpus.
 
-       1. The button's own text *is* the query. What you click is what you
-          searched, so a visitor can read the result back against the words
-          they sent. Never label one thing and send another.
-       2. `data-type` pins a channel, and an example with no `data-type` resets
-          to `all` (app.js). `owl:FunctionalProperty` is the flagship precisely
-          because nothing spoken and nothing semantic can answer it — unpinned,
-          the other legs' noise buries the one frame that can — and a visual
-          query has to reach the frame leg to be a demonstration of anything.
+         The five are the receipt-checked pairs from
+         research/demo-queries-2026-08-10.md, one per thing the corpus can
+         prove, plus the frame-leg example carried over from the 2026-08-09
+         harvest (the 08-10 file is additive and has no visual query in it):
 
-       Between them these five cover every channel the chip row offers: all,
-       on-screen text, frames, the transcript, all. -->
-  <section id="empty" class="empty" aria-label="Getting started">
-    <h2>Try one of these</h2>
-    <ul class="examples">
-      <li><button type="button" class="chip example">reward hacking</button></li>
-      <li><button type="button" class="chip example" data-type="ocr">owl:FunctionalProperty</button></li>
-      <li><button type="button" class="chip example" data-type="frame">architecture diagram with boxes and arrows</button></li>
-      <li><button type="button" class="chip example" data-type="transcript">small towns in Bavaria</button></li>
-      <li><button type="button" class="chip example">slop</button></li>
-    </ul>
-    <div id="corpus" class="corpus" hidden>
-      <h3>In this corpus</h3>
-      <ul id="corpus-list"></ul>
-    </div>
-  </section>
+           · "context window costs money tokens" (ocr) — §2.1 ★, the price
+             table nobody read out loud: one hit, `transcript 0 · ocr 1`, and
+             not one of those numbers is spoken anywhere in the talk.
+           · "context engineering" (all) — §2.2/§4.1, the slide carries the
+             Karpathy sentence verbatim while the transcript has only the
+             paraphrase; rank 1 is a 22-second citation in a 46-minute talk.
+           · "architecture diagram with boxes and arrows" (frame) — a visual
+             query has to reach the frame leg to demonstrate anything.
+           · "human annotation calibrate LLM judge" (transcript) — §3.1 ★,
+             three talks, two of them contradicting, every quote verbatim.
+           · "FlashAttention-4" (all) — §5.1 ★, it refuses rather than
+             invents, and names the legs that ran and the one that did not. -->
+    <section id="empty" class="empty" aria-label="Getting started">
+      <div class="kick"><s></s><span class="ml gold">start here</span></div>
+      <h2>Try one of these</h2>
+      <ul class="examples">
+        <li><button type="button" class="example" data-type="ocr">context window costs money tokens</button></li>
+        <li><button type="button" class="example">context engineering</button></li>
+        <li><button type="button" class="example" data-type="frame">architecture diagram with boxes and arrows</button></li>
+        <li><button type="button" class="example" data-type="transcript">human annotation calibrate LLM judge</button></li>
+        <li><button type="button" class="example">FlashAttention-4</button></li>
+      </ul>
+      <div id="corpus" class="corpus" hidden>
+        <div class="phead"><span class="ml gold">in this corpus</span></div>
+        <ul id="corpus-list"></ul>
+      </div>
+    </section>
 
-  <section id="answer" class="answer" hidden aria-live="polite" aria-label="Answer"></section>
+    <section id="answer" class="answer" hidden aria-live="polite" aria-label="Answer"></section>
 
-  <section id="results" class="results" aria-label="Results"></section>
-  <div id="results-foot"></div>
+    <section id="results" class="results" aria-label="Results"></section>
+    <div id="results-foot"></div>
+  </div>
+</section>
 
-  <section class="connect">
+<!-- ─────────────── beat 2 · add this corpus to your own agent ─────────────── -->
+<section class="connect">
+  <div class="wrap">
+    <div class="kick"><s></s><span class="ml gold">yours, mid-task</span></div>
     <h2>Add this corpus to your own agent</h2>
-    <p>MCP endpoint</p>
-    <div class="copyrow">
-      <code id="mcp-url">…</code>
-      <button type="button" id="copy" class="ghost">Copy</button>
+    <p class="lede">The same corpus this page is searching, on tap for whatever you
+      are building.</p>
+    <div class="connect-box">
+      <div class="phead"><span class="ml">mcp endpoint</span></div>
+      <div class="copyrow">
+        <code id="mcp-url">…</code>
+        <button type="button" id="copy">copy</button>
+      </div>
+      <div class="phead"><span class="ml">claude code</span></div>
+      <div class="copyrow">
+        <code><i>$</i> <span id="cli-line">claude mcp add --transport http vidtheque …</span></code>
+        <button type="button" id="copy-cli">copy</button>
+      </div>
     </div>
-    <p class="hint">Claude Code: <code id="cli-line">claude mcp add --transport http vidtheque …</code></p>
-    <p class="copy-note sr-only" id="copy-note" role="status"></p>
-  </section>
+    <p class="sr-only" id="copy-note" role="status"></p>
+  </div>
+</section>
+
 </main>
 
 <footer>
-  <p>
-    <strong>vidtheque</strong> ·
-    <a id="repo" href="https://github.com/T0mSIlver/vidtheque">Source on GitHub</a>
-  </p>
-  <p class="muted">The videos belong to the people who made them.</p>
+  <div class="wrap">
+    <div class="fgrid">
+      <div>
+        <span class="ml gold">attribution</span>
+        <p>The videos belong to the people who made them.</p>
+        <p><a class="lnk" id="repo" href="https://github.com/T0mSIlver/vidtheque" rel="noopener">Source on GitHub</a>
+          · MIT · self-hosted.</p>
+      </div>
+      <div class="fmark"><b>vidtheque<i>.</i></b></div>
+    </div>
+    <div class="fbase">
+      <span class="ml dim">the knowledge of the builders, on tap</span>
+      <span class="ml dim r">early development · schemas can still change</span>
+    </div>
+  </div>
 </footer>
 
 <!-- Click a frame and it opens here, big enough to read the slide. A native
@@ -125,9 +200,9 @@
     <img id="shot-img" class="shot-img" alt="">
     <div class="shot-foot">
       <p id="shot-caption" class="shot-caption"></p>
-      <a id="shot-link" class="shot-link" target="_blank" rel="noopener noreferrer"></a>
+      <a id="shot-link" class="rcpt lg" target="_blank" rel="noopener noreferrer"></a>
     </div>
-    <button type="button" id="shot-close" class="ghost shot-close" autofocus>Close</button>
+    <button type="button" id="shot-close" class="ghost shot-close" autofocus>close</button>
   </div>
 </dialog>
 

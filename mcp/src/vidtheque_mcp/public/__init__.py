@@ -32,6 +32,30 @@ STATIC_DIR = Path(__file__).parent / "static"
 # Long enough that a reload is cheap, short enough that a redeploy is visible.
 _STATIC_CACHE = "public, max-age=300"
 
+# The kinds of file in `static/`. This route used to type everything that was
+# not a stylesheet as `text/javascript`, which loads a font in today's browsers
+# — they sniff woff2 — and stops loading it the moment anything in front of this
+# app sets `X-Content-Type-Options: nosniff`. That is not a bet worth taking on
+# the two faces the whole type system rests on (DESIGN.md, Fonts rule 5), so the
+# suffix decides, the way `dashboard/__init__.py` already does it. A suffix that
+# is not here — the OFL licence texts beside the fonts — is not an asset and
+# 404s rather than being served as something it is not.
+_MEDIA = {
+    ".css": "text/css",
+    ".js": "text/javascript",
+    ".html": "text/html",
+    ".svg": "image/svg+xml",
+    ".woff2": "font/woff2",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+}
+_TEXTUAL = frozenset({".css", ".js", ".html", ".svg"})
+
+# Fonts and stills are content-stable binaries: they outlive a deploy in a way a
+# stylesheet does not, so they get the cache the page cannot have.
+_ASSET_CACHE = "public, max-age=31536000, immutable"
+
 # `/dashboard/login`, per IP, per minute. A constant rather than a knob, for the
 # same reason the jobs view's poll interval is one: a number somebody can raise
 # is a number somebody raises, and this one is the difference between a password
@@ -62,11 +86,14 @@ def public_routes() -> list[Route]:
             return Response(status_code=404)
         if not path.is_file():
             return Response(status_code=404)
-        media = "text/css" if path.suffix == ".css" else "text/javascript"
+        media = _MEDIA.get(path.suffix)
+        if media is None:
+            return Response(status_code=404)
+        textual = path.suffix in _TEXTUAL
         return FileResponse(
             path,
-            media_type=f"{media}; charset=utf-8",
-            headers={"Cache-Control": _STATIC_CACHE},
+            media_type=f"{media}; charset=utf-8" if textual else media,
+            headers={"Cache-Control": _STATIC_CACHE if textual else _ASSET_CACHE},
         )
 
     return [

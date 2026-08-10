@@ -835,15 +835,27 @@ to the original talks (§6 item 4); the videos remain their creators' work. The
 public framing now follows the locked positioning contract directly: the
 knowledge of AI Engineer 2026, on tap; your agent watched it.
 
-The aesthetic target is a **search surface, not a dashboard**: a column of text
-on a plain ground, one accent colour, system fonts, no cards-with-shadows, no
-sidebar, no charts. The corpus is the content; the chrome should be nearly
-invisible. Dark mode via `prefers-color-scheme` with both palettes defined as
-CSS custom properties on `:root`.
+**Amended 2026-08-10 (the projection-room rebuild).** The look is no longer
+described here. `DESIGN.md` is the visual contract for every product surface and
+it names this one: *the demo is the landing's continuation, selling,
+functional-first* — same ground, same gold, same lime, same faces, same zero
+radius, same receipt slab, one rung down the display ladder, and motion only
+where **this visitor's** query is running. What this file still owns is
+everything below: function, data, clamps and copy. Three sentences of the old
+paragraph are retired by that, and are recorded here so nobody restores them
+from memory: the palette is not "six custom properties at the top of
+`style.css`" (it is DESIGN.md's tokens, and the six role names are aliases into
+them); the faces are not the system stack (Archivo VF and JetBrains Mono VF are
+vendored beside the stylesheet); and there is no light scheme (`color-scheme:
+dark`, one `theme-color`, no `prefers-color-scheme` block, no toggle — a
+projection room does not have a day mode).
+
+What survives unchanged is the *ratio*: the corpus is the content and the chrome
+is nearly invisible. No sidebar, no charts, no card that exists to be a card.
 
 The `<head>` is part of the deliverable, not boilerplate: a title that says
 what the thing is, a description, `og:title`/`og:description` (no `og:image` —
-a wrong one is worse than none), `viewport`, a `theme-color` per scheme so the
+a wrong one is worse than none), `viewport`, one `theme-color` (`#040405`) so the
 browser chrome follows the page, and a **drawn** film-frame favicon as an inline
 SVG data URI rather than an emoji, because an emoji favicon renders as a
 different glyph on every platform and disappears in a monochrome tab strip.
@@ -859,8 +871,21 @@ Layout, top to bottom:
    link is a quiet outline rather than a second filled control beside it. It is
    hidden until `/api/meta` reports `browse` (§2.3). Below ~30rem it wraps to
    its own line under the tagline rather than squeezing it.
+
+   *Amended 2026-08-10 (the rebuild).* The header is the landing's rail: the
+   wordmark (still the `<h1>`, per the Font-Logo Rule — the word, the gold full
+   stop, nothing else), the corpus size as a micro-label, and the same one link,
+   which keeps its accessible name `Browse the corpus` at every width and prints
+   `browse →` below `--bp-hand`. The positioning line moved *down* into the
+   hero, where it is the page's one big line and its lede — the rail is a rail,
+   and a tagline in it competes with the thing it is a tagline for.
 2. **Search box** — autofocus, submits on Enter. One primary button, labelled
-   by the current mode (`Search` / `Ask`).
+   by the current mode (`Search` / `Ask ✨`). *Amended 2026-08-10:* it is the
+   landing's query bar — a gold cue, the query in the machine's face, **a state
+   cell that prints the machine's own word** (`ready` / `scanning` / `reading` /
+   `no hits` / `refused`), then the action. The state cell is the honest signal
+   that something is running (the Motion Law's alternative to a spinner), and it
+   is a word first and a colour second.
 3. **Controls row** — filter chips on the left (`all` / `transcript` /
    `on-screen text` / `frames`, mapping to `content_type`, `all` by default),
    and on the right a two-pill **mode switch**, `search | ask ✨`. The switch is
@@ -883,7 +908,10 @@ Layout, top to bottom:
    long to wait.
 6. **"Add this corpus to your own agent"** — the label `MCP endpoint`, the
    `mcp_url` from `/api/meta`, a copy button, and the one-liner:
-   `claude mcp add --transport http vidtheque <mcp_url>`.
+   `claude mcp add --transport http vidtheque <mcp_url>`. *Amended 2026-08-10:*
+   the one-liner gets a copy button of its own — it is the line somebody
+   actually pastes — and a clipboard that refuses still selects the text, so
+   there is always a way to take it.
 7. **Footer** — the vidtheque name, the GitHub link, and one muted line
    that never gets culled: “The videos belong to the people who made
    them.” — the attribution ethic is page-visible wherever creators’
@@ -926,6 +954,30 @@ A demo is judged on the four screens that are not "ten results came back".
   `architecture diagram with boxes and arrows` (frame),
   `small towns in Bavaria` (transcript — a paraphrase, not a keyword),
   `slop` (all).
+
+  *Amended 2026-08-10 (the rebuild): four of the five are re-drawn from
+  `research/demo-queries-2026-08-10.md`,* which is the harvest that was checked
+  at click level — the cited second pulled back verbatim, every frame receipt
+  fetched over HTTP and looked at. The two rules above are unchanged and the
+  set still covers every chip in the row:
+
+  1. `context window costs money tokens` (**ocr**) — the flagship, and a better
+     one than the term it replaces: the payload is `transcript 0 · ocr 1` and
+     **not one of the prices on that slide is spoken anywhere in the talk**
+     (§2.1). It is the whole argument for reading the screen, in one result.
+  2. `context engineering` (all) — the slide carries the Karpathy sentence
+     verbatim while the transcript has only the paraphrase (§2.2), and rank 1 is
+     a 22-second citation inside a 46-minute talk (§4.1).
+  3. `architecture diagram with boxes and arrows` (**frame**) — carried over
+     from the 2026-08-09 harvest, which the 08-10 file adds to rather than
+     replaces: a visual query still has to reach the frame leg to demonstrate
+     anything, and 08-10 has none.
+  4. `human annotation calibrate LLM judge` (**transcript**) — three talks, two
+     of them directly contradicting, every quote verbatim (§3.1).
+  5. `FlashAttention-4` (all) — `0/0`, and it names the legs that ran and the
+     one it deliberately did not (§5.1). A demo whose example list contains a
+     refusal is making the product's third pillar in one click; the empty state
+     below is not an edge case here, it is one of the five.
 - **Nothing matched** names the query, offers `Search all` when a content-type
   filter is on, and otherwise says `Try fewer words.` When
   the facade's `data_status` says `empty` (§2.1) it says *that* instead: an
@@ -985,8 +1037,10 @@ box, `aria-pressed` on both chip groups (they are toggles, and a screen reader
 should hear the state, not infer it from colour), `role="status"` on the result
 count and `aria-live` on the answer pane, a single `:focus-visible` ring that
 also lands on the result rows, `alt` text naming the video and the timestamp on
-every thumbnail, and AA contrast in both schemes for every colour pair the page
-actually uses.
+every thumbnail, and AA contrast for every colour pair the page actually uses
+(*amended 2026-08-10: one scheme, so one sweep. DESIGN.md carries the measured
+ratios and fences `--fg3` as the system's single sub-4.5:1 value, which is why
+no label that carries a fact is set in it on this surface*).
 
 Mobile is a first-class target, not a media query afterthought: at 375px the
 input takes its own line with the primary action full-width under it, chips
@@ -1023,15 +1077,26 @@ to be speech:
 | `source` | badge(s) | how the snippet reads |
 |---|---|---|
 | `transcript` | `spoken` | a verbatim quotation of speech — set in quotation marks |
-| `ocr` | `on-screen` | text that was *visible*, not said — monospaced behind a dashed rule |
+| `ocr` | `on-screen` | text that was *visible*, not said — monospaced, and in `--seen` |
 | `frame` | `frame` | **no quotable text.** The image is the evidence, so it is rendered larger (160×90, `w=320`); any text is what happened to be visible in the frame, muted and never quoted |
 | `transcript+ocr` | `spoken` + `on-screen` | both channels agreed; the text is whichever was longer, so it is presented as neither — plain, with both badges |
 
-Two rules the styling obeys. **The word carries the meaning**: border style
-(solid / dashed) and font (sans / mono) differ alongside the colour, so a badge
-is still legible on a monochrome screen and to a colour-blind visitor — and the
-label is a real word, not an icon. **Both schemes**: the badges use the same six
-custom properties as everything else, so light and dark follow for free.
+Two rules the styling obeys. **The word carries the meaning**: the face (sans /
+mono) and the ground differ alongside the colour, so a badge is still legible on
+a monochrome screen and to a colour-blind visitor — and the label is a real
+word, not an icon.
+
+*Amended 2026-08-10: the second rule is now the Lime Rule* (DESIGN.md), which is
+stronger than "both schemes follow for free" and points the same way. `--seen`
+— lime — marks **on-screen-text evidence and nothing else**: the `on-screen`
+badge and the OCR line it labels, and that is the whole of it on this page. A
+`frame` badge is *not* lime, because a visual match read no text; it is the
+neutral plate. Gold stays on the receipt, the timecode and the found frame's
+outline. Gold and lime never touch the same object: gold is what you asked for,
+lime is what the machine saw. The dashed rule the OCR snippet used to carry is
+gone with it — dashed means one thing in this system now (an honest-about-being-
+next affordance), and the lime already says *read off the screen* in a way a
+border style never did.
 
 A `source` the page has never heard of still gets a badge with its own name.
 Dropping provenance silently is the one failure that is worse than an ugly
@@ -1084,6 +1149,26 @@ line of snippet, each linking to `youtu.be` at that second.
 
 The moment snippet is clamped to one line on purpose. This is a list to skim;
 the sentence in full is one click away, in the video, at the second it was said.
+(Below `--bp-hand` the row goes to three lines rather than dropping anything,
+and the snippet is clamped to two — a phone has no one-line row that is still a
+sentence.)
+
+*Amended 2026-08-10 (the rebuild): the moment ends in its receipt, printed.*
+`youtu.be/<id>?t=<second>` is rendered as the receipt slab rather than implied
+by an underlined timestamp, because "the sentence, the slide, and the second it
+happened" is the product's argument and a demo that only *links* it is asking to
+be taken on trust. Two consequences, both deliberate:
+
+- **The card head prints the talk's id** (mono, muted, beside the channel and
+  the moment count) and the moment prints the second. Together they are the
+  receipt; separately they are what each row is actually about.
+- **The receipt is a third control in the row**, a sibling of the thumbnail
+  button and the text anchor, for the same reason those two are siblings: a link
+  inside a link is neither valid nor operable. It is the *small* slab — border
+  and ink, no filled block — because ten filled gold blocks down a page of
+  results would spend the accent on the list instead of on the moment. The
+  filled slab is kept for the answer's Sources rows and the enlarged frame,
+  where there are three of them and they are the payoff.
 
 Three properties worth stating, because each is a thing that could have gone
 wrong:
@@ -1131,7 +1216,11 @@ Four decisions worth stating:
   an idle line under the list ("reading the corpus…") carries it between calls,
   when the slow thing is the model thinking rather than a tool running. The idle
   line steps aside while a row is running, so there is never a second spinner
-  claiming a second kind of work.
+  claiming a second kind of work. *Amended 2026-08-10: the spinner is the
+  landing's caret* — a gold block that blinks while the machine is inside the
+  corpus, which is the Motion Law's own vocabulary for "the agent is asking"
+  (and it stops, painted, under `prefers-reduced-motion`). Same rule, one
+  mark, and no rotating ring anywhere in the system.
 - **The result is a text node with its arrow in it**, not a `::before`. The
   arrow is chrome, but a log a visitor copies out of the page should still read
   as a log, and so should one whose stylesheet never arrived.
@@ -1167,18 +1256,21 @@ shown.
 2. **The daily budget is 50 asks.** That is a number chosen to be visibly
    conservative, not measured against anything. Raise it once the free tier's
    real behaviour is known.
-3. **Visual choices are mine** and are the easiest thing here to overrule: one
-   accent colour (a warm amber that reads on both grounds), the 46rem column,
-   hairline rows over cards, thumbnails at 96px, and the `search | ask ✨` pill
-   pair instead of a toggle button. The whole palette is six custom properties
-   at the top of `style.css`. The palette was checked rather than assumed:
-   every text/ground pair the page uses clears AA in both schemes (the light
-   accent is the tightest at 4.8:1), so a nudge to either accent should be
-   re-checked before it ships.
-6. **The three example queries** on the cold page are corpus-specific copy in
-   `index.html`. They stop being useful the day the corpus changes; there is no
-   machinery to keep them honest, deliberately, because a generated example is
-   a worse example.
+3. **Resolved 2026-08-10: the visual choices are the system's now.** This entry
+   used to offer up a warm amber, a 46rem column and a six-property palette for
+   you to overrule. You overruled the whole thing: `DESIGN.md` is the visual
+   contract, the demo is the landing's continuation, and this page is one column
+   at the system's `--bp-stack` measure with the query bar and its chips capped
+   at 44rem. What is left open is not the palette but the *ratio* — how much of
+   the hero the argument gets before the input starts. It is currently: kicker,
+   one `headline` line, one lede, then the box.
+6. **The five example queries** on the cold page are corpus-specific copy in
+   `index.html`, re-drawn 2026-08-10 from the verified harvest (§6.1). They stop
+   being useful the day the corpus changes; there is no machinery to keep them
+   honest, deliberately, because a generated example is a worse example. The
+   thing to re-check when the corpus moves is that `context window costs money
+   tokens` still returns exactly one OCR hit and `FlashAttention-4` still
+   returns none.
 7. **A gibberish query still returns results.** The vector leg has no relevance
    floor, so `zzzzqqqq` comes back with the whole corpus, semantically ranked.
    The zero-results state is therefore designed but nearly unreachable in
