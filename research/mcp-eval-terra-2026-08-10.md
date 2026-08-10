@@ -661,3 +661,301 @@ obvious next increment.
    times out of five made an agent fabricate a timestamp.
 4. §4.5, §4.6, §4.8 — the three ways the surface lets a wrong call look right.
 5. §4.4, §4.7, §4.10 — payload completeness.
+
+---
+
+# Round 2 — post-repair (2026-08-10 night)
+
+Same orchestrator, same session, same harness. Round 1 ran against a surface
+whose **text and frame embeddings were the output of a randomly initialised
+network** (`research/embedding-random-init-2026-08-10.md`); this round runs
+against the repaired space, the recalibrated floors
+(`research/vec-floor-calibration-2026-08-10.md` §6 — text ceiling 0.55, frame
+0.65, bands 0.20/0.15) and fixes for every §4 finding above.
+
+**Seven terra runs**, all `gpt-5.6-terra`, Codex `0.144.1`,
+`model_reasoning_effort=medium`, `--ignore-user-config`, working directory
+outside this repo. Six are the round-1 personas re-run on the **byte-identical
+prompt** — that is what makes the regression column honest — plus one new
+persona built for the code paths that did not exist this morning. Run dirs:
+`…/scratchpad/terra-eval/r2/{p1-research,p2-frames,p3-naive,p4-paginate,p5-absent,p6-stress,p7-migrate}/`
+(`prompt.md`, `events.jsonl`, `final.md`; `run_one.sh`, `run_p2.sh`, `trace.py`,
+`probe.py` at the top). Every terra line quoted below is verbatim from
+`events.jsonl`; every server-side claim was re-run by hand through
+`scripts/mcp_call.py` (`probe.py` wraps it with the E_BUSY retry the repaired
+remedy now prescribes) and the reproduction is printed with the finding.
+
+**Corpus under test.** 182 videos · 181 queryable · 64.0 h · 41,702 transcript
+cues · 7,689 keyframes · one channel (AI Engineer), published 2026-01-12 →
+2026-08-09, `data_status: indexing` throughout (tranche 6). Counts are stable
+across this section because the reconciliation fix (§4.7) now prints both.
+
+---
+
+## 8. Regression table — round-1 finding → what a consumer sees now
+
+| § | Round-1 defect | Now | Consumer-visible evidence |
+|---|---|---|---|
+| 4.1 | Semantic legs had no floor; any query "matched" 120–145 of 154 videos | **FIXED** | `q="turbopuffer"` → `Results: 2/2 (no more results)`, both Turbopuffer talks (was `5/121`, rank 1 an unrelated talk). `q="CUDA kernel occupancy"` → `3/16`, rank 1 a frame showing `torch.randn(…, device="cuda")` (was `3/~330+`, rank 1 a Hugging Face talk about self-training). `q="voice agent interruption latency"` → rank 1 *Voice Agents That Handle Interrupts* (was the same hub talk). The `OV56RddyFuU` hub does not appear in any round-2 payload I pulled. |
+| 4.2 | `Legs:` merged FTS and KNN, so the guide's `transcript 0` rule was dead | **FIXED**, one residual | `Legs: transcript 6 (fts 14 · vec 11/800)`. `fts 0` is now readable and is what told p7 its top hit had no lexical footing. Residual in §9.2. |
+| 4.3 | `video-summary` printed the bare floor, not `DEEPLINK_LEAD` | **FIXED** | `4:37 … ?t=275` (cue at 277.95; was `?t=277`). Chapters: `1:46 … ?t=104` (chapter at 106.0). **p3, the consumer that invented `?t=398` in round 1, invented nothing this time** — it shipped `?t=533` for a moment it labelled 8:55, which is exactly `floor(535) − 2`. |
+| 4.4 | `get-segment-context` printed 20–40 stamped lines and one link | **FIXED** | `TRANSCRIPT (cite one line: https://youtu.be/b_PmGocP4rc + the ?t= printed on it)` then `[3:30 ?t=208]`, `[3:35 ?t=213]`, … and `cues[].link` in `structuredContent`. p1 shipped a four-speaker table with **eight distinct links, three of them from one video** (`?t=1067`, `?t=1085`, `?t=757`); p7 quoted three sentences of one passage at `?t=41`, `?t=69`, `?t=88`. Round 1's 27-second citation error is structurally unreachable. |
+| 4.5 | Unknown parameter names accepted and silently ignored | **FIXED**, two residuals | `search {tag:"topic:foo"}` → `E_BAD_PARAM … did you mean tag= → tags=?` plus the full accepted set. p7 translated **six** old-tool parameter names off the error text alone. Residuals in §9.3, §9.4. |
+| 4.6 | `E_UNKNOWN_VIDEO` string-concatenated caller input into an `index-video` URL | **PARTIAL, by design** | A URL now gets `that is a URL — the video_id is the 11 characters inside it: video_id="BEKc4P87XKo"`; a sentence gets `a video_id is an 11-char YouTube id (e.g. kCc8FmEb1nY)`. But `not-a-video` — the eval's own example — **is eleven legal YouTube-id characters**, so it still returns `index-video url="https://youtu.be/not-a-video" adds it (~2-6 min of GPU)`. `errors.py:129-143` says so explicitly and moves the honesty into the remedy ("If it came from memory, it is not an id from this corpus"). Round-2 p6 nevertheless graded it the same way round-1 p6 did: *"Partly — it treats malformed and unknown IDs identically and suggests indexing the malformed ID."* §9.5. |
+| 4.7 | `corpus-summary` and `list-videos` reported different corpus sizes | **FIXED** | `Corpus: 182 videos (181 queryable · 1 queued but never built)` and, on the payload that is missing rows, `note: 181 of the 182 videos in this corpus are queryable and can appear here; 1 queued but never built (index_state=pending) cannot. corpus-summary counts all 182.` p7 was asked point-blank to resolve the disagreement and did it in one sentence off the payload. p4 shipped the reconciliation *and* the right caveat — see §10. |
+| 4.8 | A year in `t_start` returned six tidy, wrong hits | **FIXED** | `t_start=2019` → `E_BAD_PARAM: t_start=2019 on the in-video axis means 2019 seconds (33:39) into every video, which is almost certainly not what you meant.` and a remedy naming **both** axes. A non-year unscoped window gets the softer `note:` instead. p6: *"explicitly detects the likely axis mix-up and gives the correct publish-date filter."* This was the one probe round-1 p6 called unrecoverable. |
+| 4.9 | `E_BUSY`'s "narrow the query" taught a recovery that cannot work | **FIXED in text, half-landed in behaviour** | The remedy is now `retry the same call in 1s — the limit is on concurrent searches, not on what a query costs, so the identical call succeeds as soon as a slot frees.` p1 still did **not** repeat the identical call — it varied the query twice — but it recovered in one further call instead of abandoning `search` for four. p4 and p6 each retried the identical call and it worked. §9.7. |
+| 4.10 | `Chapters (0 of 0):` over nothing, and `next:` aimed at second zero | **FIXED** | `Chapters: none — the publisher marked none in the description, and this corpus does not derive them.` and `next: get-segment-context video_id="BEKc4P87XKo" t=277 window=60 for the actual words around the first key text above.` Both halves, including the "say why there are none" clause. |
+| 4.11 | `fields` narrows the TSV but not `structuredContent` | **NOT FIXED — documented instead** | Behaviour unchanged (`fields="video_id"` still returns twelve keys per row in `structuredContent`); `4bfdb2d` records in tool-surface §3.5 that `fields` shapes the text block only, and why. Recording it here so the decision has a date rather than looking like an omission. |
+| 4.12 | Clamps silent; `list-videos`' approximate total scaled with the page | **FIXED**, with a new edge case | `limit=500` → `note: clamped server-side: limit=500 → 50. The caps are in vidtheque://context; page with offset instead of raising limit.` (also for `limit=0 → 1`, `limit=-3 → 1`). p6 graded all three "Yes — it clamps to 50 and explicitly says so." The total now reads `181` at `limit=1`, `limit=50` and `limit=100` alike. New edge case in §9.1. |
+
+**Scorecard: 12 numbered round-1 findings. 9 verified fully fixed end to end,
+1 partially fixed by deliberate design (§4.6), 1 fixed-with-a-new-edge-case
+(§4.12 → §9.1), 1 answered with documentation rather than code (§4.11).
+Nothing regressed.**
+
+### 8.1 The near-misses in `demo-queries-2026-08-10.md` §6
+
+- **§6.2** (a confident answer to a question the corpus cannot answer) — **gone**
+  as a defect. `CUDA kernel occupancy` no longer claims 330+ results.
+- **§6.3** (a perfect quote, an approximate link) — **gone**, per §4.4.
+- **§6.4** (a chapter link two seconds off the contract) — **gone**, per §4.3.
+- **§6.1** (the right slide wrapped in browser chrome) — **still live**. p3
+  pulled the identical Google-Slides-URL-plus-tab-strip OCR string at
+  `cgimkNGNjvU` 8:54 this round. Unfixed and unfiled beyond the original note.
+
+---
+
+## 9. New findings, by severity
+
+### 9.1 MEDIUM · (a)(b) · Past the last page, `list-videos` prints a total equal to the offset you sent
+
+Found by p4 while paging an exhaustive inventory; reproduced by hand.
+
+```
+$ … call list-videos '{"limit":100,"offset":200,"format":"tsv","fields":"video_id"}'
+Videos: 0/200 (no more results)
+…
+note: 181 of the 182 videos in this corpus are queryable and can appear here; …
+structured: {"videos": [], "pagination": {"limit": 100, "offset": 200,
+             "has_more": false, "approx_total": 181}}
+```
+
+**`0/200` beside `approx_total: 181` in the same payload, and beside the `0/181`
+and `100/181` the two neighbouring pages printed.** The mechanism is
+`text.py:140-142`: when `has_more` is false the line takes `total = offset +
+shown` — correct when you have *walked* to the end (`81/181` at `offset=100` is
+right), wrong the moment a caller jumps past it, because `shown` is 0 and the
+total collapses onto the offset. That is precisely the "the number moves with
+the page you asked for" shape `4bfdb2d` removed from the *in-range* case four
+hours earlier; only the out-of-range case survives.
+
+It also loses the diagnosis `search` gives for the same situation. Compare, same
+session:
+
+```
+search  {"q":"on-call tax","limit":5,"offset":5000}
+  → Results: 0/4 (past the last page)
+    This query has 4 results; the last page starts at offset=0.
+    next: re-run with offset=0, or offset=0 for the top of the ranking.
+list-videos {"limit":100,"offset":200}
+  → Videos: 0/200 (no more results)
+```
+
+**Enhancement.** In `pagination_line`, when `shown == 0 and offset > 0`, print
+the probe total and `(past the last page)` with the `last_offset` sentence
+`search` already ships — one branch, and it makes the two paging tools say the
+same thing about the same event.
+
+### 9.2 LOW-MEDIUM · (b) · The `Legs:` sub-leg split is three different units, and the guide's own example implies they add up
+
+`vidtheque://guide` (`tools/resources.py:150`) teaches:
+
+> Read the `Legs:` counts, and the sub-legs in the parentheses:
+> `transcript 24 (fts 9 · vec 15/800)`.
+
+9 + 15 = 24. No live payload does that. Verbatim, from three separate runs:
+
+```
+Legs: transcript 43  (fts 0    · vec 28/800)   ← 0 + 28 ≠ 43
+Legs: transcript 71  (fts 1    · vec 72/800)   ← the vec sub-leg exceeds the total
+Legs: transcript 130 (fts 369  · vec 123/800)  ← the fts sub-leg exceeds it by 3×
+Legs: transcript 400 (fts 5000 · vec 0/800)
+```
+
+`search.py:557-566` is explicit that this is intended — *"Units are each
+sub-leg's own: cues for FTS, chunks for the vector legs"*, against a fused count
+of **segments** — but nothing in the payload or the guide says so, and the
+guide's illustrative numbers say the opposite. A caller who trusts the example
+will read `fts 369` as "369 talks say this" and `vec 72 > 71` as a bug.
+
+The diagnostic the split exists for is undamaged: `fts 0` still means "no
+lexical footing", and both p7 and p5 used it correctly. Only the arithmetic
+misleads.
+
+**Enhancement.** Change the guide's example to real numbers and one clause —
+`transcript 24 (fts 369 cues · vec 123 chunks of 800)` — or print the unit
+inline. Cheapest correct fix is to stop using an example that adds up.
+
+### 9.3 LOW-MEDIUM · (c) · The `page= → offset=` near miss is a unit mismatch
+
+The new unknown-name error is the round's biggest single win, and this is the
+one entry in its alias table that hands back a wrong answer confidently:
+
+```
+$ … call search '{"q":"evals","page":2,"limit":3}'
+error: E_BAD_PARAM
+Unknown parameter for search: page=. It was rejected, not applied …
+next: did you mean page= → offset=? …
+```
+
+`page=2` and `offset=2` are not the same request. A client that takes the
+suggestion literally on a `limit=50` listing reads rows 2–52 believing it read
+page 2, and gets a 200 — the exact failure mode ("a filter you think you passed
+was not") that this error was built to end, reintroduced one layer down.
+`params.py:55` maps `page → offset`; `page_size → limit` on the next line is
+fine because the units match.
+
+**Enhancement.** Either drop `page` from `ALIASES` (the generic "search accepts:
+…" list still gets the caller there) or give it its own sentence:
+*"`offset` counts rows, not pages — page N is `offset=(N-1)×limit`."*
+p7 dodged this only because it read `vidtheque://context` before it guessed.
+
+### 9.4 LOW · (c) · The unknown-name error names the parameter but not its domain, so a rename costs two round trips
+
+p7's own closing line, unprompted:
+
+> The server's `kind → content_type` suggestion was incomplete: it correctly
+> named the parameter, but `speech` itself is invalid and must be translated to
+> `transcript`.
+
+Reproduced:
+
+```
+$ … search {"q":"…","kind":"speech", …}
+  → E_BAD_PARAM … did you mean kind= → content_type=?
+$ … search {"q":"…","content_type":"speech", …}
+  → E_BAD_PARAM: content_type must be one of all, transcript, ocr, frame.
+```
+
+Both errors are correct and both are recoverable; the point is that the server
+knew the answer at the first call — it had the name, the value, and the enum —
+and spent a round trip anyway. Low severity, and the fix is one line: when the
+suggested target is an enum parameter, append its domain to the same `next:`.
+
+### 9.5 LOW · (c) · `E_UNKNOWN_VIDEO`'s residual — see §4.6
+
+Filed as its own line because two independent consumers, a week apart, both
+graded it "partly". The shape check is right and the remedy's new precondition
+clause is right; what a stress-tester sees is still an offer to spend 2–6 min of
+GPU on the string it just made up. Worth Tom's call whether an id that is
+plausible *and* absent should lead with `list-videos` and mention `index-video`
+second — the ordering is the whole finding.
+
+### 9.6 LOW · (d) · `vec 800` and `vec 800/800` are printed identically, so "the band did not bind" is invisible
+
+`_legs_line` prints the `kept/considered` form only when the band actually cut
+something — deliberately, so that identical numbers are not noise
+(`search.py:986-993`). The result is that the one case a caller most needs to
+know about reads like the tidiest:
+
+```
+q="why does my assistant forget what I told it a minute ago"
+  → Legs: transcript 353 (fts 0 · vec 800) · …          ← 800 of 800 kept
+q="turbopuffer"
+  → Legs: transcript 6 (fts 14 · vec 11/800) · …        ← 11 of 800 kept
+```
+
+The first is a query whose semantic pool was *not* narrowed at all, and it is
+the one that looks unqualified. A trailing `/800` (or a `note:` when the band
+keeps everything) costs four characters and says "this pool is as wide as the
+KNN".
+
+### 9.7 LOW · (e→c) · `E_BUSY` is honest now, and consumers still do not repeat the call
+
+Recording the behavioural half, because the text fix is verified and the
+behaviour fix is not. p1's first two searches were `E_BUSY`; it read the new
+remedy and issued a **third, differently-worded** query rather than the identical
+one. p4 and p6 did repeat the identical call and succeeded. So: 2 of 3 consumers
+now do the right thing, against 0 of 1 in round 1, and the one that did not
+recovered in one call instead of five.
+
+**The frequency is again my own doing** and is not evidence about production: the
+admission limit is a global `Semaphore(2)` shared by `search` and `list-videos`,
+and I ran two terra agents plus hand probes against it. Round 1's note stands —
+a global limit of 2 shared with `list-videos` and the dashboard is Tom's call.
+
+### 9.8 LOW · (c) · A phrase that exists only in a title has no lexical footing
+
+```
+$ … call search '{"q":"on-call tax","content_type":"transcript","limit":5, …}'
+Results: 4/4 (no more results)
+Legs: transcript 7 (fts 0 · vec 4/800) · ocr 0 · frame 0
+[transcript] The Unreasonable Effectiveness of Separating the Task from the Model … (GgLQ02aO-hs)
+[transcript] Always-on agents run production without the on-call tax — Justin Smith, Resolve AI (vSx5IULvBns)  19:54
+```
+
+The corpus contains a talk **named** "on-call tax"; it ranks 2, 3 and 4, and an
+unrelated talk about `self.extract` takes rank 1. Titles are not in the
+transcript FTS index, so `fts 0` is truthful and the vector leg is deciding
+alone on four candidates. Defensible (`video_title=` is the parameter for
+titles, and it works), but a demo should know it: **the one place `search` cannot
+find a phrase is the title bar.** Worth a guide clause next to the `fts 0`
+bullet rather than code.
+
+### 9.9 PASS · (e) · What round 2 got right that round 1 could not test
+
+| # | Probe | Response | Why it counts |
+|---|---|---|---|
+| P12 | **p2-frames ran** — the coding-agent persona §5 recorded as never executed | `slides.md` with 5 sections from 5 different talks, every frame URL curl-checked (`200 image/jpeg`, 51,734–107,817 bytes), and **garbled OCR flagged rather than guessed**: *"Some of the small OCR labels are garbled (for example, 'FALED'), so they are not transcribed verbatim here."* | 13 MCP calls, `workspace-write` + loopback egress, no indexing, no fabricated frame id. The frame-receipt path is the product's signature artifact and it now has an independent consumer's deliverable behind it. |
+| P13 | A junk query made of ordinary English words | `q="sourdough starter hydration schedule"` → `Results: 0/0` · `All three legs were queried and none of them matched.` | Round 1 could only refuse through `has_lexical_footing` ("no word of this query occurs anywhere"). This refusal comes through the **floor**: the words are all in the corpus, the legs all ran, and nothing was near enough. That is the empty state §6.3 of the calibration doc predicted, reachable for the first time. |
+| P14 | Four unanswerable questions (p5, identical prompt) | 4/4 correct refusals again, and this time **without having to reason around inflated denominators**: `CUDA kernel occupancy` came back `5/16`, not `10/~330+` | Round 1's cost — "it had to reason around four payloads that each claimed hundreds of results" — is gone. |
+| P15 | Six old-tool parameter names, no docs (p7) | Every one translated; five off the server's own error text, the rest off `vidtheque://context` | The unknown-name error is a *migration aid*, not just a guard. This is the strongest evidence for §4.5's fix. |
+| P16 | Exhaustive inventory with a queued video present (p4) | *"I cannot honestly call List B exhaustive for all 182 library items: the server says one video is still queued/unbuilt and is not queryable … The 101 is exhaustive for the 181 queryable videos"* | The §4.7 reconciliation is not decoration — a consumer used it to scope its own honesty claim. |
+
+---
+
+## 10. Consumer task success, round 1 vs round 2
+
+| Persona | Round 1 | Round 2 |
+|---|---|---|
+| p1-research | Succeeded. **Two of five searches returned an off-topic rank 1**, and the deliverable carried two different moments on one link, 27 s off. | Succeeded. Every search on topic; the deliverable carries **four named speakers and eight distinct per-sentence links**. But: it graded the corpus *"more consensus than contradiction"* and found a softer disagreement than round 1's Brumley/Heiner pair — an honest answer, and a weaker demo. Round 1's sharper pair is still reachable (demo doc §11.5); this consumer's query wording just did not land on it. |
+| p2-frames | **Not run.** | **Ran and succeeded** — see P12. |
+| p3-naive | Succeeded in 12 calls; lost 2 searches to `E_BUSY` and narrowed instead of waiting; **hand-corrected a chapter link and thereby invented a timestamp**. | Succeeded in **9 calls**, 1 `E_BUSY`, no invented timestamp, and it landed on a different (also correct) talk. |
+| p4-paginate | Succeeded, paged to the true end, but shipped **"143 distinct talks"** — semantic fill presented as lexical recall — out of 151. | Succeeded, paged to the true end, shipped **101 distinct talks out of 181** merged from two queries, plus *"the server did **not** stop pagination early"* and an explicit carve-out for the one unqueryable video. The count is defensible and the caveat is the payload's, not the model's invention. |
+| p5-absent | **4/4 correct refusals** — the round's strongest result, at the cost of reasoning around inflated totals. | **4/4 again**, with the totals no longer inflated. |
+| p6-stress | 27 probes; filed three findings that matched ours. Errors recoverable, unknown parameter names silently ignored, year-as-seconds unrecoverable. | 23 probes; **"automatic recovery: Yes"** on every row but one. Its remaining "leads a client astray" list is four items long, of which three are documented contract choices (`get-frames` partial failure inside a success, inline-image downgrade, `E_BUSY` under client concurrency) and one is §9.5. |
+| p7-migrate (new) | — | Succeeded. All five jobs, six parameter renames off the error text, the 0/0 negative control, the count reconciliation, and one finding of its own (§9.4). |
+
+**The shape of the change.** Round 1's failures were mostly *the surface lying
+quietly*: a rank 1 unrelated to the query, a total that meant nothing, a link
+that was right four times out of five. Every one of those is now either fixed or
+named in the payload. What is left in §9 is smaller and of a different kind —
+edge cases at the boundary of a page, a guide example that does not add up, an
+alias that is off by one unit. Round 1 found one finding that contradicted a
+locked design principle; round 2 found none.
+
+---
+
+## 11. What I could not verify, round 2
+
+- **Whether the relevance gains are the floor or the embeddings.** They are
+  confounded by construction: both landed tonight. The calibration doc's §6.3
+  separates them on the DB side (rank 1 was already correct at ceiling 1.0 on
+  the repaired space; the ceiling changes the *pool*), but no consumer-visible
+  A/B exists, and I did not build one.
+- **`E_BUSY` frequency**, again and for the same reason (§9.7).
+- **Whether p1's softer disagreement is the corpus or the ranking.** The corpus
+  grew from 154 to 182 videos between rounds, so round 2's p1 was choosing from
+  a different shelf. The Brumley/Heiner pair still exists and still surfaces
+  (demo doc §11.5); I did not re-run p1 with round 1's exact query wording to
+  isolate it.
+- **`index-video` idempotency under terra.** p6's single authorised call came
+  back `user cancelled MCP tool call` from the harness both rounds; the
+  behaviour is verified by hand (round-1 P8) and has never been observed
+  through a consumer.
+- **The `fts` sub-leg's AND semantics.** `fts 0` appears on many multi-word
+  real queries (`"RAG failure modes production"`, `"human evaluation LLM
+  judge"`). I did not confirm whether that is FTS5 requiring every term or a
+  narrower tokenisation, which matters for how strongly §9.2's diagnostic should
+  be worded.
