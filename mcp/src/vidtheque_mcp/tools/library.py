@@ -178,6 +178,19 @@ async def list_videos(
                 "re-index them.",
             )
         )
+    # Two counters, one name — the §4.7 lesson, applied to videos. This tool
+    # lists `QUERYABLE_INDEX_STATES` and `corpus-summary` counts every row; the
+    # gap is now named on the payload that is missing rows, not left for the
+    # caller to derive (it derived it wrong).
+    if index_state is None:
+        states = await corpus_state.read_video_states(deps)
+        difference = states.difference()
+        if difference:
+            footer.append(
+                f"note: {states.queryable} of the {states.total} videos in this corpus "
+                f"are queryable and can appear here; {difference} cannot. "
+                f"corpus-summary counts all {states.total}."
+            )
     if records:
         footer.append(f'next: video-summary video_id="{records[0]["video_id"]}" for chapters and key texts.')
 
@@ -272,6 +285,7 @@ async def corpus_summary(
     pool = await deps.db.read(lambda c: queries.resolve_videos(c, flt))
     gap_info = await deps.db.read(queries.gaps)
     backlog = await deps.db.read(queries.embed_backlog)
+    states = await corpus_state.read_video_states(deps)
 
     total = int(rollup["videos_ready"]) + int(rollup["videos_pending"])
     # `data_status` is derived in exactly one place for all three surfaces that
@@ -282,8 +296,15 @@ async def corpus_summary(
     status = state.word
 
     hours = float(rollup["hours"] or 0.0)
+    # This headline counts every row; `list-videos` and `search` answer from
+    # `QUERYABLE_INDEX_STATES` only. When the two numbers differ, the difference
+    # is printed here rather than left for a caller to reconstruct — one did,
+    # and got it wrong in a deliverable (terra eval §4.7).
+    short = states.short()
+    queryable = f" ({states.queryable} queryable · {short})" if short else ""
     lines = [
-        f"Corpus: {total} videos · {hours:.1f}h · {int(rollup['cues']):,} transcript cues · "
+        f"Corpus: {total} videos{queryable} · {hours:.1f}h · "
+        f"{int(rollup['cues']):,} transcript cues · "
         f"{int(rollup['keyframes']):,} keyframes",
         f"Published span: {iso_day(rollup['oldest_published'])} → "
         f"{iso_day(rollup['newest_published'])} · last indexed: "
@@ -295,6 +316,8 @@ async def corpus_summary(
         lines.append(f"queue: {queue_phrase}")
     structured: dict[str, Any] = {
         "videos": total,
+        "queryable_videos": states.queryable,
+        "videos_by_index_state": dict(states.counts),
         "hours": hours,
         "cues": int(rollup["cues"]),
         "keyframes": int(rollup["keyframes"]),

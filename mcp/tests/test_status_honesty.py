@@ -135,6 +135,60 @@ async def test_the_gaps_block_gives_each_counter_its_own_name(assembled: Assembl
     assert payload["gaps"]["jobs_running"] == 0
 
 
+async def make_one_video_unqueryable(assembled: Assembled, state: str = "indexing") -> None:
+    await assembled.db.write(
+        lambda c: c.execute(
+            "UPDATE videos SET index_state = ? WHERE source_id = 'eMlx5fFNoYc'", (state,)
+        )
+    )
+
+
+async def test_the_two_video_counters_reconcile_themselves(assembled: Assembled) -> None:
+    """terra eval §4.7: 154 from corpus-summary, 152 from list-videos, in one minute.
+
+    `corpus-summary` counts every row, `list-videos` counts the queryable ones
+    (§4.2, deliberately) — and neither payload mentioned the other, so the
+    consumer that was asked for the exact count invented the reconciliation and
+    got it wrong.
+    """
+    await make_one_video_unqueryable(assembled)
+
+    summary = await library.corpus_summary(assembled.deps)
+    text = body(summary)
+    assert "Corpus: 3 videos (2 queryable · 1 still being indexed)" in text
+    payload = structured(summary)
+    assert payload["videos"] == 3
+    assert payload["queryable_videos"] == 2
+    assert payload["videos_by_index_state"]["indexing"] == 1
+
+    listed = body(await library.list_videos(assembled.deps, limit=50))
+    assert "Videos: 2/2" in listed
+    assert (
+        "note: 2 of the 3 videos in this corpus are queryable and can appear here; "
+        "1 still being indexed (index_state=indexing) cannot. corpus-summary counts all 3."
+    ) in listed
+
+
+async def test_the_counters_say_nothing_when_they_agree(assembled: Assembled) -> None:
+    """No note, no parenthetical, on the corpus where the two counts are one."""
+    text = body(await library.corpus_summary(assembled.deps))
+    assert "Corpus: 3 videos · " in text
+    assert "queryable" not in text
+    listed = body(await library.list_videos(assembled.deps, limit=50))
+    assert "queryable" not in listed
+
+
+async def test_the_reconciling_note_is_for_the_default_view_only(
+    assembled: Assembled,
+) -> None:
+    """`index_state=all` is the dashboard's view: nothing is being withheld."""
+    await make_one_video_unqueryable(assembled, "failed")
+    listed = body(await library.list_videos(assembled.deps, index_state="all", limit=50))
+    assert "queryable" not in listed
+    default = body(await library.list_videos(assembled.deps, limit=50))
+    assert "1 failed to index (index_state=failed) cannot" in default
+
+
 async def test_job_status_says_a_deferred_job_is_waiting_not_working(
     assembled: Assembled,
 ) -> None:

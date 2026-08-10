@@ -23,6 +23,17 @@ Two counters, one name each — the other half of §9.1.4:
 They answer different questions and are never again printed as if they were the
 same number.
 
+**The same lesson, for videos** (2026-08-10). `corpus-summary` counts every row
+in `videos`; `list-videos` counts `QUERYABLE_INDEX_STATES`, deliberately (§4.2).
+Neither payload mentioned the other, so a consumer asked point-blank for the
+exact size of the library got 154 from one tool and 152 from the other in the
+same minute, invented a reconciliation, and shipped it as fact — with the wrong
+number of videos mid-pipeline (terra eval §4.7). `read_video_states` is the one
+derivation both now print from. Its SQL lives here rather than in `db/queries`
+because the reconciliation *is* the corpus-state story this module exists to
+tell, and splitting the counter from the sentence that explains it is how the
+two counters drifted in the first place.
+
 The deferral read is phase 2's, not a new one: `_JOB_SQL` already selects
 `not_before` and `defer_s` (the remainder on the same clock the column was
 written against), so `list_jobs` hands them over for free.
@@ -45,6 +56,70 @@ from .base import Deps
 # is unambiguously *working*, and the header says so without paying for the
 # page: see `QueueState.truncated`.
 QUEUE_PAGE_CAP = 25
+
+
+# Why a video is not answerable, in words, keyed by the schema's own state. A
+# caller reading "2 pending" cannot act; "2 queued but never built" can be taken
+# to `job-status`.
+_STATE_WORDS = {
+    "indexing": "still being indexed",
+    "pending": "queued but never built",
+    "failed": "failed to index",
+}
+
+
+@dataclass(frozen=True)
+class VideoStates:
+    """How many videos are in each `index_state`, and what that means to a caller.
+
+    `queryable` is what `search`, `list-videos` and the corpus resource can
+    answer from (`queries.QUERYABLE_INDEX_STATES`); `total` is every row, which
+    is what `corpus-summary` counts. When they differ, both payloads say so in
+    the same words rather than leaving the caller to guess at the difference.
+    """
+
+    counts: Mapping[str, int]
+
+    @property
+    def total(self) -> int:
+        return sum(self.counts.values())
+
+    @property
+    def queryable(self) -> int:
+        return sum(self.counts.get(state, 0) for state in queries.QUERYABLE_INDEX_STATES)
+
+    @property
+    def hidden(self) -> dict[str, int]:
+        """The states `list-videos` does not list, in the schema's own words."""
+        return {
+            state: n
+            for state, n in sorted(self.counts.items())
+            if state not in queries.QUERYABLE_INDEX_STATES and n
+        }
+
+    def short(self) -> str | None:
+        """"1 still being indexed and 2 failed to index", or None."""
+        hidden = self.hidden
+        if not hidden:
+            return None
+        return " and ".join(f"{n} {_STATE_WORDS.get(s, s)}" for s, n in hidden.items())
+
+    def difference(self) -> str | None:
+        """The same, with the schema's own word for it: `(index_state=indexing)`."""
+        short = self.short()
+        if short is None:
+            return None
+        return f"{short} (index_state={'|'.join(self.hidden)})"
+
+
+async def read_video_states(deps: Deps) -> VideoStates:
+    """One `GROUP BY index_state` over `videos` — the reconciling read."""
+    rows = await deps.db.read(
+        lambda c: c.execute(
+            "SELECT index_state, COUNT(*) AS n FROM videos GROUP BY index_state"
+        ).fetchall()
+    )
+    return VideoStates({str(r["index_state"]): int(r["n"]) for r in rows})
 
 
 @dataclass(frozen=True)
