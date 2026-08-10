@@ -125,8 +125,32 @@ so there is exactly one implementation and the raw API behaves the same.
 
 **Intra-video axis** — `offset_start` / `offset_end`. Seconds from the start of a
 video. Accepts a number (`723`) or a clock string (`12:03`, `1:12:03`), normalized
-to seconds. Only meaningful when the result set is scoped to few videos; harmless
-otherwise (it filters *within* each video).
+to seconds. Only meaningful when the result set is scoped to few videos.
+
+**It is not harmless otherwise** (amended 2026-08-10 — this paragraph used to say
+it was). `search {"q":"the","t_start":2019,"t_end":2020}` returned five hits from
+seconds 33:39–33:40 of five different talks, tidily formatted and entirely wrong,
+with no `note:` — the caller meant the year (terra eval §4.8). A wrong filter
+that returns nothing is self-correcting; a wrong filter that returns six
+plausible hits is not, and the consumer that hit it marked it the one probe where
+recovery was impossible. Note that the *corpus* axis already caught the
+mirror-image case: `published_after="2:00"` is a hard `E_BAD_TIME_FORMAT`. So, on
+a call that names no `video_id`:
+
+- a **year-shaped** bare number in `t_start`/`t_end` (integer, 1900–2100) is
+  `E_BAD_PARAM`, naming what those seconds actually are, the corpus-axis call
+  that means the year, and the clock spelling that means the position:
+  *"t_start=2019 on the in-video axis means 2019 seconds (33:39) into every
+  video … to select videos published in 2019, use `published_after="2019-01-01"
+  published_before="2020-01-01"`. To really mean 33:39 inside a video, write
+  `t_start="33:39"` — or scope the call with `video_id=`."*
+- any other in-video window prints a `note:` naming the axis it used and the
+  other one, the §2 "`all` means all" pattern applied to axis confusion.
+
+A call scoped with `video_id=` gets neither: there the axis is unambiguous, and
+2019 s into a 50-minute talk is a real position. The clock form is never
+second-guessed — what the caller wrote is the only evidence of what they meant,
+which is why the guard reads the raw argument rather than the parsed seconds.
 
 Also accepted anywhere a "when did we ingest this" filter makes sense:
 `indexed_after` / `indexed_before`, same normalizer.
@@ -882,7 +906,8 @@ header with a blank cell under every row.
   page is not a bound, it is a page-shaped ranking (§3.4, §3.6, §3.10).
 - No images, ever. That path is `get-frames`, where its cost is visible.
 
-**Errors:** `E_EMPTY_QUERY`, `E_BAD_TIME_FORMAT`, `E_BAD_PARAM`, `E_ORDER_SCOPE`,
+**Errors:** `E_EMPTY_QUERY`, `E_BAD_TIME_FORMAT`, `E_BAD_PARAM` (including a
+year-shaped `t_start`/`t_end` on an unscoped call, §3.2), `E_ORDER_SCOPE`,
 `E_UNKNOWN_VIDEO` (any id in `video_id[]` unknown — names which), `E_FEATURE_DISABLED`,
 `E_TIMEOUT`, `E_BUSY`.
 

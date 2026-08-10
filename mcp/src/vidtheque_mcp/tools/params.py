@@ -108,6 +108,65 @@ AXIS_HINT = (
 )
 
 
+def _year_shaped(raw: float | str | None) -> int | None:
+    """The year a caller typed into an in-video time field, or None.
+
+    Only a *bare* number counts: `t_start="33:39"` is the clock form and means
+    what it says, and `t_start=2019` is the same 2019 seconds — the difference
+    is what the caller wrote, which is the only evidence of what they meant.
+    """
+    if raw is None or isinstance(raw, bool):
+        return None
+    if isinstance(raw, str):
+        text = raw.strip()
+        if ":" in text or not text.lstrip("-").replace(".", "", 1).isdigit():
+            return None
+        value = float(text)
+    else:
+        value = float(raw)
+    return int(value) if value.is_integer() and 1900 <= value <= 2100 else None
+
+
+def axis_check(
+    t_start: float | str | None, t_end: float | str | None, *, scoped: bool
+) -> ToolError | str | None:
+    """Guard the two-axis confusion in the one direction that was not caught.
+
+    `published_after="2:00"` is a hard `E_BAD_TIME_FORMAT`; the mirror image —
+    a year in `t_start`/`t_end` — was read as seconds and answered with five
+    tidy, entirely wrong hits and no `note:` (terra eval §4.8). §3.2's "harmless
+    otherwise" is exactly what makes it dangerous: a wrong filter that returns
+    nothing is self-correcting, a wrong filter that returns six plausible hits
+    is not.
+
+    Returns the error to raise, a `note:` line to print, or None. A call scoped
+    to named videos gets neither — there the in-video axis is unambiguous, and
+    2019 s into a 50-minute talk is a real position.
+    """
+    if scoped or (t_start is None and t_end is None):
+        return None
+    for param, raw in (("t_start", t_start), ("t_end", t_end)):
+        year = _year_shaped(raw)
+        if year is not None:
+            return ToolError(
+                "E_BAD_PARAM",
+                f"{param}={year} on the in-video axis means {year} seconds "
+                f"({year // 60}:{year % 60:02d}) into every video, which is "
+                "almost certainly not what you meant.",
+                f'to select videos published in {year}, use '
+                f'published_after="{year}-01-01" published_before="{year + 1}-01-01". '
+                f'To really mean {year // 60}:{year % 60:02d} inside a video, write '
+                f'{param}="{year // 60}:{year % 60:02d}" — or scope the call with '
+                "video_id=, where seconds are taken as written.",
+            )
+    return (
+        "note: t_start/t_end are the in-video axis — seconds from the start of "
+        "each video — and this call names no video_id, so the window was applied "
+        "inside every video in the pool. Upload dates are published_after/"
+        "published_before (§3.2)."
+    )
+
+
 def suggest(name: str, known: Collection[str]) -> str | None:
     """The parameter `name` was probably reaching for, or None."""
     for candidate in ALIASES.get(name.lower(), ()):

@@ -37,6 +37,7 @@ from ..text import (
 from ..timeparse import parse_corpus_time, parse_offset
 from . import corpus_state
 from .base import Deps, handle_errors, normalize_video_ids, require_known_videos, text_result
+from .params import axis_check
 
 CONTENT_TYPES = ("all", "transcript", "ocr", "frame")
 ORDERS = ("relevance", "recency", "video_time")
@@ -243,6 +244,15 @@ async def run(
     )
     span_start = parse_offset(t_start, "t_start")
     span_end = parse_offset(t_end, "t_end")
+    # §3.2's two axes, guarded in the direction that was not: a year in the
+    # in-video field used to return a small, tidy, entirely wrong answer with no
+    # note (terra eval §4.8). axis_check returns the error, the note, or
+    # nothing. (Imported by name: `params` is a local in this function.)
+    axis = axis_check(t_start, t_end, scoped=bool(wanted_ids))
+    if isinstance(axis, ToolError):
+        raise axis
+    if axis:
+        notes.append(axis)
 
     browse = queries.is_browse_query(q)
     if browse and not any(

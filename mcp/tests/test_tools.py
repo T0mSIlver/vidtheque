@@ -63,6 +63,43 @@ async def test_speaker_filter_is_feature_disabled(assembled: Assembled) -> None:
     assert structured(result)["code"] == "E_FEATURE_DISABLED"
 
 
+async def test_a_year_in_the_in_video_axis_is_a_typed_error(assembled: Assembled) -> None:
+    """terra eval §4.8: `t_start=2019` answered with seconds 2019-2020 of every
+    video — five tidy, entirely wrong hits and no note. The corpus axis catches
+    the mirror-image case (`published_after="2:00"` is E_BAD_TIME_FORMAT); this
+    direction did not.
+    """
+    result = await search.run(assembled.deps, q="cache", t_start=2019, t_end=2020, limit=5)
+    payload = structured(result)
+    assert payload["code"] == "E_BAD_PARAM"
+    assert "33:39" in payload["message"]  # what 2019 seconds actually is
+    assert 'published_after="2019-01-01"' in payload["next"]
+    assert 't_start="33:39"' in payload["next"]  # …and how to really mean it
+
+
+async def test_a_scoped_call_reads_the_in_video_axis_as_written(
+    assembled: Assembled,
+) -> None:
+    """With video_id= the axis is unambiguous — 2019 s into a talk is a position."""
+    result = await search.run(
+        assembled.deps, q="cache", video_id="kCc8FmEb1nY", t_start=2019, t_end=2020
+    )
+    assert not result.is_error
+    assert not any("in-video axis" in n for n in structured(result)["notes"])
+    # The clock form is never second-guessed either, scoped or not.
+    clocked = await search.run(assembled.deps, q="cache", t_start="33:39", limit=5)
+    assert not clocked.is_error
+
+
+async def test_an_unscoped_in_video_window_says_which_axis_it_used(
+    assembled: Assembled,
+) -> None:
+    result = await search.run(assembled.deps, q="cache", t_start=5, t_end=200, limit=5)
+    assert not result.is_error
+    assert any("in-video axis" in n for n in structured(result)["notes"])
+    assert "published_after" in body(result)
+
+
 async def test_video_time_order_needs_a_single_video(assembled: Assembled) -> None:
     result = await search.run(assembled.deps, q="cache", order="video_time")
     assert structured(result)["code"] == "E_ORDER_SCOPE"
