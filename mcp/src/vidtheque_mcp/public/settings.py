@@ -44,6 +44,11 @@ class PublicSettings:
     ask_per_min: int = 5
     ask_per_day: int = 50
     frames_per_min: int = 120
+    # `/mcp`, per IP. Loose on purpose: one question answered by somebody's
+    # agent is legitimately a burst of tool calls, and this is the product
+    # rather than a page. It exists because the alternative was no ceiling at
+    # all on the surface that reaches the GPU (2026-08-10 audit, F-1).
+    mcp_per_min: int = 120
     rate_max_keys: int = 10_000
 
     # Trust-on-configuration: behind Cloudflare the edge overwrites this header,
@@ -70,6 +75,7 @@ class PublicSettings:
             ask_per_min=_int_env("VIDTHEQUE_RATE_ASK_PER_MIN", 5),
             ask_per_day=_int_env("VIDTHEQUE_RATE_ASK_PER_DAY", 50),
             frames_per_min=_int_env("VIDTHEQUE_RATE_FRAMES_PER_MIN", 120),
+            mcp_per_min=_int_env("VIDTHEQUE_RATE_MCP_PER_MIN", 120),
             rate_max_keys=_int_env("VIDTHEQUE_RATE_MAX_KEYS", 10_000),
             trusted_ip_header=_trusted_ip_header(),
         )

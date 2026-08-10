@@ -347,55 +347,64 @@ async def run(
                 "have returned their k nearest vectors regardless."
             )
 
-    qvec = None
-    if legs["transcript"] and not browse and use_vector:
-        qvec = await deps.embed_query(q or "", notes, space="text")
-    qimg = None
-    if legs["frame"]:
-        # The frame leg runs the text query through the frame model itself,
-        # into the same space as the stored frame vectors. Same weights as the
-        # transcript leg's query with the unified embedder, under a different
-        # instruction; SigLIP's text tower with the two-model pair. Either way
-        # it is /v1/embeddings/frame-query and never /v1/embeddings.
-        qimg = await deps.embed_query(q or "", notes, space="frame")
-        if qimg is None:
-            legs["frame"] = False
-
-    # The vectors these legs are about to search may not be current yet: an
-    # embedder swap rebuilds both vec tables empty and sets the embed stages
-    # back to `pending` (migration 0004). Nearest-neighbour search over a
-    # half-filled index does not fail, it quietly returns less — so say so.
-    # `all` means all, and that includes being honest about what `all` could
-    # not reach.
-    if legs["transcript"] or legs["frame"]:
-        await _note_embed_backlog(deps, legs, notes)
-
-    # Per-leg caps are an overfetch bound, not the user's `max_per_video`: the
-    # cap the user asked for spans modalities and can only be applied once the
-    # legs are fused and cross-modal duplicates collapsed (see _cap_per_video).
-    leg_per_video = min(50, max(max_per_video * 3, max_per_video + 2))
-    fetch_n = CANDIDATE_POOL
-
-    params = queries.SearchParams(
-        q=q,
-        video_ids=video_pool,
-        qvec=qvec,
-        limit=fetch_n,  # the pool, not the page: ranking must not move with limit
-        offset=0,
-        max_per_video=leg_per_video,
-        cluster_gap=cluster_gap,
-        candidate_cap=settings.candidate_cap,
-        t_start=span_start,
-        t_end=span_end,
-        min_chars=min_chars,
-        max_chars=max_chars,
-        speaker_ids=speaker_ids,
-        vec_max_distance=settings.vec_max_distance,
-        vec_max_margin=settings.vec_max_margin,
-        k_vec=_k_for(fetch_n),
-    )
-
+    # Admission opens *here*, not at the database call, and holds across both.
+    # Embedding the query is GPU work on the worker, and it used to happen
+    # before any admission control at all — so N concurrent anonymous searches
+    # were up to 2N forward passes with nothing bounding N, on the one surface
+    # (`/mcp`) that had no rate limit either. One acquisition spans the embeds
+    # and the legs deliberately: two would let a request pay for its vectors
+    # and then be turned away at the door. (2026-08-10 audit, F-1.)
     async with admission(deps.search_semaphore):
+        qvec = None
+        if legs["transcript"] and not browse and use_vector:
+            qvec = await deps.embed_query(q or "", notes, space="text")
+        qimg = None
+        if legs["frame"]:
+            # The frame leg runs the text query through the frame model itself,
+            # into the same space as the stored frame vectors. Same weights as
+            # the transcript leg's query with the unified embedder, under a
+            # different instruction; SigLIP's text tower with the two-model
+            # pair. Either way it is /v1/embeddings/frame-query, never
+            # /v1/embeddings.
+            qimg = await deps.embed_query(q or "", notes, space="frame")
+            if qimg is None:
+                legs["frame"] = False
+
+        # The vectors these legs are about to search may not be current yet: an
+        # embedder swap rebuilds both vec tables empty and sets the embed stages
+        # back to `pending` (migration 0004). Nearest-neighbour search over a
+        # half-filled index does not fail, it quietly returns less — so say so.
+        # `all` means all, and that includes being honest about what `all` could
+        # not reach.
+        if legs["transcript"] or legs["frame"]:
+            await _note_embed_backlog(deps, legs, notes)
+
+        # Per-leg caps are an overfetch bound, not the user's `max_per_video`:
+        # the cap the user asked for spans modalities and can only be applied
+        # once the legs are fused and cross-modal duplicates collapsed (see
+        # _cap_per_video).
+        leg_per_video = min(50, max(max_per_video * 3, max_per_video + 2))
+        fetch_n = CANDIDATE_POOL
+
+        params = queries.SearchParams(
+            q=q,
+            video_ids=video_pool,
+            qvec=qvec,
+            limit=fetch_n,  # the pool, not the page: ranking must not move with limit
+            offset=0,
+            max_per_video=leg_per_video,
+            cluster_gap=cluster_gap,
+            candidate_cap=settings.candidate_cap,
+            t_start=span_start,
+            t_end=span_end,
+            min_chars=min_chars,
+            max_chars=max_chars,
+            speaker_ids=speaker_ids,
+            vec_max_distance=settings.vec_max_distance,
+            vec_max_margin=settings.vec_max_margin,
+            k_vec=_k_for(fetch_n),
+        )
+
         hits, leg_counts, pool_full = await deps.db.read(
             lambda c: _run_legs(
                 c,

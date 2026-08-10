@@ -463,8 +463,13 @@ def test_frames_have_their_own_looser_bucket(tmp_path: Path) -> None:
         assert client.get("/frames/kCc8FmEb1nY-00000.jpg").status_code == 429
 
 
-def test_the_mcp_mount_is_never_rate_limited(tmp_path: Path) -> None:
-    """The limiter matches two prefixes; the streaming transport is untouched."""
+def test_the_mcp_mount_is_not_charged_to_the_browser_buckets(tmp_path: Path) -> None:
+    """An agent's calls are not a page's requests, so `/mcp` has its own bucket.
+
+    A tight `/api/search` limit must not throttle the transport: the demo page
+    and somebody's agent are different clients with different shapes, which is
+    why they were separated in the first place.
+    """
     tight = PublicSettings(enabled=True, search_per_min=1)
     with make_client(tmp_path, tight) as client:
         for _ in range(4):
@@ -473,6 +478,22 @@ def test_the_mcp_mount_is_never_rate_limited(tmp_path: Path) -> None:
             )["result"]
             assert result["isError"] is False
         assert client.get("/healthz").status_code == 200
+
+
+def test_the_mcp_mount_has_a_ceiling_of_its_own(tmp_path: Path) -> None:
+    """It used to have none at all, and that was the hole.
+
+    `/mcp` reaches `search`, which embeds its query on the GPU — so an
+    unlimited transport meant an anonymous caller could loop tool calls at
+    machine speed against the worker. The bucket is loose enough that one
+    question's burst of calls is fine and bounded enough that a loop is not.
+    (2026-08-10 audit, F-1.)
+    """
+    tight = PublicSettings(enabled=True, mcp_per_min=2)
+    with make_client(tmp_path, tight) as client:
+        for _ in range(2):
+            assert client.post("/mcp", json={}).status_code != 429
+        assert client.post("/mcp", json={}).status_code == 429
 
 
 def test_nothing_is_limited_outside_public_mode(tmp_path: Path) -> None:
