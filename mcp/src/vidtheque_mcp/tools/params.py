@@ -99,6 +99,64 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "inline": ("return",),
 }
 
+# `page → offset` is the one alias whose units differ from the name it fixes,
+# and a caller who follows it literally gets a 200 for the wrong rows: on a
+# `limit=50` listing, `offset=2` reads rows 2-52 while the caller believes it
+# read page 2 — "a filter you think you passed was not", one layer down (terra
+# eval §9.3). Dropping the alias would only send them to the generic accepted
+# list; naming the unit is what actually lands.
+UNIT_HINTS: dict[str, str] = {
+    "page": (
+        "offset counts ROWS, not pages — page N is offset=(N-1)×limit, so page 2 "
+        "of a limit=50 listing is offset=50"
+    ),
+}
+
+# Enum-typed parameters, per tool, so a rename whose *value* also has to change
+# costs one round trip instead of two: the server has the name, the value and
+# the domain at the first call, and used to spend a call anyway (terra eval
+# §9.4 — `kind="speech"` → `content_type=` → `content_type must be one of …`).
+# Imported lazily inside `enum_domain`: the tool modules import this one.
+_ENUM_SOURCES: dict[str, dict[str, str | tuple[str, ...]]] = {
+    "search": {
+        "content_type": "search.CONTENT_TYPES",
+        "order": "search.ORDERS",
+        "format": ("text", "tsv"),
+    },
+    "list-videos": {
+        "order": "library.LIST_ORDERS",
+        "has": "library.HAS_VALUES",
+        "index_state": "library.INDEX_STATE_VALUES",
+        "format": ("text", "tsv"),
+    },
+    "get-frames": {"return": ("url", "image")},
+    "index-video": {
+        "expand": "indexing.EXPANSIONS",
+        "priority": ("normal", "high"),
+    },
+    "job-status": {"state": ("all", "active", "failed", "done")},
+}
+
+
+def enum_domain(tool: str, param: str) -> tuple[str, ...] | None:
+    """The allowed values of `param` on `tool`, or None if it is not an enum.
+
+    The tuples live on the tools that validate them (one definition, one error
+    text); this resolves the names at call time because `tools/search.py` and
+    friends import this module, never the other way round.
+    """
+    source = _ENUM_SOURCES.get(tool, {}).get(param)
+    if source is None:
+        return None
+    if isinstance(source, tuple):
+        return source
+    module_name, attribute = source.split(".")
+    from . import indexing, library, search  # noqa: PLC0415 - see docstring
+
+    module = {"search": search, "library": library, "indexing": indexing}[module_name]
+    return tuple(getattr(module, attribute))
+
+
 # The two-axis confusion is worth naming rather than merely redirecting: a
 # caller who wrote `t_start=2019` on a corpus-wide search meant the year (§3.2,
 # and §4.8 of the terra eval).
@@ -208,6 +266,20 @@ def error_for(
     hint_parts: list[str] = []
     if guesses:
         hint_parts.append("did you mean " + ", ".join(guesses) + "?")
+    for wrong, right in pairs:
+        unit = UNIT_HINTS.get(wrong)
+        if unit and right:
+            hint_parts.append(f"{unit} ({wrong}=N is not {right}=N).")
+        # The value the caller sent, judged against the domain of the parameter
+        # it was reaching for. Only when it does not fit: a rename that carries
+        # a valid value needs no lecture.
+        domain = enum_domain(tool, right) if right else None
+        sent = arguments.get(wrong)
+        if domain and isinstance(sent, str) and sent not in domain:
+            hint_parts.append(
+                f"{right} must be one of {', '.join(domain)} — "
+                f"{sent!r} is not one of them."
+            )
     if any(w in {"t_start", "t_end", "offset_start", "offset_end"} for w, _ in pairs):
         hint_parts.append(AXIS_HINT + ".")
     hint_parts.append(f"{tool} accepts: {', '.join(sorted(known))}.")

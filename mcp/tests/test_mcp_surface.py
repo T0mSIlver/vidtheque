@@ -181,6 +181,72 @@ def test_an_unknown_parameter_name_is_a_typed_error(client: TestClient) -> None:
     assert "content_type" in payload["next"]  # the full domain, as `fields` does
 
 
+def test_the_page_alias_says_offset_counts_rows(client: TestClient) -> None:
+    """terra eval §9.3: the one alias whose units differ from its target.
+
+    `page=2 → offset=2` is a wrong answer given confidently — on a `limit=50`
+    listing a client that follows it reads rows 2-52 believing it read page 2,
+    and gets a 200. That is the exact failure this error exists to end,
+    reintroduced one layer down.
+    """
+    result = call(
+        client,
+        "tools/call",
+        {"name": "search", "arguments": {"q": "cache", "page": 2, "limit": 3}},
+    )
+    hint = result["structuredContent"]["next"]
+    assert "page= → offset=" in hint
+    assert "offset counts ROWS, not pages" in hint
+    assert "page N is offset=(N-1)×limit" in hint
+
+
+def test_a_rename_into_an_enum_carries_the_enum(client: TestClient) -> None:
+    """terra eval §9.4: the server had the name, the value AND the domain, and
+    spent a round trip anyway — `kind="speech"` → `content_type=` →
+    `content_type must be one of …`. A value that already fits gets no lecture.
+    """
+    result = call(
+        client,
+        "tools/call",
+        {"name": "search", "arguments": {"q": "cache", "kind": "speech", "limit": 2}},
+    )
+    hint = result["structuredContent"]["next"]
+    assert "kind= → content_type=" in hint
+    assert "content_type must be one of all, transcript, ocr, frame" in hint
+    assert "'speech' is not one of them" in hint
+
+    fine = call(
+        client,
+        "tools/call",
+        {"name": "search", "arguments": {"q": "cache", "kind": "transcript", "limit": 2}},
+    )
+    assert "must be one of" not in fine["structuredContent"]["next"]
+
+
+def test_the_enum_table_cannot_drift_from_the_tools_that_validate() -> None:
+    """One definition per domain: `params` resolves the tool's own tuple.
+
+    A second hand-written copy would go stale exactly when a value is added,
+    and the error text would then teach a domain the validator rejects.
+    """
+    from vidtheque_mcp.tools import indexing, library, search
+    from vidtheque_mcp.tools.params import _ENUM_SOURCES, enum_domain
+
+    assert enum_domain("search", "content_type") == search.CONTENT_TYPES
+    assert enum_domain("search", "order") == search.ORDERS
+    assert enum_domain("list-videos", "order") == library.LIST_ORDERS
+    assert enum_domain("list-videos", "has") == library.HAS_VALUES
+    assert enum_domain("list-videos", "index_state") == library.INDEX_STATE_VALUES
+    assert enum_domain("index-video", "expand") == indexing.EXPANSIONS
+    assert enum_domain("search", "q") is None, "not every parameter is an enum"
+    assert enum_domain("nonesuch", "order") is None
+    # Every entry resolves — a typo in a dotted name would only surface on the
+    # one error path that reads it.
+    for tool, params in _ENUM_SOURCES.items():
+        for name in params:
+            assert enum_domain(tool, name), f"{tool}.{name}"
+
+
 def test_the_wrong_time_axis_is_rejected_by_name(client: TestClient) -> None:
     """§3.2: `t_start` on the corpus-shaped tool is the axis confusion, not a typo."""
     result = call(

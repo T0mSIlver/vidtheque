@@ -324,6 +324,29 @@ They were rejected, not applied — a filter you think you passed was not."* wit
 *"did you mean tag= → tags=, sort_by= → order=?"* and the tool's full parameter
 list. `t_start`/`t_end` on a tool that has no intra-video axis additionally get
 the §3.2 sentence, because that one is an axis confusion rather than a typo.
+
+**Two clauses the near miss carries when it needs them** (amended 2026-08-11,
+terra eval §9.3 and §9.4):
+
+- **A near miss whose units differ says so.** `page= → offset=` is the one
+  entry in the alias table that hands back a wrong answer confidently: on a
+  `limit=50` listing, a client that takes it literally reads rows 2-52
+  believing it read page 2 — and gets a 200, which is the failure this error
+  exists to end, one layer down. So the hint adds *"offset counts ROWS, not
+  pages — page N is `offset=(N-1)×limit`, so page 2 of a limit=50 listing is
+  `offset=50`"*. Dropping the alias was the alternative; it would only have
+  sent the caller to the generic accepted-names list, which is where they were
+  already going wrong.
+- **A near miss into an enum carries the enum, when the value does not fit.**
+  `kind="speech"` cost two round trips — `content_type=` on the first,
+  `content_type must be one of …` on the second — while the server had the
+  name, the value *and* the domain at the first call. It now appends
+  *"content_type must be one of all, transcript, ocr, frame — 'speech' is not
+  one of them."* Only when the value is out of domain: a rename carrying a
+  valid value needs no lecture. The domains resolve from the tuples the tools
+  validate against (`tools/params.py::enum_domain`), never a second copy —
+  a stale copy would teach a domain the validator rejects.
+
 Two details this cost:
 
 - **It cannot be enforced inside a tool.** The SDK validates `tools/call`
