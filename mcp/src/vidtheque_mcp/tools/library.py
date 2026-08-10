@@ -173,15 +173,21 @@ async def list_videos(
         )
 
     footer = ["", "coverage: t=transcript o=on-screen text f=frame embeddings -=missing"]
+    # Every `note:` this payload prints is also collected, because a client that
+    # reads `structuredContent` instead of the text block sees only what is
+    # collected (§3.5, round-3 eval §14.1). The clamp note and the queryable
+    # reconciliation below are the two round-2 repairs that were invisible to
+    # such a client until this list existed.
+    notes: list[str] = []
     if clamped:
-        footer.append(
+        notes.append(
             f"note: clamped server-side: {', '.join(clamped)}. The caps are in "
             "vidtheque://context; page with offset instead of raising limit."
         )
     missing = [r for r in records if "-" in str(r["coverage"])]
     if missing:
         example = missing[0]
-        footer.append(
+        notes.append(
             # "channels" here means transcript/OCR/frame coverage, but `channel`
             # is also a filter parameter on this very tool, so the old wording
             # read as a missing YouTube channel name (smoke §4.6).
@@ -202,13 +208,16 @@ async def list_videos(
         states = await corpus_state.read_video_states(deps)
         difference = states.difference()
         if difference:
-            footer.append(
+            notes.append(
                 f"note: {states.queryable} of the {states.total} videos in this corpus "
                 f"are queryable and can appear here; {difference} cannot. "
                 f"corpus-summary counts all {states.total}."
             )
+    footer.extend(notes)
+    nxt: str | None = None
     if records:
-        footer.append(f'next: video-summary video_id="{records[0]["video_id"]}" for chapters and key texts.')
+        nxt = f'next: video-summary video_id="{records[0]["video_id"]}" for chapters and key texts.'
+        footer.append(nxt)
 
     pagination: dict[str, Any] = {
         "limit": limit,
@@ -222,10 +231,14 @@ async def list_videos(
         # does not have to parse the prose to get back.
         pagination["last_offset"] = last_page_offset(probe_total, limit)
 
-    return text_result(
-        "\n".join(header) + body + "\n".join(footer),
-        {"videos": records, "pagination": pagination},
-    )
+    structured_list: dict[str, Any] = {
+        "videos": records,
+        "pagination": pagination,
+        "notes": notes,
+    }
+    if nxt:
+        structured_list["next"] = nxt
+    return text_result("\n".join(header) + body + "\n".join(footer), structured_list)
 
 
 def _index_states(index_state: str | None) -> tuple[str, ...]:
@@ -342,14 +355,25 @@ async def corpus_summary(
         "cues": int(rollup["cues"]),
         "keyframes": int(rollup["keyframes"]),
         "data_status": status,
+        # The `Published span:` line, structured. A client that reads only
+        # `structuredContent` had no way to answer "is there anything here from
+        # before 2020?" — the question round-1 p5 refused correctly *off this
+        # line* (§2.4), and which round 3's structured-only fleet could not
+        # reach at all (§14.1).
+        "published_span": {
+            "oldest": iso_day(rollup["oldest_published"]),
+            "newest": iso_day(rollup["newest_published"]),
+            "last_indexed": iso_minute(rollup["last_indexed"]),
+        },
     }
+    notes: list[str] = []
     if backlog["text"] or backlog["frame"]:
         waiting = " and ".join(
             f"{backlog[key]} {what}"
             for key, what in (("text", "transcript"), ("frame", "frame"))
             if backlog[key]
         )
-        lines.append(
+        notes.append(
             f"note: {waiting} vector set(s) are waiting to be re-embedded after "
             "an embedding-model change — semantic search covers only the videos "
             "already re-embedded; keyword search is unaffected. Nothing is "
@@ -359,7 +383,8 @@ async def corpus_summary(
 
     note = deps.db.vectors.note()
     if note:
-        lines.append(note)
+        notes.append(note)
+    lines.extend(notes)
 
     if include_channels:
         rows = await deps.db.read(lambda c: queries.channel_rollup(c, pool, max_channels))
@@ -400,6 +425,18 @@ async def corpus_summary(
                 f"  {iso_day(row['indexed_at'])}  {title} — {row['channel_name']} "
                 f"({row['public_id']})  {duration_clock(row['duration_s'])}"
             )
+        # The only place this tool names a video_id at all; without it a
+        # structured-only client has to call `list-videos` to get its first id.
+        structured["recent"] = [
+            {
+                "video_id": str(r["public_id"]),
+                "title": str(r["title"]),
+                "channel": str(r["channel_name"]),
+                "indexed_at": iso_day(r["indexed_at"]),
+                "duration": duration_clock(r["duration_s"]),
+            }
+            for r in rows
+        ]
 
     if include_gaps:
         lines.append("")
@@ -431,21 +468,22 @@ async def corpus_summary(
     if include_guidance:
         lines.append("")
         if total == 0:
-            lines.append(
-                deps.hint(
-                    "index-video",
-                    'next_best_query: index-video url="https://youtu.be/…" to add '
-                    "your first video.",
-                    "next_best_query: none — this read-only server has no videos "
-                    "indexed and no tool that can add one.",
-                )
+            guidance = deps.hint(
+                "index-video",
+                'next_best_query: index-video url="https://youtu.be/…" to add '
+                "your first video.",
+                "next_best_query: none — this read-only server has no videos "
+                "indexed and no tool that can add one.",
             )
         else:
-            lines.append(
+            guidance = (
                 'next_best_query: search q="<topic>" limit=5 — or list-videos '
                 'channel="…" to browse one channel.'
             )
+        lines.append(guidance)
+        structured["next"] = guidance
 
+    structured["notes"] = notes
     return text_result("\n".join(lines), structured)
 
 
@@ -519,7 +557,23 @@ async def video_summary(
         f"ocr {_tick(cov, 'has_ocr')} {keyframes} keyframes · "
         f"frame embeddings {_tick(cov, 'has_frames')})",
     ]
-    structured: dict[str, Any] = {"video_id": video_id, "data_status": status}
+    # Identity and body, not just `video_id` + `data_status`. This tool used to
+    # put its entire substance — title, link, key texts, on-screen highlights —
+    # in the text block alone, so a client that reads `structuredContent`
+    # instead of prose got `{"video_id": …, "data_status": "ok", "tags": [],
+    # "chapters": []}` back from a 27-minute talk: a payload with no content in
+    # it (round-3 eval §14.1). §3.5's rule is parity, per tool.
+    structured: dict[str, Any] = {
+        "video_id": video_id,
+        "title": str(row["title"]),
+        "channel": str(row["channel_name"]),
+        "published": iso_day(row["published_at"]),
+        "duration": duration_clock(row["duration_s"]),
+        "indexed_at": iso_day(row["indexed_at"]),
+        "link": f"https://youtu.be/{video_id}",
+        "keyframes": keyframes,
+        "data_status": status,
+    }
 
     if include_tags:
         tag_map = await deps.db.read(lambda c: queries.video_tags(c, [vid]))
@@ -597,6 +651,14 @@ async def video_summary(
                 f'"{middle_truncate(str(cue["text"]), max_chars)}"  '
                 f'?t={deeplink_t(cue["start_s"], lead)}'
             )
+        structured["key_texts"] = [
+            {
+                "start": float(c["start_s"]),
+                "text": middle_truncate(str(c["text"]), max_chars),
+                "link": deeplink(video_id, c["start_s"], lead),
+            }
+            for c in rows
+        ]
 
     if include_ocr_highlights:
         rows = await deps.db.read(
@@ -616,6 +678,17 @@ async def video_summary(
                 f"{middle_truncate(str(frame['screen_text'] or ''), max_chars):<52} "
                 f"{video_id}-{int(frame['ord']):05d}  ?t={deeplink_t(frame['t_s'], lead)}"
             )
+        # `frame_id` included: it is the only id `get-frames` accepts, and the
+        # guide forbids constructing one.
+        structured["ocr_highlights"] = [
+            {
+                "t": float(f["t_s"]),
+                "frame_id": f"{video_id}-{int(f['ord']):05d}",
+                "screen_text": middle_truncate(str(f["screen_text"] or ""), max_chars),
+                "link": deeplink(video_id, f["t_s"], lead),
+            }
+            for f in rows
+        ]
 
     if include_links:
         rows = await deps.db.read(lambda c: queries.video_links(c, vid, 10))
@@ -633,11 +706,13 @@ async def video_summary(
             if aim_chapter is not None
             else (None, "")
         )
-        lines.append("")
-        lines.append(
+        nxt = (
             f'next: get-segment-context video_id="{video_id}" t={int(aim or 0)} '
             f"window=60 for the actual words{what}."
         )
+        lines.append("")
+        lines.append(nxt)
+        structured["next"] = nxt
 
     return text_result("\n".join(lines), structured)
 

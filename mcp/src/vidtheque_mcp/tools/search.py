@@ -511,6 +511,9 @@ async def run(
         "leg_counts": leg_counts,
         "notes": notes,
     }
+    nxt = _next_line(page)
+    if nxt:
+        structured["next"] = nxt
     if related is not None:
         structured["related_tags"] = related
     return text_result(body, structured)
@@ -1181,18 +1184,28 @@ def _render(
         footer.append(
             "related tags: " + " · ".join(f"{t} {n}" for t, n in list(related.items())[:12])
         )
-    if page:
-        first = page[0]
-        # Two next steps, because the bench showed the single get-segment-context
-        # hint pulling models into window-walking when the question was "where
-        # does this video discuss X" — a chapter list answers that in one call.
-        footer.append(
-            f'next: video-summary video_id="{first.public_id}" for the chapter '
-            "list (fastest way to name the moment), or "
-            f'get-segment-context video_id="{first.public_id}" '
-            f"t={int(first.start_s)} for the full surrounding transcript."
-        )
+    nxt = _next_line(page)
+    if nxt:
+        footer.append(nxt)
     return "\n".join(header) + body + ("\n" + "\n".join(footer) if footer else "")
+
+
+def _next_line(page: Sequence[Any]) -> str | None:
+    """The closing `next:` line, so the text block and `structuredContent` agree.
+
+    Two next steps, because the bench showed the single get-segment-context hint
+    pulling models into window-walking when the question was "where does this
+    video discuss X" — a chapter list answers that in one call.
+    """
+    if not page:
+        return None
+    first = page[0]
+    return (
+        f'next: video-summary video_id="{first.public_id}" for the chapter '
+        "list (fastest way to name the moment), or "
+        f'get-segment-context video_id="{first.public_id}" '
+        f"t={int(first.start_s)} for the full surrounding transcript."
+    )
 
 
 def _and_list(names: list[str]) -> str:
@@ -1267,6 +1280,7 @@ def _past_the_end(
             f"page starts at offset={last}."
         )
     )
+    nxt = f"next: re-run with offset={last}, or offset=0 for the top of the ranking."
     lines = [
         f"Results: 0/{total} ({end})",
         f'Query: "{q or "*"}" · content_type={content_type} · order={order} · '
@@ -1274,7 +1288,7 @@ def _past_the_end(
         *notes,
         "",
         holds,
-        f"next: re-run with offset={last}, or offset=0 for the top of the ranking.",
+        nxt,
     ]
     return text_result(
         "\n".join(lines),
@@ -1289,6 +1303,8 @@ def _past_the_end(
                 "last_offset": last,
             },
             "notes": notes,
+            "reason": holds,
+            "next": nxt,
         },
     )
 
@@ -1346,6 +1362,15 @@ async def _empty_result(
                 "approx_total": 0,
             },
             "notes": notes,
+            # The empty state's whole value is *which* empty state it is: no
+            # video survived the filters, or the legs ran and nothing matched,
+            # or no word of the query is in the corpus at all. That distinction
+            # lived only in the text block, and a structured-only consumer
+            # called the resulting ambiguity "the single most dangerous case in
+            # the whole surface" (round-3 eval §14.2) — four different causes
+            # returning one indistinguishable payload.
+            "reason": reason,
+            "next": f"next: {hint}",
             "data_status": status.split()[0],
         },
     )

@@ -293,6 +293,32 @@ with ids dropped (−73%)**. Their conclusion, verbatim: *"The win is not the sy
 format; structured data goes in `structuredContent`, which conformant clients read
 without spending prose tokens.
 
+**Parity: `structuredContent` carries everything the text block says**
+(amended 2026-08-11). The sentence above used to assume a client reads the prose
+*and* uses the structured half to avoid parsing it. That assumption is wrong for
+at least one major client: **Claude Code renders `structuredContent` and drops
+the `content` text blocks entirely** when a tool returns both. A whole fleet of
+round-3 consumers therefore never saw a single `note:` from `list-videos`, never
+saw why a search came back empty, never saw a closing `next:`, and got
+`{"video_id": …, "data_status": "ok", "tags": [], "chapters": []}` back from a
+27-minute talk (round-3 eval §14.1). Two round-2 repairs — the clamp note
+(§4.12) and the queryable reconciliation (§4.7) — were invisible to it, and one
+such consumer independently re-filed both as live defects.
+
+The rule, therefore, per read tool:
+
+| key | meaning |
+|---|---|
+| `notes: [str]` | every `note:` line the text block printed, verbatim, in order |
+| `next: str` | the closing `next:` / `next_best_query:` line, verbatim |
+| `reason: str` | on an empty or past-the-end `search`: *which* empty state this is |
+
+A `note:` that is printed and not collected is a bug, and the test that pins it
+(`test_every_printed_next_line_is_also_structured`) compares the strings rather
+than their existence. Errors already worked this way (§3.8) — that is why the
+typed error contract was the one part of the surface the structured-only fleet
+scored "yes, recoverable" on every row.
+
 **An unknown `fields` name is `E_BAD_PARAM`, naming the valid columns.** Both
 tools validate every name the caller wrote, *before* the ≤ 12 cap is applied, so
 a typo in the thirteenth position is rejected rather than sliced away. `search`
@@ -774,8 +800,11 @@ substring-based.
 
 **Return shape.** One `text` block; `structuredContent` mirrors it as
 `{results: [...], pagination: {limit, offset, has_more, approx_total,
-pool_exhausted, last_offset?}, leg_counts: {...}, notes: [...],
-related_tags?: {...}}`. Each result
+pool_exhausted, last_offset?}, leg_counts: {...}, notes: [...], next?: str,
+reason?: str, data_status?: str, related_tags?: {...}}`. `next` is the closing
+drill-down line; `reason` appears on the two zero-result payloads and is the
+sentence that distinguishes *no video survived the filters* from *the legs ran
+and nothing matched* from *the pool ended here* (§3.5 parity). Each result
 carries `{source, video_id, title, channel, start, end, match_start,
 match_cue_id, text, link, cue_ids, frame_id, score}` — `match_start` is the
 anchor the `link` points at (§3.6), equal to `start` for the point-in-time legs;
@@ -1145,6 +1174,12 @@ eval §4.7). When the corpus holds videos this view cannot show, and no explicit
 note: 152 of the 154 videos in this corpus are queryable and can appear here; 2 still being indexed (index_state=indexing) cannot. corpus-summary counts all 154.
 ```
 
+`structuredContent` is `{videos: [...], pagination: {...}, notes: [...],
+next?: str}`. The `notes` list is the §3.5 parity rule, and this tool is why the
+rule exists: both repairs above shipped as prose only, so the fleet whose client
+drops text blocks saw a clamp it could not detect and a 194-vs-192 split it read
+as two tools disagreeing (round-3 eval §14.1, §14.2).
+
 It costs one `GROUP BY index_state` over `videos`, and it prints only when the
 two numbers actually differ — a corpus with nothing mid-pipeline says nothing,
 and the dashboard's `index_state=all` view is withholding nothing to explain.
@@ -1268,6 +1303,13 @@ and is carried as `queryable_videos` plus a `videos_by_index_state` map in
 minute with nothing reconciling them, and the consumer that had been asked for
 the exact number wrote its own explanation into a deliverable — naming two
 videos mid-pipeline where `Gaps:` said one (terra eval §4.7).
+
+`structuredContent` also carries `published_span: {oldest, newest,
+last_indexed}` and `recent: [{video_id, title, channel, indexed_at, duration}]`
+alongside `notes` and `next` (§3.5). The span is not decoration: it is the line
+round-1 p5 refused *"agents before 2020"* on, and it was unreachable for a
+structured-only client, which had the corpus size but no way to date it.
+`recent` is the only place this tool names a `video_id` at all.
 
 `data_status` is the endpoint diagnosing itself, so an empty answer never sends the
 model guessing:
@@ -1458,6 +1500,19 @@ them"*; key texts name the `t_start`/`t_end` span when one was passed), and the
 `next:` aims at the first key text, falling back to the first chapter after
 0:00, and only then to `t=0`.
 
+**`structuredContent` carries the payload, not a receipt for it** (amended
+2026-08-11). It used to be `{video_id, data_status, tags?, chapters?}`: on the
+common conference talk — no publisher chapters, no tags — that is four keys and
+no content, returned for a 27-minute video whose text block held a title, a
+link, twelve key texts and ten on-screen highlights. A client that renders
+`structuredContent` instead of prose got nothing back from the tool the guide
+calls step 3 (round-3 eval §14.1). It now carries `{video_id, title, channel,
+published, duration, indexed_at, link, keyframes, data_status, tags?, chapters?,
+key_texts?: [{start, text, link}], ocr_highlights?: [{t, frame_id, screen_text,
+link}], next?}` — every section that is printed, and each item with the deep
+link §3.6 already computed for it. `ocr_highlights[].frame_id` is there because
+it is the only id `get-frames` accepts and the guide forbids constructing one.
+
 **Status — chapters are the publisher's, not derived.** This section used to
 promise "YouTube chapters if present, else derived from scene+topic
 segmentation". The pipeline stores what yt-dlp reports (`pipeline/sources.py`
@@ -1580,7 +1635,8 @@ inside its stamp, `[1:12:03 ?t=4321]`, and the `TRANSCRIPT` header names the
 base URL to append it to. The whole URL on 40 lines would spend roughly a third
 of the transcript budget on repetition of one string; the suffix costs ~2%.
 Conformant clients do not compose anything: `structuredContent.cues[]` now
-carries `link` beside `cue_id`/`start`/`end`/`text`.
+carries `link` beside `cue_id`/`start`/`end`/`text`, and `next` carries the
+closing line (§3.5 parity).
 
 **Token discipline.** Double-capped: `window` seconds **and** `max_text_chars`,
 whichever binds first, with the binding one named in the payload. OCR capped at
@@ -1772,10 +1828,12 @@ wider at the route than at the tool.**
   description names no figure at all ("URLs are signed and expire") and the
   footer prints the actual expiry timestamp it just signed.
 - **`/frames/<id>.jpg` clamps `w` to 64..1280, the tool to 128..1280.** The
-  demo facade (demo-site.md) renders a 96×54 grid and asks the route directly;
-  128 is a floor for what a *model* should ask for, not for what a browser may.
-  The signature binds the clamped pair, so widening the route's floor can only
-  turn a URL that used to 401 into one that works.
+  demo facade (demo-site.md) now uses one geometry for every result kind —
+  160×90 rendered at `w=320`, above the tool's floor since `a45ab6c` — and asks
+  the route directly; the two floors still differ on purpose, because 128 is a
+  floor for what a *model* should ask for, not for what a browser may. The
+  signature binds the clamped pair, so widening the route's floor can only turn
+  a URL that used to 401 into one that works.
 
 **Resizing ships.** `w` and `q` are applied, not just signed: the route
 resamples into `derived/` and serves the variant, `w` wider than the stored

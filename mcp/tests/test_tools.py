@@ -1132,3 +1132,97 @@ async def test_guide_carries_the_shared_rules(assembled: Assembled) -> None:
     assert "t_start`/`t_end" in guide
     assert "case-insensitive substrings" in guide
     assert "max_text_chars=0" in guide
+
+
+# ------------------------------------- text/structured parity (round-3 eval §14)
+#
+# A conformant MCP client may render `structuredContent` *instead of* the text
+# block, not alongside it — Claude Code does. Every affordance that lived only
+# in prose was therefore invisible to a whole fleet of consumers: the clamp
+# note, the queryable reconciliation, the empty-state reason, the closing
+# `next:`, and the entire body of `video-summary`. §3.5 now requires parity.
+
+
+async def test_list_videos_notes_reach_structured_content(assembled: Assembled) -> None:
+    """The two round-2 repairs that shipped as prose only (§4.7, §4.12)."""
+    result = await library.list_videos(assembled.deps, limit=9999)
+    notes = structured(result)["notes"]
+    assert any("clamped server-side" in n for n in notes)
+    # and the text block still says the same thing, verbatim
+    for note in notes:
+        assert note in body(result)
+
+
+async def test_list_videos_reconciliation_note_reaches_structured_content(
+    assembled: Assembled,
+) -> None:
+    await assembled.db.write(
+        lambda c: c.execute(
+            "UPDATE videos SET index_state='pending' WHERE source_id='kCc8FmEb1nY'"
+        )
+    )
+    result = await library.list_videos(assembled.deps, limit=50)
+    notes = structured(result)["notes"]
+    assert any("queryable and can appear here" in n for n in notes)
+    assert notes == [n for n in notes if n in body(result)]
+
+
+async def test_corpus_summary_carries_its_span_and_guidance(assembled: Assembled) -> None:
+    """`Published span:` was the line round-1 p5 refused a pre-2020 question on."""
+    payload = structured(await library.corpus_summary(assembled.deps))
+    span = payload["published_span"]
+    assert span["oldest"] and span["newest"]
+    assert payload["next"].startswith("next_best_query:")
+    assert payload["recent"] and payload["recent"][0]["video_id"]
+    assert "notes" in payload
+
+
+async def test_video_summary_structured_carries_its_body(assembled: Assembled) -> None:
+    """It used to be `{video_id, data_status, tags, chapters}` — no content."""
+    payload = structured(
+        await library.video_summary(assembled.deps, video_id="kCc8FmEb1nY")
+    )
+    assert payload["title"]
+    assert payload["link"] == "https://youtu.be/kCc8FmEb1nY"
+    assert payload["key_texts"] and payload["key_texts"][0]["link"].startswith(
+        "https://youtu.be/kCc8FmEb1nY?t="
+    )
+    highlights = payload["ocr_highlights"]
+    assert highlights and highlights[0]["frame_id"].startswith("kCc8FmEb1nY-")
+    assert payload["next"].startswith("next: get-segment-context")
+
+
+async def test_search_empty_state_names_its_reason_in_structured(
+    assembled: Assembled,
+) -> None:
+    """Four causes of "0 results" returned one indistinguishable payload."""
+    filtered = structured(
+        await search.run(assembled.deps, q="cache", channel="no-such-channel")
+    )
+    assert "no leg was queried" in filtered["reason"]
+    assert filtered["next"].startswith("next:")
+
+    nothing = structured(await search.run(assembled.deps, q="zzzzqqqxnotaword"))
+    assert nothing["reason"] != filtered["reason"]
+
+
+async def test_every_printed_next_line_is_also_structured(assembled: Assembled) -> None:
+    """The parity rule itself, over the read tools that print one."""
+    results = [
+        await search.run(assembled.deps, q="cache", limit=3),
+        await library.list_videos(assembled.deps, limit=3),
+        await library.corpus_summary(assembled.deps),
+        await library.video_summary(assembled.deps, video_id="kCc8FmEb1nY"),
+        await segment.run(assembled.deps, video_id="kCc8FmEb1nY", t=420),
+    ]
+    for result in results:
+        text = body(result)
+        printed = [ln for ln in text.splitlines() if ln.startswith(("next:", "next_best_query:"))]
+        assert printed, text[:200]
+        assert structured(result)["next"] == printed[-1]
+
+
+async def test_search_past_the_last_page_carries_its_reason(assembled: Assembled) -> None:
+    payload = structured(await search.run(assembled.deps, q="cache", limit=5, offset=900))
+    assert "last page starts at offset=" in payload["reason"]
+    assert payload["next"].startswith("next: re-run with offset=")
