@@ -1082,6 +1082,26 @@ def test_a_stripped_citation_leaves_no_seam_behind(tmp_path: Path) -> None:
     assert " ." not in answer, "nor an orphaned full stop"
 
 
+def test_an_annotated_marker_resolves_and_renders_bare(tmp_path: Path) -> None:
+    """deepseek-v4-flash wrote `[1 transcript]` on the first real ask (2026-08-11):
+    the annotation must resolve to the evidence and render as bare `[1]` — and a
+    bracketed number that is prose (`[10 ms]`) must stay prose."""
+    upstream = Upstream(
+        _completion(tool_calls=[_tool_call("c1", "search", {"query": "kv cache"})]),
+        _completion(
+            "The loop scores itself [1 transcript]. A fabricated one "
+            "[9 frame] is dropped. Latency was flat ([10 ms] regardless)."
+        ),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        payload = client.post("/api/ask", json={"q": "what?"}).json()
+    assert payload["answer"] == (
+        "The loop scores itself [1]. A fabricated one is dropped. "
+        "Latency was flat ([10 ms] regardless)."
+    )
+    assert [c["n"] for c in payload["citations"]] == [1]
+
+
 def test_an_answer_with_only_real_citations_is_passed_through_verbatim(
     tmp_path: Path,
 ) -> None:

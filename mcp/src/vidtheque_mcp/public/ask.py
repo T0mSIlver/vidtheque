@@ -418,7 +418,8 @@ async def ask_events(
                     "role": "user",
                     "content": (
                         "Answer now from what the tools already returned. Cite "
-                        "with [n]. If there is not enough evidence, say so."
+                        "with the bare marker [n] — no words inside the "
+                        "brackets. If there is not enough evidence, say so."
                     ),
                 },
             ],
@@ -691,7 +692,18 @@ async def _tool_context(
 # A citation marker *with the horizontal space that flanks it*, so dropping one
 # takes the hole with it. `[ \t]` only: a newline is a paragraph break to the
 # page's renderer and is never eaten.
-_CITATION = re.compile(r"(?P<pre>[ \t]*)\[(?P<n>\d{1,2})\](?P<post>[ \t]*)")
+#
+# Models also annotate the marker with the source label the loop showed them —
+# deepseek-v4-flash wrote `[29 transcript]` on the first real cross-video ask
+# (2026-08-11) and the bare-`[n]` pattern resolved nothing: broken prose AND an
+# empty citations array at once. The annotation is accepted (only the exact
+# source words a hit can carry, so `[10 ms]` in prose stays prose) and the
+# rendered marker is normalised back to `[n]`, which is what the page's
+# superscript renderer expects.
+_KINDS = r"(?:transcript|ocr|frame)(?:\+(?:transcript|ocr|frame))?"
+_CITATION = re.compile(
+    r"(?P<pre>[ \t]*)\[(?P<n>\d{1,2})(?:[ ,:]+" + _KINDS + r")?\](?P<post>[ \t]*)"
+)
 
 # What a dropped marker must not leave a space in front of.
 _TIGHT_AFTER = ",.;:!?)]}\n"
@@ -737,7 +749,9 @@ def _answer(
         if n in known:
             if n not in used:
                 used.append(n)
-            out.append(match.group(0))  # untouched, the spaces around it included
+            # Normalised, not untouched: an annotated `[29 transcript]` renders
+            # as `[29]`; the flanking spaces are kept as written.
+            out.append(f"{match.group('pre')}[{n}]{match.group('post')}")
             continue
         # A marker pointing at nothing is not a link, it is noise. One space is
         # left where it separated two words, and none where the text either side
