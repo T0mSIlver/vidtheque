@@ -570,6 +570,16 @@ async def video_detail(request: Request) -> Response:
 
     frame_page = clamp(params.get("frames"), 1, FRAME_PAGE_MAX, FRAME_PAGE)  # type: ignore[arg-type]
     frame_offset = clamp(params.get("frame_offset"), 0, 100_000, 0)  # type: ignore[arg-type]
+    # The keyframe a shot bar pointed at, by `ord` (2026-08-10, review round 4).
+    # A bar's link has always carried the `frame_offset` of the strip page that
+    # holds its first frame; what it could not carry was *which* frame, because
+    # `#frame-N` is a fragment and a fragment never reaches a server. So a bar
+    # that pointed off the current page navigated and then marked nothing —
+    # which on real data is most of the band, because a talk has one shot per
+    # keyframe and a strip page holds twenty-four of them. `select` is the same
+    # ordinal as the fragment, in the query string, so the landing page can put
+    # the frame into evidence itself. `None` when absent: `0` is a real ordinal.
+    selected_ord = _selected_ord(params.get("select"))
     cue_page_size = clamp(params.get("cues"), 1, CUE_PAGE_MAX, CUE_PAGE)  # type: ignore[arg-type]
     cue_offset = clamp(params.get("cue_offset"), 0, 500_000, 0)  # type: ignore[arg-type]
 
@@ -644,12 +654,27 @@ async def video_detail(request: Request) -> Response:
             "frame_page": frame_page,
             "frame_offset": frame_offset,
             "frames_more": frames_more,
+            "selected_ord": selected_ord,
             "cues": _cue_rows(cue_rows, chunks),
             "cue_page": cue_page_size,
             "cue_offset": cue_offset,
             "cues_more": cues_more,
         },
     )
+
+
+def _selected_ord(raw: str | None) -> int | None:
+    """`?select=` as an ordinal, or ``None``.
+
+    Not :func:`clamp`, because every other bound on this page has a sensible
+    default and this one does not: `clamp(None, 0, …, 0)` would select frame 0
+    on every page load, and a page that arrives with a keyframe already marked
+    is a page reporting a click nobody made. An unparseable or negative value
+    is the same as no value — the URL is an input.
+    """
+    if raw is None or not raw.strip().isdigit():
+        return None
+    return min(int(raw.strip()), 100_000)
 
 
 def _video_header(row: sqlite3.Row, tags: list[str]) -> dict[str, Any]:

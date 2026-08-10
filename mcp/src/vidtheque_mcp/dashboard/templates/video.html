@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-{% macro nav_link(f_off, c_off, anchor) -%}
-{{ root }}/videos/{{ video.video_id }}?frames={{ frame_page }}&amp;frame_offset={{ f_off }}&amp;cues={{ cue_page }}&amp;cue_offset={{ c_off }}#{{ anchor }}
+{% macro nav_link(f_off, c_off, anchor, select=none) -%}
+{{ root }}/videos/{{ video.video_id }}?frames={{ frame_page }}&amp;frame_offset={{ f_off }}&amp;cues={{ cue_page }}&amp;cue_offset={{ c_off }}{% if select is not none %}&amp;select={{ select }}{% endif %}#{{ anchor }}
 {%- endmacro %}
 {# One OCR line: the string the machine read, its box, and how sure it was.
    `data-line` is its index in the frame's own ordered list, and the box drawn
@@ -124,7 +124,12 @@
         data-kept="{{ shot.kept }}/{{ shot.frames }} kept"
         {% if shot.preview %}data-preview="{{ shot.preview }}"{% endif %}
         style="left:{{ shot.left }}%;width:{{ shot.width }}%">
-      <a href="{{ nav_link(shot.frame_offset, cue_offset, 'frame-' ~ shot.first_ord) }}"
+      {# `select` carries the ordinal the fragment carries, because a fragment
+         never reaches a server: a bar whose frame is on another page of the
+         strip has to *navigate*, and until this the page it landed on marked
+         nothing. On real data that is most of the band — a talk has one shot
+         per keyframe and a page of the strip holds twenty-four. #}
+      <a href="{{ nav_link(shot.frame_offset, cue_offset, 'frame-' ~ shot.first_ord, shot.first_ord) }}"
          title="shot {{ shot.shot_id }}, {{ shot.start_s | clock }} to {{ shot.end_s | clock }}, {{ shot.kept }}/{{ shot.frames }} frames kept">
         <span class="sr-only">Shot {{ shot.shot_id }}, {{ shot.start_s | clock }} to {{ shot.end_s | clock }},
           {{ shot.kept }} of {{ shot.frames }} keyframes kept</span>
@@ -260,7 +265,11 @@
   {% if frames %}
   <ul class="strip">
     {% for frame in frames %}
-    <li class="framecard{{ ' is-dup' if frame.dup_of_ord is not none }}" id="frame-{{ frame.ord }}"
+    {# `is-selected` is server-rendered when `?select=` names this frame — the
+       same mark `dashboard.js` paints when the frame was already on the page,
+       so a shot bar puts its keyframe into evidence whether the click could be
+       intercepted or had to navigate, and whether or not the script ran. #}
+    <li class="framecard{{ ' is-dup' if frame.dup_of_ord is not none }}{{ ' is-selected' if frame.ord == selected_ord }}" id="frame-{{ frame.ord }}"
         data-shot="{{ frame.shot_id }}">
       {# Pixel size and byte weight moved off the card and into the lightbox's
          caption. dashboard.md §5.3 asks a card for `t_s`, `ord`, `sharpness`,
@@ -313,7 +322,7 @@
   {% if read_frames %}
   <div class="ocrgrid">
     {% for frame in read_frames %}
-    <figure class="ocrframe" id="ocr-{{ frame.frame_id }}" data-ocrframe="{{ frame.frame_id }}">
+    <figure class="ocrframe{{ ' is-selected' if frame.ord == selected_ord }}" id="ocr-{{ frame.frame_id }}" data-ocrframe="{{ frame.frame_id }}">
       {# The still is a button now (Tom, 2026-08-10): a frame in this panel
          opens in the same overlay a keyframe in the strip does, because it is
          the same frame and a reader who wants to *read* the slide has to be

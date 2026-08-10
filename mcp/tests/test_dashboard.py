@@ -572,6 +572,68 @@ def test_the_scene_timeline_is_positions_not_a_query_per_shot(
     assert "3 shot(s)." in body
 
 
+def test_a_shot_bar_off_the_current_strip_page_still_lands_on_evidence(
+    client: TestClient,
+) -> None:
+    """The regression, found live on real data 2026-08-10 (review round 4).
+
+    A shot bar is supposed to *select its keyframe into evidence*: the card and
+    its OCR figure marked in gold, the reader put in front of the moment they
+    pointed at. That only ever worked when the frame happened to be in the
+    document already, because the interception is a click handler and the
+    fragment it reads — `#frame-N` — never reaches a server. The fixture hid it
+    completely: a seeded video has three keyframes and a strip page holds
+    twenty-four, so every bar's frame was always on the page. A real talk has
+    one shot per keyframe and a hundred and sixty of them, so five bars in six
+    navigated and the page they landed on marked nothing at all.
+
+    `?frames=1` is the fixture's way of being that talk: one frame per strip
+    page, so two of the three bars point off it.
+    """
+    body = page(client, f"{ROOT}/videos/kCc8FmEb1nY?frames=1")
+    links = re.findall(r'<li class="shotbar.*?<a href="([^"]+)"', body, re.S)
+    assert len(links) == 3
+    # Every bar names the ordinal it points at, in the query string, beside the
+    # fragment that carries the same number for the browser's own scroll.
+    for link in links:
+        ordinal = re.search(r"#frame-(\d+)$", link).group(1)
+        assert f"&amp;select={ordinal}" in link, link
+        assert f"frame_offset={ordinal}" in link, "…on the page that holds it"
+
+    # And the page that link lands on puts the frame into evidence itself —
+    # both halves of it, exactly as the intercepted click does.
+    landing = page(
+        client, f"{ROOT}/videos/kCc8FmEb1nY?frames=1&frame_offset=1&select=1"
+    )
+    card = re.search(r'<li class="framecard([^"]*)" id="frame-1"', landing)
+    assert card and "is-selected" in card.group(1)
+    assert re.search(r'<figure class="ocrframe is-selected" id="ocr-\w+-00001"', landing)
+
+    # A page nobody selected on marks nothing: `select` has no default, because
+    # `0` is a real ordinal and a page that arrives with a keyframe already
+    # marked is a page reporting a click nobody made.
+    quiet = page(client, f"{ROOT}/videos/kCc8FmEb1nY?frames=1")
+    assert "is-selected" not in quiet
+    assert "is-selected" not in page(
+        client, f"{ROOT}/videos/kCc8FmEb1nY?frames=1&select=not-a-number"
+    )
+
+
+def test_the_intercepted_click_and_the_navigation_end_in_the_same_url(
+    client: TestClient,
+) -> None:
+    """The script's half of the same fix.
+
+    When the frame is already on the page there is nothing to navigate to, so
+    the handler marks it in place — and writes the same `select=` the link
+    would have carried, so a reload, a copied link and the back button all
+    agree with the path that had to reload.
+    """
+    script = (STATIC / "dashboard.js").read_text()
+    assert 'here.searchParams.set("select", String(ord))' in script
+    assert "history.replaceState" in script
+
+
 def test_the_scrub_preview_is_markup_the_band_can_lose(client: TestClient) -> None:
     """The hover preview, and the no-JavaScript page it has to leave alone.
 

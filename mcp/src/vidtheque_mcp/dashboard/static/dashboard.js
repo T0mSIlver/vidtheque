@@ -219,10 +219,21 @@ if (closeButton && dialog) {
 // asked yet — where in this video is that — and the second click, on the frame
 // they can now see, is the one that opens it.
 //
-// With this file blocked the bar is still a real link to `#frame-N`, still
-// carries its own offset when the frame is on another page of the strip, and
-// `:target` still marks the frame it lands on. The interception only happens
-// when the frame is already here, so a bar pointing off-page always navigates.
+// **The half that was missing** (found in review, 2026-08-10): this only ever
+// worked for a frame that was already in the document. The fixture gives a
+// video two or three keyframes, so in the suite every bar's frame was on the
+// page and the interception always fired; on a real talk there is one shot per
+// keyframe and a page of the strip holds twenty-four of them, so most of the
+// band navigated instead — and the page it landed on marked nothing, because
+// `#frame-N` is a fragment and a fragment never reaches a server. The bars now
+// carry `select=<ord>` beside the fragment and the server paints the same
+// `is-selected` on the card and on its OCR figure, so the two paths end in the
+// same picture. `history.replaceState` puts the interception on the same
+// footing: what is selected is in the URL either way, so a reload, a copied
+// link and the back button all agree.
+//
+// With this file blocked the bar is still a real link, still carries its own
+// offset and its own `select`, and `:target` still marks where it lands.
 function selectFrame(ord) {
   const card = document.getElementById("frame-" + ord);
   if (!card) return false;
@@ -240,6 +251,17 @@ function selectFrame(ord) {
   const figure = frameId && document.getElementById("ocr-" + frameId);
   if (figure) figure.classList.add("is-selected");
   if (button) button.focus({ preventScroll: true });
+
+  // Same address the navigating path would have produced, minus the reload.
+  try {
+    const here = new URL(window.location.href);
+    here.searchParams.set("select", String(ord));
+    here.hash = "frame-" + ord;
+    history.replaceState(null, "", here.href);
+  } catch {
+    // A browser that refuses the rewrite still has the selection on screen;
+    // the URL is the bookmark, not the state.
+  }
   return true;
 }
 
