@@ -30,7 +30,15 @@ from vidtheque_mcp.jobs import store as jobs_store
 from vidtheque_mcp.jobs.runner import ItemContext, ItemFailed, ItemSkipped
 from vidtheque_mcp.pipeline.runner import ItemRun
 from vidtheque_mcp.pipeline.settings import PipelineSettings
-from vidtheque_mcp.pipeline.sources import looks_like_container, source_ref_of
+from vidtheque_mcp.errors import ToolError
+from vidtheque_mcp.pipeline.sources import (
+    SourceError,
+    is_indexable_url,
+    looks_like_container,
+    parse_info,
+    source_ref_of,
+)
+from vidtheque_mcp.tools.indexing import normalize_url
 
 from .pipeline_fakes import SECOND_URL, VIDEO_URL
 from .test_pipeline_e2e import Harness, harness
@@ -272,6 +280,69 @@ def test_a_url_only_names_a_video_on_a_host_we_index_from() -> None:
         f"https://www.youtube-nocookie.com/embed/{SOURCE_ID}",
     ):
         assert source_ref_of(legitimate) == ("youtube", SOURCE_ID), legitimate
+
+
+def test_a_submitted_url_must_be_youtube_before_yt_dlp_ever_sees_it() -> None:
+    """The slow path was `yt-dlp fetches it`, and that was the whole problem.
+
+    `source_ref_of` returning None means "I cannot name this locally", which is
+    correct for every playlist and channel URL too — so it was never a
+    boundary. The only check on a submitted URL was `^https?://`, while the
+    error message beside it promised YouTube. An unrecognised host fell through
+    to the fetch, from inside the home network.
+
+    (2026-08-10 audit, F-15.)
+    """
+    for hostile in (
+        "http://169.254.169.254/latest/meta-data/",
+        "http://127.0.0.1:8100/dashboard",
+        "http://[::1]:8080/",
+        "https://attacker.example/*.mp4",
+        f"https://www.youtube.com@evil.example/watch?v={SOURCE_ID}",
+        f"https://youtube.com.evil.example/watch?v={SOURCE_ID}",
+        "https://youtube.com:8080@evil.example/",
+        "file:///etc/passwd",
+        "ftp://youtube.com/",
+    ):
+        assert not is_indexable_url(hostile), hostile
+        with pytest.raises(ToolError) as caught:
+            normalize_url(hostile)
+        assert caught.value.code == "E_UNSUPPORTED_SOURCE"
+
+    # Every shape the corpus is actually built from still goes through, and
+    # that includes the container URLs `source_ref_of` cannot name.
+    for legitimate in (
+        f"https://youtu.be/{SOURCE_ID}",
+        f"https://www.youtube.com/watch?v={SOURCE_ID}",
+        "https://www.youtube.com/playlist?list=PL9tOrKPmQ4nAbC",
+        "https://www.youtube.com/@aiDotEngineer",
+        "https://www.youtube.com/c/SomeChannel/videos",
+        f"https://m.youtube.com/watch?v={SOURCE_ID}",
+        f"https://www.youtube-nocookie.com/embed/{SOURCE_ID}",
+    ):
+        assert is_indexable_url(legitimate), legitimate
+        assert normalize_url(legitimate) == legitimate
+
+    # A bare id is still the shorthand it always was.
+    assert normalize_url(SOURCE_ID) == f"https://youtu.be/{SOURCE_ID}"
+
+
+def test_a_remote_id_that_would_become_a_glob_is_refused() -> None:
+    """`media_candidates` globs the id and retention unlinks every match.
+
+    A video served from `https://host/*.mp4` gives the generic extractor an id
+    of `*`, which matched every file in media/ and deleted all of them. The
+    grammar is exact rather than a denylist, because the only ids this pipeline
+    should ever see are YouTube's. (2026-08-10 audit, F-16.)
+    """
+    for bad in ("*", "../../etc/passwd", "a" * 400, "id with spaces", "a/b"):
+        with pytest.raises(SourceError):
+            parse_info({"id": bad, "title": "t", "duration": 10}, "https://youtu.be/x")
+
+    meta = parse_info(
+        {"id": SOURCE_ID, "title": "t", "duration": 10}, f"https://youtu.be/{SOURCE_ID}"
+    )
+    assert meta.source_id == SOURCE_ID
 
 
 async def test_a_hostile_url_carrying_a_known_id_takes_the_slow_path(

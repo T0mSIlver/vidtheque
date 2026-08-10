@@ -333,6 +333,42 @@ _VIDEO_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 _PATH_ID = re.compile(r"^/(?:shorts|embed)/([A-Za-z0-9_-]{11})(?:[/?]|$)")
 
 
+def is_indexable_url(url: str) -> bool:
+    """May this URL be handed to yt-dlp at all?
+
+    Distinct from :func:`source_ref_of`, which answers "which video is this"
+    and returns ``None`` for anything it cannot name locally — including every
+    legitimate playlist and channel URL, whose ids only exist after the probe.
+    That difference is why the host allowlist below it was never a boundary:
+    an unrecognised host fell through to the *slow path*, which is yt-dlp, which
+    fetches it.
+
+    So the only validation on a submitted URL was ``^https?://``, while the
+    error message beside it promised "youtube.com / youtu.be video, playlist and
+    channel URLs". The code now says what the message always did.
+
+    What that was worth to an attacker, once `index-video` was reachable:
+    ``http://169.254.169.254/latest/meta-data/``, ``http://127.0.0.1:8100/…``,
+    or any public URL redirecting to one — fetched by the box, from inside the
+    home network. (2026-08-10 audit, F-15.)
+
+    The host is the boundary; the path deliberately is not, because /watch,
+    /playlist, /@handle, /c/, /user/, /shorts and /live are all legitimate and
+    an allowlist of path shapes would rot. Credentials and non-default ports are
+    refused because `https://youtube.com:8080@evil.example/` is a URL whose
+    host is not what a reader thinks it is.
+    """
+    parts = urlsplit(url if "://" in url else f"https://{url}")
+    if parts.scheme not in ("http", "https"):
+        return False
+    if parts.username or parts.password:
+        return False
+    if parts.port not in (None, 80, 443):
+        return False
+    host = (parts.hostname or "").lower()
+    return host in _YOUTUBE_HOSTS or host in _YOUTUBE_SHORT_HOSTS
+
+
 def source_ref_of(url: str) -> tuple[str, str] | None:
     """The `(source, source_id)` a URL names — syntactically, and only if the
     *host* is one we index from.
@@ -399,6 +435,24 @@ def parse_info(
     source_id = str(info.get("id") or "").strip()
     if not source_id:
         raise SourceError(f"no video id in the extraction of {fallback_url}")
+    if not _VIDEO_ID.match(source_id):
+        # The id is remote data and it becomes a filesystem path *and a glob*:
+        # `media_candidates` globs `f"{source_id}.*"` and retention unlinks
+        # every match. A generic-extractor id of `*` — which a video served
+        # from `https://host/*.mp4` produces — therefore matched every file in
+        # media/ and deleted all of them. Percent-encoded separators made
+        # traversal-shaped ids the same way, and nothing bounded the length.
+        #
+        # YouTube ids are eleven characters of a known alphabet, so the grammar
+        # is exact rather than a denylist of metacharacters. Anything else is a
+        # source we do not index from, which `is_indexable_url` should already
+        # have refused at submission — this is the second lock on the same door,
+        # because this one is what actually touches the disk.
+        # (2026-08-10 audit, F-16.)
+        raise SourceError(
+            f"{fallback_url} resolved to an unusable video id "
+            f"({source_id[:40]!r}); expected an 11-character YouTube id."
+        )
 
     duration = float(info.get("duration") or 0.0)
     description = info.get("description")

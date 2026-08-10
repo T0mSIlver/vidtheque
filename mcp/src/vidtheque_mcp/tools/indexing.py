@@ -21,7 +21,7 @@ from ..db import queries
 from ..errors import ToolError, bad_param, unknown_job
 from ..jobs import store as jobs_store
 from ..jobs.store import DuplicateInFlight
-from ..pipeline.sources import source_ref_of
+from ..pipeline.sources import is_indexable_url, source_ref_of
 from ..text import (
     clamp,
     duration_clock,
@@ -45,14 +45,21 @@ MAX_ERROR_CHARS = 400
 
 
 def normalize_url(raw: str) -> str:
-    """Bare 11-char ids are accepted; anything else must be a URL yt-dlp knows."""
+    """Bare 11-char ids are accepted; anything else must be a YouTube URL.
+
+    The remedy below has always named YouTube. The check did not: it was
+    ``^https?://`` and nothing else, so any host at all was accepted and handed
+    to yt-dlp — which fetched it, from inside whatever network the box sits on.
+    ``is_indexable_url`` is now the same claim the message makes.
+    (2026-08-10 audit, F-15.)
+    """
     candidate = raw.strip()
     if _YT_ID.match(candidate):
         return f"https://youtu.be/{candidate}"
-    if not _URL.match(candidate):
+    if not _URL.match(candidate) or not is_indexable_url(candidate):
         raise ToolError(
             "E_UNSUPPORTED_SOURCE",
-            f"{raw!r} is not a URL or a YouTube id.",
+            f"{middle_truncate(raw, 120)!r} is not a YouTube URL or a video id.",
             "supported: youtube.com / youtu.be video, playlist and channel URLs, "
             "or a bare 11-character video id.",
         )
