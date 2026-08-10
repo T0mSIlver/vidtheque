@@ -59,6 +59,25 @@ function boxesFor(frameId) {
   });
 }
 
+/** Bring a line into view **only when it is not already in it**.
+ *
+ *  `scrollIntoView({ block: "nearest" })` was the obvious call and it was the
+ *  bug (Tom, 2026-08-10, review round 4): `inline` defaults to `"nearest"` too,
+ *  and the line list was a multicol box whose overflow paginates *sideways*, so
+ *  "nearest" resolved to a horizontal scroll. Moving the pointer between two
+ *  adjacent detection boxes slid the whole list under the reader, including
+ *  when the line it was aiming at was already fully visible.
+ *
+ *  This scrolls the scroller itself, on one axis, by the smallest amount that
+ *  puts the line inside — and does nothing at all when it is inside already. */
+function revealLine(line, scroller) {
+  const box = scroller.getBoundingClientRect();
+  const item = line.getBoundingClientRect();
+  if (item.top >= box.top && item.bottom <= box.bottom) return;
+  scroller.scrollTop +=
+    item.top < box.top ? item.top - box.top : item.bottom - box.bottom;
+}
+
 /** Light the box and the line that share an index, in whichever container is
  *  passed. One function for the grid and for the dialog, because the pairing is
  *  the same fact in both and a second implementation is a second thing to get
@@ -130,7 +149,7 @@ if (dialog) {
     // where the reader is looking.
     if (!node.classList.contains("ocrbox")) return;
     const line = shotLines.querySelector(`[data-line="${index}"]`);
-    if (line) line.scrollIntoView({ block: "nearest" });
+    if (line) revealLine(line, shotLines);
   };
   dialog.addEventListener("pointerover", (event) => pair(event, true));
   dialog.addEventListener("pointerout", (event) => pair(event, false));

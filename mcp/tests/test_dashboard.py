@@ -3125,3 +3125,33 @@ def test_an_untagged_corpus_says_no_tags_and_stops(tmp_path: Path) -> None:
         body = page(client, ROOT)
     assert "no tags" in body
     assert "namespace" not in body
+
+
+# ------------------------------------ 8. the fourth review pass (2026-08-10)
+
+
+def test_the_overlay_line_list_scrolls_down_and_never_sideways() -> None:
+    """Round 4, item 3. The bar that jumped between adjacent columns.
+
+    `columns: 2` on a box with a bounded height does not draw two columns and
+    scroll down: it paginates the overflow *sideways*. Measured on a real slide
+    the list was 15,501px wide inside a 1,126px scrollport, so the reader was
+    looking at one screenful of a horizontal filmstrip — and every
+    `scrollIntoView` in it resolved to a horizontal jump, including for a line
+    that was already fully on screen.
+    """
+    css = (STATIC / "dashboard.css").read_text()
+    rule = _rule(css, ".shot-lines")
+    assert not re.search(r"(?<!-)columns:", rule), "multicol paginated sideways"
+    assert "display: grid" in rule
+    assert "overflow: hidden auto" in rule, "down, and never sideways again"
+
+    script = (STATIC / "dashboard.js").read_text()
+    assert "scrollIntoView" not in script.split("function revealLine")[1].split(
+        "\n}"
+    )[0], "the reveal measures, it does not delegate"
+    # Nothing scrolls a line that is already inside its box…
+    assert "if (item.top >= box.top && item.bottom <= box.bottom) return;" in script
+    # …and what does scroll only ever moves the one axis this box has.
+    assert "scroller.scrollTop +=" in script
+    assert "scrollLeft" not in script

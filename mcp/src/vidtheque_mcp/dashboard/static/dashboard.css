@@ -2033,20 +2033,34 @@ button.ocrstage { border: 0; padding: 0; cursor: zoom-in; }
 
 /* The frame's lines, beside the frame, at a size you can read a slide off. Two
    columns where there is room: a transcription of a dense slide is thirty short
-   strings and one long column of them would push the picture off the screen. */
+   strings and one long column of them would push the picture off the screen.
+
+   **A grid, not multicol** (Tom, 2026-08-10, review round 4). `columns: 2` on a
+   box with a bounded height does not give two columns and a vertical scroll: it
+   paginates the overflow *sideways*, so a 189-line slide measured 15,501px wide
+   inside a 1,126px scrollport and the box a reader could see was one screenful
+   of a horizontal filmstrip. Pointing at a detection box then slid the whole
+   list under the pointer, which is the bug that got reported. A grid overflows
+   down, which is the direction this box has always claimed to scroll. The cost
+   is stated: the lines read left-to-right and then down rather than down the
+   first column and then the second. `overflow: hidden auto` is belt and braces
+   — nothing here can overflow horizontally (`.ocrtext` wraps anywhere), and if
+   anything ever does it must not become a sideways scroll again. */
 .shot-lines {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  gap: 0 var(--s6);
+  align-content: start;
   margin: var(--s3) 0 0;
   padding: 0;
   list-style: none;
   max-height: 11rem;
-  overflow-y: auto;
+  overflow: hidden auto;
   overscroll-behavior: contain;
-  columns: 2;
-  column-gap: var(--s6);
   font-size: var(--t-cell);
   line-height: var(--lh-cell);
 }
-.shot-lines > .ocrline { break-inside: avoid; }
+.shot-lines > .ocrline { min-width: 0; }
 
 .shot-foot {
   display: flex;
