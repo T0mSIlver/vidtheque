@@ -147,6 +147,34 @@ class AskUnavailable(Exception):
 
 
 @dataclass
+class Billing:
+    """Did this ask already buy upstream work? One flag, per request (§4.4).
+
+    The daily budget is refunded for an ask that cost nothing, and *cost* is
+    the only honest test. "Did the visitor get an answer" is not the same
+    question, and using it was a way to get paid completions for free: the
+    first `activity` event is emitted only after a completion came back with a
+    tool call in it, so a client that waits for that line, disconnects, and
+    repeats spends the model's tokens while the ``finally`` hands the day's
+    token back every time. Reported by the 2026-08-09 review.
+
+    So the flag is set by :meth:`OpenRouter.complete` the moment the provider
+    answers with a non-error status — that response is a generation, and it is
+    billed whether or not the loop ever turns it into prose. An explicit
+    refusal (401/403/429/5xx) and a request that never reached the provider at
+    all cost nothing and leave the flag alone, which is what keeps a flapping
+    free tier from eating the day (§4.4's original reason for existing).
+
+    One caveat, deliberately: a read timeout *after* the provider accepted the
+    request may have been billed and is counted as unpaid here, because a
+    timeout is far more often a dead upstream than a generated answer. Nobody
+    can force one on demand, which is what separates it from the disconnect.
+    """
+
+    paid: bool = False
+
+
+@dataclass
 class Citation:
     """One search hit the model was shown, addressable by its `[n]`."""
 
@@ -232,7 +260,9 @@ class OpenRouter:
         self._settings = settings
         self._client = client
 
-    async def complete(self, body: dict[str, Any], deadline: float) -> dict[str, Any]:
+    async def complete(
+        self, body: dict[str, Any], deadline: float, billing: Billing | None = None
+    ) -> dict[str, Any]:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise AskUnavailable("upstream_unavailable")
@@ -256,6 +286,12 @@ class OpenRouter:
             logger.warning("ask: upstream request failed: %s", type(exc).__name__)
             raise AskUnavailable("upstream_unavailable") from None
 
+        if response.status_code < 400 and billing is not None:
+            # The provider answered. Whatever the loop makes of the body — an
+            # answer, a tool call, an unparseable mess — this completion was
+            # generated and it is billed, so the refund rule must know.
+            billing.paid = True
+
         if response.status_code in (401, 403):
             logger.warning("ask: upstream rejected the key (%s)", response.status_code)
             raise AskUnavailable("upstream_rejected", retry_after_s=300)
@@ -277,15 +313,21 @@ class OpenRouter:
 
 
 async def run_ask(
-    deps: Deps, public: PublicSettings, llm: OpenRouter, question: str
+    deps: Deps,
+    public: PublicSettings,
+    llm: OpenRouter,
+    question: str,
+    billing: Billing | None = None,
 ) -> dict[str, Any]:
     """The loop, drained. Returns the answer payload, or raises `AskUnavailable`.
 
     The POST-and-wait path (§3) is the stream (§3.5) with the activity events
     thrown away, so the two can never answer differently: there is one loop, and
-    the only question is whether anybody is watching it work.
+    the only question is whether anybody is watching it work. ``billing`` is
+    carried for the same reason — the two transports must not *bill*
+    differently either.
     """
-    async with aclosing(ask_events(deps, public, llm, question)) as events:
+    async with aclosing(ask_events(deps, public, llm, question, billing)) as events:
         async for event in events:
             if event.get("event") == "answer":
                 return event["payload"]
@@ -294,7 +336,11 @@ async def run_ask(
 
 
 async def ask_events(
-    deps: Deps, public: PublicSettings, llm: OpenRouter, question: str
+    deps: Deps,
+    public: PublicSettings,
+    llm: OpenRouter,
+    question: str,
+    billing: Billing | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """The loop, as the events a visitor can watch (§3.5).
 
@@ -325,6 +371,7 @@ async def ask_events(
                 "temperature": 0.2,
             },
             deadline,
+            billing,
         )
         message = _first_message(payload)
         calls = message.get("tool_calls") or []
@@ -379,6 +426,7 @@ async def ask_events(
             "temperature": 0.2,
         },
         deadline,
+        billing,
     )
     content = (_first_message(payload).get("content") or "").strip()
     if not content:
@@ -733,8 +781,15 @@ async def ask_endpoint(request: Request) -> Response:
     ask that reaches the model and wrong for one that does not. Launch day is
     exactly when a free tier flaps: without this, one visitor retrying through
     503s spends the whole 50/day in ten minutes and every *other* visitor is
-    locked out until the bucket trickles back. So a non-200 gives the day's
-    token back — the request cost no upstream tokens, so it costs no budget.
+    locked out until the bucket trickles back. So a failure that bought
+    **nothing upstream** gives the day's token back.
+
+    "Bought nothing upstream" is the test, not the status code and not the
+    answer — see :class:`Billing`. A 400, a `not_configured` 503, an upstream
+    that refused or was unreachable: all free, all refunded. A loop that got a
+    completion back and then fell over has already spent the money, and giving
+    the token back for it is how a retry loop drains a paid budget at no cost
+    to whoever is driving it.
 
     Only ``ask_global`` is refunded. The per-IP minute bucket is the anti-hammer
     guard, not the cost control: someone retrying a broken upstream five times a
@@ -742,13 +797,13 @@ async def ask_endpoint(request: Request) -> Response:
 
     A **stream** is always a 200 — the status line is written before the model
     has done anything — so the refund for that path cannot live here. It lives
-    where the outcome is actually known, in :func:`_stream`, and the rule is the
-    same one stated in words rather than in status codes: an ask that produced
-    no answer gives the day's token back. Exactly one of the two runs for any
-    request, so a failed stream is refunded once, not twice.
+    where the outcome is actually known, in :func:`_stream`, under the same
+    rule and the same flag. Exactly one of the two runs for any request, so a
+    failed stream is refunded once, not twice.
     """
-    response = await _ask(request)
-    if response.status_code != 200:
+    billing = Billing()
+    response = await _ask(request, billing)
+    if response.status_code != 200 and not billing.paid:
         refund(request.scope, "ask_global")
     return response
 
@@ -822,18 +877,27 @@ async def _stream(
     llm: OpenRouter,
     question: str,
     framing: Framing,
+    billing: Billing,
 ) -> AsyncIterator[bytes]:
     """The loop's events, framed, and the budget accounting that goes with it.
 
     Two things this owes the rest of the system, and both are owed identically
     by every framing — which is why there is one of these and not two:
 
-    * **The refund.** ``ask_endpoint`` refunds on a non-200 and a stream is a
-      200 whatever happens inside it, so the accounting moves here: no `answer`
-      event, no charge. ``finally`` rather than an ``except`` branch, because
-      the ways a stream dies without an error event are the interesting ones —
-      the visitor closing the tab, a mode switch aborting the fetch, the loop
-      being cancelled — and every one of them cost no model tokens either.
+    * **The refund.** ``ask_endpoint`` refunds a failure that bought nothing
+      and a stream is a 200 whatever happens inside it, so the accounting moves
+      here: no paid completion, no charge. ``finally`` rather than an
+      ``except`` branch, because the ways a stream dies without an error event
+      are the interesting ones — the visitor closing the tab, a mode switch
+      aborting the fetch, the loop being cancelled.
+
+      What the condition may *not* be is "did an answer go out". A disconnect
+      is something the client chooses, and the first `activity` line it can
+      wait for is proof a completion already came back: refunding on
+      no-answer paid for a stranger's tool calls, once per disconnect, for as
+      long as they cared to repeat it. So the flag is :class:`Billing`, set
+      when the provider answers, and a stream that died before the first
+      completion is still refunded exactly as before.
     * **The terminal event.** ``AskUnavailable`` is a 503 body on the JSON path
       and an `error` event here, built from the same words, so the page's
       degraded pane renders the same either way.
@@ -843,13 +907,11 @@ async def _stream(
     needed to `await` to be given back is a budget that leaks on exactly the
     disconnect this exists to handle.
     """
-    answered = False
     try:
         if framing.preamble:
             yield framing.preamble
-        async with aclosing(ask_events(deps, public, llm, question)) as events:
+        async with aclosing(ask_events(deps, public, llm, question, billing)) as events:
             async for event in events:
-                answered = answered or event.get("event") == "answer"
                 yield framing.frame(event)
     except AskUnavailable as exc:
         yield framing.frame(_error_event(exc.reason, exc.retry_after_s))
@@ -857,11 +919,11 @@ async def _stream(
         logger.exception("ask: unexpected failure mid-stream")
         yield framing.frame(_error_event("upstream_unavailable", 30))
     finally:
-        if not answered:
+        if not billing.paid:
             refund(scope, "ask_global")
 
 
-async def _ask(request: Request) -> Response:
+async def _ask(request: Request, billing: Billing) -> Response:
     deps: Deps = request.app.state.assembled.deps
     public: PublicSettings = request.app.state.public_settings
     llm: OpenRouter | None = request.app.state.openrouter
@@ -893,7 +955,7 @@ async def _ask(request: Request) -> Response:
         # refused above, with a status code. From here the answer is worth
         # watching, so the status line goes out now and the rest is events.
         return StreamingResponse(
-            _stream(request.scope, deps, public, llm, question, framing),
+            _stream(request.scope, deps, public, llm, question, framing, billing),
             media_type=framing.media_type,
             headers={
                 "Cache-Control": "no-store",
@@ -909,7 +971,8 @@ async def _ask(request: Request) -> Response:
 
     try:
         payload = await asyncio.wait_for(
-            run_ask(deps, public, llm, question), timeout=public.ask_timeout_s + 5
+            run_ask(deps, public, llm, question, billing),
+            timeout=public.ask_timeout_s + 5,
         )
     except AskUnavailable as exc:
         return _unavailable(exc.reason, exc.retry_after_s)

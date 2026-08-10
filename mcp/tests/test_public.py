@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from contextlib import aclosing
 from pathlib import Path
 from typing import Any, Callable
 
@@ -1351,18 +1352,15 @@ def test_a_stream_that_dies_mid_way_ends_in_a_terminal_error_event(
     assert "sk-or" not in response.text and "quota" not in response.text
 
 
-def test_a_stream_that_dies_mid_way_gives_the_day_back(tmp_path: Path) -> None:
+def test_a_stream_that_dies_before_the_model_gives_the_day_back(tmp_path: Path) -> None:
     """The refund cannot key on the status: a stream is a 200 whatever happens.
 
-    This is the launch-day failure again (§4.4). The POST path refunds on a
-    non-200; a stream that got as far as one tool call and then lost the
-    upstream has already sent `200 OK`, so the accounting has to be about the
-    outcome — no answer, no charge.
+    This is the launch-day failure again (§4.4). The POST path refunds a
+    failure that bought nothing; a stream that never got a completion back has
+    already sent `200 OK`, so the accounting has to happen inside the body and
+    it has to be about the cost — nothing bought, nothing charged.
     """
-    upstream = Upstream(
-        _completion(tool_calls=[_tool_call("c1", "search", {"query": "kv cache"})]),
-        httpx.Response(503, json={"error": {"message": "upstream is down"}}),
-    )
+    upstream = Upstream(httpx.Response(503, json={"error": {"message": "down"}}))
     settings = PublicSettings(
         enabled=True, openrouter_key="sk-or-test", ask_per_min=50, ask_per_day=2
     )
@@ -1376,6 +1374,90 @@ def test_a_stream_that_dies_mid_way_gives_the_day_back(tmp_path: Path) -> None:
         spent = _stream_ask(client, ip="3.3.3.3")
     assert spent.status_code == 429
     assert spent.json()["bucket"] == "ask_global"
+
+
+def test_a_stream_that_dies_after_a_paid_completion_keeps_the_charge(
+    tmp_path: Path,
+) -> None:
+    """The other side of §4.4, and the 2026-08-09 review's HIGH.
+
+    A loop that got one completion back — enough for a tool call, enough for
+    the first activity line — has already spent the model's tokens. Refunding
+    it because no prose arrived made a paid completion free to anyone willing
+    to fail on purpose, and a client can fail on purpose by disconnecting.
+    """
+    upstream = Upstream(
+        _completion(tool_calls=[_tool_call("c1", "search", {"query": "kv cache"})]),
+        httpx.Response(503, json={"error": {"message": "upstream is down"}}),
+    )
+    settings = PublicSettings(
+        enabled=True, openrouter_key="sk-or-test", ask_per_min=50, ask_per_day=1
+    )
+    with make_client(tmp_path, settings, upstream) as client:
+        assert _events(_stream_ask(client))[-1]["event"] == "error"
+        spent = _stream_ask(client, ip="2.2.2.2")
+    assert spent.status_code == 429, "the day's one ask was spent on a real completion"
+    assert spent.json()["bucket"] == "ask_global"
+
+
+# The disconnect itself, which no `TestClient` request can express: the body
+# generator is driven by hand and closed mid-flight, which is exactly what an
+# ASGI server does to it when the socket goes away. `deps` is never touched
+# because both cases stop before a tool runs — the whole point is that the
+# second one stops *after* the completion that paid for it.
+
+
+async def _disconnect_after(frames: int, upstream: Upstream) -> RateLimiter:
+    """Charge one ask, read `frames` frames of stream, then hang up."""
+    from vidtheque_mcp.public.ask import SSE_STREAM, Billing, OpenRouter, _stream
+
+    limiter = RateLimiter({"ask_global": (5, 86_400.0)}, budget=FakeBudget())
+    day = ratelimit.utc_day()
+    assert limiter.check("ask_global", "@global", day)[0] is True
+    # The shape the middleware leaves behind for the handler to refund from.
+    scope = {ratelimit.CHARGES_SCOPE_KEY: (limiter, (("ask_global", "@global"),), day)}
+
+    settings = PublicSettings(enabled=True, openrouter_key="sk-or-test")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as http:
+        llm = OpenRouter(settings, http)
+        stream = _stream(scope, None, settings, llm, "what?", SSE_STREAM, Billing())
+        read = 0
+        async with aclosing(stream):
+            async for _frame in stream:
+                read += 1
+                if read >= frames:
+                    break  # the tab closes here
+    return limiter
+
+
+def _spent(limiter: RateLimiter) -> int:
+    return limiter._counters[("ask_global", "@global")].spent
+
+
+async def test_a_disconnect_before_the_first_completion_gives_the_day_back() -> None:
+    """Nothing was bought: the SSE preamble goes out before a single request
+    to the model does, so a client that leaves there costs nothing."""
+    limiter = await _disconnect_after(1, Upstream(_completion("never reached")))
+    assert _spent(limiter) == 0
+    assert limiter._budget.rows[("ask_global", "@global", ratelimit.utc_day())] == 0
+
+
+async def test_a_disconnect_after_the_first_completion_keeps_the_charge() -> None:
+    """The review's HIGH, at the seam it lives at.
+
+    The first activity line is emitted only once a completion has come back
+    with a tool call in it, so a client that waits for that line and then hangs
+    up has been served a paid generation. Repeat that and the old rule handed
+    the day's token back every time — free tokens, on someone else's key.
+    """
+    upstream = Upstream(
+        _completion(tool_calls=[_tool_call("c1", "search", {"query": "kv cache"})]),
+        _completion("unreached"),
+    )
+    limiter = await _disconnect_after(2, upstream)  # preamble, then activity/start
+    assert len(upstream.requests) == 1, "one completion — the one that was paid for"
+    assert _spent(limiter) == 1
+    assert limiter._budget.rows[("ask_global", "@global", ratelimit.utc_day())] == 1
 
 
 def test_a_completed_stream_is_charged_exactly_once(tmp_path: Path) -> None:
@@ -1559,18 +1641,18 @@ def test_an_sse_stream_that_dies_mid_way_ends_in_a_terminal_error_event(
     assert "sk-or" not in response.text and "quota" not in response.text
 
 
-def test_an_sse_stream_that_dies_mid_way_gives_the_day_back(tmp_path: Path) -> None:
-    """§4.4's rule is about the outcome, not the framing: no answer, no charge.
+def test_an_sse_stream_that_dies_before_the_model_gives_the_day_back(
+    tmp_path: Path,
+) -> None:
+    """§4.4's rule is about the cost, not the framing: nothing bought, no charge.
 
-    The NDJSON mirror is `test_a_stream_that_dies_mid_way_gives_the_day_back`.
-    Both exist because the refund lives in a `finally` inside the generator, and
-    a framing that grew its own copy of that generator would grow its own copy
-    of the bug — so the framing is a parameter and this proves it stayed one.
+    The NDJSON mirror is
+    `test_a_stream_that_dies_before_the_model_gives_the_day_back`. Both exist
+    because the refund lives in a `finally` inside the generator, and a framing
+    that grew its own copy of that generator would grow its own copy of the bug
+    — so the framing is a parameter and this proves it stayed one.
     """
-    upstream = Upstream(
-        _completion(tool_calls=[_tool_call("c1", "search", {"query": "kv cache"})]),
-        httpx.Response(503, json={"error": {"message": "upstream is down"}}),
-    )
+    upstream = Upstream(httpx.Response(503, json={"error": {"message": "down"}}))
     settings = PublicSettings(
         enabled=True, openrouter_key="sk-or-test", ask_per_min=50, ask_per_day=2
     )
@@ -1707,10 +1789,7 @@ def test_the_mid_stream_refund_reaches_the_row_in_both_framings(
     has to survive a restart, and it fires from a `finally` inside a generator —
     so it is synchronous all the way down to the row's delta, in both framings.
     """
-    upstream = Upstream(
-        _completion(tool_calls=[_tool_call("c1", "search", {"query": "kv cache"})]),
-        httpx.Response(503, json={"error": {"message": "upstream is down"}}),
-    )
+    upstream = Upstream(httpx.Response(503, json={"error": {"message": "down"}}))
     with make_client(tmp_path, PAID, upstream) as client:
         for _ in range(3):
             response = client.post("/api/ask", json={"q": "what?"}, headers=headers)
@@ -1721,6 +1800,23 @@ def test_the_mid_stream_refund_reaches_the_row_in_both_framings(
     with make_client(tmp_path, PAID, upstream, fresh=False) as client:
         upstream.scripted = [_completion("fine.")]
         assert client.post("/api/ask", json={"q": "?"}, headers=headers).status_code == 200
+    assert _budget_rows(tmp_path) == {("ask_global", "@global", _today()): 1}
+
+
+@pytest.mark.parametrize("headers", [NDJSON, SSE], ids=["ndjson", "sse"])
+def test_a_paid_stream_that_never_answered_still_costs_the_row(
+    tmp_path: Path, headers: dict[str, str]
+) -> None:
+    """The persisted half of the review's HIGH: money spent is money written
+    down, in both framings, even though the stream ended in an error event."""
+    upstream = Upstream(
+        _completion(tool_calls=[_tool_call("c1", "search", {"query": "kv cache"})]),
+        httpx.Response(503, json={"error": {"message": "upstream is down"}}),
+    )
+    with make_client(tmp_path, PAID, upstream) as client:
+        response = client.post("/api/ask", json={"q": "what?"}, headers=headers)
+        assert response.status_code == 200
+        assert '"event": "error"' in response.text or '"event":"error"' in response.text
     assert _budget_rows(tmp_path) == {("ask_global", "@global", _today()): 1}
 
 

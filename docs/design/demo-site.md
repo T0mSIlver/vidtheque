@@ -422,9 +422,12 @@ Since the table's normal case is "the free tier is unavailable", and the day it
 is *most* unavailable is launch day, without a refund one impatient visitor
 retrying through a flap spends all 50 asks in ten minutes and every other
 visitor gets `429 ask_global` with ~28 minutes per reclaimed token. So the
-endpoint refunds `ask_global` on any non-200 (§4.4). Only the global one: the
-per-IP minute bucket is the anti-hammer guard, not the cost control, and
-someone retrying a broken upstream should still be slowed down.
+endpoint refunds `ask_global` on a non-200 **that bought nothing upstream**
+(§4.4). Only the global one: the per-IP minute bucket is the anti-hammer guard,
+not the cost control, and someone retrying a broken upstream should still be
+slowed down. And only the ones that were free: a loop that got a completion
+back and then fell over has already spent the money, and handing the token back
+for it would make a paid generation free to anyone willing to fail on purpose.
 
 Body, in every 503 case, the same shape:
 
@@ -553,21 +556,30 @@ An unknown tool name is narrated too ("Asking for “delete_everything”" → "
 tool"), because a round in which the model did something the loop refused is not
 a round that stalled, and a gap in the log would read as one.
 
-**What a stream owes the budget.** §4.4's refund keys on a non-200, and a stream
-is a 200 the moment its first byte is written — before the model has done
-anything. So the accounting moves to where the outcome is known: **no `answer`
-event, no charge.** It is a `finally`, not an error branch, because the ways a
-stream ends without an error event are the interesting ones — the visitor closing
-the tab, a mode switch aborting the fetch, the loop being cancelled — and every
-one of them cost the same zero upstream tokens as a 503 did. Exactly one of the
-two rules runs for any given request, so a failed stream is refunded once.
+**What a stream owes the budget.** §4.4's refund keys on a status code, and a
+stream is a 200 the moment its first byte is written — before the model has done
+anything. So the accounting moves to where the cost is known: **no paid
+completion, no charge.** It is a `finally`, not an error branch, because the ways
+a stream ends without an error event are the interesting ones — the visitor
+closing the tab, a mode switch aborting the fetch, the loop being cancelled.
+Exactly one of the two rules runs for any given request, so a failed stream is
+refunded once.
+
+The condition may *not* be "did an `answer` event go out", which is what it was
+until the 2026-08-09 review. A disconnect is something the client chooses, and
+the first activity line it can wait for is proof that a completion already came
+back: refunding on no-answer paid for a stranger's tool calls, once per
+disconnect, for as long as they cared to repeat it. The flag is set when the
+provider answers with a non-error status, so it covers the answer case and the
+attack case with one fact.
 
 **A disconnect stops the work.** Starlette's streaming response fails its next
 write once the client is gone, which closes the generator, which cancels the
 upstream call that was in flight. Verified end to end against a real socket: a
-visitor who abandons a stream after the first activity line costs no budget *and*
-no second completion. What cannot be cancelled is a call already in flight at the
-moment they leave; that one runs to its deadline and is thrown away.
+visitor who abandons a stream after the first activity line costs no *second*
+completion. It does cost the first one, and is charged for it. What cannot be
+cancelled is a call already in flight at the moment they leave; that one runs to
+its deadline and is thrown away — and, having been generated, it is billed.
 
 **Refusals stay status codes.** Everything that can be refused before the model
 is reached — a 429 from the limiter with its `Retry-After`, a 503 for a missing
@@ -727,13 +739,23 @@ So the middleware records what it charged on the request scope, and
 - **The middleware itself**, when a *later* bucket refuses: `/api/ask` charges
   per-IP and then global, and a request refused by the second must not stay
   charged to the first. A refused request costs nothing, anywhere.
-- **`ask_endpoint`**, on any non-200. Nothing else refunds anything; a search
-  that returns zero rows is still a search that ran.
-- **The ask *stream*, on any run that produced no answer** (§3.5). Not a third
-  rule, the same one: a stream's status line is written before the model has
-  done anything, so "non-200" cannot express it and "no answer, no charge" does.
-  Exactly one of the two runs per request — a streamed request is a 200 — so a
-  failed stream is refunded once, never twice.
+- **`ask_endpoint`**, on a non-200 that bought nothing upstream. Nothing else
+  refunds anything; a search that returns zero rows is still a search that ran.
+- **The ask *stream*, on any run that bought nothing upstream** (§3.5). Not a
+  third rule, the same one: a stream's status line is written before the model
+  has done anything, so "non-200" cannot express it. Exactly one of the two runs
+  per request — a streamed request is a 200 — so a failed stream is refunded
+  once, never twice.
+
+**What "bought nothing" means, exactly.** One per-request flag, set the moment
+the provider answers with a non-error status, because that response is a
+generation and it is billed whether or not the loop ever turns it into prose.
+An explicit refusal (401/403/429/5xx) and a request that never reached the
+provider leave it alone — which is the launch-day flap this section exists for,
+still refunded, still free. One caveat, deliberate: a read timeout after the
+provider accepted the request may have been billed and is counted as unpaid,
+because a timeout is far more often a dead upstream than a generated answer,
+and nobody can force one on demand.
 
 A refund refills first and is capped at capacity, so it can never mint a token
 the bucket never had, and refunding a bucket that no longer exists (swept) is a
