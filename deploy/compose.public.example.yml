@@ -26,6 +26,20 @@
 #      only path in, which is the precondition that makes trusting that header
 #      sound. See docs/deploy-public.md, "the trusted-header config item".
 #
+#      **`!override` is load-bearing.** Compose merges sequence fields by
+#      APPENDING, so an overlay that simply restates `ports:` produces BOTH
+#      publications — the base file's `0.0.0.0` one and this file's loopback
+#      one. That is what this overlay used to do, and it meant the bind it
+#      promised to fix was still open. Verify the merged model, never the YAML:
+#
+#        docker compose -f deploy/docker-compose.yml \
+#                       -f deploy/compose.public.example.yml config --format json \
+#          | jq '[.services[].ports[]?] | all(.host_ip == "127.0.0.1")'
+#
+#      Then verify the listeners, because the merged model is still only a
+#      claim: `sudo ss -ltnpH | awk '$4 ~ /:(8080|8081)$/'` must show nothing
+#      but 127.0.0.1 and [::1]. (Found by the 2026-08-10 audit, B-1.)
+#
 # This overlay adds no new environment variables. Everything it references has
 # an entry in deploy/.env.example, which stays the document of record.
 
@@ -37,7 +51,14 @@ services:
     # ${PUBLIC_URL}. Set PUBLIC_URL in .env to the https:// tunnel hostname.
     env_file:
       - .env
-    ports:
+    environment:
+      # `env_file` hands this container the WHOLE .env, which includes the
+      # tunnel token — a credential `mcp` has no use for and which anyone
+      # holding can run the tunnel. An explicit `environment:` entry wins over
+      # `env_file`, so this blanks it for this service only; cloudflared still
+      # gets the real value from its own interpolation. (2026-08-10 audit, F-7.)
+      TUNNEL_TOKEN: ""
+    ports: !override
       # Loopback only: cloudflared is the sole way in. Keep the published port
       # so `curl http://127.0.0.1:8080/healthz` still works on the box for the
       # smoke tests; drop the whole `ports:` block if cloudflared runs inside
@@ -45,15 +66,22 @@ services:
       - "127.0.0.1:${MCP_PORT:-8080}:8080"
 
   worker:
-    # Same reasoning, less urgency: the worker holds no public surface. It is
-    # here so the two services cannot drift into reading their configuration
-    # from two different places.
-    env_file:
-      - .env
-    ports:
-      # The worker must never be reachable from off-box. It answers an
-      # unauthenticated OpenAI-compatible API that will happily spend the GPU.
-      - "127.0.0.1:${WORKER_PORT:-8081}:8081"
+    # NO `env_file` here, deliberately. The base file already names every
+    # variable the worker reads, interpolated from the same .env — so an
+    # env_file would add nothing the worker needs and two things it must never
+    # hold: OPENROUTER_API_KEY (money) and TUNNEL_TOKEN (anyone holding it can
+    # run the tunnel). Both would then be readable via `docker inspect` and
+    # /proc/<pid>/environ on a service whose whole job is running untrusted
+    # model weights against a GPU. (2026-08-10 audit, F-7.)
+    #
+    # NOT PUBLISHED AT ALL. The worker answers an unauthenticated
+    # OpenAI-compatible API with no request-size limits, on a 24GB GPU — the
+    # audit's F-12. `mcp` reaches it as http://worker:8081 on the compose
+    # network, which needs no host publication whatsoever, so the safest bind
+    # is no bind. `!reset` removes the base file's entry rather than adding to
+    # it. If you genuinely need to curl the worker on the box, do it from
+    # inside: `docker compose exec worker curl -s localhost:8081/status`.
+    ports: !reset null
 
   # The base file already defines this service under `profiles: ["tunnel"]`,
   # running a REMOTELY-managed tunnel from TUNNEL_TOKEN with ingress

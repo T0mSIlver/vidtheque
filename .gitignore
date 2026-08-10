@@ -34,6 +34,12 @@ models/
 .env
 .env.*
 !.env.example
+# Cloudflare tunnel credentials. `cloudflared tunnel create` writes a JSON file
+# holding the tunnel secret, and deploy/compose.public.example.yml suggests
+# mounting it from this directory — so it is one `git add` away from a public
+# repo. Anyone holding it can run the tunnel. (2026-08-10 audit, F-7.)
+cloudflared-credentials*.json
+deploy/cloudflared.yml
 
 # Bench output (results are committed deliberately, raw runs are not)
 bench/runs/
