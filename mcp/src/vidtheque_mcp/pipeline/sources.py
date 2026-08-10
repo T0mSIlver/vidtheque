@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Any, Protocol, Sequence
+from urllib.parse import parse_qs, urlsplit
 
 from .settings import PipelineSettings
 
@@ -309,21 +310,71 @@ def looks_like_container(url: str) -> bool:
     return path.endswith(_CONTAINER_TAILS)
 
 
-_SOURCE_ID_RE = re.compile(r"(?:youtu\.be/|v=|/shorts/|/embed/)([A-Za-z0-9_-]{11})")
+# The hosts a `videos.source = 'youtube'` row can legitimately have come from.
+# Anything else is a URL we have never probed, whatever it has in its query
+# string.
+_YOUTUBE_HOSTS = frozenset(
+    {
+        "youtube.com",
+        "www.youtube.com",
+        "m.youtube.com",
+        "music.youtube.com",
+        "youtube-nocookie.com",
+        "www.youtube-nocookie.com",
+    }
+)
+_YOUTUBE_SHORT_HOSTS = frozenset({"youtu.be", "www.youtu.be"})
+
+_VIDEO_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
+# `/shorts/<id>` and `/embed/<id>`, the two path forms the corpus has ever been
+# handed. `/watch?v=<id>` is read out of the query instead, because a `v` in a
+# path segment is not the same claim as a `v` parameter.
+_PATH_ID = re.compile(r"^/(?:shorts|embed)/([A-Za-z0-9_-]{11})(?:[/?]|$)")
 
 
-def source_id_of(url: str) -> str | None:
-    """The video id a URL names, judged syntactically — no request, no guess.
+def source_ref_of(url: str) -> tuple[str, str] | None:
+    """The `(source, source_id)` a URL names — syntactically, and only if the
+    *host* is one we index from.
 
     Lives here beside `looks_like_container` because it is the same kind of
     knowledge: what a URL *says* before anything asks the source. Two callers
     need it and neither wants a round trip — `index-video` deciding whether a
     URL is a video the corpus already holds, and the pipeline's local
     resolution (`runner._resolve_locally`) deciding whether it needs the probe
-    at all. One regex, so the two can never disagree about what a URL means.
+    at all. One parser, so the two can never disagree about what a URL means.
+
+    **The host is load-bearing, not decoration.** This used to be one regex
+    hunting for `v=` anywhere in the string, and `videos.source_id` is only
+    half of the unique key — so `https://evil.example/?v=<a known id>` resolved
+    to that known YouTube row, skipped the probe, and ran stages or applied the
+    caller's tags against a video the URL had nothing to do with. Reported by
+    the 2026-08-09 review. Now the answer carries the source it belongs to and
+    the lookups key on both columns; anything unrecognised returns `None`,
+    which is the slow path, which asks yt-dlp — the correct answer, just not
+    the free one.
     """
-    match = _SOURCE_ID_RE.search(url)
-    return match.group(1) if match else None
+    # yt-dlp takes `youtu.be/<id>` without a scheme and so do people pasting
+    # links; without this, `urlsplit` reads the host as the first path segment
+    # and every scheme-less URL would lose the fast path.
+    parts = urlsplit(url if "://" in url else f"https://{url}")
+    if parts.scheme not in ("http", "https"):
+        return None
+    host = (parts.hostname or "").lower()
+
+    if host in _YOUTUBE_SHORT_HOSTS:
+        candidate = parts.path.lstrip("/").split("/", 1)[0]
+        return ("youtube", candidate) if _VIDEO_ID.match(candidate) else None
+
+    if host not in _YOUTUBE_HOSTS:
+        return None
+
+    match = _PATH_ID.match(parts.path)
+    if match:
+        return "youtube", match.group(1)
+    for candidate in parse_qs(parts.query).get("v", ()):
+        if _VIDEO_ID.match(candidate):
+            return "youtube", candidate
+    return None
 
 
 def parse_info(

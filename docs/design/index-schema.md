@@ -264,7 +264,15 @@ unreachable worker would otherwise read as "stt will not run" and buy a fast pat
 that a worker returning mid-item then needs the probe for.
 
 A container URL (`/playlist?list=…&v=<id>` names a video id inside a URL meaning
-"fan me out") and any `force_reindex` are excluded outright. Everything else is
+"fan me out") and any `force_reindex` are excluded outright. So is a URL whose
+**host** is not one we index from: the identity is `(source, source_id)`, both
+columns, because an eleven-character id in the query string of some other host
+is not a claim about this corpus. Matching on `source_id` alone let
+`https://evil.example/?v=<a known id>` resolve to that video, skip the probe,
+and run the caller's stages and tags against it (2026-08-09 review); the same
+pair now keys `index-video`'s already-indexed lookup. Anything unrecognised
+falls to the slow path, which asks yt-dlp — the correct answer, just not the
+free one. Everything else is
 unchanged, and that is the point — the **claim is still taken** (`E_INDEXING`
 across jobs, `E_DUPLICATE_ITEM` within one), the video still reads `indexing` for
 the length of the pass, and the `fetch` row is left alone rather than re-stamped

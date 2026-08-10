@@ -76,7 +76,7 @@ from .sources import (
     looks_like_container,
     parse_info,
     playlist_entries,
-    source_id_of,
+    source_ref_of,
 )
 from .worker_client import OcrPage, WorkerAPI, WorkerRejected, WorkerUnavailable
 
@@ -325,16 +325,24 @@ class IndexingPipeline:
         the shapes that carry both — `/playlist?list=…&v=<id>` names a video id
         inside a URL whose meaning is "fan me out".
 
+        And the URL has to be one we could have indexed *from*: the identity is
+        `(source, source_id)`, both halves, because an eleven-character id in
+        the query string of some other host is not a claim about our corpus.
+        See `sources.source_ref_of`.
+
         Returns True when it resolved the item, having taken the claim exactly
         as `_land_metadata` would. Only the sleep and the round trip are skipped.
         """
         url = run.ctx.source_url
         if run.force or looks_like_container(url):
             return False
-        source_id = source_id_of(url)
-        if source_id is None:
+        ref = source_ref_of(url)
+        if ref is None:
             return False
-        row = await self.db.read(lambda c: store.video_for_source_id(c, source_id))
+        source, source_id = ref
+        row = await self.db.read(
+            lambda c: store.video_for_source_ref(c, source, source_id)
+        )
         if row is None:
             return False
 

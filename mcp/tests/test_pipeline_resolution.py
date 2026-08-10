@@ -30,7 +30,7 @@ from vidtheque_mcp.jobs import store as jobs_store
 from vidtheque_mcp.jobs.runner import ItemContext, ItemFailed, ItemSkipped
 from vidtheque_mcp.pipeline.runner import ItemRun
 from vidtheque_mcp.pipeline.settings import PipelineSettings
-from vidtheque_mcp.pipeline.sources import looks_like_container, source_id_of
+from vidtheque_mcp.pipeline.sources import looks_like_container, source_ref_of
 
 from .pipeline_fakes import SECOND_URL, VIDEO_URL
 from .test_pipeline_e2e import Harness, harness
@@ -238,12 +238,68 @@ async def test_force_reindex_is_a_fetch(settings: Settings, clip: Path) -> None:
         await close(parts)
 
 
+def test_a_url_only_names_a_video_on_a_host_we_index_from() -> None:
+    """The 2026-08-09 review's MEDIUM, at the parser.
+
+    `videos.source_id` is half of the unique key, so an eleven-character id in
+    the query string of *any* URL used to resolve to the YouTube row that
+    happens to hold it. The identity is the pair, and the pair is only claimed
+    for a host the corpus could have been indexed from.
+    """
+    for hostile in (
+        f"https://evil.example/?v={SOURCE_ID}",
+        f"https://evil.example/watch?v={SOURCE_ID}",
+        # The userinfo trick: the host is `evil.example`, and `urlsplit` knows.
+        f"https://www.youtube.com@evil.example/watch?v={SOURCE_ID}",
+        f"https://notyoutube.com/shorts/{SOURCE_ID}",
+        # A lookalike suffix is a different host, not a YouTube one.
+        f"https://youtube.com.evil.example/watch?v={SOURCE_ID}",
+        f"javascript:x?v={SOURCE_ID}",
+        "https://www.youtube.com/watch?v=too-short",
+    ):
+        assert source_ref_of(hostile) is None, hostile
+
+    for legitimate in (
+        f"https://youtu.be/{SOURCE_ID}",
+        f"https://youtu.be/{SOURCE_ID}?t=90",
+        f"youtu.be/{SOURCE_ID}",  # scheme-less, the way people paste them
+        f"https://www.youtube.com/watch?v={SOURCE_ID}",
+        f"https://www.youtube.com/watch?v={SOURCE_ID}&list=PL9tOrKPmQ4nAbC",
+        f"https://m.youtube.com/watch?v={SOURCE_ID}",
+        f"https://music.youtube.com/watch?v={SOURCE_ID}",
+        f"http://YouTube.com/watch?v={SOURCE_ID}",
+        f"https://www.youtube.com/shorts/{SOURCE_ID}",
+        f"https://www.youtube-nocookie.com/embed/{SOURCE_ID}",
+    ):
+        assert source_ref_of(legitimate) == ("youtube", SOURCE_ID), legitimate
+
+
+async def test_a_hostile_url_carrying_a_known_id_takes_the_slow_path(
+    settings: Settings, clip: Path
+) -> None:
+    """End to end: the free identity is refused, so the probe decides.
+
+    Without it, `https://evil.example/?v=<known id>` resolved to the indexed
+    video, skipped the probe entirely, and ran that job's stages and tags
+    against a video the caller never named.
+    """
+    parts = await indexed(settings, clip)
+    try:
+        await stale_embeds(parts)
+        taken, run = await resolve(parts, f"https://evil.example/?v={SOURCE_ID}")
+        assert taken is False
+        assert run.meta is None, "nothing was resolved on a stranger's behalf"
+        assert not run.stages, "and no half-built run was left for the slow path"
+    finally:
+        await close(parts)
+
+
 async def test_a_container_url_is_never_resolved_locally(
     settings: Settings, clip: Path
 ) -> None:
     """`/playlist?list=…&v=<id>` names a video inside a URL that means "fan me
     out". `_maybe_expand` screens it first; this is the guard behind that."""
-    assert source_id_of(PLAYLIST_WITH_V) == SOURCE_ID
+    assert source_ref_of(PLAYLIST_WITH_V) == ("youtube", SOURCE_ID)
     assert looks_like_container(PLAYLIST_WITH_V) is True
     parts = await indexed(settings, clip)
     try:

@@ -21,7 +21,7 @@ from ..db import queries
 from ..errors import ToolError, bad_param, unknown_job
 from ..jobs import store as jobs_store
 from ..jobs.store import DuplicateInFlight
-from ..pipeline.sources import source_id_of
+from ..pipeline.sources import source_ref_of
 from ..text import (
     clamp,
     duration_clock,
@@ -274,13 +274,16 @@ def _lookup(
         else ""
     )
     for url in urls:
-        source_id = source_id_of(url)
-        if source_id is None:
+        # Both halves of the unique key, or none: a URL on a host we do not
+        # index from is not "already indexed" however familiar the id in its
+        # query string looks (2026-08-09 review).
+        ref = source_ref_of(url)
+        if ref is None:
             continue
         row = conn.execute(
             "SELECT id, public_id, title, indexed_at, index_state FROM videos "
-            "WHERE source_id = ?" + clause,
-            (source_id,),
+            "WHERE source = ? AND source_id = ?" + clause,
+            ref,
         ).fetchone()
         if row is not None:
             found[url] = row

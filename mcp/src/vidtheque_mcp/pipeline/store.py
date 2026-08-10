@@ -87,20 +87,26 @@ def upsert_video(conn: sqlite3.Connection, meta: VideoMeta) -> int:
     return int(row["id"])
 
 
-def video_for_source_id(conn: sqlite3.Connection, source_id: str) -> sqlite3.Row | None:
+def video_for_source_ref(
+    conn: sqlite3.Connection, source: str, source_id: str
+) -> sqlite3.Row | None:
     """The video a URL names, resolved without asking the source who it is.
 
     The same resolution `index-video` already does when it decides whether a
-    URL is a video the corpus holds (`tools/indexing._lookup`): the id out of
-    the URL against `videos.source_id`, which is half of the unique key. The
-    columns are exactly the ones `runner._meta_from_row` rebuilds a `VideoMeta`
-    from — the probe's *identity* answers, none of its inventory.
+    URL is a video the corpus holds (`tools/indexing._lookup`), and keyed on
+    the whole of `(source, source_id)` — the table's unique key. Matching on
+    the id alone was a way to point any URL at any indexed video, because an
+    eleven-character id in a query string is not evidence of whose id it is
+    (2026-08-09 review); `sources.source_ref_of` supplies the other half.
+
+    The columns are exactly the ones `runner._meta_from_row` rebuilds a
+    `VideoMeta` from — the probe's *identity* answers, none of its inventory.
     """
     return conn.execute(
         "SELECT id, source, source_id, url, title, description, channel_id, "
         "channel_name, published_at, duration_s, language FROM videos "
-        "WHERE source_id = ?",
-        (source_id,),
+        "WHERE source = ? AND source_id = ?",
+        (source, source_id),
     ).fetchone()
 
 
