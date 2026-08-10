@@ -10,7 +10,9 @@ line to ``registry.py``. Nothing else in the worker learns its name.
 
 from __future__ import annotations
 
+import contextlib
 import logging
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
@@ -152,6 +154,77 @@ def looks_like_device_failure(exc: BaseException) -> bool:
         return True
     text = str(exc).lower()
     return any(marker in text for marker in DEVICE_FAILURE_MARKERS)
+
+
+# --------------------------------------------------------------------------
+# "did the weights actually load?"
+# --------------------------------------------------------------------------
+
+
+UNINITIALISED_WEIGHT_MARKERS = (
+    "newly initialized",
+    "were not initialized from the model checkpoint",
+)
+"""Substrings of the ``transformers`` warning that says a tensor is *random*.
+
+The stable half of a warning that has read
+``Some weights of {model} were not initialized from the model checkpoint at
+{path} and are newly initialized: [...]`` since transformers 2.x.
+"""
+
+
+class _UninitialisedWeightWatcher(logging.Handler):
+    """Collects that warning while a checkpoint is being loaded."""
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.NOTSET)
+        self.hits: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            message = record.getMessage()
+        except Exception:  # pragma: no cover - a malformed record is not our bug
+            return
+        if any(marker in message for marker in UNINITIALISED_WEIGHT_MARKERS):
+            self.hits.append(message)
+
+
+@contextlib.contextmanager
+def watch_for_uninitialised_weights(
+    logger_name: str = "transformers",
+) -> Iterator[list[str]]:
+    """Yield a list that fills with ``transformers``' random-init warnings.
+
+    **Why a backend cannot skip this.** ``from_pretrained`` does not fail when
+    it cannot match the checkpoint's keys to the model's — it *warns*, fills the
+    unmatched tensors with fresh random numbers, and returns a model that
+    answers every request. An embedder built that way is a random projection:
+    it produces stable, unit-norm, correctly-shaped 2048-d vectors that are
+    mutually orthogonal to the ones the previous process produced, and nothing
+    downstream can tell. That is not hypothetical — it is what
+    ``Qwen/Qwen3-VL-Embedding-2B`` did on this stack for 22 hours and 176
+    videos (``research/embedding-random-init-2026-08-10.md``): 625 of 625
+    tensors newly initialised, twelve times, once per model load, with the
+    warning sitting in ``worker.log`` the whole time.
+
+    So the rule this enforces: **a published checkpoint that loads with any
+    newly-initialised weight is a failed load**, and a failed load is a 503
+    (:class:`BackendUnavailable`) rather than a corpus of noise.
+
+    The level is forced to ``WARNING`` for the duration so an operator's
+    ``TRANSFORMERS_VERBOSITY=error`` cannot turn the guard off by accident.
+    """
+    watcher = _UninitialisedWeightWatcher()
+    logger = logging.getLogger(logger_name)
+    previous_level = logger.level
+    if not logger.isEnabledFor(logging.WARNING):
+        logger.setLevel(logging.WARNING)
+    logger.addHandler(watcher)
+    try:
+        yield watcher.hits
+    finally:
+        logger.removeHandler(watcher)
+        logger.setLevel(previous_level)
 
 
 # --------------------------------------------------------------------------

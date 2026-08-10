@@ -51,6 +51,16 @@ is a record that lies.
 The 64-token ceiling that `siglip2_image_embed.py` had to warn about is gone
 with the text tower it belonged to: frame queries now go through a 32K-context
 model, so a long descriptive frame query is embedded whole.
+
+**And the load is checked, not assumed.** This card is saved from
+`Qwen3VLForConditionalGeneration` and loaded through `AutoModel`, a
+combination transformers 4.57.6 cannot reconcile — it warns, randomly
+initialises all 625 tensors, and returns a model that answers every request
+with correctly-shaped noise. That ran unnoticed for 22 hours and 176 videos
+(`research/embedding-random-init-2026-08-10.md`). :data:`CHECKPOINT_KEY_MAPPING`
+is the fix and :meth:`Qwen3VLEmbedBackend._load` is the proof: a load that
+still reports an uninitialised tensor is a `BackendUnavailable`, never a
+served vector.
 """
 
 from __future__ import annotations
@@ -68,11 +78,47 @@ from .base import (
     BaseBackend,
     Embeddings,
     InvalidImageError,
+    watch_for_uninitialised_weights,
 )
 
 log = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "Qwen/Qwen3-VL-Embedding-2B"
+
+CHECKPOINT_KEY_MAPPING = {r"^model\.": ""}
+"""Strip the task model's ``model.`` prefix off the checkpoint's tensor names.
+
+**This is load-bearing, and it was worth 22 hours of noise vectors.** The card
+is saved from ``Qwen3VLForConditionalGeneration``, so every one of its 625
+tensors is named ``model.language_model.…`` / ``model.visual.…``.
+sentence-transformers loads it through ``AutoModel`` (the checkpoint's own
+``sentence_bert_config.json`` says ``transformer_task: feature-extraction``),
+which resolves to ``Qwen3VLModel`` — whose parameters are named
+``language_model.…`` / ``visual.…``, without the prefix.
+
+transformers normally reconciles exactly that ("loading a base model from a
+task model's state dict"), but the reconciliation is gated on
+``model.base_model_prefix`` being non-empty::
+
+    prefix = model.base_model_prefix
+    has_prefix_module = any(s.startswith(prefix) for s in keys) if len(prefix) > 0 else False
+    expects_prefix_module = hasattr(model, prefix) if len(prefix) > 0 else False
+    loading_base_model_from_task_state_dict = has_prefix_module and not expects_prefix_module
+
+and ``Qwen3VLModel.base_model_prefix`` is ``""`` (transformers 4.57.6,
+``models/qwen3_vl/modeling_qwen3_vl.py:888``). So the branch is dead, not one
+key matches, and **the entire model — language tower and vision tower — is
+randomly initialised** while ``from_pretrained`` returns normally.
+
+``key_mapping`` is applied before that branch, so this restores the match: 0
+missing keys, weights byte-identical to the checkpoint (verified on a
+miniature Qwen3-VL in ``research/embedding-random-init-2026-08-10.md`` §4).
+
+It is a workaround for a *version*, which is why :meth:`_load` verifies rather
+than assumes: if a later transformers fixes ``base_model_prefix``, this mapping
+starts stripping a prefix the loader also wants to strip, the guard trips, and
+the load is retried without it — see :meth:`_load`.
+"""
 
 NATIVE_DIMS = 2048
 """The checkpoint's native width. MRL truncation (64-2048) is a config knob —
@@ -145,6 +191,55 @@ class Qwen3VLEmbedBackend(BaseBackend):
 
     # -- lifecycle ---------------------------------------------------------
     def _load(self) -> None:
+        """Load the checkpoint, and refuse to serve if it did not actually land.
+
+        The second half is the point. ``from_pretrained`` answers a key
+        mismatch with a warning and a randomly initialised tensor, so the
+        failure mode this guards is not "the worker is down" but "the worker is
+        up and every vector it has ever written is noise"
+        (``research/embedding-random-init-2026-08-10.md``). The order is:
+
+        1. load with :data:`CHECKPOINT_KEY_MAPPING`, which is what transformers
+           4.57.6 needs for this card;
+        2. if tensors were still newly initialised, the mapping is wrong for
+           *this* transformers — retry the plain load, which is what a version
+           with a fixed ``base_model_prefix`` wants;
+        3. if that is random too, raise. A 503 costs the batch a retry; a
+           random embedder costs the corpus.
+        """
+        log.info(
+            "loading unified embedder model=%s device=%s dim=%s",
+            self.model_id,
+            self.device,
+            self.truncate_dim or "native",
+        )
+        model, uninitialised = self._build(CHECKPOINT_KEY_MAPPING)
+        if uninitialised:
+            log.warning(
+                "%s loaded with randomly initialised weights under key_mapping=%r "
+                "(%s); retrying without it. First warning: %s",
+                self.model_id,
+                CHECKPOINT_KEY_MAPPING,
+                "the installed transformers may no longer need the workaround",
+                uninitialised[0][:400],
+            )
+            model, uninitialised = self._build(None)
+        if uninitialised:
+            raise BackendUnavailable(
+                f"{self.model_id} did not load: transformers reports randomly "
+                f"initialised weights with and without the checkpoint key mapping, "
+                f"so this embedder would serve noise. Check the transformers "
+                f"version against CHECKPOINT_KEY_MAPPING. transformers said: "
+                f"{uninitialised[0][:400]}"
+            )
+
+        self._model = model
+        if self.max_seq_length:
+            self._model.max_seq_length = self.max_seq_length
+        self._dims = _reported_dims(self._model, self.truncate_dim)
+
+    def _build(self, key_mapping: dict[str, str] | None) -> tuple[Any, list[str]]:
+        """One load attempt; the model and whatever transformers complained about."""
         try:
             from sentence_transformers import SentenceTransformer
         except ImportError as exc:  # pragma: no cover - depends on gpu extra
@@ -152,29 +247,26 @@ class Qwen3VLEmbedBackend(BaseBackend):
                 "sentence-transformers is not installed — install the worker's 'gpu' extra"
             ) from exc
 
-        log.info(
-            "loading unified embedder model=%s device=%s dim=%s",
-            self.model_id,
-            self.device,
-            self.truncate_dim or "native",
-        )
         # bf16, not fp16: the card ships bf16 weights and the decision is full
         # precision until a bench says otherwise. fp16 on a 2B LLM-based
         # embedder is where the silent NaN lives.
-        model_kwargs = {"dtype": "bfloat16"} if self.device == "cuda" else None
+        model_kwargs: dict[str, Any] = (
+            {"dtype": "bfloat16"} if self.device == "cuda" else {}
+        )
+        if key_mapping:
+            model_kwargs["key_mapping"] = dict(key_mapping)
         kwargs: dict[str, Any] = {
             "device": self.device,
-            "model_kwargs": model_kwargs,
+            "model_kwargs": model_kwargs or None,
             # Last-token pooling over a causal LM: padding on the right pools a
             # pad token. Same trap as Qwen3-Embedding, same fix.
             "tokenizer_kwargs": {"padding_side": "left"},
         }
         if self.truncate_dim:
             kwargs["truncate_dim"] = self.truncate_dim
-        self._model = SentenceTransformer(self.model_id, **kwargs)
-        if self.max_seq_length:
-            self._model.max_seq_length = self.max_seq_length
-        self._dims = _reported_dims(self._model, self.truncate_dim)
+        with watch_for_uninitialised_weights() as uninitialised:
+            model = SentenceTransformer(self.model_id, **kwargs)
+        return model, list(uninitialised)
 
     def _unload(self) -> None:
         self._model = None

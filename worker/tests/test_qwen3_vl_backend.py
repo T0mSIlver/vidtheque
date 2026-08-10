@@ -18,7 +18,11 @@ from typing import Any
 import pytest
 
 from vidtheque_worker.backends import qwen3_vl_embed as mod
-from vidtheque_worker.backends.base import BackendUnavailable, InvalidImageError
+from vidtheque_worker.backends.base import (
+    BackendUnavailable,
+    InvalidImageError,
+    watch_for_uninitialised_weights,
+)
 from vidtheque_worker.backends.qwen3_vl_embed import (
     DEFAULT_FRAME_INSTRUCTION,
     DEFAULT_QUERY_INSTRUCTION,
@@ -31,6 +35,10 @@ class FakeSentenceTransformer:
     """Records construction and every encode call."""
 
     last: "FakeSentenceTransformer | None" = None
+    builds: list["FakeSentenceTransformer"] = []
+    warn_uninitialised: "list[bool] | None" = None
+    """Per-construction script for the transformers random-init warning: one
+    bool per load attempt, consumed in order. ``None`` means a clean load."""
 
     def __init__(self, model_id: str, **kwargs: Any) -> None:
         self.model_id = model_id
@@ -38,6 +46,15 @@ class FakeSentenceTransformer:
         self.calls: list[tuple[list[Any], dict[str, Any]]] = []
         self.max_seq_length: int | None = None
         FakeSentenceTransformer.last = self
+        FakeSentenceTransformer.builds.append(self)
+        script = FakeSentenceTransformer.warn_uninitialised
+        if script and script.pop(0):
+            logging.getLogger("transformers.modeling_utils").warning(
+                "Some weights of Qwen3VLModel were not initialized from the model "
+                "checkpoint at %s and are newly initialized: ['language_model."
+                "embed_tokens.weight']",
+                model_id,
+            )
 
     def get_sentence_embedding_dimension(self) -> int:
         return NATIVE_DIMS
@@ -53,7 +70,10 @@ def st(monkeypatch):
     module.SentenceTransformer = FakeSentenceTransformer  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "sentence_transformers", module)
     FakeSentenceTransformer.last = None
-    return module
+    FakeSentenceTransformer.builds = []
+    FakeSentenceTransformer.warn_uninitialised = None
+    yield module
+    FakeSentenceTransformer.warn_uninitialised = None
 
 
 def loaded(st, **kwargs) -> Qwen3VLEmbedBackend:
@@ -74,14 +94,104 @@ def test_cuda_loads_bf16_with_left_padding(st):
     way."""
     backend = loaded(st, device="cuda")
     kwargs = FakeSentenceTransformer.last.kwargs
-    assert kwargs["model_kwargs"] == {"dtype": "bfloat16"}
+    assert kwargs["model_kwargs"]["dtype"] == "bfloat16"
     assert kwargs["tokenizer_kwargs"] == {"padding_side": "left"}
     assert backend.dims == NATIVE_DIMS
 
 
 def test_cpu_does_not_ask_for_bf16(st):
     loaded(st, device="cpu")
-    assert FakeSentenceTransformer.last.kwargs["model_kwargs"] is None
+    assert "dtype" not in (FakeSentenceTransformer.last.kwargs["model_kwargs"] or {})
+
+
+# --------------------------------------------------------------------------
+# the load that must not be assumed
+#
+# `from_pretrained` answers a key mismatch with a warning and a random tensor,
+# not an exception. The card is saved from `Qwen3VLForConditionalGeneration`
+# (`model.language_model.…`) and loaded through `AutoModel` (`language_model.…`),
+# and transformers 4.57.6 cannot bridge that because `Qwen3VLModel.base_model_prefix`
+# is `""`. All 625 tensors came back random, twelve loads in a row, and the
+# worker served correctly-shaped noise for 176 videos
+# (`research/embedding-random-init-2026-08-10.md`).
+# --------------------------------------------------------------------------
+
+
+def test_the_checkpoint_key_mapping_reaches_from_pretrained(st):
+    """`model_kwargs` is forwarded verbatim to `AutoModel.from_pretrained`, so
+    this dict is the whole fix. Lose it and every vector is a random
+    projection — with a 200 on the response and a unit norm on the vector."""
+    loaded(st, device="cuda")
+    assert (
+        FakeSentenceTransformer.last.kwargs["model_kwargs"]["key_mapping"]
+        == mod.CHECKPOINT_KEY_MAPPING
+    )
+    assert mod.CHECKPOINT_KEY_MAPPING == {r"^model\.": ""}
+
+
+def test_a_random_init_under_the_mapping_retries_without_it(st, caplog):
+    """The mapping is a workaround for a transformers *version*. If a later one
+    fixes `base_model_prefix`, the mapping strips a prefix the loader also wants
+    to strip and the load goes random the other way — so the guard retries
+    plain rather than pinning the worker to one release."""
+    FakeSentenceTransformer.warn_uninitialised = [True, False]
+    with caplog.at_level(logging.WARNING, logger=mod.__name__):
+        backend = loaded(st)
+    assert len(FakeSentenceTransformer.builds) == 2
+    assert "key_mapping" in FakeSentenceTransformer.builds[0].kwargs["model_kwargs"]
+    assert FakeSentenceTransformer.builds[1].kwargs["model_kwargs"] in (
+        None,
+        {"dtype": "bfloat16"},
+    )
+    assert backend.loaded
+    assert "randomly initialised" in "\n".join(caplog.messages)
+
+
+def test_a_random_init_both_ways_refuses_to_serve(st):
+    """503, not a vector. A worker that is down costs the batch a retry; a
+    worker serving random projections costs the corpus — silently, because the
+    vectors are the right width, unit-norm and perfectly stable within one
+    process."""
+    FakeSentenceTransformer.warn_uninitialised = [True, True]
+    backend = Qwen3VLEmbedBackend()
+    with pytest.raises(BackendUnavailable) as raised:
+        backend.load()
+    assert "randomly initialised" in str(raised.value)
+    assert "newly initialized" in str(raised.value), "quotes what transformers said"
+    assert not backend.loaded
+
+
+def test_a_clean_load_costs_exactly_one_attempt(st):
+    loaded(st)
+    assert len(FakeSentenceTransformer.builds) == 1
+
+
+def test_the_watcher_sees_a_child_loggers_warning():
+    """transformers logs this from `transformers.modeling_utils`; the handler
+    hangs off `transformers`, and propagation is what connects them."""
+    with watch_for_uninitialised_weights() as hits:
+        logging.getLogger("transformers.modeling_utils").warning(
+            "Some weights of X were not initialized from the model checkpoint at Y "
+            "and are newly initialized: ['a.b']"
+        )
+        logging.getLogger("transformers.modeling_utils").warning("some other warning")
+    assert len(hits) == 1 and "newly initialized" in hits[0]
+
+
+def test_the_watcher_cannot_be_silenced_by_verbosity_and_restores_it():
+    """`TRANSFORMERS_VERBOSITY=error` must not be a way to turn the guard off,
+    and the guard must not be a way to turn an operator's verbosity back on."""
+    logger = logging.getLogger("transformers")
+    logger.setLevel(logging.ERROR)
+    try:
+        with watch_for_uninitialised_weights() as hits:
+            logging.getLogger("transformers.modeling_utils").warning(
+                "and are newly initialized: ['a.b']"
+            )
+        assert hits
+        assert logger.level == logging.ERROR
+    finally:
+        logger.setLevel(logging.NOTSET)
 
 
 def test_native_width_asks_for_no_truncation(st):
