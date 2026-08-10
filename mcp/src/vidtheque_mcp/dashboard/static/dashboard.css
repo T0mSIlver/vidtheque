@@ -989,8 +989,17 @@ span.tone-warn { color: var(--tone-warn); }
 }
 
 .field { display: flex; flex-direction: column; gap: var(--s1); }
+/* One flexible field per band and everything else fixed (Tom, 2026-08-10,
+   round 4, item 7b). A text input takes its width from the platform's `size`
+   and a select takes its from its own longest option, so a band of intrinsic
+   widths re-flows the moment the reader changes what any of them holds — the
+   layout shift Tom saw on applying a filter. With one flexible field the
+   band's geometry is a function of the viewport and of nothing else. */
 .field-wide { flex: 1 1 16rem; min-width: 0; }
+.field-text { flex: 0 0 13rem; min-width: 0; }
+.field-text > input { width: 100%; }
 .field-narrow { flex: 0 0 5rem; }
+.field-narrow > input { width: 100%; }
 /* A field that owns its own line rather than sharing a flex row. */
 .field-block { display: flex; flex-direction: column; gap: var(--s1); }
 
@@ -2422,6 +2431,10 @@ footer p { margin: 0; max-width: var(--note); }
 
   .filters { padding: var(--s3); }
   .field-wide { flex-basis: 100%; }
+  /* On a hand the fixed widths become fractions of the row rather than
+     absolute ones: 13rem is wider than the viewport. Two per row for the text
+     fields and the pickers, which is the same shape the ranges already take. */
+  .field-text, .field-pick { flex: 1 1 9rem; }
   .field-actions { margin-left: 0; flex-basis: 100%; }
   .field-actions button { flex: 1 1 auto; }
 

@@ -3337,7 +3337,7 @@ def test_every_picker_is_this_systems_own_control_and_a_fixed_width(
     # field, whose calendar button is the platform's answer to another question.
     assert "appearance: none" not in _rule(css, ".field input, .field select")
 
-    for path in (f"{ROOT}/jobs",):
+    for path in (f"{ROOT}/jobs", f"{ROOT}/videos"):
         body = page(client, path)
         selects = re.findall(r"<select[^>]*>", body)
         assert selects, path
@@ -3346,3 +3346,57 @@ def test_every_picker_is_this_systems_own_control_and_a_fixed_width(
         # viewport's and never the selected value's.
         assert body.count('<span class="pick">') == len(selects), path
         assert body.count('class="field field-pick"') == len(selects), path
+
+
+def test_the_videos_band_searches_on_change_and_keeps_its_no_script_path(
+    client: TestClient,
+) -> None:
+    """Round 4, item 7c. Applying a filter *is* changing it.
+
+    The Apply button is still real markup — it is what a browser with the
+    script blocked submits — and comes off the page only once the script has
+    taken the job over, which is the same contract the transcript's pager
+    keeps. Nothing about the URL, the clamps or the handler changes: the script
+    submits the same form the button submitted.
+    """
+    body = page(client, f"{ROOT}/videos")
+    assert '<form class="filters" method="get"' in body
+    assert "data-autosubmit" in body
+    assert re.search(r'<button type="submit" data-apply>Apply</button>', body)
+
+    script = (STATIC / "dashboard.js").read_text()
+    assert 'document.querySelectorAll("form.filters[data-autosubmit]")' in script
+    assert "requestSubmit" in script
+    # A picker submits on the spot; a text field waits for the typing to stop.
+    assert 'form.addEventListener("change"' in script
+    assert "setTimeout(() => submit(event.target), 450)" in script
+    assert "if (apply) apply.hidden = true;" in script
+
+
+def test_the_videos_masthead_drops_the_order_and_prints_only_narrowing(
+    client: TestClient,
+) -> None:
+    """Round 4, item 7d.
+
+    Every other entry in that strip is something that took rows *out* of the
+    table. An order takes nothing out, it never disappeared, and what the rows
+    are sorted by is already said by the picker in the band and by the sorted
+    column's own gold underline. With it gone the strip is empty when nothing
+    is narrowing, so the paragraph goes with it rather than sitting under the
+    title as a blank line.
+    """
+    plain = page(client, f"{ROOT}/videos")
+    head = plain[plain.index('<div class="pagehead">') : plain.index("</form>")]
+    assert "ordered by" not in head
+    assert '<p class="pagehead-meta">' not in head, "no strip when nothing narrows"
+    # The sort is still stated, twice, where it belongs.
+    assert 'aria-sort="descending"' in plain
+
+    narrowed = page(client, f"{ROOT}/videos?index_state=ready&has=transcript")
+    strip = re.search(r'<p class="pagehead-meta">(.*?)</p>', narrowed, re.S).group(1)
+    assert "state" in strip and "ready" in strip
+    assert "has" in strip and "transcript" in strip
+    assert "ordered by" not in strip
+    # The last fact carries no separator, whichever one it turns out to be.
+    assert strip.rstrip().endswith("</span>")
+    assert not re.search(r'<span class="sep">·</span>\s*$', strip.rstrip())

@@ -21,68 +21,99 @@ q={{ filters.q | urlencode }}&amp;channel={{ filters.channel | urlencode }}&amp;
     {# The filters that are actually narrowing the table, on the title's own
        baseline. The form below says what every control is set to; this says
        what the *result set* is, which is the thing you check before you believe
-       a row count. #}
+       a row count.
+
+       `ordered by <order>` is gone (Tom, 2026-08-10, round 4). Every other
+       entry here is a *narrowing* — something that took rows out of the table
+       — and an order takes nothing out; it was also the one line that never
+       disappeared, so the strip always had a fact in it and the eye stopped
+       reading it. What the rows are sorted by is already said twice: by the
+       picker in the band and by the sorted column's own gold underline, which
+       is what that underline is for. With it gone the strip is empty when
+       nothing is narrowing, so the whole paragraph is conditional now — a
+       masthead with an empty line under the title is a line that says
+       something is missing. #}
     {# Every separator is glued to the fact before it — no whitespace in front
        of a `·`, a break opportunity after it — so a strip that runs out of room
        ends a line with its separator instead of starting the next one with a
-       dangling middot. #}
+       dangling middot. The last fact in the strip carries no separator, and
+       which one is last depends on which filters are set, so each one is
+       *preceded* by its separator and the first is asked not to print one. #}
+    {#- An open end is `…`, not a made-up boundary: "published 2025-01-01 …"
+        says one end is set and the other is not, where "published 2025-01-01 –
+        2026-08-09" would be the page inventing a filter nobody applied. The
+        days here are the resolved ones, so this line and the query agree. #}
+    {% set facts = [] %}
+    {% if filters.index_state != 'all' %}
+    {%- set facts = facts + [('state', filters.index_state)] %}{% endif %}
+    {% if filters.has != 'any' %}
+    {%- set facts = facts + [('has', filters.has)] %}{% endif %}
+    {% if filters.published_after or filters.published_before %}
+    {%- set facts = facts + [('published', (filters.published_after or '…') ~ ' – ' ~ (filters.published_before or '…'))] %}{% endif %}
+    {% if filters.indexed_after or filters.indexed_before %}
+    {%- set facts = facts + [('indexed', (filters.indexed_after or '…') ~ ' – ' ~ (filters.indexed_before or '…'))] %}{% endif %}
+    {% if facts %}
     <p class="pagehead-meta">
-      {% if filters.index_state != 'all' %}<span class="fact">state <span class="mono">{{ filters.index_state }}</span></span><span class="sep">·</span>
-      {% endif %}
-      {%- if filters.has != 'any' %}<span class="fact">has <span class="mono">{{ filters.has }}</span></span><span class="sep">·</span>
-      {% endif %}
-      {#- An open end is `…`, not a made-up boundary: "published 2025-01-01 …"
-         says one end is set and the other is not, where "published 2025-01-01 –
-         2026-08-09" would be the page inventing a filter nobody applied. The
-         days here are the resolved ones, so this line and the query agree. #}
-      {%- if filters.published_after or filters.published_before %}
-      <span class="fact">published <span class="mono">{{ filters.published_after or "…" }}</span>
-      <span class="sep">–</span>
-      <span class="mono">{{ filters.published_before or "…" }}</span></span><span class="sep">·</span>
-      {% endif %}
-      {%- if filters.indexed_after or filters.indexed_before %}
-      <span class="fact">indexed <span class="mono">{{ filters.indexed_after or "…" }}</span>
-      <span class="sep">–</span>
-      <span class="mono">{{ filters.indexed_before or "…" }}</span></span><span class="sep">·</span>
-      {% endif %}
-      <span class="fact">ordered by <span class="mono">{{ filters.order }}</span></span>
+      {%- for label, value in facts %}<span class="fact">{{ label }} <span class="mono">{{ value }}</span></span>
+      {%- if not loop.last %}<span class="sep">·</span>
+      {% endif %}{% endfor %}
     </p>
+    {% endif %}
   </div>
 </div>
 
 {# A real GET form: the filters are the URL, so a filtered table is a link
-   somebody can send. No JavaScript is involved in any of it. #}
-<form class="filters" method="get" action="{{ root }}/videos">
+   somebody can send.
+
+   `data-autosubmit` (Tom, 2026-08-10, round 4): with the script running, a
+   change to any control *is* the search — a picker submits on the spot, a text
+   field submits when the typing pauses. More requests, and they are cheap
+   against a local SQLite index; what they buy is a band you use rather than a
+   form you fill in. The Apply button stays in the markup as the no-JavaScript
+   path, exactly as the transcript's pager does, and is hidden only once the
+   script has taken the job over. Nothing about the URL, the clamps or the
+   server changed: this submits the same form a click submitted. #}
+<form class="filters" method="get" action="{{ root }}/videos" data-autosubmit>
   <div class="field field-wide">
     <label for="f-q">Title, channel or description</label>
     <input id="f-q" name="q" type="search" value="{{ filters.q }}" placeholder="attention, tokenizer…"
            spellcheck="false" autocomplete="off">
   </div>
-  <div class="field">
+  {# Fixed widths from here down (item 7b). A text input sized by the platform
+     and a select sized by its own longest option both change width when the
+     reader changes what is in them, and one control resizing re-flows every
+     control on its row. Every field in this band now takes its width from the
+     band, so the geometry is the viewport's and nothing moves when a filter is
+     applied. #}
+  <div class="field field-text">
     <label for="f-channel">Channel</label>
     <input id="f-channel" name="channel" type="text" value="{{ filters.channel }}" autocomplete="off">
   </div>
-  <div class="field">
+  <div class="field field-text">
     <label for="f-tags">Tags</label>
     <input id="f-tags" name="tags" type="text" value="{{ filters.tags }}" placeholder="topic:attention"
            autocomplete="off">
   </div>
-  <div class="field">
+  <div class="field field-pick">
     <label for="f-state">State</label>
-    <select id="f-state" name="index_state">
-      <option value="all"{{ ' selected' if filters.index_state == 'all' }}>all states</option>
-      {% for state in index_states %}
-      <option value="{{ state }}"{{ ' selected' if filters.index_state == state }}>{{ state }}</option>
-      {% endfor %}
-    </select>
+    <span class="pick">
+      <select id="f-state" name="index_state">
+        <option value="all"{{ ' selected' if filters.index_state == 'all' }}>all states</option>
+        {% for state in index_states %}
+        <option value="{{ state }}"{{ ' selected' if filters.index_state == state }}>{{ state }}</option>
+        {% endfor %}
+      </select>
+    </span>
   </div>
-  <div class="field">
+  <div class="field field-pick">
     <label for="f-has">Coverage</label>
-    <select id="f-has" name="has">
-      {% for value in has_values %}
-      <option value="{{ value }}"{{ ' selected' if filters.has == value }}>{{ "any" if value == "any" else value }}</option>
-      {% endfor %}
-    </select>
+    <span class="pick">
+      <select id="f-has" name="has">
+        {% for value in has_values %}
+        <option value="{{ value }}"{{ ' selected' if filters.has == value }}>{{ "any" if value == "any" else value }}</option>
+        {% endfor %}
+      </select>
+    </span>
   </div>
   {# The two time axes, as two controls, never one (CLAUDE.md's invariant):
      `published` picks which videos, `indexed` picks when this box did the work.
@@ -110,13 +141,15 @@ q={{ filters.q | urlencode }}&amp;channel={{ filters.channel | urlencode }}&amp;
       <input id="f-idx-before" name="indexed_before" type="date" value="{{ filters.indexed_before }}">
     </div>
   </fieldset>
-  <div class="field">
+  <div class="field field-pick">
     <label for="f-order">Order</label>
-    <select id="f-order" name="order">
-      {% for value in orders %}
-      <option value="{{ value }}"{{ ' selected' if filters.order == value }}>{{ value }}</option>
-      {% endfor %}
-    </select>
+    <span class="pick">
+      <select id="f-order" name="order">
+        {% for value in orders %}
+        <option value="{{ value }}"{{ ' selected' if filters.order == value }}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </span>
   </div>
   <div class="field field-narrow">
     <label for="f-limit">Rows</label>
@@ -124,7 +157,11 @@ q={{ filters.q | urlencode }}&amp;channel={{ filters.channel | urlencode }}&amp;
            inputmode="numeric">
   </div>
   <div class="field field-actions">
-    <button type="submit">Apply</button>
+    {# `data-apply` is what the script hides once it has taken over. Reset is a
+       link to this page with no query on it and is not a submit, so it is not
+       the appender's to hide — it is the one control here that still has a job
+       when every change is already a search. #}
+    <button type="submit" data-apply>Apply</button>
     <a class="ghostlink" href="{{ root }}/videos">Reset</a>
   </div>
 </form>

@@ -586,3 +586,72 @@ if (cuebox) {
     if (cuebox.scrollTop + cuebox.clientHeight * 2 >= cuebox.scrollHeight) loadMore();
   });
 }
+
+// The filter band submits itself (Tom, 2026-08-10, round 4, item 7c). Changing
+// a picker *is* the search; typing into a text field is the search once the
+// typing pauses. More requests, and they are cheap against a local SQLite
+// index — what they buy is a band you use rather than a form you fill in and
+// then have to remember to submit.
+//
+// It is an enhancement over a form that already works, like everything else in
+// this file: the Apply button is real, is what a browser with this file blocked
+// uses, and comes off the page only once this has taken the job over. Nothing
+// about the URL, the clamps or the server changes — `requestSubmit()` submits
+// exactly the form the button submitted.
+//
+// The one thing a reloading search box owes its reader is the caret back. The
+// field that caused a submit is remembered for the length of that navigation
+// and re-focused on the way in, with the caret at the end of what was typed.
+// `sessionStorage` rather than the URL: which control had focus is not a fact
+// about the result set and has no business in a link somebody sends.
+const FOCUS_KEY = "vidtheque:filters:focus";
+const TYPED = "input[type='search'], input[type='text'], input[type='number']";
+
+for (const form of document.querySelectorAll("form.filters[data-autosubmit]")) {
+  const apply = form.querySelector("[data-apply]");
+  let pending = 0;
+
+  const submit = (source) => {
+    clearTimeout(pending);
+    try {
+      if (source && source.id) sessionStorage.setItem(FOCUS_KEY, source.id);
+    } catch {
+      // A tab with storage refused still searches; it only loses the caret.
+    }
+    if (typeof form.requestSubmit === "function") form.requestSubmit();
+    else form.submit();
+  };
+
+  // A picker has no half-made state: the moment it changes, the reader has
+  // said what they want.
+  form.addEventListener("change", (event) => {
+    if (!event.target.matches(TYPED)) submit(event.target);
+  });
+  // A text field is half-typed for most of its life, so it waits for a pause.
+  // `input` and not `change`: `change` on a text field fires on blur, which is
+  // both too late and a second submit behind the one that already ran.
+  form.addEventListener("input", (event) => {
+    if (!event.target.matches(TYPED)) return;
+    clearTimeout(pending);
+    pending = setTimeout(() => submit(event.target), 450);
+  });
+  // Enter still submits, and must not leave a debounce armed behind it.
+  form.addEventListener("submit", () => clearTimeout(pending));
+
+  if (apply) apply.hidden = true;
+
+  try {
+    const wanted = sessionStorage.getItem(FOCUS_KEY);
+    sessionStorage.removeItem(FOCUS_KEY);
+    const field = wanted && form.querySelector("#" + CSS.escape(wanted));
+    if (field) {
+      field.focus({ preventScroll: true });
+      const at = field.value ? field.value.length : 0;
+      if (field.setSelectionRange && field.type !== "number") {
+        field.setSelectionRange(at, at);
+      }
+    }
+  } catch {
+    // Same: no storage, no caret, still a working search band.
+  }
+}
