@@ -1,10 +1,26 @@
-# vidtheque — reference deployment.
+# vidtheque — reference deployment, for a PRIVATE instance on your own network.
 #
 #   docker compose up -d                      mcp + worker
-#   docker compose --profile tunnel up -d     …plus a Cloudflare tunnel
 #
-# No GPU? Drop the `worker` service and point WORKER_URL at any
-# OpenAI-compatible provider — the endpoints are the contract.
+# GOING PUBLIC NEEDS THE OVERLAY, NOT THE `tunnel` PROFILE ON ITS OWN.
+# This file hands the `mcp` container four variables by name and nothing else,
+# because `.env` is compose's *interpolation* source and not the container's
+# environment — so VIDTHEQUE_PUBLIC_READONLY and VIDTHEQUE_AUTH sit in `.env`
+# read by nobody, the write tools stay registered, and the port publishes on
+# 0.0.0.0. Behind a tunnel that is an open indexing service. Use:
+#
+#   docker compose -f deploy/docker-compose.yml \
+#                  -f deploy/compose.public.example.yml \
+#                  --profile tunnel up -d
+#
+# and read docs/deploy-public.md first — §6.1 is this paragraph with receipts.
+#
+# No GPU? Dropping the `worker` service and pointing WORKER_URL at a hosted
+# OpenAI-compatible provider covers the transcript leg — `/v1/embeddings`, both
+# indexing and query side. It does NOT cover frame search or on-screen text:
+# those need `/v1/embeddings/image`, `/v1/embeddings/frame-query` and `/v1/ocr`
+# at the same base URL, which no ordinary provider serves. Run the worker, or
+# a shim that answers all five paths.
 #
 # Every variable below is documented in .env.example. Copy it to .env first.
 
@@ -12,9 +28,10 @@ name: vidtheque
 
 services:
   mcp:
-    # Placeholder: the MCP framework has not been chosen yet (see mcp/NOTE.md),
-    # so this builds a stub image. Swap `build` for
-    # `image: ghcr.io/t0msilver/vidtheque-mcp:<tag>` once images are published.
+    # Built from source: `mcp/Dockerfile` is the real image (Python 3.12,
+    # CPU-only, multi-arch), and there is no published tag yet. Swap `build`
+    # for `image: ghcr.io/t0msilver/vidtheque-mcp:<tag>` once there is one —
+    # the GHCR publish workflow fires on a `v*` git tag.
     build:
       context: ..
       dockerfile: mcp/Dockerfile
