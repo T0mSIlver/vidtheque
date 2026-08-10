@@ -417,22 +417,65 @@ caps are the only thing between a scraper and the whole corpus:
 | `VIDTHEQUE_FRAME_CACHE_MAX_AGE` | 86400 | `Cache-Control: public, max-age=` on a served frame |
 | `VIDTHEQUE_INLINE_FRAME_MAX` / `_BYTES` | 4 / 6 MiB | `get-frames return="image"` — agents, not the page |
 
-Two things to check, both arithmetic:
+Two things to check, both arithmetic. **Both were modelled at 3,460 keyframes
+and the corpus outgrew that by 3.6×**; the numbers below were remeasured on the
+live database and the live `derived/` cache on **2026-08-11 ~01:45 Paris**, at
+**12,351 keyframes over 199 `ready` videos**. That is a moving target until the
+corpus is frozen (`BEFORE-SHIP.md` 2.1), so take the *formula*, not the
+constant, and re-run `select count(*) from keyframes` at the freeze.
 
-1. **Walk time.** 3,460 keyframes at 120/min is under half an hour for a single
-   IP to take the whole corpus. That is the accepted design (`demo-site.md` §5:
-   the limiter makes it "slow enough to be pointless", not impossible). Confirm
-   it is still the accepted answer now that the corpus is real and public.
+1. **Walk time.** `keyframes ÷ 120 per minute` for a single IP. At 12,351
+   that is **103 minutes**, not "under half an hour" — and 103 minutes is a
+   `for` loop with a `sleep` in it, unattended. That is still the accepted
+   design (`demo-site.md` §5: the limiter makes a crawl "slow enough to be
+   pointless", not impossible), but the *reason it is accepted* has to survive
+   the new number, so confirm it rather than inherit it. Two things make the
+   real figure lower than 103 minutes, both worth knowing before agreeing:
+   `/frames/*.jpg` is served `Cache-Control: public, max-age=86400` and `.jpg`
+   is default-cached by Cloudflare, so **an edge hit never reaches the origin
+   and is never charged to the limiter** (`research/release-staging-2026-08-11.md` §6.5) — a second crawler behind the
+   same colo walks a warm cache at whatever rate it likes; and the bucket is
+   per client IP, so *n* addresses divide the wall clock by *n*.
 2. **Cache thrash.** The demo asks for three widths — 192 (list thumb), 320
    (frame hit), 960 (lightbox) — and the read-only projection, public since
    phase 4, asks for three more: 192 (shared), 512 (detail) and 1280
-   (lightbox). Five distinct widths across the two surfaces, so a full crawl
-   materialises roughly 5 × 3,460 variants rather than three. On rough per-variant sizes that is several hundred MB
-   against a 256 MB cap, i.e. the cache **will** evict under sustained public
-   load and every eviction is a re-encode on the request path. Measure the
-   actual `derived/` sizes on the box (`du -sh $DATA_DIR/derived`) and raise
-   `VIDTHEQUE_DERIVED_CACHE_MB` if there is disk for it. This is a CPU/latency
-   decision, not a correctness one — `derived/` is disposable by design.
+   (lightbox). Five distinct widths across the two surfaces. Measured average
+   variant sizes in the live `derived/` cache:
+
+   | width | measured average |
+   |---|---:|
+   | 192 | 3.2 KB |
+   | 320 | 7.4 KB |
+   | 512 | 15.4 KB |
+   | 960 | 44.2 KB |
+   | 1280 | 65.2 KB |
+   | **all five, per keyframe** | **≈ 135 KB** |
+
+   So a full crawl of both surfaces materialises 5 × 12,351 ≈ **62,000
+   variants, ≈ 1.6 GB** — against a **256 MB** cap, i.e. **≈6.4× over**, not the
+   "several hundred MB" this section used to say. The cache **will** evict
+   under sustained public load, and every eviction is a re-encode on the
+   request path. Only the cheapest width fits at all: 192 across the whole
+   corpus is ≈ 39 MB, comfortably inside the cap — while the two lightbox
+   widths alone (960 + 1280 ≈ 109 KB per keyframe) are ≈ 1.3 GB on their own.
+   The list thumbnails will therefore survive in cache and the enlargements
+   will not, which is the right way round and worth knowing is *why*.
+
+   **And five is not the ceiling.** `w` and `q` are caller-controlled and only
+   *clamped*, not enumerated: `MIN_WIDTH=64 … MAX_WIDTH=1280` and
+   `MIN_QUALITY=20 … MAX_QUALITY=95` (`http/derived.py`), so the number of
+   distinct materialisable variants per keyframe is in the tens of thousands,
+   and the real bound on cache thrash is `VIDTHEQUE_RATE_FRAMES_PER_MIN`, not
+   the number of widths the product happens to use. That is by design — the
+   cache is byte-capped and disposable — but it means the honest statement is
+   "the LRU is permanently hot under any crawl", not "the LRU holds the working
+   set".
+
+   Measure before deciding (`du -sh $DATA_DIR/derived`) and raise
+   `VIDTHEQUE_DERIVED_CACHE_MB` if there is disk for it — 512 MB holds the two
+   surfaces' five widths for about a third of the corpus, 2 GB holds all of it.
+   This is a CPU/latency decision, not a correctness one: `derived/` is
+   disposable by design and rebuilds on demand.
 
 ---
 
