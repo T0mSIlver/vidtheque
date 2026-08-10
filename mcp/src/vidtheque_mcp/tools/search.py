@@ -181,11 +181,30 @@ async def run(
             f"available fields: {', '.join(TSV_FIELDS)}.",
         )
 
+    asked = (limit, offset, max_per_video)
     limit = clamp(limit, 1, 50, 10)
     offset = clamp(offset, 0, 10_000, 0)
     max_per_video = clamp(max_per_video, 1, 20, 3)
     cluster_gap = float(clamp(int(cluster_gap), 0, 60, 8))
     max_text_chars = clamp_text_chars(max_text_chars, 120, 20_000, 1000)
+    # §5.2's deferred half, taken 2026-08-10: the caps are published ahead of the
+    # call (`vidtheque://context`), but a caller who asked for `limit=500` and
+    # got 50 had nothing in the payload to tell a clamp from a complete answer —
+    # filed twice now, by two vendors' agents (mcp-design-bench §D6, terra eval
+    # §4.12). One line, only when a clamp actually moved a number the caller
+    # sent, naming both values.
+    clamped = [
+        f"{name}={was} → {now}"
+        for name, was, now in zip(
+            ("limit", "offset", "max_per_video"), asked, (limit, offset, max_per_video)
+        )
+        if isinstance(was, int) and not isinstance(was, bool) and was != now
+    ]
+    if clamped:
+        notes.append(
+            f"note: clamped server-side: {', '.join(clamped)}. The caps are in "
+            "vidtheque://context; page with offset instead of raising limit."
+        )
 
     if q is not None and len(q) > 512:
         raise bad_param("q is limited to 512 characters.", "shorten the query.")

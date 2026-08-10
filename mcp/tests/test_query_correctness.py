@@ -1809,3 +1809,22 @@ async def test_a_phrasing_miss_reads_as_fts_zero(tool_corpus) -> None:
     legs = [line for line in body.splitlines() if line.startswith("Legs:")][0]
     assert "(fts 0 · vec 1)" in legs, legs
     assert "transcript 1 " in legs, "…and the fused count still shows the hit"
+
+
+async def test_a_clamp_that_binds_says_so(tool_corpus) -> None:
+    """§4.12 LOW. The caps are published ahead of the call, but the payload said
+    nothing when one moved a number the caller sent: `limit=500` came back as
+    `Results: 50/…` with no mention of the clamp, and a stress-testing consumer
+    filed it three times. §5.2 deferred this half on 2026-08-09; two vendors'
+    agents have now filed it independently, so it ships."""
+    parts = await tool_corpus(_six_videos)
+    loud = text_of(
+        await search.run(parts.deps, q="good eval", content_type="transcript", limit=500)
+    )
+    assert "note: clamped server-side: limit=500 → 50" in loud
+    assert "page with offset instead of raising limit" in loud
+
+    quiet = text_of(
+        await search.run(parts.deps, q="good eval", content_type="transcript", limit=5)
+    )
+    assert "clamped server-side" not in quiet, "a clamp that did not bind is not news"

@@ -87,8 +87,10 @@ drill down with tools, not with invented resource URIs.
 
 ## Server-side limits
 
-Values outside these are **clamped silently**, not rejected: asking for more
-does not get you more, it gets you the cap with no warning.
+Values outside these are **clamped**, not rejected: asking for more does not get
+you more, it gets you the cap. `search` prints a `note:` when a clamp moved a
+value you sent (§5.2); the other tools are still silent, so read the printed
+count, never the number you asked for.
 
 | Parameter | Range | Default |
 |---|---|---|

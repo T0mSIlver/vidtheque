@@ -102,3 +102,30 @@ scratch, not committed; each is ~60 lines of "open the DB read-only, POST to the
 worker, run the KNN, print percentiles" and the queries are listed in §1. Nothing
 here needs the repo — a read-only DB handle and a running worker is the whole
 apparatus.
+
+## 5. Before/after on the live corpus (added with the fix)
+
+`queries.search_transcript` called directly against the live DB (read-only, 171
+videos — the index batches added ~17 videos between §2's run and this one, which
+is why the band keeps ~200 chunks here rather than §2's ~48: the new videos are
+the correctly-embedded ones, so they land inside the band), query vectors from
+the running worker, `k=800`, absolute ceiling 1.0 in both columns — the only
+difference is the band:
+
+| query | | rows | videos | vec kept | latency | rank 1 |
+|---|---|---|---|---|---|---|
+| `turbopuffer` | before | 401 (pool full) | 119 | 800/800 | 3737 ms | `UM6sFg_jdlE` "RAG is dead, right?? — Turbopuffer" |
+| | after | 109 | **36** | 242/800 | **850 ms** | same |
+| `CUDA kernel occupancy` | before | 401 (pool full) | 132 | 800/800 | 3088 ms | `FB-MLPhL9Ms` (unrelated) |
+| | after | 25 | **5** | 189/800 | **663 ms** | same |
+| `voice agent interruption latency` | before | 401 (pool full) | 123 | 800/800 | 3021 ms | `CS5Cmz5FssI` (the hub) |
+| | after | 25 | **5** | 189/800 | **709 ms** | same |
+
+Three things to read here. The **counts stop lying**: `turbopuffer` no longer
+"matches" 119 of 171 talks, and the candidate pool stops filling, which also
+retires the misleading "deeper matches exist" note on these queries. The band is
+**4× cheaper**, because the fused ranking is built over hundreds of candidates
+instead of the whole `k`. And **rank 1 does not move** — the band drops the tail,
+it does not re-rank; two of these three rank 1s are still topically wrong, and
+they will stay wrong until §3's embedding problem is fixed. That is the honest
+split between what a floor can fix and what it cannot.
