@@ -50,9 +50,14 @@ flowchart LR
     tunnel["cloudflared (optional)<br/>compose profile <code>tunnel</code>"] -.-> MCP
 ```
 
-The worker is a **stateless inference API**. No GPU? Skip the worker service
-entirely and point `WORKER_URL` at any OpenAI-compatible provider — the
-endpoints are the contract, not the implementation.
+The worker is a **stateless inference API** — the endpoints are the contract,
+not the implementation. No GPU? Pointing `WORKER_URL` at a hosted
+OpenAI-compatible provider covers the **transcript leg**, both indexing and
+query side, on the standard `/v1/embeddings`. It does not cover frame search or
+on-screen text: those need `/v1/embeddings/image`,
+`/v1/embeddings/frame-query` and `/v1/ocr` at the same base URL, and no ordinary
+provider serves them. Run the worker for the whole product, or a shim that
+answers all five paths.
 
 Transcripts, metadata, OCR text *and* keyframes are embedded by one model:
 `Qwen3-VL-Embedding-2B` (Apache-2.0, 2048 dims), which reads a slide or a
@@ -68,17 +73,43 @@ frame embeddings never share an endpoint under either arrangement.
 
 ```bash
 git clone https://github.com/T0mSIlver/vidtheque.git
-cd vidtheque/deploy
-cp .env.example .env      # read it: every knob is documented there
-docker compose up -d      # mcp + worker
+cd vidtheque
+cp deploy/.env.example deploy/.env
 ```
 
-With a Cloudflare tunnel for remote access (read `docs/deploy-public.md`
-first — going public is a checklist, and the security audit is the gate):
+[`deploy/.env.example`](deploy/.env.example) is the document of record for every
+environment variable — 48 KB of what each knob does and what it costs. It is
+worth the read before the first `up`.
+
+**Private, on your own network** — the reference deployment:
 
 ```bash
-TUNNEL_TOKEN=… docker compose --profile tunnel up -d
+docker compose -f deploy/docker-compose.yml up -d      # mcp + worker
 ```
+
+**Public, behind a Cloudflare tunnel** — the overlay is not optional:
+
+```bash
+# in deploy/.env, at least: VIDTHEQUE_PUBLIC_READONLY=1  VIDTHEQUE_AUTH=none
+#                           VIDTHEQUE_PUBLIC_HOSTNAME=…  PUBLIC_URL=https://…
+TUNNEL_TOKEN=… docker compose \
+    -f deploy/docker-compose.yml \
+    -f deploy/compose.public.example.yml \
+    --profile tunnel up -d
+```
+
+Run the tunnel profile *without* `compose.public.example.yml` and the base file
+hands the container four variables by name and nothing else — `deploy/.env` is
+compose's interpolation source, not the container's environment — so
+`VIDTHEQUE_PUBLIC_READONLY` and `VIDTHEQUE_AUTH` are read by nobody: the server
+comes up in **full read-write mode, with the write tools registered, on
+`0.0.0.0`, behind a public hostname**. The overlay closes that and binds the
+published ports to loopback so the tunnel is the only way in.
+
+Read [`docs/deploy-public.md`](docs/deploy-public.md) before you open a tunnel:
+going public is a checklist, the security audit is the gate, and thirty seconds
+of `curl http://127.0.0.1:8080/api/meta | jq .auth` is the difference between a
+demo and an open indexing service.
 
 Check the worker:
 
