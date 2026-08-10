@@ -26,6 +26,7 @@ from typing import Protocol
 from ..config import _int_env
 from ..db import Database
 from . import store
+from .store import EVENT_KEEP_DAYS
 
 logger = logging.getLogger(__name__)
 
@@ -189,6 +190,15 @@ class PipelineRunner:
         # Startup sweep: whatever the previous process was holding when it died
         # is nobody's work until it goes back on the queue.
         await self.reclaim_stale()
+        # …and the same sweep for history. Every stage of every item appends a
+        # `job_events` row and nothing ever deleted one, so the table grew for
+        # the life of the deployment — and a full disk is what turns a commit
+        # failure into a poisoned writer (F-21). Same 30 days and the same
+        # once-at-boot shape the ask budget already uses, so there is one
+        # retention story rather than two. (2026-08-10 audit, F-25.)
+        pruned = await self.db.write(store.prune_events)
+        if pruned:
+            logger.info("pruned %s job event(s) older than %s days", pruned, EVENT_KEEP_DAYS)
         self._task = asyncio.create_task(self._loop(), name="vidtheque-pipeline")
 
     async def stop(self) -> None:
@@ -261,11 +271,22 @@ class PipelineRunner:
         try:
             await self._drive(job_id, str(job["public_id"]))
         finally:
-            beat.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await beat
-            self._active.discard(job_id)
-            await self.db.write(lambda c: _settle(c, job_id))
+            # Nested, and unconditional. `await beat` suppressed only
+            # CancelledError, so a heartbeat that died of anything else — an
+            # OperationalError from the writer, a disk error — re-raised here
+            # *before* the two lines below ran. The id stayed in `_active`,
+            # `reclaim_stale` skips everything in `_active`, and the job and its
+            # video claims were stuck until the process restarted.
+            # (2026-08-10 audit, F-24.)
+            try:
+                beat.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await beat
+            except Exception:
+                logger.exception("heartbeat for job %s failed", job_id)
+            finally:
+                self._active.discard(job_id)
+                await self.db.write(lambda c: _settle(c, job_id))
         return True
 
     async def _beat(self, job_id: int) -> None:

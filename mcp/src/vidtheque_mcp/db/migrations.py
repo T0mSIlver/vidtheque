@@ -97,9 +97,24 @@ def migrate(conn: sqlite3.Connection, directory: Path | None = None) -> list[int
             "refusing to guess."
         )
 
+    # A database from a *newer* build than this one. `user_version` matching
+    # the audit trail only proves the file is self-consistent, not that this
+    # binary understands it — so rolling a release back started cleanly against
+    # a schema it had never seen and read and wrote it anyway. There is no
+    # downgrade path, so refusing is the only safe answer.
+    # (2026-08-10 audit, F-23.)
+    known = discover(directory)
+    latest_known = max((m.version for m in known), default=0)
+    if version > latest_known:
+        raise MigrationError(
+            f"the database is at schema {version} and this build knows only "
+            f"{latest_known}. It was written by a newer vidtheque; there is no "
+            "downgrade path. Run the newer build, or restore a backup."
+        )
+
     by_version = {int(r["version"]): r for r in rows}
     pending: list[Migration] = []
-    for migration in discover(directory):
+    for migration in known:
         if migration.version <= version:
             recorded = by_version.get(migration.version)
             if recorded is not None and recorded["checksum"] != migration.checksum:

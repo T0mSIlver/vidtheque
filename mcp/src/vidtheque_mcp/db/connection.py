@@ -176,22 +176,42 @@ class ReadPool:
         """Run ``fn`` on a pooled connection with a real, interruptible deadline."""
         if self._free is None:  # pragma: no cover - misuse
             raise RuntimeError("ReadPool.open() was never awaited")
-        conn, cancel = await self._free.get()
+        free = self._free
+        conn, cancel = await free.get()
         cancel.arm(self._budget_s if budget_s is None else budget_s)
+
+        def release(_task: "asyncio.Future[T]" | None = None) -> None:
+            cancel.disarm()
+            free.put_nowait((conn, cancel))
+
+        # The work runs as its own task so the connection's lifetime is tied to
+        # the *thread*, not to whoever is waiting for it. `to_thread` awaited
+        # directly looks equivalent and is not: cancelling that await unwinds
+        # this coroutine while the thread keeps running `fn`, and the `finally`
+        # then handed the very same connection to the next request. Python
+        # cannot kill a thread, so the only correct release is a deferred one.
+        #
+        # The trigger is a client disconnect mid-search — free, anonymous and
+        # repeatable. (2026-08-10 audit, F-20.)
+        task: "asyncio.Future[T]" = asyncio.ensure_future(asyncio.to_thread(fn, conn))
         try:
             try:
-                return await asyncio.to_thread(fn, conn)
+                return await asyncio.shield(task)
             except sqlite3.OperationalError as exc:
                 if "interrupted" in str(exc).lower():
                     raise QueryInterrupted(cancel.deadline_expired) from exc
                 raise
         except asyncio.CancelledError:
-            # A dropped future must stop real work, not just stop waiting.
+            # A dropped future must stop real work, not just stop waiting. The
+            # interrupt is what makes the thread exit promptly; `release` then
+            # fires from its done-callback.
             cancel.cancel()
             raise
         finally:
-            cancel.disarm()
-            self._free.put_nowait((conn, cancel))
+            if task.done():
+                release()
+            else:
+                task.add_done_callback(release)
 
 
 class Writer:
@@ -223,20 +243,48 @@ class Writer:
         return self._conn
 
     async def run(self, fn: Callable[[sqlite3.Connection], T]) -> T:
-        """Run ``fn`` inside a BEGIN IMMEDIATE transaction on the writer."""
-        async with self._lock:
-            return await asyncio.to_thread(self._run_sync, fn)
+        """Run ``fn`` inside a BEGIN IMMEDIATE transaction on the writer.
+
+        The lock is held until the *thread* finishes, not until this coroutine
+        does. `async with self._lock` around a bare `await to_thread(...)` looks
+        equivalent and is not: cancelling the await released the lock while the
+        transaction was still open on the connection, and the next writer met an
+        active transaction. (2026-08-10 audit, F-20.)
+        """
+        await self._lock.acquire()
+        task: "asyncio.Future[T]" = asyncio.ensure_future(
+            asyncio.to_thread(self._run_sync, fn)
+        )
+        try:
+            return await asyncio.shield(task)
+        finally:
+            if task.done():
+                self._lock.release()
+            else:
+                task.add_done_callback(lambda _t: self._lock.release())
 
     def _run_sync(self, fn: Callable[[sqlite3.Connection], T]) -> T:
         conn = self.raw
         conn.execute("BEGIN IMMEDIATE")
         try:
             result = fn(conn)
+            conn.execute("COMMIT")
+            return result
         except BaseException:
-            conn.execute("ROLLBACK")
+            # COMMIT used to sit outside this handler, so a commit-time failure
+            # — a full disk, an I/O error — propagated with the transaction
+            # still open. Every later BEGIN IMMEDIATE then failed and the single
+            # writer was poisoned until the process restarted, taking the job
+            # runner and the paid-budget accounting with it.
+            #
+            # `in_transaction` rather than an unconditional ROLLBACK: after a
+            # successful COMMIT there is nothing to roll back, and issuing one
+            # would raise from the handler and mask the real error.
+            # (2026-08-10 audit, F-21.)
+            if conn.in_transaction:
+                with contextlib.suppress(sqlite3.Error):
+                    conn.execute("ROLLBACK")
             raise
-        conn.execute("COMMIT")
-        return result
 
 
 @contextlib.contextmanager
