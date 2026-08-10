@@ -284,14 +284,15 @@ const snippetFor = (hit, query) => {
   return node;
 };
 
-// A frame hit *is* its image: the picture is the evidence, so it is rendered
-// bigger than the decorative thumbnail a transcript hit carries.
+// A frame hit *is* its image: the picture is the evidence, and it is the reason
+// the row carries one at all. It no longer changes the thumbnail's *size* —
+// see `thumbFor` — but it still decides where the picture appears (a frame
+// moment brings its own; a spoken one is represented by the card's cover).
 const isFrameHit = (hit) => hit.source === "frame";
 
 const thumbFor = (hit) => {
   const src = safeUrl(hit.thumb);
   if (src) {
-    const wide = isFrameHit(hit);
     const img = el("img", "hit-thumb");
     img.src = src;
     // The row's own link text says the title and the timestamp, so a verbose
@@ -300,11 +301,12 @@ const thumbFor = (hit) => {
     img.alt = `Frame from ${hit.title || hit.video_id} at ${hit.timestamp || "0:00"}`;
     img.loading = "lazy";
     img.decoding = "async";
-    // The width the facade actually asked the frame route for (192, or 320 for
-    // a frame hit), so the box is reserved at the real aspect before the bytes
-    // arrive and nothing below it moves. The CSS box is that at 2x.
-    img.width = wide ? 320 : 192;
-    img.height = wide ? 180 : 108;
+    // The width the facade actually asked the frame route for — one number for
+    // every kind of hit now (demo-site.md §5) — so the box is reserved at the
+    // real aspect before the bytes arrive and nothing below it moves. The CSS
+    // box is that at 2x: 160×90.
+    img.width = 320;
+    img.height = 180;
     // A frame that will not load takes its enlarge button with it: a control
     // that opens a broken image is worse than no control.
     img.addEventListener("error", () =>
@@ -326,7 +328,7 @@ const placeholder = (hit) => {
 
 // -------------------------------------------------------------- the lightbox
 //
-// A thumbnail is 96 or 160 CSS pixels of a slide: enough to recognise, never
+// A thumbnail is 160 CSS pixels of a slide: enough to recognise, never
 // enough to read. Clicking one opens the frame at `thumb_large` (a width the
 // *server* picked and clamped — the page cannot ask for a size of its own).
 //

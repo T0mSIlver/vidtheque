@@ -767,21 +767,22 @@ a:hover > .rcpt,
 /* A still sits on black behind a 1px inset hairline — the glass in front of a
    frame, not elevation. Fixed box, mirrored in the img attributes, so the row
    keeps its height whether the frame loaded, failed, or never existed. */
+/* **One box, every kind of hit** (demo-site.md §5, amended 2026-08-11).
+   160×90 is the facade's `w=320` at 2x, and it is now the only thumbnail
+   geometry on the surface: a card cover, a frame moment, a `frame` citation
+   and a `transcript+ocr` citation beside it are the same rectangle. There were
+   three sizes — 96×54 for a text hit, 128×72 for a card cover, 160×90 for a
+   frame — each defensible on its own and, in one Sources list, a column of
+   pictures that changes width per row for a reason the reader cannot see
+   (Tom, 2026-08-11). The number is the contract's, not the browser's. */
 .hit-thumb {
   flex: none;
-  /* 96×54 is the facade's `w=192` at 2x; a frame hit asks for `w=320` and gets
-     the room a piece of evidence deserves. Both numbers are the contract's
-     (demo-site.md §5) and neither is the browser's to choose. */
-  width: 96px;
-  height: 54px;
+  width: 160px;
+  height: 90px;
   object-fit: cover;
   background: var(--black);
   box-shadow: var(--edge);
 }
-
-.hit.is-frame .hit-thumb,
-.moment.is-frame .hit-thumb { width: 160px; height: 90px; }
-.vcard-head .hit-thumb { width: 128px; height: 72px; }
 
 .hit-shot {
   flex: none;
@@ -1218,10 +1219,6 @@ footer { background: var(--void); border-top: 1px solid var(--seam); padding: va
 
 /* ─────────────────────────────────────────────────────────────── stacking */
 
-@media (max-width: 1120px) {
-  .moment .hit-thumb { width: 160px; height: 90px; }
-}
-
 /* --bp-hand: body drops to 15px, chrome tightens, on-image marks are dropped
    rather than shrunk, and multi-column grids go to one column. */
 @media (max-width: 780px) {
@@ -1258,9 +1255,12 @@ footer { background: var(--void); border-top: 1px solid var(--seam); padding: va
   .chips button { flex: 1 1 auto; }
 
   .vcard-head { gap: var(--s3); padding: 12px; }
+  /* Still one box for every kind, one size down: 160×90 beside a 390px row
+     leaves no room for the text. The full-width variant a frame moment used to
+     take here is gone with the second geometry — the moment row already goes
+     to three lines at this width (§6.5), so the picture has the row above its
+     text either way. */
   .hit-thumb { width: 112px; height: 63px; }
-  .moment .hit-thumb,
-  .moment.is-frame .hit-thumb { width: 100%; height: auto; aspect-ratio: 16 / 9; }
 
   /* The moment goes to three lines rather than losing its receipt: the receipt
      is the argument, and a truncated one proves nothing. The snippet is still

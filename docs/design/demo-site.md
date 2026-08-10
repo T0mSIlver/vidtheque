@@ -153,7 +153,7 @@ GET /api/search?q=kv+cache&content_type=all&limit=10&offset=0
       "text": "we cache the keys and the values at every new token",
       "link": "https://youtu.be/kCc8FmEb1nY?t=10",
       "frame_id": "kCc8FmEb1nY-00000",
-      "thumb": "https://…/frames/kCc8FmEb1nY-00000.jpg?w=192&q=70",
+      "thumb": "https://…/frames/kCc8FmEb1nY-00000.jpg?w=320&q=70",
       "thumb_large": "https://…/frames/kCc8FmEb1nY-00000.jpg?w=960&q=70",
       "score": 0.0312
     }
@@ -856,12 +856,23 @@ If the flag is combined with `token`/`oauth`, `frame_signer` exists and the
 facade signs its thumbnails exactly as `get-frames` does, using the same
 `FrameUrlSigner.url()`. One helper, both callers, no second signing scheme.
 
-Thumbnails are requested at `w=192&q=70` — 96×54 CSS pixels at 2x — and the
-route *does* resize now, through the byte-capped `derived/` cache
-(index-schema §6), clamping `w` server-side to 64..1280. A **frame** hit asks
-for `w=320` instead: it matched on its image, the page renders it at 160×90, and
-the width follows at the same 2x. Both are the facade's choice of a size the
-route already allows; neither is a limit the browser gets to set.
+Thumbnails are requested at `w=320&q=70` — 160×90 CSS pixels at 2x — and the
+route *does* resize, through the byte-capped `derived/` cache (index-schema §6),
+clamping `w` server-side to 64..1280. The width is the facade's choice of a size
+the route already allows; it is not a limit the browser gets to set.
+
+**One width, every hit** (*amended 2026-08-11, Tom's review*). There were two:
+`w=192` (96×54) for a transcript or OCR hit, and `w=320` (160×90) for a **frame**
+hit, on the argument that a frame matched on its image and the image is the
+evidence, so it should be bigger. The argument is sound and the result is not:
+in one Sources list a `frame` citation sat beside a `transcript+ocr` one at two
+different sizes, and in the results a card cover was a third (128×72). Three
+rectangles down one column, changing for a reason a reader cannot see. So the
+frame's box is now every kind's box — the evidence keeps the room it deserved
+and the list stops looking broken. `api.THUMB_WIDTH` is the only width left
+(`FRAME_THUMB_WIDTH` is gone, and `ask.py` reads the same constant), the CSS has
+one `.hit-thumb` rule, and below `--bp-hand` it is one size down (112×63) for
+every kind alike.
 
 ---
 
@@ -1164,7 +1175,7 @@ to be speech:
 |---|---|---|
 | `transcript` | `spoken` | a verbatim quotation of speech — set in quotation marks |
 | `ocr` | `on-screen` | text that was *visible*, not said — monospaced, and in `--seen` |
-| `frame` | `frame` | **no quotable text.** The image is the evidence, so it is rendered larger (160×90, `w=320`); any text is what happened to be visible in the frame, muted and never quoted |
+| `frame` | `frame` | **no quotable text.** The image is the evidence; any text is what happened to be visible in the frame, muted and never quoted |
 | `transcript+ocr` | `spoken` + `on-screen` | both channels agreed; the text is whichever was longer, so it is presented as neither — plain, with both badges |
 
 Two rules the styling obeys. **The word carries the meaning**: the face (sans /
@@ -1194,7 +1205,7 @@ same distinction in prose (§3.3).
 
 ### 6.4 Click to enlarge
 
-A thumbnail is 96 or 160 CSS pixels of somebody's slide: enough to recognise,
+A thumbnail is 160 CSS pixels of somebody's slide: enough to recognise,
 never enough to *read*. Clicking one opens the frame at `thumb_large`
 (`w=960`) in a dialog with the title, the channel, the timestamp, and
 `open at <t> on YouTube`.

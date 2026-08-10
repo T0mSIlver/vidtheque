@@ -832,7 +832,7 @@ def _answer(
     decision depends on what has already been *written* — two fabricated markers
     in a row (`"text [8][9] end"`) would otherwise each add their own space.
     """
-    from .api import FRAME_THUMB_WIDTH, LIGHTBOX_WIDTH, THUMB_WIDTH, thumb_url
+    from .api import LIGHTBOX_WIDTH, THUMB_WIDTH, thumb_url
 
     known = {c.n: c for c in evidence.items}
     used: list[int] = []
@@ -865,11 +865,10 @@ def _answer(
     cleaned = "".join(out).strip()
     citations = [
         known[n].as_dict(
-            thumb_url(
-                deps,
-                known[n].frame_id,
-                FRAME_THUMB_WIDTH if known[n].source == "frame" else THUMB_WIDTH,
-            ),
+            # One width for every kind of citation (§5): a Sources list whose
+            # rows are different sizes depending on which leg found them is a
+            # list that looks broken before it is read.
+            thumb_url(deps, known[n].frame_id, THUMB_WIDTH),
             thumb_url(deps, known[n].frame_id, LIGHTBOX_WIDTH),
         )
         for n in sorted(used)

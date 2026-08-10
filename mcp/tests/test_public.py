@@ -181,7 +181,7 @@ def test_search_facade_emits_thumbnail_urls_for_frame_hits(public_client: TestCl
     assert hits, "the ocr leg should return frame-backed hits"
     thumb = hits[0]["thumb"]
     assert thumb.startswith("http://localhost:8080/frames/")
-    assert thumb.endswith(".jpg?w=192&q=70")  # auth=none: unsigned, and honest about it
+    assert thumb.endswith(".jpg?w=320&q=70")  # auth=none: unsigned, and honest about it
     assert public_client.get(thumb).status_code == 200
 
 
@@ -206,21 +206,28 @@ def test_every_frame_backed_hit_carries_an_enlargeable_url(
     assert all(h["thumb_large"] is None for h in empty)
 
 
-def test_a_frame_hit_asks_for_the_wider_thumbnail(public_client: TestClient) -> None:
-    """A frame hit matched on its *image*, so the page shows it bigger (§6.3).
+def test_every_kind_of_hit_asks_for_the_same_thumbnail(public_client: TestClient) -> None:
+    """One thumbnail geometry across every source (§5, amended 2026-08-11).
 
-    The width follows the CSS box at 2x, and it is the facade that picks it —
-    the browser never gets to ask the route for a size.
+    A frame hit used to ask for `w=320` and everything else for `w=192`, on the
+    argument that a visual match *is* its picture. It still is — that width won
+    — but a Sources list whose rows change size depending on which leg found
+    them reads as broken before it reads as anything (Tom's review). The width
+    is the facade's either way: the browser never gets to ask for a size.
     """
-    from vidtheque_mcp.public.api import _decorate_hit
+    from vidtheque_mcp.public.api import THUMB_WIDTH, _decorate_hit
 
     deps = public_client.app.state.assembled.deps
-    frame = _decorate_hit(deps, {"source": "frame", "frame_id": "kCc8FmEb1nY-00000"})
-    spoken = _decorate_hit(deps, {"source": "transcript", "frame_id": "kCc8FmEb1nY-00000"})
-    assert frame["thumb"].endswith("?w=320&q=70")
-    assert spoken["thumb"].endswith("?w=192&q=70")
-    # Both widths are ones the route already serves, clamp and byte cap intact.
-    assert public_client.get(frame["thumb"]).status_code == 200
+    widths = {
+        source: _decorate_hit(deps, {"source": source, "frame_id": "kCc8FmEb1nY-00000"})[
+            "thumb"
+        ]
+        for source in ("frame", "transcript", "ocr", "transcript+ocr")
+    }
+    assert THUMB_WIDTH == 320, "160×90 at 2x — the frame's box, kept for all of them"
+    assert {url.split("?")[1] for url in widths.values()} == {"w=320&q=70"}, widths
+    # A width the route already serves, clamp and byte cap intact.
+    assert public_client.get(widths["frame"]).status_code == 200
 
 
 def test_search_facade_keeps_token_discipline(public_client: TestClient) -> None:
@@ -268,7 +275,7 @@ def test_videos_facade_lists_the_library_with_covers(public_client: TestClient) 
     ids = {v["video_id"] for v in payload["videos"]}
     assert {"kCc8FmEb1nY", "zduSFxRajkE", "eMlx5fFNoYc"} <= ids
     by_id = {v["video_id"]: v for v in payload["videos"]}
-    assert by_id["kCc8FmEb1nY"]["thumb"].endswith("kCc8FmEb1nY-00000.jpg?w=192&q=70")
+    assert by_id["kCc8FmEb1nY"]["thumb"].endswith("kCc8FmEb1nY-00000.jpg?w=320&q=70")
     # Seeded with no keyframes at all — a cover it does not have is null, not a
     # fabricated URL that 404s in the page.
     assert by_id["eMlx5fFNoYc"]["thumb"] is None
@@ -1019,6 +1026,32 @@ def test_a_source_row_is_a_grid_so_a_long_title_cannot_drop_under_the_frame() ->
     # And the title is a label, clamped, because the receipt is the evidence.
     title = _rule(css, ".hit-title")
     assert "-webkit-line-clamp: 2" in title and "line-clamp: 2" in title
+
+
+def test_one_thumbnail_geometry_across_every_kind_of_result() -> None:
+    """§5, amended 2026-08-11: one `.hit-thumb` box, whatever found the hit.
+
+    The stylesheet's half of the same rule the facade keeps: three sizes —
+    96×54 for a text hit, 128×72 for a card cover, 160×90 for a frame — became
+    one, so a Sources list is a column of identical rectangles and the
+    skeleton's reserved box matches every row it might stand in for.
+    """
+    css = (STATIC / "style.css").read_text()
+    thumb = _rule(css, ".hit-thumb")
+    assert "width: 160px" in thumb and "height: 90px" in thumb
+    # No per-kind override anywhere: a second geometry is the whole bug.
+    for gone in (
+        ".hit.is-frame .hit-thumb",
+        ".moment.is-frame .hit-thumb",
+        ".vcard-head .hit-thumb",
+    ):
+        assert gone not in css, gone
+    # And below `--bp-hand` it steps down once, still for every kind at once.
+    assert ".hit-thumb { width: 112px; height: 63px; }" in css
+
+    script = (STATIC / "app.js").read_text()
+    assert "img.width = 320;" in script and "img.height = 180;" in script
+    assert "wide ?" not in script, "the branch that made a frame hit its own size"
 
 
 def test_the_idle_line_is_parked_in_the_flow_never_taken_out_of_it() -> None:

@@ -60,12 +60,14 @@ from ..tools.base import Deps
 from . import humanize
 from .settings import REPO_URL, PublicSettings
 
-# 96×54 CSS pixels at 2x DPR — now that /frames actually applies w, this is
-# the honest size (was 320 when the param was decorative; ~2x page weight).
-THUMB_WIDTH = 192
-# A frame hit matched on its *image*, so the page renders it at 160×90 CSS
-# pixels instead of 96×54; the width follows, at the same 2x.
-FRAME_THUMB_WIDTH = 320
+# 160×90 CSS pixels at 2x DPR. **One width, every hit** (§5, amended
+# 2026-08-11): there used to be two — 192 for a transcript or OCR hit and 320
+# for a frame hit, because the frame is the evidence and deserved the room. It
+# does, and it still gets it; what it may not do is make a Sources list where a
+# `frame` citation and a `transcript+ocr` citation beside it are different
+# sizes (Tom, 2026-08-11). A result row is a result row, so the frame's box is
+# now every kind's box and the second width is gone.
+THUMB_WIDTH = 320
 # The click-to-enlarge view (§6.4). Wide enough to read a slide, well inside the
 # route's 64..1280 clamp and the `derived/` byte cap, and fetched only when a
 # visitor actually opens one — so it costs nothing on a results page.
@@ -218,8 +220,7 @@ def _decorate_hit(deps: Deps, hit: dict[str, Any]) -> dict[str, Any]:
     """The fields the facade adds, all of them from data already returned."""
     row = dict(hit)
     row["timestamp"] = clock(hit.get("start"))
-    width = FRAME_THUMB_WIDTH if hit.get("source") == "frame" else THUMB_WIDTH
-    row["thumb"] = thumb_url(deps, hit.get("frame_id"), width)
+    row["thumb"] = thumb_url(deps, hit.get("frame_id"), THUMB_WIDTH)
     # The enlarged frame. A second *URL*, not a second query — and under
     # `token`/`oauth` it has to be signed here, because the page cannot sign a
     # width of its own (which is the point: the clamp is the server's).
