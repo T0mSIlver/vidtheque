@@ -197,10 +197,11 @@ def error_for(
 
     pairs = [(name, suggest(name, known)) for name in unknown]
     named = ", ".join(f"{name}=" for name in unknown)
-    plural = "s" if len(unknown) > 1 else ""
+    many = len(unknown) > 1
     message = (
-        f"Unknown parameter{plural} for {tool}: {named}. They were rejected, not "
-        "applied — a filter you think you passed was not."
+        f"Unknown parameter{'s' if many else ''} for {tool}: {named}. "
+        f"{'They were' if many else 'It was'} rejected, not applied — a filter "
+        "you think you passed was not."
     )
 
     guesses = [f'{wrong}= → {right}=' for wrong, right in pairs if right]
