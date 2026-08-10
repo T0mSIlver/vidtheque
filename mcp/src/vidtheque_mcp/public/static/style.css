@@ -968,10 +968,15 @@ a:hover > .rcpt,
 
   .answer:has(.answer-sources) > .answer-prose { grid-column: 1; grid-row: 1; }
   .answer:has(.answer-sources) > .worklog { grid-column: 1; grid-row: 2; }
+  /* Row 3 takes the slack the Sources column creates, and the model line sits
+     at the *top* of it — under the disclosure it belongs to. Pushed to the
+     bottom instead, the gap lands between two things that belong together and
+     reads as a rendering fault; left here, the same gap is the end of a
+     column, which is what it is. */
   .answer:has(.answer-sources) > .answer-foot {
     grid-column: 1;
     grid-row: 3;
-    align-self: end;
+    align-self: start;
   }
 
   /* Beside the answer, separated by the hairline that would otherwise have
