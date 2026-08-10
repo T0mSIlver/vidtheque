@@ -168,12 +168,12 @@ time axis.
   itself"; "summed from the column, not walked on disk"). Every state is a
   **word** as well as a colour — that is an accessibility rule and a voice rule
   at the same time.
-- **The drawn film-frame favicon** (an inline SVG, not an emoji) is already
-  shared by both surfaces so they read as one product in a tab strip. Since
-  2026-08-09 the same drawing — path for path — is also the mark at the top of
-  the dashboard's rail and the thing the wordmark sits beside, rendered as
-  inline SVG that takes its two colours from the scheme tokens (a `data:`
-  favicon cannot). One drawn object, three places, no new asset.
+- **The favicon is the v.** (chosen 2026-08-11, replacing the drawn film
+  frame): the wordmark's `v` with its gold full stop, floating transparent
+  with a dark keyline so one SVG reads on both tab-strip themes. An inline
+  `data:` SVG shared verbatim by both surfaces so they read as one product in
+  a tab strip. It is the word abbreviated — the tab says what the rail lockup
+  says — and it never appears inside a page beside the word.
 - **The logo is the wordmark: `vidtheque.` — lowercase, with the period.**
   Decided 2026-08-10 with the landing-page identity: the gold full stop is the
   receipt ending the sentence, and it recurs as the timestamp dot. A font

@@ -825,9 +825,13 @@ it reads as a mark rather than as a heading. **v5's numbers are the contract.**
 The footer signature is unchanged between v4 and v5 and is the one place the
 word is allowed to be large — a signature, at the end, after the argument.
 
-The film-frame favicon stays as the tab icon, redrawn in `--gold` on `--pitch`.
-It is a favicon and not a brandmark: it never appears inside a page beside the
-word.
+The favicon is **the v.** (Tom's pick, 2026-08-11): the wordmark's `v` with its
+gold full stop, floating on a transparent ground — gold core, a 1-unit
+`--gold-ink` keyline so the same bytes read on light and dark tab strips (the
+keyline melts into dark chrome, and becomes the silhouette on white). It is the
+word abbreviated, not a drawing beside it, so the tab and the rail lockup say
+the same thing. It is a favicon and not a brandmark: it never appears inside a
+page beside the word. The drawn film frame it replaced lives in git history.
 
 ## Motion — the law
 
@@ -1098,8 +1102,8 @@ the same commit as their CSS, and says so:
   layered gradients doing a legibility job, and a hatch encoding a fact is
   fine. A surface that fades because fading looks expensive is not.)
 - **Don't** reach for film sprockets, clapperboards, reel icons or faux-CRT.
-  "Projection room" is a derivation, not a decoration. The favicon's drawn
-  film frame is the one sanctioned exception and it stays in the tab.
+  "Projection room" is a derivation, not a decoration. (The old film-frame
+  favicon was the one sanctioned exception; it retired 2026-08-11 for the v.)
 - **Don't** introduce a third font family, or a serif for the wordmark.
 - **Don't** put a raw colour, an off-ladder font size, an off-ladder weight, or
   an off-4px layout spacing value in a stylesheet.
