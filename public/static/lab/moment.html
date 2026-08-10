@@ -664,7 +664,7 @@ footer.end .attrib{grid-column:1/-1;border-top:1px solid var(--rule);padding-top
 
     const right = el('div', 'right');
     right.append(el('div', 'blk',
-      `<span class="lab">${m.speaker}${m.org ? ' · ' + esc(m.org) : ''}</span>
+      `<span class="lab">${esc(m.speaker)}${m.org ? ' · ' + esc(m.org) : ''}</span>
        <h3>${esc(m.title)}</h3>
        <p class="sub">${esc(m.kick)}</p>`));
 
