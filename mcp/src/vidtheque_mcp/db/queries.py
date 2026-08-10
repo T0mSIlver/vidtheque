@@ -87,6 +87,43 @@ OCR_SNIPPET_TOKENS = 64
 VEC_MAX_DISTANCE = 1.0
 FRAME_MAX_DISTANCE = 1.0
 
+# --- the vector legs' RELATIVE floor, which is the one that binds -----------
+#
+# The absolute ceilings above cannot be recalibrated for a new embedder without
+# a GPU bench, and the comment explains why transplanting one model's number
+# into another model's space is the worse failure. The margin below is the same
+# idea expressed against the query's OWN nearest hit, which is what makes it
+# survive a change of embedder: `keep hits within M of the best hit for this
+# query` needs no knowledge of the radius at which a model packs its corpus.
+#
+# Grounding, from the only two calibrations we have (the SigLIP-2 +
+# Qwen3-Embedding-0.6B pair, measured 2026-08-09 and quoted above):
+#
+#   text   real best-hit 0.504-0.576, real 20th-nearest 0.664  -> worst real
+#          spread from a query's own best hit: 0.664 - 0.504 = 0.16
+#   frame  real best-hit 0.877-0.919, real 20th-nearest 0.946  -> worst real
+#          spread: 0.946 - 0.877 = 0.069
+#
+# The defaults sit above both, exactly as the absolute ceilings did: 0.20 text,
+# 0.10 frame. Expressed the other way round, they reproduce the ceilings that
+# pair was actually given (best 0.576 + 0.20 ~ 0.72; best 0.877 + 0.10 ~ 0.96)
+# without hard-coding that pair's radius.
+#
+# Re-measured on the shipped Qwen3-VL-Embedding-2B space over the live 154-video
+# corpus (research/vec-floor-calibration-2026-08-10.md): real and junk best-hit
+# distances overlap completely there too (real 0.715-0.767, junk 0.739-0.767),
+# so an absolute ceiling still cannot be set — but the k=800 nearest span
+# 0.72-0.98 and the band keeps ~48 of them instead of all 800. That is the
+# `Results: 5/121` for `turbopuffer` that the terra eval filed as its first
+# HIGH finding (research/mcp-eval-terra-2026-08-10.md §4.1).
+#
+# The cut is applied in SQL, before fusion, and the payload prints how many
+# candidates survived it (`Legs: transcript 47 (fts 9 - vec 38/800)`) — a
+# relevance floor that narrows silently would be the §2 invariant broken in a
+# new place.
+VEC_MAX_MARGIN = 0.20
+FRAME_MAX_MARGIN = 0.10
+
 SIGLIP_FRAME_MAX_DISTANCE = 0.96
 """The measured ceiling for `google/siglip2-so400m-patch16-naflex`'s 1152-d
 space (real best-hit 0.877-0.919, junk 0.877-0.966, real 20th-nearest 0.946).
@@ -572,11 +609,18 @@ vec_hits AS MATERIALIZED (
     AND video_id IN (SELECT value FROM json_each(:video_ids))
     AND start_s <= :vec_t_end
 ),
+-- The relevance BAND (VEC_MAX_MARGIN): the k nearest chunks are only "nearest",
+-- never "near", so the cut that matters is relative to this query's own best
+-- hit. `MIN(distance)` over an already-materialized k rows, once.
+vec_band AS MATERIALIZED (
+  SELECT MIN(distance) + :vec_margin AS cut FROM vec_hits
+),
 vec_ranked AS MATERIALIZED (
   SELECT chunk_id, distance,
          ROW_NUMBER() OVER (ORDER BY distance, chunk_id) AS chunk_r
   FROM vec_hits
   WHERE distance <= :vec_max_distance
+    AND distance <= (SELECT cut FROM vec_band)
 ),
 vec_scoped AS MATERIALIZED (
   -- ONE best distance per cue. Chunks overlap by design (45 s window, 15 s
@@ -631,6 +675,18 @@ WITH
 params AS (SELECT :rrf_k AS rrf_k, :cluster_gap AS gap_s,
                   :cluster_max AS max_span, :max_per_video AS per_video),
 {legs},
+
+-- Sub-leg candidate counts, so the payload can print `transcript 47
+-- (fts 9 · vec 38/800)` instead of one fused number. The guide tells callers to
+-- read the transcript leg's count — "`transcript 0` next to on-screen hits
+-- usually means the phrasing differs" — and a merged count cannot say that: it
+-- never reads 0 while a KNN leg is returning its k
+-- (research/mcp-eval-terra-2026-08-10.md §4.2). MATERIALIZED so the three
+-- counts are computed once and not per output row.
+--   n_fts      cues the lexical leg matched
+--   n_vec      chunks that survived the relevance band
+--   n_vec_knn  chunks the KNN returned before the band (0 when it did not bind)
+leg_stats AS MATERIALIZED (SELECT {stats}),
 
 -- `n_legs` is how many of this query's rankers found this cue. It is not a
 -- score — it is the tie-break evidence the fusion seam had none of: RRF's
@@ -751,7 +807,10 @@ capped AS (
   FROM clustered
 )
 SELECT video_id, start_s, end_s, text, cue_ids, score, n_cues, n_matched,
-       anchor_s, anchor_cue_id, anchor_text, n_legs
+       anchor_s, anchor_cue_id, anchor_text, n_legs,
+       (SELECT n_fts     FROM leg_stats) AS n_fts,
+       (SELECT n_vec     FROM leg_stats) AS n_vec,
+       (SELECT n_vec_knn FROM leg_stats) AS n_vec_knn
 FROM capped
 WHERE rn <= (SELECT per_video FROM params)
 """
@@ -774,8 +833,15 @@ def _transcript_sql(*, do_fts: bool, do_vec: bool, do_browse: bool) -> str:
     if do_browse:
         legs.append(_LEG_BROWSE.format(scope=_CUE_SCOPE))
         unions.append(_SCORED_LEG.format(leg="browse_hits"))
+    stats = ", ".join(
+        (
+            "(SELECT count(*) FROM fts_hits) AS n_fts" if do_fts else "0 AS n_fts",
+            "(SELECT count(*) FROM vec_ranked) AS n_vec" if do_vec else "0 AS n_vec",
+            "(SELECT count(*) FROM vec_hits) AS n_vec_knn" if do_vec else "0 AS n_vec_knn",
+        )
+    )
     return _TRANSCRIPT_HEAD.format(
-        legs=",".join(legs), unions="\n    UNION ALL\n".join(unions)
+        legs=",".join(legs), stats=stats, unions="\n    UNION ALL\n".join(unions)
     )
 
 
@@ -799,6 +865,9 @@ class SearchParams:
     # which must return nothing rather than everything.
     speaker_ids: Sequence[int] | None = None
     vec_max_distance: float = VEC_MAX_DISTANCE
+    # Relative to this query's own nearest chunk; see VEC_MAX_MARGIN. Both
+    # ceilings apply — the effective one is whichever binds first.
+    vec_max_margin: float = VEC_MAX_MARGIN
 
     @property
     def browse(self) -> bool:
@@ -835,6 +904,7 @@ class SearchParams:
             # sound: no chunk holding an in-range cue can be dropped.
             "vec_t_end": VEC_TIME_SENTINEL if self.t_end is None else self.t_end,
             "vec_max_distance": self.vec_max_distance,
+            "vec_margin": self.vec_max_margin,
             "min_chars": self.min_chars,
             "max_chars": self.max_chars,
             "speaker_on": 0 if self.speaker_ids is None else 1,
@@ -1024,11 +1094,18 @@ WITH frame_hits AS MATERIALIZED (
 -- excluded outright — the keyframe stage already decided they are the same
 -- image as an earlier frame, and only the earlier one is embedded, so this is
 -- the belt to that braces.
+-- The relevance band, same rule as the transcript vector leg (FRAME_MAX_MARGIN):
+-- relative to this query's own nearest frame, so it survives a change of frame
+-- encoder in a way an absolute cosine ceiling does not.
+frame_band AS MATERIALIZED (
+  SELECT MIN(distance) + :frame_margin AS cut FROM frame_hits
+),
 deduped AS (
   SELECT fh.*, ROW_NUMBER() OVER (PARTITION BY fh.video_id, k.phash
                                   ORDER BY fh.distance, fh.t_s, fh.keyframe_id) AS dup_rn
   FROM frame_hits fh JOIN keyframes k ON k.id = fh.keyframe_id
   WHERE fh.distance <= :frame_max_distance AND k.dup_of IS NULL
+    AND fh.distance <= (SELECT cut FROM frame_band)
 ),
 ranked AS (
   SELECT keyframe_id, video_id, t_s, distance,
@@ -1045,6 +1122,9 @@ SELECT v.public_id || '-' || printf('%05d', k.ord) AS frame_id,
        v.title AS title, v.channel_name AS channel,
        c.t_s, c.distance,
        1.0 / (:rrf_k + c.r) AS score,
+       -- What the band kept, and what the KNN handed it. Printed, not silent.
+       (SELECT count(*) FROM ranked)     AS n_kept,
+       (SELECT count(*) FROM frame_hits) AS n_knn,
        (SELECT group_concat(o.text, ' | ' ORDER BY o.line_no)
           FROM ocr_lines o WHERE o.keyframe_id = c.keyframe_id) AS ocr_text
 FROM capped c
@@ -1062,6 +1142,7 @@ def search_frames(
     qimg: bytes,
     k_frames: int,
     max_distance: float = FRAME_MAX_DISTANCE,
+    max_margin: float = FRAME_MAX_MARGIN,
 ) -> list[sqlite3.Row]:
     return conn.execute(
         _FRAME_SQL,
@@ -1076,6 +1157,7 @@ def search_frames(
             ),
             "frame_t_end": VEC_TIME_SENTINEL if params.t_end is None else params.t_end,
             "frame_max_distance": max_distance,
+            "frame_margin": max_margin,
             "max_per_video": params.max_per_video,
             "limit": params.limit + 1,
             "offset": params.offset,

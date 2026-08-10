@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -1398,7 +1399,9 @@ async def test_the_pool_is_the_pool_and_not_the_pool_plus_one(
     result = await search.run(
         parts.deps, q="good eval", content_type="transcript", limit=50
     )
-    assert "Legs: transcript 2 ·" in text_of(result), "counted after the sentinel goes"
+    # `transcript 2 (…)` — the fused count is still counted after the sentinel
+    # goes; what follows it is the sub-leg split (§4.2 of the terra eval).
+    assert "Legs: transcript 2 (" in text_of(result), "counted after the sentinel goes"
     assert page_of(result)["approx_total"] == 2
     assert len(rows_of(result)) == 2, "and the page cannot show a 3rd of 2"
     assert page_of(result)["pool_exhausted"] is True, "still known to be bounded"
@@ -1635,3 +1638,174 @@ async def test_the_matched_phrase_survives_truncation(tool_corpus) -> None:
     # ...and the citation is the matched cue inside that two-minute island.
     assert rows[0]["start"] == 0.0
     assert rows[0]["match_start"] == 50.0
+
+
+# ===========================================================================
+# The terra eval, 2026-08-10 (research/mcp-eval-terra-2026-08-10.md §4.1, §4.2).
+#
+# Six Codex/gpt-5.6-terra consumers on the live server. Two search-side
+# failures, and both are about the same thing: a nearest-neighbour leg answers
+# every query with its k nearest, and nothing in the payload — or in the
+# ranking — told the difference between "this matched" and "this was returned".
+# ===========================================================================
+
+
+def _one_near_many_far(conn: sqlite3.Connection) -> None:
+    """One chunk near the query vector, twenty scattered elsewhere.
+
+    Every video also carries the query's word, so `has_lexical_footing` opens
+    the semantic legs — the §4.1 case is precisely the one where the corpus
+    *does* say the word somewhere and the KNN then hands back everything.
+    """
+    for i in range(21):
+        vid = add_video(conn, f"vecfloor{i:03d}")
+        cue = add_cue(conn, vid, 0, 0.0, 5.0, f"turbopuffer appears here in talk {i}")
+        add_chunk(
+            conn, vid, 0, cue, cue, f"talk {i} body",
+            0.0, 5.0,
+            # The fixture's vectors are `sin()` stand-ins: identical text is the
+            # only thing that is genuinely NEAR, everything else sits out at the
+            # ~1.0 background distance of two random directions — which is the
+            # geometry this finding is about.
+            vector_text=("turbopuffer" if i == 0 else f"unrelated topic {i}"),
+        )
+
+
+def test_the_vector_leg_keeps_only_the_band_around_its_own_best_hit(
+    corpus: Corpus,
+) -> None:
+    """§4.1 HIGH. `vec_max_distance` admitted every non-anti-correlated chunk,
+    so a KNN with k=800 returned a fifth of the corpus and unrelated talks took
+    rank 1. The cut that binds is relative to THIS query's nearest hit, which is
+    the only form that survives a change of embedder (VEC_MAX_MARGIN)."""
+    corpus.write(_one_near_many_far)
+    conn = corpus.read
+    qvec = queries.pack_f32(vector_for("turbopuffer", TEXT_DIM))
+
+    def run(margin: float):
+        return queries.search_transcript(
+            conn,
+            queries.SearchParams(
+                q="turbopuffer",
+                video_ids=pool(conn),
+                qvec=qvec,
+                limit=100,
+                cluster_gap=0.0,
+                vec_max_distance=2.0,
+                vec_max_margin=margin,
+            ),
+        )
+
+    wide, banded = run(2.0), run(0.05)
+    assert int(wide[0]["n_vec"]) == 21, "without a band, the KNN's whole k fuses"
+    assert int(banded[0]["n_vec"]) == 1, "with one, only the chunk that is actually near"
+    # The band is a candidate cut, not a re-ranking: it must not remove the
+    # lexical leg's own rows.
+    assert len(banded) == 21, "the FTS leg still answers for every talk"
+    assert int(banded[0]["n_vec_knn"]) == 21, "and the payload can say what was dropped"
+
+
+def test_the_frame_band_is_relative_too(corpus: Corpus) -> None:
+    """Same rule on the frame leg (FRAME_MAX_MARGIN), same reason."""
+
+    def build(conn: sqlite3.Connection) -> None:
+        vid = add_video(conn, "framefloor0")
+        near = add_ocr(conn, vid, 0, 1.0, "the wanted slide")
+        add_frame_vector(conn, near, vid, 1.0, "the wanted slide")
+        for i in range(1, 8):
+            far = add_ocr(conn, vid, i, 10.0 * i, f"another slide {i}")
+            add_frame_vector(conn, far, vid, 10.0 * i, f"nothing alike {i}")
+
+    corpus.write(build)
+    conn = corpus.read
+    qimg = queries.pack_f32(vector_for("the wanted slide", FRAME_DIM))
+    params = queries.SearchParams(q="slide", video_ids=pool(conn), limit=50, max_per_video=20)
+
+    wide = queries.search_frames(conn, params, qimg, 20, max_distance=2.0, max_margin=2.0)
+    banded = queries.search_frames(conn, params, qimg, 20, max_distance=2.0, max_margin=0.05)
+    assert len(wide) == 8
+    assert len(banded) == 1, "only the frame that is near the query survives"
+    assert int(banded[0]["n_knn"]) == 8, "and the k it was chosen from is carried out"
+
+
+def test_the_configured_margins_are_the_defaults_and_are_clamped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Server-side, never prompt-only, and documented in `deploy/.env.example`.
+
+    A margin is a search guarantee: an operator typo that would switch it off
+    is clamped into the documented range rather than obeyed."""
+    from vidtheque_mcp.config import Settings as _S
+
+    shipped = _S(data_dir=Path("/data"), public_url="http://x", worker_url="http://y")
+    assert shipped.vec_max_margin == queries.VEC_MAX_MARGIN == 0.20
+    assert shipped.frame_max_margin == queries.FRAME_MAX_MARGIN == 0.10
+
+    env = (Path(__file__).resolve().parents[2] / "deploy" / ".env.example").read_text()
+    assert "VIDTHEQUE_VEC_MAX_MARGIN" in env
+    assert "VIDTHEQUE_FRAME_MAX_MARGIN" in env
+
+    monkeypatch.setenv("VIDTHEQUE_VEC_MAX_MARGIN", "20")
+    monkeypatch.setenv("VIDTHEQUE_FRAME_MAX_MARGIN", "-1")
+    monkeypatch.setenv("VIDTHEQUE_SECRET", "test-secret-not-for-production")
+    monkeypatch.setenv("PUBLIC_URL", "http://localhost:8080")
+    tuned = _S.from_env()
+    assert tuned.vec_max_margin == 2.0, "clamped, not obeyed"
+    assert tuned.frame_max_margin == 0.0
+
+
+async def test_the_legs_line_splits_the_lexical_and_semantic_sub_legs(
+    tool_corpus, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """§4.2 HIGH. `vidtheque://guide` teaches "`transcript 0` next to on-screen
+    hits usually means the phrasing differs" — and the fused count can never
+    read 0 while a KNN leg is returning its k. The split restores the rule.
+
+    End to end with §4.1: the absolute ceiling is opened right up, so the only
+    thing standing between the caller and "21 talks match turbopuffer" is the
+    relevance band — and the line says how many of the k it kept."""
+    parts = await tool_corpus(_one_near_many_far)
+    # `Settings` is frozen; `Deps` is not, and the fixture's absolute ceiling
+    # (0.72, the SigLIP-era number) would otherwise do the cutting for us.
+    monkeypatch.setattr(
+        parts.deps, "settings", replace(parts.deps.settings, vec_max_distance=2.0)
+    )
+    result = await search.run(
+        parts.deps, q="turbopuffer", content_type="transcript", limit=5
+    )
+    body = text_of(result)
+    assert "Legs: transcript " in body
+    legs = [line for line in body.splitlines() if line.startswith("Legs:")][0]
+    assert "(fts 21 · vec 1/21)" in legs, legs
+
+    counts = result.structured_content["leg_counts"]
+    assert counts["transcript_fts"] == 21
+    assert counts["transcript_vec"] == 1, "one chunk is actually near the query"
+    assert counts["transcript_vec_knn"] == 21, "…of the 21 the KNN handed back"
+
+
+async def test_a_phrasing_miss_reads_as_fts_zero(tool_corpus) -> None:
+    """The diagnostic itself: the words are not in the transcript, the topic is
+    — and the caller can now tell those apart in one line."""
+
+    def make(conn: sqlite3.Connection) -> None:
+        vid = add_video(conn, "phrasingdif")
+        cue = add_cue(conn, vid, 0, 0.0, 5.0, "we keep the keys and the values around")
+        add_chunk(
+            conn, vid, 0, cue, cue, "we keep the keys and the values around", 0.0, 5.0,
+            # The topic, reachable by the semantic leg only. The fixture's
+            # vectors are `sin()` stand-ins, so "near" means the same string.
+            vector_text="keep retention",
+        )
+
+    parts = await tool_corpus(make)
+    body = text_of(
+        # `keep` has lexical footing, so the semantic legs run; `retention` is
+        # not in the corpus, so the AND-ed FTS leg matches nothing.
+        await search.run(
+            parts.deps, q="keep retention", content_type="transcript", limit=5
+        )
+    )
+    legs = [line for line in body.splitlines() if line.startswith("Legs:")][0]
+    assert "(fts 0 · vec 1)" in legs, legs
+    assert "transcript 1 " in legs, "…and the fused count still shows the hit"

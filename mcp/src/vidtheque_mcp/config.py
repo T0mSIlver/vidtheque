@@ -62,6 +62,16 @@ def _float_env(name: str, default: float) -> float:
         raise ConfigError(f"{name} must be a number, got {raw!r}") from exc
 
 
+def _clamped_float_env(name: str, default: float, low: float, high: float) -> float:
+    """A float env with a server-side clamp — never a prompt-only limit.
+
+    The relevance band is a search *guarantee*, so an operator typo (`2O`, `20`)
+    must not be able to switch it off silently: out-of-range values are pulled
+    back into the documented range instead.
+    """
+    return min(high, max(low, _float_env(name, default)))
+
+
 def _bool_env(name: str, default: bool) -> bool:
     raw = _env(name)
     if raw is None:
@@ -109,6 +119,15 @@ class Settings:
     # anyone still on that pair.
     vec_max_distance: float = 1.0
     frame_max_distance: float = 1.0
+
+    # The floor that actually binds, and the reason the two above may stay open:
+    # a margin over the query's OWN nearest hit, which needs no knowledge of the
+    # radius at which a given model packs its corpus. Grounded on the one pair
+    # we have calibrated — see db.queries.VEC_MAX_MARGIN — and clamped to
+    # [0, 2] on the way in, because a mistyped env is not a licence to return
+    # the whole corpus.
+    vec_max_margin: float = 0.20
+    frame_max_margin: float = 0.10
 
     # Crash recovery (index-schema §1.9). A claim quieter than this belonged to
     # a process that is gone; the runner requeues it and resumes per stage.
@@ -222,6 +241,10 @@ class Settings:
             candidate_cap=_int_env("VIDTHEQUE_CANDIDATE_CAP", 5_000),
             vec_max_distance=_float_env("VIDTHEQUE_VEC_MAX_DISTANCE", 1.0),
             frame_max_distance=_float_env("VIDTHEQUE_FRAME_MAX_DISTANCE", 1.0),
+            vec_max_margin=_clamped_float_env("VIDTHEQUE_VEC_MAX_MARGIN", 0.20, 0.0, 2.0),
+            frame_max_margin=_clamped_float_env(
+                "VIDTHEQUE_FRAME_MAX_MARGIN", 0.10, 0.0, 2.0
+            ),
             deeplink_lead_s=_int_env("VIDTHEQUE_DEEPLINK_LEAD", 2),
             stale_claim_s=_int_env("VIDTHEQUE_STALE_CLAIM_S", 300),
             query_timeout_s=float(_int_env("VIDTHEQUE_QUERY_TIMEOUT_S", 30)),

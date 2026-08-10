@@ -345,6 +345,7 @@ async def run(
         max_chars=max_chars,
         speaker_ids=speaker_ids,
         vec_max_distance=settings.vec_max_distance,
+        vec_max_margin=settings.vec_max_margin,
         k_vec=_k_for(fetch_n),
     )
 
@@ -357,6 +358,7 @@ async def run(
                 qimg,
                 fetch_n,
                 settings.frame_max_distance,
+                settings.frame_max_margin,
                 max_text_chars,
             )
         )
@@ -460,6 +462,11 @@ async def run(
             "approx_total": total,
             "pool_exhausted": pool_full,
         },
+        # The same split the `Legs:` line prints, for the client that reads
+        # structured content instead of prose: a conformant client should not
+        # have to parse a header to learn that the lexical sub-leg matched
+        # nothing (§4.2 of the terra eval).
+        "leg_counts": leg_counts,
         "notes": notes,
     }
     if related is not None:
@@ -515,10 +522,27 @@ def _run_legs(
     qimg: bytes | None,
     fetch_n: int,
     frame_max_distance: float,
+    frame_max_margin: float,
     max_text_chars: int,
 ) -> tuple[list[Hit], dict[str, int], bool]:
     hits: list[Hit] = []
-    counts = {"transcript": 0, "ocr": 0, "frame": 0}
+    # `transcript` is the FUSED count — what the leg contributed to the ranking.
+    # The `*_fts` / `*_vec` / `*_vec_knn` keys are the sub-leg candidate counts
+    # behind it, and they are what the guide's "`transcript 0` means the
+    # phrasing differs" rule actually needs: a fused count next to a KNN leg
+    # never reads 0 (research/mcp-eval-terra-2026-08-10.md §4.2). Units are each
+    # sub-leg's own: cues for FTS, chunks for the vector legs, frames for the
+    # frame leg.
+    counts = {
+        "transcript": 0,
+        "ocr": 0,
+        "frame": 0,
+        "transcript_fts": 0,
+        "transcript_vec": 0,
+        "transcript_vec_knn": 0,
+        "frame_vec": 0,
+        "frame_knn": 0,
+    }
     # Every leg fetches `pool + 1` rows (SearchParams.bind adds the +1), so a
     # leg that came back with more than the pool is a leg that had more to give.
     # That extra row is a *sentinel*: it is read for the flag and then dropped
@@ -535,6 +559,10 @@ def _run_legs(
     if legs["transcript"]:
         rows = _pool(queries.search_transcript(conn, params))
         counts["transcript"] = len(rows)
+        if rows:
+            counts["transcript_fts"] = int(rows[0]["n_fts"])
+            counts["transcript_vec"] = int(rows[0]["n_vec"])
+            counts["transcript_vec_knn"] = int(rows[0]["n_vec_knn"])
         for row in rows:
             hits.append(
                 Hit(
@@ -588,9 +616,19 @@ def _run_legs(
 
     if legs["frame"] and qimg is not None:
         rows = _pool(
-            queries.search_frames(conn, params, qimg, _k_for(fetch_n), frame_max_distance)
+            queries.search_frames(
+                conn,
+                params,
+                qimg,
+                _k_for(fetch_n),
+                frame_max_distance,
+                frame_max_margin,
+            )
         )
         counts["frame"] = len(rows)
+        if rows:
+            counts["frame_vec"] = int(rows[0]["n_kept"])
+            counts["frame_knn"] = int(rows[0]["n_knn"])
         for row in rows:
             hits.append(
                 Hit(
@@ -905,6 +943,35 @@ def _as_dict(deps: Deps, hit: Hit, max_text_chars: int) -> dict[str, Any]:
     }
 
 
+def _legs_line(counts: dict[str, int]) -> str:
+    """`Legs:` — the fused count per leg, and the sub-legs behind it.
+
+    The transcript leg is FTS ∪ KNN, and printing only the fused number killed
+    the one diagnostic `vidtheque://guide` tells callers to use: with a KNN leg
+    returning its k, `transcript` never reads 0, so "the phrasing differs" and
+    "the topic is unspoken" look identical
+    (research/mcp-eval-terra-2026-08-10.md §4.2). `fts 0` says it in one token.
+
+    `a/b` is kept/considered: how many candidates survived the relevance band
+    out of the k nearest the KNN returned (§4.1's floor). It is printed only
+    when the band actually binds — a cut that narrows silently is the §2
+    invariant broken, and one that prints two identical numbers is noise.
+    """
+    transcript = ""
+    if counts.get("transcript_fts") or counts.get("transcript_vec"):
+        vec = str(counts["transcript_vec"])
+        if counts.get("transcript_vec_knn", 0) > counts["transcript_vec"]:
+            vec += f"/{counts['transcript_vec_knn']}"
+        transcript = f" (fts {counts['transcript_fts']} · vec {vec})"
+    frame = ""
+    if counts.get("frame_knn", 0) > counts.get("frame_vec", 0) > 0:
+        frame = f" (vec {counts['frame_vec']}/{counts['frame_knn']})"
+    return (
+        f"Legs: transcript {counts['transcript']}{transcript} · ocr {counts['ocr']} · "
+        f"frame {counts['frame']}{frame} (fused, RRF k=60)"
+    )
+
+
 def _render(
     deps: Deps,
     page: list[Hit],
@@ -937,8 +1004,7 @@ def _render(
         first,
         f'Query: "{q or "*"}" · content_type={content_type} · order={order} · '
         f"max_per_video={max_per_video}",
-        f"Legs: transcript {leg_counts['transcript']} · ocr {leg_counts['ocr']} · "
-        f"frame {leg_counts['frame']} (fused, RRF k=60)",
+        _legs_line(leg_counts),
         *notes,
         "",
     ]
