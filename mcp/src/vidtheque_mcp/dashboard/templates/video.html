@@ -3,10 +3,13 @@
 {{ root }}/videos/{{ video.video_id }}?frames={{ frame_page }}&amp;frame_offset={{ f_off }}&amp;cues={{ cue_page }}&amp;cue_offset={{ c_off }}#{{ anchor }}
 {%- endmacro %}
 {# One OCR line: the string the machine read, its box, and how sure it was.
-   Written once because the digest prints it in two lists — the bounded preview
-   and the remainder behind the expander — and the two must be the same row. #}
-{% macro ocr_line(line) -%}
-<li class="ocrline" data-box="{{ line.box[0] }},{{ line.box[1] }},{{ line.box[2] }},{{ line.box[3] }}">
+   `data-line` is its index in the frame's own ordered list, and the box drawn
+   over the still carries the same number — that pair is the whole linkage, and
+   because it is an index rather than a position in the DOM it holds for *every*
+   line rather than for the first eight (2026-08-10). #}
+{% macro ocr_line(line, index) -%}
+<li class="ocrline" data-line="{{ index }}"
+    data-box="{{ line.box[0] }},{{ line.box[1] }},{{ line.box[2] }},{{ line.box[3] }}">
   <span class="ocrtext">{{ line.text }}</span>
   {%- if line.conf is not none %}<span class="conf">{{ "%.2f" | format(line.conf) }}</span>{% endif %}
 </li>
@@ -22,19 +25,30 @@
 <div class="pagehead">
   <div class="pagehead-line">
     <h1>{{ video.title }}</h1>
-    <p class="pagehead-meta">
-      <span class="pill tone-{{ video.index_state | tone }}">{{ video.index_state }}</span>
-      {# video-summary's own word, verbatim (§4.5). Shown only when it says
-         something `index_state` did not, which for a failed video it does not.
+    {# Both states are labelled, and each label is joined to its own state
+       (Tom, 2026-08-10: the cluster "doesn't look good"). It was a bare pill,
+       then a floating 10px `data_status`, then a second bare pill — three
+       objects at three weights with nothing saying which label owned which
+       pill, and the tracked label read as a stray caption between them.
 
-         It is labelled, because the two pills come from two different
-         vocabularies and §4.5 says the four are deliberately not unified: a
-         bare `ready` beside a bare `no_frames` reads as the page contradicting
-         itself, and naming the second one's source is the difference between a
-         contradiction and two facts. #}
+       §4.5 is the reason it has to be labelled at all: the four `data_status`
+       vocabularies are deliberately not unified, so a bare `ready` beside a
+       bare `no_frames` reads as the page contradicting itself. Naming *both*
+       sources is what turns a contradiction into two facts, and the
+       `statepair` — one hairline box, the key on `--plate2`, the state's own
+       pill flush against it — is what makes each name belong to one of them. #}
+    <p class="pagehead-meta">
+      <span class="statepair">
+        <span class="statepair-key">index_state</span>
+        <span class="pill tone-{{ video.index_state | tone }}">{{ video.index_state }}</span>
+      </span>
+      {# video-summary's own word, verbatim. Shown only when it says something
+         `index_state` did not, which for a failed video it does not. #}
       {% if data_status and data_status != video.index_state %}
-      <span class="label">data_status</span>
-      <span class="pill tone-{{ data_status | tone }}">{{ data_status }}</span>
+      <span class="statepair">
+        <span class="statepair-key">data_status</span>
+        <span class="pill tone-{{ data_status | tone }}">{{ data_status }}</span>
+      </span>
       {% endif %}
     </p>
   </div>
@@ -299,37 +313,38 @@
   {% if read_frames %}
   <div class="ocrgrid">
     {% for frame in read_frames %}
-    <figure class="ocrframe" id="ocr-{{ frame.frame_id }}">
-      <div class="ocrstage">
+    <figure class="ocrframe" id="ocr-{{ frame.frame_id }}" data-ocrframe="{{ frame.frame_id }}">
+      {# The still is a button now (Tom, 2026-08-10): a frame in this panel
+         opens in the same overlay a keyframe in the strip does, because it is
+         the same frame and a reader who wants to *read* the slide has to be
+         able to. It carries the strip's own `data-*`, so the one click handler
+         in `dashboard.js` serves both panels and neither knows about the
+         other. The boxes are `pointer-events: none` here on purpose: at 512px
+         a detection box is a few millimetres of screen, and the full-size box
+         interaction is what the overlay is for. #}
+      <button type="button" class="framebtn ocrstage" data-large="{{ frame.large }}"
+              data-frame="{{ frame.frame_id }}"
+              data-caption="{{ frame.frame_id }} · {{ frame.t_s | clock }} · {{ frame.width }}×{{ frame.height }} · {{ frame.jpeg_bytes | bytes_human }}"
+              data-link="https://youtu.be/{{ video.video_id }}?t={{ frame.t_s | int }}">
         <img src="{{ frame.detail }}" alt="Keyframe {{ frame.ord }} at {{ frame.t_s | clock }}"
              width="512" height="288" loading="lazy" decoding="async">
         {% for line in frame.lines %}
-        <span class="ocrbox" aria-hidden="true"
+        <span class="ocrbox" aria-hidden="true" data-line="{{ loop.index0 }}"
               style="left:{{ (line.box[0] * 100) | round(3) }}%;top:{{ (line.box[1] * 100) | round(3) }}%;width:{{ ((line.box[2] - line.box[0]) * 100) | round(3) }}%;height:{{ ((line.box[3] - line.box[1]) * 100) | round(3) }}%"></span>
         {% endfor %}
-      </div>
-      {# The digest (DESIGN.md, The digest). A dense slide is thirty-odd lines,
-         and printed in full four of them made this panel taller than four
-         viewports. The preview is `ocr_preview_lines`, which is the same eight
-         the box↔line highlight can point at — so what you can see is exactly
-         what the frame above can show you — and the remainder is one
-         `<details>` away, in place, with a real count on it. The boxes are all
-         still drawn, and `dashboard.js` still reads every `.ocrline` in this
-         figure for the lightbox, open or closed. #}
+      </button>
+      {# One continuous list of every line the machine read, in a scrollbox
+         (Tom, 2026-08-10). The digest that used to bound this — eight lines,
+         then a `+ N more` expander — is gone, and so is the split it created:
+         two `<ol>`s meant the box↔line highlight could only be wired for the
+         first eight, and an opened expander then had lines that pointed at
+         nothing. A fixed-height scroller holds all of them, the numbering is
+         one sequence, and every line links to its box. #}
       <figcaption>
         <p class="framemeta"><span class="at">{{ frame.t_s | clock }}</span> <span class="muted">#{{ frame.ord }} · {{ frame.lines | length }} line(s)</span></p>
-        <ol class="ocrlines ocrlines-head">
-          {% for line in frame.lines[:ocr_preview_lines] %}{{ ocr_line(line) }}{% endfor %}
+        <ol class="ocrlines" data-ocrlines>
+          {% for line in frame.lines %}{{ ocr_line(line, loop.index0) }}{% endfor %}
         </ol>
-        {% set rest = frame.lines[ocr_preview_lines:] %}
-        {% if rest %}
-        <details class="digest">
-          <summary><span class="digest-count">{{ rest | length }}</span> more line(s)</summary>
-          <ol class="ocrlines ocrlines-rest" start="{{ ocr_preview_lines + 1 }}">
-            {% for line in rest %}{{ ocr_line(line) }}{% endfor %}
-          </ol>
-        </details>
-        {% endif %}
       </figcaption>
     </figure>
     {% endfor %}
@@ -361,25 +376,59 @@
 <section class="panel" aria-labelledby="transcript-title" id="transcript">
   <h2 class="panel-title" id="transcript-title">Transcript</h2>
   {% if cues %}
-  <ol class="cues">
-    {% for cue in cues %}
-    {% if cue.chunk_opens %}
-    <li class="chunkmark" aria-hidden="true">
-      chunk {{ cue.chunk_opens.seq }} · {{ cue.chunk_opens.start_s | clock }}–{{ cue.chunk_opens.end_s | clock }} · {{ cue.chunk_opens.n_chars }} chars
-    </li>
-    {% endif %}
-    <li class="cue{{ ' in-chunk' if cue.chunk_opens or cue.chunk_closes }}">
-      <a class="at" href="https://youtu.be/{{ video.video_id }}?t={{ cue.start_s | int }}"
-         rel="noopener noreferrer" target="_blank">{{ cue.start_s | clock }}</a>
-      <span class="badge badge-{{ 'spoken' if cue.origin == 'whisperx' else 'screen' }}">{{ cue.origin }}</span>
-      <span class="cuetext">{{ cue.text }}</span>
-      {% if cue.speaker %}<span class="muted speaker">{{ cue.speaker }}</span>{% endif %}
-      {% if cue.avg_logprob is not none %}<span class="conf" title="avg_logprob">{{ "%.2f" | format(cue.avg_logprob) }}</span>{% endif %}
-    </li>
-    {% endfor %}
-  </ol>
+  {# The transcript is a bounded scrollbox that appends the next batch as the
+     reader nears the end (Tom, 2026-08-10), not a page with a "Next N cues"
+     button under it. Two things that were true of the button are still true
+     here: the batch is the server's own clamped page, and the *position* is
+     always printed — the sticky line above says which cues these are and how
+     many the video has, so a reader three thousand cues down still knows where
+     they are. What is gone is the reload: a click that threw the strip, the
+     OCR panel and the scroll position away to move a hundred rows.
+
+     With JavaScript off this is exactly what it was: a scrollbox holding the
+     first page, and the `<noscript>`-free fallback is the pager below, which
+     is still rendered and still works. #}
+  <p class="cuepos" data-field="cue-position" role="status">
+    cues <span class="mono" data-field="cue-range">{{ cue_offset + 1 }}–{{ cue_offset + cues | length }}</span>
+    of <span class="mono">{{ counts['cues'] | count }}</span>
+  </p>
+  <div class="cuebox" data-cues="{{ root }}/api/videos/{{ video.video_id }}/cues"
+       data-video="{{ video.video_id }}"
+       data-cue-page="{{ cue_page }}" data-cue-next="{{ cue_offset + cues | length }}"
+       data-cue-total="{{ counts['cues'] }}" data-cue-first="{{ cue_offset }}"
+       data-cue-more="{{ 'yes' if cues_more else 'no' }}" tabindex="0">
+    <ol class="cues" data-cuelist>
+      {% for cue in cues %}
+      {% if cue.chunk_opens %}
+      <li class="chunkmark" aria-hidden="true">
+        chunk {{ cue.chunk_opens.seq }} · {{ cue.chunk_opens.start_s | clock }}–{{ cue.chunk_opens.end_s | clock }} · {{ cue.chunk_opens.n_words }} words · {{ cue.chunk_opens.n_chars }} chars
+      </li>
+      {% endif %}
+      {# The per-cue `origin` badge is gone (Tom, 2026-08-10): it printed
+         `whisperx` on every one of a thousand rows to say what the "What was
+         stored" band already says once, per origin, with a count — and what
+         the `stt` row in Provenance says with the model that produced it. A
+         label repeated on every row is not a label. #}
+      <li class="cue{{ ' in-chunk' if cue.chunk_opens or cue.chunk_closes }}">
+        <a class="at" href="https://youtu.be/{{ video.video_id }}?t={{ cue.start_s | int }}"
+           rel="noopener noreferrer" target="_blank">{{ cue.start_s | clock }}</a>
+        <span class="cuetext">{{ cue.text }}</span>
+        {% if cue.speaker %}<span class="muted speaker">{{ cue.speaker }}</span>{% endif %}
+        {% if cue.avg_logprob is not none %}<span class="conf" title="avg_logprob">{{ "%.2f" | format(cue.avg_logprob) }}</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+    {# Revealed by the appender while a batch is in flight, and only then: a
+       real request is the one thing on this surface that may say it is
+       working. It is server-rendered and hidden, so the script assigns no
+       string of its own. #}
+    <p class="cueload" data-field="cue-loading" hidden>loading</p>
+  </div>
+  {# The no-JavaScript path, and the script's own escape hatch when a fetch
+     fails: real links, the server's own offsets. Hidden by the appender only
+     once it has taken over. #}
   {% if cue_offset or cues_more %}
-  <nav class="pager" aria-label="Transcript pages">
+  <nav class="pager" aria-label="Transcript pages" data-cue-pager>
     {% if cue_offset %}
     <a class="ghostlink" href="{{ nav_link(frame_offset, [cue_offset - cue_page, 0] | max, 'transcript') }}">← Earlier</a>
     {% endif %}
@@ -488,8 +537,16 @@
     </div>
     <div class="shot-stage">
       <img id="shot-img" class="shot-img" alt="">
-      <div id="shot-boxes" class="shot-boxes" aria-hidden="true"></div>
+      <div id="shot-boxes" class="shot-boxes"></div>
     </div>
+    {# The full-size half of the linkage (2026-08-10). At 1152px a detection box
+       is a target you can actually point at, so this is where the two-way
+       interaction lives: hover a box and its line lights and scrolls into view
+       here; hover a line and its box lights over the still. Empty and hidden as
+       served — every string in it is cloned from the `.ocrline` rows already on
+       the page, so the dialog needs no second request and the page needs no
+       JSON blob in a script tag. #}
+    <ol class="shot-lines" id="shot-lines" hidden></ol>
     <div class="shot-foot">
       <label class="shot-toggle"><input type="checkbox" id="shot-showboxes" checked> Show OCR boxes</label>
       <a id="shot-link" class="shot-link" target="_blank" rel="noopener noreferrer">Open at this second</a>

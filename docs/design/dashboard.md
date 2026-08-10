@@ -1272,3 +1272,187 @@ DESIGN.md's migration notes named them, and this rebuild is where they moved:
   (`#040405`), `content="dark"`, `color-scheme: dark` in the stylesheet, and an
   assertion that **no** `@media (prefers-color-scheme` block exists. The name is
   left as DESIGN.md's migration note cites it; the docstring carries the truth.
+
+### 12.5 Tom's review of the rebuild — the second pass (2026-08-10)
+
+Fifteen items, reviewed on the built pages. §12.1–§12.4 above stay as the
+record of the first pass; where this pass overturned something there, it says
+so. The visuals and this section landed in one commit.
+
+**The three that changed a decision §12 had already written down.**
+
+1. **The state cluster on video detail is a `statepair`, not a pill / label /
+   pill.** §12.1 shipped the header states as a bare pill, a floating 10px
+   `data_status` and a second bare pill; Tom's verdict was that it "doesn't look
+   good", and the diagnosis is that nothing said which label owned which pill.
+   The new primitive is one hairline box per fact: the key on `--plate2`, the
+   state's own pill flush against it. §4.5 is why both are labelled at all —
+   the four `data_status` vocabularies are deliberately not unified, so a bare
+   `ready` beside a bare `no_frames` reads as the page contradicting itself.
+   Reused on the overview for the one fact left after item 14.
+
+2. **The deferral countdown is the same height as the pills beside it.**
+   §12's stylesheet argued the countdown "is a notch taller than the state pill
+   beside it, which is correct". It was 26px against 17px, and Tom read the cell
+   as two kinds of object rather than as one strip. Overturned: `--chip-h`
+   (20px) is now the height of every marker that can share a state cell — pill,
+   error code, `statepair` key, countdown. What still makes the countdown
+   outrank its neighbours is what should: it is the only dashed border in the
+   row, it is the warn tone, and it is the only one set in readable machine text
+   rather than in the tracked label idiom.
+
+3. **The `live` badge is gone entirely.** §12.1 recorded replacing the pulsing
+   dot with a static square and the word — the right fix for the Motion Law, and
+   still the wrong object. On a dashboard served by the process that also holds
+   the job runner, "this page is live" is always true and therefore says
+   nothing. Liveness belongs to the jobs, and the rows now report it themselves.
+
+**How the jobs page feels alive without decorative motion** (Tom: "don't add
+useless animation but it gotta feel alive"). Three real signals and no fourth,
+each one nameable as machine work, which is the Motion Law's own test:
+
+- the meter's width transitions over `--poll-ms`, **the server's own poll
+  interval**, written onto the root element by `jobs.js`. A stage that moved
+  from 42% to 47% between two measurements is drawn advancing across the gap
+  instead of snapping. The duration is a data cadence, not a design token, and
+  it is deliberately not in DESIGN.md's `motion:` block for that reason;
+- `.is-working` is set **only while `state == running`** — the runner has
+  claimed the job and a stage is executing — and it draws a bright cap on the
+  fill's leading edge. Static geometry, no animation, and simply absent on a
+  queued, deferred, finished or failed job;
+- the wall clock ticks up once a second while the job is live. That is the
+  Motion Law's own entry, "a counter ticking up: counts are counts", and it is
+  the thing a reader actually watches. `data-wall` is written only for a job the
+  server called live, so a finished job's clock is a measurement and stays one.
+
+There is no indeterminate stripe, no pulse and no sweep, and a job that is not
+running draws a bar that does not move — which is the honest picture of a
+machine that is not working. **SSE was considered and not taken**: §5.4 decided
+polling for reasons that have not changed (a long-lived connection per tab
+against the single-process holder of the only SQLite writer), and none of the
+three signals above needs it. Smoothness came from drawing the interval, not
+from shortening it.
+
+**The evidence panels.**
+
+4. **Clicking a shot bar selects into evidence; it does not open a modal.**
+   The strip and the OCR panel scroll to that moment and the frame is marked in
+   both, in gold, because that is exactly "the moment you are pointing at". The
+   second click — on the frame the reader can now see — is the one that opens
+   it. A modal on the first click would answer a question that has not been
+   asked yet. With JavaScript off the bar is still a real link to `#frame-N`,
+   still carries its own offset when the frame is on another page of the strip,
+   and `:target` still marks what it lands on; the interception only happens
+   when the frame is already on the page.
+
+5. **The OCR panel is a scrollbox of every line, and the digest is gone.**
+   §12 shipped `OCR_PREVIEW_LINES = 8` and a `+ N more` expander, chosen to
+   match the eight `:has()` pairs a stylesheet could enumerate. That number was
+   always the tail wagging the dog: it meant a dense slide had twenty-six lines
+   that lit nothing, and an opened expander then held lines that pointed at the
+   wrong box or at none. Both are replaced by one continuous `<ol>` in a
+   `--ocrbox-h` scroller, with the pairing carried by a `data-line` **index** on
+   the line and on its box — which holds for every line, however many there are.
+   `OCR_PREVIEW_LINES` is deleted; `OCR_LINE_CAP` (the *page's* budget, §5.3's
+   outer cap) is untouched and still printed when it binds.
+
+6. **The frames in the OCR panel open in the same overlay as the strip's**, by
+   carrying the strip's own `data-*` — one delegated click handler serves both
+   panels, because a second opener is a second place for the lightbox contract
+   to drift. In the grid the boxes are `pointer-events: none`: at 512px a
+   detection box is a few millimetres of screen, and a pointer aimed at one
+   would only be stealing the click that opens the frame. **The full-size
+   two-way interaction lives in the overlay**, which now lists the frame's lines
+   beside it: hover a box, its line lights and scrolls into view; hover a line,
+   its box lights.
+
+   One thing this costs, stated plainly: the box↔line highlight used to be pure
+   CSS and worked with JavaScript off. Pointing is now an enhancement. What is
+   *not* an enhancement is the receipt — every line, its text, its confidence
+   and its box are server-rendered and complete either way. Being able to aim at
+   one end of it is what needs the script, and "all lines" is not purchasable in
+   CSS at any length.
+
+**The transcript.**
+
+7. **A bounded scrollbox that appends, with the position always printed.**
+   The "Next 50 cues →" button is no longer the control: a click that reloaded
+   the page to move fifty rows threw the strip, the OCR panel and the reader's
+   scroll position away with it. Nearing the end of the box fetches the next
+   batch from `GET /dashboard/api/videos/{video_id}/cues` and appends it. The
+   sticky line above prints `cues 1–150 of 1,203` — and the second number is the
+   count `per_video_counts` already read for the "What was stored" band, so no
+   page issues a second count query for a position line. **`has_more`, never a
+   total, on the endpoint itself**; the same `CUE_PAGE_MAX` and offset ceiling
+   as the page; every string formatted server-side, so the script carries no
+   clock, no chunk label and no rounding of its own. The pager stays in the
+   markup as the no-JavaScript path and as the appender's own fallback when a
+   fetch is refused, hidden only once the script has taken over.
+
+8. **The per-cue `origin` badge is gone.** It printed `whisperx` on every one
+   of a thousand rows to say what the "What was stored" band already says once,
+   per origin, with a count — and what the `stt` row in Provenance says with the
+   model that produced it. A label repeated on every row is not a label.
+
+9. **The chunk marker counts words as well as characters.** Characters are what
+   the chunker clamps on; words are what a human has an intuition for.
+   `chunk_spans` selects `chunks.text` for this and the count is
+   `len(text.split())` — the definition — rather than a SQL space-counting
+   expression that miscounts every newline in the joined cue text. The text
+   itself never reaches the template.
+
+**The rest.**
+
+10. **The overview does not draw "What is missing" when all three counts are
+    zero.** Three zeros is not a panel: the block answers "what should I go and
+    look at", and when the answer is nothing it was a third of the column saying
+    so. Nothing is hidden by it — every figure in it is a link into a filter of
+    the videos table. The queue panel deliberately does *not* do this: an empty
+    queue is a fact about this second, and a panel that vanished when the batch
+    finished would take the operator's place-marker with it.
+
+11. **An untagged corpus says `no tags` and stops.** The `<namespace>:<name>`
+    lesson that followed it belongs beside the field that enforces it — where
+    the video page's tag form already states it, and where `tag-video`'s own
+    refusal states it again.
+
+12. **The vector pill is gone from the models panel.** It said "vector legs on"
+    — a green badge for the ordinary case, which is the badge nobody reads —
+    beside a table that already names both embedding models and their
+    dimensions. The one case that changes what a reader should believe is the
+    *off* case, and that has its own banner at the top of the page in words a
+    visitor can act on. `indexing allowed` survives as a `statepair`, since one
+    fact left over from a removed pair had no business still wearing a row
+    label.
+
+13. **The rail's first group loses its heading.** "The index" named three
+    routes and none of them needed naming. `Manage` and `This demo` keep theirs:
+    those are the two groups whose *absence* is a fact about the deployment.
+
+14. **The version is `0.0.1` everywhere.** `mcp/pyproject.toml` said `0.1.0`
+    while the workspace root and the worker both said `0.0.1`, so `/healthz`,
+    `vidtheque://context`, `/api/meta` and the dashboard footer all published a
+    version this project does not ship. Fixed at the two sources
+    (`mcp/pyproject.toml`, `vidtheque_mcp.__version__`), with `uv.lock`
+    refreshed in the same commit because it records the member's version, and
+    the example payloads in `demo-site.md` §2.3 and `tool-surface.md` corrected
+    to match. Asserted against the packaging metadata rather than against a
+    literal, so the next bump cannot leave a surface behind.
+
+**Two bugs this review surfaced that were not on the list**, both from the first
+pass and both invisible to the suite:
+
+- **`.framebtn` was taking the 34px control height.** The chassis gives every
+  `button` that height, a definite height beats an aspect ratio, and every
+  keyframe in the strip was a 34px letterbox. The fixture's JPEGs do not decode,
+  so the box was empty either way and nothing showed it. `height: auto` on
+  `.framebtn`, plus a reset of the control's type so a broken frame's alt text
+  is a sentence rather than a tracked label.
+- **An `inline-flex` marker ate the spaces around its own clock.** A flex
+  container makes an item of every text run inside it and drops the whitespace
+  between them, so `held <span>1m 28s</span> more` printed as
+  `held1m 28smore`. Every chip-height marker is `inline-block` with a
+  `line-height` instead.
+
+Both are pinned by tests, because a geometry bug a fixture can hide is exactly
+the kind that comes back.

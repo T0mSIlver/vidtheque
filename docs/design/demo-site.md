@@ -204,7 +204,7 @@ What the page needs to render itself, and nothing else:
 ```json
 {
   "name": "vidtheque",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "browse": "/dashboard",
   "mcp_url": "https://vidtheque.example.com/mcp",
   "auth": "none",

@@ -170,12 +170,28 @@
       </ul>
     </section>
 
+    {# Three zeros is not a panel (Tom, 2026-08-10). This block answers "what
+       should I go and look at", and when the answer is nothing it was three
+       rows of `0` taking a third of the column to say so — an operator scanning
+       at 03:00 reads the heading, not the digits. The absence of the panel is
+       the same statement, and it costs no screen. Nothing is hidden: every
+       figure here is a link into a filter of the videos table, and an empty
+       filter is one click away from wherever the reader already is.
+
+       The queue panel above deliberately does *not* do this: a queue that is
+       empty right now is a fact about this second, and a panel that vanishes
+       when the batch finishes would take the operator's own place-marker with
+       it. A coverage gap is a fact about the corpus. #}
+    {% set gap_total = gaps.transcript_no_ocr + gaps.indexing + gaps.failed %}
+    {% if gap_total %}
     <section class="panel" aria-labelledby="gaps">
       <h2 class="panel-title" id="gaps">What is missing</h2>
       {# Sentences with a number in them. The number is the link, because the
          number is the thing you want to go and look at. #}
       {# A zero is good news and must not wear the accent: the colour on this
-         page means "go and look at this", and there is nothing to look at. #}
+         page means "go and look at this", and there is nothing to look at. A
+         zero can still show up here — one gap of three being clear does not
+         retire the panel, only all three do. #}
       <ul class="gaplist">
         <li>
           <a class="{{ 'gap-none' if not gaps.transcript_no_ocr }}" href="{{ root }}/videos?has=transcript&amp;index_state=all">{{ gaps.transcript_no_ocr | count }}</a>
@@ -194,6 +210,7 @@
         </li>
       </ul>
     </section>
+    {% endif %}
 
     {# §2.4: the demo overview carries the corpus, not the box it is on. Two
        byte totals are a measurement of somebody's disk, and the projection
@@ -244,9 +261,12 @@
       {% endfor %}
     </ul>
     {% else %}
-    <p class="empty-note">
-      No tags yet. <code>tag-video</code> takes <code>&lt;namespace&gt;:&lt;name&gt;</code>.
-    </p>
+    {# "no tags", and nothing after it (Tom, 2026-08-10). The sentence that
+       followed taught `<namespace>:<name>` — a format lesson, on the surface
+       whose whole brief is that it does not narrate. The tag form on a video
+       page states the same rule where it is needed, next to the field that
+       enforces it, and `tag-video`'s own refusal states it again. #}
+    <p class="empty-note">no tags</p>
     {% endif %}
   </section>
 </div>
@@ -286,10 +306,21 @@
       </table>
     </div>
     <div>
+      {# The vector pill is gone (Tom, 2026-08-10). It said "vector legs on" —
+         a green badge for the ordinary case, which is the badge nobody reads,
+         and the table beside it already names the two embedding models and
+         their dimensions. The one case that changes what a reader should
+         believe is the *off* case, and that has its own banner at the top of
+         this page in the words a visitor can act on.
+
+         What is left is one fact, so it stops being a labelled row of pills and
+         becomes a single `statepair` — the key and the state as one object,
+         which is the same primitive the video header uses. #}
       <p class="live-state">
-        <span class="label">live</span>
-        <span class="pill tone-{{ 'ok' if vectors.enabled else 'bad' }}">{{ "vector legs on" if vectors.enabled else "vector legs off" }}</span>
-        <span class="pill tone-{{ 'ok' if writes_allowed else 'bad' }}">{{ "indexing allowed" if writes_allowed else "indexing refused" }}</span>
+        <span class="statepair">
+          <span class="statepair-key">indexing</span>
+          <span class="pill tone-{{ 'ok' if writes_allowed else 'bad' }}">{{ "allowed" if writes_allowed else "refused" }}</span>
+        </span>
       </p>
     </div>
   </div>

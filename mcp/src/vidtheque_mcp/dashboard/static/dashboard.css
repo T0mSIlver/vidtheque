@@ -212,6 +212,15 @@
   --prose: 70ch;     /* running text */
   --note: 74ch;      /* a machine note, a sentence about a state */
   --row: 2.125rem;   /* 34px — the table row, the nav item, every control */
+  /* 20px — every marker that can share a state cell: a pill, an error code, a
+     `statepair` key, the deferral countdown. One height, so a row of them is a
+     strip rather than a stack of boxes at three sizes. */
+  --chip-h: 1.25rem;
+  /* The two scrollboxes, both bounded in *lines* rather than in pixels, so the
+     box is as tall as the thing it holds and not as tall as a guess. Ten OCR
+     lines at `cell`; eighteen transcript cues at the same. */
+  --ocrbox-h: 14rem;
+  --cuebox-h: 34rem;
   /* The width the column name takes when a table row becomes a stacked block
      below 52rem: the label's basis and the indent a wrapped value needs to line
      up under the other values are the same number. */
@@ -868,8 +877,20 @@ code { font-size: var(--t-machine); overflow-wrap: anywhere; }
    message. Ink, ground and hairline all come from one tone, and the ground and
    the border are mixed from the ink. */
 .pill {
+  /* `inline-block` and a line-height, **not** `inline-flex`: a flex container
+     makes an item of every text run inside it and drops the whitespace between
+     them, which turned the countdown's own `held <span>1m 28s</span> more` into
+     `held1m 28smore` (caught in review, 2026-08-10). The box carries the height
+     and the leading centres the text. */
   display: inline-block;
-  padding: 1px var(--s2);
+  /* One height for every marker that sits in a state cell — the pills, the
+     error code, the countdown. It was not one before: the countdown's 13px
+     text inside 4px of inset made it 26px beside a 17px pill, and a row of
+     three markers at two heights reads as two kinds of thing (Tom,
+     2026-08-10). `--chip-h` is what makes them one strip. */
+  height: var(--chip-h);
+  line-height: calc(var(--chip-h) - 2px);
+  padding: 0 var(--s2);
   font-family: var(--font-mono);
   font-size: var(--t-label-sm);
   font-weight: var(--w-label);
@@ -879,10 +900,42 @@ code { font-size: var(--t-machine); overflow-wrap: anywhere; }
   color: var(--tone, var(--tone-neutral));
   background: var(--tone-bg, var(--tone-neutral-bg));
   border: 1px solid var(--tone-line, var(--tone-neutral-line));
-  vertical-align: 1px;
+  vertical-align: -0.3em;
   white-space: nowrap;
 }
 .pill-small { font-size: var(--t-label-sm); }
+
+/* A key and the state it names, as one object: the key on the band plate, the
+   state's own pill flush against it, one hairline around the pair. Built for
+   the video header, where a bare pill, a floating 10px `data_status` and a
+   second bare pill were three objects with nothing saying which label owned
+   which pill (Tom, 2026-08-10); reused on the overview, where one fact left
+   over from a removed pair had no business still wearing a row label. */
+.statepair {
+  display: inline-block;
+  vertical-align: -0.3em;
+  white-space: nowrap;
+  /* The two halves are inline-blocks on one line, so the line box between them
+     would otherwise show as a gap in the middle of a joined object. */
+  font-size: 0;
+}
+.statepair-key {
+  display: inline-block;
+  height: var(--chip-h);
+  line-height: calc(var(--chip-h) - 2px);
+  padding: 0 var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--t-label-sm);
+  font-weight: var(--w-label);
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+  font-variant-ligatures: none;
+  color: var(--muted);
+  background: var(--plate2);
+  border: 1px solid var(--seam2);
+  border-right: 0;
+}
+.statepair > .pill { vertical-align: top; }
 
 .tone-ok      { --tone: var(--tone-ok);      --tone-bg: var(--tone-ok-bg);      --tone-line: var(--tone-ok-line); }
 .tone-warn    { --tone: var(--tone-warn);    --tone-bg: var(--tone-warn-bg);    --tone-line: var(--tone-warn-line); }
@@ -1045,29 +1098,10 @@ button[disabled]:hover { color: var(--fg3); border-color: var(--seam); }
   color: var(--fg);
 }
 
-/* "This page is still moving." The word, in the work tone — the same
-   word-and-colour contract every state on this surface keeps. The mark beside
-   it is a square that does not move: a pulsing dot is banned outright, and a
-   dot that breathes reports nothing a word does not already say. */
-.live {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--s1);
-  font-family: var(--font-mono);
-  font-size: var(--t-label);
-  font-weight: var(--w-label);
-  letter-spacing: 0.19em;
-  text-transform: uppercase;
-  color: var(--tone-work);
-}
-.livedot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin: 0 var(--s1) 0 var(--s2);
-  vertical-align: 1px;
-  background: var(--tone-work);
-}
+/* The `live` badge that used to sit here is gone (Tom, 2026-08-10). It said the
+   *page* was refreshing, which on a dashboard served by the process that also
+   holds the job runner is always true; liveness belongs to the jobs, and the
+   rows report it themselves — see `.meter.is-working` below. */
 
 /* `position: relative` is not decoration, it is the clip. `.sr-only` is
    `position: absolute` with no offsets, so its containing block is the nearest
@@ -1385,15 +1419,29 @@ button[disabled]:hover { color: var(--fg3); border-color: var(--seam); }
 .framebtn {
   display: block;
   width: 100%;
+  /* `height: auto` is load-bearing and was missing (found 2026-08-10, second
+     pass). The chassis gives every `button` the 34px control height, a
+     *definite* height beats an aspect ratio, and every frame in the strip was
+     collapsing to a 34px letterbox — invisible in the fixture only because its
+     JPEGs do not decode. A frame is not a control and does not take the
+     control height. */
+  height: auto;
   aspect-ratio: 16 / 9;
   padding: 0;
   overflow: hidden;
   background: var(--black);
   border: 0;
+  /* Nor the control's type: the box holds a picture, and the alt text of a
+     frame that failed to decode is a sentence, not a label. */
+  font: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--fg2);
   box-shadow: inset 0 0 0 1px var(--edge-in);
   line-height: 0;
   cursor: zoom-in;
 }
+.framebtn:hover { color: var(--fg2); }
 
 .framebtn img { width: 100%; height: 100%; object-fit: cover; transition: filter var(--t-fast); }
 
@@ -1454,32 +1502,44 @@ button[disabled]:hover { color: var(--fg3); border-color: var(--seam); }
 }
 
 .ocrstage img { width: 100%; height: 100%; object-fit: cover; }
+/* The still in this panel is a `.framebtn` too (2026-08-10): the same frame,
+   the same overlay, the same one click handler as the strip. */
+button.ocrstage { border: 0; padding: 0; cursor: zoom-in; }
 
 .ocrbox {
   position: absolute;
   border: 1px solid var(--seen-24);
   transition: border-color var(--t-fast), background-color var(--t-fast);
 }
+/* In the grid the boxes are a drawing, not a target: at 512px a detection box
+   is a few millimetres of screen, and a pointer aimed at one would only be
+   stealing the click that opens the frame. The full-size interaction is the
+   overlay's. */
+.ocrstage .ocrbox { pointer-events: none; }
 
-/* A transcription of a slide, so a wrapped line reads as one entry rather than
-   as two. */
+/* Every line the machine read, in one continuous list, in a box that scrolls
+   (Tom, 2026-08-10). The `+ N more` digest that used to bound this is gone, and
+   with it the split that capped the box↔line linkage at whatever a stylesheet
+   could enumerate. `--ocrbox-h` is ten lines: past that a slide is a document
+   and the reader wants to scroll it, under it the box shrinks to fit and the
+   panel keeps its near-uniform grid row. */
 .ocrlines {
   margin: var(--s2) 0 0;
   padding: 0;
   list-style: none;
+  max-height: var(--ocrbox-h);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   font-size: var(--t-cell);
   line-height: var(--lh-cell);
 }
-/* The remainder, once the expander is open: the same list continued, same rule
-   down the left, with `start` on the `<ol>` so the numbering the markup carries
-   stays true even though nothing draws it. */
-.ocrlines-rest { margin-top: var(--s1); }
 
 .ocrline {
   display: flex;
   gap: var(--s2);
   align-items: baseline;
   padding: 2px 0 2px var(--s2);
+  scroll-margin: var(--s2);
   /* One step louder than the box at rest: a 1px rule down the left of a text
      line has a fraction of a detection box's perimeter to be seen in, and this
      rule is what says "the machine read this off the screen" for a reader who
@@ -1488,40 +1548,37 @@ button[disabled]:hover { color: var(--fg3); border-color: var(--seam); }
   transition: border-color var(--t-fast), background-color var(--t-fast);
 }
 
-/* Point at a line, light its box; point at a box, light its line. It is done in
-   CSS on purpose: the correspondence is positional (the nth box is the nth
-   line, because the server renders both from one ordered list), so `:has()` can
-   state it without a listener and a page with JavaScript off keeps it. Eight is
-   the cap — eight explicit pairs rather than a loop — and it is also the
-   digest's preview length, deliberately the same number: **the preview is
-   exactly the set of lines the frame can point at.** The pairs are scoped away
-   from the remainder list, because a rule that let line 9 light box 1 would be
-   a *wrong* pointer rather than an absent one. */
-.ocrframe:has(.ocrlines:not(.ocrlines-rest) > li:nth-child(1):hover) .ocrbox:nth-of-type(1),
-.ocrframe:has(.ocrlines:not(.ocrlines-rest) > li:nth-child(2):hover) .ocrbox:nth-of-type(2),
-.ocrframe:has(.ocrlines:not(.ocrlines-rest) > li:nth-child(3):hover) .ocrbox:nth-of-type(3),
-.ocrframe:has(.ocrlines:not(.ocrlines-rest) > li:nth-child(4):hover) .ocrbox:nth-of-type(4),
-.ocrframe:has(.ocrlines:not(.ocrlines-rest) > li:nth-child(5):hover) .ocrbox:nth-of-type(5),
-.ocrframe:has(.ocrlines:not(.ocrlines-rest) > li:nth-child(6):hover) .ocrbox:nth-of-type(6),
-.ocrframe:has(.ocrlines:not(.ocrlines-rest) > li:nth-child(7):hover) .ocrbox:nth-of-type(7),
-.ocrframe:has(.ocrlines:not(.ocrlines-rest) > li:nth-child(8):hover) .ocrbox:nth-of-type(8),
+/* Point at a line, light its box; point at a box, light its line. The pairing
+   is by index — `data-line` on both — which is what makes it hold for *every*
+   line rather than for the first eight a stylesheet could name as `:has()`
+   pairs. `dashboard.js` toggles `.is-lit`; `:hover` is here as well so a
+   pointer over a line or a box is lit whether or not the script ran.
+
+   What is lost with the script blocked is the *pointing*, and only that: every
+   line, its text, its confidence and its box are server-rendered and complete
+   either way. The receipt does not depend on JavaScript; being able to aim at
+   one end of it does. */
+.ocrbox.is-lit,
 .ocrbox:hover {
   border-color: var(--seen);
   border-width: 1.5px;
   background: color-mix(in srgb, var(--seen) 12%, transparent);
 }
-.ocrframe:has(.ocrbox:nth-of-type(1):hover) .ocrlines:not(.ocrlines-rest) > li:nth-child(1),
-.ocrframe:has(.ocrbox:nth-of-type(2):hover) .ocrlines:not(.ocrlines-rest) > li:nth-child(2),
-.ocrframe:has(.ocrbox:nth-of-type(3):hover) .ocrlines:not(.ocrlines-rest) > li:nth-child(3),
-.ocrframe:has(.ocrbox:nth-of-type(4):hover) .ocrlines:not(.ocrlines-rest) > li:nth-child(4),
-.ocrframe:has(.ocrbox:nth-of-type(5):hover) .ocrlines:not(.ocrlines-rest) > li:nth-child(5),
-.ocrframe:has(.ocrbox:nth-of-type(6):hover) .ocrlines:not(.ocrlines-rest) > li:nth-child(6),
-.ocrframe:has(.ocrbox:nth-of-type(7):hover) .ocrlines:not(.ocrlines-rest) > li:nth-child(7),
-.ocrframe:has(.ocrbox:nth-of-type(8):hover) .ocrlines:not(.ocrlines-rest) > li:nth-child(8),
+.ocrline.is-lit,
 .ocrline:hover {
   border-left-color: var(--seen);
   background: color-mix(in srgb, var(--seen) 6%, transparent);
 }
+
+/* Selected into evidence: a shot bar was clicked and this is the moment it
+   pointed at. Gold, because that is exactly "the moment you are pointing at" —
+   and a 1px inset edge rather than a fill, like the hovered table row. */
+.framecard.is-selected .framebtn img,
+.ocrframe.is-selected .ocrstage img {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.framecard.is-selected .at, .ocrframe.is-selected .at { color: var(--gold-hi); }
 
 .ocrtext { flex: 1 1 auto; min-width: 0; font-size: var(--t-machine); overflow-wrap: anywhere; }
 
@@ -1535,6 +1592,46 @@ button[disabled]:hover { color: var(--fg3); border-color: var(--seam); }
 .ocrline > .conf { flex: 0 0 2.25rem; align-self: start; padding-top: 3px; text-align: right; }
 
 /* -------------------------------------------------------------- transcript */
+
+/* Where you are in the transcript, printed above the box and never scrolled
+   away (Tom, 2026-08-10). It replaces the thing a "Next 50 cues →" button told
+   you by implication and only while you were looking at it: `cues 1–150 of
+   1,203` is the whole of the position, and the second number is the count the
+   "What was stored" band already read — no page issues a second count query for
+   this line. */
+.cuepos {
+  margin: 0 0 var(--s2);
+  color: var(--muted);
+  font-size: var(--t-machine-sm);
+}
+.cuepos .mono { color: var(--fg); font-size: var(--t-machine); }
+
+/* The scrollbox. Bounded, because a four-hour talk is three thousand cues and
+   the panels under this one are not worth burying; scrolled rather than paged,
+   because the next batch arrives without throwing the strip, the OCR panel and
+   the reader's place away. `overscroll-behavior: contain` so reaching the end
+   of the transcript does not carry on and scroll the page. */
+.cuebox {
+  max-height: var(--cuebox-h);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-top: 1px solid var(--seam);
+  border-bottom: 1px solid var(--seam);
+}
+
+/* Shown by the appender while a real request is in flight, and hidden the
+   moment one lands: the Motion Law's one sanctioned spinner-shaped thing, and
+   it is a word rather than a spinner. */
+.cueload {
+  margin: 0;
+  padding: var(--s2) 0 var(--s2) var(--s3);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  font-weight: var(--w-label);
+  letter-spacing: 0.19em;
+  text-transform: uppercase;
+}
 
 .cues { margin: 0; padding: 0; list-style: none; }
 
@@ -1595,10 +1692,29 @@ button[disabled]:hover { color: var(--fg3); border-color: var(--seam); }
 /* Progress as a rule, not a widget: the same hairline the tables are made of,
    filled to the fraction the job already computed, in the work tone — because
    what it reports is a machine working. The number beside it is the accessible
-   answer; the bar is aria-hidden and adds nothing but a glance. The width
-   transition is the one animation on this surface that is not a colour, and it
-   is sanctioned: it moves when and only when a real job advances. */
+   answer; the bar is aria-hidden and adds nothing but a glance.
+
+   **How this feels alive, and why none of it is decoration** (Tom, 2026-08-10:
+   "don't add useless animation but it gotta feel alive"). Three real signals
+   and no fourth:
+
+   1. the fill's width transitions over `--poll-ms` — the *server's own poll
+      interval*, written onto the root by `jobs.js` — so a stage that moved
+      between two measurements is drawn advancing across the gap instead of
+      snapping. The duration is a data cadence, not a chosen one;
+   2. `.is-working` is set only while `state == running`, i.e. the runner has
+      claimed the job and a stage is executing. It draws a bright cap on the
+      fill's leading edge: static geometry, no animation, and it is simply
+      absent on a queued, deferred, finished or failed job;
+   3. the wall clock beside the row ticks up once a second while the job is
+      live — "a counter ticking up: counts are counts", which is the Motion
+      Law's own entry, and it is the thing a reader actually watches.
+
+   Nothing pulses, nothing sweeps, there is no indeterminate stripe, and a job
+   that is not running draws a bar that does not move — which is the honest
+   picture of a machine that is not working. */
 .meter {
+  position: relative;
   display: inline-block;
   width: 4.5rem;
   height: 4px;
@@ -1613,8 +1729,12 @@ button[disabled]:hover { color: var(--fg3); border-color: var(--seam); }
   display: block;
   height: 100%;
   background: var(--tone-work);
-  transition: width var(--t-state) linear;
+  transition: width var(--poll-ms, var(--t-state)) linear;
 }
+/* The head of the bar, and only while there is a machine at it. `--fg` rather
+   than a second tone: this is the *edge* of the work tone, not a new state, and
+   the pill beside it already prints the word `running`. */
+.meter.is-working .meter-fill { box-shadow: inset -2px 0 0 var(--fg); }
 .meter-label { margin-left: var(--s1); font-size: var(--t-machine); color: var(--muted); }
 
 .progressline {
@@ -1627,16 +1747,21 @@ button[disabled]:hover { color: var(--fg3); border-color: var(--seam); }
 
 /* The countdown — the highest-value line on that page, because "deferred for
    another 240s" was true and invisible on every surface vidtheque had. It is
-   set as machine text at working weight, not as another muted pill, and it is a
-   notch taller than the state pill beside it: "held 3m 41s more" outranks
-   "queued". */
+   the same `--chip-h` as the pills it stands beside (Tom, 2026-08-10: it was
+   26px against their 17px and the cell read as two kinds of object). What still
+   makes it outrank them is what should: it is the only dashed border on the
+   row, it is the warn tone, and it is the one marker in the cell set in
+   readable machine text rather than in the tracked label idiom. */
 .countdown {
   display: inline-block;
-  padding: var(--s1) var(--s2);
-  font-size: var(--t-machine);
+  height: var(--chip-h);
+  line-height: calc(var(--chip-h) - 2px);
+  padding: 0 var(--s2);
+  font-size: var(--t-machine-sm);
   color: var(--tone-warn);
   background: var(--tone-warn-bg);
   border: 1px dashed var(--tone-warn-line);
+  vertical-align: -0.3em;
   white-space: nowrap;
 }
 
@@ -1901,6 +2026,27 @@ button[disabled]:hover { color: var(--fg3); border-color: var(--seam); }
 .shot-boxes { position: absolute; inset: 0; }
 .shot-boxes .ocrbox { border-color: var(--seen); border-width: 1.5px; }
 .shot-boxes[hidden] { display: none; }
+/* Here the boxes *are* targets — at 1152px a detection box is something a
+   pointer can find, which is the whole reason the two-way interaction lives in
+   the overlay rather than over a 512px thumbnail in the grid. */
+.shot-boxes .ocrbox { pointer-events: auto; cursor: default; }
+
+/* The frame's lines, beside the frame, at a size you can read a slide off. Two
+   columns where there is room: a transcription of a dense slide is thirty short
+   strings and one long column of them would push the picture off the screen. */
+.shot-lines {
+  margin: var(--s3) 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 11rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  columns: 2;
+  column-gap: var(--s6);
+  font-size: var(--t-cell);
+  line-height: var(--lh-cell);
+}
+.shot-lines > .ocrline { break-inside: avoid; }
 
 .shot-foot {
   display: flex;

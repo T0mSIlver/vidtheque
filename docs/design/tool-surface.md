@@ -2197,7 +2197,7 @@ when it fails.
     "out_of_range": "clamped silently — read the printed count, not the one you asked for"
   },
   "features": {"diarization": true, "ocr": true, "frame_embeddings": true},
-  "server_version": "0.1.0"
+  "server_version": "0.0.1"
 }
 ```
 

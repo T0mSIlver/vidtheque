@@ -26,7 +26,7 @@ from vidtheque_mcp.app import build_app
 from vidtheque_mcp.config import Settings
 from vidtheque_mcp.dashboard import ROOT, WRITE_ROUTES
 from vidtheque_mcp.dashboard.settings import DashboardSettings
-from vidtheque_mcp.dashboard.views import EVENT_PREVIEW, OCR_PREVIEW_LINES
+from vidtheque_mcp.dashboard.views import EVENT_PREVIEW
 from vidtheque_mcp.db.connection import open_write_connection
 from vidtheque_mcp.public.api import OWNER_CLAMPS, PUBLIC_CLAMPS
 from vidtheque_mcp.public.settings import PublicSettings
@@ -457,7 +457,13 @@ def test_the_overview_answers_the_first_screen_questions(client: TestClient) -> 
     # The counts, the declared models, and the live vector state beside them.
     assert "transcript cues" in body and "keyframes" in body
     assert "Qwen/Qwen3-VL-Embedding-2B" in body
-    assert "vector legs on" in body and "indexing allowed" in body
+    # The "vector legs on" pill is gone (Tom, 2026-08-10): it was a green badge
+    # for the ordinary case, beside a table that already names both embedding
+    # models. What survives is the one fact that changes what a *write* can do,
+    # as a `statepair` — the key and the state as one object.
+    assert "vector legs" not in body
+    assert '<span class="statepair-key">indexing</span>' in body
+    assert re.search(r'class="pill tone-ok">allowed<', body)
     # `data_status` verbatim from corpus-summary, not re-derived.
     assert re.search(r'class="pill tone-\w+">(ok|partial|degraded|indexing|empty)<', body)
     # Storage from the column, and no filesystem path anywhere.
@@ -474,7 +480,10 @@ def test_the_overview_shows_the_drift_banner_when_vectors_are_off(
         body = page(client, ROOT)
         assert "The corpus and the worker disagree" in body
         assert "the worker is serving" in body
-        assert "vector legs off" in body
+        # The *effect* is the banner's own sentence, and it is what survived the
+        # pill's removal: the reason a visitor should stop trusting vector
+        # recall is a paragraph, not a badge.
+        assert "the vector legs are off" in body
     finally:
         assembled.db.vectors.enabled = True
         assembled.db.vectors.reason = None
@@ -633,7 +642,7 @@ def test_the_keyframe_strip_uses_the_derived_cache_and_never_base64(
 
 def test_the_ocr_browser_draws_the_boxes_it_stored(client: TestClient) -> None:
     body = page(client, f"{ROOT}/videos/zduSFxRajkE")
-    boxes = re.findall(r'class="ocrline"\s+data-box="([^"]+)"', body)
+    boxes = re.findall(r'class="ocrline" data-line="\d+"\s+data-box="([^"]+)"', body)
     assert len(boxes) == 3
     for box in boxes:
         values = [float(v) for v in box.split(",")]
@@ -642,7 +651,7 @@ def test_the_ocr_browser_draws_the_boxes_it_stored(client: TestClient) -> None:
     # The boxes are drawn over the frame from those same coordinates, as
     # percentages. That the page says so in prose is no longer the assertion:
     # the paragraph went in the 2026-08-10 cull, the geometry is the claim.
-    assert re.search(r'class="ocrbox" aria-hidden="true"\s+style="left:[\d.]+%', body)
+    assert re.search(r'class="ocrbox" aria-hidden="true" data-line="\d+"\s+style="left:[\d.]+%', body)
 
 
 def test_the_transcript_browser_shows_the_chunk_boundaries(client: TestClient) -> None:
@@ -2639,65 +2648,74 @@ def _figure(body: str, frame_id: str) -> str:
     return body[start : body.index("</figure>", start)]
 
 
-def test_a_dense_slide_prints_a_bounded_preview_and_an_honest_expander(
+def test_a_dense_slide_prints_every_line_in_one_scrolling_list(
     tmp_path: Path,
 ) -> None:
-    """The OCR digest: eight lines, then a real count, and nothing thrown away."""
+    """The OCR panel is a scrollbox now (Tom, 2026-08-10), not a digest.
+
+    What replaced the `+ N more` expander is one continuous `<ol>` of every
+    line, bounded in CSS rather than in markup. The reason is the linkage: two
+    lists meant the box↔line highlight could only be wired for the lines a
+    stylesheet could enumerate, and an opened expander then held lines that
+    pointed at nothing.
+    """
     _dense_corpus(tmp_path)
     with make_client(tmp_path) as client:
         body = page(client, f"{ROOT}/videos/kCc8FmEb1nY")
 
     figure = _figure(body, "kCc8FmEb1nY-00000")
-    head, _, rest = figure.partition('<details class="digest">')
     total = figure.count('<li class="ocrline"')
 
-    # The preview is bounded, whatever the slide holds.
-    assert head.count('<li class="ocrline"') == OCR_PREVIEW_LINES
-    # The expander's count is the remainder, counted off the same list — not a
-    # cap, not a page size, not "show more".
-    assert rest.count('<li class="ocrline"') == total - OCR_PREVIEW_LINES
-    assert (
-        f'<span class="digest-count">{total - OCR_PREVIEW_LINES}</span> more line(s)'
-        in rest
-    )
-    # And the receipt is intact: every line the server read is still in the
-    # markup, inside a `<details>` that needs no script to open.
+    # Every line the server read is in the markup, in one list, with no
+    # expander and no second list to hold a remainder.
     assert total == DENSE_SLIDE_LINES + 1  # the slide, plus the fixture's own line
-    assert '<ol class="ocrlines ocrlines-head">' in head
-    assert f'<ol class="ocrlines ocrlines-rest" start="{OCR_PREVIEW_LINES + 1}"' in rest
+    assert figure.count('<ol class="ocrlines"') == 1
+    for gone in ("digest", "ocrlines-head", "ocrlines-rest", "more line(s)"):
+        assert gone not in figure, f"{gone} survived the scrollbox"
     assert "<script" not in figure
 
 
-def test_a_frame_inside_the_preview_bound_gets_no_expander(tmp_path: Path) -> None:
-    """Three lines is three lines. A digest with nothing to hold is not drawn."""
-    with make_client(tmp_path) as client:
-        body = page(client, f"{ROOT}/videos/zduSFxRajkE")
-    figure = _figure(body, "zduSFxRajkE-00000")
-    assert figure.count('<li class="ocrline"') == 3
-    assert "digest" not in figure
+def test_every_ocr_line_and_its_box_are_paired_by_index(tmp_path: Path) -> None:
+    """The linkage is complete, and that is the whole point of the redesign.
 
-
-def test_the_ocr_preview_is_exactly_the_lines_the_frame_can_point_at() -> None:
-    """The two bounds are one number, and this is what keeps them one.
-
-    The box↔line highlight is eight explicit `:has()` pairs in the stylesheet;
-    the digest previews ``OCR_PREVIEW_LINES``. Drifted apart, the panel either
-    hides a line that would have lit a box or shows one that cannot — and the
-    pairs are scoped away from the remainder list precisely so that an expanded
-    line 9 does not light box 1, which would be a *wrong* pointer rather than a
-    missing one.
+    `data-line` is the index of a line in its frame's own ordered list, and the
+    box drawn over the still carries the same number. Because it is an index
+    rather than a position in the DOM, the pairing holds for **every** line —
+    the previous design capped it at the eight the stylesheet could name as
+    `:has()` pairs, so a dense slide had twenty-six lines that lit nothing.
     """
+    _dense_corpus(tmp_path)
+    with make_client(tmp_path) as client:
+        body = page(client, f"{ROOT}/videos/kCc8FmEb1nY")
+    figure = _figure(body, "kCc8FmEb1nY-00000")
+
+    lines = re.findall(r'<li class="ocrline" data-line="(\d+)"', figure)
+    boxes = re.findall(r'<span class="ocrbox" aria-hidden="true" data-line="(\d+)"', figure)
+    assert lines and lines == boxes, "a box with no line, or a line with no box"
+    assert lines == [str(n) for n in range(len(lines))], "the indexes are the list order"
+
+    # And no enumerated pair survives in the stylesheet: one of them coming
+    # back would be a second, shorter answer to the same question.
     css = (STATIC / "dashboard.css").read_text()
-    lit = {
-        int(n)
-        for n in re.findall(
-            r"\.ocrlines:not\(\.ocrlines-rest\) > li:nth-child\((\d+)\):hover", css
-        )
-    }
-    assert lit == set(range(1, OCR_PREVIEW_LINES + 1))
-    assert not re.search(r"\.ocrlines > li:nth-child\(\d+\):hover", css), (
-        "an unscoped pair would let the expanded remainder light the wrong box"
-    )
+    assert not re.search(r"\.ocrlines[^{]*nth-child\(\d+\)", css)
+    assert ".ocrbox.is-lit" in css and ".ocrline.is-lit" in css
+
+
+def test_the_ocr_frames_open_in_the_same_overlay_as_the_strip(tmp_path: Path) -> None:
+    """§5.3 + Tom, 2026-08-10: a frame in this panel is the same frame.
+
+    It carries the strip's own `data-*`, so the one delegated click handler in
+    `dashboard.js` serves both panels — a second opener would be a second place
+    for the lightbox contract to drift.
+    """
+    with make_client(tmp_path) as client:
+        body = page(client, f"{ROOT}/videos/kCc8FmEb1nY")
+    figure = _figure(body, "kCc8FmEb1nY-00000")
+    assert 'class="framebtn ocrstage"' in figure
+    for attribute in ("data-large=", "data-frame=", "data-caption=", "data-link="):
+        assert attribute in figure, attribute
+    # Still the 512px variant from the fixed width set, never base64.
+    assert re.search(r'src="/frames/[\w.-]+\.jpg\?w=512', figure)
 
 
 def test_the_event_log_shows_the_newest_and_counts_the_older(tmp_path: Path) -> None:
@@ -2817,3 +2835,231 @@ def test_a_wrapped_meta_strip_never_starts_a_line_with_a_separator(
         assert '</span><span class="sep">·</span>' in page(
             client, f"{ROOT}/videos/kCc8FmEb1nY"
         )
+
+
+# ------------------------------------- 10. the second identity pass (2026-08-10)
+#
+# Fifteen items from Tom's review of the projection-room rebuild. The ones with
+# a shape a test can hold are here; the rest are geometry and live in the
+# screenshots and in dashboard.md §12.5.
+
+
+def test_the_version_is_one_string_everywhere(tmp_path: Path) -> None:
+    """0.0.1, and the same 0.0.1 in every place that publishes it.
+
+    `mcp/pyproject.toml` said 0.1.0 while the workspace root and the worker both
+    said 0.0.1, so `/healthz`, `vidtheque://context` and the dashboard footer
+    published a version the project does not ship (Tom, 2026-08-10). One
+    constant, asserted against the packaging metadata rather than against a
+    literal, so the next bump cannot leave a surface behind.
+    """
+    import tomllib
+
+    from vidtheque_mcp import __version__
+
+    root = Path(__file__).resolve().parents[2]
+    declared = tomllib.loads((root / "mcp/pyproject.toml").read_text())["project"]["version"]
+    worker = tomllib.loads((root / "worker/pyproject.toml").read_text())["project"]["version"]
+    assert __version__ == declared == worker == "0.0.1"
+
+    with make_client(tmp_path) as client:
+        assert client.get("/healthz").json()["version"] == __version__
+        assert f"<code>{__version__}</code>" in page(client, ROOT)
+
+
+def test_the_rail_drops_the_heading_that_named_nothing(client: TestClient) -> None:
+    """Item 13. Three routes are their own label; the groups that say what a
+    deployment *is* keep theirs."""
+    body = page(client, ROOT)
+    assert "The index" not in body
+    assert '<ul class="navlist">' in body  # the links themselves are untouched
+
+
+def test_the_video_header_labels_both_states_as_one_object(client: TestClient) -> None:
+    """Item 1. A bare pill, a floating label and a second bare pill were three
+    objects with nothing saying which name owned which state.
+
+    §4.5 is why both have to be named at all: the four `data_status`
+    vocabularies are deliberately not unified, so a bare `ready` beside a bare
+    `no_frames` reads as the page contradicting itself.
+    """
+    body = page(client, f"{ROOT}/videos/kCc8FmEb1nY")
+    assert '<span class="statepair-key">index_state</span>' in body
+    # Every key is joined to a pill, never left floating.
+    for pair in re.findall(r'<span class="statepair">(.*?)</span>\s*</span>', body, re.S):
+        assert "statepair-key" in pair and 'class="pill' in pair
+
+
+def test_the_transcript_is_a_scrollbox_with_its_position_printed(
+    client: TestClient,
+) -> None:
+    """Item 6. No "Next N cues" button as the primary control, and the position
+    is on the page whether or not the reader is at the end of it.
+
+    The pager stays in the markup: it is the no-JavaScript path and the
+    appender's own fallback when a fetch is refused. What it is not any more is
+    the thing the reader has to click.
+    """
+    # `?cues=2` is the only way this fixture has more than one batch: six cues
+    # is under the default page, and a scrollbox with nothing to append is not
+    # what this test is about.
+    body = page(client, f"{ROOT}/videos/kCc8FmEb1nY?cues=2")
+    assert 'class="cuebox"' in body and "data-cuelist" in body
+    assert re.search(r'cues <span class="mono" data-field="cue-range">1–2</span>', body)
+    # The count beside it is the one "What was stored" already read — no page
+    # issues a second count query for a position line.
+    assert 'data-cue-total="6"' in body and 'data-cue-more="yes"' in body
+    assert "data-cue-pager" in body  # the fallback survives, hidden by the script
+
+
+def test_the_transcript_batches_arrive_preformatted(client: TestClient) -> None:
+    """The appender's source. Same clamps as the page, every string formatted
+    server-side, `has_more` and never a total."""
+    payload = client.get(
+        f"{ROOT}/api/videos/kCc8FmEb1nY/cues?offset=0&limit=100000"
+    ).json()
+    assert payload["limit"] == 200  # CUE_PAGE_MAX, not the URL's number
+    assert payload["has_more"] is False
+    assert "total" not in payload
+    cue = payload["cues"][0]
+    # The script assigns these verbatim; it owns no clock and no chunk label.
+    assert re.fullmatch(r"\d+:\d\d(:\d\d)?", cue["at"])
+    assert set(cue) == {"at", "t", "text", "speaker", "conf", "in_chunk", "chunk"}
+    assert client.get(f"{ROOT}/api/videos/nosuchvideo1/cues").status_code == 404
+
+
+def test_the_chunk_marker_counts_words_as_well_as_characters(
+    client: TestClient,
+) -> None:
+    """Item 5. Characters are what the chunker clamps on; words are what a
+    human has an intuition for. Both, and the text itself stays off the page."""
+    body = page(client, f"{ROOT}/videos/kCc8FmEb1nY")
+    assert re.search(r"chunk \d+ · [\d:]+–[\d:]+ · \d+ words · \d+ chars", body)
+
+
+def test_the_transcript_drops_the_per_cue_origin_badge(client: TestClient) -> None:
+    """Item 4. `whisperx` on a thousand rows is not a label.
+
+    The fact is not lost: "What was stored" prints it once per origin with a
+    count, and the `stt` row in Provenance names the model that produced it.
+    """
+    body = page(client, f"{ROOT}/videos/kCc8FmEb1nY")
+    assert "badge-spoken" not in body and "badge-screen" not in body
+    assert "whisperx" in body  # still counted, once, in the band above
+
+
+def test_the_jobs_view_reports_liveness_through_the_work_and_not_a_badge(
+    client: TestClient,
+) -> None:
+    """Items 11 and 12.
+
+    The `live` badge is gone — on a dashboard served by the process that holds
+    the runner it was always true and therefore said nothing. What replaced it
+    is three real signals, and the one this test can hold is the gate:
+    `is-working` appears on a `running` job and on nothing else.
+    """
+    body = page(client, f"{ROOT}/jobs")
+    assert 'class="live"' not in body and "livedot" not in body
+
+    rows = re.findall(r'<tr data-job="([^"]+)">(.*?)</tr>', body, re.S)
+    working = {job for job, row in rows if "is-working" in row}
+    running = {job for job, row in rows if re.search(r'data-field="job-state">running<', row)}
+    assert working == running == {"job_running001"}
+    # And the clock only ticks for a job that is still live.
+    ticking = re.findall(r'data-wall="(\d*)"', body)
+    assert ticking.count("") == 1  # the finished one, and only it
+
+
+def test_the_state_markers_in_a_cell_are_one_height(client: TestClient) -> None:
+    """Item 10. The countdown was 26px beside a 17px pill and the cell read as
+    two kinds of object. One token, `--chip-h`, and every marker takes it."""
+    css = (STATIC / "dashboard.css").read_text()
+    for selector in (".pill", ".countdown", ".statepair-key"):
+        # Anchored to the rule whose selector is *only* this one: every marker
+        # here is also a member of the two-channel mono selector list, and
+        # `_rule` would find that block first.
+        match = re.search("^" + re.escape(selector) + r"\s*\{([^}]*)\}", css, re.M)
+        assert match, selector
+        assert "height: var(--chip-h)" in match.group(1), selector
+
+
+def test_a_frame_is_not_a_control_and_does_not_take_the_control_height() -> None:
+    """A geometry bug the fixture hid, found in review 2026-08-10.
+
+    The chassis gives every `button` the 34px control height. `.framebtn` is a
+    button holding a 16/9 picture, and a *definite* height beats an aspect
+    ratio — so every keyframe in the strip was rendering as a 34px letterbox.
+    It was invisible in the suite and in a screenshot because the fixture's
+    JPEGs do not decode, so the box was empty either way.
+    """
+    css = (STATIC / "dashboard.css").read_text()
+    rule = _rule(css, ".framebtn")
+    assert "height: auto" in rule and "aspect-ratio: 16 / 9" in rule
+
+
+def test_a_state_marker_keeps_the_spaces_around_its_own_clock() -> None:
+    """The other one from the same review.
+
+    `held <span>1m 28s</span> more` inside an `inline-flex` box loses both
+    spaces — a flex container makes an item of every text run and drops the
+    whitespace between them — and the jobs table printed `held1m 28smore`. The
+    markers take their height from the box and their centring from the leading,
+    which is what `inline-block` plus a `line-height` is for.
+    """
+    css = (STATIC / "dashboard.css").read_text()
+    for selector in (".pill", ".countdown", ".statepair-key"):
+        match = re.search("^" + re.escape(selector) + r"\s*\{([^}]*)\}", css, re.M)
+        assert match, selector
+        block = match.group(1)
+        assert "display: inline-block" in block, selector
+        assert "line-height: calc(var(--chip-h)" in block, selector
+
+
+def test_the_overview_retires_the_gaps_panel_when_there_are_none(
+    tmp_path: Path,
+) -> None:
+    """Item 7. Three zeros is not a panel.
+
+    Nothing is hidden by it: every figure in that panel is a link into a filter
+    of the videos table, and an empty filter is one click from wherever the
+    reader already is. The queue panel deliberately does *not* do this — an
+    empty queue is a fact about this second, and a panel that vanished when the
+    batch finished would take the operator's place-marker with it.
+    """
+    data = _corpus(tmp_path)
+    with make_client(tmp_path) as client:
+        assert "What is missing" in page(client, ROOT)  # the fixture has gaps
+
+    conn = open_write_connection(data / "vidtheque.db")
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("UPDATE videos SET index_state = 'ready'")
+        conn.execute(
+            "INSERT OR REPLACE INTO video_stages (video_id, stage, state, model_key) "
+            "SELECT id, 'ocr', 'done', 'seed' FROM videos"
+        )
+        conn.execute("COMMIT")
+    finally:
+        conn.close()
+
+    with make_client(tmp_path) as client:
+        body = page(client, ROOT)
+        assert "What is missing" not in body
+        assert "The queue" in body  # the panel about *now* stays whatever it says
+
+
+def test_an_untagged_corpus_says_no_tags_and_stops(tmp_path: Path) -> None:
+    """Item 8. The format lesson that followed it belongs beside the field that
+    enforces it, not on the surface whose brief is that it does not narrate."""
+    data = _corpus(tmp_path)
+    conn = open_write_connection(data / "vidtheque.db")
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("DELETE FROM video_tags")
+        conn.execute("COMMIT")
+    finally:
+        conn.close()
+    with make_client(tmp_path) as client:
+        body = page(client, ROOT)
+    assert "no tags" in body
+    assert "namespace" not in body

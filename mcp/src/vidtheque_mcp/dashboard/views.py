@@ -36,7 +36,7 @@ from ..jobs import store as jobs_store
 # the demo publishes in full anyway — so keying it off the credential would
 # paginate the browsable corpus at 24 rows to protect nothing.
 from ..public.api import OWNER_CLAMPS, _cover_frames, thumb_url
-from ..text import clamp, iso_day, iso_minute
+from ..text import clamp, clock, iso_day, iso_minute
 from ..timeparse import parse_corpus_time
 from ..tools import library
 from ..tools.base import Deps
@@ -61,12 +61,12 @@ CHANNEL_CAP = 12
 TAG_CAP = 24
 RECENT_CAP = 8
 OCR_LINE_CAP = 600
-# How many OCR lines a frame's caption prints before the digest's expander
-# takes over (DESIGN.md, The digest). It is **eight because the stylesheet's
-# box↔line highlight is eight pairs**: the preview is exactly the set of lines
-# the frame above can point at, and the remainder — which never lit a box even
-# before the digest existed — is one click away with a real count on it.
-OCR_PREVIEW_LINES = 8
+# `OCR_PREVIEW_LINES` is gone (Tom, 2026-08-10). It bounded a per-frame digest
+# whose expander split the list in two, which in turn capped the box↔line
+# linkage at the eight lines a stylesheet could enumerate. The panel is a
+# scrollbox of every line now and the linkage is by index, so there is no
+# preview length left to pick. `OCR_LINE_CAP` — the *page's* budget, the outer
+# half of §5.3's double cap — is untouched and still printed when it binds.
 # The same bound for the job event log, and the same reason to have one: an
 # overnight batch writes sixty events and the panel printed all of them.
 EVENT_PREVIEW = 8
@@ -634,11 +634,11 @@ async def video_detail(request: Request) -> Response:
             "shots": _shot_bars(deps, video_id, shots, duration, frame_page),
             "shots_capped": len(shots) >= SHOT_CAP,
             "frames": _frame_cards(deps, video_id, frame_rows, ocr_lines),
-            # The digest's bound, and the honest half of the double cap: when
-            # the *page's* line budget is spent the per-frame counts under-report
-            # by definition, so the panel says so rather than printing a short
-            # list as if it were the whole one.
-            "ocr_preview_lines": OCR_PREVIEW_LINES,
+            # The honest half of the double cap: when the *page's* line budget
+            # is spent the per-frame counts under-report by definition, so the
+            # panel says so rather than printing a short list as if it were the
+            # whole one. This is the only OCR bound left — the per-frame one
+            # went with the digest.
             "ocr_line_cap": OCR_LINE_CAP,
             "ocr_lines_capped": sum(len(v) for v in ocr_lines.values()) >= OCR_LINE_CAP,
             "frame_page": frame_page,
@@ -841,11 +841,93 @@ def _cue_rows(
                     "start_s": float(chunk["start_s"]),
                     "end_s": float(chunk["end_s"]),
                     "n_chars": int(chunk["n_chars"]),
+                    # Characters are what the chunker clamps on; words are what
+                    # a human has an intuition for. Counted here, from the
+                    # chunk's own text, and the text itself never reaches the
+                    # template — `words_json` is not the only thing this page
+                    # declines to dump.
+                    "n_words": len(str(chunk["text"]).split()),
                 },
                 "chunk_closes": cue_id in closes,
             }
         )
     return rows
+
+
+async def cues_json(request: Request) -> Response:
+    """`GET /dashboard/api/videos/{video_id}/cues` — the next batch, for the
+    transcript scrollbox.
+
+    The scrollbox replaced a "Next N cues" button (Tom, 2026-08-10), so the
+    reader never leaves the page and the batch has to arrive as data. This is
+    the *same* read the page made — `queries.cue_page` plus `chunk_spans` over
+    the same cue-id window — with the same server-side clamps, and every string
+    the script assigns is formatted here: the timecode, the chunk label, the
+    confidence. The script carries no formatter of its own, which is the rule
+    `jobs.js` already keeps.
+
+    `has_more` and not a total: the page's own "of N" comes from
+    `per_video_counts`, which it already read for the counts band, so nothing
+    here duplicates a count query.
+    """
+    db = request.app.state.assembled.db
+    video_id = str(request.path_params["video_id"])
+    row = await db.read(lambda c: queries.lookup_video(c, video_id))
+    if row is None:
+        return JSONResponse(
+            {
+                "error": "E_UNKNOWN_VIDEO",
+                "message": f'"{video_id}" is not in the corpus.',
+                "next": "browse the videos table for what is indexed.",
+            },
+            status_code=404,
+            headers={"Cache-Control": "no-store"},
+        )
+    vid = int(row["id"])
+    params = request.query_params
+    limit = clamp(params.get("limit"), 1, CUE_PAGE_MAX, CUE_PAGE)  # type: ignore[arg-type]
+    offset = clamp(params.get("offset"), 0, 500_000, 0)  # type: ignore[arg-type]
+
+    cue_rows = await db.read(lambda c: queries.cue_page(c, vid, offset, limit))
+    has_more = len(cue_rows) > limit
+    cue_rows = cue_rows[:limit]
+    chunks: list[sqlite3.Row] = []
+    if cue_rows:
+        chunks = await db.read(
+            lambda c: queries.chunk_spans(
+                c, vid, int(cue_rows[0]["id"]), int(cue_rows[-1]["id"])
+            )
+        )
+    return JSONResponse(
+        {
+            "cues": [
+                {
+                    "at": clock(cue["start_s"]),
+                    "t": int(cue["start_s"]),
+                    "text": cue["text"],
+                    "speaker": cue["speaker"],
+                    "conf": None
+                    if cue["avg_logprob"] is None
+                    else f"{cue['avg_logprob']:.2f}",
+                    "in_chunk": bool(cue["chunk_opens"] or cue["chunk_closes"]),
+                    "chunk": None
+                    if cue["chunk_opens"] is None
+                    else (
+                        f"chunk {cue['chunk_opens']['seq']} · "
+                        f"{clock(cue['chunk_opens']['start_s'])}–"
+                        f"{clock(cue['chunk_opens']['end_s'])} · "
+                        f"{cue['chunk_opens']['n_words']} words · "
+                        f"{cue['chunk_opens']['n_chars']} chars"
+                    ),
+                }
+                for cue in _cue_rows(cue_rows, chunks)
+            ],
+            "offset": offset,
+            "limit": limit,
+            "has_more": has_more,
+        },
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 # ----------------------------------------------------------------- §5.4 jobs

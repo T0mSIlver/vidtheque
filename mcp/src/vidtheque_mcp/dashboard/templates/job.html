@@ -44,7 +44,10 @@
     <span class="fact" data-field="job-counts">{{ job.text.counts }}</span>
   </p>
   <p class="pagehead-meta progressline">
-    <span class="meter meter-wide" aria-hidden="true"><span class="meter-fill" data-field="job-meter"
+    {# `is-working` only while the runner is actually executing a stage — see
+       jobs.html for the whole of the contract. #}
+    <span class="meter meter-wide{{ ' is-working' if job.state == 'running' }}" aria-hidden="true"
+          data-field="job-meter-box"><span class="meter-fill" data-field="job-meter"
           style="width:{{ job.progress }}%"></span></span>
     <span class="meter-label" data-field="job-progress">{{ job.text.progress }}</span>
     <span class="stale-note" data-field="job-stale" hidden>this job has finished, so reload for the final record</span>
@@ -85,7 +88,7 @@
   <dl class="figures">
     <div class="figure">
       <dt>wall clock</dt>
-      <dd data-field="job-wall">{{ job.text.wall }}</dd>
+      <dd data-field="job-wall" data-wall="{{ job.wall_s if job.live and job.wall_s is not none else '' }}">{{ job.text.wall }}</dd>
       <dd class="figure-note">created → {{ "finished" if job.finished_at else "now" }}</dd>
     </div>
     <div class="figure">

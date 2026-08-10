@@ -208,6 +208,16 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
             guarded(views.job_json, json=True),
             methods=["GET"],
         ),
+        # The transcript scrollbox's own source (2026-08-10). Same argument as
+        # the two above: `/api/*` answers questions about the corpus in the
+        # corpus's own shape, and this answers "the next batch of *this page's*
+        # cue list, already formatted". Same prefix, same gate, same clamps —
+        # `CUE_PAGE_MAX` and the offset ceiling are the page's, not the URL's.
+        Route(
+            f"{ROOT}/api/videos/{{video_id}}/cues",
+            guarded(views.cues_json, json=True),
+            methods=["GET"],
+        ),
         Route(ROOT, guarded(views.overview), methods=["GET"]),
         Route(f"{ROOT}/videos", guarded(views.videos), methods=["GET"]),
         Route(f"{ROOT}/videos/{{video_id}}", guarded(views.video_detail), methods=["GET"]),

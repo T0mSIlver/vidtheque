@@ -1907,10 +1907,17 @@ def chunk_spans(
     the embedding unit" is a question about the cues in front of you and a
     four-hour talk has hundreds of chunks. `chunks_span(first_cue_id,
     last_cue_id)` is the index.
+
+    `text` is selected for one reason and the caller must not print it: the
+    dashboard's chunk marker states the unit in **words as well as characters**
+    (2026-08-10), and a word count is `len(text.split())` — the definition —
+    rather than a SQL space-counting expression that miscounts every newline
+    the joined cue text carries. The rows are bounded to one cue page, so this
+    is a handful of chunk bodies and never the whole transcript.
     """
     return conn.execute(
         """
-        SELECT id, seq, start_s, end_s, first_cue_id, last_cue_id, n_chars
+        SELECT id, seq, start_s, end_s, first_cue_id, last_cue_id, n_chars, text
         FROM chunks
         WHERE video_id = :vid AND last_cue_id >= :lo AND first_cue_id <= :hi
         ORDER BY seq

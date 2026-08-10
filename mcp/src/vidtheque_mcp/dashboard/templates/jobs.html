@@ -61,9 +61,13 @@
        that says so. #}
     <span class="stale-note" data-field="job-stale" hidden>a job was queued since this page loaded, so reload</span>
   </span>
-  {# The word as well as the colour, like every other state on this surface: a
-     reader who cannot see the pulse still reads "live". #}
-  {% if live %}<span class="live"><span class="livedot" aria-hidden="true"></span>live</span>{% endif %}
+  {# The `live` badge is gone (Tom, 2026-08-10). It announced that the *page*
+     was refreshing, which on a dashboard served by the same process that holds
+     the job runner is always true and therefore says nothing. What a reader
+     actually wants to know is whether the *work* is moving, and the rows
+     answer that themselves: a running job's bar advances and its wall clock
+     ticks, a queued one's does neither. Liveness is a property of the jobs,
+     not a badge above them. #}
 </p>
 
 <div class="tablewrap" data-poll="{{ root }}/api/jobs?state={{ filters.state }}&amp;limit={{ filters.limit }}&amp;offset={{ pagination.offset }}"
@@ -106,14 +110,28 @@
           held <span data-field="job-defer-clock">{{ job.text.defer }}</span> more
         </span>
       </td>
+      {# `is-working` is the whole "alive" contract and it is gated on one
+         thing: the job is `running`, which means the runner has claimed it and
+         a stage is executing. It draws a bright cap on the bar's leading edge —
+         static geometry, no animation — and the bar's width transitions over
+         exactly one poll interval, so a stage advancing 42% → 47% is drawn as
+         movement rather than as a jump. Nothing pulses, nothing sweeps, and a
+         job that is queued, deferred or finished shows a bar that does not
+         move, because nothing is working. #}
       <td data-label="Progress">
-        <span class="meter" aria-hidden="true"><span class="meter-fill" data-field="job-meter"
+        <span class="meter{{ ' is-working' if job.state == 'running' }}" aria-hidden="true"
+              data-field="job-meter-box"><span class="meter-fill" data-field="job-meter"
               style="width:{{ job.progress }}%"></span></span>
         <span class="meter-label" data-field="job-progress">{{ job.text.progress }}</span>
       </td>
       <td data-label="Items"><span data-field="job-counts">{{ job.text.counts }}</span></td>
       <td data-label="Created"><time>{{ job.created_at | minute }}</time></td>
-      <td class="num" data-label="Wall clock" data-field="job-wall">{{ job.text.wall }}</td>
+      {# A counter ticking up, which is the one motion DESIGN.md sanctions with
+         nothing but "counts are counts". It ticks only while the job is live —
+         a finished job's wall clock is a measurement, and a measurement that
+         keeps counting is a lie. #}
+      <td class="num" data-label="Wall clock" data-field="job-wall"
+          data-wall="{{ job.wall_s if job.live and job.wall_s is not none else '' }}">{{ job.text.wall }}</td>
     </tr>
     {% endfor %}
   </tbody>

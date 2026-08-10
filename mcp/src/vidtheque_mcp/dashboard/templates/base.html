@@ -68,7 +68,12 @@
   </div>
 
   <nav class="nav" aria-label="Sections">
-    <p class="nav-group">The index</p>
+    {# The first group has no heading (Tom, 2026-08-10). "The index" named the
+       three routes under it and none of them needed naming — a rail of three
+       words is its own label, and the heading was one line of chrome above the
+       thing the operator came to click. The groups that *change* what the rail
+       means — `Manage`, `This demo` — keep theirs, because those are the two
+       cases where an item's absence is a fact about the deployment. #}
     <ul class="navlist">
       <li><a href="{{ root }}"{% if page == 'corpus' %} aria-current="page"{% endif %}>Overview</a></li>
       <li><a href="{{ root }}/videos"{% if page == 'videos' %} aria-current="page"{% endif %}>Videos</a></li>

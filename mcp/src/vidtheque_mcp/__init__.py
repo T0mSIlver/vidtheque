@@ -8,6 +8,6 @@ Hard rule (CLAUDE.md): nothing here may import from ``vidtheque_worker``. The
 two services talk over HTTP, and the worker's OpenAPI document is the contract.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.0.1"
 
 __all__ = ["__version__"]

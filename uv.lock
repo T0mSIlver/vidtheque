@@ -2476,7 +2476,7 @@ gpu = [{ name = "vidtheque-worker", extras = ["gpu", "nvml"], editable = "worker
 
 [[package]]
 name = "vidtheque-mcp"
-version = "0.1.0"
+version = "0.0.1"
 source = { editable = "mcp" }
 dependencies = [
     { name = "av" },

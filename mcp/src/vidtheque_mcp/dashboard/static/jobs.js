@@ -91,6 +91,24 @@ function tickDeferrals() {
   }
 }
 
+/** The other second-by-second arithmetic on a number the server sent: a live
+ *  job's wall clock, counting up.
+ *
+ *  This is the whole of "the page feels alive" and it is not decoration — it is
+ *  the one motion DESIGN.md's table sanctions with nothing but "counts are
+ *  counts". `data-wall` is present only on a job the server called live, so a
+ *  finished job's clock is a measurement and stays one; every poll resets the
+ *  number, so a tab left open overnight never drifts. */
+function tickWallClocks() {
+  for (const node of document.querySelectorAll("[data-wall]")) {
+    if (node.dataset.wall === "") continue;
+    const seconds = Number(node.dataset.wall) + 1;
+    if (!Number.isFinite(seconds)) continue;
+    node.dataset.wall = String(seconds);
+    node.textContent = span(seconds);
+  }
+}
+
 /** The one thing this script cannot patch is a row that is not on the page —
  *  a job queued since it rendered, or the panels a finished job makes stale.
  *  Both reveal a note the server already wrote; neither invents a sentence. */
@@ -106,8 +124,19 @@ function applyJob(scope, job) {
   setText(scope, "job-counts", job.text.counts);
   setText(scope, "job-wall", job.text.wall);
   setText(scope, "job-ran", job.text.ran);
+  // The clock the ticker counts up between polls, re-synced to the server's
+  // own number on every one of them.
+  for (const node of scope.querySelectorAll("[data-wall]")) {
+    node.dataset.wall = job.live && job.wall_s !== null ? String(job.wall_s) : "";
+  }
   for (const bar of scope.querySelectorAll("[data-field='job-meter']")) {
     bar.style.width = `${job.progress}%`;
+  }
+  // "Working" is `running` and nothing else: claimed by the runner, a stage
+  // executing. Queued, deferred, finished and failed all draw a bar that does
+  // not move, because none of them is a machine doing anything.
+  for (const box of scope.querySelectorAll("[data-field='job-meter-box']")) {
+    box.classList.toggle("is-working", job.state === "running");
   }
   setDefer(scope, job.defer_s);
 }
@@ -220,7 +249,14 @@ if (root) {
 
   if (url && live) {
     timer = setInterval(poll, interval);
-    ticker = setInterval(tickDeferrals, 1000);
+    ticker = setInterval(() => {
+      tickDeferrals();
+      tickWallClocks();
+    }, 1000);
+    // The bar's width transition is exactly one poll interval long, so a stage
+    // that moved between two measurements is drawn advancing rather than
+    // jumping. It is the server's own cadence, not a chosen duration.
+    document.documentElement.style.setProperty("--poll-ms", `${interval}ms`);
     // The countdown is wrong the moment the page was cached or the reader came
     // back to the tab, so re-sync on the way back rather than on a timer.
     document.addEventListener("visibilitychange", () => {
