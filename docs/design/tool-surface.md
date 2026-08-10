@@ -382,8 +382,26 @@ Shape: one text block, plus `structuredContent`:
 ```
 error: E_UNKNOWN_VIDEO
 Video "kCc8FmEb1nY" is not in the corpus.
-next: index-video url="https://youtu.be/kCc8FmEb1nY" to add it (takes ~2-6 min), or list-videos to browse what is indexed.
+next: if you copied this id from a YouTube URL or a result, index-video url="https://youtu.be/kCc8FmEb1nY" adds it (~2-6 min of GPU). If it came from memory, it is not an id from this corpus — list-videos to browse what is indexed.
 ```
+
+**The remedy is shape-checked, and it states its precondition** (amended
+2026-08-10). It used to concatenate whatever the caller sent into
+`https://youtu.be/<it>` and recommend 2-6 min of GPU on the result; a
+stress-testing consumer refused to follow it, unprompted (terra eval §4.6). Two
+different failures live under one code, and they get different answers:
+
+- **Input that cannot be a `video_id`** (§3.1's two shapes) — a title, a
+  sentence, a 12-character string — is answered with the shape and an example,
+  and no `index-video` line: *"video 3" is not a video_id, so nothing in the
+  corpus can match it.* A pasted watch/shorts/embed URL is answered with the id
+  from inside it, which is the one wrong shape worth translating rather than
+  refusing.
+- **A well-formed id this corpus does not have** cannot be told from a real one
+  by this server — that is what "not in the corpus" means, and the eval's own
+  example, `not-a-video`, is 11 legal characters. So the remedy names the
+  condition under which the spend is worth it: a *copied* id is worth indexing,
+  a *remembered* one is the fabrication the guide's first rule forbids.
 
 ```json
 {"code":"E_UNKNOWN_VIDEO","message":"Video \"kCc8FmEb1nY\" is not in the corpus.",
@@ -429,7 +447,7 @@ added.
 | `E_INDEXING` | 409 | video is mid-pipeline; partial data | `job-status job_id=…`, plus what *is* queryable now |
 | `E_FEATURE_DISABLED` | 409 | filter needs a disabled feature (e.g. `speaker` with diarization off) | "omit `speaker=`" |
 | `E_TIMEOUT` | 408 | 30s query budget exhausted | "narrow the range: add `channel=`, `video_id=`, or a tighter `published_after`" |
-| `E_BUSY` | 503 | admission control full | `retry_after_s: 1` |
+| `E_BUSY` | 503 | admission control full | `retry_after_s: 1`, and *only* that — "retry the same call in 1s; the limit is on concurrent searches, not on what a query costs". The hint used to offer "or narrow the query so it costs less", which cannot work (the semaphore is taken before the query is built) and which a consumer acted on instead of waiting: terra eval §4.9 |
 | `E_RATE_LIMIT` | 429 | per-client budget | `retry_after_s` |
 | `E_TOO_LARGE` | 413 | request would exceed inline image budget | "use `return=url`, or lower `limit`" |
 | `E_UNSUPPORTED_SOURCE` | 422 | `index-video` URL yt-dlp can't handle | lists supported sources |
@@ -953,6 +971,23 @@ The incomplete-coverage footer names `index-video`, and degrades on a deployment
 that masks it (§3.8): *"3 video(s) have incomplete coverage. The channels they do
 have are searchable; this server cannot re-index them."*
 
+**The list says what it is not listing** (amended 2026-08-10). This tool counts
+`QUERYABLE_INDEX_STATES` and `corpus-summary` counts every row, so the two
+disagreed by two in the same minute with nothing on either payload connecting
+them; a consumer asked point-blank for the exact count constructed the
+reconciliation itself and got the number of mid-pipeline videos wrong (terra
+eval §4.7). When the corpus holds videos this view cannot show, and no explicit
+`index_state=` was passed, the footer names the gap in the same words
+`corpus-summary`'s headline uses — both from `tools/corpus_state.read_video_states`:
+
+```
+note: 152 of the 154 videos in this corpus are queryable and can appear here; 2 still being indexed (index_state=indexing) cannot. corpus-summary counts all 154.
+```
+
+It costs one `GROUP BY index_state` over `videos`, and it prints only when the
+two numbers actually differ — a corpus with nothing mid-pipeline says nothing,
+and the dashboard's `index_state=all` view is withholding nothing to explain.
+
 **Status — the `cues` and `frames` columns are blank.** Those two opt-in `fields`
 are fed by the per-video counters above, and the schema does not carry them
 (index-schema §1.2 has no such columns). The alternative — a `COUNT(*)` over `cues`
@@ -1033,7 +1068,7 @@ documented first call, so it is where the list costs least.
 **Return shape:**
 
 ```
-Corpus: 312 videos · 486h 12m · 1,240,331 transcript cues · 58,904 keyframes
+Corpus: 312 videos (310 queryable · 2 still being indexed) · 486h 12m · 1,240,331 transcript cues · 58,904 keyframes
 Published span: 2019-04-02 → 2026-08-02 · last indexed: 2026-08-07 19:41 (2 videos)
 data_status: ok
 
@@ -1061,6 +1096,17 @@ Gaps:
 
 next_best_query: search q="<topic>" limit=5 — or list-videos channel="GPU MODE" to browse that channel.
 ```
+
+**The headline count is every row, and it says how many of them can answer**
+(amended 2026-08-10). `search` and `list-videos` answer from
+`QUERYABLE_INDEX_STATES`; this tool counts the table. The parenthetical is
+printed only when the two differ, comes from the same
+`tools/corpus_state.read_video_states` as `list-videos`' matching footer (§4.2),
+and is carried as `queryable_videos` plus a `videos_by_index_state` map in
+`structuredContent`. Before it, the two tools reported 154 and 152 in the same
+minute with nothing reconciling them, and the consumer that had been asked for
+the exact number wrote its own explanation into a deliverable — naming two
+videos mid-pipeline where `Gaps:` said one (terra eval §4.7).
 
 `data_status` is the endpoint diagnosing itself, so an empty answer never sends the
 model guessing:
@@ -2015,7 +2061,18 @@ after the fact: a bench agent asked `search` for `limit=500`, got 50, and had no
 signal anywhere in the text payload that it had been narrowed
 (`research/mcp-design-bench-2026-08-09.md` §D6). Publishing the caps ahead of the
 call is the cheap half of that fix; printing a `note:` when a clamp actually
-binds is the other half, and is deferred.
+binds was deferred on 2026-08-09 and **shipped for `search` on 2026-08-10**,
+after a second vendor's agent filed it independently three times in one run
+(terra eval §4.12):
+
+```
+note: clamped server-side: limit=500 → 50. The caps are in vidtheque://context; page with offset instead of raising limit.
+```
+
+It prints only when a clamp moved a number the caller actually sent — a default
+that was never sent is not a clamp, and a payload that says so on every call is
+the token cost this line exists to avoid. `list-videos` has the same silence and
+does not print this yet.
 
 ### 5.3 `vidtheque://guide` — progressive disclosure
 
@@ -2065,8 +2122,10 @@ drill down with tools, not with invented resource URIs.
 
 ## Server-side limits
 
-Values outside these are **clamped silently**, not rejected: asking for more
-does not get you more, it gets you the cap with no warning.
+Values outside these are **clamped**, not rejected: asking for more does not get
+you more, it gets you the cap. `search` prints a `note:` when a clamp moved a
+value you sent (§5.2); the other tools are still silent, so read the printed
+count, never the number you asked for.
 
 | Parameter | Range | Default |
 |---|---|---|

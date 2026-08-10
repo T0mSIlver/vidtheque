@@ -190,6 +190,15 @@ async def test_admission_control_refuses_rather_than_queueing() -> None:
                 pass
         assert caught.value.code == "E_BUSY"
         assert caught.value.retry_after_s == 1
+        # ...and the remedy is time, and only time. The semaphore is taken
+        # before the query is built, so "narrow the query so it costs less" —
+        # what this used to say — is refused exactly as fast, and a terra
+        # consumer acted on that half twice and lost both searches
+        # (research/mcp-eval-terra-2026-08-10.md §4.9).
+        hint = caught.value.next_hint or ""
+        assert "narrow" not in hint, hint
+        assert "retry the same call in 1s" in hint
+        assert "limit is on concurrent searches" in hint
     # Released again afterwards.
     async with admission(sem):
         pass

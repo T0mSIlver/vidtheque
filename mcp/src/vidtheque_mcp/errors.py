@@ -12,7 +12,22 @@ appears (research doc §2.2). Auth lives in the middleware, not here.
 
 from __future__ import annotations
 
+import re
+
 from mcp_types import CallToolResult, TextContent
+
+# §3.1: an 11-char YouTube id, or `<source>:<id>` for a future non-YouTube one.
+_YOUTUBE_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
+_SOURCED_ID = re.compile(r"^[a-z][a-z0-9]{1,15}:[A-Za-z0-9_.:-]{1,64}$")
+# The id inside a pasted watch/short/embed URL, which is the one wrong-shaped
+# input that is worth answering with the right shape rather than a shrug.
+_ID_IN_URL = re.compile(r"(?:youtu\.be/|[?&]v=|/shorts/|/embed/|/live/)([A-Za-z0-9_-]{11})")
+
+
+def plausible_video_id(value: str) -> bool:
+    """Could this string be a `video_id` at all? (§3.1's two shapes.)"""
+    return bool(_YOUTUBE_ID.match(value) or _SOURCED_ID.match(value))
+
 
 # code -> HTTP-shaped status, kept for the raw API and for documentation parity
 # with the table in tool-surface §3.8.
@@ -110,15 +125,54 @@ def unknown_video(video_id: str, can_index: bool = True) -> ToolError:
     mode `index-video` is absent from `tools/list`, and this error kept naming
     it anyway — the most-hit dead end in the surface pointing at the one tool
     that is not there (demo-queries §9.1.8).
+
+    It also has to be a remedy worth following. The `index-video` line used to
+    string-concatenate whatever arrived into `https://youtu.be/<it>` and
+    recommend spending 2-6 min of GPU on it; a stress-testing consumer refused
+    it on its own ("a client should not follow that suggestion blindly", terra
+    eval §4.6). Two things were wrong, and they need different fixes:
+
+    - **Input that cannot be an id at all** — a title, a sentence, a URL, a
+      13-character string — now gets the shape back instead of a download
+      recommendation, and a pasted URL gets the id from inside it.
+    - **Input that is a well-formed id we do not have** cannot be told apart
+      from a real one by this server; that is what "not in the corpus" means.
+      (`not-a-video`, the eval's own example, is 11 legal characters.) So the
+      remedy states its own precondition rather than recommending the spend
+      unconditionally: a copied id is worth indexing, a remembered one is the
+      fabrication the guide forbids.
     """
-    remedy = (
-        f'index-video url="https://youtu.be/{video_id}" to add it (takes ~2-6 min), '
-        "or list-videos to browse what is indexed."
-        if can_index
-        else "list-videos to browse what is indexed — this server is read-only and "
-        "cannot add videos, so a video that is not listed cannot be answered from."
+    if plausible_video_id(video_id):
+        remedy = (
+            f'if you copied this id from a YouTube URL or a result, index-video '
+            f'url="https://youtu.be/{video_id}" adds it (~2-6 min of GPU). If it came '
+            "from memory, it is not an id from this corpus — list-videos to browse "
+            "what is indexed."
+            if can_index
+            else "list-videos to browse what is indexed — this server is read-only and "
+            "cannot add videos, so a video that is not listed cannot be answered from."
+        )
+        return ToolError("E_UNKNOWN_VIDEO", f'Video "{video_id}" is not in the corpus.', remedy)
+
+    inside = _ID_IN_URL.search(video_id)
+    if inside:
+        remedy = (
+            f'that is a URL — the video_id is the 11 characters inside it: '
+            f'video_id="{inside.group(1)}".'
+        )
+        if can_index:
+            remedy += f' If it is not in the corpus, index-video url="{video_id}" adds it.'
+    else:
+        remedy = (
+            "a video_id is an 11-char YouTube id (e.g. kCc8FmEb1nY). Use one exactly "
+            "as a search, list-videos or corpus resource result printed it — never a "
+            "title, a URL or a guess. list-videos to browse what is indexed."
+        )
+    return ToolError(
+        "E_UNKNOWN_VIDEO",
+        f'"{video_id}" is not a video_id, so nothing in the corpus can match it.',
+        remedy,
     )
-    return ToolError("E_UNKNOWN_VIDEO", f'Video "{video_id}" is not in the corpus.', remedy)
 
 
 def unknown_frame(frame_id: str, video_id: str | None, max_ord: int | None) -> ToolError:
@@ -146,10 +200,25 @@ def unknown_job(job_id: str) -> ToolError:
 
 
 def busy(retry_after_s: int = 1) -> ToolError:
+    """The remedy is time, and only time — say so and nothing else.
+
+    It used to read "retry in 1s, **or narrow the query so it costs less**",
+    which taught a recovery that cannot work: the semaphore is acquired before
+    the query is built (`db/connection.py::admission`), so a cheaper query is
+    refused exactly as fast as an expensive one. A terra consumer read the
+    second clause as the actionable half, narrowed twice instead of waiting,
+    lost both searches and gave up on `search` for four calls
+    (research/mcp-eval-terra-2026-08-10.md §4.9).
+    """
     return ToolError(
         "E_BUSY",
         "The server is already running its maximum number of concurrent searches.",
-        f"retry in {retry_after_s}s, or narrow the query so it costs less.",
+        # No mention of query cost at all, not even to deny it: the reason this
+        # hint misfired is that a consumer took the cheapest-looking clause and
+        # acted on it, and a negated one is exactly as available.
+        f"retry the same call in {retry_after_s}s — the limit is on concurrent "
+        "searches, not on what a query costs, so the identical call succeeds as "
+        "soon as a slot frees.",
         retry_after_s=retry_after_s,
     )
 
