@@ -909,6 +909,14 @@ A surface may add **one** breakpoint of its own for a real structural change
 (the dashboard's tables stop being tables somewhere around 52rem) and documents
 it in its own section here. It may not add a third for taste.
 
+Registered surface breakpoints:
+
+- **Demo: `--bp-wide` 1380px** (2026-08-11, commit 334f1f7) — the ask pane
+  goes two-column: answer at its 70ch measure left, Sources right, a hairline
+  column rule between. Below it the pane is one column at the measure. The
+  structural change is real (the pane owns the full `--maxw` column above the
+  break); the measure itself never widens.
+
 **The page body never scrolls horizontally at any width.** A grid too wide to
 stack scrolls inside its own wrapper, which is `position: relative` so an
 absolutely-positioned child cannot escape the clip. Every slot that prints a
