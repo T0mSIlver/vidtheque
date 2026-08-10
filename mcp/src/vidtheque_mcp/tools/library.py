@@ -20,6 +20,7 @@ from ..text import (
     iso_day,
     iso_minute,
     iso_z,
+    last_page_offset,
     middle_truncate,
     pagination_line,
     split_csv,
@@ -209,17 +210,21 @@ async def list_videos(
     if records:
         footer.append(f'next: video-summary video_id="{records[0]["video_id"]}" for chapters and key texts.')
 
+    pagination: dict[str, Any] = {
+        "limit": limit,
+        "offset": offset,
+        "has_more": has_more,
+        "approx_total": probe_total,
+    }
+    if not page and offset > 0:
+        # Same key, same meaning as `search`'s past-the-end payload (§3.4): the
+        # offset the last page starts at, so a client that pages structurally
+        # does not have to parse the prose to get back.
+        pagination["last_offset"] = last_page_offset(probe_total, limit)
+
     return text_result(
         "\n".join(header) + body + "\n".join(footer),
-        {
-            "videos": records,
-            "pagination": {
-                "limit": limit,
-                "offset": offset,
-                "has_more": has_more,
-                "approx_total": probe_total,
-            },
-        },
+        {"videos": records, "pagination": pagination},
     )
 
 

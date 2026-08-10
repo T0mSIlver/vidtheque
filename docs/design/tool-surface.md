@@ -218,6 +218,23 @@ Rendering:
 - probe finished below the ceiling → exact: `Results: 10/38 (use offset=10 for more)`
 - probe hit the ceiling → approximate: `Results: 10/~40+ (use offset=10 for more)`
 - last page: `Results: 8/8 (no more results)`
+- **past the last page** (`offset > 0`, nothing shown) → the probe total, never
+  the offset, plus where the end is:
+
+  ```
+  Videos: 0/181 (past the last page)
+  This call has 181 videos; the last page starts at offset=100. next: re-run with offset=100, or offset=0 for the top.
+  ```
+
+  `structuredContent.pagination` carries `last_offset` on this payload only —
+  the same key, with the same meaning, as `search`'s past-the-end payload
+  (rule 4 below). The walked-to-the-end line is `offset + shown`, which is
+  right only while `shown > 0`: jumped past the end it collapses onto the
+  offset, and `Videos: 0/200` printed beside `approx_total: 181` in the same
+  payload (terra eval §9.1) is the "the total moves with the page you asked
+  for" shape this section removed from the in-range case. The probe is exact on
+  this path by construction — an empty page means the count stopped below its
+  `offset + …` ceiling — so no second query is needed to print it.
 
 `~40+` reads as "at least 40, we stopped counting" — which is the truth, unlike an
 unbounded `COUNT(*)` that screenpipe still runs (live bug: page capped at 5000

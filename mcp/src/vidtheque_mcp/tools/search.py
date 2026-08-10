@@ -28,6 +28,7 @@ from ..text import (
     clamp_text_chars,
     clock,
     deeplink,
+    last_page_offset,
     middle_truncate,
     pagination_line,
     split_csv,
@@ -1169,7 +1170,7 @@ def _past_the_end(
     the exact case where a caller is most likely to read "there is nothing
     past here" as a fact about the corpus.
     """
-    last = max(0, ((total - 1) // limit) * limit)
+    last = last_page_offset(total, limit)
     end = "past the last page of the ranked pool" if pool_full else "past the last page"
     holds = (
         f"The ranked pool holds {total} result{'s' if total != 1 else ''} and it "

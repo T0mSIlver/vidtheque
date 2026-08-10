@@ -379,6 +379,34 @@ async def test_list_videos_total_does_not_move_with_the_page(assembled: Assemble
     assert "Videos: 1/3" in body(await library.list_videos(assembled.deps, limit=1))
 
 
+async def test_list_videos_past_the_last_page_says_where_the_end_is(
+    assembled: Assembled,
+) -> None:
+    """terra eval §9.1: `Videos: 0/200` beside `approx_total: 181`.
+
+    `total = offset + shown` is right only when you *walked* to the end; jumped
+    past it, `shown` is 0 and the total collapses onto the offset — the "the
+    number moves with the page you asked for" shape §3.4 removed from the
+    in-range case. `search` has said where the end is since §7.9; this is the
+    same sentence on the other paging tool.
+    """
+    result = await library.list_videos(assembled.deps, limit=2, offset=200)
+    text = body(result)
+    assert "0/200" not in text
+    assert "Videos: 0/3 (past the last page)" in text
+    assert "the last page starts at offset=2" in text
+    assert "next: re-run with offset=2, or offset=0 for the top." in text
+    pagination = structured(result)["pagination"]
+    assert pagination["approx_total"] == 3
+    assert pagination["has_more"] is False
+    assert pagination["last_offset"] == 2
+    # In range, the walked-to-the-end line is untouched.
+    walked = await library.list_videos(assembled.deps, limit=2, offset=2)
+    assert "Videos: 1/3 (no more results)" in body(walked)
+    assert "past the last page" not in body(walked)
+    assert "last_offset" not in structured(walked)["pagination"]
+
+
 async def test_list_videos_says_when_a_clamp_moved_a_number(assembled: Assembled) -> None:
     """The other half of §4.12, and the line `search` already prints."""
     text = body(await library.list_videos(assembled.deps, limit=500))

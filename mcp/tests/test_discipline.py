@@ -18,6 +18,7 @@ from vidtheque_mcp.text import (
     clamp_text_chars,
     clock,
     deeplink,
+    last_page_offset,
     middle_truncate,
     pagination_line,
     validate_tag,
@@ -123,6 +124,24 @@ def test_pagination_rendering() -> None:
         pagination_line("Results", 10, 0, 10, True, 41, True)
         == "Results: 10/~40+ (use offset=10 for more)"
     )
+
+
+def test_pagination_past_the_last_page_prints_the_probe_not_the_offset() -> None:
+    """terra eval §9.1. `shown == 0` past the end used to make the offset the
+    total (`Videos: 0/200` against 181 real rows). The probe is exact here — an
+    empty page means the count stopped below its ceiling."""
+    line = pagination_line("Videos", 0, 200, 100, False, 181, False)
+    assert line.splitlines()[0] == "Videos: 0/181 (past the last page)"
+    assert "the last page starts at offset=100" in line
+    assert "offset=200" not in line
+    assert last_page_offset(181, 100) == 100
+    # An empty corpus has no page to go back to, and says so in the singular.
+    assert pagination_line("Videos", 0, 5, 10, False, 1, False).endswith(
+        "This call has 1 video; the last page starts at offset=0. "
+        "next: re-run with offset=0, or offset=0 for the top."
+    )
+    # offset=0 with nothing to show is an empty result, not an over-page.
+    assert pagination_line("Videos", 0, 0, 10, False, 0, False) == "Videos: 0/0 (no more results)"
 
 
 def test_tag_validation_mirrors_the_schema_check() -> None:

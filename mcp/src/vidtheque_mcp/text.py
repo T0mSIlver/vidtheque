@@ -127,6 +127,16 @@ def iso_z(ts: int | float | None) -> str | None:
     return datetime.fromtimestamp(int(ts), UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def last_page_offset(total: int, limit: int) -> int:
+    """The offset the last page starts at, for a total of `total` rows.
+
+    One definition, because two tools print it: `search`'s past-the-end payload
+    and `pagination_line`'s. `0` for an empty result set — there is no page to
+    go back to, and `offset=0` is where the caller should start again.
+    """
+    return max(0, ((total - 1) // max(1, limit)) * limit)
+
+
 def pagination_line(
     noun: str,
     shown: int,
@@ -136,8 +146,29 @@ def pagination_line(
     probe_total: int,
     probe_hit_ceiling: bool,
 ) -> str:
-    """tool-surface §3.4 rendering. Never an exact total from a second query."""
+    """tool-surface §3.4 rendering. Never an exact total from a second query.
+
+    May return two lines: past the last page, the second one says where the end
+    is (§3.4 rule 4), which is what `search` has always done and `list-videos`
+    did not.
+    """
     if not has_more:
+        if shown == 0 and offset > 0:
+            # Past the last page. `total = offset + shown` collapses onto the
+            # offset here — `Videos: 0/200` beside `approx_total: 181` in the
+            # same payload (terra eval §9.1) — and it is exactly the "the total
+            # moves with the page you asked for" shape §3.4 removed from the
+            # in-range case. The probe is exact on this path: an empty page
+            # means `total <= offset < ceiling`, so the probe never hit its
+            # ceiling and `probe_total` is the real count.
+            last = last_page_offset(probe_total, limit)
+            unit = noun.lower() if probe_total != 1 else noun.lower().rstrip("s")
+            return (
+                f"{noun}: 0/{probe_total} (past the last page)\n"
+                f"This call has {probe_total} {unit}; the last page starts at "
+                f"offset={last}. next: re-run with offset={last}, or offset=0 for "
+                "the top."
+            )
         total = offset + shown
         return f"{noun}: {shown}/{total} (no more results)"
     if probe_hit_ceiling:
