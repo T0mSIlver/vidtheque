@@ -3209,3 +3209,32 @@ def test_the_gold_evidence_mark_is_not_clipped_by_the_frame_it_marks() -> None:
     assert not re.search(r"^\.(framecard|ocrframe)[^{}]*img[^{}]*\{[^}]*outline:", css, re.M)
     for box in (".framebtn", ".ocrstage"):
         assert "overflow: hidden" in _rule(css, box), f"{box} still clips"
+
+
+def test_the_overview_masthead_carries_the_state_and_the_clock_only(
+    client: TestClient,
+) -> None:
+    """Round 4, item 5. Two facts re-homed, for two different reasons.
+
+    The state word wore a bare pill on the title's baseline, at a different
+    weight from the machine strings beside it, reading as a caption that had
+    drifted. §12.5 item 1 had already settled what a state looks like on this
+    surface — a key joined to its own pill — and this page has one other fact
+    wearing that primitive, so now it has one idiom rather than two.
+
+    The published span was never a masthead fact at all: it says what is *in*
+    the corpus, not what state the corpus is in or when this box last worked.
+    It sits under the `videos` figure in the ledger, beside the count it is
+    about.
+    """
+    body = page(client, ROOT)
+    head = body[body.index('<div class="pagehead">') : body.index("</div>\n</div>")]
+    assert '<span class="statepair-key">data_status</span>' in head
+    assert "published" not in head, "the span left the masthead"
+    assert "indexed" in head, "the freshness clock stays"
+
+    ledger = body[body.index('<dl class="ledger">') : body.index("</dl>")]
+    videos_figure = ledger[: ledger.index("<dt>runtime</dt>")]
+    assert re.search(
+        r'published <span class="fact"><span class="mono">[\d-]+</span>', videos_figure
+    ), "…and landed on the count it describes"
