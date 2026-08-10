@@ -19,6 +19,7 @@ caption tracks.
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import random
@@ -487,10 +488,26 @@ class Source(Protocol):
 
     def fetch_subtitle(self, track: SubtitleTrack) -> str: ...
 
-    def download_audio(self, url: str, source_id: str, dest_dir: Path, codec: str) -> MediaFile: ...
+    # `info` is the dict `probe` returned for the same video, when the caller
+    # still has it: one extraction, three uses (audit 2026-08-10 §5). An
+    # implementation may ignore it and extract again — it is an optimisation,
+    # never a promise about what lands on disk.
+    def download_audio(
+        self,
+        url: str,
+        source_id: str,
+        dest_dir: Path,
+        codec: str,
+        info: dict[str, Any] | None = None,
+    ) -> MediaFile: ...
 
     def download_video(
-        self, url: str, source_id: str, dest_dir: Path, max_height: int
+        self,
+        url: str,
+        source_id: str,
+        dest_dir: Path,
+        max_height: int,
+        info: dict[str, Any] | None = None,
     ) -> MediaFile: ...
 
     @property
@@ -506,6 +523,11 @@ class YtDlpSource:
     def __init__(self, settings: PipelineSettings) -> None:
         self._settings = settings
         self._sleeper = time.sleep  # swapped in tests that exercise backoff
+        # How many times a reused probe extraction turned out to be stale and
+        # cost a second extraction after all (`_download`). Process-lifetime,
+        # logged each time it moves: it is the number that says whether
+        # consolidation is paying for itself on this box.
+        self.stale_info_refreshes = 0
 
     @property
     def version(self) -> str:
@@ -561,24 +583,90 @@ class YtDlpSource:
                     return ydl.sanitize_info(info)
             except Exception as exc:  # yt_dlp.utils.DownloadError and friends
                 message = str(exc)
-                if _is_rate_limit(message):
+                # Two retry classes, not one (audit 2026-08-10 §1). A 429 or a
+                # throttling 403 is about *this request* and often clears in
+                # seconds, so it earns the short inner backoff. A bot-check is
+                # not: YouTube has blocked the whole logged-out session on this
+                # IP, the measured waves run 60-90 minutes, and 5+10+20 seconds
+                # of retries cannot outlive that — all they do is spend the
+                # item's attempts and add requests to a block that hammering
+                # makes longer. `--extractor-retries` is documented as retries
+                # for *known extractor errors*; it was never a recovery
+                # mechanism for an IP block. So the bot-check falls straight
+                # through to `_classified` → `RateLimited` → `E_RATE_LIMIT`,
+                # and the job-level cool-off owns the wait.
+                if _is_rate_limit(message) and not _is_bot_check(message):
                     attempt += 1
-                    if attempt > self._settings.extractor_retries:
-                        raise RateLimited(
-                            f"YouTube rate-limited this box while fetching {url}: {message}"
-                        ) from exc
-                    # exp=5:120, the shape yt-dlp's own --retry-sleep uses.
-                    delay = min(5 * 2 ** (attempt - 1), self._settings.worker_retry_max_wait_s)
-                    logger.warning(
-                        "429 from YouTube; sleeping %.0fs before retry %d", delay, attempt
-                    )
-                    self._sleeper(delay + random.uniform(0, 1.0))
-                    continue
-                if _is_not_yet(message):
-                    raise NotYetAvailable(message) from exc
-                if _is_unavailable(message):
-                    raise Unavailable(message) from exc
-                raise SourceError(message) from exc
+                    if attempt <= self._settings.extractor_retries:
+                        # exp=5:120, the shape yt-dlp's own --retry-sleep uses.
+                        delay = min(
+                            5 * 2 ** (attempt - 1), self._settings.worker_retry_max_wait_s
+                        )
+                        logger.warning(
+                            "429 from YouTube; sleeping %.0fs before retry %d", delay, attempt
+                        )
+                        self._sleeper(delay + random.uniform(0, 1.0))
+                        continue
+                raise _classified(message, url) from exc
+
+    def _download(self, opts: dict[str, Any], url: str, info: dict[str, Any] | None) -> None:
+        """One media download — from the probe's extraction when we have it.
+
+        This is finding 3 of the audit. A normal item used to pay *three* full
+        YouTube extractions: the metadata probe, then a fresh ``YoutubeDL`` for
+        the audio, then another for the frame source. Each one re-fetches the
+        webpage and the player response, and the maintainers' own guest-session
+        estimate is counted in webpage/player requests per hour — so two thirds
+        of an item's budget went on asking the same question again.
+
+        yt-dlp already supports the answer: ``--load-info-json`` replays a
+        previously extracted info dict through ``process_ie_result``, which
+        runs format *selection* (from ``info['formats']``) and the download,
+        with no extractor call. Passing the probe's dict does the same thing in
+        process, so audio and video both resolve out of one extraction. Format
+        selection is per-call, so the two downloads still pick their own
+        formats — the outputs are byte-identical, there are simply fewer
+        requests.
+
+        The line where re-extraction wins back: **format URLs and manifests
+        expire.** Rather than guess which yt-dlp message means "stale", the
+        fallback is defined by what re-extraction can possibly fix — anything
+        except an explicit 429, a bot-check, and the two stable verdicts. Those
+        four re-raise; everything else buys exactly one fresh extraction, which
+        is precisely the code path this method replaced. So the worst case is
+        today's cost plus nothing, the normal case is a third of it, and a
+        genuinely throttled 403 still ends as ``RateLimited`` — from the
+        re-extraction, one request later.
+        """
+        if info is None:
+            self._run(opts, url, download=True)
+            return
+        import yt_dlp
+
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.process_ie_result(copy.deepcopy(info), download=True)
+            return
+        except Exception as exc:
+            message = str(exc)
+            if (
+                _is_bot_check(message)
+                or _is_too_many_requests(message)
+                or _is_not_yet(message)
+                or _is_unavailable(message)
+            ):
+                # Nothing a second extraction can mend, and during a block the
+                # cheapest thing this box can do is stop asking.
+                raise _classified(message, url) from exc
+            self.stale_info_refreshes += 1
+            logger.warning(
+                "the probe's extraction no longer downloads %s (%s); re-extracting "
+                "— %d stale-info refresh(es) so far this process",
+                url,
+                message,
+                self.stale_info_refreshes,
+            )
+        self._run(opts, url, download=True)
 
     # --------------------------------------------------------------- methods
 
@@ -629,13 +717,23 @@ class YtDlpSource:
                     raise RateLimited(f"429 fetching the {track.lang} caption track") from exc
                 raise SourceError(message) from exc
 
-    def download_audio(self, url: str, source_id: str, dest_dir: Path, codec: str) -> MediaFile:
+    def download_audio(
+        self,
+        url: str,
+        source_id: str,
+        dest_dir: Path,
+        codec: str,
+        info: dict[str, Any] | None = None,
+    ) -> MediaFile:
         """bestaudio, converted once, by yt-dlp's own ffmpeg call.
 
         16 kHz mono is whisper-native, so the codec fork is only about what is
         kept: `opus` is the retention default (index-schema §6.1 sizes the disk
         budget on it), `wav` is the uncompressed 16 kHz PCM whisperX would
         otherwise decode for itself.
+
+        ``info`` is the probe's extraction, when the caller still holds it; see
+        `_download` for why that is the whole of finding 3.
         """
         dest_dir.mkdir(parents=True, exist_ok=True)
         args = ["-ac", "1", "-ar", "16000"] if codec != "opus" else ["-ac", "1", "-b:a", "24k"]
@@ -648,11 +746,16 @@ class YtDlpSource:
             ],
             "postprocessor_args": {"extractaudio": args},
         }
-        self._run(opts, url, download=True)
+        self._download(opts, url, info)
         return MediaFile(path=_first_match(dest_dir, source_id))
 
     def download_video(
-        self, url: str, source_id: str, dest_dir: Path, max_height: int
+        self,
+        url: str,
+        source_id: str,
+        dest_dir: Path,
+        max_height: int,
+        info: dict[str, Any] | None = None,
     ) -> MediaFile:
         """H.264 at the height cap, video only — STT has its own copy.
 
@@ -669,7 +772,7 @@ class YtDlpSource:
             "outtmpl": {"default": "%(id)s.%(ext)s"},
             "paths": {"home": str(dest_dir), "temp": str(dest_dir / "tmp")},
         }
-        self._run(opts, url, download=True)
+        self._download(opts, url, info)
         return MediaFile(path=_first_match(dest_dir, source_id))
 
 
@@ -716,6 +819,49 @@ def _seconds_until_release(info: dict[str, Any]) -> int | None:
     return max(0, remaining) if remaining > 0 else None
 
 
+def _classified(message: str, url: str) -> SourceError:
+    """One yt-dlp message in, the typed error it deserves out.
+
+    The precedence is the load-bearing part and it is the one `_run` has always
+    used, with the bot-check lifted to the front so it can be told apart from
+    the throttling it otherwise shares a code with.
+    """
+    if _is_bot_check(message):
+        return RateLimited(
+            f"YouTube is asking this box to confirm it is not a bot while fetching "
+            f"{url}: the IP is blocked for logged-out access, so this was not "
+            f"retried inside the extraction — {message}"
+        )
+    if _is_rate_limit(message):
+        return RateLimited(f"YouTube rate-limited this box while fetching {url}: {message}")
+    if _is_not_yet(message):
+        return NotYetAvailable(message)
+    if _is_unavailable(message):
+        return Unavailable(message)
+    return SourceError(message)
+
+
+def _is_too_many_requests(message: str) -> bool:
+    """The explicit throttle, with no 403 or bot-check ambiguity about it."""
+    lowered = message.lower()
+    return "429" in lowered or "too many requests" in lowered
+
+
+def _is_bot_check(message: str) -> bool:
+    """"Sign in to confirm you're not a bot" — the IP-level block, on its own.
+
+    Split out of `_is_rate_limit` because the two need *different retry
+    classes*, not different wording. A 429 or a throttling 403 is about this
+    request and often clears in seconds, so it earns the short inner backoff.
+    A bot-check is yt-dlp's pinned known issue #3766: YouTube has blocked the
+    IP while the client is logged out, and no in-extraction retry clears it —
+    the observed waves run 60-90 minutes. It is still `E_RATE_LIMIT` to
+    everything downstream; it just skips straight there.
+    """
+    lowered = message.lower()
+    return "confirm you're not a bot" in lowered or "confirm you’re not a bot" in lowered
+
+
 def _is_rate_limit(message: str) -> bool:
     """429, and the 403 that YouTube serves for the same reason.
 
@@ -731,7 +877,7 @@ def _is_rate_limit(message: str) -> bool:
     `_is_unavailable` already claims and which no amount of waiting fixes.
     """
     lowered = message.lower()
-    if "429" in lowered or "too many requests" in lowered:
+    if _is_too_many_requests(message):
         return True
     # YouTube's bot-check IS throttling in its modern costume. Observed live
     # (overnight batch, wave 2, 2026-08-09 01:08): four of ten videos failed
@@ -739,8 +885,10 @@ def _is_rate_limit(message: str) -> bool:
     # fine — a soft, intermittent gate that a cool-off clears and hammering
     # escalates. It was classified E_UNSUPPORTED_SOURCE (final), so no defer
     # fired and the driver kept submitting. Distinct from the age gate, which
-    # _is_unavailable claims and no waiting fixes.
-    if "confirm you're not a bot" in lowered or "confirm you’re not a bot" in lowered:
+    # _is_unavailable claims and no waiting fixes. `_run` splits it back out of
+    # this predicate (`_is_bot_check`) to skip the inner retries: same typed
+    # code downstream, no in-extraction backoff.
+    if _is_bot_check(message):
         return True
     return "403" in lowered and any(
         marker in lowered
@@ -790,6 +938,10 @@ class RecordedSource:
     infos: dict[str, dict[str, Any]] = field(default_factory=dict)
     subtitles: dict[str, str] = field(default_factory=dict)
     version: str = "yt-dlp-fake"
+    # One entry per media download: did the caller hand back the probe's info
+    # dict, or make this download pay for its own extraction? The seam's whole
+    # point (audit §5), so the double records it.
+    reused_info: list[bool] = field(default_factory=list)
 
     def probe(self, url: str) -> dict[str, Any]:
         try:
@@ -806,15 +958,29 @@ class RecordedSource:
         except KeyError as exc:
             raise SourceError(f"no canned subtitle for {track.url}") from exc
 
-    def download_audio(self, url: str, source_id: str, dest_dir: Path, codec: str) -> MediaFile:
+    def download_audio(
+        self,
+        url: str,
+        source_id: str,
+        dest_dir: Path,
+        codec: str,
+        info: dict[str, Any] | None = None,
+    ) -> MediaFile:
+        self.reused_info.append(info is not None)
         dest_dir.mkdir(parents=True, exist_ok=True)
         path = dest_dir / f"{source_id}.{codec}"
         path.write_bytes(b"fake-audio")
         return MediaFile(path=path)
 
     def download_video(
-        self, url: str, source_id: str, dest_dir: Path, max_height: int
+        self,
+        url: str,
+        source_id: str,
+        dest_dir: Path,
+        max_height: int,
+        info: dict[str, Any] | None = None,
     ) -> MediaFile:
+        self.reused_info.append(info is not None)
         dest_dir.mkdir(parents=True, exist_ok=True)
         path = dest_dir / f"{source_id}.mp4"
         path.write_bytes(b"fake-video")
