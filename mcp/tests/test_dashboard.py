@@ -1559,6 +1559,52 @@ def test_trusted_cidrs_are_empty_by_default_and_are_the_socket_peer(
         assert forged.status_code == 401, "a header is not an address"
 
 
+def test_a_cidr_that_covers_the_proxy_warns_at_boot(caplog) -> None:
+    """The 2026-08-09 review's MEDIUM, as the honest minimal guard.
+
+    `trusts()` reads the socket peer, which is right for a LAN and wrong behind
+    a tunnel: cloudflared connects over loopback or a docker bridge, so a CIDR
+    covering *that* makes every anonymous visitor an owner. A trusted-IP header
+    is the tell that a proxy is in front, because it exists for exactly the
+    reason the socket peer is not the client. Not a refusal — a LAN box with no
+    proxy looks identical — but never silent either.
+    """
+    import ipaddress
+    import logging
+
+    from vidtheque_mcp.dashboard.settings import (
+        DashboardSettings as DS,
+        proxy_origin_cidrs,
+        warn_on_proxy_origin_cidrs,
+    )
+
+    loopback = DS(trusted_cidrs=(ipaddress.ip_network("127.0.0.1/32"),))
+    docker = DS(trusted_cidrs=(ipaddress.ip_network("172.17.0.0/16"),))
+    routable = DS(trusted_cidrs=(ipaddress.ip_network("203.0.113.0/24"),))
+
+    assert proxy_origin_cidrs(loopback) == ("127.0.0.1/32",)
+    assert proxy_origin_cidrs(docker) == ("172.17.0.0/16",), "docker's own bridge"
+    assert proxy_origin_cidrs(routable) == ()
+    assert proxy_origin_cidrs(DS()) == ()
+
+    for settings in (loopback, docker):
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, "vidtheque_mcp.dashboard.settings"):
+            warn_on_proxy_origin_cidrs(settings, "CF-Connecting-IP")
+        assert caplog.records, settings.trusted_cidrs
+        said = caplog.records[0].getMessage()
+        assert "treated as the owner" in said, said
+        assert str(settings.trusted_cidrs[0]) in said
+
+    # No proxy in front (the header is the documented way to say "trust the
+    # socket only"), or an allowlist a proxy cannot be speaking from: silence.
+    for settings, header in ((loopback, ""), (routable, "CF-Connecting-IP")):
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, "vidtheque_mcp.dashboard.settings"):
+            warn_on_proxy_origin_cidrs(settings, header)
+        assert caplog.records == []
+
+
 def test_the_env_vars_this_phase_adds_are_documented() -> None:
     """CLAUDE.md: an env var without an entry in `deploy/.env.example` is a bug."""
     import os

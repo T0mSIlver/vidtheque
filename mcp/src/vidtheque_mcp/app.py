@@ -36,7 +36,12 @@ from starlette.routing import Mount
 
 from .auth.modes import AuthBundle, build_auth
 from .config import Settings
-from .dashboard import DashboardSettings, dashboard_routes, write_side_enabled
+from .dashboard import (
+    DashboardSettings,
+    dashboard_routes,
+    warn_on_proxy_origin_cidrs,
+    write_side_enabled,
+)
 from .db import Database
 from .embeddings import EmbeddingClient
 from .http import frames_routes, health_routes
@@ -108,6 +113,10 @@ def assemble(
     settings.validate()
     public = public if public is not None else PublicSettings.from_env()
     dashboard = dashboard if dashboard is not None else DashboardSettings.from_env()
+    # An allowlist that covers the proxy's own socket makes every visitor
+    # through the proxy an owner. Said once, at boot, where an operator reading
+    # the startup log will see it.
+    warn_on_proxy_origin_cidrs(dashboard, public.trusted_ip_header)
     db = Database(
         path=settings.db_path,
         read_pool_size=settings.read_pool_size,

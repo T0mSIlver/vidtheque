@@ -387,6 +387,20 @@ refuses every request a cross-site page can generate.
   grants indexing to everyone on the network the instance is on. Not a default I
   will set on someone else's behalf.
 
+**Amendment, 2026-08-09 review.** The allowlist is decided on the socket peer,
+which behind a reverse proxy or a tunnel is the *proxy's* address — cloudflared
+speaks from loopback, or from a docker bridge under compose. So a CIDR covering
+that network makes every anonymous visitor arriving through the proxy a trusted
+peer: owner clamps, the full-transcript hatch, and the credential-free write
+side. `settings.warn_on_proxy_origin_cidrs` logs a WARNING at boot when the
+allowlist overlaps loopback/RFC1918/ULA **and** a trusted-IP header is
+configured, since that header exists precisely because the socket peer is not
+the client. A warning rather than a refusal: a LAN box on 192.168/16 with no
+proxy is indistinguishable at boot, and taking someone's owner access away on a
+heuristic is the worse failure. Rejecting proxy-origin CIDRs outright, or
+demanding a credential for anything that arrived through the configured proxy,
+is the deeper fix and belongs to the security audit (`deploy-public.md` §1.1).
+
 ---
 
 ## 4. What the index actually records — an audit

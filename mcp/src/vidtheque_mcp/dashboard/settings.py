@@ -65,6 +65,69 @@ class DashboardSettings:
         )
 
 
+# The networks a reverse proxy or a tunnel connector speaks *from* when it sits
+# on the same box or the same docker bridge: loopback, the RFC1918 ranges and
+# IPv6 unique-local. `172.17.0.0/16`, docker's default bridge, is inside
+# `172.16.0.0/12`.
+_PROXY_ORIGIN_NETWORKS = tuple(
+    ipaddress.ip_network(entry)
+    for entry in (
+        "127.0.0.0/8",
+        "::1/128",
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+        "fc00::/7",
+    )
+)
+
+
+def proxy_origin_cidrs(settings: DashboardSettings) -> tuple[str, ...]:
+    """Trusted networks a proxy in front of this server could be speaking from."""
+    return tuple(
+        str(network)
+        for network in settings.trusted_cidrs
+        if any(network.overlaps(origin) for origin in _PROXY_ORIGIN_NETWORKS)
+    )
+
+
+def warn_on_proxy_origin_cidrs(settings: DashboardSettings, trusted_ip_header: str) -> None:
+    """Say so, at boot, when the allowlist may be describing the proxy (§3.4).
+
+    ``trusts()`` reads the **socket peer**, which is the right answer for a
+    server a LAN talks to directly and the wrong shape for one behind a tunnel:
+    cloudflared connects over loopback (or a docker bridge), so behind it every
+    anonymous visitor on the internet arrives with a trusted peer address, and
+    `is_owner` says yes to all of them — owner clamps on `/dashboard/api/*`,
+    the full-transcript hatch, and with ``AUTH=token`` the credential-free
+    write side too.
+
+    A configured ``VIDTHEQUE_TRUSTED_IP_HEADER`` is the tell that a proxy is in
+    front: it exists precisely because the socket peer is *not* the client. So
+    the two settings together are the footgun, and this is the warning rather
+    than a refusal because a legitimate deployment can look identical — a LAN
+    box on 192.168/16 with no proxy — and taking someone's owner access away at
+    boot on a heuristic is worse than telling them what it means. Flagged by
+    the 2026-08-09 review; `docs/deploy-public.md` §9 carries the operator half.
+    """
+    if not trusted_ip_header:
+        return
+    risky = proxy_origin_cidrs(settings)
+    if not risky:
+        return
+    logger.warning(
+        "VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS contains %s while "
+        "VIDTHEQUE_TRUSTED_IP_HEADER=%s is set, which means a proxy is in front "
+        "of this server. Trust is decided on the SOCKET PEER, so if the proxy "
+        "connects from one of those networks then every visitor arriving "
+        "through it is treated as the owner — owner clamps, full transcripts, "
+        "and the credential-free write side. Either narrow the allowlist to "
+        "networks the proxy cannot speak from, or empty it and use the token.",
+        ", ".join(risky),
+        trusted_ip_header,
+    )
+
+
 def _cidrs(name: str) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
     """Parse a comma-separated allowlist, dropping — loudly — what will not parse.
 
