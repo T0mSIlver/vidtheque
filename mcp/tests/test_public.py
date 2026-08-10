@@ -889,6 +889,43 @@ def _page(client: TestClient) -> str:
     return response.text
 
 
+def _assert_the_v_favicon(head: str) -> str:
+    """Tom picked the mark on 2026-08-10: the wordmark's `v`, and the dot.
+
+    The film frame is gone — it drew the medium rather than the product's
+    argument. Two properties of the replacement are load-bearing rather than
+    stylistic, so both are pinned: there is no background rectangle, which is
+    what lets one drawing sit on a light *and* a dark tab strip without the
+    `prefers-color-scheme` variant this single-scheme surface has no business
+    carrying; and the gold is cored inside a keyline in `--gold-ink`, which is
+    what keeps the shape readable when the strip under it is light.
+
+    The same assertions the dashboard makes about the same drawing
+    (`test_dashboard.py::test_the_favicon_is_the_v_and_carries_no_ground`) —
+    one mark, two surfaces, and this returns the URI so the caller can compare
+    them byte for byte.
+    """
+    icon = re.search(r'<link rel="icon" href="(data:image/svg\+xml,[^"]+)"', head)
+    assert icon, "an inline data: icon"
+    svg = icon.group(1)
+    assert "%23e7b455" in svg, "the gold core"
+    assert "%23120c02" in svg and "stroke-width='2'" in svg, "the gold-ink keyline"
+    assert "%23040405" not in svg, "no pitch ground — the glyph floats"
+    assert "<rect width='32' height='32'" not in svg, "…and no ground rect at all"
+    path = re.search(r"d='([^']+)'", svg).group(1)
+    assert " " not in path, "comma-separated path data: a URI carries no raw space"
+    return svg
+
+
+def test_the_demo_and_the_dashboard_wear_the_same_mark(public_client: TestClient) -> None:
+    """One favicon, drawn once. A tab strip with both open shows one product."""
+    from vidtheque_mcp import dashboard
+
+    templates = Path(dashboard.__file__).parent / "templates"
+    demo = _assert_the_v_favicon(_page(public_client))
+    assert demo == _assert_the_v_favicon((templates / "base.html").read_text())
+
+
 def test_the_page_declares_an_identity_worth_unfurling(public_client: TestClient) -> None:
     """Title, description, the OG pair, viewport, favicon, the one scheme."""
     body = _page(public_client)
@@ -901,6 +938,7 @@ def test_the_page_declares_an_identity_worth_unfurling(public_client: TestClient
     assert 'property="og:description"' in body
     assert 'name="viewport"' in body and "width=device-width" in body
     assert 'rel="icon"' in body and "image/svg+xml" in body
+    _assert_the_v_favicon(body)
     # Dark only since the projection-room rebuild (DESIGN.md, 2026-08-10): one
     # scheme, one `theme-color`, and no `prefers-color-scheme` anywhere — a
     # projection room does not have a day mode, and a second palette left in

@@ -26,11 +26,18 @@
 <link rel="preload" href="/static/fonts/archivo-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/static/fonts/jetbrains-mono-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/static/style.css">
-<!-- A film frame, drawn rather than an emoji: emoji favicons render as a
-     different glyph on every platform and vanish in monochrome tab strips.
-     Gold on pitch, square corners — it is a favicon, not a brandmark, and it
-     never appears inside the page beside the word. -->
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%23040405'/><rect x='6' y='9' width='20' height='14' fill='%23e7b455'/><g fill='%23040405'><rect x='8.5' y='11' width='3' height='3'/><rect x='8.5' y='18' width='3' height='3'/><rect x='20.5' y='11' width='3' height='3'/><rect x='20.5' y='18' width='3' height='3'/></g></svg>">
+<!-- The wordmark's own "v.", drawn rather than an emoji: emoji favicons render
+     as a different glyph on every platform and vanish in monochrome tab strips.
+     Tom's pick (F5), and it is the Font-Logo Rule at 16px — the letter and the
+     gold full stop, the two things the lockup is made of, and nothing else.
+     Floating on transparency rather than a pitch tile, so the glyph reads on a
+     light tab strip as well as a dark one; the 1-unit `--gold-ink` keyline
+     under it is what keeps the gold from dissolving into a pale background.
+     A favicon, not a brandmark: it never appears inside the page.
+     Byte-identical to the dashboard's (`dashboard/templates/base.html`) —
+     one mark, two surfaces, and the path data is comma-separated so the URI
+     carries no raw spaces. -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 16 16'><path d='M2,4L5,4L6.5,9.2L8,4L11,4L7.5,13L5.5,13Z' fill='%23120c02' stroke='%23120c02' stroke-width='2' stroke-linejoin='miter' stroke-miterlimit='2'/><rect x='11' y='9' width='5' height='5' fill='%23120c02'/><path d='M2,4L5,4L6.5,9.2L8,4L11,4L7.5,13L5.5,13Z' fill='%23e7b455'/><rect x='12' y='10' width='3' height='3' fill='%23e7b455'/></svg>">
 </head>
 <body>
 
