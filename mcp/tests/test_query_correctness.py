@@ -1405,7 +1405,7 @@ async def test_the_pool_is_the_pool_and_not_the_pool_plus_one(
     )
     # `transcript 2 (…)` — the fused count is still counted after the sentinel
     # goes; what follows it is the sub-leg split (§4.2 of the terra eval).
-    assert "Legs: transcript 2 (" in text_of(result), "counted after the sentinel goes"
+    assert "Legs: transcript 2 segments (" in text_of(result), "counted after the sentinel goes"
     assert page_of(result)["approx_total"] == 2
     assert len(rows_of(result)) == 2, "and the page cannot show a 3rd of 2"
     assert page_of(result)["pool_exhausted"] is True, "still known to be bounded"
@@ -1780,7 +1780,7 @@ async def test_the_legs_line_splits_the_lexical_and_semantic_sub_legs(
     body = text_of(result)
     assert "Legs: transcript " in body
     legs = [line for line in body.splitlines() if line.startswith("Legs:")][0]
-    assert "(fts 21 · vec 1/21)" in legs, legs
+    assert "(fts 21 cues · vec 1/21 chunks)" in legs, legs
 
     counts = result.structured_content["leg_counts"]
     assert counts["transcript_fts"] == 21
@@ -1811,8 +1811,49 @@ async def test_a_phrasing_miss_reads_as_fts_zero(tool_corpus) -> None:
         )
     )
     legs = [line for line in body.splitlines() if line.startswith("Legs:")][0]
-    assert "(fts 0 · vec 1)" in legs, legs
-    assert "transcript 1 " in legs, "…and the fused count still shows the hit"
+    assert "(fts 0 cues · vec 1/1 chunks)" in legs, legs
+    assert "transcript 1 segment " in legs, "…and the fused count still shows the hit"
+
+
+async def test_the_legs_line_names_its_units_and_never_hides_the_band(
+    tool_corpus, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """§9.2 and §9.6, which are the same line read two ways.
+
+    §9.2: three numbers in three units, unlabelled, and the guide's example
+    added up by coincidence — so `transcript 130 (fts 369 · vec 123/800)` read
+    as an arithmetic bug. §9.6: `a/b` was suppressed when the band kept
+    everything, so `vec 800` (nothing was narrowed) printed more tidily than
+    `vec 11/800` (the band bit hard) — the case that most needs attention
+    looked like the cleanest.
+    """
+    parts = await tool_corpus(_one_near_many_far)
+    monkeypatch.setattr(
+        parts.deps, "settings", replace(parts.deps.settings, vec_max_distance=2.0)
+    )
+    result = await search.run(
+        parts.deps, q="turbopuffer", content_type="transcript", limit=5
+    )
+    legs = [line for line in text_of(result).splitlines() if line.startswith("Legs:")][0]
+    for unit in ("segments", "cues", "chunks"):
+        assert unit in legs, legs
+    counts = result.structured_content["leg_counts"]
+    assert counts["transcript_vec"] != counts["transcript"], "the units really differ"
+
+    # Band wide open: every one of the k nearest survives, and the line says so
+    # in the same `kept/considered` shape rather than dropping the denominator.
+    monkeypatch.setattr(
+        parts.deps,
+        "settings",
+        replace(parts.deps.settings, vec_max_distance=2.0, vec_max_margin=2.0),
+    )
+    unbound = await search.run(
+        parts.deps, q="turbopuffer", content_type="transcript", limit=5
+    )
+    line = [l for l in text_of(unbound).splitlines() if l.startswith("Legs:")][0]
+    kept = unbound.structured_content["leg_counts"]
+    assert kept["transcript_vec"] == kept["transcript_vec_knn"], "the band kept it all"
+    assert f"vec {kept['transcript_vec']}/{kept['transcript_vec_knn']} chunks" in line, line
 
 
 async def test_a_clamp_that_binds_says_so(tool_corpus) -> None:

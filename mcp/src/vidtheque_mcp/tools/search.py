@@ -983,23 +983,41 @@ def _legs_line(counts: dict[str, int]) -> str:
     (research/mcp-eval-terra-2026-08-10.md §4.2). `fts 0` says it in one token.
 
     `a/b` is kept/considered: how many candidates survived the relevance band
-    out of the k nearest the KNN returned (§4.1's floor). It is printed only
-    when the band actually binds — a cut that narrows silently is the §2
-    invariant broken, and one that prints two identical numbers is noise.
+    out of the k nearest the KNN returned (§4.1's floor). It is printed
+    **always**, including `800/800`. Printing it only when the band bit made
+    the one case a caller most needs to notice — a semantic pool that was not
+    narrowed at all — read like the tidiest one, because `vec 800` and
+    `vec 800/800` are the same four characters of difference in the opposite
+    direction (terra eval §9.6).
+
+    The three numbers are three units, and they are labelled, because nothing
+    in the payload said so and the guide's example (`transcript 24 (fts 9 ·
+    vec 15/800)`) added up by coincidence — so `fts 369` beside a fused `130`
+    read as an arithmetic bug, or worse, as "369 talks say this" (§9.2). The
+    fused count is segments (post-cluster, what the leg contributed to the
+    ranking); `fts` counts cues; `vec` counts chunks. They are not summands.
     """
     transcript = ""
     if counts.get("transcript_fts") or counts.get("transcript_vec"):
         vec = str(counts["transcript_vec"])
-        if counts.get("transcript_vec_knn", 0) > counts["transcript_vec"]:
+        if counts.get("transcript_vec_knn", 0):
             vec += f"/{counts['transcript_vec_knn']}"
-        transcript = f" (fts {counts['transcript_fts']} · vec {vec})"
+        transcript = (
+            f" (fts {counts['transcript_fts']} {_unit(counts['transcript_fts'], 'cue')}"
+            f" · vec {vec} chunks)"
+        )
     frame = ""
-    if counts.get("frame_knn", 0) > counts.get("frame_vec", 0) > 0:
+    if counts.get("frame_knn", 0):
         frame = f" (vec {counts['frame_vec']}/{counts['frame_knn']})"
+    fused = counts["transcript"]
     return (
-        f"Legs: transcript {counts['transcript']}{transcript} · ocr {counts['ocr']} · "
-        f"frame {counts['frame']}{frame} (fused, RRF k=60)"
+        f"Legs: transcript {fused} {_unit(fused, 'segment')}{transcript} · "
+        f"ocr {counts['ocr']} · frame {counts['frame']}{frame} (fused, RRF k=60)"
     )
+
+
+def _unit(n: int, word: str) -> str:
+    return word if n == 1 else word + "s"
 
 
 def _render(

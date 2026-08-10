@@ -751,7 +751,7 @@ which is the whole point of that tool.
 ```
 Results: 10/~40+ (use offset=10 for more)
 Query: "kv cache" · content_type=all · order=relevance · max_per_video=3
-Legs: transcript 24 (fts 9 · vec 15/800) · ocr 9 · frame 7 (vec 11/800) (fused, RRF k=60; 5000-candidate cap not reached)
+Legs: transcript 24 segments (fts 9 cues · vec 15/800 chunks) · ocr 9 · frame 7 (vec 11/800) (fused, RRF k=60; 5000-candidate cap not reached)
 
 [transcript] Let's build GPT: from scratch — Andrej Karpathy (kCc8FmEb1nY)
   1:12:03–1:12:47 · match at 1:12:21 · https://youtu.be/kCc8FmEb1nY?t=4339
@@ -801,11 +801,24 @@ note: speaker= applies to the transcript leg only — ocr and frame legs were no
 ```
 
 **The `Legs:` line prints sub-legs, and the semantic ones print what they kept
-(2026-08-10).** The leading number per leg is the fused contribution to the
-ranking. The parenthetical behind it is the *candidate* count per sub-leg, in
-each sub-leg's own unit — cues for `fts`, chunks for the transcript `vec`,
-frames for the frame leg — and `a/b` is kept-of-considered, printed only when
-the relevance band below actually cut something.
+(2026-08-10; units and the unbound band, 2026-08-11).** The leading number per
+leg is the fused contribution to the ranking, in *segments*. The parenthetical
+behind it is the *candidate* count per sub-leg, in each sub-leg's own unit —
+cues for `fts`, chunks for the transcript `vec`, frames for the frame leg — and
+`a/b` is kept-of-considered.
+
+**The units are printed, and `a/b` is printed always.** Three numbers in three
+units, none of them labelled, invited exactly one reading — that they add up —
+and the guide's own illustrative example (`transcript 24 (fts 9 · vec 15/800)`)
+happened to. No live payload does: `transcript 130 (fts 369 · vec 123/800)` is
+a normal line, and it read as an arithmetic bug or, worse, as "369 talks say
+this" (terra eval §9.2). And `a/b` used to be suppressed when the relevance
+band kept everything, on the reasoning that two identical numbers are noise —
+which made `vec 800` (the pool was not narrowed at all: read the scores, not
+the count) print more tidily than `vec 11/800` (the band bit hard and the
+survivors are few). The one case the caller most needs to notice looked like
+the cleanest (§9.6). Both fixes are text on one line of one payload; neither
+changes a count.
 
 It exists because the guide tells callers to read this line, and a *merged*
 count cannot carry the rule it teaches: a nearest-neighbour sub-leg always
@@ -2264,13 +2277,17 @@ you asked for.
 - A `note:` line means a leg was skipped and why. `all` always means all: a
   missing leg is always announced, never silently dropped.
 - Read the `Legs:` counts, and the sub-legs in the parentheses:
-  `transcript 24 (fts 9 · vec 15/800)`. **`fts 0`** next to on-screen hits means
-  the phrasing differs, not that the topic is unspoken — slides write
-  `hasFather`, `owl:FunctionalProperty`, `CVE-2026-22812`; speech says "has
-  father", "functional property". Re-search the spoken phrasing, or open
-  `get-segment-context` at the top on-screen hit. `vec 15/800` is the semantic
-  sub-leg: 15 of the 800 nearest chunks were near enough to this query to be
-  ranked at all — the other 785 were "nearest", not "near".
+  `transcript 130 segments (fts 369 cues · vec 123/800 chunks)`. **The three
+  numbers are three units and they do not add up** — the leading one is what
+  the leg contributed to the ranking, the other two are the candidates behind
+  it. **`fts 0`** next to on-screen hits means the phrasing differs, not that
+  the topic is unspoken — slides write `hasFather`, `owl:FunctionalProperty`,
+  `CVE-2026-22812`; speech says "has father", "functional property". Re-search
+  the spoken phrasing, or open `get-segment-context` at the top on-screen hit.
+  `vec 123/800` is the semantic sub-leg: 123 of the 800 nearest chunks were
+  near enough to this query to be ranked at all — the other 677 were "nearest",
+  not "near". `vec 800/800` means the relevance band kept every one of them:
+  the pool is as wide as the KNN, so read the scores, not the count.
 - **On-screen text is a flat reading-order join, and it is capped per frame.**
   Tables, code, bullet lists and quote/attribution pairs come back unscrambled
   from the layout that made them readable, and OCR mangles digits and bullet

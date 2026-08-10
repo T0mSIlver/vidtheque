@@ -147,13 +147,17 @@ you asked for.
 - A `note:` line means a leg was skipped and why. `all` always means all: a
   missing leg is always announced, never silently dropped.
 - Read the `Legs:` counts, and the sub-legs in the parentheses:
-  `transcript 24 (fts 9 · vec 15/800)`. **`fts 0`** next to on-screen hits means
-  the phrasing differs, not that the topic is unspoken — slides write
-  `hasFather`, `owl:FunctionalProperty`, `CVE-2026-22812`; speech says "has
-  father", "functional property". Re-search the spoken phrasing, or open
-  `get-segment-context` at the top on-screen hit. `vec 15/800` is the semantic
-  sub-leg: 15 of the 800 nearest chunks were near enough to this query to be
-  ranked at all — the other 785 were "nearest", not "near".
+  `transcript 130 segments (fts 369 cues · vec 123/800 chunks)`. **The three
+  numbers are three units and they do not add up** — the leading one is what
+  the leg contributed to the ranking, the other two are the candidates behind
+  it. **`fts 0`** next to on-screen hits means the phrasing differs, not that
+  the topic is unspoken — slides write `hasFather`, `owl:FunctionalProperty`,
+  `CVE-2026-22812`; speech says "has father", "functional property". Re-search
+  the spoken phrasing, or open `get-segment-context` at the top on-screen hit.
+  `vec 123/800` is the semantic sub-leg: 123 of the 800 nearest chunks were
+  near enough to this query to be ranked at all — the other 677 were "nearest",
+  not "near". `vec 800/800` means the relevance band kept every one of them:
+  the pool is as wide as the KNN, so read the scores, not the count.
 - **On-screen text is a flat reading-order join, and it is capped per frame.**
   Tables, code, bullet lists and quote/attribution pairs come back unscrambled
   from the layout that made them readable, and OCR mangles digits and bullet
