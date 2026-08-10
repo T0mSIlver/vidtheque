@@ -233,10 +233,21 @@ async def run(
         )
 
     if speaker and not deps.db.diarization_enabled:
+        # The remedy names the nearest working filter, not just the dead one.
+        # "omit speaker=" is correct and was still a dead end: a round-3
+        # consumer building a per-speaker briefing re-sent the same call with
+        # six different names, one after another, because nothing in the error
+        # offered a route to the thing it wanted (round-3 eval §14.4). Speaker
+        # names are not indexed, but on a conference corpus they are usually in
+        # the title, and `video_title=` is a real substring filter.
         raise ToolError(
             "E_FEATURE_DISABLED",
-            "speaker= needs diarization, which is off for this corpus.",
-            "omit speaker=. See the deployment docs for DIARIZE=1.",
+            "speaker= needs diarization, which is off for this corpus, so no "
+            "speaker name will ever match — re-sending it with a different "
+            "name is refused identically.",
+            f'omit speaker=. To find one person anyway, try video_title="{speaker}" '
+            "— titles often carry the speaker — or put the name in q=. See the "
+            "deployment docs for DIARIZE=1.",
         )
 
     flt = queries.CorpusFilter(
@@ -300,6 +311,7 @@ async def run(
 
     video_pool = await deps.db.read(lambda c: queries.resolve_videos(c, flt))
     if not video_pool:
+        await _note_untagged_corpus(deps, tag_list, notes)
         # limit/offset are echoed even here: the early return used to default
         # them to 0, so a filter that matched no video answered with
         # `pagination.limit: 0` while the same empty result from an unmatched
@@ -520,6 +532,31 @@ async def run(
 
 
 # ---------------------------------------------------------------------------
+
+
+async def _note_untagged_corpus(
+    deps: Deps, tag_list: Sequence[str], notes: list[str]
+) -> None:
+    """A `tags=` filter emptied the pool: was the tag wrong, or is nothing tagged?
+
+    Both answers are a clean, error-free `Results: 0/0`, and a round-3
+    integration consumer graded that ambiguity the single most dangerous case
+    on the surface — *"`tags=` is a real, documented, schema-listed parameter
+    that silently does nothing on this corpus"* (§14.3). §3.7 already says a
+    corpus with no tags does not advertise tags; this is the same rule applied
+    to the filter rather than to the display, and it costs one bounded
+    existence probe on a branch that has nothing else to spend.
+    """
+    if not tag_list:
+        return
+    if await deps.db.read(queries.any_video_tagged):
+        return
+    notes.append(
+        f"note: no video in this corpus carries any tag, so tags="
+        f"{','.join(tag_list)} could not match — this is an empty feature, not "
+        "a misspelt tag. Tags are attached with tag-video; every other filter "
+        "on this call is unaffected."
+    )
 
 
 async def _note_title_footing(

@@ -104,7 +104,7 @@ class HTTPEmbeddingClient:
             response.raise_for_status()
             body = response.json()
         except Exception as exc:  # httpx errors, JSON errors, non-2xx
-            raise EmbeddingUnavailable(str(exc)) from exc
+            raise EmbeddingUnavailable(str(exc) or type(exc).__name__) from exc
         items = sorted(body.get("data", []), key=lambda d: d.get("index", 0))
         vectors = [list(item["embedding"]) for item in items]
         return vectors, body.get("model"), body.get("dimensions")
@@ -122,7 +122,7 @@ class HTTPEmbeddingClient:
             client = await self._http()
             response = await client.post("/v1/embeddings/frame-query", json=payload)
         except Exception as exc:  # transport-level failure
-            raise EmbeddingUnavailable(str(exc)) from exc
+            raise EmbeddingUnavailable(str(exc) or type(exc).__name__) from exc
         if response.status_code == 404:
             raise FrameQueryUnsupported(
                 "the worker answered 404 for /v1/embeddings/frame-query "
@@ -132,7 +132,7 @@ class HTTPEmbeddingClient:
             response.raise_for_status()
             body = response.json()
         except Exception as exc:
-            raise EmbeddingUnavailable(str(exc)) from exc
+            raise EmbeddingUnavailable(str(exc) or type(exc).__name__) from exc
         items = sorted(body.get("data", []), key=lambda d: d.get("index", 0))
         vectors = [list(item["embedding"]) for item in items]
         return vectors, body.get("model"), body.get("dimensions")

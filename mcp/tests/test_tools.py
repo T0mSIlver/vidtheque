@@ -1226,3 +1226,60 @@ async def test_search_past_the_last_page_carries_its_reason(assembled: Assembled
     payload = structured(await search.run(assembled.deps, q="cache", limit=5, offset=900))
     assert "last page starts at offset=" in payload["reason"]
     assert payload["next"].startswith("next: re-run with offset=")
+
+
+async def test_an_untagged_corpus_says_so_when_a_tag_filter_empties_the_pool(
+    assembled: Assembled,
+) -> None:
+    """§3.7 applied to the filter, not the display (round-3 eval §14.3)."""
+    # A tagged corpus gets no note: the empty answer really does mean "wrong tag".
+    tagged = await search.run(assembled.deps, q="cache", tags="topic:nope")
+    assert not any("carries any tag" in n for n in structured(tagged)["notes"])
+
+    await assembled.db.write(lambda c: c.execute("DELETE FROM video_tags"))
+    result = await search.run(assembled.deps, q="cache", tags="topic:nope")
+    payload = structured(result)
+    assert any("no video in this corpus carries any tag" in n for n in payload["notes"])
+    assert payload["notes"] == [n for n in payload["notes"] if n in body(result)]
+
+
+async def test_a_tagless_call_does_not_pay_for_the_tag_probe(
+    assembled: Assembled,
+) -> None:
+    await assembled.db.write(lambda c: c.execute("DELETE FROM video_tags"))
+    result = await search.run(assembled.deps, q="cache", channel="no-such-channel")
+    assert not any("carries any tag" in n for n in structured(result)["notes"])
+
+
+async def test_speaker_filter_names_the_filter_that_does_work(
+    assembled: Assembled,
+) -> None:
+    """"omit speaker=" was correct and a dead end: one consumer re-sent it six
+    times with six different names (round-3 eval §14.4)."""
+    result = await search.run(assembled.deps, q="cache", speaker="Andrej Karpathy")
+    payload = structured(result)
+    assert payload["code"] == "E_FEATURE_DISABLED"
+    assert 'video_title="Andrej Karpathy"' in payload["next"]
+    assert "refused identically" in payload["message"]
+
+
+async def test_an_unreachable_worker_names_a_cause_even_with_no_message(
+    assembled: Assembled,
+) -> None:
+    """`str(exc)` is empty for a bare httpx timeout; the note read "unreachable ()"."""
+    from vidtheque_mcp.embeddings import EmbeddingUnavailable
+
+    class Mute:
+        dim = 2048
+        FRAME_MODEL = "Qwen/Qwen3-VL-Embedding-2B"
+
+        async def embed(self, texts, model=None, input_type="query"):
+            raise EmbeddingUnavailable("")
+
+        async def embed_frame_query(self, texts, model=None):
+            raise EmbeddingUnavailable("")
+
+    assembled.deps.embeddings = Mute()
+    result = await search.run(assembled.deps, q="cache", limit=3)
+    assert "unreachable ()" not in body(result)
+    assert "EmbeddingUnavailable, no message" in body(result)

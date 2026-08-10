@@ -120,8 +120,14 @@ class Deps:
             return None
         except EmbeddingUnavailable as exc:
             leg = "frame" if space == "frame" else "vector"
+            # `str(exc)` is empty for a bare httpx timeout, and this note then
+            # read "the embedding worker is unreachable ()" — a degraded search
+            # that named its degradation and not its cause. A round-3 consumer
+            # hit it live and could only say it "could not determine whether
+            # the failure is transient" (§14.5).
+            why = str(exc) or f"{type(exc).__name__}, no message"
             note = (
-                f"note: the embedding worker is unreachable ({exc}) — the "
+                f"note: the embedding worker is unreachable ({why}) — the "
                 f"{leg} leg was skipped for this search."
             )
             if note not in notes:

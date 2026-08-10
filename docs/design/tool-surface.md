@@ -464,6 +464,19 @@ filter existed and then invented `tag=` for it (demo-queries §9.1.9). Either sh
 the feature or stop advertising it; the surfaces come back, unchanged, the moment
 one video is tagged.
 
+**And a `tags=` filter over an untagged corpus says so** (amended 2026-08-11).
+The rule above governs what the server *volunteers*; this one governs what it
+does when the caller asks. `tags=topic:rag` over a corpus where nothing is
+tagged returns a clean, error-free `Results: 0/0` — byte-identical to the same
+filter with a misspelt tag, which is a real and recoverable mistake. A round-3
+integration consumer called that the single most dangerous case on the surface:
+*"a real, documented, schema-listed parameter that silently does nothing … it
+looks like a right call."* On the branch where a `tags=` filter has already
+emptied the video pool, one bounded existence probe
+(`db/queries.py::any_video_tagged`, `SELECT 1 FROM video_tags LIMIT 1`) buys the
+distinction, and the payload prints it as a `note:`. Asked nowhere else, and
+never asked when no `tags=` was passed.
+
 The tradeoff, deliberately: **a column the caller explicitly named is never
 dropped.** `list-videos fields="video_id,tags"` still returns the `tags` column
 over an untagged corpus, empty, exactly like the documented `cues`/`frames`
@@ -566,7 +579,7 @@ added.
 | `E_UNKNOWN_JOB` | 404 | bad `job_id` | "call `job-status` with no id for recent jobs" |
 | `E_NOT_INDEXED` | 409 | video row exists, pipeline never ran | `index-video force_reindex=true` |
 | `E_INDEXING` | 409 | video is mid-pipeline; partial data | `job-status job_id=…`, plus what *is* queryable now |
-| `E_FEATURE_DISABLED` | 409 | filter needs a disabled feature (e.g. `speaker` with diarization off) | "omit `speaker=`" |
+| `E_FEATURE_DISABLED` | 409 | filter needs a disabled feature (e.g. `speaker` with diarization off) | "omit `speaker=`" — **and names the filter that does work**: `video_title="<the name>"`, since a re-send with a different value is refused identically and one consumer sent six (round-3 eval §14.4) |
 | `E_TIMEOUT` | 408 | 30s query budget exhausted | "narrow the range: add `channel=`, `video_id=`, or a tighter `published_after`" |
 | `E_BUSY` | 503 | admission control full | `retry_after_s: 1`, and *only* that — "retry the IDENTICAL call in 1s — do not reformulate the query, a different one is refused exactly as fast; the limit is on concurrent searches, not on what a query costs". The hint used to offer "or narrow the query so it costs less", which cannot work (the semaphore is taken before the query is built) and which a consumer acted on instead of waiting (terra eval §4.9). With that removed, 2 of 3 consumers repeated the identical call and the third still re-worded twice, reading "retry the same call" as advice — so the wrong move is now named as an instruction (§9.7). If a third round still shows reformulation, the answer is a bigger semaphore, not more prose |
 | `E_RATE_LIMIT` | 429 | per-client budget | `retry_after_s` |

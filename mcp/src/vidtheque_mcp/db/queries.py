@@ -1461,6 +1461,20 @@ def tag_rollup(conn: sqlite3.Connection, video_ids: Sequence[int], limit: int) -
     ).fetchall()
 
 
+def any_video_tagged(conn: sqlite3.Connection) -> bool:
+    """Does any video in this corpus carry any tag at all?
+
+    One bounded existence probe, asked only on the branch where a `tags=`
+    filter has already emptied the pool — the difference between "your tag
+    spelling is wrong" and "nothing here has ever been tagged", which a
+    round-3 consumer named as the surface's most dangerous ambiguity because
+    both return a clean, error-free zero. `tag_count` cannot answer it: it
+    counts the `tags` table, and a tag attached to no video counts there
+    (§3.7's own "Tags (top 0 of 1)" bug).
+    """
+    return conn.execute("SELECT 1 FROM video_tags LIMIT 1").fetchone() is not None
+
+
 def tag_count(conn: sqlite3.Connection) -> tuple[int, int]:
     row = conn.execute("SELECT COUNT(*) AS n, COUNT(DISTINCT ns) AS ns FROM tags").fetchone()
     return int(row["n"]), int(row["ns"])
