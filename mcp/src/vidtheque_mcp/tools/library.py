@@ -86,9 +86,19 @@ async def list_videos(
     if q and len(q) > 256:
         raise bad_param("q is limited to 256 characters.")
 
+    asked = (limit, offset)
     limit = clamp(limit, 1, 100, 20)
     offset = clamp(offset, 0, 10_000, 0)
     max_text_chars = clamp_text_chars(max_text_chars, 40, 2000, 120)
+    # The same line `search` prints (§5.2's deferred half, taken 2026-08-10):
+    # only when a clamp actually moved a number the caller sent, naming both
+    # values. A rule honoured by one of the two paging tools is the shape §3.5
+    # spent a paragraph removing.
+    clamped = [
+        f"{name}={was} → {now}"
+        for name, was, now in zip(("limit", "offset"), asked, (limit, offset))
+        if isinstance(was, int) and not isinstance(was, bool) and was != now
+    ]
     tag_list = split_csv(tags, 10, "tags")
     for tag in tag_list:
         validate_tag(tag)
@@ -162,6 +172,11 @@ async def list_videos(
         )
 
     footer = ["", "coverage: t=transcript o=on-screen text f=frame embeddings -=missing"]
+    if clamped:
+        footer.append(
+            f"note: clamped server-side: {', '.join(clamped)}. The caps are in "
+            "vidtheque://context; page with offset instead of raising limit."
+        )
     missing = [r for r in records if "-" in str(r["coverage"])]
     if missing:
         example = missing[0]

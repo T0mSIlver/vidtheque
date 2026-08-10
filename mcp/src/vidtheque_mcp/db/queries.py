@@ -1276,6 +1276,13 @@ def list_videos(
     return conn.execute(sql, bound).fetchall()
 
 
+# How deep the `list-videos` count probe counts before it says "at least".
+# Independent of `limit` by construction: a total that moves with the page size
+# is not a total, and a caller told to "read the printed count" was reading a
+# different corpus size on every call.
+COUNT_PROBE_FLOOR = 500
+
+
 def probe_videos(
     conn: sqlite3.Connection,
     video_ids: Sequence[int],
@@ -1286,7 +1293,13 @@ def probe_videos(
     candidate_cap: int,
     headroom: int = 30,
 ) -> tuple[int, bool]:
-    ceiling = offset + limit + headroom
+    # The ceiling has a floor, so the printed total does not scale with the page
+    # the caller asked for: `limit=1` used to answer `~30+` and `limit=50`
+    # `~80+` over the same 152-video corpus, which is the defect §3.4 removed
+    # from `search` on 2026-08-09, still live here (terra eval §4.12). Counting
+    # rows of the same CTE up to a few hundred is the same bounded probe — one
+    # index scan over the filtered videos, not a `COUNT(*)` over the corpus.
+    ceiling = offset + max(limit + headroom, COUNT_PROBE_FLOOR)
     sql = "WITH probe AS (" + _list_sql(q) + " LIMIT :ceiling) SELECT COUNT(*) FROM probe"
     bound = _list_bind(video_ids, q, has_filter, candidate_cap)
     bound["ceiling"] = ceiling

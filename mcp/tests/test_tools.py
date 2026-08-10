@@ -365,6 +365,29 @@ async def test_list_videos_coverage_flags_the_gaps(assembled: Assembled) -> None
     assert "missing channels" not in text
 
 
+async def test_list_videos_total_does_not_move_with_the_page(assembled: Assembled) -> None:
+    """terra eval §4.12: `limit=1` said `~30+` where `limit=50` said `~80+`.
+
+    The probe ceiling used to be `offset + limit + 30`, so the number the guide
+    tells callers to read was a function of the page they asked for — the defect
+    §3.4 removed from `search` on 2026-08-09, still live on the tool that keeps
+    the probe.
+    """
+    one = structured(await library.list_videos(assembled.deps, limit=1))
+    fifty = structured(await library.list_videos(assembled.deps, limit=50))
+    assert one["pagination"]["approx_total"] == fifty["pagination"]["approx_total"] == 3
+    assert "Videos: 1/3" in body(await library.list_videos(assembled.deps, limit=1))
+
+
+async def test_list_videos_says_when_a_clamp_moved_a_number(assembled: Assembled) -> None:
+    """The other half of §4.12, and the line `search` already prints."""
+    text = body(await library.list_videos(assembled.deps, limit=500))
+    assert "note: clamped server-side: limit=500 → 100." in text
+    assert "vidtheque://context" in text
+    quiet = body(await library.list_videos(assembled.deps, limit=20))
+    assert "clamped server-side" not in quiet
+
+
 async def test_list_videos_relevance_needs_a_query(assembled: Assembled) -> None:
     result = await library.list_videos(assembled.deps, order="relevance")
     assert structured(result)["code"] == "E_ORDER_SCOPE"

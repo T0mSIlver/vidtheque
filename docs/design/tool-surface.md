@@ -204,8 +204,14 @@ No tool ever runs a second count query. The rule:
    `ORDER BY rank`). This is the seam where the embedding reranker slots in.
 2. The page is fetched with `LIMIT limit + 1` → `has_more`.
 3. A **count probe** counts rows in the *same* CTE up to
-   `ceiling = offset + limit + 30`. Cheap (bounded), and it cannot disagree with
-   the page query because it is the same filter expression.
+   `ceiling = offset + max(limit + 30, 500)`. Cheap (bounded), and it cannot
+   disagree with the page query because it is the same filter expression. The
+   `500` floor is what keeps the printed total from being a function of the page
+   the caller asked for: without it, `limit=1` answered `~30+` and `limit=50`
+   `~80+` over the same 152-video corpus (terra eval §4.12) — the defect this
+   section removed from `search` on 2026-08-09, left live on the one tool that
+   keeps the probe. Counting a few hundred rows of an already-filtered CTE is
+   the same bounded scan; what is forbidden is the unbounded `COUNT(*)`.
 
 Rendering:
 
@@ -278,6 +284,19 @@ while `order="bogus"` on the same call returned a clean typed error — one tool
 two standards (demo-queries §9.1.9). The valid sets are `search`'s
 `TSV_FIELDS` (the keys of a result row) and `list-videos`' `LIST_FIELDS`; a
 `fields` list is never silently narrowed, in either direction.
+
+**`fields` shapes the text block only; `structuredContent` always carries the
+whole row** — stated here because it was read as an omission (terra eval §4.11:
+*"twelve keys per row for a caller who asked for two"*). It is the parameter
+table's `tsv only`, and it is deliberate on both sides: the structured payload is
+what the dashboard and the public JSON facade read (`public/api.py` says so at
+its call site, and passes no `fields` precisely because it wants every key), and
+a client that narrows the prose it pays for still gets the full record for free
+in a channel it does not have to parse. The honest cost, recorded rather than
+denied: a conformant client cannot use `fields` to shrink `structuredContent`,
+and the documented-empty `cues`/`frames` columns ride along in it. If that ever
+needs to change, the facades must ask for their columns by name first — the
+change is theirs, not the tool's.
 
 **An unknown *parameter* name is `E_BAD_PARAM` too** (amended 2026-08-10), and
 it names the near miss. `search {"q":"context engineering","tag":"topic:test",
@@ -2096,8 +2115,12 @@ note: clamped server-side: limit=500 → 50. The caps are in vidtheque://context
 
 It prints only when a clamp moved a number the caller actually sent — a default
 that was never sent is not a clamp, and a payload that says so on every call is
-the token cost this line exists to avoid. `list-videos` has the same silence and
-does not print this yet.
+the token cost this line exists to avoid. `list-videos` prints the identical
+line, from the identical rule (later the same day): one of the two paging tools
+announcing its clamps is the "one tool, two standards" shape §3.5 exists to
+forbid. The guide's "clamped silently" table above is therefore now about
+*values*, not about silence — the cap is still applied without refusing the
+call, and the payload says it happened.
 
 ### 5.3 `vidtheque://guide` — progressive disclosure
 
