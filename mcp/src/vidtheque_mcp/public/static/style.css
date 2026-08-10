@@ -935,9 +935,14 @@ a:hover > .rcpt,
   border: 1px solid var(--seam2);
 }
 
-/* Every child spans, and the two that do not are named below. A row that is
+/* Every child spans, and the ones that do not are named below. A row that is
    placed by name cannot be moved by a row that is missing. */
 .answer > * { grid-column: 1 / -1; min-width: 0; }
+
+/* …except a control, which is its own size. A grid item stretches by default,
+   and an `inline-flex` button with an auto width stretches with it: the
+   degraded pane's "Search instead" would be a 670px slab of border. */
+.answer > .ghost { justify-self: start; }
 
 .answer-prose { max-width: var(--prose); }
 

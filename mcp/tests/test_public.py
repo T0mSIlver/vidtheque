@@ -1083,6 +1083,10 @@ def test_the_ask_pane_is_the_page_not_a_strip_down_the_side() -> None:
     # Every child spans unless it is placed by name, so a pane rendered without
     # its log or its model line cannot shift the two columns.
     assert ".answer > * { grid-column: 1 / -1; min-width: 0; }" in css
+    # …except a control. A grid item stretches by default and an inline-flex
+    # button with an auto width goes with it: the degraded pane's "Search
+    # instead" would be a 670px slab of border. Measured: 137px, at every width.
+    assert ".answer > .ghost { justify-self: start; }" in css
     for placed in (
         ".answer:has(.answer-sources) > .answer-prose { grid-column: 1; grid-row: 1; }",
         ".answer:has(.answer-sources) > .worklog { grid-column: 1; grid-row: 2; }",
