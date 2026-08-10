@@ -2018,6 +2018,49 @@ def cue_text_totals(conn: sqlite3.Connection, video_id: int) -> dict[str, int]:
     return {"words": words, "chars": chars}
 
 
+def job_contents(
+    conn: sqlite3.Connection, job_ids: Sequence[str]
+) -> dict[str, sqlite3.Row]:
+    """What each job on a page of the jobs table actually holds.
+
+    A row that prints only `job_uid` says nothing a reader can act on (Tom,
+    2026-08-10, round 4). What a job *contains* is its items, and an item that
+    has been fetched has resolved to a video with a title and a channel — which
+    is corpus data and stays in the demo projection, unlike the submitted URL
+    (dashboard.md §2.4: the URL is `args_json`'s content by another name, the
+    video it resolved to is on two other pages by id and title).
+
+    **One grouped query for the whole page**, never one per row (§6.3). The
+    bare `title`/`channel_name` columns beside `MIN(ji.seq)` are SQLite's
+    documented behaviour for exactly one min/max aggregate: they come from the
+    row that produced the minimum — the job's first resolved item, in the order
+    the job was submitted in. The join is inner, so an item that has not been
+    fetched yet contributes nothing and a wholly unfetched job is simply absent
+    from the result, which is the honest answer to "what is in it" for a job
+    that has not looked yet.
+    """
+    if not job_ids:
+        return {}
+    marks = ",".join("?" * len(job_ids))
+    rows = conn.execute(
+        f"""
+        SELECT j.public_id                     AS job_id,
+               MIN(ji.seq)                     AS first_seq,
+               v.title                         AS first_title,
+               v.channel_name                  AS channel,
+               COUNT(*)                        AS resolved,
+               COUNT(DISTINCT v.channel_name)  AS channels
+        FROM job_items ji
+        JOIN jobs   j ON j.id = ji.job_id
+        JOIN videos v ON v.id = ji.video_id
+        WHERE j.public_id IN ({marks})
+        GROUP BY j.public_id
+        """,
+        tuple(job_ids),
+    ).fetchall()
+    return {str(row["job_id"]): row for row in rows}
+
+
 def keyframe_bytes_total(conn: sqlite3.Connection) -> int:
     """Keyframe bytes on disk, from the column that already stores them.
 

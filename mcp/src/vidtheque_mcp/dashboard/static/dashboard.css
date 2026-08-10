@@ -216,6 +216,13 @@
      `statepair` key, the deferral countdown. One height, so a row of them is a
      strip rather than a stack of boxes at three sizes. */
   --chip-h: 1.25rem;
+  /* 144px — every picker in a filter band, whatever it is currently showing.
+     A select sized by its own content re-flows the controls beside it the
+     moment the reader changes its value, and a band whose geometry moves when
+     you use it is the layout shift Tom reported (round 4, item 7b). Wide
+     enough for the longest value any of them holds — `indexed_at`,
+     `transcript`, `all states` — plus the disclosure mark's own gutter. */
+  --pick-w: 9rem;
   /* The two scrollboxes, both bounded in *lines* rather than in pixels, so the
      box is as tall as the thing it holds and not as tall as a guess. Ten OCR
      lines at `cell`; eighteen transcript cues at the same. */
@@ -1026,10 +1033,52 @@ span.tone-warn { color: var(--tone-warn); }
   border: 1px solid var(--seam2);
   transition: border-color var(--t-fast);
 }
-/* Room for the platform's own disclosure arrow. The arrow stays the platform's:
-   a hand-drawn caret would be the first glyph of an icon language this system
-   deliberately does not have. */
-.field select { padding-right: var(--s5); }
+/* ---- the picker
+
+   **Overturns the first pass** (Tom, 2026-08-10, round 4). That pass kept the
+   platform's own disclosure arrow, on the argument that a drawn caret would be
+   the first glyph of an icon language this system deliberately does not have.
+   What it bought on the operator's actual machine was a rounded, shaded,
+   OS-accented macOS control sitting in a band of square 34px hairline boxes —
+   the one thing on the page that was not this system. `appearance: none`, and
+   the band's own chrome.
+
+   The mark is not an icon: it is a 6px square with two of its four hairlines
+   drawn, turned 45°, in the same ink as a label. Every other rule in this band
+   is a 1px hairline and so is this one. The *list* the control opens is still
+   the platform's, and stays there — that is the part a surface with no
+   JavaScript cannot draw, and a reimplementation would be a listbox widget
+   with its own keyboard model to get wrong. */
+.pick { position: relative; display: flex; min-width: 0; }
+/* Only the select loses its platform drawing — never a checkbox, which
+   `appearance: none` would erase, and never a date field, whose calendar
+   button is the platform's own answer to a question this band does not ask. */
+.pick > select {
+  width: 100%;
+  padding-right: var(--s6);
+  appearance: none;
+}
+.pick::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: var(--s3);
+  width: 6px;
+  height: 6px;
+  border-right: 1px solid var(--fg2);
+  border-bottom: 1px solid var(--fg2);
+  transform: translateY(-70%) rotate(45deg);
+  transition: border-color var(--t-fast);
+  /* A mark that follows a control must never be the thing the pointer is on. */
+  pointer-events: none;
+}
+.pick:hover::after { border-color: var(--accent); }
+/* Every picker in a band is the same width, whatever it is currently showing.
+   A select sized by its own content changes width when the reader changes its
+   value, and one control resizing re-flows every control beside it — which is
+   the layout shift item 7b is about. This is what stops it, and it stops it in
+   the one place both bands read from. */
+.field-pick { flex: 0 0 var(--pick-w); }
 .field input::placeholder { color: var(--fg3); opacity: 1; }
 .field input:hover, .field select:hover { border-color: var(--gold-44); }
 /* A date input carries the platform's calendar button inside its own box. Fixed
@@ -1700,8 +1749,22 @@ button.ocrstage { border: 0; padding: 0; cursor: zoom-in; }
 
 /* -------------------------------------------------------------------- jobs */
 
-.jobs .col-title { min-width: 11rem; }
+/* Wider than it was, because the cell holds a conference title now rather than
+   a fourteen-character handle (Tom, 2026-08-10, round 4). The id moved down to
+   the meta line with the kind and the priority, where the other machine strings
+   on this row already were. */
+.jobs .col-title { min-width: 18rem; }
 .jobs time { white-space: nowrap; }
+/* The rest of the batch, counted. The label idiom rather than the title's,
+   because "+9 more" is a count and not a name. */
+.row-more {
+  margin-left: var(--s2);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--t-machine-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .jobitems .col-title { min-width: 14rem; }
 
 /* Progress as a rule, not a widget: the same hairline the tables are made of,
@@ -1751,6 +1814,58 @@ button.ocrstage { border: 0; padding: 0; cursor: zoom-in; }
    the pill beside it already prints the word `running`. */
 .meter.is-working .meter-fill { box-shadow: inset -2px 0 0 var(--fg); }
 .meter-label { margin-left: var(--s1); font-size: var(--t-machine); color: var(--muted); }
+
+/* ---- the hint
+
+   A percentage nobody can decompose is a number a reader has to trust (Tom,
+   2026-08-10, round 4: "the progress % is unexplained"). The breakdown it is
+   made of is on the row already — done, failed, skipped, cancelled, still to
+   run — and what is not is the rule that turns them into one number, which is
+   two sentences and does not belong printed on sixty rows.
+
+   So: a plate, one step above the page, revealed by pointing at the figure or
+   tabbing to it. No shadow — DESIGN.md gives this surface none, and a plate
+   with a hairline against `--pitch` is already a step off the ground. No
+   transition either: a thing that is either shown or not shown is not the
+   machine working, and the Motion Law has nothing to say about it. The
+   anchor takes `tabindex` and `aria-describedby`, so a keyboard reaches the
+   same sentence a pointer does and a screen reader is told the figure has
+   one. */
+.hinted { position: relative; display: inline-block; }
+.hint {
+  position: absolute;
+  top: calc(100% + var(--s1));
+  left: 0;
+  z-index: 2;
+  display: none;
+  width: max-content;
+  max-width: 24rem;
+  padding: var(--s2) var(--s3);
+  color: var(--fg2);
+  background: var(--plate);
+  border: 1px solid var(--seam2);
+  font-family: var(--font-mono);
+  font-size: var(--t-machine-sm);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--lh-cell);
+  white-space: normal;
+}
+/* The last row is the one whose hint would fall out of the bottom of the
+   table's own wrapper — which is a scroll container, so "out of" means
+   "clipped". It opens upward instead, over the rows above it, which are inside
+   the wrapper by construction. */
+.grid tbody tr:last-child .hint { top: auto; bottom: calc(100% + var(--s1)); }
+.hinted:hover > .hint,
+.hinted:focus-within > .hint { display: block; }
+/* The figure is a control now in one respect only — it can be tabbed to — so
+   it says so the way everything else on this surface does: on hover, in the
+   accent, with no geometry moving. */
+.hinted > [tabindex]:hover, .hinted > [tabindex]:focus-visible { color: var(--accent); }
+/* Both lines carry a fact, so both are `--fg2`: `--fg3` is atmosphere and
+   DESIGN.md fences it out of anything a reader has to be able to read. What
+   separates them is the gap, not the ink. */
+.hint-line { display: block; }
+.hint-line + .hint-line { margin-top: var(--s1); }
 
 .progressline {
   display: flex;

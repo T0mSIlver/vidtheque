@@ -122,6 +122,10 @@ function applyJob(scope, job) {
   setState(scope, "job-state", job.state);
   setText(scope, "job-progress", job.text.progress);
   setText(scope, "job-counts", job.text.counts);
+  // The breakdown behind the percentage, so a hint held open while a job
+  // advances is patched with the same numbers the bar beside it moved to.
+  setText(scope, "job-tally", job.text.tally);
+  setText(scope, "job-basis", job.text.basis);
   setText(scope, "job-wall", job.text.wall);
   setText(scope, "job-ran", job.text.ran);
   // The clock the ticker counts up between polls, re-synced to the server's

@@ -17,13 +17,19 @@
 
 {# A real GET form: the filter is the URL. Nothing here needs JavaScript. #}
 <form class="filters" method="get" action="{{ root }}/jobs">
-  <div class="field">
+  {# The picker is this band's own control now (Tom, 2026-08-10, round 4): the
+     platform's select was the one object on the page that was not this system.
+     `.pick` is the wrapper that draws the disclosure mark and pins the width;
+     the same wrapper is on every picker in the videos band. #}
+  <div class="field field-pick">
     <label for="f-jobstate">State</label>
-    <select id="f-jobstate" name="state">
-      {% for value in states %}
-      <option value="{{ value }}"{{ ' selected' if filters.state == value }}>{{ value }}</option>
-      {% endfor %}
-    </select>
+    <span class="pick">
+      <select id="f-jobstate" name="state">
+        {% for value in states %}
+        <option value="{{ value }}"{{ ' selected' if filters.state == value }}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </span>
   </div>
   <div class="field field-narrow">
     <label for="f-joblimit">Rows</label>
@@ -87,10 +93,22 @@
   <tbody>
     {% for job in jobs %}
     <tr data-job="{{ job.job_id }}">
+      {# What the job *contains*, not just what it is called (Tom, 2026-08-10,
+         round 4). The row's headline is the first item's video title with the
+         rest counted after it; the id drops to the meta line beside the kind
+         and the priority, where the other machine strings are. A job whose
+         items have not been fetched yet has no title to print and says so with
+         the count it does have. The submitted URL is never here — §2.4 redacts
+         it in the demo and the title it resolved to is corpus. #}
       <th scope="row" class="col-title" data-label="Job">
-        <a class="row-title" href="{{ root }}/jobs/{{ job.job_id }}"><code>{{ job.job_id }}</code></a>
+        <a class="row-title" href="{{ root }}/jobs/{{ job.job_id }}">
+          {%- if job.contents.title %}{{ job.contents.title }}
+          {%- else %}<span class="muted">{{ job.contents.note }}</span>{% endif -%}
+        </a>
+        {% if job.contents.more %}<span class="row-more">+{{ job.contents.more }} more</span>{% endif %}
         <span class="row-meta">
-          {{ job.kind }}<span class="sep">·</span>priority {{ job.priority }}
+          <code>{{ job.job_id }}</code><span class="sep">·</span>{{ job.kind }}<span class="sep">·</span>priority {{ job.priority }}
+          {%- if job.contents.channel %}<span class="sep">·</span>{{ job.contents.channel }}{% endif %}
           {% if job.degraded %}
           <span class="sep">·</span><span class="tone-bad">{{ job.degraded }} degraded</span>
           {% endif %}
@@ -118,11 +136,24 @@
          movement rather than as a jump. Nothing pulses, nothing sweeps, and a
          job that is queued, deferred or finished shows a bar that does not
          move, because nothing is working. #}
+      {# The figure carries its own breakdown (Tom, 2026-08-10, round 4: the %
+         is unexplained). Point at it or tab to it and the five item states it
+         is made of are printed, with the rule that turns them into one number —
+         which is two sentences and has no business being repeated on sixty
+         rows. Both strings are formatted server-side and both are patched by
+         the tick, so a hint left open while a job advances stays true. #}
       <td data-label="Progress">
         <span class="meter{{ ' is-working' if job.state == 'running' }}" aria-hidden="true"
               data-field="job-meter-box"><span class="meter-fill" data-field="job-meter"
               style="width:{{ job.progress }}%"></span></span>
-        <span class="meter-label" data-field="job-progress">{{ job.text.progress }}</span>
+        <span class="hinted">
+          <span class="meter-label" data-field="job-progress" tabindex="0"
+                aria-describedby="pct-{{ job.job_id }}">{{ job.text.progress }}</span>
+          <span class="hint" role="tooltip" id="pct-{{ job.job_id }}">
+            <span class="hint-line" data-field="job-tally">{{ job.text.tally }}</span>
+            <span class="hint-line" data-field="job-basis">{{ job.text.basis }}</span>
+          </span>
+        </span>
       </td>
       <td data-label="Items"><span data-field="job-counts">{{ job.text.counts }}</span></td>
       <td data-label="Created"><time>{{ job.created_at | minute }}</time></td>

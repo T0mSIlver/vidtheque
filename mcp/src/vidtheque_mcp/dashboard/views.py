@@ -1046,9 +1046,37 @@ def _job_card(
     # the poller needs no formatter of its own and cannot drift into a second
     # way of saying "4m 12s" (the one exception is the countdown between ticks,
     # which is arithmetic on a number this already sent).
+    # What the percentage is made of, and what it is computed over (Tom,
+    # 2026-08-10, round 4: "the progress % is unexplained"). All five buckets,
+    # always, including the zeroes — the point of the line is that they add up
+    # to `n_items`, and a tally with terms missing does not visibly add up.
+    pending = max(
+        0,
+        card["n_items"]
+        - card["n_done"]
+        - card["n_failed"]
+        - card["n_skipped"]
+        - card["n_cancelled"],
+    )
     card["text"] = {
         "progress": f"{card['progress']}%",
         "counts": _counts_line(card),
+        "tally": " · ".join(
+            (
+                f"{card['n_done']} done",
+                f"{card['n_failed']} failed",
+                f"{card['n_skipped']} skipped",
+                f"{card['n_cancelled']} cancelled",
+                f"{pending} still to run",
+            )
+        ),
+        # The rule, in the one place a reader can ask for it. `jobs_store.STAGES`
+        # rather than a literal 7, because the fraction in `_ITEM_FRACTION` is
+        # divided by that same tuple's length.
+        "basis": (
+            f"of {card['n_items']} item(s). An item still in the pipeline counts "
+            f"the stages it has finished, out of {len(jobs_store.STAGES)}."
+        ),
         "wall": span(card["wall_s"]),
         "ran": span(card["ran_s"]),
         "waited": span(card["waited_s"]),
@@ -1135,6 +1163,14 @@ async def jobs(request: Request) -> Response:
     redact = _redacted(request)
 
     cards, has_more, now = await _job_page(db, state, limit, offset, redact)
+    # One extra grouped read for the page, not one per row (§6.3). Deliberately
+    # here and not in `_job_page`: what a job contains does not change between
+    # two ticks of the poller, so the JSON the tick reads does not carry it.
+    contents = await db.read(
+        lambda c: queries.job_contents(c, [card["job_id"] for card in cards])
+    )
+    for card in cards:
+        card["contents"] = _job_contents(card, contents.get(card["job_id"]))
     return _render(
         "jobs.html",
         {
@@ -1150,6 +1186,42 @@ async def jobs(request: Request) -> Response:
             "redacted": redact,
         },
     )
+
+
+def _job_contents(card: dict[str, Any], row: sqlite3.Row | None) -> dict[str, Any]:
+    """The line that says what a job holds, from its own items.
+
+    A jobs table whose rows print only `job_uid` is a list of opaque handles
+    (Tom, 2026-08-10, round 4). What the reader wants is what went in: the first
+    video's title with the rest counted after it, and — when every item that has
+    resolved so far came from one channel — that channel's name, which is the
+    playlist or channel a batch was expanded from by another route.
+
+    The submitted URL is **not** here and must not be: §2.4's redaction table
+    drops it in the demo projection, and the title and channel it resolved to
+    are corpus, published on two other pages. Keeping one rule for both modes
+    is what stops the two drifting apart.
+
+    A job whose items have not been fetched yet has no title to print, and says
+    so with the count it does have rather than borrowing the id as a name.
+    """
+    n_items = int(card["n_items"])
+    if row is None or not row["first_title"]:
+        return {
+            "title": None,
+            "more": 0,
+            "channel": None,
+            "note": f"{n_items} item(s), none fetched yet",
+        }
+    return {
+        "title": str(row["first_title"]),
+        "more": max(0, n_items - 1),
+        # One channel across every resolved item, or none named at all: "two of
+        # these came from somewhere else" is not a fact a row can print in three
+        # words, and naming only the first would be a claim about the rest.
+        "channel": str(row["channel"]) if int(row["channels"]) == 1 and row["channel"] else None,
+        "note": None,
+    }
 
 
 async def _job_page(

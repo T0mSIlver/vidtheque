@@ -858,7 +858,10 @@ def test_the_jobs_pages_do_not_fan_out_per_row(client: TestClient) -> None:
     """
     one = _count_reads(client, f"{ROOT}/jobs?limit=1")
     many = _count_reads(client, f"{ROOT}/jobs?limit=100")
-    assert one == many <= 3, f"{one} reads for 1 job, {many} for 100"
+    # Four, not three, since round 4: what each job *contains* is one more
+    # grouped read for the page — and still one for a hundred rows, which is
+    # the only thing this test is about.
+    assert one == many <= 4, f"{one} reads for 1 job, {many} for 100"
     detail = _count_reads(client, f"{ROOT}/jobs/job_finished01")
     assert detail <= 8, f"{detail} reads for one job page"
 
@@ -3238,3 +3241,108 @@ def test_the_overview_masthead_carries_the_state_and_the_clock_only(
     assert re.search(
         r'published <span class="fact"><span class="mono">[\d-]+</span>', videos_figure
     ), "…and landed on the count it describes"
+
+
+def test_a_job_row_says_what_it_contains(client: TestClient) -> None:
+    """Round 4, item 6b. A row printing only `job_uid` is an opaque handle.
+
+    What a job contains is its items, and an item that has been fetched has
+    resolved to a video with a title and a channel — both corpus, both already
+    published on two other pages. The submitted URL is the redacted field
+    (§2.4) and stays off this row in both modes.
+    """
+    body = page(client, f"{ROOT}/jobs")
+    rows = dict(re.findall(r'<tr data-job="([^"]+)">(.*?)</tr>', body, re.S))
+
+    running = rows["job_running001"]
+    assert "Let&#39;s build GPT: from scratch" in running, "the first item's video"
+    assert '<span class="row-more">+1 more</span>' in running, "and the rest, counted"
+    assert "Andrej Karpathy" in running, "one channel across the items, so it is named"
+    # The id is still on the row — it is the identifier — in the meta line with
+    # the other machine strings rather than as the row's headline.
+    assert "<code>job_running001</code>" in running
+
+    # A job whose items have not been fetched has no title to borrow and says
+    # what it does know instead of wearing its own id as a name.
+    assert "1 item(s), none fetched yet" in rows["job_deferred01"]
+
+    # And nothing on the page prints what was submitted, in either mode.
+    for url in ("https://youtu.be/queuedvideo", "https://youtu.be/deferredvid"):
+        assert url not in body
+
+
+def test_a_job_row_costs_the_page_one_more_read_and_not_one_per_row(
+    client: TestClient,
+) -> None:
+    """§6.3 again: what a job contains is one grouped query for the page.
+
+    And it is deliberately not on the poll target — what a job holds does not
+    change between two ticks, so the JSON the 2 s tick reads does not carry it.
+    """
+    one = _count_reads(client, f"{ROOT}/jobs?limit=1")
+    many = _count_reads(client, f"{ROOT}/jobs?limit=100")
+    assert one == many <= 4, f"{one} reads for 1 job, {many} for 100"
+
+    payload = client.get(f"{ROOT}/api/jobs").json()
+    assert payload["jobs"] and "contents" not in payload["jobs"][0]
+
+
+def test_the_progress_figure_carries_its_own_breakdown(client: TestClient) -> None:
+    """Round 4, item 6c. A percentage nobody can decompose is a number a reader
+    has to take on trust.
+
+    Five buckets, always, including the zeroes — the point of the tally is that
+    it adds up to `n_items` — plus the rule that turns them into one number,
+    which is two sentences and does not belong repeated on sixty rows.
+    """
+    body = page(client, f"{ROOT}/jobs")
+    rows = dict(re.findall(r'<tr data-job="([^"]+)">(.*?)</tr>', body, re.S))
+    running = rows["job_running001"]
+
+    assert 'aria-describedby="pct-job_running001"' in running
+    assert '<span class="hint" role="tooltip" id="pct-job_running001">' in running
+    tally = re.search(r'data-field="job-tally">([^<]+)<', running).group(1)
+    assert tally == "0 done · 0 failed · 0 skipped · 0 cancelled · 2 still to run"
+    basis = re.search(r'data-field="job-basis">([^<]+)<', running).group(1)
+    assert "of 2 item(s)" in basis and "out of 7" in basis  # len(jobs.store.STAGES)
+
+    # Reachable by keyboard, and patched by the tick like every other value on
+    # the row, so a hint held open while a job advances stays true.
+    assert 'data-field="job-progress" tabindex="0"' in running
+    script = (STATIC / "jobs.js").read_text()
+    assert 'setText(scope, "job-tally", job.text.tally)' in script
+    assert 'setText(scope, "job-basis", job.text.basis)' in script
+
+
+def test_every_picker_is_this_systems_own_control_and_a_fixed_width(
+    client: TestClient,
+) -> None:
+    """Round 4, items 6a and 7a — and it overturns §12.2's third call.
+
+    That pass kept the platform's disclosure arrow, reasoning that a drawn
+    caret would be the first glyph of an icon language this system does not
+    have. On the operator's own machine what it bought was a rounded, shaded,
+    OS-accented macOS control in a band of square 34px hairline boxes. The mark
+    is a 6px square with two of its hairlines drawn, turned 45°, which is the
+    same 1px rule everything else in the band is edged with.
+
+    The fixed width is item 7b's half of the same wrapper: a select sized by
+    its own content re-flows every control beside it when the reader changes
+    its value.
+    """
+    css = (STATIC / "dashboard.css").read_text()
+    assert "appearance: none" in _rule(css, ".pick > select")
+    assert "flex: 0 0 var(--pick-w)" in _rule(css, ".field-pick")
+    # …and never on a checkbox, which `appearance: none` erases, nor on a date
+    # field, whose calendar button is the platform's answer to another question.
+    assert "appearance: none" not in _rule(css, ".field input, .field select")
+
+    for path in (f"{ROOT}/jobs",):
+        body = page(client, path)
+        selects = re.findall(r"<select[^>]*>", body)
+        assert selects, path
+        # Every picker sits in the wrapper that draws the mark, and every
+        # picker's field carries the width, so the band's geometry is the
+        # viewport's and never the selected value's.
+        assert body.count('<span class="pick">') == len(selects), path
+        assert body.count('class="field field-pick"') == len(selects), path
