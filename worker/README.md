@@ -1,72 +1,114 @@
 # vidtheque-worker
 
-Stateless GPU inference API for vidtheque. Speaks an OpenAI-compatible surface
-so that a self-hoster without a GPU can drop it and point `WORKER_URL` at a
-hosted provider instead.
+Stateless GPU inference API for vidtheque. Speaks OpenAI shapes where they fit,
+so that a self-hoster without a GPU can drop this service and point `WORKER_URL`
+at a hosted provider for the transcript leg — `/v1/embeddings` is the standard
+contract and the swap is real. The other three paths below are this project's
+own, and frame search and on-screen text do not work without something that
+answers them.
 
 | Method | Path                       | Shape                                                    |
 | ------ | -------------------------- | -------------------------------------------------------- |
 | POST   | `/v1/audio/transcriptions` | OpenAI multipart; `response_format=verbose_json` returns segments with word timestamps |
 | POST   | `/v1/embeddings`           | OpenAI JSON; `input` is a string or a list of strings     |
 | POST   | `/v1/embeddings/image`     | custom multipart; images in, one vector each, upload order |
-| POST   | `/v1/embeddings/frame-query` | custom JSON; a short text query into the *frame* space |
+| POST   | `/v1/embeddings/frame-query` | custom JSON; a text query embedded for *frame* retrieval |
 | POST   | `/v1/ocr`                  | custom multipart; images in, `{text, confidence, bbox}` out |
 | GET    | `/status`                  | loaded models, VRAM free/used, queue depth               |
 | GET    | `/healthz`                 | liveness                                                 |
 
-## Two vector spaces, three endpoints
+## One vector space, three endpoints
 
-Text and frames are embedded by different models into spaces that are not
-comparable — 1024 dims from `Qwen3-Embedding-0.6B` for transcripts, metadata and
-OCR text, 1152 dims from `SigLIP 2 NaFlex so400m` for keyframes. They get
-separate endpoints rather than one polymorphic `/v1/embeddings` for two reasons:
-`/v1/embeddings` is the OpenAI contract whose entire point is that a GPU-less
-deployment can repoint `WORKER_URL` at a hosted provider, and a multipart branch
-would break that swap; and a single endpoint returning vectors from two spaces
-is an index-corruption bug waiting for a caller to make it.
+**Shipped default: `Qwen/Qwen3-VL-Embedding-2B`, one checkpoint, 2048 dims,
+Apache-2.0, ~4.4 GB of bf16 weights, 32K text context.** Transcripts, metadata,
+OCR text *and* keyframes land in **one** comparable space — the model reads a
+slide or a terminal as a document rather than as a picture, the axis where a
+CLIP-style dual encoder measures 1.3–3.6× worse and where a corpus of
+conference talks actually lives (`research/multimodal-embedding-2026-08-09.md`,
+Tom's decision of 2026-08-09).
 
-The frame space has two endpoints of its own because it has two towers.
-`/v1/embeddings/image` is the indexing side; `/v1/embeddings/frame-query` runs
-the *text* tower of the same checkpoint, which is the entire reason frames are
-embedded with SigLIP rather than captioned — "a terminal showing a stack trace"
-lands in the same 1152-d space as the frames themselves, with no second model,
-no second slot and no second load. Two things follow:
+It replaced two models: `Qwen3-Embedding-0.6B` (1024 dims) on the transcript leg
+and `SigLIP 2 NaFlex so400m` (1152 dims) on the frame leg. **Both are still
+selectable** — `EMBED_BACKEND=qwen3-embedding` or `bge-m3`,
+`IMAGE_EMBED_BACKEND=siglip2` — and that configuration is genuinely *two*
+spaces, never mixed. It is a smaller-card fallback, not the default, and it
+needs `config['text_embed.dim']` and the `vec_chunks` DDL moved back to 1024
+(`docs/design/index-schema.md` §3.1).
 
-- **It is a path, not a flag.** `space=frame` on `/v1/embeddings` would be
-  ignored by a hosted OpenAI provider after the `WORKER_URL` swap, which then
-  answers with its own text space at some other width — a silent index
-  corruption. An unknown path 404s instead.
-- **Keep queries short.** SigLIP 2's trained text context is 64 tokens
-  (`model_max_length` in the config is the `1e30` sentinel — ignore it), and
-  everything past it is dropped with no error. The backend passes the
-  lowercasing and `padding="max_length", max_length=64, truncation=True` that
-  transformers 4.x does not apply itself, and logs when a query fills the
-  window. Long text belongs on `/v1/embeddings`, in the other space.
+**One model, one slot.** `embed` and `image_embed` stay separate lifecycle
+tasks — indexing needs both at once and one slot would force the pipeline to
+choose — but when `EMBED_BACKEND`, `IMAGE_EMBED_BACKEND` **and** the two model
+ids all agree, `build_backends` hands the manager the *same instance* twice and
+`LifecycleManager` gives it **one shared Slot**: one 4.4 GB VRAM charge instead
+of 8.8, one eviction clock, one GPU-lease bracket, and one load on a cold
+`content_type=all` search instead of two (§5.5 of the same research note). Point
+them at different backends and you get two models in two slots — supported,
+correct, and twice the cold start.
 
-`/v1/embeddings` takes one non-OpenAI optional extra, `input_type`
-(`document` — the default — or `query`). An instruction-tuned embedder prefixes
-queries and not documents; index one side with the wrong setting and recall
-degrades with no error anywhere. The prefix text itself is config
-(`EMBED_QUERY_PROMPT`, empty to use the checkpoint's own), never the caller's.
-A symmetric model like bge-m3 accepts the field and ignores it.
+Three endpoints survive the collapse to one space, for reasons that are now
+about *interface* and *instruction* rather than about incomparable vectors:
 
-`/v1/embeddings/image` takes an optional `max_num_patches` — NaFlex's resolution
-knob, and a per-frame decision rather than a global one: a talking head is worth
-the default 256, a slide OCR found sixty lines in is worth 1024. Same
-checkpoint either way. Trained budgets are 128/256/576/784/1024.
+- **`/v1/embeddings` is the OpenAI contract**, and its whole point is that a
+  GPU-less deployment can repoint `WORKER_URL` at a hosted provider. A
+  multipart branch on it would break that swap, so images get their own path.
+- **A path, not a flag.** `space=frame` on `/v1/embeddings` would be silently
+  ignored by a hosted provider after that swap, which then answers from its own
+  text space at some other width — a silent index corruption. An unknown path
+  404s instead.
+- **The three paths carry three instructions, and the instruction is part of
+  the vector.** This model is instruction-aware, so the same text under two
+  instructions is two different vectors.
+
+| path | instruction applied |
+| --- | --- |
+| `/v1/embeddings`, `input_type=document` (default) | none — documents are embedded bare |
+| `/v1/embeddings`, `input_type=query` | `EMBED_QUERY_PROMPT`, default *"Given a search query, retrieve the transcript passage that answers it"* |
+| `/v1/embeddings/image` | none — frames are the document side too |
+| `/v1/embeddings/frame-query` | `FRAME_QUERY_PROMPT`, default *"Given a search query, retrieve the video frame that matches it"* |
+
+`input_type` is the one non-OpenAI extra on `/v1/embeddings`. Index one side
+with the wrong setting and recall degrades with no error anywhere; the prefix
+text is config, never the caller's, and a symmetric model like bge-m3 accepts
+the field and ignores it. Both instructions are echoed back on every embeddings
+response (`instruction`) and under `instructions` on `GET /status`, because the
+corpus records what indexing assumed in `config['text_embed.query_prefix']` and
+`config['frame_embed.query_prefix']` — and that record drifted from behaviour
+once already. `curl $WORKER_URL/status` is the whole reconciliation.
+
+`/v1/embeddings/frame-query` embeds a *text* query into the frame space, so "a
+terminal showing a stack trace" is answerable with no second model, no second
+slot and no second load. **SigLIP 2's 64-token query ceiling went with the text
+tower it belonged to**: frame queries now run through a 32K-context model and a
+long descriptive query is embedded whole.
+
+`/v1/embeddings/image` still accepts `max_num_patches` — **a SigLIP-2-only
+knob**, NaFlex's per-request resolution budget (trained values
+128/256/576/784/1024, `IMAGE_EMBED_MAX_PATCHES` for the default). The unified
+embedder ignores it: it takes the frame at its stored resolution (1280×720 →
+~880 merged visual tokens, measured), which the paper's own sweep puts at the
+knee of the scaling curve. There is nothing to tune and nothing to under-feed.
+
+`EMBED_DIM` is the MRL truncation width, `0` meaning the native 2048 — the
+shipped decision. It must equal `config['text_embed.dim']` and
+`config['frame_embed.dim']` in the corpus, or `mcp/`'s drift check disables both
+vector legs and search answers FTS-only.
 
 ## The two ideas worth knowing
 
 **Backend abstraction.** Each task (`stt`, `embed`, `image_embed`, `ocr`) is a
 protocol with `load()` / `unload()` / `infer()` / `vram_estimate_mb` (plus
-`embed_text()` on `image_embed`, the second tower of the same checkpoint).
-Implementations register themselves in `backends/registry.py` and are selected
-by env (`STT_BACKEND=whisperx`, `EMBED_BACKEND=qwen3-embedding`,
-`IMAGE_EMBED_BACKEND=siglip2`, `OCR_BACKEND=rapidocr`). Adding a backend is one
-class plus one registry entry — nothing else in the worker knows which
-implementation is live. This is the experimentation surface that `bench/`
-measures; `EMBED_BACKEND=bge-m3` is the shipped alternative to benchmark
-against.
+`embed_text()` on `image_embed`, which under the unified default is the same
+weights under a different instruction and under `siglip2` is the checkpoint's
+text tower). Implementations register themselves in `backends/registry.py` and
+are selected by env (`STT_BACKEND=whisperx`, `EMBED_BACKEND=qwen3-vl-embedding`,
+`IMAGE_EMBED_BACKEND=qwen3-vl-embedding`, `OCR_BACKEND=rapidocr` — the shipped
+defaults). Adding a backend is one class plus one registry entry — nothing else
+in the worker knows which implementation is live. This is the experimentation
+surface that `bench/` measures; `qwen3-embedding`, `bge-m3` and `siglip2` are
+the alternatives to benchmark against. Switching either embedding backend
+changes the vector space, so it is a re-embed of the whole corpus rather than a
+restart — migrate the database *first* (`deploy/.env.example` explains why
+worker-first latches the re-embed off).
 
 **LifecycleManager.** One object owns the GPU:
 
@@ -74,12 +116,16 @@ against.
   requests arrive at once;
 - load-on-demand — models are only pulled into VRAM when a request needs them;
 - idle-TTL unload (`IDLE_UNLOAD_SECONDS`, default 300);
-- an optional resident *text* embedding model (`EMBED_RESIDENT=1`) that is
-  exempt from eviction, for corpora where query-time embedding latency matters
-  more than the ~1.8 GB it holds. The frame embedder stays evictable even
-  though `/v1/embeddings/frame-query` made it a query-time model too: at ~5 GB
-  it is the largest of the four, so a cold load on a frame search is the trade
-  `EMBED_RESIDENT` deliberately does not extend to it;
+- an optional resident embedding slot (`EMBED_RESIDENT=1`, default `0`) that is
+  exempt from eviction, for deployments where query-time latency matters more
+  than the ~4.4 GB it holds standing. Under the shipped unified default that one
+  flag covers **both** legs, because they are one slot. It is off by default and
+  the reason is the lease, not the VRAM: a resident model never holds
+  `GPU_ACQUIRE_CMD`'s bracket, so `GPU_RELEASE_CMD` fires only at shutdown and a
+  llama.cpp co-tenant is stopped at the first embedding request and never
+  restarted (measured, `research/gpu-validation-2026-08-08.md` §5.3). Going
+  unified already collects most of what residency buys: a cold
+  `content_type=all` search used to load two models and now loads one;
 - an NVML free-VRAM check before every load, with LRU eviction of non-resident
   backends when the headroom is short (NVML missing → log and proceed);
 - `GPU_ACQUIRE_CMD` / `GPU_RELEASE_CMD` shell hooks around the first load and
@@ -89,7 +135,9 @@ against.
 OCR sits outside all of that. RapidOCR is CPU-only here — PP-OCR det/rec are
 small dynamic-shape convnets whose CUDA path the maintainers themselves gave up
 on — so its VRAM estimate is 0, it never triggers eviction, and it never joins
-the GPU lease. Only whisperX and the two embedders contend for the card.
+the GPU lease. Under the shipped unified default only whisperX and the one
+shared embedding slot contend for the card; split the two embedding backends and
+it is three.
 
 Every environment variable is documented in `deploy/.env.example`.
 
