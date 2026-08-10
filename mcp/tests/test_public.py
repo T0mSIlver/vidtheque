@@ -521,12 +521,192 @@ def test_the_model_is_told_which_channel_each_hit_came_from(tmp_path: Path) -> N
     ]
     assert numbered, "the search tool answers with numbered hits"
     for line in numbered:
-        assert line.split(" · ")[0].split("] ")[1] in labels, line
+        # `[n] “Talk” — Speaker · <label> at 0:05 (video_id=…, t=5)`: the name
+        # leads, the channel is the field after it.
+        assert line.split(" · ")[1].split(" at ")[0] in labels, line
 
     # And the prompt asks for the distinction rather than templating it — the
     # frame rule especially, which is the one that fails silently.
     system = upstream.requests[0]["messages"][0]["content"]
     assert "frame" in system and "never quote text from one" in system
+
+
+# ------------------------------------------------- 5b. naming what it cites
+#
+# "In a transcript, loop engineering is described as…" is not an attribution: a
+# visitor cannot check it, and the corpus knows exactly whose talk it was. Tom
+# hit it on the live corpus (2026-08-11) and the fix is in the prompting layer,
+# so it is pinned there — on the strings actually sent upstream.
+
+
+@pytest.mark.parametrize(
+    "title,expected",
+    [
+        # The convention, and its three other punctuations in the live corpus.
+        (
+            "Loop Engineering from First Principles — Kyle Mistele, HumanLayer",
+            ("Loop Engineering from First Principles", "Kyle Mistele", "HumanLayer"),
+        ),
+        ("Building pi in a World of Slop — Mario Zechner", ("Building pi in a World of Slop", "Mario Zechner", "")),
+        # An em dash with a NO-BREAK SPACE after it: 26 of AI Engineer's 182
+        # uploads, and `" — " in title` is False for every one of them.
+        (
+            "Paperclip: Open Source Human Control Plane — Dotta Bippa",
+            ("Paperclip: Open Source Human Control Plane", "Dotta Bippa", ""),
+        ),
+        # A plain hyphen, and a title that already contains one: the *last*
+        # separator is the attribution, and a hyphen inside a word is a word.
+        (
+            "Medic for Apache Spark - First Aid for Failing Jobs - Drasko Profirovic, Pinterest",
+            (
+                "Medic for Apache Spark - First Aid for Failing Jobs",
+                "Drasko Profirovic",
+                "Pinterest",
+            ),
+        ),
+        (
+            "Vending-Bench: Long-Horizon Agent Evals — Lukas Petersson, Andon Labs",
+            ("Vending-Bench: Long-Horizon Agent Evals", "Lukas Petersson", "Andon Labs"),
+        ),
+        # Nothing to split: a title stays a whole title rather than losing its
+        # second half to a guess.
+        (
+            "Building Great Agent Skills: The Missing Manual",
+            ("Building Great Agent Skills: The Missing Manual", "", ""),
+        ),
+        # A tail that is prose, not a person: too long, or the rest of a question.
+        (
+            "Why Off-the-Shelf AI Doesn't Understand Money - and why every finance "
+            "team keeps rebuilding the same broken pipeline anyway",
+            (
+                "Why Off-the-Shelf AI Doesn't Understand Money - and why every finance "
+                "team keeps rebuilding the same broken pipeline anyway",
+                "",
+                "",
+            ),
+        ),
+    ],
+)
+def test_a_conference_title_splits_into_talk_speaker_and_org(
+    title: str, expected: tuple[str, str, str]
+) -> None:
+    from vidtheque_mcp.public.ask import split_title
+
+    assert split_title(title) == expected
+
+
+def test_the_attribution_names_the_speaker_and_falls_back_to_the_channel() -> None:
+    """The channel is the publisher; it stands in only when nobody is named."""
+    from vidtheque_mcp.public.ask import attribution
+
+    assert attribution(
+        "Loop Engineering from First Principles — Kyle Mistele, HumanLayer",
+        "AI Engineer",
+    ) == "“Loop Engineering from First Principles” — Kyle Mistele (HumanLayer)"
+    # No speaker in the title: the publisher is the only name there is, and two
+    # names for "who said this" is worse than one.
+    assert attribution("Building Great Agent Skills", "AI Engineer") == (
+        "“Building Great Agent Skills” — AI Engineer"
+    )
+    assert attribution("Building Great Agent Skills", None) == "“Building Great Agent Skills”"
+
+
+def test_every_hit_names_the_talk_and_the_speaker_before_anything_else(
+    tmp_path: Path,
+) -> None:
+    """The name is the handle the prose reaches for, so it leads the line."""
+    upstream = Upstream(
+        _completion(tool_calls=[_tool_call("c1", "search", {"query": "kv cache"})]),
+        _completion("The slide reads it out [1]."),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        client.post("/api/ask", json={"q": "what does the kv cache cost?"})
+
+    tool_message = next(
+        m for m in upstream.requests[1]["messages"] if m.get("role") == "tool"
+    )
+    numbered = [
+        line for line in tool_message["content"].splitlines() if line.startswith("[")
+    ]
+    assert numbered
+    for line in numbered:
+        head = line.split("] ", 1)[1].split(" · ")[0]
+        assert head.startswith("“") and "” — " in head, line
+    # The fixture's first video is Karpathy's, and its title carries no speaker:
+    # the channel stands in, and the id is still there for the drill-down.
+    assert "[1] “Let's build GPT: from scratch” — Andrej Karpathy · " in tool_message["content"]
+    assert "video_id=kCc8FmEb1nY" in tool_message["content"]
+
+
+def test_the_system_prompt_refuses_an_anonymous_attribution(tmp_path: Path) -> None:
+    upstream = Upstream(_completion("nothing to cite."))
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        client.post("/api/ask", json={"q": "hello"})
+    system = upstream.requests[0]["messages"][0]["content"]
+    assert "name the talk" in system.lower() or "names the talk" in system.lower()
+    assert '"in a transcript"' in system, "the failing phrase is named, not implied"
+    # And the marker rule from 2026-08-11 is still in front of the model.
+    assert "no words inside the brackets" in system
+
+
+def test_the_forced_answer_asks_for_the_name_and_the_bare_marker(tmp_path: Path) -> None:
+    """The last completion is the one that writes the prose, so it repeats both."""
+    looping = _completion(tool_calls=[_tool_call("c", "search", {"query": "cache"})])
+    upstream = Upstream(looping, httpx.Response(200, json=_completion("Final answer.")))
+    settings = PublicSettings(enabled=True, openrouter_key="sk-or-test", ask_max_rounds=1)
+    with make_client(tmp_path, settings, upstream) as client:
+        client.post("/api/ask", json={"q": "why?"})
+    nudge = upstream.requests[-1]["messages"][-1]
+    assert nudge["role"] == "user"
+    assert "no words inside the brackets" in nudge["content"]
+    assert "name the talk or the speaker" in nudge["content"]
+    assert '"in a transcript"' in nudge["content"]
+
+
+def test_the_drilled_window_names_the_talk_it_came_from(tmp_path: Path) -> None:
+    """The round with the most work in it gets the same handle a search hit has."""
+    upstream = Upstream(
+        _completion(
+            tool_calls=[
+                _tool_call("c1", "search", {"query": "kv cache"}),
+                _tool_call(
+                    "c2", "get_segment_context", {"video_id": "kCc8FmEb1nY", "t": 12}
+                ),
+            ]
+        ),
+        _completion("Karpathy says the price is memory [1]."),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        assert client.post("/api/ask", json={"q": "what price?"}).status_code == 200
+    window = next(
+        m
+        for m in upstream.requests[1]["messages"]
+        if m.get("role") == "tool" and m.get("name") == "get_segment_context"
+    )
+    assert "“Let's build GPT: from scratch” — Andrej Karpathy" in window["content"]
+    assert "name the talk or the speaker" in window["content"]
+
+
+def test_a_drill_down_into_an_unseen_video_names_its_id_not_a_title(
+    tmp_path: Path,
+) -> None:
+    """No earlier hit carried a title, so the window names the id rather than
+    inventing one — the same rule the activity line follows."""
+    upstream = Upstream(
+        _completion(
+            tool_calls=[
+                _tool_call("c1", "get_segment_context", {"video_id": "kCc8FmEb1nY", "t": 12})
+            ]
+        ),
+        _completion("It says the price is memory [1]."),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        assert client.post("/api/ask", json={"q": "what price?"}).status_code == 200
+    window = next(
+        m for m in upstream.requests[1]["messages"] if m.get("role") == "tool"
+    )
+    assert "from video kCc8FmEb1nY at " in window["content"]
+    assert "“" not in window["content"].splitlines()[0]
 
 
 def test_ask_offers_exactly_two_tools(tmp_path: Path) -> None:

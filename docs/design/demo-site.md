@@ -341,6 +341,32 @@ sentence, and a good answer usually needs the sentence before and after it. One
 drill-down round is the difference between "he mentions the block table" and an
 answer that says what it does.
 
+**Each hit leads with the talk and the speaker** (*amended 2026-08-11*), not
+with the channel label:
+
+```
+[2] “Loop Engineering from First Principles” — Kyle Mistele (HumanLayer) · transcript at 17:57 (video_id=xIt_mTQp6mY, t=1077)
+    the model gets the tool's own bounded text here
+```
+
+A conference upload carries its attribution inside the title — AI Engineer
+publishes `Talk title — Speaker, Org` — and the `channel` beside it is the
+*publisher*, not a person. Rendered as one blob after the source label, that
+title is something the model skips: asked who said a thing, deepseek-v4-flash
+reached for the label instead and wrote «In a transcript, loop engineering is
+described as…», which names nothing a visitor can check (Tom, live corpus,
+2026-08-11). So the title is split before the model sees it (last
+whitespace-flanked dash wins; a tail longer than 70 characters or ending in `?`
+is title, not a person — 179 of the live corpus's 182 uploads split cleanly, and
+the other three fall back to the channel), the name leads the line, and the id
+and `t` come last because they are arguments rather than something to write a
+sentence about. The `[n]`, the source label and the clock string are all
+unchanged; only their order and the name in front of them are new.
+
+The drill-down window says whose talk it is in the same words, so an answer
+built out of the round where the model did the most work has the same handle to
+attribute with as one built out of a search hit.
+
 ### 3.3 The loop
 
 ```
@@ -381,8 +407,27 @@ system + user
   comes back as `"the block table is"` and `"see [9]."` does not become
   `"see ."`. An answer is the thing a visitor screenshots; a typo in one is
   worth the twenty lines.
+- **An annotated marker resolves and renders bare** (*amended 2026-08-11*).
+  Models label the marker with the source word the loop showed them —
+  deepseek-v4-flash wrote `[29 transcript]` on the first real cross-video ask,
+  and a bare-`[n]` pattern resolved nothing: broken prose *and* an empty
+  citations array at once. Only the exact words a hit can carry are accepted
+  (`transcript`, `ocr`, `frame`, and the `+` pair), so `[10 ms]` in prose stays
+  prose, and what lands on the page is `[29]`. Both prompts ask for the bare
+  marker as well; this is the belt to that braces.
+- **Prose must name the source it attributes to** (*amended 2026-08-11*). The
+  system prompt and the forced-answer nudge both carry the rule, with the
+  failing phrase named rather than implied: never "in a transcript", never "one
+  talk says", never "a slide shows" without the talk it belongs to — say
+  «In Kyle Mistele's loop-engineering talk [2]…» or «Will Brown (Prime
+  Intellect) frames it as… [19]». It is a rule, not a template: no per-sentence
+  shape is dictated, and the two examples are there to show that both the talk
+  and the speaker are handles a sentence can be built around. The channel
+  (`transcript` / `ocr` / `frame`) says *how* the corpus knows a thing and is
+  still asked for; it is never who said it.
 - The system prompt is short and says the things that matter: answer only from
-  tool results, mark each claim with the `[n]` of the result it came from, and
+  tool results, mark each claim with the bare `[n]` of the result it came from
+  (no words inside the brackets — the annotated-marker rule above), and
   — since the hits are labelled — *say which channel* a fact came from, with one
   hard rule for the case that fails silently: a frame is a visual match, so
   describe what it shows and never quote text from one. That last part is

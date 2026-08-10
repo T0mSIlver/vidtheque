@@ -80,13 +80,27 @@ SYSTEM_PROMPT = (
     "provided. Never answer from your own knowledge: if the tools return "
     "nothing useful, say the corpus does not cover it. Search first; use "
     "get_segment_context when a hit needs its surrounding sentences. Every "
-    "claim must carry the [n] marker of the search result it came from. "
+    "claim must carry the [n] marker of the search result it came from — the "
+    "bare marker, with no words inside the brackets. "
+    # The naming rule. Every hit is rendered as `“Talk” — Speaker (Org)`
+    # precisely so there is a name to reach for; without this instruction the
+    # model reaches for the *label* instead and writes "in a transcript, loop
+    # engineering is described as…", which names nothing a visitor can check
+    # (reported by Tom off the live corpus, 2026-08-11). Not a template: the
+    # rule is "name it when you attribute it", and the examples are there to
+    # show two natural shapes rather than one to fill in.
+    "Each hit names the talk it came from and who gave it: attribute in those "
+    "words. \"In Kyle Mistele's loop-engineering talk [2]…\", \"Will Brown "
+    "(Prime Intellect) frames it as… [19]\". Never attribute to an anonymous "
+    "source: no \"in a transcript\", no \"one talk says\", no \"a slide shows\" "
+    "without the talk it belongs to. "
     # Each hit says which channel it came from, and the three are different
     # kinds of evidence. Encouraged, not templated: an answer that says "the
     # slide reads" where the slide is the source is worth more than one that
     # flattens speech, screen text and imagery into a single voice — and a
     # frame is the case that goes wrong silently, because there is nothing in
-    # it to quote.
+    # it to quote. The channel is *how* the corpus knows a thing, never who
+    # said it — that is the talk and the speaker, above.
     "Hits are labelled transcript (said aloud), ocr (on-screen text) or frame "
     "(a visual match): say which in your prose. Describe what a frame shows; "
     "never quote text from one. Keep "
@@ -419,7 +433,9 @@ async def ask_events(
                     "content": (
                         "Answer now from what the tools already returned. Cite "
                         "with the bare marker [n] — no words inside the "
-                        "brackets. If there is not enough evidence, say so."
+                        "brackets — and name the talk or the speaker whenever "
+                        "you attribute a claim, never \"in a transcript\". If "
+                        "there is not enough evidence, say so."
                     ),
                 },
             ],
@@ -497,6 +513,75 @@ _CHANNEL = {
 # enough to identify what was searched, short enough not to wrap three times.
 _QUERY_CHARS = 80
 _TITLE_CHARS = 60
+
+
+# ------------------------------------------------------------- who said it
+#
+# A conference upload carries its attribution inside the title — AI Engineer
+# publishes "Talk title — Speaker, Org", and the `channel` beside it is the
+# *publisher* ("AI Engineer"), not a person. Rendered as one blob after a source
+# label, that title is something the model skips: asked who said a thing, it
+# reached for the label instead and wrote "in a transcript, loop engineering is
+# described as…" (Tom, off the live corpus, 2026-08-11). Naming nothing a
+# visitor can check is the one thing this mode may not do.
+#
+# So the pieces are split apart before the model ever sees them, and the name
+# leads the line. The split is the lab harvest's, minus its `": "` fallback —
+# that one exists to pull a subtitle out of "Vending-Bench: Long-Horizon Agent
+# Evals" and would hand the model "Long-Horizon Agent Evals" as a person.
+#
+# One dash rule rather than a list of three literal separators, because the live
+# corpus punctuates the same convention four ways: em dash, en dash, hyphen, and
+# an em dash followed by a NO-BREAK SPACE (26 of AI Engineer's 182 uploads, and
+# `" — " in title` is False for every one of them). Surrounding whitespace is
+# required on both sides so `Long-Horizon` and `Vending-Bench` are words, not
+# splits, and the *last* separator wins — "Medic for Apache Spark - First Aid
+# for Failing Jobs - Drasko Profirovic, Pinterest" attributes to the person at
+# the end, not to its own subtitle.
+_ATTRIB_SPLIT = re.compile(r"\s+[—–-]\s+")
+
+# What an attribution tail can be: short, and not the second half of a question.
+# Everything else is title, and stays title — no word is ever dropped, so a
+# split that guesses wrong still renders every word the corpus has.
+_ATTRIB_CHARS = 70
+
+
+def split_title(title: str) -> tuple[str, str, str]:
+    """`"Talk — Speaker, Org"` → `("Talk", "Speaker", "Org")`.
+
+    Both halves are returned verbatim: nothing is dropped, so the worst a wrong
+    split can do is punctuate a title oddly.
+    """
+    text = (title or "").strip()
+    cuts = list(_ATTRIB_SPLIT.finditer(text))
+    if cuts:
+        cut = cuts[-1]
+        head, tail = text[: cut.start()].strip(), text[cut.end() :].strip()
+        if head and tail and len(tail) <= _ATTRIB_CHARS and not tail.endswith("?"):
+            if "," in tail:
+                who, org = tail.split(",", 1)
+                return head, who.strip(), org.strip()
+            return head, tail, ""
+    return text, "", ""
+
+
+def attribution(title: str | None, channel: str | None = None) -> str:
+    """One hit's source, as a name a sentence can be built around.
+
+    ``“Loop Engineering from First Principles” — Kyle Mistele (HumanLayer)``.
+    The channel stands in only when the title carries no speaker: it is the
+    publisher, so naming it beside a speaker would offer two answers to "who
+    said this" — and the answer is always the person.
+    """
+    talk, who, org = split_title(title or "")
+    if not talk:
+        return f"“{channel}”" if channel else "an untitled video"
+    name = who or (channel or "")
+    if not name:
+        return f"“{talk}”"
+    if who and org:
+        name = f"{name} ({org})"
+    return f"“{talk}” — {name}"
 
 
 def _call_args(call: dict[str, Any]) -> tuple[str, dict[str, Any]]:
@@ -609,13 +694,16 @@ async def _tool_search(
     lines = [f'{len(hits)} results for "{query}":']
     for hit in hits:
         n = evidence.record(hit)
-        # The label is what makes the prompt's "say which channel" actionable:
-        # without it the model is asked to distinguish speech from a slide with
-        # nothing in front of it that says which one this line is.
+        # The name leads, because it is the handle the prose has to reach for
+        # (`attribution`). The label follows it: it is what makes the prompt's
+        # "say which channel" actionable — without it the model is asked to
+        # distinguish speech from a slide with nothing in front of it that says
+        # which one this line is. The id and `t` come last; they are arguments
+        # for get_segment_context, not something to write a sentence about.
         lines.append(
-            f"[{n}] {hit.get('source') or 'transcript'} · {hit.get('title')} — "
-            f"{hit.get('channel') or 'unknown'} "
-            f"({hit.get('video_id')} at {clock(hit.get('start'))}, t={int(hit.get('start') or 0)})"
+            f"[{n}] {attribution(hit.get('title'), hit.get('channel'))} · "
+            f"{hit.get('source') or 'transcript'} at {clock(hit.get('start'))} "
+            f"(video_id={hit.get('video_id')}, t={int(hit.get('start') or 0)})"
         )
         lines.append(f"    {str(hit.get('text') or '')}")
     return "\n".join(lines), summary
@@ -678,7 +766,16 @@ async def _tool_context(
                 ),
             }
         )
-        text = f"This window is [{n}] — cite [{n}] for anything you take from it.\n{text}"
+        # The talk is named here too, so an answer built out of the round where
+        # the model did the most work has the same handle to attribute with as
+        # one built out of a search hit. A drill-down into a video no earlier
+        # hit carried names the id rather than inventing a title for it.
+        whose = attribution(title, channel) if title else f"video {video_id}"
+        text = (
+            f"This window is [{n}], from {whose} at {clock(centre)} — cite "
+            f"[{n}] for anything you take from it, and name the talk or the "
+            "speaker when you do.\n" + text
+        )
     # Counted from the cues the window actually returned, so "no transcript
     # there" is a fact about the corpus rather than a guess about the read.
     summary = (
