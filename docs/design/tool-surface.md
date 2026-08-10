@@ -801,24 +801,40 @@ distinct talks" about `eval` as a fact
 `frame`, `transcript_fts`, `transcript_vec`, `transcript_vec_knn`, `frame_vec`,
 `frame_knn`) for clients that do not parse prose.
 
-**The relevance floor on the two vector legs is RELATIVE, and it is
+**The relevance floor on the two vector legs is two cuts, and both are
 server-side.** A hit is dropped before fusion when its cosine distance exceeds
-either the absolute ceiling (`VIDTHEQUE_VEC_MAX_DISTANCE` /
-`VIDTHEQUE_FRAME_MAX_DISTANCE`) *or* `best_hit_distance + margin`, where the
-margin is `VIDTHEQUE_VEC_MAX_MARGIN` (0.20) and `VIDTHEQUE_FRAME_MAX_MARGIN`
-(0.10), clamped to `0..2` on the way in. It is not a tool parameter and there is
-no way to widen it from a prompt.
+either the absolute ceiling (`VIDTHEQUE_VEC_MAX_DISTANCE` 0.55 /
+`VIDTHEQUE_FRAME_MAX_DISTANCE` 0.65) *or* `best_hit_distance + margin`
+(`VIDTHEQUE_VEC_MAX_MARGIN` 0.20 / `VIDTHEQUE_FRAME_MAX_MARGIN` 0.15, clamped
+`0..2` on the way in). Neither is a tool parameter; there is no way to widen
+either from a prompt.
 
-The band is relative because an absolute cosine distance does not survive a
-change of embedder — a model that packs its corpus at a different radius turns a
-ceiling that sat above one real range into one that cuts through another, which
-is why the absolute defaults ship open at `1.0` and why they stayed open through
-two embedder swaps. "Within `m` of this query's own best hit" needs no knowledge
-of that radius. Both margins are the calibrated pair's numbers re-expressed
-relative to their own best hit (real 20th-nearest sat 0.16 text / 0.069 frame
-from the best hit; `research/multimodal-embedding-2026-08-09.md`), re-checked
-against the shipped space on the live corpus in
-`research/vec-floor-calibration-2026-08-10.md`.
+They answer different questions, and the second one is why the ceiling alone is
+not enough:
+
+- **The ceiling separates a real query from a junk one.** Calibrated 2026-08-10
+  on the repaired embedding space over 154 videos, 12 real / 10 junk queries:
+  text best-hit distance is **real 0.220-0.459 vs junk 0.579-0.665**, an empty
+  corridor 0.12 wide, and 0.55 sits inside it — all ten junk queries return
+  zero chunks, no real query loses a hit. The frame leg only partly separates
+  (real 0.382-0.623, junk 0.550-0.749), so 0.65 sits above the whole real range
+  and lets a little junk through rather than cutting real recall.
+- **The band bounds a real query's fan-out.** A junk query's `k` nearest are
+  flat (best 0.579, 800th 0.771), so a band around its own best hit keeps all
+  800 of them — the band cannot do the ceiling's job. A real query's distances
+  rise steeply from a genuinely near best hit, and the margins are calibrated as
+  "about the top 50 chunks / top 20-50 frames": the real 50th-nearest sits
+  0.18-0.22 (text) and 0.09-0.18 (frame) from the best hit.
+
+Absolute distances do not survive a change of embedder, so the ceilings are a
+**bench item on every encoder swap** — the procedure and both measurements are in
+`research/vec-floor-calibration-2026-08-10.md`; the band needs no re-measurement.
+Both defaults shipped open at `1.0` until 2026-08-10, for a reason worth keeping
+in view: the encoder had never once loaded its weights
+(`research/embedding-random-init-2026-08-10.md`), and in a randomly-initialised
+space real and junk best-hit distances overlap completely, so *no* absolute
+ceiling was settable and every attempt to set one would have deleted real
+recall. A ceiling is only as good as its last measurement.
 
 Without it, §1.3's *relevance first* was not true of the shipped server: with
 `k=800` and a ceiling of `1.0`, `q="turbopuffer"` answered `Results: 5/121` over

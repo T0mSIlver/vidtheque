@@ -11,6 +11,14 @@ This is that measurement, run against the shipped
 `Qwen/Qwen3-VL-Embedding-2B` (2048-d) space on the live corpus — plus the reason
 the answer is **not** a new absolute ceiling.
 
+> **§§1-5 are the RANDOM-SPACE measurement.** Everything below this line up to
+> §6 was measured against an embedding index that turned out to be the output of
+> a randomly initialised network — §3 is where that was first seen, and
+> `research/embedding-random-init-2026-08-10.md` is the root cause and the
+> repair. The numbers are kept because they are what a broken space looks like
+> from the search side, and because §3's probes are the ones that caught it.
+> **The shipped defaults come from §6.**
+
 ## 1. Method
 
 Live DB opened read-only (`file:/home/dev/vidtheque-data/vidtheque.db?mode=ro`,
@@ -154,3 +162,90 @@ chunks, not of this model over this corpus. The band that shipped is safe
 §2's table and §5's before/after must both be re-measured once the corpus is
 re-embedded on real weights. The conclusion that survives untested is the SigLIP-era
 one; this run cannot corroborate it.
+
+---
+
+## 6. Recalibration on the repaired space (2026-08-10, ~22:30)
+
+Same method as §1 — same 12 real and 10 junk queries, same read-only DB handle,
+same `k=800` KNN, same worker endpoints — re-run after the weight-loading repair
+(`4bb20ec`) and the full re-embed. Corpus: 6,701 chunks / 11,197 keyframes,
+tranche still running. **This is where the shipped defaults come from.**
+
+Sanity first, the probe that failed at 2/5 in §3: five unrelated documents and
+their five obvious queries now score **5/5 top-1**, correct document 0.61-0.77,
+unrelated 0.11-0.33. The model is doing retrieval.
+
+### 6.1 Real and junk finally separate
+
+Best-hit cosine distance, by query (full table: 12 real, 10 junk):
+
+| leg | real best-hit | junk best-hit | corridor |
+|---|---|---|---|
+| text | **0.220 - 0.459** | **0.579 - 0.665** | 0.12 wide, empty |
+| frame | 0.382 - 0.623 | 0.550 - 0.749 | overlapping |
+
+Tightest real queries on the text leg were `context engineering` (0.220),
+`LLM as a judge evaluation` (0.237) and `agent memory and skills` (0.242); the
+loosest were `turbopuffer` (0.459 — a proper noun the FTS leg owns anyway) and
+`fine-tuning with LoRA adapters` (0.419). Junk ran from `tax deductions for
+rental property depreciation` (0.579) to `Napoleon's retreat from Moscow` (0.665).
+
+Compare §2, where the same 22 queries gave real 0.715-0.767 against junk
+0.739-0.767 — no corridor, in either direction. The overlap in §2 was not a
+property of asymmetric-prefix embedders after all; it was the random space.
+(The SigLIP-era overlap in `db/queries.py`'s comment was measured on a
+6-video corpus and is left standing as its own datum.)
+
+### 6.2 What ships, and why the band stays
+
+**`VIDTHEQUE_VEC_MAX_DISTANCE = 0.55`** (was 1.0) — inside the corridor, 0.09
+above the worst real best-hit, 0.03 below the best junk one.
+**`VIDTHEQUE_FRAME_MAX_DISTANCE = 0.65`** (was 1.0) — above the whole real range
+(worst real best-hit 0.623), which is as far as the frame leg's partial
+separation allows; three junk queries keep a handful of frames each, and that is
+the deliberate direction to err in.
+
+**`VIDTHEQUE_VEC_MAX_MARGIN` stays 0.20**, **`VIDTHEQUE_FRAME_MAX_MARGIN` goes
+0.10 → 0.15.** The band is not redundant with the ceiling, and the repaired
+space is what makes that visible: a junk query's `k` nearest are **flat** — best
+0.579, 800th 0.771, a spread of 0.19 — so a 0.20 band around its own best hit
+keeps all 800. Measured, with the ceiling open, every junk query still fused 800
+chunks over ~120 videos. The ceiling separates real from junk; the band bounds a
+real query's fan-out. Real 50th-nearest sits 0.18-0.22 (text) and 0.09-0.18
+(frame) from its own best hit, so 0.20/0.15 are "about the top 50 chunks / top
+20-50 frames". Frame moved because 0.10 was leaving the leg with 3-12 candidates
+— under one page.
+
+### 6.3 End to end, live (`queries.search_transcript`, 171 videos)
+
+| query | ceiling 1.0 (was) | ceiling 0.55 (ships) | rank 1 |
+|---|---|---|---|
+| `turbopuffer` | 136 rows / 70 videos | **10 rows / 2 videos** | "Building Turbopuffer" ✓ |
+| `voice agent interruption latency` | 126 / 50 | 126 / 50 | "Voice Agents That Handle Interrupts" ✓ |
+| `LLM as a judge evaluation` | 73 / 34 | 73 / 34 | "Build Evals That Actually Matter" ✓ |
+| `CUDA kernel occupancy` | 32 / 14 | 17 / 7 | "First Steps Toward Automated AI Research" (nearest real neighbour; the corpus has no CUDA talk) |
+| `how to prune apple trees in winter` | 401 / 117 | **0 / 0** | — |
+| `symptoms of feline hyperthyroidism` | 401 / 125 | **0 / 0** | — |
+| `sourdough bread hydration schedule` | 401 / 129 | **0 / 0** | — |
+
+Two things to read. **Rank 1 is now topically right on every real query** — that
+is the embedding repair, not the floor; §5's before/after had the same floor and
+the wrong rank 1s. And the ceiling costs real recall nowhere in this sample
+while taking junk from "the whole corpus, confidently ranked" to nothing: the
+`Results: 0/0` empty state is now reachable through the *floor*, not only
+through `has_lexical_footing`, which matters because a junk query made of common
+English words ("how to prune apple trees in winter") has lexical footing.
+
+Frame leg, same shape: `symptoms of feline hyperthyroidism` 169 rows → 0;
+`CUDA kernel occupancy` 51 → 6; `voice agent interruption latency` unchanged at
+the top and wider at 0.15 (9 rows → 38, 15 videos).
+
+### 6.4 When to re-run this
+
+On any encoder change, and on any corpus whose domain is much broader than "one
+conference's talks" — a general-purpose library will have a wider real range and
+may need a looser ceiling. The procedure is §1; the two numbers to reproduce are
+the best-hit ranges in §6.1. If they overlap, do not set an absolute ceiling:
+raise both to 1.0 and let the band and `has_lexical_footing` carry it, which is
+exactly the configuration this project ran until today.

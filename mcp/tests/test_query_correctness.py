@@ -1016,15 +1016,19 @@ def test_frame_floor_drops_hits_beyond_the_ceiling(corpus: Corpus) -> None:
 def test_the_configured_floors_are_the_defaults() -> None:
     """The knobs are wired, and `deploy/.env.example` documents both.
 
-    Against the class defaults, not the test fixture: the fixture pins the
-    measured SigLIP-era numbers so ranking assertions have a stable geometry,
-    while what SHIPS is deliberately open until the GPU bench recalibrates both
-    for Qwen3-VL-Embedding's 2048-d space (queries.VEC_MAX_DISTANCE)."""
+    Against the class defaults, not the test fixture: the fixture's vectors are
+    `sin()` stand-ins with no model's geometry, so it pins its own numbers,
+    while these are measurements — 2026-08-10, on the repaired
+    Qwen3-VL-Embedding-2B space, real best-hit 0.220-0.459 against junk
+    0.579-0.665 (research/vec-floor-calibration-2026-08-10.md §6). They shipped
+    open at 1.0 for as long as the encoder was randomly initialised and no
+    corridor existed to put them in; moving them again means re-running that
+    measurement, not editing this line."""
     shipped = Settings(
         data_dir=Path("/data"), public_url="http://x", worker_url="http://y"
     )
-    assert shipped.vec_max_distance == queries.VEC_MAX_DISTANCE == 1.0
-    assert shipped.frame_max_distance == queries.FRAME_MAX_DISTANCE == 1.0
+    assert shipped.vec_max_distance == queries.VEC_MAX_DISTANCE == 0.55
+    assert shipped.frame_max_distance == queries.FRAME_MAX_DISTANCE == 0.65
     env = (Path(__file__).resolve().parents[2] / "deploy" / ".env.example").read_text()
     assert "VIDTHEQUE_VEC_MAX_DISTANCE" in env
     assert "VIDTHEQUE_FRAME_MAX_DISTANCE" in env
@@ -1739,7 +1743,7 @@ def test_the_configured_margins_are_the_defaults_and_are_clamped(
 
     shipped = _S(data_dir=Path("/data"), public_url="http://x", worker_url="http://y")
     assert shipped.vec_max_margin == queries.VEC_MAX_MARGIN == 0.20
-    assert shipped.frame_max_margin == queries.FRAME_MAX_MARGIN == 0.10
+    assert shipped.frame_max_margin == queries.FRAME_MAX_MARGIN == 0.15
 
     env = (Path(__file__).resolve().parents[2] / "deploy" / ".env.example").read_text()
     assert "VIDTHEQUE_VEC_MAX_MARGIN" in env
@@ -1828,3 +1832,37 @@ async def test_a_clamp_that_binds_says_so(tool_corpus) -> None:
         await search.run(parts.deps, q="good eval", content_type="transcript", limit=5)
     )
     assert "clamped server-side" not in quiet, "a clamp that did not bind is not news"
+
+
+def test_the_band_cannot_do_the_ceilings_job(corpus: Corpus) -> None:
+    """Why both cuts exist, pinned — 2026-08-10 recalibration.
+
+    A junk query's k nearest are FLAT: measured on the repaired embedding
+    space, best 0.579 and 800th 0.771, a spread narrower than the band itself,
+    so a margin around its own best hit keeps every one of them. Only the
+    absolute ceiling can tell a query the corpus cannot answer from one it can.
+    The fixture's `sin()` vectors reproduce exactly that shape — mutually
+    unrelated texts all land at the ~1.0 background distance."""
+    corpus.write(_one_near_many_far)
+    conn = corpus.read
+    # A query near nothing in this corpus: 21 chunks, all at the background
+    # distance, none of them an answer.
+    qvec = queries.pack_f32(vector_for("mutually unrelated to every chunk", TEXT_DIM))
+
+    def run(ceiling: float, margin: float) -> int:
+        rows = queries.search_transcript(
+            conn,
+            queries.SearchParams(
+                q="turbopuffer",
+                video_ids=pool(conn),
+                qvec=qvec,
+                limit=100,
+                cluster_gap=0.0,
+                vec_max_distance=ceiling,
+                vec_max_margin=margin,
+            ),
+        )
+        return int(rows[0]["n_vec"]) if rows else 0
+
+    assert run(2.0, 0.20) == 21, "the band alone keeps the whole flat k"
+    assert run(0.55, 0.20) == 0, "the ceiling is what makes the empty state reachable"

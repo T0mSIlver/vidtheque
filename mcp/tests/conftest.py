@@ -335,13 +335,12 @@ def settings(data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> Settings:
         auth_mode="none",
         secret="test-secret-not-for-production",
         # Pinned, and NOT the shipped defaults. The fixture's vectors are
-        # `sin()`-derived stand-ins with no model's geometry, so an absolute
-        # cosine ceiling means nothing here — and the shipped default is
-        # deliberately open (1.0) until the GPU bench recalibrates it for
-        # Qwen3-VL-Embedding's space, which would let junk vectors into every
-        # ranking assertion in the suite. These are the measured SigLIP-era
-        # numbers, used purely as a stable geometry to rank against.
-        # `test_discipline.py` asserts what actually ships.
+        # `sin()`-derived stand-ins with no model's geometry: an identical
+        # string is distance ~0 and any two different ones sit at the ~1.0
+        # background, so no measured ceiling means anything here. These two
+        # numbers are a stable geometry to rank against, nothing more — what
+        # ships is calibrated against a real embedding space and asserted in
+        # `test_query_correctness.py::test_the_configured_floors_are_the_defaults`.
         vec_max_distance=0.72,
         frame_max_distance=0.96,
     )

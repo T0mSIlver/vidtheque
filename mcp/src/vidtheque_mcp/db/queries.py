@@ -78,14 +78,34 @@ OCR_SNIPPET_TOKENS = 64
 #    above one model's real range can sit *below* another's and silently delete
 #    real recall. That is the failure this whole comment says is the worse one.
 #
-#    So both defaults are deliberately loosened until the GPU bench re-measures
-#    them on this corpus, and the SigLIP-space values are kept beside them as
-#    the documented settings for anyone still running that pair. The
-#    replacement procedure is the one that produced these: embed a set of real
-#    queries and a set of junk queries, look at the best-hit distributions, and
-#    put the ceiling above the whole real range. **Bench item.**
-VEC_MAX_DISTANCE = 1.0
-FRAME_MAX_DISTANCE = 1.0
+#    So both defaults were deliberately loosened to 1.0 while that was true, and
+#    the SigLIP-space values are kept below as the documented settings for
+#    anyone still running that pair.
+#
+#    **RECALIBRATED 2026-08-10, and this time the separation is clean.** Two
+#    things had to happen first: the unified embedder had to actually load its
+#    weights (it never had — research/embedding-random-init-2026-08-10.md) and
+#    the corpus had to be re-embedded on real ones. In the repaired
+#    Qwen3-VL-Embedding-2B space, over 154 videos, 12 real and 10 junk queries
+#    (research/vec-floor-calibration-2026-08-10.md §6):
+#
+#      text   best-hit distance   real 0.220-0.459   junk 0.579-0.665
+#      frame  best-hit distance   real 0.382-0.623   junk 0.550-0.749
+#
+#    The text leg separates with a 0.12-wide empty corridor, so the ceiling is
+#    settable for the first time in this project's life: 0.55 sits inside that
+#    corridor, 0.09 above the worst real best-hit and 0.03 below the best junk
+#    one. Every one of the 10 junk queries now returns ZERO chunks (they used to
+#    return the whole k), and no real query loses its best hit.
+#
+#    The frame leg only partly separates — a text->image query is the harder
+#    mapping, and the SigLIP pair overlapped here too — so 0.65 is set above the
+#    whole real range (worst real best-hit 0.623) and accepts that the three
+#    junk queries whose best frame sits at 0.550-0.624 keep a handful of frames.
+#    Above the real range, not through it: the failure that deletes real recall
+#    is still the worse one.
+VEC_MAX_DISTANCE = 0.55
+FRAME_MAX_DISTANCE = 0.65
 
 # --- the vector legs' RELATIVE floor, which is the one that binds -----------
 #
@@ -96,33 +116,36 @@ FRAME_MAX_DISTANCE = 1.0
 # survive a change of embedder: `keep hits within M of the best hit for this
 # query` needs no knowledge of the radius at which a model packs its corpus.
 #
-# Grounding, from the only two calibrations we have (the SigLIP-2 +
-# Qwen3-Embedding-0.6B pair, measured 2026-08-09 and quoted above):
+# The two floors do DIFFERENT jobs, which the repaired space made visible and
+# the random one hid:
 #
-#   text   real best-hit 0.504-0.576, real 20th-nearest 0.664  -> worst real
-#          spread from a query's own best hit: 0.664 - 0.504 = 0.16
-#   frame  real best-hit 0.877-0.919, real 20th-nearest 0.946  -> worst real
-#          spread: 0.946 - 0.877 = 0.069
+#   * the absolute ceiling separates a real query from a junk one. It is the
+#     only one that can: a junk query's k nearest are FLAT (best 0.579, 800th
+#     0.771 — a spread of 0.19), so a 0.20 band around its own best hit keeps
+#     all 800 of them. Measured, not reasoned: with the ceiling open, every junk
+#     query still fused 800 chunks over ~120 videos.
+#   * the band bounds the fan-out of a REAL query, whose distances rise steeply
+#     from a genuinely near best hit. In the repaired space the real 50th-
+#     nearest sits 0.18-0.22 from the best hit (text) and 0.09-0.18 (frame), so
+#     these margins are "roughly the top 50 chunks / top 20-50 frames" — enough
+#     for RRF and the per-video cap to have something to choose between, bounded
+#     independently of `limit`.
 #
-# The defaults sit above both, exactly as the absolute ceilings did: 0.20 text,
-# 0.10 frame. Expressed the other way round, they reproduce the ceilings that
-# pair was actually given (best 0.576 + 0.20 ~ 0.72; best 0.877 + 0.10 ~ 0.96)
-# without hard-coding that pair's radius.
+# Both are also what keeps the floor honest across a change of embedder: the
+# ceiling needs a re-measurement (the procedure is in this file, and the numbers
+# it produced are in the research doc), the band does not.
 #
-# Re-measured on the shipped Qwen3-VL-Embedding-2B space over the live 154-video
-# corpus (research/vec-floor-calibration-2026-08-10.md): real and junk best-hit
-# distances overlap completely there too (real 0.715-0.767, junk 0.739-0.767),
-# so an absolute ceiling still cannot be set — but the k=800 nearest span
-# 0.72-0.98 and the band keeps ~48 of them instead of all 800. That is the
-# `Results: 5/121` for `turbopuffer` that the terra eval filed as its first
-# HIGH finding (research/mcp-eval-terra-2026-08-10.md §4.1).
+# Frame went 0.10 -> 0.15 on 2026-08-10: at 0.10, measured on the repaired
+# space, the leg contributed 3-12 frames to fusion — under one page, and less
+# diversity than the per-video cap assumes. 0.15 is the frame leg's real
+# top-20-to-50 and matches what the text leg's 0.20 does there.
 #
 # The cut is applied in SQL, before fusion, and the payload prints how many
 # candidates survived it (`Legs: transcript 47 (fts 9 - vec 38/800)`) — a
 # relevance floor that narrows silently would be the §2 invariant broken in a
 # new place.
 VEC_MAX_MARGIN = 0.20
-FRAME_MAX_MARGIN = 0.10
+FRAME_MAX_MARGIN = 0.15
 
 SIGLIP_FRAME_MAX_DISTANCE = 0.96
 """The measured ceiling for `google/siglip2-so400m-patch16-naflex`'s 1152-d

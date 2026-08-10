@@ -108,17 +108,17 @@ class Settings:
     count_probe_headroom: int = 30
 
     # Relevance floors for the two KNN legs — cosine distance, so LOWER is
-    # closer and these are ceilings. The reasoning, and why they are
-    # deliberately loose, is on db.queries.VEC_MAX_DISTANCE.
+    # closer and these are ceilings. The reasoning is on
+    # db.queries.VEC_MAX_DISTANCE.
     #
-    # The measured values (0.72 text / 0.96 frame) belong to the SigLIP 2 +
-    # Qwen3-Embedding-0.6B spaces. Migration 0004 moved both legs into
-    # Qwen3-VL-Embedding-2B's, where an absolute cosine distance measured
-    # elsewhere means nothing — so these sit effectively open until the GPU
-    # bench re-measures them, and the old values are documented beside them for
-    # anyone still on that pair.
-    vec_max_distance: float = 1.0
-    frame_max_distance: float = 1.0
+    # Calibrated 2026-08-10 against the repaired Qwen3-VL-Embedding-2B space
+    # (research/vec-floor-calibration-2026-08-10.md §6): real best-hit
+    # 0.220-0.459 vs junk 0.579-0.665 on the text leg, which is the first time
+    # this project has had a corridor to put an absolute ceiling in. The
+    # SigLIP-era values (0.72 / 0.96) are documented on the queries constants
+    # for anyone still running that pair.
+    vec_max_distance: float = 0.55
+    frame_max_distance: float = 0.65
 
     # The floor that actually binds, and the reason the two above may stay open:
     # a margin over the query's OWN nearest hit, which needs no knowledge of the
@@ -127,7 +127,7 @@ class Settings:
     # [0, 2] on the way in, because a mistyped env is not a licence to return
     # the whole corpus.
     vec_max_margin: float = 0.20
-    frame_max_margin: float = 0.10
+    frame_max_margin: float = 0.15
 
     # Crash recovery (index-schema §1.9). A claim quieter than this belonged to
     # a process that is gone; the runner requeues it and resumes per stage.
@@ -239,11 +239,11 @@ class Settings:
             login_session_ttl_s=_int_env("VIDTHEQUE_DASHBOARD_SESSION_TTL_S", 12 * 3_600),
             response_max_chars=_int_env("VIDTHEQUE_RESPONSE_MAX_CHARS", 60_000),
             candidate_cap=_int_env("VIDTHEQUE_CANDIDATE_CAP", 5_000),
-            vec_max_distance=_float_env("VIDTHEQUE_VEC_MAX_DISTANCE", 1.0),
-            frame_max_distance=_float_env("VIDTHEQUE_FRAME_MAX_DISTANCE", 1.0),
+            vec_max_distance=_float_env("VIDTHEQUE_VEC_MAX_DISTANCE", 0.55),
+            frame_max_distance=_float_env("VIDTHEQUE_FRAME_MAX_DISTANCE", 0.65),
             vec_max_margin=_clamped_float_env("VIDTHEQUE_VEC_MAX_MARGIN", 0.20, 0.0, 2.0),
             frame_max_margin=_clamped_float_env(
-                "VIDTHEQUE_FRAME_MAX_MARGIN", 0.10, 0.0, 2.0
+                "VIDTHEQUE_FRAME_MAX_MARGIN", 0.15, 0.0, 2.0
             ),
             deeplink_lead_s=_int_env("VIDTHEQUE_DEEPLINK_LEAD", 2),
             stale_claim_s=_int_env("VIDTHEQUE_STALE_CLAIM_S", 300),
