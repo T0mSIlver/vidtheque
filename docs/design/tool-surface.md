@@ -290,6 +290,21 @@ contract owes callers:
   independent agents filed it as a bug in one field test (§9.3.1, §9.4), so
   `vidtheque://guide` now says so in a clause.
 
+**The compact `?t=` column is the same number** (amended 2026-08-10).
+`video-summary` prints `?t=<int>` beside each chapter, key text and on-screen
+highlight rather than repeating the whole URL under the `https://youtu.be/<id>`
+it printed four lines above; `get-segment-context` prints it inside each
+transcript and on-screen stamp. It is the identical arithmetic — the item's
+start minus `DEEPLINK_LEAD` — and there is now exactly one implementation of it,
+`text.deeplink_t()`, which `text.deeplink()` also calls. `video-summary`'s three
+columns built the bare floor by hand until 2026-08-10, so a rule stated
+unconditionally here and repeated in `vidtheque://guide` was honoured by four
+tools out of five: an agent that had been told never to invent a timestamp
+read the guide, saw the disagreement, and hand-corrected a chapter link to
+`?t=398` (terra eval §4.3). A `t=` a payload prints as a *parameter* for the
+next call (`get-segment-context t=…`) is never lead-adjusted — it is a position,
+not a link.
+
 ### 3.7 Tags
 
 Namespaced, lowercase, `<namespace>:<value>`. Reserved namespaces: `topic:`,
@@ -1103,7 +1118,7 @@ Full transcripts are never returned by this tool at any setting.
 |---|---|---|---|---|
 | `video_id` | string | — | **required** | From search / list-videos. |
 | `offset_start` / `offset_end` | number \| string | — | §3.2 | Summarize only part of a long video. |
-| `include_chapters` | bool | `true` | | YouTube chapters if present, else derived from scene+topic segmentation. |
+| `include_chapters` | bool | `true` | | The publisher's chapter marks, as yt-dlp reports them. **Not derived** — see the status note below. |
 | `include_speakers` | bool | `true` | | Omitted silently when diarization is off (this one *is* a silent omission — it's a presence question, not a filter). |
 | `include_key_texts` | bool | `true` | | Sampled transcript lines with highest TF-IDF weight. |
 | `include_ocr_highlights` | bool | `true` | | Distinct on-screen texts (slide titles, code, command lines). |
@@ -1128,7 +1143,7 @@ Tags: topic:transformers, topic:training, person:karpathy, lang:en
 Chapters (14 of 14):
   00:00  intro: ChatGPT, Transformers, nanoGPT           ?t=0
   07:52  reading and exploring the data                  ?t=470
-  09:23  tokenization, train/val split                   ?t=563
+  09:23  tokenization, train/val split                   ?t=561
   …
   1:11:32 kv cache and inference-time cost               ?t=4290
   1:47:58 conclusions                                    ?t=6476
@@ -1136,22 +1151,42 @@ Chapters (14 of 14):
 Speakers: Andrej Karpathy (99% of speech), unnamed_2 (0.4%, 00:03-00:11)
 
 Key texts (12):
-  09:41  "we're going to take the tiny shakespeare dataset and train a character-level model"  ?t=581
-  33:12  "the crux of self-attention is that every token emits a query and a key"              ?t=1992
+  09:41  "we're going to take the tiny shakespeare dataset and train a character-level model"  ?t=579
+  33:12  "the crux of self-attention is that every token emits a query and a key"              ?t=1990
   …
 
 On-screen text highlights (10):
-  12:04  import torch; torch.manual_seed(1337)                       [code]      ?t=724
-  35:50  wei = q @ k.transpose(-2,-1) * C**-0.5                      [code]      ?t=2150
-  41:18  "attention is a communication mechanism"                    [slide]     ?t=2478
+  12:04  import torch; torch.manual_seed(1337)                       [code]      ?t=722
+  35:50  wei = q @ k.transpose(-2,-1) * C**-0.5                      [code]      ?t=2148
+  41:18  "attention is a communication mechanism"                    [slide]     ?t=2476
   ×3 near-identical terminal frames collapsed (48:02-48:40)
   …
 
-next: get-segment-context video_id="kCc8FmEb1nY" t=4290 window=60 for the KV-cache passage.
+next: get-segment-context video_id="kCc8FmEb1nY" t=581 window=60 for the actual words around the first key text above.
 ```
 
 `data_status`: `ok` | `transcript_only` | `no_ocr` | `no_frames` | `indexing`
 (with the `job_id`) | `failed` (with the error and a `force_reindex` hint).
+
+**Empty sections say what is absent; they are never a bare heading, and the
+`next:` is aimed** (amended 2026-08-10). `Chapters (0 of 0):` over nothing is
+the shape §3.7 forbids for tags, and it left a caller unable to tell "this video
+has none" from "this server did not compute them" — while the closing line
+pointed at `t=0`, the first second of a 27-minute talk, directly beneath three
+timestamped key texts it could have aimed at (terra eval §4.10). Each of the
+three sections prints one honest line when it is empty (chapters: *"none — the
+publisher marked none in the description, and this corpus does not derive
+them"*; key texts name the `t_start`/`t_end` span when one was passed), and the
+`next:` aims at the first key text, falling back to the first chapter after
+0:00, and only then to `t=0`.
+
+**Status — chapters are the publisher's, not derived.** This section used to
+promise "YouTube chapters if present, else derived from scene+topic
+segmentation". The pipeline stores what yt-dlp reports (`pipeline/sources.py`
+`_chapters`, `pipeline/store.replace_chapters`) and derives nothing, so a talk
+published without chapter marks has none — which is most conference talks. The
+empty-section line above is therefore the contract's answer to "why are there no
+chapters", and it does not claim a segmentation pass that does not run.
 
 **Token discipline.** Caps above, all clamped server-side; `×N` collapsing for
 runs of near-identical OCR (perceptual-hash buckets, computed at index time);

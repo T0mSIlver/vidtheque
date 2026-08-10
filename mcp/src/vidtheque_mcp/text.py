@@ -81,6 +81,21 @@ def duration_clock(seconds: float | None) -> str:
     return f"{hours}:{minutes:02d}:{secs:02d}"
 
 
+def deeplink_t(t: float | None, lead_s: int = 2) -> int:
+    """The `?t=` seconds for an item at `t`: clamped floor of `t` minus the lead.
+
+    The one implementation of §3.6's arithmetic, so a payload that prints the
+    compact `?t=<int>` form cannot disagree with one that prints the whole URL.
+    `video-summary` built its three `?t=` columns by hand and shipped the bare
+    floor, which is 2 s later than every other tool and than the rule the guide
+    teaches — an agent that had been told never to invent a timestamp invented
+    one to correct for it (terra eval §4.3).
+    """
+    if t is None:
+        return 0
+    return max(0, int(t) - lead_s)
+
+
 def deeplink(video_id: str | None, t: float | None, lead_s: int = 2) -> str | None:
     """`https://youtu.be/<id>?t=<int>`, clamped floor of start minus the lead.
 
@@ -91,8 +106,7 @@ def deeplink(video_id: str | None, t: float | None, lead_s: int = 2) -> str | No
         return None
     if ":" in video_id:  # `<source>:<id>` — not a YouTube id
         return None
-    seconds = max(0, int(t) - lead_s)
-    return f"https://youtu.be/{video_id}?t={seconds}"
+    return f"https://youtu.be/{video_id}?t={deeplink_t(t, lead_s)}"
 
 
 def iso_day(ts: int | None) -> str:

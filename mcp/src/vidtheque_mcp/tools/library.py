@@ -14,6 +14,8 @@ from ..text import (
     clamp,
     clamp_text_chars,
     clock,
+    deeplink,
+    deeplink_t,
     duration_clock,
     iso_day,
     iso_minute,
@@ -483,20 +485,46 @@ async def video_summary(
             lines.append("Tags: " + ", ".join(tag_list))
         structured["tags"] = tag_list
 
+    # §3.6: every `?t=` in this payload is the item's start minus DEEPLINK_LEAD,
+    # exactly as `deeplink()` computes it for the tools that print whole URLs.
+    lead = deps.settings.deeplink_lead_s
+    # Where the closing `next:` line points. It used to say `t=0`
+    # unconditionally — the first second of a 27-minute talk, printed directly
+    # under three timestamped key texts it could have aimed at (terra eval
+    # §4.10). A key text is a spoken moment; a chapter start is a boundary and
+    # the first one is usually the intro, so it is the fallback, not the pick.
+    aim_key: float | None = None
+    aim_chapter: float | None = None
+
     if include_chapters:
         rows = await deps.db.read(lambda c: queries.chapters(c, vid, max_chapters))
         total = await deps.db.read(lambda c: queries.chapter_count(c, vid))
         lines.append("")
-        lines.append(f"Chapters ({len(rows)} of {total}):")
+        if rows:
+            lines.append(f"Chapters ({len(rows)} of {total}):")
+        else:
+            # A bare `Chapters (0 of 0):` heading over nothing is the shape §3.7
+            # forbids for tags, and it left a caller unable to tell "this video
+            # has none" from "this server did not compute them" (§4.10).
+            lines.append(
+                "Chapters: none — the publisher marked none in the description, "
+                "and this corpus does not derive them."
+            )
         for chapter in rows:
             lines.append(
                 f"  {clock(chapter['start_s']):>8}  "
                 f"{middle_truncate(str(chapter['title']), max_chars):<48} "
-                f"?t={int(chapter['start_s'])}"
+                f"?t={deeplink_t(chapter['start_s'], lead)}"
             )
         structured["chapters"] = [
-            {"start": float(c["start_s"]), "title": c["title"]} for c in rows
+            {
+                "start": float(c["start_s"]),
+                "title": c["title"],
+                "link": deeplink(video_id, c["start_s"], lead),
+            }
+            for c in rows
         ]
+        aim_chapter = next((float(c["start_s"]) for c in rows if float(c["start_s"]) > 0), None)
 
     if include_speakers and deps.db.diarization_enabled:
         rows = await deps.db.read(lambda c: queries.speakers_for(c, vid))
@@ -512,11 +540,19 @@ async def video_summary(
             lambda c: queries.key_texts(c, vid, max_key_texts, span_start, span_end)
         )
         lines.append("")
-        lines.append(f"Key texts ({len(rows)}):")
+        if rows:
+            lines.append(f"Key texts ({len(rows)}):")
+            aim_key = float(rows[0]["start_s"])
+        else:
+            lines.append(
+                "Key texts: none — this video has no transcript cues"
+                + (" in the requested t_start/t_end span." if (span_start or span_end) else ".")
+            )
         for cue in rows:
             lines.append(
                 f"  {clock(cue['start_s']):>8}  "
-                f'"{middle_truncate(str(cue["text"]), max_chars)}"  ?t={int(cue["start_s"])}'
+                f'"{middle_truncate(str(cue["text"]), max_chars)}"  '
+                f'?t={deeplink_t(cue["start_s"], lead)}'
             )
 
     if include_ocr_highlights:
@@ -524,12 +560,18 @@ async def video_summary(
             lambda c: queries.ocr_highlights(c, vid, max_ocr_highlights, span_start, span_end)
         )
         lines.append("")
-        lines.append(f"On-screen text highlights ({len(rows)}):")
+        if rows:
+            lines.append(f"On-screen text highlights ({len(rows)}):")
+        else:
+            lines.append(
+                "On-screen text highlights: none — no keyframe of this video "
+                "carries readable on-screen text."
+            )
         for frame in rows:
             lines.append(
                 f"  {clock(frame['t_s']):>8}  "
                 f"{middle_truncate(str(frame['screen_text'] or ''), max_chars):<52} "
-                f"{video_id}-{int(frame['ord']):05d}  ?t={int(frame['t_s'])}"
+                f"{video_id}-{int(frame['ord']):05d}  ?t={deeplink_t(frame['t_s'], lead)}"
             )
 
     if include_links:
@@ -541,10 +583,17 @@ async def video_summary(
                 lines.append(f"  {link['url']}  {link['title'] or ''}")
 
     if include_guidance:
+        aim, what = (
+            (aim_key, " around the first key text above")
+            if aim_key is not None
+            else (aim_chapter, " around the first chapter above")
+            if aim_chapter is not None
+            else (None, "")
+        )
         lines.append("")
         lines.append(
-            f'next: get-segment-context video_id="{video_id}" t=0 window=60 '
-            "for the actual words."
+            f'next: get-segment-context video_id="{video_id}" t={int(aim or 0)} '
+            f"window=60 for the actual words{what}."
         )
 
     return text_result("\n".join(lines), structured)

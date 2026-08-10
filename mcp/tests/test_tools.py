@@ -405,6 +405,58 @@ async def test_video_summary_unknown_video(assembled: Assembled) -> None:
     assert structured(result)["code"] == "E_UNKNOWN_VIDEO"
 
 
+async def test_video_summary_deep_links_carry_the_lead(assembled: Assembled) -> None:
+    """§3.6, terra eval §4.3: the three `?t=` columns were the bare floor.
+
+    Four tools out of five applied `DEEPLINK_LEAD`; a consumer that read the
+    guide's lead clause hand-corrected this payload's number instead.
+    """
+    await assembled.db.write(
+        lambda c: c.execute(
+            "INSERT INTO chapters (video_id, seq, start_s, end_s, title) "
+            "SELECT id, 1, 300.0, 600.0, 'the kv cache' FROM videos WHERE source_id='kCc8FmEb1nY'"
+        )
+    )
+    result = await library.video_summary(assembled.deps, video_id="kCc8FmEb1nY")
+    text = body(result)
+    lead = assembled.deps.settings.deeplink_lead_s
+    assert lead == 2
+    assert "?t=298" in text  # chapter at 300.0
+    assert "?t=418" in text  # key text cue at 420.0
+    assert "?t=428" in text  # on-screen highlight at 430.0
+    assert "?t=300" not in text and "?t=420" not in text and "?t=430" not in text
+    chapters = {c["title"]: c for c in structured(result)["chapters"]}
+    assert chapters["the kv cache"]["link"] == "https://youtu.be/kCc8FmEb1nY?t=298"
+
+
+async def test_video_summary_aims_its_next_at_a_moment_it_printed(
+    assembled: Assembled,
+) -> None:
+    """terra eval §4.10: `t=0` under three timestamped key texts.
+
+    `eMlx5fFNoYc`'s only cue starts at 30 s and its only chapter at 0, so the
+    aimed `next:` and the old unconditional `t=0` are distinguishable.
+    """
+    result = await library.video_summary(assembled.deps, video_id="eMlx5fFNoYc")
+    next_line = next(line for line in body(result).splitlines() if line.startswith("next:"))
+    assert 'get-segment-context video_id="eMlx5fFNoYc" t=30 window=60' in next_line
+    assert "first key text" in next_line
+
+
+async def test_video_summary_empty_sections_say_what_is_absent(
+    assembled: Assembled,
+) -> None:
+    """No bare `Chapters (0 of 0):` heading — §3.7's rule, applied to chapters."""
+    await assembled.db.write(lambda c: c.execute("DELETE FROM chapters"))
+    result = await library.video_summary(assembled.deps, video_id="eMlx5fFNoYc")
+    text = body(result)
+    assert "Chapters (0 of 0)" not in text
+    assert "Chapters: none — the publisher marked none" in text
+    # …and this video has no OCR at all, which the section now says in words.
+    assert "On-screen text highlights: none" in text
+    assert structured(result)["chapters"] == []
+
+
 # ------------------------------------------------------- get-segment-context
 
 
