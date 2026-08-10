@@ -106,6 +106,42 @@ If the instance has a token configured, the contrast is the check that the fix
 is credential-keyed rather than mode-keyed — the same URL with
 `-H "Authorization: Bearer $VIDTHEQUE_TOKEN"` must come back `"owner"`.
 
+**And the audit must check the allowlist itself.** `VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS`
+is now one of the three things that says "owner", and it is decided on the
+**socket peer** — the address the kernel reports. Behind a tunnel that address
+is *cloudflared's*, not the visitor's: the connector speaks from loopback, or
+from a docker bridge if it runs in compose. So a CIDR covering the network the
+connector connects from makes **every anonymous visitor through the tunnel an
+owner** — owner clamps on both prefixes, the full-transcript hatch, and with
+`AUTH=token` the credential-free write side (indexing, re-indexing, tagging).
+`X-Forwarded-For`/`CF-Connecting-IP` cannot cause this — authorization never
+reads them (§4) — but they also cannot save you from it, because the socket is
+genuinely the proxy's.
+
+On the public deployment the correct value is **empty**, which is the default.
+Raised by the 2026-08-09 review; a fuller answer (rejecting proxy-origin CIDRs
+outright, or requiring a credential when the request came through the tunnel)
+is deferred to this audit. What ships tonight is a boot-time warning: the server
+logs `WARNING … treated as the owner` when the allowlist overlaps loopback,
+RFC1918 or IPv6 unique-local **and** `VIDTHEQUE_TRUSTED_IP_HEADER` is set, since
+a trusted header is the tell that a proxy is in front. Verify both halves:
+
+```bash
+# 1. The config. On the public box this should print nothing at all.
+grep -E '^VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS=.+' deploy/.env
+
+# 2. The boot log. Any hit here is a finding, not a note.
+docker compose logs mcp 2>&1 | grep -i 'treated as the owner'
+
+# 3. The behaviour, from outside, with no credential: must be "public".
+curl -s https://<hostname>/dashboard/api/meta | jq .clamps.policy
+```
+
+A LAN deployment with no proxy in front is the legitimate case the warning
+cannot distinguish, which is why it is a warning and not a refusal. If that is
+this box, record the reasoning in the audit write-up rather than ignoring the
+line.
+
 The original finding, and the three answers it landed on, follow.
 
 Found while shipping phase 4, not fixed there, because it is the "what is a
@@ -940,10 +976,33 @@ process holds it in memory until restart.
 
 ## 9. Operating notes
 
-- **Restarting the server resets the ask budget.** The limiter is in-memory
-  (`ratelimit.py` says so in its first paragraph). A redeploy hands the day's 50
-  asks back. If the budget is money (§1.1), the cap that matters lives at
-  OpenRouter, not here.
+- **Restarting the server does *not* reset the ask budget.** It used to, and
+  this note used to say so. Migration 0005 writes the daily `ask_global` counter
+  to SQLite (`ask_budget`, one row per bucket/client/UTC day), so a redeploy
+  resumes the day where it left off — which was the point: on a launch day you
+  redeploy several times an hour, and an in-memory cap handed the money back
+  each time. What is still in memory is every *per-minute* bucket, and those do
+  reset on a restart; that is deliberate, they guard against hammering and
+  nobody hammers across a restart they did not know happened.
+  - **The reset is the UTC date changing**, not local midnight and not a
+    restart. `Retry-After` on a `429 ask_global` is the seconds until UTC
+    midnight, which can be hours, and that is the honest number for a
+    day-keyed budget.
+  - **Reads happen once, at boot**; after that the in-memory counter is the
+    gate and SQLite is only the record, written behind the request. An orderly
+    stop drains the queue; a `kill -9` can lose whatever was in flight, which
+    is at most one ask.
+  - **Rows older than 30 days are pruned at boot**, so the table answers "what
+    did the demo cost last month" and never grows.
+  - To see it: `sqlite3 <data>/vidtheque.db 'SELECT * FROM ask_budget ORDER BY
+    day DESC LIMIT 10;'`. To hand back a day by hand, `UPDATE ask_budget SET
+    spent = 0 WHERE day = '<YYYY-MM-DD>'` **and restart** — the live counter is
+    only re-read at boot.
+  - A failed ask that bought nothing upstream is refunded (`-1`) and a paid one
+    is not, so the row is a record of spend rather than of attempts
+    (`demo-site.md` §4.4).
+  - If the budget is money (§1.1), the cap that ultimately matters still lives
+    at OpenRouter, not here.
 - **Indexing while public.** Adding videos needs the write tools, which needs
   `VIDTHEQUE_PUBLIC_READONLY=0`, which un-masks them for everyone. Stop the
   tunnel, flip the flag, index, flip it back, verify with §2.1, restart the
