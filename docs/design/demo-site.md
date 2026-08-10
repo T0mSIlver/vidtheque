@@ -1035,6 +1035,15 @@ Layout, top to bottom:
    content is served (positioning stress-test obligation), not only in
    this contract.
 
+   *Amended 2026-08-11:* that line now carries **one link, “Removal on
+   request”**, into `docs/takedown.md`. The same positioning obligation that
+   put the sentence on the page also promises *“take a channel out on
+   request — one row, one command, and we say so publicly”*
+   (`research/positioning-2026-08-10.md` §9.1), and a promise whose procedure
+   is unreachable from the surface making it is half a promise. Four words,
+   no argument, in the voice the cull left: it states an operation, the way
+   `MCP endpoint` does.
+
 ### 6.1 The states
 
 A demo is judged on the four screens that are not "ten results came back".

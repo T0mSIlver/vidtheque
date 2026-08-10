@@ -1063,6 +1063,17 @@ process holds it in memory until restart.
   loopback (`--metrics 127.0.0.1:20241`); `journalctl -u cloudflared -f` is the
   connector's own view. The application's view is `/dashboard` — which, in this
   deployment, the public can also see.
+- **A creator asks to be removed.** `docs/takedown.md` is the procedure, and it
+  is a standing obligation rather than an incident: the positioning contract
+  promises publicly to *"take a channel out on request"*
+  (`research/positioning-2026-08-10.md` §9.1), and the demo page's attribution
+  line links to it. Three things in there that are not obvious and that a
+  hurried removal gets wrong — a plain `sqlite3` connection **cannot** perform
+  the delete (the cascade runs through `vec0` triggers and needs `sqlite-vec`
+  loaded, and `PRAGMA foreign_keys` defaults off outside the app); the deleted
+  transcript stays recoverable from free pages until a `VACUUM`; and stopping
+  the origin does not un-publish the keyframes, because `/frames/*.jpg` sits in
+  Cloudflare's edge cache for up to a day (§8's rollback card).
 
 ---
 

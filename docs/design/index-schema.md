@@ -1373,6 +1373,30 @@ SELECT (SELECT count(*) FROM chunks)    - (SELECT count(*) FROM vec_chunks) AS c
 
 (Non-zero is legitimate only while a `text_embed`/`frame_embed` stage is mid-run.)
 
+**Correction, 2026-08-11 — `frame_drift` as written is non-zero on a healthy,
+idle corpus, and always will be.** Duplicate keyframes (`dup_of IS NOT NULL`)
+are stored but never embedded, so the live corpus sits at **12,225 keyframes
+against 8,429 `vec_frames`** with every `frame_embed` stage `done` — a standing
+drift of ~3,800 that means nothing. The equivalence that actually holds is
+
+```sql
+SELECT (SELECT count(*) FROM chunks) - (SELECT count(*) FROM vec_chunks) AS chunk_drift,
+       (SELECT count(*) FROM keyframes WHERE dup_of IS NULL)
+         - (SELECT count(*) FROM vec_frames)                             AS frame_drift;
+```
+
+— measured exact (8,429 = 8,429). And for checking a *delete* rather than an
+embed, the sharper question is whether any vector outlived its row, which the
+subtraction cannot see at all:
+
+```sql
+SELECT (SELECT COUNT(*) FROM vec_chunks WHERE chunk_id    NOT IN (SELECT id FROM chunks)),
+       (SELECT COUNT(*) FROM vec_frames WHERE keyframe_id NOT IN (SELECT id FROM keyframes));
+```
+
+Both 0 after a rehearsed video deletion on a copy of the live database.
+`docs/takedown.md` §2.6 uses the second form for exactly that reason.
+
 ### 3.4 Storage and latency at 500 videos — measured
 
 Fixture: 500 videos × 20 min, 150,000 cues, 18,500 chunks, 40,000 keyframes,

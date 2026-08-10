@@ -308,6 +308,22 @@ def test_the_demo_page_is_served_at_the_root(public_client: TestClient) -> None:
     assert "Results link to the original talks" not in body
 
 
+def test_the_attribution_line_points_at_the_removal_path(
+    public_client: TestClient,
+) -> None:
+    """The ethic line promises removal; the page has to say where to ask.
+
+    `research/positioning-2026-08-10.md` §9.1 commits publicly to taking a
+    channel out on request, and lists "an unfollow/remove path exists and is
+    documented" as the obligation that creates. `docs/takedown.md` is that
+    path, and the footer is where the promise is made (demo-site.md §6 item 7).
+    """
+    body = public_client.get("/").text
+    assert "The videos belong to the people who made them." in body
+    assert "docs/takedown.md" in body
+    assert "Removal on request" in body
+
+
 def test_the_enlarge_dialog_is_a_real_dialog(public_client: TestClient) -> None:
     """Esc, the backdrop, the focus trap and the modal role are the platform's."""
     body = public_client.get("/").text
