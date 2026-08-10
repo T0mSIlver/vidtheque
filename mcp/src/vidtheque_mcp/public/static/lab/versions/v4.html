@@ -1,0 +1,1076 @@
+<!doctype html>
+<html lang="en" data-version="v4">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vidtheque — the knowledge of the builders, on tap</title>
+<meta name="description" content="Empowering AI with the knowledge of the builders and creators.">
+<!--
+ LANDING VERSION 4 — THE MERGE (Tom's call, 2026-08-10 evening):
+ V3's chassis, V1's life, V2's air.
+
+ · CHASSIS (v3): gold-on-black, kintsugi seams, hairlines not cards, zero
+   radius, mono-uppercase micro-labels, the receipt slab, the moment stack,
+   the ledger, the quickstart, the attribution footer.
+ · LIFE (v1): the hero's right column is the self-typing search query cycling
+   three real, verified queries, landing on the result receipt — the machine
+   visibly doing the one thing the page promises. The field-test beat keeps
+   v1's terminal rendering.
+ · AIR (v2): more padding everywhere, fewer lines visible at once, the
+   terminal breathes.
+
+ MOTION LAW (locked): movement only where the machine is working. The query
+ types because the agent queries; the wall drifts because the corpus was
+ watched; the ledger ticks because counts are counts. Nothing else moves.
+ No pulsing dots, no scan lines, no ambient glow, no hover-wiggle. Everything
+ that moves freezes under prefers-reduced-motion: reduce (and under ?still=1,
+ the lab's screenshot switch).
+
+ COLOR LAW (locked): gold is the single brand accent. Lime appears ONLY as
+ the semantic marker for SEEN — on-screen text evidence: detection boxes,
+ the seen-channel labels, the legend swatch. v3's stray lime (the rail dot,
+ transcript video ids) is fixed to neutral here.
+
+ DELIBERATE DIVERGENCES from DESIGN.md — lab-only, DESIGN.md deliberately
+ NOT amended (a lab piece does not bind the product's visual contract):
+  1. Dark gold-on-black ground instead of the six pinned warm-paper colours.
+  2. Archivo VF at light weight for display instead of Inter/Instrument Serif.
+  3. A second hue (lime) exists solely as the SEEN channel marker; the
+     one-accent rule is otherwise honoured (gold, loudly).
+ Inside the page DESIGN.md's two-channel type rule holds without exception:
+ every id, timecode, count, query and machine string is mono; every sentence
+ a human spoke or wrote is the sans face.
+
+ COPY: bound by docs/design/positioning.md (LOCKED 2026-08-10). H1 is Tom's
+ order. The protocol word appears in the quickstart and nowhere above it.
+ The attribution line in the footer is never cullable (demo-site.md §3.7).
+
+ DATA: v4-assets/data.js, harvested read-only from vidtheque.db (same readout
+ as v3). The three hero queries, their frames, OCR boxes, sentences and
+ receipts are v1's canned set, verified against the live corpus
+ (research/demo-queries-2026-08-09.md). The agent exchange is the synthesist
+ run from the 2026-08-09 field test — condensed for width, not re-recorded,
+ its own caveat left in. The wall is the 70 real keyframes from v1's monitor
+ wall, ids and timecodes verbatim. The page makes zero network requests.
+-->
+<style>
+@font-face{font-family:"Archivo VF";src:url("v4-assets/fonts/archivo-latin-wght-normal.woff2") format("woff2");font-weight:100 900;font-display:block;font-style:normal}
+@font-face{font-family:"JetBrains Mono VF";src:url("v4-assets/fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2");font-weight:100 800;font-display:block;font-style:normal}
+
+:root{
+  /* ground: near-black, warm, three plates deep */
+  --void:#08080a; --pitch:#040405; --plate:#0e0e12; --plate2:#141419; --plate3:#1a1a20;
+  --seam:#242429; --seam2:#33333b;
+  /* type */
+  --fg:#f3f0ea; --fg2:#9d968c; --fg3:#6b665e;
+  /* the one accent — gold. CTA, one word of the H1, the citation slab,
+     the active chip, the heard channel. Nothing else. */
+  --gold:#e7b455; --gold-hi:#f6cd78; --gold-ink:#120c02;
+  --gold-6:rgba(231,180,85,.06); --gold-12:rgba(231,180,85,.12);
+  --gold-24:rgba(231,180,85,.24); --gold-44:rgba(231,180,85,.44);
+  /* the seen channel — the machine reading the screen. Boxes and labels only. */
+  --seen:#c9f938; --seen-24:rgba(201,249,56,.24); --seen-48:rgba(201,249,56,.48);
+  --sans:"Archivo VF",system-ui,-apple-system,sans-serif;
+  --mono:"JetBrains Mono VF",ui-monospace,SFMono-Regular,monospace;
+  --gut:clamp(20px,4.2vw,72px);
+  --maxw:1420px;
+}
+*{margin:0;padding:0;box-sizing:border-box;border-radius:0}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{
+  background:var(--void); color:var(--fg);
+  font-family:var(--sans); font-size:16px; line-height:1.58;
+  font-weight:340; letter-spacing:-.004em;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  overflow-x:hidden;
+}
+img{display:block;max-width:100%}
+a{color:inherit;text-decoration:none}
+::selection{background:var(--gold);color:var(--gold-ink)}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
+/* ── atoms ─────────────────────────────────────────────────────────── */
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 var(--gut)}
+.mono{font-family:var(--mono);font-variant-ligatures:none}
+/* mono uppercase micro-label, wide tracking. Never applied to an identifier. */
+.ml{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.19em;
+  text-transform:uppercase;color:var(--fg3);font-variant-ligatures:none;line-height:1.4}
+.ml.gold{color:var(--gold)}
+.ml.seen{color:var(--seen)}
+.kick{display:flex;align-items:center;gap:12px}
+.kick s{display:block;width:34px;height:1px;background:var(--gold);text-decoration:none;flex:none}
+.id{font-family:var(--mono);text-transform:none;font-variant-ligatures:none}
+
+/* light-weight display at size; everything else is the same face at 320–520 */
+h1,h2,h3{font-weight:200;letter-spacing:-.032em;line-height:1.02;text-wrap:balance}
+h1{font-size:clamp(2.5rem,5vw,4.9rem);line-height:.98;letter-spacing:-.038em}
+h1 em{font-style:normal;color:var(--gold);font-weight:200}
+h2{font-size:clamp(1.9rem,3.5vw,3.35rem);font-weight:210}
+h2 em{font-style:normal;color:var(--gold);font-weight:210}
+.lede{font-size:clamp(.98rem,1.12vw,1.1rem);line-height:1.66;color:var(--fg2);max-width:60ch;font-weight:340}
+.lede b{color:var(--fg);font-weight:500}
+
+/* kintsugi seams — gold hairline cracks, drawn as strokes, never a wash */
+.seams{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:0}
+.seams svg{position:absolute;width:min(52vw,820px);height:auto}
+.seams svg.tr{top:-22%;right:-7%;opacity:.75}
+.seams svg.bl{bottom:-40%;left:-15%;width:min(50vw,780px);transform:scale(-1,-1);opacity:.8}
+.hatch{position:absolute;inset:0;pointer-events:none;z-index:0;
+  background-image:
+    linear-gradient(90deg,rgba(231,180,85,.035) 1px,transparent 1px),
+    linear-gradient(rgba(231,180,85,.035) 1px,transparent 1px);
+  background-size:72px 72px}
+
+/* ── top rail ──────────────────────────────────────────────────────── */
+.rail{position:relative;z-index:20;border-bottom:1px solid var(--seam)}
+.railin{display:flex;align-items:center;justify-content:space-between;gap:18px;
+  padding:16px 0 15px}
+.mark{display:flex;align-items:baseline;gap:12px}
+/* the font logo: the period is the receipt's full stop */
+.mark b{font-family:var(--sans);font-weight:460;font-size:17.5px;letter-spacing:-.028em;color:var(--fg)}
+.mark b i{font-style:normal;color:var(--gold)}
+.railmeta{display:flex;align-items:center;gap:16px}
+
+/* ── beat 1 · hero ─────────────────────────────────────────────────── */
+.hero{position:relative;background:var(--pitch);border-bottom:1px solid var(--seam);
+  overflow:hidden}
+.heroin{position:relative;z-index:2;max-width:var(--maxw);margin:0 auto;
+  display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.02fr);align-items:center;
+  gap:clamp(34px,4vw,72px);
+  padding:clamp(56px,6.6vw,104px) var(--gut)}
+.herocopy{display:flex;flex-direction:column;align-items:flex-start;gap:clamp(22px,2.2vw,32px);
+  max-width:34rem}
+.herocopy h1{max-width:15ch}
+.ctarow{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+.cta{display:inline-flex;align-items:center;gap:12px;background:var(--gold);color:var(--gold-ink);
+  font-family:var(--sans);font-size:15px;font-weight:600;letter-spacing:-.012em;
+  padding:15px 22px 15px 24px;border:1px solid var(--gold);cursor:pointer;
+  transition:background .16s ease}
+.cta:hover{background:var(--gold-hi)}
+.cta svg{width:12px;height:12px;flex:none}
+.ctanote{font-family:var(--mono);font-size:10.5px;line-height:1.6;color:var(--fg3);
+  max-width:36ch;letter-spacing:.01em;font-variant-ligatures:none}
+.chips{display:flex;flex-direction:column;gap:10px;width:100%}
+.chiprow{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-family:var(--mono);font-size:11px;font-weight:450;color:var(--fg2);
+  border:1px solid var(--seam2);background:transparent;padding:7px 10px;line-height:1.2;
+  cursor:pointer;font-variant-ligatures:none;text-align:left;
+  transition:border-color .16s ease,color .16s ease}
+.chip:hover{border-color:var(--gold-44);color:var(--fg)}
+.chip.on{border-color:var(--gold);color:var(--gold);background:var(--gold-6)}
+
+/* the technical block: the self-typing query and the receipt it lands on */
+.herostage{position:relative;align-self:stretch;display:flex;align-items:center;min-width:0}
+.qpanel{position:relative;width:100%;background:var(--plate);
+  border:1px solid var(--seam2);
+  box-shadow:0 40px 90px -30px rgba(0,0,0,.95)}
+.qpanel::before{content:"";position:absolute;left:-1px;top:-1px;width:12px;height:1px;background:var(--gold)}
+.qpanel::after{content:"";position:absolute;left:-1px;top:-1px;width:1px;height:12px;background:var(--gold)}
+.qhead{display:flex;align-items:center;gap:12px;padding:10px 15px;
+  border-bottom:1px solid var(--seam);background:var(--plate2)}
+.qhead .r{margin-left:auto}
+#qstatus[data-s="found"]{color:var(--gold)}
+#qstatus[data-s="searching"]{color:var(--gold)}
+.qbar{display:flex;align-items:center;gap:11px;padding:13px 15px;
+  border-bottom:1px solid var(--seam);font-family:var(--mono);font-size:13.5px;
+  color:var(--fg);font-variant-ligatures:none;white-space:nowrap;overflow:hidden;min-height:46px}
+.qbar .pr{color:var(--gold);font-weight:700;flex:none}
+.caret{display:inline-block;width:8px;height:16px;background:var(--gold);flex:none;
+  animation:blink 1.06s steps(1,end) infinite}
+@keyframes blink{0%,52%{opacity:1}53%,100%{opacity:0}}
+
+/* the frame and its detections — box coords straight from ocr_lines */
+.frame{position:relative;aspect-ratio:16/9;background:#000;overflow:hidden;isolation:isolate}
+.frame>img{width:100%;height:100%;object-fit:cover;display:block}
+.frame::after{content:"";position:absolute;inset:0;pointer-events:none;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+#qimg{opacity:0;transition:opacity .22s linear}
+.qframe.cut #qimg{opacity:1}
+.det{position:absolute;left:var(--x);top:var(--y);width:var(--w);height:var(--h);
+  outline:1px solid rgba(201,249,56,.22);pointer-events:none}
+.det.on{outline:1.5px solid var(--seen);
+  box-shadow:0 0 0 1px rgba(201,249,56,.22)}
+.det .tab{position:absolute;left:-1.5px;bottom:100%;margin-bottom:3px;
+  background:var(--seen);color:#0a1400;font-family:var(--mono);font-size:8.5px;
+  font-weight:700;letter-spacing:.14em;text-transform:uppercase;padding:2.5px 6px;
+  white-space:nowrap;line-height:1.1;display:flex;gap:7px;align-items:center}
+.frame.sm .det.on{box-shadow:0 0 0 1px rgba(201,249,56,.2)}
+/* hero detections land as the canned search returns them */
+#qboxes .det{opacity:0;transition:opacity .18s linear}
+#qboxes .det.on{opacity:1}
+/* the seen burn: what the machine read off this frame */
+.qburn{display:flex;gap:11px;align-items:baseline;padding:10px 15px;
+  border-top:1px solid var(--seam);font-family:var(--mono);font-size:11.5px;
+  color:var(--fg);font-variant-ligatures:none;min-height:38px;
+  white-space:nowrap;overflow:hidden}
+.qburn .ll{color:var(--seen);flex:none;letter-spacing:.16em;font-size:9.5px;
+  font-weight:700;text-transform:uppercase}
+.qburn .r{margin-left:auto;color:var(--fg3);font-size:10px}
+/* the heard channel */
+.qsay{padding:18px 20px 16px;border-top:1px solid var(--seam);display:flex;
+  flex-direction:column;gap:12px;min-height:9.4em}
+.said{font-size:clamp(1rem,1.22vw,1.22rem);line-height:1.4;font-weight:330;
+  letter-spacing:-.02em;color:var(--fg);border-left:1px solid var(--gold);padding-left:15px;
+  max-width:56ch;text-wrap:pretty}
+.who{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.who strong{font-size:14px;font-weight:520;letter-spacing:-.02em}
+.who em{font-style:normal;font-size:13px;color:var(--fg2);font-weight:340}
+.who em::before{content:"";display:inline-block;width:1px;height:9px;background:var(--seam2);
+  margin-right:10px;vertical-align:baseline}
+/* the citation slab — the whole promise, in one gold bar */
+.receipt{display:inline-flex;align-items:stretch;font-family:var(--mono);font-size:13px;
+  font-weight:600;line-height:1;border:1px solid var(--gold);color:var(--gold);
+  background:var(--gold-6);letter-spacing:-.01em;font-variant-ligatures:none;align-self:flex-start}
+.receipt span{padding:9px 0 9px 11px;display:flex;align-items:center}
+.receipt span.vid{padding-left:0;color:var(--fg)}
+.receipt b{background:var(--gold);color:var(--gold-ink);padding:9px 11px;display:flex;
+  align-items:center;gap:8px;font-weight:700;margin-left:11px}
+.receipt svg{width:9px;height:9px;flex:none}
+.receipt.sm{font-size:11px}
+.receipt.sm span{padding:6px 0 6px 8px}
+.receipt.sm span.vid{padding-left:0}
+.receipt.sm b{padding:6px 8px;margin-left:8px}
+.receipt:hover{background:var(--gold-12)}
+.qfoot{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  border-top:1px solid var(--seam);padding:12px 20px;background:var(--plate2)}
+.qfoot .r{margin-left:auto}
+.qfoot .receipt{visibility:hidden}
+.qfoot.found .receipt{visibility:visible}
+
+/* ── section chrome ────────────────────────────────────────────────── */
+section.beat{position:relative;padding:clamp(76px,8.6vw,150px) 0;border-bottom:1px solid var(--seam)}
+.bhead{display:flex;flex-direction:column;gap:22px;max-width:74ch}
+.bhead h2{max-width:19ch}
+.bhead .lede{max-width:64ch}
+.bhead + *{margin-top:clamp(40px,4.6vw,72px)}
+.split{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,.72fr);
+  gap:clamp(28px,3.8vw,72px);align-items:start}
+.split .bhead + *{margin-top:0}
+.chancard{border:1px solid var(--seam2);background:var(--plate);padding:22px 24px 24px;
+  display:flex;flex-direction:column;gap:14px}
+.chancard .cname{font-size:clamp(1.5rem,2.1vw,2rem);font-weight:220;letter-spacing:-.035em;
+  line-height:1;color:var(--fg)}
+.chancard dl{display:flex;flex-direction:column;border-top:1px solid var(--seam)}
+.chancard dl div{display:flex;align-items:baseline;gap:14px;padding:9px 0;
+  border-bottom:1px solid var(--seam)}
+.chancard dt{font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--fg3)}
+.chancard dd{margin-left:auto;font-family:var(--mono);font-size:13px;color:var(--fg);
+  font-variant-numeric:tabular-nums}
+.legend{border-left:1px solid var(--seam2);padding-left:clamp(18px,1.8vw,26px);
+  display:flex;flex-direction:column;gap:16px}
+.legend .lg{display:grid;grid-template-columns:16px minmax(0,1fr);gap:12px;align-items:start}
+.legend .lg i{width:12px;height:12px;margin-top:5px;display:block}
+.legend .lg i.hd{background:var(--gold)}
+.legend .lg i.sn{outline:1.5px solid var(--seen);background:rgba(201,249,56,.1)}
+.legend .lg i.fr{background:var(--plate3);outline:1px solid var(--seam2)}
+.legend p{font-size:13.5px;line-height:1.55;color:var(--fg2);font-weight:340}
+.legend p b{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--fg)}
+
+/* ── beat 2 · the stack of moments ─────────────────────────────────── */
+.stack{display:flex;flex-direction:column;border:1px solid var(--seam2);background:var(--plate)}
+.mrow{display:grid;grid-template-columns:34px minmax(0,300px) minmax(0,1fr);
+  border-bottom:1px solid var(--seam);transition:background .18s ease}
+.stack .mrow:last-child{border-bottom:0}
+.mrow:hover{background:var(--plate2)}
+.mrow .num{border-right:1px solid var(--seam);padding:20px 0 0;text-align:center}
+.mrow .th{padding:20px;border-right:1px solid var(--seam)}
+.mrow .bd{padding:20px 22px 22px;display:flex;flex-direction:column;gap:13px;min-width:0}
+.mrow .said{font-size:clamp(1rem,1.2vw,1.18rem)}
+.seenline{display:flex;gap:10px;align-items:flex-start;font-family:var(--mono);font-size:11.5px;
+  line-height:1.5;color:var(--seen);min-width:0;font-variant-ligatures:none}
+.seenline .ll{color:var(--fg3);flex:none;letter-spacing:.16em;font-size:9.5px;font-weight:700;
+  text-transform:uppercase;padding-top:2px}
+.seenline p{min-width:0;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;
+  -webkit-line-clamp:2;-webkit-box-orient:vertical}
+/* the invariant made visible: a leg that cannot apply prints a note */
+.note{font-family:var(--mono);font-size:11px;line-height:1.6;color:var(--gold);
+  letter-spacing:.005em;font-variant-ligatures:none;max-width:74ch}
+.note::before{content:"note: ";color:var(--fg3)}
+.mfoot{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:2px}
+.mfoot .r{margin-left:auto}
+
+/* ── beat 3 · the wall, full width, drifting ───────────────────────── */
+.wallband{border-top:1px solid var(--seam);border-bottom:1px solid var(--seam);
+  background:var(--pitch);overflow:hidden}
+.wrow{overflow:hidden;border-bottom:1px solid var(--seam)}
+.wrow:last-child{border-bottom:0}
+/* the drift: a few px per second, alternating rows, continuous. The corpus
+   was watched; the wall moves at reading pace and at nothing else. */
+.wtrack{display:flex;gap:1px;width:max-content;
+  animation:wdrift 900s linear infinite}
+.wtrack.rev{animation-direction:reverse}
+@keyframes wdrift{from{transform:translate3d(0,0,0)}to{transform:translate3d(calc(-1*var(--shift,3000px)),0,0)}}
+.wt{position:relative;flex:none;width:clamp(132px,13.4vw,200px);aspect-ratio:16/9;
+  overflow:hidden;background:#000}
+.wt img{width:100%;height:100%;object-fit:cover;filter:saturate(.78) brightness(.7);
+  transition:filter .2s linear}
+.wt:hover img{filter:none}
+.wt::after{content:"";position:absolute;inset:0;pointer-events:none;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.045)}
+.wt .slug{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;
+  gap:6px;padding:2.5px 5px 3px;background:rgba(3,5,8,.72);font-family:var(--mono);
+  font-size:7.5px;line-height:1;letter-spacing:.04em;color:rgba(226,236,246,.66);
+  white-space:nowrap;overflow:hidden;font-variant-ligatures:none}
+.wt .slug b{font-weight:600;color:rgba(226,236,246,.45)}
+/* the roadmap affordance: honest about being next — dashed, gold, no fill */
+.follow{display:flex;align-items:center;justify-content:center;gap:12px;
+  outline:1px dashed var(--gold-44);outline-offset:-4px;padding:16px;
+  text-align:center;background:var(--pitch);transition:background .18s ease}
+.follow:hover{background:var(--gold-6)}
+.follow span{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--gold);line-height:1.4}
+.followsub{font-family:var(--mono);font-size:10.5px;color:var(--fg3);letter-spacing:.02em;
+  display:block;text-transform:none;font-weight:400;margin-top:4px}
+.ledger{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+  border:1px solid var(--seam2);background:var(--plate)}
+.ledger div{padding:22px 24px 24px;border-right:1px solid var(--seam);min-width:0}
+.ledger div:last-child{border-right:0}
+.ledger dt{font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.17em;
+  text-transform:uppercase;color:var(--fg3);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.ledger dd{font-family:var(--mono);font-size:clamp(1.6rem,2.5vw,2.5rem);font-weight:300;
+  letter-spacing:-.045em;margin-top:10px;font-variant-numeric:tabular-nums;color:var(--fg)}
+.ledger dd u{text-decoration:none;color:var(--gold);font-size:.44em;font-weight:500;
+  letter-spacing:0;margin-left:2px}
+.bandmeta{display:flex;align-items:baseline;justify-content:space-between;gap:20px;
+  flex-wrap:wrap;padding:16px 0 0}
+
+/* ── beat 4 · the field test — v1's terminal, aired out ────────────── */
+.term{border:1px solid var(--seam2);background:#0a0a0e;
+  box-shadow:0 40px 90px -34px rgba(0,0,0,.9)}
+.termhead{display:flex;align-items:center;gap:14px;padding:12px 18px;
+  border-bottom:1px solid var(--seam);background:var(--plate2);flex-wrap:wrap}
+.termhead .r{margin-left:auto}
+.termbody{padding:clamp(22px,2.4vw,36px) clamp(18px,2.4vw,36px) clamp(26px,2.8vw,40px);
+  font-family:var(--mono);font-size:12.5px;line-height:1.85;font-variant-ligatures:none;
+  color:var(--fg2);overflow-x:auto}
+.termbody .ask{display:flex;gap:13px;align-items:flex-start;padding-bottom:22px;
+  border-bottom:1px solid var(--seam);margin-bottom:24px}
+.termbody .ask .caret2{color:var(--gold);font-weight:700;flex:none;padding-top:5px}
+.termbody .q{color:var(--fg);font-family:var(--sans);font-size:clamp(1.05rem,1.6vw,1.5rem);
+  font-weight:250;letter-spacing:-.028em;line-height:1.26;max-width:52ch}
+.call{white-space:pre-wrap;word-break:break-word;color:var(--fg);margin:22px 0 2px}
+.call .k{color:var(--gold);font-weight:600}
+.call .arg{color:var(--fg2)}
+.ret{color:var(--fg3);margin-bottom:6px}
+.say{color:var(--fg);font-family:var(--sans);font-size:15.5px;line-height:1.68;
+  font-weight:340;max-width:70ch;margin:16px 0 18px}
+.say b{font-weight:560}
+.say .id{font-size:.9em;color:var(--fg)}
+.q-cite{border-left:1px solid var(--gold);padding:4px 0 4px 16px;margin:0 0 20px}
+.q-cite p{font-family:var(--sans);font-size:15.5px;line-height:1.55;color:var(--fg);
+  font-weight:340;max-width:70ch}
+.q-cite .who2{margin-top:9px;display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;color:var(--fg3)}
+.q-cite .who2 b{color:var(--fg2);font-weight:600}
+.q-cite .who2 a{color:var(--gold)}
+.q-cite .who2 a:hover{text-decoration:underline}
+.termfoot{border-top:1px solid var(--seam);padding:18px;background:var(--plate2);
+  display:flex;flex-direction:column;gap:10px}
+.termfoot .note{max-width:112ch}
+
+/* ── beat 5 · quickstart + footer ──────────────────────────────────── */
+.starts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
+.start{display:flex;flex-direction:column;gap:12px;min-width:0}
+.copybox{display:flex;align-items:stretch;border:1px solid var(--seam2);background:var(--plate);
+  min-width:0}
+.copybox code{flex:1 1 0;min-width:0;font-family:var(--mono);font-size:13px;color:var(--fg);
+  padding:15px 17px;overflow-x:auto;white-space:nowrap;font-variant-ligatures:none;
+  letter-spacing:-.01em}
+.copybox code i{font-style:normal;color:var(--fg3)}
+.copybox button{border:0;border-left:1px solid var(--seam2);background:transparent;color:var(--gold);
+  font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.19em;padding:0 15px;
+  cursor:pointer;transition:background .16s ease,color .16s ease}
+.copybox button:hover{background:var(--gold);color:var(--gold-ink)}
+footer{padding:clamp(48px,5.4vw,76px) 0 clamp(52px,5.8vw,82px);position:relative}
+.fgrid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:clamp(28px,3.4vw,64px);
+  align-items:start}
+.fgrid p{font-size:14.5px;line-height:1.66;color:var(--fg2);max-width:56ch;font-weight:340}
+.fgrid p + p{margin-top:13px}
+.fgrid a.lnk{color:var(--gold);border-bottom:1px solid var(--gold-44)}
+.fmark{display:flex;align-items:flex-end;justify-content:flex-end}
+.fmark b{font-size:clamp(2.2rem,4.4vw,4rem);font-weight:250;letter-spacing:-.045em;color:var(--fg);
+  line-height:.9}
+.fmark b i{font-style:normal;color:var(--gold)}
+.fbase{margin-top:clamp(30px,3.4vw,48px);padding-top:17px;border-top:1px solid var(--seam);
+  display:flex;gap:18px;flex-wrap:wrap;align-items:baseline}
+.fbase .r{margin-left:auto}
+
+/* ── responsive ────────────────────────────────────────────────────── */
+@media (max-width:1180px){
+  .heroin{grid-template-columns:1fr;gap:40px}
+  .herocopy{max-width:44rem}
+  .mrow{grid-template-columns:30px minmax(0,240px) minmax(0,1fr)}
+  .split{grid-template-columns:1fr;gap:32px}
+  .legend{border-left:0;padding-left:0;border-top:1px solid var(--seam2);padding-top:24px}
+  .ledger{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .ledger div:nth-child(2){border-right:0}
+  .ledger div:nth-child(-n+2){border-bottom:1px solid var(--seam)}
+}
+@media (max-width:780px){
+  body{font-size:15px}
+  .starts{grid-template-columns:1fr}
+  .fgrid{grid-template-columns:1fr;gap:26px}
+  .fmark{justify-content:flex-start}
+  .mrow{grid-template-columns:1fr}
+  .mrow .num{display:none}
+  .mrow .th{border-right:0;padding:16px 16px 0}
+  .mrow .bd{padding:14px 16px 18px}
+  .hide-s{display:none}
+  .railin{padding:12px 0;gap:10px}
+  .railmeta{gap:9px}
+  .railmeta .ml{font-size:8.6px;letter-spacing:.15em}
+  .mark b{font-size:15.5px}
+  /* at 390 the tabs cover the slide they annotate — the box is the signal */
+  .frame .det .tab{display:none}
+  .qbar{font-size:11px;min-height:40px;padding:10px 12px}
+  .caret{width:6px;height:13px}
+  .qhead{font-size:9px;gap:8px}
+  .qhead .ml{font-size:9px;letter-spacing:.14em}
+  .qburn{font-size:10px}
+  .qsay{min-height:0}
+  .termbody{font-size:11.5px}
+  .say,.q-cite p{font-size:14px}
+  .ledger{grid-template-columns:1fr}
+  .ledger div{border-right:0;border-bottom:1px solid var(--seam);padding:16px 17px 17px}
+  .ledger div:last-child{border-bottom:0}
+  .ledger dd{font-size:1.9rem}
+  .cta{width:100%;justify-content:space-between}
+  .ctanote{max-width:none}
+  .seams svg{width:120vw}
+  .wt{width:132px}
+}
+/* everything that moves, frozen — same list for reduced motion and for
+   ?still=1, the lab's screenshot switch */
+@media (prefers-reduced-motion:reduce){
+  .caret{animation:none}
+  .wtrack{animation:none}
+  #qimg,#qboxes .det,.wt img,.mrow,.chip,.cta,.copybox button{transition:none}
+}
+html.still .caret{animation:none}
+html.still .wtrack{animation:none}
+html.still #qimg,html.still #qboxes .det{transition:none}
+</style>
+</head>
+<body>
+
+<!-- ─────────────────────── top rail ─────────────────────── -->
+<header class="rail">
+  <div class="wrap railin">
+    <div class="mark"><b>vidtheque<i>.</i></b><span class="ml hide-s" id="railCorpus"></span></div>
+    <div class="railmeta">
+      <span class="ml">read-only from vidtheque.db</span>
+    </div>
+  </div>
+</header>
+
+<!-- ───────────────── beat 1 · the machine, working ───────────────── -->
+<section class="hero">
+  <div class="hatch"></div>
+  <div class="seams">
+    <svg class="tr" viewBox="0 0 620 520" fill="none" aria-hidden="true">
+      <defs><filter id="seamglow" x="-40%" y="-40%" width="180%" height="180%">
+        <feGaussianBlur stdDeviation="6"/></filter></defs>
+      <g stroke="#e7b455" fill="none" stroke-linecap="round">
+        <g filter="url(#seamglow)" opacity=".20" stroke-width="2.6">
+          <path d="M620 4C562 52 540 64 508 104c-40 48-38 88-76 124-42 40-46 86-88 122-44 38-44 88-82 130"/>
+        </g>
+        <path d="M620 4C562 52 540 64 508 104c-40 48-38 88-76 124-42 40-46 86-88 122-44 38-44 88-82 130" stroke-width="1.3" opacity=".78"/>
+        <path d="M508 104c30 38 46 60 50 98s-18 62-10 100" stroke-width=".9" opacity=".46"/>
+        <path d="M432 228c-34-14-64-12-94 2s-48 34-58 58" stroke-width=".9" opacity=".42"/>
+        <path d="M344 350c-30-6-56 4-78 24" stroke-width=".8" opacity=".34"/>
+        <path d="M558 202c26 14 42 38 50 64" stroke-width=".7" opacity=".28"/>
+        <path d="M262 480c-30-28-58-32-88-20" stroke-width=".7" opacity=".26"/>
+        <path d="M470 60c22 10 34 26 40 46" stroke-width=".7" opacity=".24"/>
+      </g>
+    </svg>
+    <svg class="bl" viewBox="0 0 620 520" fill="none" aria-hidden="true">
+      <g stroke="#e7b455" fill="none" stroke-linecap="round">
+        <g filter="url(#seamglow)" opacity=".2" stroke-width="2.8">
+          <path d="M620 30C566 74 546 92 514 132c-38 48-30 86-70 122-40 36-44 84-84 118"/>
+        </g>
+        <path d="M620 30C566 74 546 92 514 132c-38 48-30 86-70 122-40 36-44 84-84 118" stroke-width="1.25" opacity=".82"/>
+        <path d="M514 132c28 34 42 58 44 94s-14 52-6 84" stroke-width=".9" opacity=".5"/>
+        <path d="M444 254c-32-10-58-4-84 14s-40 40-46 66" stroke-width=".85" opacity=".42"/>
+        <path d="M360 372c-26 4-48 18-64 40" stroke-width=".75" opacity=".3"/>
+        <path d="M558 226c24 12 40 32 48 56" stroke-width=".7" opacity=".26"/>
+      </g>
+    </svg>
+  </div>
+
+  <div class="heroin">
+    <div class="herocopy">
+      <div class="kick"><s></s><span class="ml gold">the knowledge of the builders, on tap</span></div>
+      <h1>Builders talk.<br>Your agent <em>listens.</em></h1>
+      <p class="lede">Point it at the builders you trust. It watches every talk, keeps every
+        sentence and every line that crossed the screen, and answers with <b>the second it
+        happened</b> — the sentence, the slide, and the second, assembling on the right.</p>
+      <div class="ctarow">
+        <button class="cta" id="askbtn" type="button">Ask the corpus
+          <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="square"><path d="M2.6 6h6.6M6.4 3.2 9.2 6l-2.8 2.8"/></svg>
+        </button>
+        <p class="ctanote">three canned searches, verified against the live corpus.<br>this page makes no network calls.</p>
+      </div>
+      <div class="chips">
+        <span class="ml">verified against the live stack</span>
+        <div class="chiprow" id="chips"></div>
+      </div>
+    </div>
+
+    <div class="herostage">
+      <figure class="qpanel">
+        <div class="qhead">
+          <span class="ml gold">canned search · replayed as recorded</span>
+          <span class="ml r" id="qstatus" data-s="ready">ready</span>
+        </div>
+        <div class="qbar"><span class="pr">&gt;</span><span id="qtext"></span><i class="caret"></i></div>
+        <div class="frame qframe" id="qframe">
+          <img id="qimg" alt="" src="v4-assets/pgm/r1.jpg">
+          <div id="qboxes"></div>
+        </div>
+        <div class="qburn"><span class="ll">seen</span><span class="id" id="qburnTxt"></span><span class="r" id="qburnLine"></span></div>
+        <div class="qsay">
+          <span class="ml gold" id="qheard">heard</span>
+          <p class="said" id="qsaid"></p>
+          <div class="who"><strong id="qwho"></strong><em id="qtitle"></em></div>
+        </div>
+        <div class="qfoot" id="qfoot">
+          <a class="receipt" id="qcite" href="#" rel="noopener">
+            <span>youtu.be/</span><span class="vid id" id="qcid"></span><b><span id="qct"></span>
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"><path d="M3.4 8.6 8.6 3.4M4.6 3.4h4v4"/></svg></b>
+          </a>
+          <span class="ml r" id="qmeta"></span>
+        </div>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── beat 2 · the stack of moments ───────────── -->
+<section class="beat" id="stack">
+  <div class="wrap">
+    <div class="split">
+      <div class="bhead">
+        <div class="kick"><s></s><span class="ml gold">three more, out of the corpus</span></div>
+        <h2>You don't have time to watch it all. <em>Your agent does.</em></h2>
+        <p class="lede">Every one of these is a moment your agent can hand back mid-task: the
+          sentence a builder actually said, the text the machine read off the screen behind them,
+          and a link that lands on the second. When a leg has nothing to give, it
+          <b>says so</b> — it never quietly narrows the answer.</p>
+      </div>
+      <div class="legend">
+        <span class="ml">two channels, one timeline</span>
+        <div class="lg"><i class="hd"></i>
+          <p><b>heard</b> — every sentence spoken, aligned to the word, so the link lands
+             mid-sentence instead of at the top of a chunk.</p></div>
+        <div class="lg"><i class="sn"></i>
+          <p><b>seen</b> — every line that crossed the screen, kept with the box it was read
+             from. That box is drawn on the frame, never nudged to fit.</p></div>
+        <div class="lg"><i class="fr"></i>
+          <p><b>the frame itself</b> — kept as evidence, so a moment with nothing readable on
+             screen is still a moment.</p></div>
+      </div>
+    </div>
+    <div class="stack" id="stackRows" style="margin-top:clamp(40px,4.6vw,72px)"></div>
+  </div>
+</section>
+
+<!-- ───────────── beat 3 · the corpus, full width ───────────── -->
+<section class="beat" id="corpus">
+  <div class="wrap">
+    <div class="split">
+      <div class="bhead">
+        <div class="kick"><s></s><span class="ml gold">the first shelf, not the library</span></div>
+        <h2>Follow the builders. Get the sentence, the slide, and <em>the second.</em></h2>
+        <p class="lede">Every frame below was read out of a talk this corpus has already watched
+          all the way through — ids and timecodes verbatim. Point it at a conference, a channel,
+          a creator, and their knowledge compounds into yours.</p>
+      </div>
+      <div class="chancard" id="chanCard"></div>
+    </div>
+  </div>
+  <div class="wallband" id="wallband" style="margin-top:clamp(40px,4.6vw,72px)"></div>
+  <div class="wrap">
+    <div class="bandmeta">
+      <span class="ml" id="bandLine"></span>
+      <span class="ml hide-s">hover a frame for the talk</span>
+    </div>
+    <a class="follow" href="#run" style="margin-top:clamp(20px,2.2vw,30px);display:flex">
+      <span>+ follow a channel<span class="followsub">today: point it at a channel. next: it keeps watching.</span></span>
+    </a>
+    <dl class="ledger" id="ledger" style="margin-top:clamp(26px,3vw,44px)"></dl>
+  </div>
+</section>
+
+<!-- ───────────── beat 4 · the field test ───────────── -->
+<section class="beat" id="ask">
+  <div class="wrap">
+    <div class="bhead">
+      <div class="kick"><s></s><span class="ml gold">recorded 2026-08-09 · not re-recorded</span></div>
+      <h2>Your agent <em>watched it.</em></h2>
+      <p class="lede">An agent, on the real protocol, answering a question no single talk
+        answers — and citing five speakers. Four Sonnet agents drove the live stack for an
+        afternoon; this is the one that was asked to answer properly, <b>with citations</b>,
+        the way ask mode does.</p>
+    </div>
+
+    <div class="term">
+      <div class="termhead">
+        <span class="ml gold">synthesist · 21 calls</span>
+        <span class="ml hide-s">claude sonnet · the live stack · read-only demo corpus</span>
+        <span class="ml r">field test 2026-08-09</span>
+      </div>
+      <div class="termbody">
+        <div class="ask">
+          <span class="caret2">&gt;</span>
+          <p class="q">What do speakers disagree about when it comes to LLM as a judge?</p>
+        </div>
+
+        <p class="call"><span class="k">call</span> search <span class="arg">{"q":"LLM as a judge","content_type":"transcript","max_per_video":1,"limit":6}</span></p>
+        <p class="ret">← 6 moments · 6 talks · leg: transcript · relevance-first</p>
+
+        <p class="say">They agree it is the default and disagree about whether it deserves to be.
+          <b>Two positions, and a third group that ships it anyway:</b></p>
+
+        <div class="q-cite">
+          <p>“And LLM as a judge doesn't really work either because LLMs don't have good
+            taste in writing.”</p>
+          <p class="who2"><b>Nick Heiner</b> · Surge AI · When Will The Benchmaxxing Plague End?
+            · 16:01 · <a href="https://youtu.be/-npY6XjM8CQ?t=961" rel="noopener">youtu.be/-npY6XjM8CQ?t=961</a></p>
+        </div>
+        <div class="q-cite">
+          <p>“Agent as a judge is about adaptive dynamic analysis. LLM as a judge just gives you a
+            fixed rubric with these fixed scores.”</p>
+          <p class="who2"><b>Aparna Dhinakaran</b> · Arize AI · The Future of Evals
+            · 4:07 · <a href="https://youtu.be/q2JrUKBMf0w?t=247" rel="noopener">youtu.be/q2JrUKBMf0w?t=247</a></p>
+        </div>
+
+        <p class="call"><span class="k">call</span> search <span class="arg">{"q":"LLM as a judge in production","content_type":"transcript","max_per_video":1,"limit":6}</span></p>
+        <p class="ret">← 6 moments · 6 talks · leg: transcript</p>
+
+        <p class="say" style="margin-bottom:0">And three teams who run it in production regardless — video at
+          <span class="id">b_PmGocP4rc</span> (Character.ai), agent evals at
+          <span class="id">31GUkCBD-Uc</span> (Uber), clinical at
+          <span class="id">O72p-rBb2bA</span> (SonderMind). The disagreement is not
+          “does it work”; it is <b>what it is allowed to be the judge of</b>.</p>
+      </div>
+      <div class="termfoot">
+        <p class="note">the caveat, from the same run: the synthesist quoted an airline story from
+          <span class="id">tJFjeMBKbIY</span> and the link it was handed opened at 18:57 —
+          twenty-seven seconds before the story starts. Filed as a bug: search links point at the
+          cluster start, not at the matched moment. A real transcript with a real caveat in it is
+          worth more than a clean fake.</p>
+        <span class="ml">calls, results and the caveat as recorded in research/demo-queries-2026-08-09.md — condensed for width, nothing rewritten</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── beat 5 · quickstart + footer ───────────── -->
+<section class="beat" id="run" style="border-bottom:0">
+  <div class="wrap">
+    <div class="bhead">
+      <div class="kick"><s></s><span class="ml gold">yours, on your box</span></div>
+      <h2>Run your own. Point your agent at it.</h2>
+      <p class="lede">One compose file, one SQLite file, no build step, no runtime network
+        dependency. It runs the CPU half on a Pi.</p>
+    </div>
+    <div class="starts">
+      <div class="start">
+        <span class="ml">1 · run the corpus</span>
+        <div class="copybox">
+          <code><i>$</i> docker compose up -d</code>
+          <button type="button" data-copy="docker compose up -d">copy</button>
+        </div>
+        <p class="ml" style="color:var(--fg3);text-transform:none;letter-spacing:.02em;font-size:11px">
+          clone, copy <span class="id">.env.example</span> to <span class="id">.env</span>, and it is up.</p>
+      </div>
+      <div class="start">
+        <span class="ml">2 · hand it to your agent</span>
+        <div class="copybox">
+          <code><i>$</i> claude mcp add --transport http vidtheque &lt;mcp_url&gt;</code>
+          <button type="button" data-copy="claude mcp add --transport http vidtheque <mcp_url>">copy</button>
+        </div>
+        <p class="ml" style="color:var(--fg3);text-transform:none;letter-spacing:.02em;font-size:11px">
+          one line for Claude, Codex, or anything that speaks the protocol.</p>
+      </div>
+    </div>
+    <div class="fbase" style="margin-top:clamp(26px,2.8vw,40px)">
+      <span class="ml">macOS · Linux · MIT · runs the CPU half on a Pi</span>
+      <span class="ml r" style="color:var(--gold)">early development · no releases yet · schemas can still change</span>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="hatch"></div>
+  <div class="wrap" style="position:relative;z-index:2">
+    <div class="fgrid">
+      <div>
+        <span class="ml gold">attribution</span>
+        <p style="margin-top:12px">The videos belong to the people who made them. vidtheque watched
+          them, kept the timestamps, and sends you back to the source — every answer on this page
+          is a quotation with a link that lands on the second it was said.</p>
+        <p>Nothing is hosted or redistributed here: the file is downloaded, read, and deleted.
+          What stays is the transcript, the text that was on screen, and the keyframes kept as
+          evidence. A creator who would rather not be followed is a complete reason, and there is
+          no appeal to make.</p>
+        <p><a class="lnk" href="https://github.com/tomvaucourt/vidtheque" rel="noopener">the repo</a>
+          · MIT · one owner, self-hosted.</p>
+      </div>
+      <div class="fmark"><b>vidtheque<i>.</i></b></div>
+    </div>
+    <div class="fbase">
+      <span class="ml">landing v4 · v3 chassis · v1 life · v2 air</span>
+      <span class="ml" id="footStamp"></span>
+      <span class="ml r">numbers read out of the corpus at render time</span>
+    </div>
+  </div>
+</footer>
+
+<script src="v4-assets/data.js"></script>
+<script>
+(() => {
+  const D = window.VT, A = 'v4-assets/';
+  const M = Object.fromEntries(D.moments.map(m => [m.id, m]));
+  const $ = s => document.querySelector(s);
+  const el = (t, c, h) => { const n = document.createElement(t); if (c) n.className = c;
+    if (h != null) n.innerHTML = h; return n; };
+  const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  const pad = n => String(n).padStart(2, '0');
+  const hms = s => { s = Math.floor(s); const h = (s/3600)|0, m = ((s%3600)/60)|0;
+    return (h ? h + ':' + pad(m) : pad(m)) + ':' + pad(s % 60); };
+  const num = n => Math.round(n).toLocaleString('en-US');
+  const ARROW = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"><path d="M3.4 8.6 8.6 3.4M4.6 3.4h4v4"/></svg>';
+  /* ?still=1 paints every end state at once — how the lab judges screenshots.
+     Same path as reduced motion: everything that moves, frozen. */
+  const STILL = location.search.includes('still');
+  if (STILL) document.documentElement.classList.add('still');
+  const reduce = STILL || matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ═══════════ beat 1 — v1's life: the canned searches, replayed ═══════════
+     Every query below was run against the live corpus (research/
+     demo-queries-2026-08-09.md); frames, boxes, sentences and links verbatim. */
+  const QUERIES = [
+    { q:'owl:FunctionalProperty',
+      img:'pgm/r1.jpg', src:'Sir59K8ZDPU', t:1136,
+      mode:'ocr · exact', conf:'1.00', counts:'15 frames · 35 cues · 3 videos',
+      boxes:[[0.499,0.308,0.647,0.338,'never spoken']],
+      ocr:'owl:FunctionalProperty', line:'line 11 / 34 · conf 1.00',
+      said:'So you have these functional properties, disjoint properties … the errors it can catch, look over in the right-hand column.',
+      saidAt:'19:01', who:'Frank Coyle', title:'Why Agentic Systems Need Ontologies' },
+    { q:'the talk where they showed the sharded-mongo diagram',
+      img:'pgm/r2.jpg', src:'lyL5QhgIOxc', t:1022,
+      mode:'frame + transcript · semantic', conf:'0.98', counts:'11 frames · 37 cues · 5 videos',
+      boxes:[[0.395,0.190,0.455,0.221,'mongos'],[0.534,0.190,0.594,0.221,''],
+             [0.668,0.190,0.726,0.221,''],[0.832,0.192,0.927,0.221,'config servers'],
+             [0.275,0.414,0.340,0.443,'shard a'],[0.684,0.414,0.747,0.443,'shard b']],
+      ocr:'MONGOS · CONFIG SERVERS · SHARD A · SHARD B', line:'6 of 41 lines',
+      said:'Sharding means scaling your database horizontally.',
+      saidAt:'16:56', who:'Arek Borucki', title:'Serving 2 Million Models Without Melting' },
+    { q:'the most expensive typo in history',
+      img:'pgm/r3.jpg', src:'tJFjeMBKbIY', t:456,
+      mode:'transcript · lexical', conf:'1.00', counts:'10 frames · 48 cues · 7 videos',
+      boxes:[[0.380,0.261,0.827,0.376,'']],
+      ocr:'~$100,000,000,000', line:'line 4 / 14',
+      said:'Let me tell you about the most expensive typo in history.',
+      saidAt:'07:24', who:'Shawn Chan', title:'Build for the Memo, Not the Demo' }
+  ];
+
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  let token = 0, current = 0;
+
+  function chips(i){
+    $('#chips').innerHTML = QUERIES.map((q, j) =>
+      `<button type="button" class="chip${j === i ? ' on' : ''}" data-i="${j}">${esc(q.q)}</button>`).join('');
+  }
+  function qReset(){
+    $('#qframe').classList.remove('cut');
+    $('#qboxes').innerHTML = '';
+    $('#qburnTxt').textContent = ''; $('#qburnLine').textContent = '';
+    $('#qsaid').textContent = ''; $('#qwho').textContent = ''; $('#qtitle').textContent = '';
+    $('#qheard').textContent = 'heard';
+    $('#qmeta').textContent = '';
+    $('#qfoot').classList.remove('found');
+    $('#qstatus').dataset.s = 'ready'; $('#qstatus').textContent = 'ready';
+  }
+  function drawBoxes(q){
+    $('#qboxes').innerHTML = q.boxes.map(([x0, y0, x1, y1, lab]) =>
+      `<div class="det on" style="--x:${(x0*100).toFixed(2)}%;--y:${(y0*100).toFixed(2)}%;` +
+      `--w:${((x1-x0)*100).toFixed(2)}%;--h:${((y1-y0)*100).toFixed(2)}%">` +
+      (lab ? `<span class="tab">${esc(lab)}</span>` : '') + '</div>').join('');
+  }
+  function land(q){
+    $('#qimg').src = A + q.img;
+    $('#qimg').alt = 'Keyframe ' + q.src + ' at ' + hms(q.t);
+    $('#qframe').classList.add('cut');
+    $('#qburnTxt').textContent = q.ocr; $('#qburnLine').textContent = q.line;
+    $('#qheard').textContent = 'heard — spoken at ' + q.saidAt;
+    $('#qsaid').textContent = q.said;
+    $('#qwho').textContent = q.who; $('#qtitle').textContent = q.title;
+    $('#qcite').href = `https://youtu.be/${q.src}?t=${q.t}`;
+    $('#qcid').textContent = q.src; $('#qct').textContent = '?t=' + q.t;
+    $('#qmeta').textContent = `match ${q.mode} · conf ${q.conf} · ${q.counts}`;
+  }
+  async function typeIn(elm, text, ms, tk){
+    elm.textContent = '';
+    for (let i = 0; i < text.length; i++){
+      if (tk !== token) return;
+      elm.textContent = text.slice(0, i + 1);
+      await sleep(ms + (text[i] === ' ' ? 16 : 0));
+    }
+  }
+  async function run(i, tk){
+    const q = QUERIES[i]; current = i;
+    chips(i); qReset();
+    $('#qtext').textContent = '';
+    await sleep(600); if (tk !== token) return;
+    await typeIn($('#qtext'), q.q, 34, tk); if (tk !== token) return;
+    await sleep(300); if (tk !== token) return;
+
+    $('#qstatus').dataset.s = 'searching'; $('#qstatus').textContent = 'searching';
+    await sleep(820); if (tk !== token) return;
+
+    land(q);
+    $('#qstatus').dataset.s = 'found'; $('#qstatus').textContent = 'found';
+    await sleep(340); if (tk !== token) return;
+    drawBoxes(q);
+    const dets = $('#qboxes').querySelectorAll('.det');
+    dets.forEach(d => d.classList.remove('on'));
+    dets.forEach((d, j) => setTimeout(() => d.classList.add('on'), j * 90));
+    await sleep(520); if (tk !== token) return;
+    $('#qfoot').classList.add('found');
+    await sleep(6200); if (tk !== token) return;
+
+    for (let k = q.q.length; k >= 0; k -= 2){
+      if (tk !== token) return;
+      $('#qtext').textContent = q.q.slice(0, k); await sleep(11);
+    }
+    await sleep(180);
+  }
+  async function loop(from){
+    const tk = ++token; let i = from ?? 0;
+    while (tk === token){ await run(i, tk); i = (i + 1) % QUERIES.length; }
+  }
+  /* the end state, instantly — for stills and reduced motion */
+  function freeze(i){
+    token++;
+    const q = QUERIES[i]; current = i;
+    chips(i); qReset();
+    $('#qtext').textContent = q.q;
+    land(q); drawBoxes(q);
+    $('#qstatus').dataset.s = 'found'; $('#qstatus').textContent = 'found';
+    $('#qfoot').classList.add('found');
+  }
+  $('#askbtn').addEventListener('click', () => {
+    if (reduce) freeze(current); else loop(current);
+  });
+  $('#chips').addEventListener('click', e => {
+    const b = e.target.closest('.chip'); if (!b) return;
+    const i = +b.dataset.i;
+    if (reduce) freeze(i); else loop(i);
+  });
+  /* the demo only runs while it is on screen */
+  const hero = document.querySelector('.hero');
+  const heroIO = new IntersectionObserver(es => es.forEach(en => {
+    if (reduce) return;
+    if (en.isIntersecting){ if (!window.__running){ window.__running = true; loop(current); } }
+    else if (window.__running){ token++; window.__running = false; }
+  }), {threshold: 0.12});
+  if (reduce){ freeze(0); } else { window.__running = true; loop(0); heroIO.observe(hero); }
+
+  /* ---- shared: frame thumbs with boxes exactly where ocr_lines put them ---- */
+  function frame(m, opt = {}) {
+    const f = el('figure', 'frame' + (opt.sm ? ' sm' : ''));
+    const img = el('img');
+    img.src = A + m.img; img.loading = 'eager'; img.decoding = 'async';
+    img.alt = 'Keyframe at ' + hms(m.t) + ' of ' + m.title + ' — ' + m.speaker;
+    f.append(img);
+    m.ocr.forEach((l, i) => {
+      const on = m.hero.includes(i);
+      if (opt.only === 'hero' && !on) return;
+      const [x0, y0, x1, y1] = l.b;
+      const d = el('div', 'det' + (on ? ' on' : ''));
+      d.style.cssText = `--x:${(x0*100).toFixed(2)}%;--y:${(y0*100).toFixed(2)}%;` +
+        `--w:${((x1-x0)*100).toFixed(2)}%;--h:${((y1-y0)*100).toFixed(2)}%`;
+      f.append(d);
+    });
+    return f;
+  }
+  const receipt = (m, cls = '') =>
+    `<a class="receipt ${cls}" href="https://youtu.be/${m.video_id}?t=${Math.floor(m.t)}" rel="noopener">` +
+    `<span>youtu.be/</span><span class="vid id">${m.video_id}</span>` +
+    `<b>?t=${Math.floor(m.t)}${ARROW}</b></a>`;
+  const cueOf = m => m.cues[m.cue_index];
+  const seenText = m => m.hero.map(i => m.ocr[i].t).join(' ');
+
+  /* ═══════════ beat 2 — the stack: a slide, a terminal, a person ═══════════ */
+  {
+    const rows = document.getElementById('stackRows');
+    [41, 1944, 564].forEach((id, i) => {
+      const m = M[id], cue = cueOf(m);
+      const r = el('div', 'mrow');
+      r.append(el('div', 'num', '<span class="ml">' + pad(i + 1) + '</span>'));
+      const th = el('div', 'th');
+      th.append(frame(m, { sm: true, only: 'hero' }));
+      r.append(th);
+      const seen = m.ocr.length
+        ? `<div class="seenline"><span class="ll">seen</span><p>${esc(seenText(m))}</p></div>`
+        : `<p class="note">nothing readable on screen here — <b>ocr_state=empty</b>, so this
+             moment stands on the sentence alone, and the frame is the evidence.</p>`;
+      r.append(el('div', 'bd',
+        `<div class="who"><strong>${esc(m.speaker)}</strong><em>${esc(m.title)}${m.org ? ' · ' + esc(m.org) : ''}</em></div>
+         <p class="said">${esc(cue.t)}</p>
+         ${seen}
+         <div class="mfoot">${receipt(m, 'sm')}<span class="ml r">${esc(m.kick)}</span></div>`));
+      rows.append(r);
+    });
+  }
+
+  /* ═══════════ beat 3 — the wall: 70 real keyframes, drifting ═══════════
+     v1's monitor-wall set, ids and timecodes verbatim. Alternating rows,
+     a few px/s, frozen under reduced motion. */
+  const TILES = [
+    ['t00.jpg','CoEIs6Xm8m8','00:00:45'],['t01.jpg','z0sh8HyTrDo','00:02:55'],
+    ['t02.jpg','b_PmGocP4rc','00:01:12'],['t03.jpg','hacEQHHhu2Q','00:00:35'],
+    ['t04.jpg','s67bE2Ur3bY','00:00:40'],['t05.jpg','Byv311hdoHE','00:00:52'],
+    ['t06.jpg','tJFjeMBKbIY','00:00:35'],['t07.jpg','O-CBZ3JtRvo','00:05:10'],
+    ['t08.jpg','o6U_2vd967Y','00:03:33'],['t09.jpg','tJFjeMBKbIY','00:07:36'],
+    ['t10.jpg','zkX03APVj0M','00:02:26'],['t11.jpg','zkX03APVj0M','00:01:10'],
+    ['t12.jpg','cJ0EOzey--o','00:00:52'],['t13.jpg','-jY2T2PiJBE','00:00:17'],
+    ['t14.jpg','jRCpXUjz4CI','00:00:55'],['t15.jpg','CgsWxRUY5Eo','00:12:46'],
+    ['t16.jpg','AMiyLItEtLA','00:08:41'],['t17.jpg','Byv311hdoHE','00:05:58'],
+    ['t18.jpg','jWq-aZIU0kM','00:05:54'],['t19.jpg','ZFxh7sqbUZo','00:24:35'],
+    ['t20.jpg','Ib5GBkD555M','00:00:18'],['t21.jpg','q2JrUKBMf0w','00:05:45'],
+    ['t22.jpg','GgLQ02aO-hs','00:00:44'],['t23.jpg','QHBjufYK8TA','00:10:43'],
+    ['t24.jpg','FWMJQDH3iK0','00:08:00'],['t25.jpg','J4_jCrTxMkk','00:28:04'],
+    ['t26.jpg','2JX6JYyQG4Y','00:00:28'],['t27.jpg','GgLQ02aO-hs','00:00:37'],
+    ['t28.jpg','2JX6JYyQG4Y','00:00:41'],['t29.jpg','jQDXzEVHMSE','00:00:23'],
+    ['t30.jpg','J4_jCrTxMkk','00:28:37'],['t31.jpg','jQDXzEVHMSE','00:00:19'],
+    ['t32.jpg','2JX6JYyQG4Y','00:00:32'],['t33.jpg','AMiyLItEtLA','00:12:23'],
+    ['t34.jpg','z0sh8HyTrDo','00:04:41'],['t35.jpg','jRCpXUjz4CI','00:18:34'],
+    ['t36.jpg','xIt_mTQp6mY','00:16:34'],['t37.jpg','jRCpXUjz4CI','00:06:38'],
+    ['t38.jpg','LZuWZRze3MU','00:18:28'],['t39.jpg','KhYifX22yhE','00:17:04'],
+    ['t40.jpg','0RNNfxpdbQk','00:00:11'],['t41.jpg','1EZdpEhwmNc','00:07:05'],
+    ['t42.jpg','LZuWZRze3MU','00:10:47'],['t43.jpg','pWXUkLP9uWM','00:02:25'],
+    ['t44.jpg','xIt_mTQp6mY','00:04:36'],['t45.jpg','Sir59K8ZDPU','00:18:56'],
+    ['t46.jpg','zkX03APVj0M','00:10:37'],['t47.jpg','418t26CVz-w','00:05:55'],
+    ['t48.jpg','o6U_2vd967Y','00:18:14'],['t49.jpg','ZyIoTOAbRfs','00:11:41'],
+    ['t50.jpg','3ZMUiFaQ3qg','00:11:46'],['t51.jpg','Yk87oUPVaxU','00:04:27'],
+    ['t52.jpg','AMiyLItEtLA','00:01:48'],['t53.jpg','-I5W5QVAT8E','00:00:40'],
+    ['t54.jpg','LZuWZRze3MU','00:09:23'],['t55.jpg','k35LeKZEhiE','00:17:35'],
+    ['t56.jpg','RVxym6mmIns','00:11:08'],['t57.jpg','s4r6nk5WsZw','00:05:47'],
+    ['t58.jpg','-jY2T2PiJBE','00:03:33'],['t59.jpg','GgLQ02aO-hs','00:00:34'],
+    ['t60.jpg','Sir59K8ZDPU','00:20:26'],['t61.jpg','Sir59K8ZDPU','00:20:10'],
+    ['t62.jpg','Sir59K8ZDPU','00:09:32'],['t63.jpg','Sir59K8ZDPU','00:00:23'],
+    ['t64.jpg','lyL5QhgIOxc','00:17:02'],['t65.jpg','lyL5QhgIOxc','00:11:22'],
+    ['t66.jpg','lyL5QhgIOxc','00:00:40'],['t67.jpg','lyL5QhgIOxc','00:05:56'],
+    ['t68.jpg','pWXUkLP9uWM','00:18:48'],['t69.jpg','pWXUkLP9uWM','00:02:54']
+  ];
+  {
+    const band = document.getElementById('wallband');
+    const byVid = Object.fromEntries(D.grid.map(g => [g.vid, g]));
+    const ROWS = 4, rows = Array.from({length: ROWS}, () => []);
+    TILES.forEach((t, i) => rows[i % ROWS].push(t));
+    const cell = ([f, id, tc]) => {
+      const g = byVid[id];
+      const fig = el('figure', 'wt');
+      fig.title = (g ? g.title + ' — ' + g.speaker + (g.org ? ' (' + g.org + ')' : '') + ' · ' : '') + id + ' · ' + tc;
+      fig.innerHTML = `<img src="${A}wall/${f}" alt="${esc(g ? g.title + ' — ' + g.speaker : id)}"` +
+        ` loading="lazy" decoding="async" width="480" height="270">` +
+        `<span class="slug"><b>${id}</b><span>${tc}</span></span>`;
+      return fig;
+    };
+    rows.forEach((list, r) => {
+      const row = el('div', 'wrow');
+      const track = el('div', 'wtrack' + (r % 2 ? ' rev' : ''));
+      list.forEach(t => track.append(cell(t)));
+      list.forEach(t => track.append(cell(t)));   /* duplicate: seamless loop */
+      row.append(track); band.append(row);
+    });
+    /* the drift speed is a constant few px/s, so duration follows width */
+    const SPEED = 3.2; /* px per second */
+    const pace = () => band.querySelectorAll('.wtrack').forEach(tr => {
+      const half = tr.scrollWidth / 2;
+      tr.style.setProperty('--shift', half + 'px');
+      tr.style.animationDuration = (half / SPEED).toFixed(0) + 's';
+    });
+    requestAnimationFrame(pace);
+    let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(pace, 200); }, {passive: true});
+  }
+
+  /* ---- the ledger: four cells off the same readout; counts tick because
+          they are counts. Instant under reduced motion. ---- */
+  {
+    const st = D.stats, hrs = st.seconds / 3600;
+    const hmFmt = v => Math.floor(v) + '<u>h</u> ' + pad(Math.round((v % 1) * 60)) + '<u>m</u>';
+    const cells = [
+      ['talks', st.talks, 'int'],
+      ['hours watched', hrs, 'hm'],
+      ['moments kept', st.keyframes, 'int'],
+      ['lines read off the screen', st.ocr_lines, 'int']
+    ];
+    const ledger = document.getElementById('ledger');
+    const dds = cells.map(([k, v, kind]) => {
+      const d = el('div'); const dd = el('dd');
+      dd.dataset.n = v; dd.dataset.fmt = kind;
+      dd.innerHTML = kind === 'hm' ? hmFmt(v) : num(v);
+      d.append(el('dt', '', k), dd); ledger.append(d);
+      return dd;
+    });
+    const fmt = (v, kind) => kind === 'hm' ? hmFmt(v) : num(v);
+    function countUp(dd){
+      const target = parseFloat(dd.dataset.n), kind = dd.dataset.fmt;
+      if (reduce){ dd.innerHTML = fmt(target, kind); return; }
+      const t0 = performance.now(), dur = 1100;
+      (function step(t){
+        const p = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+        dd.innerHTML = fmt(target * e, kind);
+        if (p < 1) requestAnimationFrame(step);
+      })(performance.now());
+    }
+    if (reduce){ dds.forEach(dd => countUp(dd)); }
+    else {
+      const io = new IntersectionObserver(es => es.forEach(en => {
+        if (!en.isIntersecting) return;
+        dds.forEach(countUp); io.disconnect();
+      }), {rootMargin: '0px 0px -10% 0px'});
+      io.observe(ledger);
+    }
+
+    document.getElementById('bandLine').innerHTML =
+      `${num(st.talks)} talks · ${num(st.cues)} sentences spoken · ${num(st.words)} words · ` +
+      `${num(st.ocr_frames)} frames read · one channel followed so far`;
+    const d0 = new Date(st.first_pub * 1000), d1 = new Date(st.last_pub * 1000);
+    const ymd = d => d.toISOString().slice(0, 10);
+    document.getElementById('railCorpus').innerHTML =
+      'following <span class="id" style="color:var(--gold)">' + esc(st.channel) + '</span> · ' +
+      num(st.talks) + ' talks watched';
+    document.getElementById('chanCard').innerHTML =
+      `<span class="ml gold">the channel followed so far</span>
+       <p class="cname">${esc(st.channel)}</p>
+       <dl>
+         <div><dt>talks watched</dt><dd>${num(st.talks)}</dd></div>
+         <div><dt>published between</dt><dd>${ymd(d0)} → ${ymd(d1)}</dd></div>
+         <div><dt>frames kept</dt><dd>${num(st.keyframes)}</dd></div>
+       </dl>
+       <p class="ml" style="text-transform:none;letter-spacing:.02em;color:var(--fg3)">
+         the demo is the first shelf. the next one is a channel you choose.</p>`;
+    document.getElementById('footStamp').textContent =
+      'corpus read ' + ymd(d0) + ' → ' + ymd(d1) + ' · ' + num(st.keyframes) + ' keyframes on disk';
+  }
+
+  /* ---- copy buttons ---- */
+  document.querySelectorAll('[data-copy]').forEach(b => {
+    b.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(b.dataset.copy); } catch (e) { /* no clipboard, no drama */ }
+      const was = b.textContent; b.textContent = 'copied';
+      setTimeout(() => { b.textContent = was; }, 1400);
+    });
+  });
+})();
+</script>
+</body>
+</html>
