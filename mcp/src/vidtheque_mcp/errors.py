@@ -108,9 +108,15 @@ def bad_param(message: str, next_hint: str | None = None) -> ToolError:
 
 
 def bad_time(value: str, param: str) -> ToolError:
+    # Echo a prefix, never the whole thing. A rejected value is caller-supplied
+    # and unbounded — `published_after="A"*10_000_000` was parsed, copied
+    # several times, and then returned in full in both the text and the
+    # structured content. Sixty characters is more than enough to see which
+    # value was wrong. (2026-08-10 audit, F-14.)
+    shown = value if len(value) <= 60 else f"{value[:60]}…"
     return ToolError(
         "E_BAD_TIME_FORMAT",
-        f'Could not parse {param}={value!r}.',
+        f'Could not parse {param}={shown!r}.',
         "accepted: ISO 8601 (2026-03-01, 2026-03-01T12:00:00Z), relative "
         '("7d ago", "3w ago", "6mo ago", "2y ago"), or a keyword '
         "(now, today, yesterday). Intra-video times also accept seconds (723) "

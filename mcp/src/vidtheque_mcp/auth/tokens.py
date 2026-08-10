@@ -19,6 +19,8 @@ from dataclasses import dataclass
 
 import jwt
 
+from ..variants import ALLOWED_QUALITIES, ALLOWED_WIDTHS, snap
+
 ALGORITHM = "HS256"
 _ACCESS_SALT = b"vidtheque/access-token/v1"
 _FRAME_SALT = b"vidtheque/frame-url/v1"
@@ -112,10 +114,17 @@ class FrameUrlSigner:
     def sign(
         self, frame_id: str, width: int, quality: int, now: int | None = None
     ) -> tuple[int, str]:
+        # Sign the *effective* pair, which is the snapped one — the route
+        # snaps before it verifies, so signing the raw request would produce a
+        # signature that never matches. One finite vocabulary on both sides:
+        # a caller asking for w=96 gets a URL for w=192 that actually works,
+        # rather than a 401 it cannot diagnose. (2026-08-10 audit, F-5.)
+        width, quality = snap(width, ALLOWED_WIDTHS), snap(quality, ALLOWED_QUALITIES)
         expires_at = (now if now is not None else int(time.time())) + self.ttl_s
         return expires_at, self._mac(frame_id, width, quality, expires_at)
 
     def url(self, base_url: str, frame_id: str, width: int, quality: int) -> tuple[str, int]:
+        width, quality = snap(width, ALLOWED_WIDTHS), snap(quality, ALLOWED_QUALITIES)
         expires_at, signature = self.sign(frame_id, width, quality)
         url = (
             f"{base_url.rstrip('/')}/frames/{frame_id}.jpg"

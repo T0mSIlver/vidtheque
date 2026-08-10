@@ -1847,6 +1847,24 @@ wider at the route than at the tool.**
   floor for what a *model* should ask for, not for what a browser may. The
   signature binds the clamped pair, so widening the route's floor can only turn
   a URL that used to 401 into one that works.
+- **Amended 2026-08-11: `w` and `q` are then *snapped* to a finite set** —
+  widths `192, 320, 512, 960, 1280` and qualities `70, 75`, the values the demo
+  and the dashboard actually ask for (`vidtheque_mcp/variants.py`). Requests
+  snap to the nearest member rather than being refused, so every URL that
+  worked before still returns an image; it may be a neighbouring size.
+
+  Why the contract moved: the clamps bounded the *values* and never the *key
+  space*. `variant_key` carries both numbers, so the old ranges admitted
+  1,217 × 76 = 92,492 cache entries per frame — ~320M across the corpus against
+  a 256 MiB LRU — and every miss is a full decode plus a re-encode on the
+  request path. A crawler varying `w` by one held the cache permanently cold
+  and the CPU permanently busy, at the frames rate limit, indefinitely
+  (2026-08-10 audit, F-5).
+
+  The signer snaps too (`auth/tokens.py`), so both sides share one vocabulary
+  and no signed URL changes meaning. One consequence worth stating: two widths
+  that snap together are now the *same* capability, so a signature for `w=192`
+  also serves `w=191`. It does not serve `w=960`.
 
 **Resizing ships.** `w` and `q` are applied, not just signed: the route
 resamples into `derived/` and serves the variant, `w` wider than the stored

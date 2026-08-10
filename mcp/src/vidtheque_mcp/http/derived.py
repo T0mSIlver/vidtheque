@@ -53,6 +53,11 @@ MIN_QUALITY = 20
 MAX_QUALITY = 95
 DEFAULT_QUALITY = 75
 
+# The finite variant vocabulary, and why it is finite, live in `variants` —
+# `auth/tokens` needs the same values to sign with and cannot import from this
+# package. (2026-08-10 audit, F-5.)
+from ..variants import ALLOWED_QUALITIES, ALLOWED_WIDTHS, snap  # noqa: E402,F401
+
 
 @dataclass(frozen=True)
 class Derived:

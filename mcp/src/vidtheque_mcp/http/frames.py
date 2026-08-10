@@ -36,6 +36,8 @@ from ..config import Settings
 from ..db import Database
 from ..db import queries
 from .derived import (
+    ALLOWED_QUALITIES,
+    ALLOWED_WIDTHS,
     DEFAULT_QUALITY,
     DEFAULT_WIDTH,
     MAX_QUALITY,
@@ -43,6 +45,7 @@ from .derived import (
     MIN_QUALITY,
     MIN_WIDTH,
     DerivedCache,
+    snap,
 )
 
 # `<video_id>-<NNNNN>`: the ordinal is fixed-width, so a fabricated id is
@@ -75,11 +78,17 @@ def frames_routes(
         frame_id = request.path_params["frame_id"]
         asked_width = request.query_params.get("w")
         asked_quality = request.query_params.get("q")
-        # The signature covers the *clamped* pair, and it covers it whether or
+        # The signature covers the *effective* pair, and it covers it whether or
         # not the caller sent the parameters — so the defaults below are part of
         # the signing contract and cannot move without invalidating live URLs.
-        width = _clamp(asked_width, MIN_WIDTH, MAX_WIDTH, DEFAULT_WIDTH)
-        quality = _clamp(asked_quality, MIN_QUALITY, MAX_QUALITY, DEFAULT_QUALITY)
+        # Snapping to the product's real width and quality sets keeps the cache
+        # key space finite; the values the server itself generates are all in
+        # those sets, so no URL it ever signed changes meaning (F-5).
+        width = snap(_clamp(asked_width, MIN_WIDTH, MAX_WIDTH, DEFAULT_WIDTH), ALLOWED_WIDTHS)
+        quality = snap(
+            _clamp(asked_quality, MIN_QUALITY, MAX_QUALITY, DEFAULT_QUALITY),
+            ALLOWED_QUALITIES,
+        )
 
         credential = await _authorized(request, auth, frame_id, width, quality)
         if credential is None:
