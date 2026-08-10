@@ -26,6 +26,7 @@ from vidtheque_mcp.app import build_app
 from vidtheque_mcp.config import Settings
 from vidtheque_mcp.dashboard import ROOT, WRITE_ROUTES
 from vidtheque_mcp.dashboard.settings import DashboardSettings
+from vidtheque_mcp.dashboard.views import EVENT_PREVIEW, OCR_PREVIEW_LINES
 from vidtheque_mcp.db.connection import open_write_connection
 from vidtheque_mcp.public.api import OWNER_CLAMPS, PUBLIC_CLAMPS
 from vidtheque_mcp.public.settings import PublicSettings
@@ -2509,3 +2510,236 @@ def test_the_pages_keep_the_owner_page_size_and_that_is_the_decision(
         assert "max_text_chars" not in body
     # And the page's bound is still the server's, not the URL's.
     assert OWNER_CLAMPS.videos_max_limit == 100
+
+
+# ------------------------------- 9. the digest, and the wrap sweep behind it
+#
+# Tom, 2026-08-10: "there are some weird wrapping issues notably and make sure
+# nothing is out of place", and the OCR matches block "eats a huge column of
+# vertical space" on dense slides. The design that answered both is DESIGN.md,
+# **The digest**; what a CPU test can hold is the half a screenshot cannot check
+# twice — that the bounds are real numbers, that the expander counts the list it
+# is actually holding, and that the full text never left the page.
+
+DENSE_SLIDE_LINES = 30
+
+
+def _dense_corpus(tmp_path: Path) -> Path:
+    """The fixture corpus with one keyframe carrying a slide's worth of text."""
+    data = _corpus(tmp_path)
+    conn = open_write_connection(data / "vidtheque.db")
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        keyframe = conn.execute(
+            "SELECT k.id, k.video_id, k.t_s FROM keyframes k "
+            "JOIN videos v ON v.id = k.video_id "
+            "WHERE v.source_id = 'kCc8FmEb1nY' ORDER BY k.ord LIMIT 1"
+        ).fetchone()
+        start = int(
+            conn.execute(
+                "SELECT COALESCE(MAX(line_no), -1) + 1 FROM ocr_lines WHERE keyframe_id = ?",
+                (keyframe["id"],),
+            ).fetchone()[0]
+        )
+        for offset in range(DENSE_SLIDE_LINES):
+            conn.execute(
+                "INSERT INTO ocr_lines (keyframe_id, video_id, t_s, line_no, text, conf, "
+                "x0, y0, x1, y1) VALUES (?, ?, ?, ?, ?, 0.9, 0, 0, 1, 1)",
+                (
+                    keyframe["id"],
+                    keyframe["video_id"],
+                    keyframe["t_s"],
+                    start + offset,
+                    f"block_bytes = 2 * block_size * num_kv_heads, row {offset}",
+                ),
+            )
+        conn.execute("COMMIT")
+    finally:
+        conn.close()
+    return data
+
+
+def _figure(body: str, frame_id: str) -> str:
+    """The one `<figure>` of the OCR grid that belongs to this frame."""
+    start = body.index(f'id="ocr-{frame_id}"')
+    return body[start : body.index("</figure>", start)]
+
+
+def test_a_dense_slide_prints_a_bounded_preview_and_an_honest_expander(
+    tmp_path: Path,
+) -> None:
+    """The OCR digest: eight lines, then a real count, and nothing thrown away."""
+    _dense_corpus(tmp_path)
+    with make_client(tmp_path) as client:
+        body = page(client, f"{ROOT}/videos/kCc8FmEb1nY")
+
+    figure = _figure(body, "kCc8FmEb1nY-00000")
+    head, _, rest = figure.partition('<details class="digest">')
+    total = figure.count('<li class="ocrline"')
+
+    # The preview is bounded, whatever the slide holds.
+    assert head.count('<li class="ocrline"') == OCR_PREVIEW_LINES
+    # The expander's count is the remainder, counted off the same list — not a
+    # cap, not a page size, not "show more".
+    assert rest.count('<li class="ocrline"') == total - OCR_PREVIEW_LINES
+    assert (
+        f'<span class="digest-count">{total - OCR_PREVIEW_LINES}</span> more line(s)'
+        in rest
+    )
+    # And the receipt is intact: every line the server read is still in the
+    # markup, inside a `<details>` that needs no script to open.
+    assert total == DENSE_SLIDE_LINES + 1  # the slide, plus the fixture's own line
+    assert '<ol class="ocrlines ocrlines-head">' in head
+    assert f'<ol class="ocrlines ocrlines-rest" start="{OCR_PREVIEW_LINES + 1}"' in rest
+    assert "<script" not in figure
+
+
+def test_a_frame_inside_the_preview_bound_gets_no_expander(tmp_path: Path) -> None:
+    """Three lines is three lines. A digest with nothing to hold is not drawn."""
+    with make_client(tmp_path) as client:
+        body = page(client, f"{ROOT}/videos/zduSFxRajkE")
+    figure = _figure(body, "zduSFxRajkE-00000")
+    assert figure.count('<li class="ocrline"') == 3
+    assert "digest" not in figure
+
+
+def test_the_ocr_preview_is_exactly_the_lines_the_frame_can_point_at() -> None:
+    """The two bounds are one number, and this is what keeps them one.
+
+    The box↔line highlight is eight explicit `:has()` pairs in the stylesheet;
+    the digest previews ``OCR_PREVIEW_LINES``. Drifted apart, the panel either
+    hides a line that would have lit a box or shows one that cannot — and the
+    pairs are scoped away from the remainder list precisely so that an expanded
+    line 9 does not light box 1, which would be a *wrong* pointer rather than a
+    missing one.
+    """
+    css = (STATIC / "dashboard.css").read_text()
+    lit = {
+        int(n)
+        for n in re.findall(
+            r"\.ocrlines:not\(\.ocrlines-rest\) > li:nth-child\((\d+)\):hover", css
+        )
+    }
+    assert lit == set(range(1, OCR_PREVIEW_LINES + 1))
+    assert not re.search(r"\.ocrlines > li:nth-child\(\d+\):hover", css), (
+        "an unscoped pair would let the expanded remainder light the wrong box"
+    )
+
+
+def test_the_event_log_shows_the_newest_and_counts_the_older(tmp_path: Path) -> None:
+    """The same primitive on the other unbounded block.
+
+    Newest first, so the bounded half is the half that answers "what just
+    happened"; an overnight batch's other fifty rows keep their count and their
+    place.
+    """
+    data = _corpus(tmp_path)
+    conn = open_write_connection(data / "vidtheque.db")
+    try:
+        job = int(
+            conn.execute(
+                "SELECT id FROM jobs WHERE public_id='job_deferred01'"
+            ).fetchone()[0]
+        )
+        conn.execute("BEGIN IMMEDIATE")
+        for n in range(20):
+            conn.execute(
+                "INSERT INTO job_events (job_id, at, level, message) VALUES "
+                "(?, unixepoch() - ?, 'info', ?)",
+                (job, 100 + n, f"stage keyframe: decoded {n * 250} frames"),
+            )
+        conn.execute("COMMIT")
+    finally:
+        conn.close()
+
+    with make_client(tmp_path) as client:
+        body = page(client, f"{ROOT}/jobs/job_deferred01")
+
+    section = body[body.index('id="events"') :]
+    preview, _, older = section.partition('<details class="digest">')
+    total = section.count('<li class="event"')
+    assert preview.count('<li class="event"') == EVENT_PREVIEW
+    assert older.count('<li class="event"') == total - EVENT_PREVIEW
+    assert (
+        f'<span class="digest-count">{total - EVENT_PREVIEW}</span> older event(s)'
+        in older
+    )
+    # `jobs.js` prepends a live event into `[data-events]`, so that attribute
+    # stays on the list the reader is looking at rather than inside the drawer.
+    assert 'class="events" data-events' in preview
+    assert "data-events" not in older
+
+
+def test_the_live_tick_looks_for_an_event_across_the_whole_digest() -> None:
+    """Split the log in two and a poller that only knows the first list
+    re-prepends every event that has scrolled into the second one."""
+    script = (STATIC / "jobs.js").read_text()
+    known = script[script.index("const known = new Set(") :][:200]
+    assert 'document.querySelectorAll("[data-event]")' in known
+
+
+def _rule(css: str, selector: str) -> str:
+    """The declaration block of the first rule whose selector list starts here.
+
+    Anchored to the start of a line, because these selectors are also named in
+    the prose above them and a comment is not a rule.
+    """
+    match = re.search("^" + re.escape(selector) + r"[^{}]*\{([^}]*)\}", css, re.M)
+    assert match, f"no rule for {selector}"
+    return match.group(1)
+
+
+def test_a_corpus_string_can_never_take_the_page_sideways() -> None:
+    """The No-Sideways Rule, at the four places a corpus string broke it.
+
+    Measured on 2026-08-10 against a fixture carrying a 78-character unbroken
+    token in a video title, a 130-character channel name and a yt-dlp traceback
+    with a signed URL in it: the video title took the document to 1445px at a
+    1440px viewport, the overview's arrival list to 572px at 390, and the
+    degraded list on the jobs page squeezed a video id to one character per line
+    getting there.
+    """
+    css = (STATIC / "dashboard.css").read_text()
+    for selector in (".pagehead h1", ".row-title", ".errtext, .eventtext"):
+        assert "overflow-wrap: anywhere" in _rule(css, selector), selector
+    # Flex line-breaking uses the hypothetical main size, so an `auto` basis on
+    # the row body let a long title push the thumbnail onto a line of its own.
+    assert "flex: 1 1 0" in _rule(css, ".row-body")
+
+
+def test_the_scroll_wrapper_is_the_containing_block_for_what_it_clips() -> None:
+    """`.sr-only` is `position: absolute` with no offsets.
+
+    Without a positioned ancestor its containing block is the page, an
+    out-of-flow box is not clipped by a scroll container it merely sits inside,
+    and the coverage column's invisible descriptions scrolled the whole videos
+    page 185px sideways at 1024 (measured 2026-08-10).
+    """
+    css = (STATIC / "dashboard.css").read_text()
+    wrapper = _rule(css, ".tablewrap")
+    assert "position: relative" in wrapper
+    assert "overflow-x: auto" in wrapper
+    assert "position: absolute" in _rule(css, ".sr-only")
+
+
+def test_a_wrapped_meta_strip_never_starts_a_line_with_a_separator(
+    tmp_path: Path,
+) -> None:
+    """The separator belongs to the fact before it.
+
+    Written the other way round the only break opportunity in the strip was in
+    front of the middot, so a strip that wrapped began its second line with a
+    dangling `· en · indexed 2025-08-03`.
+    """
+    templates = Path(__file__).resolve().parents[1] / "src/vidtheque_mcp/dashboard/templates"
+    for name in ("overview.html", "videos.html", "video.html", "jobs.html", "job.html"):
+        body = (templates / name).read_text()
+        for block in re.findall(r'<p class="pagehead-meta">(.*?)</p>', body, re.S):
+            assert not re.search(r'\s<span class="sep">·</span>', block), (
+                f"{name}: a middot with whitespace in front of it can start a line"
+            )
+    # And it is still one strip on the page, not a run of naked separators.
+    with make_client(tmp_path) as client:
+        assert '</span><span class="sep">·</span>' in page(
+            client, f"{ROOT}/videos/kCc8FmEb1nY"
+        )
