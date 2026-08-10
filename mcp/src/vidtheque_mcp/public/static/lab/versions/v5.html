@@ -544,7 +544,6 @@ footer{background:var(--void);padding:clamp(40px,4.6vw,64px) 0 clamp(44px,5vw,70
     <div class="mark"><b>vidtheque<i>.</i></b></div>
     <div class="railmeta">
       <span class="ml hide-s" id="railCorpus"></span>
-      <span class="ml">read-only from vidtheque.db</span>
     </div>
   </div>
 </header>
@@ -570,10 +569,8 @@ footer{background:var(--void);padding:clamp(40px,4.6vw,64px) 0 clamp(44px,5vw,70
         <button class="cta" id="askbtn" type="button">Ask the corpus
           <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" aria-hidden="true"><path d="M2.6 6h6.6M6.4 3.2 9.2 6l-2.8 2.8"/></svg>
         </button>
-        <div class="chips" id="chips" role="group" aria-label="Canned example questions"></div>
+        <div class="chips" id="chips" role="group" aria-label="Example questions"></div>
       </div>
-      <p class="canned">three canned searches, verified against the live corpus ·
-        this page makes no network calls</p>
     </div>
 
     <div class="bench idle" id="bench" aria-live="polite">
@@ -589,8 +586,7 @@ footer{background:var(--void);padding:clamp(40px,4.6vw,64px) 0 clamp(44px,5vw,70
 
   <div class="herofoot">
     <div class="wrap in">
-      <span class="ml">canned demo · local assets · no network</span>
-      <span class="ml hide-s">the videos belong to the people who made them</span>
+      <span class="ml">the videos belong to the people who made them</span>
     </div>
   </div>
 </section>
@@ -603,7 +599,7 @@ footer{background:var(--void);padding:clamp(40px,4.6vw,64px) 0 clamp(44px,5vw,70
       <h2>You don't have time to watch it all. <em>Your agent does.</em></h2>
       <p class="lede">Every still below is a moment your agent can hand back mid-task: the
         sentence a builder actually said, the text the machine read off the screen behind
-        them, and a link that lands on the second. When a leg has nothing to give, it
+        them, and a link that lands on the second. When a moment has nothing to give, it
         <b>says so</b> — it never quietly narrows the answer.</p>
     </div>
     <div class="legendrow">
@@ -624,12 +620,11 @@ footer{background:var(--void);padding:clamp(40px,4.6vw,64px) 0 clamp(44px,5vw,70
 <section class="beat" id="corpus" style="padding-bottom:clamp(44px,5vw,84px)">
   <div class="wrap">
     <div class="bhead">
-      <div class="kick"><s></s><span class="ml gold">the wall, running · 70 real keyframes, ids and timecodes verbatim</span></div>
+      <div class="kick"><s></s><span class="ml gold">the wall, running · 70 keyframes</span></div>
       <h2>Follow the builders. Get the sentence, the slide, and <em>the second.</em></h2>
-      <p class="lede">The same wall the hero dims for atmosphere, running at reading pace.
-        Every frame below was read out of a talk this corpus has already watched all the
-        way through. Point it at a conference, a channel, a creator, and their knowledge
-        compounds into yours.</p>
+      <p class="lede">Every frame below was read out of a talk this corpus has already
+        watched all the way through. Point it at a conference, a channel, a creator, and
+        their knowledge compounds into yours.</p>
     </div>
   </div>
   <div class="wallband" id="wallband" style="margin-top:clamp(34px,4vw,58px)"></div>
@@ -648,12 +643,10 @@ footer{background:var(--void);padding:clamp(40px,4.6vw,64px) 0 clamp(44px,5vw,70
 <section class="beat" id="ask">
   <div class="wrap">
     <div class="bhead">
-      <div class="kick"><s></s><span class="ml gold">the booth log · recorded 2026-08-09 · not re-recorded</span></div>
+      <div class="kick"><s></s><span class="ml gold">the booth log · recorded 2026-08-09</span></div>
       <h2>Your agent <em>watched it.</em></h2>
       <p class="lede">An agent, on the real protocol, answering a question no single talk
-        answers — and citing five speakers. Four Sonnet agents drove the live stack for an
-        afternoon; this is the one that was asked to answer properly, <b>with citations</b>,
-        the way ask mode does.</p>
+        answers — <b>with citations</b>, five speakers deep.</p>
     </div>
 
     <div class="term veiled" id="term">
@@ -703,9 +696,7 @@ footer{background:var(--void);padding:clamp(40px,4.6vw,64px) 0 clamp(44px,5vw,70
         <p class="note">the caveat, from the same run: the synthesist quoted an airline story from
           <span class="id">tJFjeMBKbIY</span> and the link it was handed opened at 18:57 —
           twenty-seven seconds before the story starts. Filed as a bug: search links point at the
-          cluster start, not at the matched moment. A real transcript with a real caveat in it is
-          worth more than a clean fake.</p>
-        <span class="ml">calls, results and the caveat as recorded in research/demo-queries-2026-08-09.md — condensed for width, nothing rewritten</span>
+          cluster start, not at the matched moment.</p>
       </div>
     </div>
   </div>
@@ -765,8 +756,7 @@ footer{background:var(--void);padding:clamp(40px,4.6vw,64px) 0 clamp(44px,5vw,70
     </div>
     <div class="fbase">
       <span class="ml">landing v5 · projection room</span>
-      <span class="ml" id="footStamp"></span>
-      <span class="ml r">numbers read out of the corpus at render time</span>
+      <span class="ml r" id="footStamp"></span>
     </div>
   </div>
 </footer>
@@ -907,7 +897,7 @@ footer{background:var(--void);padding:clamp(40px,4.6vw,64px) 0 clamp(44px,5vw,70
     const push = s => { const n = document.querySelector(s); if (!n) return;
       const rg = document.createRange(); rg.selectNodeContents(n);
       for (const r of rg.getClientRects()) if (r.width > 1 && r.height > 1) out.push(r); };
-    ['.herocopy .kick', '.herocopy h1', '.herocopy .lede', '.herocopy .canned'].forEach(push);
+    ['.herocopy .kick', '.herocopy h1', '.herocopy .lede'].forEach(push);
     ['#slug', '#askbtn', '#chips', '#bench', '.rail', '.herofoot']
       .forEach(s => { const n = document.querySelector(s);
         if (n) out.push(n.getBoundingClientRect()); });
@@ -1156,7 +1146,7 @@ footer{background:var(--void);padding:clamp(40px,4.6vw,64px) 0 clamp(44px,5vw,70
     } else dds.forEach(c => { c.dd.innerHTML = c.fmt(c.target); });
     document.getElementById('ledgerNote').textContent =
       num(st.cues) + ' sentences spoken · ' + num(st.words) + ' words · ' +
-      num(st.ocr_frames) + ' frames read · counted off vidtheque.db for this build';
+      num(st.ocr_frames) + ' frames read';
   }
 
   /* ═══ beat 3 — the wall: 70 real keyframes, drifting (v4's treatment) ═══
