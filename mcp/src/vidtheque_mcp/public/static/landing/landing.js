@@ -473,8 +473,7 @@
     document.getElementById('bandDates').textContent =
       'published ' + ymd(st.first_pub) + ' → ' + ymd(st.last_pub) + ' · hover a frame for the talk';
     document.getElementById('footStamp').textContent =
-      'corpus read ' + ymd(st.first_pub) + ' → ' + ymd(st.last_pub) + ' · ' +
-      num(st.keyframes) + ' keyframes on disk';
+      '';
   }
 
   /* ═══ beat 4 — the booth log types its question when you reach it ═══ */
