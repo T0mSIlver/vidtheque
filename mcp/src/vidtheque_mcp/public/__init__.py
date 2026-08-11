@@ -1,4 +1,6 @@
-"""The public demo surface: read-only masking, `/api`, the page, rate limits.
+"""The public surface: read-only masking, `/api`, the two pages, rate limits.
+
+The landing is at `/` and the demo at `/demo` (Tom, 2026-08-11).
 
 ``VIDTHEQUE_PUBLIC_READONLY=1`` turns all four on together — one mode resolved
 at app-construction time, like ``VIDTHEQUE_AUTH``, never a per-route
@@ -62,15 +64,26 @@ _ASSET_CACHE = "public, max-age=31536000, immutable"
 # that *those mechanisms are what the safety consists of*. This is the second
 # line, for the day someone adds a sink without reading the file's header.
 #
-# The page can afford the strict version because it was built self-contained:
+# The demo can afford the strict version because it was built self-contained:
 # no inline `<style>`, no `style=` attribute, no `.style` assignment in the
 # script, one same-origin stylesheet, one same-origin module, fonts from
 # `static/`. So no `unsafe-inline` and no `unsafe-eval` anywhere, which is what
 # makes a CSP worth having rather than worth quoting.
 #
+# **The landing at `/` was made to fit this policy rather than the policy
+# widened to fit it (2026-08-11).** It arrived from `lab/` as one file with an
+# inline `<style>`, an inline `<script>` and ten `style=` attributes — every
+# one of which this policy refuses. The two blocks are now `landing.css` and
+# `landing.js` and the attributes are classes; the alternative was an
+# `unsafe-inline` (or a hash list to recompute on every edit) on the one page
+# every visitor loads first, to save moving two blocks once. `.style` and
+# `cssText` assignments from the script are untouched: CSSOM is not something
+# CSP governs, and the lift and the OCR boxes are built out of it.
+#
 # `img-src` carries `data:` for exactly one thing — the wordmark favicon is an
-# inline SVG data URL in `index.html`. Thumbnails are `PUBLIC_URL/frames/…`,
-# which is this origin. `form-action` is `'self'` and not `'none'`: the search
+# inline SVG data URL, the same one on both documents. Thumbnails are
+# `PUBLIC_URL/frames/…` and the landing's stills are `/static/landing/…`, which
+# are this origin. `form-action` is `'self'` and not `'none'`: the demo's search
 # box is a real `<form>` that the script intercepts, and a policy that only
 # holds while the JavaScript works is the wrong shape.
 #
@@ -101,16 +114,19 @@ _DOCUMENT_HEADERS = {
 # Top-level names under `static/` that this route refuses, whatever they hold.
 #
 # `static/lab/` is the landing workshop — competing prototypes of a page that
-# has not shipped, ~13 MB of them, with their own asset trees. The route serves
+# has not shipped, ~11 MB of them, with their own asset trees. The route serves
 # *any* file under `static/` by suffix, so without this the whole lab answers at
-# `https://<host>/static/lab/versions/v5.html` the moment a tunnel opens
+# `https://<host>/static/lab/versions/v1.html` the moment a tunnel opens
 # (`research/release-staging-2026-08-11.md` §9, finding 1).
 #
-# A prefix denial rather than moving the files: the landing graduates *out* of
-# `lab/` later, so the directory keeps existing and keeps being worked in; dev
-# use is a local preview server, not this app; and a denied prefix covers a new
-# prototype directory nobody remembered to think about, which a one-time `git mv`
-# does not. Matched on the resolved path, so `../lab/…` cannot walk back in.
+# The winning prototype has since graduated — v5 is `static/landing/` and is
+# served at `/` — and the denial stayed, which is the case it was written for:
+# a prefix covers the directory that keeps existing and keeps being worked in
+# (through a local preview server, never through this app) and the next
+# prototype nobody remembered to think about, where a one-time `git mv` covers
+# only what was moved. Matched on the resolved path, so `../lab/…` cannot walk
+# back in. Adding a top-level name here is the amendment; adding a *file* to
+# `static/` is publishing it.
 _DENIED_SUBTREES = frozenset({"lab"})
 
 # `/dashboard/login`, per IP, per minute. A constant rather than a knob, for the
@@ -120,19 +136,40 @@ _DENIED_SUBTREES = frozenset({"lab"})
 LOGIN_PER_MIN = 10
 
 
+def _document(path: Path) -> Response:
+    """One HTML document, with the headers every document on this app gets.
+
+    Both pages go through here rather than through the asset route: `/` and
+    `/demo` are the two *documents*, they are named rather than resolved from a
+    path parameter, and they must not be able to drift apart on the policy the
+    2026-08-10 audit wrote (`_DOCUMENT_HEADERS`).
+    """
+    return FileResponse(
+        path,
+        media_type="text/html; charset=utf-8",
+        headers={"Cache-Control": _STATIC_CACHE, **_DOCUMENT_HEADERS},
+    )
+
+
 def public_routes() -> list[Route]:
-    """`/api/*`, the demo page at `/`, and its two static files.
+    """`/api/*`, the landing at `/`, the demo at `/demo`, and their assets.
 
     Order matters only against ``Mount("/", mcp_app)`` in ``app.py``, which
     matches everything and must stay last.
+
+    **The landing owns `/` and the demo moved to `/demo`** — Tom, 2026-08-11,
+    post-launch topology (demo-site.md §1). The demo had `/` because it was the
+    only page there was; a visitor arriving cold now meets the argument first
+    and the working corpus one click in. Nothing redirects: an old bookmark of
+    `/` lands on the landing, whose one CTA is `/demo`, which is the same two
+    clicks a redirect would have cost and is honest about where it went.
     """
 
-    async def page(_request) -> Response:
-        return FileResponse(
-            STATIC_DIR / "index.html",
-            media_type="text/html; charset=utf-8",
-            headers={"Cache-Control": _STATIC_CACHE, **_DOCUMENT_HEADERS},
-        )
+    async def landing(_request) -> Response:
+        return _document(STATIC_DIR / "landing" / "index.html")
+
+    async def demo(_request) -> Response:
+        return _document(STATIC_DIR / "index.html")
 
     async def asset(request) -> Response:
         name = request.path_params["asset"]
@@ -163,7 +200,8 @@ def public_routes() -> list[Route]:
 
     return [
         *api_routes(demo=True),
-        Route("/", page, methods=["GET"]),
+        Route("/", landing, methods=["GET"]),
+        Route("/demo", demo, methods=["GET"]),
         Route("/static/{asset:path}", asset, methods=["GET"]),
     ]
 

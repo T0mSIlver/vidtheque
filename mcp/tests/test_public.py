@@ -296,8 +296,8 @@ def test_meta_reports_the_endpoint_and_the_ask_state(tmp_path: Path) -> None:
 # ---------------------------------------------------------------- 3. the page
 
 
-def test_the_demo_page_is_served_at_the_root(public_client: TestClient) -> None:
-    response = public_client.get("/")
+def test_the_demo_page_is_served_at_demo(public_client: TestClient) -> None:
+    response = public_client.get("/demo")
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
     body = response.text
@@ -306,6 +306,107 @@ def test_the_demo_page_is_served_at_the_root(public_client: TestClient) -> None:
     assert "Add this corpus to your own agent" in body
     assert "Source on GitHub" in body
     assert "Results link to the original talks" not in body
+
+
+def test_the_landing_is_served_at_the_root(public_client: TestClient) -> None:
+    """`/` is the landing since 2026-08-11 (demo-site.md §1, Tom's topology)."""
+    response = public_client.get("/")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    body = response.text
+    assert "Builders talk." in body
+    assert "/static/landing/landing.css" in body
+    assert "/static/landing/landing.js" in body
+    assert "/static/landing/data.js" in body
+    # The demo's own document is a different page and did not come along.
+    assert "/static/app.js" not in body
+
+
+def test_the_landing_cta_is_the_way_into_the_demo(public_client: TestClient) -> None:
+    """The one control that leaves the canned show, and it is a real link.
+
+    A `<button>` running the hero cycle was right in the lab, where there was
+    nowhere to go. Now there is: the CTA is the exit into the live corpus, so
+    middle-click has to work and it has to be an affordance whether or not the
+    script ran (demo-site.md §6.1).
+    """
+    body = _landing(public_client)
+    assert '<a class="cta" id="askbtn" href="/demo">' in body
+    assert "Ask the corpus" in body
+    # The cycle itself stays: the chips still drive it, the button no longer does.
+    script = (STATIC / "landing" / "landing.js").read_text()
+    assert "$('#chips').addEventListener('click'" in script
+    assert "$('#askbtn').addEventListener" not in script
+
+
+def test_the_landing_carries_no_lab_stamp(public_client: TestClient) -> None:
+    """The version stamp was flagged lab-only at cull time and left with it.
+
+    Comments are stripped first: the document's own graduation note *names* the
+    stamp to say it is gone, and that sentence should stay legal — the same
+    courtesy `app.js` gets for talking about `innerHTML`.
+    """
+    body = re.sub(r"<!--.*?-->", "", _landing(public_client), flags=re.S)
+    assert "landing v5 · projection room" not in body
+    assert 'data-version="v5"' not in body
+    assert "<title>vidtheque — Builders talk. Your agent listens.</title>" in body
+
+
+def test_the_landing_holds_nothing_the_policy_refuses(public_client: TestClient) -> None:
+    """`style-src 'self'`/`script-src 'self'` mean this, spelled out.
+
+    The lab piece was one self-contained file: an inline `<style>`, an inline
+    `<script>` and ten `style=` attributes, every one of which the document
+    policy refuses. Checked against the served bytes rather than trusted,
+    because the whole page would come up unstyled and inert if this regressed —
+    and it would come up that way only in a browser, never in these tests.
+    """
+    # Comments stripped, as above: the head's graduation note is prose about
+    # the very things this asserts are absent from the markup.
+    body = re.sub(r"<!--.*?-->", "", _landing(public_client), flags=re.S)
+    assert "<style" not in body
+    assert 'style="' not in body
+    for tag in (
+        '<script src="/static/landing/data.js"></script>',
+        '<script src="/static/landing/landing.js"></script>',
+    ):
+        assert tag in body
+        body = body.replace(tag, "")
+    assert "<script" not in body, "no inline script survives on the landing"
+    # …and none of the script's generated markup smuggles one back in.
+    assert 'style="' not in (STATIC / "landing" / "landing.js").read_text()
+
+
+def test_the_landing_assets_are_served_from_their_graduated_paths(
+    public_client: TestClient,
+) -> None:
+    """Every path the document and the script name, answered.
+
+    The lab piece addressed `v5-assets/…` relative to itself. Served at `/`, a
+    relative `src` resolves against the site root, so the graduation made them
+    root-absolute — and that is exactly the class of bug a browser shows and a
+    unit test does not, unless it asks.
+    """
+    for path, media in (
+        ("/static/landing/landing.css", "text/css"),
+        ("/static/landing/landing.js", "text/javascript"),
+        ("/static/landing/data.js", "text/javascript"),
+        ("/static/landing/pgm/r1.jpg", "image/jpeg"),
+        ("/static/landing/wall/t00.jpg", "image/jpeg"),
+        ("/static/landing/moments/m41.jpg", "image/jpeg"),
+        ("/static/landing/grid/xIt_mTQp6mY.jpg", "image/jpeg"),
+        # The two faces, deduped against the packaged pair rather than
+        # re-vendored beside the page.
+        ("/static/fonts/archivo-latin-wght-normal.woff2", "font/woff2"),
+        ("/static/fonts/jetbrains-mono-latin-wght-normal.woff2", "font/woff2"),
+    ):
+        response = public_client.get(path)
+        assert response.status_code == 200, path
+        assert response.headers["content-type"].startswith(media), path
+    # The stylesheet reaches the faces by `../fonts/`, which is that same pair.
+    css = (STATIC / "landing" / "landing.css").read_text()
+    assert 'url("../fonts/archivo-latin-wght-normal.woff2")' in css
+    assert not (STATIC / "landing" / "fonts").exists(), "the vendored copy is gone"
 
 
 def test_the_attribution_line_points_at_the_removal_path(
@@ -318,15 +419,17 @@ def test_the_attribution_line_points_at_the_removal_path(
     documented" as the obligation that creates. `docs/takedown.md` is that
     path, and the footer is where the promise is made (demo-site.md §6 item 7).
     """
-    body = public_client.get("/").text
+    body = public_client.get("/demo").text
     assert "The videos belong to the people who made them." in body
     assert "docs/takedown.md" in body
     assert "Removal on request" in body
+    # The landing makes the same promise in its own footer.
+    assert "The videos belong to the people who made them." in _landing(public_client)
 
 
 def test_the_enlarge_dialog_is_a_real_dialog(public_client: TestClient) -> None:
     """Esc, the backdrop, the focus trap and the modal role are the platform's."""
-    body = public_client.get("/").text
+    body = public_client.get("/demo").text
     assert "<dialog id=\"shot\"" in body
     assert 'aria-labelledby="shot-caption"' in body
     # Opening it must not put Enter on "leave the page": Close takes focus.
@@ -347,26 +450,34 @@ def test_the_landing_workshop_is_not_on_the_public_surface(
 
     The asset route serves anything under `static/` whose suffix it knows, and
     `static/lab/` holds the landing prototypes — competing versions of a page
-    that has not shipped. Left alone they answer at
-    `/static/lab/versions/v5.html` the moment a tunnel opens
+    that had not shipped. Left alone they answer at
+    `/static/lab/versions/v1.html` the moment a tunnel opens
     (`research/release-staging-2026-08-11.md` §9, finding 1). The demo's own
     three files and its fonts are unaffected — that is the other half of the
     assertion and the reason this is a prefix denial rather than a `git mv`.
+
+    The winner *did* get a `git mv` (2026-08-11): v5 is `static/landing/` and is
+    served at `/`. The gate stayed for the five prototypes behind it, which is
+    the case it was written for — and the paths below are files that still
+    exist, so a 404 here is the denial and not a missing file.
     """
+    assert (STATIC / "lab" / "versions" / "v1.html").is_file(), "fixture moved"
     for path in (
-        "/static/lab/versions/v5.html",
         "/static/lab/hero.html",
         "/static/lab/versions/v1.html",
+        "/static/lab/versions/v6.html",
+        "/static/lab/hero/t00.jpg",
         # …and by prefix, so a prototype directory added later is covered too.
         "/static/lab/anything/at/all.css",
         # The traversal-normalised spelling resolves into `lab/` and is refused
         # by the same check, not by the containment one above it.
-        "/static/fonts/../lab/versions/v5.html",
+        "/static/fonts/../lab/versions/v1.html",
     ):
         assert public_client.get(path).status_code == 404, path
-    # The demo still works.
+    # The demo still works, and so does the page that graduated out of `lab/`.
     assert public_client.get("/static/style.css").status_code == 200
     assert public_client.get("/static/app.js").status_code == 200
+    assert public_client.get("/static/landing/landing.css").status_code == 200
     assert (
         public_client.get("/static/fonts/archivo-latin-wght-normal.woff2").status_code
         == 200
@@ -390,10 +501,16 @@ def test_the_two_faces_are_served_as_fonts(public_client: TestClient) -> None:
     assert public_client.get("/static/fonts/Archivo-OFL.txt").status_code == 404
 
 
-def test_the_root_is_not_the_page_outside_public_mode(private_client: TestClient) -> None:
-    """`/` falls through to the MCP mount, which has nothing there."""
+def test_neither_page_exists_outside_public_mode(private_client: TestClient) -> None:
+    """`/` and `/demo` fall through to the MCP mount, which has nothing there.
+
+    The new route is registered in the same place and by the same branch as the
+    old one, so a private deployment gained no surface from the topology change.
+    """
     assert private_client.get("/").status_code == 404
+    assert private_client.get("/demo").status_code == 404
     assert private_client.get("/static/style.css").status_code == 404
+    assert private_client.get("/static/landing/landing.css").status_code == 404
 
 
 # --------------------------------------------------------- 4. rate limiting
@@ -981,6 +1098,13 @@ STATIC = Path(vidtheque_mcp.public.__file__).parent / "static"
 
 
 def _page(client: TestClient) -> str:
+    """The demo page — `/demo` since 2026-08-11, when the landing took `/`."""
+    response = client.get("/demo")
+    assert response.status_code == 200
+    return response.text
+
+
+def _landing(client: TestClient) -> str:
     response = client.get("/")
     assert response.status_code == 200
     return response.text
@@ -1316,7 +1440,14 @@ def test_the_idle_line_is_parked_in_the_flow_never_taken_out_of_it() -> None:
 
 
 def test_the_page_and_its_assets_are_cacheable(public_client: TestClient) -> None:
-    for path in ("/", "/static/style.css", "/static/app.js"):
+    for path in (
+        "/",
+        "/demo",
+        "/static/style.css",
+        "/static/app.js",
+        "/static/landing/landing.css",
+        "/static/landing/landing.js",
+    ):
         cache = public_client.get(path).headers.get("cache-control", "")
         assert "max-age=" in cache, f"{path} is served without a cache lifetime"
 
@@ -1363,22 +1494,31 @@ def test_the_document_carries_a_policy_that_needs_no_unsafe_word(
     `unsafe-inline`/`unsafe-eval` are asserted *absent* because the page was
     built self-contained precisely so it could refuse them, and a CSP carrying
     either is the version that gets quoted rather than the version that works.
+
+    **Both documents**, since 2026-08-11: the landing at `/` arrived from the
+    lab as one file with an inline `<style>`, an inline `<script>` and ten
+    `style=` attributes, and was rebuilt to fit this policy rather than the
+    policy widened to admit it. Asserting it on `/demo` alone would have let the
+    front door — the page every visitor loads first — carry a weaker one.
     """
-    headers = public_client.get("/").headers
-    policy = headers.get("content-security-policy", "")
-    for directive in (
-        "default-src 'self'",
-        "script-src 'self'",
-        "img-src 'self' data:",  # the inline-SVG favicon, and nothing else
-        "frame-ancestors 'none'",  # /api/ask spends money; framing steals clicks
-        "base-uri 'none'",
-        "object-src 'none'",
-    ):
-        assert directive in policy, f"the document policy dropped {directive!r}"
-    for unsafe in ("unsafe-inline", "unsafe-eval"):
-        assert unsafe not in policy, f"the policy admits {unsafe!r}"
-    assert headers.get("x-frame-options") == "DENY"
-    assert headers.get("x-content-type-options") == "nosniff"
+    for path in ("/", "/demo"):
+        headers = public_client.get(path).headers
+        policy = headers.get("content-security-policy", "")
+        for directive in (
+            "default-src 'self'",
+            "script-src 'self'",
+            "style-src 'self'",  # no `style=` attribute survives on either page
+            "img-src 'self' data:",  # the inline-SVG favicon, and nothing else
+            "frame-ancestors 'none'",  # /api/ask spends money; framing steals clicks
+            "base-uri 'none'",
+            "object-src 'none'",
+        ):
+            assert directive in policy, f"{path} dropped {directive!r}"
+        for unsafe in ("unsafe-inline", "unsafe-eval"):
+            assert unsafe not in policy, f"{path} admits {unsafe!r}"
+        assert headers.get("x-frame-options") == "DENY", path
+        assert headers.get("x-content-type-options") == "nosniff", path
+        assert headers.get("referrer-policy") == "no-referrer", path
 
 
 def test_the_policy_follows_the_document_and_not_the_route(
@@ -1391,10 +1531,17 @@ def test_the_policy_follows_the_document_and_not_the_route(
     `.html` under `static/` arrives with no policy and nothing notices.
     """
     assert "content-security-policy" not in public_client.get("/static/style.css").headers
-    page = public_client.get("/").headers["content-security-policy"]
+    assert (
+        "content-security-policy"
+        not in public_client.get("/static/landing/landing.js").headers
+    )
+    page = public_client.get("/demo").headers["content-security-policy"]
     assert page == public_client.get("/static/index.html").headers.get(
         "content-security-policy"
     ), "an HTML asset is a document and must carry the document's policy"
+    assert page == public_client.get("/").headers.get(
+        "content-security-policy"
+    ), "the landing is a document on this app and gets the app's document policy"
 
 
 # A line of OCR is untrusted input by construction. This is the shape of it.

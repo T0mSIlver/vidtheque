@@ -529,20 +529,22 @@ components:
 
 # Design System: vidtheque — the projection room
 
-Normative for every **product** web surface: the landing page, the public demo
-at `/`, and the dashboard at `/dashboard`. One world, three densities.
+Normative for every **product** web surface: the landing page at `/`, the public
+demo at `/demo`, and the dashboard at `/dashboard`. One world, three densities.
 
 This file does **not** override `docs/design/demo-site.md` or
 `docs/design/dashboard.md` on function, data, clamps or copy, and it does not
 override `docs/design/positioning.md` on voice. It owns how the surfaces look,
 and nothing else.
 
-**Reference implementation:** `mcp/src/vidtheque_mcp/public/static/lab/versions/v5.html`
+**Reference implementation:** `mcp/src/vidtheque_mcp/public/static/landing/`
 ("projection room"). Tom picked it on 2026-08-10 as the product's visual
-identity. Every token below was read out of v5 as shipped; where a value is an
-extension rather than a readout it says so in the prose. When this file and v5
-disagree, **this file wins** — v5 is a lab piece and may drift; but say why in
-the amending commit, because v5 is the thing Tom actually approved.
+identity, and it graduated out of `lab/versions/v5.html` to the served landing
+on 2026-08-11 (demo-site.md §6.1) — same page, no longer a lab piece. Every
+token below was read out of v5 as shipped; where a value is an extension rather
+than a readout it says so in the prose. When this file and the landing disagree,
+**this file wins**; but say why in the amending commit, because that page is the
+thing Tom actually approved.
 
 **The amendment rule.** The frontmatter tokens above are normative. Any agent
 may **use** any token and may **add** a `components:` entry for a component it
@@ -957,7 +959,8 @@ spends.
 
 ### The landing page — the maximal expression
 
-**v5.html is the reference.** Full-bleed imagery, the display ladder at its top
+**`static/landing/` is the reference** (v5 as it graduated). Full-bleed
+imagery, the display ladder at its top
 rungs, the drifting wall, the lift, the light table, the evidence wall, the
 booth log. This is the only surface where a beat may exist purely to make an
 argument, and the only one that may spend a whole viewport on one idea. Motion
@@ -1024,9 +1027,11 @@ licence texts beside them. **The canonical location is
 | `archivo-latin-wght-normal.woff2` | Archivo | `wght` 100–900 | 34,928 |
 | `jetbrains-mono-latin-wght-normal.woff2` | JetBrains Mono | `wght` 100–800 | 40,404 |
 
-with `Archivo-OFL.txt` and `JetBrainsMono-OFL.txt`. Both files are byte-
-identical to the lab's copies under `lab/versions/v5-assets/fonts/`, and the
-JetBrains Mono file is byte-identical to the one the dashboard already shipped
+with `Archivo-OFL.txt` and `JetBrainsMono-OFL.txt`. This is now the *only* copy
+on the public surface: the landing carried a byte-identical set of its own under
+`lab/versions/v5-assets/fonts/` and dropped it when it graduated (2026-08-11),
+so both documents load the same two files. The JetBrains Mono file is
+byte-identical to the one the dashboard already shipped
 (`md5 b058178d…`). Provenance: the fontsource variable packages, filenames
 verbatim; the JetBrains Mono entry in
 `dashboard/static/fonts/PROVENANCE.md` covers that file, and Archivo arrived

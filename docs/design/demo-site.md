@@ -31,8 +31,24 @@ conditional. Set it and four things change together:
 |---|---|---|
 | write tools (`index-video`, `tag-video`) | registered | **never registered** |
 | `/api/*` | absent (404) | served |
-| `/` | the MCP mount | the demo page |
+| `/` | the MCP mount | **the landing page** |
+| `/demo` | the MCP mount | the demo page |
 | rate limiting on `/api/*` and `/frames/*` | none | token bucket per IP |
+
+**Amended 2026-08-11 (Tom, post-launch topology): the landing owns `/` and the
+demo moved to `/demo`.** The demo had the root because it was the only page
+there was. It is not any more: the landing graduated out of `static/lab/` the
+same day (§6.1), and a visitor arriving cold at a search box has to be sold the
+corpus before being asked to query it — which is the landing's whole job and
+none of the demo's. So the front door is the argument and the working corpus is
+one click in, behind the landing's single CTA.
+
+Nothing redirects, deliberately. An old bookmark of `/` lands on the landing,
+which is the same site saying the same thing, with `/demo` in its one gold
+button; a 302 would buy that visitor one click at the cost of a rule that
+outlives everyone's memory of why it exists. `/api/*`, `/frames/*`, `/mcp` and
+`/dashboard` did not move — the facade is addressed by agents and by the demo's
+own script, and a public JSON path is a promise in a way a page is not.
 
 The read surface is untouched: seven read tools, three resources,
 `/frames/<id>.jpg`, `/healthz`, and `/mcp` all behave exactly as they do in a
@@ -878,25 +894,72 @@ every kind alike.
 
 ## 6. The page
 
-Served at `/` from `vidtheque_mcp/public/static/`, three files, no build step,
-no framework, no external requests. `index.html` + `app.js` + `style.css`,
-shipped inside the wheel (hatchling includes package data under the package
-directory).
+Served at **`/demo`** (§1) from `vidtheque_mcp/public/static/`, three files, no
+build step, no framework, no external requests. `index.html` + `app.js` +
+`style.css`, shipped inside the wheel (hatchling includes package data under the
+package directory). Everything below describes this page; the landing that took
+`/` is §6.1.
+
+Both documents are served by the same small helper and carry the same headers —
+the CSP and its three companions are a property of *being a document on this
+app*, not of a route, so the two pages cannot drift apart on the policy the
+2026-08-10 audit wrote.
 
 **The asset route serves that directory, minus a denylist (2026-08-11).**
 `/static/{asset:path}` resolves under the packaged `static/` root, refuses
 anything that escapes it, and types the response by suffix — so *every* file
-under `static/` is public the moment the demo is. That is one file too generous:
-`static/lab/` is the landing workshop, ~13 MB of competing prototypes of a page
-that has not shipped, and it answered at `/static/lab/versions/v5.html`
+under `static/` is public the moment the demo is. That is one directory too
+generous: `static/lab/` is the landing workshop, competing prototypes of a page
+that had not shipped, and it answered at `/static/lab/versions/v5.html`
 (`research/release-staging-2026-08-11.md` §9, finding 1). The route now refuses
 the `lab/` subtree by prefix, checked on the *resolved* path so `../lab/…` is
-covered by the same line. Denied rather than moved on purpose: the landing
-graduates out of `lab/` later, the directory keeps being worked in (through a
-local preview server, never through this app), and a prefix covers the next
-prototype directory that nobody remembers to think about. Adding a top-level
-name to `_DENIED_SUBTREES` is the amendment; adding a *file* to `static/` is
-publishing it.
+covered by the same line. Denied rather than moved on purpose, and the reason
+held: v5 has since graduated out of `lab/` (§6.1) and the ~11 MB of prototypes
+behind it have not, the directory keeps being worked in (through a local preview
+server, never through this app), and a prefix covers the next prototype
+directory that nobody remembers to think about where a `git mv` covers only what
+was moved. Adding a top-level name to `_DENIED_SUBTREES` is the amendment;
+adding a *file* to `static/` is publishing it.
+
+### 6.1 The landing at `/` (added 2026-08-11)
+
+`static/landing/` — `index.html` + `landing.css` + `landing.js`, its stills in
+`grid/`, `moments/`, `pgm/` and `wall/`, and `data.js`, the read-only corpus
+readout every count and frame on the page is rendered from. It makes **zero
+network requests**: the landing argues, the demo works.
+
+This is `lab/versions/v5.html`, the prototype Tom picked on 2026-08-10 and
+which `DESIGN.md` names as the visual system's reference implementation. It
+graduated unchanged in everything a reader can see. What changed is what a lab
+piece may do and a served document may not:
+
+- **The inline `<style>` and `<script>` moved out, verbatim, and the ten
+  `style=` attributes became classes.** The CSP above carries no
+  `unsafe-inline`, and that is the thing the audit actually bought — a policy
+  with `unsafe-inline` in it is a policy worth quoting rather than having. The
+  alternative was widening it (or maintaining a hash list) on the one page every
+  visitor loads first, to avoid moving two blocks once. Script-side `.style`
+  and `cssText` assignments stayed: the lift and the OCR boxes are built out of
+  them, and CSSOM is not something CSP governs.
+- **Asset paths are root-absolute** (`/static/landing/…`). The document is
+  served at `/`, so a relative `src` resolves against the site root.
+- **The vendored font copies are gone**; the page uses the packaged pair at
+  `/static/fonts/`, which the lab copy was byte-identical to. One pair of
+  faces, three surfaces.
+- **The `landing v5 · projection room` stamp is gone** from the footer, the
+  `<title>` and the `<html>` element — the lab's own label, flagged as such at
+  cull time.
+- **`<head>` gained the front door's furniture**: the drawn favicon,
+  `theme-color`, `color-scheme` and the unfurl tags, each copied from the demo
+  page rather than re-decided, so the two surfaces cannot disagree.
+- **"Ask the corpus" is a link to `/demo`.** It was a button that advanced the
+  canned hero cycle. The cycle is the landing's own show and still runs on its
+  own (and its example chips still drive it); the CTA is the one control that
+  *leaves*, which is why it is a real `<a>` — middle-click works, and it is the
+  same affordance whether or not the script ran.
+
+The demo's rail keeps its one link out, into `/dashboard`, and its wordmark —
+already `href="/"` — now goes to the landing, which is what a wordmark means.
 
 **Amended 2026-08-10 (Tom's voice cull).** The surface keeps labels, values and
 one-line states; it no longer explains its mechanics or argues for its design.

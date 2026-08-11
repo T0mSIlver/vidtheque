@@ -2487,7 +2487,8 @@ def test_the_welcome_page_gains_its_link_into_the_browsable_corpus(
     an invitation to a dead page in the masthead.
     """
     with make_client(tmp_path, public=DEMO) as demo:
-        body = demo.get("/").text
+        # `/demo` since 2026-08-11: the landing took `/` (demo-site.md §1).
+        body = demo.get("/demo").text
         assert 'id="browse"' in body and 'href="/dashboard"' in body
         assert "Browse the corpus" in body
         assert demo.get("/api/meta").json()["browse"] == ROOT
