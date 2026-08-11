@@ -68,3 +68,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/vidtheque_mcp"]
+# The landing workshop lives on the archive/landing-lab branch; if a lab/
+# ever grows back here, it still never ships in the wheel.
+exclude = ["src/vidtheque_mcp/public/static/lab"]
