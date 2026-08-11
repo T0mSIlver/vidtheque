@@ -29,8 +29,19 @@ class Settings(BaseSettings):
     )
 
     # --- server -----------------------------------------------------------
-    host: str = Field(default="0.0.0.0", validation_alias=_either("HOST"))
-    port: int = Field(default=8081, validation_alias=_either("PORT"))
+    host: str = Field(
+        default="0.0.0.0",
+        validation_alias=AliasChoices("VIDTHEQUE_WORKER_HOST", "VIDTHEQUE_HOST", "HOST"),
+    )
+    # VIDTHEQUE_WORKER_PORT wins over VIDTHEQUE_PORT: when mcp and the worker
+    # share one env file (single-box deployment, 2026-08-11), VIDTHEQUE_PORT
+    # belongs to mcp and the worker taking it binds mcp's port. dev_stack.sh
+    # and deploy/staging always set the WORKER_ form; the bare forms remain for
+    # a worker deployed alone.
+    port: int = Field(
+        default=8081,
+        validation_alias=AliasChoices("VIDTHEQUE_WORKER_PORT", "VIDTHEQUE_PORT", "PORT"),
+    )
     log_level: str = Field(default="info", validation_alias=_either("LOG_LEVEL"))
 
     docs_enabled: bool = Field(default=False, validation_alias=_either("WORKER_DOCS"))

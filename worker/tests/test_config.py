@@ -276,3 +276,24 @@ def test_unknown_image_embed_backend_lists_the_alternatives():
     with pytest.raises(UnknownBackend) as excinfo:
         build_backend("image_embed", "open-clip", settings())
     assert "siglip2" in str(excinfo.value)
+
+
+def test_the_worker_port_wins_over_the_shared_port(monkeypatch):
+    """One env file, two processes (2026-08-11 cutover): VIDTHEQUE_PORT is
+    mcp's; the worker must prefer VIDTHEQUE_WORKER_PORT or it binds mcp's
+    port while a unit guard on the WORKER_ form reads green."""
+    monkeypatch.setenv("VIDTHEQUE_PORT", "8100")
+    monkeypatch.setenv("VIDTHEQUE_WORKER_PORT", "8081")
+    assert Settings(_env_file=None).port == 8081
+
+
+def test_the_shared_port_still_works_for_a_worker_deployed_alone(monkeypatch):
+    monkeypatch.setenv("VIDTHEQUE_PORT", "9999")
+    monkeypatch.delenv("VIDTHEQUE_WORKER_PORT", raising=False)
+    assert Settings(_env_file=None).port == 9999
+
+
+def test_the_worker_host_wins_over_the_shared_host(monkeypatch):
+    monkeypatch.setenv("VIDTHEQUE_HOST", "127.0.0.1")
+    monkeypatch.setenv("VIDTHEQUE_WORKER_HOST", "0.0.0.0")
+    assert Settings(_env_file=None).host == "0.0.0.0"
