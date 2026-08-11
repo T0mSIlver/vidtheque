@@ -446,37 +446,39 @@ def test_the_page_assets_are_served_and_confined(public_client: TestClient) -> N
     assert public_client.get("/static/nope.css").status_code == 404
 
 
-def test_the_landing_workshop_is_not_on_the_public_surface(
+def test_the_lab_gate_denies_by_name_not_by_absence(
     public_client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`static/lab/` is unreleased work and must 404 through the demo route.
+    """A `static/lab/` that grows back is refused before anyone thinks about it.
 
-    The asset route serves anything under `static/` whose suffix it knows, and
-    `static/lab/` holds the landing prototypes — competing versions of a page
-    that had not shipped. Left alone they answer at
-    `/static/lab/versions/v1.html` the moment a tunnel opens
-    (`research/release-staging-2026-08-11.md` §9, finding 1). The demo's own
-    three files and its fonts are unaffected — that is the other half of the
-    assertion and the reason this is a prefix denial rather than a `git mv`.
-
-    The winner *did* get a `git mv` (2026-08-11): v5 is `static/landing/` and is
-    served at `/`. The gate stayed for the five prototypes behind it, which is
-    the case it was written for — and the paths below are files that still
-    exist, so a 404 here is the denial and not a missing file.
+    The prototypes that motivated the gate live on `archive/landing-lab` now,
+    so a 404 on `/static/lab/…` against the real tree would only prove the
+    files are gone. The property worth keeping is the *denial*: the asset
+    route refuses the `lab` name on the resolved path, whatever it holds. So
+    this test grows a lab back — a real file, servable suffix — under a
+    substitute `STATIC_DIR`, and expects the gate, not the filesystem, to say
+    404. `asset()` reads the module global per request, so the patch takes
+    effect without rebuilding the app.
     """
-    assert (STATIC / "lab" / "versions" / "v1.html").is_file(), "fixture moved"
-    for path in (
-        "/static/lab/hero.html",
-        "/static/lab/versions/v1.html",
-        "/static/lab/versions/v6.html",
-        "/static/lab/hero/t00.jpg",
-        # …and by prefix, so a prototype directory added later is covered too.
-        "/static/lab/anything/at/all.css",
-        # The traversal-normalised spelling resolves into `lab/` and is refused
-        # by the same check, not by the containment one above it.
-        "/static/fonts/../lab/versions/v1.html",
-    ):
-        assert public_client.get(path).status_code == 404, path
+    (tmp_path / "lab").mkdir()
+    (tmp_path / "lab" / "probe.css").write_text("denied", encoding="utf-8")
+    (tmp_path / "fonts").mkdir()
+    (tmp_path / "fonts" / "probe.css").write_text("served", encoding="utf-8")
+    monkeypatch.setattr(vidtheque_mcp.public, "STATIC_DIR", tmp_path)
+    assert public_client.get("/static/lab/probe.css").status_code == 404
+    # …and by prefix, so a nested path is covered too.
+    assert public_client.get("/static/lab/anything/at/all.css").status_code == 404
+    # The traversal-normalised spelling resolves into `lab/` and is refused by
+    # the same check, not by the containment one above it.
+    assert public_client.get("/static/fonts/../lab/probe.css").status_code == 404
+    # A sibling directory that is not on the denied list serves normally — the
+    # gate is the name, not the route.
+    assert public_client.get("/static/fonts/probe.css").status_code == 200
+
+
+def test_the_released_surface_survived_the_lab_cull(public_client: TestClient) -> None:
     # The demo still works, and so does the page that graduated out of `lab/`.
     assert public_client.get("/static/style.css").status_code == 200
     assert public_client.get("/static/app.js").status_code == 200
