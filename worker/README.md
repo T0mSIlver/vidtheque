@@ -1,5 +1,7 @@
 # vidtheque-worker
 
+System picture: the root README's Architecture section; how to work here: `AGENTS.md`.
+
 Stateless GPU inference API for vidtheque. Speaks OpenAI shapes where they fit,
 so that a self-hoster without a GPU can drop this service and point `WORKER_URL`
 at a hosted provider for the transcript leg — `/v1/embeddings` is the standard

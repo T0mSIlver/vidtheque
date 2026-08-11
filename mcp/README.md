@@ -1,5 +1,7 @@
 # vidtheque-mcp
 
+System picture: the root README's Architecture section; how to work here: `AGENTS.md`.
+
 The CPU half of vidtheque: the SQLite + sqlite-vec + FTS5 index, the keyframe
 directory, the job queue, the OAuth authorization server, and the nine-tool MCP
 surface. It talks to the GPU worker over HTTP only — no Python import ever
