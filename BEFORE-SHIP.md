@@ -219,6 +219,30 @@ section in the runbook.
 > speakers consent?"*. Publishing the answer without the substance is the one
 > failure mode the positioning work explicitly set out to avoid.
 
+**G4c · The V5 front end, audited** `[AGENT]` · **DONE 2026-08-11**
+(commit `1d5a3d2`)
+
+The one scope the 2026-08-10 audit could not cover, because the pages did not
+exist when it ran. Full record: `audit-v5-frontend-2026-08-11.md` in the private
+repo.
+
+- [x] **The mechanisms held.** No `innerHTML`, `insertAdjacentHTML`,
+      `document.write`, `eval` or `srcdoc` anywhere in `app.js`; no inline
+      script or event handler in `index.html`; no markdown-to-HTML step. The
+      model's own prose — the highest-risk string in the product — is appended
+      as text nodes, and its `[n]` markers become `safeUrl`-guarded anchors
+- [x] All eleven `href`/`src` assignments guarded. `meta.browse` deliberately
+      uses a same-origin *path* check instead of `safeUrl`, because `safeUrl`
+      resolves relative input and would accept another host — the right
+      distinction, already made
+- [x] **The gap, now closed:** CSP, `X-Frame-Options` and `Referrer-Policy`
+      were set on the consent screen and nowhere else, so the surface that is
+      actually public had none of them. The page is self-contained enough to
+      take the strict policy — **no `unsafe-inline`, no `unsafe-eval`** — and
+      `frame-ancestors 'none'` closes the clickjacking route to `/api/ask`,
+      which is the one control that spends money. Headers follow the media
+      type rather than the route; two tests pin it
+
 ---
 
 ## PHASE 1 — Standup decisions (15 min, `[BOTH]`, before anything is built)
