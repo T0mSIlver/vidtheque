@@ -440,9 +440,12 @@
       fig.title = (g ? g.title + ' — ' + g.speaker + (g.org ? ' (' + g.org + ')' : '') +
         ' · ' + hms(g.dur) + ' · ' + num(g.cues) + ' spoken lines · ' +
         num(g.ocr) + ' lines read off the screen · ' : '') + id + ' · ' + tc;
-      fig.innerHTML = `<img src="${A}wall/${f}" alt="${esc(g ? g.title + ' — ' + g.speaker : id)}"` +
+      const secs = tc.split(':').reduce((a, p) => a * 60 + (+p), 0);
+      fig.innerHTML = `<a href="https://youtu.be/${esc(id)}?t=${secs}" target="_blank"` +
+        ` rel="noopener">` +
+        `<img src="${A}wall/${f}" alt="${esc(g ? g.title + ' — ' + g.speaker : id)}"` +
         ` loading="lazy" decoding="async" width="480" height="270">` +
-        `<span class="bslug"><b>${esc(id)}</b><span>${tc}</span></span>`;
+        `<span class="bslug"><b>${esc(id)}</b><span>${tc}</span></span></a>`;
       return fig;
     };
     rows.forEach((list, r) => {
@@ -453,7 +456,7 @@
       row.append(track); band.append(row);
     });
     /* the drift speed is a constant few px/s, so duration follows width */
-    const SPEED = 3.2; /* px per second */
+    const SPEED = 4.2; /* px per second — nudged up, Tom 2026-08-11 */
     const pace = () => band.querySelectorAll('.wtrack').forEach(tr => {
       if (reduce) { tr.style.animation = 'none'; return; }
       const half = tr.scrollWidth / 2;
@@ -466,12 +469,10 @@
 
     const st = D.stats;
     document.getElementById('bandLine').innerHTML =
-      `${num(st.talks)} talks · ${num(st.cues)} sentences spoken · ${num(st.words)} words · ` +
-      `${num(st.ocr_frames)} frames read · one channel followed so far — ` +
-      `<span class="gold">${esc(st.channel)}</span>`;
+      `one channel followed so far — <span class="gold">${esc(st.channel)}</span>`;
     const ymd = ts => new Date(ts * 1000).toISOString().slice(0, 10);
     document.getElementById('bandDates').textContent =
-      'published ' + ymd(st.first_pub) + ' → ' + ymd(st.last_pub) + ' · hover a frame for the talk';
+      'published ' + ymd(st.first_pub) + ' → ' + ymd(st.last_pub) + ' · click a frame to open the talk at that second';
     document.getElementById('footStamp').textContent =
       '';
   }
