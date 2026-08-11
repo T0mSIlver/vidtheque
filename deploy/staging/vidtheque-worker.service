@@ -1,6 +1,6 @@
 # ===========================================================================
 # BOX:      the SANDBOX container (the box that keeps the GPU)
-# INSTALLS: BEFORE-SHIP.md Phase 4.2 — "Decide the mechanism first: edit
+# INSTALLS: docs/history/BEFORE-SHIP.md Phase 4.2 — "Decide the mechanism first: edit
 #           dev_stack.sh so VIDTHEQUE_HOST comes from the environment, or give
 #           the worker its own systemd unit on the sandbox".
 #           THIS IS THAT UNIT. dev_stack.sh is not being changed (Tom,

@@ -1,6 +1,6 @@
 # ===========================================================================
 # BOX:      the PUBLIC container
-# INSTALLS: BEFORE-SHIP.md Phase 2.4 — "systemd units"
+# INSTALLS: docs/history/BEFORE-SHIP.md Phase 2.4 — "systemd units"
 # GOES TO:  /etc/systemd/system/vidtheque-mcp.service
 #           then `systemctl daemon-reload && systemctl enable --now vidtheque-mcp`
 #
@@ -57,7 +57,7 @@ EnvironmentFile=/var/lib/vidtheque/stack.env
 # overrides Environment= regardless of the order the directives appear in. So
 # stack.env stays the single source of truth and these guards make a missing
 # or edited line a REFUSAL TO START rather than a silent wrong bind. They are
-# the same two checks BEFORE-SHIP.md Phase 4.1 asks a human to run, on every
+# the same two checks docs/history/BEFORE-SHIP.md Phase 4.1 asks a human to run, on every
 # start instead of once — and they test the EFFECTIVE value the process will
 # receive, not the text of a file. An absent line expands to the empty string
 # and fails, which is the case that matters.

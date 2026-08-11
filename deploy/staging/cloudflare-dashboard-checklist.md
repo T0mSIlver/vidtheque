@@ -1,6 +1,6 @@
 <!--
 BOX:      none — this is clicks in the Cloudflare dashboard, from any browser
-INSTALLS: BEFORE-SHIP.md Phase 5, the block headed "Cloudflare dashboard
+INSTALLS: docs/history/BEFORE-SHIP.md Phase 5, the block headed "Cloudflare dashboard
           settings — do this BEFORE Phase 6, or Phase 6 lies to you"
 ZONE:     vidtheque.dev (Free plan)
 
@@ -216,7 +216,7 @@ this is an **accept**, not a fix — but it is an accept that belongs in
 un-publish the keyframes** — edge copies survive the origin for up to a day. If
 a rollback is about *content* rather than an outage, also do
 **Caching → Configuration → Purge Everything**, and accept honestly that copies
-already downloaded are gone for good. BEFORE-SHIP.md's rollback card carries
+already downloaded are gone for good. docs/history/BEFORE-SHIP.md's rollback card carries
 this; it is repeated here because this is the page you will be on.
 
 ---

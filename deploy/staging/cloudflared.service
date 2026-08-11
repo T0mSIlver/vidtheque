@@ -1,6 +1,6 @@
 # ===========================================================================
 # BOX:      the PUBLIC container
-# INSTALLS: BEFORE-SHIP.md Phase 2.4 ("cloudflared unit hardened: dedicated
+# INSTALLS: docs/history/BEFORE-SHIP.md Phase 2.4 ("cloudflared unit hardened: dedicated
 #           non-root user, NoNewPrivileges=yes, ProtectSystem=strict") and
 #           Phase 5 (the tunnel itself)
 # GOES TO:  /etc/systemd/system/cloudflared.service

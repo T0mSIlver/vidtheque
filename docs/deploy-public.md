@@ -5,7 +5,7 @@ a welcome page, a read-only dashboard, and a demo over the AI Engineer corpus,
 with the MCP server itself reachable so anyone can point their own agent at it.
 This document turns that day into a checklist.
 
-**Who runs this.** Tom, with an agent alongside. `research/HANDOFF-2026-08-09.md`
+**Who runs this.** Tom, with an agent alongside. `docs/history/HANDOFF-2026-08-09.md`
 reserves the tunnel, the domain, the DNS records and the security audit for
 "together", and that reservation is the point of §1: everything below §1 is
 mechanical, and §1 is not.
@@ -26,7 +26,7 @@ scanned, and the tunnel goes live the moment `cloudflared` connects.
 ## 1. The gate — the security audit is required before first public traffic
 
 **This is a hard gate.** The deferred security audit
-(`research/HANDOFF-2026-08-09.md`, "Reserved for together") happens **before**
+(`docs/history/HANDOFF-2026-08-09.md`, "Reserved for together") happens **before**
 the first public request, not after the URL is shared and not "next week". It
 is run **with Tom**, as a decision-making session, not unilaterally by an agent:
 several of the findings below are *policy* questions — how much of the corpus is
@@ -484,7 +484,7 @@ Two things to check, both arithmetic. **Both were modelled at 3,460 keyframes
 and the corpus outgrew that by 3.6×**; the numbers below were remeasured on the
 live database and the live `derived/` cache on **2026-08-11 ~01:45 Paris**, at
 **12,351 keyframes over 199 `ready` videos**. That is a moving target until the
-corpus is frozen (`BEFORE-SHIP.md` 2.1), so take the *formula*, not the
+corpus is frozen (`docs/history/BEFORE-SHIP.md` 2.1), so take the *formula*, not the
 constant, and re-run `select count(*) from keyframes` at the freeze.
 
 1. **Walk time.** `keyframes ÷ 120 per minute` for a single IP. At 12,351

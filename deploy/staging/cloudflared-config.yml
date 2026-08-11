@@ -1,6 +1,6 @@
 # ===========================================================================
 # BOX:      the PUBLIC container
-# INSTALLS: BEFORE-SHIP.md Phase 5 — "cp deploy/cloudflared.example.yml
+# INSTALLS: docs/history/BEFORE-SHIP.md Phase 5 — "cp deploy/cloudflared.example.yml
 #           ~/.cloudflared/config.yml, fill the three placeholders"
 # GOES TO:  /etc/cloudflared/config.yml   (NOT ~/.cloudflared — the unit runs
 #           as the `cloudflared` system user, which has no home)

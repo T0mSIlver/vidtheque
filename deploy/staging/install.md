@@ -1,9 +1,9 @@
 <!--
 BOX:      none — this is the map. Each file below says which box it belongs on.
-INSTALLS: BEFORE-SHIP.md Phases 2.4, 4.1, 4.2 and 5.
+INSTALLS: docs/history/BEFORE-SHIP.md Phases 2.4, 4.1, 4.2 and 5.
 STATUS:   STAGED. Nothing in deploy/staging/ has been installed anywhere, and
           nothing here has been executed. Written 2026-08-11 against
-          BEFORE-SHIP.md (Phase 1 ANSWERED) and
+          docs/history/BEFORE-SHIP.md (Phase 1 ANSWERED) and
           research/release-staging-2026-08-11.md (the runbook, incl. §10).
 -->
 
@@ -15,7 +15,7 @@ baked in; every value that could not be known before the container exists is a
 `<PLACEHOLDER>` and every one of those is in §0's table.
 
 `docs/deploy-public.md` stays the authority for the go-public *checks*.
-`BEFORE-SHIP.md` stays the ordered list for the morning. This file only says
+`docs/history/BEFORE-SHIP.md` stays the ordered list for the morning. This file only says
 **which artifact goes where, in what order, and how you know it worked**.
 
 ---
@@ -272,7 +272,7 @@ systemd-analyze security vidtheque-mcp.service
 
 ## 6. Public — mode verification, before the tunnel exists
 
-**BEFORE-SHIP.md Phase 4.3, verbatim.** Run all of it against
+**docs/history/BEFORE-SHIP.md Phase 4.3, verbatim.** Run all of it against
 `http://127.0.0.1:8100`. A thing that is wrong here is wrong through the tunnel
 too, and cheaper to find.
 
@@ -456,7 +456,7 @@ sudo systemctl disable cloudflared
 ```
 
 The full escalation — five steps, each more permanent, with the cache-purge
-caveat that "no cache to purge" was wrong — is **BEFORE-SHIP.md's rollback
+caveat that "no cache to purge" was wrong — is **docs/history/BEFORE-SHIP.md's rollback
 card**, and the reasoning is `research/release-staging-2026-08-11.md` §8.5.
 Two things from there that belong next to these commands:
 
