@@ -25,6 +25,9 @@ REPO_DIR=/home/vidtheque/vidtheque
 GH_REPO=T0mSIlver/vidtheque
 STATE=/var/lib/vidtheque/.last-deployment-id
 RUN="runuser -u vidtheque --"
+# runuser does not load the user's login PATH; uv lives in ~/.local/bin
+# (field failure, inaugural deploy 2026-08-11: "uv sync" = command not found).
+UV=/home/vidtheque/.local/bin/uv
 
 [ -f /etc/vidtheque-deploy.env ] && . /etc/vidtheque-deploy.env
 AUTH=()
@@ -65,16 +68,18 @@ esac
 cd "$REPO_DIR"
 $RUN git fetch origin --quiet                     || fail "git fetch"
 $RUN git checkout --quiet "$SHA"                  || fail "checkout $SHA"
-$RUN uv sync --frozen --group gpu --quiet         || fail "uv sync"
 
-# Self-update: keep the installed copy current with the tree just checked out,
-# so a fix to this script ships like any other commit (field lesson 2026-08-11:
-# a hand-patched installed copy + a re-run install command = silently dead
-# mechanism). Applies from the NEXT run — this run continues as loaded.
-cmp -s "$REPO_DIR/deploy/staging/vidtheque-deploy.sh" /usr/local/sbin/vidtheque-deploy || {
+# Self-update FIRST, then re-exec, so a fix to this script deploys itself in
+# the same run that ships it (inaugural-deploy lesson: updating last means a
+# broken step earlier can never be healed by the mechanism it broke).
+if ! cmp -s "$REPO_DIR/deploy/staging/vidtheque-deploy.sh" /usr/local/sbin/vidtheque-deploy; then
   install -m 755 "$REPO_DIR/deploy/staging/vidtheque-deploy.sh" /usr/local/sbin/vidtheque-deploy
-  echo "deploy: self-updated /usr/local/sbin/vidtheque-deploy from $SHA"
-}
+  if [ -z "${VIDTHEQUE_DEPLOY_REEXEC:-}" ]; then
+    echo "deploy: self-updated — re-executing the new script"
+    VIDTHEQUE_DEPLOY_REEXEC=1 exec /usr/local/sbin/vidtheque-deploy
+  fi
+fi
+$RUN "$UV" sync --frozen --group gpu --quiet      || fail "uv sync"
 
 systemctl restart vidtheque-worker vidtheque-mcp  || fail "restart"
 sleep 5
