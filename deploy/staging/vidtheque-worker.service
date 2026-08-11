@@ -32,11 +32,11 @@ Wants=network-online.target
 
 [Service]
 Type=exec
-User=dev
-Group=dev
-WorkingDirectory=/home/dev/work/vidtheque
+User=vidtheque
+Group=vidtheque
+WorkingDirectory=/home/vidtheque/vidtheque
 
-EnvironmentFile=/home/dev/vidtheque-data/stack.env
+EnvironmentFile=/var/lib/vidtheque/stack.env
 
 # --- the bridge bind, guarded --------------------------------------------
 #
@@ -50,12 +50,15 @@ EnvironmentFile=/home/dev/vidtheque-data/stack.env
 # two wrong answers a refusal to start rather than a silent regression.
 # They test the EFFECTIVE value, so an unset variable and the unfilled
 # `192.168.1.98` placeholder both fail. Exercised under systemd-run.
-ExecStartPre=/bin/sh -c 'case x${VIDTHEQUE_HOST} in x|x127.*|x0.0.0.0|xlocalhost|x::1|x*BRIDGE_IP*) exit 1 ;; esac'
-ExecStartPre=/bin/sh -c 'test x${VIDTHEQUE_PORT} = x8081'
+# Topology A (2026-08-11): the worker shares the box with mcp and must stay on
+# loopback — the ONLY acceptable answers are unset (defaults to loopback) or
+# 127.0.0.1. Anything routable is an unauthenticated GPU API on a public box.
+ExecStartPre=/bin/sh -c 'case x${VIDTHEQUE_HOST} in x|x127.0.0.1) ;; *) exit 1 ;; esac'
+ExecStartPre=/bin/sh -c 'test x${VIDTHEQUE_WORKER_PORT} = x8081'
 
 # The GPU venv's interpreter directly, for the same reasons as the mcp unit:
 # no dependency resolution at start time.
-ExecStart=/home/dev/work/vidtheque/.venv/bin/python -m vidtheque_worker
+ExecStart=/home/vidtheque/vidtheque/.venv/bin/python -m vidtheque_worker
 
 Restart=on-failure
 RestartSec=10

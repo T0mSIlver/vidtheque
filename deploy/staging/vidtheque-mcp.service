@@ -28,8 +28,8 @@ Documentation=file:///home/vidtheque/vidtheque/docs/deploy-public.md
 # The tunnel is useless without this and this is useless without the network.
 # network-online.target because PUBLIC_URL/hostname config is resolved lazily
 # but the worker link is not: WORKER_URL points across the host bridge.
-After=network-online.target
-Wants=network-online.target
+After=network-online.target vidtheque-worker.service
+Wants=network-online.target vidtheque-worker.service
 
 [Service]
 Type=exec

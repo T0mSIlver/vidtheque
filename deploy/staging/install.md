@@ -99,7 +99,17 @@ Phase 7    share
 
 ---
 
-## 3. Sandbox — the worker, bridge-bound and supervised
+## 3. RETIRED (2026-08-11, Topology A) — the worker moved to CT 9001
+
+Tom's field decision: GPU passthrough into CT 9001 (copied verbatim from CT
+9000's bind-mount mechanism, driver 550.163.01) — everything runs on the
+public box, the worker on LOOPBACK, and no firewall is needed anywhere: the
+inference API never touches a network interface. The section below is kept
+for the record of what Topology B would have been; every command in it is
+obsolete. The worker unit now installs on CT 9001 (§5, alongside the mcp
+unit); the sandbox keeps only its rollback demo role.
+
+### 3-old. Sandbox — the worker, bridge-bound and supervised (OBSOLETE)
 
 Do this immediately after Phase 3.2. Everything here is on the **sandbox** box.
 
