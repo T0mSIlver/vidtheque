@@ -1,0 +1,101 @@
+# ===========================================================================
+# BOX:      the SANDBOX container (the box that keeps the GPU)
+# INSTALLS: BEFORE-SHIP.md Phase 4.2 — "Decide the mechanism first: edit
+#           dev_stack.sh so VIDTHEQUE_HOST comes from the environment, or give
+#           the worker its own systemd unit on the sandbox".
+#           THIS IS THAT UNIT. dev_stack.sh is not being changed (Tom,
+#           2026-08-11), so the worker gets a unit instead.
+# GOES TO:  /etc/systemd/system/vidtheque-worker.service
+#           then `systemctl daemon-reload && systemctl enable --now vidtheque-worker`
+#
+# It also closes review finding 4 / BEFORE-SHIP Phase 8: today the worker is
+# the one service in the serving path still running under `nohup` with no
+# Restart=, and /healthz reports the DATABASE's vector state rather than worker
+# reachability — so a worker crash leaves the public site green, HTTP 200, and
+# every search silently FTS-only, indefinitely. `Restart=on-failure` is the
+# cheap half of the answer; the worker-specific liveness probe is the other
+# half and lives in install.md's post-install notes.
+#
+# WARNING — after installing this, DO NOT run `scripts/dev_stack.sh start` on
+# this box. Its `start` pins `VIDTHEQUE_HOST=127.0.0.1` for the worker inline,
+# and its "already answers on port 8081?" guard probes 127.0.0.1 — which the
+# bridge-bound worker does not answer. It would cheerfully start a SECOND
+# worker on loopback: two processes, one 3090, one FIFO queue each.
+# Use `systemctl start vidtheque-worker` and, if the sandbox mcp is ever
+# needed, start it by hand (see stack.env.sandbox's rollback-lever block).
+# ===========================================================================
+
+[Unit]
+Description=vidtheque inference worker (GPU, private to the public container)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=dev
+Group=dev
+WorkingDirectory=/home/dev/work/vidtheque
+
+EnvironmentFile=/home/dev/vidtheque-data/stack.env
+
+# --- the bridge bind, guarded --------------------------------------------
+#
+# Topology B's one new rule: this worker must answer the public container over
+# the host bridge. Loopback means the public box gets ~40 s of timeout and then
+# FTS-only search with a note:; 0.0.0.0 means an unauthenticated
+# OpenAI-compatible API that will happily spend the GPU is on every interface.
+#
+# The value lives in stack.env (measured: EnvironmentFile= overrides
+# Environment= regardless of order on systemd 257), so these guards make the
+# two wrong answers a refusal to start rather than a silent regression.
+# They test the EFFECTIVE value, so an unset variable and the unfilled
+# `<BRIDGE_IP>` placeholder both fail. Exercised under systemd-run.
+ExecStartPre=/bin/sh -c 'case x${VIDTHEQUE_HOST} in x|x127.*|x0.0.0.0|xlocalhost|x::1|x*BRIDGE_IP*) exit 1 ;; esac'
+ExecStartPre=/bin/sh -c 'test x${VIDTHEQUE_PORT} = x8081'
+
+# The GPU venv's interpreter directly, for the same reasons as the mcp unit:
+# no dependency resolution at start time.
+ExecStart=/home/dev/work/vidtheque/.venv/bin/python -m vidtheque_worker
+
+Restart=on-failure
+RestartSec=10
+
+# SHUTDOWN_GRACE_SECONDS defaults to 30: how long shutdown waits for a job that
+# is already *inside* a model before it frees the weights anyway. Give systemd
+# room to let that finish rather than SIGKILLing a thread mid-inference.
+TimeoutStopSec=60
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vidtheque-worker
+
+# --- hardening: deliberately light, and here is why -----------------------
+#
+# This unit exists for Restart= and journald, NOT for confinement. The public
+# container's unit carries a full, *verified* sandbox because everything it
+# runs is one uvicorn process over SQLite and JPEGs. This one is different in
+# three ways that each veto a line of that set, and none of them can be tested
+# without restarting the live worker:
+#
+#   * /dev/nvidia0, /dev/nvidiactl, /dev/nvidia-uvm, /dev/nvidia-uvm-tools —
+#     so PrivateDevices=yes is out.
+#   * a 13 GB HuggingFace cache under $HOME and a CUDA venv — so
+#     ProtectSystem=strict would need ReadWritePaths gymnastics for both.
+#   * torch/CUDA/ctranslate2 — so MemoryDenyWriteExecute and a SystemCallFilter
+#     are exactly the kind of unverified tightening that turns "the demo is
+#     slow" into "the demo has no vector legs" at 11:00 on launch morning.
+#
+# ProtectSystem=full still makes /usr, /boot, /efi and /etc read-only, which is
+# the cheap majority of the benefit with none of the risk. The real answer is
+# topology B+ (§3.3): the worker moves to its own LXC on a calm afternoon and
+# gets hardened there, with a GPU to test against.
+NoNewPrivileges=yes
+ProtectSystem=full
+# The repo, the venv, the HF cache and DATA_DIR are all under /home.
+ProtectHome=no
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,122 @@
+# ===========================================================================
+# BOX:      the PUBLIC container
+# INSTALLS: BEFORE-SHIP.md Phase 2.4 ("cloudflared unit hardened: dedicated
+#           non-root user, NoNewPrivileges=yes, ProtectSystem=strict") and
+#           Phase 5 (the tunnel itself)
+# GOES TO:  /etc/systemd/system/cloudflared.service
+#
+# WRITE THIS FILE INSTEAD OF RUNNING `cloudflared service install`.
+#
+# That is a deliberate departure from Phase 5's last-but-two line, and the
+# reason is in the research (§6.6 item 1): `service install` has been observed
+# writing an ExecStart that runs cloudflared in DNS-over-HTTPS *proxy* mode
+# (`cloudflared --config …/config.yml`, no `tunnel run`), producing a unit that
+# reports `active (running)` with no tunnel behind it
+# (community-scripts/ProxmoxVE #11501). It also resolves $HOME to /root under
+# sudo, which is how a credentials file goes missing. Phase 5 says "read the
+# generated ExecStart; do not trust the green dot" — writing the ExecStart
+# ourselves is the same instruction, taken one step earlier, and it is what
+# lets the unit carry a dedicated user and the hardening Phase 2.4 asks for.
+#
+# The `systemctl is-enabled cloudflared` half of Phase 1 decision 6 (reboot
+# policy: BOTH claims) is satisfied by `systemctl enable`; the `pct config
+# <CTID> | grep onboot` half is a separate claim on the Proxmox host and having
+# one of each is the failure.
+# ===========================================================================
+
+[Unit]
+Description=Cloudflare Tunnel (vidtheque.dev)
+Documentation=https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/
+After=network-online.target vidtheque-mcp.service
+Wants=network-online.target
+# Ordering only, not a hard dependency: if mcp is down the tunnel should stay
+# up and return 502 rather than disappear, because a 502 is diagnosable from
+# outside and a dead connector is not. Stopping the connector stays the
+# rollback, and a rollback is something you do on purpose.
+
+[Service]
+# Type=simple, NOT Type=notify.
+#
+# cloudflared's own generated unit uses `Type=notify` with `TimeoutStartSec=0`.
+# That is fine when it works and catastrophic when it does not: if the
+# installed build never sends sd_notify READY, `systemctl start` blocks
+# forever in `activating` while the tunnel is actually up — a hang with no
+# error, on launch morning. `simple` cannot lie in that direction, and the
+# real readiness check is one line of journal anyway:
+#   journalctl -u cloudflared -n 20 | grep -i 'Registered tunnel connection'
+# which install.md §7 uses as the verification step.
+Type=simple
+User=cloudflared
+Group=cloudflared
+
+# --- run ------------------------------------------------------------------
+#
+# --config is EXPLICIT because the default search path is ~/.cloudflared, then
+# /etc/cloudflared, then /usr/local/etc/cloudflared, and "which config did it
+# pick" is not a question worth asking at 11:00.
+#
+# --no-autoupdate: never let cloudflared replace itself under a running
+# deployment. Update it the way everything else on the box is updated.
+#
+# --metrics on loopback only: Prometheus-style counters, and the honest way to
+# see whether the connector has live edge connections during the Phase 6 smoke
+# tests. Never bind it anywhere else.
+#
+# `tunnel run` takes NO tunnel id here on purpose: the id lives once, in
+# config.yml's `tunnel:` key, so there is one place to fill in and no way for
+# two copies to drift. A missing or wrong key fails loudly at start.
+#
+# --protocol is NOT set: `auto` is correct (§6.3). Pin http2 only if QUIC
+# handshakes prove unstable, and know that after falling back to HTTP/2
+# cloudflared never retries QUIC.
+ExecStart=/usr/bin/cloudflared --no-autoupdate --config /etc/cloudflared/config.yml --metrics 127.0.0.1:20241 tunnel run
+
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=0
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cloudflared
+
+# --- hardening (Phase 2.4) ------------------------------------------------
+#
+# This is the one process in the container that talks to the internet, and for
+# an HTTP-only tunnel it needs no capabilities at all.
+#
+# Expect this in the journal at startup and IGNORE IT:
+#   "cannot create ICMPv4 proxy: Group ID … is not between ping group 1 to 0"
+# It is cosmetic for an HTTP tunnel (cloudflared #1334, #1109). Do not spend
+# launch morning granting CAP_NET_RAW or widening net.ipv4.ping_group_range to
+# silence it.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+# Nothing is written: no logfile is configured, so everything goes to journald.
+# The config and the credentials JSON are READ from /etc/cloudflared, which
+# ProtectSystem=strict leaves readable.
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RemoveIPC=yes
+# AF_NETLINK is in the list on purpose: Go's net package enumerates interfaces
+# over netlink, so dropping it is the kind of tightening that breaks a
+# connector for a reason nobody guesses from the error.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

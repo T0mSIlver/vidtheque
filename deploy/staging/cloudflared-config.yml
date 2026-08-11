@@ -1,0 +1,125 @@
+# ===========================================================================
+# BOX:      the PUBLIC container
+# INSTALLS: BEFORE-SHIP.md Phase 5 — "cp deploy/cloudflared.example.yml
+#           ~/.cloudflared/config.yml, fill the three placeholders"
+# GOES TO:  /etc/cloudflared/config.yml   (NOT ~/.cloudflared — the unit runs
+#           as the `cloudflared` system user, which has no home)
+#
+# This is deploy/cloudflared.example.yml with the launch decisions baked in:
+# hostname vidtheque.dev, service http://127.0.0.1:8100, dashboard PUBLIC
+# (so no 404 rule), catch-all 404. The example file stays the generic
+# template for other people; this one is the launch artifact.
+#
+# Two placeholders, both from the output of `cloudflared tunnel create
+# vidtheque` — copy them out of that command's output literally. `sudo`
+# resolves $HOME to /root, so the credentials path the command prints is
+# frequently NOT the one you expect.
+#
+# Validate before starting anything:
+#   cloudflared tunnel ingress validate --config /etc/cloudflared/config.yml
+#   cloudflared tunnel ingress rule --config /etc/cloudflared/config.yml https://vidtheque.dev/mcp
+#   cloudflared tunnel ingress rule --config /etc/cloudflared/config.yml https://vidtheque.dev/dashboard
+#   cloudflared tunnel ingress rule --config /etc/cloudflared/config.yml https://vidtheque.dev/frames/x-00000.jpg
+#
+# LOCALLY-MANAGED ONLY. Leave this tunnel's ingress EMPTY in the Zero Trust
+# dashboard — rules in both places is a recurring source of "routes to the
+# wrong thing / 502" (§6.6). TUNNEL_TOKEN stays unset in stack.env for the
+# same reason.
+# ===========================================================================
+
+# From `cloudflared tunnel create vidtheque`. This is the ONLY place the id
+# appears: cloudflared.service runs `tunnel run` with no argument so there is
+# nothing to keep in sync.
+tunnel: <TUNNEL_ID>
+
+# The literal path printed by `cloudflared tunnel create`. Copy the file to
+# /etc/cloudflared/ and `chown cloudflared:cloudflared`, `chmod 600` it — the
+# unit runs as that user with ProtectHome=yes and will not find it anywhere
+# under a home directory.
+credentials-file: <CREDENTIALS_PATH>
+
+# Rules are evaluated top to bottom, first match wins, and the file MUST end
+# with a catch-all.
+ingress:
+  # One origin serves everything: the demo page at `/`, the `/api/*` facade,
+  # `/frames/*`, `/dashboard/*`, the MCP transport at `/mcp`, and `/healthz`.
+  # One rule, no path splitting.
+  #
+  # http://127.0.0.1:8100 is not a downgrade — this hop is inside the
+  # container, TLS is terminated at Cloudflare's edge, and that is exactly why
+  # PUBLIC_URL is an https:// URL. The port matches VIDTHEQUE_PORT=8100 in
+  # stack.env and the address matches VIDTHEQUE_HOST=127.0.0.1; those two lines
+  # and this one are the same decision written three times, which is why the
+  # unit guards them.
+  - hostname: vidtheque.dev
+    service: http://127.0.0.1:8100
+
+  # NOT ENABLED — Phase 1 decision 4: the dashboard is PUBLIC with redactions.
+  #
+  # The alternative was this rule, which would 404 /dashboard at the edge. It
+  # stays here, commented, because "we chose not to" is worth more in six
+  # months than a rule nobody remembers considering. If it is ever wanted:
+  # `path` is a REGULAR EXPRESSION, not a prefix, and it must come BEFORE the
+  # hostname rule above to have any effect at all.
+  #
+  # What makes the public choice safe is VIDTHEQUE_PUBLIC_READONLY=1 actually
+  # reaching the process — the jobs view then keeps states, codes, counts and
+  # clocks and drops source URLs, error text and event messages. That is a
+  # runtime claim, so it is checked twice: locally in Phase 4.3 and again
+  # THROUGH THE TUNNEL in Phase 6 (deploy-public.md §2.5's greps).
+  #
+  # - hostname: vidtheque.dev
+  #   path: ^/dashboard
+  #   service: http_status:404
+
+  # Mandatory catch-all. Anything reaching the tunnel without matching above —
+  # including a hostname that was never routed — gets a 404 from cloudflared
+  # rather than reaching vidtheque.
+  - service: http_status:404
+
+# Defaults for every rule above.
+originRequest:
+  # TCP connect to the local origin. 30s is the documented default; 10s is
+  # plenty for a loopback hop and turns "mcp is down" into a fast 502 instead
+  # of a thirty-second hang.
+  connectTimeout: 10s
+
+  # ---------------------------------------------------------------------
+  # STREAMING — what is set here, and why the answer is "nothing"
+  #
+  # Verified against the research (§6.3) rather than assumed:
+  #
+  # * There is NO originRequest key that controls response buffering. Not one.
+  #   Anyone who tells you otherwise is thinking of nginx.
+  # * cloudflared's own connection/connection.go flushes on ANY of three
+  #   conditions — no Content-Length, `Transfer-Encoding: chunked`, or a
+  #   content type prefixed by `text/event-stream`, `application/grpc` or
+  #   `application/x-ndjson`. The MCP transport sends `text/event-stream` and
+  #   `/api/ask` was moved onto SSE framing on 2026-08-09, so both are on the
+  #   flushable list and nothing tunnel-side needs configuring.
+  # * Do NOT set `httpHostHeader`. cloudflared forwards the public hostname as
+  #   `Host` by default, which is exactly what the MCP transport's
+  #   DNS-rebinding guard checks. The fix for a 421 is
+  #   VIDTHEQUE_PUBLIC_HOSTNAME, never a header rewrite.
+  # * Do NOT set `disableChunkedEncoding`. It is a WSGI option and vidtheque is
+  #   ASGI — and the sharper reason is that chunked encoding is one of the
+  #   three flush triggers above, so disabling it would FORCE buffering while
+  #   a Content-Length is computed.
+  #
+  # The buffer that might still bite is at the EDGE, not here: Cloudflare's
+  # Response Body Buffering Configuration Rule defaults to `Standard`, which is
+  # the best available explanation for community reports of SSE held until
+  # ~100 KB accumulates. That is a dashboard setting and an experiment, not a
+  # step — see cloudflare-dashboard-checklist.md §6.
+  # ---------------------------------------------------------------------
+
+# --------------------------------------------------------------------------
+# Everything below stays commented: these are documented as CLI FLAGS, the
+# flag->key mapping holds for locally-managed tunnels but no current Cloudflare
+# doc shows them as YAML, and cloudflared.service passes the ones we want on
+# the command line instead — where `systemctl cat cloudflared` shows them.
+# --------------------------------------------------------------------------
+# loglevel: info
+# no-autoupdate: true          -> passed as --no-autoupdate in the unit
+# protocol: auto               -> left at the default, deliberately (§6.3)
+# metrics: 127.0.0.1:20241     -> passed as --metrics in the unit

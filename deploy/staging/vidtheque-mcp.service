@@ -1,0 +1,158 @@
+# ===========================================================================
+# BOX:      the PUBLIC container
+# INSTALLS: BEFORE-SHIP.md Phase 2.4 — "systemd units"
+# GOES TO:  /etc/systemd/system/vidtheque-mcp.service
+#           then `systemctl daemon-reload && systemctl enable --now vidtheque-mcp`
+#
+# Replaces scripts/dev_stack.sh on this box. That script is a DEVELOPMENT
+# stack and says so: setsid nohup, pidfiles, and log files nothing rotates
+# (mcp.log measured 10 MB after about a day of indexing, in a 20 GB
+# container). This unit gives the three things a box that must survive a crash
+# and a reboot unattended actually needs: Restart=, journald, and an explicit
+# bind address.
+#
+# It introduces NO new environment variable (CLAUDE.md's rule for Phase 2.4).
+# Every name it mentions has a deploy/.env.example entry.
+#
+# The hardening block below was VERIFIED, not copied from a blog post: the
+# exact set was run against this repo's real import path (vidtheque_mcp +
+# build_app + a sqlite-vec extension load + a write into a ReadWritePaths
+# directory) under `systemd-run` inside an unprivileged Debian 13 LXC of the
+# same family as the target, systemd 257. All green. Notes inline where a
+# line was deliberately NOT taken.
+# ===========================================================================
+
+[Unit]
+Description=vidtheque MCP server (public demo, read-only)
+Documentation=file:///home/vidtheque/vidtheque/docs/deploy-public.md
+# The tunnel is useless without this and this is useless without the network.
+# network-online.target because PUBLIC_URL/hostname config is resolved lazily
+# but the worker link is not: WORKER_URL points across the host bridge.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=vidtheque
+Group=vidtheque
+WorkingDirectory=/home/vidtheque/vidtheque
+
+# --- configuration --------------------------------------------------------
+#
+# One file, and it is the whole configuration (unlike the compose path, where
+# deploy/.env is only compose's *interpolation* source and the mode flags are
+# read by nobody unless the public overlay is applied — deploy-public.md §6.1).
+EnvironmentFile=/home/vidtheque/vidtheque-data/stack.env
+
+# --- codex review BLOCKER #1, guarded ------------------------------------
+#
+# mcp/__main__.py:22-24 defaults to 0.0.0.0:8080. dev_stack.sh only ever
+# passed VIDTHEQUE_HOST/VIDTHEQUE_PORT *inline*, so a unit that merely reads
+# stack.env inherits those defaults: the tunnel 502s against 127.0.0.1:8100
+# and the origin becomes LAN-reachable, where a forged CF-Connecting-IP mints
+# a fresh bucket per request and voids every per-IP limit.
+#
+# The obvious fix — `Environment=VIDTHEQUE_HOST=127.0.0.1` here — DOES NOT
+# WORK. Measured on systemd 257 (Debian 13, the target): EnvironmentFile=
+# overrides Environment= regardless of the order the directives appear in. So
+# stack.env stays the single source of truth and these guards make a missing
+# or edited line a REFUSAL TO START rather than a silent wrong bind. They are
+# the same two checks BEFORE-SHIP.md Phase 4.1 asks a human to run, on every
+# start instead of once — and they test the EFFECTIVE value the process will
+# receive, not the text of a file. An absent line expands to the empty string
+# and fails, which is the case that matters.
+#
+# (Both forms below were exercised under systemd-run: a good env file starts,
+# an env file missing VIDTHEQUE_HOST or carrying a CIDR does not.)
+ExecStartPre=/bin/sh -c 'test x${VIDTHEQUE_HOST} = x127.0.0.1'
+ExecStartPre=/bin/sh -c 'test x${VIDTHEQUE_PORT} = x8100'
+
+# --- gate G2a, guarded the same way --------------------------------------
+#
+# A non-empty trusted-CIDR allowlist behind a tunnel makes every anonymous
+# visitor an owner. Since 2026-08-11 (commit 2f29bdd) the application refuses
+# to boot on exactly the combination this box has, so this line is redundant
+# by design — and it stays, because a check that runs beats a guarantee you
+# have to reason about, and because it names the problem in the journal
+# instead of in a stack trace.
+ExecStartPre=/bin/sh -c 'test x${VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS} = x'
+
+# --- run ------------------------------------------------------------------
+#
+# The venv interpreter directly, NOT `uv run`. Two reasons: ProtectSystem=strict
+# makes $HOME read-only, so uv could not write its cache; and a service that
+# resolves its own dependencies at start is a service that can change
+# behaviour on a restart nobody asked for. `uv sync` is an install step, not a
+# start step.
+ExecStart=/home/vidtheque/vidtheque/.venv/bin/python -m vidtheque_mcp
+
+Restart=on-failure
+RestartSec=5
+# uvicorn's graceful shutdown, plus room for the read pool to drain.
+TimeoutStopSec=30
+
+# journald, which is the log rotation that dev_stack.sh never had.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vidtheque-mcp
+
+# --- hardening (every line below was exercised; see the header) -----------
+
+NoNewPrivileges=yes
+
+# The whole filesystem read-only except the corpus. DATA_DIR holds
+# vidtheque.db (+ -wal/-shm), keyframes/, derived/, audio/, tmp/, secret.key —
+# all writes go there and nowhere else.
+ProtectSystem=strict
+ReadWritePaths=/home/vidtheque/vidtheque-data
+
+# ProtectHome MUST be `no`, stated explicitly so nobody "hardens" it later:
+# the repo, the venv AND the data directory all live under /home on this box.
+# `yes` makes /home an empty tmpfs and the service cannot even find its
+# interpreter; `read-only` breaks every corpus write. ProtectSystem=strict
+# above already makes /home read-only apart from ReadWritePaths, which is the
+# protection ProtectHome would have been bought for.
+ProtectHome=no
+
+# Private /tmp and /var/tmp. Verified compatible: Python's tempfile lands in
+# the private namespace and DATA_DIR/tmp is unaffected.
+# (Gotcha worth recording: ProtectSystem=strict makes /tmp read-only when
+# PrivateTmp is off, and a ReadWritePaths= under /tmp then conflicts with
+# PrivateTmp=yes and fails the unit with 226/NAMESPACE. Neither applies here —
+# nothing this service needs lives in /tmp.)
+PrivateTmp=yes
+
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RemoveIPC=yes
+# One uvicorn listener and loopback; nothing here speaks netlink or packet.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+# Verified working with the sqlite-vec loadable extension (dlopen needs no
+# W+X mapping). If a future dependency ships a JIT this is the line that
+# breaks first — the failure is loud, at import.
+MemoryDenyWriteExecute=yes
+
+# Not taken, on purpose:
+#   PrivateNetwork=yes      — it must reach the worker across the host bridge.
+#   DynamicUser=yes         — the corpus is a persistent volume mount with a
+#                             fixed owner; a rolling UID would orphan it.
+#   IPAddressAllow/Deny     — the origin's exposure is decided by binding
+#                             loopback and by the container firewall, not here;
+#                             an eBPF filter in an unprivileged LXC is one more
+#                             thing that can fail closed on launch morning.
+
+[Install]
+WantedBy=multi-user.target
