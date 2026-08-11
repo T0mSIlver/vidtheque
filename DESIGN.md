@@ -23,6 +23,10 @@ colors:
   fg3: "#6b665e"
   fg-max: "#ffffff"
   fg-over: "#c9c2b6"
+  # cool on-image ink for receipt slugs over video frames — deliberately cooler
+  # than fg-over: over thumbnails the cool cast reads as chrome, not content.
+  slug-ink: "rgba(226,236,246,.66)"
+  slug-ink-dim: "rgba(226,236,246,.45)"
   # ── the one accent: gold
   gold: "#e7b455"
   gold-hi: "#f6cd78"
@@ -194,6 +198,25 @@ typography:
     fontWeight: 700
     lineHeight: 1.1
     letterSpacing: "0.14em"
+    textTransform: "uppercase"
+    fontFeature: "ligatures none"
+  # the micro-slug tier, below tag: on-image receipt labels only (the wall's
+  # per-tile id+timecode at 7.5px; the query state cell compresses to 7.6px at
+  # bp-hand). Captured 2026-08-11 from the landing — the reference page these
+  # tokens were derived from — after the graduation surfaced them as unnamed.
+  wall-slug:
+    fontFamily: "{typography.machine.fontFamily}"
+    fontSize: "7.5px"
+    fontWeight: 400
+    lineHeight: 1
+    letterSpacing: "0.04em"
+    fontFeature: "ligatures none"
+  slug-st-hand:
+    fontFamily: "{typography.machine.fontFamily}"
+    fontSize: "7.6px"
+    fontWeight: 600
+    lineHeight: 1.4
+    letterSpacing: "0.13em"
     textTransform: "uppercase"
     fontFeature: "ligatures none"
   figure:
