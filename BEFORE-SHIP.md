@@ -261,6 +261,23 @@ repo.
 Eight questions, all from `research/release-staging-2026-08-11.md` §11. Answer
 them out loud, write them in the handoff, then stop discussing them.
 
+> **ANSWERED (Tom + orchestrator, 2026-08-11 ~11:45) — decisions final:**
+> 1. **Hostname: `vidtheque.dev` — BUY IT NOW.** Registrar + move to Cloudflare
+>    nameservers immediately; propagation is now on the critical path, so this
+>    is the first action of the morning. `[TOM — DO FIRST]`
+> 2. **Ask mode ON day one**, via a new dedicated spend-capped OpenRouter key,
+>    revocable alone. `[TOM: create the key]`
+> 3. **Embedder residency:** `IDLE_UNLOAD_SECONDS=3600` for launch day.
+> 4. **Dashboard PUBLIC with redactions** (no 404 ingress rule).
+> 5. **Tag `v0.0.1` at announce time** — same moment as Phase 7, not before.
+> 6. **Reboot policy: both claims** — container `onboot` AND
+>    `systemctl enable cloudflared`.
+> 7. **Sandbox stays in demo mode after cutover** (it is the rollback).
+> 8. **Indexing does not resume while public.** The last 2026 tranche finishes
+>    before the Phase-2 freeze.
+> 9. **The Cloudflare free rate-limiting rule is SPENT ON `/mcp`**
+>    (~60 req/min/IP, generous for real consumers, a wall for loops).
+
 - [ ] **Hostname.** Recommended: `vidtheque.tomvaucourt.com`. Verified last
       night: that zone is already on Cloudflare nameservers and already
       proxied, so `cloudflared tunnel route dns` works immediately and there is
