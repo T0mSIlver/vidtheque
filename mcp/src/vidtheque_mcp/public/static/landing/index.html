@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vidtheque — Builders talk. Your agent listens.</title>
+<meta name="description" content="Empowering AI with the knowledge of the builders and creators.">
+<!--
+ THE LANDING PAGE — PROJECTION ROOM. Served at `/`; the demo is at `/demo`
+ (Tom, 2026-08-11 — demo-site.md §1). DESIGN.md names this page the reference
+ implementation of the visual system and the maximal expression of it.
+
+ GRADUATED OUT OF THE LAB, 2026-08-11. This was `static/lab/versions/v5.html`,
+ one self-contained file with its own vendored fonts. What changed on the way
+ out, and nothing else did:
+  1. The two inline blocks moved to `landing.css` and `landing.js`, verbatim.
+     The served document runs under the demo's CSP — `script-src 'self'`,
+     `style-src 'self'`, no `unsafe-inline` anywhere — which is what the
+     2026-08-10 audit bought and is not worth spending on a marketing page.
+     For the same reason the ten `style=` attributes became classes and rules;
+     a style attribute is refused wherever it was written.
+  2. Asset paths are root-absolute `/static/landing/…`: the document is served
+     at `/`, so a relative `src` resolves against the site root, not this file.
+  3. The fonts are the packaged pair under `/static/fonts/` — the lab copy was
+     byte-identical to them.
+  4. `<head>` grew what a front door needs and a lab piece did not: the
+     favicon, `theme-color`, `color-scheme` and the unfurl tags, all of them
+     copied from the demo page so the two surfaces cannot disagree.
+  5. The `landing v5 · projection room` stamp is gone from the footer, the
+     title and the `<html>` element. It was the lab's own label.
+  6. "Ask the corpus" is a link to `/demo` rather than a button that advanced
+     the canned cycle. The cycle is the landing's show and still runs; the CTA
+     is the way out of it into the live corpus.
+
+ THESIS: the corpus itself is the opening image. The strongest reaction the
+ first three versions earned was the wall of watched frames, so v5 leads with
+ it: the hero IS the wall — full-bleed, dimmed to after-hours levels, drifting
+ the way a projector gate breathes — with the H1 and a self-typing query
+ floating over it. The receipt emerges FROM the wall: ask, and the wall goes
+ dark except the one talk that has the answer; the matched keyframe physically
+ lifts off its tile and lands on the light table as the annotated specimen —
+ lime boxes on the words the machine read, the sentence being spoken at that
+ second, and the youtu.be/…?t= slab. Every beat after keeps the same fiction:
+ stills pulled off the wall onto the bench, the wall running full width as
+ the index, the booth log of the agent that was in here last night.
+
+ REFINEMENT PASS — Tom's five notes on the winning version, 2026-08-10:
+  1. The lift is the page's signature move, so it is now unmissable: the
+     table's frame slot sits empty (a hairline landing pad) while the frame
+     is in the air, the frame detaches from the wall before it travels, and
+     the flight is one composited transform between two 16:9 rects — no
+     per-frame layout, no squash, nothing clipped. ~1.2 s door to door.
+  2. Where the found frame lights up is geometry, not luck. pickTile() now
+     measures the wall against the light table and against the hero's actual
+     text line boxes (not the copy column's mostly-empty bounding box) and
+     takes the clear tile nearest the table — so all three canned queries
+     land in the same relation to it, the one Tom liked on "the most
+     expensive typo". Stacked layouts get an explicit lane, one tile tall,
+     between the copy and the table. The drift amplitude was cut so that
+     clearance holds through the whole cycle, not just at rest.
+  3. The hero wall is v1's pitch again: fewer, bigger frames (~145 px of
+     viewport per tile, capped at 12 columns) and no gap or hairline between
+     them, so the wall reads as one surface. Dimming and drift unchanged.
+  4. Beat 3 is v4's treatment: the full-width wall of 70 real keyframes,
+     four rows drifting in alternation at a constant 3.2 px/s, every tile
+     carrying its own id and timecode.
+  5. Beat 4 is v4's terminal — v1's look aired out to v2's spacing — with
+     v5's typing-in of the question kept on top of it.
+
+ MOTION LAW (Tom, locked): movement only where the machine is working.
+ Inventory on this page — the hero wall's slow drift (the projector is
+ running), the self-typing query and its caret (blinks only while typing),
+ the search dim + the hit tile lighting, the lift of the frame to the table,
+ the OCR boxes acquiring, the ledger counting up, the beat-3 wall drifting
+ (the corpus was watched), the booth log typing its question. No pulsing
+ dots, no scan lines, no ambient glow, no hover transforms anywhere.
+ Everything paints its end state under prefers-reduced-motion: reduce, and
+ ?still=1 does the same for screenshots.
+
+ PALETTE: v3's world — gold on black, one brand accent (gold: the CTA, the
+ receipt slab, the heard channel, one word of the H1). Lime appears ONLY as
+ the semantic marker for SEEN / on-screen-text evidence — boxes, seen-labels,
+ seen-lines — never decoration. Logo is the font logo only: the vidtheque.
+ wordmark where the period is the receipt's full stop.
+
+ DESIGN.MD: this page is the *reference implementation*, not a divergence from
+ one — Tom picked it on 2026-08-10 as the product's visual identity and every
+ token in DESIGN.md was read out of it. Two things it does that no other
+ surface may: the dark ground with gold and lime instead of the dashboard's
+ warm-paper six, and Archivo VF at very light weights (200-ish) at display
+ size. Both are the landing's maximal register (DESIGN.md, "Per-surface
+ guidance"). Where this file and DESIGN.md disagree, DESIGN.md wins, and the
+ amending commit says why.
+
+ COPY: bound by docs/design/positioning.md (LOCKED 2026-08-10). H1 is Tom's
+ order. The protocol word appears once, in the quickstart, nowhere above.
+ DATA: data.js (harvested read-only from vidtheque.db, same readout as v3)
+ renders every count, frame, box, sentence and id at runtime. The three hero
+ searches are v1's canned set, verified against the live corpus
+ (research/demo-queries-2026-08-09.md); the booth log is transcribed from the
+ same research file, not re-recorded. Beat 3's wall is v1's 70-keyframe
+ monitor-wall set (wall/), ids and timecodes verbatim. The page makes zero
+ network requests — the live corpus is one link away, at /demo.
+-->
+
+<!-- One scheme. A projection room does not have a day mode (DESIGN.md). -->
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#040405">
+<!-- Unfurls. No og:image yet — a wrong one is worse than none. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="vidtheque">
+<meta property="og:title" content="vidtheque — Builders talk. Your agent listens.">
+<meta property="og:description" content="Empowering AI with the knowledge of the builders and creators.">
+<meta name="twitter:card" content="summary">
+<!-- Both faces in the first flight, `font-display: block`, for the reason the
+     demo page carries the same pair: the display line and the machine channel
+     are set in different faces and a face discovered by the stylesheet arrives
+     one round trip after the page has already laid itself out. -->
+<link rel="preload" href="/static/fonts/archivo-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/jetbrains-mono-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/landing/landing.css">
+<!-- The wordmark's own "v.", byte-identical to the demo's and the dashboard's:
+     one mark, three surfaces. Drawn rather than an emoji — an emoji favicon
+     renders as a different glyph on every platform and vanishes in a
+     monochrome tab strip. -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 16 16'><path d='M2,4L5,4L6.5,9.2L8,4L11,4L7.5,13L5.5,13Z' fill='%23120c02' stroke='%23120c02' stroke-width='2' stroke-linejoin='miter' stroke-miterlimit='2'/><rect x='11' y='9' width='5' height='5' fill='%23120c02'/><path d='M2,4L5,4L6.5,9.2L8,4L11,4L7.5,13L5.5,13Z' fill='%23e7b455'/><rect x='12' y='10' width='3' height='3' fill='%23e7b455'/></svg>">
+</head>
+<body>
+
+
+<!-- ─────────────────────── top rail ─────────────────────── -->
+<header class="rail">
+  <div class="wrap railin">
+    <div class="mark"><b>vidtheque<i>.</i></b></div>
+    <div class="railmeta">
+      <span class="ml hide-s" id="railCorpus"></span>
+    </div>
+  </div>
+</header>
+
+<!-- ───────────── beat 1 · the projection room ───────────── -->
+<section class="hero" id="top">
+  <div class="wallwrap" aria-hidden="true"><div class="wall" id="heroWall"></div></div>
+  <div class="scrim" aria-hidden="true"></div>
+
+  <div class="heroin">
+    <div class="herocopy">
+      <div class="kick"><s></s><span class="ml gold">the knowledge of the builders, on tap</span></div>
+      <h1>Builders talk.<br>Your agent <em>listens.</em></h1>
+      <p class="lede">Behind this page is every talk this corpus has watched all the way
+        through. Ask, and the wall goes dark except the one that has the answer —
+        <b>the sentence, the slide, and the second it happened.</b></p>
+      <div class="slug" id="slug">
+        <span class="ic"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3.6 1.8 L8.2 6 L3.6 10.2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></span>
+        <span class="q"><span id="qtext"></span><span class="caret"></span></span>
+        <span class="st" id="status" data-s="ready">ready</span>
+      </div>
+      <div class="ctarow">
+        <!-- The exit into the live product. The hero's canned cycle is this
+             page's own show and runs on its own; this is the one control that
+             leaves it, so it is a real link — middle-click works, and it is
+             the same affordance whether or not the script ran. -->
+        <a class="cta" id="askbtn" href="/demo">Ask the corpus
+          <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" aria-hidden="true"><path d="M2.6 6h6.6M6.4 3.2 9.2 6l-2.8 2.8"/></svg>
+        </a>
+        <div class="chips" id="chips" role="group" aria-label="Example questions"></div>
+      </div>
+    </div>
+
+    <div class="bench idle" id="bench" aria-live="polite">
+      <div class="benchhead" id="benchhead">
+        <span class="ml gold">the light table</span>
+        <span class="ml r">nothing lifted yet</span>
+      </div>
+      <figure class="frame" id="benchframe"></figure>
+      <div class="benchsay" id="benchsay" hidden></div>
+      <div class="benchfoot" id="benchfoot" hidden></div>
+    </div>
+  </div>
+
+  <div class="herofoot">
+    <div class="wrap in">
+      <span class="ml">the videos belong to the people who made them</span>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── beat 2 · stills off the wall + the ledger ───────────── -->
+<section class="beat" id="stills">
+  <div class="wrap">
+    <div class="bhead">
+      <div class="kick"><s></s><span class="ml gold">four stills, off the wall</span></div>
+      <h2>You don't have time to watch it all. <em>Your agent does.</em></h2>
+      <p class="lede">Every still below is a moment your agent can hand back mid-task: the
+        sentence a builder actually said, the text the machine read off the screen behind
+        them, and a link that lands on the second. When a moment has nothing to give, it
+        <b>says so</b> — it never quietly narrows the answer.</p>
+    </div>
+    <div class="legendrow">
+      <div class="lg"><i class="hd"></i><p><b>heard</b> — every sentence spoken, aligned
+        to the word.</p></div>
+      <div class="lg"><i class="sn"></i><p><b>seen</b> — every line that crossed the
+        screen, kept with the box it was read from.</p></div>
+      <div class="lg"><i class="fr"></i><p><b>the frame</b> — kept as evidence, even when
+        nothing on it is readable.</p></div>
+    </div>
+    <div class="plates" id="plates"></div>
+    <dl class="ledger" id="ledger"></dl>
+    <p class="ml ledgernote" id="ledgerNote"></p>
+  </div>
+</section>
+
+<!-- ───────────── beat 3 · the wall, lit ───────────── -->
+<section class="beat" id="corpus">
+  <div class="wrap">
+    <div class="bhead">
+      <div class="kick"><s></s><span class="ml gold">the wall, running · 70 keyframes</span></div>
+      <h2>Follow the builders. Get the sentence, the slide, and <em>the second.</em></h2>
+      <p class="lede">Every frame below was read out of a talk this corpus has already
+        watched all the way through. Point it at a conference, a channel, a creator, and
+        their knowledge compounds into yours.</p>
+    </div>
+  </div>
+  <div class="wallband" id="wallband"></div>
+  <div class="wrap">
+    <div class="bandmeta">
+      <span class="ml" id="bandLine"></span>
+      <span class="ml hide-s" id="bandDates"></span>
+    </div>
+    <a class="follow" href="#run">
+      <span>+ follow a channel<span class="followsub">today: point it at a channel. next: it keeps watching.</span></span>
+    </a>
+  </div>
+</section>
+
+<!-- ───────────── beat 4 · the booth log ───────────── -->
+<section class="beat" id="ask">
+  <div class="wrap">
+    <div class="bhead">
+      <div class="kick"><s></s><span class="ml gold">the booth log · recorded 2026-08-09</span></div>
+      <h2>Your agent <em>watched it.</em></h2>
+      <p class="lede">An agent, on the real protocol, answering a question no single talk
+        answers — <b>with citations</b>, five speakers deep.</p>
+    </div>
+
+    <div class="term veiled" id="term">
+      <div class="termhead">
+        <span class="ml gold">synthesist · 21 calls</span>
+        <span class="ml hide-s">claude sonnet · vidtheque over the real protocol · demo/readonly</span>
+        <span class="ml r">field test 2026-08-09</span>
+      </div>
+      <div class="termbody">
+        <div class="ask">
+          <span class="pfx">&gt;</span>
+          <p class="q" id="termQ"></p>
+          <span class="caret2"></span>
+        </div>
+
+        <div class="termrest">
+        <p class="call"><span class="k">call</span> search <span class="arg">{"q":"LLM as a judge","content_type":"transcript","max_per_video":1,"limit":6}</span></p>
+        <p class="ret">← 6 moments · 6 talks · leg: transcript · relevance-first</p>
+
+        <p class="say">They agree it is the default and disagree about whether it deserves to be.
+          <b>Two positions, and a third group that ships it anyway:</b></p>
+
+        <div class="q-cite">
+          <p>“And LLM as a judge doesn't really work either because LLMs don't have good
+            taste in writing.”</p>
+          <p class="who2"><b>Nick Heiner</b> · Surge AI · When Will The Benchmaxxing Plague End?
+            · 16:01 · <a href="https://youtu.be/-npY6XjM8CQ?t=961" rel="noopener">youtu.be/-npY6XjM8CQ?t=961</a></p>
+        </div>
+        <div class="q-cite">
+          <p>“Agent as a judge is about adaptive dynamic analysis. LLM as a judge just gives you a
+            fixed rubric with these fixed scores.”</p>
+          <p class="who2"><b>Aparna Dhinakaran</b> · Arize AI · The Future of Evals
+            · 4:07 · <a href="https://youtu.be/q2JrUKBMf0w?t=247" rel="noopener">youtu.be/q2JrUKBMf0w?t=247</a></p>
+        </div>
+
+        <p class="call"><span class="k">call</span> search <span class="arg">{"q":"LLM as a judge in production","content_type":"transcript","max_per_video":1,"limit":6}</span></p>
+        <p class="ret">← 6 moments · 6 talks · leg: transcript</p>
+
+        <p class="say last">And three teams who run it in production regardless — video at
+          <span class="id">b_PmGocP4rc</span> (Character.ai), agent evals at
+          <span class="id">31GUkCBD-Uc</span> (Uber), clinical at
+          <span class="id">O72p-rBb2bA</span> (SonderMind). The disagreement is not
+          “does it work”; it is <b>what it is allowed to be the judge of</b>.</p>
+        </div><!-- /.termrest -->
+      </div>
+      <div class="termfoot">
+        <p class="note">the caveat, from the same run: the synthesist quoted an airline story from
+          <span class="id">tJFjeMBKbIY</span> and the link it was handed opened at 18:57 —
+          twenty-seven seconds before the story starts. Filed as a bug: search links point at the
+          cluster start, not at the matched moment.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───────────── beat 5 · quickstart + footer ───────────── -->
+<section class="beat" id="run">
+  <div class="wrap">
+    <div class="bhead">
+      <div class="kick"><s></s><span class="ml gold">yours, on your box</span></div>
+      <h2>Run your own. Point your agent at it.</h2>
+      <p class="lede">One compose file, one SQLite file, no build step, no runtime network
+        dependency. It runs the CPU half on a Pi.</p>
+    </div>
+    <div class="starts">
+      <div class="start">
+        <span class="ml">1 · run the corpus</span>
+        <div class="copybox">
+          <code><i>$</i> docker compose up -d</code>
+          <button type="button" data-copy="docker compose up -d">copy</button>
+        </div>
+        <p class="startnote">clone, copy <span class="id">.env.example</span> to
+          <span class="id">.env</span>, and it is up.</p>
+      </div>
+      <div class="start">
+        <span class="ml">2 · hand it to your agent</span>
+        <div class="copybox">
+          <code><i>$</i> claude mcp add --transport http vidtheque &lt;mcp_url&gt;</code>
+          <button type="button" data-copy="claude mcp add --transport http vidtheque <mcp_url>">copy</button>
+        </div>
+        <p class="startnote">one line for Claude, Codex, or anything that speaks the protocol.</p>
+      </div>
+    </div>
+    <div class="fbase">
+      <span class="ml">macOS · Linux · MIT · runs the CPU half on a Pi</span>
+      <span class="ml r gold">early development · no releases yet · schemas can still change</span>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="fgrid">
+      <div>
+        <span class="ml gold">attribution</span>
+        <p>The videos belong to the people who made them. vidtheque watched
+          them, kept the timestamps, and sends you back to the source — every answer on this page
+          is a quotation with a link that lands on the second it was said.</p>
+        <p>Nothing is hosted or redistributed here: the file is downloaded, read, and deleted.
+          What stays is the transcript, the text that was on screen, and the keyframes kept as
+          evidence. A creator who would rather not be followed is a complete reason, and there is
+          no appeal to make.</p>
+        <p><a class="lnk" href="https://github.com/tomvaucourt/vidtheque" rel="noopener">the repo</a>
+          · MIT · one owner, self-hosted.</p>
+      </div>
+      <div class="fmark"><b>vidtheque<i>.</i></b></div>
+    </div>
+    <!-- The lab's version stamp stood on the left here. What is left is the
+         readout, which is about the corpus rather than about the page. -->
+    <div class="fbase">
+      <span class="ml r" id="footStamp"></span>
+    </div>
+  </div>
+</footer>
+
+<script src="/static/landing/data.js"></script>
+<script src="/static/landing/landing.js"></script>
+</body>
+</html>
