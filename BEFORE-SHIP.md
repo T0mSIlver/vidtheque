@@ -110,12 +110,23 @@ hatch that `demo-site.md` §2 reserves for an owner's agent.
 
 **Both:**
 
-- [ ] **Decision recorded**: is "ships empty, warns loudly" the permanent
-      answer, or does the code learn to refuse proxy-origin CIDRs / require a
-      credential when a trusted header is present? Either answer is fine.
-      *No answer* is what fails this gate — write it into
-      `audit-2026-08-11.md` in the private `vidtheque-security` repo
-      (`docs/security.md` says why audits are not in this tree)
+- [x] **Decision recorded — 2026-08-11, Tom: the code refuses** (commit
+      `2f29bdd`). "Ships empty, warns loudly" is *not* the permanent answer; a
+      warning is a control that depends on someone reading it, and this one
+      guards owner access. The server now refuses to boot on the dangerous
+      combination and only that one: a trusted CIDR overlapping
+      loopback/RFC1918/docker, **and** `VIDTHEQUE_TRUSTED_IP_HEADER` set,
+      **and** a non-loopback `VIDTHEQUE_PUBLIC_HOSTNAME`
+- [x] The third condition is load-bearing and was not in the first attempt:
+      the header **defaults** to `CF-Connecting-IP`, so the two-condition
+      version refused a plain LAN box — the deployment §3.2 built the allowlist
+      for, where on `AUTH=none` the CIDR is the only credential there is. Two
+      existing tests caught it. A home lab has no public hostname and is
+      untouched
+- [x] G2a's config check is now enforced rather than trusted: the public box
+      *cannot* boot with a proxy-origin CIDR. The `grep` below stays, because a
+      check that runs is still worth more than a guarantee you have to reason
+      about
 
 > Launching does not require the deeper code fix. It requires that the empty
 > value is verified in the running process and that the deferral is a decision
