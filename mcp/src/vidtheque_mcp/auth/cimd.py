@@ -21,6 +21,7 @@ Validation rules implemented here:
 from __future__ import annotations
 
 import ipaddress
+import json
 import socket
 import time
 from dataclasses import dataclass, field
@@ -55,9 +56,37 @@ def _resolves_to_private(host: str) -> bool:
             ip = ipaddress.ip_address(address)
         except ValueError:  # pragma: no cover - defensive
             return True
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+        if _is_special_use(ip):
             return True
     return False
+
+
+# Ranges Python's own predicates do not cover, and which are still not the
+# public internet. 100.64.0.0/10 is carrier-grade NAT — routable-looking,
+# reachable, and on a home connection frequently the ISP's own equipment.
+# RFC 6890. (2026-08-10 audit, auth hardening.)
+_EXTRA_SPECIAL_USE = (
+    ipaddress.ip_network("100.64.0.0/10"),
+    ipaddress.ip_network("192.0.0.0/24"),
+    ipaddress.ip_network("198.18.0.0/15"),
+    ipaddress.ip_network("64:ff9b::/96"),
+)
+
+
+def _is_special_use(ip: "ipaddress.IPv4Address | ipaddress.IPv6Address") -> bool:
+    if (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    ):
+        return True
+    mapped = getattr(ip, "ipv4_mapped", None)
+    if mapped is not None and _is_special_use(mapped):
+        return True
+    return any(ip in network for network in _EXTRA_SPECIAL_USE if ip.version == network.version)
 
 
 def guard_ssrf(url: str, *, allow_insecure: bool = False) -> None:
@@ -175,14 +204,26 @@ class CIMDFetcher:
         client = self.client or httpx.AsyncClient(timeout=self.timeout_s, follow_redirects=False)
         owned = self.client is None
         try:
-            response = await client.get(client_id, headers={"Accept": "application/json"})
-            if response.status_code != 200:
-                raise CIMDError(
-                    f"client metadata document returned HTTP {response.status_code}"
-                )
-            if len(response.content) > MAX_DOCUMENT_BYTES:
-                raise CIMDError("client metadata document is too large")
-            document = response.json()
+            # Streamed, and stopped at the cap. `response.content` buffered and
+            # decompressed the *whole* body before the length was looked at, so
+            # the limit described what we would accept and not what we would
+            # read — a compression bomb landed in memory first and was rejected
+            # afterwards. (2026-08-10 audit, auth hardening.)
+            async with client.stream(
+                "GET", client_id, headers={"Accept": "application/json"}
+            ) as response:
+                if response.status_code != 200:
+                    raise CIMDError(
+                        f"client metadata document returned HTTP {response.status_code}"
+                    )
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in response.aiter_bytes():
+                    total += len(chunk)
+                    if total > MAX_DOCUMENT_BYTES:
+                        raise CIMDError("client metadata document is too large")
+                    chunks.append(chunk)
+            document = json.loads(b"".join(chunks))
         except CIMDError:
             raise
         except Exception as exc:
