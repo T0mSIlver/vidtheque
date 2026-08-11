@@ -79,6 +79,17 @@ def client(parts):
         yield c
 
 
+@pytest.fixture
+def docs_client(parts):
+    """The same app with WORKER_DOCS=1, for the tests that read the schema."""
+    _, manager = parts
+    app = create_app(
+        settings=Settings(_env_file=None, docs_enabled=True), manager=manager
+    )
+    with TestClient(app) as c:
+        yield c
+
+
 # --------------------------------------------------------------------------
 # transcriptions
 # --------------------------------------------------------------------------
@@ -570,8 +581,21 @@ def test_inference_failure_is_a_503_the_caller_can_retry(parts):
         assert retried.json() == {"text": "hello there general kenobi"}
 
 
-def test_openapi_documents_the_contract(client):
-    schema = client.get("/openapi.json").json()
+def test_the_schema_is_not_published_by_default(client):
+    """No auth in front of this service, so it publishes nothing about itself.
+
+    /docs, /redoc and /openapi.json listed every route, every form field and
+    every advertised cap to whoever reached the port — a map, for a service
+    that is one misconfigured bind away from the open internet and has the GPU
+    behind it. WORKER_DOCS=1 brings them back for development.
+    (2026-08-10 audit, F-32.)
+    """
+    for path in ("/openapi.json", "/docs", "/redoc"):
+        assert client.get(path).status_code == 404, path
+
+
+def test_openapi_documents_the_contract(docs_client):
+    schema = docs_client.get("/openapi.json").json()
     assert set(schema["paths"]) == {
         "/v1/audio/transcriptions",
         "/v1/embeddings",
@@ -583,11 +607,11 @@ def test_openapi_documents_the_contract(client):
     }
 
 
-def test_openapi_documents_the_error_envelope(client):
+def test_openapi_documents_the_error_envelope(docs_client):
     """No Python import crosses mcp/ ↔ worker/, so this file is the only place
     a client can learn that a failure is `{"error": {...}}` and not FastAPI's
     `{"detail": ...}` — and which codes are worth retrying."""
-    schema = client.get("/openapi.json").json()
+    schema = docs_client.get("/openapi.json").json()
     for path in ("/v1/embeddings", "/v1/embeddings/image", "/v1/ocr"):
         responses = schema["paths"][path]["post"]["responses"]
         assert {"400", "413", "500", "503"} <= set(responses), path

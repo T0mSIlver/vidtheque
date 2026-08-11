@@ -78,6 +78,7 @@ from .base import (
     BaseBackend,
     Embeddings,
     InvalidImageError,
+    safe_model_kwargs,
     watch_for_uninitialised_weights,
 )
 
@@ -176,8 +177,10 @@ class Qwen3VLEmbedBackend(BaseBackend):
         frame_query_prompt: str | None = None,
         max_seq_length: int | None = None,
         vram_estimate_mb: int | None = None,
+        revision: str | None = None,
     ) -> None:
         super().__init__(model_id, vram_estimate_mb=vram_estimate_mb)
+        self.revision = revision
         self.device = device
         self.batch_size = batch_size
         self.image_batch_size = image_batch_size or batch_size
@@ -257,7 +260,8 @@ class Qwen3VLEmbedBackend(BaseBackend):
             model_kwargs["key_mapping"] = dict(key_mapping)
         kwargs: dict[str, Any] = {
             "device": self.device,
-            "model_kwargs": model_kwargs or None,
+            "revision": self.revision,
+            "model_kwargs": safe_model_kwargs(model_kwargs),
             # Last-token pooling over a causal LM: padding on the right pools a
             # pad token. Same trap as Qwen3-Embedding, same fix.
             "tokenizer_kwargs": {"padding_side": "left"},

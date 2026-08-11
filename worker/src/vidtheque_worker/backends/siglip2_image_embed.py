@@ -57,6 +57,7 @@ from .base import (
     BaseBackend,
     Embeddings,
     InvalidImageError,
+    safe_model_kwargs,
 )
 
 log = logging.getLogger(__name__)
@@ -117,8 +118,10 @@ class SigLIP2Backend(BaseBackend):
         max_num_patches: int = 256,
         batch_size: int = 32,
         vram_estimate_mb: int | None = None,
+        revision: str | None = None,
     ) -> None:
         super().__init__(model_id, vram_estimate_mb=vram_estimate_mb)
+        self.revision = revision
         if vram_estimate_mb is None:
             self._vram_estimate_mb = estimate_vram_mb(
                 max_num_patches, base=self.default_vram_mb
@@ -151,11 +154,17 @@ class SigLIP2Backend(BaseBackend):
         log.info("loading frame embedder model=%s device=%s", self.model_id, self.device)
         dtype = torch.bfloat16 if self.device == "cuda" else torch.float32
         model = AutoModel.from_pretrained(
-            self.model_id, dtype=dtype, attn_implementation="sdpa"
+            self.model_id,
+            dtype=dtype,
+            attn_implementation="sdpa",
+            revision=self.revision,
+            **safe_model_kwargs(),
         )
         self._torch = torch
         self._model = model.eval().to(self.device)
-        self._processor = AutoProcessor.from_pretrained(self.model_id)
+        self._processor = AutoProcessor.from_pretrained(
+            self.model_id, revision=self.revision
+        )
         self._dims = _projection_dims(self._model)
 
     def _unload(self) -> None:

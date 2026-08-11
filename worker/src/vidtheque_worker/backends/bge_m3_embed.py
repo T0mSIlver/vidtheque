@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from .base import BackendUnavailable, BaseBackend, Embeddings
+from .base import BackendUnavailable, BaseBackend, Embeddings, safe_model_kwargs
 
 log = logging.getLogger(__name__)
 
@@ -35,8 +35,10 @@ class BGEM3Backend(BaseBackend):
         batch_size: int = 16,
         max_seq_length: int | None = None,
         vram_estimate_mb: int | None = None,
+        revision: str | None = None,
     ) -> None:
         super().__init__(model_id, vram_estimate_mb=vram_estimate_mb)
+        self.revision = revision
         self.device = device
         self.batch_size = batch_size
         self.max_seq_length = max_seq_length
@@ -53,7 +55,12 @@ class BGEM3Backend(BaseBackend):
             ) from exc
 
         log.info("loading embedding model=%s device=%s", self.model_id, self.device)
-        self._model = SentenceTransformer(self.model_id, device=self.device)
+        self._model = SentenceTransformer(
+            self.model_id,
+            device=self.device,
+            revision=self.revision,
+            model_kwargs=safe_model_kwargs(),
+        )
         if self.max_seq_length:
             self._model.max_seq_length = self.max_seq_length
         try:

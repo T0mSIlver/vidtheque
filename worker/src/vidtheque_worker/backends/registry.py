@@ -51,6 +51,7 @@ def _qwen3_embedding(settings: Settings) -> EmbedBackend:
         device=device,
         query_prompt=settings.embed_query_prompt,
         vram_estimate_mb=None if device == "cuda" else 0,
+        revision=settings.model_revision,
     )
 
 
@@ -60,6 +61,7 @@ def _bge_m3(settings: Settings) -> EmbedBackend:
         settings.embed_model,
         device=device,
         vram_estimate_mb=None if device == "cuda" else 0,
+        revision=settings.model_revision,
     )
 
 
@@ -82,6 +84,7 @@ def _qwen3_vl_embedding(settings: Settings, *, task: str = "embed") -> Any:
         query_prompt=settings.embed_query_prompt,
         frame_query_prompt=settings.frame_query_prompt,
         vram_estimate_mb=None if device == "cuda" else 0,
+        revision=settings.model_revision,
     )
 
 
@@ -92,6 +95,7 @@ def _siglip2(settings: Settings) -> ImageEmbedBackend:
         device=device,
         max_num_patches=settings.image_embed_max_patches,
         vram_estimate_mb=None if device == "cuda" else 0,
+        revision=settings.model_revision,
     )
 
 
