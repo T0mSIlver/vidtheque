@@ -1054,23 +1054,23 @@ with `Archivo-OFL.txt` and `JetBrainsMono-OFL.txt`. This is now the *only* copy
 on the public surface: the landing carried a byte-identical set of its own under
 `lab/versions/v5-assets/fonts/` and dropped it when it graduated (2026-08-11),
 so both documents load the same two files. The JetBrains Mono file is
-byte-identical to the one the dashboard already shipped
+byte-identical to the one the dashboard shipped until 2026-08-11
 (`md5 b058178d…`). Provenance: the fontsource variable packages, filenames
-verbatim; the JetBrains Mono entry in
-`dashboard/static/fonts/PROVENANCE.md` covers that file, and Archivo arrived
-with lab v4 (commit `1251269`).
+verbatim; `public/static/fonts/PROVENANCE.md` carries the full record, and
+Archivo arrived with lab v4 (commit `1251269`).
 
 **Rules for the builders:**
 
 1. `public/static/fonts/` is the **document of record**. New face, new subset,
    new version: it lands there first.
-2. The dashboard keeps a **byte-identical copy** at
-   `dashboard/static/fonts/` — copied, never diverged — because
+2. The dashboard serves the **same files through an alias** (amended
+   2026-08-11: the byte-identical copy at `dashboard/static/fonts/` is gone).
    `public/static/*` is only routed under `VIDTHEQUE_PUBLIC_READONLY=1`
    (`public/__init__.py`) while the dashboard's own asset route is always
-   registered. A dashboard font served from `/static/fonts/…` 404s in a private
-   deployment. Archivo is already copied there; Inter and Instrument Serif are
-   retired and their files and licence texts come out in the rebuild commit.
+   registered — so that route maps its `fonts/` prefix onto the document of
+   record (`dashboard/__init__.py`, `_FONTS_DIR`) instead of keeping a copy
+   that can drift. `/dashboard/static/fonts/…` still serves in a private
+   deployment; there is no second copy to keep identical.
 3. **`@font-face src` is relative** (`fonts/…woff2`), never built from
    `PUBLIC_URL`. These surfaces are served through an SSH tunnel on a port
    nobody predicted.

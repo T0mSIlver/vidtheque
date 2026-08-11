@@ -56,6 +56,11 @@ __all__ = [
 
 STATIC_DIR = Path(__file__).parent / "static"
 
+# The canonical faces (DESIGN.md, "Fonts — one canonical location"). The copy
+# that used to live beside this file is gone: the asset route aliases `fonts/`
+# onto the document of record, so the two surfaces cannot drift byte by byte.
+_FONTS_DIR = Path(__file__).resolve().parent.parent / "public" / "static" / "fonts"
+
 # Its own asset route rather than `public/static`: that one is registered only
 # in public mode, and a private deployment must not need the demo turned on to
 # get a stylesheet.
@@ -114,9 +119,12 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
 
     async def asset(request: Request) -> Response:
         name = request.path_params["asset"]
-        path = (STATIC_DIR / name).resolve()
-        try:  # never serve anything outside the packaged static directory
-            path.relative_to(STATIC_DIR.resolve())
+        base = STATIC_DIR
+        if name.startswith("fonts/"):
+            base, name = _FONTS_DIR, name[len("fonts/") :]
+        path = (base / name).resolve()
+        try:  # never serve anything outside the directory being served from
+            path.relative_to(base.resolve())
         except ValueError:
             return Response(status_code=404)
         if not path.is_file():

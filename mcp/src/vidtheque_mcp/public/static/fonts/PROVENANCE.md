@@ -7,13 +7,14 @@ step and makes no external requests at runtime** (`docs/design/dashboard.md`
 request, and a font that is not served at all leaves the dashboard on whatever
 the operating system happens to have.
 
-**The document of record is `mcp/src/vidtheque_mcp/public/static/fonts/`**
-(DESIGN.md, *Fonts — one canonical location*). The copies here are
-byte-identical to it and must stay that way — copied, never diverged — because
-`public/static/*` is only routed under `VIDTHEQUE_PUBLIC_READONLY=1`
-(`public/__init__.py`) while the dashboard's own asset route is always
-registered. A dashboard font served from `/static/fonts/…` 404s in a private
-deployment.
+**This directory is the document of record** (DESIGN.md, *Fonts — one
+canonical location*) — and since 2026-08-11 it is the *only* copy. The
+dashboard used to carry a byte-identical duplicate because `public/static/*`
+is only routed under `VIDTHEQUE_PUBLIC_READONLY=1` (`public/__init__.py`)
+while the dashboard's own asset route is always registered; now the dashboard
+route aliases its `fonts/` prefix onto this directory
+(`dashboard/__init__.py`, `_FONTS_DIR`), so a private deployment still serves
+`/dashboard/static/fonts/…` and there is no second copy to drift.
 
 Both are SIL Open Font License 1.1. The OFL requires the licence to travel with
 the files, so it does — see `Archivo-OFL.txt` and `JetBrainsMono-OFL.txt`,
@@ -64,9 +65,10 @@ the machine strings on this surface include YouTube video ids like
 
 ## Serving
 
-Served from the existing dashboard static route
-(`GET /dashboard/static/fonts/<file>`), which grew a `.woff2` media type for
-them. `@font-face` `src:` values in `dashboard.css` are **relative**
+Served twice from this one directory: the public asset route
+(`GET /static/fonts/<file>`, public mode only) and the dashboard route's
+`fonts/` alias (`GET /dashboard/static/fonts/<file>`, always registered).
+`@font-face` `src:` values in `dashboard.css` are **relative**
 (`fonts/…woff2`), never built from `PUBLIC_URL` — the SSH-tunnel rule
 (`docs/design/dashboard.md` §8) applies to fonts exactly as it applies to
 keyframes. `font-display: block` for both, matching the reference
