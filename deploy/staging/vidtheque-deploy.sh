@@ -33,7 +33,7 @@ AUTH=()
 api() { curl -fsS -m 15 "${AUTH[@]}" -H "Accept: application/vnd.github+json" "$@"; }
 
 LATEST=$(api "https://api.github.com/repos/$GH_REPO/deployments?per_page=1" |
-  python3 -c 'import json,sys; d=json.load(sys.stdin); print(f"{d[0][\"id\"]} {d[0][\"sha\"]}" if d else "")')
+  python3 -c 'import json,sys; d=json.load(sys.stdin); print("%s %s" % (d[0]["id"], d[0]["sha"]) if d else "")')
 [ -z "$LATEST" ] && exit 0
 DEP_ID=${LATEST%% *}
 SHA=${LATEST##* }
@@ -66,6 +66,15 @@ cd "$REPO_DIR"
 $RUN git fetch origin --quiet                     || fail "git fetch"
 $RUN git checkout --quiet "$SHA"                  || fail "checkout $SHA"
 $RUN uv sync --frozen --group gpu --quiet         || fail "uv sync"
+
+# Self-update: keep the installed copy current with the tree just checked out,
+# so a fix to this script ships like any other commit (field lesson 2026-08-11:
+# a hand-patched installed copy + a re-run install command = silently dead
+# mechanism). Applies from the NEXT run — this run continues as loaded.
+cmp -s "$REPO_DIR/deploy/staging/vidtheque-deploy.sh" /usr/local/sbin/vidtheque-deploy || {
+  install -m 755 "$REPO_DIR/deploy/staging/vidtheque-deploy.sh" /usr/local/sbin/vidtheque-deploy
+  echo "deploy: self-updated /usr/local/sbin/vidtheque-deploy from $SHA"
+}
 
 systemctl restart vidtheque-worker vidtheque-mcp  || fail "restart"
 sleep 5
