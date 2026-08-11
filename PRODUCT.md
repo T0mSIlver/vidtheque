@@ -94,14 +94,16 @@ a neighbouring product could not truthfully copy:
   (`docs/design/dashboard.md` §8).
 - **Auth modes:** `none` | `token` | `oauth` (`DECISIONS.md` #1). A browser that
   is not signed in gets a page, not a JSON blob.
-- **Two web surfaces, one product:**
-  - `/dashboard` — the management surface. Five routes: corpus overview, videos
-    table, video detail, jobs, job detail.
-  - `/` — the public demo, a read-only projection of the same corpus, gated by
-    `VIDTHEQUE_PUBLIC_READONLY`. Its role per the positioning contract: **the
-    proof** — the corpus on tap, ask it something; it searches and answers, it
-    does not manage (`docs/design/demo-site.md` §6, `positioning.md` surface
-    implications).
+- **Three web surfaces, one product** (aligned 2026-08-11: `/` is the landing,
+  the demo moved to `/demo` — commit `4ddd45d`):
+  - `/` — the landing, static by design; the argument before the product.
+  - `/demo` — the public demo, a read-only projection of the same corpus,
+    gated by `VIDTHEQUE_PUBLIC_READONLY`. Its role per the positioning
+    contract: **the proof** — the corpus on tap, ask it something; it searches
+    and answers, it does not manage (`docs/design/demo-site.md` §6,
+    `positioning.md` surface implications).
+  - `/dashboard` — the management surface. Five routes: corpus overview,
+    videos table, video detail, jobs, job detail.
 - **The GPU is leased.** On Tom's box the worker shares a 3090 with a llama.cpp
   LXC through `GPU_ACQUIRE_CMD`/`GPU_RELEASE_CMD` hooks; public defaults leave
   them unset. Jobs therefore wait for reasons that are real and need to be
@@ -230,7 +232,7 @@ and differ in register, not in world.
 
 - **The landing — `Sell`.** The maximal expression: the wall, the lift, the
   receipts performed. Static by design; the trailer, not the movie.
-- **`/` (the public demo) — `Persuade`, in continuation of the landing.** The
+- **`/demo` (the public demo) — `Persuade`, in continuation of the landing.** The
   proof for someone who arrived from a link: live search, ask-with-citations,
   the same aesthetic carrying into a working product
   (`positioning.md`: the demo is the proof).
