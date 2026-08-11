@@ -333,6 +333,8 @@ cloudflared tunnel login          # pick the vidtheque.dev zone (must read Activ
 cloudflared tunnel create vidtheque
 
 # 7b. config, and its own user
+#     (Field note 2026-08-11: the .deb does NOT create this user — the hardened
+#      unit fails at start without this useradd. Confirmed in production.)
 sudo useradd --system --no-create-home --shell /usr/sbin/nologin cloudflared
 sudo mkdir -p /etc/cloudflared
 sudo cp /home/vidtheque/vidtheque/deploy/staging/cloudflared-config.yml \
@@ -343,7 +345,7 @@ sudo chown -R cloudflared:cloudflared /etc/cloudflared
 sudo chmod 600 /etc/cloudflared/*.json
 
 # 7c. validate BEFORE running anything
-cloudflared tunnel ingress validate --config /etc/cloudflared/config.yml
+cloudflared tunnel --config /etc/cloudflared/config.yml ingress validate
 cloudflared tunnel ingress rule --config /etc/cloudflared/config.yml https://vidtheque.dev/mcp
 cloudflared tunnel ingress rule --config /etc/cloudflared/config.yml https://vidtheque.dev/dashboard
 cloudflared tunnel ingress rule --config /etc/cloudflared/config.yml https://vidtheque.dev/frames/x-00000.jpg

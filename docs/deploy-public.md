@@ -833,7 +833,7 @@ directory", which on Linux is searched as `~/.cloudflared`, then
 ```bash
 cp deploy/cloudflared.example.yml ~/.cloudflared/config.yml
 $EDITOR ~/.cloudflared/config.yml     # tunnel UUID, credentials-file, hostname, service URL
-cloudflared tunnel ingress validate --config ~/.cloudflared/config.yml
+cloudflared tunnel --config ~/.cloudflared/config.yml
 cloudflared tunnel ingress rule --config ~/.cloudflared/config.yml https://vidtheque.example.com/mcp
 ```
 

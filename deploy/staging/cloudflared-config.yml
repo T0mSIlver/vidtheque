@@ -16,7 +16,7 @@
 # frequently NOT the one you expect.
 #
 # Validate before starting anything:
-#   cloudflared tunnel ingress validate --config /etc/cloudflared/config.yml
+#   cloudflared tunnel --config /etc/cloudflared/config.yml ingress validate
 #   cloudflared tunnel ingress rule --config /etc/cloudflared/config.yml https://vidtheque.dev/mcp
 #   cloudflared tunnel ingress rule --config /etc/cloudflared/config.yml https://vidtheque.dev/dashboard
 #   cloudflared tunnel ingress rule --config /etc/cloudflared/config.yml https://vidtheque.dev/frames/x-00000.jpg
