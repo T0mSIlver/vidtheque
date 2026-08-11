@@ -40,7 +40,7 @@ from .access import (
     sign_in_hint,
     write_side_enabled,
 )
-from .settings import ROOT, DashboardSettings, warn_on_proxy_origin_cidrs
+from .settings import ROOT, DashboardSettings, refuse_proxy_origin_cidrs
 
 __all__ = [
     "ROOT",
@@ -50,7 +50,7 @@ __all__ = [
     "dashboard_routes",
     "origin_ok",
     "require_write",
-    "warn_on_proxy_origin_cidrs",
+    "refuse_proxy_origin_cidrs",
     "write_side_enabled",
 ]
 

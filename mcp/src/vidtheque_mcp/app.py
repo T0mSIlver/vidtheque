@@ -39,7 +39,7 @@ from .config import Settings, _env
 from .dashboard import (
     DashboardSettings,
     dashboard_routes,
-    warn_on_proxy_origin_cidrs,
+    refuse_proxy_origin_cidrs,
     write_side_enabled,
 )
 from .db import Database
@@ -137,9 +137,9 @@ def assemble(
     dashboard = dashboard if dashboard is not None else DashboardSettings.from_env()
     settings = _tighten_for_public(settings, public)
     # An allowlist that covers the proxy's own socket makes every visitor
-    # through the proxy an owner. Said once, at boot, where an operator reading
-    # the startup log will see it.
-    warn_on_proxy_origin_cidrs(dashboard, public.trusted_ip_header)
+    # through the proxy an owner. Refused at boot (gate G2, 2026-08-11): it was
+    # a warning, and a warning is a control that depends on someone reading it.
+    refuse_proxy_origin_cidrs(dashboard, public.trusted_ip_header, settings.public_hostnames)
     db = Database(
         path=settings.db_path,
         read_pool_size=settings.read_pool_size,

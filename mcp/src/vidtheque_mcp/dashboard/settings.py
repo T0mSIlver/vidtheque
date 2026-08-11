@@ -12,7 +12,7 @@ import ipaddress
 import logging
 from dataclasses import dataclass
 
-from ..config import _bool_env, _env, _int_env
+from ..config import _LOOPBACK_HOSTS, ConfigError, _bool_env, _env, _int_env
 
 logger = logging.getLogger(__name__)
 
@@ -91,8 +91,12 @@ def proxy_origin_cidrs(settings: DashboardSettings) -> tuple[str, ...]:
     )
 
 
-def warn_on_proxy_origin_cidrs(settings: DashboardSettings, trusted_ip_header: str) -> None:
-    """Say so, at boot, when the allowlist may be describing the proxy (§3.4).
+def refuse_proxy_origin_cidrs(
+    settings: DashboardSettings,
+    trusted_ip_header: str,
+    public_hostnames: tuple[str, ...] = (),
+) -> None:
+    """Refuse to boot when the allowlist may be describing the proxy (§3.4).
 
     ``trusts()`` reads the **socket peer**, which is the right answer for a
     server a LAN talks to directly and the wrong shape for one behind a tunnel:
@@ -104,27 +108,52 @@ def warn_on_proxy_origin_cidrs(settings: DashboardSettings, trusted_ip_header: s
 
     A configured ``VIDTHEQUE_TRUSTED_IP_HEADER`` is the tell that a proxy is in
     front: it exists precisely because the socket peer is *not* the client. So
-    the two settings together are the footgun, and this is the warning rather
-    than a refusal because a legitimate deployment can look identical — a LAN
-    box on 192.168/16 with no proxy — and taking someone's owner access away at
-    boot on a heuristic is worse than telling them what it means. Flagged by
-    the 2026-08-09 review; `docs/deploy-public.md` §9 carries the operator half.
+    the two settings together are the footgun.
+
+    **This was a warning until 2026-08-11 (gate G2).** It refuses now, in the
+    shape B-2 established the same night: a misconfiguration that silently
+    widens authorization is a boot failure, not a log line, because a log line
+    is a control that depends on someone reading it.
+
+    **Three conditions, and the third is the one that took a second attempt.**
+    The header alone is not the signal it looks like: ``trusted_ip_header``
+    *defaults* to ``CF-Connecting-IP`` and `deploy/.env.example` ships that
+    value, so "a header is set" is true of a LAN box that has never heard of a
+    proxy. Refusing on the first two conditions alone would take owner access
+    away from exactly the deployment §3.2 designed the allowlist for — an
+    ``AUTH=none`` LAN box, where the CIDR is the only credential there is.
+
+    So the third condition is a **non-loopback public hostname**, the same test
+    `Settings._refuse_anonymous_writes_in_public` uses to mean "this is really
+    exposed". A LAN deployment has none and boots untouched; a tunnelled one
+    has one, and there the two settings together say *every visitor is the
+    owner*.
+
+    No escape-hatch env var, and none is needed: the remedy is to narrow the
+    allowlist to a network the proxy cannot speak from, which is a safe
+    configuration rather than a suppressed warning.
+
+    Flagged by the 2026-08-09 review; `docs/deploy-public.md` §9 carries the
+    operator half.
     """
     if not trusted_ip_header:
         return
     risky = proxy_origin_cidrs(settings)
     if not risky:
         return
-    logger.warning(
-        "VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS contains %s while "
-        "VIDTHEQUE_TRUSTED_IP_HEADER=%s is set, which means a proxy is in front "
-        "of this server. Trust is decided on the SOCKET PEER, so if the proxy "
-        "connects from one of those networks then every visitor arriving "
-        "through it is treated as the owner — owner clamps, full transcripts, "
-        "and the credential-free write side. Either narrow the allowlist to "
-        "networks the proxy cannot speak from, or empty it and use the token.",
-        ", ".join(risky),
-        trusted_ip_header,
+    exposed = [h for h in public_hostnames if h not in _LOOPBACK_HOSTS]
+    if not exposed:
+        return
+    raise ConfigError(
+        f"VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS contains {', '.join(risky)} while "
+        f"VIDTHEQUE_TRUSTED_IP_HEADER={trusted_ip_header} is set and this server "
+        f"answers on {', '.join(exposed)}, which means a proxy is in front of "
+        "it. Trust is decided on the SOCKET PEER, "
+        "so if the proxy connects from one of those networks then every visitor "
+        "arriving through it is treated as the owner — owner clamps, full "
+        "transcripts, and the credential-free write side. Either narrow the "
+        "allowlist to networks the proxy cannot speak from, or empty it and use "
+        "the token."
     )
 
 

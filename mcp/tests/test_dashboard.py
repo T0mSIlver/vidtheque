@@ -1711,27 +1711,37 @@ def test_trusted_cidrs_are_empty_by_default_and_are_the_socket_peer(
         assert forged.status_code == 401, "a header is not an address"
 
 
-def test_a_cidr_that_covers_the_proxy_warns_at_boot(caplog) -> None:
-    """The 2026-08-09 review's MEDIUM, as the honest minimal guard.
+def test_a_cidr_that_covers_the_proxy_refuses_the_boot() -> None:
+    """The 2026-08-09 review's MEDIUM, refused rather than logged (gate G2).
 
     `trusts()` reads the socket peer, which is right for a LAN and wrong behind
     a tunnel: cloudflared connects over loopback or a docker bridge, so a CIDR
     covering *that* makes every anonymous visitor an owner. A trusted-IP header
     is the tell that a proxy is in front, because it exists for exactly the
-    reason the socket peer is not the client. Not a refusal — a LAN box with no
-    proxy looks identical — but never silent either.
+    reason the socket peer is not the client.
+
+    Three conditions, and the third earns its own assertions below: the header
+    *defaults* to `CF-Connecting-IP` and `.env.example` ships that value, so
+    "a header is set" is also true of a LAN box that has never seen a proxy.
+    Refusing on the first two alone took owner access away from the deployment
+    §3.2 designed the allowlist for — caught by two existing tests in this file
+    when the first version of this guard landed. A non-loopback public hostname
+    is what distinguishes the exposed case, per B-2's own test.
     """
     import ipaddress
-    import logging
 
+    import pytest
+
+    from vidtheque_mcp.config import ConfigError
     from vidtheque_mcp.dashboard.settings import (
         DashboardSettings as DS,
         proxy_origin_cidrs,
-        warn_on_proxy_origin_cidrs,
+        refuse_proxy_origin_cidrs,
     )
 
     loopback = DS(trusted_cidrs=(ipaddress.ip_network("127.0.0.1/32"),))
     docker = DS(trusted_cidrs=(ipaddress.ip_network("172.17.0.0/16"),))
+    lan = DS(trusted_cidrs=(ipaddress.ip_network("10.0.0.0/8"),))
     routable = DS(trusted_cidrs=(ipaddress.ip_network("203.0.113.0/24"),))
 
     assert proxy_origin_cidrs(loopback) == ("127.0.0.1/32",)
@@ -1739,22 +1749,28 @@ def test_a_cidr_that_covers_the_proxy_warns_at_boot(caplog) -> None:
     assert proxy_origin_cidrs(routable) == ()
     assert proxy_origin_cidrs(DS()) == ()
 
-    for settings in (loopback, docker):
-        caplog.clear()
-        with caplog.at_level(logging.WARNING, "vidtheque_mcp.dashboard.settings"):
-            warn_on_proxy_origin_cidrs(settings, "CF-Connecting-IP")
-        assert caplog.records, settings.trusted_cidrs
-        said = caplog.records[0].getMessage()
+    public = ("vidtheque.example.com",)
+    for settings in (loopback, docker, lan):
+        with pytest.raises(ConfigError) as caught:
+            refuse_proxy_origin_cidrs(settings, "CF-Connecting-IP", public)
+        said = str(caught.value)
         assert "treated as the owner" in said, said
-        assert str(settings.trusted_cidrs[0]) in said
+        assert str(settings.trusted_cidrs[0]) in said, "it must name the CIDR"
+        assert "vidtheque.example.com" in said, "and the hostname it is exposed on"
+        # The remedy is in the message: this is the one a reader can act on
+        # without opening the source.
+        assert "narrow the allowlist" in said, said
 
-    # No proxy in front (the header is the documented way to say "trust the
-    # socket only"), or an allowlist a proxy cannot be speaking from: silence.
+    # Boots: no proxy in front (the header is the documented way to say "trust
+    # the socket only"), or an allowlist a proxy cannot be speaking from.
     for settings, header in ((loopback, ""), (routable, "CF-Connecting-IP")):
-        caplog.clear()
-        with caplog.at_level(logging.WARNING, "vidtheque_mcp.dashboard.settings"):
-            warn_on_proxy_origin_cidrs(settings, header)
-        assert caplog.records == []
+        refuse_proxy_origin_cidrs(settings, header, public)
+
+    # And the case that made this a three-condition rule: a LAN deployment, on
+    # the *default* header, with the allowlist that is its only credential.
+    # No public hostname, so nothing here is exposed and nothing is refused.
+    for hostnames in ((), ("localhost",), ("127.0.0.1",)):
+        refuse_proxy_origin_cidrs(lan, "CF-Connecting-IP", hostnames)
 
 
 def test_the_env_vars_this_phase_adds_are_documented() -> None:
