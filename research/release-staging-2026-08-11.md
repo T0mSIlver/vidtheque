@@ -1651,3 +1651,12 @@ verified clean. Unprivileged + nesting is the supported configuration; a public
 box without journald is a worse security posture than the marginal namespace
 surface nesting adds. `keyctl` remains off. BEFORE-SHIP §2.2 corrected in the
 same commit as this note.
+
+---
+
+## 2026-08-11 — where the companion docs went (repo cleanup)
+
+The checklist this research fed, `BEFORE-SHIP.md`, was executed on launch
+morning and now lives at `docs/history/BEFORE-SHIP.md`, beside the overnight
+handoffs (`docs/history/HANDOFF-2026-08-09/-10/-11.md`). References in this
+document to `BEFORE-SHIP.md` at the repo root read through to that path.
