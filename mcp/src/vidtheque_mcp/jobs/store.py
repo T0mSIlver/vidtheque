@@ -44,6 +44,11 @@ TERMINAL = {"done", "failed", "skipped", "cancelled"}
 # progress report, so a live job is never this quiet; a killed process is.
 DEFAULT_STALE_CLAIM_S = 300
 
+# The same month the ask budget keeps, for the same reason: long enough to
+# answer "what did last month's indexing do", short enough that the table
+# cannot grow for the life of the deployment (2026-08-10 audit, F-25).
+EVENT_KEEP_DAYS = 30
+
 
 def new_job_id() -> str:
     return "job_" + secrets.token_hex(6)
@@ -449,6 +454,22 @@ def request_cancel(conn: sqlite3.Connection, public_id: str) -> None:
     until it stops, and job-status should say so.
     """
     conn.execute("UPDATE jobs SET cancel_requested = 1 WHERE public_id = ?", (public_id,))
+
+
+def prune_events(conn: sqlite3.Connection) -> int:
+    """Drop job events older than ``EVENT_KEEP_DAYS``. Returns rows deleted.
+
+    Every stage of every item appends a row here and nothing deleted one, so the
+    table grew for the life of the deployment. That is a slow leak on its own
+    and a fast one in combination: a full disk is what turns a commit failure
+    into a writer poisoned until restart. The jobs themselves stay — they are
+    the ledger the dashboard renders; it is the per-stage chatter that does not
+    need to be kept for a year. (2026-08-10 audit, F-25.)
+    """
+    cursor = conn.execute(
+        "DELETE FROM job_events WHERE at < unixepoch() - ?", (EVENT_KEEP_DAYS * 86_400,)
+    )
+    return cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
 
 
 def log(

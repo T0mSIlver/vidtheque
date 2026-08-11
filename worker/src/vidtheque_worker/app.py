@@ -91,6 +91,16 @@ def create_app(
         version=__version__,
         description=DESCRIPTION,
         lifespan=lifespan,
+        # No interactive docs and no schema. This service has no authentication
+        # and is a `docker inspect` away from the GPU; /docs, /redoc and
+        # /openapi.json published every route, every form field and every
+        # advertised cap to anyone who reached the port, which is a map for
+        # whoever got there. The endpoints are the contract and they live in
+        # the repo. Set WORKER_DOCS=1 to get them back while developing.
+        # (2026-08-10 audit, F-32.)
+        docs_url="/docs" if settings.docs_enabled else None,
+        redoc_url="/redoc" if settings.docs_enabled else None,
+        openapi_url="/openapi.json" if settings.docs_enabled else None,
     )
     app.include_router(router)
     _install_error_handlers(app)

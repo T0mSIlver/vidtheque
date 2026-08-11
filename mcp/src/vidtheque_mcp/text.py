@@ -234,7 +234,9 @@ def validate_tag(tag: str) -> tuple[str, str]:
     candidate = tag.strip()
     if not _TAG_RE.match(candidate):
         raise bad_param(
-            f'Invalid tag "{tag}".',
+            # A prefix, not the whole thing: the regex bounds a *valid* tag at
+            # 64 characters and an invalid one is whatever the caller sent.
+            f'Invalid tag "{tag[:70]}".',
             "tags are <namespace>:<value>, lowercase, matching "
             "^[a-z0-9]+:[a-z0-9][a-z0-9._-]{0,63}$ — e.g. topic:attention.",
         )
@@ -252,6 +254,17 @@ def split_csv(value: str | None, limit: int, param: str) -> list[str]:
 
     if not value:
         return []
+    # Bound the string before splitting it. `limit` caps how many values come
+    # out and never capped how much came in, so a single multi-megabyte
+    # argument was split, stripped and copied before anything counted it. The
+    # ceiling is generous against the real shape — ten tags of at most 70
+    # characters — and refuses the pathological one.
+    # (2026-08-10 audit, F-14.)
+    if len(value) > limit * 128:
+        raise bad_param(
+            f"{param} is too long ({len(value)} characters).",
+            f"pass at most {limit} comma-separated values.",
+        )
     items = [item.strip() for item in value.split(",") if item.strip()]
     if len(items) > limit:
         raise bad_param(

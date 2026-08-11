@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     port: int = Field(default=8081, validation_alias=_either("PORT"))
     log_level: str = Field(default="info", validation_alias=_either("LOG_LEVEL"))
 
+    docs_enabled: bool = Field(default=False, validation_alias=_either("WORKER_DOCS"))
+    """FastAPI's /docs, /redoc and /openapi.json. Off by default.
+
+    This service has no authentication, so anything it publishes it publishes to
+    whoever can reach the port. Handy while developing, a map while deployed
+    (2026-08-10 audit, F-32)."""
+
     # --- backend selection ------------------------------------------------
     stt_backend: str = Field(default="whisperx", validation_alias=_either("STT_BACKEND"))
     embed_backend: str = Field(
@@ -63,6 +70,22 @@ class Settings(BaseSettings):
     loads two."""
 
     ocr_model: str = Field(default="rapidocr-default", validation_alias=_either("OCR_MODEL"))
+
+    model_revision: str | None = Field(
+        default=None, validation_alias=_either("MODEL_REVISION")
+    )
+    """Pin every hub download to one commit, instead of tracking a moving head.
+
+    Empty by default because there is no revision that is right for whatever
+    `EMBED_MODEL` an operator sets, and inventing one would break the moment
+    they change the model. But an unpinned id is a repository we re-download
+    whatever it says today: SentenceTransformers reads a repository-controlled
+    `sentence_bert_config.json` whose `model_kwargs` can set
+    `weights_only: false`, and Transformers then calls unrestricted
+    `torch.load` — unpickling as root, on a box with a GPU attached.
+    :func:`safe_model_kwargs` closes that specific door; this closes the door
+    of the artifact changing under you at all. (2026-08-10 audit, F-27.)
+    """
 
     # --- embedding behaviour ----------------------------------------------
     embed_query_prompt: str | None = Field(

@@ -72,6 +72,7 @@ from .sources import (
     SourceError,
     Unavailable,
     VideoMeta,
+    is_indexable_url,
     is_playlist,
     looks_like_container,
     parse_info,
@@ -287,8 +288,22 @@ class IndexingPipeline:
         except SourceError as exc:
             raise ItemFailed("E_UNSUPPORTED_SOURCE", str(exc), retryable=False) from exc
 
-        urls = [entry.url for entry in entries][:max_items]
-        added = await self.db.write(lambda c: store.append_items(c, run.ctx.job_id, urls))
+        # Revalidate every child. The parent URL was checked when the job was
+        # submitted; these arrive from the extractor, which is a remote source
+        # of URLs, and they were appended verbatim. A container that names an
+        # off-host entry would have queued a fetch of it — the same hole the
+        # parent check closes, one level down. (2026-08-10 audit, F-15.)
+        urls = [entry.url for entry in entries if is_indexable_url(entry.url)][:max_items]
+        rejected = len(entries) - len([e for e in entries if is_indexable_url(e.url)])
+        if rejected:
+            await run.ctx.log(
+                f"dropped {rejected} expanded entr(ies) that were not YouTube URLs",
+                "warning",
+                stage="fetch",
+            )
+        added = await self.db.write(
+            lambda c: store.append_items(c, run.ctx.job_id, urls, max_items)
+        )
         await run.ctx.log(f"expanded {url} into {added} item(s)", "info", stage="fetch")
         raise ItemSkipped(f"expanded into {added} item(s)", code="E_EXPANDED")
 
@@ -411,8 +426,14 @@ class IndexingPipeline:
                         "E_UNSUPPORTED_SOURCE", f"{url} is a playlist.", retryable=False
                     )
                 max_items = int(run.args.get("max_items") or 25)
-                urls = [e.url for e in playlist_entries(info, max_items)]
-                added = await self.db.write(lambda c: store.append_items(c, run.ctx.job_id, urls))
+                urls = [
+                    e.url
+                    for e in playlist_entries(info, max_items)
+                    if is_indexable_url(e.url)
+                ]
+                added = await self.db.write(
+                    lambda c: store.append_items(c, run.ctx.job_id, urls, max_items)
+                )
                 raise ItemSkipped(f"expanded into {added} item(s)", code="E_EXPANDED")
             meta = parse_info(info, url, getattr(self.source, "version", None))
         except NotYetAvailable as exc:
@@ -427,6 +448,22 @@ class IndexingPipeline:
                 f"{url} could not be extracted: {exc}",
                 retryable=False,
             ) from exc
+
+        # Refused here, at the probe, because this is the first moment the
+        # duration is known and the last one before anything is downloaded or
+        # decoded. Everything downstream — the fetch, the full-file decode the
+        # keyframe detector does before its 600-frame budget applies, the STT
+        # timeout that scales from this very number — is unbounded without it.
+        # (2026-08-10 audit, F-17.)
+        limit = self.settings.max_duration_s
+        if limit > 0 and meta.duration_s > limit:
+            raise ItemFailed(
+                "E_UNSUPPORTED_SOURCE",
+                f"{meta.source_id} is {meta.duration_s / 3600:.1f}h, over the "
+                f"{limit / 3600:.1f}h indexing limit "
+                "(VIDTHEQUE_INDEX_MAX_DURATION_S).",
+                retryable=False,
+            )
 
         run.meta = meta
         run.info = info

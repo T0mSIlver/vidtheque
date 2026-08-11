@@ -10,7 +10,10 @@ is deliberate — the owner's llama.cpp arrangement stays out of shared code.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+import os
+import signal
 from dataclasses import dataclass
 
 log = logging.getLogger(__name__)
@@ -96,22 +99,50 @@ class NvmlProbe:
 
 
 async def run_shell_hook(command: str, *, timeout: float = 60.0, label: str = "hook") -> None:
-    """Run a shell hook, raising :class:`GPUHookError` on failure or timeout."""
+    """Run a shell hook, raising :class:`GPUHookError` on failure or timeout.
+
+    Nothing request-derived reaches ``command`` — it comes from the operator's
+    environment and only from there — so this is not an injection surface. Two
+    other things about it were real:
+
+    * **The error named the command.** ``GPUHookError`` is returned to the
+      caller as a 503 body, so a lease hook holding an inline bearer token for
+      the llama.cpp host published it to whoever triggered a cold load. The
+      label identifies which hook failed and is all a caller can act on; the
+      command goes to the log, where the operator already has it.
+    * **The timeout killed the shell, not its children.** ``/bin/sh -c`` exits
+      and whatever it spawned carries on holding the VRAM the timeout was
+      about. Killing the process group is what the timeout meant.
+
+    (2026-08-10 audit, F-31.)
+    """
     log.info("running %s: %s", label, command)
     proc = await asyncio.create_subprocess_shell(
         command,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
+        start_new_session=True,
     )
     try:
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except TimeoutError:
-        proc.kill()
+        _kill_group(proc)
         await proc.wait()
-        raise GPUHookError(f"{label} timed out after {timeout}s: {command}") from None
+        log.warning("%s timed out after %ss: %s", label, timeout, command)
+        raise GPUHookError(f"{label} timed out after {timeout}s") from None
 
     output = (stdout or b"").decode(errors="replace").strip()
     if output:
         log.info("%s output: %s", label, output)
     if proc.returncode != 0:
-        raise GPUHookError(f"{label} exited {proc.returncode}: {command}")
+        log.warning("%s exited %s: %s", label, proc.returncode, command)
+        raise GPUHookError(f"{label} exited {proc.returncode}")
+
+
+def _kill_group(proc: "asyncio.subprocess.Process") -> None:
+    """SIGKILL the hook's whole process group, falling back to the shell."""
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):  # pragma: no cover
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()

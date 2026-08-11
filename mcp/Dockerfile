@@ -37,6 +37,15 @@ RUN uv sync --locked --no-install-project --package vidtheque-mcp
 COPY mcp/ mcp/
 RUN uv sync --locked --package vidtheque-mcp
 
+# Not root. This is the process the internet talks to, and it runs yt-dlp and
+# ffmpeg over remote input when indexing is enabled. /data is the only thing it
+# writes. (2026-08-10 audit, F-28.)
+RUN groupadd --system --gid 10001 vidtheque \
+    && useradd --system --uid 10001 --gid vidtheque --no-create-home vidtheque \
+    && mkdir -p /data \
+    && chown -R vidtheque:vidtheque /data /app
+USER vidtheque:vidtheque
+
 VOLUME ["/data"]
 EXPOSE 8080
 

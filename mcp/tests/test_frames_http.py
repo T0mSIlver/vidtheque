@@ -118,18 +118,37 @@ def test_no_params_is_a_byte_identical_passthrough(corpus: Path) -> None:
 
 def test_width_resizes_and_preserves_aspect(corpus: Path) -> None:
     with client(make_settings(corpus)) as c:
-        response = c.get(f"/frames/{FRAME_ID}.jpg?w=96")
+        response = c.get(f"/frames/{FRAME_ID}.jpg?w=192")
     assert response.status_code == 200
-    assert size_of(response.content) == (96, 54)
+    assert size_of(response.content) == (192, 108)
     assert int(response.headers["content-length"]) == len(response.content)
     # The whole point: a thumbnail is a fraction of the frame it came from.
     assert len(response.content) < len(SOURCE) / 4
 
 
-def test_width_clamps_to_the_floor(corpus: Path) -> None:
+def test_an_arbitrary_width_snaps_to_the_nearest_the_product_uses(corpus: Path) -> None:
+    """The clamps bounded the values; they never bounded the *key space*.
+
+    `variant_key` carries both numbers, so 1,217 widths x 76 qualities was
+    92,492 cache entries per frame against a 256 MiB LRU, each miss a decode
+    plus a re-encode on the request path. Snapping rather than rejecting means
+    an odd width still returns an image — a neighbouring one.
+    (2026-08-10 audit, F-5.)
+    """
     with client(make_settings(corpus)) as c:
-        assert size_of(c.get(f"/frames/{FRAME_ID}.jpg?w=1").content) == (64, 36)
-        assert size_of(c.get(f"/frames/{FRAME_ID}.jpg?w=-500").content) == (64, 36)
+        # Below the floor, above nothing: 1 and -500 both land on the smallest
+        # width the product actually asks for.
+        assert size_of(c.get(f"/frames/{FRAME_ID}.jpg?w=1").content) == (192, 108)
+        assert size_of(c.get(f"/frames/{FRAME_ID}.jpg?w=-500").content) == (192, 108)
+        # And a plausible-looking width in between snaps to its neighbour.
+        assert size_of(c.get(f"/frames/{FRAME_ID}.jpg?w=300").content) == (320, 180)
+        assert size_of(c.get(f"/frames/{FRAME_ID}.jpg?w=500").content) == (512, 288)
+    # Three requests either side of 320 are one cache entry, not three.
+    assert {p.name for p in variants(corpus)} == {
+        "00000-w192-q75.jpg",
+        "00000-w320-q75.jpg",
+        "00000-w512-q75.jpg",
+    }
 
 
 def test_width_clamps_to_the_ceiling_and_never_upscales(corpus: Path) -> None:
@@ -151,12 +170,12 @@ def test_quality_alone_re_encodes_at_the_original_size(corpus: Path) -> None:
     assert len(low.content) < len(SOURCE)
 
 
-def test_quality_clamps(corpus: Path) -> None:
+def test_quality_snaps_too(corpus: Path) -> None:
     with client(make_settings(corpus)) as c:
-        assert c.get(f"/frames/{FRAME_ID}.jpg?w=96&q=1").status_code == 200
-        assert c.get(f"/frames/{FRAME_ID}.jpg?w=96&q=100000").status_code == 200
+        assert c.get(f"/frames/{FRAME_ID}.jpg?w=192&q=1").status_code == 200
+        assert c.get(f"/frames/{FRAME_ID}.jpg?w=192&q=100000").status_code == 200
     keys = {path.name for path in variants(corpus)}
-    assert keys == {"00000-w96-q20.jpg", "00000-w96-q95.jpg"}
+    assert keys == {"00000-w192-q70.jpg", "00000-w192-q75.jpg"}
 
 
 def test_unparseable_params_fall_back_to_the_signed_defaults(corpus: Path) -> None:
@@ -169,16 +188,16 @@ def test_unparseable_params_fall_back_to_the_signed_defaults(corpus: Path) -> No
 
 def test_the_variant_lands_where_index_schema_says(corpus: Path) -> None:
     with client(make_settings(corpus)) as c:
-        c.get(f"/frames/{FRAME_ID}.jpg?w=96&q=60")
-    assert variants(corpus) == [corpus / "derived" / VIDEO_ID / "00000-w96-q60.jpg"]
+        c.get(f"/frames/{FRAME_ID}.jpg?w=192&q=70")
+    assert variants(corpus) == [corpus / "derived" / VIDEO_ID / "00000-w192-q70.jpg"]
 
 
 def test_second_request_is_served_from_derived_without_re_encoding(corpus: Path) -> None:
     with client(make_settings(corpus)) as c:
-        first = c.get(f"/frames/{FRAME_ID}.jpg?w=96&q=60")
+        first = c.get(f"/frames/{FRAME_ID}.jpg?w=192&q=70")
         [path] = variants(corpus)
         stamp = path.stat().st_mtime_ns
-        second = c.get(f"/frames/{FRAME_ID}.jpg?w=96&q=60")
+        second = c.get(f"/frames/{FRAME_ID}.jpg?w=192&q=70")
     assert second.content == first.content
     assert variants(corpus) == [path]
     # Every encode ends in a write, so an untouched file is a cache hit.
@@ -216,11 +235,11 @@ def test_a_bearer_response_is_private_and_a_signed_one_is_public(corpus: Path) -
     signer = FrameUrlSigner(settings.resolve_secret(), settings.frame_url_ttl_s)
     expires_at, signature = signer.sign(FRAME_ID, 96, 60)
     with client(settings) as c:
-        signed = c.get(f"/frames/{FRAME_ID}.jpg?w=96&q=60&exp={expires_at}&sig={signature}")
+        signed = c.get(f"/frames/{FRAME_ID}.jpg?w=192&q=70&exp={expires_at}&sig={signature}")
         bearer = c.get(
-            f"/frames/{FRAME_ID}.jpg?w=96&q=60", headers={"Authorization": "Bearer s3cret"}
+            f"/frames/{FRAME_ID}.jpg?w=192&q=70", headers={"Authorization": "Bearer s3cret"}
         )
-        denied = c.get(f"/frames/{FRAME_ID}.jpg?w=96&q=60")
+        denied = c.get(f"/frames/{FRAME_ID}.jpg?w=192&q=70")
 
     # The URL is the capability, so a shared cache holding it changes nothing —
     # but it may not hold it for longer than the signature lives.
@@ -246,18 +265,20 @@ def test_signed_urls_serve_the_resized_bytes_and_tampering_fails(corpus: Path) -
 
     with client(settings) as c:
         good = c.get(f"/frames/{FRAME_ID}.jpg?{query}")
-        # The parameters are signature-bound: change either and the MAC misses.
-        tampered_w = c.get(f"/frames/{FRAME_ID}.jpg?w=97&q=60&exp={expires_at}&sig={signature}")
-        tampered_q = c.get(f"/frames/{FRAME_ID}.jpg?w=96&q=61&exp={expires_at}&sig={signature}")
+        # The parameters are signature-bound. Both sides snap, so a *number*
+        # one away is the same variant and therefore the same capability —
+        # what the MAC must refuse is being pointed at a different image.
+        tampered_w = c.get(f"/frames/{FRAME_ID}.jpg?w=960&q=70&exp={expires_at}&sig={signature}")
+        tampered_q = c.get(f"/frames/{FRAME_ID}.jpg?w=192&q=75&exp={expires_at}&sig={signature}")
         dropped = c.get(f"/frames/{FRAME_ID}.jpg?exp={expires_at}&sig={signature}")
-        stale_exp, stale_sig = signer.sign(FRAME_ID, 96, 60, now=int(time.time()) - 10**9)
-        expired = c.get(f"/frames/{FRAME_ID}.jpg?w=96&q=60&exp={stale_exp}&sig={stale_sig}")
+        stale_exp, stale_sig = signer.sign(FRAME_ID, 192, 70, now=int(time.time()) - 10**9)
+        expired = c.get(f"/frames/{FRAME_ID}.jpg?w=192&q=70&exp={stale_exp}&sig={stale_sig}")
 
     assert good.status_code == 200
-    assert size_of(good.content) == (96, 54)
+    assert size_of(good.content) == (192, 108)
     assert tampered_w.status_code == 401
     assert tampered_q.status_code == 401
-    assert dropped.status_code == 401  # signed for 96/60, presented as 512/75
+    assert dropped.status_code == 401  # signed for 192/70, presented as 512/75
     assert expired.status_code == 401
 
 
@@ -272,7 +293,7 @@ def test_an_oauth_bearer_still_gets_a_resized_frame(corpus: Path) -> None:
             f"/frames/{FRAME_ID}.jpg?w=128", headers={"Authorization": f"Bearer {token}"}
         )
     assert response.status_code == 200
-    assert size_of(response.content) == (128, 72)
+    assert size_of(response.content) == (192, 108)  # 128 snaps to the nearest
 
 
 # -------------------------------------------------------------- the cache unit

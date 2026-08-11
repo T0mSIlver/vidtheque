@@ -10,10 +10,18 @@ Intra-video  — `t_start` / `t_end` / `t`, REAL seconds from the video start.
 
 from __future__ import annotations
 
+import math
 import re
 from datetime import UTC, date, datetime, timedelta
 
 from .errors import ToolError, bad_time
+
+# No time expression this accepts is anywhere near this long: the longest is a
+# full ISO 8601 timestamp with an offset. The bound exists because a caller can
+# send megabytes, and everything downstream — strip, lower, three regexes, ISO
+# parsing, and the error that echoes it — is a copy. Refused before any of that
+# runs. (2026-08-10 audit, F-14.)
+MAX_TIME_CHARS = 64
 
 _RELATIVE = re.compile(r"^\s*(\d+)\s*(s|sec|secs|m|min|mins|h|hr|hrs|d|w|mo|y)\s*ago\s*$", re.I)
 _UNIT_SECONDS = {
@@ -53,6 +61,8 @@ def parse_corpus_time(value: object, param: str, *, now: datetime | None = None)
 
     if not isinstance(value, str):
         raise bad_time(str(value), param)
+    if len(value) > MAX_TIME_CHARS:
+        raise bad_time(value, param)
 
     raw = value.strip()
     lowered = raw.lower()
@@ -100,6 +110,8 @@ def parse_offset(value: object, param: str) -> float | None:
     if isinstance(value, (int, float)):
         seconds = float(value)
     elif isinstance(value, str):
+        if len(value) > MAX_TIME_CHARS:
+            raise bad_time(value, param)
         raw = value.strip()
         match = _CLOCK.match(raw)
         if match:
@@ -115,6 +127,12 @@ def parse_offset(value: object, param: str) -> float | None:
     else:
         raise bad_time(str(value), param)
 
+    # `float("nan")` and `float("inf")` both parse, and neither is a time. The
+    # negative check below let them straight through — NaN compares false
+    # against everything — and they surfaced much later as an E_INTERNAL from
+    # whatever arithmetic met them first. (2026-08-10 audit, F-14.)
+    if not math.isfinite(seconds):
+        raise bad_time(str(value), param)
     if seconds < 0:
         raise ToolError(
             "E_BAD_PARAM",

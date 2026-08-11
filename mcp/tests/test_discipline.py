@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -197,6 +198,64 @@ async def test_progress_handler_interrupts_a_long_query(tmp_path: Path) -> None:
         assert caught.value.deadline_expired is True
         assert elapsed < 5.0, "the deadline must stop real work, not just stop waiting"
     finally:
+        await pool.close()
+
+
+async def test_a_cancelled_read_does_not_hand_its_connection_to_the_next_one(
+    tmp_path: Path,
+) -> None:
+    """Python cannot kill a thread, so the release has to wait for it.
+
+    A client disconnecting mid-search cancels the awaiting task. The `finally`
+    then returned the connection to the pool while the executor thread was
+    still running `fn` on it, and the next request pulled the same connection
+    out and used it concurrently. Free, anonymous, repeatable.
+    (2026-08-10 audit, F-20.)
+    """
+    data = tmp_path / "data"
+    (data / "keyframes").mkdir(parents=True)
+    seed(data / "vidtheque.db", data / "keyframes")
+
+    running = threading.Event()
+    may_finish = threading.Event()
+    inside = 0
+    concurrent = 0
+
+    def blocking(conn: sqlite3.Connection) -> int:
+        nonlocal inside, concurrent
+        inside += 1
+        concurrent = max(concurrent, inside)
+        running.set()
+        may_finish.wait(5.0)
+        inside -= 1
+        return conn.execute("SELECT 1").fetchone()[0]
+
+    pool = ReadPool(data / "vidtheque.db", size=1, budget_s=30.0)
+    await pool.open()
+    try:
+        first = asyncio.create_task(pool.run(blocking))
+        # Polled, not `Event.wait`: a synchronous wait here blocks the loop, so
+        # the task never reaches the executor at all.
+        for _ in range(100):
+            if running.is_set():
+                break
+            await asyncio.sleep(0.05)
+        assert running.is_set(), "the thread never started"
+        first.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+
+        # The pool has one connection and its thread is still inside `fn`, so a
+        # second read must wait rather than be handed the same object.
+        second = asyncio.create_task(pool.run(lambda c: c.execute("SELECT 2").fetchone()[0]))
+        await asyncio.sleep(0.2)
+        assert not second.done(), "the connection was repooled while still in use"
+
+        may_finish.set()
+        assert await asyncio.wait_for(second, 5.0) == 2
+        assert concurrent == 1, "two callers were inside one connection at once"
+    finally:
+        may_finish.set()
         await pool.close()
 
 

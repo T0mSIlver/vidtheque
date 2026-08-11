@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from .base import BackendUnavailable, BaseBackend, Embeddings
+from .base import BackendUnavailable, BaseBackend, Embeddings, safe_model_kwargs
 
 log = logging.getLogger(__name__)
 
@@ -51,8 +51,10 @@ class Qwen3EmbedBackend(BaseBackend):
         max_seq_length: int | None = None,
         query_prompt: str | None = None,
         vram_estimate_mb: int | None = None,
+        revision: str | None = None,
     ) -> None:
         super().__init__(model_id, vram_estimate_mb=vram_estimate_mb)
+        self.revision = revision
         self.device = device
         self.batch_size = batch_size
         self.max_seq_length = max_seq_length
@@ -71,10 +73,13 @@ class Qwen3EmbedBackend(BaseBackend):
             ) from exc
 
         log.info("loading embedding model=%s device=%s", self.model_id, self.device)
-        model_kwargs = {"dtype": "float16"} if self.device == "cuda" else None
+        model_kwargs = safe_model_kwargs(
+            {"dtype": "float16"} if self.device == "cuda" else None
+        )
         self._model = SentenceTransformer(
             self.model_id,
             device=self.device,
+            revision=self.revision,
             model_kwargs=model_kwargs,
             # Last-token pooling: padding on the right would pool a pad token.
             tokenizer_kwargs={"padding_side": "left"},

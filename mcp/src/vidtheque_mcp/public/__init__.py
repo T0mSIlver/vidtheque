@@ -157,6 +157,17 @@ def public_middleware(
                 # should — a minute bucket means nothing across a restart.
                 "ask_global": (public.ask_per_day, 86_400.0),
                 "frames": (public.frames_per_min, 60.0),
+                # `/mcp` used to be the one route with no bucket at all, on the
+                # argument that an agent's traffic is not a browser's. True, and
+                # it still let an anonymous caller loop `tools/call` at machine
+                # speed on the surface that reaches the GPU: a `search` embeds
+                # its query before any admission control, so N concurrent calls
+                # are 2N forward passes with nothing bounding N. The bucket is
+                # deliberately loose — an agent legitimately makes a burst of
+                # calls to answer one question — but a ceiling that exists is
+                # the difference from one that does not.
+                # (2026-08-10 audit, F-1.)
+                "mcp": (public.mcp_per_min, 60.0),
             }
         )
     if dashboard_per_min is not None:
@@ -192,6 +203,8 @@ def public_middleware(
             return "search"
         if path.startswith("/frames/"):
             return "frames"
+        if path == "/mcp" or path.startswith("/mcp/"):
+            return "mcp"
         return None
 
     def extra_buckets(path: str) -> tuple[str, ...]:

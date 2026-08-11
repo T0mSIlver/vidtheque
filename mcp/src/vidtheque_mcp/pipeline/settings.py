@@ -47,6 +47,15 @@ class PipelineSettings:
     # ------------------------------------------------------------------- media
     audio_codec: str = "opus"
     max_height: int = 1080
+    # The ceiling on how much video one item may be. Nothing bounded this: a
+    # download had no byte or duration cap, keyframe detection decoded the
+    # *whole* file before the 600-frame budget applied, and the STT timeout
+    # scaled from the remote `duration_s` with no ceiling of its own. A
+    # multi-hour upload therefore pinned download, decode, disk and CPU — and
+    # it needs no attacker, only a long video. Four hours is roughly four times
+    # the longest talk in the corpus (56 minutes), so it binds the pathological
+    # case and not the real one. (2026-08-10 audit, F-17.)
+    max_duration_s: float = 4 * 3600.0
 
     # --------------------------------------------------------------- transcript
     stt_policy: str = "prefer_whisperx"
@@ -117,6 +126,7 @@ class PipelineSettings:
             keep_word_timings=_bool_env("VIDTHEQUE_KEEP_WORD_TIMINGS", True),
             audio_codec=(_env("VIDTHEQUE_AUDIO_CODEC", "opus") or "opus").strip().lower(),
             max_height=_int_env("VIDTHEQUE_INDEX_MAX_HEIGHT", 1080),
+            max_duration_s=_float_env("VIDTHEQUE_INDEX_MAX_DURATION_S", 4 * 3600.0),
             stt_policy=(_env("VIDTHEQUE_STT_POLICY", "prefer_whisperx") or "prefer_whisperx")
             .strip()
             .lower(),

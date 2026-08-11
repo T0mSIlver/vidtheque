@@ -55,6 +55,19 @@ COPY worker/ worker/
 COPY mcp/src/ mcp/src/
 RUN uv sync --locked --package vidtheque-worker --extra gpu --extra nvml
 
+# Not root. This process loads model weights downloaded at runtime and decodes
+# untrusted media, which is the pair of properties that makes "container root"
+# worth avoiding: a bug in either reaches everything the user can touch, and as
+# root that is the whole filesystem, the HF cache it would poison for every
+# later load, and the environment. It does not need to write anywhere except
+# the cache and /tmp, so it owns those and nothing else.
+# (2026-08-10 audit, F-28.)
+RUN groupadd --system --gid 10001 vidtheque \
+    && useradd --system --uid 10001 --gid vidtheque --no-create-home vidtheque \
+    && mkdir -p /hf-cache \
+    && chown -R vidtheque:vidtheque /hf-cache /app
+USER vidtheque:vidtheque
+
 EXPOSE 8081
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

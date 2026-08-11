@@ -67,6 +67,18 @@ SSE_MEDIA_TYPE = "text/event-stream"
 MAX_QUESTION_CHARS = 400
 MAX_TOOL_CALLS_PER_ROUND = 6
 
+# The output ceiling, sent on every completion. Without it the only bound on
+# generated tokens was the provider's own default and the 90s deadline, on the
+# one path that spends money — the input side has been bounded all along
+# (a 400-char question, six results of 300 chars, a 1200-char window) and the
+# output side was not bounded at all. "Under 150 words" lives in the system
+# prompt, and a prompt is not a clamp: CLAUDE.md's rule is server-side limits,
+# never prompt-only. 700 tokens is roughly three times the 150 words the prompt
+# asks for, so it binds runaway generation without truncating an honest answer.
+# The tool-call rounds get the same ceiling; a round that only emits tool calls
+# needs far less. (2026-08-10 audit, F-3.)
+ASK_MAX_OUTPUT_TOKENS = 700
+
 # The facade's bounds, tighter than the MCP defaults and enforced server-side:
 # the model cannot ask for more.
 ASK_SEARCH_LIMIT = 6
@@ -172,17 +184,27 @@ class Billing:
     repeats spends the model's tokens while the ``finally`` hands the day's
     token back every time. Reported by the 2026-08-09 review.
 
-    So the flag is set by :meth:`OpenRouter.complete` the moment the provider
-    answers with a non-error status — that response is a generation, and it is
-    billed whether or not the loop ever turns it into prose. An explicit
-    refusal (401/403/429/5xx) and a request that never reached the provider at
-    all cost nothing and leave the flag alone, which is what keeps a flapping
-    free tier from eating the day (§4.4's original reason for existing).
+    So the flag is set by :meth:`OpenRouter.complete` **before it dispatches**,
+    not after the provider answers. That ordering is the whole point, and the
+    2026-08-10 audit (B-3) is why it changed: setting it afterwards left a
+    window the length of a completion in which the flag was still false. A
+    visitor who disconnects inside that window cancels the task; `CancelledError`
+    derives from `BaseException`, so the `except Exception` below never sees it,
+    the assignment never runs, and the ``finally`` refunds the day's token —
+    while the provider has already generated and billed the answer. Repeat and
+    the daily cap never moves.
 
-    One caveat, deliberately: a read timeout *after* the provider accepted the
-    request may have been billed and is counted as unpaid here, because a
-    timeout is far more often a dead upstream than a generated answer. Nobody
-    can force one on demand, which is what separates it from the disconnect.
+    The honest question is not "did the provider answer" but "might this have
+    been billed", and once the request is on the wire the answer is yes. So the
+    flag goes up first and comes back down only where nothing can have been
+    generated: a failure to connect at all, and an explicit refusal
+    (401/403/429) which the provider answers without running a model. A read
+    timeout, a 5xx and a cancellation all stay paid, because any of them can sit
+    on top of a real generation.
+
+    The cost of this direction is that a genuinely dead upstream can charge a
+    visitor a token they did not get an answer from. That is the right way round
+    for a budget that guards money: the alternative charged Tom instead.
     """
 
     paid: bool = False
@@ -283,6 +305,11 @@ class OpenRouter:
         key = self._settings.openrouter_key
         if not key:  # pragma: no cover - the endpoint checks first
             raise AskUnavailable("not_configured")
+        # Whatever this call was worth, it was already worth it before this
+        # round: a later round must never be able to hand back an earlier one.
+        was_paid = billing.paid if billing is not None else False
+        if billing is not None:
+            billing.paid = True
         try:
             response = await self._client.post(
                 f"{self._settings.openrouter_base_url}/chat/completions",
@@ -296,15 +323,32 @@ class OpenRouter:
                 },
                 timeout=min(remaining, 60.0),
             )
-        except Exception as exc:  # network, TLS, timeout — all the same to a visitor
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            # Never reached the provider, so nothing can have been generated.
+            # This is the narrow case the flag may be handed back for — it is
+            # also the flapping-upstream case §4.4 exists to forgive.
+            if billing is not None:
+                billing.paid = was_paid
+            logger.warning("ask: upstream unreachable: %s", type(exc).__name__)
+            raise AskUnavailable("upstream_unavailable") from None
+        except Exception as exc:  # read timeout, TLS mid-stream, protocol error
+            # The request was on the wire. It may have been generated and
+            # billed, so the flag stays up. Cancellation does not land here at
+            # all — CancelledError is a BaseException — which is precisely why
+            # the flag had to go up before the await.
             logger.warning("ask: upstream request failed: %s", type(exc).__name__)
             raise AskUnavailable("upstream_unavailable") from None
 
-        if response.status_code < 400 and billing is not None:
-            # The provider answered. Whatever the loop makes of the body — an
-            # answer, a tool call, an unparseable mess — this completion was
-            # generated and it is billed, so the refund rule must know.
-            billing.paid = True
+        if response.status_code >= 400:
+            # A status line is proof the provider answered *instead of*
+            # generating — a refusal (401/403/429), a rejected body (4xx), or a
+            # flap (5xx). None of those ran a model, so the day's token goes
+            # back. This is §4.4's original reason for existing: without it one
+            # visitor retrying through an upstream flap burns the whole day for
+            # everybody. It is also the line between this and a cancellation,
+            # which produces no status at all and therefore stays charged.
+            if billing is not None:
+                billing.paid = was_paid
 
         if response.status_code in (401, 403):
             logger.warning("ask: upstream rejected the key (%s)", response.status_code)
@@ -313,11 +357,10 @@ class OpenRouter:
             logger.warning("ask: upstream rate limited")
             raise AskUnavailable("upstream_rate_limited")
         if response.status_code >= 400:
-            # 200 chars for the operator; nothing at all for the client. An
-            # upstream body is attacker-influenced text and a provider detail.
-            logger.warning(
-                "ask: upstream %s: %s", response.status_code, response.text[:200]
-            )
+            # Status only. An upstream body is attacker-influenced text, and a
+            # provider that echoes the request would copy the prepaid key
+            # straight into this log line (2026-08-10 audit, F-8).
+            logger.warning("ask: upstream returned %s", response.status_code)
             raise AskUnavailable("upstream_unavailable")
         try:
             return response.json()
@@ -383,6 +426,7 @@ async def ask_events(
                 "messages": messages,
                 "tools": TOOL_SPECS,
                 "temperature": 0.2,
+                "max_tokens": ASK_MAX_OUTPUT_TOKENS,
             },
             deadline,
             billing,
@@ -441,6 +485,7 @@ async def ask_events(
             ],
             "tool_choice": "none",
             "temperature": 0.2,
+            "max_tokens": ASK_MAX_OUTPUT_TOKENS,
         },
         deadline,
         billing,

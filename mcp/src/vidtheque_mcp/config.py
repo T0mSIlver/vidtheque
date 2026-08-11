@@ -10,6 +10,7 @@ conditional sprinkled through the codebase.
 
 from __future__ import annotations
 
+import logging
 import os
 import secrets
 from dataclasses import dataclass, field
@@ -72,11 +73,38 @@ def _clamped_float_env(name: str, default: float, low: float, high: float) -> fl
     return min(high, max(low, _float_env(name, default)))
 
 
+_TRUE_WORDS = frozenset({"1", "true", "yes", "on"})
+_FALSE_WORDS = frozenset({"0", "false", "no", "off"})
+
+# The hosts that are not "the internet can reach this".
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "[::1]", "::1"})
+
+
 def _bool_env(name: str, default: bool) -> bool:
+    """Parse a boolean, and **refuse** a spelling that is neither.
+
+    This used to coerce anything unrecognised to false, which is the wrong
+    direction for every flag that reads it: `VIDTHEQUE_PUBLIC_READONLY=Y` is
+    plainly someone asking for read-only mode, and silently answering "false"
+    registers the write tools on a public hostname with no complaint anywhere.
+    A typo must be a boot failure, not a security posture.
+
+    Both documented spellings still work — the value is stripped and
+    lower-cased first, so `True` and a trailing space are fine.
+    (2026-08-10 audit, B-2.)
+    """
     raw = _env(name)
     if raw is None:
         return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
+    value = raw.strip().lower()
+    if value in _TRUE_WORDS:
+        return True
+    if value in _FALSE_WORDS:
+        return False
+    raise ConfigError(
+        f"{name}={raw!r} is not a boolean. "
+        f"Use one of {sorted(_TRUE_WORDS)} or {sorted(_FALSE_WORDS)}."
+    )
 
 
 @dataclass(frozen=True)
@@ -284,6 +312,47 @@ class Settings:
                     f"VIDTHEQUE_PUBLIC_HOSTNAME must include {host!r}, or the "
                     "transport's DNS-rebinding guard answers 421 to every request"
                 )
+        self._refuse_anonymous_writes_in_public()
+
+    def _refuse_anonymous_writes_in_public(self) -> None:
+        """No credential, writes registered, and a public hostname: refuse.
+
+        That combination has no legitimate use. It is what a missing compose
+        overlay produces, and the failure is silent in the worst possible
+        direction — `index-video` and `tag-video` registered for anyone who
+        finds the URL, which is also an unrestricted SSRF probe into whatever
+        network the box sits on. Nothing in the app noticed; the runbook
+        documented it and documentation is not a control.
+
+        The escape hatch is deliberate and one step: indexing genuinely does
+        need the write tools, and the documented workflow (stop the tunnel,
+        flip the flag, index, flip it back) would otherwise refuse to boot
+        while the hostname is still configured. `VIDTHEQUE_ALLOW_PUBLIC_WRITES=1`
+        says "I know, the tunnel is down" out loud, which is the difference
+        between a decision and an accident. (2026-08-10 audit, B-2.)
+        """
+        if self.auth_mode != "none":
+            return
+        if _bool_env("VIDTHEQUE_PUBLIC_READONLY", False):
+            return
+        if _bool_env("VIDTHEQUE_ALLOW_PUBLIC_WRITES", False):
+            logging.getLogger(__name__).warning(
+                "VIDTHEQUE_ALLOW_PUBLIC_WRITES is set: the write tools are "
+                "registered with no credential in front of them, on %s. Make "
+                "sure the tunnel is stopped.",
+                ", ".join(self.public_hostnames),
+            )
+            return
+        public = [h for h in self.public_hostnames if h not in _LOOPBACK_HOSTS]
+        if not public:
+            return
+        raise ConfigError(
+            f"VIDTHEQUE_AUTH=none with writes enabled on a public hostname "
+            f"({', '.join(public)}) registers index-video and tag-video for "
+            "anyone who finds the URL. Set VIDTHEQUE_PUBLIC_READONLY=1 for a "
+            "demo deployment, or VIDTHEQUE_ALLOW_PUBLIC_WRITES=1 if the tunnel "
+            "is stopped and you are indexing."
+        )
 
     def resolve_secret(self) -> str:
         """The signing secret, auto-generated into the data dir on first boot.

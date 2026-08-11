@@ -139,10 +139,12 @@ def test_a_random_init_under_the_mapping_retries_without_it(st, caplog):
         backend = loaded(st)
     assert len(FakeSentenceTransformer.builds) == 2
     assert "key_mapping" in FakeSentenceTransformer.builds[0].kwargs["model_kwargs"]
-    assert FakeSentenceTransformer.builds[1].kwargs["model_kwargs"] in (
-        None,
-        {"dtype": "bfloat16"},
-    )
+    # The retry drops key_mapping and keeps everything else — including the
+    # safety kwargs, which a repository-controlled config must never be able to
+    # weaken (2026-08-10 audit, F-27).
+    retried = FakeSentenceTransformer.builds[1].kwargs["model_kwargs"]
+    assert "key_mapping" not in retried
+    assert retried["use_safetensors"] is True and retried["weights_only"] is True
     assert backend.loaded
     assert "randomly initialised" in "\n".join(caplog.messages)
 

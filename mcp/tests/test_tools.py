@@ -1263,10 +1263,20 @@ async def test_speaker_filter_names_the_filter_that_does_work(
     assert "refused identically" in payload["message"]
 
 
-async def test_an_unreachable_worker_names_a_cause_even_with_no_message(
+async def test_an_unreachable_worker_names_a_cause_but_not_the_worker(
     assembled: Assembled,
 ) -> None:
-    """`str(exc)` is empty for a bare httpx timeout; the note read "unreachable ()"."""
+    """Two requirements, and the exception's *class* satisfies both.
+
+    `str(exc)` is empty for a bare httpx timeout and the note read
+    "unreachable ()" — a degraded search naming its degradation and not its
+    cause, which a round-3 consumer could not act on (§14.5). It also carries
+    the worker's URL, and on a public deployment this note is printed to a
+    stranger (2026-08-10 audit, F-4).
+
+    The class name says whether the failure is transient without naming a
+    host. The message goes to the log.
+    """
     from vidtheque_mcp.embeddings import EmbeddingUnavailable
 
     class Mute:
@@ -1282,4 +1292,27 @@ async def test_an_unreachable_worker_names_a_cause_even_with_no_message(
     assembled.deps.embeddings = Mute()
     result = await search.run(assembled.deps, q="cache", limit=3)
     assert "unreachable ()" not in body(result)
-    assert "EmbeddingUnavailable, no message" in body(result)
+    assert "EmbeddingUnavailable" in body(result)
+
+
+async def test_the_unreachable_note_does_not_publish_the_worker_url(
+    assembled: Assembled,
+) -> None:
+    """The whole reason the message is withheld (2026-08-10 audit, F-4)."""
+    from vidtheque_mcp.embeddings import EmbeddingUnavailable
+
+    class Leaky:
+        dim = 2048
+        FRAME_MODEL = "Qwen/Qwen3-VL-Embedding-2B"
+
+        async def embed(self, texts, model=None, input_type="query"):
+            raise EmbeddingUnavailable("all attempts failed: http://worker:8081/v1/embeddings")
+
+        async def embed_frame_query(self, texts, model=None):
+            raise EmbeddingUnavailable("all attempts failed: http://worker:8081/v1/embeddings")
+
+    assembled.deps.embeddings = Leaky()
+    result = await search.run(assembled.deps, q="cache", limit=3)
+    printed = body(result)
+    assert "worker:8081" not in printed
+    assert "EmbeddingUnavailable" in printed

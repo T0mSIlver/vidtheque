@@ -86,11 +86,13 @@ class VidthequeOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode,
             if client_info.client_secret
             else None
         )
-        self.store.save_client(
-            client_info.client_id,
-            client_info.model_dump(mode="json", exclude_none=True),
-            secret_hash,
-        )
+        # The hash is the stored credential, so the plaintext beside it was a
+        # second copy with no job — `docker inspect` on auth.db, a backup, or a
+        # stray read all handed out a working client secret that the hash exists
+        # precisely to avoid storing. (2026-08-10 audit, auth hardening.)
+        metadata = client_info.model_dump(mode="json", exclude_none=True)
+        metadata.pop("client_secret", None)
+        self.store.save_client(client_info.client_id, metadata, secret_hash)
 
     # ---------------------------------------------------------- authorize
 

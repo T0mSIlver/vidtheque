@@ -533,11 +533,19 @@ def attach_video(conn: sqlite3.Connection, item_id: int, video_id: int) -> Claim
     return Claim(ok=True)
 
 
-def append_items(conn: sqlite3.Connection, job_id: int, urls: Sequence[str]) -> int:
+def append_items(
+    conn: sqlite3.Connection, job_id: int, urls: Sequence[str], max_items: int = 200
+) -> int:
     """Fan-out: playlist/channel entries become items of the *same* job.
 
     One `index-video` call covering 200 playlist entries stays one handle the
     model polls, which is the entire point of the jobs/job_items split.
+
+    ``max_items`` is job-wide, not per-container. `index-video` clamps its own
+    `max_items` to 200 and accepts ten roots, and each root then expanded up to
+    that many *independently* — so one call could produce ~2,010 items while
+    advertising 200. The cap now counts what the job already holds.
+    (2026-08-10 audit, F-19.)
     """
     if not urls:
         return 0
@@ -557,10 +565,13 @@ def append_items(conn: sqlite3.Connection, job_id: int, urls: Sequence[str]) -> 
             "SELECT COALESCE(MAX(seq), -1) + 1 FROM job_items WHERE job_id = ?", (job_id,)
         ).fetchone()[0]
     )
+    room = max(0, max_items - len(seen))
     added = 0
     for url in urls:
         if url in seen:
             continue
+        if added >= room:
+            break
         seen.add(url)
         conn.execute(
             "INSERT INTO job_items (job_id, seq, source_url, video_id) VALUES (?, ?, ?, NULL)",

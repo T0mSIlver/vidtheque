@@ -27,7 +27,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import httpx2 as httpx
 from mcp.server.transport_security import TransportSecuritySettings
@@ -35,7 +35,7 @@ from starlette.applications import Starlette
 from starlette.routing import Mount
 
 from .auth.modes import AuthBundle, build_auth
-from .config import Settings
+from .config import Settings, _env
 from .dashboard import (
     DashboardSettings,
     dashboard_routes,
@@ -96,6 +96,28 @@ def build_app(
     ).app
 
 
+def _tighten_for_public(settings: Settings, public: PublicSettings) -> Settings:
+    """Defaults that are right for an owner's agent and wrong for the internet.
+
+    ``get-frames return="image"`` ships at four images and 6 MiB of raw JPEG,
+    which base64 turns into an ~8 MiB response with the raw bytes, the encoded
+    string and the JSON copy all alive at once — and the byte cap is consulted
+    *after* the file is read. On a private box that is a sensible convenience
+    for an agent that cannot follow a URL. Pointed at the internet it is a
+    memory and uplink amplifier on the surface with the loosest limit, so in
+    public mode the default becomes zero and callers get URLs instead, which is
+    what CLAUDE.md's frames-by-URL rule wants anyway.
+
+    An operator who sets the variable explicitly still means it: this only
+    moves the *default*. (2026-08-10 audit, F-13.)
+    """
+    if not public.enabled:
+        return settings
+    if _env("VIDTHEQUE_INLINE_FRAME_MAX") is not None:
+        return settings
+    return replace(settings, inline_frame_max=0)
+
+
 def assemble(
     settings: Settings,
     *,
@@ -113,6 +135,7 @@ def assemble(
     settings.validate()
     public = public if public is not None else PublicSettings.from_env()
     dashboard = dashboard if dashboard is not None else DashboardSettings.from_env()
+    settings = _tighten_for_public(settings, public)
     # An allowlist that covers the proxy's own socket makes every visitor
     # through the proxy an owner. Said once, at boot, where an operator reading
     # the startup log will see it.
@@ -158,6 +181,15 @@ def assemble(
     mcp = build_mcp_server(settings, deps, auth, hidden_tools(public.enabled))
     mcp_app = mcp.streamable_http_app(
         streamable_http_path="/mcp",
+        # Stateless, and it has to be. The default keeps a transport and a
+        # server task per session in the manager, with no idle timeout and no
+        # cap — and `/mcp` is deliberately the one route the rate limiter never
+        # sees. So an anonymous `initialize` in a loop, which needs no
+        # credential and costs the caller nothing, accumulates sessions until
+        # the box dies. Nothing here holds per-session state: the tools take
+        # their dependencies from `deps`, and the resources are static.
+        # (2026-08-10 audit, F-2.)
+        stateless_http=True,
         transport_security=TransportSecuritySettings(
             enable_dns_rebinding_protection=True,
             allowed_hosts=settings.allowed_hosts,

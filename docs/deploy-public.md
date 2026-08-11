@@ -50,6 +50,16 @@ surface and answer per route: `/` and `/static/*`, `/api/search|videos|meta`,
 `/healthz`. Under `none`, `auth.routes` is empty and `/auth/*` and
 `/.well-known/*` do not exist — confirm that, do not assume it.
 
+**That list was incomplete, corrected 2026-08-11.** It omitted
+`/dashboard/videos*`, `/dashboard/jobs*`, `/dashboard/api/jobs*`,
+`/dashboard/static/*` and the `/dashboard/` redirect — all mounted anonymously
+— and, on `/mcp`, the **three public resource URIs** and the session lifecycle.
+Two of the audit's findings lived in exactly the gap: `/dashboard/videos/{id}`
+published every stage's model id and raw error while the jobs view beside it
+redacted both, and sessions accumulated without limit because nobody had
+enumerated the lifecycle as part of the surface. Enumerate from the router, not
+from this list.
+
 **Readonly masking completeness.** Two independent mechanisms have to both be
 on, and they are on for different reasons:
 
@@ -81,6 +91,21 @@ but the model ids *are* settings. The projection now drops all four
 the one thing a visitor can act on: that vector search is off, without the
 mismatch that caused it. So the audit's job here is now **verification, not a
 decision** — §2.5 has the grep.
+
+**"Fixed" was true of the dashboard and not of the deployment — 2026-08-11.**
+Three other anonymous read paths published the same class of data, and §2.5's
+greps could not see any of them because they only ever read dashboard HTML:
+MCP `job-status` handed back the submitted URL and the yt-dlp error text the
+jobs view had just withheld (a visitor reads a job id off `/dashboard/jobs`,
+which renders them as links, and quotes it at `/mcp`); `corpus-summary` printed
+raw `video_stages.error`; `/dashboard/videos/{id}` published `model_key` and
+stage errors. All three are fixed and the pairing now has a test, because
+nothing tested it and that is why it survived.
+
+The lesson worth keeping: redaction here is written per *view*, so each new view
+starts unredacted and remembers on its own. §2.5's greps check one surface. The
+question to ask of any new read path is what it prints, not whether the flag is
+set.
 
 **Clamp policy on `/dashboard/api/*` — RESOLVED 2026-08-09 (dashboard phase 5):
 fixed, not accepted.** The three answers below are kept because the reasoning is
@@ -200,9 +225,17 @@ per-IP `search` (30/min), `ask` (5/min), `frames` (120/min), `dashboard`
 (120/min), and the server-wide `ask_global` (50/day). Check the bypasses
 specifically: a forged client-IP header (§4), a path that maps to no bucket
 (`bucket_for` returns `None` for anything outside `/api/`, `/frames/`,
-`/dashboard` — and the `/mcp` mount is deliberately never limited,
-`test_public.py:386`), and whether the refund paths can be driven to mint
+`/dashboard` and `/mcp`), and whether the refund paths can be driven to mint
 credit (they refill-then-cap, `Bucket.give_back`, so they should not).
+
+**Corrected 2026-08-11: `/mcp` is no longer unlimited.** It was, deliberately,
+on the argument that an agent's traffic is not a browser's — which is true and
+still left the surface that reaches the GPU unmetered: MCP `search` embeds its
+query on the worker, so concurrent anonymous calls were forward passes with
+nothing bounding them. It now has its own loose bucket
+(`VIDTHEQUE_RATE_MCP_PER_MIN`, 120), and query embedding happens inside search
+admission rather than before it (2026-08-10 audit, F-1). Probe it like the
+others.
 
 **SSRF in the CIMD fetcher.** `auth/cimd.py:guard_ssrf` requires https, refuses
 credentials in the URL, and refuses any host that resolves to a private,
@@ -229,21 +262,41 @@ If the box ever runs `token`/`oauth`, the signature covers the *clamped*
 `(frame_id, width, quality, exp)` pair and not the origin — re-check that
 widening the clamp floor cannot change what a live signed URL means.
 
-**Ask budget exhaustion.** `ask_global` is 50/day, keyed `"@global"`, in memory,
-and **reset by any restart** (`ratelimit.py` module docstring says so out loud).
-`VIDTHEQUE_ASK_MAX_ROUNDS=4` means one ask is up to four upstream completions.
+**Ask budget exhaustion. Corrected 2026-08-11 — the two facts below were both
+wrong.** `ask_global` is 50/day, keyed `"@global"`, and **persisted**: migration
+0005 writes it to SQLite, so a restart resumes the day rather than handing it
+back. §9 has had this right for a while and this paragraph did not.
+
+`VIDTHEQUE_ASK_MAX_ROUNDS=4` means one ask is up to **five** upstream
+completions, not four: four tool-enabled rounds and then a forced final answer
+with tools off, so the visitor always gets prose rather than a spinner.
+
+And the thing neither number covered: until 2026-08-11 a visitor who
+disconnected *during* a completion got the day's token back while OpenRouter had
+already generated and billed the answer, so the cap could be held at zero
+indefinitely. The flag is now raised before the request is dispatched
+(2026-08-10 audit, B-3), and every completion carries an explicit `max_tokens`,
+which it did not.
 **The shipped model id is not free.** `deploy/.env.example` records the finding:
 there is no `deepseek/*:free` on OpenRouter any more, that whole family is paid,
 and `OPENROUTER_MODEL=deepseek/deepseek-v4-flash-0731` is what the demo runs.
-So the daily bucket is a **money** guard sitting on top of an in-memory counter
-that a redeploy zeroes — which the limiter's own docstring calls out as
-acceptable for a free tier and *not* acceptable for money. The audit must land
-on one of: (a) a hard spend cap set on the OpenRouter key itself, using a
-dedicated key scoped to this deployment; (b) a genuinely free model id from the
-list in `.env.example`; or (c) `OPENROUTER_API_KEY=` empty, which turns the mode
-off cleanly — `/api/meta` reports `ask_enabled: false` and the page hides the
-toggle rather than offering a button that 503s. **(c) is the recommended day-one
-posture**: ship search first, add ask when the traffic shape is known.
+So the daily bucket is a **money** guard, and the audit had to land on one of:
+(a) a hard spend cap set on the OpenRouter key itself, using a dedicated key
+scoped to this deployment; (b) a genuinely free model id from the list in
+`.env.example`; or (c) `OPENROUTER_API_KEY=` empty, which turns the mode off
+cleanly — `/api/meta` reports `ask_enabled: false` and the page hides the toggle
+rather than offering a button that 503s.
+
+**Decided 2026-08-11: (a), and the in-app budget as well.** Ask ships on day
+one on `deepseek/deepseek-v4-flash-0731`, spent by a **dedicated key with a hard
+provider-side cap**. The reasoning is that the provider cap is the only control
+that speaks the same unit as the asset — the local counter counts asks, not
+dollars, and a one-line model change alters the cost per ask without touching
+the number 50. It is also the only one that survives a bug in the counter, which
+B-3 was.
+
+**Setting that cap is a manual step on OpenRouter and nothing in this repo can
+check it.** §7.5 has the checklist line.
 
 **Header spoofing through the tunnel.** See §4 in full. It is a real config
 item, it has a code answer already, and getting it wrong in either direction is
@@ -296,12 +349,22 @@ reasoning is worth stating because "no auth on a public box" reads wrong:
   front of `/frames/*` and the dashboard, and a visitor who cannot load a
   thumbnail has no demo. The whole point of the public instance is that a
   stranger can search it and add `/mcp` to their own agent.
-- Nothing that can *write* exists in this combination, by two independent
-  mechanisms. The readonly flag unregisters the write **tools**; `AUTH=none`
-  unregisters the dashboard's write **routes**. Either one alone would be
-  enough; both is the belt and the braces, and each is a one-line change away
-  from the other being load-bearing — which is exactly why the audit checks both
-  rather than reasoning about one.
+- Nothing that can write *to the corpus* exists in this combination, by two
+  independent mechanisms. The readonly flag unregisters the write **tools**;
+  `AUTH=none` unregisters the dashboard's write **routes**. Either one alone
+  would be enough; both is the belt and the braces, and each is a one-line
+  change away from the other being load-bearing — which is exactly why the audit
+  checks both rather than reasoning about one.
+  - **Qualified 2026-08-11.** This used to say "nothing that can *write*", flat.
+    An anonymous frame GET writes and evicts derived-cache files, and `/api/ask`
+    writes the budget row. Neither touches the corpus and both are bounded, but
+    "no writes happen" was not true and a reader planning a read-only mount
+    would have been misled by it.
+  - **And 2026-08-11: the third mechanism is now the boot.** `AUTH=none` with
+    writes enabled on a non-loopback hostname refuses to start, because two
+    mechanisms that are both one env var away from off is not the same as a
+    deployment that cannot come up wrong. `VIDTHEQUE_ALLOW_PUBLIC_WRITES=1` is
+    the deliberate exception, for the §9 indexing workflow.
 - The thing `AUTH=none` costs you is that everything readable is public. That is
   a *content* decision, not a security posture, and it is §1's first question.
 
@@ -476,6 +539,17 @@ constant, and re-run `select count(*) from keyframes` at the freeze.
    surfaces' five widths for about a third of the corpus, 2 GB holds all of it.
    This is a CPU/latency decision, not a correctness one: `derived/` is
    disposable by design and rebuilds on demand.
+
+   **This arithmetic was about the wrong number, corrected 2026-08-11.** Five
+   widths is what *the product* asks for. What a hostile caller could ask for
+   was every integer in the clamp: `variant_key` carries the width and the
+   quality, so 1,217 × 76 = 92,492 cache keys per frame, ~320 million across the
+   corpus. Not "the cache will evict under load" but "the cache can be held
+   permanently cold, on purpose, at 120 requests a minute, for as long as
+   somebody feels like it" — and every miss is a decode plus a re-encode on the
+   request path. `w` and `q` now snap to the five widths and two qualities that
+   are real (2026-08-10 audit, F-5), which makes the paragraph above true as
+   written rather than optimistic.
 
 ---
 
@@ -976,6 +1050,36 @@ is pointed at.
 - [ ] `cloudflared` running as a service, surviving a reboot
 - [ ] rollback rehearsed (§8) — **before** the URL is shared, not after
 
+**Added by the 2026-08-10 audit.** Everything above this line the repo can help
+with. Everything below it is a fact about the box or an account elsewhere, and
+no test in this repository can check any of it:
+
+- [ ] the merged compose model publishes **loopback only**, checked with
+      `docker compose … config --format json | jq '[.services[].ports[]?] | all(.host_ip == "127.0.0.1")'`
+- [ ] `sudo ss -ltnpH | awk '$4 ~ /:(8080|8081|8100)$/'` shows no wildcard
+      listener — the merged model is a claim, this is the fact (B-1)
+- [ ] the **worker** is unreachable from a second machine on the LAN *and* from
+      off-network. It has no authentication and no request-size limits; the
+      compose overlay no longer publishes it at all, and that is worth
+      confirming rather than assuming (F-12)
+- [ ] Proxmox and LXC firewall, router port forwards, UPnP and IPv6 checked by
+      hand — "bound to loopback" and "nothing forwards to it" are two claims
+- [ ] `job-status` through the **public `/mcp`** shows no source URL and no
+      error text. §2.5's greps only read dashboard HTML and never covered this
+      path, which is how it stayed open for two phases (F-4)
+- [ ] the OpenRouter key is **dedicated to this deployment and has a hard spend
+      cap set in the console**. The in-app budget counts asks; only this counts
+      money, and only this survives a bug in the counter
+- [ ] **Bot Fight Mode is OFF.** It is zone-wide, cannot be scoped to a path,
+      and cannot be skipped by WAF rules — it challenges non-browser clients,
+      which is exactly what `/mcp` serves. Enabling it breaks the product for
+      every agent
+- [ ] the single free-plan WAF rate-limiting rule, if used, points at
+      `/api/ask` — the only path that spends money
+- [ ] `MODEL_REVISION` pinned, or the decision to leave it floating recorded.
+      Nothing else stands between a third-party artifact and code execution in
+      the worker container (F-26, F-27)
+
 ---
 
 ## 8. Rollback
@@ -1033,17 +1137,29 @@ process holds it in memory until restart.
     day-keyed budget.
   - **Reads happen once, at boot**; after that the in-memory counter is the
     gate and SQLite is only the record, written behind the request. An orderly
-    stop drains the queue; a `kill -9` can lose whatever was in flight, which
-    is at most one ask.
+    stop drains the queue; a `kill -9` can lose whatever was in flight —
+    **corrected 2026-08-11: that is the whole queued burst, not "at most one
+    ask"**, and a persistently failing writer loses every delta it is handed,
+    because a failed write is logged and dropped rather than retried. Each
+    failed-write-then-restart cycle hands back up to a full day. The
+    provider-side cap is what this cannot undo.
   - **Rows older than 30 days are pruned at boot**, so the table answers "what
-    did the demo cost last month" and never grows.
+    did the demo cost last month". **Corrected 2026-08-11:** "never grows" was
+    wrong — pruning happens only at boot, so a long-lived process adds a row per
+    UTC day until its next restart. That is a row a day, which is nothing; the
+    sentence was still false.
   - To see it: `sqlite3 <data>/vidtheque.db 'SELECT * FROM ask_budget ORDER BY
     day DESC LIMIT 10;'`. To hand back a day by hand, `UPDATE ask_budget SET
     spent = 0 WHERE day = '<YYYY-MM-DD>'` **and restart** — the live counter is
     only re-read at boot.
   - A failed ask that bought nothing upstream is refunded (`-1`) and a paid one
     is not, so the row is a record of spend rather than of attempts
-    (`demo-site.md` §4.4).
+    (`demo-site.md` §4.4). **Sharpened 2026-08-11:** "bought nothing" now means
+    *the provider never answered* — a failure to connect, or any status line it
+    returned instead of generating. A read timeout and a cancelled request stay
+    charged, because either can sit on top of a real generation. Before B-3 the
+    row recorded observed successes, and work that was billed and then abandoned
+    was invisible to it.
   - If the budget is money (§1.1), the cap that ultimately matters still lives
     at OpenRouter, not here.
 - **Indexing while public.** Adding videos needs the write tools, which needs

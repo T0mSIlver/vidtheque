@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, TypeVar
 
+from ..config import ConfigError, _bool_env
 from .connection import ReadPool, Writer, open_write_connection
 from .migrations import migrate
 
@@ -69,6 +70,7 @@ class Database:
     # ------------------------------------------------------------ lifecycle
 
     async def open(self) -> None:
+        self._refuse_to_invent_a_corpus()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         await asyncio.to_thread(self._bootstrap)
         self._writer = Writer(self.path)
@@ -83,6 +85,32 @@ class Database:
         if self._writer is not None:
             await self._writer.close()
             self._writer = None
+
+    def _refuse_to_invent_a_corpus(self) -> None:
+        """A missing database file is an accident on a public deployment.
+
+        ``sqlite3.connect`` creates what is missing and ``migrate`` then makes
+        it a perfectly valid empty deployment — so a wrong data path, an
+        unmounted volume or a deleted file booted a server with no corpus and,
+        worse, with ``ask_budget`` back at zero. The money guard disappears at
+        exactly the moment an operator is improvising with mounts.
+
+        Only in read-only mode. A first run, a test and a dev box all
+        legitimately create their database, and refusing there would mean no
+        deployment could ever start. `VIDTHEQUE_PUBLIC_READONLY=1` is the
+        deployment that has nothing to create and everything to lose.
+        (2026-08-10 audit, F-22.)
+        """
+        if self.path.exists():
+            return
+        if not _bool_env("VIDTHEQUE_PUBLIC_READONLY", False):
+            return
+        raise ConfigError(
+            f"{self.path} does not exist, and a read-only public deployment has "
+            "nothing to create it from. Check VIDTHEQUE_DATA_DIR and that the "
+            "volume is mounted — booting would publish an empty corpus and "
+            "reset the daily ask budget."
+        )
 
     def _bootstrap(self) -> None:
         conn = open_write_connection(self.path)

@@ -11,6 +11,7 @@ garbage-collect and no per-connection client explosion.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 import time
@@ -75,6 +76,13 @@ class AuthStore:
         self._conn = sqlite3.connect(str(self.path), isolation_level=None, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_DDL)
+        # Owner-only. This file holds live session ids — replaying one is being
+        # the owner — and the mode was whatever the process umask happened to
+        # be, which on a default 022 is world-readable. Set after connect so it
+        # applies to the file SQLite actually created.
+        # (2026-08-10 audit, auth hardening.)
+        with contextlib.suppress(OSError):
+            self.path.chmod(0o600)
 
     def close(self) -> None:
         self._conn.close()

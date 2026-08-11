@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import secrets
 from dataclasses import dataclass, field
 from typing import Any, Sequence
 
@@ -15,6 +17,8 @@ from ..db import queries
 from ..embeddings import EmbeddingClient, EmbeddingUnavailable, FrameQueryUnsupported
 from ..errors import ToolError, plausible_video_id, timeout, unknown_video
 from ..jobs.runner import PipelineRunner
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -120,14 +124,24 @@ class Deps:
             return None
         except EmbeddingUnavailable as exc:
             leg = "frame" if space == "frame" else "vector"
-            # `str(exc)` is empty for a bare httpx timeout, and this note then
-            # read "the embedding worker is unreachable ()" — a degraded search
-            # that named its degradation and not its cause. A round-3 consumer
-            # hit it live and could only say it "could not determine whether
-            # the failure is transient" (§14.5).
-            why = str(exc) or f"{type(exc).__name__}, no message"
+            # Two requirements that look opposed and are not.
+            #
+            # A round-3 consumer hit this note live and could not tell whether
+            # the failure was transient, because `str(exc)` is empty for a bare
+            # httpx timeout and the note read "unreachable ()" (§14.5). So the
+            # reader needs to know *what kind* of failure it was.
+            #
+            # And `str(exc)` carries the worker's URL, which on a public
+            # deployment is printed to a stranger (2026-08-10 audit, F-4).
+            #
+            # The exception's class name answers the first without any of the
+            # second: ConnectTimeout and ReadTimeout are transient in a way
+            # ConnectError is not, and none of the three names a host. The full
+            # message goes to the log, where the operator already has the URL.
+            log.warning("embedding worker unavailable for the %s leg: %s", leg, exc)
             note = (
-                f"note: the embedding worker is unreachable ({why}) — the "
+                f"note: the embedding worker is unreachable "
+                f"({type(exc).__name__}) — the "
                 f"{leg} leg was skipped for this search."
             )
             if note not in notes:
@@ -200,9 +214,18 @@ def handle_errors(fn):
                 return timeout().to_result()
             raise
         except Exception as exc:  # pragma: no cover - last resort
+            # The remedy has always promised the server log has the trace id.
+            # It did not — the id did not exist and the exception text went to
+            # the caller instead, which on a public deployment means an
+            # anonymous stranger reads whatever str(exc) happens to carry: an
+            # absolute data path, the internal worker URL, a SQLite detail.
+            # Now the id is real, and it is the only thing that crosses over.
+            # (2026-08-10 audit, F-4.)
+            trace = secrets.token_hex(4)
+            log.exception("tool %s failed [trace %s]", fn.__name__, trace)
             return ToolError(
                 "E_INTERNAL",
-                f"Unexpected failure: {exc}",
+                f"Unexpected failure (trace {trace}).",
                 "retry once; if it persists the server log has the trace id.",
             ).to_result()
 

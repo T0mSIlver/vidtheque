@@ -85,6 +85,18 @@ class WorkerShuttingDown(ManagerNotRunning):
     code = "worker_shutting_down"
 
 
+class WorkerBusy(BackendUnavailable):
+    """The queue is full. A 503 now beats a place in a line nobody can serve.
+
+    Refusing is the honest answer to more work than one GPU can do: every job
+    waiting holds its payload in memory, so an unbounded queue turned a flood
+    into a memory and disk problem before it became a GPU one.
+    (2026-08-10 audit, F-29.)
+    """
+
+    code = "worker_busy"
+
+
 @dataclass(slots=True)
 class Slot:
     """One loaded model and its bookkeeping — **not** necessarily one task.
@@ -177,6 +189,7 @@ class LifecycleManager:
         vram_probe: VramProbe | None = None,
         hook_runner: HookRunner | None = None,
         idle_poll_interval: float | None = None,
+        max_queue: int = 32,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._slots: dict[str, Slot] = _build_slots(backends, set(resident_tasks))
@@ -190,6 +203,10 @@ class LifecycleManager:
         self._hook_runner: HookRunner = hook_runner or self._default_hook_runner
         self._clock = clock
         self._idle_poll_interval = idle_poll_interval or _default_poll(idle_unload_seconds)
+        # Deep enough that the indexing pipeline's own batching never sees it —
+        # it submits a stage at a time — and shallow enough that a flood is
+        # refused rather than accumulated.
+        self._max_queue = max(1, max_queue)
 
         self._queue: asyncio.Queue[_Job] = asyncio.Queue()
         self._gpu_lock = asyncio.Lock()
@@ -337,11 +354,23 @@ class LifecycleManager:
         loop = asyncio.get_running_loop()
         future: asyncio.Future = loop.create_future()
         job = _Job(task=task, fn=fn, future=future, enqueued_at=self._clock(), label=label)
+        # Backpressure, not growth. The queue was unbounded and every waiting
+        # job holds its closure alive — text, image blobs, tempfile paths — so a
+        # request flood became a memory and disk problem long before it became a
+        # GPU one, and the backlog kept growing while the GPU worked through it
+        # one job at a time. A caller that is told "busy" immediately can retry;
+        # a caller queued behind four hundred others cannot.
+        # (2026-08-10 audit, F-29.)
+        if self._queue.qsize() >= self._max_queue:
+            raise WorkerBusy(
+                f"{self._queue.qsize()} job(s) already queued; try again shortly"
+            )
         self._in_flight += 1
         try:
-            # Unbounded queue: `put` never awaits, so nothing can run between
-            # the liveness check above and the job landing in the queue.
-            await self._queue.put(job)
+            # `put_nowait` rather than `await put`: the bound is checked above,
+            # and nothing may run between the liveness check and the job landing
+            # in the queue.
+            self._queue.put_nowait(job)
             return await future
         finally:
             self._in_flight -= 1
@@ -449,6 +478,15 @@ class LifecycleManager:
 
     async def _execute(self, job: _Job) -> None:
         slot = self._slots[job.task]
+        # Nobody is waiting for this any more: the caller's request was
+        # cancelled or timed out while the job sat in the queue. Loading a model
+        # and running a forward pass for a future that will be thrown away is
+        # pure GPU spend, and under a flood it is most of the spend — the
+        # backlog outlives the clients that created it. Cheapest possible check,
+        # at the last moment before the work starts. (2026-08-10 audit, F-29.)
+        if job.future.done():
+            log.info("skipping %s: the caller is gone", job.task)
+            return
         try:
             async with self._gpu_lock:
                 self._running_task = job.task

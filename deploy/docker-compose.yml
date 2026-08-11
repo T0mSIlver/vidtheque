@@ -107,7 +107,11 @@ services:
 
   cloudflared:
     profiles: ["tunnel"]
-    image: cloudflare/cloudflared:latest
+    # `:latest` on the one container that terminates your public hostname means
+    # whatever the registry serves the next time this is pulled. Pin it — and
+    # prefer a digest over a tag when you do: `docker buildx imagetools inspect
+    # cloudflare/cloudflared:<version>` prints one. (2026-08-10 audit, F-28.)
+    image: cloudflare/cloudflared:${CLOUDFLARED_VERSION:-2026.7.1}
     restart: unless-stopped
     command: tunnel --no-autoupdate run
     environment:

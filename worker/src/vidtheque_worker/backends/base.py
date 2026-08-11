@@ -33,6 +33,33 @@ weights and evict whisperX to make room for a model already on the card
 (``research/multimodal-embedding-2026-08-09.md`` §5.5)."""
 
 
+def safe_model_kwargs(extra: dict[str, Any] | None = None) -> dict[str, Any]:
+    """`model_kwargs` a compromised repository cannot turn unsafe.
+
+    SentenceTransformers reads `sentence_bert_config.json` **from the
+    repository** and merges its `model_kwargs` into the ones passed here. It
+    strips `trust_remote_code`, and it preserves `weights_only` and
+    `use_safetensors` — both of which reach `AutoModel.from_pretrained`.
+    Transformers defaults `weights_only=True`, and accepts `False`, and then
+    calls unrestricted `torch.load`.
+
+    So a repository that is compromised or typosquatted can ship
+    `{"use_safetensors": false, "weights_only": false}` alongside a malicious
+    `pytorch_model.bin`, and the next cold load unpickles it — arbitrary code,
+    as root, in a container with the GPU attached. It needs no open port: any
+    load triggers it, including one an ordinary anonymous search causes.
+
+    Passing them explicitly here puts the caller's values last, so the merge
+    cannot weaken them. Today's artifacts are safetensors and weights-only
+    anyway; this is about the update that has not happened yet.
+    (2026-08-10 audit, F-27.)
+    """
+    kwargs: dict[str, Any] = dict(extra or {})
+    kwargs["use_safetensors"] = True
+    kwargs["weights_only"] = True
+    return kwargs
+
+
 class BackendError(RuntimeError):
     """Backend failed in a way the caller can be told about.
 
