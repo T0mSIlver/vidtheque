@@ -45,18 +45,27 @@ Five gates here, plus the corpus freeze in Phase 2.1, which is the sixth and is
 listed there because it is also the first build step. These are not ordered
 among themselves. They are ordered *before everything*.
 
-### G1 · Merge the security branch `[TOM]` · ~20 min + review
+### G1 · Merge the security branch `[TOM]` · **DONE 2026-08-11** (commit `a4e3027`)
 
-- [ ] Tom's overnight security worktree merges into `main`
-- [ ] `make test` green after the merge (last agent run: **1121 tests**)
-- [ ] `uv lock --check` clean, CI green on the merge commit
-- [ ] Any finding in that branch that changes a *shipped default* is re-checked
-      against `deploy/.env.example` — an env var without an entry there is a bug
-      (CLAUDE.md)
+- [x] Tom's overnight security worktree merges into `main` — all 15 commits,
+      textually clean (main's side of the fork was one handoff entry, no file
+      overlap)
+- [x] `make test` green after the merge: **1150 passed**
+- [x] `uv lock --check` clean
+- [x] Any finding in that branch that changes a *shipped default* is re-checked
+      against `deploy/.env.example` — enforced by `test_pipeline_units.py:141`,
+      which is in the 1150
 
 > Everything downstream builds from the merged `main`. Do not clone the public
 > box from a pre-merge commit "to save time"; the whole point of the branch is
 > that it changes what is safe to expose.
+
+**One `[TOM]` item was created by the merge.** The audit report and fix record
+were pushed to the public repo at 08:41 UTC and force-pushed out at 08:48. The
+orphaned commit `e91390c` is still served by GitHub and its SHA is in the public
+events feed — see `docs/security.md` and the post-merge report. Two actions:
+file the GitHub Support purge request, and treat the audit's deferred findings
+as potentially known when deciding whether they gate the URL.
 
 ### G2 · The trusted-CIDR / tunnel-proxy question `[BOTH]` · ~30 min
 
@@ -90,7 +99,8 @@ hatch that `demo-site.md` §2 reserves for an owner's agent.
       answer, or does the code learn to refuse proxy-origin CIDRs / require a
       credential when a trusted header is present? Either answer is fine.
       *No answer* is what fails this gate — write it into
-      `research/security-audit-2026-08-11.md`
+      `audit-2026-08-11.md` in the private `vidtheque-security` repo
+      (`docs/security.md` says why audits are not in this tree)
 
 > Launching does not require the deeper code fix. It requires that the empty
 > value is verified in the running process and that the deferral is a decision
@@ -600,8 +610,8 @@ route.
 
 `docs/deploy-public.md` §7.5's sharing checklist, plus:
 
-- [ ] G1–G4 all ticked, and the audit written to
-      `research/security-audit-2026-08-11.md` with every item **pass**,
+- [ ] G1–G4 all ticked, and the audit written to `audit-2026-08-11.md` in the
+      private `vidtheque-security` repo with every item **pass**,
       **accepted risk with a sentence of reasoning**, or **blocked**. A blocked
       item means the URL is not shared
 - [ ] `pct snapshot <id> pre-launch` taken on **both** containers, public one

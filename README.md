@@ -144,6 +144,7 @@ uv sync --extra gpu     # whisperX, transformers, RapidOCR
 | `deploy/`            | docker-compose, `.env.example`, tunnel wiring, go-public runbook  |
 | `bench/`             | benchmark harness — backend comparisons on real hardware          |
 | `docs/design/`       | the contracts: tool surface, index schema, demo site, dashboard   |
+| `docs/security.md`   | where the security material lives, public and private             |
 | `research/`          | the evidence behind the contracts (append-only working notes)     |
 
 ## License

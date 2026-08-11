@@ -46,6 +46,10 @@ may be published here later; until then the advisory form is the channel.)
 In scope: this repository, and the deployment guidance it ships —
 `mcp/`, `worker/`, `deploy/`, `scripts/`, and `docs/deploy-public.md`.
 
+[`docs/security.md`](docs/security.md) maps the rest of the security material:
+what is public here on purpose, and what is held in a private repo because an
+audit names the things that are not fixed yet.
+
 Particularly interesting: anything that crosses the public read-only boundary
 (a write tool or write route reachable at `VIDTHEQUE_PUBLIC_READONLY=1`),
 anything that escapes `VIDTHEQUE_DATA_DIR` through `/frames/*` or `/static/*`,
