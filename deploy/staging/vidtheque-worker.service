@@ -49,7 +49,7 @@ EnvironmentFile=/home/dev/vidtheque-data/stack.env
 # Environment= regardless of order on systemd 257), so these guards make the
 # two wrong answers a refusal to start rather than a silent regression.
 # They test the EFFECTIVE value, so an unset variable and the unfilled
-# `<BRIDGE_IP>` placeholder both fail. Exercised under systemd-run.
+# `192.168.1.98` placeholder both fail. Exercised under systemd-run.
 ExecStartPre=/bin/sh -c 'case x${VIDTHEQUE_HOST} in x|x127.*|x0.0.0.0|xlocalhost|x::1|x*BRIDGE_IP*) exit 1 ;; esac'
 ExecStartPre=/bin/sh -c 'test x${VIDTHEQUE_PORT} = x8081'
 

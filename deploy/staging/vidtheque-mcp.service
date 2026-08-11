@@ -42,7 +42,7 @@ WorkingDirectory=/home/vidtheque/vidtheque
 # One file, and it is the whole configuration (unlike the compose path, where
 # deploy/.env is only compose's *interpolation* source and the mode flags are
 # read by nobody unless the public overlay is applied — deploy-public.md §6.1).
-EnvironmentFile=/home/vidtheque/vidtheque-data/stack.env
+EnvironmentFile=/var/lib/vidtheque/stack.env
 
 # --- codex review BLOCKER #1, guarded ------------------------------------
 #
@@ -104,7 +104,7 @@ NoNewPrivileges=yes
 # vidtheque.db (+ -wal/-shm), keyframes/, derived/, audio/, tmp/, secret.key —
 # all writes go there and nowhere else.
 ProtectSystem=strict
-ReadWritePaths=/home/vidtheque/vidtheque-data
+ReadWritePaths=/var/lib/vidtheque
 
 # ProtectHome MUST be `no`, stated explicitly so nobody "hardens" it later:
 # the repo, the venv AND the data directory all live under /home on this box.

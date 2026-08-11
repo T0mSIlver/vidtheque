@@ -31,8 +31,8 @@ grep -rn '<[A-Z_]*>\|<paste' deploy/staging/
 
 | placeholder | appears in | what it is | how to get it |
 |---|---|---|---|
-| `<BRIDGE_IP>` | `stack.env.public` (`WORKER_URL`), `stack.env.sandbox` (`VIDTHEQUE_HOST`, and the commented rollback block) | the **sandbox** container's address on the host bridge — the address the public box calls for embeddings | on the sandbox: `ip -4 -br addr show` (the `vmbr0`-facing interface, usually `eth0`) |
-| `<PUBLIC_IP>` | no file — only the firewall command in §3 | the **public** container's address on the host bridge — the only source allowed to reach `:8081` | on the public box: `ip -4 -br addr show` |
+| `192.168.1.98` | `stack.env.public` (`WORKER_URL`), `stack.env.sandbox` (`VIDTHEQUE_HOST`, and the commented rollback block) | the **sandbox** container's address on the host bridge — the address the public box calls for embeddings | on the sandbox: `ip -4 -br addr show` (the `vmbr0`-facing interface, usually `eth0`) |
+| `192.168.1.42` | no file — only the firewall command in §3 | the **public** container's address on the host bridge — the only source allowed to reach `:8081` | on the public box: `ip -4 -br addr show` |
 | `<TUNNEL_ID>` | `cloudflared-config.yml` (`tunnel:`), and the DNS CNAME target you eyeball in the dashboard checklist §2.4 | the tunnel's UUID | printed by `cloudflared tunnel create vidtheque`; `cloudflared tunnel list` prints it again |
 | `<CREDENTIALS_PATH>` | `cloudflared-config.yml` (`credentials-file:`) | the credentials JSON written by `tunnel create` | **copy the literal path out of that command's output** — `sudo` resolves `$HOME` to `/root`, so it is often not where you expect |
 | `<paste the capped key>` | `stack.env.public` (`OPENROUTER_API_KEY`) | Tom's **existing spend-capped** OpenRouter key (Phase 1 decision 2) | Tom, on the box, once. Never into the repo, never into a chat, never into a commit |
@@ -47,7 +47,7 @@ template is worse than a wrong-but-consistent one:
 |---|---|---|
 | public service user | `vidtheque` | `vidtheque-mcp.service` |
 | public repo clone | `/home/vidtheque/vidtheque` | `vidtheque-mcp.service` |
-| public data dir | `/home/vidtheque/vidtheque-data` | `stack.env.public`, `vidtheque-mcp.service` |
+| public data dir | `/var/lib/vidtheque` | `stack.env.public`, `vidtheque-mcp.service` |
 | sandbox user / repo / data | `dev`, `/home/dev/work/vidtheque`, `/home/dev/vidtheque-data` | `vidtheque-worker.service`, `stack.env.sandbox` — these three are **measured from the live box**, not assumed |
 
 Keeping the data directory named `vidtheque-data` is deliberate (§5.1): the
@@ -61,7 +61,7 @@ launch morning is not when to introduce a second true path.
 
 | file | box | destination | BEFORE-SHIP step |
 |---|---|---|---|
-| `stack.env.public` | public | `/home/vidtheque/vidtheque-data/stack.env` | 4.1 |
+| `stack.env.public` | public | `/var/lib/vidtheque/stack.env` | 4.1 |
 | `stack.env.sandbox` | sandbox | `/home/dev/vidtheque-data/stack.env` (**replaces** the live file) | 4.1 + 4.2 |
 | `vidtheque-worker.service` | sandbox | `/etc/systemd/system/vidtheque-worker.service` | 4.2 (and Phase 8's worker-liveness item) |
 | `vidtheque-mcp.service` | public | `/etc/systemd/system/vidtheque-mcp.service` | 2.4 |
@@ -113,10 +113,10 @@ cp -a /home/dev/vidtheque-data/stack.env /home/dev/vidtheque-data/stack.env.pre-
 diff /home/dev/vidtheque-data/stack.env.pre-cutover \
      /home/dev/work/vidtheque/deploy/staging/stack.env.sandbox
 
-# 3c. Install, then fill <BRIDGE_IP>.
+# 3c. Install. (VIDTHEQUE_HOST is pre-filled to 192.168.1.98 — verify, don't edit.)
 cp /home/dev/work/vidtheque/deploy/staging/stack.env.sandbox \
    /home/dev/vidtheque-data/stack.env
-$EDITOR /home/dev/vidtheque-data/stack.env     # VIDTHEQUE_HOST=<BRIDGE_IP>
+grep '^VIDTHEQUE_HOST=' /home/dev/vidtheque-data/stack.env   # expect =192.168.1.98
 
 # 3d. The unit.
 sudo cp /home/dev/work/vidtheque/deploy/staging/vidtheque-worker.service \
@@ -131,13 +131,13 @@ sudo systemctl enable --now vidtheque-worker
 # 1. it is running, and its ExecStartPre guards passed
 systemctl status vidtheque-worker --no-pager
 # A failure here with status=1 on an ExecStartPre is the guard doing its job:
-# VIDTHEQUE_HOST is still <BRIDGE_IP>, or loopback, or 0.0.0.0.
+# VIDTHEQUE_HOST is unset, still the unfilled placeholder, loopback, or 0.0.0.0.
 
 # 2. it is on the bridge and NOT on loopback
-ss -tlnp | grep 8081          # expect <BRIDGE_IP>:8081, and nothing on 127.0.0.1:8081
+ss -tlnp | grep 8081          # expect 192.168.1.98:8081, and nothing on 127.0.0.1:8081
 
 # 3. the GPU queue is idle and the consumer is alive (Phase 2.1's other half)
-curl -s http://<BRIDGE_IP>:8081/status | jq '{queue, loaded: [.slots[]?.loaded]}'
+curl -s http://192.168.1.98:8081/status | jq '{queue, loaded: [.slots[]?.loaded]}'
 ```
 
 **Then the firewall.** The worker answers an **unauthenticated**
@@ -147,7 +147,7 @@ launch and written into the audit).
 
 ```bash
 # accept :8081 only from the public container
-sudo iptables -A INPUT -p tcp --dport 8081 -s <PUBLIC_IP> -j ACCEPT
+sudo iptables -A INPUT -p tcp --dport 8081 -s 192.168.1.42 -j ACCEPT
 sudo iptables -A INPUT -p tcp --dport 8081 -j DROP
 # persist it however this box already persists rules; a firewall that does not
 # survive a reboot is Phase 8's "exercise the reboot, do not assert it"
@@ -157,8 +157,8 @@ Verify from **two** places, because one of them is the whole point:
 
 ```bash
 # from the PUBLIC container: both must answer
-curl -fsS http://<BRIDGE_IP>:8081/healthz    # {"status":"ok","version":"0.0.1"}
-curl -fsS http://<BRIDGE_IP>:8081/status
+curl -fsS http://192.168.1.98:8081/healthz    # {"status":"ok","version":"0.0.1"}
+curl -fsS http://192.168.1.98:8081/status
 
 # from ANY OTHER box on the LAN: both must be refused
 ```
@@ -176,17 +176,20 @@ curl -fsS http://<BRIDGE_IP>:8081/status
 After Phase 3's copy and Phase 3.9's verification.
 
 ```bash
+# /var/lib/vidtheque is a root-owned LXC mount point — give it to the
+# service user once, before anything writes there:
+sudo chown vidtheque:vidtheque /var/lib/vidtheque
 sudo install -m 600 -o vidtheque -g vidtheque \
   /home/vidtheque/vidtheque/deploy/staging/stack.env.public \
-  /home/vidtheque/vidtheque-data/stack.env
-$EDITOR /home/vidtheque/vidtheque-data/stack.env   # <BRIDGE_IP>, the OpenRouter key
+  /var/lib/vidtheque/stack.env
+$EDITOR /var/lib/vidtheque/stack.env   # ONLY the OpenRouter key remains to fill
 ```
 
 **Verify — the four checks Phase 4.1 and gate G2a ask for, none of which is
 "read the file and feel good":**
 
 ```bash
-DATA=/home/vidtheque/vidtheque-data
+DATA=/var/lib/vidtheque
 
 # 1. G2a: the trusted-CIDR line must be empty. This must print NOTHING.
 grep -E '^VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS=.+' $DATA/stack.env
