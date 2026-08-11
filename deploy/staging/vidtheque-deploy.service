@@ -1,0 +1,13 @@
+# BOX: the PUBLIC container (CT 9001) · GOES TO: /etc/systemd/system/
+# Paired with vidtheque-deploy.timer. Root: it restarts the two product units.
+[Unit]
+Description=vidtheque pull-based deploy (GitHub Deployments API)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/vidtheque-deploy
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vidtheque-deploy

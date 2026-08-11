@@ -1,0 +1,13 @@
+# BOX: the PUBLIC container (CT 9001) · GOES TO: /etc/systemd/system/
+# Every minute with a token in /etc/vidtheque-deploy.env; if running
+# tokenless, widen to */3 to stay inside the unauthenticated API limit.
+[Unit]
+Description=poll GitHub deployments for vidtheque
+
+[Timer]
+OnBootSec=90
+OnUnitActiveSec=60
+AccuracySec=10
+
+[Install]
+WantedBy=timers.target
