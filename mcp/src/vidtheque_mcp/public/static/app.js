@@ -17,7 +17,11 @@ const PAGE_SIZE = 10;
 
 const state = {
   contentType: "all",
-  askMode: false,
+  // Ask is the default (Tom, 2026-08-11; demo-site.md §6.1). This mirrors the
+  // markup, which already ships in the ask state — button word, placeholder,
+  // hidden channel row, pressed mode, ask example set — so the common load
+  // never swaps modes on screen. Change one and you must change the other.
+  askMode: true,
   meta: null,
   offset: 0,
   seq: 0, // a stale response must never overwrite a newer one
@@ -1148,6 +1152,12 @@ function setAskMode(on) {
   // In ask mode the model picks the channel, so the content-type filter has
   // nothing to act on: hide it rather than leave a control that does nothing.
   $("chips").hidden = on;
+  // The cold page's examples belong to a mode. A keyword chip under an ask box
+  // spends a model call on a phrase nobody would ever ask, and a question chip
+  // in search mode runs a sentence through a keyword index — so the set on
+  // screen is always the one the mode on screen can run (demo-site.md §6.1).
+  $("ex-ask").hidden = !on;
+  $("ex-search").hidden = on;
   $("go").textContent = on ? "Ask ✨" : "Search";
   $("q").setAttribute(
     "placeholder",
@@ -1158,9 +1168,11 @@ function setAskMode(on) {
     $("answer").hidden = true;
     setState("ready");
   }
+  // Now that ask is the *default*, the URL has to be able to say "search" —
+  // `ask=0`, so a link copied out of search reopens in search. Absent means the
+  // default, `ask=1` is unchanged and still arrives loaded but unfired.
   const url = new URL(location.href);
-  if (on) url.searchParams.set("ask", "1");
-  else url.searchParams.delete("ask");
+  url.searchParams.set("ask", on ? "1" : "0");
   history.replaceState(null, "", url);
 }
 
@@ -1263,6 +1275,7 @@ const renderCorpus = (videos) => {
   const params = new URLSearchParams(location.search);
   const q = params.get("q");
   const type = params.get("type");
+  const askParam = params.get("ask");
   if (type && CHANNEL_NAME[type]) selectContentType(type, false);
   if (q) {
     $("q").value = q;
@@ -1270,6 +1283,16 @@ const renderCorpus = (videos) => {
     // flash the teaching state on its way to the results.
     showEmptyState(false);
   }
+  // The page ships in ask mode, so the two ways a *link* means search are
+  // resolved here — before the first await, so a shared search link never
+  // flashes the ask box on its way to the rows.
+  //   · `?ask=0` — copied out of search, once the switch had been used.
+  //   · `?q=…` with no `ask=` at all — every search link written before ask
+  //     was the default, and every one `syncUrl` writes for a visitor who
+  //     never touched the switch.
+  // `?ask=1&q=…` is untouched: it stays in ask with the question loaded and
+  // does not fire (demo-site.md §6.2).
+  if (askParam === "0" || (q && askParam === null)) setAskMode(false);
 
   try {
     const meta = await (await fetch("/api/meta")).json();
@@ -1278,8 +1301,12 @@ const renderCorpus = (videos) => {
     $("cli-line").textContent = `claude mcp add --transport http vidtheque ${meta.mcp_url}`;
     const repo = safeUrl(meta.repo);
     if (repo) $("repo").href = repo;
-    // No key configured — hide the switch rather than offer a mode that 503s.
+    // No key configured — hide the switch rather than offer a mode that 503s,
+    // and fall back to search, because the default mode is now the one that
+    // this deployment cannot serve. It is the one load that swaps modes on
+    // screen; it is also the one nobody should be shipping.
     $("modes").hidden = !meta.ask_enabled;
+    if (!meta.ask_enabled) setAskMode(false);
     // The way into the browsable corpus, shown only when the server says the
     // route group is there. `safeUrl` is the wrong tool here — it resolves
     // against the current page and would happily accept an absolute URL on
@@ -1305,11 +1332,13 @@ const renderCorpus = (videos) => {
     $("copy").disabled = true;
   }
 
-  // `?ask=1` arrives in ask mode with the question loaded, but does not fire:
-  // an answer costs a slice of the daily model budget, so a shared link must
-  // not spend it on page load. One click does.
-  if (params.get("ask") && state.meta?.ask_enabled) setAskMode(true);
-  else if (q) runSearch();
+  // A loaded question never fires itself. An answer costs a slice of the daily
+  // model budget, so neither a shared link, a crawler, nor the new default mode
+  // may spend it on page load — only a click does. Which is why nothing here
+  // calls `runAsk`, and why the mode being ask is exactly why `runSearch` is
+  // guarded rather than run: an `?ask=1&q=…` link would otherwise search the
+  // question it was supposed to be holding.
+  if (q && !state.askMode) runSearch();
 
   if (!q) {
     showEmptyState(true);

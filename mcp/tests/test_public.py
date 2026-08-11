@@ -1185,6 +1185,11 @@ def test_the_cold_page_teaches_instead_of_showing_a_blank(public_client: TestCli
     What *is* pinned is that no chip is a refusal (amended 2026-08-11): every
     example returns evidence, because a demo does not spend one of its four
     buttons proving it can say nothing.
+
+    Amended again 2026-08-11 (ask as default): there are now two sets, one per
+    mode, and *both* teach — each carries the one line under its heading that an
+    ask-first cold page needs, because a question box does not explain itself
+    the way a search box does.
     """
     body = _page(public_client)
     assert body.count('class="example"') >= 3
@@ -1194,6 +1199,9 @@ def test_the_cold_page_teaches_instead_of_showing_a_blank(public_client: TestCli
     for landmark in ("<header", "<main>", "<footer>", "<h1"):
         assert landmark in body
     assert 'class="sr-only" for="q"' in body, "the search box has a real label"
+    # Teaching copy, one line per set — the cold page never ships a bare list.
+    assert body.count('class="exnote"') == 2, "each example set says what it is for"
+    assert ".exnote" in (STATIC / "style.css").read_text()
 
 
 def test_an_example_that_needs_a_channel_pins_it(public_client: TestClient) -> None:
@@ -1214,6 +1222,91 @@ def test_an_example_that_needs_a_channel_pins_it(public_client: TestClient) -> N
 
     script = (STATIC / "app.js").read_text()
     assert 'selectContentType(example.dataset.type || "all", false)' in script
+
+
+def test_ask_is_the_mode_the_page_boots_in(public_client: TestClient) -> None:
+    """demo-site.md §6.1, amended 2026-08-11 (Tom): the switch starts on ask.
+
+    The headline says "Ask it something", so the box under it is the one that
+    answers a question; search is one click away. What this pins is that the
+    default is stated in the **markup** — the pressed mode, the button's word,
+    the placeholder, the hidden channel row — and not applied by `app.js` after
+    `/api/meta` lands, which would swap the whole control strip a round trip
+    into the load. `state.askMode` starts `true` to match; the two are one
+    state and drifting them apart is exactly the stutter this avoids.
+
+    The budget rule is untouched: nothing here fires an ask, on load or
+    otherwise. Only a click spends the day.
+    """
+    body = _page(public_client)
+    assert 'class="is-on" data-mode="ask" aria-pressed="true"' in body
+    assert 'data-mode="search" aria-pressed="false"' in body
+    assert 'id="go" class="cta">Ask ✨<' in body
+    assert 'placeholder="ask a question about these talks…"' in body
+    # In ask mode the model picks the channel, so the content-type row starts
+    # hidden rather than offering a filter with nothing to act on.
+    assert 'id="chips" class="chips" role="group" aria-label="Search which channel" hidden' in body
+
+    script = (STATIC / "app.js").read_text()
+    assert "askMode: true," in script, "the script agrees with the markup"
+    # Nothing on this page may spend model budget without a click — a default of
+    # ask is not a licence to answer a question nobody asked.
+    boot = script[script.index("async function boot()") :]
+    assert "runAsk(" not in boot, boot
+    # A link can still say search, both ways: explicitly, and the way every
+    # link written before ask was the default already says it.
+    assert 'url.searchParams.set("ask", on ? "1" : "0")' in script
+    assert 'if (askParam === "0" || (q && askParam === null)) setAskMode(false)' in script
+    # A deployment with no key configured cannot serve the default mode.
+    assert "if (!meta.ask_enabled) setAskMode(false)" in script
+
+
+def test_the_example_chips_swap_with_the_mode(public_client: TestClient) -> None:
+    """demo-site.md §6.1, amended 2026-08-11: two sets, one per mode.
+
+    A keyword chip under an ask box spends a model call on a phrase nobody
+    would ever say out loud, and a question chip in search mode runs a sentence
+    through a keyword index. So the set on screen is the one the mode on screen
+    can run, and `setAskMode` is the only thing that swaps them.
+
+    The ask questions are receipt-checked in
+    `research/demo-queries-2026-08-10.md` — the flagship first — and none of
+    them shares its vocabulary with the answer, which is the property that
+    makes them worth a model call rather than a search. The search set stays
+    keywords.
+    """
+    body = _page(public_client)
+    ask_set = body[body.index('id="ex-ask"') : body.index('id="ex-search"')]
+    search_set = body[body.index('id="ex-search"') : body.index('id="corpus"')]
+
+    # Ask mode is the default, so its set is the visible one as authored.
+    assert 'id="ex-ask" class="exset">' in body
+    assert 'id="ex-search" class="exset" hidden' in body
+
+    # The flagship leads: 7 citations across 6 talks, and no single talk holds
+    # the answer (research "Tom's ask-mode flagship").
+    questions = re.findall(r'class="example"[^>]*>([^<]+)<', ask_set)
+    assert questions[0] == (
+        "Why does loop engineering look so much like building RLVR environments?"
+    ), questions
+    assert questions[1:] == [
+        "What happens when the machine grades its own homework?",
+        "Can you trust a model to judge how good the writing is?",
+    ], questions
+    # They are questions, not keywords — the whole point of the set.
+    assert all(q.endswith("?") for q in questions), questions
+
+    # Keywords stay keywords, and no question strayed into the search set.
+    keywords = re.findall(r'class="example"[^>]*>([^<]+)<', search_set)
+    assert "context window costs money tokens" in keywords
+    assert "human annotation calibrate LLM judge" in keywords
+    assert not any(k.endswith("?") for k in keywords), keywords
+
+    # The swap itself, and the click that runs a chip in the *current* mode.
+    script = (STATIC / "app.js").read_text()
+    assert '$("ex-ask").hidden = !on;' in script
+    assert '$("ex-search").hidden = on;' in script
+    assert "state.askMode ? runAsk() : runSearch();" in script
 
 
 def test_the_empty_state_is_one_sentence_and_the_way_back(public_client: TestClient) -> None:
