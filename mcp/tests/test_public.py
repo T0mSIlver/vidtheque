@@ -438,6 +438,33 @@ def test_client_key_prefers_the_trusted_header() -> None:
     assert client_key({"client": None}, "CF-Connecting-IP") == "unknown"
 
 
+def test_the_trusted_header_reaches_the_middleware_and_separates_buckets(
+    tmp_path: Path,
+) -> None:
+    """`client_key` being right proves nothing about the wiring around it.
+
+    The unit test above calls the function directly. What §4 actually depends
+    on is the whole chain — the configured header name reaching the middleware,
+    the middleware reading it, and two values getting two buckets — because
+    behind the tunnel every request arrives from the same socket and this header
+    is the only thing telling visitors apart. If the wiring broke, the unit test
+    would still pass and the entire internet would share one bucket.
+    (2026-08-10 audit: a property with no test.)
+    """
+    tight = PublicSettings(enabled=True, search_per_min=1)
+    with make_client(tmp_path, tight) as client:
+        first = {"CF-Connecting-IP": "9.9.9.9"}
+        second = {"CF-Connecting-IP": "8.8.8.8"}
+        assert client.get("/api/search?q=cache", headers=first).status_code == 200
+        assert client.get("/api/search?q=cache", headers=first).status_code == 429
+        # A different visitor, same socket: their own bucket.
+        assert client.get("/api/search?q=cache", headers=second).status_code == 200
+        assert client.get("/api/search?q=cache", headers=second).status_code == 429
+        # And the first comma-separated entry is the client, not the proxy.
+        chained = {"CF-Connecting-IP": "9.9.9.9, 10.0.0.1"}
+        assert client.get("/api/search?q=cache", headers=chained).status_code == 429
+
+
 def test_search_is_limited_with_retry_after(tmp_path: Path) -> None:
     tight = PublicSettings(enabled=True, search_per_min=2)
     with make_client(tmp_path, tight) as client:
