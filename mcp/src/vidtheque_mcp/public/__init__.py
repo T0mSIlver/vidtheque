@@ -163,7 +163,7 @@ def public_routes() -> list[Route]:
         return _document(STATIC_DIR / "landing" / "index.html")
 
     async def demo(_request) -> Response:
-        return _document(STATIC_DIR / "index.html")
+        return _document(STATIC_DIR / "demo" / "index.html")
 
     async def asset(request) -> Response:
         name = request.path_params["asset"]

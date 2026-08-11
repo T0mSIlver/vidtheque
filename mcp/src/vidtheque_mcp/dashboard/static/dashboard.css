@@ -20,7 +20,7 @@
    nowhere else. What it does not spend: display type, imagery as decoration,
    shadows, spectacle, motion that is not a machine working.
 
-   The first six custom properties are asserted equal to public/static/style.css
+   The first six custom properties are asserted equal to public/static/demo/style.css
    (test_dashboard.py::test_the_dashboard_palette_matches_the_demos) — the thing
    that stops the two surfaces drifting into two visual worlds. They are pinned
    aliases and carry no value of their own.
@@ -68,7 +68,7 @@
    contract they are. The palette test resolves each one through its aliases and
    compares the two surfaces as mappings, so they are held to the same *colour*
    without either file being forced into the other's spelling or ordering.
-   Adding a seventh here means adding it to public/static/style.css in the same
+   Adding a seventh here means adding it to public/static/demo/style.css in the same
    commit — which is exactly the friction it exists to create. */
 
 :root {

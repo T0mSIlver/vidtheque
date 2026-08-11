@@ -302,7 +302,7 @@ def test_the_demo_page_is_served_at_demo(public_client: TestClient) -> None:
     assert response.headers["content-type"].startswith("text/html")
     body = response.text
     assert "vidtheque" in body
-    assert "/static/app.js" in body
+    assert "/static/demo/app.js" in body
     assert "Add this corpus to your own agent" in body
     assert "Source on GitHub" in body
     assert "Results link to the original talks" not in body
@@ -319,7 +319,7 @@ def test_the_landing_is_served_at_the_root(public_client: TestClient) -> None:
     assert "/static/landing/landing.js" in body
     assert "/static/landing/data.js" in body
     # The demo's own document is a different page and did not come along.
-    assert "/static/app.js" not in body
+    assert "/static/demo/app.js" not in body
 
 
 def test_the_landing_cta_is_the_way_into_the_demo(public_client: TestClient) -> None:
@@ -440,8 +440,8 @@ def test_the_enlarge_dialog_is_a_real_dialog(public_client: TestClient) -> None:
 
 
 def test_the_page_assets_are_served_and_confined(public_client: TestClient) -> None:
-    assert public_client.get("/static/style.css").status_code == 200
-    assert public_client.get("/static/app.js").status_code == 200
+    assert public_client.get("/static/demo/style.css").status_code == 200
+    assert public_client.get("/static/demo/app.js").status_code == 200
     assert public_client.get("/static/../../config.py").status_code in (404, 400)
     assert public_client.get("/static/nope.css").status_code == 404
 
@@ -480,8 +480,8 @@ def test_the_lab_gate_denies_by_name_not_by_absence(
 
 def test_the_released_surface_survived_the_lab_cull(public_client: TestClient) -> None:
     # The demo still works, and so does the page that graduated out of `lab/`.
-    assert public_client.get("/static/style.css").status_code == 200
-    assert public_client.get("/static/app.js").status_code == 200
+    assert public_client.get("/static/demo/style.css").status_code == 200
+    assert public_client.get("/static/demo/app.js").status_code == 200
     assert public_client.get("/static/landing/landing.css").status_code == 200
     assert (
         public_client.get("/static/fonts/archivo-latin-wght-normal.woff2").status_code
@@ -514,7 +514,7 @@ def test_neither_page_exists_outside_public_mode(private_client: TestClient) -> 
     """
     assert private_client.get("/").status_code == 404
     assert private_client.get("/demo").status_code == 404
-    assert private_client.get("/static/style.css").status_code == 404
+    assert private_client.get("/static/demo/style.css").status_code == 404
     assert private_client.get("/static/landing/landing.css").status_code == 404
 
 
@@ -1100,6 +1100,7 @@ def test_the_per_ip_ask_bucket_is_charged_before_the_global_one(tmp_path: Path) 
 # ----------------------------------------------- 6. the page as a page, and XSS
 
 STATIC = Path(vidtheque_mcp.public.__file__).parent / "static"
+DEMO = STATIC / "demo"
 
 
 def _page(client: TestClient) -> str:
@@ -1214,7 +1215,7 @@ def test_an_example_that_needs_a_channel_pins_it(public_client: TestClient) -> N
     for pin in ('data-type="ocr">context window costs money tokens', 'data-type="frame"'):
         assert pin in body
 
-    script = (STATIC / "app.js").read_text()
+    script = (DEMO / "app.js").read_text()
     assert 'selectContentType(example.dataset.type || "all", false)' in script
 
 
@@ -1225,7 +1226,7 @@ def test_the_empty_state_is_one_sentence_and_the_way_back(public_client: TestCli
     It does not quote the query back — it is still in the box two centimetres
     above — and it does not tell the visitor they used too many words.
     """
-    script = (STATIC / "app.js").read_text()
+    script = (DEMO / "app.js").read_text()
     assert '"Nothing in the corpus matches this."' in script
     assert "Try fewer words" not in script
     assert "Nothing matched “" not in script
@@ -1258,7 +1259,7 @@ def test_the_answer_pane_carries_the_measure_and_the_prose_fills_it() -> None:
     paragraph is set in — the pane while there is nothing to put beside it, and
     the prose *column* once there is (see the next test).
     """
-    css = (STATIC / "style.css").read_text()
+    css = (DEMO / "style.css").read_text()
     pane = _rule(css, ".answer")
     assert "max-width: calc(var(--prose) + 2 * var(--answer-pad))" in pane
     assert "font-size: 15.5px" in pane, "`ch` has to resolve at the prose's size"
@@ -1268,7 +1269,7 @@ def test_the_answer_pane_carries_the_measure_and_the_prose_fills_it() -> None:
     assert "max-width" not in paragraph, "a second measure inside the first"
 
     # The column exists in the DOM, or the measure has nothing to sit on.
-    script = (STATIC / "app.js").read_text()
+    script = (DEMO / "app.js").read_text()
     assert 'el("div", "answer-prose")' in script
     assert "prose.append(p)" in script and "pane.append(prose)" in script
 
@@ -1280,7 +1281,7 @@ def test_the_chassis_is_the_system_column_not_a_narrower_one() -> None:
     than toured. What that bought at 1440 was a third of the screen for the
     evidence and the rest for margin.
     """
-    css = (STATIC / "style.css").read_text()
+    css = (DEMO / "style.css").read_text()
     assert "max-width: var(--maxw)" in _rule(css, ".wrap")
     assert "--maxw: 1460px;" in css, "the system's number, not a new one"
     # The measures inside it are what keep text readable, and are untouched.
@@ -1297,7 +1298,7 @@ def test_the_ask_pane_is_the_page_not_a_strip_down_the_side() -> None:
     on layout: sources beside the answer, the log spanning, the prose still
     breaking at 70ch because that is what its column is.
     """
-    css = (STATIC / "style.css").read_text()
+    css = (DEMO / "style.css").read_text()
     assert "--bp-wide: 1380px;" in css
     assert "@media (min-width: 1380px)" in css
     # Wide when there is something to spend the width on — a live log or an
@@ -1339,7 +1340,7 @@ def test_the_work_log_reserves_its_room_instead_of_growing_into_it() -> None:
     arrived; with the box reserved the pane holds 261px from the first event to
     the last and the page does not move at all while the model works.
     """
-    css = (STATIC / "style.css").read_text()
+    css = (DEMO / "style.css").read_text()
     log = _rule(css, ".answer > .worklist")
     assert "--log-lines: 6;" in log
     assert "height: calc(var(--log-lines) * 1.85em + 30px);" in log
@@ -1349,7 +1350,7 @@ def test_the_work_log_reserves_its_room_instead_of_growing_into_it() -> None:
     # Only the live log. The one folded into the disclosure keeps its own
     # height, because by then nothing is arriving.
     assert ".worklog .worklist {" not in log
-    script = (STATIC / "app.js").read_text()
+    script = (DEMO / "app.js").read_text()
     assert "list.scrollTop = list.scrollHeight;" in script
 
 
@@ -1362,12 +1363,12 @@ def test_the_page_holds_its_columns_still_while_the_machine_works() -> None:
     the mono face, discovered by the stylesheet a round trip after the page had
     laid itself out, moved the whole machine channel when it landed.
     """
-    css = (STATIC / "style.css").read_text()
+    css = (DEMO / "style.css").read_text()
     assert "scrollbar-gutter: stable" in _rule(css, "html")
     state = _rule(css, ".st")
     assert "min-width: 88px" in state and "justify-content: center" in state
 
-    body = (STATIC / "index.html").read_text()
+    body = (DEMO / "index.html").read_text()
     preloads = re.findall(r'<link rel="preload" href="([^"]+)"', body)
     assert sorted(Path(p).name for p in preloads) == [
         "archivo-latin-wght-normal.woff2",
@@ -1383,7 +1384,7 @@ def test_a_source_row_is_a_grid_so_a_long_title_cannot_drop_under_the_frame() ->
     it, which on a corpus whose titles run 20 to 120 characters is a different
     layout per talk.
     """
-    css = (STATIC / "style.css").read_text()
+    css = (DEMO / "style.css").read_text()
     row = _rule(css, ".hit")
     assert "display: grid" in row
     assert "grid-template-columns: auto auto minmax(0, 1fr)" in row
@@ -1409,7 +1410,7 @@ def test_one_thumbnail_geometry_across_every_kind_of_result() -> None:
     one, so a Sources list is a column of identical rectangles and the
     skeleton's reserved box matches every row it might stand in for.
     """
-    css = (STATIC / "style.css").read_text()
+    css = (DEMO / "style.css").read_text()
     thumb = _rule(css, ".hit-thumb")
     assert "width: 160px" in thumb and "height: 90px" in thumb
     # No per-kind override anywhere: a second geometry is the whole bug.
@@ -1422,7 +1423,7 @@ def test_one_thumbnail_geometry_across_every_kind_of_result() -> None:
     # And below `--bp-hand` it steps down once, still for every kind at once.
     assert ".hit-thumb { width: 112px; height: 63px; }" in css
 
-    script = (STATIC / "app.js").read_text()
+    script = (DEMO / "app.js").read_text()
     assert "img.width = 320;" in script and "img.height = 180;" in script
     assert "wide ?" not in script, "the branch that made a frame hit its own size"
 
@@ -1436,9 +1437,9 @@ def test_the_idle_line_is_parked_in_the_flow_never_taken_out_of_it() -> None:
     position clamped and anchored back on each one. Measured on the stub at
     1440: hiding moved the page 39px per tool call, parking moves it 0.
     """
-    css = (STATIC / "style.css").read_text()
+    css = (DEMO / "style.css").read_text()
     assert ".thinking.is-parked { visibility: hidden; }" in css
-    script = (STATIC / "app.js").read_text()
+    script = (DEMO / "app.js").read_text()
     assert 'idle.classList.add("is-parked")' in script
     assert 'idle.classList.remove("is-parked")' in script
     assert "idle.hidden" not in script, "back to a display toggle is back to the stutter"
@@ -1448,8 +1449,8 @@ def test_the_page_and_its_assets_are_cacheable(public_client: TestClient) -> Non
     for path in (
         "/",
         "/demo",
-        "/static/style.css",
-        "/static/app.js",
+        "/static/demo/style.css",
+        "/static/demo/app.js",
         "/static/landing/landing.css",
         "/static/landing/landing.js",
     ):
@@ -1468,7 +1469,7 @@ def test_the_page_builds_no_html_from_data(public_client: TestClient) -> None:
     # never uses one, and that sentence should stay legal.
     script = "\n".join(
         line
-        for line in (STATIC / "app.js").read_text().splitlines()
+        for line in (DEMO / "app.js").read_text().splitlines()
         if not line.strip().startswith(("//", "*", "/*"))
     )
     for sink in (
@@ -1482,7 +1483,7 @@ def test_the_page_builds_no_html_from_data(public_client: TestClient) -> None:
     ):
         assert sink not in script, f"app.js reaches for {sink}"
     stripped = _page(public_client).replace(
-        '<script type="module" src="/static/app.js"></script>', ""
+        '<script type="module" src="/static/demo/app.js"></script>', ""
     )
     assert "<script" not in stripped, "no inline script: the page stays CSP-ready"
 
@@ -1535,13 +1536,13 @@ def test_the_policy_follows_the_document_and_not_the_route(
     written against the media type rather than the path — otherwise the next
     `.html` under `static/` arrives with no policy and nothing notices.
     """
-    assert "content-security-policy" not in public_client.get("/static/style.css").headers
+    assert "content-security-policy" not in public_client.get("/static/demo/style.css").headers
     assert (
         "content-security-policy"
         not in public_client.get("/static/landing/landing.js").headers
     )
     page = public_client.get("/demo").headers["content-security-policy"]
-    assert page == public_client.get("/static/index.html").headers.get(
+    assert page == public_client.get("/static/demo/index.html").headers.get(
         "content-security-policy"
     ), "an HTML asset is a document and must carry the document's policy"
     assert page == public_client.get("/").headers.get(

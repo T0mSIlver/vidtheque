@@ -36,7 +36,7 @@ from .conftest import FakeEmbeddings, rpc, rpc_headers, seed
 
 STATIC = Path(__file__).resolve().parents[1] / "src/vidtheque_mcp/dashboard/static"
 TEMPLATES = Path(__file__).resolve().parents[1] / "src/vidtheque_mcp/dashboard/templates"
-DEMO_STATIC = Path(__file__).resolve().parents[1] / "src/vidtheque_mcp/public/static"
+DEMO_STATIC = Path(__file__).resolve().parents[1] / "src/vidtheque_mcp/public/static/demo"
 
 # What was on someone's screen, and what yt-dlp said about it. Both are corpus
 # strings and both are attacker-controlled in exactly the same way.
