@@ -371,9 +371,14 @@ Not hypothetical.
 Full sizing table and rationale: `research/release-staging-2026-08-11.md` §4.1.
 
 - [ ] Debian 13 (trixie) template, matching the box that produced the data
-- [ ] **unprivileged**, `features` **empty** — explicitly turn `nesting` **off**
-      (it defaults on for GUI-created containers since ~PVE 8.3; nothing here
-      needs it, and it is a weakened-namespace flag on an internet-facing box)
+- [x] **unprivileged**, `--features nesting=1`, `keyctl` off. **Corrected
+      2026-08-11 in the field:** the original "features empty" call broke the
+      boot — systemd 257 on Debian 13 needs its own mount namespaces for the
+      credentials machinery (and for the staged units' PrivateTmp-class
+      hardening), and without `nesting` twenty units fail `243/CREDENTIALS`,
+      journald included. Unprivileged + nesting is the supported shape (it is
+      why PVE defaults it on); a public box without logging is the worse
+      security posture. `keyctl` genuinely stays off
 - [ ] rootfs **20 GB** (`pct resize` grows online, **cannot shrink**)
 - [ ] corpus on a **volume mount point with `backup=1`**, *not* a bind mount —
       bind mounts are **never included in `vzdump`**, which turns "the container

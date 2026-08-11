@@ -1634,3 +1634,20 @@ and only `/api/ask` would ever need its own.
     *who* reaches the worker, not *what they may ask it to do*. Accept for
     launch, or put a reverse proxy in front that exposes only the two embedding
     paths?
+
+
+## §12 — Field correction, 2026-08-11 ~13:00: `nesting` is required on Debian 13
+
+§4.1's "features empty, nesting explicitly off" recommendation did not survive
+contact: CT 9001 (unprivileged, Debian 13/trixie, systemd 257) booted degraded
+with **20 units failing `status=243/CREDENTIALS`, including journald** — no
+logging at all. Mechanism: systemd ≥254 builds private mount namespaces for its
+credentials machinery (and for PrivateTmp-class unit hardening, which our
+staged units use); an unprivileged container without `nesting` cannot create
+them. This is precisely why PVE defaults `nesting` on since 8.3.
+
+Resolution (Tom + orchestrator): `pct set 9001 --features nesting=1`, reboot,
+verified clean. Unprivileged + nesting is the supported configuration; a public
+box without journald is a worse security posture than the marginal namespace
+surface nesting adds. `keyctl` remains off. BEFORE-SHIP §2.2 corrected in the
+same commit as this note.
