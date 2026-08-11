@@ -149,8 +149,11 @@ are two different questions and §3 answers the second one.
 
 ### 2.4 Demo mode = welcome page + read-only projection
 
-Today `/` serves `public/static/index.html` (`public/__init__.py:42`): search,
-ask, and a six-video "in this corpus" list. **That page is the welcome page.**
+Today `/demo` serves `public/static/demo/index.html` (amended 2026-08-11:
+the landing owns `/` since commit `4ddd45d`'s topology swap, and the demo's
+files moved under `static/demo/` in the repo cleanup — the welcome page's
+route is `/demo`, its role is unchanged): search, ask, and a six-video "in
+this corpus" list. **That page is the welcome page.**
 It stays, it keeps its aesthetic (demo-site.md §6: a search engine, not a
 dashboard), and it gains one link — into the browsable corpus, which is the
 dashboard's read-only projection.
