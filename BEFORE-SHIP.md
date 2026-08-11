@@ -51,10 +51,25 @@ among themselves. They are ordered *before everything*.
       textually clean (main's side of the fork was one handoff entry, no file
       overlap)
 - [x] `make test` green after the merge: **1150 passed**
-- [x] `uv lock --check` clean
+- [x] `uv lock --check` clean (174 packages), **CI green on the merge commit** —
+      run `31474834981` on `a4e3027`, and `31475091262` on the follow-up
 - [x] Any finding in that branch that changes a *shipped default* is re-checked
       against `deploy/.env.example` — enforced by `test_pipeline_units.py:141`,
-      which is in the 1150
+      which is in the 1150. Five new vars, all documented: `MODEL_REVISION`,
+      `WORKER_DOCS=0`, `VIDTHEQUE_INDEX_MAX_DURATION_S=14400`,
+      `VIDTHEQUE_ALLOW_PUBLIC_WRITES=0`, `VIDTHEQUE_RATE_MCP_PER_MIN=120`
+- [x] **Changed behaviour that can refuse a boot**, checked by hand: booleans are
+      now strict, so every flag in `stack.env` must read `1/true/yes/on` or
+      `0/false/no/off` (case and surrounding space are fine). Anything else —
+      `Y`, `2`, `enabled` — is now a boot failure by design. **Grep the new
+      `stack.env` for this in Phase 4.1**, before the tunnel exists
+- [x] Frame widths now snap to `(192, 320, 512, 960, 1280)` and qualities to
+      `(70, 75)`. Snapping, not rejecting — **no existing URL breaks**, and every
+      width the demo and dashboard actually request is already in the set
+- [x] Both images now run as UID 10001. **Does not affect this launch**: Phase
+      2.4 runs the public box from a systemd unit against `stack.env`, not from
+      compose. It would matter on the compose path with a *pre-existing* named
+      volume, whose files stay root-owned — noted for whoever goes that way
 
 > Everything downstream builds from the merged `main`. Do not clone the public
 > box from a pre-merge commit "to save time"; the whole point of the branch is
