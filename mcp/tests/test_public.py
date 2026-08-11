@@ -332,7 +332,10 @@ def test_the_landing_cta_is_the_way_into_the_demo(public_client: TestClient) -> 
     """
     body = _landing(public_client)
     assert '<a class="cta" id="askbtn" href="/demo">' in body
-    assert "Ask the corpus" in body
+    # "Open the demo", not "Ask the corpus" (Tom, 2026-08-11 post-launch): the
+    # hero already performs the ask; the CTA's job is to name the next room.
+    assert "Open the demo" in body
+    assert "Ask the corpus" not in body
     # The cycle itself stays: the chips still drive it, the button no longer does.
     script = (STATIC / "landing" / "landing.js").read_text()
     assert "$('#chips').addEventListener('click'" in script

@@ -952,7 +952,9 @@ piece may do and a served document may not:
 - **`<head>` gained the front door's furniture**: the drawn favicon,
   `theme-color`, `color-scheme` and the unfurl tags, each copied from the demo
   page rather than re-decided, so the two surfaces cannot disagree.
-- **"Ask the corpus" is a link to `/demo`.** It was a button that advanced the
+- **The CTA is a link to `/demo`** — reading "Open the demo" (Tom, 2026-08-11:
+  the hero already performs the ask; the CTA names the next room; the demo's own
+  action button keeps "Ask the corpus"). It was a button that advanced the
   canned hero cycle. The cycle is the landing's own show and still runs on its
   own (and its example chips still drive it); the CTA is the one control that
   *leaves*, which is why it is a real `<a>` — middle-click works, and it is the
