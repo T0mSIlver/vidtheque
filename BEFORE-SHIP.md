@@ -132,7 +132,12 @@ hatch that `demo-site.md` §2 reserves for an owner's agent.
 > value is verified in the running process and that the deferral is a decision
 > rather than an oversight.
 
-### G3 · Organiser-consent email `[TOM]` · ~15 min to write, unknown to answer
+### G3 · Organiser-consent email `[TOM]` · gate = SENT (decided 2026-08-11)
+
+> Decision: shipping proceeds once the email is **sent** (not answered). The
+> public copy stays respectful-by-construction — attribution, receipts, the
+> 72-hour removal path — and adjusts if the organisers object. Tom writes and
+> sends it this morning; that act closes the gate.
 
 `research/positioning-2026-08-10.md` §9.1 makes this load-bearing: *"the
 organisers get asked **before** the demo is announced"*, and it is the honest
@@ -219,12 +224,11 @@ section in the runbook.
 - [x] The public page's ethic line points at it — footer attribution now reads
       "The videos belong to the people who made them. **Removal on request**.",
       `demo-site.md` §6 item 7 amended in the same commit, with a test
-- [ ] **`[TOM]`, two blanks in `docs/takedown.md` §1 and they are the only
-      things stopping it being complete:** (a) *where* a creator asks — a
-      public GitHub issue, the organiser thread, or a published address; and
-      (b) the **response time** to promise. Both are marked `[Tom]` in the
-      file. A removal path with no address on it is the same half-promise this
-      gate exists to close
+- [x] **Both blanks FILLED (decided together, 2026-08-11 ~12:15):** creators
+      ask via a **public GitHub issue** (a `Removal request` template now
+      exists in `.github/ISSUE_TEMPLATE/`), and the promise is **acknowledged
+      and actioned within 72 hours**. `docs/takedown.md` §1 updated. G4b is
+      complete.
 
 > This is a gate because it is a promise made in the answer to *"did the
 > speakers consent?"*. Publishing the answer without the substance is the one

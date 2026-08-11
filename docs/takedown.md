@@ -31,21 +31,20 @@ channel, say so and name what should go:
 - **one span inside a video** (a Q&A, a name, a slide that should not have been
   shown) — see §5, which is honest about what is and is not possible here.
 
-**How to ask** — *[Tom]: pick one and fill this in before launch.* The options:
-
-- a public issue on <https://github.com/T0mSIlver/vidtheque/issues> (fastest,
-  and it makes the removal visible, which is half of "we say so publicly");
-- a reply on the organiser-consent thread, for AI Engineer;
-- an email address published here.
+**How to ask** — open a **public issue** on
+<https://github.com/T0mSIlver/vidtheque/issues> using the *Removal request*
+template (decided 2026-08-11). A public issue is deliberate: the removal
+becomes visible, which is half of "we say so publicly". If you would rather
+not post publicly, say so in a minimal issue ("removal request, details
+requested privately") and the operator will take it from there.
 
 Do **not** use the security advisory form in `SECURITY.md` for this — that is
 for vulnerabilities and it is private, which is the wrong shape for a takedown.
 
-**Response time** — *[Tom]: decide and state a number.* Say what is true rather
-than what sounds good: this is a one-person project, so something like
-"acknowledged within N days, removed within M" is worth more than a promise to
-act in an hour. Whatever it says, §2 is short enough that the removal itself is
-minutes.
+**Response time** — **acknowledged and actioned within 72 hours** (decided
+2026-08-11). This is a one-person project; 72 hours is the honest number. The
+removal itself takes minutes (§2), so the promise is about noticing, not
+doing.
 
 Until it is answered, a request can always be honoured immediately in its
 cheapest form: **stop serving it** (§2.2) while the full delete is scheduled.
