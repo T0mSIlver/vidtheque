@@ -56,6 +56,48 @@ _TEXTUAL = frozenset({".css", ".js", ".html", ".svg"})
 # stylesheet does not, so they get the cache the page cannot have.
 _ASSET_CACHE = "public, max-age=31536000, immutable"
 
+# Sent with every HTML document this app serves. The 2026-08-10 audit found no
+# executable rendering sink on the demo — `app.js` builds every string as a DOM
+# text node and every href goes through `safeUrl` — and said in as many words
+# that *those mechanisms are what the safety consists of*. This is the second
+# line, for the day someone adds a sink without reading the file's header.
+#
+# The page can afford the strict version because it was built self-contained:
+# no inline `<style>`, no `style=` attribute, no `.style` assignment in the
+# script, one same-origin stylesheet, one same-origin module, fonts from
+# `static/`. So no `unsafe-inline` and no `unsafe-eval` anywhere, which is what
+# makes a CSP worth having rather than worth quoting.
+#
+# `img-src` carries `data:` for exactly one thing — the wordmark favicon is an
+# inline SVG data URL in `index.html`. Thumbnails are `PUBLIC_URL/frames/…`,
+# which is this origin. `form-action` is `'self'` and not `'none'`: the search
+# box is a real `<form>` that the script intercepts, and a policy that only
+# holds while the JavaScript works is the wrong shape.
+#
+# `frame-ancestors 'none'` is the clickjacking half. The demo has one control
+# that spends money (`/api/ask`), and framing it is how a stranger gets someone
+# else's clicks to spend it. `auth/login.py` already carries the same pair for
+# the consent screen; this covers the surface that is actually public.
+_DOCUMENT_HEADERS = {
+    "Content-Security-Policy": "; ".join(
+        (
+            "default-src 'self'",
+            "script-src 'self'",
+            "style-src 'self'",
+            "img-src 'self' data:",
+            "font-src 'self'",
+            "connect-src 'self'",
+            "frame-ancestors 'none'",
+            "form-action 'self'",
+            "base-uri 'none'",
+            "object-src 'none'",
+        )
+    ),
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+}
+
 # Top-level names under `static/` that this route refuses, whatever they hold.
 #
 # `static/lab/` is the landing workshop — competing prototypes of a page that
@@ -89,7 +131,7 @@ def public_routes() -> list[Route]:
         return FileResponse(
             STATIC_DIR / "index.html",
             media_type="text/html; charset=utf-8",
-            headers={"Cache-Control": _STATIC_CACHE},
+            headers={"Cache-Control": _STATIC_CACHE, **_DOCUMENT_HEADERS},
         )
 
     async def asset(request) -> Response:
@@ -107,10 +149,16 @@ def public_routes() -> list[Route]:
         if media is None:
             return Response(status_code=404)
         textual = path.suffix in _TEXTUAL
+        headers = {"Cache-Control": _STATIC_CACHE if textual else _ASSET_CACHE}
+        # A document served from `static/` is still a document, and gets the
+        # same policy the page at `/` does — the headers follow the media type
+        # rather than the route, so a future `.html` asset cannot arrive bare.
+        if path.suffix == ".html":
+            headers.update(_DOCUMENT_HEADERS)
         return FileResponse(
             path,
             media_type=f"{media}; charset=utf-8" if textual else media,
-            headers={"Cache-Control": _STATIC_CACHE if textual else _ASSET_CACHE},
+            headers=headers,
         )
 
     return [

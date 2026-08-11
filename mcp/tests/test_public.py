@@ -1351,6 +1351,52 @@ def test_the_page_builds_no_html_from_data(public_client: TestClient) -> None:
     assert "<script" not in stripped, "no inline script: the page stays CSP-ready"
 
 
+def test_the_document_carries_a_policy_that_needs_no_unsafe_word(
+    public_client: TestClient,
+) -> None:
+    """The second line behind the no-HTML-sink rule above.
+
+    The audit's XSS verdict rests entirely on `app.js` never building HTML from
+    data. That is true today and checked by the test above, but it is a property
+    of a file someone will edit. The policy is what holds if that edit lands.
+
+    `unsafe-inline`/`unsafe-eval` are asserted *absent* because the page was
+    built self-contained precisely so it could refuse them, and a CSP carrying
+    either is the version that gets quoted rather than the version that works.
+    """
+    headers = public_client.get("/").headers
+    policy = headers.get("content-security-policy", "")
+    for directive in (
+        "default-src 'self'",
+        "script-src 'self'",
+        "img-src 'self' data:",  # the inline-SVG favicon, and nothing else
+        "frame-ancestors 'none'",  # /api/ask spends money; framing steals clicks
+        "base-uri 'none'",
+        "object-src 'none'",
+    ):
+        assert directive in policy, f"the document policy dropped {directive!r}"
+    for unsafe in ("unsafe-inline", "unsafe-eval"):
+        assert unsafe not in policy, f"the policy admits {unsafe!r}"
+    assert headers.get("x-frame-options") == "DENY"
+    assert headers.get("x-content-type-options") == "nosniff"
+
+
+def test_the_policy_follows_the_document_and_not_the_route(
+    public_client: TestClient,
+) -> None:
+    """A stylesheet needs no policy; an HTML asset needs the same one as `/`.
+
+    Assets and the page are served by two different handlers, so the rule is
+    written against the media type rather than the path — otherwise the next
+    `.html` under `static/` arrives with no policy and nothing notices.
+    """
+    assert "content-security-policy" not in public_client.get("/static/style.css").headers
+    page = public_client.get("/").headers["content-security-policy"]
+    assert page == public_client.get("/static/index.html").headers.get(
+        "content-security-policy"
+    ), "an HTML asset is a document and must carry the document's policy"
+
+
 # A line of OCR is untrusted input by construction. This is the shape of it.
 # The padding has to run past the facade's 400-char budget *after* the OCR leg's
 # snippet window (64 tokens, index-schema §2.5), which is why it is wordy.
