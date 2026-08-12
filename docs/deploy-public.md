@@ -913,7 +913,7 @@ it shares no DNS cache, no `/etc/hosts` entry and no local route.
 ### 7.1 Relative paths — already right, confirm anyway
 
 The demo page's JS fetches `/api/meta`, `/api/videos`, `/api/search` and
-`/api/ask` as root-relative paths (`public/static/app.js`), and the dashboard's
+`/api/ask` as root-relative paths (`public/static/demo/app.js`), and the dashboard's
 templates and stylesheet are explicit that assets are relative and never built
 from `PUBLIC_URL` (`dashboard/templates/base.html:15`,
 `dashboard/static/dashboard.css:28`). So the *chrome* survives any hostname. What

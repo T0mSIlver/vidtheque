@@ -9,7 +9,7 @@
         "displayName": "Paper",
         "canonical": "#fbfaf9",
         "dark": "#131313",
-        "note": "Pinned: asserted equal to public/static/style.css.",
+        "note": "Pinned: asserted equal to public/static/demo/style.css.",
         "tonalRamp": [
           "#111110",
           "#191918",
@@ -403,7 +403,7 @@
       "Do clamp lists server-side and print has_more, never a total."
     ],
     "donts": [
-      "Don't change --bg, --fg, --muted, --line, --accent or --raised without changing public/static/style.css in the same commit and widening the palette test.",
+      "Don't change --bg, --fg, --muted, --line, --accent or --raised without changing public/static/demo/style.css in the same commit and widening the palette test.",
       "Don't add an inline <script>. The pages stay CSP-ready.",
       "Don't build a chart with a time axis, a sparkline, a progress ring, or a soft-shadowed rectangle standing in for content.",
       "Don't ship a card, a shadow, a gradient, glass, or a coloured border-left above 1px.",

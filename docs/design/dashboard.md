@@ -1255,10 +1255,14 @@ replaced by `.mark` and `.fmark`, the two selectors the contract names. The
 drawn film frame stays as the **favicon only**, redrawn gold on pitch with
 square corners; it never appears inside a page.
 
-`dashboard/static/fonts/` keeps its byte-identical copy of the two vendored
-faces and loses the two it no longer serves — Inter and Instrument Serif, with
-their licence texts. `PROVENANCE.md` records what went and why. The `src` stays
-relative for the SSH-tunnel reason §8 already gives.
+`dashboard/static/fonts/` lost the two faces it no longer serves — Inter and
+Instrument Serif, with their licence texts; `PROVENANCE.md` records what went
+and why. Amended 2026-08-12: the byte-identical copy of the two remaining
+faces is gone too. The dashboard's asset route aliases its `fonts/` prefix
+onto `public/static/fonts/`, the document of record (DESIGN.md, Rules for the
+builders #2, `dashboard/__init__.py` `_FONTS_DIR`), so the dashboard's font
+URLs still serve in a private deployment and there is no second copy to
+drift. The `src` stays relative for the SSH-tunnel reason §8 already gives.
 
 ### 12.4 The two pinned tests
 

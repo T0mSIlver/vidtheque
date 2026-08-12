@@ -28,8 +28,10 @@ product itself is explained in `README.md` and `docs/README.md`.
   never silently narrows.
 - Token discipline: middle-truncation with a documented `0` opt-out,
   pagination hints printed in payloads, double caps (items AND chars),
-  server-side clamps — never prompt-only limits.
-- Frames by authenticated URL by default; inline base64 is the opt-in.
+  expensive paths bounded independently of `limit`, server-side clamps —
+  never prompt-only limits.
+- Frames by authenticated URL by default; inline base64 is the opt-in,
+  with the correct mimeType.
 - `has_more` over exact totals; relevance-first ordering, `order` explicit.
 
 ## Working here

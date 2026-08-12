@@ -1077,10 +1077,10 @@ Archivo arrived with lab v4 (commit `1251269`).
 4. `font-display: block` for both, matching v5: these faces carry the display
    voice and a FOUT on a 5.6rem headline is worse than 100ms of nothing. Only
    the text face is preloaded.
-5. **`public/__init__.py`'s asset route currently types every non-`.css` file as
-   `text/javascript`.** Whoever ships fonts under `/static/fonts/` adds the
-   `.woff2` media type there in the same commit, the way
-   `dashboard/__init__.py` already did.
+5. **`public/__init__.py`'s asset route types responses by suffix** (`_MEDIA`;
+   `.woff2` landed there the commit the fonts shipped, amended 2026-08-12 to
+   say so). Whoever ships an asset with a new suffix adds its media type in
+   the same commit, the way the fonts did.
 
 ## Migration notes for the rebuild
 

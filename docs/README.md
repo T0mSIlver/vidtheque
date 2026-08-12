@@ -8,8 +8,8 @@ lives and which document owns it.
 |---|---|---|---|
 | MCP tools + resources | `/mcp` | `mcp/src/vidtheque_mcp/tools/` | `docs/design/tool-surface.md` |
 | Index (SQLite + sqlite-vec + FTS5) | — | `mcp/src/vidtheque_mcp/db/` | `docs/design/index-schema.md` |
-| Pipeline + jobs | — | `mcp/src/vidtheque_mcp/pipeline/`, `jobs/` | `docs/design/index-schema.md`, `docs/design/DECISIONS.md` |
-| Auth (none / token / oauth) | `/oauth/*` | `mcp/src/vidtheque_mcp/auth/` | `docs/design/DECISIONS.md` #1 |
+| Pipeline + jobs | — | `mcp/src/vidtheque_mcp/{pipeline,jobs}/` | `docs/design/index-schema.md`, `docs/design/DECISIONS.md` |
+| Auth (none / token / oauth) | `/{authorize,token,register,revoke}`, `/auth/*`, `/.well-known/*` | `mcp/src/vidtheque_mcp/auth/` | `docs/design/DECISIONS.md` #1 |
 | Landing | `/` | `mcp/src/vidtheque_mcp/public/static/landing/` | `DESIGN.md` |
 | Demo (read-only projection) | `/demo` | `mcp/src/vidtheque_mcp/public/static/demo/` | `docs/design/demo-site.md` |
 | Dashboard | `/dashboard` | `mcp/src/vidtheque_mcp/dashboard/` | `docs/design/dashboard.md` |
