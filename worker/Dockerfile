@@ -44,15 +44,21 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.24 /uv /uvx /usr/local/bin/
 WORKDIR /app
 
 # Dependency layer: only manifests, so it caches across source edits.
+# The trailing rm is not housekeeping: with UV_LINK_MODE=copy, uv's wheel
+# cache is a second full copy of the venv (7.4 GB here), dead at runtime —
+# and a layer keeps whatever the RUN that made it leaves behind, so it must
+# go in this command or it ships (field report follow-up, 2026-08-12).
 COPY pyproject.toml uv.lock .python-version ./
 COPY worker/pyproject.toml worker/
 COPY mcp/pyproject.toml mcp/
 RUN uv python install ${PYTHON_VERSION} \
-    && uv sync --locked --no-install-project --package vidtheque-worker --extra gpu --extra nvml
+    && uv sync --locked --no-install-project --package vidtheque-worker --extra gpu --extra nvml \
+    && rm -rf /root/.cache/uv
 
 # Source layer.
 COPY worker/ worker/
-RUN uv sync --locked --package vidtheque-worker --extra gpu --extra nvml
+RUN uv sync --locked --package vidtheque-worker --extra gpu --extra nvml \
+    && rm -rf /root/.cache/uv
 
 # Not root. This process loads model weights downloaded at runtime and decodes
 # untrusted media, which is the pair of properties that makes "container root"
@@ -61,10 +67,16 @@ RUN uv sync --locked --package vidtheque-worker --extra gpu --extra nvml
 # later load, and the environment. It does not need to write anywhere except
 # the cache and /tmp, so it owns those and nothing else.
 # (2026-08-10 audit, F-28.)
+#
+# /app stays root-owned, deliberately and twice over: the process has no
+# business rewriting its own code or venv, and `chown -R /app` over a lower
+# layer has no metadata-only copy-up — it rewrote the entire 7.7 GB venv into
+# a fresh 8.26 GB layer (field report follow-up, 2026-08-12). The chown below
+# is non-recursive over one empty directory.
 RUN groupadd --system --gid 10001 vidtheque \
     && useradd --system --uid 10001 --gid vidtheque --no-create-home vidtheque \
     && mkdir -p /hf-cache \
-    && chown -R vidtheque:vidtheque /hf-cache /app
+    && chown vidtheque:vidtheque /hf-cache
 USER vidtheque:vidtheque
 
 EXPOSE 8081

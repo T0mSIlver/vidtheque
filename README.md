@@ -29,9 +29,11 @@ docker compose -f deploy/docker-compose.yml up -d      # private: mcp + worker
 curl localhost:8081/healthz && curl localhost:8081/status
 ```
 
-**Disk: budget ~120 GB.** Measured on a clean install (2026-08-12): the worker
-image is ~44 GB (CUDA + torch), the model cache ~13 GB, and a rebuild needs
-~32 GB of transient build cache on top — a 60 GB disk dies mid-build.
+**Disk: budget ~80 GB.** The worker image costs ~28 GB — CUDA plus GPU torch,
+which is what it genuinely weighs. (A clean 2026-08-12 install measured 44 GB:
+two layer bugs, since fixed, shipped uv's wheel cache and a `chown -R` copy of
+the whole venv.) Add ~13 GB of model cache, your corpus, and roughly an
+image's worth of transient build cache during a rebuild.
 
 Going **public** is different: the tunnel overlay is not optional. Without
 `compose.public.example.yml` the port publishes on `0.0.0.0`, so the origin
