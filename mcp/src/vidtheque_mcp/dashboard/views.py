@@ -19,6 +19,7 @@ import os
 import sqlite3
 import time
 from typing import Any
+from urllib.parse import urlencode
 
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
@@ -664,6 +665,11 @@ async def video_detail(request: Request) -> Response:
             "cue_page": cue_page_size,
             "cue_offset": cue_offset,
             "cues_more": cues_more,
+            # A GET prefill, not a write. The source URL is encoded into one
+            # internal dashboard link; the index form remains the place where
+            # the operator reviews it and POST remains the only state change.
+            "queue_channel_url": f"{ROOT}/index?"
+            + urlencode({"urls": str(row["url"]), "expand": "channel_recent"}),
         },
     )
 

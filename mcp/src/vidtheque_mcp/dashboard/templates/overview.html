@@ -122,6 +122,32 @@
   </dl>
 </section>
 
+{% if write_side %}
+{# The queue is a primary path, so the overview carries the short version of
+   the index form. POST is still the existing handler and the hidden values are
+   its conservative defaults: one URL means one video, all search channels,
+   normal priority. The full form is one link away when those defaults are not
+   the right answer. The whole panel is absent with the write routes. #}
+<section class="panel" aria-labelledby="quick-add">
+  <h2 class="panel-title" id="quick-add">Add videos</h2>
+  <form class="filters" data-quick-add method="post" action="{{ root }}/index">
+    <input type="hidden" name="expand" value="none">
+    <input type="hidden" name="max_items" value="25">
+    <input type="hidden" name="priority" value="normal">
+    <div class="field field-wide">
+      <label for="quick-urls">Video URLs</label>
+      <textarea id="quick-urls" name="urls" rows="4" required spellcheck="false"
+                autocomplete="off" placeholder="https://youtu.be/kCc8FmEb1nY&#10;https://youtu.be/zduSFxRajkE"
+                {{ 'disabled' if not writes_allowed }}></textarea>
+    </div>
+    <div class="field field-actions">
+      <button type="submit" {{ 'disabled' if not writes_allowed }}>Queue videos</button>
+      <a class="ghostlink" href="{{ root }}/index">More options</a>
+    </div>
+  </form>
+</section>
+{% endif %}
+
 {# The zone: what arrived (dense, wants the width) beside what is wrong and
    what it costs (short answers that never wanted 1400px). #}
 <div class="split split-main">

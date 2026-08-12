@@ -1677,3 +1677,32 @@ page no longer needs to offer twice: the scene timeline above it is the thing
 that answers "where in this video", at one bar per shot across the whole
 runtime, and the frames grid answers "what is on this frame", which is a
 reading and not a sweep.
+
+## 13. The queue as a dashboard-wide flow (2026-08-12)
+
+The phase-3 write side already made indexing possible; this amendment makes it
+reachable from the surfaces where the next URL appears. It changes no write
+policy and adds no route.
+
+- **Every dashboard page links to `GET /dashboard/index` as `Add videos` when,
+  and only when, the write side is registered.** The link is in the shared
+  rail, so adding is at most one click away. It is absent — not disabled — in
+  `VIDTHEQUE_PUBLIC_READONLY=1` and `VIDTHEQUE_AUTH=none`, exactly like the
+  write routes behind it (§2.3, §3.2).
+- **The overview carries a quick-add form.** It POSTs to the existing
+  `/dashboard/index` handler with `expand=none`, `max_items=25`, normal
+  priority and all three channels, leaving validation, batching, the Origin
+  rule and the receipt to the phase-3 implementation. The whole form is absent
+  when the write side is absent; `db.writes_allowed=false` disables its
+  controls as §5.5 requires.
+- **`GET /dashboard/index` accepts `urls`, `expand` and `tags` as render-only
+  prefill parameters.** It performs no normalisation, tool call, database read
+  or write. `expand` must be one of the tool's three declared values or falls
+  back to the form default; rendered `urls` and `tags` are capped at 16,384 and
+  800 characters respectively so a deep link cannot create an unbounded HTML
+  response. POST remains the only operation that interprets the values.
+- **A video detail page uses that GET contract for `Queue more from this
+  channel`.** The internal link prefills the video's stored source URL and
+  `expand=channel_recent`; it does not queue anything until the operator
+  submits the index form. A jobs empty state links to the same form. Both
+  affordances follow the shared write-side predicate.

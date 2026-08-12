@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import json
 import re
+from html import unescape
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from starlette.testclient import TestClient
@@ -1545,7 +1547,7 @@ def test_the_write_side_is_absent_in_readonly_mode_not_merely_refused(
         # No affordance survives the projection either (§2.4's table).
         table = demo.get(f"{ROOT}/videos", headers=BEARER).text
         assert "Re-index" not in table
-        assert "Add to the index" not in table
+        assert "Add videos" not in table
 
 
 def test_the_write_routes_are_declared_and_post_only(tmp_path: Path) -> None:
@@ -2004,6 +2006,94 @@ def test_the_index_form_refuses_honestly_when_indexing_is_disabled(
             client.app.state.assembled.db.writes_allowed = True
 
 
+def test_get_index_prefills_a_bounded_draft_without_queueing(tmp_path: Path) -> None:
+    """The deep-link contract is render-only: POST is still the write."""
+    from vidtheque_mcp.dashboard.writes import (
+        MAX_PREFILL_TAGS_CHARS,
+        MAX_PREFILL_URLS_CHARS,
+    )
+
+    source = "https://www.youtube.com/watch?v=kCc8FmEb1nY&list=PL_test"
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        before = [j["job_id"] for j in client.get(f"{ROOT}/api/jobs").json()["jobs"]]
+        response = client.get(
+            f"{ROOT}/index",
+            params={"urls": source, "expand": "channel_recent", "tags": "topic:attention"},
+        )
+        assert response.status_code == 200
+
+        urls = re.search(r'<textarea id="urls"[^>]*>(.*?)</textarea>', response.text, re.S)
+        tags = re.search(r'<input id="tags"[^>]*value="([^"]*)"', response.text, re.S)
+        assert urls and unescape(urls.group(1)) == source
+        assert tags and unescape(tags.group(1)) == "topic:attention"
+        assert '<option value="channel_recent" selected>' in response.text
+        assert [j["job_id"] for j in client.get(f"{ROOT}/api/jobs").json()["jobs"]] == before
+
+        # Unrecognised enum values fall back to the full form's default, and
+        # free text cannot make an unbounded response body.
+        bounded = client.get(
+            f"{ROOT}/index",
+            params={
+                "urls": "u" * (MAX_PREFILL_URLS_CHARS + 200),
+                "expand": "everything",
+                "tags": "t" * (MAX_PREFILL_TAGS_CHARS + 200),
+            },
+        ).text
+        bounded_urls = re.search(r'<textarea id="urls"[^>]*>(.*?)</textarea>', bounded, re.S)
+        bounded_tags = re.search(r'<input id="tags"[^>]*value="([^"]*)"', bounded, re.S)
+        assert bounded_urls and len(unescape(bounded_urls.group(1))) == MAX_PREFILL_URLS_CHARS
+        assert bounded_tags and len(unescape(bounded_tags.group(1))) == MAX_PREFILL_TAGS_CHARS
+        assert '<option value="playlist" selected>' in bounded
+
+        hostile = client.get(
+            f"{ROOT}/index", params={"urls": HOSTILE, "tags": HOSTILE}
+        ).text
+        assert "<script>alert" not in hostile and "<img src=x" not in hostile
+        assert "&lt;script&gt;alert" in hostile
+
+
+def test_the_overview_quick_add_posts_conservative_defaults(tmp_path: Path) -> None:
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        overview = page(client, ROOT)
+        assert f'<form class="filters" data-quick-add method="post" action="{ROOT}/index">' in overview
+        for name, value in (
+            ("expand", "none"),
+            ("max_items", "25"),
+            ("priority", "normal"),
+        ):
+            assert f'<input type="hidden" name="{name}" value="{value}">' in overview
+
+        queued = client.post(
+            f"{ROOT}/index",
+            data={
+                "urls": "quickadd001",
+                "expand": "none",
+                "max_items": "25",
+                "priority": "normal",
+            },
+            headers=SAME_ORIGIN,
+            follow_redirects=False,
+        )
+        assert queued.status_code == 303
+        assert queued.headers["location"].startswith(f"{ROOT}/jobs/job_")
+
+
+def test_video_detail_deep_links_to_the_channel_prefill(tmp_path: Path) -> None:
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        detail = page(client, f"{ROOT}/videos/kCc8FmEb1nY")
+        match = re.search(r'data-queue-channel href="([^"]+)"', detail)
+        assert match
+        target = urlsplit(unescape(match.group(1)))
+        assert target.path == f"{ROOT}/index"
+        assert parse_qs(target.query) == {
+            "urls": ["https://youtu.be/kCc8FmEb1nY"],
+            "expand": ["channel_recent"],
+        }
+
+
 def test_nothing_on_the_write_side_offers_a_delete(tmp_path: Path) -> None:
     """§5.2: `jobs.kind='delete'` has no pipeline, so it gets no button."""
     with owner_client(tmp_path) as client:
@@ -2156,20 +2246,56 @@ def test_the_write_affordances_appear_only_with_the_write_side(
 ) -> None:
     """The controls and the routes are the same decision, made once (§2.4)."""
     with owner_client(tmp_path) as client:
+        # The shared chrome includes the route even before a session exists.
+        assert f'data-add-videos href="{ROOT}/index"' in page(client, f"{ROOT}/login")
         sign_in(client)
-        assert "Add to the index" in page(client, ROOT)
+        for path, status in (
+            (ROOT, 200),
+            (f"{ROOT}/videos", 200),
+            (f"{ROOT}/videos/kCc8FmEb1nY", 200),
+            (f"{ROOT}/jobs", 200),
+            (f"{ROOT}/jobs/job_deferred01", 200),
+            (f"{ROOT}/index", 200),
+            (f"{ROOT}/videos/not-here", 404),
+        ):
+            assert f'data-add-videos href="{ROOT}/index"' in page(client, path, status)
+        assert "Add videos" in page(client, ROOT)
+        assert "data-quick-add" in page(client, ROOT)
+        assert "data-queue-channel" in page(client, f"{ROOT}/videos/kCc8FmEb1nY")
         assert "Re-index" in page(client, f"{ROOT}/videos")
         assert 'id="manage"' in page(client, f"{ROOT}/videos/kCc8FmEb1nY")
         assert "Sign out" in page(client, ROOT)
 
+        # The filtered empty state is still an empty jobs page, and it points
+        # straight at the same index form.
+        assert f'data-empty-add href="{ROOT}/index"' in page(
+            client, f"{ROOT}/jobs?state=done"
+        )
+
     with make_client(tmp_path) as none_mode:  # auth=none
         overview = page(none_mode, ROOT)
-        assert "Add to the index" not in overview
+        assert "Add videos" not in overview
+        assert "data-quick-add" not in overview
         assert "Sign out" not in overview
         # …and it says why, with the one-line fix (§3.2 rule 3).
         assert "VIDTHEQUE_AUTH=token" in overview
         assert "Re-index" not in page(none_mode, f"{ROOT}/videos")
         assert 'id="manage"' not in page(none_mode, f"{ROOT}/videos/kCc8FmEb1nY")
+        assert "data-queue-channel" not in page(
+            none_mode, f"{ROOT}/videos/kCc8FmEb1nY"
+        )
+        assert "data-empty-add" not in page(none_mode, f"{ROOT}/jobs?state=done")
+
+    with owner_client(tmp_path, readonly=True) as demo:
+        overview = demo.get(ROOT, headers=BEARER).text
+        assert "data-add-videos" not in overview
+        assert "data-quick-add" not in overview
+        assert "data-queue-channel" not in demo.get(
+            f"{ROOT}/videos/kCc8FmEb1nY", headers=BEARER
+        ).text
+        assert "data-empty-add" not in demo.get(
+            f"{ROOT}/jobs?state=done", headers=BEARER
+        ).text
 
 
 # ------------------------------------------- 9. the projection (phase 4)
@@ -2234,7 +2360,7 @@ def test_the_demo_serves_every_read_page_and_none_of_the_write_ones(
         assert not (registered & set(WRITE_ROUTES))
         assert demo.get(f"{ROOT}/index").status_code == 404
         assert demo.get(f"{ROOT}/login").status_code == 404
-        assert "Add to the index" not in table and "Re-index" not in table
+        assert "Add videos" not in table and "Re-index" not in table
 
 
 def test_the_overview_projection_keeps_the_corpus_and_drops_the_box(

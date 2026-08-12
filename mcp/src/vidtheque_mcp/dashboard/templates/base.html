@@ -98,7 +98,7 @@
     {% if write_side %}
     <p class="nav-group">Manage</p>
     <ul class="navlist">
-      <li><a href="{{ root }}/index"{% if page == 'index' %} aria-current="page"{% endif %}>Add to the index</a></li>
+      <li><a data-add-videos href="{{ root }}/index"{% if page == 'index' %} aria-current="page"{% endif %}>Add videos</a></li>
     </ul>
     {% endif %}
     {# The demo's way back. In read-only mode this surface is one half of a

@@ -54,7 +54,12 @@
     {% endif %}
   </p>
   {% if filters.state != 'all' %}
-  <p class="notice-next"><a href="{{ root }}/jobs?state=all">Show every job</a></p>
+  <p class="notice-next">
+    <a href="{{ root }}/jobs?state=all">Show every job</a>{% if write_side %}<span class="sep">·</span>
+    <a data-empty-add href="{{ root }}/index">Add videos</a>{% endif %}
+  </p>
+  {% elif write_side %}
+  <p class="notice-next"><a data-empty-add href="{{ root }}/index">Add videos</a></p>
   {% endif %}
 </section>
 {% else %}

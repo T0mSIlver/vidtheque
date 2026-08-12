@@ -71,7 +71,8 @@
     <a href="{{ video.url }}" rel="noopener noreferrer" target="_blank">Open on YouTube</a>{% if video.tags %}<span class="sep">·</span>
     <span class="taglist">
       {%- for tag in video.tags %}<a class="chip chip-small" href="{{ root }}/videos?tags={{ tag | urlencode }}&amp;index_state=all">{{ tag }}</a>{% endfor -%}
-    </span>{% endif %}
+    </span>{% endif %}{% if write_side %}<span class="sep">·</span>
+    <a data-queue-channel href="{{ queue_channel_url }}">Queue more from this channel</a>{% endif %}
   </p>
 </div>
 

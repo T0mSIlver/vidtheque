@@ -57,6 +57,13 @@ URLS_PER_JOB = 10
 # rather than at two numbers a reader has to reconcile.
 MAX_FORM_URLS = 200
 
+# A GET prefill is still an input that becomes a response body. Bound both
+# free-text fields before rendering so a deep link cannot turn the index form
+# into an unbounded HTML payload. These are render bounds only: POST keeps the
+# service layer's validation and the form's URL-count cap below.
+MAX_PREFILL_URLS_CHARS = 16_384
+MAX_PREFILL_TAGS_CHARS = 800
+
 # What a paste is split on: newlines, spaces, commas. Anything else is part of
 # a URL, and `normalize_url` is the one that decides whether it is a good one.
 _SEPARATORS = re.compile(r"[\s,]+")
@@ -243,6 +250,18 @@ async def logout(request: Request) -> Response:
 # ---------------------------------------------------------------- §5.5 index
 
 
+def _index_form_values() -> dict[str, Any]:
+    return {
+        "urls": "",
+        "expand": "playlist",
+        "max_items": 25,
+        "tags": "",
+        "channels": [name for name, _label, _note in _CHANNEL_BOXES],
+        "priority": "normal",
+        "force_reindex": False,
+    }
+
+
 def _index_context(request: Request, **extra: Any) -> dict[str, Any]:
     assembled = request.app.state.assembled
     return {
@@ -256,24 +275,35 @@ def _index_context(request: Request, **extra: Any) -> dict[str, Any]:
         # renders disabled with the reason, rather than accepting a submission
         # that will come back `E_FEATURE_DISABLED`.
         "vectors": assembled.db.vectors,
-        "form": {
-            "urls": "",
-            "expand": "playlist",
-            "max_items": 25,
-            "tags": "",
-            "channels": [name for name, _label, _note in _CHANNEL_BOXES],
-            "priority": "normal",
-            "force_reindex": False,
-        },
+        "form": _index_form_values(),
         "result": None,
         "error": None,
         **extra,
     }
 
 
+def _prefilled_index_form(request: Request) -> dict[str, Any]:
+    """Bounded GET parameters, copied into controls and nowhere else.
+
+    This deliberately does not normalise URLs, validate tags, call a tool or
+    touch the database. A prefill is a draft the operator may still edit; the
+    existing POST remains the only path that interprets or persists it.
+    """
+    form = _index_form_values()
+    params = request.query_params
+    expand = str(params.get("expand") or "")
+    form["urls"] = str(params.get("urls") or "")[:MAX_PREFILL_URLS_CHARS]
+    form["tags"] = str(params.get("tags") or "")[:MAX_PREFILL_TAGS_CHARS]
+    if expand in indexing.EXPANSIONS:
+        form["expand"] = expand
+    return form
+
+
 async def index_form(request: Request) -> Response:
-    """`GET /dashboard/index` — the form. A read, so it takes the read gate."""
-    return _render("index.html", _index_context(request))
+    """`GET /dashboard/index` — a bounded prefill, and no state change."""
+    return _render(
+        "index.html", _index_context(request, form=_prefilled_index_form(request))
+    )
 
 
 async def index_submit(request: Request) -> Response:
