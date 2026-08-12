@@ -70,7 +70,7 @@ than no number.
 | `keyframe_decode.py` | the CPU side: shot detection and frame extraction, every lever (dual-stream, PyAV threading, pass-2 workers, fused convert) with timings *and* a diff of what the output did |
 | `keyframe_gpu.py` | the same stage with the decode moved to an ffmpeg subprocess — NVDEC variants, the feed ceiling with no detector on it, and the pass-2 seek |
 | `pipeline_bench.py` | the whole pipeline, once per configuration: CPU vs GPU vs GPU+whisperX, per stage |
-| `results/` | committed measurements, with the raw JSON they came from |
+| `results/` | committed measurements, with the raw JSON they came from. The `--out` paths in the examples below are scratch names; the committed envelopes carry dates: `keyframe-decode-2026-08-08.json`, `keyframe-threading-2026-08-08.json` (the `--extract-workers` run), `keyframe-gpu-2026-08-09.json`, `pipeline-bench-2026-08-09.json`. The fused probe has no committed run. |
 
 `gpu_validation.py` answers a different question from `run.py`: not "which
 backend is faster" but "does the memory come back". It runs one worker process

@@ -6,10 +6,15 @@
 .pytest_cache
 .ruff_cache
 .mypy_cache
-bench/runs
+bench
 research
 docs
 deploy/.env
 *.md
 !README.md
-!mcp/NOTE.md
+.claude
+.impeccable
+tools
+scripts
+mcp/tests
+worker/tests

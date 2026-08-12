@@ -1,9 +1,9 @@
 <!--
 BOX:      none — this is the map. Each file below says which box it belongs on.
-INSTALLS: BEFORE-SHIP.md Phases 2.4, 4.1, 4.2 and 5.
-STATUS:   STAGED. Nothing in deploy/staging/ has been installed anywhere, and
-          nothing here has been executed. Written 2026-08-11 against
-          BEFORE-SHIP.md (Phase 1 ANSWERED) and
+INSTALLS: docs/history/BEFORE-SHIP.md Phases 2.4, 4.1, 4.2 and 5.
+STATUS:   EXECUTED 2026-08-11 — vidtheque.dev live. Kept as the cutover
+          reference for the next box. Written 2026-08-11 against
+          docs/history/BEFORE-SHIP.md (Phase 1 ANSWERED) and
           research/release-staging-2026-08-11.md (the runbook, incl. §10).
 -->
 
@@ -15,7 +15,7 @@ baked in; every value that could not be known before the container exists is a
 `<PLACEHOLDER>` and every one of those is in §0's table.
 
 `docs/deploy-public.md` stays the authority for the go-public *checks*.
-`BEFORE-SHIP.md` stays the ordered list for the morning. This file only says
+`docs/history/BEFORE-SHIP.md` stays the ordered list for the morning. This file only says
 **which artifact goes where, in what order, and how you know it worked**.
 
 ---
@@ -104,80 +104,11 @@ Phase 7    share
 Tom's field decision: GPU passthrough into CT 9001 (copied verbatim from CT
 9000's bind-mount mechanism, driver 550.163.01) — everything runs on the
 public box, the worker on LOOPBACK, and no firewall is needed anywhere: the
-inference API never touches a network interface. The section below is kept
-for the record of what Topology B would have been; every command in it is
-obsolete. The worker unit now installs on CT 9001 (§5, alongside the mcp
-unit); the sandbox keeps only its rollback demo role.
-
-### 3-old. Sandbox — the worker, bridge-bound and supervised (OBSOLETE)
-
-Do this immediately after Phase 3.2. Everything here is on the **sandbox** box.
-
-```bash
-# 3a. Back up the live config before replacing it — it holds the OpenRouter key
-#     that this repo deliberately does not.
-cp -a /home/dev/vidtheque-data/stack.env /home/dev/vidtheque-data/stack.env.pre-cutover
-
-# 3b. Diff before copying. Read every line that differs; there should be
-#     exactly the four CHANGED blocks the file documents, plus the removed key.
-diff /home/dev/vidtheque-data/stack.env.pre-cutover \
-     /home/dev/work/vidtheque/deploy/staging/stack.env.sandbox
-
-# 3c. Install. (VIDTHEQUE_HOST is pre-filled to 192.168.1.98 — verify, don't edit.)
-cp /home/dev/work/vidtheque/deploy/staging/stack.env.sandbox \
-   /home/dev/vidtheque-data/stack.env
-grep '^VIDTHEQUE_HOST=' /home/dev/vidtheque-data/stack.env   # expect =192.168.1.98
-
-# 3d. The unit.
-sudo cp /home/dev/work/vidtheque/deploy/staging/vidtheque-worker.service \
-        /etc/systemd/system/vidtheque-worker.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now vidtheque-worker
-```
-
-**Verify — three claims, three commands:**
-
-```bash
-# 1. it is running, and its ExecStartPre guards passed
-systemctl status vidtheque-worker --no-pager
-# A failure here with status=1 on an ExecStartPre is the guard doing its job:
-# VIDTHEQUE_HOST is unset, still the unfilled placeholder, loopback, or 0.0.0.0.
-
-# 2. it is on the bridge and NOT on loopback
-ss -tlnp | grep 8081          # expect 192.168.1.98:8081, and nothing on 127.0.0.1:8081
-
-# 3. the GPU queue is idle and the consumer is alive (Phase 2.1's other half)
-curl -s http://192.168.1.98:8081/status | jq '{queue, loaded: [.slots[]?.loaded]}'
-```
-
-**Then the firewall.** The worker answers an **unauthenticated**
-OpenAI-compatible API — the network is the entire authorization story, and it
-bounds *who*, not *what they may ask it to do* (review finding 8, accepted for
-launch and written into the audit).
-
-```bash
-# accept :8081 only from the public container
-sudo iptables -A INPUT -p tcp --dport 8081 -s 192.168.1.42 -j ACCEPT
-sudo iptables -A INPUT -p tcp --dport 8081 -j DROP
-# persist it however this box already persists rules; a firewall that does not
-# survive a reboot is Phase 8's "exercise the reboot, do not assert it"
-```
-
-Verify from **two** places, because one of them is the whole point:
-
-```bash
-# from the PUBLIC container: both must answer
-curl -fsS http://192.168.1.98:8081/healthz    # {"status":"ok","version":"0.0.1"}
-curl -fsS http://192.168.1.98:8081/status
-
-# from ANY OTHER box on the LAN: both must be refused
-```
-
-> **Do not run `scripts/dev_stack.sh start` on the sandbox after this.** Its
-> `start` pins `VIDTHEQUE_HOST=127.0.0.1` for the worker inline and its
-> "already answers on 8081?" guard probes `127.0.0.1`, which the bridge-bound
-> worker does not answer — so it would start a **second** worker on loopback.
-> Two processes, one 3090. Use `systemctl` from here on.
+inference API never touches a network interface. The worker unit now installs
+on CT 9001 (§5, alongside the mcp unit); the sandbox keeps only its rollback
+demo role. What Topology B would have been — the bridge-bound worker, its
+iptables story, and the dev_stack.sh double-start trap — is in git history
+(this section pre-cleanup) and in `research/release-staging-2026-08-11.md`.
 
 ---
 
@@ -272,7 +203,7 @@ systemd-analyze security vidtheque-mcp.service
 
 ## 6. Public — mode verification, before the tunnel exists
 
-**BEFORE-SHIP.md Phase 4.3, verbatim.** Run all of it against
+**docs/history/BEFORE-SHIP.md Phase 4.3, verbatim.** Run all of it against
 `http://127.0.0.1:8100`. A thing that is wrong here is wrong through the tunnel
 too, and cheaper to find.
 
@@ -456,7 +387,7 @@ sudo systemctl disable cloudflared
 ```
 
 The full escalation — five steps, each more permanent, with the cache-purge
-caveat that "no cache to purge" was wrong — is **BEFORE-SHIP.md's rollback
+caveat that "no cache to purge" was wrong — is **docs/history/BEFORE-SHIP.md's rollback
 card**, and the reasoning is `research/release-staging-2026-08-11.md` §8.5.
 Two things from there that belong next to these commands:
 

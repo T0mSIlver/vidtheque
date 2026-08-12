@@ -113,20 +113,14 @@ _DOCUMENT_HEADERS = {
 
 # Top-level names under `static/` that this route refuses, whatever they hold.
 #
-# `static/lab/` is the landing workshop — competing prototypes of a page that
-# has not shipped, ~11 MB of them, with their own asset trees. The route serves
-# *any* file under `static/` by suffix, so without this the whole lab answers at
-# `https://<host>/static/lab/versions/v1.html` the moment a tunnel opens
-# (`research/release-staging-2026-08-11.md` §9, finding 1).
-#
-# The winning prototype has since graduated — v5 is `static/landing/` and is
-# served at `/` — and the denial stayed, which is the case it was written for:
-# a prefix covers the directory that keeps existing and keeps being worked in
-# (through a local preview server, never through this app) and the next
-# prototype nobody remembered to think about, where a one-time `git mv` covers
-# only what was moved. Matched on the resolved path, so `../lab/…` cannot walk
-# back in. Adding a top-level name here is the amendment; adding a *file* to
-# `static/` is publishing it.
+# `static/lab/` was the landing workshop — ~11 MB of competing prototypes that
+# would have answered at `https://<host>/static/lab/versions/v1.html` the
+# moment a tunnel opened (`research/release-staging-2026-08-11.md` §9,
+# finding 1). The prototypes now live on the `archive/landing-lab` branch, but
+# the denial is by *name*, not by absence: the next workshop directory someone
+# grows here is covered before anyone remembers to think about it. Matched on
+# the resolved path, so `../lab/…` cannot walk back in. Adding a top-level
+# name here is the amendment; adding a *file* to `static/` is publishing it.
 _DENIED_SUBTREES = frozenset({"lab"})
 
 # `/dashboard/login`, per IP, per minute. A constant rather than a knob, for the
@@ -169,7 +163,7 @@ def public_routes() -> list[Route]:
         return _document(STATIC_DIR / "landing" / "index.html")
 
     async def demo(_request) -> Response:
-        return _document(STATIC_DIR / "index.html")
+        return _document(STATIC_DIR / "demo" / "index.html")
 
     async def asset(request) -> Response:
         name = request.path_params["asset"]

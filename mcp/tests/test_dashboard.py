@@ -36,7 +36,7 @@ from .conftest import FakeEmbeddings, rpc, rpc_headers, seed
 
 STATIC = Path(__file__).resolve().parents[1] / "src/vidtheque_mcp/dashboard/static"
 TEMPLATES = Path(__file__).resolve().parents[1] / "src/vidtheque_mcp/dashboard/templates"
-DEMO_STATIC = Path(__file__).resolve().parents[1] / "src/vidtheque_mcp/public/static"
+DEMO_STATIC = Path(__file__).resolve().parents[1] / "src/vidtheque_mcp/public/static/demo"
 
 # What was on someone's screen, and what yt-dlp said about it. Both are corpus
 # strings and both are attacker-controlled in exactly the same way.
@@ -1047,6 +1047,38 @@ def test_the_asset_route_serves_nothing_outside_its_directory(
     assert client.get(f"{ROOT}/static/dashboard.js").status_code == 200
     assert client.get(f"{ROOT}/static/../../config.py").status_code == 404
     assert client.get(f"{ROOT}/static/nope.css").status_code == 404
+
+
+def test_the_fonts_come_from_the_one_canonical_directory(
+    client: TestClient,
+) -> None:
+    """`fonts/` is an alias onto public/static/fonts — the document of record.
+
+    The dashboard used to carry byte-identical copies; now the route serves
+    the canonical files, so equality is structural, not a discipline. The
+    alias must stay as confined as the directory it replaced: no walking out
+    of it, and the licence texts are still not assets.
+    """
+    face = client.get(f"{ROOT}/static/fonts/archivo-latin-wght-normal.woff2")
+    assert face.status_code == 200
+    assert face.headers["content-type"] == "font/woff2"
+    assert "immutable" in face.headers["cache-control"]
+    # The bytes are the canonical file's bytes, read straight from the package.
+    import vidtheque_mcp.public as _public
+
+    canonical = (
+        Path(_public.__file__).parent
+        / "static"
+        / "fonts"
+        / "archivo-latin-wght-normal.woff2"
+    )
+    assert face.content == canonical.read_bytes()
+    # A face that is not in the canonical directory is a 404, not a fallback
+    # to the dashboard's own directory.
+    assert client.get(f"{ROOT}/static/fonts/nope.woff2").status_code == 404
+    # The OFL texts travel with the fonts without being served — on this
+    # route exactly as on the public one.
+    assert client.get(f"{ROOT}/static/fonts/Archivo-OFL.txt").status_code == 404
 
 
 # ------------------------------------------------------------------- 4. XSS

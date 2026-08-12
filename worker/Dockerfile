@@ -52,7 +52,6 @@ RUN uv python install ${PYTHON_VERSION} \
 
 # Source layer.
 COPY worker/ worker/
-COPY mcp/src/ mcp/src/
 RUN uv sync --locked --package vidtheque-worker --extra gpu --extra nvml
 
 # Not root. This process loads model weights downloaded at runtime and decodes

@@ -1,5 +1,5 @@
 /* vidtheque landing v3 - corpus readout, harvested read-only from vidtheque.db on
-   2026-08-10 by the same lab harvest that produced public/static/lab/assets/corpus.json.
+   2026-08-10 by the lab harvest (the lab now lives on the archive/landing-lab branch).
    Every number, frame, sentence, box and id on the page is read out of this file at
    render time; in production the same values come from /api/meta and the search payload.
    Nothing in here is written by hand. */

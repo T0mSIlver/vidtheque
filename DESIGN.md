@@ -1054,33 +1054,33 @@ with `Archivo-OFL.txt` and `JetBrainsMono-OFL.txt`. This is now the *only* copy
 on the public surface: the landing carried a byte-identical set of its own under
 `lab/versions/v5-assets/fonts/` and dropped it when it graduated (2026-08-11),
 so both documents load the same two files. The JetBrains Mono file is
-byte-identical to the one the dashboard already shipped
+byte-identical to the one the dashboard shipped until 2026-08-11
 (`md5 b058178d…`). Provenance: the fontsource variable packages, filenames
-verbatim; the JetBrains Mono entry in
-`dashboard/static/fonts/PROVENANCE.md` covers that file, and Archivo arrived
-with lab v4 (commit `1251269`).
+verbatim; `public/static/fonts/PROVENANCE.md` carries the full record, and
+Archivo arrived with lab v4 (commit `1251269`).
 
 **Rules for the builders:**
 
 1. `public/static/fonts/` is the **document of record**. New face, new subset,
    new version: it lands there first.
-2. The dashboard keeps a **byte-identical copy** at
-   `dashboard/static/fonts/` — copied, never diverged — because
+2. The dashboard serves the **same files through an alias** (amended
+   2026-08-11: the byte-identical copy at `dashboard/static/fonts/` is gone).
    `public/static/*` is only routed under `VIDTHEQUE_PUBLIC_READONLY=1`
    (`public/__init__.py`) while the dashboard's own asset route is always
-   registered. A dashboard font served from `/static/fonts/…` 404s in a private
-   deployment. Archivo is already copied there; Inter and Instrument Serif are
-   retired and their files and licence texts come out in the rebuild commit.
+   registered — so that route maps its `fonts/` prefix onto the document of
+   record (`dashboard/__init__.py`, `_FONTS_DIR`) instead of keeping a copy
+   that can drift. `/dashboard/static/fonts/…` still serves in a private
+   deployment; there is no second copy to keep identical.
 3. **`@font-face src` is relative** (`fonts/…woff2`), never built from
    `PUBLIC_URL`. These surfaces are served through an SSH tunnel on a port
    nobody predicted.
 4. `font-display: block` for both, matching v5: these faces carry the display
    voice and a FOUT on a 5.6rem headline is worse than 100ms of nothing. Only
    the text face is preloaded.
-5. **`public/__init__.py`'s asset route currently types every non-`.css` file as
-   `text/javascript`.** Whoever ships fonts under `/static/fonts/` adds the
-   `.woff2` media type there in the same commit, the way
-   `dashboard/__init__.py` already did.
+5. **`public/__init__.py`'s asset route types responses by suffix** (`_MEDIA`;
+   `.woff2` landed there the commit the fonts shipped, amended 2026-08-12 to
+   say so). Whoever ships an asset with a new suffix adds its media type in
+   the same commit, the way the fonts did.
 
 ## Migration notes for the rebuild
 

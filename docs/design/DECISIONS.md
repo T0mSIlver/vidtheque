@@ -79,3 +79,16 @@ touches them.
   0 MB) are outside the bracket for the same reason in reverse: they never
   contend, so they must never stop a co-tenant. Measured in
   `research/gpu-validation-2026-08-08.md` §5.2–5.3.
+
+## Amended 2026-08-11 (repo cleanup; flagged in the cleanup PR for Tom)
+
+- **Embedding default superseded: `Qwen3-VL-Embedding-2B`, both legs.**
+  Decision 4 (text: `Qwen3-Embedding-0.6B`) and the SigLIP 2 frame-embeddings
+  default above describe the 2026-08-08 stack. Since 2026-08-10 the shipped
+  default is `EMBED_BACKEND=qwen3-vl-embedding` / `IMAGE_EMBED_BACKEND=
+  qwen3-vl-embedding` with `Qwen/Qwen3-VL-Embedding-2B` on both legs — one
+  model, one lifecycle slot, one vector space (`deploy/.env.example`, the env
+  document of record; evidence `research/multimodal-embedding-2026-08-09.md`,
+  load-contract fix `research/embedding-random-init-2026-08-10.md` §4).
+  `Qwen3-Embedding-0.6B`, SigLIP 2 and BGE-M3 remain selectable worker
+  backends, not defaults.

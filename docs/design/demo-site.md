@@ -914,12 +914,14 @@ that had not shipped, and it answered at `/static/lab/versions/v5.html`
 (`research/release-staging-2026-08-11.md` §9, finding 1). The route now refuses
 the `lab/` subtree by prefix, checked on the *resolved* path so `../lab/…` is
 covered by the same line. Denied rather than moved on purpose, and the reason
-held: v5 has since graduated out of `lab/` (§6.1) and the ~11 MB of prototypes
-behind it have not, the directory keeps being worked in (through a local preview
-server, never through this app), and a prefix covers the next prototype
-directory that nobody remembers to think about where a `git mv` covers only what
-was moved. Adding a top-level name to `_DENIED_SUBTREES` is the amendment;
-adding a *file* to `static/` is publishing it.
+held while the directory was worked in (through a local preview server, never
+through this app): v5 graduated out of `lab/` (§6.1) while the ~11 MB of
+prototypes behind it stayed. Amended 2026-08-12: those prototypes have since
+retired to the `archive/landing-lab` branch and `static/lab/` is gone from
+`main` — the denial stays, by *name*, because a prefix covers the next
+prototype directory that nobody remembers to think about where a `git mv`
+covers only what was moved. Adding a top-level name to `_DENIED_SUBTREES` is
+the amendment; adding a *file* to `static/` is publishing it.
 
 ### 6.1 The landing at `/` (added 2026-08-11)
 

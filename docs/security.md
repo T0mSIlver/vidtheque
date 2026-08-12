@@ -35,7 +35,7 @@ What lives there:
   before merge
 - `fixes-2026-08-11.md` — the fix record for that audit: what landed, what was
   deliberately deferred and on whose decision
-- `audit-2026-08-11.md` — the on-box verification audit `BEFORE-SHIP.md`
+- `audit-2026-08-11.md` — the on-box verification audit `docs/history/BEFORE-SHIP.md`
   Phase 7 requires before the URL is shared
 
 `.gitignore` refuses `research/security-audit-*.md` and

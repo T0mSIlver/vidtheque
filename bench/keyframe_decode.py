@@ -24,6 +24,9 @@ database, the worker or ``$VIDTHEQUE_DATA_DIR``.
         --pair full=/scratch/ID-1080p.mp4,detect=/scratch/ID-360p.mp4 \\
         --repeats 2 --out bench/results/raw/keyframe-decode.json
 
+(The ``--out`` name above is a scratch path; the committed envelope from this
+probe is ``results/raw/keyframe-decode-2026-08-08.json``.)
+
 Media is not committed; point it at your own downloads. `--pts-probe` also
 samples both files at fixed timestamps and hashes the frames, which is how the
 "the two timelines are the same timeline" claim gets checked rather than
