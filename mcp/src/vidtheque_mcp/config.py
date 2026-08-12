@@ -157,6 +157,11 @@ class Settings:
     vec_max_margin: float = 0.20
     frame_max_margin: float = 0.15
 
+    # Whether this box runs the job runner at all. Off is for boxes that only
+    # serve: read-only mode masks the write *tools*, not the runner, and a
+    # migrated database with queued rows would otherwise be resumed here.
+    run_pipeline: bool = True
+
     # Crash recovery (index-schema §1.9). A claim quieter than this belonged to
     # a process that is gone; the runner requeues it and resumes per stage.
     stale_claim_s: int = 300
@@ -274,6 +279,7 @@ class Settings:
                 "VIDTHEQUE_FRAME_MAX_MARGIN", 0.15, 0.0, 2.0
             ),
             deeplink_lead_s=_int_env("VIDTHEQUE_DEEPLINK_LEAD", 2),
+            run_pipeline=_bool_env("VIDTHEQUE_RUN_PIPELINE", True),
             stale_claim_s=_int_env("VIDTHEQUE_STALE_CLAIM_S", 300),
             query_timeout_s=float(_int_env("VIDTHEQUE_QUERY_TIMEOUT_S", 30)),
             max_concurrent_searches=_int_env("VIDTHEQUE_MAX_CONCURRENT_SEARCHES", 2),

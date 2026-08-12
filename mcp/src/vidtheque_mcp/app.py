@@ -79,7 +79,7 @@ def build_app(
     settings: Settings,
     *,
     embeddings: EmbeddingClient | None = None,
-    run_pipeline: bool = True,
+    run_pipeline: bool | None = None,
     pipeline: Pipeline | None = None,
     public: PublicSettings | None = None,
     dashboard: DashboardSettings | None = None,
@@ -122,7 +122,7 @@ def assemble(
     settings: Settings,
     *,
     embeddings: EmbeddingClient | None = None,
-    run_pipeline: bool = True,
+    run_pipeline: bool | None = None,
     pipeline: Pipeline | None = None,
     public: PublicSettings | None = None,
     dashboard: DashboardSettings | None = None,
@@ -133,6 +133,7 @@ def assemble(
     ``embeddings=`` fakes the worker). ``dashboard`` is the same seam for the
     management route group."""
     settings.validate()
+    run_pipeline = settings.run_pipeline if run_pipeline is None else run_pipeline
     public = public if public is not None else PublicSettings.from_env()
     dashboard = dashboard if dashboard is not None else DashboardSettings.from_env()
     settings = _tighten_for_public(settings, public)
