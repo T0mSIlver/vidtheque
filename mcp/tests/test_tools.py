@@ -1083,15 +1083,26 @@ async def test_runner_is_a_noop_with_an_empty_queue(assembled: Assembled) -> Non
     assert await assembled.runner.run_once() is False
 
 
-async def test_job_cancellation_is_cooperative(assembled: Assembled) -> None:
+async def test_cancelling_a_queued_job_settles_it_without_the_runner(
+    assembled: Assembled,
+) -> None:
+    """`request_cancel` on a queued job is synchronous, not cooperative.
+
+    This test used to assert the cooperative path — create, cancel, `run_once`,
+    observe `cancelled` — and kept passing after `request_cancel` started
+    settling queued jobs directly, with `run_once` finding nothing to claim.
+    It now asserts that settle explicitly; the cooperative mid-run path is
+    covered where a stage is actually running, in `test_pipeline_e2e.py`.
+    """
     from vidtheque_mcp.jobs import store as jobs_store
 
     created = await indexing.index_video(assembled.deps, url="https://youtu.be/Qk7mF2xLp0A")
     job_id = structured(created)["job_id"]
     await assembled.db.write(lambda c: jobs_store.request_cancel(c, job_id))
-    await assembled.runner.run_once()
     result = await indexing.job_status(assembled.deps, job_id=job_id, state="all")
     assert structured(result)["state"] == "cancelled"
+    # And the runner agrees there is nothing left to claim.
+    assert await assembled.runner.run_once() is False
 
 
 # ----------------------------------------------------------------- resources

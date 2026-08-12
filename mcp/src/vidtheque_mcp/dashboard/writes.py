@@ -562,6 +562,10 @@ async def retry_job(request: Request) -> Response:
         args = json.loads(str(job["args_json"] or "{}"))
     except (TypeError, ValueError):
         args = {}
+    # `create_job` always dumps a dict, but this row is data, not an
+    # invariant: `"null"` and `"[]"` decode fine and would 500 on `.get`.
+    if not isinstance(args, dict):
+        args = {}
     max_items = clamp(args.get("max_items"), 1, MAX_FORM_URLS, 25)
     batch_size = max(1, min(URLS_PER_JOB, max_items))
     urls = [str(row["source_url"]) for row in candidates]
@@ -593,6 +597,13 @@ async def retry_job(request: Request) -> Response:
                 {"job_id": str(payload["job_id"]), "items": int(payload.get("items", 0))}
             )
 
+    # `index_submit`'s rule, for the same reason: one job and nothing to
+    # explain goes straight to the thing that is now happening, and the POST
+    # is never left as the page a reload would repeat — a reloaded retry is
+    # a duplicate repair job, the one write on this surface where that is
+    # not merely noise.
+    if len(jobs) == 1 and not errors:
+        return _see(f"{ROOT}/jobs/{jobs[0]['job_id']}")
     return _render(
         "retry.html",
         {

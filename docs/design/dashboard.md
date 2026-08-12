@@ -1782,6 +1782,12 @@ at the next stage boundary. The indexing pipeline checks after every stage,
 including `frame_embed` before finalization, so the request cannot be followed
 by a falsely successful item. Existing terminal jobs refuse the action.
 
+A cancelled item settles its video the way a crash does (`_reset_video`'s
+rule): `stale` when the video was already indexed — it keeps its data and
+stays searchable — and `pending` only when a first index never finished.
+Settling `pending` unconditionally would un-publish an indexed video whose
+repair was cancelled. *(Amended 2026-08-12, review of PR #4.)*
+
 ### 16.2 Retry only failed or degraded items
 
 The private detail page for a finished job offers
@@ -1798,7 +1804,10 @@ MCP tool's ten-URL cap is unchanged. The retry preserves the original job's
 channels, tags, expansion bound and priority, and does not force a rebuild:
 the service and pipeline therefore resume a degraded video at its failed stage
 while retaining successful stages. The response is a receipt linking the old
-job and every newly queued job.
+job and every newly queued job — except when exactly one job was queued and
+nothing needs explaining, which follows `index_submit`'s rule and redirects
+to it: a retry receipt left as the POST response is a page whose reload
+queues the repair twice. *(Amended 2026-08-12, review of PR #4.)*
 
 ### 16.3 Job triage filters and ordering
 

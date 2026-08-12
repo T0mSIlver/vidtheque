@@ -232,7 +232,7 @@ class IndexingPipeline:
             await self._settle_video(run, "failed")
             raise
         except ItemCancelled:
-            await self._settle_video(run, "pending")
+            await self._settle_video(run, "interrupted")
             raise
 
     async def _stages(self, run: ItemRun) -> None:
@@ -1226,6 +1226,22 @@ class IndexingPipeline:
         video_id = run.video_id
         if state == "failed":
             await self.db.write(lambda c: store.mark_failed(c, video_id))
+            return
+        if state == "interrupted":
+            # The cancel path's twin of `jobs/store._reset_video`, for the same
+            # reason: `stale` is the schema's word for "indexed, just not with
+            # the current pipeline", and it stays searchable. Writing `pending`
+            # here unconditionally un-published an already-indexed video whose
+            # *reindex* was cancelled — every byte of its index still on disk,
+            # excluded from QUERYABLE_INDEX_STATES with nothing explaining why.
+            await self.db.write(
+                lambda c: c.execute(
+                    "UPDATE videos SET index_state = "
+                    "CASE WHEN indexed_at IS NULL THEN 'pending' ELSE 'stale' END, "
+                    "updated_at = unixepoch() WHERE id = ?",
+                    (video_id,),
+                )
+            )
             return
         await self.db.write(
             lambda c: c.execute(

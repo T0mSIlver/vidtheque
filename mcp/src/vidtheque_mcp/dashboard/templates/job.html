@@ -58,8 +58,11 @@
   </form>
   {% endif %}
   {% if write_side and not job.live and job.kind in ('index', 'reindex') and (job.n_failed or job.degraded) %}
+  {# Disabled with the write-refused database, like every control that feeds
+     `index_video` (§5.5). Cancel above stays live: it writes the job row, not
+     the index, and works exactly when an operator most needs it to. #}
   <form class="rowform" method="post" action="{{ root }}/jobs/{{ job.job_id }}/retry">
-    <button type="submit">Retry {{ job.n_failed + job.degraded }} failed or degraded item(s)</button>
+    <button type="submit"{{ ' disabled' if not writes_allowed }}>Retry {{ job.n_failed + job.degraded }} failed or degraded item(s)</button>
   </form>
   {% endif %}
 </div>

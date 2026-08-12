@@ -21,7 +21,8 @@
     Only items that failed, or finished with a failed optional stage, were sent
     back through the index service. Successful items from
     <a href="{{ root }}/jobs/{{ old_job_id }}"><code>{{ old_job_id }}</code></a>
-    were left alone.
+    were left alone. A retry resumes each video at its outstanding stages; it
+    does not force a rebuild of stages that already succeeded.
   </p>
   {% if jobs %}
   <ul class="joblist">

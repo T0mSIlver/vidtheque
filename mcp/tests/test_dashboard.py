@@ -1938,16 +1938,21 @@ def test_retry_queues_only_failed_and_degraded_items_with_original_policy(
         finally:
             conn.close()
 
+        # One new job and nothing to explain follows `index_submit`'s rule:
+        # a 303 to the job now running, never a POST body a reload repeats —
+        # a reloaded retry receipt would queue the repair twice.
         receipt = client.post(
-            f"{ROOT}/jobs/job_finished01/retry", headers=SAME_ORIGIN
+            f"{ROOT}/jobs/job_finished01/retry",
+            headers=SAME_ORIGIN,
+            follow_redirects=False,
         )
-        assert receipt.status_code == 200
-        assert "failed or degraded item(s) selected" in receipt.text
-        assert ">2</span>" in receipt.text
-        assert "built-in method" not in receipt.text
-        assert f'{ROOT}/jobs/job_finished01' in receipt.text
-        new_ids = re.findall(rf'{ROOT}/jobs/(job_[A-Za-z0-9_-]+)', receipt.text)
-        new_id = next(job_id for job_id in new_ids if job_id != "job_finished01")
+        assert receipt.status_code == 303
+        location = receipt.headers["location"]
+        assert location.startswith(f"{ROOT}/jobs/job_")
+        new_id = location.rsplit("/", 1)[1]
+        assert new_id != "job_finished01"
+        detail = page(client, location)
+        assert "built-in method" not in detail
 
         conn = open_write_connection(db)
         try:

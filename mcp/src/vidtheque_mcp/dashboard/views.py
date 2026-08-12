@@ -226,15 +226,27 @@ FAILED_WINDOW_S = 86_400
 
 
 async def overview(request: Request) -> Response:
-    assembled = request.app.state.assembled
-    deps: Deps = assembled.deps
-    db = assembled.db
     redact = _redacted(request)
-
     # Network and database work overlap. A down worker therefore costs at most
     # the remainder of this one-second budget, not one second after the corpus
     # page has already finished assembling itself.
     readiness_task = asyncio.create_task(_pipeline_readiness(request, redact=redact))
+    try:
+        return await _overview_page(request, readiness_task, redact=redact)
+    finally:
+        # Any unwind between here and the task's own await — a query budget
+        # exceeded, a locked writer — must not orphan a task holding an open
+        # HTTP request. Cancelling a completed task is a no-op.
+        if not readiness_task.done():
+            readiness_task.cancel()
+
+
+async def _overview_page(
+    request: Request, readiness_task: asyncio.Task[dict[str, Any]], *, redact: bool
+) -> Response:
+    assembled = request.app.state.assembled
+    deps: Deps = assembled.deps
+    db = assembled.db
 
     summary = await library.corpus_summary(
         deps,
@@ -245,7 +257,6 @@ async def overview(request: Request) -> Response:
     )
     error = _tool_error(summary)
     if error is not None:  # pragma: no cover - corpus_summary has no error path
-        readiness_task.cancel()
         return _render(
             "error.html",
             {**_chrome(request, "corpus"), "error": error, "title": "Corpus"},
@@ -369,23 +380,29 @@ async def _pipeline_readiness(request: Request, *, redact: bool) -> dict[str, An
         body: Any = None
         parsed = False
         too_large = False
-        async with http.stream(
-            "GET", f"{worker_url}/status", timeout=WORKER_STATUS_TIMEOUT_S
-        ) as response:
-            if response.status_code >= 400:
-                worker["detail"] = f"The worker answered HTTP {response.status_code}."
-            else:
-                content = bytearray()
-                async for chunk in response.aiter_bytes():
-                    if len(content) + len(chunk) > WORKER_STATUS_MAX_BYTES:
-                        too_large = True
-                        break
-                    content.extend(chunk)
-                if too_large:
-                    worker["detail"] = "The worker status response exceeded 64 kB."
+        # `asyncio.timeout` is the wall-clock bound §15 promises. httpx's
+        # `timeout=` alone is per-operation and its read leg resets on every
+        # chunk, so a peer trickling one byte per 900 ms would stay under it
+        # for as long as it cared to — with the overview awaiting the whole
+        # time.
+        async with asyncio.timeout(WORKER_STATUS_TIMEOUT_S):
+            async with http.stream(
+                "GET", f"{worker_url}/status", timeout=WORKER_STATUS_TIMEOUT_S
+            ) as response:
+                if response.status_code >= 400:
+                    worker["detail"] = f"The worker answered HTTP {response.status_code}."
                 else:
-                    body = json.loads(content)
-                    parsed = True
+                    content = bytearray()
+                    async for chunk in response.aiter_bytes():
+                        if len(content) + len(chunk) > WORKER_STATUS_MAX_BYTES:
+                            too_large = True
+                            break
+                        content.extend(chunk)
+                    if too_large:
+                        worker["detail"] = "The worker status response exceeded 64 kB."
+                    else:
+                        body = json.loads(content)
+                        parsed = True
         if parsed:
             backends = body.get("backends") if isinstance(body, dict) else None
             if not isinstance(backends, list):

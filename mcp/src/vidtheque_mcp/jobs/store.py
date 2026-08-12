@@ -624,9 +624,7 @@ def recent_jobs_for_video(
                    )
                ) AS degraded_stages
         FROM jobs j
-        WHERE EXISTS (
-            SELECT 1 FROM job_items i WHERE i.job_id = j.id AND i.video_id = ?
-        )
+        WHERE j.id IN (SELECT job_id FROM job_items WHERE video_id = ?)
         ORDER BY j.created_at DESC, j.id DESC
         LIMIT ?
         """,
