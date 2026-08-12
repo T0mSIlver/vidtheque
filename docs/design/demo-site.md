@@ -1176,6 +1176,66 @@ A demo is judged on the four screens that are not "ten results came back".
   fifth of the demo. **Honesty is not the thing a demo has to prove** — every
   chip now returns evidence. The refusal path is unchanged and still one typed
   query away, and §5.1 remains the receipt for it.
+
+  *Amended 2026-08-11 (Tom): **ask is the default mode**, and the examples come
+  in two sets, one per mode.* The headline says *"Ask it something"*; the box
+  under it now is the one that does. `search | ask` boots on **ask**, search is
+  one click away and loses nothing.
+
+  **The default is stated in the markup, not applied by `app.js`.** The button's
+  word (`Ask ✨`), the placeholder, the hidden content-type row, the pressed
+  mode and the visible example set are one state, and applying it a round trip
+  after `/api/meta` lands is the same stutter the font preloads exist to
+  prevent. `state.askMode` starts `true` to match, and the two must move
+  together. Exactly three things override the default, and each is explicit:
+  `ask_enabled: false` from `/api/meta` (a deployment with no key — the one
+  load that swaps mode on screen, and it is the misconfiguration, not the
+  demo), `?ask=0`, and `?q=` with no `ask=` (§6.2).
+
+  **Mode-appropriate examples.** A keyword chip under an ask box teaches the
+  wrong thing twice: it tells a stranger this is a search box, and clicking it
+  spends a model call on a phrase nobody would ever ask out loud. So `#ex-ask`
+  and `#ex-search` are two sets in the HTML — still copy, still the two rules
+  above — and `setAskMode` swaps them with the switch. What is on screen is
+  always runnable in the mode that is on screen, and a chip click runs in the
+  **current** mode. The search set is the four above, unchanged: keywords stay
+  keywords. The ask set is three questions, ordered by demo strength, each
+  receipt-checked in `research/demo-queries-2026-08-10.md`, and **none of them
+  shares its vocabulary with the answer** — a question whose words are already
+  in the transcript is a search wearing a question mark and proves nothing the
+  chip row does not:
+
+  1. `Why does loop engineering look so much like building RLVR environments?`
+     — Tom's flagship ("Tom's ask-mode flagship"): `fts 0 cues`, a pure vector
+     leg, 7 citations across 6 talks, and an answer no single talk contains.
+     The whole pitch in one click, so it is first.
+  2. `What happens when the machine grades its own homework?` — §8.1 ★★, `fts
+     0` again, and ranks 1–2 are two named practitioners who disagree (Lance
+     Martin: isolate the judge's context; David Brumley: drop the judge).
+  3. `Can you trust a model to judge how good the writing is?` — §13.1 ★★,
+     surfaced by two independent vendors' agents in the dual-fleet eval: a
+     sentence a person says out loud, sharing no content word with either side
+     of the argument it returns (Hetzel vs Heiner, both verbatim).
+
+  Three, not four. §13.1 is explicitly the replacement for the round-1/round-2
+  disagreement pairs, so `What do speakers disagree about when it comes to LLM
+  as a judge?` (§3.1, `research/demo-queries-2026-08-09.md` §4.1) would be the
+  same argument twice — and its keyword form is already the search set's
+  transcript chip. Every ask click spends daily model budget: three questions
+  that each prove a different thing beat four that overlap.
+
+  **Ask-first still has to teach.** A search box teaches itself — type words,
+  get rows with those words in them. A question box does not: nothing on screen
+  says whether the answer is *read out of* these talks or invented over them,
+  and that distinction is the product. So each set carries one line under its
+  heading (`.exnote`) — the ask set's says the answer is built by reading the
+  corpus and comes back with the sentence, the talk and the second; the search
+  set's names the three channels. The corpus listing from `/api/videos` is
+  under both, unchanged.
+
+  **Nothing fires an ask without a click.** The budget and rate-limit UX is
+  untouched, no ask auto-runs on load, and the `?ask=1` rule below is unchanged
+  — a shared question arrives loaded and unfired.
 - **Nothing matched** is one sentence and one way out: `Nothing in the corpus
   matches this.`, then `Try one of the examples.` — a `.linky` that clears the
   query, resets the channel and puts the cold page (with its four chips) back.
@@ -1283,6 +1343,15 @@ every search and read back on load, so a result page is shareable and the
 browser's history behaves. `?ask=1` arrives *in* ask mode with the question
 loaded but **does not fire**: an answer costs a slice of the daily model budget,
 and a shared link (or a crawler) must not spend it on page load. One click does.
+
+*Amended 2026-08-11, with ask as the default mode (§6.1).* The URL has to be
+able to say **search**, or a link copied out of search reopens in ask. `ask` is
+now three-valued: absent means the default, `?ask=1` is unchanged, and `?ask=0`
+is search — written by the switch, read on load. One more rule keeps every link
+made before the change honest: **`?q=` with no `ask=` at all means search**,
+because that is what every `syncUrl` write and every previously shared result
+link looks like. `?ask=1&q=…` is the one combination that loads a question
+without running anything.
 
 A real `<form>` and a real `<a href>` on every result, so Enter submits and
 middle-click opens — the two things a search page is expected to do. (The

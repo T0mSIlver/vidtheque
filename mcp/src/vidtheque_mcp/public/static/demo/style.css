@@ -487,6 +487,14 @@ button[disabled] { opacity: .5; cursor: default; }
 
 .empty h2 { font-size: 14px; font-weight: 520; letter-spacing: -.02em; margin-top: var(--s4); }
 
+/* One line under the heading, and it exists because the page now opens in ask.
+   A search box teaches itself — you type words, you get rows with those words
+   in them. A question box does not: nothing on screen says whether an answer
+   is read out of these talks or invented over them, and that distinction is
+   the whole product. So the cold page says it once, in the human channel,
+   before it hands anyone a question to click. */
+.exnote { margin-top: 8px; max-width: var(--note); color: var(--fg2); font-size: 13px; line-height: 1.5; }
+
 .examples {
   display: flex;
   flex-wrap: wrap;
