@@ -163,6 +163,16 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
             Route(f"{ROOT}/index", guarded(writes.index_form), methods=["GET"]),
             Route(f"{ROOT}/index", writes.index_submit, methods=["POST"]),
             Route(
+                f"{ROOT}/jobs/{{job_id}}/cancel",
+                writes.cancel_job,
+                methods=["POST"],
+            ),
+            Route(
+                f"{ROOT}/jobs/{{job_id}}/retry",
+                writes.retry_job,
+                methods=["POST"],
+            ),
+            Route(
                 f"{ROOT}/videos/{{video_id}}/reindex",
                 writes.reindex,
                 methods=["POST"],

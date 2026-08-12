@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% macro page_link(offset) -%}
-{{ root }}/jobs?state={{ filters.state }}&amp;limit={{ filters.limit }}&amp;offset={{ offset }}
+{{ root }}/jobs?state={{ filters.state }}&amp;kind={{ filters.kind }}&amp;error_code={{ filters.error_code | urlencode }}&amp;degraded={{ 1 if filters.degraded else 0 }}&amp;order={{ filters.order }}&amp;limit={{ filters.limit }}&amp;offset={{ offset }}
 {%- endmacro %}
 {% block main %}
 
@@ -10,6 +10,7 @@
     {# Separator glued to the fact before it; see video.html for the finding. #}
     <p class="pagehead-meta">
       <span class="fact">state <span class="mono">{{ filters.state }}</span></span><span class="sep">·</span>
+      <span class="fact">order <span class="mono">{{ filters.order }}</span></span><span class="sep">·</span>
       <span class="fact">refresh <span class="mono">{{ (poll_ms / 1000) | round | int }}s</span></span>
     </p>
   </div>
@@ -31,6 +32,30 @@
       </select>
     </span>
   </div>
+  <div class="field field-pick">
+    <label for="f-jobkind">Kind</label>
+    <span class="pick">
+      <select id="f-jobkind" name="kind">
+        {% for value in kinds %}<option value="{{ value }}"{{ ' selected' if filters.kind == value }}>{{ value }}</option>{% endfor %}
+      </select>
+    </span>
+  </div>
+  <div class="field">
+    <label for="f-joberror">Error code</label>
+    <input id="f-joberror" name="error_code" type="text" value="{{ filters.error_code }}" placeholder="E_RATE_LIMIT" autocomplete="off">
+  </div>
+  <div class="field field-pick">
+    <label for="f-joborder">Order</label>
+    <span class="pick">
+      <select id="f-joborder" name="order">
+        {% for value in orders %}<option value="{{ value }}"{{ ' selected' if filters.order == value }}>{{ value | replace('_', ' ') }}</option>{% endfor %}
+      </select>
+    </span>
+  </div>
+  <label class="check check-compact">
+    <input type="checkbox" name="degraded" value="1"{{ ' checked' if filters.degraded }}>
+    <span class="check-word">Degraded only</span>
+  </label>
   <div class="field field-narrow">
     <label for="f-joblimit">Rows</label>
     <input id="f-joblimit" name="limit" type="number" min="1" max="100" value="{{ filters.limit }}"
@@ -81,10 +106,10 @@
      not a badge above them. #}
 </p>
 
-<div class="tablewrap" data-poll="{{ root }}/api/jobs?state={{ filters.state }}&amp;limit={{ filters.limit }}&amp;offset={{ pagination.offset }}"
+<div class="tablewrap" data-poll="{{ root }}/api/jobs?state={{ filters.state }}&amp;kind={{ filters.kind }}&amp;error_code={{ filters.error_code | urlencode }}&amp;degraded={{ 1 if filters.degraded else 0 }}&amp;order={{ filters.order }}&amp;limit={{ filters.limit }}&amp;offset={{ pagination.offset }}"
      data-interval="{{ poll_ms }}" data-live="{{ 'yes' if live else 'no' }}">
 <table class="grid jobs">
-  <caption class="sr-only">Jobs, newest first, with what each one is waiting on</caption>
+  <caption class="sr-only">Jobs in the selected triage order, with what each one is waiting on</caption>
   <thead>
     <tr>
       <th scope="col">job</th>
@@ -93,6 +118,7 @@
       <th scope="col">items</th>
       <th scope="col">created</th>
       <th scope="col" class="num">wall clock</th>
+      {% if write_side %}<th scope="col" class="col-actions">action</th>{% endif %}
     </tr>
   </thead>
   <tbody>
@@ -121,7 +147,7 @@
       </th>
       <td data-label="State">
         <span class="pill tone-{{ job.state | tone }}" data-field="job-state">{{ job.state }}</span>
-        {% if job.cancel_requested %}<span class="pill pill-small tone-warn">cancel requested</span>{% endif %}
+        {% if job.cancel_requested and job.live %}<span class="pill pill-small tone-warn">cancel requested</span>{% endif %}
         {% if job.error_code %}
         <span class="pill pill-small tone-bad">{{ job.error_code }}</span>
         {% endif %}
@@ -168,6 +194,15 @@
          keeps counting is a lie. #}
       <td class="num" data-label="Wall clock" data-field="job-wall"
           data-wall="{{ job.wall_s if job.live and job.wall_s is not none else '' }}">{{ job.text.wall }}</td>
+      {% if write_side %}
+      <td class="col-actions" data-label="Action">
+        {% if job.live %}
+        <form class="rowform" method="post" action="{{ root }}/jobs/{{ job.job_id }}/cancel">
+          <button class="ghost" type="submit">Cancel</button>
+        </form>
+        {% else %}<span class="muted">—</span>{% endif %}
+      </td>
+      {% endif %}
     </tr>
     {% endfor %}
   </tbody>

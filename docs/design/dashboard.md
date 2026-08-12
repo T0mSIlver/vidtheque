@@ -1762,3 +1762,67 @@ configuration (§1 non-goal 4).
   **served model ids/load state**, and the existing **drift reason**, because
   those identify operator infrastructure and settings. The projection does not
   issue the worker request at all rather than fetching data it must discard.
+## 16. Job repair actions (2026-08-12)
+
+### 16.1 Cancellation
+
+The private write side adds `POST /dashboard/jobs/{job_id}/cancel`, exposed on
+the job detail page and as a compact action on live rows. Like every dashboard
+write (§2.4 and §3.3), the route is absent when
+`VIDTHEQUE_PUBLIC_READONLY=1` or `VIDTHEQUE_AUTH=none`, is POST-only, and uses
+the existing credential and Origin guard. The action is rendered only for
+`queued|running` jobs.
+
+Cancellation has two honest outcomes. A queued job, including one held behind
+`not_before`, has no worker to cooperate with and is settled `cancelled`
+immediately with its queued items; it never waits through the backoff merely to
+notice the request. A running job stays `running`, sets
+`cancel_requested=1`, and renders “cancel requested” until the pipeline stops
+at the next stage boundary. The indexing pipeline checks after every stage,
+including `frame_embed` before finalization, so the request cannot be followed
+by a falsely successful item. Existing terminal jobs refuse the action.
+
+### 16.2 Retry only failed or degraded items
+
+The private detail page for a finished job offers
+`POST /dashboard/jobs/{job_id}/retry` only when the job has a failed item or a
+`done` item named by `degraded_items`. Registration and authorization follow
+the same §2.4/§3.3 rules as cancellation: absent in read-only and `AUTH=none`
+modes, POST-only, and guarded by the existing credential and Origin check.
+
+The selection is bounded to 200 items and contains each failed item plus each
+degraded item exactly once, even when several stages failed for one video.
+Successful items are not submitted. Each batch goes through
+`tools.indexing.index_video`; batches are at most `URLS_PER_JOB` (ten), so the
+MCP tool's ten-URL cap is unchanged. The retry preserves the original job's
+channels, tags, expansion bound and priority, and does not force a rebuild:
+the service and pipeline therefore resume a degraded video at its failed stage
+while retaining successful stages. The response is a receipt linking the old
+job and every newly queued job.
+
+### 16.3 Job triage filters and ordering
+
+`GET /dashboard/jobs` and its polling endpoint accept server-side `error_code`,
+`kind`, and `degraded=1` filters in addition to the existing state filter.
+Degraded means that the job has a `done` item whose video currently has a
+failed stage, the same predicate as `degraded_items`; it is not inferred from
+the job's terminal state. `order` is explicit and one of `newest`, `priority`
+(lower numeric priority first), or `wall_clock` (longest
+`created_at`→finished/now span first), with stable id tie-breakers.
+
+`jobs_store.list_jobs` owns every predicate and ordering so the page and JSON
+poll target cannot disagree. All active choices, including row limit and
+offset, survive in polling and both pager directions. The store still reads at
+most `limit + 1`; the response exposes `has_more` and never computes a total.
+
+### 16.4 Per-video indexing history
+
+The video detail page adds a bounded **Recent indexing runs** panel. One
+`jobs_store.recent_jobs_for_video(video_id, 10)` statement reads the latest ten
+jobs whose items touched the video, newest first, with job state, kind, created
+and finished clocks, job error code, and degraded stage names under the same
+predicate as `degraded_items`. Every row links to the job detail page.
+
+This is a detail-only query. The videos table performs no job-history read and
+there is no per-video query fan-out on that list. The panel is capped directly;
+it does not issue a count and does not claim an exact total.

@@ -447,13 +447,43 @@ def finish_job(
     )
 
 
-def request_cancel(conn: sqlite3.Connection, public_id: str) -> None:
-    """Cancellation is cooperative and its own column.
+def request_cancel(conn: sqlite3.Connection, public_id: str) -> tuple[bool, str] | None:
+    """Cancel queued work now, or ask running work to stop at its next boundary.
 
-    Not a state: a running job that has been asked to stop is still running
-    until it stops, and job-status should say so.
+    Returns ``(accepted, state)`` for an existing job and ``None`` for an
+    unknown id. A deferred job has no worker to cooperate with: leaving it
+    queued behind ``not_before`` would make a cancellation request wait through
+    the very backoff it is meant to end, so its queued items settle immediately.
+    A running job keeps its honest state until the pipeline reaches a boundary.
     """
-    conn.execute("UPDATE jobs SET cancel_requested = 1 WHERE public_id = ?", (public_id,))
+    row = conn.execute(
+        "SELECT id, state, cancel_requested FROM jobs WHERE public_id = ?", (public_id,)
+    ).fetchone()
+    if row is None:
+        return None
+    state = str(row["state"])
+    if state not in ("queued", "running"):
+        return False, state
+
+    job_id = int(row["id"])
+    if state == "queued":
+        conn.execute(
+            "UPDATE job_items SET state = 'cancelled', finished_at = unixepoch() "
+            "WHERE job_id = ? AND state IN ('queued','running')",
+            (job_id,),
+        )
+        conn.execute(
+            "UPDATE jobs SET state = 'cancelled', cancel_requested = 1, "
+            "finished_at = unixepoch() WHERE id = ?",
+            (job_id,),
+        )
+        log(conn, job_id, "cancelled before the next claim")
+        return True, "cancelled"
+
+    if not bool(row["cancel_requested"]):
+        conn.execute("UPDATE jobs SET cancel_requested = 1 WHERE id = ?", (job_id,))
+        log(conn, job_id, "cancellation requested; stopping at the next stage boundary")
+    return True, "running"
 
 
 def prune_events(conn: sqlite3.Connection) -> int:
@@ -570,25 +600,91 @@ def latest_job_for_video(conn: sqlite3.Connection, video_id: int) -> sqlite3.Row
     ).fetchone()
 
 
-def list_jobs(
-    conn: sqlite3.Connection, state: str, limit: int, offset: int = 0
+def recent_jobs_for_video(
+    conn: sqlite3.Connection, video_id: int, limit: int = 10
 ) -> list[sqlite3.Row]:
-    """A page of jobs, newest first.
+    """The bounded job history for one video, including degraded stage names.
+
+    One statement for the whole panel. The degraded predicate is deliberately
+    the same one as :func:`degraded_items`: a job item that finished ``done``
+    while the video's current stage record says an optional stage failed.
+    """
+    return conn.execute(
+        """
+        SELECT j.public_id, j.state, j.kind, j.created_at, j.finished_at,
+               j.error_code,
+               (
+                   SELECT GROUP_CONCAT(stage, ',') FROM (
+                       SELECT DISTINCT s.stage AS stage
+                       FROM job_items di
+                       JOIN video_stages s
+                         ON s.video_id = di.video_id AND s.state = 'failed'
+                       WHERE di.job_id = j.id AND di.video_id = ? AND di.state = 'done'
+                       ORDER BY s.stage
+                   )
+               ) AS degraded_stages
+        FROM jobs j
+        WHERE EXISTS (
+            SELECT 1 FROM job_items i WHERE i.job_id = j.id AND i.video_id = ?
+        )
+        ORDER BY j.created_at DESC, j.id DESC
+        LIMIT ?
+        """,
+        (video_id, video_id, limit),
+    ).fetchall()
+
+
+def list_jobs(
+    conn: sqlite3.Connection,
+    state: str,
+    limit: int,
+    offset: int = 0,
+    *,
+    error_code: str | None = None,
+    kind: str | None = None,
+    degraded_only: bool = False,
+    order: str = "newest",
+) -> list[sqlite3.Row]:
+    """A bounded, explicitly ordered page of jobs for tools and dashboard.
 
     ``offset`` defaults to 0, which is every caller that existed before the
     dashboard: `job-status` shows one page of active work and never pages. The
     jobs view asks for ``limit + 1`` and slices, so it prints `has_more`
     instead of counting the table (CLAUDE.md).
     """
-    clause = {
-        "all": "",
-        "active": " WHERE j.state IN ('queued','running')",
-        "failed": " WHERE j.state = 'failed'",
-        "done": " WHERE j.state = 'done'",
-    }.get(state, " WHERE j.state IN ('queued','running')")
+    predicates: list[str] = []
+    params: list[Any] = []
+    state_clause = {
+        "all": None,
+        "active": "j.state IN ('queued','running')",
+        "failed": "j.state = 'failed'",
+        "done": "j.state = 'done'",
+    }.get(state, "j.state IN ('queued','running')")
+    if state_clause:
+        predicates.append(state_clause)
+    if error_code:
+        predicates.append("j.error_code = ?")
+        params.append(error_code)
+    if kind:
+        predicates.append("j.kind = ?")
+        params.append(kind)
+    if degraded_only:
+        predicates.append(
+            "EXISTS (SELECT 1 FROM job_items i JOIN video_stages s "
+            "ON s.video_id = i.video_id AND s.state = 'failed' "
+            "WHERE i.job_id = j.id AND i.state = 'done')"
+        )
+    clause = " WHERE " + " AND ".join(predicates) if predicates else ""
+    ordering = {
+        "newest": "j.created_at DESC, j.id DESC",
+        "priority": "j.priority ASC, j.created_at DESC, j.id DESC",
+        "wall_clock": (
+            "(COALESCE(j.finished_at, unixepoch()) - j.created_at) DESC, j.id DESC"
+        ),
+    }.get(order, "j.created_at DESC, j.id DESC")
     return conn.execute(
-        _JOB_SQL + clause + " ORDER BY j.created_at DESC, j.id DESC LIMIT ? OFFSET ?",
-        (limit, offset),
+        _JOB_SQL + clause + f" ORDER BY {ordering} LIMIT ? OFFSET ?",
+        (*params, limit, offset),
     ).fetchall()
 
 
@@ -632,6 +728,44 @@ def degraded_items(conn: sqlite3.Connection, job_id: int, limit: int = 20) -> li
         """,
         (job_id, limit),
     ).fetchall()
+
+
+def retry_candidates(
+    conn: sqlite3.Connection, public_id: str, limit: int = 201
+) -> tuple[sqlite3.Row, list[sqlite3.Row]] | None:
+    """A finished job and exactly the items whose result needs repair.
+
+    Loud failures are item rows in ``failed``. Silent degradation is a ``done``
+    item whose video has at least one failed stage; ``EXISTS`` keeps that item
+    singular when more than one optional stage failed. The original arguments
+    and numeric priority travel with the selection so the dashboard can call
+    ``index_video`` with the same policy rather than constructing jobs itself.
+    """
+    job = conn.execute(
+        "SELECT id, public_id, state, kind, args_json, priority FROM jobs "
+        "WHERE public_id = ?",
+        (public_id,),
+    ).fetchone()
+    if job is None:
+        return None
+    rows = conn.execute(
+        """
+        SELECT i.seq, i.source_url, i.state, i.video_id, v.public_id AS video_public_id
+        FROM job_items i
+        LEFT JOIN videos v ON v.id = i.video_id
+        WHERE i.job_id = ? AND (
+            i.state = 'failed' OR (
+                i.state = 'done' AND EXISTS (
+                    SELECT 1 FROM video_stages s
+                    WHERE s.video_id = i.video_id AND s.state = 'failed'
+                )
+            )
+        )
+        ORDER BY i.seq LIMIT ?
+        """,
+        (int(job["id"]), limit),
+    ).fetchall()
+    return job, rows
 
 
 def degraded_counts(conn: sqlite3.Connection, job_ids: Sequence[int]) -> dict[int, int]:

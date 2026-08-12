@@ -263,6 +263,11 @@ class IndexingPipeline:
             await self._skip(run, "ocr", "channels did not ask for on-screen text")
             await self._skip(run, "frame_embed", "channels did not ask for frames")
 
+        # Frame embedding is a stage too. Without this final boundary, a
+        # cancellation arriving during it was acknowledged by the job row but
+        # the item went on to finalize as done — exactly the queued lie the
+        # dashboard action must never expose.
+        await self._checkpoint(run)
         await self._finalize(run)
 
     # ------------------------------------------------------------- expansion

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block main %}
+
+<p class="crumbs"><a href="{{ root }}/jobs">Jobs</a> <span aria-hidden="true">/</span> retry from <a href="{{ root }}/jobs/{{ old_job_id }}"><code>{{ old_job_id }}</code></a></p>
+
+<div class="pagehead">
+  <div class="pagehead-line">
+    <h1>Repair queued</h1>
+    <p class="pagehead-meta"><span class="mono">{{ selected }}</span> failed or degraded item(s) selected</p>
+  </div>
+  <p class="pagehead-meta">
+    channels <span class="mono">{{ preserved.channels }}</span><span class="sep">·</span>
+    tags <span class="mono">{{ preserved.tags }}</span><span class="sep">·</span>
+    priority <span class="mono">{{ preserved.priority }}</span>
+  </p>
+</div>
+
+<section class="panel receipt" aria-labelledby="receipt">
+  <h2 class="panel-title" id="receipt">What the retry did</h2>
+  <p class="panel-note">
+    Only items that failed, or finished with a failed optional stage, were sent
+    back through the index service. Successful items from
+    <a href="{{ root }}/jobs/{{ old_job_id }}"><code>{{ old_job_id }}</code></a>
+    were left alone.
+  </p>
+  {% if jobs %}
+  <ul class="joblist">
+    {% for job in jobs %}
+    <li>
+      <a class="mono" href="{{ root }}/jobs/{{ job.job_id }}">{{ job.job_id }}</a>
+      <span class="row-meta"><span class="mono">{{ job["items"] }}</span> item(s) queued</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% for error in errors %}
+  <p class="signin-error"><span class="pill tone-bad">{{ error.code }}</span> {{ error.message }}</p>
+  {% if error.next %}<p class="empty-note">{{ error.next }}</p>{% endif %}
+  {% endfor %}
+</section>
+
+{% endblock %}

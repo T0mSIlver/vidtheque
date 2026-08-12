@@ -69,6 +69,7 @@ SHOT_CAP = 2_000
 CHANNEL_CAP = 12
 TAG_CAP = 24
 RECENT_CAP = 8
+VIDEO_HISTORY_CAP = 10
 OCR_LINE_CAP = 600
 # `OCR_PREVIEW_LINES` is gone (Tom, 2026-08-10). It bounded a per-frame digest
 # whose expander split the list in two, which in turn capped the box↔line
@@ -817,6 +818,9 @@ async def video_detail(request: Request) -> Response:
     # much of this video is there — and never on a listing page.
     cue_totals = await db.read(lambda c: queries.cue_text_totals(c, vid))
     tag_map = await db.read(lambda c: queries.video_tags(c, [vid]))
+    history_rows = await db.read(
+        lambda c: jobs_store.recent_jobs_for_video(c, vid, VIDEO_HISTORY_CAP)
+    )
 
     frames_more = len(frame_rows) > frame_page
     frame_rows = frame_rows[:frame_page]
@@ -874,6 +878,23 @@ async def video_detail(request: Request) -> Response:
             # the operator reviews it and POST remains the only state change.
             "queue_channel_url": f"{ROOT}/index?"
             + urlencode({"urls": str(row["url"]), "expand": "channel_recent"}),
+            "job_history": [
+                {
+                    "job_id": str(job["public_id"]),
+                    "state": str(job["state"]),
+                    "kind": str(job["kind"]),
+                    "created_at": job["created_at"],
+                    "finished_at": job["finished_at"],
+                    "error_code": job["error_code"],
+                    "degraded_stages": (
+                        str(job["degraded_stages"]).split(",")
+                        if job["degraded_stages"]
+                        else []
+                    ),
+                }
+                for job in history_rows
+            ],
+            "job_history_cap": VIDEO_HISTORY_CAP,
         },
     )
 
@@ -1190,6 +1211,8 @@ EVENT_CAP = 60
 DEGRADED_CAP = 40
 
 _JOB_STATES = ("all", "active", "failed", "done")
+_JOB_KINDS = ("all", "index", "reindex", "delete")
+_JOB_ORDERS = ("newest", "priority", "wall_clock")
 
 # 2 s while anything is `queued|running`, stopped when nothing is (§5.4). Not
 # an env var: a poll interval that is a deployment knob is a poll interval
@@ -1372,15 +1395,21 @@ def _job_event(row: sqlite3.Row, *, redact: bool = False) -> dict[str, Any]:
 
 
 async def jobs(request: Request) -> Response:
-    """`GET /dashboard/jobs` — every job, newest first."""
+    """`GET /dashboard/jobs` — bounded triage with explicit ordering."""
     db = request.app.state.assembled.db
     params = request.query_params
     state = params.get("state") if params.get("state") in _JOB_STATES else "all"
+    kind = params.get("kind") if params.get("kind") in _JOB_KINDS else "all"
+    order = params.get("order") if params.get("order") in _JOB_ORDERS else "newest"
+    error_code = str(params.get("error_code") or "").strip()[:64]
+    degraded_only = params.get("degraded") == "1"
     limit = clamp(params.get("limit"), 1, JOB_PAGE_MAX, JOB_PAGE)  # type: ignore[arg-type]
     offset = clamp(params.get("offset"), 0, OWNER_CLAMPS.offset_max, 0)  # type: ignore[arg-type]
     redact = _redacted(request)
 
-    cards, has_more, now = await _job_page(db, state, limit, offset, redact)
+    cards, has_more, now = await _job_page(
+        db, state, limit, offset, redact, error_code, kind, degraded_only, order
+    )
     # One extra grouped read for the page, not one per row (§6.3). Deliberately
     # here and not in `_job_page`: what a job contains does not change between
     # two ticks of the poller, so the JSON the tick reads does not carry it.
@@ -1396,7 +1425,16 @@ async def jobs(request: Request) -> Response:
             "title": "Jobs",
             "jobs": cards,
             "states": _JOB_STATES,
-            "filters": {"state": state, "limit": limit},
+            "filters": {
+                "state": state,
+                "kind": kind,
+                "error_code": error_code,
+                "degraded": degraded_only,
+                "order": order,
+                "limit": limit,
+            },
+            "kinds": _JOB_KINDS,
+            "orders": _JOB_ORDERS,
             "pagination": {"limit": limit, "offset": offset, "has_more": has_more},
             "live": any(card["live"] for card in cards),
             "now": now,
@@ -1443,7 +1481,15 @@ def _job_contents(card: dict[str, Any], row: sqlite3.Row | None) -> dict[str, An
 
 
 async def _job_page(
-    db: Any, state: str, limit: int, offset: int, redact: bool
+    db: Any,
+    state: str,
+    limit: int,
+    offset: int,
+    redact: bool,
+    error_code: str = "",
+    kind: str = "all",
+    degraded_only: bool = False,
+    order: str = "newest",
 ) -> tuple[list[dict[str, Any]], bool, int]:
     """Two reads for the whole page, whatever the row count (§6.3).
 
@@ -1451,7 +1497,18 @@ async def _job_page(
     table pages, and one grouped `degraded_counts` for every row on the page
     rather than a probe per row.
     """
-    rows = await db.read(lambda c: jobs_store.list_jobs(c, state, limit + 1, offset))
+    rows = await db.read(
+        lambda c: jobs_store.list_jobs(
+            c,
+            state,
+            limit + 1,
+            offset,
+            error_code=error_code or None,
+            kind=None if kind == "all" else kind,
+            degraded_only=degraded_only,
+            order=order,
+        )
+    )
     has_more = len(rows) > limit
     rows = rows[:limit]
     degraded = await db.read(
@@ -1616,9 +1673,23 @@ async def jobs_json(request: Request) -> Response:
     db = request.app.state.assembled.db
     params = request.query_params
     state = params.get("state") if params.get("state") in _JOB_STATES else "all"
+    kind = params.get("kind") if params.get("kind") in _JOB_KINDS else "all"
+    order = params.get("order") if params.get("order") in _JOB_ORDERS else "newest"
+    error_code = str(params.get("error_code") or "").strip()[:64]
+    degraded_only = params.get("degraded") == "1"
     limit = clamp(params.get("limit"), 1, JOB_PAGE_MAX, JOB_PAGE)  # type: ignore[arg-type]
     offset = clamp(params.get("offset"), 0, OWNER_CLAMPS.offset_max, 0)  # type: ignore[arg-type]
-    cards, has_more, now = await _job_page(db, state, limit, offset, _redacted(request))
+    cards, has_more, now = await _job_page(
+        db,
+        state,
+        limit,
+        offset,
+        _redacted(request),
+        error_code,
+        kind,
+        degraded_only,
+        order,
+    )
     return JSONResponse(
         {
             "now": now,

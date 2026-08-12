@@ -1133,6 +1133,15 @@ span.tone-warn { color: var(--tone-warn); }
    a two-field filter bar on a 1900px screen must not put Apply 1400px from the
    select it applies to. */
 .field-actions { flex-direction: row; gap: var(--s2); align-items: center; }
+.filters .check-compact {
+  display: flex;
+  height: var(--row);
+  gap: var(--s2);
+  align-items: center;
+  padding: 0;
+  border: 0;
+}
+.filters .check-compact input { width: var(--s4); height: var(--s4); }
 
 /* Every control in the bar is exactly `--row` tall — the same 34px as a table
    row and a nav item — so the band reads as one object instead of as four
