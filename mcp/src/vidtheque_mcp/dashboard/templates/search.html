@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block main %}
+
+<div class="pagehead">
+  <div class="pagehead-line">
+    <h1>Search the corpus</h1>
+    {% if payload %}
+    <p class="pagehead-meta">
+      <span class="fact"><span class="mono">{{ payload.pagination.offset + 1 if payload.results else 0 }}</span>–<span class="mono">{{ payload.pagination.offset + (payload.results | length) }}</span></span>
+      {% if payload.pagination.get('approx_total') is not none %}
+      <span class="sep">·</span><span class="fact">of {{ "~" if payload.pagination.get('pool_exhausted') else "" }}<span class="mono">{{ payload.pagination.approx_total }}</span></span>
+      {% endif %}
+    </p>
+    {% endif %}
+  </div>
+</div>
+
+<form class="filters" role="search" method="get" action="{{ root }}/search">
+  <div class="field field-wide">
+    <label for="search-q">Query</label>
+    <input id="search-q" type="search" name="q" value="{{ filters.q }}"
+           maxlength="512" required autocomplete="off" autofocus>
+  </div>
+  <div class="field field-pick">
+    <label for="search-type">Channel</label>
+    <span class="pick">
+      <select id="search-type" name="content_type">
+        {% for content_type in content_types %}
+        <option value="{{ content_type }}" {{ 'selected' if filters.content_type == content_type }}>{{ content_type }}</option>
+        {% endfor %}
+      </select>
+    </span>
+  </div>
+  <div class="field field-text">
+    <label for="search-channel">Video channel</label>
+    <input id="search-channel" type="text" name="channel" value="{{ filters.channel }}"
+           maxlength="128" autocomplete="off">
+  </div>
+  <div class="field field-actions">
+    <button type="submit">Search</button>
+  </div>
+</form>
+
+{% if error %}
+<section class="notice notice-bad" aria-labelledby="search-error">
+  <h2 class="notice-title" id="search-error">{{ error.error }}</h2>
+  <p class="notice-detail">{{ error.message }}</p>
+  {% if error.next %}<p class="notice-next">next: {{ error.next }}</p>{% endif %}
+</section>
+{% elif payload %}
+<section class="panel search-inspection" data-search-results
+         data-limit="{{ payload.pagination.limit }}"
+         aria-labelledby="search-results">
+  <h2 class="panel-title" id="search-results">Results</h2>
+
+  {% if payload.leg_counts %}
+  <dl class="legline" aria-label="Search legs">
+    {% for leg, n in payload.leg_counts.items() %}
+    <div><dt>{{ leg }}</dt><dd>{{ n }}</dd></div>
+    {% endfor %}
+  </dl>
+  {% endif %}
+
+  {% if payload.notes %}
+  <ul class="search-notes" aria-label="Search notes">
+    {% for note in payload.notes %}<li>{{ note }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if payload.results %}
+  <ol class="search-results" start="{{ payload.pagination.offset + 1 }}">
+    {% for hit in payload.results %}
+    <li class="search-hit">
+      <div class="search-hit-body">
+        <p class="search-hit-title">{{ hit.title }}</p>
+        <p class="search-hit-meta">
+          <code>{{ hit.source }}</code><span class="sep">·</span>{{ hit.channel or "unknown" }}<span class="sep">·</span><span class="mono">{{ hit.match_start | clock }}</span>
+        </p>
+        {% if hit.text %}<p class="search-snippet">{{ hit.text }}</p>{% endif %}
+      </div>
+      {% if hit.receipt %}
+      <a class="search-receipt" href="{{ hit.receipt.href }}" target="_blank" rel="noopener noreferrer">{{ hit.receipt.label }} ↗</a>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+  {% else %}
+  <div class="empty">
+    <p class="empty-lead">No moments matched.</p>
+    <p class="empty-note">Change the query, channel, or searched content.</p>
+  </div>
+  {% endif %}
+
+  {% if previous or next %}
+  <nav class="pager" aria-label="Search pagination">
+    {% if previous %}<a class="ghostlink" href="{{ previous }}">← Previous</a>{% endif %}
+    {% if next %}<a class="ghostlink" href="{{ next }}">More results →</a>{% endif %}
+  </nav>
+  {% endif %}
+</section>
+{% elif searched %}
+<div class="empty">
+  <p class="empty-lead">No moments matched.</p>
+  <p class="empty-note">Change the query, channel, or searched content.</p>
+</div>
+{% else %}
+<div class="empty search-empty">
+  <p class="empty-lead">No search has run.</p>
+  <p class="empty-note">Enter words from a transcript, slide, or scene.</p>
+</div>
+{% endif %}
+
+{% endblock %}

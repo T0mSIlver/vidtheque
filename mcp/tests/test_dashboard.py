@@ -1,13 +1,17 @@
 """The management dashboard — `docs/design/dashboard.md`, phases 1 and 2.
 
-Five read-only pages, `/dashboard/api/*` under owner clamps, and the auth gate
-in front of both. Nothing here reaches the network or loads a model: the pages
-are rendered against the seeded fixture corpus through the same ASGI app the
-server runs.
+Six read-only pages, `/dashboard/api/*` under caller-keyed clamps, and the auth
+gate in front of both. Worker readiness reaches only the injected HTTP status
+stub; nothing here loads a model. The pages render against the seeded fixture
+corpus through the same ASGI app the server runs.
 
 Phase 2's half is the jobs view — the `not_before` countdown, the retry
 counter, the degraded list and the event tail — plus its demo projection, which
 keeps every clock and drops exactly two fields.
+
+The shipped half of phase 5 is the search document, entering through the same
+handler as the JSON facade; the overview's readiness observation is the other
+current-state read covered here.
 
 The two things this file is most interested in are the ones a screenshot cannot
 check: that a corpus string never becomes markup, and that every list is
@@ -20,8 +24,10 @@ import json
 import re
 from html import unescape
 from pathlib import Path
+from typing import Callable
 from urllib.parse import parse_qs, urlsplit
 
+import httpx2 as httpx
 import pytest
 from starlette.testclient import TestClient
 
@@ -29,7 +35,7 @@ from vidtheque_mcp.app import build_app
 from vidtheque_mcp.config import Settings
 from vidtheque_mcp.dashboard import ROOT, WRITE_ROUTES
 from vidtheque_mcp.dashboard.settings import DashboardSettings
-from vidtheque_mcp.dashboard.views import EVENT_PREVIEW
+from vidtheque_mcp.dashboard.views import EVENT_PREVIEW, WORKER_STATUS_TIMEOUT_S
 from vidtheque_mcp.db.connection import open_write_connection
 from vidtheque_mcp.public.api import OWNER_CLAMPS, PUBLIC_CLAMPS
 from vidtheque_mcp.public.settings import PublicSettings
@@ -194,7 +200,7 @@ def _seed_jobs(conn) -> None:  # type: ignore[no-untyped-def]
 
 
 def _settings(tmp_path: Path, **kwargs) -> Settings:
-    return Settings(
+    values = dict(
         data_dir=_corpus(tmp_path),
         public_url="http://localhost:8080",
         worker_url="http://worker:8081",
@@ -204,8 +210,13 @@ def _settings(tmp_path: Path, **kwargs) -> Settings:
         # stand-in vectors have no geometry to calibrate against.
         vec_max_distance=0.72,
         frame_max_distance=0.96,
-        **kwargs,
     )
+    values.update(kwargs)
+    return Settings(**values)  # type: ignore[arg-type]
+
+
+def _worker_down(request: httpx.Request) -> httpx.Response:
+    raise httpx.ConnectError("worker unavailable", request=request)
 
 
 def make_client(
@@ -215,14 +226,22 @@ def make_client(
     token: str | None = None,
     public: PublicSettings | None = None,
     dashboard: DashboardSettings | None = None,
+    worker_handler: Callable[[httpx.Request], httpx.Response] | None = None,
+    worker_url: str = "http://worker:8081",
 ) -> TestClient:
-    settings = _settings(tmp_path, auth_mode=auth_mode, static_token=token)  # type: ignore[arg-type]
+    settings = _settings(
+        tmp_path, auth_mode=auth_mode, static_token=token, worker_url=worker_url
+    )  # type: ignore[arg-type]
+    worker_http = httpx.AsyncClient(
+        transport=httpx.MockTransport(worker_handler or _worker_down)
+    )
     app = build_app(
         settings,
         embeddings=FakeEmbeddings(),
         run_pipeline=False,
         public=public or PublicSettings(enabled=False),
         dashboard=dashboard or DashboardSettings(),
+        worker_status_http=worker_http,
     )
     return TestClient(app, base_url="http://localhost:8080")
 
@@ -491,6 +510,128 @@ def test_the_overview_shows_the_drift_banner_when_vectors_are_off(
     finally:
         assembled.db.vectors.enabled = True
         assembled.db.vectors.reason = None
+
+
+def test_pipeline_readiness_reads_worker_status_over_bounded_http(
+    tmp_path: Path,
+) -> None:
+    requests: list[httpx.Request] = []
+
+    def worker(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "backends": [
+                    {
+                        "task": "embed",
+                        "model": "served/text-model",
+                        "loaded": True,
+                    },
+                    {
+                        "task": "image_embed",
+                        "model": "served/frame-model",
+                        "loaded": False,
+                    },
+                    {"task": "ocr", "model": "served/ocr-model", "loaded": True},
+                ],
+                # Operator-only fields returned by /status but not needed here.
+                "vram": {"used_mb": 9999},
+                "queue": {"depth": 4},
+            },
+        )
+
+    with owner_client(tmp_path, worker_handler=worker) as client:
+        body = client.get(ROOT, headers=BEARER).text
+
+    assert [request.url.path for request in requests] == ["/status"]
+    assert WORKER_STATUS_TIMEOUT_S <= 1.0
+    assert 'data-readiness' in body
+    assert ">MCP<" in body and ">Database<" in body
+    assert "Reachable over HTTP" in body
+    assert "served/text-model" in body and "served/frame-model" in body
+    assert ">loaded<" in body and ">cold<" in body
+    assert re.search(r"last health check\s*<time[^>]+>\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", body)
+    assert "9999" not in body and ">vram<" not in body.lower()
+
+
+def test_pipeline_readiness_degrades_without_delaying_or_breaking_the_page(
+    tmp_path: Path,
+) -> None:
+    def timed_out(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("late", request=request)
+
+    with owner_client(tmp_path, worker_handler=timed_out) as client:
+        body = client.get(ROOT, headers=BEARER).text
+        assert client.get(f"{ROOT}/videos", headers=BEARER).status_code == 200
+    assert ">unavailable<" in body
+    assert "did not answer its status check" in body
+
+    with owner_client(tmp_path, worker_url="") as client:
+        body = client.get(ROOT, headers=BEARER).text
+    assert ">unconfigured<" in body
+    assert "No worker URL is configured" in body
+
+
+def test_readonly_readiness_omits_operator_infrastructure(tmp_path: Path) -> None:
+    called = False
+
+    def worker(_: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(
+            200,
+            json={"backends": [{"task": "embed", "model": "private/model-id"}]},
+        )
+
+    with owner_client(tmp_path, readonly=True, worker_handler=worker) as client:
+        assembled = client.app.state.assembled
+        assembled.db.vectors.disable("private drift reason")
+        body = client.get(ROOT, headers=BEARER).text
+
+    assert not called  # the projection does not make an operator-only probe
+    assert ">MCP<" in body and ">Database<" in body
+    assert "full-text only" in body
+    assert "Worker" not in body
+    assert "private/model-id" not in body and "private drift reason" not in body
+
+
+def test_search_is_in_the_rail_and_uses_the_shared_result_contract(
+    tmp_path: Path,
+) -> None:
+    with owner_client(tmp_path) as client:
+        for path in (ROOT, f"{ROOT}/videos", f"{ROOT}/jobs"):
+            body = client.get(path, headers=BEARER).text
+            assert 'class="rail-search"' in body
+            assert f'action="{ROOT}/search"' in body
+
+        body = client.get(
+            f"{ROOT}/search?q=cache&limit=999", headers=BEARER
+        ).text
+        assert 'data-search-results' in body and 'data-limit="50"' in body
+        # Structured leg names and corpus channel names are not translated by
+        # the page. Exact-second receipts are the tool's own deeplinks.
+        assert "transcript_fts" in body and "frame_knn" in body
+        assert "Andrej Karpathy" in body and "GPU MODE" in body
+        assert re.search(r'href="https://youtu\.be/[\w-]+\?t=\d+"', body)
+        assert re.search(r"youtu\.be/[\w-]+\?t=\d+ ↗", body)
+
+        notes = client.get(
+            f"{ROOT}/search?q=words-that-do-not-exist-anywhere", headers=BEARER
+        ).text
+        assert "note: no word of this query occurs anywhere in the corpus" in notes
+
+    # In an open dashboard the same credential-keyed policy as the JSON facade
+    # applies; the page does not turn its route prefix into owner authority.
+    with make_client(tmp_path) as client:
+        body = page(client, f"{ROOT}/search?q=cache&limit=999")
+        assert 'data-limit="20"' in body
+
+
+def test_search_page_escapes_corpus_and_query_text(client: TestClient) -> None:
+    body = page(client, f"{ROOT}/search?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E")
+    assert "<script>alert(1)</script>" not in body
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in body
 
 
 def test_the_videos_table_shows_every_state_and_no_per_row_counts(
@@ -1448,11 +1589,24 @@ SAME_ORIGIN = {"Origin": "http://localhost:8080"}
 
 
 def owner_client(
-    tmp_path: Path, *, readonly: bool = False, password: str | None = PASSWORD, **kwargs
+    tmp_path: Path,
+    *,
+    readonly: bool = False,
+    password: str | None = PASSWORD,
+    worker_handler: Callable[[httpx.Request], httpx.Response] | None = None,
+    worker_url: str = "http://worker:8081",
+    **kwargs,
 ) -> TestClient:
     """`token` mode with a password — the deployment phase 3 is written for."""
     settings = _settings(
-        tmp_path, auth_mode="token", static_token=TOKEN, password=password
+        tmp_path,
+        auth_mode="token",
+        static_token=TOKEN,
+        password=password,
+        worker_url=worker_url,
+    )
+    worker_http = httpx.AsyncClient(
+        transport=httpx.MockTransport(worker_handler or _worker_down)
     )
     app = build_app(
         settings,
@@ -1460,6 +1614,7 @@ def owner_client(
         run_pipeline=False,
         public=PublicSettings(enabled=readonly),
         dashboard=kwargs.pop("dashboard", None) or DashboardSettings(),
+        worker_status_http=worker_http,
         **kwargs,
     )
     return TestClient(app, base_url="http://localhost:8080", **kwargs.pop("client", {}))
@@ -2326,6 +2481,7 @@ OPERATOR_STRINGS = (
 
 READ_PAGES = (
     ROOT,
+    f"{ROOT}/search",
     f"{ROOT}/videos",
     f"{ROOT}/videos/kCc8FmEb1nY",
     f"{ROOT}/jobs",

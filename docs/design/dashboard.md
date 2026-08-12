@@ -1706,3 +1706,59 @@ policy and adds no route.
   `expand=channel_recent`; it does not queue anything until the operator
   submits the index form. A jobs empty state links to the same form. Both
   affordances follow the shared write-side predicate.
+
+## 14. Dashboard search as owner inspection (2026-08-12)
+
+This ships the search half of phase 5 as a dashboard document. It does not
+change §1 non-goal 3: an agent searches with `search` at `/mcp`; there is no new
+agent endpoint, MCP proxy or dashboard-only query shape to scrape.
+
+- A compact GET form in the shared rail opens `GET /dashboard/search`, so every
+  dashboard page has one search entry. The result page is server-rendered and
+  shareable: query, content channel, video-channel filter and pagination remain
+  in the URL, and GET changes no state.
+- The page enters through `public.api.search_payload`, the same handler behind
+  both search JSON facades, which calls `tools.search.run`. It therefore gets
+  the tool's ranking, result cap, text cap, pagination and credential-keyed
+  `PUBLIC_CLAMPS` / `OWNER_CLAMPS`; it has no SQL and no second query
+  implementation. The dashboard inspection rendering keeps the structured leg
+  names/counts and every tool `note:` line verbatim. Corpus titles, channels and
+  snippets remain autoescaped text.
+- Every linked moment is admitted only when the tool returned an HTTPS
+  `youtu.be` URL with a numeric `t=` value. The page prints that same
+  `youtu.be/<id>?t=<second>` as the receipt; it never reconstructs a timestamp
+  from display text or invents a link for a source that has none.
+- Search is a read page and remains in the read-only projection. That is not a
+  new public query policy: an anonymous projection request still receives the
+  public clamp, while a bearer, session or trusted peer receives the owner
+  clamp according to §2.4's existing matrix. The public welcome/search page is
+  unchanged in this increment; the ask half of phase 5 remains unshipped.
+
+## 15. Current pipeline readiness (2026-08-12)
+
+The overview gains one display-only readiness panel. It is a measurement made
+for the current page load — no row is written, no sample is retained, and no
+chart or history is implied (§1 non-goal 5). It has no controls and edits no
+configuration (§1 non-goal 4).
+
+- MCP and database are `ready` when the page renders: the route is executing in
+  the MCP process and the overview's bounded reads have succeeded. Vector search
+  reports the live `db.vectors.enabled` effect; the private page also prints its
+  drift reason when one exists.
+- The private page probes the worker's documented `GET /status` over HTTP. It
+  imports no worker Python. The probe runs concurrently with the overview reads,
+  has a one-second request timeout, accepts at most 64 kB and twelve backend
+  rows, and prints the task, model id actually reported by the worker, and
+  whether that backend is loaded or cold. An unset worker URL says
+  `unconfigured`; a timeout, transport failure, non-2xx response or malformed
+  status says `unavailable`. None of those failures prevents the overview from
+  rendering. `last health check` is the UTC second at which this observation
+  completed, not a stored heartbeat.
+- The §2.4 projection applies per field. It keeps **MCP ready** and **database
+  ready** because successfully reading the page already reveals both; keeps the
+  **vector-search state** because it changes what a visitor should believe about
+  results; and keeps the **check clock**, which is only the timestamp of this
+  page-local observation. It drops the **worker row**, **worker reachability**,
+  **served model ids/load state**, and the existing **drift reason**, because
+  those identify operator infrastructure and settings. The projection does not
+  issue the worker request at all rather than fetching data it must discard.

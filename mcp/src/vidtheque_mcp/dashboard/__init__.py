@@ -17,6 +17,10 @@ Phase 2 adds the jobs view and its poll target, still read-only: `not_before`
 as a live countdown, `attempts`, the degraded list and the `job_events` tail
 (§5.4), redacted to codes, counts and clocks in demo mode (§2.4).
 
+The search half of phase 5 adds one server-rendered inspection page over the
+same shared handler as the JSON facade. Agents still use `/mcp`; this route
+group does not acquire a second query layer or an agent-oriented endpoint.
+
 It lives inside the mcp server because all state does (CLAUDE.md), and it never
 speaks MCP: it calls `tools/*` and `db/queries.py` directly, exactly as `/api`
 already does.
@@ -219,6 +223,7 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
             methods=["GET"],
         ),
         Route(ROOT, guarded(views.overview), methods=["GET"]),
+        Route(f"{ROOT}/search", guarded(views.search), methods=["GET"]),
         Route(f"{ROOT}/videos", guarded(views.videos), methods=["GET"]),
         Route(f"{ROOT}/videos/{{video_id}}", guarded(views.video_detail), methods=["GET"]),
         Route(f"{ROOT}/jobs", guarded(views.jobs), methods=["GET"]),

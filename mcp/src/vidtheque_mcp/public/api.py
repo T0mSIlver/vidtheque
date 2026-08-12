@@ -232,19 +232,32 @@ def _decorate_hit(deps: Deps, hit: dict[str, Any]) -> dict[str, Any]:
 # ------------------------------------------------------------------ endpoints
 
 
-async def search_endpoint(request: Request, *, demo: bool = False) -> JSONResponse:
+async def search_payload(
+    request: Request, *, demo: bool = False, verbatim_notes: bool = False
+) -> tuple[dict[str, Any], int]:
+    """Run the shared search leg once and shape it for a browser surface.
+
+    Both JSON route groups and the dashboard search page enter here. The page
+    therefore cannot grow its own interpretation of a query, a clamp or a leg:
+    all three are still :func:`tools.search.run`'s, behind the caller-keyed
+    policy this module already owns.
+
+    ``verbatim_notes`` is the dashboard inspection view's one presentation
+    difference. It keeps the tool's exact ``note:`` lines; the public JSON
+    facade continues to remove that agent-facing prefix for its reader.
+    """
     deps: Deps = request.app.state.assembled.deps
     policy = await policy_for(request)
     params = request.query_params
     content_type = params.get("content_type") or "all"
     if content_type not in CONTENT_TYPES:
-        return JSONResponse(
+        return (
             {
                 "error": "E_BAD_PARAM",
                 "message": f"content_type must be one of {', '.join(CONTENT_TYPES)}.",
                 "next": "omit it for all three channels.",
             },
-            status_code=400,
+            400,
         )
 
     limit = _int_param(
@@ -269,27 +282,47 @@ async def search_endpoint(request: Request, *, demo: bool = False) -> JSONRespon
         max_text_chars=text_chars,
     )
     if result.is_error:
-        return _error_response(result.structured_content, "search failed")
+        payload = result.structured_content or {}
+        code = str(payload.get("code") or "E_INTERNAL")
+        return (
+            {
+                "error": code,
+                "message": payload.get("message") or "search failed",
+                "next": payload.get("next"),
+            },
+            HTTP_STATUS.get(code, 500),
+        )
 
     payload = result.structured_content or {}
-    return JSONResponse(
+    return (
         {
             "query": params.get("q") or "",
             "content_type": content_type,
             "results": [_decorate_hit(deps, hit) for hit in payload.get("results", [])],
             "pagination": payload.get("pagination", {}),
+            "leg_counts": payload.get("leg_counts", {}),
             # The `note:` prefix marks a line as machinery for a model reading
             # the text block. The page renders notes in their own muted line,
             # which says the same thing without the prefix. On the demo, a note
             # whose whole audience is a model is dropped as well (§6.1).
-            "notes": humanize.notes(payload.get("notes"), demo=demo),
+            "notes": (
+                list(payload.get("notes") or [])
+                if verbatim_notes
+                else humanize.notes(payload.get("notes"), demo=demo)
+            ),
             # Only the tool's empty path sets this, and it is the difference
             # between "nothing matched" and "nothing is indexed" — which a
             # `?q=` link to a fresh instance would otherwise report as a bad
             # query. Absent on a page of hits, where it would say nothing.
             "data_status": payload.get("data_status"),
-        }
+        },
+        200,
     )
+
+
+async def search_endpoint(request: Request, *, demo: bool = False) -> JSONResponse:
+    payload, status = await search_payload(request, demo=demo)
+    return JSONResponse(payload, status_code=status)
 
 
 async def videos_endpoint(request: Request) -> JSONResponse:

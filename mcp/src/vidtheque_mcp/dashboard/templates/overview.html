@@ -122,6 +122,59 @@
   </dl>
 </section>
 
+{# A single observation, never a history. In the projection the worker row is
+   absent rather than redacted in place: its reachability and model ids describe
+   operator infrastructure, while MCP/database readiness and the vector effect
+   are already observable to a reader using this page. #}
+<section class="panel readiness" data-readiness aria-labelledby="readiness">
+  <div class="panel-headline">
+    <h2 class="panel-title" id="readiness">Pipeline readiness</h2>
+    <p class="panel-clock">last health check <time datetime="{{ readiness.checked_at }}">{{ readiness.checked_at }}</time></p>
+  </div>
+  <dl class="readiness-list">
+    <div>
+      <dt>MCP</dt>
+      <dd><span class="pill tone-ok">{{ readiness.mcp }}</span></dd>
+    </div>
+    <div>
+      <dt>Database</dt>
+      <dd><span class="pill tone-ok">{{ readiness.database }}</span></dd>
+    </div>
+    {% if readiness.worker %}
+    <div class="readiness-worker">
+      <dt>Worker</dt>
+      <dd>
+        <span class="pill tone-{{ 'ok' if readiness.worker.state == 'ready' else ('bad' if readiness.worker.state == 'unavailable' else 'neutral') }}">{{ readiness.worker.state }}</span>
+        <span class="readiness-detail">{{ readiness.worker.detail }}</span>
+      </dd>
+    </div>
+    {% endif %}
+    <div>
+      <dt>Vector search</dt>
+      <dd>
+        <span class="pill tone-{{ 'ok' if readiness.vectors.enabled else 'bad' }}">{{ "ready" if readiness.vectors.enabled else "full-text only" }}</span>
+        {% if readiness.vectors.reason %}<span class="readiness-detail">{{ readiness.vectors.reason }}</span>{% endif %}
+      </dd>
+    </div>
+  </dl>
+  {% if readiness.worker and readiness.worker.models %}
+  <div class="tablewrap readiness-models">
+    <table class="grid">
+      <thead><tr><th scope="col">worker task</th><th scope="col">model served</th><th scope="col">memory</th></tr></thead>
+      <tbody>
+        {% for model in readiness.worker.models %}
+        <tr>
+          <th scope="row"><code>{{ model.task }}</code></th>
+          <td><code>{{ model.model }}</code></td>
+          <td>{{ "loaded" if model.loaded else "cold" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
 {% if write_side %}
 {# The queue is a primary path, so the overview carries the short version of
    the index form. POST is still the existing handler and the hidden values are

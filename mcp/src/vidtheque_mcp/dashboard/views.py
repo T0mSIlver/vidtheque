@@ -1,4 +1,4 @@
-"""The read-only pages — dashboard.md §5.1, §5.2, §5.3 and §5.4.
+"""The read-only pages — dashboard.md §5.1–§5.4 and amendments §14–§15.
 
 Every one of these calls the **same service layer the MCP tools call**
 (`tools/library.*`), plus the raw `db/queries.py` reads the tool surface was
@@ -15,11 +15,13 @@ holds three variants per keyframe instead of one per browser window.
 
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 import sqlite3
 import time
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
@@ -36,8 +38,14 @@ from ..jobs import store as jobs_store
 # policies here is rows-per-page and how far an offset may walk, on a listing
 # the demo publishes in full anyway — so keying it off the credential would
 # paginate the browsable corpus at 24 rows to protect nothing.
-from ..public.api import OWNER_CLAMPS, _cover_frames, thumb_url
-from ..text import clamp, clock, iso_day, iso_minute
+from ..public.api import (
+    CONTENT_TYPES,
+    OWNER_CLAMPS,
+    _cover_frames,
+    search_payload,
+    thumb_url,
+)
+from ..text import clamp, clock, iso_day, iso_minute, iso_z
 from ..timeparse import parse_corpus_time
 from ..tools import library
 from ..tools.base import Deps
@@ -71,6 +79,15 @@ OCR_LINE_CAP = 600
 # The same bound for the job event log, and the same reason to have one: an
 # overnight batch writes sixty events and the panel printed all of them.
 EVENT_PREVIEW = 8
+
+# A health panel must never become the slowest dependency of the page that
+# reports it. `/status` is deliberately lock-free on the worker; this is the
+# corresponding client-side wall-clock bound. The response cap is defensive —
+# the shipped worker returns a few kilobytes — and stops a mispointed URL from
+# turning an overview request into an unbounded JSON parse.
+WORKER_STATUS_TIMEOUT_S = 1.0
+WORKER_STATUS_MAX_BYTES = 64 * 1024
+WORKER_BACKEND_CAP = 12
 
 _ENV = build_environment()
 
@@ -113,6 +130,9 @@ def _chrome(request: Request, page: str) -> dict[str, Any]:
     return {
         "root": ROOT,
         "page": page,
+        "rail_query": (
+            (request.query_params.get("q") or "")[:512] if page == "search" else ""
+        ),
         "version": __version__,
         "auth_mode": mode,
         "readonly": readonly,
@@ -210,6 +230,11 @@ async def overview(request: Request) -> Response:
     db = assembled.db
     redact = _redacted(request)
 
+    # Network and database work overlap. A down worker therefore costs at most
+    # the remainder of this one-second budget, not one second after the corpus
+    # page has already finished assembling itself.
+    readiness_task = asyncio.create_task(_pipeline_readiness(request, redact=redact))
+
     summary = await library.corpus_summary(
         deps,
         max_channels=CHANNEL_CAP,
@@ -219,6 +244,7 @@ async def overview(request: Request) -> Response:
     )
     error = _tool_error(summary)
     if error is not None:  # pragma: no cover - corpus_summary has no error path
+        readiness_task.cancel()
         return _render(
             "error.html",
             {**_chrome(request, "corpus"), "error": error, "title": "Corpus"},
@@ -258,6 +284,7 @@ async def overview(request: Request) -> Response:
         }
         for row in recent
     ]
+    readiness = await readiness_task
 
     return _render(
         "overview.html",
@@ -292,7 +319,184 @@ async def overview(request: Request) -> Response:
                 # the keyframe bytes are a column (§5.1).
                 "database": _file_size(assembled.settings.db_path),
             },
+            "readiness": readiness,
         },
+    )
+
+
+async def _pipeline_readiness(request: Request, *, redact: bool) -> dict[str, Any]:
+    """One bounded current-state observation of the local pipeline boundary.
+
+    The projection does not make the worker request at all: worker reachability
+    and checkpoint ids are operator infrastructure, while MCP/database
+    readiness and the vector-search *effect* are already observable through
+    the page and its search results. There is no cache and no history; the
+    timestamp is the clock of this observation.
+    """
+    assembled = request.app.state.assembled
+    readiness: dict[str, Any] = {
+        "mcp": "ready",
+        "database": "ready",
+        "vectors": {
+            "enabled": assembled.db.vectors.enabled,
+            "reason": None if redact else assembled.db.vectors.reason,
+        },
+        "worker": None,
+        "checked_at": None,
+    }
+    if redact:
+        readiness["checked_at"] = iso_z(time.time())
+        return readiness
+
+    worker_url = assembled.settings.worker_url.rstrip("/")
+    http = assembled.worker_status_http
+    if not worker_url or http is None:
+        readiness["worker"] = {
+            "state": "unconfigured",
+            "detail": "No worker URL is configured.",
+            "models": [],
+        }
+        readiness["checked_at"] = iso_z(time.time())
+        return readiness
+
+    worker: dict[str, Any] = {
+        "state": "unavailable",
+        "detail": "The worker did not answer its status check.",
+        "models": [],
+    }
+    try:
+        body: Any = None
+        parsed = False
+        too_large = False
+        async with http.stream(
+            "GET", f"{worker_url}/status", timeout=WORKER_STATUS_TIMEOUT_S
+        ) as response:
+            if response.status_code >= 400:
+                worker["detail"] = f"The worker answered HTTP {response.status_code}."
+            else:
+                content = bytearray()
+                async for chunk in response.aiter_bytes():
+                    if len(content) + len(chunk) > WORKER_STATUS_MAX_BYTES:
+                        too_large = True
+                        break
+                    content.extend(chunk)
+                if too_large:
+                    worker["detail"] = "The worker status response exceeded 64 kB."
+                else:
+                    body = json.loads(content)
+                    parsed = True
+        if parsed:
+            backends = body.get("backends") if isinstance(body, dict) else None
+            if not isinstance(backends, list):
+                worker["detail"] = "The worker returned an invalid status response."
+            else:
+                models = []
+                for backend in backends[:WORKER_BACKEND_CAP]:
+                    if not isinstance(backend, dict) or not backend.get("model"):
+                        continue
+                    models.append(
+                        {
+                            "task": str(backend.get("task") or "unknown"),
+                            "model": str(backend["model"]),
+                            "loaded": bool(backend.get("loaded")),
+                        }
+                    )
+                worker = {
+                    "state": "ready",
+                    "detail": "Reachable over HTTP.",
+                    "models": models,
+                }
+    except Exception:
+        # Transport, timeout, status JSON and protocol errors are all the same
+        # current fact to the operator. Exception text can contain the worker
+        # hostname and is not useful enough to put into HTML.
+        pass
+    readiness["worker"] = worker
+    readiness["checked_at"] = iso_z(time.time())
+    return readiness
+
+
+# --------------------------------------------------------------- search
+
+
+def _search_receipt(hit: dict[str, Any]) -> dict[str, str] | None:
+    """The tool's YouTube link, admitted as one exact-second receipt."""
+    raw = hit.get("link")
+    if not isinstance(raw, str):
+        return None
+    parsed = urlsplit(raw)
+    query = parse_qs(parsed.query)
+    seconds = query.get("t", [None])[0]
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "youtu.be"
+        or not parsed.path.strip("/")
+        or seconds is None
+        or not seconds.isdigit()
+    ):
+        return None
+    return {
+        "href": raw,
+        "label": f"youtu.be/{parsed.path.strip('/')}?t={seconds}",
+    }
+
+
+def _search_page_link(filters: dict[str, Any], offset: int) -> str:
+    params = {key: value for key, value in filters.items() if value not in (None, "")}
+    params["offset"] = max(0, offset)
+    return f"{ROOT}/search?{urlencode(params)}"
+
+
+async def search(request: Request) -> Response:
+    """Human inspection over the exact handler used by both JSON facades."""
+    params = request.query_params
+    filters = {
+        "q": (params.get("q") or "")[:512],
+        "content_type": (
+            params.get("content_type")
+            if params.get("content_type") in CONTENT_TYPES
+            else "all"
+        ),
+        "channel": (params.get("channel") or "")[:128],
+        "limit": params.get("limit") or "",
+        "max_text_chars": params.get("max_text_chars") or "",
+    }
+    searched = "q" in params
+    payload: dict[str, Any] | None = None
+    error: dict[str, Any] | None = None
+    status = 200
+    if searched:
+        payload, status = await search_payload(request, verbatim_notes=True)
+        if "error" in payload:
+            error = payload
+            payload = None
+        else:
+            for hit in payload.get("results", []):
+                hit["receipt"] = _search_receipt(hit)
+
+    pagination = (payload or {}).get("pagination", {})
+    limit = int(pagination.get("limit") or OWNER_CLAMPS.search_default_limit)
+    offset = int(pagination.get("offset") or 0)
+    return _render(
+        "search.html",
+        {
+            **_chrome(request, "search"),
+            "title": "Search",
+            "filters": filters,
+            "content_types": CONTENT_TYPES,
+            "searched": searched,
+            "payload": payload,
+            "error": error,
+            "previous": (
+                _search_page_link(filters, max(0, offset - limit)) if offset else None
+            ),
+            "next": (
+                _search_page_link(filters, offset + limit)
+                if pagination.get("has_more")
+                else None
+            ),
+        },
+        status=status,
     )
 
 
