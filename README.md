@@ -29,10 +29,14 @@ docker compose -f deploy/docker-compose.yml up -d      # private: mcp + worker
 curl localhost:8081/healthz && curl localhost:8081/status
 ```
 
+**Disk: budget ~120 GB.** Measured on a clean install (2026-08-12): the worker
+image is ~44 GB (CUDA + torch), the model cache ~13 GB, and a rebuild needs
+~32 GB of transient build cache on top — a 60 GB disk dies mid-build.
+
 Going **public** is different: the tunnel overlay is not optional. Without
-`compose.public.example.yml`, `deploy/.env` is compose's interpolation source,
-not the container's environment — the server would come up read-write on
-`0.0.0.0` behind a public hostname. Read
+`compose.public.example.yml` the port publishes on `0.0.0.0`, so the origin
+stays reachable around the tunnel and a request that skipped Cloudflare can
+forge the trusted IP header; the overlay binds to loopback. Read
 [`docs/deploy-public.md`](docs/deploy-public.md) before you open a tunnel;
 going public is a checklist and the security audit is the gate.
 

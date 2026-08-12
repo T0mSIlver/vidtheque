@@ -66,20 +66,29 @@ def test_the_public_overlay_replaces_the_ports_it_means_to_replace() -> None:
     )
 
 
+def test_the_env_gap_is_closed_in_the_base_file() -> None:
+    """`.env` is compose's interpolation source, not the container's
+    environment. Without `env_file` on mcp, VIDTHEQUE_AUTH=token in .env is
+    read by nobody and a private box boots AUTH=none with the write tools
+    registered — silently (field report, 2026-08-12). The fix lives in the
+    BASE file so every mode gets it, not just the public overlay."""
+    mcp = _service_block(BASE.read_text(encoding="utf-8"), "mcp")
+    assert "env_file" in mcp, "mcp must read the whole .env in every mode"
+    assert 'TUNNEL_TOKEN: ""' in mcp, "mcp has no use for the tunnel credential"
+
+
 def test_the_worker_is_handed_neither_secret() -> None:
     """`env_file` hands over the whole .env, and the worker needs none of it.
 
     The base file already names every variable the worker reads, so an
     env_file there would add nothing it needs and two things it must never
     hold — the OpenRouter key and the tunnel token — on the service whose job
-    is running untrusted model weights (audit F-7).
+    is running untrusted model weights (audit F-7). Checked in both files so
+    an overlay cannot quietly add it back.
     """
-    worker = _service_block(OVERLAY.read_text(encoding="utf-8"), "worker")
-    assert "env_file" not in worker
-
-    mcp = _service_block(OVERLAY.read_text(encoding="utf-8"), "mcp")
-    assert "env_file" in mcp, "the mcp service is the reason this overlay exists"
-    assert 'TUNNEL_TOKEN: ""' in mcp, "mcp has no use for the tunnel credential"
+    for text in (BASE.read_text(encoding="utf-8"), OVERLAY.read_text(encoding="utf-8")):
+        worker = _service_block(text, "worker")
+        assert "env_file" not in worker
 
 
 @pytest.mark.parametrize("image", ["cloudflared"])
@@ -88,3 +97,15 @@ def test_no_deployment_image_floats_on_latest(image: str) -> None:
     the registry serves next time somebody pulls."""
     block = _service_block(BASE.read_text(encoding="utf-8"), image)
     assert ":latest" not in block, f"{image} must be pinned"
+
+
+LOCAL = DEPLOY / "compose.local.example.yml"
+
+
+def test_the_local_overlay_replaces_the_volume_it_means_to_replace() -> None:
+    """Same shape rule as the public overlay's ports (audit B-1): without
+    `!override` Compose APPENDS, and /data gets both the named volume and the
+    bind — silently."""
+    mcp = _service_block(LOCAL.read_text(encoding="utf-8"), "mcp")
+    assert "volumes: !override" in mcp
+    assert ":/data" in mcp

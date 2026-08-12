@@ -1,0 +1,40 @@
+# Private-mode overlay for deploy/docker-compose.yml. OPTIONAL, and a
+# TEMPLATE: copy it, edit the path, name it explicitly:
+#
+#   docker compose -f deploy/docker-compose.yml \
+#                  -f deploy/compose.local.yml up -d
+#
+# The base file alone is a correct private deployment — it reads the whole
+# `deploy/.env` via `env_file`, so your auth mode reaches the process. What
+# this overlay adds is operational: the corpus on a host path instead of
+# inside a named volume, so backing it up or publishing a snapshot to another
+# instance (VACUUM INTO + rsync of keyframes/) is plain file work rather than
+# `docker compose exec` archaeology.
+#
+# Verify the merge the same way the public overlay teaches — the merged model,
+# never the YAML:
+#
+#   docker compose -f deploy/docker-compose.yml -f deploy/compose.local.yml \
+#     config --format json | jq '.services.mcp.volumes'
+#
+# must show exactly ONE mount at /data.
+#
+# Smoke-testing a private box: `/api/*` is a public-mode route group and 404s
+# here BY DESIGN — that 404 is not a broken install. Check instead:
+#
+#   curl -s localhost:8080/healthz
+#   curl -s -H "Authorization: Bearer $VIDTHEQUE_TOKEN" \
+#     localhost:8080/dashboard/api/meta
+#
+# This overlay adds no new environment variables. The host path below is the
+# one thing to edit.
+
+services:
+  mcp:
+    # **`!override` is load-bearing.** Compose merges sequence fields by
+    # APPENDING, so restating `volumes:` without it mounts BOTH the base
+    # file's named volume and this bind at /data — the same trap the public
+    # overlay documents for `ports:` (audit B-1), with the same silent
+    # failure. The named volume then still exists but holds nothing.
+    volumes: !override
+      - /srv/vidtheque-data:/data

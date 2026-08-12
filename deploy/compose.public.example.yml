@@ -6,20 +6,18 @@
 #                  -f deploy/compose.public.example.yml \
 #                  --profile tunnel up -d
 #
-# It exists because of two things the base compose file gets wrong for a
-# public deployment, both documented in docs/deploy-public.md:
+# It exists because of the one thing the base compose file still gets wrong
+# for a public deployment, documented in docs/deploy-public.md:
 #
-#   1. THE ENV GAP. `deploy/.env` is compose's *interpolation* source, not the
-#      container's environment. The base file hands the `mcp` service four
-#      variables by name (WORKER_URL, VIDTHEQUE_DATA_DIR, VIDTHEQUE_PUBLIC_URL,
-#      VIDTHEQUE_LOG_LEVEL) and nothing else — so VIDTHEQUE_PUBLIC_READONLY,
-#      VIDTHEQUE_AUTH, VIDTHEQUE_PUBLIC_HOSTNAME, VIDTHEQUE_TRUSTED_IP_HEADER,
-#      the rate-limit budgets, OPENROUTER_API_KEY and every pipeline knob sit
-#      in .env being read by nobody. The failure is silent and it is the worst
-#      possible one: the server comes up in FULL READ-WRITE MODE with the write
-#      tools registered, on a public hostname. `env_file` closes it.
+#   (THE ENV GAP used to be the other one: `deploy/.env` is compose's
+#      *interpolation* source, not the container's environment, and the base
+#      file handed `mcp` four variables by name with everything else in .env
+#      read by nobody. That fix — `env_file` plus the blanked TUNNEL_TOKEN —
+#      moved into the base file itself once a private box hit the same silent
+#      failure the other way round, booting AUTH=none after configuring token
+#      auth (field report, 2026-08-12). This overlay no longer carries it.)
 #
-#   2. THE BIND. `"${MCP_PORT:-8080}:8080"` publishes on 0.0.0.0, so the origin
+#      THE BIND. `"${MCP_PORT:-8080}:8080"` publishes on 0.0.0.0, so the origin
 #      is reachable by any route the box has — and a request that did not come
 #      through Cloudflare can forge `CF-Connecting-IP` and mint itself a fresh
 #      rate-limit bucket per request. Binding to loopback makes the tunnel the
@@ -45,19 +43,9 @@
 
 services:
   mcp:
-    # Hand the container the whole .env. Compose merges this UNDER the base
-    # file's `environment:` block, so the four explicit variables there still
-    # win — including VIDTHEQUE_PUBLIC_URL, which is interpolated from
-    # ${PUBLIC_URL}. Set PUBLIC_URL in .env to the https:// tunnel hostname.
-    env_file:
-      - .env
-    environment:
-      # `env_file` hands this container the WHOLE .env, which includes the
-      # tunnel token — a credential `mcp` has no use for and which anyone
-      # holding can run the tunnel. An explicit `environment:` entry wins over
-      # `env_file`, so this blanks it for this service only; cloudflared still
-      # gets the real value from its own interpolation. (2026-08-10 audit, F-7.)
-      TUNNEL_TOKEN: ""
+    # env_file and the blanked TUNNEL_TOKEN live in the base file now (see the
+    # header). Set PUBLIC_URL in .env to the https:// tunnel hostname — the
+    # base file interpolates VIDTHEQUE_PUBLIC_URL from it.
     ports: !override
       # Loopback only: cloudflared is the sole way in. Keep the published port
       # so `curl http://127.0.0.1:8080/healthz` still works on the box for the

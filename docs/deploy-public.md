@@ -753,20 +753,26 @@ control. Use remote if you want the tunnel restartable from a phone.
 
 ### 6.1 First: close the compose env gap
 
-**If you deploy with compose, read this before anything else.** `deploy/.env` is
-compose's *interpolation* source; it is not the container's environment. The
-`mcp` service names four variables explicitly (`WORKER_URL`,
-`VIDTHEQUE_DATA_DIR`, `VIDTHEQUE_PUBLIC_URL`, `VIDTHEQUE_LOG_LEVEL`) and nothing
-else — so `VIDTHEQUE_PUBLIC_READONLY`, `VIDTHEQUE_AUTH`,
-`VIDTHEQUE_PUBLIC_HOSTNAME`, `VIDTHEQUE_TRUSTED_IP_HEADER`, every rate-limit
-number, `OPENROUTER_API_KEY` and every pipeline knob sit in `.env` being read by
-nobody.
+**Resolved 2026-08-12: `env_file` moved into the base file.** The paragraph
+below left "whether `env_file` belongs in the base file" to the audit session;
+a field report from a clean *private* install answered it first — the same gap
+the other way round, an operator who set `VIDTHEQUE_AUTH=token` in `.env` and
+got a server that booted `AUTH=none` with the write tools registered, silently,
+because on a LAN nothing visibly breaks. The base `deploy/docker-compose.yml`
+now reads the whole `.env` on the `mcp` service (with `TUNNEL_TOKEN` blanked,
+audit F-7) and a shape test pins it. The overlay's remaining job is the bind.
 
-The failure is silent and it is the worst one available: **the server comes up
-in full read-write mode, with `index-video` registered, on a public hostname.**
+The mechanism, for whoever meets it elsewhere: `deploy/.env` is compose's
+*interpolation* source; it is not the container's environment. Before the fix
+the `mcp` service named four variables explicitly (`WORKER_URL`,
+`VIDTHEQUE_DATA_DIR`, `VIDTHEQUE_PUBLIC_URL`, `VIDTHEQUE_LOG_LEVEL`) and
+nothing else — so `VIDTHEQUE_PUBLIC_READONLY`, `VIDTHEQUE_AUTH`, every
+rate-limit number, `OPENROUTER_API_KEY` and every pipeline knob sat in `.env`
+being read by nobody, and a public deployment came up **in full read-write
+mode, with `index-video` registered, on a public hostname.**
 
-`deploy/compose.public.example.yml` closes it with `env_file` and additionally
-binds both published ports to loopback (§4). Use it as an overlay:
+The overlay is still not optional for going public — it binds both published
+ports to loopback (§4):
 
 ```bash
 docker compose -f deploy/docker-compose.yml \
@@ -774,11 +780,7 @@ docker compose -f deploy/docker-compose.yml \
                --profile tunnel up -d
 ```
 
-The base `deploy/docker-compose.yml` is deliberately left unchanged — it is the
-reference deployment for people who are not going public, and this is an opt-in
-overlay rather than a new default. Whether that is the right call, or whether
-`env_file` belongs in the base file, is a decision for the audit session.
-`scripts/dev_stack.sh` does not have this problem: it sources `stack.env` with
+`scripts/dev_stack.sh` never had this problem: it sources `stack.env` with
 `set -a`, so everything in it is exported.
 
 Whichever path you take, prove it from outside the process before you go

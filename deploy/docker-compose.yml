@@ -3,11 +3,13 @@
 #   docker compose up -d                      mcp + worker
 #
 # GOING PUBLIC NEEDS THE OVERLAY, NOT THE `tunnel` PROFILE ON ITS OWN.
-# This file hands the `mcp` container four variables by name and nothing else,
-# because `.env` is compose's *interpolation* source and not the container's
-# environment — so VIDTHEQUE_PUBLIC_READONLY and VIDTHEQUE_AUTH sit in `.env`
-# read by nobody, the write tools stay registered, and the port publishes on
-# 0.0.0.0. Behind a tunnel that is an open indexing service. Use:
+# The `mcp` service reads the whole `.env` via `env_file` (so your mode flags
+# do reach the process — this file used to hand it four variables by name and
+# nothing else, and a private box that set VIDTHEQUE_AUTH=token booted
+# AUTH=none; field report 2026-08-12). What this file still gets wrong for a
+# public deployment is the BIND: the port publishes on 0.0.0.0, so behind a
+# tunnel the origin stays reachable off-tunnel and a request that skipped
+# Cloudflare can forge CF-Connecting-IP. The overlay closes that. Use:
 #
 #   docker compose -f deploy/docker-compose.yml \
 #                  -f deploy/compose.public.example.yml \
@@ -37,11 +39,24 @@ services:
       dockerfile: mcp/Dockerfile
     image: vidtheque-mcp:dev
     restart: unless-stopped
+    # The whole .env, in every mode. `.env` is compose's *interpolation*
+    # source, not the container's environment; without this line
+    # VIDTHEQUE_AUTH=token in .env is read by nobody and the server boots
+    # AUTH=none with the write tools registered — silently, since on a LAN
+    # nothing visibly breaks. The explicit `environment:` entries below win
+    # over env_file, so the four-variable contract is unchanged.
+    env_file:
+      - .env
     environment:
       WORKER_URL: ${WORKER_URL:-http://worker:8081}
       VIDTHEQUE_DATA_DIR: /data
       VIDTHEQUE_PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
       VIDTHEQUE_LOG_LEVEL: ${LOG_LEVEL:-info}
+      # `env_file` hands this container the whole .env, which includes the
+      # tunnel token — a credential mcp has no use for and anyone holding can
+      # run the tunnel. Blanked here for this service only; cloudflared still
+      # interpolates the real value. (2026-08-10 audit, F-7.)
+      TUNNEL_TOKEN: ""
     volumes:
       - vidtheque-data:/data
     ports:
