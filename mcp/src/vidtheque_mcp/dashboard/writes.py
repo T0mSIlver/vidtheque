@@ -25,6 +25,7 @@ Three things this module deliberately does **not** have:
 from __future__ import annotations
 
 import hmac
+import json
 import re
 import secrets
 import time
@@ -38,6 +39,7 @@ from ..auth.provider import OWNER_SUBJECT
 from ..config import Settings
 from ..db import queries
 from ..errors import HTTP_STATUS
+from ..jobs import store as jobs_store
 from ..text import clamp
 from ..tools import indexing, library
 from ..tools.base import Deps
@@ -56,6 +58,13 @@ URLS_PER_JOB = 10
 # `tools/indexing.py`, so the form and the tool refuse at the same number
 # rather than at two numbers a reader has to reconcile.
 MAX_FORM_URLS = 200
+
+# A GET prefill is still an input that becomes a response body. Bound both
+# free-text fields before rendering so a deep link cannot turn the index form
+# into an unbounded HTML payload. These are render bounds only: POST keeps the
+# service layer's validation and the form's URL-count cap below.
+MAX_PREFILL_URLS_CHARS = 16_384
+MAX_PREFILL_TAGS_CHARS = 800
 
 # What a paste is split on: newlines, spaces, commas. Anything else is part of
 # a URL, and `normalize_url` is the one that decides whether it is a good one.
@@ -243,6 +252,18 @@ async def logout(request: Request) -> Response:
 # ---------------------------------------------------------------- §5.5 index
 
 
+def _index_form_values() -> dict[str, Any]:
+    return {
+        "urls": "",
+        "expand": "playlist",
+        "max_items": 25,
+        "tags": "",
+        "channels": [name for name, _label, _note in _CHANNEL_BOXES],
+        "priority": "normal",
+        "force_reindex": False,
+    }
+
+
 def _index_context(request: Request, **extra: Any) -> dict[str, Any]:
     assembled = request.app.state.assembled
     return {
@@ -256,24 +277,35 @@ def _index_context(request: Request, **extra: Any) -> dict[str, Any]:
         # renders disabled with the reason, rather than accepting a submission
         # that will come back `E_FEATURE_DISABLED`.
         "vectors": assembled.db.vectors,
-        "form": {
-            "urls": "",
-            "expand": "playlist",
-            "max_items": 25,
-            "tags": "",
-            "channels": [name for name, _label, _note in _CHANNEL_BOXES],
-            "priority": "normal",
-            "force_reindex": False,
-        },
+        "form": _index_form_values(),
         "result": None,
         "error": None,
         **extra,
     }
 
 
+def _prefilled_index_form(request: Request) -> dict[str, Any]:
+    """Bounded GET parameters, copied into controls and nowhere else.
+
+    This deliberately does not normalise URLs, validate tags, call a tool or
+    touch the database. A prefill is a draft the operator may still edit; the
+    existing POST remains the only path that interprets or persists it.
+    """
+    form = _index_form_values()
+    params = request.query_params
+    expand = str(params.get("expand") or "")
+    form["urls"] = str(params.get("urls") or "")[:MAX_PREFILL_URLS_CHARS]
+    form["tags"] = str(params.get("tags") or "")[:MAX_PREFILL_TAGS_CHARS]
+    if expand in indexing.EXPANSIONS:
+        form["expand"] = expand
+    return form
+
+
 async def index_form(request: Request) -> Response:
-    """`GET /dashboard/index` — the form. A read, so it takes the read gate."""
-    return _render("index.html", _index_context(request))
+    """`GET /dashboard/index` — a bounded prefill, and no state change."""
+    return _render(
+        "index.html", _index_context(request, form=_prefilled_index_form(request))
+    )
 
 
 async def index_submit(request: Request) -> Response:
@@ -410,6 +442,185 @@ def _submitted(form: Any) -> dict[str, Any]:
 
 
 # ------------------------------------------------------------ §2.4 row actions
+
+
+async def cancel_job(request: Request) -> Response:
+    """`POST /dashboard/jobs/{job_id}/cancel` — stop only live work.
+
+    Queued work settles in the store immediately. Running work remains
+    `running` with `cancel_requested=1` until the real pipeline reaches its
+    next cooperative stage boundary; the detail page therefore reports the
+    request without claiming the worker has already stopped.
+    """
+    refusal = await _guard(request)
+    if refusal is not None:
+        return refusal
+
+    job_id = request.path_params["job_id"]
+    outcome = await request.app.state.assembled.db.write(
+        lambda c: jobs_store.request_cancel(c, job_id)
+    )
+    if outcome is None:
+        return _error_page(
+            request,
+            "jobs",
+            {
+                "code": "E_UNKNOWN_JOB",
+                "message": f'"{job_id}" is not a job on this instance.',
+                "next": "the jobs table lists every job this index has run.",
+            },
+        )
+    accepted, state = outcome
+    if not accepted:
+        return _error_page(
+            request,
+            "jobs",
+            {
+                "code": "E_BAD_PARAM",
+                "message": f'Job "{job_id}" is already {state}.',
+                "next": "only queued or running jobs can be cancelled.",
+            },
+            back={"href": f"{ROOT}/jobs/{job_id}", "label": "Back to this job"},
+        )
+    return _see(f"{ROOT}/jobs/{job_id}")
+
+
+async def retry_job(request: Request) -> Response:
+    """Requeue only a finished job's failed or degraded items.
+
+    Selection is one bounded store read. Creation deliberately goes back
+    through ``tools.indexing.index_video`` in batches of at most ten, preserving
+    the original channels, tags, expansion bound and priority while leaving
+    successful items out of the call entirely.
+    """
+    refusal = await _guard(request)
+    if refusal is not None:
+        return refusal
+
+    assembled = request.app.state.assembled
+    old_job_id = request.path_params["job_id"]
+    selected = await assembled.db.read(
+        lambda c: jobs_store.retry_candidates(c, old_job_id, MAX_FORM_URLS + 1)
+    )
+    if selected is None:
+        return _error_page(
+            request,
+            "jobs",
+            {
+                "code": "E_UNKNOWN_JOB",
+                "message": f'"{old_job_id}" is not a job on this instance.',
+                "next": "the jobs table lists every job this index has run.",
+            },
+        )
+    job, candidates = selected
+    state = str(job["state"])
+    if state in ("queued", "running"):
+        return _error_page(
+            request,
+            "jobs",
+            {
+                "code": "E_BAD_PARAM",
+                "message": f'Job "{old_job_id}" is still {state}.',
+                "next": "retry is available after the original job finishes.",
+            },
+            back={"href": f"{ROOT}/jobs/{old_job_id}", "label": "Back to this job"},
+        )
+    if str(job["kind"]) not in ("index", "reindex"):
+        return _error_page(
+            request,
+            "jobs",
+            {
+                "code": "E_BAD_PARAM",
+                "message": f'Job "{old_job_id}" is a {job["kind"]} job.',
+                "next": "only indexing jobs can be repaired through index-video.",
+            },
+            back={"href": f"{ROOT}/jobs/{old_job_id}", "label": "Back to this job"},
+        )
+    if len(candidates) > MAX_FORM_URLS:
+        return _error_page(
+            request,
+            "jobs",
+            {
+                "code": "E_TOO_LARGE",
+                "message": f"More than {MAX_FORM_URLS} items need repair.",
+                "next": "retry the affected videos in smaller batches from the index form.",
+            },
+        )
+    if not candidates:
+        return _error_page(
+            request,
+            "jobs",
+            {
+                "code": "E_BAD_PARAM",
+                "message": f'Job "{old_job_id}" has no failed or degraded items.',
+                "next": "successful items are deliberately not re-queued.",
+            },
+            back={"href": f"{ROOT}/jobs/{old_job_id}", "label": "Back to this job"},
+        )
+
+    try:
+        args = json.loads(str(job["args_json"] or "{}"))
+    except (TypeError, ValueError):
+        args = {}
+    # `create_job` always dumps a dict, but this row is data, not an
+    # invariant: `"null"` and `"[]"` decode fine and would 500 on `.get`.
+    if not isinstance(args, dict):
+        args = {}
+    max_items = clamp(args.get("max_items"), 1, MAX_FORM_URLS, 25)
+    batch_size = max(1, min(URLS_PER_JOB, max_items))
+    urls = [str(row["source_url"]) for row in candidates]
+    batches = [urls[i : i + batch_size] for i in range(0, len(urls), batch_size)]
+    tags = args.get("tags") or []
+    tags_csv = ",".join(str(tag) for tag in tags) if isinstance(tags, list) else str(tags)
+    channels = str(args.get("channels") or "all")
+    priority = "high" if int(job["priority"]) <= 50 else "normal"
+
+    jobs: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+    for batch in batches:
+        result = await indexing.index_video(
+            assembled.deps,
+            urls=batch,
+            expand=str(args.get("expand") or "none"),
+            max_items=max_items,
+            tags=tags_csv or None,
+            channels=channels,
+            priority=priority,
+        )
+        error = _tool_error(result)
+        if error is not None:
+            errors.append(error)
+            continue
+        payload = result.structured_content or {}
+        if payload.get("job_id"):
+            jobs.append(
+                {"job_id": str(payload["job_id"]), "items": int(payload.get("items", 0))}
+            )
+
+    # `index_submit`'s rule, for the same reason: one job and nothing to
+    # explain goes straight to the thing that is now happening, and the POST
+    # is never left as the page a reload would repeat — a reloaded retry is
+    # a duplicate repair job, the one write on this surface where that is
+    # not merely noise.
+    if len(jobs) == 1 and not errors:
+        return _see(f"{ROOT}/jobs/{jobs[0]['job_id']}")
+    return _render(
+        "retry.html",
+        {
+            **_chrome(request, "jobs"),
+            "title": f"Retry from {old_job_id}",
+            "old_job_id": old_job_id,
+            "selected": len(candidates),
+            "jobs": jobs,
+            "errors": errors,
+            "preserved": {
+                "channels": channels,
+                "tags": tags_csv or "—",
+                "priority": priority,
+            },
+        },
+        status=200 if jobs else 409,
+    )
 
 
 async def reindex(request: Request) -> Response:

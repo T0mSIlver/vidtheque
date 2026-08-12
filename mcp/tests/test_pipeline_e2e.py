@@ -410,6 +410,58 @@ async def test_cancellation_is_honoured_between_stages(settings: Settings, clip:
         assert stages["fetch"]["state"] == "done"
         assert stages["stt"]["state"] == "done"
         assert "keyframe" not in stages
+        # A first index that never finished has nothing to search yet.
+        video = await parts.one("SELECT index_state, indexed_at FROM videos")
+        assert video["index_state"] == "pending"
+        assert video["indexed_at"] is None
+    finally:
+        await parts.db.close()
+        parts.parts.auth.close()
+
+
+async def test_cancelling_a_reindex_settles_the_video_stale_not_pending(
+    settings: Settings, clip: Path
+) -> None:
+    """A cancelled *reindex* keeps the video searchable as `stale`.
+
+    `pending` is excluded from `QUERYABLE_INDEX_STATES`, so settling it
+    unconditionally un-published an already-indexed video whose repair was
+    cancelled — every byte of its index still on disk, invisible to search,
+    with nothing on any page explaining why. Same rule as
+    `jobs/store._reset_video`.
+    """
+    parts_holder: list[Harness] = []
+    transcribes = {"n": 0}
+
+    async def cancel_the_second_pass() -> None:
+        transcribes["n"] += 1
+        if transcribes["n"] < 2:
+            return
+        harness_ = parts_holder[0]
+        job_id = harness_.job_id  # type: ignore[attr-defined]
+        await harness_.db.write(lambda c: jobs_store.request_cancel(c, job_id))
+
+    worker = FakeWorker(on_transcribe=cancel_the_second_pass)
+    parts = await harness(settings, clip, worker=worker)
+    parts_holder.append(parts)
+    try:
+        parts.job_id = await parts.index(url=VIDEO_URL)  # type: ignore[attr-defined]
+        assert await parts.run() is True
+        video = await parts.one("SELECT index_state, indexed_at FROM videos")
+        assert video["index_state"] == "ready"
+        assert video["indexed_at"] is not None
+
+        parts.job_id = await parts.index(  # type: ignore[attr-defined]
+            url=VIDEO_URL, force_reindex=True
+        )
+        assert await parts.run() is True
+        job = await parts.one(
+            "SELECT state FROM jobs WHERE public_id = ?", (parts.job_id,)
+        )
+        assert job["state"] == "cancelled"
+        video = await parts.one("SELECT index_state, indexed_at FROM videos")
+        assert video["index_state"] == "stale"
+        assert video["indexed_at"] is not None
     finally:
         await parts.db.close()
         parts.parts.auth.close()

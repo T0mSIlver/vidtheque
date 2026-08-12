@@ -232,7 +232,7 @@ class IndexingPipeline:
             await self._settle_video(run, "failed")
             raise
         except ItemCancelled:
-            await self._settle_video(run, "pending")
+            await self._settle_video(run, "interrupted")
             raise
 
     async def _stages(self, run: ItemRun) -> None:
@@ -263,6 +263,11 @@ class IndexingPipeline:
             await self._skip(run, "ocr", "channels did not ask for on-screen text")
             await self._skip(run, "frame_embed", "channels did not ask for frames")
 
+        # Frame embedding is a stage too. Without this final boundary, a
+        # cancellation arriving during it was acknowledged by the job row but
+        # the item went on to finalize as done — exactly the queued lie the
+        # dashboard action must never expose.
+        await self._checkpoint(run)
         await self._finalize(run)
 
     # ------------------------------------------------------------- expansion
@@ -1221,6 +1226,22 @@ class IndexingPipeline:
         video_id = run.video_id
         if state == "failed":
             await self.db.write(lambda c: store.mark_failed(c, video_id))
+            return
+        if state == "interrupted":
+            # The cancel path's twin of `jobs/store._reset_video`, for the same
+            # reason: `stale` is the schema's word for "indexed, just not with
+            # the current pipeline", and it stays searchable. Writing `pending`
+            # here unconditionally un-published an already-indexed video whose
+            # *reindex* was cancelled — every byte of its index still on disk,
+            # excluded from QUERYABLE_INDEX_STATES with nothing explaining why.
+            await self.db.write(
+                lambda c: c.execute(
+                    "UPDATE videos SET index_state = "
+                    "CASE WHEN indexed_at IS NULL THEN 'pending' ELSE 'stale' END, "
+                    "updated_at = unixepoch() WHERE id = ?",
+                    (video_id,),
+                )
+            )
             return
         await self.db.write(
             lambda c: c.execute(

@@ -1,13 +1,17 @@
 """The management dashboard — `docs/design/dashboard.md`, phases 1 and 2.
 
-Five read-only pages, `/dashboard/api/*` under owner clamps, and the auth gate
-in front of both. Nothing here reaches the network or loads a model: the pages
-are rendered against the seeded fixture corpus through the same ASGI app the
-server runs.
+Six read-only pages, `/dashboard/api/*` under caller-keyed clamps, and the auth
+gate in front of both. Worker readiness reaches only the injected HTTP status
+stub; nothing here loads a model. The pages render against the seeded fixture
+corpus through the same ASGI app the server runs.
 
 Phase 2's half is the jobs view — the `not_before` countdown, the retry
 counter, the degraded list and the event tail — plus its demo projection, which
 keeps every clock and drops exactly two fields.
+
+The shipped half of phase 5 is the search document, entering through the same
+handler as the JSON facade; the overview's readiness observation is the other
+current-state read covered here.
 
 The two things this file is most interested in are the ones a screenshot cannot
 check: that a corpus string never becomes markup, and that every list is
@@ -18,8 +22,12 @@ from __future__ import annotations
 
 import json
 import re
+from html import unescape
 from pathlib import Path
+from typing import Callable
+from urllib.parse import parse_qs, urlsplit
 
+import httpx2 as httpx
 import pytest
 from starlette.testclient import TestClient
 
@@ -27,7 +35,7 @@ from vidtheque_mcp.app import build_app
 from vidtheque_mcp.config import Settings
 from vidtheque_mcp.dashboard import ROOT, WRITE_ROUTES
 from vidtheque_mcp.dashboard.settings import DashboardSettings
-from vidtheque_mcp.dashboard.views import EVENT_PREVIEW
+from vidtheque_mcp.dashboard.views import EVENT_PREVIEW, WORKER_STATUS_TIMEOUT_S
 from vidtheque_mcp.db.connection import open_write_connection
 from vidtheque_mcp.public.api import OWNER_CLAMPS, PUBLIC_CLAMPS
 from vidtheque_mcp.public.settings import PublicSettings
@@ -192,7 +200,7 @@ def _seed_jobs(conn) -> None:  # type: ignore[no-untyped-def]
 
 
 def _settings(tmp_path: Path, **kwargs) -> Settings:
-    return Settings(
+    values = dict(
         data_dir=_corpus(tmp_path),
         public_url="http://localhost:8080",
         worker_url="http://worker:8081",
@@ -202,8 +210,13 @@ def _settings(tmp_path: Path, **kwargs) -> Settings:
         # stand-in vectors have no geometry to calibrate against.
         vec_max_distance=0.72,
         frame_max_distance=0.96,
-        **kwargs,
     )
+    values.update(kwargs)
+    return Settings(**values)  # type: ignore[arg-type]
+
+
+def _worker_down(request: httpx.Request) -> httpx.Response:
+    raise httpx.ConnectError("worker unavailable", request=request)
 
 
 def make_client(
@@ -213,14 +226,22 @@ def make_client(
     token: str | None = None,
     public: PublicSettings | None = None,
     dashboard: DashboardSettings | None = None,
+    worker_handler: Callable[[httpx.Request], httpx.Response] | None = None,
+    worker_url: str = "http://worker:8081",
 ) -> TestClient:
-    settings = _settings(tmp_path, auth_mode=auth_mode, static_token=token)  # type: ignore[arg-type]
+    settings = _settings(
+        tmp_path, auth_mode=auth_mode, static_token=token, worker_url=worker_url
+    )  # type: ignore[arg-type]
+    worker_http = httpx.AsyncClient(
+        transport=httpx.MockTransport(worker_handler or _worker_down)
+    )
     app = build_app(
         settings,
         embeddings=FakeEmbeddings(),
         run_pipeline=False,
         public=public or PublicSettings(enabled=False),
         dashboard=dashboard or DashboardSettings(),
+        worker_status_http=worker_http,
     )
     return TestClient(app, base_url="http://localhost:8080")
 
@@ -489,6 +510,128 @@ def test_the_overview_shows_the_drift_banner_when_vectors_are_off(
     finally:
         assembled.db.vectors.enabled = True
         assembled.db.vectors.reason = None
+
+
+def test_pipeline_readiness_reads_worker_status_over_bounded_http(
+    tmp_path: Path,
+) -> None:
+    requests: list[httpx.Request] = []
+
+    def worker(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "backends": [
+                    {
+                        "task": "embed",
+                        "model": "served/text-model",
+                        "loaded": True,
+                    },
+                    {
+                        "task": "image_embed",
+                        "model": "served/frame-model",
+                        "loaded": False,
+                    },
+                    {"task": "ocr", "model": "served/ocr-model", "loaded": True},
+                ],
+                # Operator-only fields returned by /status but not needed here.
+                "vram": {"used_mb": 9999},
+                "queue": {"depth": 4},
+            },
+        )
+
+    with owner_client(tmp_path, worker_handler=worker) as client:
+        body = client.get(ROOT, headers=BEARER).text
+
+    assert [request.url.path for request in requests] == ["/status"]
+    assert WORKER_STATUS_TIMEOUT_S <= 1.0
+    assert 'data-readiness' in body
+    assert ">MCP<" in body and ">Database<" in body
+    assert "Reachable over HTTP" in body
+    assert "served/text-model" in body and "served/frame-model" in body
+    assert ">loaded<" in body and ">cold<" in body
+    assert re.search(r"last health check\s*<time[^>]+>\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", body)
+    assert "9999" not in body and ">vram<" not in body.lower()
+
+
+def test_pipeline_readiness_degrades_without_delaying_or_breaking_the_page(
+    tmp_path: Path,
+) -> None:
+    def timed_out(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("late", request=request)
+
+    with owner_client(tmp_path, worker_handler=timed_out) as client:
+        body = client.get(ROOT, headers=BEARER).text
+        assert client.get(f"{ROOT}/videos", headers=BEARER).status_code == 200
+    assert ">unavailable<" in body
+    assert "did not answer its status check" in body
+
+    with owner_client(tmp_path, worker_url="") as client:
+        body = client.get(ROOT, headers=BEARER).text
+    assert ">unconfigured<" in body
+    assert "No worker URL is configured" in body
+
+
+def test_readonly_readiness_omits_operator_infrastructure(tmp_path: Path) -> None:
+    called = False
+
+    def worker(_: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(
+            200,
+            json={"backends": [{"task": "embed", "model": "private/model-id"}]},
+        )
+
+    with owner_client(tmp_path, readonly=True, worker_handler=worker) as client:
+        assembled = client.app.state.assembled
+        assembled.db.vectors.disable("private drift reason")
+        body = client.get(ROOT, headers=BEARER).text
+
+    assert not called  # the projection does not make an operator-only probe
+    assert ">MCP<" in body and ">Database<" in body
+    assert "full-text only" in body
+    assert "Worker" not in body
+    assert "private/model-id" not in body and "private drift reason" not in body
+
+
+def test_search_is_in_the_rail_and_uses_the_shared_result_contract(
+    tmp_path: Path,
+) -> None:
+    with owner_client(tmp_path) as client:
+        for path in (ROOT, f"{ROOT}/videos", f"{ROOT}/jobs"):
+            body = client.get(path, headers=BEARER).text
+            assert 'class="rail-search"' in body
+            assert f'action="{ROOT}/search"' in body
+
+        body = client.get(
+            f"{ROOT}/search?q=cache&limit=999", headers=BEARER
+        ).text
+        assert 'data-search-results' in body and 'data-limit="50"' in body
+        # Structured leg names and corpus channel names are not translated by
+        # the page. Exact-second receipts are the tool's own deeplinks.
+        assert "transcript_fts" in body and "frame_knn" in body
+        assert "Andrej Karpathy" in body and "GPU MODE" in body
+        assert re.search(r'href="https://youtu\.be/[\w-]+\?t=\d+"', body)
+        assert re.search(r"youtu\.be/[\w-]+\?t=\d+ ↗", body)
+
+        notes = client.get(
+            f"{ROOT}/search?q=words-that-do-not-exist-anywhere", headers=BEARER
+        ).text
+        assert "note: no word of this query occurs anywhere in the corpus" in notes
+
+    # In an open dashboard the same credential-keyed policy as the JSON facade
+    # applies; the page does not turn its route prefix into owner authority.
+    with make_client(tmp_path) as client:
+        body = page(client, f"{ROOT}/search?q=cache&limit=999")
+        assert 'data-limit="20"' in body
+
+
+def test_search_page_escapes_corpus_and_query_text(client: TestClient) -> None:
+    body = page(client, f"{ROOT}/search?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E")
+    assert "<script>alert(1)</script>" not in body
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in body
 
 
 def test_the_videos_table_shows_every_state_and_no_per_row_counts(
@@ -784,6 +927,49 @@ def test_the_jobs_table_is_clamped_and_pages_with_has_more(client: TestClient) -
     assert "job_running001" in active and "job_finished01" not in active
 
 
+def test_job_triage_filters_order_and_polling_share_one_query(client: TestClient) -> None:
+    assert "job_deferred01" in page(client, f"{ROOT}/jobs?error_code=E_RATE_LIMIT")
+    assert "job_running001" not in page(
+        client, f"{ROOT}/jobs?error_code=E_RATE_LIMIT"
+    )
+    degraded = page(client, f"{ROOT}/jobs?degraded=1")
+    assert "job_finished01" in degraded
+    assert "job_running001" not in degraded and "job_deferred01" not in degraded
+
+    priority = page(client, f"{ROOT}/jobs?order=priority")
+    assert priority.index("job_running001") < priority.index("job_deferred01")
+    wall = page(client, f"{ROOT}/jobs?order=wall_clock")
+    assert wall.index("job_finished01") < wall.index("job_running001")
+
+    filtered = page(
+        client,
+        f"{ROOT}/jobs?state=all&kind=index&error_code=E_RATE_LIMIT"
+        "&degraded=0&order=priority&limit=1",
+    )
+    poll = re.search(r'data-poll="([^"]+)"', filtered).group(1)
+    assert "kind=index" in poll and "error_code=E_RATE_LIMIT" in poll
+    assert "degraded=0" in poll and "order=priority" in poll
+    older = re.findall(r'href="([^"]+)">Older', filtered)
+    if older:
+        assert all(part in older[0] for part in (
+            "kind=index", "error_code=E_RATE_LIMIT", "degraded=0", "order=priority"
+        ))
+    payload = client.get(poll.replace("&amp;", "&")).json()
+    assert [job["job_id"] for job in payload["jobs"]] == ["job_deferred01"]
+
+
+def test_job_kind_filter_is_server_side(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        conn = open_write_connection(client.app.state.assembled.db.path)
+        try:
+            conn.execute("UPDATE jobs SET kind='reindex' WHERE public_id='job_finished01'")
+        finally:
+            conn.close()
+        body = page(client, f"{ROOT}/jobs?kind=reindex")
+        assert "job_finished01" in body
+        assert "job_running001" not in body and "job_deferred01" not in body
+
+
 def test_the_job_page_says_what_the_video_cost(client: TestClient) -> None:
     """§10.4: the clocks are the point, and the two of them mean different things."""
     body = page(client, f"{ROOT}/jobs/job_finished01")
@@ -808,6 +994,59 @@ def test_the_job_page_carries_attempts_the_degraded_list_and_the_tail(
     assert "Finished with something missing" in body
     assert "<code>ocr</code> failed" in body
     assert "worker returned 503 for 41 frames" in body
+
+
+def test_video_detail_has_one_bounded_recent_indexing_history_query(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        db = client.app.state.assembled.db.path
+        conn = open_write_connection(db)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            video = int(
+                conn.execute(
+                    "SELECT id FROM videos WHERE public_id='kCc8FmEb1nY'"
+                ).fetchone()[0]
+            )
+            for n in range(12):
+                cursor = conn.execute(
+                    "INSERT INTO jobs (owner_id, public_id, kind, args_json, n_items, "
+                    "state, created_at, started_at, finished_at) VALUES "
+                    "(1, ?, 'reindex', '{}', 1, 'done', unixepoch() + ?, "
+                    "unixepoch() + ?, unixepoch() + ?)",
+                    (f"job_history{n:02d}", n, n, n + 1),
+                )
+                conn.execute(
+                    "INSERT INTO job_items (job_id, seq, source_url, video_id, state, "
+                    "finished_at) VALUES (?, 0, 'https://youtu.be/kCc8FmEb1nY', ?, "
+                    "'done', unixepoch() + ?)",
+                    (int(cursor.lastrowid), video, n + 1),
+                )
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+
+        body = page(client, f"{ROOT}/videos/kCc8FmEb1nY")
+        panel = body[body.index('id="index-history"') :]
+        assert "job_history11" in panel and "job_history02" in panel
+        assert "job_history01" not in panel
+        assert panel.count("<code>job_history") == 10
+        assert "Latest 10 at most; no total is computed" in panel
+
+        # The videos table is unchanged: history is a detail-only query, never
+        # a per-row addition to the listing.
+        assert _count_reads(client, f"{ROOT}/videos?limit=1") == _count_reads(
+            client, f"{ROOT}/videos?limit=100"
+        )
+
+
+def test_video_history_shows_error_and_degraded_stage(client: TestClient) -> None:
+    body = page(client, f"{ROOT}/videos/eMlx5fFNoYc")
+    panel = body[body.index('id="index-history"') :]
+    assert "job_finished01" in panel
+    assert "failed" in panel and "index" in panel
+    assert "<code>ocr</code>" in panel
 
 
 def test_the_deferred_job_explains_itself(client: TestClient) -> None:
@@ -1478,11 +1717,24 @@ SAME_ORIGIN = {"Origin": "http://localhost:8080"}
 
 
 def owner_client(
-    tmp_path: Path, *, readonly: bool = False, password: str | None = PASSWORD, **kwargs
+    tmp_path: Path,
+    *,
+    readonly: bool = False,
+    password: str | None = PASSWORD,
+    worker_handler: Callable[[httpx.Request], httpx.Response] | None = None,
+    worker_url: str = "http://worker:8081",
+    **kwargs,
 ) -> TestClient:
     """`token` mode with a password — the deployment phase 3 is written for."""
     settings = _settings(
-        tmp_path, auth_mode="token", static_token=TOKEN, password=password
+        tmp_path,
+        auth_mode="token",
+        static_token=TOKEN,
+        password=password,
+        worker_url=worker_url,
+    )
+    worker_http = httpx.AsyncClient(
+        transport=httpx.MockTransport(worker_handler or _worker_down)
     )
     app = build_app(
         settings,
@@ -1490,6 +1742,7 @@ def owner_client(
         run_pipeline=False,
         public=PublicSettings(enabled=readonly),
         dashboard=kwargs.pop("dashboard", None) or DashboardSettings(),
+        worker_status_http=worker_http,
         **kwargs,
     )
     return TestClient(app, base_url="http://localhost:8080", **kwargs.pop("client", {}))
@@ -1507,6 +1760,8 @@ def sign_in(client: TestClient, secret: str = PASSWORD) -> None:
 
 WRITE_POSTS = (
     f"{ROOT}/index",
+    f"{ROOT}/jobs/job_running001/cancel",
+    f"{ROOT}/jobs/job_finished01/retry",
     f"{ROOT}/logout",
     f"{ROOT}/videos/kCc8FmEb1nY/reindex",
     f"{ROOT}/videos/kCc8FmEb1nY/tags",
@@ -1577,7 +1832,7 @@ def test_the_write_side_is_absent_in_readonly_mode_not_merely_refused(
         # No affordance survives the projection either (§2.4's table).
         table = demo.get(f"{ROOT}/videos", headers=BEARER).text
         assert "Re-index" not in table
-        assert "Add to the index" not in table
+        assert "Add videos" not in table
 
 
 def test_the_write_routes_are_declared_and_post_only(tmp_path: Path) -> None:
@@ -1605,6 +1860,8 @@ def test_no_write_is_reachable_by_a_get(tmp_path: Path) -> None:
         sign_in(client)
         for path in (
             f"{ROOT}/logout",
+            f"{ROOT}/jobs/job_running001/cancel",
+            f"{ROOT}/jobs/job_finished01/retry",
             f"{ROOT}/videos/kCc8FmEb1nY/reindex",
             f"{ROOT}/videos/kCc8FmEb1nY/tags",
         ):
@@ -1614,6 +1871,153 @@ def test_no_write_is_reachable_by_a_get(tmp_path: Path) -> None:
             assert client.get(path).status_code in (404, 405), path
         # `/index` has a GET and it is the form, which reads and never writes.
         assert client.get(f"{ROOT}/index").status_code == 200
+
+
+def test_cancel_is_guarded_and_honest_for_running_and_deferred_jobs(
+    tmp_path: Path,
+) -> None:
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        running = client.post(
+            f"{ROOT}/jobs/job_running001/cancel",
+            headers=SAME_ORIGIN,
+            follow_redirects=False,
+        )
+        assert running.status_code == 303
+        assert running.headers["location"] == f"{ROOT}/jobs/job_running001"
+        running_page = page(client, f"{ROOT}/jobs/job_running001")
+        assert "cancel requested" in running_page
+        assert 'data-field="job-state">running<' in running_page
+
+        deferred = client.post(
+            f"{ROOT}/jobs/job_deferred01/cancel",
+            headers=SAME_ORIGIN,
+            follow_redirects=False,
+        )
+        assert deferred.status_code == 303
+        deferred_page = page(client, f"{ROOT}/jobs/job_deferred01")
+        assert 'data-field="job-state">cancelled<' in deferred_page
+        assert 'data-field="job-defer" data-defer="0"' in deferred_page
+        assert 'id="deferred"' not in deferred_page
+        assert "cancel requested" not in deferred_page
+
+        finished = client.post(
+            f"{ROOT}/jobs/job_finished01/cancel", headers=SAME_ORIGIN
+        )
+        assert finished.status_code == 400
+        assert "already failed" in finished.text
+
+
+def test_cancel_actions_exist_only_for_live_jobs_on_the_write_side(
+    tmp_path: Path,
+) -> None:
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        table = page(client, f"{ROOT}/jobs")
+        assert f'{ROOT}/jobs/job_running001/cancel' in table
+        assert f'{ROOT}/jobs/job_deferred01/cancel' in table
+        assert f'{ROOT}/jobs/job_finished01/cancel' not in table
+        assert "Cancel this job" in page(client, f"{ROOT}/jobs/job_running001")
+        assert "Cancel this job" not in page(client, f"{ROOT}/jobs/job_finished01")
+
+    with owner_client(tmp_path, readonly=True) as demo:
+        table = demo.get(f"{ROOT}/jobs", headers=BEARER).text
+        assert "/cancel" not in table and ">Cancel<" not in table
+
+
+def test_retry_queues_only_failed_and_degraded_items_with_original_policy(
+    tmp_path: Path,
+) -> None:
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        db = client.app.state.assembled.db.path
+        conn = open_write_connection(db)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            job = int(
+                conn.execute(
+                    "SELECT id FROM jobs WHERE public_id='job_finished01'"
+                ).fetchone()[0]
+            )
+            degraded_url = str(
+                conn.execute(
+                    "SELECT source_url FROM job_items WHERE job_id=? AND seq=0", (job,)
+                ).fetchone()[0]
+            )
+            successful = conn.execute(
+                "SELECT id, url FROM videos WHERE public_id='kCc8FmEb1nY'"
+            ).fetchone()
+            conn.execute(
+                "UPDATE jobs SET n_items=3, priority=50, args_json=? WHERE id=?",
+                (
+                    json.dumps(
+                        {
+                            "expand": "none",
+                            "max_items": 25,
+                            "tags": ["topic:repair", "series:jobs"],
+                            "channels": "transcript,ocr",
+                        }
+                    ),
+                    job,
+                ),
+            )
+            conn.execute(
+                "INSERT INTO job_items (job_id, seq, source_url, video_id, state, "
+                "attempts, finished_at) VALUES (?, 2, ?, ?, 'done', 1, unixepoch())",
+                (job, successful["url"], successful["id"]),
+            )
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+
+        # One new job and nothing to explain follows `index_submit`'s rule:
+        # a 303 to the job now running, never a POST body a reload repeats —
+        # a reloaded retry receipt would queue the repair twice.
+        receipt = client.post(
+            f"{ROOT}/jobs/job_finished01/retry",
+            headers=SAME_ORIGIN,
+            follow_redirects=False,
+        )
+        assert receipt.status_code == 303
+        location = receipt.headers["location"]
+        assert location.startswith(f"{ROOT}/jobs/job_")
+        new_id = location.rsplit("/", 1)[1]
+        assert new_id != "job_finished01"
+        detail = page(client, location)
+        assert "built-in method" not in detail
+
+        conn = open_write_connection(db)
+        try:
+            new = conn.execute(
+                "SELECT id, args_json, priority, n_items FROM jobs WHERE public_id=?",
+                (new_id,),
+            ).fetchone()
+            items = conn.execute(
+                "SELECT source_url FROM job_items WHERE job_id=? ORDER BY seq",
+                (new["id"],),
+            ).fetchall()
+        finally:
+            conn.close()
+        assert new["priority"] == 50 and new["n_items"] == 2
+        assert json.loads(new["args_json"])["channels"] == "transcript,ocr"
+        assert json.loads(new["args_json"])["tags"] == ["topic:repair", "series:jobs"]
+        assert {row["source_url"] for row in items} == {
+            "https://youtu.be/failedvideo",
+            degraded_url,
+        }
+        assert successful["url"] not in {row["source_url"] for row in items}
+
+
+def test_retry_is_absent_without_a_repair_subset_and_from_readonly(
+    tmp_path: Path,
+) -> None:
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        assert "/retry" in page(client, f"{ROOT}/jobs/job_finished01")
+        assert "/retry" not in page(client, f"{ROOT}/jobs/job_running001")
+    with owner_client(tmp_path, readonly=True) as demo:
+        body = demo.get(f"{ROOT}/jobs/job_finished01", headers=BEARER).text
+        assert "/retry" not in body and "Retry" not in body
 
 
 # --- 8.2 the auth matrix
@@ -2036,6 +2440,94 @@ def test_the_index_form_refuses_honestly_when_indexing_is_disabled(
             client.app.state.assembled.db.writes_allowed = True
 
 
+def test_get_index_prefills_a_bounded_draft_without_queueing(tmp_path: Path) -> None:
+    """The deep-link contract is render-only: POST is still the write."""
+    from vidtheque_mcp.dashboard.writes import (
+        MAX_PREFILL_TAGS_CHARS,
+        MAX_PREFILL_URLS_CHARS,
+    )
+
+    source = "https://www.youtube.com/watch?v=kCc8FmEb1nY&list=PL_test"
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        before = [j["job_id"] for j in client.get(f"{ROOT}/api/jobs").json()["jobs"]]
+        response = client.get(
+            f"{ROOT}/index",
+            params={"urls": source, "expand": "channel_recent", "tags": "topic:attention"},
+        )
+        assert response.status_code == 200
+
+        urls = re.search(r'<textarea id="urls"[^>]*>(.*?)</textarea>', response.text, re.S)
+        tags = re.search(r'<input id="tags"[^>]*value="([^"]*)"', response.text, re.S)
+        assert urls and unescape(urls.group(1)) == source
+        assert tags and unescape(tags.group(1)) == "topic:attention"
+        assert '<option value="channel_recent" selected>' in response.text
+        assert [j["job_id"] for j in client.get(f"{ROOT}/api/jobs").json()["jobs"]] == before
+
+        # Unrecognised enum values fall back to the full form's default, and
+        # free text cannot make an unbounded response body.
+        bounded = client.get(
+            f"{ROOT}/index",
+            params={
+                "urls": "u" * (MAX_PREFILL_URLS_CHARS + 200),
+                "expand": "everything",
+                "tags": "t" * (MAX_PREFILL_TAGS_CHARS + 200),
+            },
+        ).text
+        bounded_urls = re.search(r'<textarea id="urls"[^>]*>(.*?)</textarea>', bounded, re.S)
+        bounded_tags = re.search(r'<input id="tags"[^>]*value="([^"]*)"', bounded, re.S)
+        assert bounded_urls and len(unescape(bounded_urls.group(1))) == MAX_PREFILL_URLS_CHARS
+        assert bounded_tags and len(unescape(bounded_tags.group(1))) == MAX_PREFILL_TAGS_CHARS
+        assert '<option value="playlist" selected>' in bounded
+
+        hostile = client.get(
+            f"{ROOT}/index", params={"urls": HOSTILE, "tags": HOSTILE}
+        ).text
+        assert "<script>alert" not in hostile and "<img src=x" not in hostile
+        assert "&lt;script&gt;alert" in hostile
+
+
+def test_the_overview_quick_add_posts_conservative_defaults(tmp_path: Path) -> None:
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        overview = page(client, ROOT)
+        assert f'<form class="filters" data-quick-add method="post" action="{ROOT}/index">' in overview
+        for name, value in (
+            ("expand", "none"),
+            ("max_items", "25"),
+            ("priority", "normal"),
+        ):
+            assert f'<input type="hidden" name="{name}" value="{value}">' in overview
+
+        queued = client.post(
+            f"{ROOT}/index",
+            data={
+                "urls": "quickadd001",
+                "expand": "none",
+                "max_items": "25",
+                "priority": "normal",
+            },
+            headers=SAME_ORIGIN,
+            follow_redirects=False,
+        )
+        assert queued.status_code == 303
+        assert queued.headers["location"].startswith(f"{ROOT}/jobs/job_")
+
+
+def test_video_detail_deep_links_to_the_channel_prefill(tmp_path: Path) -> None:
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        detail = page(client, f"{ROOT}/videos/kCc8FmEb1nY")
+        match = re.search(r'data-queue-channel href="([^"]+)"', detail)
+        assert match
+        target = urlsplit(unescape(match.group(1)))
+        assert target.path == f"{ROOT}/index"
+        assert parse_qs(target.query) == {
+            "urls": ["https://youtu.be/kCc8FmEb1nY"],
+            "expand": ["channel_recent"],
+        }
+
+
 def test_nothing_on_the_write_side_offers_a_delete(tmp_path: Path) -> None:
     """§5.2: `jobs.kind='delete'` has no pipeline, so it gets no button."""
     with owner_client(tmp_path) as client:
@@ -2188,20 +2680,56 @@ def test_the_write_affordances_appear_only_with_the_write_side(
 ) -> None:
     """The controls and the routes are the same decision, made once (§2.4)."""
     with owner_client(tmp_path) as client:
+        # The shared chrome includes the route even before a session exists.
+        assert f'data-add-videos href="{ROOT}/index"' in page(client, f"{ROOT}/login")
         sign_in(client)
-        assert "Add to the index" in page(client, ROOT)
+        for path, status in (
+            (ROOT, 200),
+            (f"{ROOT}/videos", 200),
+            (f"{ROOT}/videos/kCc8FmEb1nY", 200),
+            (f"{ROOT}/jobs", 200),
+            (f"{ROOT}/jobs/job_deferred01", 200),
+            (f"{ROOT}/index", 200),
+            (f"{ROOT}/videos/not-here", 404),
+        ):
+            assert f'data-add-videos href="{ROOT}/index"' in page(client, path, status)
+        assert "Add videos" in page(client, ROOT)
+        assert "data-quick-add" in page(client, ROOT)
+        assert "data-queue-channel" in page(client, f"{ROOT}/videos/kCc8FmEb1nY")
         assert "Re-index" in page(client, f"{ROOT}/videos")
         assert 'id="manage"' in page(client, f"{ROOT}/videos/kCc8FmEb1nY")
         assert "Sign out" in page(client, ROOT)
 
+        # The filtered empty state is still an empty jobs page, and it points
+        # straight at the same index form.
+        assert f'data-empty-add href="{ROOT}/index"' in page(
+            client, f"{ROOT}/jobs?state=done"
+        )
+
     with make_client(tmp_path) as none_mode:  # auth=none
         overview = page(none_mode, ROOT)
-        assert "Add to the index" not in overview
+        assert "Add videos" not in overview
+        assert "data-quick-add" not in overview
         assert "Sign out" not in overview
         # …and it says why, with the one-line fix (§3.2 rule 3).
         assert "VIDTHEQUE_AUTH=token" in overview
         assert "Re-index" not in page(none_mode, f"{ROOT}/videos")
         assert 'id="manage"' not in page(none_mode, f"{ROOT}/videos/kCc8FmEb1nY")
+        assert "data-queue-channel" not in page(
+            none_mode, f"{ROOT}/videos/kCc8FmEb1nY"
+        )
+        assert "data-empty-add" not in page(none_mode, f"{ROOT}/jobs?state=done")
+
+    with owner_client(tmp_path, readonly=True) as demo:
+        overview = demo.get(ROOT, headers=BEARER).text
+        assert "data-add-videos" not in overview
+        assert "data-quick-add" not in overview
+        assert "data-queue-channel" not in demo.get(
+            f"{ROOT}/videos/kCc8FmEb1nY", headers=BEARER
+        ).text
+        assert "data-empty-add" not in demo.get(
+            f"{ROOT}/jobs?state=done", headers=BEARER
+        ).text
 
 
 # ------------------------------------------- 9. the projection (phase 4)
@@ -2232,6 +2760,7 @@ OPERATOR_STRINGS = (
 
 READ_PAGES = (
     ROOT,
+    f"{ROOT}/search",
     f"{ROOT}/videos",
     f"{ROOT}/videos/kCc8FmEb1nY",
     f"{ROOT}/jobs",
@@ -2266,7 +2795,7 @@ def test_the_demo_serves_every_read_page_and_none_of_the_write_ones(
         assert not (registered & set(WRITE_ROUTES))
         assert demo.get(f"{ROOT}/index").status_code == 404
         assert demo.get(f"{ROOT}/login").status_code == 404
-        assert "Add to the index" not in table and "Re-index" not in table
+        assert "Add videos" not in table and "Re-index" not in table
 
 
 def test_the_overview_projection_keeps_the_corpus_and_drops_the_box(

@@ -90,6 +90,18 @@
       <li><a href="{{ root }}/videos"{% if page == 'videos' %} aria-current="page"{% endif %}>Videos</a></li>
       <li><a href="{{ root }}/jobs"{% if page == 'jobs' %} aria-current="page"{% endif %}>Jobs</a></li>
     </ul>
+    {# Search is a dashboard document, not a JSON surface for agents. The
+       compact rail entry is on every page; submitting it navigates to the
+       dedicated result page, where the query layer's own legs and notes are
+       visible. Agents keep the wider, structured `/mcp` tool. #}
+    <form class="rail-search" role="search" method="get" action="{{ root }}/search">
+      <label for="rail-search">Search</label>
+      <span class="rail-search-control">
+        <input id="rail-search" type="search" name="q" value="{{ rail_query }}"
+               maxlength="512" required autocomplete="off" placeholder="moments in the corpus">
+        <button type="submit" aria-label="Search the corpus">Go</button>
+      </span>
+    </form>
     {# The write side, as the second group the phase-1 chassis left room for.
        It appears exactly when the routes behind it are registered — in the
        demo projection and in `AUTH=none` there is no group here at all, rather
@@ -98,7 +110,7 @@
     {% if write_side %}
     <p class="nav-group">Manage</p>
     <ul class="navlist">
-      <li><a href="{{ root }}/index"{% if page == 'index' %} aria-current="page"{% endif %}>Add to the index</a></li>
+      <li><a data-add-videos href="{{ root }}/index"{% if page == 'index' %} aria-current="page"{% endif %}>Add videos</a></li>
     </ul>
     {% endif %}
     {# The demo's way back. In read-only mode this surface is one half of a

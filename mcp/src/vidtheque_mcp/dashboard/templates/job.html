@@ -27,7 +27,7 @@
          The code was only in the notice further down, so on a deferred job the
          header said how long the wait had left and never said what set it. #}
       {% if job.error_code %}<span class="pill pill-small tone-bad">{{ job.error_code }}</span>{% endif %}
-      {% if job.cancel_requested %}<span class="pill pill-small tone-warn">cancel requested</span>{% endif %}
+      {% if job.cancel_requested and job.live %}<span class="pill pill-small tone-warn">cancel requested</span>{% endif %}
       {# `not_before`, read back at last. It ticks between polls and is reset by
          each one, so a page left open says how long the wait still has to run. #}
       <span class="countdown" data-field="job-defer" data-defer="{{ job.defer_s }}"
@@ -52,6 +52,19 @@
     <span class="meter-label" data-field="job-progress">{{ job.text.progress }}</span>
     <span class="stale-note" data-field="job-stale" hidden>this job has finished, so reload for the final record</span>
   </p>
+  {% if write_side and job.live %}
+  <form class="rowform" method="post" action="{{ root }}/jobs/{{ job.job_id }}/cancel">
+    <button class="ghost" type="submit">Cancel this job</button>
+  </form>
+  {% endif %}
+  {% if write_side and not job.live and job.kind in ('index', 'reindex') and (job.n_failed or job.degraded) %}
+  {# Disabled with the write-refused database, like every control that feeds
+     `index_video` (§5.5). Cancel above stays live: it writes the job row, not
+     the index, and works exactly when an operator most needs it to. #}
+  <form class="rowform" method="post" action="{{ root }}/jobs/{{ job.job_id }}/retry">
+    <button type="submit"{{ ' disabled' if not writes_allowed }}>Retry {{ job.n_failed + job.degraded }} failed or degraded item(s)</button>
+  </form>
+  {% endif %}
 </div>
 
 {% if job.defer_s %}

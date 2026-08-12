@@ -1684,3 +1684,161 @@ page no longer needs to offer twice: the scene timeline above it is the thing
 that answers "where in this video", at one bar per shot across the whole
 runtime, and the frames grid answers "what is on this frame", which is a
 reading and not a sweep.
+
+## 13. The queue as a dashboard-wide flow (2026-08-12)
+
+The phase-3 write side already made indexing possible; this amendment makes it
+reachable from the surfaces where the next URL appears. It changes no write
+policy and adds no route.
+
+- **Every dashboard page links to `GET /dashboard/index` as `Add videos` when,
+  and only when, the write side is registered.** The link is in the shared
+  rail, so adding is at most one click away. It is absent — not disabled — in
+  `VIDTHEQUE_PUBLIC_READONLY=1` and `VIDTHEQUE_AUTH=none`, exactly like the
+  write routes behind it (§2.3, §3.2).
+- **The overview carries a quick-add form.** It POSTs to the existing
+  `/dashboard/index` handler with `expand=none`, `max_items=25`, normal
+  priority and all three channels, leaving validation, batching, the Origin
+  rule and the receipt to the phase-3 implementation. The whole form is absent
+  when the write side is absent; `db.writes_allowed=false` disables its
+  controls as §5.5 requires.
+- **`GET /dashboard/index` accepts `urls`, `expand` and `tags` as render-only
+  prefill parameters.** It performs no normalisation, tool call, database read
+  or write. `expand` must be one of the tool's three declared values or falls
+  back to the form default; rendered `urls` and `tags` are capped at 16,384 and
+  800 characters respectively so a deep link cannot create an unbounded HTML
+  response. POST remains the only operation that interprets the values.
+- **A video detail page uses that GET contract for `Queue more from this
+  channel`.** The internal link prefills the video's stored source URL and
+  `expand=channel_recent`; it does not queue anything until the operator
+  submits the index form. A jobs empty state links to the same form. Both
+  affordances follow the shared write-side predicate.
+
+## 14. Dashboard search as owner inspection (2026-08-12)
+
+This ships the search half of phase 5 as a dashboard document. It does not
+change §1 non-goal 3: an agent searches with `search` at `/mcp`; there is no new
+agent endpoint, MCP proxy or dashboard-only query shape to scrape.
+
+- A compact GET form in the shared rail opens `GET /dashboard/search`, so every
+  dashboard page has one search entry. The result page is server-rendered and
+  shareable: query, content channel, video-channel filter and pagination remain
+  in the URL, and GET changes no state.
+- The page enters through `public.api.search_payload`, the same handler behind
+  both search JSON facades, which calls `tools.search.run`. It therefore gets
+  the tool's ranking, result cap, text cap, pagination and credential-keyed
+  `PUBLIC_CLAMPS` / `OWNER_CLAMPS`; it has no SQL and no second query
+  implementation. The dashboard inspection rendering keeps the structured leg
+  names/counts and every tool `note:` line verbatim. Corpus titles, channels and
+  snippets remain autoescaped text.
+- Every linked moment is admitted only when the tool returned an HTTPS
+  `youtu.be` URL with a numeric `t=` value. The page prints that same
+  `youtu.be/<id>?t=<second>` as the receipt; it never reconstructs a timestamp
+  from display text or invents a link for a source that has none.
+- Search is a read page and remains in the read-only projection. That is not a
+  new public query policy: an anonymous projection request still receives the
+  public clamp, while a bearer, session or trusted peer receives the owner
+  clamp according to §2.4's existing matrix. The public welcome/search page is
+  unchanged in this increment; the ask half of phase 5 remains unshipped.
+
+## 15. Current pipeline readiness (2026-08-12)
+
+The overview gains one display-only readiness panel. It is a measurement made
+for the current page load — no row is written, no sample is retained, and no
+chart or history is implied (§1 non-goal 5). It has no controls and edits no
+configuration (§1 non-goal 4).
+
+- MCP and database are `ready` when the page renders: the route is executing in
+  the MCP process and the overview's bounded reads have succeeded. Vector search
+  reports the live `db.vectors.enabled` effect; the private page also prints its
+  drift reason when one exists.
+- The private page probes the worker's documented `GET /status` over HTTP. It
+  imports no worker Python. The probe runs concurrently with the overview reads,
+  has a one-second request timeout, accepts at most 64 kB and twelve backend
+  rows, and prints the task, model id actually reported by the worker, and
+  whether that backend is loaded or cold. An unset worker URL says
+  `unconfigured`; a timeout, transport failure, non-2xx response or malformed
+  status says `unavailable`. None of those failures prevents the overview from
+  rendering. `last health check` is the UTC second at which this observation
+  completed, not a stored heartbeat.
+- The §2.4 projection applies per field. It keeps **MCP ready** and **database
+  ready** because successfully reading the page already reveals both; keeps the
+  **vector-search state** because it changes what a visitor should believe about
+  results; and keeps the **check clock**, which is only the timestamp of this
+  page-local observation. It drops the **worker row**, **worker reachability**,
+  **served model ids/load state**, and the existing **drift reason**, because
+  those identify operator infrastructure and settings. The projection does not
+  issue the worker request at all rather than fetching data it must discard.
+## 16. Job repair actions (2026-08-12)
+
+### 16.1 Cancellation
+
+The private write side adds `POST /dashboard/jobs/{job_id}/cancel`, exposed on
+the job detail page and as a compact action on live rows. Like every dashboard
+write (§2.4 and §3.3), the route is absent when
+`VIDTHEQUE_PUBLIC_READONLY=1` or `VIDTHEQUE_AUTH=none`, is POST-only, and uses
+the existing credential and Origin guard. The action is rendered only for
+`queued|running` jobs.
+
+Cancellation has two honest outcomes. A queued job, including one held behind
+`not_before`, has no worker to cooperate with and is settled `cancelled`
+immediately with its queued items; it never waits through the backoff merely to
+notice the request. A running job stays `running`, sets
+`cancel_requested=1`, and renders “cancel requested” until the pipeline stops
+at the next stage boundary. The indexing pipeline checks after every stage,
+including `frame_embed` before finalization, so the request cannot be followed
+by a falsely successful item. Existing terminal jobs refuse the action.
+
+A cancelled item settles its video the way a crash does (`_reset_video`'s
+rule): `stale` when the video was already indexed — it keeps its data and
+stays searchable — and `pending` only when a first index never finished.
+Settling `pending` unconditionally would un-publish an indexed video whose
+repair was cancelled. *(Amended 2026-08-12, review of PR #4.)*
+
+### 16.2 Retry only failed or degraded items
+
+The private detail page for a finished job offers
+`POST /dashboard/jobs/{job_id}/retry` only when the job has a failed item or a
+`done` item named by `degraded_items`. Registration and authorization follow
+the same §2.4/§3.3 rules as cancellation: absent in read-only and `AUTH=none`
+modes, POST-only, and guarded by the existing credential and Origin check.
+
+The selection is bounded to 200 items and contains each failed item plus each
+degraded item exactly once, even when several stages failed for one video.
+Successful items are not submitted. Each batch goes through
+`tools.indexing.index_video`; batches are at most `URLS_PER_JOB` (ten), so the
+MCP tool's ten-URL cap is unchanged. The retry preserves the original job's
+channels, tags, expansion bound and priority, and does not force a rebuild:
+the service and pipeline therefore resume a degraded video at its failed stage
+while retaining successful stages. The response is a receipt linking the old
+job and every newly queued job — except when exactly one job was queued and
+nothing needs explaining, which follows `index_submit`'s rule and redirects
+to it: a retry receipt left as the POST response is a page whose reload
+queues the repair twice. *(Amended 2026-08-12, review of PR #4.)*
+
+### 16.3 Job triage filters and ordering
+
+`GET /dashboard/jobs` and its polling endpoint accept server-side `error_code`,
+`kind`, and `degraded=1` filters in addition to the existing state filter.
+Degraded means that the job has a `done` item whose video currently has a
+failed stage, the same predicate as `degraded_items`; it is not inferred from
+the job's terminal state. `order` is explicit and one of `newest`, `priority`
+(lower numeric priority first), or `wall_clock` (longest
+`created_at`→finished/now span first), with stable id tie-breakers.
+
+`jobs_store.list_jobs` owns every predicate and ordering so the page and JSON
+poll target cannot disagree. All active choices, including row limit and
+offset, survive in polling and both pager directions. The store still reads at
+most `limit + 1`; the response exposes `has_more` and never computes a total.
+
+### 16.4 Per-video indexing history
+
+The video detail page adds a bounded **Recent indexing runs** panel. One
+`jobs_store.recent_jobs_for_video(video_id, 10)` statement reads the latest ten
+jobs whose items touched the video, newest first, with job state, kind, created
+and finished clocks, job error code, and degraded stage names under the same
+predicate as `degraded_items`. Every row links to the job detail page.
+
+This is a detail-only query. The videos table performs no job-history read and
+there is no per-video query fan-out on that list. The panel is capped directly;
+it does not issue a count and does not claim an exact total.

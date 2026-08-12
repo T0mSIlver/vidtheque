@@ -1,4 +1,4 @@
-"""The read-only pages — dashboard.md §5.1, §5.2, §5.3 and §5.4.
+"""The read-only pages — dashboard.md §5.1–§5.4 and amendments §14–§15.
 
 Every one of these calls the **same service layer the MCP tools call**
 (`tools/library.*`), plus the raw `db/queries.py` reads the tool surface was
@@ -15,10 +15,13 @@ holds three variants per keyframe instead of one per browser window.
 
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 import sqlite3
 import time
 from typing import Any
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
@@ -35,8 +38,14 @@ from ..jobs import store as jobs_store
 # policies here is rows-per-page and how far an offset may walk, on a listing
 # the demo publishes in full anyway — so keying it off the credential would
 # paginate the browsable corpus at 24 rows to protect nothing.
-from ..public.api import OWNER_CLAMPS, _cover_frames, thumb_url
-from ..text import clamp, clock, iso_day, iso_minute
+from ..public.api import (
+    CONTENT_TYPES,
+    OWNER_CLAMPS,
+    _cover_frames,
+    search_payload,
+    thumb_url,
+)
+from ..text import clamp, clock, iso_day, iso_minute, iso_z
 from ..timeparse import parse_corpus_time
 from ..tools import library
 from ..tools.base import Deps
@@ -60,6 +69,7 @@ SHOT_CAP = 2_000
 CHANNEL_CAP = 12
 TAG_CAP = 24
 RECENT_CAP = 8
+VIDEO_HISTORY_CAP = 10
 OCR_LINE_CAP = 600
 # `OCR_PREVIEW_LINES` is gone (Tom, 2026-08-10). It bounded a per-frame digest
 # whose expander split the list in two, which in turn capped the box↔line
@@ -70,6 +80,15 @@ OCR_LINE_CAP = 600
 # The same bound for the job event log, and the same reason to have one: an
 # overnight batch writes sixty events and the panel printed all of them.
 EVENT_PREVIEW = 8
+
+# A health panel must never become the slowest dependency of the page that
+# reports it. `/status` is deliberately lock-free on the worker; this is the
+# corresponding client-side wall-clock bound. The response cap is defensive —
+# the shipped worker returns a few kilobytes — and stops a mispointed URL from
+# turning an overview request into an unbounded JSON parse.
+WORKER_STATUS_TIMEOUT_S = 1.0
+WORKER_STATUS_MAX_BYTES = 64 * 1024
+WORKER_BACKEND_CAP = 12
 
 _ENV = build_environment()
 
@@ -112,6 +131,9 @@ def _chrome(request: Request, page: str) -> dict[str, Any]:
     return {
         "root": ROOT,
         "page": page,
+        "rail_query": (
+            (request.query_params.get("q") or "")[:512] if page == "search" else ""
+        ),
         "version": __version__,
         "auth_mode": mode,
         "readonly": readonly,
@@ -204,10 +226,27 @@ FAILED_WINDOW_S = 86_400
 
 
 async def overview(request: Request) -> Response:
+    redact = _redacted(request)
+    # Network and database work overlap. A down worker therefore costs at most
+    # the remainder of this one-second budget, not one second after the corpus
+    # page has already finished assembling itself.
+    readiness_task = asyncio.create_task(_pipeline_readiness(request, redact=redact))
+    try:
+        return await _overview_page(request, readiness_task, redact=redact)
+    finally:
+        # Any unwind between here and the task's own await — a query budget
+        # exceeded, a locked writer — must not orphan a task holding an open
+        # HTTP request. Cancelling a completed task is a no-op.
+        if not readiness_task.done():
+            readiness_task.cancel()
+
+
+async def _overview_page(
+    request: Request, readiness_task: asyncio.Task[dict[str, Any]], *, redact: bool
+) -> Response:
     assembled = request.app.state.assembled
     deps: Deps = assembled.deps
     db = assembled.db
-    redact = _redacted(request)
 
     summary = await library.corpus_summary(
         deps,
@@ -257,6 +296,7 @@ async def overview(request: Request) -> Response:
         }
         for row in recent
     ]
+    readiness = await readiness_task
 
     return _render(
         "overview.html",
@@ -291,7 +331,190 @@ async def overview(request: Request) -> Response:
                 # the keyframe bytes are a column (§5.1).
                 "database": _file_size(assembled.settings.db_path),
             },
+            "readiness": readiness,
         },
+    )
+
+
+async def _pipeline_readiness(request: Request, *, redact: bool) -> dict[str, Any]:
+    """One bounded current-state observation of the local pipeline boundary.
+
+    The projection does not make the worker request at all: worker reachability
+    and checkpoint ids are operator infrastructure, while MCP/database
+    readiness and the vector-search *effect* are already observable through
+    the page and its search results. There is no cache and no history; the
+    timestamp is the clock of this observation.
+    """
+    assembled = request.app.state.assembled
+    readiness: dict[str, Any] = {
+        "mcp": "ready",
+        "database": "ready",
+        "vectors": {
+            "enabled": assembled.db.vectors.enabled,
+            "reason": None if redact else assembled.db.vectors.reason,
+        },
+        "worker": None,
+        "checked_at": None,
+    }
+    if redact:
+        readiness["checked_at"] = iso_z(time.time())
+        return readiness
+
+    worker_url = assembled.settings.worker_url.rstrip("/")
+    http = assembled.worker_status_http
+    if not worker_url or http is None:
+        readiness["worker"] = {
+            "state": "unconfigured",
+            "detail": "No worker URL is configured.",
+            "models": [],
+        }
+        readiness["checked_at"] = iso_z(time.time())
+        return readiness
+
+    worker: dict[str, Any] = {
+        "state": "unavailable",
+        "detail": "The worker did not answer its status check.",
+        "models": [],
+    }
+    try:
+        body: Any = None
+        parsed = False
+        too_large = False
+        # `asyncio.timeout` is the wall-clock bound §15 promises. httpx's
+        # `timeout=` alone is per-operation and its read leg resets on every
+        # chunk, so a peer trickling one byte per 900 ms would stay under it
+        # for as long as it cared to — with the overview awaiting the whole
+        # time.
+        async with asyncio.timeout(WORKER_STATUS_TIMEOUT_S):
+            async with http.stream(
+                "GET", f"{worker_url}/status", timeout=WORKER_STATUS_TIMEOUT_S
+            ) as response:
+                if response.status_code >= 400:
+                    worker["detail"] = f"The worker answered HTTP {response.status_code}."
+                else:
+                    content = bytearray()
+                    async for chunk in response.aiter_bytes():
+                        if len(content) + len(chunk) > WORKER_STATUS_MAX_BYTES:
+                            too_large = True
+                            break
+                        content.extend(chunk)
+                    if too_large:
+                        worker["detail"] = "The worker status response exceeded 64 kB."
+                    else:
+                        body = json.loads(content)
+                        parsed = True
+        if parsed:
+            backends = body.get("backends") if isinstance(body, dict) else None
+            if not isinstance(backends, list):
+                worker["detail"] = "The worker returned an invalid status response."
+            else:
+                models = []
+                for backend in backends[:WORKER_BACKEND_CAP]:
+                    if not isinstance(backend, dict) or not backend.get("model"):
+                        continue
+                    models.append(
+                        {
+                            "task": str(backend.get("task") or "unknown"),
+                            "model": str(backend["model"]),
+                            "loaded": bool(backend.get("loaded")),
+                        }
+                    )
+                worker = {
+                    "state": "ready",
+                    "detail": "Reachable over HTTP.",
+                    "models": models,
+                }
+    except Exception:
+        # Transport, timeout, status JSON and protocol errors are all the same
+        # current fact to the operator. Exception text can contain the worker
+        # hostname and is not useful enough to put into HTML.
+        pass
+    readiness["worker"] = worker
+    readiness["checked_at"] = iso_z(time.time())
+    return readiness
+
+
+# --------------------------------------------------------------- search
+
+
+def _search_receipt(hit: dict[str, Any]) -> dict[str, str] | None:
+    """The tool's YouTube link, admitted as one exact-second receipt."""
+    raw = hit.get("link")
+    if not isinstance(raw, str):
+        return None
+    parsed = urlsplit(raw)
+    query = parse_qs(parsed.query)
+    seconds = query.get("t", [None])[0]
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "youtu.be"
+        or not parsed.path.strip("/")
+        or seconds is None
+        or not seconds.isdigit()
+    ):
+        return None
+    return {
+        "href": raw,
+        "label": f"youtu.be/{parsed.path.strip('/')}?t={seconds}",
+    }
+
+
+def _search_page_link(filters: dict[str, Any], offset: int) -> str:
+    params = {key: value for key, value in filters.items() if value not in (None, "")}
+    params["offset"] = max(0, offset)
+    return f"{ROOT}/search?{urlencode(params)}"
+
+
+async def search(request: Request) -> Response:
+    """Human inspection over the exact handler used by both JSON facades."""
+    params = request.query_params
+    filters = {
+        "q": (params.get("q") or "")[:512],
+        "content_type": (
+            params.get("content_type")
+            if params.get("content_type") in CONTENT_TYPES
+            else "all"
+        ),
+        "channel": (params.get("channel") or "")[:128],
+        "limit": params.get("limit") or "",
+        "max_text_chars": params.get("max_text_chars") or "",
+    }
+    searched = "q" in params
+    payload: dict[str, Any] | None = None
+    error: dict[str, Any] | None = None
+    status = 200
+    if searched:
+        payload, status = await search_payload(request, verbatim_notes=True)
+        if "error" in payload:
+            error = payload
+            payload = None
+        else:
+            for hit in payload.get("results", []):
+                hit["receipt"] = _search_receipt(hit)
+
+    pagination = (payload or {}).get("pagination", {})
+    limit = int(pagination.get("limit") or OWNER_CLAMPS.search_default_limit)
+    offset = int(pagination.get("offset") or 0)
+    return _render(
+        "search.html",
+        {
+            **_chrome(request, "search"),
+            "title": "Search",
+            "filters": filters,
+            "content_types": CONTENT_TYPES,
+            "searched": searched,
+            "payload": payload,
+            "error": error,
+            "previous": (
+                _search_page_link(filters, max(0, offset - limit)) if offset else None
+            ),
+            "next": (
+                _search_page_link(filters, offset + limit)
+                if pagination.get("has_more")
+                else None
+            ),
+        },
+        status=status,
     )
 
 
@@ -612,6 +835,9 @@ async def video_detail(request: Request) -> Response:
     # much of this video is there — and never on a listing page.
     cue_totals = await db.read(lambda c: queries.cue_text_totals(c, vid))
     tag_map = await db.read(lambda c: queries.video_tags(c, [vid]))
+    history_rows = await db.read(
+        lambda c: jobs_store.recent_jobs_for_video(c, vid, VIDEO_HISTORY_CAP)
+    )
 
     frames_more = len(frame_rows) > frame_page
     frame_rows = frame_rows[:frame_page]
@@ -664,6 +890,28 @@ async def video_detail(request: Request) -> Response:
             "cue_page": cue_page_size,
             "cue_offset": cue_offset,
             "cues_more": cues_more,
+            # A GET prefill, not a write. The source URL is encoded into one
+            # internal dashboard link; the index form remains the place where
+            # the operator reviews it and POST remains the only state change.
+            "queue_channel_url": f"{ROOT}/index?"
+            + urlencode({"urls": str(row["url"]), "expand": "channel_recent"}),
+            "job_history": [
+                {
+                    "job_id": str(job["public_id"]),
+                    "state": str(job["state"]),
+                    "kind": str(job["kind"]),
+                    "created_at": job["created_at"],
+                    "finished_at": job["finished_at"],
+                    "error_code": job["error_code"],
+                    "degraded_stages": (
+                        str(job["degraded_stages"]).split(",")
+                        if job["degraded_stages"]
+                        else []
+                    ),
+                }
+                for job in history_rows
+            ],
+            "job_history_cap": VIDEO_HISTORY_CAP,
         },
     )
 
@@ -980,6 +1228,8 @@ EVENT_CAP = 60
 DEGRADED_CAP = 40
 
 _JOB_STATES = ("all", "active", "failed", "done")
+_JOB_KINDS = ("all", "index", "reindex", "delete")
+_JOB_ORDERS = ("newest", "priority", "wall_clock")
 
 # 2 s while anything is `queued|running`, stopped when nothing is (§5.4). Not
 # an env var: a poll interval that is a deployment knob is a poll interval
@@ -1162,15 +1412,21 @@ def _job_event(row: sqlite3.Row, *, redact: bool = False) -> dict[str, Any]:
 
 
 async def jobs(request: Request) -> Response:
-    """`GET /dashboard/jobs` — every job, newest first."""
+    """`GET /dashboard/jobs` — bounded triage with explicit ordering."""
     db = request.app.state.assembled.db
     params = request.query_params
     state = params.get("state") if params.get("state") in _JOB_STATES else "all"
+    kind = params.get("kind") if params.get("kind") in _JOB_KINDS else "all"
+    order = params.get("order") if params.get("order") in _JOB_ORDERS else "newest"
+    error_code = str(params.get("error_code") or "").strip()[:64]
+    degraded_only = params.get("degraded") == "1"
     limit = clamp(params.get("limit"), 1, JOB_PAGE_MAX, JOB_PAGE)  # type: ignore[arg-type]
     offset = clamp(params.get("offset"), 0, OWNER_CLAMPS.offset_max, 0)  # type: ignore[arg-type]
     redact = _redacted(request)
 
-    cards, has_more, now = await _job_page(db, state, limit, offset, redact)
+    cards, has_more, now = await _job_page(
+        db, state, limit, offset, redact, error_code, kind, degraded_only, order
+    )
     # One extra grouped read for the page, not one per row (§6.3). Deliberately
     # here and not in `_job_page`: what a job contains does not change between
     # two ticks of the poller, so the JSON the tick reads does not carry it.
@@ -1186,7 +1442,16 @@ async def jobs(request: Request) -> Response:
             "title": "Jobs",
             "jobs": cards,
             "states": _JOB_STATES,
-            "filters": {"state": state, "limit": limit},
+            "filters": {
+                "state": state,
+                "kind": kind,
+                "error_code": error_code,
+                "degraded": degraded_only,
+                "order": order,
+                "limit": limit,
+            },
+            "kinds": _JOB_KINDS,
+            "orders": _JOB_ORDERS,
             "pagination": {"limit": limit, "offset": offset, "has_more": has_more},
             "live": any(card["live"] for card in cards),
             "now": now,
@@ -1233,7 +1498,15 @@ def _job_contents(card: dict[str, Any], row: sqlite3.Row | None) -> dict[str, An
 
 
 async def _job_page(
-    db: Any, state: str, limit: int, offset: int, redact: bool
+    db: Any,
+    state: str,
+    limit: int,
+    offset: int,
+    redact: bool,
+    error_code: str = "",
+    kind: str = "all",
+    degraded_only: bool = False,
+    order: str = "newest",
 ) -> tuple[list[dict[str, Any]], bool, int]:
     """Two reads for the whole page, whatever the row count (§6.3).
 
@@ -1241,7 +1514,18 @@ async def _job_page(
     table pages, and one grouped `degraded_counts` for every row on the page
     rather than a probe per row.
     """
-    rows = await db.read(lambda c: jobs_store.list_jobs(c, state, limit + 1, offset))
+    rows = await db.read(
+        lambda c: jobs_store.list_jobs(
+            c,
+            state,
+            limit + 1,
+            offset,
+            error_code=error_code or None,
+            kind=None if kind == "all" else kind,
+            degraded_only=degraded_only,
+            order=order,
+        )
+    )
     has_more = len(rows) > limit
     rows = rows[:limit]
     degraded = await db.read(
@@ -1406,9 +1690,23 @@ async def jobs_json(request: Request) -> Response:
     db = request.app.state.assembled.db
     params = request.query_params
     state = params.get("state") if params.get("state") in _JOB_STATES else "all"
+    kind = params.get("kind") if params.get("kind") in _JOB_KINDS else "all"
+    order = params.get("order") if params.get("order") in _JOB_ORDERS else "newest"
+    error_code = str(params.get("error_code") or "").strip()[:64]
+    degraded_only = params.get("degraded") == "1"
     limit = clamp(params.get("limit"), 1, JOB_PAGE_MAX, JOB_PAGE)  # type: ignore[arg-type]
     offset = clamp(params.get("offset"), 0, OWNER_CLAMPS.offset_max, 0)  # type: ignore[arg-type]
-    cards, has_more, now = await _job_page(db, state, limit, offset, _redacted(request))
+    cards, has_more, now = await _job_page(
+        db,
+        state,
+        limit,
+        offset,
+        _redacted(request),
+        error_code,
+        kind,
+        degraded_only,
+        order,
+    )
     return JSONResponse(
         {
             "now": now,

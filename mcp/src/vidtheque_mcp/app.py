@@ -71,6 +71,7 @@ class Assembled:
     deps: Deps
     auth: AuthBundle
     runner: PipelineRunner
+    worker_status_http: httpx.AsyncClient | None = None
     public: PublicSettings = field(default_factory=PublicSettings)
     dashboard: DashboardSettings = field(default_factory=DashboardSettings)
 
@@ -84,6 +85,7 @@ def build_app(
     public: PublicSettings | None = None,
     dashboard: DashboardSettings | None = None,
     public_http: httpx.AsyncClient | None = None,
+    worker_status_http: httpx.AsyncClient | None = None,
 ) -> Starlette:
     return assemble(
         settings,
@@ -93,6 +95,7 @@ def build_app(
         public=public,
         dashboard=dashboard,
         public_http=public_http,
+        worker_status_http=worker_status_http,
     ).app
 
 
@@ -127,11 +130,13 @@ def assemble(
     public: PublicSettings | None = None,
     dashboard: DashboardSettings | None = None,
     public_http: httpx.AsyncClient | None = None,
+    worker_status_http: httpx.AsyncClient | None = None,
 ) -> Assembled:
     """``public`` / ``public_http`` are the demo seam: the mode, and the LLM
     client behind ``/api/ask`` (a ``MockTransport`` in tests, exactly as
-    ``embeddings=`` fakes the worker). ``dashboard`` is the same seam for the
-    management route group."""
+    ``embeddings=`` fakes the worker). ``worker_status_http`` is the equivalent
+    HTTP seam for the dashboard's bounded ``GET /status`` probe. ``dashboard``
+    is the same seam for the management route group."""
     settings.validate()
     run_pipeline = settings.run_pipeline if run_pipeline is None else run_pipeline
     public = public if public is not None else PublicSettings.from_env()
@@ -207,6 +212,10 @@ def assemble(
     elif public_http is not None:  # an injected client with no key: still closed
         http = public_http
 
+    status_http = worker_status_http
+    if status_http is None and dashboard.enabled and settings.worker_url:
+        status_http = httpx.AsyncClient()
+
     # The daily ask budget's durable half. Public mode only — it is the only
     # mode with a daily bucket to persist — and constructed here rather than
     # inside the limiter so its lifecycle hangs off the same lifespan the
@@ -231,6 +240,8 @@ def assemble(
                 await client.aclose()
                 if http is not None:
                     await http.aclose()
+                if status_http is not None and status_http is not http:
+                    await status_http.aclose()
                 # Before the database: the drain has deltas to write and it
                 # writes them through the connection closed on the next line.
                 if budget is not None:
@@ -280,6 +291,7 @@ def assemble(
         deps=deps,
         auth=auth,
         runner=runner,
+        worker_status_http=status_http,
         public=public,
         dashboard=dashboard,
     )

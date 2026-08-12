@@ -476,6 +476,36 @@ code { font-size: var(--t-machine); overflow-wrap: anywhere; }
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
+/* Search is the one instrument in the rail. It stays a real GET form and uses
+   the same inset console ground as the full filter band; the compact button is
+   a label-sized square, not a second nav item. */
+.rail-search { margin: var(--s4) var(--s4) 0; }
+.rail-search > label {
+  display: block;
+  margin-bottom: var(--s1);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  font-weight: var(--w-label);
+  letter-spacing: .19em;
+  text-transform: uppercase;
+  color: var(--fg2);
+}
+.rail-search-control { display: flex; min-width: 0; }
+.rail-search input {
+  min-width: 0;
+  width: 100%;
+  height: var(--row);
+  padding: 0 var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--t-machine-sm);
+  color: var(--fg);
+  background: var(--console);
+  border: 1px solid var(--seam2);
+  border-right: 0;
+}
+.rail-search input::placeholder { color: var(--fg3); opacity: 1; }
+.rail-search button { flex: 0 0 auto; padding: 0 var(--s2); }
+
 /* What this deployment is allowed to do is true of every page, so it belongs to
    the chassis and not to a page header. */
 .rail-foot {
@@ -605,6 +635,87 @@ code { font-size: var(--t-machine); overflow-wrap: anywhere; }
   color: var(--muted);
   font-size: var(--t-cell);
 }
+
+.panel-headline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s1) var(--s4);
+}
+.panel-clock {
+  margin: 0 0 var(--s3);
+  color: var(--muted);
+  font-size: var(--t-machine-sm);
+}
+.panel-clock time { color: var(--fg); font-family: var(--font-mono); }
+
+/* Readiness is one flat observation. Rows, not cards: each system name is a
+   label beside the word it reported, and the worker's model map is the table
+   below only when there is one to show. */
+.readiness-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  margin: 0;
+  border: 1px solid var(--seam2);
+  background: var(--plate);
+}
+.readiness-list > div { min-width: 0; padding: var(--s3); border-left: 1px solid var(--seam); }
+.readiness-list > div:first-child { border-left: 0; }
+.readiness-list dt {
+  margin-bottom: var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  font-weight: var(--w-label);
+  letter-spacing: .19em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.readiness-list dd { margin: 0; }
+.readiness-detail { display: block; margin-top: var(--s2); color: var(--muted); font-size: var(--t-cell); }
+.readiness-models { margin-top: var(--s3); }
+
+/* Search results preserve rank: one ordered rail of moments, with the channel
+   text and tool notes left exactly as the shared handler returned them. */
+.legline { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s5); margin: 0; }
+.legline > div { display: flex; gap: var(--s2); align-items: baseline; }
+.legline dt { color: var(--muted); font-family: var(--font-mono); font-size: var(--t-label); }
+.legline dd { margin: 0; font-family: var(--font-mono); font-size: var(--t-machine); }
+.search-notes {
+  margin: var(--s3) 0 0;
+  padding: var(--s3) var(--s4);
+  list-style: none;
+  color: var(--muted);
+  background: var(--console);
+  border: 1px solid var(--seam);
+  font-family: var(--font-mono);
+  font-size: var(--t-log);
+}
+.search-notes li + li { margin-top: var(--s2); }
+.search-results { margin: var(--s4) 0 0; padding: 0; list-style: none; counter-reset: hit; }
+.search-hit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--s3) var(--s5);
+  padding: var(--s4) 0;
+  border-top: 1px solid var(--seam);
+  counter-increment: hit;
+}
+.search-hit:first-child { border-top-color: var(--seam2); }
+.search-hit-body { min-width: 0; }
+.search-hit-title { margin: 0; font-weight: var(--w-strong); }
+.search-hit-meta { margin: var(--s1) 0 0; color: var(--muted); font-size: var(--t-machine-sm); }
+.search-snippet { margin: var(--s2) 0 0; max-width: var(--prose); overflow-wrap: anywhere; }
+.search-receipt {
+  align-self: start;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--t-machine-sm);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.search-receipt:hover { text-decoration: underline; }
+.search-empty { margin-top: var(--s6); }
 
 /* ------------------------------------------------------------- the digest */
 
@@ -1022,6 +1133,15 @@ span.tone-warn { color: var(--tone-warn); }
    a two-field filter bar on a 1900px screen must not put Apply 1400px from the
    select it applies to. */
 .field-actions { flex-direction: row; gap: var(--s2); align-items: center; }
+.filters .check-compact {
+  display: flex;
+  height: var(--row);
+  gap: var(--s2);
+  align-items: center;
+  padding: 0;
+  border: 0;
+}
+.filters .check-compact input { width: var(--s4); height: var(--s4); }
 
 /* Every control in the bar is exactly `--row` tall — the same 34px as a table
    row and a nav item — so the band reads as one object instead of as four
@@ -2301,6 +2421,9 @@ footer p { margin: 0; max-width: var(--note); }
     border-bottom-color: var(--accent);
   }
 
+  .rail-search { flex: 1 1 15rem; max-width: 24rem; margin: 0; }
+  .rail-search > label { display: none; }
+
   .rail-foot { margin: 0 0 0 auto; padding: 0; border-top: 0; }
   .deployment { flex-direction: row; flex-wrap: wrap; gap: 0 var(--s3); }
   /* In the strip the foot is a row of facts, so its one control stops being a
@@ -2425,6 +2548,11 @@ footer p { margin: 0; max-width: var(--note); }
   .field-text, .field-pick { flex: 1 1 9rem; }
   .field-actions { margin-left: 0; flex-basis: 100%; }
   .field-actions button { flex: 1 1 auto; }
+
+  .readiness-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .readiness-list > div:nth-child(odd) { border-left: 0; }
+  .readiness-list > div:nth-child(n + 3) { border-top: 1px solid var(--seam); }
+  .search-hit { grid-template-columns: minmax(0, 1fr); gap: var(--s2); }
 
   /* One column on a hand: a card whose still carries detection boxes and whose
      lines are a scrollbox does not halve. */
