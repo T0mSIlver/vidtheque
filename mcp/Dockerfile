@@ -5,7 +5,13 @@
 # Build from the repo root so the uv workspace is in context:
 #
 #   docker build -f mcp/Dockerfile -t vidtheque-mcp .
-FROM python:3.12-slim-bookworm
+#
+# trixie, not bookworm: the base image pins the stdlib's SQLite, and the
+# migrations need ≥ 3.44 (ordered aggregates in 0003). trixie ships 3.46.1 —
+# the exact version index-schema.md documents; bookworm's 3.40.1 fails every
+# clean install at first boot (field report, 2026-08-12). `migrations.migrate`
+# asserts the floor with a named error so a future regression says what it is.
+FROM python:3.12-slim-trixie
 
 ARG UV_VERSION=0.11.24
 

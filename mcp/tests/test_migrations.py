@@ -336,3 +336,16 @@ def test_in_flight_guard_is_the_partial_unique_index(fresh: sqlite3.Connection) 
     with pytest.raises(DuplicateInFlight) as caught:
         create_job(fresh, "index", {}, [("https://v", vid)])
     assert caught.value.job_public_id == first
+
+
+def test_an_old_sqlite_fails_with_a_named_error_not_a_syntax_error(
+    fresh: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Below the floor, 0003's ordered aggregate is a parse error pointing at
+    the migration — which reads like a typo, not a platform mismatch. The
+    check names the platform (field report, 2026-08-12: bookworm's 3.40.1
+    crash-looped every clean install)."""
+    monkeypatch.setattr(migrations.sqlite3, "sqlite_version_info", (3, 40, 1))
+    monkeypatch.setattr(migrations.sqlite3, "sqlite_version", "3.40.1")
+    with pytest.raises(migrations.MigrationError, match=r"3\.40\.1 .* 3\.44\.0"):
+        migrations.migrate(fresh)

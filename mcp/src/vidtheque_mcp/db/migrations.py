@@ -36,6 +36,14 @@ class MigrationError(RuntimeError):
     """A boot-fatal schema problem."""
 
 
+# Ordered aggregates (0003's group_concat … ORDER BY) parse only from 3.44.
+# The Docker base image is what actually pins this (index-schema.md documents
+# 3.46.1); without the check an older runtime surfaces as a raw syntax error
+# pointing at the migration, which reads like a typo rather than a platform
+# mismatch (field report, 2026-08-12).
+SQLITE_FLOOR = (3, 44, 0)
+
+
 @dataclass(frozen=True)
 class Migration:
     version: int
@@ -85,6 +93,13 @@ def applied(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 def migrate(conn: sqlite3.Connection, directory: Path | None = None) -> list[int]:
     """Apply pending migrations. Returns the versions applied in this call."""
+    if sqlite3.sqlite_version_info < SQLITE_FLOOR:
+        floor = ".".join(str(part) for part in SQLITE_FLOOR)
+        raise MigrationError(
+            f"SQLite {sqlite3.sqlite_version} is below the {floor} floor the "
+            "migrations need (index-schema.md pins 3.46.1). The Docker image "
+            "supplies the right version; a changed base image is the usual cause."
+        )
     conn.execute(_AUDIT_DDL)
 
     version = current_version(conn)
