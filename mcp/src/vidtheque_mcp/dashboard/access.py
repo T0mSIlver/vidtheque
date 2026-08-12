@@ -85,6 +85,8 @@ WRITE_ROUTES: tuple[str, ...] = (
     f"{ROOT}/login",
     f"{ROOT}/logout",
     f"{ROOT}/index",
+    f"{ROOT}/jobs/{{job_id}}/cancel",
+    f"{ROOT}/jobs/{{job_id}}/retry",
     f"{ROOT}/videos/{{video_id}}/reindex",
     f"{ROOT}/videos/{{video_id}}/tags",
 )

@@ -25,6 +25,7 @@ Three things this module deliberately does **not** have:
 from __future__ import annotations
 
 import hmac
+import json
 import re
 import secrets
 import time
@@ -38,6 +39,7 @@ from ..auth.provider import OWNER_SUBJECT
 from ..config import Settings
 from ..db import queries
 from ..errors import HTTP_STATUS
+from ..jobs import store as jobs_store
 from ..text import clamp
 from ..tools import indexing, library
 from ..tools.base import Deps
@@ -410,6 +412,174 @@ def _submitted(form: Any) -> dict[str, Any]:
 
 
 # ------------------------------------------------------------ §2.4 row actions
+
+
+async def cancel_job(request: Request) -> Response:
+    """`POST /dashboard/jobs/{job_id}/cancel` — stop only live work.
+
+    Queued work settles in the store immediately. Running work remains
+    `running` with `cancel_requested=1` until the real pipeline reaches its
+    next cooperative stage boundary; the detail page therefore reports the
+    request without claiming the worker has already stopped.
+    """
+    refusal = await _guard(request)
+    if refusal is not None:
+        return refusal
+
+    job_id = request.path_params["job_id"]
+    outcome = await request.app.state.assembled.db.write(
+        lambda c: jobs_store.request_cancel(c, job_id)
+    )
+    if outcome is None:
+        return _error_page(
+            request,
+            "jobs",
+            {
+                "code": "E_UNKNOWN_JOB",
+                "message": f'"{job_id}" is not a job on this instance.',
+                "next": "the jobs table lists every job this index has run.",
+            },
+        )
+    accepted, state = outcome
+    if not accepted:
+        return _error_page(
+            request,
+            "jobs",
+            {
+                "code": "E_BAD_PARAM",
+                "message": f'Job "{job_id}" is already {state}.',
+                "next": "only queued or running jobs can be cancelled.",
+            },
+            back={"href": f"{ROOT}/jobs/{job_id}", "label": "Back to this job"},
+        )
+    return _see(f"{ROOT}/jobs/{job_id}")
+
+
+async def retry_job(request: Request) -> Response:
+    """Requeue only a finished job's failed or degraded items.
+
+    Selection is one bounded store read. Creation deliberately goes back
+    through ``tools.indexing.index_video`` in batches of at most ten, preserving
+    the original channels, tags, expansion bound and priority while leaving
+    successful items out of the call entirely.
+    """
+    refusal = await _guard(request)
+    if refusal is not None:
+        return refusal
+
+    assembled = request.app.state.assembled
+    old_job_id = request.path_params["job_id"]
+    selected = await assembled.db.read(
+        lambda c: jobs_store.retry_candidates(c, old_job_id, MAX_FORM_URLS + 1)
+    )
+    if selected is None:
+        return _error_page(
+            request,
+            "jobs",
+            {
+                "code": "E_UNKNOWN_JOB",
+                "message": f'"{old_job_id}" is not a job on this instance.',
+                "next": "the jobs table lists every job this index has run.",
+            },
+        )
+    job, candidates = selected
+    state = str(job["state"])
+    if state in ("queued", "running"):
+        return _error_page(
+            request,
+            "jobs",
+            {
+                "code": "E_BAD_PARAM",
+                "message": f'Job "{old_job_id}" is still {state}.',
+                "next": "retry is available after the original job finishes.",
+            },
+            back={"href": f"{ROOT}/jobs/{old_job_id}", "label": "Back to this job"},
+        )
+    if str(job["kind"]) not in ("index", "reindex"):
+        return _error_page(
+            request,
+            "jobs",
+            {
+                "code": "E_BAD_PARAM",
+                "message": f'Job "{old_job_id}" is a {job["kind"]} job.',
+                "next": "only indexing jobs can be repaired through index-video.",
+            },
+            back={"href": f"{ROOT}/jobs/{old_job_id}", "label": "Back to this job"},
+        )
+    if len(candidates) > MAX_FORM_URLS:
+        return _error_page(
+            request,
+            "jobs",
+            {
+                "code": "E_TOO_LARGE",
+                "message": f"More than {MAX_FORM_URLS} items need repair.",
+                "next": "retry the affected videos in smaller batches from the index form.",
+            },
+        )
+    if not candidates:
+        return _error_page(
+            request,
+            "jobs",
+            {
+                "code": "E_BAD_PARAM",
+                "message": f'Job "{old_job_id}" has no failed or degraded items.',
+                "next": "successful items are deliberately not re-queued.",
+            },
+            back={"href": f"{ROOT}/jobs/{old_job_id}", "label": "Back to this job"},
+        )
+
+    try:
+        args = json.loads(str(job["args_json"] or "{}"))
+    except (TypeError, ValueError):
+        args = {}
+    max_items = clamp(args.get("max_items"), 1, MAX_FORM_URLS, 25)
+    batch_size = max(1, min(URLS_PER_JOB, max_items))
+    urls = [str(row["source_url"]) for row in candidates]
+    batches = [urls[i : i + batch_size] for i in range(0, len(urls), batch_size)]
+    tags = args.get("tags") or []
+    tags_csv = ",".join(str(tag) for tag in tags) if isinstance(tags, list) else str(tags)
+    channels = str(args.get("channels") or "all")
+    priority = "high" if int(job["priority"]) <= 50 else "normal"
+
+    jobs: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+    for batch in batches:
+        result = await indexing.index_video(
+            assembled.deps,
+            urls=batch,
+            expand=str(args.get("expand") or "none"),
+            max_items=max_items,
+            tags=tags_csv or None,
+            channels=channels,
+            priority=priority,
+        )
+        error = _tool_error(result)
+        if error is not None:
+            errors.append(error)
+            continue
+        payload = result.structured_content or {}
+        if payload.get("job_id"):
+            jobs.append(
+                {"job_id": str(payload["job_id"]), "items": int(payload.get("items", 0))}
+            )
+
+    return _render(
+        "retry.html",
+        {
+            **_chrome(request, "jobs"),
+            "title": f"Retry from {old_job_id}",
+            "old_job_id": old_job_id,
+            "selected": len(candidates),
+            "jobs": jobs,
+            "errors": errors,
+            "preserved": {
+                "channels": channels,
+                "tags": tags_csv or "—",
+                "priority": priority,
+            },
+        },
+        status=200 if jobs else 409,
+    )
 
 
 async def reindex(request: Request) -> Response:

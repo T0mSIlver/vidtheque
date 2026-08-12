@@ -784,6 +784,49 @@ def test_the_jobs_table_is_clamped_and_pages_with_has_more(client: TestClient) -
     assert "job_running001" in active and "job_finished01" not in active
 
 
+def test_job_triage_filters_order_and_polling_share_one_query(client: TestClient) -> None:
+    assert "job_deferred01" in page(client, f"{ROOT}/jobs?error_code=E_RATE_LIMIT")
+    assert "job_running001" not in page(
+        client, f"{ROOT}/jobs?error_code=E_RATE_LIMIT"
+    )
+    degraded = page(client, f"{ROOT}/jobs?degraded=1")
+    assert "job_finished01" in degraded
+    assert "job_running001" not in degraded and "job_deferred01" not in degraded
+
+    priority = page(client, f"{ROOT}/jobs?order=priority")
+    assert priority.index("job_running001") < priority.index("job_deferred01")
+    wall = page(client, f"{ROOT}/jobs?order=wall_clock")
+    assert wall.index("job_finished01") < wall.index("job_running001")
+
+    filtered = page(
+        client,
+        f"{ROOT}/jobs?state=all&kind=index&error_code=E_RATE_LIMIT"
+        "&degraded=0&order=priority&limit=1",
+    )
+    poll = re.search(r'data-poll="([^"]+)"', filtered).group(1)
+    assert "kind=index" in poll and "error_code=E_RATE_LIMIT" in poll
+    assert "degraded=0" in poll and "order=priority" in poll
+    older = re.findall(r'href="([^"]+)">Older', filtered)
+    if older:
+        assert all(part in older[0] for part in (
+            "kind=index", "error_code=E_RATE_LIMIT", "degraded=0", "order=priority"
+        ))
+    payload = client.get(poll.replace("&amp;", "&")).json()
+    assert [job["job_id"] for job in payload["jobs"]] == ["job_deferred01"]
+
+
+def test_job_kind_filter_is_server_side(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        conn = open_write_connection(client.app.state.assembled.db.path)
+        try:
+            conn.execute("UPDATE jobs SET kind='reindex' WHERE public_id='job_finished01'")
+        finally:
+            conn.close()
+        body = page(client, f"{ROOT}/jobs?kind=reindex")
+        assert "job_finished01" in body
+        assert "job_running001" not in body and "job_deferred01" not in body
+
+
 def test_the_job_page_says_what_the_video_cost(client: TestClient) -> None:
     """§10.4: the clocks are the point, and the two of them mean different things."""
     body = page(client, f"{ROOT}/jobs/job_finished01")
@@ -808,6 +851,59 @@ def test_the_job_page_carries_attempts_the_degraded_list_and_the_tail(
     assert "Finished with something missing" in body
     assert "<code>ocr</code> failed" in body
     assert "worker returned 503 for 41 frames" in body
+
+
+def test_video_detail_has_one_bounded_recent_indexing_history_query(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        db = client.app.state.assembled.db.path
+        conn = open_write_connection(db)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            video = int(
+                conn.execute(
+                    "SELECT id FROM videos WHERE public_id='kCc8FmEb1nY'"
+                ).fetchone()[0]
+            )
+            for n in range(12):
+                cursor = conn.execute(
+                    "INSERT INTO jobs (owner_id, public_id, kind, args_json, n_items, "
+                    "state, created_at, started_at, finished_at) VALUES "
+                    "(1, ?, 'reindex', '{}', 1, 'done', unixepoch() + ?, "
+                    "unixepoch() + ?, unixepoch() + ?)",
+                    (f"job_history{n:02d}", n, n, n + 1),
+                )
+                conn.execute(
+                    "INSERT INTO job_items (job_id, seq, source_url, video_id, state, "
+                    "finished_at) VALUES (?, 0, 'https://youtu.be/kCc8FmEb1nY', ?, "
+                    "'done', unixepoch() + ?)",
+                    (int(cursor.lastrowid), video, n + 1),
+                )
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+
+        body = page(client, f"{ROOT}/videos/kCc8FmEb1nY")
+        panel = body[body.index('id="index-history"') :]
+        assert "job_history11" in panel and "job_history02" in panel
+        assert "job_history01" not in panel
+        assert panel.count("<code>job_history") == 10
+        assert "Latest 10 at most; no total is computed" in panel
+
+        # The videos table is unchanged: history is a detail-only query, never
+        # a per-row addition to the listing.
+        assert _count_reads(client, f"{ROOT}/videos?limit=1") == _count_reads(
+            client, f"{ROOT}/videos?limit=100"
+        )
+
+
+def test_video_history_shows_error_and_degraded_stage(client: TestClient) -> None:
+    body = page(client, f"{ROOT}/videos/eMlx5fFNoYc")
+    panel = body[body.index('id="index-history"') :]
+    assert "job_finished01" in panel
+    assert "failed" in panel and "index" in panel
+    assert "<code>ocr</code>" in panel
 
 
 def test_the_deferred_job_explains_itself(client: TestClient) -> None:
@@ -1475,6 +1571,8 @@ def sign_in(client: TestClient, secret: str = PASSWORD) -> None:
 
 WRITE_POSTS = (
     f"{ROOT}/index",
+    f"{ROOT}/jobs/job_running001/cancel",
+    f"{ROOT}/jobs/job_finished01/retry",
     f"{ROOT}/logout",
     f"{ROOT}/videos/kCc8FmEb1nY/reindex",
     f"{ROOT}/videos/kCc8FmEb1nY/tags",
@@ -1573,6 +1671,8 @@ def test_no_write_is_reachable_by_a_get(tmp_path: Path) -> None:
         sign_in(client)
         for path in (
             f"{ROOT}/logout",
+            f"{ROOT}/jobs/job_running001/cancel",
+            f"{ROOT}/jobs/job_finished01/retry",
             f"{ROOT}/videos/kCc8FmEb1nY/reindex",
             f"{ROOT}/videos/kCc8FmEb1nY/tags",
         ):
@@ -1582,6 +1682,148 @@ def test_no_write_is_reachable_by_a_get(tmp_path: Path) -> None:
             assert client.get(path).status_code in (404, 405), path
         # `/index` has a GET and it is the form, which reads and never writes.
         assert client.get(f"{ROOT}/index").status_code == 200
+
+
+def test_cancel_is_guarded_and_honest_for_running_and_deferred_jobs(
+    tmp_path: Path,
+) -> None:
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        running = client.post(
+            f"{ROOT}/jobs/job_running001/cancel",
+            headers=SAME_ORIGIN,
+            follow_redirects=False,
+        )
+        assert running.status_code == 303
+        assert running.headers["location"] == f"{ROOT}/jobs/job_running001"
+        running_page = page(client, f"{ROOT}/jobs/job_running001")
+        assert "cancel requested" in running_page
+        assert 'data-field="job-state">running<' in running_page
+
+        deferred = client.post(
+            f"{ROOT}/jobs/job_deferred01/cancel",
+            headers=SAME_ORIGIN,
+            follow_redirects=False,
+        )
+        assert deferred.status_code == 303
+        deferred_page = page(client, f"{ROOT}/jobs/job_deferred01")
+        assert 'data-field="job-state">cancelled<' in deferred_page
+        assert 'data-field="job-defer" data-defer="0"' in deferred_page
+        assert 'id="deferred"' not in deferred_page
+        assert "cancel requested" not in deferred_page
+
+        finished = client.post(
+            f"{ROOT}/jobs/job_finished01/cancel", headers=SAME_ORIGIN
+        )
+        assert finished.status_code == 400
+        assert "already failed" in finished.text
+
+
+def test_cancel_actions_exist_only_for_live_jobs_on_the_write_side(
+    tmp_path: Path,
+) -> None:
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        table = page(client, f"{ROOT}/jobs")
+        assert f'{ROOT}/jobs/job_running001/cancel' in table
+        assert f'{ROOT}/jobs/job_deferred01/cancel' in table
+        assert f'{ROOT}/jobs/job_finished01/cancel' not in table
+        assert "Cancel this job" in page(client, f"{ROOT}/jobs/job_running001")
+        assert "Cancel this job" not in page(client, f"{ROOT}/jobs/job_finished01")
+
+    with owner_client(tmp_path, readonly=True) as demo:
+        table = demo.get(f"{ROOT}/jobs", headers=BEARER).text
+        assert "/cancel" not in table and ">Cancel<" not in table
+
+
+def test_retry_queues_only_failed_and_degraded_items_with_original_policy(
+    tmp_path: Path,
+) -> None:
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        db = client.app.state.assembled.db.path
+        conn = open_write_connection(db)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            job = int(
+                conn.execute(
+                    "SELECT id FROM jobs WHERE public_id='job_finished01'"
+                ).fetchone()[0]
+            )
+            degraded_url = str(
+                conn.execute(
+                    "SELECT source_url FROM job_items WHERE job_id=? AND seq=0", (job,)
+                ).fetchone()[0]
+            )
+            successful = conn.execute(
+                "SELECT id, url FROM videos WHERE public_id='kCc8FmEb1nY'"
+            ).fetchone()
+            conn.execute(
+                "UPDATE jobs SET n_items=3, priority=50, args_json=? WHERE id=?",
+                (
+                    json.dumps(
+                        {
+                            "expand": "none",
+                            "max_items": 25,
+                            "tags": ["topic:repair", "series:jobs"],
+                            "channels": "transcript,ocr",
+                        }
+                    ),
+                    job,
+                ),
+            )
+            conn.execute(
+                "INSERT INTO job_items (job_id, seq, source_url, video_id, state, "
+                "attempts, finished_at) VALUES (?, 2, ?, ?, 'done', 1, unixepoch())",
+                (job, successful["url"], successful["id"]),
+            )
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+
+        receipt = client.post(
+            f"{ROOT}/jobs/job_finished01/retry", headers=SAME_ORIGIN
+        )
+        assert receipt.status_code == 200
+        assert "failed or degraded item(s) selected" in receipt.text
+        assert ">2</span>" in receipt.text
+        assert "built-in method" not in receipt.text
+        assert f'{ROOT}/jobs/job_finished01' in receipt.text
+        new_ids = re.findall(rf'{ROOT}/jobs/(job_[A-Za-z0-9_-]+)', receipt.text)
+        new_id = next(job_id for job_id in new_ids if job_id != "job_finished01")
+
+        conn = open_write_connection(db)
+        try:
+            new = conn.execute(
+                "SELECT id, args_json, priority, n_items FROM jobs WHERE public_id=?",
+                (new_id,),
+            ).fetchone()
+            items = conn.execute(
+                "SELECT source_url FROM job_items WHERE job_id=? ORDER BY seq",
+                (new["id"],),
+            ).fetchall()
+        finally:
+            conn.close()
+        assert new["priority"] == 50 and new["n_items"] == 2
+        assert json.loads(new["args_json"])["channels"] == "transcript,ocr"
+        assert json.loads(new["args_json"])["tags"] == ["topic:repair", "series:jobs"]
+        assert {row["source_url"] for row in items} == {
+            "https://youtu.be/failedvideo",
+            degraded_url,
+        }
+        assert successful["url"] not in {row["source_url"] for row in items}
+
+
+def test_retry_is_absent_without_a_repair_subset_and_from_readonly(
+    tmp_path: Path,
+) -> None:
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        assert "/retry" in page(client, f"{ROOT}/jobs/job_finished01")
+        assert "/retry" not in page(client, f"{ROOT}/jobs/job_running001")
+    with owner_client(tmp_path, readonly=True) as demo:
+        body = demo.get(f"{ROOT}/jobs/job_finished01", headers=BEARER).text
+        assert "/retry" not in body and "Retry" not in body
 
 
 # --- 8.2 the auth matrix

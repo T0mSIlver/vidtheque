@@ -469,6 +469,44 @@
 </section>
 {% endif %}
 
+<section class="panel" aria-labelledby="index-history">
+  <h2 class="panel-title" id="index-history">Recent indexing runs</h2>
+  {% if job_history %}
+  <div class="tablewrap">
+    <table class="grid">
+      <caption class="sr-only">The latest jobs that touched this video</caption>
+      <thead>
+        <tr>
+          <th scope="col">job</th>
+          <th scope="col">state</th>
+          <th scope="col">kind</th>
+          <th scope="col">created</th>
+          <th scope="col">finished</th>
+          <th scope="col">error</th>
+          <th scope="col">degraded stages</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in job_history %}
+        <tr>
+          <th scope="row"><a href="{{ root }}/jobs/{{ job.job_id }}"><code>{{ job.job_id }}</code></a></th>
+          <td><span class="pill tone-{{ job.state | tone }}">{{ job.state }}</span></td>
+          <td><code>{{ job.kind }}</code></td>
+          <td>{{ job.created_at | minute }}</td>
+          <td>{% if job.finished_at %}{{ job.finished_at | minute }}{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td>{% if job.error_code %}<code>{{ job.error_code }}</code>{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td>{% if job.degraded_stages %}{% for stage in job.degraded_stages %}<code>{{ stage }}</code>{{ ", " if not loop.last }}{% endfor %}{% else %}<span class="muted">—</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="panel-note">Latest {{ job_history_cap }} at most; no total is computed.</p>
+  {% else %}
+  <p class="empty-note">No indexing job is linked to this video.</p>
+  {% endif %}
+</section>
+
 {# The write side, last on the page and only where it is registered (§2.4).
    Two actions and no third: `jobs.kind='delete'` is in the schema with no
    pipeline behind it, so a delete button here would queue a job that fails

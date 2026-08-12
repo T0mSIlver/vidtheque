@@ -567,3 +567,72 @@ async def test_a_terminal_item_counts_whatever_its_state(assembled: Assembled) -
     after = float((await db.read(lambda c: jobs_store.get_job(c, job_id)))["progress"])
     assert after >= before
     assert after == 0.5  # one of two items is over
+
+
+# ---------------------------------------------------------- dashboard repair
+
+
+async def test_queued_cancel_settles_without_waiting_for_a_claim(
+    assembled: Assembled,
+) -> None:
+    db = assembled.db
+    job_id = await db.write(
+        lambda c: jobs_store.create_job(
+            c, "index", {}, [("https://youtu.be/Qk7mF2xLp0A", None)]
+        )
+    )
+    outcome = await db.write(lambda c: jobs_store.request_cancel(c, job_id))
+    assert outcome == (True, "cancelled")
+    job = await db.read(lambda c: jobs_store.get_job(c, job_id))
+    items = await db.read(lambda c: jobs_store.job_items(c, int(job["id"])))
+    assert job["state"] == "cancelled" and job["cancel_requested"] == 1
+    assert [item["state"] for item in items] == ["cancelled"]
+
+
+async def test_list_jobs_filters_degradation_and_orders_explicitly(
+    assembled: Assembled,
+) -> None:
+    db = assembled.db
+
+    def seed(conn: sqlite3.Connection) -> tuple[str, str]:
+        video = conn.execute("SELECT id, url FROM videos ORDER BY id LIMIT 1").fetchone()
+        high = jobs_store.create_job(
+            conn, "reindex", {}, [(str(video["url"]), int(video["id"]))], priority=50
+        )
+        high_row = jobs_store.get_job(conn, high)
+        item = conn.execute(
+            "SELECT id FROM job_items WHERE job_id=?", (int(high_row["id"]),)
+        ).fetchone()
+        jobs_store.finish_item(conn, int(item["id"]), "done")
+        jobs_store.finish_job(conn, int(high_row["id"]), "done")
+        conn.execute(
+            "INSERT OR REPLACE INTO video_stages "
+            "(video_id, stage, state, error) VALUES (?, 'ocr', 'failed', 'repair me')",
+            (int(video["id"]),),
+        )
+
+        normal = jobs_store.create_job(
+            conn, "index", {}, [("https://youtu.be/aBcDeFgHiJk", None)], priority=100
+        )
+        normal_row = jobs_store.get_job(conn, normal)
+        conn.execute(
+            "UPDATE jobs SET error_code='E_RATE_LIMIT', created_at=created_at + 10 "
+            "WHERE id=?",
+            (int(normal_row["id"]),),
+        )
+        return high, normal
+
+    high, normal = await db.write(seed)
+    by_error = await db.read(
+        lambda c: jobs_store.list_jobs(c, "all", 10, error_code="E_RATE_LIMIT")
+    )
+    degraded = await db.read(
+        lambda c: jobs_store.list_jobs(c, "all", 10, degraded_only=True)
+    )
+    priority = await db.read(
+        lambda c: jobs_store.list_jobs(c, "all", 10, order="priority")
+    )
+    assert [row["public_id"] for row in by_error] == [normal]
+    assert [row["public_id"] for row in degraded] == [high]
+    ids = [row["public_id"] for row in priority]
+    assert ids.index(high) < ids.index(normal)
