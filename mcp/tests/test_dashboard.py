@@ -482,16 +482,65 @@ def test_the_overview_answers_the_first_screen_questions(client: TestClient) -> 
     assert "Qwen/Qwen3-VL-Embedding-2B" in body
     # The "vector legs on" pill is gone (Tom, 2026-08-10): it was a green badge
     # for the ordinary case, beside a table that already names both embedding
-    # models. What survives is the one fact that changes what a *write* can do,
-    # as a `statepair` — the key and the state as one object.
+    # models. What survives is the one fact that changes what a *write* can do —
+    # a cell in the readiness strip since the 2026-08-13 merge, beside the four
+    # other states of the same pipeline rather than two panels below them.
     assert "vector legs" not in body
-    assert '<span class="statepair-key">indexing</span>' in body
+    assert "<dt>Indexing</dt>" in body
     assert re.search(r'class="pill tone-ok">allowed<', body)
     # `data_status` verbatim from corpus-summary, not re-derived.
     assert re.search(r'class="pill tone-\w+">(ok|partial|degraded|indexing|empty)<', body)
     # Storage from the column, and no filesystem path anywhere.
     assert "keyframe JPEGs" in body
     assert "/keyframes/" not in body and "jpeg_path" not in body
+
+
+def test_readiness_is_one_panel_holding_declared_beside_served(
+    tmp_path: Path,
+) -> None:
+    """Tom, 2026-08-13: readiness is one story, told compactly.
+
+    It was two panels — "Pipeline readiness" near the top and "Declared models,
+    and what the worker is serving" at the foot of the page — with the fact that
+    links them, whether the two agree, spread across both. One panel now: five
+    states in one strip, then declared and served side by side, and the whole
+    panel wears the drift rule when they stop agreeing.
+    """
+
+    def worker(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"backends": [{"task": "stt", "model": "large-v3", "loaded": True}]}
+        )
+
+    with make_client(tmp_path, worker_handler=worker) as client:
+        body = page(client, ROOT)
+        # One heading for the whole story, and the panel that carried the
+        # second one is gone rather than moved.
+        assert "Declared models, and what the worker is serving" not in body
+        assert body.count('id="readiness"') == 1
+        panel = body[body.index('id="readiness"') : body.index("Recently indexed")]
+        # Declared and served, in that order, inside the one panel.
+        assert panel.index("model declared") < panel.index("model served")
+        assert "Qwen/Qwen3-VL-Embedding-2B" in panel and "large-v3" in panel
+        assert '<div class="split readiness-models">' in panel
+        # Five states in the strip, including the one the models panel carried.
+        assert panel.count("<dt>") == 5
+
+        # The diff goes red on the panel that *is* the diff.
+        assembled = client.app.state.assembled
+        assembled.db.vectors.disable("the worker is serving 'other'.")
+        try:
+            drifted = page(client, ROOT)
+            assert 'class="panel readiness is-drift"' in drifted
+        finally:
+            assembled.db.vectors.enabled = True
+            assembled.db.vectors.reason = None
+
+
+def test_the_overview_no_longer_repeats_the_video_count(client: TestClient) -> None:
+    """Tom, 2026-08-13: "across N videos" says what the figure two cells to the
+    left of it already says, in the same band."""
+    assert "across" not in page(client, ROOT).split("</dl>")[0]
 
 
 def test_the_overview_shows_the_drift_banner_when_vectors_are_off(
@@ -2666,17 +2715,23 @@ def test_get_index_prefills_a_bounded_draft_without_queueing(tmp_path: Path) -> 
         assert "&lt;script&gt;alert" in hostile
 
 
-def test_the_overview_quick_add_posts_conservative_defaults(tmp_path: Path) -> None:
+def test_adding_videos_lives_in_the_rail_and_nowhere_else(tmp_path: Path) -> None:
+    """Tom, 2026-08-13: the overview's quick-add form is gone.
+
+    §13 gave the surface two entry points to one POST. The rail item is on every
+    page; the form on the overview was a second one that also *decided* for the
+    operator what a playlist URL meant, through three hidden fields, and spent a
+    panel of the page's scarcest dimension doing it. What the removal must not
+    break is the handler behind it, so the POST those defaults produced is still
+    exercised here — from the form that renders them.
+    """
     with owner_client(tmp_path) as client:
         sign_in(client)
         overview = page(client, ROOT)
-        assert f'<form class="filters" data-quick-add method="post" action="{ROOT}/index">' in overview
-        for name, value in (
-            ("expand", "none"),
-            ("max_items", "25"),
-            ("priority", "normal"),
-        ):
-            assert f'<input type="hidden" name="{name}" value="{value}">' in overview
+        assert "data-quick-add" not in overview
+        assert 'action="/dashboard/index"' not in overview
+        # …and the one entry point is still one click away, on this page too.
+        assert f'data-add-videos href="{ROOT}/index"' in overview
 
         queued = client.post(
             f"{ROOT}/index",
@@ -2873,7 +2928,6 @@ def test_the_write_affordances_appear_only_with_the_write_side(
         ):
             assert f'data-add-videos href="{ROOT}/index"' in page(client, path, status)
         assert "Add videos" in page(client, ROOT)
-        assert "data-quick-add" in page(client, ROOT)
         assert "data-queue-channel" in page(client, f"{ROOT}/videos/kCc8FmEb1nY")
         assert "Re-index" in page(client, f"{ROOT}/videos")
         assert 'id="manage"' in page(client, f"{ROOT}/videos/kCc8FmEb1nY")
@@ -2888,7 +2942,6 @@ def test_the_write_affordances_appear_only_with_the_write_side(
     with make_client(tmp_path) as none_mode:  # auth=none
         overview = page(none_mode, ROOT)
         assert "Add videos" not in overview
-        assert "data-quick-add" not in overview
         assert "Sign out" not in overview
         # …and it says why, with the one-line fix (§3.2 rule 3).
         assert "VIDTHEQUE_AUTH=token" in overview
@@ -2902,7 +2955,6 @@ def test_the_write_affordances_appear_only_with_the_write_side(
     with owner_client(tmp_path, readonly=True) as demo:
         overview = demo.get(ROOT, headers=BEARER).text
         assert "data-add-videos" not in overview
-        assert "data-quick-add" not in overview
         assert "data-queue-channel" not in demo.get(
             f"{ROOT}/videos/kCc8FmEb1nY", headers=BEARER
         ).text
@@ -2927,7 +2979,11 @@ DEMO = PublicSettings(enabled=True)
 # an environment variable and its value.
 OPERATOR_STRINGS = (
     "Qwen/Qwen3-VL-Embedding-2B",
-    "Declared models",
+    # The declared-models table. It had a panel heading of its own until the
+    # 2026-08-13 readiness merge; it is pinned by its own column head and its
+    # caption now, which is what the projection actually has to drop.
+    "model declared",
+    "The models this corpus was built with",
     "keyframe JPEGs",
     # The storage panel itself. It used to be pinned by a figure-note that read
     # "one SQLite file, one writer"; that note was self-narration and went in

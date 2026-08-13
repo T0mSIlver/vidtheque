@@ -591,18 +591,16 @@ code { font-size: var(--t-machine); overflow-wrap: anywhere; }
 }
 
 /* A panel whose two halves stopped agreeing. The rule is the alarm; the words
-   under it still say what happened, because colour is never the message. */
+   under it still say what happened, because colour is never the message.
+   Descendant, not child, since the readiness merge (2026-08-13): the panel that
+   wears this now carries its title inside a `.panel-headline` beside the
+   observation clock. */
 .panel.is-drift { border-top: 2px solid var(--tone-bad); }
-.panel.is-drift > .panel-title { color: var(--tone-bad); }
+.panel.is-drift .panel-title { color: var(--tone-bad); }
 
-/* Declared above, live below: the pair that makes the models panel a diff. */
-.live-state {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s2);
-  align-items: baseline;
-  margin: var(--s3) 0 0;
-}
+/* `.live-state` went with the models panel it belonged to (2026-08-13): the one
+   fact it carried — whether indexing is allowed — is a cell in the readiness
+   list now, beside the four other states of the same pipeline. */
 
 .panel-note {
   margin: var(--s3) 0 0;
@@ -626,8 +624,13 @@ code { font-size: var(--t-machine); overflow-wrap: anywhere; }
 .panel-clock time { color: var(--fg); font-family: var(--font-mono); }
 
 /* Readiness is one flat observation. Rows, not cards: each system name is a
-   label beside the word it reported, and the worker's model map is the table
-   below only when there is one to show. */
+   label beside the word it reported, and the two model tables — declared and
+   served — sit under it as one row only when there is something to show.
+
+   Tightened 2026-08-13 with the merge: five states in one strip instead of four
+   in a panel and a fifth two panels down, so the cell padding drops a step and
+   the label sits one step off its own state. The strip is `auto-fit`, so the
+   fifth cell costs a column and no rule. */
 .readiness-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
@@ -635,10 +638,14 @@ code { font-size: var(--t-machine); overflow-wrap: anywhere; }
   border: 1px solid var(--seam2);
   background: var(--plate);
 }
-.readiness-list > div { min-width: 0; padding: var(--s3); border-left: 1px solid var(--seam); }
+.readiness-list > div {
+  min-width: 0;
+  padding: var(--s2) var(--s3);
+  border-left: 1px solid var(--seam);
+}
 .readiness-list > div:first-child { border-left: 0; }
 .readiness-list dt {
-  margin-bottom: var(--s2);
+  margin-bottom: var(--s1);
   font-family: var(--font-mono);
   font-size: var(--t-label);
   font-weight: var(--w-label);
@@ -647,8 +654,11 @@ code { font-size: var(--t-machine); overflow-wrap: anywhere; }
   color: var(--muted);
 }
 .readiness-list dd { margin: 0; }
-.readiness-detail { display: block; margin-top: var(--s2); color: var(--muted); font-size: var(--t-cell); }
-.readiness-models { margin-top: var(--s3); }
+.readiness-detail { display: block; margin-top: var(--s1); color: var(--muted); font-size: var(--t-cell); }
+/* The two halves of the diff, side by side under the strip that summarises
+   them. `--s6` between the columns rather than the `.split` default `--s10`:
+   these two tables are read across, not treated as two zones of a page. */
+.readiness-models { margin-top: var(--s3); gap: 0 var(--s6); }
 
 /* Search results preserve rank: one ordered rail of moments, with the channel
    text and tool notes left exactly as the shared handler returned them.
