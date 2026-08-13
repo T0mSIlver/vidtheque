@@ -30,6 +30,8 @@ from urllib.parse import urlparse
 
 import httpx2 as httpx
 
+from pydantic import AnyUrl
+
 from mcp.shared.auth import OAuthClientInformationFull
 
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1", "[::1]"}
@@ -145,6 +147,31 @@ def matches_registered_redirect(registered: list[str], candidate: str) -> bool:
     return False
 
 
+class LoopbackRedirectClient(OAuthClientInformationFull):
+    """The SDK's client model, with RFC 8252 §7.3 loopback semantics.
+
+    The SDK's ``validate_redirect_uri`` is exact membership, and its handler
+    runs it BEFORE the provider's ``authorize`` — so the loopback rule
+    :func:`matches_registered_redirect` implements was dead code for the case
+    it exists for: a native client (Claude Code, MCP Inspector) registers
+    ``http://localhost:<the port it held that day>/callback``, binds a fresh
+    random port at the next sign-in, and the handler refuses the mismatch
+    before this module is consulted (field report, CT 9002, 2026-08-13). The
+    RFC is explicit that the server MUST allow any port at request time for
+    loopback redirects. Every client this provider materializes — stored DCR
+    rows and synthesized CIMD documents both — is this subclass, so the
+    handler's own validation applies the rule; non-loopback URIs keep the
+    SDK's exact matching.
+    """
+
+    def validate_redirect_uri(self, redirect_uri: AnyUrl | None) -> AnyUrl:
+        if redirect_uri is not None and matches_registered_redirect(
+            [str(u) for u in (self.redirect_uris or [])], str(redirect_uri)
+        ):
+            return redirect_uri
+        return super().validate_redirect_uri(redirect_uri)
+
+
 def synthesize(client_id: str, document: dict[str, Any]) -> OAuthClientInformationFull:
     """Turn a validated document into an in-memory client record."""
     if document.get("client_id") != client_id:
@@ -156,7 +183,7 @@ def synthesize(client_id: str, document: dict[str, Any]) -> OAuthClientInformati
     if method not in {"none", "private_key_jwt"}:
         raise CIMDError(f"unsupported token_endpoint_auth_method {method!r} for a CIMD client")
     redirect_uris = validate_redirect_uris(client_id, list(document.get("redirect_uris") or []))
-    return OAuthClientInformationFull(
+    return LoopbackRedirectClient(
         client_id=client_id,
         client_secret=None,
         redirect_uris=redirect_uris,  # type: ignore[arg-type]

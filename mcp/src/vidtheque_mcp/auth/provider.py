@@ -31,7 +31,13 @@ from mcp.server.auth.provider import (
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
 from ..config import OFFLINE_SCOPE, READ_SCOPE, WRITE_SCOPE, Settings
-from .cimd import CIMDError, CIMDFetcher, looks_like_cimd, matches_registered_redirect
+from .cimd import (
+    CIMDError,
+    CIMDFetcher,
+    LoopbackRedirectClient,
+    looks_like_cimd,
+    matches_registered_redirect,
+)
 from .store import AuthStore
 from .tokens import TokenIssuer, hash_refresh_token
 
@@ -72,7 +78,9 @@ class VidthequeOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode,
         stored = self.store.load_client(client_id)
         if stored is None:
             return None
-        return OAuthClientInformationFull.model_validate(stored)
+        # The subclass, not the SDK model: its validate_redirect_uri carries
+        # the RFC 8252 loopback-port rule the handler enforces pre-authorize.
+        return LoopbackRedirectClient.model_validate(stored)
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
         """DCR fallback, persisted. Deprecated by the spec, kept for reach."""
