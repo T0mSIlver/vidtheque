@@ -117,6 +117,7 @@
       <th scope="col">progress</th>
       <th scope="col">items</th>
       <th scope="col">created</th>
+      <th scope="col">finished</th>
       <th scope="col" class="num">wall clock</th>
       {% if write_side %}<th scope="col" class="col-actions">action</th>{% endif %}
     </tr>
@@ -188,6 +189,13 @@
       </td>
       <td data-label="Items"><span data-field="job-counts">{{ job.text.counts }}</span></td>
       <td data-label="Created"><time>{{ job.created_at | minute }}</time></td>
+      {# The other end of the same measurement. It is the one clock on this row
+         that arrives *while the page is open* — a job finishes between two
+         ticks — so it carries a `data-field` and the poller fills it in, the
+         same way the state pill and the wall clock are patched. A job still
+         running prints the em dash: this has not happened yet, and a blank cell
+         would read as a value the page failed to fetch. #}
+      <td data-label="Finished"><time data-field="job-finished">{{ job.text.finished }}</time></td>
       {# A counter ticking up, which is the one motion DESIGN.md sanctions with
          nothing but "counts are counts". It ticks only while the job is live —
          a finished job's wall clock is a measurement, and a measurement that

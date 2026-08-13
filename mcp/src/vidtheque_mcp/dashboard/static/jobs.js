@@ -128,6 +128,10 @@ function applyJob(scope, job) {
   setText(scope, "job-basis", job.text.basis);
   setText(scope, "job-wall", job.text.wall);
   setText(scope, "job-ran", job.text.ran);
+  // The clock a job acquires by ending. Until then the server sent the em
+  // dash, and this assigns the server's string either way — the rule this file
+  // keeps everywhere: no formatter on this side but the two counters.
+  setText(scope, "job-finished", job.text.finished);
   // The clock the ticker counts up between polls, re-synced to the server's
   // own number on every one of them.
   for (const node of scope.querySelectorAll("[data-wall]")) {

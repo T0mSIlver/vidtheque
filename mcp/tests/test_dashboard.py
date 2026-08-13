@@ -1024,6 +1024,35 @@ def test_the_jobs_table_shows_the_countdown_that_was_invisible(
     assert "held <span" in body
 
 
+def test_the_jobs_table_prints_when_a_job_finished(client: TestClient) -> None:
+    """Tom, 2026-08-13: created is not enough.
+
+    The column the table was missing is the one that says the batch is over.
+    Three rows, three states: the finished job carries a clock formatted by
+    `iso_minute` like every other stamp on this surface, and the two live ones
+    carry the em dash rather than an empty cell — a blank in an instrument reads
+    as a value that failed to arrive.
+
+    The cell is patched by the tick because it is the one clock a row *acquires*
+    while the page is open, and the string comes from the server for the same
+    reason every other one does (§5.4).
+    """
+    body = page(client, f"{ROOT}/jobs")
+    assert "<th scope=\"col\">finished</th>" in body
+    cells = re.findall(r'<time data-field="job-finished">([^<]*)</time>', body)
+    assert len(cells) == 3, "every row carries the field, whatever its value"
+    assert cells.count("—") == 2  # queued and running have not finished
+    stamped = [c for c in cells if c != "—"]
+    assert len(stamped) == 1 and re.fullmatch(r"\d{4}-\d\d-\d\d \d\d:\d\d", stamped[0])
+    # The tick reads the same string off the same projection.
+    payload = client.get(f"{ROOT}/api/jobs").json()
+    finished = next(j for j in payload["jobs"] if j["job_id"] == "job_finished01")
+    assert finished["text"]["finished"] == stamped[0]
+    running = next(j for j in payload["jobs"] if j["job_id"] == "job_running001")
+    assert running["text"]["finished"] == "—"
+    assert 'setText(scope, "job-finished"' in (STATIC / "jobs.js").read_text()
+
+
 def test_the_jobs_table_is_clamped_and_pages_with_has_more(client: TestClient) -> None:
     one = page(client, f"{ROOT}/jobs?limit=1")
     assert "more available" in one

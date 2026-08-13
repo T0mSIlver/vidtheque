@@ -713,6 +713,14 @@ rollup) · created / started / finished · **`not_before` as a live countdown
 whenever it is in the future**, with `error_code` beside it. That row is the one
 that was missing.
 
+*Amended 2026-08-13 (Tom: "created is not enough").* The **listing** printed
+only `created`, so "when did the overnight batch actually end" was a question
+you had to open a job to answer. It carries a `finished` column now, formatted
+by the same `iso_minute` as every other stamp on the surface, em-dashed while a
+job is queued or running — the value arrives while the page is open, so the
+string is formatted server-side and patched by the same 2 s tick that patches
+the state pill.
+
 **Per item.** `state` · `stage` · `stage_pct` · `attempts` / `max_attempts` ·
 `error_code` · `error_message` · the tail of its `job_events`, which is where a
 non-rate-limit deferral is the *only* record (§4.4).

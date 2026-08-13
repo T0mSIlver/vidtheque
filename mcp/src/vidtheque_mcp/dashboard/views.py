@@ -1550,6 +1550,16 @@ def _job_card(
         "ran": span(card["ran_s"]),
         "waited": span(card["waited_s"]),
         "defer": span(card["defer_s"]),
+        # When it stopped, not only when it was asked for (Tom, 2026-08-13:
+        # "created is not enough"). `created_at` answers "when did I queue
+        # this"; the operator arriving at 03:00 is asking "when did the batch
+        # actually end", and until now the only page that said so was the job's
+        # own. A job that has not finished says so with the em dash this
+        # surface already uses for "not recorded" (`render.dash`) rather than
+        # with an empty cell — and because a running job *acquires* the value
+        # under the reader, it is formatted here and patched by the tick, like
+        # every other changing string on this row.
+        "finished": iso_minute(finished) if finished else "—",
     }
     return card
 
