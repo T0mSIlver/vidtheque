@@ -1,4 +1,7 @@
-![vidtheque.](docs/assets/wordmark.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/T0mSIlver/vidtheque/main/docs/assets/wordmark-dark.svg">
+  <img src="https://raw.githubusercontent.com/T0mSIlver/vidtheque/main/docs/assets/wordmark.svg" alt="vidtheque." width="220">
+</picture>
 
 Knowledge is announced on video. vidtheque puts it on tap.
 
