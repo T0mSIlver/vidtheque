@@ -1,11 +1,11 @@
 # Going public — the runbook
 
-vidtheque is exposed to the internet by a Cloudflare tunnel from Tom's box:
-a welcome page, a read-only dashboard, and a demo over the AI Engineer corpus,
-with the MCP server itself reachable so anyone can point their own agent at it.
-This document turns that day into a checklist.
+vidtheque is exposed to the internet by a Cloudflare tunnel from the box that
+runs it: a welcome page, a read-only dashboard, and a demo over the AI Engineer
+corpus, with the MCP server itself reachable so anyone can point their own
+agent at it. This document turns that day into a checklist.
 
-**Who runs this.** Tom, with an agent alongside. `docs/history/HANDOFF-2026-08-09.md`
+**Who runs this.** The operator, with an agent alongside. `docs/history/HANDOFF-2026-08-09.md`
 reserves the tunnel, the domain, the DNS records and the security audit for
 "together", and that reservation is the point of §1: everything below §1 is
 mechanical, and §1 is not.
@@ -28,7 +28,7 @@ scanned, and the tunnel goes live the moment `cloudflared` connects.
 **This is a hard gate.** The deferred security audit
 (`docs/history/HANDOFF-2026-08-09.md`, "Reserved for together") happens **before**
 the first public request, not after the URL is shared and not "next week". It
-is run **with Tom**, as a decision-making session, not unilaterally by an agent:
+is run **with the operator**, as a decision-making session, not unilaterally by an agent:
 several of the findings below are *policy* questions — how much of the corpus is
 public, whether ask mode ships on day one, what a scraper is allowed to take —
 and an agent cannot answer those.
@@ -212,8 +212,8 @@ The audit lands on one of, in increasing order of cost:
    this entry priced were real and both were paid: two phase-1 assertions were
    rewritten (the one named here, and `test_the_dashboard_json_is_clamped_
    server_side`, which read the owner ceiling on an anonymous request), and
-   the mode-keyed form was rejected on its own argument — Tom's deployment is
-   read-only *and* has a token. Trusted CIDRs were ruled authenticated-
+   the mode-keyed form was rejected on its own argument — the reference
+   deployment is read-only *and* has a token. Trusted CIDRs were ruled authenticated-
    equivalent: that setting already grants the whole write side with no
    credential presented, so a network trusted to change the corpus but not to
    read a transcript of it would be a boundary with no shape, and it is what
@@ -430,8 +430,8 @@ diff <(grep -oE '^[A-Z_]+=' .env.example | sort -u) \
 - Then check secrets: `.env` must not be committed (it is in `.gitignore` —
   confirm), and `git log --oneline -- deploy/.env` must be empty.
 
-**The live stack does not read `deploy/.env` at all.** Tom's box runs
-`scripts/dev_stack.sh`, which sources `$DATA_DIR/stack.env` with `set -a` — so
+**A dev-stack deployment does not read `deploy/.env` at all.** A box running
+`scripts/dev_stack.sh` sources `$DATA_DIR/stack.env` with `set -a` — so
 *that* file is the one that reaches the process, and it is the one to audit if
 you are shipping the dev stack rather than compose. Do both diffs if both exist;
 two configuration files that disagree is how a mode flag gets lost.
@@ -447,8 +447,7 @@ curl -s http://127.0.0.1:8100/dashboard/jobs/<a-failed-job-id> | grep -c 'Sign i
 # expect 0 — yt-dlp's error text is exactly what redaction drops
 ```
 
-Pick a job you know failed (the overnight batch has sixteen throttled ones and
-two `fetch failed`). The view must still show its state, its error **code**, its
+Pick a job you know failed. The view must still show its state, its error **code**, its
 counts and all of its clocks; it must not show the submitted URL, the error
 message, or any job-event message. If a failed job renders identically with the
 flag on and off, the flag is not reaching the process — go to §6.1.
@@ -483,9 +482,9 @@ caps are the only thing between a scraper and the whole corpus:
 Two things to check, both arithmetic. **Both were modelled at 3,460 keyframes
 and the corpus outgrew that by 3.6×**; the numbers below were remeasured on the
 live database and the live `derived/` cache on **2026-08-11 ~01:45 Paris**, at
-**12,351 keyframes over 199 `ready` videos**. That is a moving target until the
-corpus is frozen (`docs/history/BEFORE-SHIP.md` 2.1), so take the *formula*, not the
-constant, and re-run `select count(*) from keyframes` at the freeze.
+**12,351 keyframes over 199 `ready` videos**. That is a moving target while the
+corpus grows, so take the *formula*, not the constant, and re-run
+`select count(*) from keyframes` whenever you re-check.
 
 1. **Walk time.** `keyframes ÷ 120 per minute` for a single IP. At 12,351
    that is **103 minutes**, not "under half an hour" — and 103 minutes is a
@@ -710,7 +709,7 @@ anywhere. Do not add request-header transforms on this hostname.
 
 ## 5. Domain and DNS
 
-1. **Buy the domain, or pick a subdomain of one Tom already owns.** A subdomain
+1. **Buy the domain, or pick a subdomain of a zone you already own.** A subdomain
    of an existing zone is strictly less work: the zone is already on Cloudflare
    and step 2 is done.
 2. **Add the zone to Cloudflare** if it is new: add site, pick the Free plan,
@@ -983,7 +982,7 @@ directive, cloudflared does not honour it, and no `originRequest` option
 controls buffering. It is still sent, for the nginx that might one day be in
 front of this, and it is not a lever to pull here.
 
-**The fix that shipped (Tom's call, 2026-08-09 evening):** `/api/ask` now serves
+**The fix that shipped (decided 2026-08-09 evening):** `/api/ask` now serves
 the *same* event stream in a second framing, negotiated by `Accept` —
 `text/event-stream` gets SSE frames, `application/x-ndjson` gets the NDJSON
 lines unchanged, anything else gets the plain JSON body. The page asks for SSE
@@ -1167,8 +1166,7 @@ process holds it in memory until restart.
 - **Indexing while public.** Adding videos needs the write tools, which needs
   `VIDTHEQUE_PUBLIC_READONLY=0`, which un-masks them for everyone. Stop the
   tunnel, flip the flag, index, flip it back, verify with §2.1, restart the
-  tunnel. The sixteen throttled stragglers from the overnight batch are exactly
-  this job. Keep the 05:10 politeness overrides while doing it.
+  tunnel. Keep the yt-dlp politeness settings while doing it.
 - **Documented limits worth knowing** (all from Cloudflare's docs, 2026-08-09):
   Proxy Read Timeout 125s → HTTP 524 past it; Proxy Write Timeout 30s; proxy
   idle timeout 900s; max request body 100 MB on Free and Pro → HTTP 413; URLs

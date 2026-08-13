@@ -34,8 +34,9 @@ description of the path is enough.
 
 This is a one-person project. You will get an acknowledgement, an honest
 assessment of whether it is a bug and how bad it is, and credit in the advisory
-unless you ask not to be named. Fixes land on `main`; there are no releases and
-no backports to maintain yet, so `main` is the only supported version.
+unless you ask not to be named. Fixes land on `main` and ship in the next
+tagged release; there are no backports, so the latest release — and `main`
+ahead of it — is the only supported version.
 
 If you would rather not use GitHub, say so in a public issue **without any
 detail** and a private channel will be arranged. (A dedicated security address

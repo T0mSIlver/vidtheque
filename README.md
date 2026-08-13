@@ -8,46 +8,48 @@ solid, timestamped knowledge — every sentence spoken, every line that crossed
 the screen, every frame — and every answer comes with its receipt: the
 sentence, the slide, and the second it happened (`https://youtu.be/ID?t=123`).
 
-> screenpipe is AI powered by everything *you've* seen, said, or heard.
-> vidtheque is AI powered by what you *didn't have time* to see — from the
-> people worth listening to.
-
-**See it live:** [vidtheque.dev](https://vidtheque.dev) — and
-[vidtheque.dev/demo](https://vidtheque.dev/demo), the first shelf: every AI
-Engineer 2026 talk, on tap. (The reference instance, self-hosted on the
-maintainer's own box.)
-
-> **Early development.** Working end to end and tested, but no releases, no
-> published images, and schemas can still change without notice.
+**See it live:** [vidtheque.dev](https://vidtheque.dev) · [the demo](https://vidtheque.dev/demo)
+— the first shelf: every talk AI Engineer published in 2026, all 310, on tap.
 
 ## Quickstart
 
+Releases ship as published images — `ghcr.io/t0msilver/vidtheque-{mcp,worker}`,
+no leading `v` on image tags. A box that only serves never builds or clones:
+
 ```bash
-git clone https://github.com/T0mSIlver/vidtheque.git && cd vidtheque
-cp deploy/.env.example deploy/.env   # the document of record for every knob
-docker compose -f deploy/docker-compose.yml up -d      # private: mcp + worker
-curl localhost:8081/healthz && curl localhost:8081/status
+mkdir vidtheque && cd vidtheque
+REL=https://raw.githubusercontent.com/T0mSIlver/vidtheque/v0.0.3/deploy
+curl -fsSLO "$REL/docker-compose.yml" -O "$REL/compose.release.example.yml"
+curl -fsSL -o .env "$REL/.env.example"   # the document of record for every knob
+echo "IMAGE_TAG=0.0.3" >> .env
+docker compose -f docker-compose.yml -f compose.release.example.yml up -d
+curl localhost:8080/healthz
 ```
 
-**Disk: budget ~80 GB.** The worker image costs ~28 GB — CUDA plus GPU torch,
-which is what it genuinely weighs. (A clean 2026-08-12 install measured 44 GB:
-two layer bugs, since fixed, shipped uv's wheel cache and a `chown -R` copy of
-the whole venv.) Add ~13 GB of model cache, your corpus, and roughly an
-image's worth of transient build cache during a rebuild.
+The worker image is amd64 + CUDA (~28 GB — what GPU torch genuinely weighs);
+the mcp image is CPU-only, multi-arch, and runs on a Pi. No GPU? Drop the
+worker: a hosted OpenAI-compatible provider covers the transcript leg, and
+YouTube captions are the zero-GPU indexing path. `deploy/vidtheque-update.sh`
+makes upgrades one command; pin exact tags — `v0.0.x` schemas can still
+change. To build from source instead: clone this repo, `cp deploy/.env.example
+deploy/.env`, then `docker compose -f deploy/docker-compose.yml up -d`.
 
-Going **public** is different: the tunnel overlay is not optional. Without
-`compose.public.example.yml` the port publishes on `0.0.0.0`, so the origin
-stays reachable around the tunnel and a request that skipped Cloudflare can
-forge the trusted IP header; the overlay binds to loopback. Read
-[`docs/deploy-public.md`](docs/deploy-public.md) before you open a tunnel;
-going public is a checklist and the security audit is the gate.
+**Disk:** budget ~80 GB to build from source — the ~28 GB worker image, ~13 GB
+of model cache, your corpus, and an image's worth of transient build cache;
+pulled releases need about half. The corpus is the light part: 473 videos
+measure ~0.8 GB of SQLite + ~5.9 GB of keyframes.
+
+Going **public** is a checklist, not a flag: the `compose.public.example.yml`
+overlay binds the origin to loopback so nothing reaches around the tunnel to
+forge the trusted IP header. [`docs/deploy-public.md`](docs/deploy-public.md)
+is the runbook; the security audit is the gate.
 
 ## Follow the builders
 
 Point it at a video, a channel, or a playlist. It transcribes with word-level
 timestamps, reads what is on screen, embeds keyframes, and keeps it all in a
-local index you own. The corpus is the channels you chose, growing by
-subscription — the demo is the first shelf, not the library.
+local index you own — the channels you chose, growing by subscription. The
+demo is the first shelf, not the library.
 
 ## Your agent watched it
 
@@ -84,10 +86,8 @@ flowchart LR
 ```
 
 The worker is a **stateless inference API** — the endpoints are the contract.
-A hosted OpenAI-compatible provider can cover the transcript leg; frame search
-and OCR need the worker's sibling endpoints. One model embeds everything:
-`Qwen3-VL-Embedding-2B` reads a slide as a document, not a picture — the axis
-where CLIP-style dual encoders measure 1.3–3.6× worse on conference talks.
+One model embeds everything: `Qwen3-VL-Embedding-2B` reads a slide as a
+document, not a picture — where CLIP-style dual encoders do 1.3–3.6× worse.
 
 ## Development
 
@@ -96,8 +96,5 @@ uv sync && make test    # CPU-only, no model downloads; GPU extras: --extra gpu
 ```
 
 `AGENTS.md` is how to work in this repo; `docs/README.md` maps every surface
-to its owning contract in `docs/design/`. `research/` is the append-only
-evidence; `docs/history/` is the launch, as it happened. Security:
-[`SECURITY.md`](SECURITY.md) + [`docs/security.md`](docs/security.md).
-
-MIT — see [LICENSE](LICENSE).
+to its contract. Security: [`SECURITY.md`](SECURITY.md) +
+[`docs/security.md`](docs/security.md). MIT — see [LICENSE](LICENSE).
