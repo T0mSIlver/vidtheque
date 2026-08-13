@@ -1161,7 +1161,7 @@ function setAskMode(on) {
   $("go").textContent = on ? "Ask ✨" : "Search";
   $("q").setAttribute(
     "placeholder",
-    on ? "ask a question about these talks…" : "kv cache, nvidia-smi, ontology…",
+    on ? "ask a question about AI engineering…" : "kv cache, nvidia-smi, ontology…",
   );
   if (!on) {
     stopCountdown();

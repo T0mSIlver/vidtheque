@@ -79,7 +79,7 @@
       <span class="ic" aria-hidden="true">
         <svg viewBox="0 0 12 12"><path d="M3.6 1.8 L8.2 6 L3.6 10.2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
       </span>
-      <input id="q" name="q" type="search" placeholder="ask a question about these talks…"
+      <input id="q" name="q" type="search" placeholder="ask a question about AI engineering…"
              enterkeyhint="search" spellcheck="false" autofocus>
       <!-- The machine's own word for what it is doing. It prints the word;
            the colour only reinforces it. -->
@@ -147,38 +147,36 @@
     <section id="empty" class="empty" aria-label="Getting started">
       <div class="kick"><s></s><span class="ml gold">start here</span></div>
 
-      <!-- ASK — real questions, in the words a person would use.
-
-           Each is receipt-checked in research/, and none of them shares its
-           vocabulary with the answer: that is the point. A question whose
-           words are already in the transcript is a search dressed up as a
-           question, and it proves nothing the chip row below does not.
+      <!-- ASK — hard questions with no obvious answer, in the words a person
+           would use. Replaced 2026-08-13 (Tom's picks, the 310-talk corpus):
+           the two judge questions were two shades of one argument; these five
+           each sit on a different axis, and each is receipt-checked against
+           the live corpus in research/demo-queries-2026-08-13.md.
 
              · "Why does loop engineering look so much like building RLVR
-               environments?" — Tom's flagship
-               (research/demo-queries-2026-08-10.md, "Tom's ask-mode
-               flagship"): `fts 0 cues`, a pure vector leg, and an answer no
-               single talk contains — 7 citations across 6 talks, closing on
-               "the resemblance is structural". This is the whole pitch in one
-               click, so it is first.
-             · "What happens when the machine grades its own homework?" —
-               §8.1 ★★: `fts 0` again, and the top two hits are two named
-               practitioners who *disagree* (Lance Martin: isolate the judge's
-               context; David Brumley: drop the judge, the LLMs always say they
-               succeeded).
-             · "Can you trust a model to judge how good the writing is?" —
-               §13.1 ★★, found by two independent vendors' agents in the
-               dual-fleet eval: a sentence a person says out loud, sharing no
-               content word with either side of the argument it returns
-               (Hetzel vs Heiner, both verbatim, both citable on the second).
+               environments?" — Tom's flagship, unchanged
+               (research/demo-queries-2026-08-10.md): `fts 0`, an answer no
+               single talk contains. The whole pitch in one click, first.
+             · "Can you do reinforcement learning when nothing about the task
+               can be verified?" — `fts 0`, 6 talks; "verifier's rule" gets
+               quoted by a different speaker than the one who coined it.
+             · "Does training on model-generated data compound quality or
+               collapse it?" — 7 talks and a direct counter-take ("there's a
+               lot of talk that blindly tossing it in causes collapse, but…").
+             · "Is the harness or the model more important?" — 7 talks, three
+               camps, one numeric receipt (52.4% → 76.2%, only the harness
+               changed). The one deliberate exception to the
+               no-shared-vocabulary rule: you cannot name this fight without
+               its two nouns, and the receipts earn the exception.
+             · "Why do agents write bad AGENTS.md?" — `fts 0`; the corpus
+               answers by knowing what a *good* one is (minimal, conventions,
+               commands) — the weakest retrieval of the five and the purest
+               test of synthesis, so it is last.
 
-           Three, not four. §13.1 is explicitly the replacement for the
-           round-1/round-2 disagreement pairs, so shipping "What do speakers
-           disagree about when it comes to LLM as a judge?" beside it would be
-           the same argument twice — and its keyword form is already the
-           transcript chip in the search set below. Every ask click spends a
-           slice of the daily model budget; three questions that each prove a
-           different thing beat four that overlap. -->
+           Five, not three (Tom, 2026-08-13). The old three-question budget
+           argument still holds per click — nothing here fires without one —
+           but the corpus doubled its OCR reach and the set now has to carry
+           the announcement traffic; five disjoint axes beat three. -->
       <div id="ex-ask" class="exset">
         <h2>Ask one of these</h2>
         <p class="exnote">None of these is answered by one talk. The model reads
@@ -186,8 +184,10 @@
           and the second it was said.</p>
         <ul class="examples">
           <li><button type="button" class="example">Why does loop engineering look so much like building RLVR environments?</button></li>
-          <li><button type="button" class="example">What happens when the machine grades its own homework?</button></li>
-          <li><button type="button" class="example">Can you trust a model to judge how good the writing is?</button></li>
+          <li><button type="button" class="example">Can you do reinforcement learning when nothing about the task can be verified?</button></li>
+          <li><button type="button" class="example">Does training on model-generated data compound quality or collapse it?</button></li>
+          <li><button type="button" class="example">Is the harness or the model more important?</button></li>
+          <li><button type="button" class="example">Why do agents write bad AGENTS.md?</button></li>
         </ul>
       </div>
 
