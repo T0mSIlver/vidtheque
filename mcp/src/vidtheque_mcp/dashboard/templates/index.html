@@ -91,98 +91,103 @@
 </section>
 {% endif %}
 
-<section class="panel" aria-labelledby="submit">
-  <h2 class="panel-title" id="submit">The submission</h2>
-
-  <form class="indexform" method="post" action="{{ root }}/index">
-    <div class="field field-block">
-      <label for="urls">URLs</label>
-      <textarea id="urls" name="urls" rows="6" spellcheck="false" autocomplete="off"
-                placeholder="https://youtu.be/kCc8FmEb1nY&#10;kCc8FmEb1nY&#10;https://www.youtube.com/playlist?list=…"
-                {{ 'disabled' if not writes_allowed }}>{{ form.urls }}</textarea>
-      <p class="field-help">
-        One per line, or separated by spaces or commas; a bare 11-character id
-        works. Up to <span class="mono">{{ max_form_urls }}</span> per
-        submission, queued as jobs of <span class="mono">{{ urls_per_job }}</span>.
-      </p>
-    </div>
-
-    <div class="formrow">
-      <div class="field">
-        <label for="expand">Expand</label>
-        <select id="expand" name="expand" {{ 'disabled' if not writes_allowed }}>
-          {% for value in expansions %}
-          <option value="{{ value }}"{{ ' selected' if form.expand == value }}>{{ value }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="field field-narrow">
-        <label for="max_items">Max items</label>
-        <input id="max_items" name="max_items" type="number" min="1" max="200"
-               inputmode="numeric" value="{{ form.max_items }}"
-               {{ 'disabled' if not writes_allowed }}>
-      </div>
-      <div class="field">
-        <label for="priority">Priority</label>
-        <select id="priority" name="priority" {{ 'disabled' if not writes_allowed }}>
-          <option value="normal"{{ ' selected' if form.priority == 'normal' }}>normal</option>
-          <option value="high"{{ ' selected' if form.priority == 'high' }}>high</option>
-        </select>
-      </div>
-      <div class="field field-wide">
-        <label for="tags">Tags</label>
-        <input id="tags" name="tags" type="text" value="{{ form.tags }}"
-               placeholder="topic:attention, series:zero-to-hero" autocomplete="off"
-               {{ 'disabled' if not writes_allowed }}>
-      </div>
-    </div>
+{# The form is the page, so it is not a panel on it (2026-08-13). A `.panel` is
+   a top hairline and a heading, and this one opened directly under the page
+   head's own hairline: on the ordinary load — writes allowed, no error, no
+   receipt — the top of this page was a rule, an empty band, a second rule, and
+   only then a word. Every other page on this surface puts its controls in that
+   space and none of them opens with a rule, which is why this was the one page
+   with a section you could see and not read. The `h1` and the line under it
+   already say what is being submitted; the panel heading said it a third time
+   and charged the reader a band of empty height for it. #}
+<form class="indexform" method="post" action="{{ root }}/index">
+  <div class="field field-block">
+    <label for="urls">URLs</label>
+    <textarea id="urls" name="urls" rows="6" spellcheck="false" autocomplete="off"
+              placeholder="https://youtu.be/kCc8FmEb1nY&#10;kCc8FmEb1nY&#10;https://www.youtube.com/playlist?list=…"
+              {{ 'disabled' if not writes_allowed }}>{{ form.urls }}</textarea>
     <p class="field-help">
-      <em>Expand</em> decides what a playlist or channel URL means:
-      <code>none</code> indexes the one video,
-      <code>playlist</code> takes the list it is in,
-      <code>channel_recent</code> takes the channel's latest. <em>Max items</em>
-      caps that expansion, and caps each job.
+      One per line, or separated by spaces or commas; a bare 11-character id
+      works. Up to <span class="mono">{{ max_form_urls }}</span> per
+      submission, queued as jobs of <span class="mono">{{ urls_per_job }}</span>.
     </p>
+  </div>
 
-    <fieldset class="checks">
-      <legend class="label">Channels to build</legend>
-      {% for name, label, note in channel_boxes %}
-      <label class="check">
-        <input type="checkbox" name="channel_{{ name }}" value="1"
-               {{ 'checked' if not form.channels or name in form.channels }}
-               {{ 'disabled' if not writes_allowed }}>
-        <span class="check-word">{{ label }}</span>
-        <span class="check-note">{{ note }}</span>
-      </label>
-      {% endfor %}
-    </fieldset>
-
-    {# Its own group: forcing a rebuild is not a channel, and a checkbox filed
-       under the wrong legend is a wrong answer to a screen reader as well as
-       to a reader. #}
-    <fieldset class="checks">
-      <legend class="label">If it is already indexed</legend>
-      <label class="check">
-        <input type="checkbox" name="force_reindex" value="1"
-               {{ 'checked' if form.force_reindex }}
-               {{ 'disabled' if not writes_allowed }}>
-        <span class="check-word">Force re-index</span>
-        <span class="check-note">
-          rebuild every stage. Without this, an incomplete video resumes at its
-          outstanding stages and a finished one is left alone.
-        </span>
-      </label>
-    </fieldset>
-
-    <div class="field field-actions">
-      <button type="submit" {{ 'disabled' if not writes_allowed }}>Queue the job</button>
-      <a class="ghostlink" href="{{ root }}/jobs">Jobs</a>
+  <div class="formrow">
+    <div class="field">
+      <label for="expand">Expand</label>
+      <select id="expand" name="expand" {{ 'disabled' if not writes_allowed }}>
+        {% for value in expansions %}
+        <option value="{{ value }}"{{ ' selected' if form.expand == value }}>{{ value }}</option>
+        {% endfor %}
+      </select>
     </div>
-  </form>
+    <div class="field field-narrow">
+      <label for="max_items">Max items</label>
+      <input id="max_items" name="max_items" type="number" min="1" max="200"
+             inputmode="numeric" value="{{ form.max_items }}"
+             {{ 'disabled' if not writes_allowed }}>
+    </div>
+    <div class="field">
+      <label for="priority">Priority</label>
+      <select id="priority" name="priority" {{ 'disabled' if not writes_allowed }}>
+        <option value="normal"{{ ' selected' if form.priority == 'normal' }}>normal</option>
+        <option value="high"{{ ' selected' if form.priority == 'high' }}>high</option>
+      </select>
+    </div>
+    <div class="field field-wide">
+      <label for="tags">Tags</label>
+      <input id="tags" name="tags" type="text" value="{{ form.tags }}"
+             placeholder="topic:attention, series:zero-to-hero" autocomplete="off"
+             {{ 'disabled' if not writes_allowed }}>
+    </div>
+  </div>
+  <p class="field-help">
+    <em>Expand</em> decides what a playlist or channel URL means:
+    <code>none</code> indexes the one video,
+    <code>playlist</code> takes the list it is in,
+    <code>channel_recent</code> takes the channel's latest. <em>Max items</em>
+    caps that expansion, and caps each job.
+  </p>
 
-  {# Why there is no delete control (`jobs.kind='delete'` has no pipeline
-     behind it) is docs/design/dashboard.md §5.5 as of 2026-08-10; a page does
-     not owe the reader an argument for a button it does not have. #}
-</section>
+  <fieldset class="checks">
+    <legend class="label">Channels to build</legend>
+    {% for name, label, note in channel_boxes %}
+    <label class="check">
+      <input type="checkbox" name="channel_{{ name }}" value="1"
+             {{ 'checked' if not form.channels or name in form.channels }}
+             {{ 'disabled' if not writes_allowed }}>
+      <span class="check-word">{{ label }}</span>
+      <span class="check-note">{{ note }}</span>
+    </label>
+    {% endfor %}
+  </fieldset>
+
+  {# Its own group: forcing a rebuild is not a channel, and a checkbox filed
+     under the wrong legend is a wrong answer to a screen reader as well as
+     to a reader. #}
+  <fieldset class="checks">
+    <legend class="label">If it is already indexed</legend>
+    <label class="check">
+      <input type="checkbox" name="force_reindex" value="1"
+             {{ 'checked' if form.force_reindex }}
+             {{ 'disabled' if not writes_allowed }}>
+      <span class="check-word">Force re-index</span>
+      <span class="check-note">
+        rebuild every stage. Without this, an incomplete video resumes at its
+        outstanding stages and a finished one is left alone.
+      </span>
+    </label>
+  </fieldset>
+
+  <div class="field field-actions">
+    <button type="submit" {{ 'disabled' if not writes_allowed }}>Queue the job</button>
+    <a class="ghostlink" href="{{ root }}/jobs">Jobs</a>
+  </div>
+</form>
+
+{# Why there is no delete control (`jobs.kind='delete'` has no pipeline
+   behind it) is docs/design/dashboard.md §5.5 as of 2026-08-10; a page does
+   not owe the reader an argument for a button it does not have. #}
 
 {% endblock %}

@@ -2746,6 +2746,46 @@ def test_get_index_prefills_a_bounded_draft_without_queueing(tmp_path: Path) -> 
         assert "&lt;script&gt;alert" in hostile
 
 
+def test_the_index_page_opens_on_its_form_and_not_on_an_empty_band(
+    tmp_path: Path,
+) -> None:
+    """Tom, 2026-08-13: there is an empty section at the top of this page.
+
+    It was the `.panel` the form sat in. A panel is a top hairline plus a
+    heading, and this one opened directly under the page head's own hairline —
+    so the ordinary load (writes allowed, no error, no receipt) began with a
+    rule, a band of nothing, a second rule and only then a word. The form is the
+    first block now, which is where every other page on the surface puts its
+    controls.
+    """
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        body = page(client, f"{ROOT}/index")
+        main = body[body.index('<main id="main">') : body.index("</main>")]
+        # The first element after the page head is the form itself: on the
+        # ordinary load this page has no section on it at all.
+        after_head = main[main.index("A video, a playlist or a channel.") :]
+        assert re.match(
+            r'[^<]*</p>\s*</div>\s*<form class="indexform"', after_head
+        ), after_head[:200]
+        assert 'class="panel"' not in main
+        assert "The submission" not in body
+
+        # …and the page still refuses honestly, with its notice above the form.
+        assembled = client.app.state.assembled
+        assembled.db.writes_allowed = False
+        assembled.db.vectors.disable("dim 1024 declared, 768 stored.")
+        try:
+            refused = page(client, f"{ROOT}/index")
+            assert refused.index("Indexing is disabled") < refused.index(
+                '<form class="indexform"'
+            )
+        finally:
+            assembled.db.writes_allowed = True
+            assembled.db.vectors.enabled = True
+            assembled.db.vectors.reason = None
+
+
 def test_adding_videos_lives_in_the_rail_and_nowhere_else(tmp_path: Path) -> None:
     """Tom, 2026-08-13: the overview's quick-add form is gone.
 

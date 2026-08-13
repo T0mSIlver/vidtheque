@@ -2217,8 +2217,13 @@ button[disabled]:hover { color: var(--fg3); border-color: var(--seam); }
 
 /* One column, measured. A form is prose with controls in it — the reader goes
    down it once, top to bottom — so it takes `--prose` like every other sentence
-   here, and not the full-bleed width the scanning grids take. */
-.indexform { margin-top: var(--s3); max-width: var(--prose); }
+   here, and not the full-bleed width the scanning grids take.
+
+   It is the first block on its page since 2026-08-13 — the panel it sat in drew
+   a second hairline under the page head's own and an empty band between them —
+   so it carries the gap a panel used to, and lands where every other page's
+   controls land: straight under the head, no rule in between. */
+.indexform { margin-top: var(--s6); max-width: var(--prose); }
 /* One wrapping row of controls, the filter bar's metrics without the filter
    bar's ground: this is the page's subject, not a strip above a table. */
 .formrow {

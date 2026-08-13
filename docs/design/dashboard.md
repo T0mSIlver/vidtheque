@@ -778,6 +778,15 @@ reason shown, rather than accepting a submission that will `E_FEATURE_DISABLED`.
 read-only "resolved settings" panel is useful and in scope; the write half is
 compose's job.
 
+*Amended 2026-08-13 (Tom: "there's an empty section at the top").* The form is
+no longer wrapped in a `.panel`. A panel on this surface is a top hairline plus
+a heading, and this one opened directly under the page head's own hairline, so
+the ordinary load began with a rule, an empty band, a second rule and only then
+the word "The submission" — a section you could see and not read, on the one
+page whose first block was a panel rather than its controls. The form is the
+first block now; the `h1` and the line under it already name what is being
+submitted. The refusal notice and the receipt still render above it.
+
 One thing the form must handle that the tool does not: **the ten-URL cap is
 lower than a real batch.** HANDOFF-2026-08-09 tells Tom to retry sixteen ids in
 one `index-video` call — which `tools/indexing.py` would reject at
