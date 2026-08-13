@@ -92,16 +92,22 @@ def frames_routes(
 
         credential = await _authorized(request, auth, frame_id, width, quality)
         if credential is None:
-            return JSONResponse(
-                {"error": "invalid_token", "error_description": "signature, bearer or session required"},
-                status_code=401,
-                headers={
-                    "Cache-Control": "no-store",
-                    "WWW-Authenticate": 'Bearer error="invalid_token", '
+            # The discovery pointer is oauth-only, same rule as the /mcp 401
+            # (auth/modes.py): token mode serves no well-known routes, so
+            # advertising one here would send a client down the dead end the
+            # 2026-08-13 field report describes.
+            challenge = 'Bearer error="invalid_token", scope="vidtheque:read"'
+            if auth.mode == "oauth":
+                challenge = (
+                    'Bearer error="invalid_token", '
                     f'resource_metadata="{settings.issuer_url}'
                     '/.well-known/oauth-protected-resource/mcp", '
                     'scope="vidtheque:read"'
-                },
+                )
+            return JSONResponse(
+                {"error": "invalid_token", "error_description": "signature, bearer or session required"},
+                status_code=401,
+                headers={"Cache-Control": "no-store", "WWW-Authenticate": challenge},
             )
 
         parsed = parse_frame_id(frame_id)
