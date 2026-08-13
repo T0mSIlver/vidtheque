@@ -432,3 +432,57 @@ def test_refresh_tokens_are_stored_by_hash_only() -> None:
     assert raw not in hashed
     assert hashed == hash_refresh_token(secret, raw)
     assert hashed != hash_refresh_token("other", raw)
+
+
+def test_loopback_redirects_accept_any_port_at_authorize(corpus: Path) -> None:
+    """RFC 8252 §7.3: the port on a loopback redirect is the client's to pick.
+
+    A native client (Claude Code, MCP Inspector) registers the random port it
+    held on the day it registered and binds a fresh one at the next sign-in.
+    The SDK's handler validates redirect_uri by exact membership BEFORE the
+    provider's authorize() — so `matches_registered_redirect`'s loopback rule
+    was dead code on the path that needed it, and the second sign-in ever made
+    against the box died with "Redirect URI ... not registered for client"
+    (field report, CT 9002, 2026-08-13). `LoopbackRedirectClient` puts the
+    rule on the model the handler consults. Path and host stay exact; only
+    the loopback port floats.
+    """
+    settings = make_settings(corpus, auth_mode="oauth", password="pw")
+    with client(settings) as c:
+        registered = c.post(
+            "/register",
+            json={
+                "redirect_uris": ["http://localhost:33418/callback"],
+                "token_endpoint_auth_method": "none",
+                "grant_types": ["authorization_code", "refresh_token"],
+                "response_types": ["code"],
+                "client_name": "native-app-under-test",
+            },
+        )
+        assert registered.status_code in (200, 201), registered.text
+        client_id = registered.json()["client_id"]
+
+        def authorize(redirect_uri: str):  # type: ignore[no-untyped-def]
+            return c.get(
+                "/authorize",
+                params={
+                    "client_id": client_id,
+                    "redirect_uri": redirect_uri,
+                    "response_type": "code",
+                    "code_challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+                    "code_challenge_method": "S256",
+                    "state": "s",
+                },
+                follow_redirects=False,
+            )
+
+        # A different loopback port is the RFC's explicitly allowed case: the
+        # request proceeds to the login page instead of dying at validation.
+        moved = authorize("http://localhost:51965/callback")
+        assert moved.status_code in (302, 307), moved.text
+        assert "/auth/login" in moved.headers["location"]
+
+        # The rule floats the port and nothing else.
+        wrong_path = authorize("http://localhost:51965/elsewhere")
+        assert wrong_path.status_code == 400
+        assert "not registered" in wrong_path.text
