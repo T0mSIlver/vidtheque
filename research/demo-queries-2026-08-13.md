@@ -93,8 +93,9 @@ reproduced below for the shipped set.
 1. **Why does loop engineering look so much like building RLVR environments?**
    — unchanged flagship (2026-08-10 file, "Tom's ask-mode flagship").
 
-2. **Can you do reinforcement learning when nothing about the task can be
-   verified?** — `fts 0`, 6 talks. Receipts: the Will Brown talk itself, and —
+2. **How to do reinforcement learning when the task can't be verified?**
+   *(phrasing tightened by Tom after round 4; re-validated same day —
+   identical profile, `fts 0`, 6 talks, same receipts)* — Receipts: the Will Brown talk itself, and —
    the reason it ships — *Agents need more than a chat* (Legora) quoting
    "verifier's rule … if a task is solvable and it's easy to verify, then
    it's go[ing to be automated]" — the law cited by a different speaker than

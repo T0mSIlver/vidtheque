@@ -1293,7 +1293,7 @@ def test_the_example_chips_swap_with_the_mode(public_client: TestClient) -> None
         "Why does loop engineering look so much like building RLVR environments?"
     ), questions
     assert questions[1:] == [
-        "Can you do reinforcement learning when nothing about the task can be verified?",
+        "How to do reinforcement learning when the task can't be verified?",
         "Does training on model-generated data compound quality or collapse it?",
         "Is the harness or the model more important?",
         "Why do agents write bad AGENTS.md?",
