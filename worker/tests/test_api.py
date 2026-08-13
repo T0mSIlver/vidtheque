@@ -628,3 +628,26 @@ def test_openapi_documents_the_error_envelope(docs_client):
         "VerboseTranscriptionOut"
     )
     assert ok["content"]["text/plain"]["schema"] == {"type": "string"}
+
+
+def test_the_version_constant_matches_the_packaging() -> None:
+    """The worker's own half of the one-version rule.
+
+    The mcp side pins its constant against both pyprojects
+    (test_dashboard.py::test_the_version_is_one_string_everywhere) but cannot
+    import this package to check this constant — the mcp/worker boundary is
+    HTTP only, tests included. So the 0.0.2 bump moved every declaration and
+    left `__version__` here at 0.0.1, and `/status` on a 0.0.2 image
+    introduced itself as 0.0.1 (field finding, CT 9002, 2026-08-13). Each side
+    pins its own constant; the mcp test keeps the two pyprojects equal, so the
+    chain closes without an import across the boundary.
+    """
+    import tomllib
+    from pathlib import Path
+
+    from vidtheque_worker import __version__
+
+    declared = tomllib.loads(
+        (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text()
+    )["project"]["version"]
+    assert __version__ == declared
