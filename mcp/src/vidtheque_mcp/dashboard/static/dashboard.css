@@ -623,38 +623,19 @@ code { font-size: var(--t-machine); overflow-wrap: anywhere; }
 }
 .panel-clock time { color: var(--fg); font-family: var(--font-mono); }
 
-/* Readiness is one flat observation. Rows, not cards: each system name is a
-   label beside the word it reported, and the two model tables — declared and
-   served — sit under it as one row only when there is something to show.
-
-   Tightened 2026-08-13 with the merge: five states in one strip instead of four
-   in a panel and a fifth two panels down, so the cell padding drops a step and
-   the label sits one step off its own state. The strip is `auto-fit`, so the
-   fifth cell costs a column and no rule. */
-.readiness-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+/* Readiness is one flat observation, so it reads as one line: five statepairs
+   — the page head's own key+pill object — wrapping only when the viewport
+   makes them. The strip spent one day (2026-08-13, the merge) as a full-width
+   `auto-fit` grid of cells, which handed five words a screen's width of plate
+   and a band of air; Tom called it. The cells' detail sentences did not
+   survive as text either — a state's *why* is the pill's `title` now, with an
+   sr-only copy, because the strip's job is the five words. */
+.readiness-states {
   margin: 0;
-  border: 1px solid var(--seam2);
-  background: var(--plate);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s4);
 }
-.readiness-list > div {
-  min-width: 0;
-  padding: var(--s2) var(--s3);
-  border-left: 1px solid var(--seam);
-}
-.readiness-list > div:first-child { border-left: 0; }
-.readiness-list dt {
-  margin-bottom: var(--s1);
-  font-family: var(--font-mono);
-  font-size: var(--t-label);
-  font-weight: var(--w-label);
-  letter-spacing: .19em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.readiness-list dd { margin: 0; }
-.readiness-detail { display: block; margin-top: var(--s1); color: var(--muted); font-size: var(--t-cell); }
 /* The two halves of the diff, side by side under the strip that summarises
    them. `--s6` between the columns rather than the `.split` default `--s10`:
    these two tables are read across, not treated as two zones of a page. */
@@ -2650,9 +2631,6 @@ footer p { margin: 0; max-width: var(--note); }
   .field-actions { margin-left: 0; flex-basis: 100%; }
   .field-actions button { flex: 1 1 auto; }
 
-  .readiness-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .readiness-list > div:nth-child(odd) { border-left: 0; }
-  .readiness-list > div:nth-child(n + 3) { border-top: 1px solid var(--seam); }
   /* The still stays beside the moment on a hand — it is the evidence, and a
      stack of full-width frames is a wall of pictures. The receipt drops to its
      own line under the body rather than under the frame. */

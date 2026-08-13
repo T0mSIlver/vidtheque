@@ -1888,6 +1888,19 @@ was, the served table with the worker row, and the indexing state with them —
 "indexing refused" is a sentence about a worker nobody visiting the demo can
 reach. No new read, no new clamp, no history.
 
+**Amended again 2026-08-13, same day (Tom): the strip is words, not cells.**
+The five states shipped as a full-width `auto-fit` grid — five cells of plate
+across the whole content column, each holding one label over one word, the
+worker's cell also carrying its failure sentence as visible copy. Seen on a
+real viewport that is a screen's width spent on five words. The strip is now a
+single wrapping row of `statepair`s — the joined key+pill object the page head
+already wears for `data_status`, because these are the same kind of fact — and
+a state's detail sentence (`worker.detail`, the vector drift reason) moves off
+the page into the pill's `title` tooltip with an `sr-only` copy for readers
+that cannot hover. The word is the reading; the sentence is the footnote. The
+ledger's copy of the strip (§17) changes identically. No field is added or
+dropped; the projection is untouched.
+
 ## 16. Job repair actions (2026-08-12)
 
 ### 16.1 Cancellation
