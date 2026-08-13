@@ -81,6 +81,75 @@ if ! cmp -s "$REPO_DIR/deploy/staging/vidtheque-deploy.sh" /usr/local/sbin/vidth
 fi
 $RUN "$UV" sync --frozen --group gpu --quiet      || fail "uv sync"
 
+# ---------------------------------------------------------------------------
+# Corpus refresh — the corpus deploys the way the code does: pulled, never
+# pushed. deploy/staging/corpus-manifest.json names a generation and the
+# release assets that hold its tarball (split under GitHub's 2 GB/asset cap;
+# the parts are literal byte-ranges of one tar.gz, so `cat` restores it).
+# A generation change swaps vidtheque.db + keyframes/ and keeps the outgoing
+# generation in corpus-previous/, so a rollback is `git revert` of the
+# manifest plus one more deployment — not an ssh session this box does not
+# offer. No manifest, or an already-current generation, means this whole
+# block is a no-op. Runbook: deploy/staging/install.md §12.
+# ---------------------------------------------------------------------------
+MANIFEST="$REPO_DIR/deploy/staging/corpus-manifest.json"
+DATA_DIR=/var/lib/vidtheque
+if [ -f "$MANIFEST" ]; then
+  read -r GEN PACKED UNPACKED <<<"$(python3 -c '
+import json,sys
+m = json.load(open(sys.argv[1]))
+print(m["generation"], m["bytes_packed"], m["bytes_unpacked"])' "$MANIFEST")" \
+    || fail "corpus manifest unreadable"
+  CUR=$(cat "$DATA_DIR/.corpus-generation" 2>/dev/null || echo bootstrap)
+  if [ "$GEN" != "$CUR" ]; then
+    status in_progress "corpus refresh: $CUR -> $GEN"
+    STAGE="$DATA_DIR/corpus-incoming"
+    PREV="$DATA_DIR/corpus-previous"
+    rm -rf "$STAGE" && mkdir -p "$STAGE"
+    if [ -d "$PREV/$GEN" ]; then
+      # The requested generation is the one we swapped out last time: this
+      # deployment is a rollback, and the bytes are already on the box.
+      echo "deploy: corpus $GEN staged from corpus-previous (rollback)"
+      mv "$PREV/$GEN/vidtheque.db" "$PREV/$GEN/keyframes" "$STAGE"/ \
+        || fail "corpus rollback staging"
+    else
+      rm -rf "$PREV"   # one rollback generation is the budget; free it first
+      AVAIL=$(df --output=avail -B1 "$DATA_DIR" | tail -1)
+      [ "$AVAIL" -gt $((PACKED + UNPACKED + 1024*1024*1024)) ] \
+        || fail "corpus refresh needs $((PACKED + UNPACKED)) B + 1 GiB slack, have $AVAIL B"
+      python3 -c '
+import json,sys
+for p in json.load(open(sys.argv[1]))["parts"]:
+    print(p["sha256"] + "  " + p["url"])' "$MANIFEST" > "$STAGE/parts.lst" \
+        || fail "corpus manifest parts"
+      while read -r SUM URL; do
+        F="$STAGE/$(basename "$URL")"
+        echo "deploy: fetching $(basename "$URL")"
+        curl -fsSL --retry 3 -m 3600 -o "$F" "$URL"  || fail "corpus fetch $URL"
+        echo "$SUM  $F" | sha256sum -c - >/dev/null  || fail "corpus sha256 $F"
+      done < "$STAGE/parts.lst"
+      # Stream-extract the concatenation (the glob sorts, and part-aa < ab);
+      # each part is already integrity-checked, and gunzip+tar reject a torn
+      # stream — so the tarball never needs to exist reassembled on disk.
+      cat "$STAGE"/*.part-* | tar -xzf - -C "$STAGE" || fail "corpus unpack"
+      rm -f "$STAGE"/*.part-* "$STAGE/parts.lst"
+      [ -f "$STAGE/vidtheque.db" ] && [ -d "$STAGE/keyframes" ] \
+        || fail "corpus tarball missing vidtheque.db or keyframes/"
+    fi
+    systemctl stop vidtheque-mcp vidtheque-worker    || fail "corpus stop"
+    rm -rf "$PREV" && mkdir -p "$PREV/$CUR"
+    [ -f "$DATA_DIR/vidtheque.db" ] && mv "$DATA_DIR/vidtheque.db" "$PREV/$CUR/"
+    rm -f "$DATA_DIR"/vidtheque.db-wal "$DATA_DIR"/vidtheque.db-shm
+    [ -d "$DATA_DIR/keyframes" ] && mv "$DATA_DIR/keyframes" "$PREV/$CUR/keyframes"
+    mv "$STAGE/vidtheque.db" "$DATA_DIR/vidtheque.db" || fail "corpus swap db"
+    mv "$STAGE/keyframes"    "$DATA_DIR/keyframes"    || fail "corpus swap keyframes"
+    rm -rf "$DATA_DIR/derived" "$STAGE"   # resize cache of frames that just changed
+    chown -R vidtheque:vidtheque "$DATA_DIR/vidtheque.db" "$DATA_DIR/keyframes"
+    echo "$GEN" > "$DATA_DIR/.corpus-generation"
+    echo "deploy: corpus $GEN in place ($CUR kept in corpus-previous)"
+  fi
+fi
+
 systemctl restart vidtheque-worker vidtheque-mcp  || fail "restart"
 sleep 5
 for url in http://127.0.0.1:8081/healthz http://127.0.0.1:8100/healthz; do
