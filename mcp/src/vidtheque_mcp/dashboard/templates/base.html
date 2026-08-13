@@ -113,17 +113,17 @@
       <li><a data-add-videos href="{{ root }}/index"{% if page == 'index' %} aria-current="page"{% endif %}>Add videos</a></li>
     </ul>
     {% endif %}
-    {# The demo's way back. In read-only mode this surface is one half of a
-       two-page site — the welcome page at `/` is the search engine, this is the
-       browsable corpus behind it (dashboard.md §2.4) — and a visitor who
-       followed the link in ought to be able to follow one back out. The
-       condition is exact rather than approximate: `/` is registered by
-       `public_routes()` under the same flag that makes this the projection, so
-       the link exists precisely when its target does. #}
+    {# The demo's way back. In read-only mode this surface is the browsable
+       corpus behind the search engine at `/demo` (dashboard.md §2.4; `/` has
+       been the landing since 2026-08-11) — and a visitor who followed the link
+       in ought to be able to follow one back out. The condition is exact
+       rather than approximate: `/demo` is registered by `public_routes()`
+       under the same flag that makes this the projection, so the link exists
+       precisely when its target does. #}
     {% if readonly %}
     <p class="nav-group">This demo</p>
     <ul class="navlist">
-      <li><a href="/">Search the corpus</a></li>
+      <li><a href="/demo">Search the corpus</a></li>
     </ul>
     {% endif %}
     {# Room still left: search (dashboard.md §5.6) and settings arrive as one

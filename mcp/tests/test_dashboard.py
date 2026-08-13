@@ -2860,15 +2860,15 @@ def test_the_overview_projection_keeps_the_corpus_and_drops_the_box(
         assert re.search(r'class="pill tone-\w+">(ok|partial|degraded|indexing|empty)<', body)
         # The rail says what the reader may do and stops there.
         assert "read-only demo" in body
-        # The way back into the search engine, which exists under this flag and
-        # only under it.
-        assert 'href="/">Search the corpus' in body
+        # The way back into the search engine at /demo, which exists under
+        # this flag and only under it.
+        assert 'href="/demo">Search the corpus' in body
 
     with make_client(tmp_path) as owner:
         body = page(owner, ROOT)
         for kept in OPERATOR_STRINGS:
             assert kept in body, f"{kept} vanished from the owner's overview"
-        assert 'href="/">Search the corpus' not in body
+        assert 'href="/demo">Search the corpus' not in body
 
 
 def test_the_drift_reason_is_the_operators_sentence_and_the_effect_is_not(

@@ -201,7 +201,7 @@
   const bench = $('#bench');
   function populateBench(q, animate) {
     $('#benchhead').innerHTML =
-      `<span class="ml gold">lifted off the wall</span>
+      `<span class="ml gold">the light table</span>
        <span class="ml seen">seen — ${esc(q.seen)}</span>
        <span class="ml r hide-s">src <span class="id">${q.vid}</span> · tc ${q.tc}</span>`;
     const nf = frame(q.img,
@@ -341,10 +341,11 @@
       th.append(frame(A + m.img,
         'Keyframe at ' + hms(m.t) + ' of ' + m.title + ' — ' + m.speaker, boxes));
       p.append(th);
+      /* ocr_state=empty: no seen-line at all — the moment stands on the
+         sentence, and the frame is the evidence. */
       const seen = m.ocr.length
         ? `<div class="seenline"><span class="ll">seen</span><p>${esc(m.hero.map(i => m.ocr[i].t).join(' '))}</p></div>`
-        : `<p class="note">nothing readable on screen here — <b>ocr_state=empty</b>, so this
-             moment stands on the sentence alone, and the frame is the evidence.</p>`;
+        : '';
       p.append(el('div', 'bd',
         `<div class="who"><strong>${esc(m.speaker)}</strong><em>${esc(m.title)}${m.org ? ' · ' + esc(m.org) : ''}</em></div>
          <p class="said">${esc(cue.t)}</p>
