@@ -1896,10 +1896,14 @@ real viewport that is a screen's width spent on five words. The strip is now a
 single wrapping row of `statepair`s — the joined key+pill object the page head
 already wears for `data_status`, because these are the same kind of fact — and
 a state's detail sentence (`worker.detail`, the vector drift reason) moves off
-the page into the pill's `title` tooltip with an `sr-only` copy for readers
-that cannot hover. The word is the reading; the sentence is the footnote. The
-ledger's copy of the strip (§17) changes identically. No field is added or
-dropped; the projection is untouched.
+the page into a tooltip with an `sr-only` copy for readers that cannot hover.
+The tooltip is drawn, not the browser's `title` — native `title` demands a
+second of motionless pointer and ignores the keyboard, which on first contact
+reads as no tooltip at all: the sentence rides the pair as `data-detail`,
+floated on its own plate under the pill on hover or `focus-visible` (the pair
+takes `tabindex="0"` when it carries one). The word is the reading; the
+sentence is the footnote. The ledger's copy of the strip (§17) changes
+identically. No field is added or dropped; the projection is untouched.
 
 ## 16. Job repair actions (2026-08-12)
 

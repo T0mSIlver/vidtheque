@@ -718,9 +718,11 @@ def test_pipeline_readiness_degrades_without_delaying_or_breaking_the_page(
         body = client.get(ROOT, headers=BEARER).text
         assert client.get(f"{ROOT}/videos", headers=BEARER).status_code == 200
     assert ">unavailable<" in body
-    # The sentence is the pill's tooltip and an sr-only copy, never strip copy
-    # (Tom, 2026-08-13): the strip is five words, the why is the footnote.
-    assert 'title="The worker did not answer its status check."' in body
+    # The sentence is the statepair's drawn tooltip and an sr-only copy, never
+    # strip copy (Tom, 2026-08-13): the strip is five words, the why is the
+    # footnote — and it is `data-detail`, not `title`, because the browser's
+    # own tooltip answers neither a quick hover nor a keyboard.
+    assert 'data-detail="The worker did not answer its status check."' in body
 
     with owner_client(tmp_path, worker_url="") as client:
         body = client.get(ROOT, headers=BEARER).text

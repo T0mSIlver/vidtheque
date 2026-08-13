@@ -183,9 +183,9 @@
     <span class="statepair"><span class="statepair-key">MCP</span><span class="pill tone-ok">{{ readiness.mcp }}</span></span>
     <span class="statepair"><span class="statepair-key">Database</span><span class="pill tone-ok">{{ readiness.database }}</span></span>
     {% if readiness.worker %}
-    <span class="statepair"><span class="statepair-key">Worker</span><span class="pill tone-{{ 'ok' if readiness.worker.state == 'ready' else ('bad' if readiness.worker.state == 'unavailable' else 'neutral') }}"{% if readiness.worker.detail %} title="{{ readiness.worker.detail }}"{% endif %}>{{ readiness.worker.state }}</span>{% if readiness.worker.detail %}<span class="sr-only">{{ readiness.worker.detail }}</span>{% endif %}</span>
+    <span class="statepair"{% if readiness.worker.detail %} data-detail="{{ readiness.worker.detail }}" tabindex="0"{% endif %}><span class="statepair-key">Worker</span><span class="pill tone-{{ 'ok' if readiness.worker.state == 'ready' else ('bad' if readiness.worker.state == 'unavailable' else 'neutral') }}">{{ readiness.worker.state }}</span>{% if readiness.worker.detail %}<span class="sr-only">{{ readiness.worker.detail }}</span>{% endif %}</span>
     {% endif %}
-    <span class="statepair"><span class="statepair-key">Vector search</span><span class="pill tone-{{ 'ok' if readiness.vectors.enabled else 'bad' }}"{% if readiness.vectors.reason %} title="{{ readiness.vectors.reason }}"{% endif %}>{{ "ready" if readiness.vectors.enabled else "full-text only" }}</span>{% if readiness.vectors.reason %}<span class="sr-only">{{ readiness.vectors.reason }}</span>{% endif %}</span>
+    <span class="statepair"{% if readiness.vectors.reason %} data-detail="{{ readiness.vectors.reason }}" tabindex="0"{% endif %}><span class="statepair-key">Vector search</span><span class="pill tone-{{ 'ok' if readiness.vectors.enabled else 'bad' }}">{{ "ready" if readiness.vectors.enabled else "full-text only" }}</span>{% if readiness.vectors.reason %}<span class="sr-only">{{ readiness.vectors.reason }}</span>{% endif %}</span>
     {% if not readonly %}
     <span class="statepair"><span class="statepair-key">Indexing</span><span class="pill tone-{{ 'ok' if writes_allowed else 'bad' }}">{{ "allowed" if writes_allowed else "refused" }}</span></span>
     {% endif %}

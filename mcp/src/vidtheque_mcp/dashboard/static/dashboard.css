@@ -636,6 +636,37 @@ code { font-size: var(--t-machine); overflow-wrap: anywhere; }
   flex-wrap: wrap;
   gap: var(--s2) var(--s4);
 }
+/* A statepair that knows *why* says so on approach. Not the browser's `title`
+   — that tooltip asks for a second of motionless pointer and never answers a
+   keyboard at all, which on first contact reads as "there is no tooltip"
+   (Tom, 2026-08-13). The sentence is a `data-detail` on the pair, drawn as a
+   floated plate under it on hover or focus; `attr()` keeps the words in the
+   markup, and the `sr-only` copy inside the pair is what a reader without a
+   pointer hears. `pointer-events: none` for the scrubpreview's reason: a box
+   that appears under the pointer must never be the thing the pointer is on. */
+.statepair[data-detail] { position: relative; cursor: help; }
+.statepair[data-detail]::after {
+  content: attr(data-detail);
+  position: absolute;
+  top: calc(100% + var(--s1));
+  left: 0;
+  z-index: 3;
+  display: none;
+  width: max-content;
+  max-width: 26rem;
+  padding: var(--s1) var(--s2);
+  background: var(--plate);
+  border: 1px solid var(--seam2);
+  color: var(--fg);
+  /* The pair zeroes its own font-size to close the gap between its halves,
+     and pins nowrap; the sentence needs both back. */
+  font-size: var(--t-cell);
+  line-height: 1.45;
+  white-space: normal;
+  pointer-events: none;
+}
+.statepair[data-detail]:hover::after,
+.statepair[data-detail]:focus-visible::after { display: block; }
 /* The two halves of the diff, side by side under the strip that summarises
    them. `--s6` between the columns rather than the `.split` default `--s10`:
    these two tables are read across, not treated as two zones of a page. */
