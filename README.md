@@ -1,4 +1,4 @@
-# vidtheque
+<img src="docs/assets/wordmark.svg" alt="vidtheque." width="220">
 
 Knowledge is announced on video. vidtheque puts it on tap.
 
