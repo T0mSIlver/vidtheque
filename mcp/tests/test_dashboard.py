@@ -3613,7 +3613,7 @@ def test_the_version_is_one_string_everywhere(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[2]
     declared = tomllib.loads((root / "mcp/pyproject.toml").read_text())["project"]["version"]
     worker = tomllib.loads((root / "worker/pyproject.toml").read_text())["project"]["version"]
-    assert __version__ == declared == worker == "0.0.2"
+    assert __version__ == declared == worker == "0.0.3"
 
     with make_client(tmp_path) as client:
         assert client.get("/healthz").json()["version"] == __version__
