@@ -626,6 +626,21 @@ service-layer parameter, §7.
 24, `public/api.py:47-48`). Server-side; `?limit=100000` is clamped, not
 honoured.
 
+**The count line is exact, and the `~` is gone** (Tom, 2026-08-13: "just show
+the actual number of videos"). This is a deliberate divergence from §5.1's
+"does not show … any exact total", narrowed to this page, and the reasoning is
+the one §6 uses everywhere: token discipline is a rule about what a payload
+costs *its consumer*, and a browser is not the consumer it was written for.
+`list-videos` still counts through `COUNT_PROBE_FLOOR` and still prints
+`~473`, because a total is rows an agent pays for and will not page through —
+**that probe does not move, and no tool parameter was added for this page.**
+The page instead runs `queries.count_videos`: the same `_list_sql` CTE with the
+same filters and the same FTS candidate set, `COUNT(*)` over it, no ceiling. It
+is two reads (`resolve_videos`, then the count), independent of `limit`, and it
+counts exactly the set the pager walks. `has_more` still drives the pager; the
+total is what the line says, because a tilde above a table with a Next button is
+the one thing on the line a reader cannot act on.
+
 **Row actions** (write side only): re-index (force), tag, delete.
 
 **Delete is blocked on the pipeline, not the dashboard.** `jobs.kind` permits

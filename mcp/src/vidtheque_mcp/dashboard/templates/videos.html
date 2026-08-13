@@ -197,8 +197,13 @@ q={{ filters.q | urlencode }}&amp;channel={{ filters.channel | urlencode }}&amp;
 </section>
 {% else %}
 
+{# The number, not an estimate of it (Tom, 2026-08-13). `pagination.approx_total`
+   is still in the payload and still carries the tool's `~`, because the tool
+   counts through a ceiling for a caller that pays tokens per row. This page
+   counted the same filtered set itself, so the line says how many there are and
+   the pager says where you are in them. #}
 <p class="tablecount" role="status">
-  <span><span class="shown">{{ rows | length }}</span> shown{% if pagination.approx_total %} of ~<span class="shown">{{ pagination.approx_total }}</span>{% endif %}{% if pagination.has_more %}, more available{% endif %}.</span>
+  <span><span class="shown">{{ rows | length }}</span> shown{% if total is not none %} of <span class="shown">{{ total | count }}</span>{% endif %}{% if pagination.has_more %}, more available{% endif %}.</span>
 </p>
 
 {# `order` is the URL's, so the head can say which column the rows are actually
