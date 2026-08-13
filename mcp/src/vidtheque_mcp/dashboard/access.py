@@ -168,6 +168,21 @@ def auth_required(mode: str) -> JSONResponse:
     )
 
 
+def peer_trusted(request: Request) -> bool:
+    """Is the socket peer inside ``VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS``?
+
+    The one place the peer is read for access decisions, so the read gate and
+    the write gate cannot drift apart again: until 2026-08-13 the write gate
+    honored a trusted peer and the read pages refused the same peer — a network
+    trusted to change the corpus but not to look at the dashboard it changed it
+    from (dashboard.md §3.4's "boundary with no shape", lived). Socket peer
+    only, never ``VIDTHEQUE_TRUSTED_IP_HEADER``: ``DashboardSettings.trusts``
+    enforces that.
+    """
+    peer = request.client.host if request.client else None
+    return bool(request.app.state.assembled.dashboard.trusts(peer))
+
+
 async def require_write(request: Request) -> Response | None:
     """``None`` when the write may proceed, else the refusal to return.
 
@@ -202,8 +217,7 @@ async def require_write(request: Request) -> Response | None:
         raise AssertionError("no state-changing GET, ever (dashboard.md §3.3)")
 
     held = await credential(request)
-    peer = request.client.host if request.client else None
-    trusted_peer = held is None and assembled.dashboard.trusts(peer)
+    trusted_peer = held is None and peer_trusted(request)
     if held is None and not trusted_peer:
         return auth_required(auth.mode)
 

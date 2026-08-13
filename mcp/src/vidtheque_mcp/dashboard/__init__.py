@@ -40,6 +40,7 @@ from .access import (
     WRITE_ROUTES,
     credential,
     origin_ok,
+    peer_trusted,
     require_write,
     sign_in_hint,
     write_side_enabled,
@@ -97,12 +98,20 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
         In `none` mode this is open, because the corpus is already open through
         `/mcp` and `/frames` in that mode — a dashboard that demanded a
         credential there would be theatre. In `token`/`oauth` it takes the
-        bearer or the existing session cookie, and the refusal names which,
-        rather than making the owner guess.
+        bearer, the existing session cookie, **or a socket peer in
+        `VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS`** — the same peer the write gate
+        already admits (dashboard.md §3.4: trusted CIDRs count as a
+        credential; a network trusted to change the corpus but not to read it
+        would be a boundary with no shape). Until 2026-08-13 only the write
+        gate honored it, so a trusted LAN peer could submit an index job and
+        not view the page it posted from. On a public deployment this clause
+        is inert: G2a requires the CIDR list empty there, and the settings
+        refuse to boot when a CIDR covers the proxy path. The refusal names
+        the accepted credentials, rather than making the owner guess.
         """
 
         async def wrapper(request: Request) -> Response:
-            if await credential(request) is not None:
+            if await credential(request) is not None or peer_trusted(request):
                 return await handler(request)
             mode = request.app.state.assembled.settings.auth_mode
             if json:

@@ -2147,6 +2147,47 @@ def test_trusted_cidrs_are_empty_by_default_and_are_the_socket_peer(
         assert forged.status_code == 401, "a header is not an address"
 
 
+def test_a_trusted_peer_reads_the_pages_it_may_write_from(tmp_path: Path) -> None:
+    """The gates are symmetric (2026-08-13, Tom's call on the field finding).
+
+    §3.4 already granted a trusted peer the whole write side, and §4's policy
+    table calls that peer an owner — but `guarded()` checked only the bearer
+    and the session, so a LAN peer could submit an index job and get a sign-in
+    page for the dashboard it posted from. A network trusted to change the
+    corpus but not to read it is the "boundary with no shape" §3.4 names, now
+    in both directions. Socket peer only, as everywhere else: the forged-header
+    client outside the CIDR stays refused, page and JSON both.
+    """
+    import ipaddress
+
+    lan = DashboardSettings(trusted_cidrs=(ipaddress.ip_network("10.0.0.0/8"),))
+
+    def lan_app() -> object:  # a fresh app per client: one lifespan each
+        return build_app(
+            _settings(tmp_path, auth_mode="token", static_token=TOKEN),
+            embeddings=FakeEmbeddings(),
+            run_pipeline=False,
+            public=PublicSettings(enabled=False),
+            dashboard=lan,
+        )
+
+    inside = TestClient(
+        lan_app(), base_url="http://localhost:8080", client=("10.9.9.9", 4444)
+    )
+    with inside:
+        # No credential presented, page and JSON both: the peer is the credential.
+        assert inside.get(ROOT).status_code == 200
+        assert inside.get(f"{ROOT}/api/videos").status_code == 200
+
+    outside = TestClient(
+        lan_app(), base_url="http://localhost:8080", client=("203.0.113.7", 4444)
+    )
+    with outside:
+        forged = {"CF-Connecting-IP": "10.9.9.9", "X-Forwarded-For": "10.9.9.9"}
+        assert outside.get(ROOT, headers=forged).status_code == 401
+        assert outside.get(f"{ROOT}/api/videos", headers=forged).status_code == 401
+
+
 def test_a_cidr_that_covers_the_proxy_refuses_the_boot() -> None:
     """The 2026-08-09 review's MEDIUM, refused rather than logged (gate G2).
 
