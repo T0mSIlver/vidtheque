@@ -1,4 +1,4 @@
-<img src="docs/assets/wordmark.svg" alt="vidtheque." width="220">
+![vidtheque.](docs/assets/wordmark.svg)
 
 Knowledge is announced on video. vidtheque puts it on tap.
 
@@ -13,8 +13,7 @@ sentence, the slide, and the second it happened (`https://youtu.be/ID?t=123`).
 
 ## Quickstart
 
-Releases ship as published images — `ghcr.io/t0msilver/vidtheque-{mcp,worker}`,
-no leading `v` on image tags. A box that only serves never builds or clones:
+Releases ship as published images — `ghcr.io/t0msilver/vidtheque-{mcp,worker}`:
 
 ```bash
 mkdir vidtheque && cd vidtheque
@@ -33,16 +32,6 @@ YouTube captions are the zero-GPU indexing path. `deploy/vidtheque-update.sh`
 makes upgrades one command; pin exact tags — `v0.0.x` schemas can still
 change. To build from source instead: clone this repo, `cp deploy/.env.example
 deploy/.env`, then `docker compose -f deploy/docker-compose.yml up -d`.
-
-**Disk:** budget ~80 GB to build from source — the ~28 GB worker image, ~13 GB
-of model cache, your corpus, and an image's worth of transient build cache;
-pulled releases need about half. The corpus is the light part: 473 videos
-measure ~0.8 GB of SQLite + ~5.9 GB of keyframes.
-
-Going **public** is a checklist, not a flag: the `compose.public.example.yml`
-overlay binds the origin to loopback so nothing reaches around the tunnel to
-forge the trusted IP header. [`docs/deploy-public.md`](docs/deploy-public.md)
-is the runbook; the security audit is the gate.
 
 ## Follow the builders
 
