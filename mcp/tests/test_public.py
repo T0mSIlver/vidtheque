@@ -1245,7 +1245,7 @@ def test_ask_is_the_mode_the_page_boots_in(public_client: TestClient) -> None:
     assert 'class="is-on" data-mode="ask" aria-pressed="true"' in body
     assert 'data-mode="search" aria-pressed="false"' in body
     assert 'id="go" class="cta">Ask ✨<' in body
-    assert 'placeholder="ask a question about these talks…"' in body
+    assert 'placeholder="ask a question about AI engineering…"' in body
     # In ask mode the model picks the channel, so the content-type row starts
     # hidden rather than offering a filter with nothing to act on.
     assert 'id="chips" class="chips" role="group" aria-label="Search which channel" hidden' in body
@@ -1293,8 +1293,10 @@ def test_the_example_chips_swap_with_the_mode(public_client: TestClient) -> None
         "Why does loop engineering look so much like building RLVR environments?"
     ), questions
     assert questions[1:] == [
-        "What happens when the machine grades its own homework?",
-        "Can you trust a model to judge how good the writing is?",
+        "Can you do reinforcement learning when nothing about the task can be verified?",
+        "Does training on model-generated data compound quality or collapse it?",
+        "Is the harness or the model more important?",
+        "Why do agents write bad AGENTS.md?",
     ], questions
     # They are questions, not keywords — the whole point of the set.
     assert all(q.endswith("?") for q in questions), questions

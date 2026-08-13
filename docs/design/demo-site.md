@@ -1201,30 +1201,39 @@ A demo is judged on the four screens that are not "ten results came back".
   above — and `setAskMode` swaps them with the switch. What is on screen is
   always runnable in the mode that is on screen, and a chip click runs in the
   **current** mode. The search set is the four above, unchanged: keywords stay
-  keywords. The ask set is three questions, ordered by demo strength, each
-  receipt-checked in `research/demo-queries-2026-08-10.md`, and **none of them
-  shares its vocabulary with the answer** — a question whose words are already
-  in the transcript is a search wearing a question mark and proves nothing the
-  chip row does not:
+  keywords. The ask set is five questions *(amended 2026-08-13, Tom's picks —
+  the two judge questions were two shades of one argument and read as riddles;
+  the announcement set wants hard, contested questions with no obvious
+  answer)*, ordered by demo strength, each receipt-checked against the live
+  310-talk corpus in `research/demo-queries-2026-08-13.md`. The default rule
+  stands — **a question should share no vocabulary with its answer** (a
+  question whose words are already in the transcript is a search wearing a
+  question mark) — with one deliberate, named exception below:
 
   1. `Why does loop engineering look so much like building RLVR environments?`
-     — Tom's flagship ("Tom's ask-mode flagship"): `fts 0 cues`, a pure vector
+     — Tom's flagship ("Tom's ask-mode flagship",
+     `research/demo-queries-2026-08-10.md`): `fts 0 cues`, a pure vector
      leg, 7 citations across 6 talks, and an answer no single talk contains.
      The whole pitch in one click, so it is first.
-  2. `What happens when the machine grades its own homework?` — §8.1 ★★, `fts
-     0` again, and ranks 1–2 are two named practitioners who disagree (Lance
-     Martin: isolate the judge's context; David Brumley: drop the judge).
-  3. `Can you trust a model to judge how good the writing is?` — §13.1 ★★,
-     surfaced by two independent vendors' agents in the dual-fleet eval: a
-     sentence a person says out loud, sharing no content word with either side
-     of the argument it returns (Hetzel vs Heiner, both verbatim).
+  2. `Can you do reinforcement learning when nothing about the task can be
+     verified?` — `fts 0`, 6 talks; "verifier's rule" comes back quoted by a
+     different speaker than the one who coined it.
+  3. `Does training on model-generated data compound quality or collapse it?`
+     — 7 talks with a head-on disagreement: the collapse dogma and the talk
+     that attacks it, plus the data-quality camp.
+  4. `Is the harness or the model more important?` — 7 talks, three camps,
+     one numeric receipt (52.4% → 76.2% with only the harness changed). The
+     exception to the vocabulary rule: the fight cannot be named without its
+     two nouns (`fts` fires, ~193), and the receipts earn it.
+  5. `Why do agents write bad AGENTS.md?` — `fts 0`; retrieval leans on one
+     talk's account of what a *good* AGENTS.md is, so this is the set's purest
+     synthesis test, and it is deliberately last.
 
-  Three, not four. §13.1 is explicitly the replacement for the round-1/round-2
-  disagreement pairs, so `What do speakers disagree about when it comes to LLM
-  as a judge?` (§3.1, `research/demo-queries-2026-08-09.md` §4.1) would be the
-  same argument twice — and its keyword form is already the search set's
-  transcript chip. Every ask click spends daily model budget: three questions
-  that each prove a different thing beat four that overlap.
+  Five, not three. The per-click budget rule is untouched — nothing fires
+  without a click — and the five sit on five disjoint axes (agent loops,
+  post-training, data, harnesses, docs-for-agents), so no click proves what
+  another already proved. The question-mark/keyword split between the two
+  sets, and everything else in this section, is unchanged.
 
   **Ask-first still has to teach.** A search box teaches itself — type words,
   get rows with those words in them. A question box does not: nothing on screen

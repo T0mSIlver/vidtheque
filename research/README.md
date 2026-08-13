@@ -32,6 +32,7 @@ This index is the one navigational file — when you add a doc, add its line.
 - `mcp-eval-terra-2026-08-10.md` — six independent terra consumers eval the live surface
 - `demo-queries-2026-08-09.md` — verified demo queries, executed against the live stack
 - `demo-queries-2026-08-10.md` — demo queries harvested from the terra eval
+- `demo-queries-2026-08-13.md` — the announcement ask set: four rounds of candidates receipt-checked against the live 310-talk corpus
 - `website-test-2026-08-09.md` — real-browser QA of the public demo
 - `ytdlp-usage-audit-2026-08-10.md` — yt-dlp usage audit + effective rate limits
 
