@@ -133,8 +133,14 @@ def test_token_mode_401s_without_the_bearer(corpus: Path) -> None:
         )
         assert response.status_code == 401
         # A transport-level 401 is what makes a client re-authenticate; a 200
-        # with isError:true is passed to the model as text.
-        assert "resource_metadata=" in response.headers["www-authenticate"]
+        # with isError:true is passed to the model as text. But the challenge
+        # is a PLAIN one: `resource_metadata=` here pointed at OAuth discovery
+        # this mode does not host, and a client that honored the pointer died
+        # in a DCR 404 instead of asking its human for the token (field
+        # report, CT 9002, 2026-08-13). No pointer -> clients fall back to
+        # configured credentials.
+        assert response.headers["www-authenticate"].startswith("Bearer")
+        assert "resource_metadata=" not in response.headers["www-authenticate"]
 
 
 def test_token_mode_accepts_the_bearer(corpus: Path) -> None:
@@ -163,11 +169,23 @@ def test_unknown_host_is_421(corpus: Path) -> None:
         assert response.status_code == 421
 
 
-def test_token_mode_publishes_prm(corpus: Path) -> None:
+def test_token_mode_publishes_no_prm(corpus: Path) -> None:
+    """Token mode hosts no OAuth, so it advertises none — anywhere.
+
+    It used to publish protected-resource metadata naming an authorization
+    server that does not exist in this mode, and the /mcp and /frames 401s
+    pointed at it. Both well-known paths must 404 like `none` mode's do, so a
+    discovering client concludes "no OAuth here" and falls back to configured
+    credentials, rather than walking the pointer into a DCR 404.
+    """
     settings = make_settings(corpus, auth_mode="token", static_token="s3cret")
     with client(settings) as c:
-        prm = c.get("/.well-known/oauth-protected-resource/mcp").json()
-        assert prm["resource"] == "http://localhost:8080/mcp"
+        assert c.get("/.well-known/oauth-protected-resource/mcp").status_code == 404
+        assert c.get("/.well-known/oauth-protected-resource").status_code == 404
+        assert c.get("/.well-known/oauth-authorization-server").status_code == 404
+        frame = c.get(f"/frames/{FRAME_ID}.jpg")
+        assert frame.status_code == 401
+        assert "resource_metadata=" not in frame.headers["www-authenticate"]
 
 
 # -------------------------------------------------------- frames auth matrix

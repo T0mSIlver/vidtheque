@@ -93,11 +93,6 @@ def build_auth(settings: Settings) -> AuthBundle:
         return AuthBundle(mode="none", frame_signer=None)
 
     resource = settings.resource_url
-    auth_settings = AuthSettings(
-        issuer_url=AnyHttpUrl(settings.issuer_url),
-        resource_server_url=AnyHttpUrl(resource),
-        required_scopes=[READ_SCOPE],
-    )
 
     if settings.auth_mode == "token":
         assert settings.static_token
@@ -114,7 +109,24 @@ def build_auth(settings: Settings) -> AuthBundle:
         return AuthBundle(
             mode="token",
             token_verifier=StaticTokenVerifier(settings.static_token, resource),
-            auth_settings=auth_settings,
+            # `resource_server_url=None` is the SDK's RS-off switch, and it is
+            # the honest shape for this mode: with it set, the SDK serves
+            # protected-resource metadata naming `issuer_url` as an
+            # authorization server and stamps `resource_metadata=` into every
+            # 401 — advertising an OAuth dance this mode does not host, so a
+            # discovering client walked the pointer into a DCR 404 instead of
+            # asking its human for the token (field report, CT 9002,
+            # 2026-08-13). With it None the 401 is a plain Bearer challenge and
+            # no well-known route exists: clients probe, 404, and fall back to
+            # configured credentials. The SDK refuses a verifier with no
+            # AuthSettings at all, which is why this is None-in-settings rather
+            # than settings-less; `issuer_url` is required by the model and
+            # served by nothing in this mode.
+            auth_settings=AuthSettings(
+                issuer_url=AnyHttpUrl(settings.issuer_url),
+                resource_server_url=None,
+                required_scopes=[READ_SCOPE],
+            ),
             frame_signer=signer,
             store=token_store,
         )
