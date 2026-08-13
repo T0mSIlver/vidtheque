@@ -34,6 +34,8 @@ from pydantic import AnyUrl
 
 from mcp.shared.auth import OAuthClientInformationFull
 
+from ..config import OFFLINE_SCOPE, READ_SCOPE, WRITE_SCOPE
+
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1", "[::1]"}
 MAX_DOCUMENT_BYTES = 64 * 1024
 CACHE_TTL_S = 300
@@ -190,7 +192,17 @@ def synthesize(client_id: str, document: dict[str, Any]) -> OAuthClientInformati
         token_endpoint_auth_method=method,
         grant_types=list(document.get("grant_types") or ["authorization_code", "refresh_token"]),
         response_types=list(document.get("response_types") or ["code"]),
-        scope=document.get("scope"),
+        # A CIMD document is a generic self-description, not a grant: Claude
+        # Code's declares NO scope field, because it cannot know this server's
+        # scope vocabulary. The SDK's validate_scope treats a scope-less
+        # client as allowed-nothing, which locked every CIMD client out at
+        # /authorize with invalid_scope (field report, CT 9002, 2026-08-13).
+        # Scope POLICY is the server's: default the scope-less document to the
+        # same set the DCR path registers as valid_scopes — the request still
+        # narrows it, and the consent screen is where the human grants it. A
+        # document that DOES declare scopes keeps them verbatim, and the
+        # SDK's subset check applies to that declaration unchanged.
+        scope=document.get("scope") or " ".join((READ_SCOPE, WRITE_SCOPE, OFFLINE_SCOPE)),
         client_name=document.get("client_name"),
         client_uri=document.get("client_uri"),
         logo_uri=document.get("logo_uri"),

@@ -352,6 +352,46 @@ def test_cimd_document_must_be_self_referential() -> None:
         )
 
 
+def test_cimd_scopeless_documents_get_the_server_scope_policy() -> None:
+    """A CIMD document is a self-description, not a grant.
+
+    Claude Code's real document declares no `scope` field — it cannot know
+    this server's vocabulary — and the SDK's validate_scope treats a
+    scope-less client as allowed-nothing, which refused every CIMD sign-in
+    at /authorize with invalid_scope ("Client was not registered with scope
+    vidtheque:read"; field report, CT 9002, 2026-08-13). Scope policy is the
+    server's: a scope-less document defaults to the set the DCR path
+    registers as valid_scopes, a declared scope is kept verbatim, and the
+    consent screen stays the place a human grants any of it.
+    """
+    # The shape of Claude Code's actual metadata document, verbatim fields.
+    scopeless = synthesize(
+        "https://claude.ai/oauth/claude-code-client-metadata",
+        {
+            "client_id": "https://claude.ai/oauth/claude-code-client-metadata",
+            "client_name": "Claude Code",
+            "redirect_uris": ["http://localhost/callback", "http://127.0.0.1/callback"],
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            "token_endpoint_auth_method": "none",
+        },
+    )
+    granted = scopeless.validate_scope("vidtheque:read vidtheque:write offline_access")
+    assert granted == ["vidtheque:read", "vidtheque:write", "offline_access"]
+
+    declared = synthesize(
+        "https://claude.ai/oauth/client",
+        {
+            "client_id": "https://claude.ai/oauth/client",
+            "redirect_uris": ["https://claude.ai/cb"],
+            "scope": "vidtheque:read",
+        },
+    )
+    assert declared.validate_scope("vidtheque:read") == ["vidtheque:read"]
+    with pytest.raises(Exception, match="not registered with scope"):
+        declared.validate_scope("vidtheque:write")
+
+
 def test_cimd_requires_a_public_auth_method() -> None:
     with pytest.raises(CIMDError, match="token_endpoint_auth_method"):
         synthesize(
