@@ -1707,12 +1707,14 @@ policy and adds no route.
   rail, so adding is at most one click away. It is absent — not disabled — in
   `VIDTHEQUE_PUBLIC_READONLY=1` and `VIDTHEQUE_AUTH=none`, exactly like the
   write routes behind it (§2.3, §3.2).
-- **The overview carries a quick-add form.** It POSTs to the existing
-  `/dashboard/index` handler with `expand=none`, `max_items=25`, normal
-  priority and all three channels, leaving validation, batching, the Origin
-  rule and the receipt to the phase-3 implementation. The whole form is absent
-  when the write side is absent; `db.writes_allowed=false` disables its
-  controls as §5.5 requires.
+- ~~**The overview carries a quick-add form.**~~ **Removed 2026-08-13 (Tom).**
+  It POSTed to the existing `/dashboard/index` handler with `expand=none`,
+  `max_items=25` and normal priority — which is a second entry point to one
+  write that also *decided*, in three hidden fields, what a pasted playlist URL
+  meant. Adding videos is the rail item, on every page, and the form that owns
+  the decision is one click behind it. Nothing about the handler, the batching,
+  the Origin rule or the receipt changed; the overview got a panel of its height
+  back.
 - **`GET /dashboard/index` accepts `urls`, `expand` and `tags` as render-only
   prefill parameters.** It performs no normalisation, tool call, database read
   or write. `expand` must be one of the tool's three declared values or falls
@@ -1847,6 +1849,21 @@ configuration (§1 non-goal 4).
   **served model ids/load state**, and the existing **drift reason**, because
   those identify operator infrastructure and settings. The projection does not
   issue the worker request at all rather than fetching data it must discard.
+
+**Amended 2026-08-13 (Tom): one panel, not two.** The declared-models panel at
+the foot of the overview — `config`'s four checkpoint ids and dimensions, plus
+the `indexing allowed/refused` state — is folded into this one, because the two
+panels were halves of a single question and the reader had to hold the top of
+the page in their head to answer it. The shape is now: a strip of five states
+(MCP · database · worker · vector search · **indexing**), then **declared beside
+served** as two tables on one row, the column heads naming which side is which
+so neither table needs a heading. The whole panel wears the drift rule when the
+halves disagree, which is where that rule always belonged. Nothing moves in the
+projection's terms: the declared table is dropped there exactly as its own panel
+was, the served table with the worker row, and the indexing state with them —
+"indexing refused" is a sentence about a worker nobody visiting the demo can
+reach. No new read, no new clamp, no history.
+
 ## 16. Job repair actions (2026-08-12)
 
 ### 16.1 Cancellation

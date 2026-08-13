@@ -107,7 +107,11 @@
     <div class="figure">
       <dt>transcript cues</dt>
       <dd>{{ corpus.cues | count }}</dd>
-      <dd class="figure-note">across {{ corpus.videos | count }} videos</dd>
+      {# "across N videos" left this note on 2026-08-13 (Tom): the video count
+         is two figures to the left in the same band, and a figure-note whose
+         whole content is another figure on the same line is the ledger
+         repeating itself. #}
+      <dd class="figure-note">timed lines of speech</dd>
     </div>
     <div class="figure">
       <dt>keyframes</dt>
@@ -122,11 +126,19 @@
   </dl>
 </section>
 
-{# A single observation, never a history. In the projection the worker row is
-   absent rather than redacted in place: its reachability and model ids describe
-   operator infrastructure, while MCP/database readiness and the vector effect
-   are already observable to a reader using this page. #}
-<section class="panel readiness" data-readiness aria-labelledby="readiness">
+{# One panel, and it is a diff (merged 2026-08-13, Tom: readiness is one story
+   and it was told in two panels a page apart). What the pipeline reports right
+   now is on top as five states; what it was *declared* with sits beside what
+   the worker says it is *serving*, because those two tables only mean something
+   read against each other — and a config/dimension mismatch is what turns the
+   whole panel red.
+
+   A single observation, never a history. In the projection both tables are
+   absent rather than redacted in place: model ids and worker reachability
+   describe operator infrastructure, while MCP/database readiness and the vector
+   effect are already observable to a reader using this page (§2.4). #}
+<section class="panel readiness{{ ' is-drift' if not vectors.enabled or (not writes_allowed and not readonly) }}"
+         data-readiness aria-labelledby="readiness">
   <div class="panel-headline">
     <h2 class="panel-title" id="readiness">Pipeline readiness</h2>
     <p class="panel-clock">last health check <time datetime="{{ readiness.checked_at }}">{{ readiness.checked_at }}</time></p>
@@ -156,50 +168,67 @@
         {% if readiness.vectors.reason %}<span class="readiness-detail">{{ readiness.vectors.reason }}</span>{% endif %}
       </dd>
     </div>
+    {# The fifth state, and it was a whole panel's worth of layout on its own
+       until the merge: whether this box will accept work. It follows the model
+       tables into the projection's blind spot, because "indexing refused" is a
+       sentence about a worker nobody visiting the demo can reach (§2.4). #}
+    {% if not readonly %}
+    <div>
+      <dt>Indexing</dt>
+      <dd><span class="pill tone-{{ 'ok' if writes_allowed else 'bad' }}">{{ "allowed" if writes_allowed else "refused" }}</span></dd>
+    </div>
+    {% endif %}
   </dl>
-  {% if readiness.worker and readiness.worker.models %}
-  <div class="tablewrap readiness-models">
-    <table class="grid">
-      <thead><tr><th scope="col">worker task</th><th scope="col">model served</th><th scope="col">memory</th></tr></thead>
-      <tbody>
-        {% for model in readiness.worker.models %}
-        <tr>
-          <th scope="row"><code>{{ model.task }}</code></th>
-          <td><code>{{ model.model }}</code></td>
-          <td>{{ "loaded" if model.loaded else "cold" }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  {% if config or (readiness.worker and readiness.worker.models) %}
+  {# Declared left, served right, on one row. The column heads say which side
+     is which, so neither table needs a heading of its own — that pair of
+     headings is most of what the two panels cost in height. #}
+  <div class="split readiness-models">
+    {% if config %}
+    <div class="tablewrap">
+      <table class="grid">
+        <caption class="sr-only">The models this corpus was built with</caption>
+        <thead>
+          <tr><th scope="col">stage</th><th scope="col">model declared</th><th scope="col" class="num">dim</th></tr>
+        </thead>
+        <tbody>
+          {% for model in config %}
+          <tr>
+            <th scope="row">{{ model.label }}</th>
+            <td><code>{{ model.value }}</code></td>
+            <td class="num">{{ model.dim or "—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+    {% if readiness.worker and readiness.worker.models %}
+    <div class="tablewrap">
+      <table class="grid">
+        <caption class="sr-only">The models the worker reports serving</caption>
+        <thead><tr><th scope="col">worker task</th><th scope="col">model served</th><th scope="col">memory</th></tr></thead>
+        <tbody>
+          {% for model in readiness.worker.models %}
+          <tr>
+            <th scope="row"><code>{{ model.task }}</code></th>
+            <td><code>{{ model.model }}</code></td>
+            <td>{{ "loaded" if model.loaded else "cold" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
   </div>
   {% endif %}
 </section>
 
-{% if write_side %}
-{# The queue is a primary path, so the overview carries the short version of
-   the index form. POST is still the existing handler and the hidden values are
-   its conservative defaults: one URL means one video, all search channels,
-   normal priority. The full form is one link away when those defaults are not
-   the right answer. The whole panel is absent with the write routes. #}
-<section class="panel" aria-labelledby="quick-add">
-  <h2 class="panel-title" id="quick-add">Add videos</h2>
-  <form class="filters" data-quick-add method="post" action="{{ root }}/index">
-    <input type="hidden" name="expand" value="none">
-    <input type="hidden" name="max_items" value="25">
-    <input type="hidden" name="priority" value="normal">
-    <div class="field field-wide">
-      <label for="quick-urls">Video URLs</label>
-      <textarea id="quick-urls" name="urls" rows="4" required spellcheck="false"
-                autocomplete="off" placeholder="https://youtu.be/kCc8FmEb1nY&#10;https://youtu.be/zduSFxRajkE"
-                {{ 'disabled' if not writes_allowed }}></textarea>
-    </div>
-    <div class="field field-actions">
-      <button type="submit" {{ 'disabled' if not writes_allowed }}>Queue videos</button>
-      <a class="ghostlink" href="{{ root }}/index">More options</a>
-    </div>
-  </form>
-</section>
-{% endif %}
+{# The quick-add form left this page on 2026-08-13 (Tom). Adding videos is one
+   rail item away on every page of the surface (§13), and a second form for the
+   same POST — with three hidden fields deciding for the operator what a
+   playlist URL means — was the overview spending a panel of its scarce height
+   on a shortcut to a page that is already one click away. #}
 
 {# The zone: what arrived (dense, wants the width) beside what is wrong and
    what it costs (short answers that never wanted 1400px). #}
@@ -371,60 +400,12 @@
   </section>
 </div>
 
-{# Declared beside live: the panel is a diff, and it goes red when the two
-   halves stop agreeing.
-
-   Absent in the demo projection (§2.4: "no settings"). The four rows are the
-   `config` table — checkpoint ids and vector dimensions, which are the
-   deployment's answer to "how was this box configured", not the corpus's
-   answer to "what is in it". They are in the public repo, which is the
-   argument for keeping them; a management page that a stranger can screenshot
-   is not the place to publish them, which is the argument that won
-   (`docs/deploy-public.md` §1.1 raised it as a decision, and this is the
-   decision). Nothing else on the page depended on it: the live vector state it
-   sat beside is still in the banner above, in the words a visitor can act on. #}
-{% if config %}
-<section class="panel{{ ' is-drift' if not vectors.enabled or not writes_allowed }}" aria-labelledby="models">
-  <h2 class="panel-title" id="models">Declared models, and what the worker is serving</h2>
-  {# Declared on the left, live on the right — the panel is a diff, and now it
-     is laid out as one instead of stacking the two halves it compares. #}
-  <div class="split">
-    <div class="tablewrap">
-      <table class="grid">
-        <thead>
-          <tr><th scope="col">stage</th><th scope="col">model</th><th scope="col" class="num">dim</th></tr>
-        </thead>
-        <tbody>
-          {% for model in config %}
-          <tr>
-            <th scope="row">{{ model.label }}</th>
-            <td><code>{{ model.value }}</code></td>
-            <td class="num">{{ model.dim or "—" }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <div>
-      {# The vector pill is gone (Tom, 2026-08-10). It said "vector legs on" —
-         a green badge for the ordinary case, which is the badge nobody reads,
-         and the table beside it already names the two embedding models and
-         their dimensions. The one case that changes what a reader should
-         believe is the *off* case, and that has its own banner at the top of
-         this page in the words a visitor can act on.
-
-         What is left is one fact, so it stops being a labelled row of pills and
-         becomes a single `statepair` — the key and the state as one object,
-         which is the same primitive the video header uses. #}
-      <p class="live-state">
-        <span class="statepair">
-          <span class="statepair-key">indexing</span>
-          <span class="pill tone-{{ 'ok' if writes_allowed else 'bad' }}">{{ "allowed" if writes_allowed else "refused" }}</span>
-        </span>
-      </p>
-    </div>
-  </div>
-</section>
-{% endif %}
+{# The declared-models panel was here until 2026-08-13; it is the second half
+   of the readiness panel above now. Both halves keep their own arguments: the
+   `config` rows are absent in the projection because checkpoint ids and vector
+   dimensions are the deployment's answer to "how was this box configured", not
+   the corpus's answer to "what is in it" (§2.4, and `docs/deploy-public.md`
+   §1.1 raised it as a decision), and the live vector state a visitor *can* act
+   on is still in the banner at the top of this page. #}
 
 {% endblock %}
