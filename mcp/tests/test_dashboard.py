@@ -543,6 +543,37 @@ def test_the_overview_no_longer_repeats_the_video_count(client: TestClient) -> N
     assert "across" not in page(client, ROOT).split("</dl>")[0]
 
 
+def test_the_videos_table_counts_the_filtered_set_exactly(client: TestClient) -> None:
+    """Tom, 2026-08-13: "just show the actual number of videos".
+
+    The `~` came from `list-videos`' bounded count probe, which stays exactly as
+    it is — a total an agent pays tokens for and will not page through is the
+    thing `COUNT_PROBE_FLOOR` exists to refuse. The page counts the same
+    filtered CTE itself, so the number moves with the filters and the pager
+    still pages on `has_more`.
+    """
+    body = page(client, f"{ROOT}/videos")
+    assert "of ~" not in body
+    assert re.search(r'shown of <span class="shown">4</span>', body)
+
+    # It is the *filtered* count, not the corpus size.
+    only = page(client, f"{ROOT}/videos?index_state=indexing")
+    assert re.search(r'shown of <span class="shown">1</span>', only)
+
+    # A page of one still says how many there are, and still says there is more.
+    paged = page(client, f"{ROOT}/videos?limit=1")
+    assert re.search(r'<span class="shown">1</span> shown of <span class="shown">4</span>', paged)
+    assert "more available" in paged
+
+    # And the tool's own payload is untouched: the probe is the contract of the
+    # surface an agent reads. Three, not four, and that is the other half of
+    # §5.2 — the JSON keeps the query surface's "in the corpus" (ready|stale)
+    # while the page asks for `all`, because a management table that cannot see
+    # the half-indexed video is the one view nobody needs.
+    pagination = client.get(f"{ROOT}/api/videos").json()["pagination"]
+    assert pagination["approx_total"] == 3
+
+
 def test_the_overview_shows_the_drift_banner_when_vectors_are_off(
     client: TestClient,
 ) -> None:

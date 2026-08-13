@@ -1374,6 +1374,33 @@ def probe_videos(
     return total, total >= ceiling
 
 
+def count_videos(
+    conn: sqlite3.Connection,
+    video_ids: Sequence[int],
+    q: str | None,
+    has_filter: str,
+    candidate_cap: int,
+) -> int:
+    """The same filtered set as :func:`list_videos`, counted whole.
+
+    One difference from :func:`probe_videos` and it is the only one: no
+    ceiling. Same `_list_sql`, same bind, same FTS candidate set — so this
+    counts exactly the rows the pager can walk through and never a corpus the
+    filter does not reach.
+
+    It exists for the **dashboard** and for nothing else (dashboard.md §5.2,
+    2026-08-13). `list-videos` keeps its bounded probe and its `~`, because a
+    total is a number an agent pays tokens for and will not page through, and
+    token discipline is the tools' contract. A browser is the other caller: the
+    reader is looking at a table with a pager under it, "50 of ~473" invites the
+    question the tilde cannot answer, and one `COUNT(*)` over a CTE the same
+    request already materialised is the byte analogue of cheap.
+    """
+    sql = "WITH counted AS (" + _list_sql(q) + ") SELECT COUNT(*) FROM counted"
+    bound = _list_bind(video_ids, q, has_filter, candidate_cap)
+    return int(conn.execute(sql, bound).fetchone()[0])
+
+
 def video_tags(conn: sqlite3.Connection, video_ids: Sequence[int]) -> dict[int, list[str]]:
     if not video_ids:
         return {}

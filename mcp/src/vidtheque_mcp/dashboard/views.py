@@ -46,7 +46,7 @@ from ..public.api import (
     search_payload,
     thumb_url,
 )
-from ..text import clamp, clock, iso_day, iso_minute, iso_z
+from ..text import clamp, clock, iso_day, iso_minute, iso_z, split_csv
 from ..timeparse import parse_corpus_time
 from ..tools import library
 from ..tools.base import Deps
@@ -896,6 +896,9 @@ async def videos(request: Request) -> Response:
                 "error": error,
                 "rows": [],
                 "pagination": {"limit": limit, "offset": offset, "has_more": False},
+                # No count, rather than a zero: a refused date filtered nothing,
+                # so there is no set to have counted.
+                "total": None,
                 "filters": filters,
                 "orders": _ORDERS,
                 "has_values": _HAS,
@@ -932,6 +935,39 @@ async def videos(request: Request) -> Response:
 
     payload = result.structured_content or {}
     rows = [dict(v) for v in payload.get("videos", [])]
+
+    # "50 shown of 473", with no tilde (Tom, 2026-08-13). The `~` was the tool's
+    # and it was honest there: `list-videos` counts through a ceiling
+    # (`COUNT_PROBE_FLOOR`) because an exact total is tokens an agent spends on
+    # a number it will not page through. A reader with a pager under the table
+    # is the other caller — the tilde is the one thing on the line they cannot
+    # act on — so this page counts the set itself, with the same filters, and
+    # the tool's probe is untouched.
+    #
+    # Two reads for it, and they are the two the tool already made privately:
+    # the corpus-axis filters collapse to a video-id pool, then one `COUNT(*)`
+    # over the same CTE the rows came out of. Rebuilt here rather than returned
+    # by the tool, because a tool that grows a parameter to please a page is how
+    # the two surfaces stop sharing one query layer.
+    filter_states = queries.INDEX_STATES if index_state == "all" else (index_state,)
+    pool = await assembled.db.read(
+        lambda c: queries.resolve_videos(
+            c,
+            queries.CorpusFilter(
+                channel=channel,
+                published_after=dates["published_after"],
+                published_before=dates["published_before"],
+                indexed_after=dates["indexed_after"],
+                indexed_before=dates["indexed_before"],
+                tags=split_csv(tags, 10, "tags"),
+                index_states=filter_states,
+            ),
+        )
+    )
+    total = await assembled.db.read(
+        lambda c: queries.count_videos(c, pool, q, has, deps.settings.candidate_cap)
+    )
+
     covers = await assembled.db.read(
         lambda c: _cover_frames(c, [r["video_id"] for r in rows])
     )
@@ -948,6 +984,7 @@ async def videos(request: Request) -> Response:
             "error": None,
             "rows": rows,
             "pagination": payload.get("pagination", {}),
+            "total": total,
             "filters": filters,
             "orders": _ORDERS,
             "has_values": _HAS,
