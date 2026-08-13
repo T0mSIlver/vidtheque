@@ -3598,7 +3598,7 @@ def test_a_wrapped_meta_strip_never_starts_a_line_with_a_separator(
 
 
 def test_the_version_is_one_string_everywhere(tmp_path: Path) -> None:
-    """0.0.1, and the same 0.0.1 in every place that publishes it.
+    """One version string, the same in every place that publishes it.
 
     `mcp/pyproject.toml` said 0.1.0 while the workspace root and the worker both
     said 0.0.1, so `/healthz`, `vidtheque://context` and the dashboard footer
@@ -3613,7 +3613,7 @@ def test_the_version_is_one_string_everywhere(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[2]
     declared = tomllib.loads((root / "mcp/pyproject.toml").read_text())["project"]["version"]
     worker = tomllib.loads((root / "worker/pyproject.toml").read_text())["project"]["version"]
-    assert __version__ == declared == worker == "0.0.1"
+    assert __version__ == declared == worker == "0.0.2"
 
     with make_client(tmp_path) as client:
         assert client.get("/healthz").json()["version"] == __version__

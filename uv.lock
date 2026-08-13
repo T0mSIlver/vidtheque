@@ -2443,7 +2443,7 @@ wheels = [
 
 [[package]]
 name = "vidtheque"
-version = "0.0.1"
+version = "0.0.2"
 source = { virtual = "." }
 dependencies = [
     { name = "vidtheque-mcp" },
@@ -2476,7 +2476,7 @@ gpu = [{ name = "vidtheque-worker", extras = ["gpu", "nvml"], editable = "worker
 
 [[package]]
 name = "vidtheque-mcp"
-version = "0.0.1"
+version = "0.0.2"
 source = { editable = "mcp" }
 dependencies = [
     { name = "av" },
@@ -2513,7 +2513,7 @@ requires-dist = [
 
 [[package]]
 name = "vidtheque-worker"
-version = "0.0.1"
+version = "0.0.2"
 source = { editable = "worker" }
 dependencies = [
     { name = "fastapi" },
