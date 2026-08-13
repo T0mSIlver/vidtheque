@@ -476,35 +476,10 @@ code { font-size: var(--t-machine); overflow-wrap: anywhere; }
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
-/* Search is the one instrument in the rail. It stays a real GET form and uses
-   the same inset console ground as the full filter band; the compact button is
-   a label-sized square, not a second nav item. */
-.rail-search { margin: var(--s4) var(--s4) 0; }
-.rail-search > label {
-  display: block;
-  margin-bottom: var(--s1);
-  font-family: var(--font-mono);
-  font-size: var(--t-label);
-  font-weight: var(--w-label);
-  letter-spacing: .19em;
-  text-transform: uppercase;
-  color: var(--fg2);
-}
-.rail-search-control { display: flex; min-width: 0; }
-.rail-search input {
-  min-width: 0;
-  width: 100%;
-  height: var(--row);
-  padding: 0 var(--s2);
-  font-family: var(--font-mono);
-  font-size: var(--t-machine-sm);
-  color: var(--fg);
-  background: var(--console);
-  border: 1px solid var(--seam2);
-  border-right: 0;
-}
-.rail-search input::placeholder { color: var(--fg3); opacity: 1; }
-.rail-search button { flex: 0 0 auto; padding: 0 var(--s2); }
+/* `.rail-search` is gone (Tom, 2026-08-13): the rail's compact GET form became
+   the fourth nav item, so the search box lives on the page it opens and the
+   rail carries only destinations. Nothing replaced it here — a nav item is a
+   `.navlist a` like the other three. */
 
 /* What this deployment is allowed to do is true of every page, so it belongs to
    the chassis and not to a page header. */
@@ -676,11 +651,42 @@ code { font-size: var(--t-machine); overflow-wrap: anywhere; }
 .readiness-models { margin-top: var(--s3); }
 
 /* Search results preserve rank: one ordered rail of moments, with the channel
-   text and tool notes left exactly as the shared handler returned them. */
-.legline { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s5); margin: 0; }
-.legline > div { display: flex; gap: var(--s2); align-items: baseline; }
-.legline dt { color: var(--muted); font-family: var(--font-mono); font-size: var(--t-label); }
-.legline dd { margin: 0; font-family: var(--font-mono); font-size: var(--t-machine); }
+   text and tool notes left exactly as the shared handler returned them.
+
+   The leg counts are the one line tool-surface.md tells a caller to *read*, so
+   they are a column of sentences rather than a row of identifiers: the label is
+   the human channel, the count is the figure, and the machine's own key follows
+   the label in mono at label size. A sub-leg — the candidate count behind a
+   fused one — is inset by its own left hairline, which says "this explains the
+   line above" without a second heading. */
+.legline { display: grid; gap: 0; margin: 0; }
+.leg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--s3);
+  align-items: baseline;
+  padding: var(--s1) 0;
+  border-top: 1px solid var(--seam);
+}
+.leg:first-child { border-top: 0; }
+.leg-sub { padding-left: var(--s3); border-left: 1px solid var(--seam); }
+.legline dt { flex: 1 1 auto; min-width: 0; font-size: var(--t-cell); }
+.legline dd {
+  flex: 0 0 auto;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-machine);
+  font-variant-numeric: tabular-nums;
+}
+.leg-sub dt, .leg-sub dd { color: var(--muted); }
+/* The machine string, kept and not hidden: this page is an instrument, and
+   `transcript_vec_knn` is what an operator quotes when the count looks wrong. */
+.leg-key,
+.leg-unit {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  color: var(--fg3);
+}
 .search-notes {
   margin: var(--s3) 0 0;
   padding: var(--s3) var(--s4);
@@ -693,19 +699,70 @@ code { font-size: var(--t-machine); overflow-wrap: anywhere; }
 }
 .search-notes li + li { margin-top: var(--s2); }
 .search-results { margin: var(--s4) 0 0; padding: 0; list-style: none; counter-reset: hit; }
+/* Three columns: the frame, the moment, the receipt. The frame is first because
+   for two of the three sources it *is* the evidence — a slide the machine read
+   and a picture that matched have nothing else to show — and a column of stills
+   down the left is also how you scan ten results without reading ten titles. */
 .search-hit {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--s3) var(--s5);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--s3) var(--s4);
   padding: var(--s4) 0;
   border-top: 1px solid var(--seam);
   counter-increment: hit;
 }
 .search-hit:first-child { border-top-color: var(--seam2); }
+/* Fixed box, mirrored in the img attributes, so a row keeps its height whether
+   the frame has decoded, failed or never existed. 128px of a 192px file: the
+   strip's own width from the fixed set, at 1.5x, so a search costs the derived
+   cache no variant the videos table has not already paid for. */
+.search-hit > .search-hit-shot {
+  flex: 0 0 auto;
+  width: 128px;
+  height: 72px;
+  align-self: start;
+}
 .search-hit-body { min-width: 0; }
-.search-hit-title { margin: 0; font-weight: var(--w-strong); }
-.search-hit-meta { margin: var(--s1) 0 0; color: var(--muted); font-size: var(--t-machine-sm); }
+.search-hit-title { margin: 0; font-weight: var(--w-strong); overflow-wrap: anywhere; }
+.search-hit-title a { text-decoration: none; }
+.search-hit-title a:hover { text-decoration: underline; }
+.search-hit-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--s2);
+  margin: var(--s1) 0 0;
+  color: var(--muted);
+  font-size: var(--t-machine-sm);
+}
+.search-hit-meta .badges { display: inline-flex; flex-wrap: wrap; gap: var(--s1); }
+.search-hit-meta .sep { padding: 0; }
+.search-hit-where { min-width: 0; overflow-wrap: anywhere; }
 .search-snippet { margin: var(--s2) 0 0; max-width: var(--prose); overflow-wrap: anywhere; }
+/* The snippet is set as what it is evidence of — the demo's own three
+   treatments, because a moment must not read as a different kind of thing on
+   the two surfaces. Spoken: quoted, in the human face, because a person said
+   it. On-screen: mono and lime, the same green as the detection box it was read
+   out of (The Lime Rule — this is on-screen-text evidence, and the only place
+   on this page lime is allowed). Frame: mono and muted, never quoted and never
+   lime, because whatever text rode along is not what matched. */
+.search-snippet.is-spoken::before { content: "\201C"; color: var(--fg3); }
+.search-snippet.is-spoken::after { content: "\201D"; color: var(--fg3); }
+.search-snippet.is-screen,
+.search-snippet.is-frame {
+  font-family: var(--font-mono);
+  font-size: var(--t-machine);
+  font-variant-ligatures: none;
+}
+.search-snippet.is-screen { color: var(--seen); }
+.search-snippet.is-frame { color: var(--muted); }
+/* The reader's own words, found in the text. Gold is *this is the moment you
+   are pointing at*, which is exactly what a mark is; on the two mono channels
+   it goes to full white instead, because gold on lime is two signals on one
+   object (The One Signal Rule). */
+.search-snippet mark { background: transparent; color: var(--accent); }
+.search-snippet.is-screen mark,
+.search-snippet.is-frame mark { color: var(--fg); }
 .search-receipt {
   align-self: start;
   color: var(--accent);
@@ -1848,8 +1905,9 @@ button[disabled]:hover { color: var(--fg3); border-color: var(--seam); }
 .cue .speaker { font-size: var(--t-machine-sm); color: var(--muted); }
 
 /* Three sources, three kinds of evidence, said in a word — the demo's own
-   vocabulary, so a badge means the same thing on both surfaces. Not lime: a
-   caption track is not something the machine read off the screen. */
+   vocabulary, so a badge means the same thing on both surfaces. The word
+   carries the meaning and the colour only reinforces it, which is what keeps a
+   result row readable on a monochrome screen and for a colour-blind reader. */
 .badge {
   display: inline-block;
   padding: 0 var(--s1);
@@ -1862,7 +1920,19 @@ button[disabled]:hover { color: var(--fg3); border-color: var(--seam); }
   vertical-align: 1px;
   white-space: nowrap;
 }
-.badge-screen { text-transform: none; letter-spacing: 0; border-style: dashed; }
+/* Someone said it. Not lime: a caption track is not something the machine read
+   off the screen. */
+.badge-spoken { border-color: var(--seam2); }
+/* The machine read it off the screen — the one thing lime is for, and the same
+   green as the detection box on the video page the row links into. */
+.badge-screen {
+  color: var(--seen);
+  border-color: var(--seen-24);
+  background: color-mix(in srgb, var(--seen) 10%, transparent);
+}
+/* A visual match: no text was read, so there is no lime on it. It takes the
+   plate instead — the picture beside it is the whole of the evidence. */
+.badge-frame { color: var(--fg2); background: var(--plate3); border-color: var(--seam2); }
 
 /* -------------------------------------------------------------------- jobs */
 
@@ -2421,9 +2491,6 @@ footer p { margin: 0; max-width: var(--note); }
     border-bottom-color: var(--accent);
   }
 
-  .rail-search { flex: 1 1 15rem; max-width: 24rem; margin: 0; }
-  .rail-search > label { display: none; }
-
   .rail-foot { margin: 0 0 0 auto; padding: 0; border-top: 0; }
   .deployment { flex-direction: row; flex-wrap: wrap; gap: 0 var(--s3); }
   /* In the strip the foot is a row of facts, so its one control stops being a
@@ -2552,7 +2619,11 @@ footer p { margin: 0; max-width: var(--note); }
   .readiness-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .readiness-list > div:nth-child(odd) { border-left: 0; }
   .readiness-list > div:nth-child(n + 3) { border-top: 1px solid var(--seam); }
-  .search-hit { grid-template-columns: minmax(0, 1fr); gap: var(--s2); }
+  /* The still stays beside the moment on a hand — it is the evidence, and a
+     stack of full-width frames is a wall of pictures. The receipt drops to its
+     own line under the body rather than under the frame. */
+  .search-hit { grid-template-columns: auto minmax(0, 1fr); gap: var(--s2) var(--s3); }
+  .search-hit > .search-receipt { grid-column: 2; }
 
   /* One column on a hand: a card whose still carries detection boxes and whose
      lines are a scrollbox does not halve. */

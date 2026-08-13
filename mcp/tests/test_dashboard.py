@@ -596,22 +596,35 @@ def test_readonly_readiness_omits_operator_infrastructure(tmp_path: Path) -> Non
     assert "private/model-id" not in body and "private drift reason" not in body
 
 
-def test_search_is_in_the_rail_and_uses_the_shared_result_contract(
+def test_search_is_a_rail_destination_and_uses_the_shared_result_contract(
     tmp_path: Path,
 ) -> None:
+    """§14, amended 2026-08-13: the rail's search *form* became a search *page*.
+
+    What has to stay true is everything the form was there for — one entry from
+    every page, the shared handler behind it, the tool's own receipts — and what
+    changes is that the entry is a link to a document rather than a text field
+    in the chrome.
+    """
     with owner_client(tmp_path) as client:
         for path in (ROOT, f"{ROOT}/videos", f"{ROOT}/jobs"):
             body = client.get(path, headers=BEARER).text
-            assert 'class="rail-search"' in body
-            assert f'action="{ROOT}/search"' in body
+            assert 'class="rail-search"' not in body, "the rail widget is gone"
+            assert f'<a href="{ROOT}/search"' in body, "and it is a nav item"
 
         body = client.get(
             f"{ROOT}/search?q=cache&limit=999", headers=BEARER
         ).text
         assert 'data-search-results' in body and 'data-limit="50"' in body
-        # Structured leg names and corpus channel names are not translated by
-        # the page. Exact-second receipts are the tool's own deeplinks.
+        # The page is where you are, and the form is the page's own.
+        assert f'<a href="{ROOT}/search" aria-current="page"' in body
+        assert f'action="{ROOT}/search"' in body
+        # Structured leg names and corpus channel names are not translated away
+        # by the page: the human label is added, the machine key stays beside
+        # it. Exact-second receipts are the tool's own deeplinks.
         assert "transcript_fts" in body and "frame_knn" in body
+        assert "Transcript — keyword match (FTS)" in body
+        assert "Frames — visual candidates considered" in body
         assert "Andrej Karpathy" in body and "GPU MODE" in body
         assert re.search(r'href="https://youtu\.be/[\w-]+\?t=\d+"', body)
         assert re.search(r"youtu\.be/[\w-]+\?t=\d+ ↗", body)
@@ -628,10 +641,106 @@ def test_search_is_in_the_rail_and_uses_the_shared_result_contract(
         assert 'data-limit="20"' in body
 
 
+def test_a_search_hit_carries_its_frame_its_kind_and_a_way_into_the_index(
+    client: TestClient,
+) -> None:
+    """The rebuilt result row (Tom, 2026-08-13) — §14, amended.
+
+    A hit used to be a title, a raw `source` string and a YouTube link. Three
+    things it now carries, and each one is a fact the row could not previously
+    show: the *frame*, which for an OCR or visual match is the evidence itself;
+    the *kind* of evidence in a word; and a link into what this deployment
+    stored, next to the receipt that leaves for YouTube.
+    """
+    body = page(client, f"{ROOT}/search?q=cache")
+
+    # The frame, through the derived cache at the strip's own width, opened by
+    # the same button class and the same overlay the keyframe grid uses.
+    assert 'class="framebtn search-hit-shot"' in body
+    assert re.search(r'src="/frames/[\w.-]+\.jpg\?w=192', body)
+    assert re.search(r'data-large="/frames/[\w.-]+\.jpg\?w=1280', body)
+    assert body.count('<dialog id="shot"') == 1
+    # …and never against PUBLIC_URL, which the JSON facade's own decoration
+    # would have left on the hit.
+    assert "http://localhost:8080/frames/" not in body
+
+    # The kind, as a word — with the tool's own `source` string kept beside it.
+    assert '<span class="badge badge-screen">on-screen</span>' in body
+    assert '<span class="badge badge-spoken">spoken</span>' in body
+    assert 'title="source=ocr"' in body and 'title="source=transcript"' in body
+
+    # A frame hit lands on that frame: `ord` is dense, so which strip page holds
+    # it is arithmetic, and `select` marks it whether or not the script runs.
+    assert f'href="{ROOT}/videos/kCc8FmEb1nY?frame_offset=0&amp;select=0#frame-0"' in body
+    # A spoken hit names its cues by id and the transcript panel pages by
+    # offset, so it links to the video plainly rather than inventing a page.
+    assert f'href="{ROOT}/videos/zduSFxRajkE"' in body
+
+    # The receipt is still the argument, and it is still the tool's own link.
+    assert re.search(r'class="search-receipt" href="https://youtu\.be/[\w-]+\?t=\d+"', body)
+
+    # The reader's own words are marked in the snippet — as text nodes the
+    # template wraps, never as markup built from corpus data.
+    assert "<mark>cache</mark>" in body
+
+
+def test_the_page_translates_a_leg_and_a_source_without_ever_losing_one() -> None:
+    """The shapes the fixture corpus cannot produce, at the function.
+
+    Two of the four sources and both `frame_*` legs never appear over the
+    seeded videos, and they are exactly the cases where a translation table
+    fails quietly: the rule is that an unfamiliar key arrives as an unfamiliar
+    *word*, never as a hit with no provenance or a leg that vanished.
+    """
+    from vidtheque_mcp.dashboard.views import (
+        FRAME_PAGE,
+        HIGHLIGHT_MARKS,
+        _highlighted,
+        _search_evidence,
+        _search_inside,
+        _search_legs,
+    )
+
+    both = _search_evidence("transcript+ocr")
+    assert [pill["label"] for pill in both["pills"]] == ["spoken", "on-screen"]
+    assert both["kind"] == "mixed" and both["key"] == "transcript+ocr"
+    # A fourth leg one day: its own name, its own badge, nothing dropped.
+    fourth = _search_evidence("hypertext")
+    assert fourth["pills"] == [{"label": "hypertext", "kind": "other"}]
+    assert _search_evidence(None)["pills"] == []
+
+    legs = _search_legs({"ocr": 1, "transcript_fts": 9, "transcript": 3, "novel": 2})
+    assert [leg["key"] for leg in legs] == ["transcript", "transcript_fts", "ocr", "novel"]
+    assert [leg["sub"] for leg in legs] == [False, True, False, True]
+    assert legs[-1]["label"] == "novel", "an unknown leg keeps its own name"
+
+    # A frame hit lands on the strip page that holds its ordinal — the shot
+    # bars' arithmetic, because `ord` is dense per video.
+    inside = _search_inside({"video_id": "vid", "frame_id": f"vid-{FRAME_PAGE + 5:05d}"})
+    assert inside == (
+        f"{ROOT}/videos/vid?frame_offset={FRAME_PAGE}&select={FRAME_PAGE + 5}"
+        f"#frame-{FRAME_PAGE + 5}"
+    )
+    # A frame id that is not this video's, and a hit with no frame at all: the
+    # page link, never a guessed ordinal.
+    assert _search_inside({"video_id": "vid", "frame_id": "other-00001"}) == (
+        f"{ROOT}/videos/vid"
+    )
+    assert _search_inside({"video_id": "vid"}) == f"{ROOT}/videos/vid"
+    assert _search_inside({}) is None
+
+    # The marks are bounded like every other list on this surface.
+    marks = _highlighted("ab " * 500, "ab")
+    assert sum(1 for part in marks if part["hit"]) == HIGHLIGHT_MARKS
+
+
 def test_search_page_escapes_corpus_and_query_text(client: TestClient) -> None:
     body = page(client, f"{ROOT}/search?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E")
     assert "<script>alert(1)</script>" not in body
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in body
+    # And the highlighter is not a second way in: a query term that matches
+    # hostile corpus text is marked as escaped text, never as a live tag.
+    assert "<mark><script>" not in body
 
 
 def test_the_videos_table_shows_every_state_and_no_per_row_counts(

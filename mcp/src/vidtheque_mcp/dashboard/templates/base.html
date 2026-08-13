@@ -51,7 +51,7 @@
   ledger band in one glance, and clicks the number next to the thing that is
   wrong.
 
-  FIRST VIEWPORT: a persistent left rail carrying the wordmark and the three
+  FIRST VIEWPORT: a persistent left rail carrying the wordmark and the four
   surfaces, then a full-bleed content column — page header band, a full-width
   ledger of five mono figures, and the gaps as sentences beside the arrivals.
 
@@ -67,7 +67,7 @@
    and it holds the two things that are true of every page: where you are, and
    what this deployment is allowed to do. Below 60rem the whole thing reflows
    to a horizontal strip — no drawer, no checkbox, no JavaScript, because a
-   nav of three items does not need to be hidden behind a control. #}
+   nav of four items does not need to be hidden behind a control. #}
 <header class="rail">
   {# The lockup, and it is the word and nothing else: `vidtheque` in the text
      face with the full stop in gold — the receipt's full stop, because the
@@ -80,28 +80,25 @@
 
   <nav class="nav" aria-label="Sections">
     {# The first group has no heading (Tom, 2026-08-10). "The index" named the
-       three routes under it and none of them needed naming — a rail of three
-       words is its own label, and the heading was one line of chrome above the
-       thing the operator came to click. The groups that *change* what the rail
-       means — `Manage`, `This demo` — keep theirs, because those are the two
-       cases where an item's absence is a fact about the deployment. #}
+       routes under it and none of them needed naming — a rail of four words is
+       its own label, and the heading was one line of chrome above the thing the
+       operator came to click. The groups that *change* what the rail means —
+       `Manage`, `This demo` — keep theirs, because those are the two cases
+       where an item's absence is a fact about the deployment.
+
+       Search is the fourth word, and it is a **link** (Tom, 2026-08-13). It was
+       a compact GET form in the rail, which made the one question this corpus
+       exists to answer the only surface you could not simply go to: a form in
+       the chrome has no empty state, no filters, no legs and nothing to read
+       until you have already typed. It is a page like the other three now, and
+       the query, the channel filters and the pager are the URL. Agents keep the
+       wider, structured `search` tool at `/mcp`; nothing about that changed. #}
     <ul class="navlist">
       <li><a href="{{ root }}"{% if page == 'corpus' %} aria-current="page"{% endif %}>Overview</a></li>
+      <li><a href="{{ root }}/search"{% if page == 'search' %} aria-current="page"{% endif %}>Search</a></li>
       <li><a href="{{ root }}/videos"{% if page == 'videos' %} aria-current="page"{% endif %}>Videos</a></li>
       <li><a href="{{ root }}/jobs"{% if page == 'jobs' %} aria-current="page"{% endif %}>Jobs</a></li>
     </ul>
-    {# Search is a dashboard document, not a JSON surface for agents. The
-       compact rail entry is on every page; submitting it navigates to the
-       dedicated result page, where the query layer's own legs and notes are
-       visible. Agents keep the wider, structured `/mcp` tool. #}
-    <form class="rail-search" role="search" method="get" action="{{ root }}/search">
-      <label for="rail-search">Search</label>
-      <span class="rail-search-control">
-        <input id="rail-search" type="search" name="q" value="{{ rail_query }}"
-               maxlength="512" required autocomplete="off" placeholder="moments in the corpus">
-        <button type="submit" aria-label="Search the corpus">Go</button>
-      </span>
-    </form>
     {# The write side, as the second group the phase-1 chassis left room for.
        It appears exactly when the routes behind it are registered — in the
        demo projection and in `AUTH=none` there is no group here at all, rather
@@ -126,10 +123,10 @@
       <li><a href="/">Search the corpus</a></li>
     </ul>
     {% endif %}
-    {# Room still left: search (dashboard.md §5.6) and settings arrive as one
-       more `<p class="nav-group">` + `<ul class="navlist">` pair. The CSS
-       already carries the group label, the gap between groups and the active
-       state; nothing new has to be invented for them. #}
+    {# Room still left: settings arrives as one more `<p class="nav-group">` +
+       `<ul class="navlist">` pair. The CSS already carries the group label, the
+       gap between groups and the active state; nothing new has to be invented
+       for it. #}
   </nav>
 
   <div class="rail-foot">
