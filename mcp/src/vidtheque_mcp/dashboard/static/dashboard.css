@@ -887,6 +887,16 @@ code { font-size: var(--t-machine); overflow-wrap: anywhere; }
   margin: 0;
 }
 
+/* The ledger page's density (2026-08-13). The same grid at a smaller minimum
+   track and a tighter row gap, because ten labelled counts under one panel
+   heading are a column of figures to scan, not five headlines to read. No new
+   size: `.figure > dd` is already at the bottom rung of the figure ramp. */
+.figures-tight { grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); gap: var(--s4) var(--s5); }
+/* Two stacks of figures in one panel, or a stack of figures over a stack of
+   sentences: the gap between them is a panel's own, not a grid's. */
+.figures + .figures,
+.figures + .gaplist { margin-top: var(--s4); }
+
 .figure { min-width: 0; }
 .ledger > .figure > dt { font-size: var(--t-label-sm); letter-spacing: 0.17em; }
 .ledger > .figure > dd { font-size: var(--t-figure); }
@@ -904,6 +914,15 @@ code { font-size: var(--t-machine); overflow-wrap: anywhere; }
   letter-spacing: -0.045em;
   color: var(--fg);
 }
+
+/* A figure that is a door. The number is the link — the same idiom the gap
+   sentences use, and for the same reason: the number is the thing you want to
+   go and look at. A zero is not a door, so it drops the accent and stays a
+   figure; the class is the gap list's own, because inventing a second name for
+   "this one is not worth a click" is how two pages start disagreeing about it. */
+.figure > dd > a { color: var(--accent); text-decoration: none; }
+.figure > dd > a:hover { text-decoration: underline; }
+.figure > dd > a.gap-none { color: var(--fg); }
 
 .figure > dd.figure-note {
   margin-top: var(--s2);

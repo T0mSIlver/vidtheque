@@ -543,6 +543,75 @@ def test_the_overview_no_longer_repeats_the_video_count(client: TestClient) -> N
     assert "across" not in page(client, ROOT).split("</dl>")[0]
 
 
+def test_the_ledger_gathers_every_key_number_and_links_the_doors(
+    client: TestClient,
+) -> None:
+    """dashboard.md §17, built 2026-08-13 because the numbers were scattered.
+
+    The fixture is small enough to assert the arithmetic, which is the point of
+    the page: four videos split three ready and one indexing, three jobs split
+    one queued, one running and one failed, and every figure that is a door into
+    a filter is the link — with a zero declining the accent, exactly as the
+    overview's gap sentences already do it.
+    """
+    body = page(client, f"{ROOT}/ledger")
+    assert "<h1>The ledger</h1>" in body
+    assert f'<a href="{ROOT}/ledger" aria-current="page"' in body
+
+    def figures(section: str, until: str) -> dict[str, str]:
+        block = body[body.index(f'id="{section}"') : body.index(f'id="{until}"')]
+        return dict(re.findall(r"<dt>([a-z -]+)</dt>\s*<dd>(?:<a[^>]*>)?([\d,.]+)", block))
+
+    # The corpus, and the states behind it: ready + the four not-ready words add
+    # up to the band's own count, which is what makes this a tally. Read per
+    # panel, because `failed` is a video state *and* a job state and the two
+    # numbers are deliberately different.
+    corpus = figures("corpus", "states")
+    states = figures("states", "queue")
+    queue = figures("queue", "behind")
+    assert corpus["videos"] == "4"
+    assert [states[s] for s in ("ready", "pending", "indexing", "failed", "stale")] == [
+        "3", "0", "1", "0", "0",
+    ]
+    assert [queue[s] for s in ("queued", "running", "done", "failed", "cancelled")] == [
+        "1", "1", "0", "1", "0",
+    ]
+    # Every door is a real filter on a real page, and a zero is not gold.
+    assert f'href="{ROOT}/videos?index_state=indexing">1</a>' in body
+    assert f'<a class="gap-none" href="{ROOT}/videos?index_state=failed">0</a>' in body
+    assert f'href="{ROOT}/jobs?state=failed">1</a>' in body
+    # The storage figures come from the column, never from a directory walk.
+    assert "keyframe JPEGs" in body and "index file" in body
+    assert "/keyframes/" not in body and "jpeg_path" not in body
+
+
+def test_the_ledger_costs_a_fixed_number_of_bounded_reads(client: TestClient) -> None:
+    """§6.3's rule in the form this page can break it: a page of aggregates.
+
+    Every figure is a whole-table or index count, so the read count is a
+    constant — it does not move with the corpus, and no figure is a probe per
+    video, per job or per keyframe.
+    """
+    assert _count_reads(client, f"{ROOT}/ledger") <= 8
+
+
+def test_the_ledger_projection_drops_the_operators_disk(tmp_path: Path) -> None:
+    """§2.4 again, for a page made entirely of numbers.
+
+    The corpus counts are the demo's — they are what the welcome page already
+    publishes — and the two byte totals are not: they measure the operator's
+    box. The projection does not take those reads at all.
+    """
+    with make_client(tmp_path, public=DEMO) as demo:
+        body = page(demo, f"{ROOT}/ledger")
+        for leaked in OPERATOR_STRINGS:
+            assert leaked not in body, f"{leaked} is on the demo ledger"
+        assert "<dt>Indexing</dt>" not in body  # a worker no visitor can reach
+        # …and the corpus is all still counted.
+        assert "transcript cues" in body and "on-screen lines" in body
+        assert "Jobs by state" in body
+
+
 def test_the_videos_table_counts_the_filtered_set_exactly(client: TestClient) -> None:
     """Tom, 2026-08-13: "just show the actual number of videos".
 
@@ -1692,7 +1761,7 @@ def _every_dashboard_page(tmp_path: Path) -> list[tuple[str, str]]:
     pages = []
     with make_client(tmp_path) as anon:
         for path in (
-            "", "/videos", "/videos?published_after=2099-01-01",
+            "", "/ledger", "/videos", "/videos?published_after=2099-01-01",
             "/videos/kCc8FmEb1nY", "/videos/aaaaaaaaaaa", "/videos/zduSFxRajkE",
             "/jobs", "/jobs?state=failed", "/jobs/job_finished01",
             "/jobs/job_deferred01", "/jobs/job_running001",
@@ -3066,6 +3135,7 @@ OPERATOR_STRINGS = (
 
 READ_PAGES = (
     ROOT,
+    f"{ROOT}/ledger",
     f"{ROOT}/search",
     f"{ROOT}/videos",
     f"{ROOT}/videos/kCc8FmEb1nY",

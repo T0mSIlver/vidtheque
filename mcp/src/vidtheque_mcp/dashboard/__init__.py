@@ -250,6 +250,11 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
             methods=["GET"],
         ),
         Route(ROOT, guarded(views.overview), methods=["GET"]),
+        # The ledger (§17, 2026-08-13): the same reads the overview and the jobs
+        # view already make, gathered as one page of counts. A read page like
+        # the four beside it — same gate, no new clamp, and in the projection
+        # with the two figures that measure the operator's disk dropped.
+        Route(f"{ROOT}/ledger", guarded(views.ledger), methods=["GET"]),
         Route(f"{ROOT}/search", guarded(views.search), methods=["GET"]),
         Route(f"{ROOT}/videos", guarded(views.videos), methods=["GET"]),
         Route(f"{ROOT}/videos/{{video_id}}", guarded(views.video_detail), methods=["GET"]),

@@ -1961,3 +1961,54 @@ predicate as `degraded_items`. Every row links to the job detail page.
 This is a detail-only query. The videos table performs no job-history read and
 there is no per-video query fan-out on that list. The panel is capped directly;
 it does not issue a count and does not claim an exact total.
+
+## 17. The ledger (2026-08-13)
+
+Tom: *"I'd like a page that centralizes all the key numbers, currently they're
+scattered over the overview and other pages."* `GET /dashboard/ledger`, rail
+item **Ledger**, directly under Overview. The name is DESIGN.md's own — the
+overview's five-figure band is the *ledger band*, and this page is that idea
+taken to the whole instance.
+
+**What was scattered.** The corpus counts are the overview's band; the queue is
+two sentences beside them; the per-state video counts existed only as a *filter*
+on the videos table, so "how many are failed" was a question you answered by
+applying a filter and reading a count line; the byte totals are a panel three
+screens down; the embedding backlog was on no page at all. An operator asking
+"what does this box hold, and what is it behind on" was reading four pages and
+doing arithmetic.
+
+**Reads.** `queries.corpus_rollup`, `queries.corpus_ledger` (new, §4.8: the four
+`index_state` counts behind the rollup's one `videos_pending`, plus `chunks`,
+`tags` and distinct channels), `queries.gaps` for `transcript_no_ocr`,
+`queries.embed_backlog`, `jobs_store.job_state_counts` (new: one grouped count
+over `jobs.state`), `jobs_store.job_health` for the deferred and recently-failed
+lines, `queries.keyframe_bytes_total` + `os.stat`, and the §15 readiness
+observation, made concurrently with the counts exactly as the overview makes it.
+**No new tool, no new parameter on an existing one, and no per-video, per-job or
+per-keyframe work**: every figure is a whole-table or index count, the read
+count is constant, and a test pins it.
+
+**Shows.** The band (videos · runtime · cues · keyframes · on-screen lines,
+carrying the published span and the chunk count as figure-notes); videos by
+`index_state`, all five words; jobs by `jobs.state`, all five words, with the
+backoff and 24-hour-failure lines under them; the embedding backlog and the
+transcript-without-OCR gap; channels, tags and the two byte totals; and the
+readiness strip.
+
+**Every number is a label and a figure, and a number that is a door is the
+link** — the gap list's idiom, and its `gap-none` class, because a zero is
+nothing to go and look at and must not wear the accent. The job figures link to
+`state=active|done|failed`: the jobs view's filter vocabulary is
+`all|active|failed|done` (§5.4) and this page does not invent a sixth, so
+`queued` and `running` both point at `active`, which is exactly the filter that
+holds them, and `cancelled` — which has no filter of its own — is a figure and
+not a link.
+
+**Does not show.** Any chart, axis or history (§1 non-goal 5) — one reading,
+taken inside one request, stamped once at the top. Any exact total that would
+cost a per-row query; every count here is an aggregate. And in the projection
+(§2.4), the two byte totals and the indexing state, dropped by the same rule and
+with the same argument as on the overview: the reads are not taken at all rather
+than taken and discarded. The corpus counts stay, because they are what the
+welcome page already publishes.

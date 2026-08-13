@@ -434,6 +434,95 @@ async def _pipeline_readiness(request: Request, *, redact: bool) -> dict[str, An
     return readiness
 
 
+# ---------------------------------------------------------------- §17 ledger
+
+
+async def ledger(request: Request) -> Response:
+    """`GET /dashboard/ledger` — every key number this instance can count.
+
+    The page exists because the numbers were scattered (Tom, 2026-08-13): the
+    corpus counts are on the overview, the queue's are in two sentences beside
+    them, the per-state video counts were only ever a *filter* on the videos
+    table, and the byte totals are a panel three screens down. An operator who
+    wants "what does this box hold, and what is it behind on" was reading four
+    pages and doing arithmetic.
+
+    It adds no read the surface did not already have the right to make, and no
+    per-video work: every figure is a whole-table or index count
+    (`corpus_rollup`, `corpus_ledger`, `gaps`, `embed_backlog`,
+    `job_state_counts`, `job_health`), and the readiness observation is the
+    overview's own, made concurrently with them for the same reason.
+    """
+    redact = _redacted(request)
+    readiness_task = asyncio.create_task(_pipeline_readiness(request, redact=redact))
+    try:
+        return await _ledger_page(request, readiness_task, redact=redact)
+    finally:
+        if not readiness_task.done():
+            readiness_task.cancel()
+
+
+async def _ledger_page(
+    request: Request, readiness_task: asyncio.Task[dict[str, Any]], *, redact: bool
+) -> Response:
+    assembled = request.app.state.assembled
+    db = assembled.db
+
+    rollup = await db.read(queries.corpus_rollup)
+    ledger = await db.read(queries.corpus_ledger)
+    # `gaps` for one of its five numbers, and that is deliberate: the
+    # "transcript but no on-screen text" set is the one figure here that is a
+    # judgement about coverage rather than a column, and a second copy of that
+    # SQL is how the overview and this page start disagreeing about what a gap
+    # is. The other four terms it computes are cheap counts this page reads
+    # more precisely elsewhere.
+    gaps = await db.read(queries.gaps)
+    backlog = await db.read(queries.embed_backlog)
+    jobs_by_state = await db.read(jobs_store.job_state_counts)
+    health = await db.read(
+        lambda c: jobs_store.job_health(c, int(time.time()) - FAILED_WINDOW_S)
+    )
+    # The same read the overview skips rather than redacts, for the same reason:
+    # a byte total of the operator's disk is not a fact about the corpus, and
+    # not asking is cheaper and more honest than asking and not printing (§2.4).
+    storage = (
+        None
+        if redact
+        else {
+            "keyframes": await db.read(queries.keyframe_bytes_total),
+            "database": _file_size(assembled.settings.db_path),
+        }
+    )
+    readiness = await readiness_task
+
+    return _render(
+        "ledger.html",
+        {
+            **_chrome(request, "ledger"),
+            "title": "Ledger",
+            "rollup": rollup,
+            "ledger": ledger,
+            # `corpus-summary`'s `videos` without the tool call: the rollup
+            # already splits the corpus into ready and not-ready, and the two
+            # add up to it by construction (`_CORPUS_SQL`'s `<> 'ready'`). This
+            # page has no use for the channel and tag *lists* the tool would
+            # also build, so it does not ask for them.
+            "corpus_videos": int(rollup["videos_ready"]) + int(rollup["videos_pending"]),
+            "gaps": gaps,
+            "backlog": backlog,
+            "jobs": jobs_by_state,
+            "health": health,
+            "failed_window_h": FAILED_WINDOW_S // 3600,
+            "storage": storage,
+            "readiness": readiness,
+            # The clock of this reading. Every figure on the page was counted
+            # inside this request, so the page carries one timestamp and not a
+            # per-panel one — there is no cache and no sample behind any of them.
+            "counted_at": iso_z(time.time()),
+        },
+    )
+
+
 # --------------------------------------------------------------- search
 
 
