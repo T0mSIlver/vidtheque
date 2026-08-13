@@ -214,7 +214,10 @@ owner.
 **Trusted CIDRs count as a credential, deliberately.** The setting already
 grants that network the whole write side with nothing presented at all (§3.4) —
 indexing, re-indexing, tagging. A network trusted to *change* the corpus but not
-to read a transcript of it would be a boundary with no shape. It is also the
+to read a transcript of it would be a boundary with no shape. (Since 2026-08-13
+the dashboard's read gate honors it too, not just these clamps and the write
+gate — the §3.2 audit row carries the change and the field report that forced
+it.) It is also the
 answer to the private-LAN owner story this change would otherwise break: in
 `AUTH=none` there is no credential, so the owner of a LAN instance is anonymous
 by this rule and gets the demo's bounds on the JSON. Two things give them back
@@ -880,7 +883,7 @@ What landed, against what this document specified:
 | 2.5.3 | the rate limiter loses its mode conditional | a `dashboard` bucket, installed in every mode. **Diverged:** in a *private* deployment it is the only bucket — `/frames/*` is not charged. One detail page asks for ~48 frames, and 120/min would refuse the second page load. The owner is not that bucket's threat model; a public deployment is unchanged |
 | 2.5.4 | one declared list of write routes | `dashboard.WRITE_ROUTES`, empty, asserted empty |
 | 2.6 | `/dashboard`, JSON under `/dashboard/api/*` | as specified, not configurable |
-| 3.2 | bearer or the existing session cookie; `none` serves read-only | as specified. Read views are open in `none` (the corpus already is, through `/mcp` and `/frames`) and need the credential in `token`/`oauth` — pages get an HTML 401 naming the fix, `/dashboard/api/*` gets the typed JSON one |
+| 3.2 | bearer or the existing session cookie; `none` serves read-only | as specified, plus one credential this row did not list: **a socket peer in `VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS` passes the read gate too** (2026-08-13, Tom's call). §3.4 already granted that peer the whole write side and §4's table calls it an owner, but `guarded()` checked only the bearer and the session — so a trusted LAN peer could submit an index job and get a sign-in page for the dashboard it posted from, the "boundary with no shape" lived in the other direction. `peer_trusted()` in `dashboard/access.py` is now the one place the peer is read, shared by both gates. Inert on a public deployment: G2a requires the list empty there and the settings refuse to boot when a CIDR covers the proxy. Read views are open in `none` (the corpus already is, through `/mcp` and `/frames`) and need a credential in `token`/`oauth` — pages get an HTML 401 naming the fix, `/dashboard/api/*` gets the typed JSON one |
 | 3.3 | no state-changing GET; Origin on every write | `require_write()` ships now, refusing in `none` mode and checking `Sec-Fetch-Site`/`Origin`, with tests. A test also asserts every registered route is GET-only |
 | 4.1 | provenance from `video_stages`, four caveats | all seven stages in pipeline order, a stage with no row rendered `absent`, `model_key` NULL as `—`, and the caveats as a panel note. `stage_version` is read and **not shown** (§10.5's open half) |
 | 4.2 | no per-row counts; counts on the detail page | coverage pills in the table, `per_video_counts()` on the detail page only. A test asserts the read count does not grow with the page size, on both pages |
