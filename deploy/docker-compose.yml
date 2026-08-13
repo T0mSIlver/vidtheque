@@ -31,9 +31,12 @@ name: vidtheque
 services:
   mcp:
     # Built from source: `mcp/Dockerfile` is the real image (Python 3.12,
-    # CPU-only, multi-arch), and there is no published tag yet. Swap `build`
-    # for `image: ghcr.io/t0msilver/vidtheque-mcp:<tag>` once there is one —
-    # the GHCR publish workflow fires on a `v*` git tag.
+    # CPU-only, multi-arch). Published tags now exist — the GHCR workflow fires
+    # on a `v*` git tag and pushes both images — so a box that should run a
+    # release rather than build one overlays deploy/compose.release.example.yml,
+    # which swaps in `image: ghcr.io/t0msilver/vidtheque-mcp:${IMAGE_TAG}` and
+    # resets this `build:` so nothing silently rebuilds. THE IMAGE TAGS CARRY NO
+    # LEADING `v`: git tag `v0.0.1` publishes `0.0.1` and `0.0`.
     build:
       context: ..
       dockerfile: mcp/Dockerfile

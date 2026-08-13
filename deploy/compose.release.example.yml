@@ -1,0 +1,71 @@
+# Release-mode overlay for deploy/docker-compose.yml — run the PUBLISHED
+# images instead of building from source.
+#
+# TEMPLATE, and an OVERLAY: it changes nothing until you name it explicitly,
+# and it is named SECOND — before whatever local overlay you keep, so the
+# local one still gets the last word on binds and volumes:
+#
+#   docker compose -f deploy/docker-compose.yml \
+#                  -f deploy/compose.release.example.yml \
+#                  -f deploy/compose.local.yml up -d
+#
+# It exists because the base file only knows how to *build*. That is the right
+# default for a checkout and the wrong one for a box: building the worker image
+# means a CUDA base, torch wheels and ~28 GB of layers on a machine whose job is
+# to serve, and the box does not need the repo at all to run a release.
+# deploy/vidtheque-update.sh is the one-command version of this — it fetches
+# this file and the base file pinned to the release tag, and never builds.
+#
+#      **IMAGE_TAG CARRIES NO LEADING `v`.** The git tag is `v0.0.1`; the image
+#      tags are `0.0.1` and `0.0`. docker/metadata-action's
+#      `type=semver,pattern={{version}}` strips the `v` on the way to the
+#      registry, so `IMAGE_TAG=v0.0.1` is a pull of a tag that was never
+#      published and fails as `manifest unknown`. Pin an exact patch version;
+#      `latest` is not published at all, deliberately.
+#
+#      **THE WORKER IMAGE IS amd64-ONLY.** It is CUDA-based and there is no
+#      arm64 story for it (.github/workflows/build-worker.yml says so at the
+#      top of the job). The mcp image is multi-arch and does run on a Pi — a
+#      no-GPU box can take the mcp image from here and point WORKER_URL at
+#      something else, as the base file's header describes.
+#
+#      **`build: !reset null` is load-bearing.** Compose merges mappings by
+#      MERGING, so an overlay that only restates `image:` leaves the base
+#      file's `build:` block standing in the merged model — and then a
+#      `docker compose up --build`, or an image that simply is not present
+#      locally, rebuilds ~28 GB from source on the box instead of failing
+#      loudly. That is the same class of trap `!override` on `ports:` fixes in
+#      compose.public.example.yml (audit B-1): the overlay looks applied and
+#      the thing it promised to prevent still happens. `!reset` removes the
+#      key rather than adding to it. Verify the merged model, never the YAML:
+#
+#        docker compose -f deploy/docker-compose.yml \
+#                       -f deploy/compose.release.example.yml config --format json \
+#          | jq '[.services.mcp, .services.worker] | map(has("build") | not) | all'
+#
+#      must print `true`, and the same command with
+#      `jq '[.services.mcp, .services.worker] | map(.image)'` must print the
+#      two ghcr.io references at the tag you meant to deploy.
+#
+#      **`:?` FAILS EVERY COMPOSE COMMAND WHEN IMAGE_TAG IS UNSET**, including
+#      `ps`, `logs` and `down`. That is deliberate: an empty tag interpolates
+#      to `ghcr.io/t0msilver/vidtheque-mcp:` and the error you would get later
+#      is about a malformed reference rather than about your .env. It only
+#      bites when this overlay is explicitly named, which is why the guard can
+#      be strict here and could not be on the base file's TUNNEL_TOKEN.
+#
+# This overlay adds ONE environment variable, IMAGE_TAG, and it has an entry in
+# deploy/.env.example, which stays the document of record. Nothing inside the
+# containers reads it — it is a compose-level variable, like MCP_PORT.
+
+services:
+  mcp:
+    # Multi-arch (linux/amd64, linux/arm64), CPU-only, ~1.4 GB.
+    image: ghcr.io/t0msilver/vidtheque-mcp:${IMAGE_TAG:?set IMAGE_TAG in deploy/.env — the GHCR tag with no leading v, e.g. 0.0.1}
+    build: !reset null
+
+  worker:
+    # linux/amd64 only, CUDA, ~28 GB. Pulling it the first time is a long
+    # coffee; the layers are shared with nothing else on the box.
+    image: ghcr.io/t0msilver/vidtheque-worker:${IMAGE_TAG:?set IMAGE_TAG in deploy/.env — the GHCR tag with no leading v, e.g. 0.0.1}
+    build: !reset null
