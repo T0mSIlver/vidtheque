@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block main %}
+
+{# The ledger — dashboard.md §17, built 2026-08-13 because the key numbers were
+   scattered (Tom). Nothing on this page is new information: it is the counts
+   from the overview, the queue's two sentences, the state filter that only
+   existed as a URL on the videos table, and the byte totals, in one column of
+   figures. Every number carries its label, and a number that is a door into a
+   filtered page is the link — the same idiom the overview's gap sentences use,
+   and a zero is not a door, so it does not wear the accent.
+
+   No chart, no axis, no history (§1 non-goal 5). One reading, taken inside one
+   request, stamped once at the top. #}
+
+<div class="pagehead">
+  <div class="pagehead-line">
+    <h1>The ledger</h1>
+    <p class="pagehead-meta">
+      <span class="fact">counted <span class="mono"><time datetime="{{ counted_at }}">{{ counted_at }}</time></span></span><span class="sep">·</span>
+      <span class="fact">indexed <span class="mono">{{ rollup['last_indexed'] | minute }}</span></span>
+    </p>
+  </div>
+</div>
+
+{# The band, and the page's one corner tick: the five figures that are the
+   corpus. The same five the overview leads with, deliberately — this page is
+   where they are all together, not a second set of them. #}
+<section aria-labelledby="corpus">
+  <h2 class="sr-only" id="corpus">The corpus</h2>
+  <dl class="ledger">
+    <div class="figure">
+      <dt>videos</dt>
+      <dd><a href="{{ root }}/videos?index_state=all">{{ corpus_videos | count }}</a></dd>
+      <dd class="figure-note">
+        published <span class="fact"><span class="mono">{{ rollup['oldest_published'] | day }}</span>
+        <span class="sep">–</span>
+        <span class="mono">{{ rollup['newest_published'] | day }}</span></span>
+      </dd>
+    </div>
+    <div class="figure">
+      <dt>runtime</dt>
+      <dd>{{ "%.1f" | format(rollup['hours']) }}<span class="unit">h</span></dd>
+      <dd class="figure-note">{{ rollup['duration_s'] | round | int | count }} seconds indexed</dd>
+    </div>
+    <div class="figure">
+      <dt>transcript cues</dt>
+      <dd>{{ rollup['cues'] | count }}</dd>
+      <dd class="figure-note">in {{ ledger['chunks'] | count }} embedding chunks</dd>
+    </div>
+    <div class="figure">
+      <dt>keyframes</dt>
+      <dd>{{ rollup['keyframes'] | count }}</dd>
+      <dd class="figure-note">after near-duplicate removal</dd>
+    </div>
+    <div class="figure">
+      <dt>on-screen lines</dt>
+      <dd>{{ rollup['ocr_lines'] | count }}</dd>
+      <dd class="figure-note">read off those keyframes</dd>
+    </div>
+  </dl>
+</section>
+
+<div class="split">
+  {# The five `index_state` words, counted. They existed only as a filter on the
+     videos table until now, which meant "how many are failed" was a question
+     you answered by applying a filter and reading a count line. Each figure is
+     the link to its own filter, so it still is — in one click, from a page that
+     already told you the number. #}
+  <section class="panel" aria-labelledby="states">
+    <h2 class="panel-title" id="states">Videos by state</h2>
+    <dl class="figures figures-tight">
+      {% for state, n in [('ready', rollup['videos_ready']), ('pending', ledger['videos_pending']),
+                          ('indexing', ledger['videos_indexing']), ('failed', ledger['videos_failed']),
+                          ('stale', ledger['videos_stale'])] %}
+      <div class="figure">
+        <dt>{{ state }}</dt>
+        <dd><a class="{{ 'gap-none' if not n }}" href="{{ root }}/videos?index_state={{ state }}">{{ n | count }}</a></dd>
+      </div>
+      {% endfor %}
+    </dl>
+  </section>
+
+  {# Every job this instance has ever run, by its own state word. The jobs view
+     filters on `all|active|failed|done` and this page does not invent a sixth
+     vocabulary for it (§4.5), so `queued` and `running` both link to `active`,
+     which is exactly the filter that holds them, and `cancelled` — which has no
+     filter of its own — is a figure and not a link. #}
+  <section class="panel" aria-labelledby="queue">
+    <h2 class="panel-title" id="queue">Jobs by state</h2>
+    <dl class="figures figures-tight">
+      {% for state, n, target in [('queued', jobs['queued'], 'active'), ('running', jobs['running'], 'active'),
+                                  ('done', jobs['done'], 'done'), ('failed', jobs['failed'], 'failed'),
+                                  ('cancelled', jobs['cancelled'], none)] %}
+      <div class="figure">
+        <dt>{{ state }}</dt>
+        <dd>
+          {%- if target %}<a class="{{ 'gap-none' if not n }}" href="{{ root }}/jobs?state={{ target }}">{{ n | count }}</a>
+          {%- else %}{{ n | count }}{% endif -%}
+        </dd>
+      </div>
+      {% endfor %}
+    </dl>
+    <ul class="gaplist">
+      <li>
+        <a class="{{ 'gap-none' if not health.deferred }}" href="{{ root }}/jobs?state=active">{{ health.deferred | count }}</a>
+        <span>of the queued jobs are waiting on a backoff</span>
+      </li>
+      <li>
+        <a class="{{ 'gap-none' if not health.failed_recent }}" href="{{ root }}/jobs?state=failed">{{ health.failed_recent | count }}</a>
+        <span>job(s) failed in the last {{ failed_window_h }} hours</span>
+      </li>
+    </ul>
+  </section>
+</div>
+
+<div class="split">
+  {# What the corpus is short of. Two of these are a re-embed in progress and
+     one is a coverage gap; all three are counts of videos, and all three are
+     zero on a corpus that finished everything it started. #}
+  <section class="panel" aria-labelledby="behind">
+    <h2 class="panel-title" id="behind">What is missing</h2>
+    <dl class="figures figures-tight">
+      <div class="figure">
+        <dt>no on-screen text</dt>
+        <dd><a class="{{ 'gap-none' if not gaps.transcript_no_ocr }}" href="{{ root }}/videos?has=transcript&amp;index_state=all">{{ gaps.transcript_no_ocr | count }}</a></dd>
+        <dd class="figure-note">have a transcript, no OCR</dd>
+      </div>
+      <div class="figure">
+        <dt>transcript vectors</dt>
+        <dd>{{ backlog.text | count }}</dd>
+        <dd class="figure-note">chunked, waiting to embed</dd>
+      </div>
+      <div class="figure">
+        <dt>frame vectors</dt>
+        <dd>{{ backlog.frame | count }}</dd>
+        <dd class="figure-note">keyframed, waiting to embed</dd>
+      </div>
+    </dl>
+  </section>
+
+  <section class="panel" aria-labelledby="holds">
+    <h2 class="panel-title" id="holds">What it is filed under</h2>
+    <dl class="figures figures-tight">
+      <div class="figure">
+        <dt>channels</dt>
+        <dd>{{ ledger['channels'] | count }}</dd>
+      </div>
+      <div class="figure">
+        <dt>tags</dt>
+        <dd>{{ ledger['tags'] | count }}</dd>
+      </div>
+    </dl>
+    {# §2.4 keeps the corpus and drops the box: two byte totals are a
+       measurement of the operator's disk, and the projection does not take the
+       read at all rather than taking it and not printing it. #}
+    {% if storage %}
+    <dl class="figures figures-tight">
+      <div class="figure">
+        <dt>keyframe JPEGs</dt>
+        <dd>{{ storage.keyframes | bytes_human }}</dd>
+      </div>
+      <div class="figure">
+        <dt>index file</dt>
+        <dd>{{ storage.database | bytes_human }}</dd>
+      </div>
+    </dl>
+    {% endif %}
+  </section>
+</div>
+
+{# The same observation the overview makes, and the same one: a current-state
+   reading with no history behind it, taken concurrently with the counts above
+   so a silent worker costs this page a second at most (§15). #}
+<section class="panel readiness" data-readiness aria-labelledby="readiness">
+  <div class="panel-headline">
+    <h2 class="panel-title" id="readiness">Pipeline readiness</h2>
+    <p class="panel-clock">last health check <time datetime="{{ readiness.checked_at }}">{{ readiness.checked_at }}</time></p>
+  </div>
+  <dl class="readiness-list">
+    <div>
+      <dt>MCP</dt>
+      <dd><span class="pill tone-ok">{{ readiness.mcp }}</span></dd>
+    </div>
+    <div>
+      <dt>Database</dt>
+      <dd><span class="pill tone-ok">{{ readiness.database }}</span></dd>
+    </div>
+    {% if readiness.worker %}
+    <div class="readiness-worker">
+      <dt>Worker</dt>
+      <dd>
+        <span class="pill tone-{{ 'ok' if readiness.worker.state == 'ready' else ('bad' if readiness.worker.state == 'unavailable' else 'neutral') }}">{{ readiness.worker.state }}</span>
+        <span class="readiness-detail">{{ readiness.worker.detail }}</span>
+      </dd>
+    </div>
+    {% endif %}
+    <div>
+      <dt>Vector search</dt>
+      <dd>
+        <span class="pill tone-{{ 'ok' if readiness.vectors.enabled else 'bad' }}">{{ "ready" if readiness.vectors.enabled else "full-text only" }}</span>
+      </dd>
+    </div>
+    {% if not readonly %}
+    <div>
+      <dt>Indexing</dt>
+      <dd><span class="pill tone-{{ 'ok' if writes_allowed else 'bad' }}">{{ "allowed" if writes_allowed else "refused" }}</span></dd>
+    </div>
+    {% endif %}
+  </dl>
+</section>
+
+{% endblock %}

@@ -93,8 +93,13 @@
        until you have already typed. It is a page like the other three now, and
        the query, the channel filters and the pager are the URL. Agents keep the
        wider, structured `search` tool at `/mcp`; nothing about that changed. #}
+    {# `Ledger` is the fifth word and it sits under `Overview` (Tom, 2026-08-13):
+       the two are the same reading at two densities — the overview is what
+       happened while you were asleep, the ledger is every number this instance
+       can count, on one page instead of four. #}
     <ul class="navlist">
       <li><a href="{{ root }}"{% if page == 'corpus' %} aria-current="page"{% endif %}>Overview</a></li>
+      <li><a href="{{ root }}/ledger"{% if page == 'ledger' %} aria-current="page"{% endif %}>Ledger</a></li>
       <li><a href="{{ root }}/search"{% if page == 'search' %} aria-current="page"{% endif %}>Search</a></li>
       <li><a href="{{ root }}/videos"{% if page == 'videos' %} aria-current="page"{% endif %}>Videos</a></li>
       <li><a href="{{ root }}/jobs"{% if page == 'jobs' %} aria-current="page"{% endif %}>Jobs</a></li>
