@@ -1215,9 +1215,9 @@ A demo is judged on the four screens that are not "ten results came back".
      `research/demo-queries-2026-08-10.md`): `fts 0 cues`, a pure vector
      leg, 7 citations across 6 talks, and an answer no single talk contains.
      The whole pitch in one click, so it is first.
-  2. `Can you do reinforcement learning when nothing about the task can be
-     verified?` — `fts 0`, 6 talks; "verifier's rule" comes back quoted by a
-     different speaker than the one who coined it.
+  2. `How to do reinforcement learning when the task can't be verified?` —
+     `fts 0`, 6 talks; "verifier's rule" comes back quoted by a different
+     speaker than the one who coined it.
   3. `Does training on model-generated data compound quality or collapse it?`
      — 7 talks with a head-on disagreement: the collapse dogma and the talk
      that attacks it, plus the data-quality camp.
