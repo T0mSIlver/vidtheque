@@ -1723,10 +1723,12 @@ This ships the search half of phase 5 as a dashboard document. It does not
 change §1 non-goal 3: an agent searches with `search` at `/mcp`; there is no new
 agent endpoint, MCP proxy or dashboard-only query shape to scrape.
 
-- A compact GET form in the shared rail opens `GET /dashboard/search`, so every
-  dashboard page has one search entry. The result page is server-rendered and
-  shareable: query, content channel, video-channel filter and pagination remain
-  in the URL, and GET changes no state.
+- ~~A compact GET form in the shared rail opens `GET /dashboard/search`~~ **The
+  rail carries a `Search` link to `GET /dashboard/search`, and the query box
+  lives on that page.** *(Amended 2026-08-13 — §14.1.)* Every dashboard page
+  still has one search entry. The result page is server-rendered and shareable:
+  query, content channel, video-channel filter and pagination remain in the URL,
+  and GET changes no state.
 - The page enters through `public.api.search_payload`, the same handler behind
   both search JSON facades, which calls `tools.search.run`. It therefore gets
   the tool's ranking, result cap, text cap, pagination and credential-keyed
@@ -1743,6 +1745,71 @@ agent endpoint, MCP proxy or dashboard-only query shape to scrape.
   public clamp, while a bearer, session or trusted peer receives the owner
   clamp according to §2.4's existing matrix. The public welcome/search page is
   unchanged in this increment; the ask half of phase 5 remains unshipped.
+
+### 14.1 Search is a page, not a rail widget (Tom, 2026-08-13)
+
+**The decision.** The rail's search box is removed and `Search` becomes the
+fourth destination in the first nav group, beside Overview, Videos and Jobs.
+The reason is the one §14 did not weigh: a text field in the chrome has no empty
+state, no filters, no leg counts and nothing at all to read until you have
+already typed, which made the question this corpus exists to answer the only
+surface on the dashboard you could not simply *go to*. Nothing about the handler
+or the clamps changed; the entry point did.
+
+What that costs and what it does not: `rail_query` leaves `_chrome()`, the
+`.rail-search` rules leave the stylesheet, and the rail is four `.navlist a`s
+with the active state it already had. §2.4's read-only projection is unchanged —
+`Search` is a read page, so the item is there in the demo too, above the demo's
+own `Search the corpus` link back to the welcome page.
+
+**The page itself.** Presentation only. No tool payload, parameter, clamp or MCP
+contract moves; everything below is the dashboard layer rendering what
+`search_payload` already returned.
+
+- **Human leg labels, with the machine key kept.** `transcript_fts` renders as
+  *Transcript — keyword match (FTS)*, `frame_knn` as *Frames — visual candidates
+  considered*, and so on for all eight keys, each with its unit — the three
+  numbers are three units and are not summands (tool-surface.md §9.2). The raw
+  key is printed beside every label in mono at label size, because this surface
+  is an instrument and the key is what a bug report quotes. A key this table does
+  not know renders under its own name rather than disappearing; the sub-legs are
+  inset under the fused leg they explain.
+- **Per-hit evidence badges.** `source` becomes the demo's own three words —
+  `spoken`, `on-screen`, `frame`, both of the first two for `transcript+ocr` —
+  so a badge means the same thing on both surfaces. The raw string stays on the
+  badge group as `title="source=…"`, and an unrecognised source still gets a
+  badge carrying its own name.
+- **The frame is on the row.** A hit that names a keyframe renders it from the
+  derived cache at `STRIP_WIDTH` in a 128×72 box, and clicking it opens the
+  **same `#shot` overlay** at `LIGHTBOX_WIDTH` that the keyframe grid opens,
+  through the same delegated handler in `dashboard.js` — one lightbox contract,
+  not a second one to drift. No new cache width (§6.4) and never base64. The
+  overlay carries no OCR-box toggle here: a search hit has no `.ocrline` rows on
+  the page for boxes to be cloned from. A hit with no keyframe shows its channel
+  in the box the frame would have taken, so the column stays a column.
+- **Two links per hit, and they answer different questions.** The receipt still
+  leaves for `youtu.be/<id>?t=<second>` under §14's existing admission rule. The
+  title and the timecode now also point *into* this deployment: a hit with a
+  keyframe lands on that frame on the video page
+  (`?frame_offset=…&select=<ord>#frame-<ord>` — `ord` is dense per video, so the
+  strip page is arithmetic, exactly as the shot bars have always computed it),
+  and a transcript hit links to the video plainly, because it names its cues by
+  *id* while the transcript panel pages by *offset* and there is no honest
+  arithmetic between them.
+- **The snippet is set as what it is evidence of**, following the demo: spoken
+  text quoted in the human face, on-screen text mono and lime, frame text mono
+  and muted. The query's own words are marked in it — gold on the human channel,
+  `--fg` on the two mono ones — and a mark is "these are your words, here",
+  never a claim about *why* a hit ranked, since the semantic legs do not match
+  words at all. The marking is text runs plus a flag out of the view; the
+  template decides what a marked run looks like, so no HTML is built from corpus
+  data and every run is escaped like every other string here.
+- **Lime on a second page, and it is still The Lime Rule.** DESIGN.md's
+  dashboard bullet says lime appears only where there is on-screen-text
+  evidence, and names the video page because that was the only page which had
+  any. An OCR hit's snippet *is* an on-screen-text line and its badge *is* the
+  seen channel's label — both are exactly what the rule reserves lime for. A
+  spoken hit and a frame hit carry none.
 
 ## 15. Current pipeline readiness (2026-08-12)
 

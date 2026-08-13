@@ -1,10 +1,22 @@
 {% extends "base.html" %}
+{# The search page — dashboard.md §14, rebuilt as a destination (Tom,
+   2026-08-13). It answers the question the corpus exists for, so it carries the
+   same evidence the demo's own result list does — the frame, what kind of thing
+   matched, and the second it happened — in this surface's idiom rather than the
+   demo's: no cards, no shadow, hairlines, and lime only on text the machine read
+   off a slide.
+
+   Every filter is in the URL and every control is a real GET form, so a search
+   worth keeping is a link somebody can send. #}
 {% block main %}
 
 <div class="pagehead">
   <div class="pagehead-line">
     <h1>Search the corpus</h1>
     {% if payload %}
+    {# Which slice of the ranking you are looking at, on the title's baseline,
+       and `~` when the pool was exhausted rather than counted: `has_more` over
+       exact totals, everywhere on this surface. #}
     <p class="pagehead-meta">
       <span class="fact"><span class="mono">{{ payload.pagination.offset + 1 if payload.results else 0 }}</span>–<span class="mono">{{ payload.pagination.offset + (payload.results | length) }}</span></span>
       {% if payload.pagination.get('approx_total') is not none %}
@@ -19,14 +31,19 @@
   <div class="field field-wide">
     <label for="search-q">Query</label>
     <input id="search-q" type="search" name="q" value="{{ filters.q }}"
-           maxlength="512" required autocomplete="off" autofocus>
+           maxlength="512" required autocomplete="off" autofocus
+           placeholder="a phrase from a talk, a slide, or a scene">
   </div>
+  {# The channel the *corpus* is searched over, which is not the channel a video
+     was published on — two different words that were both called `Channel` on
+     this page until 2026-08-13. The option prints the demo's word; the value in
+     the URL is still the tool's `content_type`. #}
   <div class="field field-pick">
-    <label for="search-type">Channel</label>
+    <label for="search-type">Searched content</label>
     <span class="pick">
       <select id="search-type" name="content_type">
         {% for content_type in content_types %}
-        <option value="{{ content_type }}" {{ 'selected' if filters.content_type == content_type }}>{{ content_type }}</option>
+        <option value="{{ content_type }}" {{ 'selected' if filters.content_type == content_type }}>{{ content_words.get(content_type, content_type) }}</option>
         {% endfor %}
       </select>
     </span>
@@ -53,15 +70,25 @@
          aria-labelledby="search-results">
   <h2 class="panel-title" id="search-results">Results</h2>
 
-  {% if payload.leg_counts %}
+  {% if legs %}
+  {# What each leg contributed, as a sentence rather than as eight identifiers —
+     and the tool's own key beside it, because this is an instrument and the key
+     is what a bug report quotes. The sub-legs are the candidate counts behind a
+     fused one, so they are set one step back from the leg they explain. #}
   <dl class="legline" aria-label="Search legs">
-    {% for leg, n in payload.leg_counts.items() %}
-    <div><dt>{{ leg }}</dt><dd>{{ n }}</dd></div>
+    {% for leg in legs %}
+    <div class="leg{{ ' leg-sub' if leg.sub }}">
+      <dt>{{ leg.label }} <span class="leg-key">{{ leg.key }}</span></dt>
+      <dd>{{ leg.count }}{% if leg.unit %} <span class="leg-unit">{{ leg.unit }}</span>{% endif %}</dd>
+    </div>
     {% endfor %}
   </dl>
   {% endif %}
 
   {% if payload.notes %}
+  {# The tool's `note:` lines, verbatim — `verbatim_notes=True` is this page's
+     one presentation difference from the public facade, and it is deliberate:
+     an operator reading why a leg was skipped wants the machine's sentence. #}
   <ul class="search-notes" aria-label="Search notes">
     {% for note in payload.notes %}<li>{{ note }}</li>{% endfor %}
   </ul>
@@ -71,13 +98,71 @@
   <ol class="search-results" start="{{ payload.pagination.offset + 1 }}">
     {% for hit in payload.results %}
     <li class="search-hit">
+      {# The frame, when the hit has one. For an OCR or frame hit the picture is
+         the evidence itself, so it opens: the button is the same `.framebtn` the
+         keyframe strip uses, driven by the same delegated handler and the same
+         overlay, at the same 1280px width — one lightbox contract, three pages.
+
+         192px of JPEG in a 128px box: the strip's own width from the fixed set
+         (§6.4), at 1.5x, so a hit costs the derived cache nothing it does not
+         already hold and a slide is still legible before you enlarge it. #}
+      {% if hit.thumb %}
+      <button type="button" class="framebtn search-hit-shot" data-large="{{ hit.thumb_large }}"
+              data-frame="{{ hit.frame_id }}"
+              data-caption="{{ hit.frame_id }} · {{ hit.match_start | clock }} · {{ hit.title }}"
+              data-link="{{ hit.receipt.href if hit.receipt else '' }}"
+              aria-label="Enlarge the frame at {{ hit.match_start | clock }}">
+        <img src="{{ hit.thumb }}" alt="" width="192" height="108" loading="lazy" decoding="async">
+      </button>
+      {% else %}
+      {# No keyframe for this moment: the channel it came from, in the box the
+         frame would have taken, so the column stays a column. A spoken hit has
+         no picture and saying so is more honest than a broken one. #}
+      <span class="search-hit-shot thumb thumb-empty" aria-hidden="true">{{ hit.evidence.pills[0].label if hit.evidence.pills else "video" }}</span>
+      {% endif %}
+
       <div class="search-hit-body">
-        <p class="search-hit-title">{{ hit.title }}</p>
-        <p class="search-hit-meta">
-          <code>{{ hit.source }}</code><span class="sep">·</span>{{ hit.channel or "unknown" }}<span class="sep">·</span><span class="mono">{{ hit.match_start | clock }}</span>
+        {# Into the index, not out to YouTube: the title opens what this
+           deployment stored about that video, and a frame hit lands on the
+           frame. The receipt at the end of the row is the other half. #}
+        <p class="search-hit-title">
+          {%- if hit.inside %}<a href="{{ hit.inside }}">{{ hit.title }}</a>
+          {%- else %}{{ hit.title }}{% endif %}
         </p>
-        {% if hit.text %}<p class="search-snippet">{{ hit.text }}</p>{% endif %}
+        <p class="search-hit-meta">
+          {# What kind of evidence this is, in a word, with the tool's own
+             `source` string on the group — the word carries the meaning and the
+             colour only reinforces it, so the row reads on a monochrome screen
+             and for a colour-blind reader. #}
+          <span class="badges" title="source={{ hit.evidence.key }}">
+            {%- for pill in hit.evidence.pills %}<span class="badge badge-{{ pill.kind }}">{{ pill.label }}</span>{% endfor -%}
+          </span>
+          <span class="search-hit-where">{{ hit.channel or "unknown" }}</span><span class="sep">·</span>
+          {%- if hit.inside %}<a class="at" href="{{ hit.inside }}">{{ hit.match_start | clock }}</a>
+          {%- else %}<span class="at">{{ hit.match_start | clock }}</span>{% endif %}
+        </p>
+        {# The snippet, presented as what it is evidence of. Spoken text is
+           quoted because a person said it; on-screen text is mono and lime
+           because the machine read it off the slide; text that merely rode along
+           with a frame is mono and muted, because it is not what matched.
+
+           The marks are the query's own words found in the text — never a claim
+           about *why* this hit ranked, since the semantic legs do not match
+           words at all. Nothing here is markup built from data: the view hands
+           over text runs with a flag, and every run is escaped on the way out
+           like every other corpus string on this surface. #}
+        {% if hit.parts %}
+        <p class="search-snippet is-{{ hit.evidence.kind }}">
+          {%- for part in hit.parts %}{% if part.hit %}<mark>{{ part.text }}</mark>{% else %}{{ part.text }}{% endif %}{% endfor -%}
+        </p>
+        {% elif hit.evidence.kind == 'frame' %}
+        <p class="search-snippet is-frame">visual match, no text hit</p>
+        {% endif %}
       </div>
+
+      {# The receipt, and it is a second anchor rather than something inside the
+         first: a link inside a link is neither valid nor operable, which is the
+         same reason the frame is its own control. #}
       {% if hit.receipt %}
       <a class="search-receipt" href="{{ hit.receipt.href }}" target="_blank" rel="noopener noreferrer">{{ hit.receipt.label }} ↗</a>
       {% endif %}
@@ -110,4 +195,33 @@
 </div>
 {% endif %}
 
+{% endblock %}
+
+{% block dialog %}
+{# The same overlay the frames view opens, with the same ids, because it is
+   driven by the same delegated handler in `dashboard.js` — one lightbox
+   contract, not a second one that can drift.
+
+   Two things it does not carry here. There is no OCR box toggle, because a
+   search hit has no `.ocrline` rows on the page for the boxes to be cloned
+   from, and a control over nothing is worse than no control; `#shot-boxes`
+   itself stays, because the handler writes into it and finds it empty. And
+   there is no line list, for the same reason — `dashboard.js` guards on it
+   being absent. Reading what OCR made of a slide is a click further in, on the
+   video page this row links to. #}
+<dialog id="shot" class="shot" aria-labelledby="shot-caption">
+  <div class="shot-inner">
+    <div class="shot-head">
+      <p id="shot-caption" class="shot-caption"></p>
+      <button type="button" id="shot-close" class="ghost shot-close" autofocus>Close</button>
+    </div>
+    <div class="shot-stage">
+      <img id="shot-img" class="shot-img" alt="">
+      <div id="shot-boxes" class="shot-boxes" hidden></div>
+    </div>
+    <div class="shot-foot">
+      <a id="shot-link" class="shot-link" target="_blank" rel="noopener noreferrer">Open at this second</a>
+    </div>
+  </div>
+</dialog>
 {% endblock %}

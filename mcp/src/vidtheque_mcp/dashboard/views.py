@@ -18,10 +18,11 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import sqlite3
 import time
 from typing import Any
-from urllib.parse import parse_qs, urlencode, urlsplit
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
@@ -131,9 +132,8 @@ def _chrome(request: Request, page: str) -> dict[str, Any]:
     return {
         "root": ROOT,
         "page": page,
-        "rail_query": (
-            (request.query_params.get("q") or "")[:512] if page == "search" else ""
-        ),
+        # `rail_query` is gone with the rail's search box (Tom, 2026-08-13):
+        # search is a page, and a page's own form reads its own query string.
         "version": __version__,
         "auth_mode": mode,
         "readonly": readonly,
@@ -459,6 +459,201 @@ def _search_receipt(hit: dict[str, Any]) -> dict[str, str] | None:
     }
 
 
+def _search_inside(hit: dict[str, Any]) -> str | None:
+    """The same moment on this dashboard's own video page.
+
+    The receipt beside it goes to YouTube, which is the product's argument; this
+    goes to what the index actually *stored* about that second, which is what
+    this surface is for. Both, on every hit: the operator who is checking
+    whether OCR read a slide correctly does not want to be sent to the video to
+    find out.
+
+    A hit that names a keyframe lands **on that frame**. `ord` is dense per
+    video and the strip pages by ordinal, so which page holds it is arithmetic
+    rather than a second query — the same arithmetic the shot bars have always
+    done (`_shot_bars`) — and `select=` plus `#frame-N` mark it whether or not
+    the script runs.
+
+    A transcript hit does not get the same treatment, and that is deliberate. It
+    names its cues by **id**, the transcript panel pages by *offset*, and there
+    is no honest arithmetic from one to the other; a link that landed on cue
+    page 1 while claiming to point at 1:12:03 would be the page inventing a
+    position. It links to the video plainly and lets the panel say where it is.
+    """
+    video_id = hit.get("video_id")
+    if not isinstance(video_id, str) or not video_id:
+        return None
+    page = f"{ROOT}/videos/{quote(video_id, safe='')}"
+    frame_id = hit.get("frame_id")
+    prefix = f"{video_id}-"
+    if not isinstance(frame_id, str) or not frame_id.startswith(prefix):
+        return page
+    tail = frame_id[len(prefix) :]
+    if not tail.isdigit():
+        return page
+    ordinal = int(tail)
+    params = urlencode(
+        {"frame_offset": (ordinal // FRAME_PAGE) * FRAME_PAGE, "select": ordinal}
+    )
+    return f"{page}?{params}#frame-{ordinal}"
+
+
+# The picker's own vocabulary. `content_type` is a *parameter* — the value in
+# the URL stays `ocr`, and the tool never sees anything else — but the word in
+# the list is the one the demo's chips use, because "ocr" is a filter an
+# operator has to already know the meaning of.
+_CONTENT_WORDS = {
+    "all": "all three channels",
+    "transcript": "transcript (spoken)",
+    "ocr": "on-screen text (OCR)",
+    "frame": "frames (visual)",
+}
+
+
+# Three sources are three kinds of evidence, and the page says which one it is
+# holding rather than letting the snippet imply it. The words are the demo's own
+# (`public/static/demo/app.js`), so a badge means the same thing on both
+# surfaces: `spoken` was said out loud, `on-screen` was read off the screen by
+# OCR, `frame` matched on the picture with no text involved at all. `kind` is
+# what the stylesheet colours from — and only `screen` is allowed lime, because
+# only `screen` is evidence the machine read off a slide (The Lime Rule).
+_SOURCE_WORDS: dict[str, tuple[tuple[str, str], ...]] = {
+    "transcript": (("spoken", "spoken"),),
+    "ocr": (("on-screen", "screen"),),
+    "frame": (("frame", "frame"),),
+    "transcript+ocr": (("spoken", "spoken"), ("on-screen", "screen")),
+}
+
+
+def _search_evidence(source: Any) -> dict[str, Any]:
+    """The hit's `source` as words a human reads, with the key kept.
+
+    The raw string travels with the words rather than being replaced by them:
+    this is an instrument, `source=transcript+ocr` is what a bug report quotes,
+    and a page that only prints `spoken · on-screen` has thrown away the thing
+    the tool actually returned.
+
+    A source this table does not know still gets a badge carrying its own name
+    — a fourth leg one day must arrive as an unfamiliar word, never as a hit
+    with no provenance on it at all.
+    """
+    key = source if isinstance(source, str) and source else ""
+    words = _SOURCE_WORDS.get(key) or ((key, "other"),) if key else ()
+    return {
+        "key": key,
+        "pills": [{"label": label, "kind": kind} for label, kind in words],
+        # Which of the four ways the snippet under it should be set: a
+        # quotation of speech, a mono lime line the machine read, mono muted
+        # text that merely rode along with a picture, or neither.
+        "kind": (
+            "mixed" if key == "transcript+ocr" else (words[0][1] if words else "other")
+        ),
+    }
+
+
+# The query planner's own leg names, in a human's words. The count line under a
+# search is the one thing tool-surface.md tells callers to *read* — `fts 0` is
+# how you learn the corpus does not contain your phrasing — so the dashboard
+# prints it as a sentence rather than as eight identifiers. The raw key stays
+# beside each label: an operator comparing this page against a `search` payload
+# is comparing keys, not prose.
+#
+# The units are part of the labels because the numbers are three different units
+# and are famously not summands (tool-surface.md §9.2, terra eval): the fused
+# leg counts segments, `fts` counts cues, the vector legs count chunks and
+# frames, and `…_knn` is what the nearest-neighbour search *considered* before
+# the relevance band cut it down.
+_LEG_LABELS: tuple[tuple[str, str, str], ...] = (
+    ("transcript", "Transcript — ranked into these results", "segments"),
+    ("transcript_fts", "Transcript — keyword match (FTS)", "cues"),
+    ("transcript_vec", "Transcript — semantic match (embeddings)", "chunks kept"),
+    ("transcript_vec_knn", "Transcript — semantic candidates considered", "chunks"),
+    ("ocr", "On-screen text (OCR)", ""),
+    ("frame", "Frames — visual match", ""),
+    ("frame_vec", "Frames — semantic match (embeddings)", "frames kept"),
+    ("frame_knn", "Frames — visual candidates considered", "frames"),
+)
+
+
+def _search_legs(leg_counts: Any) -> list[dict[str, Any]]:
+    """`leg_counts` in reading order, each with its label, unit and raw key.
+
+    Ordered by this table rather than by the mapping, so a sub-leg always sits
+    under the leg it explains; a key the table does not know is appended with
+    its own name for a label rather than dropped, for the same reason an
+    unfamiliar `source` still gets a badge.
+    """
+    if not isinstance(leg_counts, dict):
+        return []
+    known = [key for key, _, _ in _LEG_LABELS]
+    order = known + [key for key in leg_counts if key not in known]
+    labels = {key: (label, unit) for key, label, unit in _LEG_LABELS}
+    legs = []
+    for key in order:
+        if key not in leg_counts:
+            continue
+        label, unit = labels.get(key, (key, ""))
+        legs.append(
+            {
+                "key": key,
+                "label": label,
+                "unit": unit,
+                "count": leg_counts[key],
+                # A sub-leg is a *candidate* count behind a fused one, so it is
+                # set one step back rather than printed as a ninth peer.
+                "sub": key not in ("transcript", "ocr", "frame"),
+            }
+        )
+    return legs
+
+
+# Enough terms to mark a real question, few enough that a query pasted out of a
+# log cannot turn a snippet into a solid block of gold; and a ceiling on the
+# marks themselves, because the text this runs over is capped by the tool but
+# the number of occurrences in it is not.
+HIGHLIGHT_TERMS = 8
+HIGHLIGHT_MARKS = 40
+
+
+def _highlighted(text: Any, query: str) -> list[dict[str, Any]]:
+    """The snippet, split into the parts the query matched and the parts it did
+    not — never into markup.
+
+    The demo marks the matched words and it is the difference between reading a
+    result and scanning one. What it does *not* do here is build HTML: this
+    returns text runs with a flag, the template decides what a marked run looks
+    like, and every one of them goes through autoescape on the way out. A slide
+    that says `<script>` is a normal slide.
+
+    Not the tool's own matching: the FTS leg stems and the vector legs do not
+    match words at all, so a mark is "these are your words, here" and never a
+    claim about *why* this hit ranked. A hit with nothing marked is ordinary —
+    that is what a semantic match looks like.
+    """
+    if not isinstance(text, str) or not text:
+        return []
+    terms = sorted(
+        {word for word in re.split(r"[^\w'-]+", query.lower()) if len(word) > 1},
+        key=len,
+        reverse=True,
+    )[:HIGHLIGHT_TERMS]
+    if not terms:
+        return [{"text": text, "hit": False}]
+    pattern = re.compile("|".join(re.escape(term) for term in terms), re.IGNORECASE)
+    parts: list[dict[str, Any]] = []
+    cursor = 0
+    for n, match in enumerate(pattern.finditer(text)):
+        if n >= HIGHLIGHT_MARKS:
+            break
+        if match.start() > cursor:
+            parts.append({"text": text[cursor : match.start()], "hit": False})
+        parts.append({"text": match.group(0), "hit": True})
+        cursor = match.end()
+    if cursor < len(text):
+        parts.append({"text": text[cursor:], "hit": False})
+    return parts
+
+
 def _search_page_link(filters: dict[str, Any], offset: int) -> str:
     params = {key: value for key, value in filters.items() if value not in (None, "")}
     params["offset"] = max(0, offset)
@@ -467,6 +662,7 @@ def _search_page_link(filters: dict[str, Any], offset: int) -> str:
 
 async def search(request: Request) -> Response:
     """Human inspection over the exact handler used by both JSON facades."""
+    deps: Deps = request.app.state.assembled.deps
     params = request.query_params
     filters = {
         "q": (params.get("q") or "")[:512],
@@ -491,6 +687,19 @@ async def search(request: Request) -> Response:
         else:
             for hit in payload.get("results", []):
                 hit["receipt"] = _search_receipt(hit)
+                hit["inside"] = _search_inside(hit)
+                hit["evidence"] = _search_evidence(hit.get("source"))
+                hit["parts"] = _highlighted(hit.get("text"), filters["q"])
+                # The facade decorated the hit for a JSON reader: absolute
+                # thumbnail URLs built from `PUBLIC_URL`, at the widths the
+                # public page asks for. Both are replaced rather than added to,
+                # because a page knows its own host better than `PUBLIC_URL`
+                # does (`_thumb`) and because the widths this surface may ask
+                # for are the fixed three (§6.4) — a fourth is a fourth JPEG per
+                # keyframe in a cache that is capped in bytes.
+                frame_id = hit.get("frame_id")
+                hit["thumb"] = _thumb(deps, frame_id, STRIP_WIDTH)
+                hit["thumb_large"] = _thumb(deps, frame_id, LIGHTBOX_WIDTH)
 
     pagination = (payload or {}).get("pagination", {})
     limit = int(pagination.get("limit") or OWNER_CLAMPS.search_default_limit)
@@ -502,8 +711,10 @@ async def search(request: Request) -> Response:
             "title": "Search",
             "filters": filters,
             "content_types": CONTENT_TYPES,
+            "content_words": _CONTENT_WORDS,
             "searched": searched,
             "payload": payload,
+            "legs": _search_legs((payload or {}).get("leg_counts")),
             "error": error,
             "previous": (
                 _search_page_link(filters, max(0, offset - limit)) if offset else None
