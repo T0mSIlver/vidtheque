@@ -1,0 +1,17 @@
+{
+  "_comment": "The public box's corpus, by generation. Consumed by vidtheque-deploy.sh (corpus refresh stage); runbook: install.md §12. Parts are byte-ranges of one tar.gz holding vidtheque.db + keyframes/, attached to a non-v* release so no image build fires.",
+  "generation": "2026-08-13-aie310",
+  "notes": "all 310 talks AI Engineer published in 2026 — the full 2026 shelf",
+  "bytes_packed": 2285672618,
+  "bytes_unpacked": 2700000000,
+  "parts": [
+    {
+      "url": "https://github.com/T0mSIlver/vidtheque/releases/download/demo-corpus-2026-08-13/demo-corpus-2026-08-13.tar.gz.part-00",
+      "sha256": "c62f05d226e90d9016f6593e3d8d7f6ded33c48ca32e8e4d7da22bcbc556693b"
+    },
+    {
+      "url": "https://github.com/T0mSIlver/vidtheque/releases/download/demo-corpus-2026-08-13/demo-corpus-2026-08-13.tar.gz.part-01",
+      "sha256": "aeac3b1aa616723d5a3bce3c9ea6cc0e429e537277b40694ddf5cf05a84df311"
+    }
+  ]
+}
