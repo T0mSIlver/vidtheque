@@ -62,6 +62,8 @@ product itself is explained in `README.md` and `docs/README.md`.
 - Never use bare `git stash` — the stash stack is shared across worktrees.
 - Substantive changes land via **PR**, never a direct push to `main`.
   Subagents never push, never touch anything outside this repo.
+- PRs merge by **rebase and merge**, never squash: the branch's small
+  logical commits are the history, and squashing melts them into one.
 
 ## Don'ts
 
