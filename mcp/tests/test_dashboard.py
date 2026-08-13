@@ -486,7 +486,7 @@ def test_the_overview_answers_the_first_screen_questions(client: TestClient) -> 
     # a cell in the readiness strip since the 2026-08-13 merge, beside the four
     # other states of the same pipeline rather than two panels below them.
     assert "vector legs" not in body
-    assert "<dt>Indexing</dt>" in body
+    assert '<span class="statepair-key">Indexing</span>' in body
     assert re.search(r'class="pill tone-ok">allowed<', body)
     # `data_status` verbatim from corpus-summary, not re-derived.
     assert re.search(r'class="pill tone-\w+">(ok|partial|degraded|indexing|empty)<', body)
@@ -523,8 +523,12 @@ def test_readiness_is_one_panel_holding_declared_beside_served(
         assert panel.index("model declared") < panel.index("model served")
         assert "Qwen/Qwen3-VL-Embedding-2B" in panel and "large-v3" in panel
         assert '<div class="split readiness-models">' in panel
-        # Five states in the strip, including the one the models panel carried.
-        assert panel.count("<dt>") == 5
+        # Five states in the strip, including the one the models panel carried
+        # — statepairs since the same day's second pass (Tom: the cell grid
+        # spent a screen's width on five words), so the strip is words, not
+        # cells, and a state's sentence rides the pill as a tooltip.
+        assert panel.count('class="statepair"') == 5
+        assert "<dt>" not in panel
 
         # The diff goes red on the panel that *is* the diff.
         assembled = client.app.state.assembled
@@ -714,7 +718,9 @@ def test_pipeline_readiness_degrades_without_delaying_or_breaking_the_page(
         body = client.get(ROOT, headers=BEARER).text
         assert client.get(f"{ROOT}/videos", headers=BEARER).status_code == 200
     assert ">unavailable<" in body
-    assert "did not answer its status check" in body
+    # The sentence is the pill's tooltip and an sr-only copy, never strip copy
+    # (Tom, 2026-08-13): the strip is five words, the why is the footnote.
+    assert 'title="The worker did not answer its status check."' in body
 
     with owner_client(tmp_path, worker_url="") as client:
         body = client.get(ROOT, headers=BEARER).text

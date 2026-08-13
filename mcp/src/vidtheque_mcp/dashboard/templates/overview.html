@@ -143,42 +143,28 @@
     <h2 class="panel-title" id="readiness">Pipeline readiness</h2>
     <p class="panel-clock">last health check <time datetime="{{ readiness.checked_at }}">{{ readiness.checked_at }}</time></p>
   </div>
-  <dl class="readiness-list">
-    <div>
-      <dt>MCP</dt>
-      <dd><span class="pill tone-ok">{{ readiness.mcp }}</span></dd>
-    </div>
-    <div>
-      <dt>Database</dt>
-      <dd><span class="pill tone-ok">{{ readiness.database }}</span></dd>
-    </div>
+  {# Five statepairs on one line — the same joined key+pill object the page
+     head wears for `data_status`, because that is what these are: the same
+     kind of fact, five of them. The strip was a full-width grid of cells for
+     one day (the 2026-08-13 merge) and Tom called it what it was — five words
+     wearing a screen's width of plate. A state's *sentence* (why the worker is
+     unavailable, why search is full-text only) moves to the pill's tooltip and
+     an sr-only span: the word is the reading, the sentence is the footnote. #}
+  <p class="readiness-states">
+    <span class="statepair"><span class="statepair-key">MCP</span><span class="pill tone-ok">{{ readiness.mcp }}</span></span>
+    <span class="statepair"><span class="statepair-key">Database</span><span class="pill tone-ok">{{ readiness.database }}</span></span>
     {% if readiness.worker %}
-    <div class="readiness-worker">
-      <dt>Worker</dt>
-      <dd>
-        <span class="pill tone-{{ 'ok' if readiness.worker.state == 'ready' else ('bad' if readiness.worker.state == 'unavailable' else 'neutral') }}">{{ readiness.worker.state }}</span>
-        <span class="readiness-detail">{{ readiness.worker.detail }}</span>
-      </dd>
-    </div>
+    <span class="statepair"><span class="statepair-key">Worker</span><span class="pill tone-{{ 'ok' if readiness.worker.state == 'ready' else ('bad' if readiness.worker.state == 'unavailable' else 'neutral') }}"{% if readiness.worker.detail %} title="{{ readiness.worker.detail }}"{% endif %}>{{ readiness.worker.state }}</span>{% if readiness.worker.detail %}<span class="sr-only">{{ readiness.worker.detail }}</span>{% endif %}</span>
     {% endif %}
-    <div>
-      <dt>Vector search</dt>
-      <dd>
-        <span class="pill tone-{{ 'ok' if readiness.vectors.enabled else 'bad' }}">{{ "ready" if readiness.vectors.enabled else "full-text only" }}</span>
-        {% if readiness.vectors.reason %}<span class="readiness-detail">{{ readiness.vectors.reason }}</span>{% endif %}
-      </dd>
-    </div>
+    <span class="statepair"><span class="statepair-key">Vector search</span><span class="pill tone-{{ 'ok' if readiness.vectors.enabled else 'bad' }}"{% if readiness.vectors.reason %} title="{{ readiness.vectors.reason }}"{% endif %}>{{ "ready" if readiness.vectors.enabled else "full-text only" }}</span>{% if readiness.vectors.reason %}<span class="sr-only">{{ readiness.vectors.reason }}</span>{% endif %}</span>
     {# The fifth state, and it was a whole panel's worth of layout on its own
        until the merge: whether this box will accept work. It follows the model
        tables into the projection's blind spot, because "indexing refused" is a
        sentence about a worker nobody visiting the demo can reach (§2.4). #}
     {% if not readonly %}
-    <div>
-      <dt>Indexing</dt>
-      <dd><span class="pill tone-{{ 'ok' if writes_allowed else 'bad' }}">{{ "allowed" if writes_allowed else "refused" }}</span></dd>
-    </div>
+    <span class="statepair"><span class="statepair-key">Indexing</span><span class="pill tone-{{ 'ok' if writes_allowed else 'bad' }}">{{ "allowed" if writes_allowed else "refused" }}</span></span>
     {% endif %}
-  </dl>
+  </p>
   {% if config or (readiness.worker and readiness.worker.models) %}
   {# Declared left, served right, on one row. The column heads say which side
      is which, so neither table needs a heading of its own — that pair of
