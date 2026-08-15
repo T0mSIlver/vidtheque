@@ -525,18 +525,20 @@ MAX_FOLLOWS = 10
 
 
 def _follows_page(conn: sqlite3.Connection) -> tuple[dict[str, int], list[dict[str, Any]]]:
-    """The band, the first ten follows, and what each brought in — one round trip."""
+    """The band, the first ten follows, and what each brought in.
+
+    Three statements whatever the number of follows: the band, the page, and one
+    grouped count. It used to be a `counts()` call per row — bounded by the cap,
+    but a per-row round trip inside a payload builder is a fan-out waiting for
+    somebody to raise the cap.
+    """
     from ..follows import store as follows_store
 
     band = follows_store.totals(conn)
     rows = follows_store.list_follows(conn, limit=MAX_FOLLOWS)[:MAX_FOLLOWS]
+    brought_in = follows_store.brought_in_counts(conn)
     return band, [
-        {
-            "row": row,
-            "brought_in": int(
-                follows_store.counts(conn, int(row["collection_id"])).get("queued", 0)
-            ),
-        }
+        {"row": row, "brought_in": brought_in.get(int(row["collection_id"]), 0)}
         for row in rows
     ]
 

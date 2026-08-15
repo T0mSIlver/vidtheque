@@ -179,6 +179,21 @@ CREATE TABLE follows (
 -- The due query, and the only one on the enqueue path.
 CREATE INDEX follows_due ON follows(next_check_at) WHERE state = 'active';
 
+-- One follow per source URL, enforced where it cannot be raced. Following is a
+-- read (`by_source_url`) followed by a write, and two `action="follow"` calls
+-- for the same URL could both find nothing and both insert — the slug uniquer
+-- would happily name the second one `-2`, leaving two follows checking one
+-- channel, each spending the shared daily budget on the same uploads. It is a
+-- partial index because `manual` collections are hand-made sets that carry no
+-- `source_url` to collide on.
+--
+-- It does NOT make two *spellings* of one channel a single follow: `@handle`
+-- and `/channel/UC…` are different strings, and telling them apart needs the
+-- channel id, which needs a probe this tool deliberately does not make. That
+-- limitation is following.md §11's business, not this index's.
+CREATE UNIQUE INDEX collections_one_follow_per_source
+  ON collections(source_url) WHERE kind <> 'manual' AND source_url IS NOT NULL;
+
 
 -- ------------------------------------------------------------- follow_seen
 --
