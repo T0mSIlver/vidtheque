@@ -377,8 +377,12 @@ def test_the_list_renders_the_band_the_rules_and_the_clocks(tmp_path: Path) -> N
         assert "0:08:00 floor" in body
         assert "5/check" in body
         # The budget line names both halves — what is spent, and the ceiling.
+        # The ceiling itself is a deployment's own number and is asserted where
+        # it is set (`test_the_budget_line_reads_the_pipeline_ceiling`); pinning
+        # today's default here made this page's test fail when Tom changed it,
+        # which told nobody anything about the page.
         assert "used today" in body
-        assert "of 8h" in body
+        assert re.search(r"of \d+h", body)
         # The last error rides on the row that has one.
         assert "E_RATE_LIMIT" in body
 

@@ -106,8 +106,9 @@ touches them.
   `follow_check` job kind and `jobs.collection_id`.
 - **Arrival is automatic, bounded by a daily budget.** Matching uploads index
   themselves until the day's hours-of-video budget is spent
-  (`VIDTHEQUE_FOLLOW_DAILY_HOURS`, proposed default 8 — Tom to confirm against
-  his box); the rest are `held_budget` and reconsidered on the next check,
+  (`VIDTHEQUE_FOLLOW_DAILY_HOURS`, **default 16** — proposed at 8, set to 16 by
+  Tom on 2026-08-15 against his own box); the rest are `held_budget` and
+  reconsidered on the next check,
   **never dropped**. The budget is counted in hours of *video* because a check
   knows a candidate's duration before it knows what indexing will cost, and it
   is global across every follow because five follows would otherwise spend five

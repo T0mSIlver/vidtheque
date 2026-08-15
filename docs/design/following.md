@@ -367,7 +367,7 @@ record (AGENTS.md).
 | Var | Default | What it does |
 |---|---|---|
 | `VIDTHEQUE_FOLLOW_CHECKS` | `1` | Master switch. Off → no `follow_check` is ever enqueued; existing follows keep their rules and their ledger and nothing checks them. Implicitly off when `VIDTHEQUE_RUN_PIPELINE=0`. Both cases are printed as a `note:` on every `follow-channel` payload — *the follow is stored and idle* — rather than refused. |
-| `VIDTHEQUE_FOLLOW_DAILY_HOURS` | `8` (**proposal — §11.1**) | Hours of video accepted per rolling 24h across every follow together. `0` disables the ceiling. Refused below 0 at boot. |
+| `VIDTHEQUE_FOLLOW_DAILY_HOURS` | `16` (Tom, 2026-08-15) | Hours of video accepted per rolling 24h across every follow together. `0` disables the ceiling. Refused below 0 at boot. |
 | `VIDTHEQUE_FOLLOW_INTERVAL_S` | `21600` (6h) | Default seconds between checks of one follow, when the follow does not set its own. Refused below 900 at boot. |
 
 No other knob is added, and none of the three is editable from the dashboard
@@ -453,14 +453,17 @@ matching entry is in DECISIONS.md.
 
 Real forks. Everything above is a decision.
 
-1. **`VIDTHEQUE_FOLLOW_DAILY_HOURS=8` is a proposal, not a measurement.** It is
-   the only number in this document that was not read off code or a research
-   file, and it wants confirming against your box: eight hours of video is
-   roughly 8–24 GPU-minutes at the published 1–3 min/hour figure, which is small
-   — but it is also eight hours of *download*, of audio extraction and of
-   keyframe decode, on a box whose GPU is leased from llama.cpp and whose
-   yt-dlp requests are the thing that gets it blocked. If the honest number is
-   3, or 20, say so and the default changes; the mechanism does not.
+1. ~~**`VIDTHEQUE_FOLLOW_DAILY_HOURS=8` is a proposal, not a measurement.**~~
+   **Answered (Tom, 2026-08-15): 16.** The proposal was 8, on the reasoning that
+   eight hours of video is roughly 8–24 GPU-minutes at the published 1–3
+   min/hour figure — small — but also eight hours of *download*, audio
+   extraction and keyframe decode, on a box whose GPU is leased from llama.cpp
+   and whose yt-dlp requests are the thing that gets it blocked. Tom doubled it.
+   It remains the one number in this document that is a judgement about a
+   particular machine rather than a measurement, so it is the first knob to
+   revisit if following ever makes the box feel busy — and the honest way to
+   settle it is a week of real arrivals against `follow_seen`, not more
+   arithmetic.
 
 2. **Does a Google Takeout `subscriptions.csv` import earn its place later?**
    Takeout is a file the operator already has, so it needs no OAuth client, no

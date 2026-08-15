@@ -125,7 +125,10 @@ class PipelineSettings:
     # never dropped, which is the whole difference between a budget and a
     # filter. Zero disables the ceiling.
     follow_checks: bool = True
-    follow_daily_hours: float = 8.0
+    # 16, set by Tom on 2026-08-15 against his own box, replacing the 8 this
+    # feature shipped as an explicit proposal. It is the one number here that
+    # is a judgement about a particular machine rather than a measurement.
+    follow_daily_hours: float = 16.0
     # How often a follow is checked when it does not say. Fifteen minutes is
     # the floor the schema enforces; the default is deliberately unhurried,
     # because a conference channel that posts twice a week is the shape this
@@ -183,7 +186,7 @@ class PipelineSettings:
             cookiefile=_env("VIDTHEQUE_YTDLP_COOKIEFILE"),
             jitless=_bool_env("VIDTHEQUE_YTDLP_JITLESS", True),
             follow_checks=_bool_env("VIDTHEQUE_FOLLOW_CHECKS", True),
-            follow_daily_hours=_float_env("VIDTHEQUE_FOLLOW_DAILY_HOURS", 8.0),
+            follow_daily_hours=_float_env("VIDTHEQUE_FOLLOW_DAILY_HOURS", 16.0),
             follow_interval_s=_int_env("VIDTHEQUE_FOLLOW_INTERVAL_S", 21_600),
         )
         settings.validate()
