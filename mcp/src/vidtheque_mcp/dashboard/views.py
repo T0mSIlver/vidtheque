@@ -46,11 +46,13 @@ from ..public.api import (
     search_payload,
     thumb_url,
 )
-from ..text import clamp, clock, iso_day, iso_minute, iso_z, split_csv
+from ..follows import rules as follow_rules
+from ..follows import store as follows_store
+from ..text import clamp, clock, duration_clock, iso_day, iso_minute, iso_z, split_csv
 from ..timeparse import parse_corpus_time
 from ..tools import library
 from ..tools.base import Deps
-from .render import build_environment, span
+from .render import build_environment, elapsed, span
 from .settings import ROOT
 
 # The fixed width set (§6.4). Three variants per frame in the `derived/` cache,
@@ -1565,7 +1567,10 @@ EVENT_CAP = 60
 DEGRADED_CAP = 40
 
 _JOB_STATES = ("all", "active", "failed", "done")
-_JOB_KINDS = ("all", "index", "reindex", "delete")
+# `follow_check` is a `jobs.kind` since migration 0006, so it is a filter here
+# the day it is a kind: a job the queue can hold and this view cannot select
+# for is a job an operator triages by reading past it.
+_JOB_KINDS = ("all", "index", "reindex", "delete", "follow_check")
 _JOB_ORDERS = ("newest", "priority", "wall_clock")
 
 # 2 s while anything is `queued|running`, stopped when nothing is (§5.4). Not
@@ -2090,4 +2095,396 @@ async def job_json(request: Request) -> Response:
             "events": detail["events"],
         },
         headers={"Cache-Control": "no-store"},
+    )
+
+
+# ----------------------------------------------------------------- following
+
+# Page sizes, server-side and double-capped like every other list on this
+# surface. The two lists are bounded independently of one another because they
+# are different costs: the follow list is a join of two small tables, and the
+# ledger is the one that grows for the life of the deployment.
+FOLLOW_PAGE = 25
+FOLLOW_PAGE_MAX = 100
+SEEN_PAGE = 25
+SEEN_PAGE_MAX = 100
+
+# The two job lists on a follow's page. Bounded independently of `limit`,
+# because neither of them is what the pager pages.
+CHECK_CAP = 10
+INDEX_JOB_CAP = 10
+
+# How many held candidates the list page names above the table. The band's job
+# is to say *that* something is waiting and give it a door, not to be a second
+# ledger — the follow's own page is where the rows are read.
+HELD_BAND_CAP = 5
+
+# What counts as "nearly" for the one derived sentence above the ledger. Sixty
+# seconds because a length rule is typed in minutes, and a minute is the
+# smallest gap an operator would call a near miss. The page prints the number
+# in the sentence, from this constant, so the two cannot disagree.
+NEAR_MISS_S = 60
+
+# Every decision except `queued` — which is to say, every candidate that did
+# **not** become a video. This band is the point of the page: a follow that
+# quietly drops a four-minute talk because its floor is eight would be the one
+# place this index goes silent (migration 0006's own argument).
+PASSED_OVER = (
+    "held_budget",
+    "held_review",
+    "skipped_tab",
+    "skipped_title",
+    "skipped_duration",
+    "skipped_horizon",
+    "already_indexed",
+    "failed",
+)
+
+
+def _follow_daily_hours(assembled: Any) -> float:
+    """The ceiling the check enforces, read from where the check reads it.
+
+    ``PipelineSettings.follow_daily_hours`` is resolved once at boot and handed
+    to the runner; a build with the pipeline off (every test, and any deployment
+    running the queue elsewhere) has no runner settings to ask, so the
+    environment is re-read rather than guessed at. Zero means the operator
+    turned the ceiling off, and the page says so in words rather than printing
+    "of 0h", which reads as "no budget left" and means the opposite.
+    """
+    from ..pipeline.settings import PipelineSettings
+
+    settings = getattr(getattr(assembled.runner, "pipeline", None), "settings", None)
+    hours = getattr(settings, "follow_daily_hours", None)
+    if hours is None:
+        hours = PipelineSettings.from_env().follow_daily_hours
+    return float(hours)
+
+
+def _rule_facts(rules: follow_rules.Rules) -> list[str]:
+    """The rule compressed to the facts that fit in a table cell.
+
+    Not a second :func:`~vidtheque_mcp.follows.rules.describe`. That function
+    renders the *policy* as one English sentence and it is the only thing that
+    does; this is the same rule as a row of machine facts, because sixty follows
+    scanned at 03:00 are a column to compare and not sixty sentences to read.
+    The sentence is one click away, at the top of the follow's own page.
+    """
+    facts = [", ".join(f"/{tab}" for tab in rules.tabs)]
+    low, high = rules.min_duration_s, rules.max_duration_s
+    if low is not None and high is not None:
+        facts.append(f"{duration_clock(low)}–{duration_clock(high)}")
+    elif low is not None:
+        facts.append(f"{duration_clock(low)} floor")
+    elif high is not None:
+        facts.append(f"{duration_clock(high)} ceiling")
+    terms = len(rules.title_include) + len(rules.title_exclude)
+    if terms:
+        facts.append(f"{terms} title term(s)")
+    if rules.channels != "all":
+        facts.append(f"{rules.channels} only")
+    facts.append(f"{rules.max_per_check}/check")
+    facts.append(f"every {span(rules.check_interval_s)}")
+    if rules.mode == "review":
+        facts.append("held for review")
+    return facts
+
+
+def _follow_row(row: sqlite3.Row) -> dict[str, Any]:
+    """One line of the table. Everything on it came off the row itself."""
+    rules = follow_rules.Rules.from_row(row)
+    return {
+        "slug": str(row["slug"]),
+        "name": str(row["title"] or row["slug"]),
+        "state": str(row["state"]),
+        "facts": _rule_facts(rules),
+        "last_check": row["last_sync_at"],
+        "last_new": row["last_new_at"],
+        "next_check": row["next_check_at"],
+        "error_code": row["last_error_code"],
+    }
+
+
+def _follow_choices() -> dict[str, Any]:
+    """The vocabularies the form offers, from the modules that own them.
+
+    Copied nowhere: ``tabs``, the channel sets and the two modes are
+    ``follows/rules.py``'s constants, and the floors and ceilings are the ones
+    ``follows/params.py`` clamps to. A form that repeated them would be a second
+    policy, which §5.5 is explicit the form does not add.
+    """
+    from .writes import CHANNEL_BOXES
+
+    return {
+        "tabs": follow_rules.TABS,
+        # The index form's own three boxes, verbatim: `index-video`'s `channels`
+        # and a follow's `channels` are the same parameter, so they are the same
+        # three labels and the same three notes, and a second copy of them here
+        # is how the two forms start describing one thing two ways. Imported
+        # inside the function because `writes` imports this module.
+        "channels": CHANNEL_BOXES,
+        "modes": follow_rules.MODES,
+        "max_backfill": follow_rules.MAX_BACKFILL,
+        "max_per_check": follow_rules.MAX_PER_CHECK,
+        "min_interval_s": follow_rules.MIN_CHECK_INTERVAL_S,
+        "default_interval_s": follow_rules.DEFAULT_CHECK_INTERVAL_S,
+    }
+
+
+def _follow_form_values(row: sqlite3.Row | None = None) -> dict[str, Any]:
+    """The form's controls, either empty or filled from a follow's own row."""
+    if row is None:
+        return {
+            "url": "",
+            "title": "",
+            "tabs": ["videos"],
+            "min_duration": "",
+            "max_duration": "",
+            "title_include": "",
+            "title_exclude": "",
+            "channels": ["transcript", "ocr", "frames"],
+            "tags": "",
+            "backfill": 0,
+            "max_per_check": 5,
+            "mode": "auto",
+            "check_interval_s": follow_rules.DEFAULT_CHECK_INTERVAL_S,
+        }
+    rules = follow_rules.Rules.from_row(row)
+    return {
+        "url": str(row["source_url"] or ""),
+        "title": str(row["title"] or ""),
+        "tabs": list(rules.tabs),
+        "min_duration": (
+            "" if rules.min_duration_s is None else duration_clock(rules.min_duration_s)
+        ),
+        "max_duration": (
+            "" if rules.max_duration_s is None else duration_clock(rules.max_duration_s)
+        ),
+        "title_include": ", ".join(rules.title_include),
+        "title_exclude": ", ".join(rules.title_exclude),
+        "channels": (
+            ["transcript", "ocr", "frames"]
+            if rules.channels == "all"
+            else follow_rules.split_terms(rules.channels)
+        ),
+        "tags": ", ".join(rules.tags),
+        "backfill": rules.backfill,
+        "max_per_check": rules.max_per_check,
+        "mode": rules.mode,
+        "check_interval_s": rules.check_interval_s,
+    }
+
+
+async def following(request: Request) -> Response:
+    """`GET /dashboard/following` — every follow, and what they are costing.
+
+    Four reads for the whole page whatever the row count: the totals band, the
+    rolling budget, one page of follows probed one row past its limit, and the
+    held band. No per-follow round trip, because a table that costs a query per
+    line is a table that stops being loadable at the size it exists for (§6.3).
+    """
+    assembled = request.app.state.assembled
+    db = assembled.db
+    params = request.query_params
+    limit = clamp(params.get("limit"), 1, FOLLOW_PAGE_MAX, FOLLOW_PAGE)  # type: ignore[arg-type]
+    offset = clamp(params.get("offset"), 0, OWNER_CLAMPS.offset_max, 0)  # type: ignore[arg-type]
+
+    totals = await db.read(follows_store.totals)
+    spent_s = await db.read(follows_store.budget_spent_s)
+    rows = await db.read(
+        lambda c: follows_store.list_follows(c, limit=limit, offset=offset)
+    )
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    held_rows = await db.read(lambda c: follows_store.held(c, HELD_BAND_CAP))
+    held_more = len(held_rows) > HELD_BAND_CAP
+    held_rows = held_rows[:HELD_BAND_CAP]
+
+    ceiling_h = _follow_daily_hours(assembled)
+    return _render(
+        "following.html",
+        {
+            **_chrome(request, "following"),
+            "title": "Following",
+            "follows": [_follow_row(row) for row in rows],
+            "totals": totals,
+            "budget": {
+                # Hours of *video*, not GPU-minutes: the check knows a
+                # candidate's length before it knows what indexing it will
+                # cost, and hours-of-video is the number an operator reasons
+                # about (`follows/store.budget_spent_s`).
+                "spent": span(int(spent_s)),
+                "ceiling": f"{ceiling_h:g}h" if ceiling_h else None,
+            },
+            "held": [
+                {
+                    "title": str(row["title"] or row["url"]),
+                    "slug": str(row["follow_slug"]),
+                    "follow": str(row["follow_title"] or row["follow_slug"]),
+                }
+                for row in held_rows
+            ],
+            "held_more": held_more,
+            "form": _follow_form_values(),
+            "choices": _follow_choices(),
+            # §5.5's honest refusal, for the follow form too: `follow_channel`
+            # raises `E_FEATURE_DISABLED` on the same condition `index_video`
+            # does, so the page says so above the controls rather than after a
+            # submission.
+            "vectors": assembled.db.vectors,
+            "pagination": {"limit": limit, "offset": offset, "has_more": has_more},
+        },
+    )
+
+
+def _seen_row(row: sqlite3.Row) -> dict[str, Any]:
+    """One ledger line. The ``reason`` is printed verbatim — it is the receipt.
+
+    No thumbnail, and there cannot be one: an un-indexed video has no keyframe
+    on this disk, and a YouTube thumbnail URL would be a runtime request off
+    this box. The ledger is text.
+    """
+    return {
+        "title": str(row["title"] or row["source_id"]),
+        "url": str(row["url"]),
+        "decision": str(row["decision"]),
+        "reason": row["reason"],
+        "judged_from": str(row["judged_from"]),
+        "duration_s": row["duration_s"],
+        "published_at": row["published_at"],
+        "decided_at": row["decided_at"],
+    }
+
+
+def _near_miss(rows: list[sqlite3.Row], rules: follow_rules.Rules) -> str | None:
+    """The one derived line above the ledger, or nothing at all.
+
+    Read out of the rows this page already fetched, at render time — no second
+    query, no stored aggregate, and no sentence when the number is zero. A
+    "0 of the last 20" line is a fact about nothing dressed as a finding, and
+    this band is the one place on the surface that must stay believable.
+    """
+    low, high = rules.min_duration_s, rules.max_duration_s
+    if low is None and high is None:
+        return None
+    near = 0
+    for row in rows:
+        if str(row["decision"]) != "skipped_duration" or row["duration_s"] is None:
+            continue
+        seconds = float(row["duration_s"])
+        if low is not None and 0 <= low - seconds <= NEAR_MISS_S:
+            near += 1
+        elif high is not None and 0 <= seconds - high <= NEAR_MISS_S:
+            near += 1
+    if not near:
+        return None
+    if low is not None and high is not None:
+        edge = "length rule"
+    else:
+        edge = "floor" if low is not None else "ceiling"
+    verb = "was" if near == 1 else "were"
+    return (
+        f"{near} of the last {len(rows)} passed over {verb} within "
+        f"{NEAR_MISS_S} seconds of your {edge}."
+    )
+
+
+async def follow_detail(request: Request) -> Response:
+    """`GET /dashboard/following/{slug}` — the rule, the checks, the cost.
+
+    Three bands in one order, and the third is the point: what this follow
+    passed over, with the sentence carrying the number that made each decision.
+    The ledger probes one row past its limit rather than counting, and the two
+    job lists are bounded independently of that limit.
+    """
+    db = request.app.state.assembled.db
+    slug = str(request.path_params["slug"])
+    row = await db.read(lambda c: follows_store.by_slug(c, slug))
+    if row is None:
+        return _render(
+            "error.html",
+            {
+                **_chrome(request, "following"),
+                "title": "No such follow",
+                "error": {
+                    "code": "E_UNKNOWN_FOLLOW",
+                    "message": f'"{slug}" is not a follow on this instance.',
+                    "next": "the Following page lists every channel this index watches.",
+                },
+                "back": {"href": f"{ROOT}/following", "label": "Following"},
+            },
+            status=404,
+        )
+
+    collection_id = int(row["collection_id"])
+    params = request.query_params
+    limit = clamp(params.get("limit"), 1, SEEN_PAGE_MAX, SEEN_PAGE)  # type: ignore[arg-type]
+    offset = clamp(params.get("offset"), 0, OWNER_CLAMPS.offset_max, 0)  # type: ignore[arg-type]
+
+    rules = follow_rules.Rules.from_row(row)
+    name = str(row["title"] or row["slug"])
+    seen = await db.read(
+        lambda c: follows_store.seen_page(
+            c, collection_id, decisions=PASSED_OVER, limit=limit, offset=offset
+        )
+    )
+    has_more = len(seen) > limit
+    seen = seen[:limit]
+    checks = await db.read(
+        lambda c: follows_store.recent_checks(c, collection_id, CHECK_CAP)
+    )
+    index_jobs = await db.read(
+        lambda c: follows_store.index_jobs(c, collection_id, INDEX_JOB_CAP)
+    )
+    in_flight = await db.read(lambda c: follows_store.check_in_flight(c, collection_id))
+    counts = await db.read(lambda c: follows_store.counts(c, collection_id))
+
+    return _render(
+        "follow.html",
+        {
+            **_chrome(request, "following"),
+            "title": name,
+            "follow": {
+                "slug": str(row["slug"]),
+                "name": name,
+                "source_url": str(row["source_url"] or ""),
+                "kind": str(row["kind"]),
+                "state": str(row["state"]),
+                "last_check": row["last_sync_at"],
+                "next_check": row["next_check_at"],
+                "last_new": row["last_new_at"],
+                "error_code": row["last_error_code"],
+                "error_message": row["last_error_message"],
+            },
+            # The rule as one sentence, from the module that owns the sentence.
+            # There is no second renderer of it anywhere on this surface.
+            "sentence": follow_rules.describe(rules, name=name),
+            "brought_in": int(counts.get("queued", 0)),
+            "checks": [
+                {
+                    "job_id": str(check["public_id"]),
+                    "state": str(check["state"]),
+                    "error_code": check["error_code"],
+                    "created_at": check["created_at"],
+                    "took": elapsed(check["started_at"], check["finished_at"]),
+                }
+                for check in checks
+            ],
+            "index_jobs": [
+                {
+                    "job_id": str(job["public_id"]),
+                    "state": str(job["state"]),
+                    "n_items": int(job["n_items"] or 0),
+                    "n_done": int(job["n_done"] or 0),
+                    "n_failed": int(job["n_failed"] or 0),
+                    "created_at": job["created_at"],
+                }
+                for job in index_jobs
+            ],
+            "in_flight": str(in_flight["public_id"]) if in_flight is not None else None,
+            "seen": [_seen_row(item) for item in seen],
+            "near_miss": _near_miss(seen, rules),
+            "form": _follow_form_values(row),
+            "choices": _follow_choices(),
+            "pagination": {"limit": limit, "offset": offset, "has_more": has_more},
+        },
     )

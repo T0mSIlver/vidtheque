@@ -1,0 +1,109 @@
+{# The rule controls, once, for the two forms that write them.
+
+   The add form and the edit form differ in exactly two fields — a URL and a
+   name, which identify a follow rather than condition it — so everything a
+   rule is made of lives here and neither page owns a second copy of it. The
+   ceilings printed in the help text come from the context, which reads them
+   off `follows/rules.py` and `follows/params.py`: the numbers in the labels and
+   the numbers the validator clamps to are one set of numbers.
+
+   `ns` prefixes every control id, so a page that ever carries both forms still
+   has one label per field. #}
+
+{% macro rule_fields(form, choices, ns='r') %}
+<fieldset class="checks">
+  <legend class="label">Which listings to watch</legend>
+  {% for tab in choices.tabs %}
+  <label class="check">
+    <input type="checkbox" name="tab_{{ tab }}" value="1"{{ ' checked' if tab in form.tabs }}>
+    <span class="check-word">/{{ tab }}</span>
+  </label>
+  {% endfor %}
+</fieldset>
+<p class="field-help">
+  A channel's <code>/videos</code>, <code>/streams</code> and <code>/shorts</code>
+  are three listings, and each one this follow watches is one more request per
+  check.
+</p>
+
+<div class="formrow">
+  <div class="field field-text">
+    <label for="{{ ns }}-min">Longer than</label>
+    <input id="{{ ns }}-min" name="min_duration" type="text" value="{{ form.min_duration }}"
+           placeholder="8:00" autocomplete="off" spellcheck="false">
+  </div>
+  <div class="field field-text">
+    <label for="{{ ns }}-max">Shorter than</label>
+    <input id="{{ ns }}-max" name="max_duration" type="text" value="{{ form.max_duration }}"
+           placeholder="1:30:00" autocomplete="off" spellcheck="false">
+  </div>
+  <div class="field field-narrow">
+    <label for="{{ ns }}-per">Per check</label>
+    <input id="{{ ns }}-per" name="max_per_check" type="number" min="1"
+           max="{{ choices.max_per_check }}" inputmode="numeric" value="{{ form.max_per_check }}">
+  </div>
+  <div class="field field-narrow">
+    <label for="{{ ns }}-back">Backfill</label>
+    <input id="{{ ns }}-back" name="backfill" type="number" min="0"
+           max="{{ choices.max_backfill }}" inputmode="numeric" value="{{ form.backfill }}">
+  </div>
+  <div class="field field-text">
+    <label for="{{ ns }}-every">Check every</label>
+    <input id="{{ ns }}-every" name="check_interval_s" type="number"
+           min="{{ choices.min_interval_s }}" step="900" inputmode="numeric"
+           value="{{ form.check_interval_s }}">
+  </div>
+  <div class="field field-pick">
+    <label for="{{ ns }}-mode">When something matches</label>
+    <span class="pick">
+      <select id="{{ ns }}-mode" name="mode">
+        {% for value in choices.modes %}
+        <option value="{{ value }}"{{ ' selected' if form.mode == value }}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </span>
+  </div>
+</div>
+<p class="field-help">
+  Lengths read <code>480</code>, <code>8:00</code> or <code>1:30:00</code>; leave
+  one empty for no bound. <em>Check every</em> is seconds, floor
+  <span class="mono">{{ choices.min_interval_s }}</span>, and a week is as far as
+  it goes. <em>Backfill</em> reaches back that many uploads once, at the moment
+  you follow. <code>review</code> holds every match for you instead of queueing
+  it.
+</p>
+
+<div class="formrow">
+  <div class="field field-wide">
+    <label for="{{ ns }}-inc">Title contains</label>
+    <input id="{{ ns }}-inc" name="title_include" type="text" value="{{ form.title_include }}"
+           placeholder="lecture, workshop" autocomplete="off">
+  </div>
+  <div class="field field-wide">
+    <label for="{{ ns }}-exc">Title never contains</label>
+    <input id="{{ ns }}-exc" name="title_exclude" type="text" value="{{ form.title_exclude }}"
+           placeholder="shorts, trailer" autocomplete="off">
+  </div>
+  <div class="field field-wide">
+    <label for="{{ ns }}-tags">Tags</label>
+    <input id="{{ ns }}-tags" name="tags" type="text" value="{{ form.tags }}"
+           placeholder="topic:attention, series:zero-to-hero" autocomplete="off">
+  </div>
+</div>
+<p class="field-help">
+  Comma-separated plain substrings, matched case-insensitively — not patterns.
+  Exclude wins over include. Tags are applied to every video this follow brings
+  in, under the same namespace rules <code>tag-video</code> uses.
+</p>
+
+<fieldset class="checks">
+  <legend class="label">Channels to build</legend>
+  {% for name, label, note in choices.channels %}
+  <label class="check">
+    <input type="checkbox" name="channel_{{ name }}" value="1"{{ ' checked' if name in form.channels }}>
+    <span class="check-word">{{ label }}</span>
+    <span class="check-note">{{ note }}</span>
+  </label>
+  {% endfor %}
+</fieldset>
+{% endmacro %}

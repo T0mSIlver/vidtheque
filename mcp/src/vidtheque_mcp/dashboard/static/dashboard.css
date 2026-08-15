@@ -892,6 +892,14 @@ code { font-size: var(--t-machine); overflow-wrap: anywhere; }
 }
 .ledger > .figure:first-child { border-left: 0; }
 
+/* Six columns, for the one band that has six figures to carry: Following
+   counts the follows, their three states, what they brought in, what is held,
+   what is due and what the day's budget has cost. Same specificity as `.ledger`
+   and declared after it, so it wins at full width and the two width rules below
+   — which reflow the band to three columns and then to two — still win over it
+   when they apply. Six divides by both, so nothing is left alone on a row. */
+.ledger-6 { grid-template-columns: repeat(6, 1fr); }
+
 .figures {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
@@ -2327,6 +2335,11 @@ button[disabled]:hover { color: var(--fg3); border-color: var(--seam); }
   border-top: 2px solid var(--tone-line, var(--seam2));
 }
 .notice-bad { --tone: var(--tone-bad); --tone-line: var(--tone-bad); }
+/* Something matched a rule and is waiting on a person. Not `bad` — nothing has
+   failed — and not neutral either, because a held video stays held until
+   somebody decides. Same tone the `held_review` pill wears in the ledger below
+   it, so the band and the rows it points at are one colour. */
+.notice-warn { --tone: var(--tone-warn); --tone-line: var(--tone-warn); }
 .notice-title {
   margin: 0;
   font-size: var(--t-cell);
@@ -2344,6 +2357,78 @@ button[disabled]:hover { color: var(--fg3); border-color: var(--seam); }
   overflow-wrap: anywhere;
 }
 .notice-next { margin: var(--s2) 0 0; max-width: var(--note); font-size: var(--t-cell); }
+
+/* ---------------------------------------------------------------- following */
+
+/* Four additions and no new primitive: the band above reuses the ledger, the
+   table reuses the grid, the ledger of passed-over candidates reuses the grid
+   again, and both forms reuse the index form's fields. What is genuinely new is
+   a sentence that is the subject of a band, a row of POST controls, and a
+   disclosure. */
+
+/* The rule, as one sentence, from `follows.rules.describe` — the only renderer
+   of it. It is body text at the prose measure and in `--fg`, because on this
+   page it is the thing being read and not a note beside something else. */
+.rulesentence {
+  margin: 0 0 var(--s4);
+  max-width: var(--prose);
+  font-size: var(--t-cell);
+  line-height: var(--lh-cell);
+  color: var(--fg);
+}
+
+/* Pause / resume, check now, unfollow. A row of `<form method="post">`, because
+   `SameSite=Lax` sends the session cookie on a top-level GET navigation and
+   this surface has no state-changing GET (dashboard.md §3.3). */
+.followactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-top: var(--s4);
+}
+.followactions > .rowform { display: inline-flex; }
+
+/* The edit disclosure. A `<details>` and nothing else: no dialog, no toggle
+   script, no inline `<script>` — the pages stay CSP-ready and the form works
+   with JavaScript off, which is the same reason every control here is a real
+   form. The marker is the picker's own disclosure mark rotated, so the surface
+   has one glyph for "there is more of this" and not two. */
+.disclose { margin-top: var(--s5); border-top: 1px solid var(--seam); }
+.disclose > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  height: var(--row);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  font-weight: var(--w-label);
+  letter-spacing: 0.19em;
+  text-transform: uppercase;
+  font-variant-ligatures: none;
+  cursor: pointer;
+  list-style: none;
+}
+.disclose > summary::-webkit-details-marker { display: none; }
+.disclose > summary::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1px solid var(--fg2);
+  border-bottom: 1px solid var(--fg2);
+  transform: rotate(-45deg);
+}
+.disclose[open] > summary::before { transform: rotate(45deg); }
+.disclose > summary:hover { color: var(--fg); }
+.disclose > summary:hover::before { border-color: var(--accent); }
+.disclose > .indexform { margin-bottom: var(--s5); }
+
+/* The two tables. `--t-machine` on the rule cell because it is a row of machine
+   facts; the reason cell is a sentence and stays in the human face, bounded so
+   a paragraph-length yt-dlp string cannot widen the table past its wrapper. */
+.grid.follows .col-rule { color: var(--muted); font-size: var(--t-machine); }
+.grid.seen .col-why { max-width: 30rem; overflow-wrap: anywhere; }
+.grid.seen .col-title { max-width: 24rem; overflow-wrap: anywhere; }
 
 /* ---------------------------------------------------------------- lightbox */
 
@@ -2564,20 +2649,20 @@ footer p { margin: 0; max-width: var(--note); }
      a screen reader to associate a `<th scope="col">` with, and every cell in
      the stack prints its own column name. Sorting is not lost with it — `order`
      is a select in the filter bar above, at every width. */
-  :is(.grid.videos, .grid.jobs) thead { display: none; }
-  :is(.grid.videos, .grid.jobs),
-  :is(.grid.videos, .grid.jobs) tbody,
-  :is(.grid.videos, .grid.jobs) tr,
-  :is(.grid.videos, .grid.jobs) th,
-  :is(.grid.videos, .grid.jobs) td { display: block; }
+  :is(.grid.videos, .grid.jobs, .grid.follows, .grid.seen) thead { display: none; }
+  :is(.grid.videos, .grid.jobs, .grid.follows, .grid.seen),
+  :is(.grid.videos, .grid.jobs, .grid.follows, .grid.seen) tbody,
+  :is(.grid.videos, .grid.jobs, .grid.follows, .grid.seen) tr,
+  :is(.grid.videos, .grid.jobs, .grid.follows, .grid.seen) th,
+  :is(.grid.videos, .grid.jobs, .grid.follows, .grid.seen) td { display: block; }
 
-  :is(.grid.videos, .grid.jobs) tr {
+  :is(.grid.videos, .grid.jobs, .grid.follows, .grid.seen) tr {
     padding: var(--s3) 0;
     border-bottom: 1px solid var(--seam);
   }
-  :is(.grid.videos, .grid.jobs) tr:hover { background: none; box-shadow: none; }
+  :is(.grid.videos, .grid.jobs, .grid.follows, .grid.seen) tr:hover { background: none; box-shadow: none; }
 
-  :is(.grid.videos, .grid.jobs) th, :is(.grid.videos, .grid.jobs) td {
+  :is(.grid.videos, .grid.jobs, .grid.follows, .grid.seen) th, :is(.grid.videos, .grid.jobs, .grid.follows, .grid.seen) td {
     height: auto;
     padding: 1px 0;
     border-bottom: 0;
@@ -2587,7 +2672,7 @@ footer p { margin: 0; max-width: var(--note); }
      `E_RATE_LIMIT` and the countdown on one unwrappable line beside a fixed
      label, and at 390 the countdown — the single line this page exists for —
      was pushed clean off the right edge of its own cell. */
-  :is(.grid.videos, .grid.jobs) td[data-label]:not(.col-shot) {
+  :is(.grid.videos, .grid.jobs, .grid.follows, .grid.seen) td[data-label]:not(.col-shot) {
     display: flex;
     flex-wrap: wrap;
     gap: var(--s1) var(--s2);
@@ -2595,11 +2680,11 @@ footer p { margin: 0; max-width: var(--note); }
   }
   /* A wrapped value starts a new flex line at the cell's left edge, so it is
      indented to the column the labels leave and the values stay a column. */
-  :is(.grid.videos, .grid.jobs) td[data-label] > .countdown {
+  :is(.grid.videos, .grid.jobs, .grid.follows, .grid.seen) td[data-label] > .countdown {
     flex: 0 0 auto;
     margin-left: calc(var(--stacked-label) + var(--s2));
   }
-  :is(.grid.videos, .grid.jobs) td[data-label]:not(.col-shot)::before {
+  :is(.grid.videos, .grid.jobs, .grid.follows, .grid.seen) td[data-label]:not(.col-shot)::before {
     content: attr(data-label);
     flex: 0 0 var(--stacked-label);
     font-family: var(--font-mono);
@@ -2609,16 +2694,23 @@ footer p { margin: 0; max-width: var(--note); }
     letter-spacing: 0.19em;
     color: var(--muted);
   }
-  :is(.grid.videos, .grid.jobs) td.num { text-align: left; }
+  :is(.grid.videos, .grid.jobs, .grid.follows, .grid.seen) td.num { text-align: left; }
   .grid.videos .col-shot { width: auto; margin-bottom: var(--s1); }
-  :is(.grid.videos, .grid.jobs) .col-title { min-width: 0; margin-bottom: var(--s1); }
+  :is(.grid.videos, .grid.jobs, .grid.follows, .grid.seen) .col-title { min-width: 0; margin-bottom: var(--s1); }
 
   /* The other grids stay tables and scroll inside their own wrapper: a
      five-column provenance table squeezed into 375px breaks `text_embed` across
      three lines, which is worse than a swipe, and the items table carries a
      colspan error row that stacking would tear off its own item. The page body
      still never scrolls sideways; the wrapper does. */
-  .grid:not(.videos, .jobs) { min-width: 34rem; }
+  .grid:not(.videos, .jobs, .follows, .seen) { min-width: 34rem; }
+
+  /* The two following tables stack with the rest: both of them lead with a
+     title and carry a state, a clock and a sentence, which is the shape the
+     stacked idiom was written for. The rule cell keeps its own column name
+     rather than borrowing the title's, because a row of machine facts with no
+     label above it reads as a second id. */
+  .grid.seen .col-why, .grid.seen .col-title { max-width: none; }
 }
 
 @media (max-width: 48.75rem) {

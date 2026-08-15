@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% from "_follow_rules.html" import rule_fields %}
+{% macro page_link(offset) -%}
+{{ root }}/following?limit={{ pagination.limit }}&amp;offset={{ offset }}
+{%- endmacro %}
+{% block main %}
+
+{# Following — the standing half of adding videos. `Add videos` takes one URL
+   now; this takes a rule and brings the next one in while the operator is
+   asleep, and then says what the rule cost. Every affordance on this page
+   POSTs, which is why the page itself is registered with the write routes and
+   is absent — not disabled — in the demo projection and in `AUTH=none`.
+
+   The vocabulary is `follow` throughout, never `subscribe`
+   (docs/design/positioning.md, LOCKED). #}
+
+<div class="pagehead">
+  <div class="pagehead-line">
+    <h1>Following</h1>
+    {# One fact, not two. The budget is a figure in the band directly under
+       this line and a nowrap copy of it up here would be the same number
+       twice, on the one row of the page that cannot wrap. #}
+    <p class="pagehead-meta">
+      <span class="fact">follows <span class="mono">{{ totals.follows | count }}</span></span>
+    </p>
+  </div>
+</div>
+
+{# The band. Six figures, the page's one corner tick, and every state printed
+   as its own word — a follow that is paused and a follow that is failing are
+   two different mornings and the colour is the reinforcement, not the message
+   (DESIGN.md, The Word-and-Colour Rule). A zero wears no tone, because a tone
+   on a zero is a warning about nothing. #}
+<section aria-labelledby="band">
+  <h2 class="sr-only" id="band">What this instance is watching</h2>
+  <dl class="ledger ledger-6">
+    <div class="figure">
+      <dt>follows</dt>
+      <dd>{{ totals.follows | count }}</dd>
+      <dd class="figure-note">channels and playlists watched</dd>
+    </div>
+    <div class="figure">
+      <dt>active</dt>
+      <dd>{{ totals.active | count }}</dd>
+      <dd class="figure-note">
+        <span class="pill pill-small tone-{{ 'wait' if totals.paused else 'neutral' }}">{{ totals.paused }} paused</span>
+        <span class="pill pill-small tone-{{ 'bad' if totals.failing else 'neutral' }}">{{ totals.failing }} failing</span>
+      </dd>
+    </div>
+    <div class="figure">
+      <dt>brought in</dt>
+      <dd>{{ totals.brought_in | count }}</dd>
+      <dd class="figure-note">videos a check accepted</dd>
+    </div>
+    <div class="figure">
+      <dt>held</dt>
+      <dd>{{ totals.held | count }}</dd>
+      <dd class="figure-note">waiting on you or on the budget</dd>
+    </div>
+    <div class="figure">
+      <dt>due within the hour</dt>
+      <dd>{{ totals.due_soon | count }}</dd>
+      <dd class="figure-note">active follows whose clock comes round</dd>
+    </div>
+    {# Hours of *video*, not GPU-minutes: the check knows a candidate's length
+       before it knows what indexing it will cost, and hours-of-video is the
+       number an operator reasons about. Rolling 24 hours, across every follow
+       together — a per-follow accounting would let five follows spend five
+       budgets. #}
+    <div class="figure">
+      <dt>budget</dt>
+      <dd>{{ budget.spent }}</dd>
+      <dd class="figure-note">
+        {% if budget.ceiling %}of {{ budget.ceiling }} used today{% else %}used today; no daily ceiling is set{% endif %}
+      </dd>
+    </div>
+  </dl>
+</section>
+
+{% if held %}
+{# The one band that is addressed to the operator rather than describing the
+   instance: something matched a rule and is waiting for a person. It names the
+   rows and gives each one its door, because "N are waiting" with nowhere to go
+   is a notification and not a control. #}
+<section class="notice notice-warn" aria-labelledby="waiting">
+  {# The count is this band's own rows and not the band figure above it: `held`
+     in the ledger is everything held, and the budget holds a candidate without
+     asking anybody. These are the ones waiting on a *person*. `has_more` over
+     an exact total, like every other list here — the whole ledger is on the
+     follow's own page. #}
+  <h2 class="notice-title" id="waiting">
+    {% if held_more %}More than {{ held | length }} videos are waiting for you.
+    {% else %}{{ held | length }} {{ 'video is' if held | length == 1 else 'videos are' }} waiting for you.{% endif %}
+  </h2>
+  <ul class="rowlist tight">
+    {% for item in held %}
+    <li class="minirow">
+      <a href="{{ root }}/following/{{ item.slug }}#passed">{{ item.title }}</a>
+      <span class="minirow-figure muted">{{ item.follow }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% if held_more %}
+  <p class="notice-next">More are held than fit here; each follow's own page has its whole ledger.</p>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if follows %}
+<p class="tablecount" role="status">
+  <span><span class="shown">{{ follows | length }}</span> shown{% if pagination.has_more %}, more available{% endif %}.</span>
+</p>
+
+<div class="tablewrap">
+<table class="grid follows">
+  <caption class="sr-only">Every followed channel, its rule, its state and its clocks</caption>
+  <thead>
+    <tr>
+      <th scope="col">channel</th>
+      <th scope="col">rule</th>
+      <th scope="col">state</th>
+      <th scope="col">last check</th>
+      <th scope="col">last arrival</th>
+      <th scope="col">next check</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for follow in follows %}
+    <tr>
+      <th scope="row" class="col-title" data-label="Channel">
+        <a class="row-title" href="{{ root }}/following/{{ follow.slug }}">{{ follow.name }}</a>
+      </th>
+      {# The rule as facts, not as a sentence: sixty rows at 03:00 are a column
+         to compare. The sentence the check actually obeys is one click away, at
+         the top of the follow's own page, rendered by the one function that
+         renders it. #}
+      <td class="col-rule" data-label="Rule">
+        {%- for fact in follow.facts %}<span class="fact mono">{{ fact }}</span>{% if not loop.last %}<span class="sep">·</span>{% endif %}{% endfor -%}
+      </td>
+      <td data-label="State">
+        <span class="pill tone-{{ follow.state | tone }}">{{ follow.state }}</span>
+        {% if follow.error_code %}<span class="pill pill-small tone-bad">{{ follow.error_code }}</span>{% endif %}
+      </td>
+      <td data-label="Last check"><time>{{ follow.last_check | minute }}</time></td>
+      <td data-label="Last arrival"><time>{{ follow.last_new | minute }}</time></td>
+      <td data-label="Next check"><time>{{ follow.next_check | minute }}</time></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% if pagination.offset or pagination.has_more %}
+<nav class="pager" aria-label="Pagination">
+  {% if pagination.offset %}
+  <a class="ghostlink" href="{{ page_link([pagination.offset - pagination.limit, 0] | max) }}">← Previous</a>
+  {% endif %}
+  {% if pagination.has_more %}
+  <a class="ghostlink" href="{{ page_link(pagination.offset + pagination.limit) }}">Next {{ pagination.limit }} →</a>
+  {% endif %}
+</nav>
+{% endif %}
+{% endif %}
+
+{# The add form, and when there is nothing to list it *is* the empty state:
+   one sentence naming what a follow does, then the controls that make one.
+   An empty state that only says "nothing here yet" is a screen you have to
+   leave in order to act on it. #}
+<section class="panel" aria-labelledby="add">
+  <h2 class="panel-title" id="add">Follow a channel</h2>
+  <p class="empty-note">
+    {% if follows %}
+    A follow checks a channel or a playlist on its own clock, judges every new
+    upload against a rule you write, and records what it decided either way.
+    {% else %}
+    Nothing is followed yet. A follow checks a channel or a playlist on its own
+    clock, indexes the new uploads that match a rule you write, and keeps a
+    ledger of every one it passed over and the number that made the decision.
+    {% endif %}
+  </p>
+
+  {# Refuse honestly, §5.5's rule: the tool raises `E_FEATURE_DISABLED` for a
+     follow as well as for an index, so the page says so before the typing
+     rather than after it. #}
+  {% if not writes_allowed %}
+  <p class="panel-note">
+    Indexing is disabled on this instance ({{ vectors.reason }}), so a follow
+    would queue videos it cannot build. Fix the config or dimension mismatch and
+    restart.
+  </p>
+  {% endif %}
+
+  <form class="indexform" method="post" action="{{ root }}/following">
+    <div class="formrow">
+      <div class="field field-wide">
+        <label for="f-url">Channel or playlist URL</label>
+        <input id="f-url" name="url" type="text" required autocomplete="off" spellcheck="false"
+               placeholder="https://www.youtube.com/@handle" value="{{ form.url }}">
+      </div>
+      <div class="field field-wide">
+        <label for="f-title">Name</label>
+        <input id="f-title" name="title" type="text" autocomplete="off"
+               placeholder="read off the URL if you leave it empty" value="{{ form.title }}">
+      </div>
+    </div>
+    <p class="field-help">
+      A channel URL (<code>/@handle</code>, <code>/channel/UC…</code>) or a
+      playlist. A single video is not a follow — <a href="{{ root }}/index">Add
+      videos</a> indexes one of those.
+    </p>
+
+    {{ rule_fields(form, choices, 'f') }}
+
+    <div class="field field-actions">
+      <button type="submit">Follow</button>
+      <a class="ghostlink" href="{{ root }}/index">Add videos</a>
+    </div>
+  </form>
+</section>
+
+{% endblock %}
