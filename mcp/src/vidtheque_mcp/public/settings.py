@@ -36,8 +36,8 @@ class PublicSettings:
     openrouter_key: str | None = None
     openrouter_model: str = DEFAULT_MODEL
     openrouter_base_url: str = DEFAULT_BASE_URL
-    ask_max_rounds: int = 4
-    ask_timeout_s: float = 90.0
+    ask_max_rounds: int = 50
+    ask_timeout_s: float = 180.0
 
     # ---------------------------------------------------------------- limits
     search_per_min: int = 30
@@ -69,8 +69,8 @@ class PublicSettings:
             openrouter_base_url=(
                 _env("OPENROUTER_BASE_URL", DEFAULT_BASE_URL) or DEFAULT_BASE_URL
             ).rstrip("/"),
-            ask_max_rounds=_int_env("VIDTHEQUE_ASK_MAX_ROUNDS", 4),
-            ask_timeout_s=_float_env("VIDTHEQUE_ASK_TIMEOUT_S", 90.0),
+            ask_max_rounds=_int_env("VIDTHEQUE_ASK_MAX_ROUNDS", 50),
+            ask_timeout_s=_float_env("VIDTHEQUE_ASK_TIMEOUT_S", 180.0),
             search_per_min=_int_env("VIDTHEQUE_RATE_SEARCH_PER_MIN", 30),
             ask_per_min=_int_env("VIDTHEQUE_RATE_ASK_PER_MIN", 5),
             ask_per_day=_int_env("VIDTHEQUE_RATE_ASK_PER_DAY", 50),

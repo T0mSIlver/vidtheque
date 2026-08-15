@@ -267,9 +267,13 @@ wrong.** `ask_global` is 50/day, keyed `"@global"`, and **persisted**: migration
 0005 writes it to SQLite, so a restart resumes the day rather than handing it
 back. §9 has had this right for a while and this paragraph did not.
 
-`VIDTHEQUE_ASK_MAX_ROUNDS=4` means one ask is up to **five** upstream
-completions, not four: four tool-enabled rounds and then a forced final answer
-with tools off, so the visitor always gets prose rather than a spinner.
+`VIDTHEQUE_ASK_MAX_ROUNDS=50` (raised from 4 on 2026-08-15) means one ask is up
+to **fifty-one** upstream completions, not fifty: fifty tool-enabled rounds and
+then a forced final answer with tools off, so the visitor always gets prose
+rather than a spinner. In practice the 180s wall clock ends a long ask well
+before the round cap does — and with the per-round tool-call cap of six gone,
+a single round can now be an arbitrary batch of searches. Re-check the daily
+ask budget against real traffic before treating either number as safe.
 
 And the thing neither number covered: until 2026-08-11 a visitor who
 disconnected *during* a completion got the day's token back while OpenRouter had
@@ -972,10 +976,13 @@ response **unless the origin sends `Content-Type: text/event-stream`**
 The ask activity stream sent `application/x-ndjson`, deliberately — `demo-site.md`
 §3.5 chose NDJSON over SSE because `EventSource` is GET-only and ask is a POST —
 so through the tunnel the visitor saw nothing for up to
-`VIDTHEQUE_ASK_TIMEOUT_S` (90s) and then the whole log and the answer at once.
-Not a hang (Cloudflare's Proxy Read Timeout is 125s, so a 90s budget stays
-inside), but "ninety seconds of work made visible" is exactly the thing that
-stopped working.
+`VIDTHEQUE_ASK_TIMEOUT_S` (90s at the time) and then the whole log and the
+answer at once. Not a hang (Cloudflare's Proxy Read Timeout is 125s, so a 90s
+budget stayed inside), but "ninety seconds of work made visible" is exactly the
+thing that stopped working. **The budget is 180s since 2026-08-15**, so it no
+longer fits inside 125s on its own; the stream stays alive on its activity
+events, and the case to watch is a silent final completion — see
+`demo-site.md` §3.5.
 
 `X-Accel-Buffering: no` does not help and never did: it is an **nginx**
 directive, cloudflared does not honour it, and no `originRequest` option

@@ -43,6 +43,10 @@ from .params import axis_check
 CONTENT_TYPES = ("all", "transcript", "ocr", "frame")
 ORDERS = ("relevance", "recency", "video_time")
 DEFAULT_FIELDS = "video_id,start,text,link,source"
+# The default hit-text budget, named because a caller that renders hits of its
+# own (`public/ask.py`) has to truncate to the same length this tool would, and
+# a second literal is how the two drift apart.
+DEFAULT_MAX_TEXT_CHARS = 1000
 # Every column `format="tsv"` can emit — the keys `_as_dict` writes, and the
 # list `E_BAD_PARAM` names. A field this does not contain used to print as a
 # header with a blank cell under every row (demo-queries §9.1.9), in the one
@@ -160,7 +164,7 @@ async def run(
     max_chars: int | None = None,
     max_per_video: int = 3,
     cluster_gap: float = 8.0,
-    max_text_chars: int = 1000,
+    max_text_chars: int = DEFAULT_MAX_TEXT_CHARS,
     format: str = "text",
     fields: str = DEFAULT_FIELDS,
 ) -> CallToolResult:
@@ -192,7 +196,7 @@ async def run(
     offset = clamp(offset, 0, 10_000, 0)
     max_per_video = clamp(max_per_video, 1, 20, 3)
     cluster_gap = float(clamp(int(cluster_gap), 0, 60, 8))
-    max_text_chars = clamp_text_chars(max_text_chars, 120, 20_000, 1000)
+    max_text_chars = clamp_text_chars(max_text_chars, 120, 20_000, DEFAULT_MAX_TEXT_CHARS)
     # §5.2's deferred half, taken 2026-08-10: the caps are published ahead of the
     # call (`vidtheque://context`), but a caller who asked for `limit=500` and
     # got 50 had nothing in the payload to tell a clamp from a complete answer —
