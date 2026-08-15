@@ -1,6 +1,6 @@
 [project]
 name = "vidtheque"
-version = "0.0.4"
+version = "0.0.5"
 description = "Self-hosted MCP server that turns videos you've watched into a searchable multimodal corpus"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
