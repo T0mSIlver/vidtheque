@@ -370,8 +370,7 @@ def held_for_budget(conn: sqlite3.Connection, limit: int = 25) -> list[sqlite3.R
     """
     return list(
         conn.execute(
-            "SELECT * FROM follow_seen WHERE collection_id IS NOT NULL "
-            "AND decision = 'held_budget' "
+            "SELECT * FROM follow_seen WHERE decision = 'held_budget' "
             "ORDER BY COALESCE(published_at, first_seen_at), id LIMIT ?",
             (limit,),
         )
