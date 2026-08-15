@@ -141,6 +141,7 @@ class FollowCheck:
         base = str(follow["source_url"]).rstrip("/")
         kind = "playlist" if str(follow["kind"]) == "playlist" else "channel_recent"
         collected: list[tuple[str, PlaylistEntry]] = []
+        claimed: set[str] = set()
         tabs = ("videos",) if kind == "playlist" else rules.tabs
         for tab in tabs:
             target = base if kind == "playlist" else f"{base}/{tab}"
@@ -170,8 +171,21 @@ class FollowCheck:
             for entry in entries:
                 # Revalidate every child, for the same reason `_maybe_expand`
                 # does: these URLs arrive from a remote extractor.
-                if entry.source_id and is_indexable_url(entry.url):
-                    collected.append((tab, entry))
+                if not (entry.source_id and is_indexable_url(entry.url)):
+                    continue
+                # One video, one candidate, however many tabs listed it. A past
+                # broadcast appears on both /videos and /streams, and
+                # `tabs=videos,streams` is exactly the combination the tab rule
+                # exists to serve — so without this the ledger showed one row
+                # (`record_seen` upserts) while the index job carried two items
+                # for the same URL. Two GPU passes, invisible from the Following
+                # page. The partial unique index cannot catch it either: both
+                # items have a NULL `video_id` at that point. First tab wins,
+                # which is the order the operator wrote them in.
+                if entry.source_id in claimed:
+                    continue
+                claimed.add(str(entry.source_id))
+                collected.append((tab, entry))
         return collected
 
     # ------------------------------------------------------------ decisions
@@ -216,12 +230,21 @@ class FollowCheck:
         # Oldest upload first: the budget below is spent in publication order.
         candidates.sort(key=lambda pair: (pair[1].published_at or 0, -pair[0]))
 
-        accepted: list[Candidate] = []
+        # `judged_from` rides with the candidate from here on. It used to be a
+        # local in the loop below and was only ever passed to `_record` on the
+        # paths that reject or hold — so a candidate that *cost a probe* and
+        # then passed was written with the parameter default, `listing`. That
+        # is a false receipt on exactly the rows an operator asks about, and
+        # migration 0006 promises the opposite ("the surface prints which, so a
+        # check that spent requests says so").
+        accepted: list[tuple[Candidate, str]] = []
         pending: list[Candidate] = []
         for rank, candidate in candidates:
             verdict = judge(rules, candidate)
-            if verdict is None and not _in_horizon(candidate, rank, rules, followed_at):
-                verdict = _horizon_verdict(rules)
+            if verdict is None and not _in_horizon(
+                candidate, rank, rules, followed_at, first_check=not seen
+            ):
+                verdict = _horizon_verdict(rules, first_check=not seen)
             if verdict is not None:
                 await self._record(collection_id, candidate, verdict.decision, verdict.reason)
                 outcome.skipped += 1
@@ -275,7 +298,7 @@ class FollowCheck:
                 )
                 outcome.held += 1
                 continue
-            accepted.append(measured)
+            accepted.append((measured, judged_from))
 
         return await self._enqueue(ctx, follow, rules, accepted, outcome)
 
@@ -284,7 +307,7 @@ class FollowCheck:
         ctx: ItemContext,
         follow: sqlite3.Row,
         rules: Rules,
-        accepted: list[Candidate],
+        accepted: list[tuple[Candidate, str]],
         outcome: Outcome,
     ) -> Outcome:
         collection_id = int(follow["collection_id"])
@@ -292,8 +315,8 @@ class FollowCheck:
             return outcome
 
         spent = await self.db.read(store.budget_spent_s)
-        queueing: list[Candidate] = []
-        for candidate in accepted:
+        queueing: list[tuple[Candidate, str]] = []
+        for candidate, judged_from in accepted:
             cost = float(candidate.duration_s or 0.0)
             if rules.mode == "review":
                 await self._record(
@@ -301,6 +324,7 @@ class FollowCheck:
                     candidate,
                     "held_review",
                     "this follow holds its arrivals for you",
+                    judged_from=judged_from,
                 )
                 outcome.held += 1
                 continue
@@ -312,11 +336,12 @@ class FollowCheck:
                     f"{duration_clock(cost)} would take today past the "
                     f"{duration_clock(self.daily_budget_s)} budget "
                     f"({duration_clock(spent)} spent) — it is reconsidered on the next check",
+                    judged_from=judged_from,
                 )
                 outcome.held += 1
                 continue
             spent += cost
-            queueing.append(candidate)
+            queueing.append((candidate, judged_from))
 
         if not queueing:
             return outcome
@@ -329,7 +354,7 @@ class FollowCheck:
             "channels": rules.channels,
             "follow": str(follow["slug"]),
         }
-        urls = [candidate.url for candidate in queueing]
+        urls = [candidate.url for candidate, _ in queueing]
         try:
             job_public_id = await self.db.write(
                 lambda c: jobs_store.create_job(
@@ -342,9 +367,11 @@ class FollowCheck:
                 )
             )
         except jobs_store.DuplicateInFlight:
-            # Something else queued one of these between the decision and the
-            # write. Leave every ledger row alone and let the next check pick
-            # up whatever is genuinely outstanding — it is a race, not an error.
+            # Defensive rather than reachable today: the in-flight guard is a
+            # partial unique index on `job_items.video_id`, and these items are
+            # URLs with no video row yet, so it cannot fire on this path. It is
+            # caught anyway because the alternative to catching it is a check
+            # that dies mid-ledger, leaving half its decisions recorded.
             await ctx.log(
                 "another job already holds one of these videos; nothing queued this check",
                 "warn",
@@ -357,12 +384,13 @@ class FollowCheck:
                 "SELECT id FROM jobs WHERE public_id = ?", (job_public_id,)
             ).fetchone()
         )
-        for candidate in queueing:
+        for candidate, judged_from in queueing:
             await self._record(
                 collection_id,
                 candidate,
                 "queued",
                 f"queued as {job_public_id}",
+                judged_from=judged_from,
                 job_id=int(job_row_id["id"]) if job_row_id else None,
             )
         outcome.queued = len(queueing)
@@ -432,35 +460,56 @@ class FollowCheck:
         )
 
 
-def _in_horizon(candidate: Candidate, rank: int, rules: Rules, followed_at: int) -> bool:
+def _in_horizon(
+    candidate: Candidate,
+    rank: int,
+    rules: Rules,
+    followed_at: int,
+    *,
+    first_check: bool,
+) -> bool:
     """Is this upload new since the follow, or inside its backfill allowance?
 
-    Two ways in, because the listing does not always date its entries: an
-    upload published at or after the moment you followed is new by the clock,
-    and one of the newest `backfill` entries is in by position. A follow with
-    `backfill=0` therefore starts from now — which is the default, because the
-    alternative default is a follow that can queue two hundred videos of GPU
-    time the first time it runs.
+    The horizon exists for one reason: the first check of a follow must not be
+    able to queue two hundred videos of GPU time. It is not a general date
+    filter, and after that first check it has no work left to do — a candidate
+    the ledger has never seen was not in the previous listing, which is what
+    "new" means for a feed.
+
+    That distinction is load-bearing rather than tidy. The rule used to be
+    `published_at >= followed_at or rank < backfill`, and a flat listing does
+    not always date its entries: on a channel whose extractor returns no
+    `timestamp`, a follow at the default `backfill=0` queued **nothing, ever**,
+    and filled its ledger with rows claiming the uploads were "published before
+    you followed" — which nobody had established. A false receipt, on the one
+    table in this schema whose entire purpose is true ones.
+
+    So: a dated upload is judged by its date, an undated one by whether this is
+    the first look, and either can still come in on position through `backfill`.
     """
-    if candidate.published_at is not None and candidate.published_at >= followed_at:
-        return True
-    return rank < rules.backfill
+    if candidate.published_at is not None:
+        return candidate.published_at >= followed_at or rank < rules.backfill
+    return (not first_check) or rank < rules.backfill
 
 
-def _horizon_verdict(rules: Rules):
+def _horizon_verdict(rules: Rules, *, first_check: bool):
+    """Why it was passed over, said in terms of what was actually known.
+
+    On a first check the honest claim is about the shelf, not the calendar: the
+    upload was already there when the follow was made. Only a dated upload on a
+    later check earns the word "published".
+    """
     from .rules import Verdict
 
-    if rules.backfill:
-        return Verdict(
-            "skipped_horizon",
-            f"published before you followed, and your backfill of {rules.backfill} "
-            "is already spent on newer uploads",
-        )
-    return Verdict(
-        "skipped_horizon",
-        "published before you followed — this follow starts from the day you "
-        "made it (set a backfill to reach back)",
+    spent = (
+        f", and your backfill of {rules.backfill} is already spent on newer uploads"
+        if rules.backfill
+        else " — this follow starts from the day you made it (set a backfill to "
+        "reach back)"
     )
+    if first_check:
+        return Verdict("skipped_horizon", f"already on the channel when you followed{spent}")
+    return Verdict("skipped_horizon", f"published before you followed{spent}")
 
 
 def _collection_of(conn: sqlite3.Connection, job_id: int) -> int | None:
