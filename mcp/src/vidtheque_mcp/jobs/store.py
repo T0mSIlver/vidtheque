@@ -93,13 +93,20 @@ def create_job(
     args: dict[str, Any],
     items: Sequence["NewItem | tuple[str, int | None]"],
     priority: int = 100,
+    collection_id: int | None = None,
 ) -> str:
-    """Insert a job and its items. Runs inside the caller's transaction."""
+    """Insert a job and its items. Runs inside the caller's transaction.
+
+    ``collection_id`` names the follow a job belongs to, when it belongs to one
+    — the `follow_check` itself, and the `index` job that check enqueues. NULL
+    for every job submitted by hand, which is every job that existed before
+    migration 0006.
+    """
     public_id = new_job_id()
     cursor = conn.execute(
-        "INSERT INTO jobs (owner_id, public_id, kind, args_json, n_items, priority) "
-        "VALUES (1, ?, ?, ?, ?, ?)",
-        (public_id, kind, json.dumps(args), len(items), priority),
+        "INSERT INTO jobs (owner_id, public_id, kind, args_json, n_items, priority, "
+        "collection_id) VALUES (1, ?, ?, ?, ?, ?, ?)",
+        (public_id, kind, json.dumps(args), len(items), priority, collection_id),
     )
     job_id = int(cursor.lastrowid or 0)
     for seq, entry in enumerate(items):

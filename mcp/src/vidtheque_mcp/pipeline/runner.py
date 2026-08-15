@@ -221,6 +221,19 @@ class IndexingPipeline:
     # ------------------------------------------------------------------ entry
 
     async def run_item(self, ctx: ItemContext) -> None:
+        if ctx.kind == "follow_check":
+            # A check is listing requests and at most a handful of probes: no
+            # media, no worker, no GPU, no `video_stages` row. It shares this
+            # seam rather than getting one of its own because it shares
+            # everything that matters underneath it — the claim, the heartbeat,
+            # the typed failure, and above all the rate-limit backoff that a
+            # source pushing back has always needed (follows/check.py).
+            from ..follows.check import FollowCheck
+
+            await FollowCheck(
+                self.db, self.source, daily_budget_s=self.settings.follow_daily_hours * 3600.0
+            ).run(ctx)
+            return
         args = await self.db.read(lambda c: store.job_args(c, ctx.job_id))
         run = ItemRun(ctx=ctx, args=args)
         self.layout.ensure()

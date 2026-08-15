@@ -21,7 +21,7 @@ import contextlib
 import logging
 import sqlite3
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Awaitable, Callable, Protocol
 
 from ..config import _int_env
 from ..db import Database
@@ -131,6 +131,12 @@ class ItemContext:
     item_id: int
     source_url: str
     video_id: int | None
+    # The job's kind, because as of migration 0006 there is more than one thing
+    # an item can be. A `follow_check` item is a channel listing to judge, not a
+    # video to index, and the seam that decides is `IndexingPipeline.run_item`
+    # — the one place the two paths were always going to meet. Defaulted so the
+    # test fakes that build a context by hand keep working.
+    kind: str = "index"
 
     async def record(self, stage: str, pct: float) -> None:
         # The heartbeat rides along with progress, and `PipelineRunner._beat`
@@ -181,6 +187,13 @@ class PipelineRunner:
         )
         self._task: asyncio.Task[None] | None = None
         self._stop = asyncio.Event()
+        # Something to do before each claim, when a feature needs the loop's
+        # tick and nothing else. `follows.scheduler.enqueue_due` is the only
+        # caller: it puts a `follow_check` on the queue when a follow's clock
+        # comes round, which is a *queue* concern the moment it is a job. The
+        # hook exists so this module does not import a feature — it claims
+        # jobs and drives items, and it should keep meaning only that.
+        self.before_claim: Callable[[], Awaitable[None]] | None = None
         # What this process is holding. A blocked event loop is alive, not
         # crashed: its own jobs are never candidates for its own sweep.
         self._active: set[int] = set()
@@ -260,6 +273,11 @@ class PipelineRunner:
 
     async def run_once(self) -> bool:
         """Claim at most one job and run it to completion. Returns True if it did."""
+        if self.before_claim is not None:
+            try:
+                await self.before_claim()
+            except Exception:  # pragma: no cover - the loop must not die
+                logger.exception("pre-claim hook failed")
         await self.reclaim_stale()
         job = await self.db.write(store.claim_next)
         if job is None:
@@ -269,7 +287,7 @@ class PipelineRunner:
         await self.db.write(lambda c: store.log(c, job_id, "job claimed"))
         beat = asyncio.create_task(self._beat(job_id), name=f"vidtheque-heartbeat-{job_id}")
         try:
-            await self._drive(job_id, str(job["public_id"]))
+            await self._drive(job_id, str(job["public_id"]), str(job["kind"]))
         finally:
             # Nested, and unconditional. `await beat` suppressed only
             # CancelledError, so a heartbeat that died of anything else — an
@@ -300,7 +318,7 @@ class PipelineRunner:
             await asyncio.sleep(HEARTBEAT_INTERVAL_S)
             await self.db.write(lambda c: store.heartbeat(c, job_id))
 
-    async def _drive(self, job_id: int, job_public_id: str) -> None:
+    async def _drive(self, job_id: int, job_public_id: str, kind: str = "index") -> None:
         while True:
             if await self._cancel_requested(job_id):
                 await self.db.write(lambda c: _cancel_remaining(c, job_id))
@@ -316,6 +334,7 @@ class PipelineRunner:
                 item_id=int(item["id"]),
                 source_url=str(item["source_url"]),
                 video_id=int(item["video_id"]) if item["video_id"] is not None else None,
+                kind=kind,
             )
             try:
                 await self.pipeline.run_item(ctx)

@@ -45,6 +45,7 @@ from .dashboard import (
 from .db import Database
 from .embeddings import EmbeddingClient
 from .http import frames_routes, health_routes
+from .follows.scheduler import enqueue_due
 from .jobs.runner import Pipeline, PipelineRunner
 from .pipeline import PipelineSettings, WorkerAPI, build_pipeline, worker_client
 from .public import (
@@ -172,6 +173,13 @@ def assemble(
         ),
         stale_after_s=settings.stale_claim_s,
     )
+    # The follow clock, on the loop's own tick rather than beside it. Nothing
+    # is enqueued when `VIDTHEQUE_FOLLOW_CHECKS=0`, and nothing is enqueued in
+    # a build with the pipeline off either — a queued check that no runner will
+    # ever claim is worse than no check at all, because the dashboard would
+    # show it waiting (follows/scheduler.py).
+    if run_pipeline and pipeline_settings.follow_checks:
+        runner.before_claim = lambda: enqueue_due(db, enabled=True)
     deps = Deps(
         settings=settings,
         db=db,
