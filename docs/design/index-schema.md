@@ -673,6 +673,94 @@ Subscriptions are deferred from the tool surface (§6) but the *storage* is here
 — `kind='channel' + source_url + sync_cron` is the whole feature minus a cron entry,
 and adding it later to a populated database is a migration for no reason.
 
+**Amended 2026-08-15 — following channels (migration 0006).** They are no longer
+deferred (`following.md`; tool-surface §4.10), and the paragraph above held up:
+0006 adds no new top-level concept, only the rules beside a `collections` row and
+a ledger of what those rules decided.
+
+```sql
+CREATE TABLE follows (
+  collection_id    INTEGER PRIMARY KEY REFERENCES collections(id) ON DELETE CASCADE,
+  state            TEXT    NOT NULL DEFAULT 'active'
+                   CHECK (state IN ('active','paused','failing')),
+  tabs             TEXT    NOT NULL DEFAULT 'videos',   -- subset of videos,streams,shorts
+  min_duration_s   INTEGER CHECK (min_duration_s IS NULL OR min_duration_s >= 0),
+  max_duration_s   INTEGER CHECK (max_duration_s IS NULL OR max_duration_s >= 0),
+  title_include    TEXT,                                -- comma-separated substrings
+  title_exclude    TEXT,                                -- exclude wins
+  channels         TEXT    NOT NULL DEFAULT 'all',      -- `index-video`'s vocabulary
+  tags             TEXT,
+  backfill         INTEGER NOT NULL DEFAULT 0  CHECK (backfill BETWEEN 0 AND 25),
+  max_per_check    INTEGER NOT NULL DEFAULT 5  CHECK (max_per_check BETWEEN 1 AND 25),
+  mode             TEXT    NOT NULL DEFAULT 'auto' CHECK (mode IN ('auto','review')),
+  check_interval_s INTEGER NOT NULL DEFAULT 21600 CHECK (check_interval_s >= 900),
+  next_check_at    INTEGER NOT NULL DEFAULT 0,
+  last_new_at      INTEGER,
+  last_error_code  TEXT,
+  last_error_message TEXT,
+  created_at       INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at       INTEGER NOT NULL DEFAULT (unixepoch())
+) STRICT;
+CREATE INDEX follows_due ON follows(next_check_at) WHERE state = 'active';
+
+CREATE TABLE follow_seen (
+  id            INTEGER PRIMARY KEY,
+  collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+  source_id     TEXT    NOT NULL,
+  url           TEXT    NOT NULL,
+  title         TEXT,
+  duration_s    REAL,
+  published_at  INTEGER,
+  tab           TEXT,
+  decision      TEXT    NOT NULL
+                CHECK (decision IN ('queued','held_budget','held_review',
+                                    'skipped_tab','skipped_title','skipped_duration',
+                                    'skipped_horizon','already_indexed','failed')),
+  reason        TEXT,
+  judged_from   TEXT    NOT NULL DEFAULT 'listing'
+                CHECK (judged_from IN ('listing','probe')),
+  video_id      INTEGER REFERENCES videos(id) ON DELETE SET NULL,
+  job_id        INTEGER REFERENCES jobs(id)   ON DELETE SET NULL,
+  first_seen_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  decided_at    INTEGER NOT NULL DEFAULT (unixepoch()),
+  UNIQUE (collection_id, source_id)
+) STRICT;
+CREATE INDEX follow_seen_recent ON follow_seen(collection_id, decided_at DESC);
+CREATE INDEX follow_seen_budget ON follow_seen(decided_at) WHERE decision = 'queued';
+```
+
+`follows` is **keyed by `collection_id`**, not by an id of its own: the follow *is*
+the collection, and two names for one number is the drift the `CHECK` constraints
+above spend their existence preventing. `owner_id` is not repeated either —
+`collections` carries it and this row cannot outlive its parent. A `manual`
+collection simply has no row here.
+
+**`sync_cron` stays NULL and unused, and it is reserved rather than forgotten.**
+The interval lives in `follows.check_interval_s`. A cron expression is a config
+language and the dashboard is deliberately not a config editor (dashboard.md §1,
+non-goal 4) — "every 6 hours" typed as `0 */6 * * *` is a worse control and a
+parser nobody asked for. The column is left in place because a literal cron may
+still earn its place later. `collections.last_sync_at` remains the last-check
+stamp and is not duplicated into `follows`; `next_check_at` is new only because
+the enqueue path needs something to sort on, and it is an absolute epoch rather
+than an interval so a paused follow that resumes does not silently owe six hours.
+
+**`follow_seen` is not redundant with `collection_videos`.** A candidate that was
+passed over never becomes a `videos` row, so there is no id for
+`collection_videos` to hold and no way to ask what a rule cost you. `decision` is
+therefore a vocabulary about work that was *never accepted*, which is why it does
+not collide with the four in §1.9 and §1.2 — the argument in full is
+`following.md` §6.1. `reason` carries the number that made the call (`4:12,
+shorter than your 8:00 floor`), `judged_from` says whether the duration came from
+the flat listing or cost a probe, and `duration_s` NULL means neither ever said —
+it is not zero, and a rule with a floor must not treat it as one.
+
+`UNIQUE (collection_id, source_id)` is what stops a check reconsidering the same
+upload every six hours for a year. Rows are upserted, and the one re-decision that
+matters is `held_budget → queued` when the daily window frees; `first_seen_at`
+survives that and `decided_at` does not. `follow_seen_budget` is partial because
+`queued` is the only decision the rolling-24h sum counts.
+
 ### 1.9 `jobs` and `job_items`
 
 One `index-video` call can cover up to 200 videos (playlist/channel expansion,
@@ -684,7 +772,7 @@ CREATE TABLE jobs (
   id               INTEGER PRIMARY KEY,
   public_id        TEXT    NOT NULL UNIQUE,       -- 'job_' || 12 hex
   kind             TEXT    NOT NULL
-                   CHECK (kind IN ('index','reindex','delete','export')),
+                   CHECK (kind IN ('index','reindex','delete','export','follow_check')),
   state            TEXT    NOT NULL DEFAULT 'queued'
                    CHECK (state IN ('queued','running','done','failed','cancelled')),
   priority         INTEGER NOT NULL DEFAULT 100,  -- lower runs first; 'high' = 50
@@ -699,11 +787,14 @@ CREATE TABLE jobs (
   created_at       INTEGER NOT NULL DEFAULT (unixepoch()),
   started_at       INTEGER,
   heartbeat_at     INTEGER,
-  finished_at      INTEGER
+  finished_at      INTEGER,
+  collection_id    INTEGER REFERENCES collections(id) ON DELETE SET NULL
 ) STRICT;
 CREATE INDEX jobs_claim  ON jobs(priority, id) WHERE state = 'queued';
 CREATE INDEX jobs_live   ON jobs(heartbeat_at) WHERE state = 'running';
 CREATE INDEX jobs_recent ON jobs(created_at DESC);
+CREATE INDEX jobs_by_collection ON jobs(collection_id, created_at DESC)
+  WHERE collection_id IS NOT NULL;
 
 CREATE TABLE job_items (
   id            INTEGER PRIMARY KEY,
@@ -741,6 +832,35 @@ CREATE TABLE job_events (
 ) STRICT;
 CREATE INDEX job_events_by_job ON job_events(job_id, id);
 ```
+
+**`follow_check` and `collection_id` arrived in migration 0006** (2026-08-15,
+`following.md` §3). A follow check is a `jobs` row rather than a timer beside the
+queue because a source that rate-limits is an ordinary operating condition here,
+and this table already owns the classification, the 90-minute cool-off, the
+attempt ceiling and crash recovery. It runs at `priority = 10` — ahead of `high`
+(50) — because a one-second listing request must not wait behind hours of GPU,
+and it enqueues an ordinary `index` job for whatever survived.
+
+**Adding the kind cost a 12-step table rebuild.** SQLite cannot `ALTER` a `CHECK`
+constraint and `kind` carries one, so 0006 is the documented rebuild:
+`jobs_new`, copy, drop, rename, recreate all four indexes. Two things are worth
+knowing before the next kind is added. `job_items_roll` lives on `job_items` and
+only *references* `jobs`, but SQLite resolves every trigger body when a table is
+dropped — leaving it in place makes `DROP TABLE jobs` fail with *"error in
+trigger job_items_roll: no such table: main.jobs"*, so dropping and recreating it
+verbatim is step 4 of the rebuild and not an optional tidy. And the runner
+already does the fiddly half: `migrations._apply_one` turns foreign keys off for
+the connection, wraps the script in one transaction, and runs `PRAGMA
+foreign_key_check` before it commits. Migrations run at boot before
+`PipelineRunner.start`, so the queue is drained by construction and no claim is
+in flight while the table is swapped.
+
+`collection_id` was taken while the table was being rewritten anyway. Both the
+check and the `index` job it enqueues carry it, so "which check found this video"
+and "what has this follow queued" are plain indexed queries rather than a `LIKE`
+against `args_json`. It is nullable and NULL for every job that has nothing to do
+with a follow — which is every job that existed before 0006 — and
+`ON DELETE SET NULL` means an unfollow never takes a job's history with it.
 
 **The state machine.**
 

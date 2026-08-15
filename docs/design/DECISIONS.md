@@ -92,3 +92,34 @@ touches them.
   load-contract fix `research/embedding-random-init-2026-08-10.md` §4).
   `Qwen3-Embedding-0.6B`, SigLIP 2 and BGE-M3 remain selectable worker
   backends, not defaults.
+
+## Amended 2026-08-15 (following channels; decided by Tom)
+
+- **Subscriptions are no longer deferred.** The v1 cut above reads
+  *"Subscriptions deferred (`index-video expand=channel_recent` covers
+  on-demand); revisit post-v1"* — this is that revisit, and the answer is yes.
+  `positioning.md` (LOCKED) makes "follow the builders" the first pillar and
+  names *follow channels* as the roadmap line that makes the position true by
+  construction; on-demand expansion does not keep watching. The full contract is
+  `docs/design/following.md`; the storage was already in the schema
+  (index-schema §1.8) and migration 0006 adds `follows`, `follow_seen`, the
+  `follow_check` job kind and `jobs.collection_id`.
+- **Arrival is automatic, bounded by a daily budget.** Matching uploads index
+  themselves until the day's hours-of-video budget is spent
+  (`VIDTHEQUE_FOLLOW_DAILY_HOURS`, proposed default 8 — Tom to confirm against
+  his box); the rest are `held_budget` and reconsidered on the next check,
+  **never dropped**. The budget is counted in hours of *video* because a check
+  knows a candidate's duration before it knows what indexing will cost, and it
+  is global across every follow because five follows would otherwise spend five
+  budgets. Per-follow `mode=review` overrides to hold everything for a human.
+  Rejected: review-by-default, which makes the product a queue of chores and
+  contradicts the pillar it serves.
+- **The v1 tool cut becomes 10 tools.** `follow-channel` (tool-surface §4.10) is
+  the write side, dispatching on `action` (follow | unfollow | pause | resume |
+  check_now); reading stays on `corpus-summary include_follows=true` rather than
+  becoming an eleventh tool. **The tool budget was the whole deferral argument
+  and the cost is recorded rather than waved away** — it is +1 where the §6
+  sketch priced +3. Tom's stated intent is that *"we might merge all the
+  dashboard management tools later on into one single tool"*, so the design
+  constraint follows from it: the tool dispatches on `action`, and no parameter
+  is named in a way that would not survive that merge.
