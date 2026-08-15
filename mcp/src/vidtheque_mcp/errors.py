@@ -39,6 +39,7 @@ HTTP_STATUS: dict[str, int] = {
     "E_UNKNOWN_VIDEO": 404,
     "E_UNKNOWN_FRAME": 404,
     "E_UNKNOWN_JOB": 404,
+    "E_UNKNOWN_FOLLOW": 404,
     "E_NOT_INDEXED": 409,
     "E_INDEXING": 409,
     "E_FEATURE_DISABLED": 409,

@@ -10,6 +10,7 @@ from mcp_types import CallToolResult
 from ..db import queries
 from ..db.connection import admission
 from ..errors import ToolError, bad_param, unknown_video
+from ..follows.rules import Rules, describe
 from ..text import (
     clamp,
     clamp_text_chars,
@@ -30,6 +31,7 @@ from ..text import (
 from ..timeparse import parse_corpus_time, parse_offset
 from . import corpus_state
 from .base import Deps, handle_errors, normalize_video_ids, require_known_videos, text_result
+from .follows import brief_rule
 
 LIST_FIELDS = ("video_id", "title", "channel", "published", "duration", "coverage",
                "tags", "indexed_at", "index_state", "cues", "frames", "link")
@@ -294,6 +296,7 @@ async def corpus_summary(
     include_recent: bool = True,
     include_gaps: bool = True,
     include_guidance: bool = True,
+    include_follows: bool = False,
     max_channels: int = 10,
     max_tags: int = 30,
     max_recent: int = 8,
@@ -474,6 +477,24 @@ async def corpus_summary(
             "jobs_deferred_until": iso_z(state.queue.deferred_until),
         }
 
+    if include_follows and not deps.offers("follow-channel"):
+        # `all` means all: a section that cannot be built says so rather than
+        # being silently absent, which would read as "nothing is followed". The
+        # withholding itself is the same rule `job-status` applies to a
+        # read-only deployment — the operator's standing instructions are not
+        # published to a stranger (2026-08-10 audit, F-4).
+        follows_note = (
+            "note: include_follows was not applied — this server is read-only and "
+            "does not say what it follows."
+        )
+        lines.append(follows_note)
+        notes.append(follows_note)
+    elif include_follows:
+        band, entries = await deps.db.read(_follows_page)
+        lines.append("")
+        lines.extend(_follow_lines(band, entries, max_text_chars))
+        structured["follows"] = _follows_payload(band, entries)
+
     if include_guidance:
         lines.append("")
         if total == 0:
@@ -494,6 +515,84 @@ async def corpus_summary(
 
     structured["notes"] = notes
     return text_result("\n".join(lines), structured)
+
+
+# The Following section is capped like every other section here, and low: it
+# answers "is this channel already covered?" before an agent proposes an
+# index-video, and that question is answered by the first few names or not at
+# all. Off by default, so no existing payload grew when it arrived.
+MAX_FOLLOWS = 10
+
+
+def _follows_page(conn: sqlite3.Connection) -> tuple[dict[str, int], list[dict[str, Any]]]:
+    """The band, the first ten follows, and what each brought in — one round trip."""
+    from ..follows import store as follows_store
+
+    band = follows_store.totals(conn)
+    rows = follows_store.list_follows(conn, limit=MAX_FOLLOWS)[:MAX_FOLLOWS]
+    return band, [
+        {
+            "row": row,
+            "brought_in": int(
+                follows_store.counts(conn, int(row["collection_id"])).get("queued", 0)
+            ),
+        }
+        for row in rows
+    ]
+
+
+def _follow_lines(
+    band: dict[str, int], entries: list[dict[str, Any]], max_text_chars: int
+) -> list[str]:
+    total = band["follows"]
+    if not total:
+        return ["Following: none — no channel or playlist is followed yet."]
+    states = ", ".join(
+        f"{band[key]} {key}" for key in ("active", "paused", "failing") if band.get(key)
+    )
+    lines = [
+        f"Following ({total}{f': {states}' if states else ''}) · "
+        f"{band['brought_in']} video(s) brought in"
+        + (f" · {band['held']} held" if band["held"] else "")
+        + ":"
+    ]
+    for entry in entries:
+        row = entry["row"]
+        name = middle_truncate(str(row["title"]), max_text_chars)
+        last = iso_minute(row["last_sync_at"]) if row["last_sync_at"] else "never"
+        lines.append(
+            f"  {name:<24} {brief_rule(Rules.from_row(row))} · last check {last} · "
+            f"{entry['brought_in']} brought in"
+        )
+    if total > len(entries):
+        lines.append(f"  … and {total - len(entries)} more")
+    return lines
+
+
+def _follows_payload(band: dict[str, int], entries: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "total": band["follows"],
+        "active": band["active"],
+        "paused": band["paused"],
+        "failing": band["failing"],
+        "brought_in": band["brought_in"],
+        "held": band["held"],
+        "items": [
+            {
+                "slug": str(entry["row"]["slug"]),
+                "title": str(entry["row"]["title"]),
+                "state": str(entry["row"]["state"]),
+                "source_url": str(entry["row"]["source_url"]),
+                "rule": describe(Rules.from_row(entry["row"]), name=str(entry["row"]["title"])),
+                "last_check_at": iso_minute(entry["row"]["last_sync_at"])
+                if entry["row"]["last_sync_at"]
+                else None,
+                "brought_in": entry["brought_in"],
+            }
+            for entry in entries
+        ],
+        "has_more": band["follows"] > len(entries),
+    }
 
 
 # -------------------------------------------------------------- video-summary

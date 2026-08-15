@@ -111,12 +111,12 @@ def call(client: TestClient, method: str, params: dict | None = None) -> dict:
 
 def test_write_tools_are_derived_from_the_annotations() -> None:
     """The mask is not a second hand-written list; it follows readOnlyHint."""
-    assert WRITE_TOOLS == {"index-video", "tag-video"}
+    assert WRITE_TOOLS == {"index-video", "tag-video", "follow-channel"}
     assert hidden_tools(False) == frozenset()
     assert hidden_tools(True) == WRITE_TOOLS
 
 
-def test_private_mode_still_lists_all_nine_tools(private_client: TestClient) -> None:
+def test_private_mode_still_lists_all_ten_tools(private_client: TestClient) -> None:
     tools = {t["name"] for t in call(private_client, "tools/list")["result"]["tools"]}
     assert tools == READ_TOOLS | WRITE_TOOLS
 

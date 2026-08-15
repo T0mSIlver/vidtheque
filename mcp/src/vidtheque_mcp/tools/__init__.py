@@ -1,6 +1,6 @@
 """Tool and resource registration against the MCP server.
 
-Nine tools, kebab-case, each carrying the annotations from tool-surface §3.9.
+Ten tools, kebab-case, each carrying the annotations from tool-surface §3.9.
 Every handler returns a ``CallToolResult`` directly so it controls its own
 content blocks (text, and for ``get-frames`` the opt-in ``ImageContent``) and
 its ``structuredContent`` — conformant clients read the latter without spending
@@ -16,6 +16,7 @@ from mcp.server import MCPServer
 from mcp_types import CallToolResult
 from pydantic import Field
 
+from . import follows as follows_tool
 from . import frames as frames_tool
 from . import indexing, library, params, resources, search
 from .base import Deps
@@ -139,6 +140,7 @@ def _register_tools(mcp: MCPServer, deps: Deps, hidden: frozenset[str]) -> None:
         include_recent: bool = True,
         include_gaps: bool = True,
         include_guidance: bool = True,
+        include_follows: bool = False,
         max_channels: int = 10,
         max_tags: int = 30,
         max_recent: int = 8,
@@ -155,6 +157,7 @@ def _register_tools(mcp: MCPServer, deps: Deps, hidden: frozenset[str]) -> None:
             include_recent=include_recent,
             include_gaps=include_gaps,
             include_guidance=include_guidance,
+            include_follows=include_follows,
             max_channels=max_channels,
             max_tags=max_tags,
             max_recent=max_recent,
@@ -296,6 +299,40 @@ def _register_tools(mcp: MCPServer, deps: Deps, hidden: frozenset[str]) -> None:
             deps, video_id=video_id, add=add, remove=remove, dry_run=dry_run
         )
 
+    async def follow_channel_tool(
+        url: str | None = None,
+        action: str = "follow",
+        title: str | None = None,
+        min_duration: str | float | None = None,
+        max_duration: str | float | None = None,
+        tabs: str = "videos",
+        title_include: str | None = None,
+        title_exclude: str | None = None,
+        channels: str = "all",
+        tags: str | None = None,
+        backfill: int = 0,
+        max_per_check: int = 5,
+        mode: str = "auto",
+        check_interval_s: int | None = None,
+    ) -> CallToolResult:
+        return await follows_tool.follow_channel(
+            deps,
+            url=url,
+            action=action,
+            title=title,
+            min_duration=min_duration,
+            max_duration=max_duration,
+            tabs=tabs,
+            title_include=title_include,
+            title_exclude=title_exclude,
+            channels=channels,
+            tags=tags,
+            backfill=backfill,
+            max_per_check=max_per_check,
+            mode=mode,
+            check_interval_s=check_interval_s,
+        )
+
     registry: list[tuple[str, Any]] = [
         ("search", search_tool),
         ("list-videos", list_videos_tool),
@@ -306,6 +343,7 @@ def _register_tools(mcp: MCPServer, deps: Deps, hidden: frozenset[str]) -> None:
         ("index-video", index_video_tool),
         ("job-status", job_status_tool),
         ("tag-video", tag_video_tool),
+        ("follow-channel", follow_channel_tool),
     ]
     for name, fn in registry:
         if name in hidden:
