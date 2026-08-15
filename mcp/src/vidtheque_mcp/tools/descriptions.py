@@ -151,6 +151,24 @@ available before then. A job still running needs another poll, not a re-index �
 force_reindex is for a job that actually reported "failed".
 """.strip()
 
+FOLLOW_CHANNEL = """
+Follow a YouTube channel or playlist: new uploads that match your rule are
+indexed on their own, on a schedule. One tool, five verbs —
+action="follow|unfollow|pause|resume|check_now".
+
+USE WHEN: the user wants to keep up with a source rather than paste its videos
+one at a time, or asks to stop, pause, resume or re-check something they
+already follow.
+
+DO NOT USE: for one video or a one-off playlist (index-video); to see what is
+already followed (corpus-summary include_follows=true).
+
+Nothing is fetched here — the first check runs on the next tick. Bound what it
+takes with tabs, min_duration, max_per_check and title_include; mode="review"
+holds candidates instead of queueing them. Unfollowing keeps every video it
+brought in.
+""".strip()
+
 TAG_VIDEO = """
 Add or remove namespaced tags on an indexed video.
 Namespaces are topic:, person:, project:, source:, lang:, series:, and the tags
@@ -170,7 +188,8 @@ one succeeds and reports no change.
 
 
 # openWorldHint is false for every query tool (the corpus is a closed local
-# index) and true for index-video (it fetches from the internet).
+# index) and true for the two that reach the internet — index-video directly,
+# follow-channel through the checks it schedules.
 #
 # idempotentHint is used as a cache-safety signal: true when the same arguments
 # return the same answer until the corpus changes. That makes job-status the one
@@ -206,6 +225,14 @@ ANNOTATIONS: dict[str, ToolAnnotations] = {
     "tag-video": ToolAnnotations(
         title="Tag a video", readOnlyHint=False, idempotentHint=True, openWorldHint=False
     ),
+    # openWorldHint, even though the tool itself never leaves the box: what it
+    # creates is a standing instruction to fetch from the internet, and a
+    # client reasoning about the annotation is reasoning about the effect.
+    # idempotentHint because following the same URL twice returns the first
+    # follow and creates no second row.
+    "follow-channel": ToolAnnotations(
+        title="Follow a channel", readOnlyHint=False, idempotentHint=True, openWorldHint=True
+    ),
 }
 
 DESCRIPTIONS: dict[str, str] = {
@@ -218,4 +245,5 @@ DESCRIPTIONS: dict[str, str] = {
     "index-video": INDEX_VIDEO,
     "job-status": JOB_STATUS,
     "tag-video": TAG_VIDEO,
+    "follow-channel": FOLLOW_CHANNEL,
 }

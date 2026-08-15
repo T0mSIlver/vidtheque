@@ -63,8 +63,15 @@ in them are made up.
 
 ## 2. The surface at a glance
 
-Nine tools. Kebab-case, following screenpipe (their original Python server shipped
+Ten tools. Kebab-case, following screenpipe (their original Python server shipped
 `search-content` in 2024-12 and the name/params are unchanged 20 months later).
+
+Nine until 2026-08-15, when `follow-channel` un-deferred the subscriptions row of
+§6. The budget argument in §1 has not softened and the tenth is counted as a cost
+(`following.md` §10.4): it is one tool rather than the three the deferral
+priced, it dispatches on `action` so a later merge of the management tools into
+one does not have to rename its parameters, and reading stays on `corpus-summary`
+rather than becoming an eleventh.
 
 | # | Tool | One-line purpose | readOnly | idempotent |
 |---|---|---|---|---|
@@ -77,10 +84,11 @@ Nine tools. Kebab-case, following screenpipe (their original Python server shipp
 | 7 | `index-video` | Add a video/playlist to the corpus. Async — returns a job id. | ❌ | ✅ |
 | 8 | `job-status` | Poll an indexing job. | ✅ | ❌ |
 | 9 | `tag-video` | Add/remove namespaced tags on an indexed video. | ❌ | ✅ |
+| 10 | `follow-channel` | Follow/unfollow a channel or playlist, or pause, resume and check one. | ❌ | ✅ |
 
 Three resources: `vidtheque://corpus`, `vidtheque://context`, `vidtheque://guide`.
 
-Deliberately **not** in v1: subscriptions, `get-clip`, markdown export, speaker
+Deliberately **not** in the surface: `get-clip`, markdown export, speaker
 identity management, per-channel permissions. See §6 for the sketches and why.
 
 ---
@@ -577,6 +585,7 @@ added.
 | `E_UNKNOWN_VIDEO` | 404 | video not in corpus | `index-video` / `list-videos` |
 | `E_UNKNOWN_FRAME` | 404 | bad `frame_id` | valid ordinal range for that video |
 | `E_UNKNOWN_JOB` | 404 | bad `job_id` | "call `job-status` with no id for recent jobs" |
+| `E_UNKNOWN_FOLLOW` | 404 | `follow-channel` handle (slug, source URL or title fragment) resolves to nothing | "`corpus-summary include_follows=true` to see what is followed" |
 | `E_NOT_INDEXED` | 409 | video row exists, pipeline never ran | `index-video force_reindex=true` |
 | `E_INDEXING` | 409 | video is mid-pipeline; partial data | `job-status job_id=…`, plus what *is* queryable now |
 | `E_FEATURE_DISABLED` | 409 | filter needs a disabled feature (e.g. `speaker` with diarization off) | "omit `speaker=`" — **and names the filter that does work**: `video_title="<the name>"`, since a re-send with a different value is refused identically and one consumer sent six (round-3 eval §14.4) |
@@ -1268,6 +1277,7 @@ documented first call, so it is where the list costs least.
 | `include_tags` | bool | `true` | | |
 | `include_recent` | bool | `true` | | Most recently indexed videos. |
 | `include_gaps` | bool | `true` | | Coverage/failure diagnostics. |
+| `include_follows` | bool | **`false`** | | The followed channels and their rules (§4.10). The one include that defaults *off*. |
 | `include_guidance` | bool | `true` | | `next_best_query`. |
 | `max_channels` | int | `10` | clamped 1..50 | |
 | `max_tags` | int | `30` | clamped 1..100 | |
@@ -1323,6 +1333,43 @@ alongside `notes` and `next` (§3.5). The span is not decoration: it is the line
 round-1 p5 refused *"agents before 2020"* on, and it was unreachable for a
 structured-only client, which had the corpus size but no way to date it.
 `recent` is the only place this tool names a `video_id` at all.
+
+**`include_follows` is where reading a follow lives** (added 2026-08-15,
+`following.md` §7). §6's deferral sketch already said `list-subscriptions` should
+fold into this tool rather than be its own, and that is what shipped: there is no
+`list-follows`, and the tenth tool is a write tool only.
+
+**It is the one include that defaults `false`, and that is the whole reason the
+section could be added at all.** Every other section here has been on by default
+since v1 and is priced into §7's ~3,500-character worst case; a tenth section
+switched on for every caller would have grown a payload nobody asked to grow.
+Off by default, an existing `corpus-summary` call is byte-identical to what it
+returned yesterday, and the agent that needs the answer — *is this channel
+already covered, before I propose an `index-video`?* — asks for it.
+
+Capped at **10 follows**, the same fixed-section discipline as channels and tags:
+
+```
+Following (3: 2 active, 1 paused) · 96 video(s) brought in · 2 held:
+  @GPUMODE                 every 6h · /videos · ≤5/check · 8:00-any · last check 2026-08-15 13:04 · 41 brought in
+  Latent Space             every 12h · /videos, /streams · ≤5/check · last check 2026-08-15 09:12 · 18 brought in
+  @YannicKilcher           every 6h · /videos · ≤3/check · never · held for review · last check never · 37 brought in
+  … and 2 more
+```
+
+The per-row rule is `brief_rule` — `describe`'s facts with the subject removed,
+because the list has already printed the name in the column beside it. One
+renderer, two densities: `structuredContent` carries the *full* sentence per row
+as `rule`, alongside `{slug, title, state, source_url, last_check_at,
+brought_in}`, plus the band's counts and `has_more`.
+
+**A read-only deployment withholds the section and says so.** When
+`follow-channel` is not offered, `include_follows=true` appends
+`note: include_follows was not applied — this server is read-only and does not
+say what it follows.` Two rules meet there and agree: `all` means all, so a
+section that cannot be built announces itself rather than being silently absent
+(which would read as *nothing is followed*); and an operator's standing
+instructions are not published to a stranger.
 
 `data_status` is the endpoint diagnosing itself, so an empty answer never sends the
 model guessing:
@@ -2209,6 +2256,213 @@ openWorldHint: false}`.
 
 ---
 
+### 4.10 `follow-channel`
+
+**Purpose:** keep watching a channel or playlist — new uploads that match the
+follow's rule index themselves on a schedule, up to a shared daily budget. Also
+pauses, resumes, unfollows and forces a check.
+
+This is the tool that makes `positioning.md`'s first pillar true by
+construction: *point vidtheque at the builders whose experience you trust and
+their knowledge compounds into your corpus.* The full contract — the ledger, the
+rule order, the budget — is `following.md`; this section is the wire surface.
+
+**One tool, five verbs.** §6 deferred this as three tools; it ships as one, and
+the shape is deliberate rather than merely cheap. They are five things to say
+about one object, and a model choosing between `pause-follow` and
+`unfollow-channel` would be choosing between two names for one noun. Tom's
+stated intent is that the management tools may later merge into a single tool,
+so nothing here is named in a way that would not survive that merge: `action` is
+the verb, `url` is the handle, and every rule parameter that exists elsewhere on
+this surface keeps the name it has there (`tags`, `channels`, `title_include`).
+Reading is `corpus-summary include_follows=true` (§4.3), not an eleventh tool.
+
+**Nothing in this tool talks to YouTube.** Creating a follow is a database row
+and the display name is read off the URL. A probe would make `action="follow"` a
+network call that can 429 the box before the follow even exists, and the first
+check is the request that asks the source anyway. That is also what lets the
+tool carry `idempotentHint: true`.
+
+**Description (ships verbatim):**
+
+```
+Follow a YouTube channel or playlist: new uploads that match your rule are
+indexed on their own, on a schedule. One tool, five verbs —
+action="follow|unfollow|pause|resume|check_now".
+
+USE WHEN: the user wants to keep up with a source rather than paste its videos
+one at a time, or asks to stop, pause, resume or re-check something they
+already follow.
+
+DO NOT USE: for one video or a one-off playlist (index-video); to see what is
+already followed (corpus-summary include_follows=true).
+
+Nothing is fetched here — the first check runs on the next tick. Bound what it
+takes with tabs, min_duration, max_per_check and title_include; mode="review"
+holds candidates instead of queueing them. Unfollowing keeps every video it
+brought in.
+```
+
+*The clause ", and the name is read off the URL" was cut from the draft of this
+block: it was true, and it took the description to 122 words against
+DECISIONS.md's ≤ 120 — which `test_descriptions_ship_and_stay_inside_the_budget`
+enforces, so the draft would have shipped a doc that said "verbatim" about a
+string the suite refused. The fact survives in the `title` row of the parameter
+table below, where a caller who cares is already looking.*
+
+**Parameters:**
+
+| name | type | default | constraint | notes |
+|---|---|---|---|---|
+| `url` | string | — | **required for every action** | For `follow`, the channel or playlist URL. For the other four it is the *handle*: a slug, the stored source URL, or part of the title, resolved by `follows.store.find`. One parameter, because a second one for "which follow" would be a second name for the same thing. |
+| `action` | enum `follow\|unfollow\|pause\|resume\|check_now` | `follow` | | The verb. Everything below applies to `follow` only. |
+| `title` | string | — | ≤ 60 chars, middle-truncated | The display name. Absent, it is read off the URL (`@handle`, else the playlist id, else the last path segment) — no request is made to find the real one. |
+| `tabs` | string | `videos` | subset of `videos,streams,shorts` | Each tab watched is one more listing request per check. |
+| `min_duration` / `max_duration` | string \| number | — | §3.2 offset axis (`480`, `8:00`, `1:30:00`) | Length rule. `min > max` is a typed error, not a follow that can never match. |
+| `title_include` / `title_exclude` | string | — | ≤ 10 terms, ≤ 80 chars each | Plain case-insensitive substrings, **not** regex. Exclude wins. |
+| `channels` | string | `all` | `all` \| subset of `transcript,ocr,frames` | Same values as `index-video` (§4.7), applied to everything this follow brings in. |
+| `tags` | string | — | ≤ 10, §3.7 validation | Applied to every video this follow brings in. |
+| `backfill` | int | `0` | clamped 0..25 | Uploads to reach back for at the moment of following. `0` = start from now. |
+| `max_per_check` | int | `5` | clamped 1..25 | Ceiling on one check's acceptances. Overflow is held, not dropped. |
+| `mode` | enum `auto\|review` | `auto` | | `review` holds every arrival for a human instead of queueing it. |
+| `check_interval_s` | int | `VIDTHEQUE_FOLLOW_INTERVAL_S` (21600) | ≥ 900 (typed error), clamped at 7 days | Seconds between checks. There is no cron expression, deliberately (`following.md` §9.1). |
+
+Clamps are server-side, in `follows/params.py`, and that module is the single
+validator: the dashboard's form calls it too rather than re-implementing a bound
+(dashboard.md §2.2). The default interval comes from the *server's*
+`PipelineSettings`, not from the dataclass, so an operator who set
+`VIDTHEQUE_FOLLOW_INTERVAL_S` gets it here as well as on the dashboard.
+
+**The URL is normalised before it is stored, so two spellings are one follow.**
+A missing scheme is added, a fragment and a trailing slash are dropped, and a
+`/videos`, `/streams`, `/shorts`, `/featured` or `/live` tail is stripped: those
+name a *tab*, and which tabs a follow watches is the `tabs` rule, not which
+channel this is. `@handle` and `@handle/videos` are therefore one follow rather
+than two rows watching the same channel twice.
+
+**Return shape** (`action=follow`):
+
+```
+Following: @GPUMODE (channel) — https://www.youtube.com/@GPUMODE
+Name: "@GPUMODE" was taken from the URL — nothing was fetched. It stays the handle until it is renamed.
+Rule: Every 6 hours, take up to 5 new uploads from @GPUMODE on /videos, longer than 8:00, index all three channels, tag series:gpu-mode.
+State: active · every 6h · next check 2026-08-15 17:04 · last check never
+Budget: 6.2h of 8.0h accepted in the last 24h, across every follow together. Over it a candidate is held and reconsidered on the next check, never dropped.
+next: job-status state="active" — the first check is queued as a follow_check job on the next tick, and nothing is indexed until it runs.
+```
+
+The rule is echoed as **one sentence**, from the same `follows.rules.describe`
+the dashboard's detail page reads, and it is also the `rule` field of
+`structuredContent` — a client reading only the structured half can show the
+policy without owning a renderer for eleven columns. A form states fields; a
+sentence states a policy, and a policy is what the caller just set.
+
+The `Name:` line is there because no probe ran. An operator seeing the handle
+where they expected the channel's own name should be told why, and saying so
+costs a line where making it authoritative would cost a request.
+
+**Already followed — the shortcut, and it creates nothing:**
+
+```
+Already following: @GPUMODE (channel) — https://www.youtube.com/@GPUMODE
+No second follow was created. The rule below is the stored one; the arguments in this call did not change it.
+Rule: Every 6 hours, take up to 5 new uploads from @GPUMODE on /videos, longer than 8:00, index all three channels, tag series:gpu-mode.
+State: active · every 6h · next check 2026-08-15 19:04 · last check 2026-08-15 13:04
+Budget: 6.2h of 8.0h accepted in the last 24h, across every follow together. …
+next: follow-channel url="gpu-mode" action="check_now" to look for new uploads sooner, or action="unfollow" to stop.
+```
+
+This is `index-video`'s already-indexed shortcut applied one level up, and for
+the same reason: a model that calls the tool twice, or a client that retries
+after a dropped connection, must not end up with two follows of one channel, two
+clocks and two ledgers. Resolution is by the *normalised* `collections.source_url`.
+`structuredContent` carries `already_following: true`.
+
+**`follow` never edits an existing follow's rule.** The stored rule is printed
+and the call's arguments are explicitly disclaimed. Silently rewriting a rule the
+operator tuned is a worse failure than refusing, and editing is the dashboard's
+`Edit` (dashboard.md §18.4).
+
+**The other four actions** each return the same shape — what is now true, the
+rule, the state line, the budget line, a `next:` — and each says what is true
+rather than that a write happened:
+
+```
+Paused: @GPUMODE — no check runs until you resume it. Nothing already indexed is affected, and the rule is kept as it is.
+Resumed: @GPUMODE — active again, with the clock re-armed to now.
+  A pause owes no back-checks: the next check looks at what is on the channel now, not at everything published while it was paused.
+Due now: @GPUMODE is marked due, and the scheduler queues its check on the next tick. It has not run yet and nothing has been fetched.
+Unfollowed: @GPUMODE — the rule is gone and no further check will run.
+  The 41 video(s) it brought in stay in the corpus and stay searchable; only the following stops. Its indexing jobs keep their history too.
+```
+
+Four precisions those lines are carrying deliberately:
+
+- **`check_now` marks the follow due; it does not queue a job.** The scheduler
+  queues on the next tick (`following.md` §3), and the payload says "has not run
+  yet" rather than naming a job id it cannot have. A check already `queued` or
+  `running` is *reported* — "that one does the work" — never duplicated.
+- **`check_now` on a paused follow schedules nothing** and says so: `Not
+  scheduled: … is paused, and a paused follow is never checked.`
+  `store.check_now` leaves a paused row alone, so claiming a check was scheduled
+  would be a claim the database contradicts. `structuredContent` carries
+  `scheduled: false`.
+- **`resume` re-arms the clock to now.** The payload states it because the
+  assumption an operator would otherwise make — that a fortnight paused is a
+  fortnight of checks owed — is exactly the catch-up burst the daily budget
+  exists to prevent.
+- **`unfollow` names what survives.** Deleting the `collections` row cascades to
+  `follows`, `follow_seen` and `collection_videos`, while `jobs.collection_id` is
+  `ON DELETE SET NULL` — so an unfollow never takes a job's history with it and
+  never touches a video. The removed rule is printed once, on its way out.
+
+**Rule arguments sent to a state action are noted, never silently dropped.** A
+call like `action="pause" min_duration="8:00"` appends
+`note: min_duration was ignored — this action changes the follow's state, not
+its rule. The rule printed above is the stored one, unchanged.` That is the same
+rule a search leg applies when it cannot run (§1.2): the payload says what was
+not applied rather than letting the caller believe it was.
+
+**A follow that nothing will check says so, and is still created.** When
+`VIDTHEQUE_FOLLOW_CHECKS=0`, or when this process runs no pipeline, the state
+block carries a `note:` naming the reason — *the follow is stored and idle*.
+Refusing was considered and rejected: the row is legitimate, only the box is
+quiet, and `job-status` owes a deferred job exactly this kind of honesty.
+
+**Token discipline.** Fixed-size response for every action and every input: one
+rule sentence, at most a handful of lines, and no list. It never echoes the
+channel's uploads, and the first check's findings are read from `job-status` or
+`corpus-summary`, not returned here. Every echoed URL is middle-truncated at 160
+characters and every echoed name at 60, because both are caller-supplied and
+unbounded.
+
+**Errors:** `E_BAD_PARAM` (unknown `action`; missing `url`; a single-video URL —
+*"a follow watches a channel or a playlist for new uploads"*, with the
+`index-video` call that does what was meant; unknown tab or `channels` value;
+`min_duration` past `max_duration`; bad tag namespace; `check_interval_s` under
+900), `E_UNSUPPORTED_SOURCE` (not a YouTube URL at all — lists the channel and
+playlist shapes that work), `E_UNKNOWN_FOLLOW` (the handle resolves to nothing;
+it was tried as a slug, as the stored source URL and as part of a name — `next:`
+is `corpus-summary include_follows=true`), `E_FEATURE_DISABLED`
+(`db.writes_allowed` is false — the config/dimension mismatch, the same gate
+`index-video` refuses on: a follow that queued videos now would index them into
+a corpus that cannot answer with them), `E_INTERNAL`.
+
+There is no `E_RATE_LIMIT` on this tool, because there is no request to be rate
+limited. The source is reached by the check, which is a job, and defers like one.
+
+**Annotations:** `{title: "Follow a channel", readOnlyHint: false,
+idempotentHint: true, openWorldHint: true}`. `openWorldHint` is `true` even
+though the tool never leaves the box: what it creates is a standing instruction
+to fetch from the internet, and a client reasoning about the annotation is
+reasoning about the effect. It is the second tool on this surface to carry it.
+`idempotentHint` because following the same URL twice returns the first follow
+and creates no second row. `readOnlyHint: false` is what masks the tool from
+`tools/list` on the read-only public deployment, through the derivation in §3.8
+— there is no second list to keep in sync.
+
+---
+
 ## 5. Resources
 
 Three, deliberately — the same count screenpipe settled on. Reads stay Tools:
@@ -2487,9 +2741,17 @@ shared rules out of the nine descriptions.
 
 ## 6. Deliberately deferred
 
+**Channel/playlist subscriptions left this table on 2026-08-15** and shipped as
+§4.10 `follow-channel`. The deferral was a tool-budget argument — three tools
+(`subscribe`, `list-subscriptions`, `unsubscribe`) for one workflow, pushing the
+surface to 12 — and half of the sketch it proposed is what shipped: reading folds
+into `corpus-summary include_follows=true` (§4.3) rather than being its own tool.
+The other half did not: the cron is an interval on the follow row, and the check
+is a queue job rather than a cron entry (`following.md` §3). The cost is +1 tool,
+not +3.
+
 | Thing | Why not v1 | Sketch if it lands |
 |---|---|---|
-| **Channel/playlist subscriptions** | The tool budget is the point (screenpipe's 28 tools are a warning, not a model). Subscriptions are *configuration* with a cron behind them, not something a model needs mid-conversation — and they are three tools (`subscribe`, `list-subscriptions`, `unsubscribe`) for one workflow, pushing the surface to 12. `index-video expand=channel_recent` already covers "catch me up on this channel" on demand. | `subscribe(url, expand, tags, max_items, check_interval)` → subscription id; cron enqueues new uploads as normal jobs; `list-subscriptions` folds into `corpus-summary include_subscriptions=true` rather than being its own tool. |
 | **`get-clip`** | An ffmpeg cut is a slow, storage-producing, mostly-redundant operation: `youtu.be/<id>?t=<s>` already sends a human to the exact moment, and a model cannot watch an MP4. It also drags in retention policy and a second signed-URL kind. | `get-clip(video_id, start, end, max 120s)` → async job → signed URL, same job machinery as indexing. |
 | **Markdown export** | Real product value (Obsidian, "data never hostage") but it is a *user* workflow, not a model one, and it is the biggest single payload the server could emit. Belongs on the HTTP API and any future web UI. | `GET /videos/<id>/export.md` — no MCP tool. |
 | **Speaker identity management** (`list-unnamed-speakers`, `update-speaker`, `merge-speakers`) | Three tools for a curation workflow that only pays off once diarization is on across a large corpus. `search speaker=` and `video-summary include_speakers` cover reading; writing can wait. | Straight port of screenpipe's trio if it earns its place. |
@@ -2507,7 +2769,7 @@ parameter gets added.
 |---|---|---|
 | `search` | ~50 items × (20,000 + 220) chars → **capped at 60,000 by the response cap** | `limit≤50`, `max_text_chars`, response cap, candidate cap 5000/leg |
 | `list-videos` | 100 rows × ~180 chars ≈ 18,000 | `limit≤100`, TSV, 120-char cells |
-| `corpus-summary` | ~3,500 | fixed section caps (50/100/25) |
+| `corpus-summary` | ~3,500 at the defaults; ~4,000 with `include_follows=true` | fixed section caps (50/100/25), and the follows section at ≤ 10 rows — off by default, so the default worst case is unchanged from v1 |
 | `video-summary` | ~6,000 | 50 chapters + 30 key texts + 30 OCR × 1,200 chars, response cap |
 | `get-segment-context` | ~22,000 (`max_text_chars=20000` + 1,200 OCR) | window ≤300s **and** char budget |
 | `get-frames` (`url`) | 12 × ~400 ≈ 5,000 at the default; 12 × ~2,000 ≈ 25,000 at `max_text_chars=2000`, and one full frame's OCR per frame at the `0` opt-out | ≤ 12 ids (`frame_ids` **or** `limit`), OCR 300/frame by default |
@@ -2515,6 +2777,7 @@ parameter gets added.
 | `index-video` | ~1,200 | ≤10 titles echoed |
 | `job-status` | ~2,500 | ≤20 jobs, fixed stage table, 400-char errors |
 | `tag-video` | ~800 | counts only, no per-video echo |
+| `follow-channel` | ~900 | one rule sentence + ≤ 5 lines, same shape for all five actions; never echoes the channel's uploads |
 
 ---
 
@@ -2544,7 +2807,11 @@ document is a decision, not a proposal.
    guardrail I do not fully trust a model to hold. Dropping it takes v1 to 8 tools
    and makes tagging an `index-video`/HTTP-API concern.
 
-4. **Subscriptions in v1 after all?** I deferred them (§6) on tool-budget grounds,
+4. ~~**Subscriptions in v1 after all?**~~ **Answered yes (Tom, 2026-08-15) —
+   §4.10, `following.md`.** The cost landed at +1 tool rather than +1 to +3, and
+   there is no cron surface: the interval is a column and the check is a queue
+   job. The original question is kept below because its framing is what the
+   answer turned on. I deferred them (§6) on tool-budget grounds,
    and `index-video expand=channel_recent` covers the on-demand case. If the
    "watch-later replacement" framing is the product story you want to *lead* with
    rather than a v1.1 addition, they should be in — the cost is +1 to +3 tools and

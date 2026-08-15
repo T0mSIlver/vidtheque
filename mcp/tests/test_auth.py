@@ -150,7 +150,7 @@ def test_token_mode_accepts_the_bearer(corpus: Path) -> None:
             "/mcp", json=rpc("tools/list"), headers=rpc_headers("tools/list", "s3cret")
         )
         assert response.status_code == 200
-        assert len(response.json()["result"]["tools"]) == 9
+        assert len(response.json()["result"]["tools"]) == 10
 
 
 def test_unknown_host_is_421(corpus: Path) -> None:
