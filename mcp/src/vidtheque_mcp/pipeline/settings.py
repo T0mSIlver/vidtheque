@@ -113,6 +113,25 @@ class PipelineSettings:
     cookiefile: str | None = None
     jitless: bool = True
 
+    # ------------------------------------------------------------------ follows
+    #
+    # The master switch, and the ceiling that makes unattended following safe
+    # on a box whose GPU is leased from a co-tenant. The budget is counted in
+    # **hours of video accepted per rolling 24 hours, across every follow
+    # together** — not GPU-minutes, because a check knows a candidate's
+    # duration before it knows what indexing it will cost, and not per-follow,
+    # because five follows would then spend five budgets. Over the ceiling a
+    # candidate is `held_budget` and reconsidered on the next check; it is
+    # never dropped, which is the whole difference between a budget and a
+    # filter. Zero disables the ceiling.
+    follow_checks: bool = True
+    follow_daily_hours: float = 8.0
+    # How often a follow is checked when it does not say. Fifteen minutes is
+    # the floor the schema enforces; the default is deliberately unhurried,
+    # because a conference channel that posts twice a week is the shape this
+    # serves and a check is still a request against a source that rate-limits.
+    follow_interval_s: int = 21_600
+
     @classmethod
     def from_env(cls) -> "PipelineSettings":
         langs = tuple(
@@ -163,6 +182,9 @@ class PipelineSettings:
             player_client=_env("VIDTHEQUE_YTDLP_PLAYER_CLIENT"),
             cookiefile=_env("VIDTHEQUE_YTDLP_COOKIEFILE"),
             jitless=_bool_env("VIDTHEQUE_YTDLP_JITLESS", True),
+            follow_checks=_bool_env("VIDTHEQUE_FOLLOW_CHECKS", True),
+            follow_daily_hours=_float_env("VIDTHEQUE_FOLLOW_DAILY_HOURS", 8.0),
+            follow_interval_s=_int_env("VIDTHEQUE_FOLLOW_INTERVAL_S", 21_600),
         )
         settings.validate()
         return settings
@@ -188,6 +210,20 @@ class PipelineSettings:
             raise ConfigError(
                 "VIDTHEQUE_KEYFRAME_DECODE_THREADS must be >= 0 (0 = OpenCV's "
                 f"own default), got {self.extract_decode_threads}"
+            )
+        # The schema's floor, at boot rather than at the first check: a typo
+        # here would otherwise be a CHECK constraint failure hours later, in a
+        # write nobody is watching.
+        if self.follow_interval_s < 900:
+            raise ConfigError(
+                "VIDTHEQUE_FOLLOW_INTERVAL_S must be >= 900 (fifteen minutes) — "
+                f"got {self.follow_interval_s}. A source that rate-limits is the "
+                "reason there is a floor at all."
+            )
+        if self.follow_daily_hours < 0:
+            raise ConfigError(
+                "VIDTHEQUE_FOLLOW_DAILY_HOURS must be >= 0 (0 disables the "
+                f"ceiling), got {self.follow_daily_hours}"
             )
 
     # ------------------------------------------------------------------ derived

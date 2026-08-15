@@ -165,6 +165,18 @@ class PlaylistEntry:
     url: str
     source_id: str | None
     title: str | None
+    # What the *flat* listing said, when it said anything. Both are `None` for
+    # an entry the extractor described without them, and `None` is not zero: a
+    # follow with a length rule treats an unknown duration as unknown and pays
+    # for one probe rather than guessing (follows/rules.py).
+    #
+    # Indexing has never needed these — it probes every item anyway — so they
+    # are additive and no existing caller reads them. Following needs them
+    # because judging fifty candidates by probing fifty of them is fifty
+    # requests against a source that rate-limits, to answer a question the
+    # listing already answered for most of them.
+    duration_s: float | None = None
+    published_at: int | None = None
 
 
 @dataclass
@@ -499,6 +511,28 @@ def _str_or_none(value: Any) -> str | None:
     return text or None
 
 
+def _float_or_none(value: Any) -> float | None:
+    """A listing's number, or nothing. A zero duration is nothing too.
+
+    yt-dlp reports `0` for an upcoming premiere and for some live entries, and
+    a rule with an eight-minute floor must not read that as "shorter than the
+    floor" — it is an absence, and the caller pays for a probe.
+    """
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def _epoch_or_none(value: Any) -> int | None:
+    try:
+        number = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
 def playlist_entries(info: dict[str, Any], max_items: int) -> list[PlaylistEntry]:
     """Flat playlist/channel entries, capped, in order, deduplicated by id."""
     entries = info.get("entries")
@@ -523,7 +557,15 @@ def playlist_entries(info: dict[str, Any], max_items: int) -> list[PlaylistEntry
         if source_id:
             seen.add(source_id)
         out.append(
-            PlaylistEntry(url=url, source_id=source_id, title=_str_or_none(entry.get("title")))
+            PlaylistEntry(
+                url=url,
+                source_id=source_id,
+                title=_str_or_none(entry.get("title")),
+                duration_s=_float_or_none(entry.get("duration")),
+                published_at=_epoch_or_none(
+                    entry.get("timestamp") or entry.get("release_timestamp")
+                ),
+            )
         )
         if len(out) >= max_items:
             break
