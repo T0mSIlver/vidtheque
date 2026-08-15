@@ -199,6 +199,46 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
                 writes.set_tags,
                 methods=["POST"],
             ),
+            # Following. The two read pages are in this list rather than beside
+            # the other reads, and deliberately: a page whose every affordance
+            # POSTs is a page with nothing on it in a deployment that registers
+            # no write side, and §2.3's argument — a route that exists and
+            # refuses is a route somebody probes — reaches the reads of a
+            # write-only surface the same way it reaches the writes. So
+            # `Following` is absent in `VIDTHEQUE_PUBLIC_READONLY=1` and in
+            # `AUTH=none`, exactly like the rail item that points at it.
+            Route(f"{ROOT}/following", guarded(views.following), methods=["GET"]),
+            Route(f"{ROOT}/following", writes.follow_create, methods=["POST"]),
+            Route(
+                f"{ROOT}/following/{{slug}}",
+                guarded(views.follow_detail),
+                methods=["GET"],
+            ),
+            Route(
+                f"{ROOT}/following/{{slug}}/state",
+                writes.follow_state,
+                methods=["POST"],
+            ),
+            Route(
+                f"{ROOT}/following/{{slug}}/check",
+                writes.follow_check_now,
+                methods=["POST"],
+            ),
+            Route(
+                f"{ROOT}/following/{{slug}}/rules",
+                writes.follow_rules,
+                methods=["POST"],
+            ),
+            Route(
+                f"{ROOT}/following/{{slug}}/delete",
+                writes.follow_delete,
+                methods=["POST"],
+            ),
+            Route(
+                f"{ROOT}/following/{{slug}}/queue",
+                writes.follow_queue,
+                methods=["POST"],
+            ),
         ]
         if write_side
         else []

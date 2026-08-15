@@ -109,10 +109,20 @@
        demo projection and in `AUTH=none` there is no group here at all, rather
        than a link to a page that 404s (dashboard.md §2.3, §3.2 rule 3). A dead
        link is not room. #}
+    {# `Following` is the group's second word, beside `Add videos` and under the
+       same predicate. The two are the same act at two tempos — one URL now, or
+       a standing rule that brings the next one in while you are asleep — so
+       they belong in one group and not in two. It is absent, not disabled, in
+       `VIDTHEQUE_PUBLIC_READONLY=1` and in `AUTH=none`, because the routes
+       behind it are: both its read pages sit inside `write_routes`, since a
+       page whose every affordance POSTs has nothing to show a deployment that
+       registers no write side. The vocabulary is `follow`, never `subscribe`
+       (docs/design/positioning.md, LOCKED). #}
     {% if write_side %}
     <p class="nav-group">Manage</p>
     <ul class="navlist">
       <li><a data-add-videos href="{{ root }}/index"{% if page == 'index' %} aria-current="page"{% endif %}>Add videos</a></li>
+      <li><a href="{{ root }}/following"{% if page == 'following' %} aria-current="page"{% endif %}>Following</a></li>
     </ul>
     {% endif %}
     {# The demo's way back. In read-only mode this surface is the browsable

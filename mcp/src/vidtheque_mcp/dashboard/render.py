@@ -57,6 +57,23 @@ _TONES = {
     "error": "bad",
     "info": "neutral",
     "debug": "neutral",
+    # follows.state — what the clock is doing, not what a video is doing.
+    "active": "ok",
+    "paused": "wait",
+    "failing": "bad",
+    # follow_seen.decision. `queued` and `failed` are already above and carry
+    # the same tone here, which is the point of mapping from the string: the
+    # vocabulary is the schema's and this table is a lookup, not a fifth set of
+    # words. A held candidate is `warn` because it is waiting on a human or on
+    # the budget and neither resolves itself; a skipped one is `wait`, because
+    # a rule that did its job is not a warning.
+    "held_budget": "warn",
+    "held_review": "warn",
+    "already_indexed": "ok",
+    "skipped_tab": "wait",
+    "skipped_title": "wait",
+    "skipped_duration": "wait",
+    "skipped_horizon": "wait",
 }
 
 

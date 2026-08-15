@@ -1,0 +1,265 @@
+{% extends "base.html" %}
+{% from "_follow_rules.html" import rule_fields %}
+{% macro page_link(offset) -%}
+{{ root }}/following/{{ follow.slug }}?limit={{ pagination.limit }}&amp;offset={{ offset }}#passed
+{%- endmacro %}
+{% block main %}
+
+{# One follow, in three bands and in this order: the rule it obeys, the checks
+   it has run, and what it passed over.
+
+   The third band is the point of the page. A follow that quietly drops a
+   four-minute talk because its floor is eight would be the one place this index
+   goes silent, and silence is the defect (PRODUCT.md, principle 3) — so every
+   candidate carries the sentence with the number that made the decision, and a
+   button to overrule it.
+
+   There is no thumbnail anywhere below. An un-indexed video has no keyframe on
+   this disk, and a YouTube thumbnail URL would be a runtime request off this
+   box. The ledger is text, and that is not a compromise: the reason is the
+   evidence here, not the picture. #}
+
+<div class="pagehead">
+  <div class="pagehead-line">
+    <h1>{{ follow.name }}</h1>
+    <p class="pagehead-meta">
+      <span class="pill tone-{{ follow.state | tone }}">{{ follow.state }}</span><span class="sep">·</span>
+      <span class="fact">{{ follow.kind }}</span><span class="sep">·</span>
+      <span class="fact">brought in <span class="mono">{{ brought_in | count }}</span></span>
+    </p>
+  </div>
+  <p class="crumbs"><a href="{{ root }}/following">← Following</a></p>
+</div>
+
+{# ---- band 1: the rule, as one sentence, and the clocks around it ---- #}
+
+<section class="panel" aria-labelledby="rule">
+  <h2 class="panel-title" id="rule">The rule</h2>
+  {# `follows.rules.describe` renders this and nothing else does. A form states
+     fields; a sentence states a policy, and what the operator is checking here
+     is a policy. The form is one disclosure behind it. #}
+  <p class="rulesentence">{{ sentence }}</p>
+
+  {# The clocks as rows rather than as figures: these are four readings a
+     reader compares against each other, not four headlines. A clock set at the
+     figure ramp would out-shout the sentence above it, which is the thing this
+     band exists to be read. #}
+  <ul class="rowlist tight">
+    <li class="minirow">
+      <span>last check</span>
+      <span class="minirow-figure"><time>{{ follow.last_check | minute }}</time></span>
+    </li>
+    <li class="minirow">
+      <span>next check</span>
+      <span class="minirow-figure"><time>{{ follow.next_check | minute }}</time></span>
+    </li>
+    <li class="minirow">
+      <span>last arrival</span>
+      <span class="minirow-figure"><time>{{ follow.last_new | minute }}</time></span>
+    </li>
+    <li class="minirow">
+      <span>source</span>
+      <span class="minirow-figure"><code>{{ follow.source_url }}</code></span>
+    </li>
+  </ul>
+
+  {% if follow.error_code %}
+  {# The last thing that went wrong, and it is printed whether or not the state
+     is `failing`: one rate limit does not fail a follow, and an operator
+     reading a green pill still wants to know what the last check hit. #}
+  <p class="signin-error">
+    <span class="pill tone-bad">{{ follow.error_code }}</span>
+    <span class="errtext">{{ follow.error_message | dash }}</span>
+  </p>
+  {% endif %}
+
+  {% if in_flight %}
+  <p class="panel-note">
+    A check is already on the queue as
+    <a class="mono" href="{{ root }}/jobs/{{ in_flight }}">{{ in_flight }}</a>.
+  </p>
+  {% endif %}
+
+  {# The controls. Every one of them is a POST — `SameSite=Lax` sends the
+     session cookie on a top-level GET navigation, so there is no
+     state-changing GET on this surface (§3.3). #}
+  <div class="followactions">
+    <form class="rowform" method="post" action="{{ root }}/following/{{ follow.slug }}/state">
+      {% if follow.state == 'paused' %}
+      <input type="hidden" name="action" value="resume">
+      <button class="ghost" type="submit">Resume</button>
+      {% else %}
+      <input type="hidden" name="action" value="pause">
+      <button class="ghost" type="submit">Pause</button>
+      {% endif %}
+    </form>
+    <form class="rowform" method="post" action="{{ root }}/following/{{ follow.slug }}/check">
+      <button class="ghost" type="submit">Check now</button>
+    </form>
+    <form class="rowform" method="post" action="{{ root }}/following/{{ follow.slug }}/delete">
+      <button class="ghost" type="submit">Unfollow</button>
+    </form>
+  </div>
+  <p class="field-help">
+    <em>Check now</em> makes the clock due; the queue claims the check on its
+    next tick. <em>Unfollow</em> stops the checks and leaves every video this
+    follow brought in — they are corpus, not membership.
+  </p>
+
+  {# A disclosure, not a second page and not a modal: the sentence is what is
+     read, and the eleven fields behind it are what is occasionally changed. A
+     `<details>` element does this with no script at all, which is what keeps
+     these pages CSP-ready. #}
+  <details class="disclose">
+    <summary>Edit the rule</summary>
+    <form class="indexform" method="post" action="{{ root }}/following/{{ follow.slug }}/rules">
+      {{ rule_fields(form, choices, 'e') }}
+      <div class="field field-actions">
+        <button type="submit">Save the rule</button>
+        <a class="ghostlink" href="{{ root }}/following/{{ follow.slug }}">Cancel</a>
+      </div>
+    </form>
+  </details>
+</section>
+
+{# ---- band 2: the check ledger ---- #}
+
+<div class="split">
+  <section class="panel" aria-labelledby="checks">
+    <h2 class="panel-title" id="checks">Recent checks</h2>
+    {% if checks %}
+    <ul class="rowlist tight">
+      {% for check in checks %}
+      <li class="minirow">
+        <a class="mono" href="{{ root }}/jobs/{{ check.job_id }}">{{ check.job_id }}</a>
+        <span class="pill pill-small tone-{{ check.state | tone }}">{{ check.state }}</span>
+        {% if check.error_code %}<span class="pill pill-small tone-bad">{{ check.error_code }}</span>{% endif %}
+        <span class="minirow-figure muted"><time>{{ check.created_at | minute }}</time></span>
+        <span class="minirow-figure">{{ check.took }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty-note">No check has run yet. The first one is queued on the next tick.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="queued">
+    <h2 class="panel-title" id="queued">Jobs this follow queued</h2>
+    {% if index_jobs %}
+    <ul class="rowlist tight">
+      {% for job in index_jobs %}
+      <li class="minirow">
+        <a class="mono" href="{{ root }}/jobs/{{ job.job_id }}">{{ job.job_id }}</a>
+        <span class="pill pill-small tone-{{ job.state | tone }}">{{ job.state }}</span>
+        <span class="minirow-figure muted"><time>{{ job.created_at | minute }}</time></span>
+        <span class="minirow-figure">{{ job.n_done }}/{{ job.n_items }} done{% if job.n_failed %}, {{ job.n_failed }} failed{% endif %}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty-note">Nothing has been queued from this follow.</p>
+    {% endif %}
+  </section>
+</div>
+
+{# ---- band 3: what it passed over ---- #}
+
+<section class="panel" id="passed" aria-labelledby="passedover">
+  <h2 class="panel-title" id="passedover">What it passed over</h2>
+
+  {# One derived line, read out of the rows below at render time, and printed
+     only when it is true. There is no query behind it and no stored aggregate;
+     a "0 of the last 20" sentence is a fact about nothing dressed as a finding,
+     so it is not printed at all. #}
+  {% if near_miss %}
+  <p class="panel-note">{{ near_miss }}</p>
+  {% endif %}
+
+  {% if not seen %}
+  <p class="empty-note">
+    Nothing has been passed over. Every candidate a check has seen was accepted,
+    or no check has run yet.
+  </p>
+  {% else %}
+  <p class="tablecount" role="status">
+    <span><span class="shown">{{ seen | length }}</span> shown{% if pagination.has_more %}, more available{% endif %}.</span>
+  </p>
+
+  <div class="tablewrap">
+  <table class="grid seen">
+    <caption class="sr-only">Every candidate this follow decided not to index, and why</caption>
+    <thead>
+      <tr>
+        <th scope="col">candidate</th>
+        <th scope="col">decision</th>
+        <th scope="col" class="num">length</th>
+        <th scope="col">published</th>
+        <th scope="col">why</th>
+        <th scope="col" class="col-actions">action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in seen %}
+      <tr>
+        <th scope="row" class="col-title" data-label="Candidate">
+          {{ item.title }}
+          <span class="row-meta"><code>{{ item.url }}</code></span>
+        </th>
+        {# A provisional decision says so rather than looking terminal:
+           `held_budget` is re-decided on the next check — that is the whole
+           difference between a budget and a filter — and `held_review` is
+           waiting on a person and will wait forever if nobody looks. #}
+        <td data-label="Decision">
+          <span class="pill tone-{{ item.decision | tone }}">{{ item.decision }}</span>
+          {% if item.decision == 'held_budget' %}
+          <span class="row-meta">re-decided on the next check</span>
+          {% elif item.decision == 'held_review' %}
+          <span class="row-meta">waiting on you</span>
+          {% endif %}
+        </td>
+        <td class="num" data-label="Length">{{ item.duration_s | duration }}</td>
+        <td data-label="Published"><time>{{ item.published_at | day }}</time></td>
+        {# The `reason` verbatim. It was written where the decision was made and
+           it carries the number that made it — "4:12, shorter than your 8:00
+           floor" is a receipt and "too short" is an opinion. `judged_from` says
+           whether that number came out of the flat listing or cost a probe. #}
+        <td class="col-why" data-label="Why">
+          {{ item.reason | dash }}
+          <span class="row-meta">
+            {%- if item.judged_from == 'probe' %}judged from a probe<span class="sep">·</span>{% endif -%}
+            <time>{{ item.decided_at | minute }}</time>
+          </span>
+        </td>
+        <td class="col-actions" data-label="Action">
+          <form class="rowform" method="post" action="{{ root }}/following/{{ follow.slug }}/queue">
+            <input type="hidden" name="url" value="{{ item.url }}">
+            <button class="ghost" type="submit">Index anyway</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  {% if pagination.offset or pagination.has_more %}
+  <nav class="pager" aria-label="Pagination">
+    {% if pagination.offset %}
+    <a class="ghostlink" href="{{ page_link([pagination.offset - pagination.limit, 0] | max) }}">← Newer</a>
+    {% endif %}
+    {% if pagination.has_more %}
+    <a class="ghostlink" href="{{ page_link(pagination.offset + pagination.limit) }}">Older {{ pagination.limit }} →</a>
+    {% endif %}
+  </nav>
+  {% endif %}
+
+  <p class="field-help">
+    <em>Index anyway</em> queues that one video with this follow's own channels
+    and tags, and expands nothing. The rule is unchanged — overruling it once is
+    not editing it.
+  </p>
+  {% endif %}
+</section>
+
+{% endblock %}

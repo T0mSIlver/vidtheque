@@ -1,12 +1,15 @@
 """The write side — dashboard.md §5.5 and §2.4's row actions, phase 3.
 
-Five POSTs and two forms, and every one of them goes through the **same service
-call the MCP tool makes**: `tools/indexing.index_video` for the index form and
-for re-index, `tools/library.tag_video` for tags. The form adds no policy. It
-renders a signature that is already bounded — `max_items` clamped 1..200, tags
-validated against the namespace rules, `channels` checked against the four sets
-— which is the whole argument for building this on the service layer instead of
-beside it (§5.5).
+Every POST here goes through the **same service call the MCP tool makes**:
+`tools/indexing.index_video` for the index form, for re-index and for the
+ledger's `Index anyway`; `tools/library.tag_video` for tags;
+`tools/follows.follow_channel` for following, pausing, resuming, checking and
+unfollowing; and `follows/params.build_rules` — the validator that tool shares —
+for editing a rule. The form adds no policy. It renders a signature that is
+already bounded — `max_items` clamped 1..200, tags validated against the
+namespace rules, `channels` checked against the four sets, a follow's interval
+floored at fifteen minutes — which is the whole argument for building this on
+the service layer instead of beside it (§5.5, §18.5).
 
 Three things this module deliberately does **not** have:
 
@@ -38,9 +41,17 @@ from ..auth.login import SESSION_COOKIE
 from ..auth.provider import OWNER_SUBJECT
 from ..config import Settings
 from ..db import queries
-from ..errors import HTTP_STATUS
+from ..errors import HTTP_STATUS, ToolError
+from ..follows import params as follow_params
+from ..follows import store as follows_store
+# By name, not by module: `follow_rules` is a handler in this file, and a module
+# alias one letter away from it is the kind of shadowing that only shows up at
+# the one call site that needed the other one.
+from ..follows.rules import TABS as FOLLOW_TABS
+from ..follows.rules import Rules as FollowRules
 from ..jobs import store as jobs_store
 from ..text import clamp
+from ..tools import follows as follows_tool
 from ..tools import indexing, library
 from ..tools.base import Deps
 from .access import auth_required, credential, origin_ok, require_write
@@ -71,8 +82,10 @@ MAX_PREFILL_TAGS_CHARS = 800
 _SEPARATORS = re.compile(r"[\s,]+")
 
 # The three sets a human ticks, and the CSV `index-video` reads. All three (or
-# none) is the string `all` — the tool's own word, not a synonym.
-_CHANNEL_BOXES = (
+# none) is the string `all` — the tool's own word, not a synonym. Public,
+# because the follow form ticks the same three boxes for the same parameter and
+# a second copy of the labels is how one thing gets described two ways.
+CHANNEL_BOXES = (
     ("transcript", "Transcript", "what was said, from the audio or the captions"),
     ("ocr", "On-screen text", "what the frames read, per keyframe"),
     ("frames", "Frame embeddings", "visual search over the keyframes"),
@@ -258,7 +271,7 @@ def _index_form_values() -> dict[str, Any]:
         "expand": "playlist",
         "max_items": 25,
         "tags": "",
-        "channels": [name for name, _label, _note in _CHANNEL_BOXES],
+        "channels": [name for name, _label, _note in CHANNEL_BOXES],
         "priority": "normal",
         "force_reindex": False,
     }
@@ -270,7 +283,7 @@ def _index_context(request: Request, **extra: Any) -> dict[str, Any]:
         **_chrome(request, "index"),
         "title": "Add to the index",
         "expansions": indexing.EXPANSIONS,
-        "channel_boxes": _CHANNEL_BOXES,
+        "channel_boxes": CHANNEL_BOXES,
         "urls_per_job": URLS_PER_JOB,
         "max_form_urls": MAX_FORM_URLS,
         # §5.5: when the corpus config and the vector tables disagree, the form
@@ -423,9 +436,9 @@ def _submitted(form: Any) -> dict[str, Any]:
     if priority not in ("normal", "high"):
         priority = "normal"
     channels = [
-        name for name, _label, _note in _CHANNEL_BOXES if form.get(f"channel_{name}")
+        name for name, _label, _note in CHANNEL_BOXES if form.get(f"channel_{name}")
     ]
-    names = [name for name, _label, _note in _CHANNEL_BOXES]
+    names = [name for name, _label, _note in CHANNEL_BOXES]
     return {
         "urls": str(form.get("urls") or ""),
         "expand": expand,
@@ -699,3 +712,256 @@ async def set_tags(request: Request) -> Response:
 
 def _tags(raw: str) -> list[str]:
     return [t.strip() for t in _SEPARATORS.split(raw) if t.strip()]
+
+
+# ------------------------------------------------------- §5.5's shape, applied
+#                                                          to following (§2.2)
+
+# Six POSTs, and not one of them decides anything. Creating, pausing, resuming,
+# checking now and unfollowing all go through `tools/follows.follow_channel` —
+# the same call the model makes — and editing the rules goes through
+# `follows/params.build_rules`, which that tool also calls and whose module
+# docstring names this file as its second caller by design. The URL
+# normalisation, the "a follow watches a container, not one video" refusal, the
+# duration parser, the tag namespace rules, the interval floor and the two
+# server-side clamps are all *there*. Reimplementing any of them here would be
+# the second policy dashboard.md §5.5 exists to argue against.
+#
+# `Index anyway` is the seventh and it is not a follow write at all: it is
+# `index_video` on one URL with `expand=none`, carrying the follow's own
+# channels and tags so a video rescued from the ledger is built the way the
+# follow would have built it.
+
+
+def _follow_error(
+    request: Request, error: dict[str, Any], slug: str | None = None
+) -> Response:
+    back = (
+        {"href": f"{ROOT}/following/{slug}", "label": "Back to this follow"}
+        if slug
+        else {"href": f"{ROOT}/following", "label": "Following"}
+    )
+    return _error_page(request, "following", error, back=back)
+
+
+def _typed(exc: ToolError) -> dict[str, Any]:
+    """A raised `ToolError` in the shape `_tool_error` returns.
+
+    `build_rules` raises rather than returning a `CallToolResult`, because its
+    other caller is a tool and a tool's decorator does the wrapping. One page
+    renders both, so they arrive as one shape.
+    """
+    return {"code": exc.code, "message": exc.message, "next": exc.next_hint}
+
+
+def _follow_rule_form(form: Any) -> dict[str, Any]:
+    """The rule controls, as the shared validator's keyword arguments.
+
+    Checkbox groups collapse the way `index-video`'s do: all three channels
+    ticked, or none, is the tool's own word `all` rather than a three-item CSV
+    that means the same thing. Nothing here is validated — that is
+    `build_rules`' job, and doing half of it here is how two validators start
+    disagreeing.
+    """
+    tabs = [tab for tab in FOLLOW_TABS if form.get(f"tab_{tab}")]
+    names = [name for name, _label, _note in CHANNEL_BOXES]
+    channels = [name for name in names if form.get(f"channel_{name}")]
+    return {
+        "tabs": ",".join(tabs) or "videos",
+        "min_duration": str(form.get("min_duration") or "").strip() or None,
+        "max_duration": str(form.get("max_duration") or "").strip() or None,
+        "title_include": str(form.get("title_include") or "").strip() or None,
+        "title_exclude": str(form.get("title_exclude") or "").strip() or None,
+        "channels": "all" if len(channels) in (0, len(names)) else ",".join(channels),
+        "tags": str(form.get("tags") or "").strip() or None,
+        "backfill": str(form.get("backfill") or "0").strip() or "0",
+        "max_per_check": str(form.get("max_per_check") or "5").strip() or "5",
+        "mode": str(form.get("mode") or "auto"),
+        "check_interval_s": str(form.get("check_interval_s") or "").strip() or None,
+    }
+
+
+async def follow_create(request: Request) -> Response:
+    """`POST /dashboard/following` — the add form, through the tool.
+
+    Redirect to the new follow's own page: the thing the operator wants to read
+    next is the rule they just wrote, rendered as the sentence the check will
+    obey. A URL that was already followed lands on the same page, because the
+    tool returns the existing follow rather than making a second one.
+    """
+    refusal = await _guard(request)
+    if refusal is not None:
+        return refusal
+
+    deps: Deps = request.app.state.assembled.deps
+    form = await request.form()
+    result = await follows_tool.follow_channel(
+        deps,
+        url=str(form.get("url") or "").strip(),
+        action="follow",
+        title=str(form.get("title") or "").strip() or None,
+        **_follow_rule_form(form),
+    )
+    error = _tool_error(result)
+    if error is not None:
+        return _follow_error(request, error)
+    payload = result.structured_content or {}
+    slug = str((payload.get("follow") or {}).get("slug") or "")
+    return _see(f"{ROOT}/following/{slug}" if slug else f"{ROOT}/following")
+
+
+async def _follow_action(request: Request, action: str, back: str) -> Response:
+    """`pause`, `resume`, `check_now` and `unfollow`, which differ only in a word.
+
+    The follow is resolved by slug here and handed to the tool as its stored
+    source URL, so the tool's own resolver sees the string it wrote rather than
+    a path segment this surface invented.
+
+    The caller has already run :func:`_guard`; this is the half after it, so a
+    handler that reads its form first cannot end up checking the credential
+    twice — or, worse, once too late.
+    """
+    assembled = request.app.state.assembled
+    slug = str(request.path_params["slug"])
+    row = await assembled.db.read(lambda c: follows_store.by_slug(c, slug))
+    if row is None:
+        return _follow_error(request, _no_such_follow(slug))
+    result = await follows_tool.follow_channel(
+        assembled.deps, url=str(row["source_url"]), action=action
+    )
+    error = _tool_error(result)
+    if error is not None:
+        return _follow_error(request, error, slug)
+    return _see(back.format(slug=slug))
+
+
+def _no_such_follow(slug: str) -> dict[str, Any]:
+    return {
+        "code": "E_UNKNOWN_FOLLOW",
+        "message": f'"{slug}" is not a follow on this instance.',
+        "next": "the Following page lists every channel this index watches.",
+    }
+
+
+async def follow_state(request: Request) -> Response:
+    """`POST /dashboard/following/{slug}/state` — pause or resume.
+
+    One route, and the verb is in the body rather than in the path: pause and
+    resume are the two directions of one control, and a surface with two URLs
+    for them is a surface where a page can offer the wrong one.
+    """
+    refusal = await _guard(request)
+    if refusal is not None:
+        return refusal
+    form = await request.form()
+    wanted = str(form.get("action") or "")
+    if wanted not in ("pause", "resume"):
+        return _follow_error(
+            request,
+            {
+                "code": "E_BAD_PARAM",
+                "message": f'"{wanted}" is not pause or resume.',
+                "next": "the two buttons on the follow's page are the whole vocabulary.",
+            },
+            str(request.path_params["slug"]),
+        )
+    return await _follow_action(request, wanted, ROOT + "/following/{slug}")
+
+
+async def follow_check_now(request: Request) -> Response:
+    """`POST /dashboard/following/{slug}/check` — make the clock due now.
+
+    It does not run a check: it moves `next_check_at`, and the queue claims a
+    `follow_check` job on its next tick. A paused follow stays paused, which is
+    the store's rule and not this handler's.
+    """
+    refusal = await _guard(request)
+    if refusal is not None:
+        return refusal
+    return await _follow_action(request, "check_now", ROOT + "/following/{slug}")
+
+
+async def follow_delete(request: Request) -> Response:
+    """`POST /dashboard/following/{slug}/delete` — unfollow.
+
+    The videos it brought in stay: they are corpus, not membership
+    (`follows/store.delete`). So this lands on the list rather than on a page
+    that no longer exists.
+    """
+    refusal = await _guard(request)
+    if refusal is not None:
+        return refusal
+    return await _follow_action(request, "unfollow", ROOT + "/following")
+
+
+async def follow_rules(request: Request) -> Response:
+    """`POST /dashboard/following/{slug}/rules` — the edit disclosure.
+
+    The one write here that is not a `follow_channel` action, because the tool
+    has none: `action="follow"` on a URL already followed deliberately returns
+    the existing follow and creates nothing, which is what makes a retried
+    request safe. So the edit goes through the validator both callers share —
+    `follows/params.build_rules`, whose module docstring names this file — and
+    then through `store.update_rules`, which refuses a column that is not a
+    rule rather than ignoring it.
+    """
+    refusal = await _guard(request)
+    if refusal is not None:
+        return refusal
+
+    assembled = request.app.state.assembled
+    slug = str(request.path_params["slug"])
+    row = await assembled.db.read(lambda c: follows_store.by_slug(c, slug))
+    if row is None:
+        return _follow_error(request, _no_such_follow(slug))
+    form = await request.form()
+    try:
+        rules = follow_params.build_rules(**_follow_rule_form(form))
+    except ToolError as exc:
+        return _follow_error(request, _typed(exc), slug)
+    collection_id = int(row["collection_id"])
+    columns = follow_params.rule_columns(rules)
+    await assembled.db.write(
+        lambda c: follows_store.update_rules(c, collection_id, columns)
+    )
+    return _see(f"{ROOT}/following/{slug}")
+
+
+async def follow_queue(request: Request) -> Response:
+    """`POST /dashboard/following/{slug}/queue` — "Index anyway", one row.
+
+    The ledger's whole argument is that a rule which passed something over is
+    reversible by the person who wrote it, so this is the button that reverses
+    it. `expand=none` because the row is one video and a channel URL that
+    expanded here would queue a surprise; the follow's own `channels` and `tags`
+    because a video rescued from the ledger should be built the way the follow
+    would have built it, and filed where the follow files things.
+    """
+    refusal = await _guard(request)
+    if refusal is not None:
+        return refusal
+
+    assembled = request.app.state.assembled
+    slug = str(request.path_params["slug"])
+    row = await assembled.db.read(lambda c: follows_store.by_slug(c, slug))
+    if row is None:
+        return _follow_error(request, _no_such_follow(slug))
+    form = await request.form()
+    url = str(form.get("url") or "").strip()
+    back = f"{ROOT}/following/{slug}#passed"
+    if not url:
+        return _see(back)
+
+    rules = FollowRules.from_row(row)
+    result = await indexing.index_video(
+        assembled.deps,
+        url=url,
+        expand="none",
+        channels=rules.channels or "all",
+        tags=", ".join(rules.tags) or None,
+    )
+    error = _tool_error(result)
+    if error is not None:
+        return _follow_error(request, error, slug)
+    job_id = (result.structured_content or {}).get("job_id")
+    return _see(f"{ROOT}/jobs/{job_id}" if job_id else back)

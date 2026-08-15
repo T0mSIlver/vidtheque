@@ -2029,3 +2029,200 @@ cost a per-row query; every count here is an aggregate. And in the projection
 with the same argument as on the overview: the reads are not taken at all rather
 than taken and discarded. The corpus counts stay, because they are what the
 welcome page already publishes.
+
+## 18. Following (2026-08-15)
+
+The contract is `docs/design/following.md`; the tool is tool-surface §4.10. This
+section is the browser surface only. It changes no write policy, adds no clamp
+and invents no state word: every bound is already in `follows/params.py`, which
+the tool calls too (§2.2 — the form adds no policy), and every decision word is
+already a `CHECK` constraint in migration 0006.
+
+**What it is for.** A follow is the one thing on this instance that acts while
+nobody is watching. The dashboard's job is therefore not "configure a follow" —
+it is *show me what it did, and what it decided not to do*, which is the same job
+the jobs page does for the queue and the video page does for a stage.
+
+### 18.1 The rail
+
+`Following` joins `Add videos` in the `Manage` group, second. It is under the
+**same write-side predicate** — the group renders only when the write routes are
+registered, so in `VIDTHEQUE_PUBLIC_READONLY=1` and `VIDTHEQUE_AUTH=none` there
+is no item at all rather than a link to a page that 404s (§2.3, §3.2 rule 3,
+§13). A dead link is not room.
+
+It is in `Manage` and not in the first group even though the list page is mostly
+reading, because the first group is the corpus and a follow is not corpus — it is
+the thing that produces corpus. The rail's second group is exactly the set whose
+absence is a fact about the deployment, and following is the newest member of it.
+
+### 18.2 The jobs view learns the kind
+
+`_JOB_KINDS` gains `follow_check` beside `all | index | reindex | delete`. A job
+kind the queue can hold and this view cannot select for is a job an operator
+triages by reading past it, so the filter arrives the day the kind does. Nothing
+else on the jobs pages changes: a `follow_check` is an ordinary job row with an
+ordinary war story, and §5.4 renders it with no special case.
+
+### 18.3 `GET|POST /dashboard/following` — the list, and the form
+
+One route, two things, and that is §5.5's shape rather than a new one: the table
+is what you came to read and the add form is the one control the page needs, so
+there is no `/following/new` to navigate to and nothing to prefill.
+
+**The table.** One row per follow, ordered as `follows.store.list_follows` orders
+it — failing first, then most recently checked. Each row carries the name, the
+state as a **word** (`active` · `paused` · `failing`; every state is a word as
+well as a colour, PRODUCT.md), the three clocks (last check, last arrival, next
+check), the last error code if there is one, and the rule compressed to
+**facts** — `/videos · 8:00 floor · 2 title term(s) · 5/check · every 6h`.
+
+That compression is deliberate and it is not a second `describe`. The sentence
+renderer is the only thing that renders a policy as English, and it lives on the
+follow's own page; sixty follows scanned at 03:00 are a column to compare, not
+sixty sentences to read. One renderer per density, neither of them duplicated.
+
+**Four reads for the whole page, whatever the row count** — the totals band
+(`store.totals`, one grouped query), the rolling budget (`store.budget_spent_s`),
+one page of follows probed one row past its limit, and the held band. No
+per-follow round trip: a table that costs a query per line stops being loadable
+at the size it exists for (§6.3). `limit` clamps 1..100 default 25, `has_more`
+over an exact total, like every list on this surface.
+
+**The budget is on this page and nowhere else.** *Spent of ceiling*, in hours of
+video, because it is the number that explains a page full of `held_budget` rows.
+A ceiling of `0` renders as words, not as *of 0h* — which reads as "no budget
+left" and means the opposite.
+
+**The held band** names at most 5 candidates waiting on a human, across every
+follow, each linking to the follow that holds it. It says *that* something is
+waiting and gives it a door; it is not a second ledger, and the rows themselves
+are read on the follow's own page.
+
+**The form** offers its vocabularies from the modules that own them —
+`follows.rules.TABS`, `MODES`, `MAX_BACKFILL`, `MAX_PER_CHECK`,
+`MIN_CHECK_INTERVAL_S` — and validates nothing itself. POST goes through
+`tools.follows.follow_channel` with `action="follow"`, the same call the model
+makes, and redirects to the new follow's own page: the thing an operator wants
+to read next is the rule they just wrote, rendered as the sentence the check
+will obey. A URL that was already followed lands on that same page, because the
+tool returns the existing follow rather than making a second one (§4.10).
+
+Two form conventions carried from the index form: the channel checkboxes
+collapse to the tool's own word `all` when all three or none are ticked, rather
+than to a three-item CSV meaning the same thing; and a rejected submission
+renders the typed error with its `next:` hint, not a field-level guess.
+
+### 18.4 `GET /dashboard/following/{slug}` — the detail page, three bands
+
+**Band 1 — the rule, as a sentence.** `follows.rules.describe`, verbatim:
+*"Every 6 hours, take up to 5 new uploads from @GPUMODE on /videos, longer than
+8:00, index all three channels, tag series:gpu-mode."* A form states fields; a
+sentence states a policy, and the operator is here to check a policy. Beside it:
+the state word, the three clocks, what the follow has brought in, and the last
+error rendered as parsed fields exactly as the jobs page renders a job's (§5.4)
+— never a raw dump. `Edit` is one disclosure behind the sentence and reveals the
+same controls the add form has, prefilled from the row; it POSTs to
+`{slug}/rules`, through `follows.params.build_rules` and then
+`store.update_rules`, which refuses a column that is not a rule rather than
+ignoring it.
+
+The edit is the one write here that is not a `follow_channel` action, because
+the tool deliberately has none: `action="follow"` on an already-followed URL
+returns the existing follow and changes nothing, which is what makes a retried
+request safe (§4.10). So the edit goes through the validator both callers share.
+
+**Band 2 — the check ledger.** This follow's own `follow_check` jobs, newest
+first, capped at 10, with the state, the error code and how long each took; and
+the `index` jobs those checks enqueued, capped at 10. Both are `jobs` rows with
+a `collection_id`, so every line links straight to the existing job detail page
+— the war story is already written and this band does not fork it. A check
+already queued or running is named, so `Check now` cannot look like it did
+nothing. Both caps are independent of the page's `limit`, because neither list
+is what the pager pages.
+
+**Band 3 — what it passed over.** The point of the page. `follow_seen` filtered
+to every decision *except* `queued` — the candidates that did not become videos
+— newest decision first, `limit` clamped 1..100 default 25, probed one row past
+for `has_more`. Per row: the title, the clock, the publication date, the
+decision word, and **`reason` verbatim**. That string already carries the number
+that made the call (`4:12, shorter than your 8:00 floor`) and this template's
+job is to print it, not to re-derive it. `judged_from` renders when it is
+`probe`, so a check that spent requests says so on the page as well as in the
+column.
+
+**One derived line, and only when it is true.** Above the ledger: *"3 of the
+last 25 passed over were within 60 seconds of your floor."* It is read out of
+the rows the page already fetched, at render time — no second query, no stored
+aggregate — and it is omitted entirely when the number is zero or the follow has
+no length rule. A *"0 of the last 25"* line is a fact about nothing dressed as a
+finding, and this is the one band on the surface that has to stay believable.
+The 60 comes from a named constant and is printed from it, so the sentence and
+the threshold cannot disagree.
+
+**Every row carries `Index anyway`** — a POST to `{slug}/queue` that runs
+`index_video` on that one URL with `expand=none` (the row is one video; a
+channel URL that expanded here would queue a surprise) and the follow's own
+`channels` and `tags`, so a video rescued from the ledger is built the way the
+follow would have built it and filed where the follow files things. It redirects
+to the new job's page. This is the whole argument for the band: a rule that
+turned something away is only honest if the person who wrote it can overrule it
+in one click.
+
+Rows that are provisional say so rather than looking terminal — `held_budget` is
+reconsidered on the next check, `held_review` is waiting for you.
+
+### 18.5 The six writes, and what they do not decide
+
+`follow_create`, `follow_state`, `follow_check_now`, `follow_delete`,
+`follow_rules`, `follow_queue`. All POST, all under the Origin rule (§3.3), and
+**not one of them decides anything**: five go through
+`tools.follows.follow_channel` and the sixth through the validator that tool
+shares. The URL normalisation, the "a follow watches a container, not one video"
+refusal, the duration parser, the tag rules, the interval floor and both clamps
+are all there already. Reimplementing any of them here would be exactly the
+second policy §5.5 exists to argue against.
+
+Two shapes worth naming:
+
+- **Pause and resume are one route with the verb in the body**, not two URLs.
+  They are the two directions of one control, and a surface with a URL for each
+  is a surface where a page can offer the wrong one.
+- **A state action resolves the follow by slug and hands the tool its stored
+  `source_url`**, so the tool's own resolver sees the string it wrote rather
+  than a path segment this surface invented.
+
+`Unfollow` lands on the list rather than on a page that no longer exists, and
+says what survives — the videos it brought in stay in the corpus; the rule and
+the ledger go. It is the one irreversible control here and the asymmetry is
+worth stating.
+
+### 18.6 What it does not show
+
+- **No thumbnails on a candidate row.** An un-indexed video has no keyframe on
+  this disk, and a YouTube thumbnail URL is a runtime request to something off
+  this box — banned outright (DESIGN.md; PRODUCT.md's durable constraints). The
+  ledger is text, and the reason string is what it is there for.
+- **No preview before commit.** It was specified and dropped: previewing a rule
+  against the live channel means a listing request from a GET-shaped flow, which
+  §3.3 forbids, and a POST that fetches before it writes — a form submission
+  that can 429 the box before a row exists. The follow's own detail page is the
+  preview, one redirect later, and `mode="review"` plus `backfill=0` is how an
+  operator tries a rule without spending anything.
+- **No cron field, and no env var** (§1 non-goal 4). The interval is seconds
+  with a floor of 900, rendered as *every 6h*; `collections.sync_cron` stays
+  NULL (index-schema §1.8). The daily budget is *displayed* as a resolved
+  setting, because it is nowhere else on the instance, and never written.
+- **No chart of arrivals over time** (§1 non-goal 5). `follow_seen.decided_at`
+  exists and a graph of it would be the same "when did Tom last run a batch"
+  picture the overview already refuses. Counts, not axes.
+- **Nothing in the projection, including the reads.** Both `GET` routes sit
+  inside the write-route list, so `Following` is absent in
+  `VIDTHEQUE_PUBLIC_READONLY=1` and in `AUTH=none` — page and rail item
+  together. The reason is §2.3's own: a route that exists and refuses is a route
+  somebody probes, and a page whose every affordance POSTs has nothing to show a
+  deployment that registers no write side. This is simpler than the ledger's
+  partial drop (§17) and is the right default for a surface whose every row
+  names an operator's standing choices. `corpus-summary include_follows` is
+  withheld on the same grounds (tool-surface §4.3).
+- **The vocabulary is `follow`, never `subscribe`** (`positioning.md`, LOCKED).
