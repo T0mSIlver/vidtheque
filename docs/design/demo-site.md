@@ -333,13 +333,20 @@ is an env var. Flagged for Tom in §7.
 ### 3.2 The two internal tools
 
 The model never sees the nine-tool surface. It sees two, described in a handful
-of words each, because a 4-round budget over a free model is not the place for
-progressive disclosure:
+of words each: the loop is a demo of the corpus, not the place for progressive
+disclosure.
 
 | tool | args | what it runs | bounds |
 |---|---|---|---|
-| `search` | `query`, `content_type?` | `tools/search.run` | `limit=6`, `max_text_chars=300`, `max_per_video=2` |
-| `get_segment_context` | `video_id`, `t` | `tools/segment.run` | `window=45`, `max_text_chars=1200` |
+| `search` | `query`, `content_type?` | `tools/search.run` | the tool's own defaults — `limit=10`, `max_text_chars=1000`, `max_per_video=3` |
+| `get_segment_context` | `video_id`, `t` | `tools/segment.run` | the tool's own defaults — `window=45`, `max_text_chars=4000` |
+
+**Amended 2026-08-15 (Tom).** The facade used to bound both tools tighter than
+the MCP surface does — six hits of 300 chars, two per video, a 1200-char
+window — and that was the demo's real bottleneck: the model answered from
+scraps of the corpus and the answers read like it. The loop now asks for what
+any MCP client gets. It still forwards no limit argument the model might send,
+so the ceilings are the tools' own server-side clamps, not the model's choice.
 
 `get_segment_context` is handed to the model as the **text** block the tool
 already renders — the model-readable form the whole contract is tuned for —
@@ -387,17 +394,21 @@ attribute with as one built out of a search hit.
 
 ```
 system + user
-  ├─ round 1..4:  completion(tools=[search, get_segment_context])
+  ├─ round 1..50: completion(tools=[search, get_segment_context])
   │                 └─ tool_calls?  → run them, append results, loop
   │                 └─ content?     → done
   └─ final:       completion(tool_choice="none")   ← forced answer
 ```
 
-- **Max 4 tool rounds** (`VIDTHEQUE_ASK_MAX_ROUNDS`). A model that is still
-  calling tools on round 5 gets one last completion with tools disabled, so
-  the visitor always gets prose rather than a spinner.
-- **Max 6 tool calls per round**, extras dropped with a note in the tool result
-  — a parallel-tool-call storm on a free model is how the daily budget dies.
+- **Max 50 tool rounds** (`VIDTHEQUE_ASK_MAX_ROUNDS`, was 4 until 2026-08-15).
+  A model that is still calling tools on the last round gets one last
+  completion with tools disabled, so the visitor always gets prose rather than
+  a spinner. At 50 the round cap is a runaway guard; the wall clock below is
+  what actually ends a long ask.
+- **No per-round tool-call cap** (the old ceiling of six, with a note in the
+  tool result, went 2026-08-15). A model that wants eight searches in a round
+  is doing the work the demo exists to show; the deadline and the per-day ask
+  budget are the money guards, not a slice of the batch.
 - A citation carries the evidence the model was shown — `source` and the
   bounded `text` of the hit, not just a title — so the page's source list reads
   exactly like a search row instead of a bare link.
@@ -452,9 +463,15 @@ system + user
   the talk. It is worth its ~30 tokens because the alternative is prose that
   flattens "he said", "the slide read" and "the screen showed" into one voice —
   which is exactly the distinction the corpus exists to keep.
-- One overall wall-clock budget (`VIDTHEQUE_ASK_TIMEOUT_S`, default 90) across
-  the whole loop, not per request. A free-tier queue that stalls turns into a
-  clean 503, not a held connection.
+- One overall wall-clock budget (`VIDTHEQUE_ASK_TIMEOUT_S`, default 180 since
+  2026-08-15; was 90) across the whole loop, not per request. A free-tier queue
+  that stalls turns into a clean 503, not a held connection. 180 is past
+  Cloudflare's 125s proxy read timeout — see §3.5, which was written when the
+  budget fitted inside it.
+- **Output ceiling** `max_tokens=32768` on every completion (was 700). It is a
+  runaway-generation backstop rather than a length policy: "under 150 words"
+  is still the prompt's ask, and at 700 the clamp was cutting honest answers
+  off mid-sentence.
 
 ### 3.4 Degradation — the part that has to be right
 
@@ -560,10 +577,15 @@ written, because a name that could frame itself is header injection in
 miniature. The stream opens with a `: ok` comment: legal SSE, ignored by every
 parser, and bytes in hand for a proxy that is deciding whether to buffer.
 
-No keep-alive heartbeat, deliberately: the loop's own wall-clock budget
-(`VIDTHEQUE_ASK_TIMEOUT_S`, 90 s) is inside Cloudflare's idle timeout, so a
-stream that emits nothing at all still ends before anything upstream gives up on
-it. Raise the timeout past ~100 s and that stops being true.
+No keep-alive heartbeat. That was deliberate while the loop's wall-clock budget
+(`VIDTHEQUE_ASK_TIMEOUT_S`) was 90 s: inside Cloudflare's read timeout, so a
+stream that emitted nothing at all still ended before anything upstream gave up
+on it. **The budget is 180 s since 2026-08-15 and that no longer holds.** What
+carries the stream now is the activity events themselves — every tool call
+writes two, and bytes reset the timer — so the exposure is a single completion
+that generates for more than ~125 s without a tool call, which is the forced
+final answer. If a 524 shows up there, the fix is a heartbeat comment on the
+stream, not a smaller budget.
 
 **Negotiation, not a second endpoint.** One route, one contract; `Accept` is the
 whole difference:

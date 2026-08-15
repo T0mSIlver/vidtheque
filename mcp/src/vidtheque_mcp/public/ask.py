@@ -65,27 +65,23 @@ NDJSON_MEDIA_TYPE = "application/x-ndjson"
 SSE_MEDIA_TYPE = "text/event-stream"
 
 MAX_QUESTION_CHARS = 400
-MAX_TOOL_CALLS_PER_ROUND = 6
 
-# The output ceiling, sent on every completion. Without it the only bound on
-# generated tokens was the provider's own default and the 90s deadline, on the
-# one path that spends money — the input side has been bounded all along
-# (a 400-char question, six results of 300 chars, a 1200-char window) and the
-# output side was not bounded at all. "Under 150 words" lives in the system
-# prompt, and a prompt is not a clamp: CLAUDE.md's rule is server-side limits,
-# never prompt-only. 700 tokens is roughly three times the 150 words the prompt
-# asks for, so it binds runaway generation without truncating an honest answer.
+# The output ceiling, sent on every completion — a backstop against a provider
+# that never stops generating, not a length policy. It was 700 (2026-08-10
+# audit, F-3), which was three times the "under 150 words" the prompt asks for
+# and, in the field, cut honest answers off mid-sentence on the demo corpus.
+# 32768 is the ceiling now: still a server-side clamp, as CLAUDE.md requires,
+# but high enough that the deadline and the round cap are what actually bind.
 # The tool-call rounds get the same ceiling; a round that only emits tool calls
-# needs far less. (2026-08-10 audit, F-3.)
-ASK_MAX_OUTPUT_TOKENS = 700
+# needs far less. (2026-08-15, Tom: the demo's limits were the bottleneck.)
+ASK_MAX_OUTPUT_TOKENS = 32768
 
-# The facade's bounds, tighter than the MCP defaults and enforced server-side:
-# the model cannot ask for more.
-ASK_SEARCH_LIMIT = 6
-ASK_SEARCH_TEXT_CHARS = 300
-ASK_SEARCH_PER_VIDEO = 2
-ASK_CONTEXT_WINDOW = 45.0
-ASK_CONTEXT_TEXT_CHARS = 1200
+# No facade bounds on the two tools any more (2026-08-15): the loop asks for
+# what the MCP surface hands anyone else — `search.run`'s ten hits of 1000
+# chars, three per video, and `segment.run`'s 45s window of 4000 chars — so the
+# demo shows the corpus at the same resolution an agent gets. Those defaults are
+# themselves clamped server-side inside the tools; the model still cannot ask
+# for more, because the loop never forwards a limit argument it might send.
 
 SYSTEM_PROMPT = (
     "You answer questions about a personal video corpus using only the tools "
@@ -441,7 +437,11 @@ async def ask_events(
             break
 
         rounds += 1
-        batch = _with_ids(calls[:MAX_TOOL_CALLS_PER_ROUND], rounds)
+        # Every call the model asked for is run: the per-round cap of six was
+        # dropped 2026-08-15, because a model that asks for eight searches is
+        # doing the work the demo exists to show. The deadline and the round
+        # cap are the budget now.
+        batch = _with_ids(calls, rounds)
         messages.append(_assistant_turn(message, batch))
         for call in batch:
             step += 1
@@ -452,18 +452,6 @@ async def ask_events(
             result, summary = await _run_tool(deps, call, evidence)
             messages.append(result)
             yield {"event": "activity", "id": step, "phase": "done", "result": summary}
-        if len(calls) > MAX_TOOL_CALLS_PER_ROUND:
-            # A parallel-tool-call storm on a free model is how the daily budget
-            # dies; the model is told rather than silently short-changed.
-            messages.append(
-                {
-                    "role": "user",
-                    "content": (
-                        f"note: only the first {MAX_TOOL_CALLS_PER_ROUND} tool calls "
-                        "of that round were run. Ask for fewer at a time."
-                    ),
-                }
-            )
 
     # Out of rounds, or an empty answer with no tool calls: one last completion
     # with tools off, so the visitor always gets prose rather than a spinner.
@@ -715,14 +703,7 @@ async def _tool_search(
     content_type = args.get("content_type")
     if content_type not in search.CONTENT_TYPES:
         content_type = "all"
-    result = await search.run(
-        deps,
-        q=query,
-        content_type=content_type,
-        limit=ASK_SEARCH_LIMIT,
-        max_per_video=ASK_SEARCH_PER_VIDEO,
-        max_text_chars=ASK_SEARCH_TEXT_CHARS,
-    )
+    result = await search.run(deps, q=query, content_type=content_type)
     if result.is_error:
         payload = result.structured_content or {}
         # The model gets the typed code; the visitor gets the fact that this
@@ -770,14 +751,7 @@ async def _tool_context(
             "error: t must be a number of seconds, as given by a search hit.",
             "that read named no moment",
         )
-    result = await segment.run(
-        deps,
-        video_id=video_id,
-        t=t,
-        window=ASK_CONTEXT_WINDOW,
-        include_frame_refs=False,
-        max_text_chars=ASK_CONTEXT_TEXT_CHARS,
-    )
+    result = await segment.run(deps, video_id=video_id, t=t, include_frame_refs=False)
     payload = result.structured_content or {}
     if result.is_error:
         return (
@@ -807,7 +781,7 @@ async def _tool_context(
                 "source": "transcript",
                 "text": middle_truncate(
                     " ".join(str(cue.get("text") or "") for cue in cues),
-                    ASK_SEARCH_TEXT_CHARS,
+                    search.DEFAULT_MAX_TEXT_CHARS,
                 ),
             }
         )
