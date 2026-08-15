@@ -22,6 +22,7 @@ says, and every payload it writes is the same size whatever the input.
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import replace
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -42,6 +43,11 @@ ACTIONS = ("follow", "unfollow", "pause", "resume", "check_now")
 # for the reason `bad_time` caps the value it rejects (2026-08-10 audit, F-14).
 MAX_URL_CHARS = 160
 MAX_NAME_CHARS = 60
+
+# What may be *stored*, as opposed to what is echoed. A real channel or playlist
+# URL is well under a hundred characters; 2048 is the conventional URL ceiling
+# and is generous against every legitimate shape.
+MAX_STORED_URL_CHARS = 2048
 
 # `/videos`, `/streams` and `/shorts` name a *tab*, and which tabs a follow
 # watches is the `tabs` rule — so they are not part of which channel this is.
@@ -180,6 +186,21 @@ async def _follow(
         )
 
     kind = "playlist" if _is_playlist(source_url) else "channel"
+    # A playlist has no tabs — the check lists it once and tags what it finds
+    # `videos`. Left alone, `tabs="streams"` on a playlist produced a follow
+    # that was structurally dead: every candidate rejected as `skipped_tab`
+    # ("from /videos; this follow watches /streams"), forever, discoverable
+    # only by reading the ledger. It is narrowed rather than refused, and it
+    # prints a `note:` — a filter that cannot apply says so, it never silently
+    # narrows (CLAUDE.md).
+    tab_note: str | None = None
+    if kind == "playlist" and rules.tabs != ("videos",):
+        tab_note = (
+            "note: tabs are a channel's /videos, /streams and /shorts, and a "
+            f"playlist has none — {', '.join('/' + t for t in rules.tabs)} was "
+            "not applied. The playlist is listed whole."
+        )
+        rules = replace(rules, tabs=("videos",))
     name = middle_truncate((title or "").strip() or _display_name(source_url), MAX_NAME_CHARS)
 
     existing = await deps.db.read(lambda c: store.by_source_url(c, source_url))
@@ -204,6 +225,8 @@ async def _follow(
         + " until it is renamed.",
         f"Rule: {describe(rules, name=name)}",
     ]
+    if tab_note:
+        lines.append(tab_note)
     lines.extend(await _state_lines(deps, row, rules, settings))
     nxt = (
         'next: job-status state="active" — the first check is queued as a '
@@ -324,15 +347,28 @@ async def _check_now(
 ) -> CallToolResult:
     collection_id = int(row["collection_id"])
     name = str(row["title"])
-    if str(row["state"]) == "paused":
-        # `store.check_now` leaves a paused follow alone, so saying a check was
-        # scheduled would be a claim the database contradicts.
+    if str(row["state"]) in ("paused", "failing"):
+        # `store.check_now` arms an *active* follow and nothing else, and the
+        # scheduler only ever enqueues an active one — so saying a check was
+        # scheduled would be a claim the database contradicts. `failing` is here
+        # for the same reason as `paused` and it is the easier one to get wrong:
+        # a channel that 404'd once leaves the follow failing, and "check now"
+        # is exactly the gesture an operator makes after fixing the URL. It has
+        # to say that resume is what re-arms it, rather than silently doing
+        # nothing while printing a time.
+        paused = str(row["state"]) == "paused"
         rules = Rules.from_row(row)
         lines = [
-            f"Not scheduled: {name} is paused, and a paused follow is never "
-            "checked. Nothing was queued.",
+            f"Not scheduled: {name} is {row['state']}, and a {row['state']} follow is "
+            "never checked. Nothing was queued.",
             f"Rule (kept): {describe(rules, name=name)}",
         ]
+        if not paused:
+            lines.insert(
+                1,
+                'Last error: '
+                f"{middle_truncate(str(row['last_error_message'] or 'not recorded'), 200)}",
+            )
         return await _state_result(
             deps, row, rules, settings, note, lines, "check_now", "resume", scheduled=False
         )
@@ -477,12 +513,18 @@ async def _structured(
 
 
 def _follow_fields(row: sqlite3.Row) -> dict[str, Any]:
-    """The follow itself, as a structured-only client sees it."""
+    """The follow itself, as a structured-only client sees it.
+
+    The URL is truncated here as it is in the text lines. `structuredContent` is
+    a payload like any other and the same budget binds it — a row written before
+    the intake clamp existed would otherwise carry its whole length into every
+    response that names the follow.
+    """
     return {
         "slug": str(row["slug"]),
-        "title": str(row["title"]),
+        "title": middle_truncate(str(row["title"]), MAX_NAME_CHARS),
         "kind": str(row["kind"]),
-        "source_url": str(row["source_url"]),
+        "source_url": middle_truncate(str(row["source_url"]), MAX_URL_CHARS),
         "state": str(row["state"]),
         "mode": str(row["mode"]),
         "tabs": str(row["tabs"]),
@@ -520,8 +562,23 @@ def _ignored_rule_args(**passed: Any) -> str | None:
 
 
 def _normalize(raw: str) -> str:
-    """The URL as it will be stored, so two spellings are one follow."""
+    """The URL as it will be stored, so two spellings are one follow.
+
+    Bounded before anything is done with it. `is_indexable_url` checks the host
+    and `looks_like_container` looks for a marker, so a hundred kilobytes of
+    padding after `youtube.com/@` passed both — and a follow stores its URL
+    forever and echoes it in every payload that names the follow, including
+    `corpus-summary`. The clamp is a refusal rather than a truncation because a
+    truncated URL is a different URL, and this one is a key.
+    """
     candidate = raw.strip()
+    if len(candidate) > MAX_STORED_URL_CHARS:
+        raise bad_param(
+            f"that URL is {len(candidate)} characters; the limit is "
+            f"{MAX_STORED_URL_CHARS}.",
+            "a channel or playlist URL is short — check for a pasted "
+            "duplicate or a tracking payload.",
+        )
     if "://" not in candidate:
         candidate = f"https://{candidate}"
     candidate = candidate.split("#", 1)[0].rstrip("/")

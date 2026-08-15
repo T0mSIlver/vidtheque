@@ -85,17 +85,24 @@
      state-changing GET on this surface (§3.3). #}
   <div class="followactions">
     <form class="rowform" method="post" action="{{ root }}/following/{{ follow.slug }}/state">
-      {% if follow.state == 'paused' %}
+      {# `failing` resumes for the same reason `paused` does: it is a follow the
+         scheduler will not enqueue, and resume is the one control that clears
+         the error and re-arms the clock. Offering only Pause here left a
+         channel that 404'd once reachable solely through pause-then-resume,
+         while Check now printed a time and queued nothing. #}
+      {% if follow.state in ('paused', 'failing') %}
       <input type="hidden" name="action" value="resume">
-      <button class="ghost" type="submit">Resume</button>
+      <button class="ghost" type="submit">{{ 'Try again' if follow.state == 'failing' else 'Resume' }}</button>
       {% else %}
       <input type="hidden" name="action" value="pause">
       <button class="ghost" type="submit">Pause</button>
       {% endif %}
     </form>
+    {% if follow.state == 'active' %}
     <form class="rowform" method="post" action="{{ root }}/following/{{ follow.slug }}/check">
       <button class="ghost" type="submit">Check now</button>
     </form>
+    {% endif %}
     <form class="rowform" method="post" action="{{ root }}/following/{{ follow.slug }}/delete">
       <button class="ghost" type="submit">Unfollow</button>
     </form>

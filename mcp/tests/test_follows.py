@@ -134,15 +134,28 @@ async def make_follow(
     db: Database,
     *,
     title: str = "GPU MODE",
-    source_url: str = CHANNEL,
+    source_url: str | None = None,
     kind: str = "channel",
     **rule_fields: Any,
 ) -> int:
+    """One follow. A distinct URL per title unless the caller names one.
+
+    `collections_one_follow_per_source` (migration 0006) makes one follow per
+    source URL a schema guarantee, so a test wanting four follows is a test
+    wanting four channels — which is what it always meant, since two follows of
+    one URL would each spend the shared daily budget on the same uploads.
+    """
+    if source_url is None:
+        source_url = CHANNEL if title == "GPU MODE" else f"{CHANNEL}-{_slug(title)}"
     return await db.write(
         lambda c: store.create(
             c, title=title, source_url=source_url, kind=kind, rules=Rules(**rule_fields)
         )
     )
+
+
+def _slug(title: str) -> str:
+    return "".join(ch.lower() if ch.isalnum() else "-" for ch in title).strip("-")
 
 
 async def backdate_follow(db: Database, collection_id: int, seconds: int) -> None:
@@ -613,18 +626,33 @@ async def test_a_paused_follow_does_not_owe_a_week_of_checks(db) -> None:
     assert follow["last_error_code"] is None and follow["last_error_message"] is None
 
 
-async def test_check_now_wakes_an_active_follow_and_leaves_a_paused_one_alone(db) -> None:
+async def test_check_now_wakes_an_active_follow_and_leaves_every_other_state_alone(db) -> None:
+    """`failing` is here for the same reason as `paused`, and is easier to get wrong.
+
+    `due()` enqueues active follows only, so arming anything else sets a clock
+    nobody reads — and the caller then prints "due now" about a check that can
+    never be queued. That is a false receipt, on the feature whose whole design
+    is receipts that are true. A channel that 404'd once leaves the follow
+    `failing`, and "check now" is exactly the gesture an operator makes after
+    fixing the URL, so it has to say that resume is what re-arms it.
+    """
     active = await make_follow(db, title="A")
     paused = await make_follow(db, title="B")
-    await arm(db, active, +9000)
-    await arm(db, paused, +9000)
+    failing = await make_follow(db, title="C")
+    for collection_id in (active, paused, failing):
+        await arm(db, collection_id, +9000)
     await db.write(lambda c: store.set_state(c, paused, "paused"))
+    await db.write(lambda c: store.set_state(c, failing, "failing"))
 
-    await db.write(lambda c: store.check_now(c, active))
-    await db.write(lambda c: store.check_now(c, paused))
+    for collection_id in (active, paused, failing):
+        await db.write(lambda c: store.check_now(c, collection_id))
 
     due = await db.read(lambda c: store.due(c, 10))
     assert [int(row["collection_id"]) for row in due] == [active]
+    # And the clock of the two it left alone was not touched at all.
+    for collection_id in (paused, failing):
+        row = await db.read(lambda c: store.get(c, collection_id))
+        assert int(row["next_check_at"]) > 0
 
 
 async def test_a_landed_video_is_joined_to_the_ledger_row_it_came_from(db) -> None:
@@ -1142,6 +1170,46 @@ async def test_a_queued_candidate_remembers_that_its_duration_cost_a_probe(db) -
 
     assert (outcome.queued, outcome.probed) == (1, 1)
     assert str((await ledger(db, collection_id))["vid00000001"]["judged_from"]) == "probe"
+
+
+async def test_a_budget_hold_is_never_re_probed_for_a_number_the_ledger_holds(db) -> None:
+    """A held row comes back every check; it must not cost a request every check.
+
+    The ledger stores what a probe measured, and `held_budget` is the one
+    decision that is explicitly provisional — so the candidate returns on the
+    next check, and used to return as a bare listing entry with no duration and
+    get re-probed. On a channel whose listing withholds durations that is one
+    request per held candidate per check, forever, against a source this feature
+    treats bot-checks from as an ordinary operating condition.
+
+    The second failure is worse than the waste: re-probes are spent oldest-first
+    out of `MAX_PROBES_PER_CHECK`, so five held rows would consume the whole
+    probe budget and starve every candidate that had never been judged at all.
+    """
+    collection_id = await make_follow(db, min_duration_s=480, max_per_check=10)
+    await backdate_follow(db, collection_id, 3600)
+    listed = entry("vid00000001", duration_s=None, published_at=now() - 600)
+    source = FakeChannel(videos=[listed], durations={listed.url: 3600.0})
+
+    # A budget far too small for a 1:00:00 video: probed, then held.
+    first = await run_check(db, collection_id, source, daily_budget_s=60.0)
+    held = (await ledger(db, collection_id))["vid00000001"]
+    assert (first.probed, str(held["decision"])) == (1, "held_budget")
+    assert float(held["duration_s"]) == 3600.0
+
+    # Still over budget, so still held — and not asked about a second time.
+    second = await run_check(db, collection_id, source, daily_budget_s=60.0)
+    assert (second.seen, second.probed) == (1, 0)
+    assert len(source.probed) == 1
+    assert str((await ledger(db, collection_id))["vid00000001"]["decision"]) == "held_budget"
+
+    # And when the window frees, it is queued off the remembered number, with
+    # the provenance of the probe that actually paid for it.
+    third = await run_check(db, collection_id, source, daily_budget_s=7200.0)
+    landed = (await ledger(db, collection_id))["vid00000001"]
+    assert (third.queued, third.probed) == (1, 0)
+    assert len(source.probed) == 1
+    assert (str(landed["decision"]), str(landed["judged_from"])) == ("queued", "probe")
 
 
 async def test_a_probe_that_cannot_answer_leaves_the_decision_to_you(db) -> None:

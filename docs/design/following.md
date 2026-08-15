@@ -268,6 +268,17 @@ to *now*, not to when it would have been due. The catch-up burst that would
 otherwise produce is exactly what the budget exists to prevent, so it must not
 be created in the first place.
 
+**Unfollowing frees the spend, and that is a known hole rather than a design.**
+The sum is over `follow_seen`, and `collections` cascades to it, so a follow
+that accepted six hours today and is deleted this evening takes those six hours
+out of the rolling window with it — every other follow's next check sees them as
+free, and the day can run to roughly twice the ceiling. It is recorded here
+rather than fixed because the fix is a choice about where a spend lives, not a
+patch: either the queued rows survive their follow (re-parented or nullified
+instead of cascaded), or the spend is written at accept time to something
+append-only that is not the ledger. Both add a table or a nullable owner to a
+schema that currently reads cleanly, and neither is worth guessing at. §11.7.
+
 ## 6. The decision vocabulary
 
 `follow_seen.decision` is one of nine words, enforced by `CHECK`:
@@ -503,3 +514,17 @@ Real forks. Everything above is a decision.
    case for dropping it: two ceilings with one decision word between them is a
    thing to explain twice on the detail page. Kept for the first cut; say if the
    detail page reads worse for it.
+
+7. **Where should a spend live, so unfollowing does not refund it?** §5's known
+   hole: the budget sums `follow_seen`, `collections` cascades to it, and an
+   unfollow therefore returns hours already spent on download and GPU to the
+   rolling window. The two honest fixes both cost something. *Keep the rows*:
+   `follow_seen.collection_id` becomes nullable with `ON DELETE SET NULL`, and
+   every read in `follows/store.py` grows a "belongs to a live follow" clause —
+   cheap to write, and it leaves orphan ledger rows nothing on any surface can
+   explain. *Record the spend separately*: an append-only row per accepted
+   candidate, pruned on the same 30-day clock as `job_events` — one more table,
+   but the budget stops being a property of a table that exists for another
+   reason. There is also the third answer, which is that a corpus with a handful
+   of follows will never notice, and a documented hole is cheaper than either.
+   It is a real fork and it is yours.

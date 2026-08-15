@@ -164,10 +164,18 @@ def set_state(conn: sqlite3.Connection, collection_id: int, state: str) -> None:
 
 
 def check_now(conn: sqlite3.Connection, collection_id: int) -> None:
-    """Make an active follow due immediately. A paused one stays paused."""
+    """Make an active follow due immediately. Anything else is left alone.
+
+    `state = 'active'` rather than `state <> 'paused'`, so this says exactly
+    what `due()` means. The looser spelling armed a `failing` follow — set
+    `next_check_at = 0` on a row the scheduler filters out — and the caller then
+    printed "due now" about a check that could never be queued. A false receipt
+    on the feature whose entire design is receipts that are true. Recovery from
+    `failing` is `set_state(..., 'active')`, which is what `resume` calls.
+    """
     conn.execute(
         "UPDATE follows SET next_check_at = 0, updated_at = unixepoch() "
-        "WHERE collection_id = ? AND state <> 'paused'",
+        "WHERE collection_id = ? AND state = 'active'",
         (collection_id,),
     )
 
@@ -287,6 +295,21 @@ def counts(conn: sqlite3.Connection, collection_id: int) -> dict[str, int]:
         (collection_id,),
     )
     return {str(row["decision"]): int(row["n"]) for row in rows}
+
+
+def brought_in_counts(conn: sqlite3.Connection) -> dict[int, int]:
+    """How many videos each follow has queued, for every follow, in one query.
+
+    The alternative is `counts()` per row, which is what a listing did until the
+    docstring claiming "one round trip" stopped being true. Bounded work either
+    way, but a per-row round trip in a payload builder is the shape that becomes
+    a fan-out the moment somebody raises the cap.
+    """
+    rows = conn.execute(
+        "SELECT collection_id, COUNT(*) AS n FROM follow_seen "
+        "WHERE decision = 'queued' GROUP BY collection_id"
+    )
+    return {int(row["collection_id"]): int(row["n"]) for row in rows}
 
 
 def totals(conn: sqlite3.Connection) -> dict[str, int]:

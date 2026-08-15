@@ -160,6 +160,65 @@ async def test_a_non_youtube_host_is_refused_before_anything_is_stored(
     assert await count_follows(assembled.deps) == 0
 
 
+async def test_a_url_too_long_to_be_a_channel_is_refused_before_it_is_stored(
+    assembled: Assembled,
+) -> None:
+    """A follow's URL is stored forever and echoed in every payload that names it.
+
+    `is_indexable_url` checks the host and `looks_like_container` looks for a
+    marker, so a hundred kilobytes of padding after a real prefix passed both.
+    Refused rather than truncated: a truncated URL is a different URL, and this
+    one is the key the follow is found by.
+    """
+    padded = CHANNEL + "a" * 100_000
+    result = await follow(assembled.deps, url=padded)
+    payload = structured(result)
+    assert payload["code"] == "E_BAD_PARAM"
+    assert "2048" in payload["message"]
+    assert len(body(result)) < 2_000  # and the refusal does not echo it back
+    assert await count_follows(assembled.deps) == 0
+
+
+async def test_a_playlist_cannot_be_given_tabs_it_does_not_have(
+    assembled: Assembled,
+) -> None:
+    """A filter that cannot apply prints a `note:` — it never silently narrows.
+
+    Tabs are a channel's /videos, /streams and /shorts. A playlist is listed
+    whole and its candidates are tagged `videos`, so `tabs="streams"` on one
+    produced a follow that rejected every candidate as `skipped_tab` forever —
+    structurally dead, and discoverable only by reading the ledger.
+    """
+    result = await follow(assembled.deps, url=PLAYLIST, tabs="streams")
+    text = body(result)
+    assert "note: tabs are a channel's" in text
+    assert "/streams was not applied" in text
+    assert structured(result)["follow"]["tabs"] == "videos"
+
+
+async def test_check_now_on_a_failing_follow_does_not_promise_a_check(
+    assembled: Assembled,
+) -> None:
+    """The scheduler enqueues active follows only, so anything else must say so."""
+    deps = assembled.deps
+    created = await follow(deps, url=CHANNEL)
+    slug = structured(created)["follow"]["slug"]
+    await deps.db.write(
+        lambda c: c.execute(
+            "UPDATE follows SET state = 'failing', last_error_message = 'channel is gone' "
+            "WHERE collection_id = (SELECT id FROM collections WHERE slug = ?)",
+            (slug,),
+        )
+    )
+
+    result = await follow(deps, url=CHANNEL, action="check_now")
+    text = body(result)
+    assert "Not scheduled" in text and "failing" in text
+    assert "channel is gone" in text  # and it says what went wrong
+    assert structured(result)["scheduled"] is False
+    assert "resume" in text
+
+
 async def test_an_unknown_follow_names_what_was_tried(assembled: Assembled) -> None:
     result = await follow(assembled.deps, url="nobody-follows-this", action="pause")
     payload = structured(result)

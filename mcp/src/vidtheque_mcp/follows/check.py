@@ -203,6 +203,16 @@ class FollowCheck:
         seen = await self.db.read(lambda c: store.seen_ids(c, collection_id))
 
         candidates: list[tuple[int, Candidate]] = []
+        # What a previous check already paid a probe to learn. A `held_budget`
+        # row comes back every check until the window frees, and it used to come
+        # back as a bare listing entry — so on a channel whose listing withholds
+        # durations, the same held candidate was re-probed every six hours for a
+        # number sitting in its own ledger row. Worse, re-probes are spent
+        # oldest-first out of `MAX_PROBES_PER_CHECK`, so five held rows starved
+        # every candidate that had never been judged at all. Against a source
+        # this module's own docstring calls rate-limiting, that is the feature's
+        # stated fear, self-inflicted.
+        remembered: dict[str, str] = {}
         for rank, (tab, entry) in enumerate(listed):
             source_id = str(entry.source_id)
             prior = seen.get(source_id)
@@ -212,6 +222,12 @@ class FollowCheck:
             # anything.
             if prior is not None and str(prior["decision"]) != "held_budget":
                 continue
+            duration_s = entry.duration_s
+            if duration_s is None and prior is not None and prior["duration_s"] is not None:
+                duration_s = float(prior["duration_s"])
+                # And it keeps the provenance it was measured with: the row is
+                # still judged from a probe, just not from a *second* one.
+                remembered[source_id] = str(prior["judged_from"] or "listing")
             candidates.append(
                 (
                     rank,
@@ -219,7 +235,7 @@ class FollowCheck:
                         source_id=source_id,
                         url=entry.url,
                         title=entry.title,
-                        duration_s=entry.duration_s,
+                        duration_s=duration_s,
                         published_at=entry.published_at,
                         tab=tab,
                     ),
@@ -263,7 +279,7 @@ class FollowCheck:
             pending.append(candidate)
 
         for candidate in pending:
-            judged_from = "listing"
+            judged_from = remembered.get(candidate.source_id, "listing")
             measured = candidate
             if needs_duration(rules, candidate):
                 if outcome.probed >= MAX_PROBES_PER_CHECK:
