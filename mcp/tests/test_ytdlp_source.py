@@ -299,3 +299,16 @@ def test_the_classifier_keeps_the_bot_check_inside_the_rate_limit_class() -> Non
     assert not sources._is_bot_check("ERROR: Sign in to confirm your age")
     assert isinstance(sources._classified(BOT_CHECK, URL), RateLimited)
     assert isinstance(sources._classified(TOO_MANY, URL), RateLimited)
+
+
+def test_the_download_403_label_does_not_promise_a_rate_limit() -> None:
+    """The download 403 has two causes and one string (2026-08-19: a broken
+    stable yt-dlp served it on every retry for hours, and every job event said
+    "rate-limited"). Same class, same typed code — but the message must carry
+    both readings and name the fix for the persistent one."""
+    classified = sources._classified(STALE, URL)
+    assert isinstance(classified, RateLimited)
+    assert "rate-limited" not in str(classified)
+    assert "updating yt-dlp" in str(classified)
+    # An explicit 429 keeps the plain reading: that one *is* a rate limit.
+    assert "rate-limited this box" in str(sources._classified(TOO_MANY, URL))

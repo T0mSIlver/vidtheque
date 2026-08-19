@@ -928,8 +928,21 @@ def _classified(message: str, url: str) -> SourceError:
             f"{url}: the IP is blocked for logged-out access, so this was not "
             f"retried inside the extraction — {message}"
         )
-    if _is_rate_limit(message):
+    if _is_too_many_requests(message):
         return RateLimited(f"YouTube rate-limited this box while fetching {url}: {message}")
+    if _is_rate_limit(message):
+        # The download 403 has two causes and one string, and only persistence
+        # tells them apart (2026-08-19: a broken stable yt-dlp produced this
+        # exact message on every retry for hours, and the old wording kept
+        # calling it a rate limit). Same typed code either way — the cool-off
+        # is the right move for both, once — but the label must not pick the
+        # transient reading on the reader's behalf.
+        return RateLimited(
+            f"YouTube refused the media download while fetching {url}. Either "
+            f"throttling (clears within a cool-off) or a yt-dlp build YouTube "
+            f"has broken — the same 403 again after a cool-off means the "
+            f"build, and the fix is updating yt-dlp, not waiting: {message}"
+        )
     if _is_not_yet(message):
         return NotYetAvailable(message)
     if _is_unavailable(message):
@@ -971,6 +984,13 @@ def _is_rate_limit(message: str) -> bool:
     Deliberately narrow: a 403 on the *download* is throttling, while a 403 on
     an extraction is usually geo-blocking or a members-only stream, which
     `_is_unavailable` already claims and which no amount of waiting fixes.
+
+    The download 403 has a second cause with the identical string (2026-08-19):
+    a yt-dlp build whose extraction path YouTube has broken 403s on *every*
+    media download, metadata fine, until the build is updated. No predicate can
+    split that from throttling on one message — persistence across cool-offs is
+    the tell — so the class stays, `_classified` words the message for both
+    readings, and the attempt ceiling keeps "forever" bounded.
     """
     lowered = message.lower()
     if _is_too_many_requests(message):
