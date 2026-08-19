@@ -1,6 +1,6 @@
 [project]
 name = "vidtheque-mcp"
-version = "0.0.5"
+version = "0.0.6"
 description = "vidtheque MCP server — corpus index, OAuth authorization server, and the 9-tool surface"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
