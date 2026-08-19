@@ -309,6 +309,9 @@ def test_the_download_403_label_does_not_promise_a_rate_limit() -> None:
     classified = sources._classified(STALE, URL)
     assert isinstance(classified, RateLimited)
     assert "rate-limited" not in str(classified)
-    assert "updating yt-dlp" in str(classified)
+    # In the head, not merely present: job-status middle-truncates errors at
+    # 400 chars (head 200 / tail 200), and a clause the truncation eats might
+    # as well not exist.
+    assert str(classified).index("updating yt-dlp") < 200
     # An explicit 429 keeps the plain reading: that one *is* a rate limit.
     assert "rate-limited this box" in str(sources._classified(TOO_MANY, URL))
