@@ -37,7 +37,18 @@ dependencies = [
     # yt-dlp ships `yt-dlp-ejs` in `default` (§5.0). The PyPI Deno
     # redistribution keeps it inside the venv instead of the image.
     # `curl-cffi` supplies the impersonation target both live runs asked for.
-    "yt-dlp[default,curl-cffi,deno]>=2026.7.4",
+    #
+    # A nightly, pinned exactly, and not by preference: on 2026-08-19 the
+    # 2026.7.4 stable — then the *latest* stable — got `HTTP Error 403:
+    # Forbidden` on every media download from CT 9002 (metadata extraction
+    # fine, deno present, same failure reproduced outside the container),
+    # while this nightly downloaded the same video from the same box. YouTube
+    # broke the stable extraction path and only the nightly channel carries
+    # the fix. Nightlies are `.devN` pre-releases on PyPI; the exact `==` is
+    # both what lets uv resolve a pre-release and the determinism rule this
+    # repo already has. Move the pin forward (or back to a `>=` stable floor)
+    # as a deliberate bump once a stable release catches up.
+    "yt-dlp[default,curl-cffi,deno]==2026.8.18.122307.dev0",
     # `-headless`, i.e. opencv-python-headless: OCR (which forces the GUI build
     # of opencv) lives on the worker, so this image needs no libGL. Pinned
     # below 0.8 as the project's own docs instruct (§4.1).
