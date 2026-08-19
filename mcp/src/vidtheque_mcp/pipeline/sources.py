@@ -936,12 +936,14 @@ def _classified(message: str, url: str) -> SourceError:
         # exact message on every retry for hours, and the old wording kept
         # calling it a rate limit). Same typed code either way — the cool-off
         # is the right move for both, once — but the label must not pick the
-        # transient reading on the reader's behalf.
+        # transient reading on the reader's behalf. The actionable clause
+        # rides in front so the 400-char middle-truncation (tools/indexing)
+        # keeps it in the head, like the bot-check prose above.
         return RateLimited(
-            f"YouTube refused the media download while fetching {url}. Either "
-            f"throttling (clears within a cool-off) or a yt-dlp build YouTube "
-            f"has broken — the same 403 again after a cool-off means the "
-            f"build, and the fix is updating yt-dlp, not waiting: {message}"
+            f"YouTube refused the media download while fetching {url} — "
+            f"throttling, or a broken yt-dlp build; updating yt-dlp fixes the "
+            f"second, a cool-off the first, and the same 403 again after a "
+            f"cool-off means the build: {message}"
         )
     if _is_not_yet(message):
         return NotYetAvailable(message)
