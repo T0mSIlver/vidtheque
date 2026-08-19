@@ -1,6 +1,6 @@
 [project]
 name = "vidtheque-worker"
-version = "0.0.5"
+version = "0.0.6"
 description = "vidtheque GPU inference worker — OpenAI-compatible STT/embeddings/OCR with a single GPU lifecycle manager"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
