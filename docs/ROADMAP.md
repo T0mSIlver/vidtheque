@@ -95,6 +95,16 @@ Carried on a backlog since 2026-08-09 and never described anywhere. The string
 `queries.py:1487` are unchanged since before it was written. Someone has to
 reproduce it before it can be scoped.
 
+### 11. HTTP envelope cases the suite has never exercised
+
+Listed in `research/website-test-2026-08-09.md` §"untested" and never turned
+into tests: the `search`-bucket 429 as a browser sees it (does `/api/meta`
+sharing that bucket brick the page boot?), the `frames`-bucket 429 →
+placeholder fallback, and the envelopes for a missing `q`, a bad
+`content_type`, a non-numeric `limit`/`offset`, `GET /api/ask` (expect 405) and
+`/static/../` traversal. Cheap, and each one is a route the public demo
+actually exposes.
+
 ### Still deferred, unchanged, and still correctly deferred
 
 `get-clip`, speaker identity management, row-level permissions and `format=json`
