@@ -43,4 +43,4 @@ This index is the one navigational file — when you add a doc, add its line.
 
 ## Release
 
-- `release-staging-2026-08-11.md` — the fresh LXC, the tunnel, the migration reasoning (executed 2026-08-11; the checklist it fed is `docs/history/BEFORE-SHIP.md`)
+- `release-staging-2026-08-11.md` — the fresh LXC, the tunnel, the migration reasoning (executed 2026-08-11; the launch checklist it fed has been retired, its durable rules folded into `docs/LESSONS.md`)

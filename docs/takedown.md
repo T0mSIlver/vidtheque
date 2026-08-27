@@ -137,8 +137,8 @@ SELECT index_state, COUNT(*) FROM videos WHERE public_id = 'VIDEO_ID';
 
 If a stage is in flight, let it finish or cancel the job terminally — a
 half-deleted video that an indexer then re-populates is the worst outcome
-available here. (`docs/history/BEFORE-SHIP.md` 2.1 has the same check for a different
-reason.)
+available here. (`docs/LESSONS.md` makes the same check for a different reason:
+a cutover must verify the queue empty, not merely quiet.)
 
 ### 2.4 The database delete — one row, and the cascade does the rest
 
@@ -287,7 +287,7 @@ which is how you confirm it happened.
 `/frames/*.jpg` is served `Cache-Control: public, max-age=86400` and `.jpg` is
 default-cached by Cloudflare, so **stopping the origin does not un-publish the
 keyframes** — edge copies answer for up to a day
-(`docs/history/BEFORE-SHIP.md`, rollback card, step 1). After §2.5:
+(`docs/LESSONS.md`, "Deploying and cutting over"). After §2.5:
 
 > Cloudflare dashboard → **Caching → Configuration → Purge Everything**
 
@@ -381,6 +381,6 @@ half-done at speed:
 4. **A `--verify` mode** that runs §2.6 and refuses to report success on
    non-zero drift.
 
-*Addendum to `docs/history/BEFORE-SHIP.md` G4b: the gate is met by this document — a
-documented manual procedure was the agreed sufficient scope — and items 1–4
-above are the follow-up work it defers.*
+*The launch gate for a removal path is met by this document — a documented
+manual procedure was the agreed sufficient scope — and items 1–4 above are the
+follow-up work it defers.*

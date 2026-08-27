@@ -5,9 +5,9 @@ runs it: a welcome page, a read-only dashboard, and a demo over the AI Engineer
 corpus, with the MCP server itself reachable so anyone can point their own
 agent at it. This document turns that day into a checklist.
 
-**Who runs this.** The operator, with an agent alongside. `docs/history/HANDOFF-2026-08-09.md`
-reserves the tunnel, the domain, the DNS records and the security audit for
-"together", and that reservation is the point of §1: everything below §1 is
+**Who runs this.** The operator, with an agent alongside. The tunnel, the
+domain, the DNS records and the security audit were reserved for "together"
+from the start, and that reservation is the point of §1: everything below §1 is
 mechanical, and §1 is not.
 
 **What this is not.** It is not a hosting guide for anyone else's box, and it
@@ -25,8 +25,7 @@ scanned, and the tunnel goes live the moment `cloudflared` connects.
 
 ## 1. The gate — the security audit is required before first public traffic
 
-**This is a hard gate.** The deferred security audit
-(`docs/history/HANDOFF-2026-08-09.md`, "Reserved for together") happens **before**
+**This is a hard gate.** The deferred security audit happens **before**
 the first public request, not after the URL is shared and not "next week". It
 is run **with the operator**, as a decision-making session, not unilaterally by an agent:
 several of the findings below are *policy* questions — how much of the corpus is

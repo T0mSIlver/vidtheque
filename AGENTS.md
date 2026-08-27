@@ -16,7 +16,9 @@ product itself is explained in `README.md` and `docs/README.md`.
 3. `DESIGN.md` + `PRODUCT.md` — the visual contract for the web surfaces.
 4. This file — conventions only. Any doc above wins.
 
-`docs/history/` holds executed launch-era records: read, don't update.
+`docs/ROADMAP.md` is the only list of open work — a backlog inside a dated
+document is a snapshot and goes stale silently. `docs/LESSONS.md` holds the
+operational rules an incident or a launch paid for.
 
 ## Invariants — never change these without Tom
 

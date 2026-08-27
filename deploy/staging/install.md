@@ -1,10 +1,15 @@
 <!--
 BOX:      none — this is the map. Each file below says which box it belongs on.
-INSTALLS: docs/history/BEFORE-SHIP.md Phases 2.4, 4.1, 4.2 and 5.
+INSTALLS: the public box's units, env and tunnel config.
 STATUS:   EXECUTED 2026-08-11 — vidtheque.dev live. Kept as the cutover
-          reference for the next box. Written 2026-08-11 against
-          docs/history/BEFORE-SHIP.md (Phase 1 ANSWERED) and
-          research/release-staging-2026-08-11.md (the runbook, incl. §10).
+          reference for the next box, and §12 is current: the corpus-refresh
+          runbook `deploy/staging/vidtheque-deploy.sh` cites by section.
+          Reasoning: research/release-staging-2026-08-11.md (incl. §10).
+NOTE:     this file describes CT 9001, the PUBLIC box (git clone + systemd,
+          pull-based deploy). The private read-write box, CT 9002, runs
+          release images and is updated with `vidtheque-update <version>`
+          (deploy/vidtheque-update.sh) — a different machine and a different
+          mechanism, not described here.
 -->
 
 # deploy/staging — install order
@@ -15,7 +20,7 @@ baked in; every value that could not be known before the container exists is a
 `<PLACEHOLDER>` and every one of those is in §0's table.
 
 `docs/deploy-public.md` stays the authority for the go-public *checks*.
-`docs/history/BEFORE-SHIP.md` stays the ordered list for the morning. This file only says
+`docs/LESSONS.md` carries the cutover rules that outlived that morning. This file only says
 **which artifact goes where, in what order, and how you know it worked**.
 
 ---
@@ -59,7 +64,7 @@ launch morning is not when to introduce a second true path.
 
 ## 1. The manifest
 
-| file | box | destination | BEFORE-SHIP step |
+| file | box | destination | cutover step |
 |---|---|---|---|
 | `stack.env.public` | public | `/var/lib/vidtheque/stack.env` | 4.1 |
 | `stack.env.sandbox` | sandbox | `/home/dev/vidtheque-data/stack.env` (**replaces** the live file) | 4.1 + 4.2 |
@@ -80,13 +85,13 @@ verb — codex blocker #2). So the worker must be brought back **bridge-bound,
 under its own unit**, before the public box is asked to talk to it.
 
 ```
-Phase 2.1  freeze the corpus, verify the queue empty        (BEFORE-SHIP)
-Phase 2.2  Tom creates the container                        (BEFORE-SHIP)
-Phase 2.3  install + clone on the public box                (BEFORE-SHIP)
-Phase 3.1  copy keyframes/ while the old stack is UP        (BEFORE-SHIP)
+Phase 2.1  freeze the corpus, verify the queue empty        (LESSONS.md)
+Phase 2.2  Tom creates the container
+Phase 2.3  install + clone on the public box
+Phase 3.1  copy keyframes/ while the old stack is UP
 Phase 3.2  stop the old stack
    -> §3   SANDBOX: stack.env + worker unit + firewall      (this file)
-Phase 3.3-3.9  snapshot, copy, verify                       (BEFORE-SHIP)
+Phase 3.3-3.9  snapshot, copy, verify
    -> §4   PUBLIC: stack.env
    -> §5   PUBLIC: vidtheque-mcp.service
    -> §6   PUBLIC: Phase 4.3 mode verification
@@ -203,7 +208,7 @@ systemd-analyze security vidtheque-mcp.service
 
 ## 6. Public — mode verification, before the tunnel exists
 
-**docs/history/BEFORE-SHIP.md Phase 4.3, verbatim.** Run all of it against
+**Mode verification, in full.** Run all of it against
 `http://127.0.0.1:8100`. A thing that is wrong here is wrong through the tunnel
 too, and cheaper to find.
 
@@ -386,17 +391,28 @@ sudo systemctl stop cloudflared
 sudo systemctl disable cloudflared
 ```
 
-The full escalation — five steps, each more permanent, with the cache-purge
-caveat that "no cache to purge" was wrong — is **docs/history/BEFORE-SHIP.md's rollback
-card**, and the reasoning is `research/release-staging-2026-08-11.md` §8.5.
-Two things from there that belong next to these commands:
+The escalation, each step more permanent. Reasoning:
+`research/release-staging-2026-08-11.md` §8.5.
 
-1. Stopping the connector **does not un-publish the keyframes**. `/frames/*.jpg`
-   is `Cache-Control: public, max-age=86400` and `.jpg` is default-cached by
+1. **Stop the connector** (above). Seconds, reversible with `start`. It **does
+   not un-publish the keyframes**: `/frames/*.jpg` is
+   `Cache-Control: public, max-age=86400` and `.jpg` is default-cached by
    Cloudflare, so edge copies survive the origin for up to a day. If the
-   rollback is about *content*, also do **Caching → Purge Everything**.
-2. **Rehearse step 1 before the URL is shared.** A rollback you have not run is
-   a plan.
+   rollback is about *content* rather than an outage, also do **Caching →
+   Purge Everything**, and accept that already-downloaded copies are gone for
+   good.
+2. **Roll the corpus back.** §12's poller keeps one previous generation at
+   `/var/lib/vidtheque/corpus-previous`; point `corpus-manifest.json` at the
+   older release and request a deployment.
+3. **Roll the code back.** Request a deployment of an earlier ref — this box is
+   a git clone, so there is no image tag to pin. (The *private* box, CT 9002,
+   rolls back differently: `vidtheque-update <previous tag>`.)
+4. **`pct rollback <id> pre-launch`.** Undoes the container.
+5. **Delete the DNS record**, then `cloudflared tunnel delete vidtheque` —
+   this invalidates the credentials, so recreating means redoing §9.
+
+**Rehearse step 1 before the URL is shared.** A rollback you have not run is a
+plan.
 
 **Rotate on exposure.** Tunnel credentials leaked → rotate, restart the
 connector, force-disconnect existing connections via the API.
