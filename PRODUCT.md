@@ -2,20 +2,8 @@
 
 <!-- impeccable:product-schema 1 -->
 
-> **How this file was written.** Derived from `CLAUDE.md`, `README.md`,
-> `docs/design/dashboard.md`, `docs/design/demo-site.md`,
-> `docs/design/tool-surface.md`, `docs/design/index-schema.md` and
-> `docs/design/DECISIONS.md` — all of them records of decisions Tom has already
-> made and signed off. No interview was run: the agent that wrote it had no
-> question tool in its surface, and the brief directed it to derive product
-> truth from those files rather than ask. Facts here are cited to a file where
-> the source is not obvious. Anything genuinely undecided is marked
-> **[undecided]** rather than invented.
->
-> **Aligned 2026-08-10:** `docs/design/positioning.md` is LOCKED and
-> authoritative for framing, voice and vocabulary. Where this file and the
-> positioning contract touch, the contract wins; this revision folds it in
-> (position, word law, surface roles, the wordmark decision).
+> Claims cite the design doc they come from where the source is not obvious.
+> Anything genuinely undecided is marked **[undecided]** rather than invented.
 
 ## Platform
 
@@ -114,11 +102,12 @@ a neighbouring product could not truthfully copy:
 
 ## Capabilities and Constraints
 
-**Capabilities.** Index a video, playlist or channel; hybrid search (FTS +
-vector, RRF) across transcript, on-screen text and frames; per-video summary;
-segment context; frame retrieval by signed URL; tagging; a job queue with
-retries, deferral and an event log; a management dashboard; a public demo
-projection.
+**Capabilities.** Index a video, playlist or channel; **follow a channel, so
+matching uploads index themselves inside a daily budget of hours of video**
+(`docs/design/following.md`); hybrid search (FTS + vector, RRF) across
+transcript, on-screen text and frames; per-video summary; segment context;
+frame retrieval by signed URL; tagging; a job queue with retries, deferral and
+an event log; a management dashboard; a public demo projection.
 
 **Durable technical constraints — these bind every future surface:**
 
@@ -196,9 +185,11 @@ time axis.
   hostile strings, a half-indexed video, a failed stage, a deduplicated
   keyframe and three job shapes.
 - `research/` holds the receipts behind the contracts and is append-only.
-- **No benchmarks, no user counts, no testimonials, no published images, no
-  releases exist.** README says so in a callout. Nothing may present a number
-  that is not read out of the index at render time.
+- **Releases, images and benchmarks exist now** — `v0.0.1`…`v0.0.6`, both
+  images on GHCR, and measured runs in `bench/results/` and `research/`. **User
+  counts and testimonials do not**, and no surface may imply either. The
+  standing rule is unchanged: nothing presents a number that is not read out of
+  the index at render time.
 
 ## Product Principles
 
