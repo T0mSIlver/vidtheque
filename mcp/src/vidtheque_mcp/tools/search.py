@@ -545,6 +545,7 @@ async def run(
 
 
 # ---------------------------------------------------------------------------
+# the private half: the `note:` lines, the legs, dedup, and scoring
 
 
 async def _note_untagged_corpus(
