@@ -686,7 +686,7 @@ exists to prevent.
 **Transcript browser.** `cues` paged by `seq` on `cues_time(video_id, start_s)`:
 `start_s`, text, `origin` (`whisperx | yt_manual | yt_auto`), `avg_logprob` when
 present — the last two are how a human sees that three of the fifty-seven videos
-came in via captions (HANDOFF-2026-08-09). Chunk boundaries overlaid from
+came in via captions (measured on the first batch, 2026-08-09). Chunk boundaries overlaid from
 `chunks` (`first_cue_id` / `last_cue_id`), because "what exactly is the
 embedding unit" is one of the questions this page exists to answer.
 
@@ -709,7 +709,7 @@ is the single most convincing thing on the page — it is the difference between
 
 ### 5.4 `GET /dashboard/jobs` and `/dashboard/jobs/{job_id}` — the war-story page
 
-The motivating incident is in HANDOFF-2026-08-09: YouTube's bot-check was
+The motivating incident, 2026-08-09: YouTube's bot-check was
 misclassified as a permanent failure, then correctly reclassified as throttling
 with defer/backoff — after which the honest state of the system was "sixteen
 videos are in a pool, waiting, and coming back". Nothing rendered that. The test
@@ -788,7 +788,7 @@ first block now; the `h1` and the line under it already name what is being
 submitted. The refusal notice and the receipt still render above it.
 
 One thing the form must handle that the tool does not: **the ten-URL cap is
-lower than a real batch.** HANDOFF-2026-08-09 tells Tom to retry sixteen ids in
+lower than a real batch.** The first batch left sixteen ids to retry in
 one `index-video` call — which `tools/indexing.py` would reject at
 `urls accepts at most 10 entries`. The form should either split a paste into
 jobs of ten client-side and say so, or the cap should move. §10.7.
@@ -819,7 +819,7 @@ the same problem with different units, and the same answers.
    holds three variants per frame instead of one per browser window. Never
    inline base64.
 5. **`loading="lazy"` and explicit `width`/`height` on every frame image.** CLS 0
-   is a shipped property of the site (HANDOFF-2026-08-09) and a keyframe strip is
+   is a shipped property of the site and a keyframe strip is
    the easiest place in the project to lose it.
 6. **XSS posture identical to demo-site.md §6.2, for a stronger reason.** The
    dashboard renders *more* adversarial text than the demo does: OCR lines, video

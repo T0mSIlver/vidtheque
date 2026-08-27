@@ -24,6 +24,7 @@ public web surfaces are served by the MCP server's own Starlette app; `/demo`
 and the read-only tool surface exist only under `VIDTHEQUE_PUBLIC_READONLY=1`.
 Every env var is documented in `deploy/.env.example`, the document of record.
 
-Also here: `docs/security.md` (the map of security material),
-`docs/takedown.md` (creator removal), `docs/deploy-public.md` (the go-public
-runbook), `docs/history/` (the launch, as it happened — read, don't update).
+Also here: `docs/ROADMAP.md` (the only list of open work),
+`docs/LESSONS.md` (operational rules an incident paid for),
+`docs/security.md` (the map of security material), `docs/takedown.md` (creator
+removal), `docs/deploy-public.md` (the go-public runbook).

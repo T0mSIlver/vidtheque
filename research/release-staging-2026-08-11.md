@@ -1660,3 +1660,25 @@ The checklist this research fed, `BEFORE-SHIP.md`, was executed on launch
 morning and now lives at `docs/history/BEFORE-SHIP.md`, beside the overnight
 handoffs (`docs/history/HANDOFF-2026-08-09/-10/-11.md`). References in this
 document to `BEFORE-SHIP.md` at the repo root read through to that path.
+
+## 2026-08-28 — the companion docs were retired
+
+`docs/history/` is gone: `BEFORE-SHIP.md` and the three overnight handoffs were
+executed records of one launch, and by this date they described a topology that
+had changed twice — the second lever on their rollback card pointed at a
+container retired the same day it shipped, and their "`/mcp` never limited" line
+had been false since `VIDTHEQUE_RATE_MCP_PER_MIN` shipped at 120.
+
+Every reference to `BEFORE-SHIP.md` **above this line** is a reference to a file
+that no longer exists. It is left as written because this document is
+append-only evidence of what was true on 2026-08-11, not a live runbook.
+
+What survived, and where it went:
+
+- the cutover rules (freeze the pipeline, verify the queue *empty* not quiet,
+  cancel terminally rather than park, what stopping the connector does and does
+  not un-publish, rotate-on-exposure) → `docs/LESSONS.md`;
+- the rollback card, rewritten for the current two-box shape → 
+  `deploy/staging/install.md` §11;
+- the open items that were still open → `docs/ROADMAP.md`, verified against the
+  code rather than inherited.
