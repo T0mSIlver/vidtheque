@@ -9,6 +9,7 @@ lives and which document owns it.
 | MCP tools + resources | `/mcp` | `mcp/src/vidtheque_mcp/tools/` | `docs/design/tool-surface.md` |
 | Index (SQLite + sqlite-vec + FTS5) | — | `mcp/src/vidtheque_mcp/db/` | `docs/design/index-schema.md` |
 | Pipeline + jobs | — | `mcp/src/vidtheque_mcp/{pipeline,jobs}/` | `docs/design/index-schema.md`, `docs/design/DECISIONS.md` |
+| Following (channels, budget, ledger) | — | `mcp/src/vidtheque_mcp/follows/` | `docs/design/following.md` |
 | Auth (none / token / oauth) | `/{authorize,token,register,revoke}`, `/auth/*`, `/.well-known/*` | `mcp/src/vidtheque_mcp/auth/` | `docs/design/DECISIONS.md` #1 |
 | Landing | `/` | `mcp/src/vidtheque_mcp/public/static/landing/` | `DESIGN.md` |
 | Demo (read-only projection) | `/demo` | `mcp/src/vidtheque_mcp/public/static/demo/` | `docs/design/demo-site.md` |
@@ -17,12 +18,11 @@ lives and which document owns it.
 | Deploy | — | `deploy/`, `deploy/staging/` | `docs/deploy-public.md` |
 | Bench | — | `bench/` | `bench/README.md` |
 
-Three sentences of orientation: the system is **two processes** — the MCP
-server (state: SQLite, keyframes, jobs) and the worker (stateless GPU
-inference) — talking **HTTP only**. The public web surfaces are served by the
-MCP server's own Starlette app; `/demo` and the read-only tool surface exist
-only under `VIDTHEQUE_PUBLIC_READONLY=1`. Every env var is documented in
-`deploy/.env.example`, the document of record.
+The system is **two processes** — the MCP server (state: SQLite, keyframes,
+jobs) and the worker (stateless GPU inference) — talking **HTTP only**. The
+public web surfaces are served by the MCP server's own Starlette app; `/demo`
+and the read-only tool surface exist only under `VIDTHEQUE_PUBLIC_READONLY=1`.
+Every env var is documented in `deploy/.env.example`, the document of record.
 
 Also here: `docs/security.md` (the map of security material),
 `docs/takedown.md` (creator removal), `docs/deploy-public.md` (the go-public
