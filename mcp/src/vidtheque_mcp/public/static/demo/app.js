@@ -1295,7 +1295,16 @@ const renderCorpus = (videos) => {
   if (askParam === "0" || (q && askParam === null)) setAskMode(false);
 
   try {
-    const meta = await (await fetch("/api/meta")).json();
+    // `/api/meta` shares the `search` rate bucket, so a visitor who spent it
+    // and reloaded used to boot a page whose every meta-derived field was
+    // `undefined`: the MCP line read "undefined", the ask switch vanished as
+    // though the deployment had no key, and nothing said why. A limiter 429
+    // answers with a JSON *error* body, so `.json()` resolves and the catch
+    // below never fired. Any non-2xx now takes the same honest path an
+    // unreachable server takes.
+    const response = await fetch("/api/meta");
+    if (!response.ok) throw new Error(String(response.status));
+    const meta = await response.json();
     state.meta = meta;
     $("mcp-url").textContent = meta.mcp_url;
     $("cli-line").textContent = `claude mcp add --transport http vidtheque ${meta.mcp_url}`;
@@ -1322,13 +1331,22 @@ const renderCorpus = (videos) => {
     if (meta.videos) {
       $("corpus-count").textContent = `${meta.videos} talk${meta.videos === 1 ? "" : "s"} watched`;
     }
-  } catch {
-    setStatus("could not reach the server");
-    setState("no reply", "refused");
+  } catch (error) {
+    // Rate-limited and unreachable are different facts and the page says which:
+    // one is over in a minute, the other is the server being down.
+    const limited = String(error && error.message) === "429";
+    setStatus(
+      limited
+        ? "too many requests — this page loads again in a minute"
+        : "could not reach the server",
+    );
+    setState(limited ? "rate limited" : "no reply", "refused");
     // The endpoint is the server's to state (it is the same string the OAuth
     // `resource` uses), so an unreachable server gets no guessed URL — and a
     // copy button with nothing to copy is disabled rather than lying.
-    $("mcp-url").textContent = "unavailable — reload the page";
+    $("mcp-url").textContent = limited
+      ? "unavailable while rate limited — reload in a minute"
+      : "unavailable — reload the page";
     $("copy").disabled = true;
   }
 

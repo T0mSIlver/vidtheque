@@ -81,15 +81,15 @@ Carried on a backlog since 2026-08-09 and never described anywhere. The string
 `queries.py:1487` are unchanged since before it was written. Someone has to
 reproduce it before it can be scoped.
 
-### 9. HTTP envelope cases the suite has never exercised
+### 9. A wrong method on `/api/*` answers 404, not 405
 
-Listed in `research/website-test-2026-08-09.md` §"untested" and never turned
-into tests: the `search`-bucket 429 as a browser sees it (does `/api/meta`
-sharing that bucket brick the page boot?), the `frames`-bucket 429 →
-placeholder fallback, and the envelopes for a missing `q`, a bad
-`content_type`, a non-numeric `limit`/`offset`, `GET /api/ask` (expect 405) and
-`/static/../` traversal. Cheap, and each one is a route the public demo
-actually exposes.
+`Mount("/", app=mcp_app)` is last in the route list and matches everything.
+Starlette scores a path-match-method-mismatch as a *partial* match and prefers
+any later full match, so the mount answers first: `GET /api/ask` and
+`POST /api/search` both read `404 Not Found`. The mount must stay last, so the
+fix is not a reorder — it is either an explicit method-aware shim above the
+mount, or accepting it and saying so in the contract. Pinned by
+`test_a_wrong_method_is_a_404_because_the_mcp_mount_outranks_the_405`.
 
 ### Still deferred, unchanged, and still correctly deferred
 
@@ -119,6 +119,8 @@ shipped by reading the code and running its tests.
 | following Q5 note when checks are off | `follows.py:450` |
 | F6 zero-hit transcript leg says nothing about why | 2026-08-28, `search.py` |
 | F10 cap footer fires on a corpus too small to bind | 2026-08-28 — and it was naming the wrong video |
+| HTTP envelope cases untested | 2026-08-28, `test_public_envelopes.py` — and they found the boot defect below |
+| Demo page boots `undefined` when the search bucket is spent | 2026-08-28 — `/api/meta` shares the bucket; a 429 has a JSON body, so `.json()` resolved and the catch never fired |
 
 **The lesson, which is why this file exists:** two of these were shipped the
 same day the document listing them as open was written. A backlog inside a
