@@ -20,10 +20,10 @@ Releases ship as published images — `ghcr.io/t0msilver/vidtheque-{mcp,worker}`
 
 ```bash
 mkdir vidtheque && cd vidtheque
-REL=https://raw.githubusercontent.com/T0mSIlver/vidtheque/v0.0.3/deploy
+REL=https://raw.githubusercontent.com/T0mSIlver/vidtheque/v0.0.6/deploy
 curl -fsSLO "$REL/docker-compose.yml" -O "$REL/compose.release.example.yml"
 curl -fsSL -o .env "$REL/.env.example"   # the document of record for every knob
-echo "IMAGE_TAG=0.0.3" >> .env
+echo "IMAGE_TAG=0.0.6" >> .env
 docker compose -f docker-compose.yml -f compose.release.example.yml up -d
 curl localhost:8080/healthz
 ```
