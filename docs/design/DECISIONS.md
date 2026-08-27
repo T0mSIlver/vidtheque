@@ -124,3 +124,30 @@ touches them.
   dashboard management tools later on into one single tool"*, so the design
   constraint follows from it: the tool dispatches on `action`, and no parameter
   is named in a way that would not survive that merge.
+
+## Amended 2026-08-28 (consolidation; lifted from `research/`)
+
+- **Reranker: deferred, not rejected.** `Qwen/Qwen3-VL-Reranker-2B` is the only
+  viable candidate; the 8B is operationally disqualified (17.6 GB of BF16
+  weights, an estimated 18–23 GB working set, against a 24 GB card that already
+  carries the ~12 GB llama.cpp lease and the 4.3 GB embedder). Evidence
+  `research/reranker-research-2026-08-10.md`.
+
+  Revisit at roughly **500 videos** or when telemetry yields a stable hard-query
+  set — **corpus size alone must not trigger adoption**. Ship only if *all four*
+  hold: ≥10% of representative queries show an **ordering** error (a relevant
+  result inside fused top-20 but missing top-5 — a missing candidate is a recall
+  failure a reranker cannot fix); ≥0.05 absolute gain in nDCG@5 or MRR@5 with no
+  regression on exact identifiers, natural-visual queries or per-video
+  diversity; added warm p95 ≤500 ms per search and ≤2 s per ask-mode run; and a
+  3090 test showing safe peak VRAM across 20 acquire/release cycles with the
+  llama.cpp lease reliably restored. Otherwise it is at most an explicit
+  high-precision path, never the default. Budget 2–4 days plus the evaluation.
+
+  *Note (2026-08-28): the private corpus is at 479 videos, so the first half of
+  the revisit trigger is about to fire. The four conditions are what decide it.*
+
+- **Vendored fonts stay under a 200 KB total budget**, OFL-licensed,
+  latin-subset, no CDN and no runtime network request. The rule outlives the
+  faces it was written against — the retired Inter + Instrument Serif pair and
+  the current Archivo + JetBrains Mono pair (75 KB) both answer to it.
