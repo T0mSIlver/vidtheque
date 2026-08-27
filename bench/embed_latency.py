@@ -15,7 +15,7 @@ itself (`scripts/qwen3_vl_embedding.py` inside the HF snapshot), so what is time
 is the vendor's own code path rather than a re-implementation of it.
 
     uv run --no-project python bench/embed_latency.py all \\
-        --frames-dir /home/dev/vidtheque-data/keyframes --frames 100 \\
+        --frames-dir "$VIDTHEQUE_DATA_DIR/keyframes" --frames 100 \\
         --out bench/runs/embed-latency.json
 
 Nothing here writes to `$VIDTHEQUE_DATA_DIR`; keyframes are opened read-only.
@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import random
 import statistics
 import subprocess
@@ -35,6 +36,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
+
+# The bench runs against a real corpus on the host, outside the container, so
+# the container default (/data) is wrong here. $VIDTHEQUE_DATA_DIR is the same
+# variable the server reads; ~/vidtheque-data is the box's conventional path.
+DATA_DIR = Path(os.environ.get("VIDTHEQUE_DATA_DIR") or Path.home() / "vidtheque-data")
 
 MODEL_ID = "Qwen/Qwen3-VL-Embedding-2B"
 
@@ -384,7 +390,7 @@ def main() -> int:
     parser.add_argument("mode", choices=("latency", "throughput", "baseline", "all"))
     parser.add_argument("--worker", default="http://127.0.0.1:8081")
     parser.add_argument("--repeats", type=int, default=20)
-    parser.add_argument("--frames-dir", type=Path, default=Path("/home/dev/vidtheque-data/keyframes"))
+    parser.add_argument("--frames-dir", type=Path, default=DATA_DIR / "keyframes")
     parser.add_argument("--frames", type=int, default=100)
     parser.add_argument("--batch-sizes", default="1,4,8")
     parser.add_argument("--corpus-frames", type=int, default=3060)
