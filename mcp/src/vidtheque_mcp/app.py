@@ -44,7 +44,7 @@ from .dashboard import (
 )
 from .db import Database
 from .embeddings import EmbeddingClient
-from .http import frames_routes, health_routes
+from .http import export_routes, frames_routes, health_routes
 from .follows.scheduler import enqueue_due
 from .jobs.runner import Pipeline, PipelineRunner
 from .pipeline import PipelineSettings, WorkerAPI, build_pipeline, worker_client
@@ -261,6 +261,7 @@ def assemble(
         *health_routes(settings, db),
         *auth.routes,
         *frames_routes(settings, db, auth),
+        *export_routes(settings, db),
         *(public_routes() if public.enabled else []),
         # The write side is resolved here, once, beside every other mode
         # decision: read-only mode and `AUTH=none` each register no write
