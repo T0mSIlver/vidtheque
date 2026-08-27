@@ -24,7 +24,7 @@ What keeps it honest:
   production patch budget — not a fresh checkpoint configured to taste.
 
     uv run --no-project python bench/frame_retrieval_spotcheck.py select \\
-        --db /home/dev/vidtheque-data/vidtheque.db --count 56 \\
+        --db "$VIDTHEQUE_DATA_DIR/vidtheque.db" --count 56 \\
         --out bench/runs/spotcheck-frames.json
     uv run --no-project python bench/frame_retrieval_spotcheck.py run \\
         --frames bench/runs/spotcheck-frames.json \\
@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 import collections
 import json
+import os
 import random
 import re
 import sqlite3
@@ -50,7 +51,10 @@ from typing import Any, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-DATA_DIR = Path("/home/dev/vidtheque-data")
+# The bench runs against a real corpus on the host, outside the container, so
+# the container default (/data) is wrong here. $VIDTHEQUE_DATA_DIR is the same
+# variable the server reads; ~/vidtheque-data is the box's conventional path.
+DATA_DIR = Path(os.environ.get("VIDTHEQUE_DATA_DIR") or Path.home() / "vidtheque-data")
 WORKER = "http://127.0.0.1:8081"
 
 # Buckets exist so the sample cannot accidentally be all slides. `code_term` is
