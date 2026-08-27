@@ -23,7 +23,7 @@ from ..errors import ToolError, bad_param
 
 # Wrong name -> the right ones, in preference order. The first candidate the
 # *called tool* actually has is the one suggested, which is what makes one table
-# serve nine tools: `t_start` on `get-segment-context` means `t`, and on
+# serve ten tools: `t_start` on `get-segment-context` means `t`, and on
 # `list-videos` it means the caller reached for the wrong time axis entirely
 # (§3.2) and gets pointed at `published_after`.
 ALIASES: dict[str, tuple[str, ...]] = {

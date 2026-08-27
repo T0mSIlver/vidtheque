@@ -332,7 +332,7 @@ is an env var. Flagged for Tom in §7.
 
 ### 3.2 The two internal tools
 
-The model never sees the nine-tool surface. It sees two, described in a handful
+The model never sees the ten-tool surface. It sees two, described in a handful
 of words each: the loop is a demo of the corpus, not the place for progressive
 disclosure.
 
