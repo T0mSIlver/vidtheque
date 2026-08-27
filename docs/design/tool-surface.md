@@ -872,6 +872,16 @@ Text truncated at 1000 chars, around the matched passage — pass max_text_chars
 next: video-summary video_id="kCc8FmEb1nY" for the chapter list (fastest way to name the moment), or get-segment-context video_id="kCc8FmEb1nY" t=4321 for the full surrounding transcript.
 ```
 
+**The cap footer fires only when the cap actually dropped a hit** (corrected
+2026-08-28, design bench F10). *Reaching* `max_per_video` and *being bound by*
+it are different facts, and the footer's advice — "raise `max_per_video` for
+more from it" — is only true of the second. The original condition was
+`n >= max_per_video` over the page, so it named the first video that reached the
+cap in page order, which on the fixture corpus is a video that lost nothing
+while the truncated one went unnamed. On a corpus small enough that one video
+holds every match it fired on every search, pointing at more that did not exist.
+`_cap_per_video` now returns the ids it truncated and the footer intersects.
+
 **The `next:` line names two follow-ups as of 2026-08-09.** It used to name only
 `get-segment-context`, and that is what agents did — the bench has one walking
 four `get-segment-context` windows to find a passage whose chapter title
@@ -921,6 +931,18 @@ The alternative — a title sub-leg or a title boost in the fusion — is
 Cost: one bounded FTS lookup (`LIMIT 3`, column-filtered to `title`), asked
 only on the `fts 0` branch — where by definition there is nothing else to
 spend on. It cannot be paid on a query that already has lexical footing.
+
+**A phrase the slides carry and the speech does not gets the sibling note**
+(added 2026-08-28, design bench F6). Same `fts 0` branch, opposite outcome: the
+transcript sub-leg is empty *and the OCR leg matched*, which is the
+identifier-versus-speech split the guide teaches — a model name is written on a
+slide and spelled out loud. The two notes are structurally exclusive: the title
+note needs no lexical footing anywhere, this one needs the OCR leg to have
+supplied it. It costs nothing — both counts are already computed for `Legs:`.
+
+```
+note: 0 transcript hits, but the on-screen text matched. Slides write identifiers, speech spells them out — for what was said about it, try the spoken phrasing.
+```
 
 **The `Legs:` line prints sub-legs, and the semantic ones print what they kept
 (2026-08-10; units and the unbound band, 2026-08-11).** The leading number per

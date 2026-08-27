@@ -45,27 +45,13 @@ wrong for a channel that was briefly private or a one-off extractor break, which
 produce the identical state. The alternative is a slow retry — one check a day —
 that clears on the first success.
 
-### 4. F10 — `max_per_video` is a flat default on a corpus of any size
-
-`search.py:165` defaults `max_per_video=3` whatever the corpus holds, so on a
-small corpus the diversity cap is the thing hiding the answer. Needs one cheap
-corpus-size read feeding the existing clamp.
-
-### 5. F6 — a zero-hit transcript leg says nothing about why
-
-When the transcript leg returns nothing and another leg has hits, the payload
-does not say the likely reason: slides write identifiers, speech spells them
-out. The advice exists only in the guide resource. `search.py:605` already has
-the analogous title-footing note to copy, and the leg counts are already
-computed.
-
-### 6. F11 — no tool parameter has a description
+### 4. F11 — no tool parameter has a description
 
 `Field(description=…)` appears nowhere in `mcp/src`. Every parameter's meaning
 lives in the tool description prose instead, which is the budget §3 is trying to
 protect. Mechanical, wide, and it touches every tool signature.
 
-### 7. `cancel-job` and `delete-video` — F12's unfinished half
+### 5. `cancel-job` and `delete-video` — F12's unfinished half
 
 A queued job cannot be cancelled and an indexed video cannot be deleted through
 the surface; `docs/takedown.md` deletes with raw SQL against a live database,
@@ -73,14 +59,14 @@ including the vec0 trigger and FK-pragma dance. F12's read-only posture shipped
 (`public/readonly.py` derives `WRITE_TOOLS` from the annotations); the inverses
 did not. Takes the surface to twelve, so it is a contract change, not a patch.
 
-### 8. A DOM-level test harness for the public page
+### 6. A DOM-level test harness for the public page
 
 `mcp/tests/test_public.py:2451` says it in its own docstring: *"What the page
 does with that — a notice under the rows it already has, rather than a wipe —
 needs a DOM-level harness and is not asserted here."* Cross-cutting: a tooling
 choice and CI wiring, and the repo's rule against self-hosted runners bounds it.
 
-### 9. F1 — structured OCR, the big one
+### 7. F1 — structured OCR, the big one
 
 OCR reaches every query as `group_concat(o.text, ' | ' ORDER BY o.line_no)`, so
 a table's cell loses its header and a two-column slide interleaves. The design
@@ -88,14 +74,14 @@ bench calls this the single highest-value change on its list. It touches OCR
 extraction in `pipeline/`, the `ocr_lines` shape, and every query that flattens
 it. Multi-session work.
 
-### 10. The channel-count quirk — needs re-diagnosis before it is a ticket
+### 8. The channel-count quirk — needs re-diagnosis before it is a ticket
 
 Carried on a backlog since 2026-08-09 and never described anywhere. The string
 "channel-count" appears in no other file, and `library.py:392` /
 `queries.py:1487` are unchanged since before it was written. Someone has to
 reproduce it before it can be scoped.
 
-### 11. HTTP envelope cases the suite has never exercised
+### 9. HTTP envelope cases the suite has never exercised
 
 Listed in `research/website-test-2026-08-09.md` §"untested" and never turned
 into tests: the `search`-bucket 429 as a browser sees it (does `/api/meta`
@@ -131,6 +117,8 @@ shipped by reading the code and running its tests.
 | Markdown export deferred | `GET /videos/<id>/export.md`, 2026-08-28 |
 | following Q3 held-review visibility | `library.py:558` prints `· N held` in `corpus-summary` |
 | following Q5 note when checks are off | `follows.py:450` |
+| F6 zero-hit transcript leg says nothing about why | 2026-08-28, `search.py` |
+| F10 cap footer fires on a corpus too small to bind | 2026-08-28 — and it was naming the wrong video |
 
 **The lesson, which is why this file exists:** two of these were shipped the
 same day the document listing them as open was written. A backlog inside a

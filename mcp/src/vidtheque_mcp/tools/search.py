@@ -429,6 +429,24 @@ async def run(
     lexical = leg_counts["transcript_fts"] or (legs["ocr"] and leg_counts["ocr"])
     if legs["transcript"] and not browse and not lexical:
         await _note_title_footing(deps, q, video_pool, notes)
+    elif (
+        legs["transcript"]
+        and legs["ocr"]
+        and not browse
+        and not leg_counts["transcript_fts"]
+        and leg_counts["ocr"]
+    ):
+        # The slides carry these words and the speech does not — the split the
+        # guide teaches, said where it is actually observed rather than only in
+        # a resource the caller may never have read (F6). Structurally
+        # exclusive with the title-footing note above: that one needs *no*
+        # lexical footing anywhere, this one needs the OCR leg to have supplied
+        # it.
+        notes.append(
+            "note: 0 transcript hits, but the on-screen text matched. Slides "
+            "write identifiers, speech spells them out — for what was said "
+            "about it, try the spoken phrasing."
+        )
 
     meta = await deps.db.read(lambda c: _video_meta(c, [h.video_id for h in hits]))
     for hit in hits:
@@ -451,7 +469,7 @@ async def run(
     hits = _collapse_same_frame(hits)
     _score_matches(hits, q)
     hits = _sort(hits, order)
-    hits = _cap_per_video(hits, max_per_video)
+    hits, truncated_videos = _cap_per_video(hits, max_per_video)
 
     total = len(hits)
     page = hits[offset : offset + limit]
@@ -509,6 +527,7 @@ async def run(
         total=total,
         pool_full=pool_full,
         leg_counts=leg_counts,
+        truncated_videos=truncated_videos,
         notes=notes,
         max_text_chars=max_text_chars,
         related=related,
@@ -1019,23 +1038,31 @@ def _sort(hits: list[Hit], order: str) -> list[Hit]:
     return sorted(hits, key=lambda h: (*_relevance_key(h), *_sort_key(h)))
 
 
-def _cap_per_video(hits: list[Hit], max_per_video: int) -> list[Hit]:
+def _cap_per_video(hits: list[Hit], max_per_video: int) -> tuple[list[Hit], set[int]]:
     """ONE per-video cap, over the fused and deduplicated list.
 
     Applied after `_sort`, so which hits a dominant video keeps follows the
     ordering the caller asked for: the highest-scoring under `relevance` and
     `recency` (all hits from one video share a publish date), the earliest
     under `video_time`.
+
+    Returns the video ids that actually **lost** a hit alongside the kept list.
+    Reaching the cap and being bound by it are different facts: a video with
+    exactly `max_per_video` hits reaches it and loses nothing, and telling that
+    caller to "raise max_per_video for more from it" points at nothing (F10 —
+    on a small corpus every search said it).
     """
     kept: list[Hit] = []
     seen: dict[int, int] = {}
+    truncated: set[int] = set()
     for hit in hits:
         n = seen.get(hit.video_id, 0)
         if n >= max_per_video:
+            truncated.add(hit.video_id)
             continue
         seen[hit.video_id] = n + 1
         kept.append(hit)
-    return kept
+    return kept, truncated
 
 
 def _keep_the_match(text: str, max_chars: int, needle: str) -> str:
@@ -1158,6 +1185,7 @@ def _render(
     notes: list[str],
     max_text_chars: int,
     related: dict[str, int] | None,
+    truncated_videos: set[int],
     fmt: str,
     fields: str,
 ) -> str:
@@ -1218,9 +1246,20 @@ def _render(
 
     footer: list[str] = []
     per_video: dict[str, int] = {}
+    truncated_here: set[str] = set()
     for hit in page:
         per_video[hit.public_id] = per_video.get(hit.public_id, 0) + 1
-    dominant = [v for v, n in per_video.items() if n >= max_per_video]
+        if hit.video_id in truncated_videos:
+            truncated_here.add(hit.public_id)
+    # Only when the cap actually dropped a hit from that video. `n >=
+    # max_per_video` alone means "reached", and on a corpus small enough that
+    # one video holds every match it is reached on every search — printing
+    # "raise max_per_video for more from it" when there is no more.
+    dominant = [
+        v
+        for v, n in per_video.items()
+        if n >= max_per_video and v in truncated_here
+    ]
     if dominant:
         footer.append(
             f"{max_per_video} of {len(page)} results came from {dominant[0]} "
