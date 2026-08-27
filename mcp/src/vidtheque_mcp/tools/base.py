@@ -1,4 +1,4 @@
-"""Shared plumbing for the nine tools: dependencies, admission, embedding."""
+"""Shared plumbing for the ten tools: dependencies, admission, embedding."""
 
 from __future__ import annotations
 

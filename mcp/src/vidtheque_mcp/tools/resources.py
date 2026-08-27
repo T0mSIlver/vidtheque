@@ -5,7 +5,7 @@ their proposal to migrate reads to Resources died as stale, and client support
 for resources is still far behind tools.
 
 `vidtheque://guide` also carries the **shared rules** that DECISIONS.md lifted
-out of the nine tool descriptions, so this file is where "never fabricate ids"
+out of the ten tool descriptions, so this file is where "never fabricate ids"
 and "two time axes" live exactly once.
 """
 

@@ -1,6 +1,6 @@
 # vidtheque MCP tool surface — v1
 
-Status: **implemented as of the current commits.** All nine tools and all three
+Status: **implemented as of the current commits.** All ten tools and all three
 resources ship; `index-video` queues real jobs and the seven-stage pipeline behind
 it writes what `search` reads back. This is the surface the `mcp/` server
 implements; the HTTP API underneath it is an implementation detail and may carry
