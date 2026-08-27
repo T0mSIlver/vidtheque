@@ -2750,10 +2750,31 @@ The other half did not: the cron is an interval on the follow row, and the check
 is a queue job rather than a cron entry (`following.md` §3). The cost is +1 tool,
 not +3.
 
+**Markdown export left this table on 2026-08-28** and shipped as
+`GET /videos/<id>/export.md`, exactly the sketch its row proposed: an HTTP
+route, **no MCP tool**, so the surface is still ten. The row's reasoning is why
+it looks the way it does. It is a *user* workflow, so the document is written
+for a notes app — YAML front matter a vault indexes on, the stage table, the
+chapters, the whole transcript with a `?t=` on every line from `deeplink_t`, and
+the on-screen text in the order it appeared rather than `ocr_highlights`'
+loudest-first ranking. It is the biggest payload the server can emit, so the
+transcript is unbounded (it *is* the artifact) while the frame walk is capped at
+400 distinct frames and says so in the file when the cap binds; `?ocr=0` drops
+that half entirely.
+
+**The gate is the part worth reading.** The export is the full-transcript hatch
+in file form. On a public instance (`VIDTHEQUE_PUBLIC_READONLY=1`) it requires
+`auth.credential.is_owner` — proved ownership, not the read gate — because that
+deployment runs `VIDTHEQUE_AUTH=none`, every request is therefore `"open"`, and
+a route that read `"open"` as "the owner" would turn `/demo` into a bulk
+download of every transcript in the corpus. A private box keeps the
+`/frames/<id>.jpg` rule instead: in `none` mode it is open, because everything
+else is. Unknown id 404s, a video the pipeline never ran 409s, both through
+`HTTP_STATUS`.
+
 | Thing | Why not v1 | Sketch if it lands |
 |---|---|---|
 | **`get-clip`** | An ffmpeg cut is a slow, storage-producing, mostly-redundant operation: `youtu.be/<id>?t=<s>` already sends a human to the exact moment, and a model cannot watch an MP4. It also drags in retention policy and a second signed-URL kind. | `get-clip(video_id, start, end, max 120s)` → async job → signed URL, same job machinery as indexing. |
-| **Markdown export** | Real product value (Obsidian, "data never hostage") but it is a *user* workflow, not a model one, and it is the biggest single payload the server could emit. Belongs on the HTTP API and any future web UI. | `GET /videos/<id>/export.md` — no MCP tool. |
 | **Speaker identity management** (`list-unnamed-speakers`, `update-speaker`, `merge-speakers`) | Three tools for a curation workflow that only pays off once diarization is on across a large corpus. `search speaker=` and `video-summary include_speakers` cover reading; writing can wait. | Straight port of screenpipe's trio if it earns its place. |
 | **Permissions / row-level filtering** | Single-owner corpus. The transferable parts are noted for later: server-authoritative policy from the credential (never a model-settable field), enforcement at both middleware and post-query row level, and *no total leakage* when restrictions are active. | — |
 | **`format=json`** | Model-facing JSON is strictly worse than TSV (−73%) and worse than text for prose. Structured consumers read `structuredContent`. | — |
