@@ -3,7 +3,7 @@
 System picture: the root README's Architecture section; how to work here: `AGENTS.md`.
 
 The CPU half of vidtheque: the SQLite + sqlite-vec + FTS5 index, the keyframe
-directory, the job queue, the OAuth authorization server, and the nine-tool MCP
+directory, the job queue, the OAuth authorization server, and the ten-tool MCP
 surface. It talks to the GPU worker over HTTP only — no Python import ever
 crosses that boundary, including in tests.
 
@@ -22,12 +22,17 @@ src/vidtheque_mcp/
 ├─ timeparse.py    the two time axes, normalized in one place
 ├─ text.py         truncation, clamps, deep links, TSV, pagination lines
 ├─ embeddings.py   the worker seam (HTTP; faked in tests)
+├─ variants.py     the finite frame-variant vocabulary — outside http/ and auth/
+│                  on purpose, because both need it and neither may import the other
 ├─ db/             migrations, connections, and the query shapes from §4
 ├─ auth/           three modes; the self-contained AS (CIMD + DCR)
 ├─ http/           /frames/{id}.jpg and /healthz
 ├─ jobs/           job rows, the state machine, and the pipeline seam
 ├─ pipeline/       the seven indexing stages behind that seam
-└─ tools/          the nine tools and the three resources
+├─ follows/        a follow's rules, its ledger, and the check that spends the budget
+├─ dashboard/      the operator's five routes, their writes, and who is allowed them
+├─ public/         the landing, /demo, ask, and the read-only projection's clamps
+└─ tools/          the ten tools and the three resources
 ```
 
 Inside `pipeline/`, the split that matters is between what can be tested on a
