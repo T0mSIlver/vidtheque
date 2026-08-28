@@ -277,6 +277,8 @@ async def _unfollow(
     name = str(row["title"])
     counts = await deps.db.read(lambda c: store.counts(c, collection_id))
     brought_in = int(counts.get("queued", 0))
+    # Before the delete: that is what nulls the owner on the spend rows.
+    spent_here = await deps.db.read(lambda c: store.spend_of_s(c, collection_id))
     await deps.db.write(lambda c: store.delete(c, collection_id))
 
     lines = [
@@ -285,8 +287,19 @@ async def _unfollow(
         "searchable; only the following stops. Its indexing jobs keep their "
         "history too.",
         f"The rule that was removed: {describe(rules, name=name)}",
-        _budget_line(await _spent(deps), settings),
     ]
+    if spent_here > 0:
+        # Unfollowing used to refund the day, because the budget was a sum over
+        # rows the delete cascaded to (migration 0007). Now it does not, and the
+        # budget line printed below is about to look unchanged — so say why
+        # before it does, rather than leaving an operator to wonder whether the
+        # unfollow worked (following.md §5).
+        lines.append(
+            f"Not a refund: the {spent_here / 3600.0:.1f}h this follow accepted in the "
+            "last 24h stay spent. They were downloaded and indexed; deleting the rule "
+            "does not un-spend the day."
+        )
+    lines.append(_budget_line(await _spent(deps), settings))
     if note:
         lines.append(note)
     nxt = (

@@ -20,6 +20,11 @@ from typing import Any, Iterable, Sequence
 
 from .rules import Rules, joined
 
+# How long a `follow_spend` row is kept. The budget window is a day; this is
+# the same 30 days `job_events` and `ask_budget` use, so the retention story on
+# this box is one sentence rather than three.
+SPEND_KEEP_DAYS = 30
+
 # The columns a follow row is made of, in one place so the read paths and the
 # update path cannot drift about what is settable.
 RULE_COLUMNS = (
@@ -220,6 +225,11 @@ def delete(conn: sqlite3.Connection, collection_id: int) -> None:
     `collections` cascades to `follows`, `follow_seen` and `collection_videos`,
     and `jobs.collection_id` is `ON DELETE SET NULL`, so an unfollow never takes
     a job's history with it.
+
+    `follow_spend` is `ON DELETE SET NULL` for a stronger reason than the jobs
+    table: the cascade used to reach the rows the daily budget sums, so deleting
+    a follow handed back hours the box had already spent (migration 0007). The
+    spend outlives its follow deliberately.
     """
     conn.execute("DELETE FROM collections WHERE id = ?", (collection_id,))
 
@@ -499,6 +509,50 @@ def link_landed(conn: sqlite3.Connection) -> int:
 # -------------------------------------------------------------------- budget
 
 
+def record_spend(
+    conn: sqlite3.Connection, collection_id: int, source_id: str, duration_s: float
+) -> None:
+    """Write one accepted candidate's hours where an unfollow cannot take them back.
+
+    Called in the same transaction as the `queued` ledger row, because a budget
+    that can lose its write is a budget that occasionally grants a day twice.
+    """
+    conn.execute(
+        "INSERT INTO follow_spend (collection_id, source_id, duration_s) VALUES (?, ?, ?)",
+        (collection_id, source_id, float(duration_s)),
+    )
+
+
+def prune_spend(conn: sqlite3.Connection) -> int:
+    """Drop spend rows past the retention window. Returns rows deleted.
+
+    Same 30 days as `job_events` and `ask_budget`, so the box has one retention
+    story rather than three. The budget itself only ever reads the last 24
+    hours; the rest is the record of what following cost last week, which
+    outlives the ledger rows it was derived from.
+    """
+    cursor = conn.execute(
+        "DELETE FROM follow_spend WHERE spent_at < unixepoch() - ?",
+        (SPEND_KEEP_DAYS * 86_400,),
+    )
+    return cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
+
+
+def spend_of_s(
+    conn: sqlite3.Connection, collection_id: int, window_s: int = 86_400
+) -> float:
+    """One follow's share of the window, for the sentence an unfollow owes.
+
+    Read before the delete, because the delete is what nulls the owner.
+    """
+    row = conn.execute(
+        "SELECT COALESCE(SUM(duration_s), 0) AS spent FROM follow_spend "
+        "WHERE collection_id = ? AND spent_at > unixepoch() - ?",
+        (collection_id, int(window_s)),
+    ).fetchone()
+    return float(row["spent"] or 0.0)
+
+
 def budget_spent_s(conn: sqlite3.Connection, window_s: int = 86_400) -> float:
     """Seconds of video accepted by every follow together in the rolling window.
 
@@ -509,10 +563,15 @@ def budget_spent_s(conn: sqlite3.Connection, window_s: int = 86_400) -> float:
     because `judge_duration` holds an unknown duration for review whenever a
     length rule exists, and a follow with no length rule has no opinion about
     long videos anyway.
+
+    The sum is over `follow_spend`, not over the ledger. It used to be the
+    ledger, and `collections` cascades to the ledger, so unfollowing refunded
+    hours the box had already spent on download and GPU (migration 0007,
+    following.md §5).
     """
     row = conn.execute(
-        "SELECT COALESCE(SUM(duration_s), 0) AS spent FROM follow_seen "
-        "WHERE decision = 'queued' AND decided_at > unixepoch() - ?",
+        "SELECT COALESCE(SUM(duration_s), 0) AS spent FROM follow_spend "
+        "WHERE spent_at > unixepoch() - ?",
         (int(window_s),),
     ).fetchone()
     return float(row["spent"] or 0.0)

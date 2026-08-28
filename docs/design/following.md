@@ -268,16 +268,31 @@ to *now*, not to when it would have been due. The catch-up burst that would
 otherwise produce is exactly what the budget exists to prevent, so it must not
 be created in the first place.
 
-**Unfollowing frees the spend, and that is a known hole rather than a design.**
-The sum is over `follow_seen`, and `collections` cascades to it, so a follow
-that accepted six hours today and is deleted this evening takes those six hours
-out of the rolling window with it — every other follow's next check sees them as
-free, and the day can run to roughly twice the ceiling. It is recorded here
-rather than fixed because the fix is a choice about where a spend lives, not a
-patch: either the queued rows survive their follow (re-parented or nullified
-instead of cascaded), or the spend is written at accept time to something
-append-only that is not the ledger. Both add a table or a nullable owner to a
-schema that currently reads cleanly, and neither is worth guessing at. §11.7.
+**Unfollowing is not a refund.** The sum used to be over `follow_seen`, and
+`collections` cascades to it, so a follow that accepted six hours today and was
+deleted this evening took those hours out of the rolling window with it: every
+other follow's next check saw them as free and the day could run to roughly
+twice the ceiling. Migration 0007 moves the spend to its own table,
+`follow_spend`, written in the same transaction as the `queued` ledger row and
+`ON DELETE SET NULL` rather than cascaded. An orphan row is not a decision
+nobody can explain — it is an hour that really was spent by a follow that is
+gone, which is exactly what the ceiling has to keep believing.
+
+The rejected alternative was the cheaper one: nullify the owner on `follow_seen`
+itself and add a "belongs to a live follow" clause to every read. `follow_seen`
+is *rendered* — the detail page reads it newest-first as the band of what a
+follow passed over — and a ledger row whose follow is gone is a decision no
+surface has an honest sentence for. The second reason outlasts the first: the
+budget stopped being a property of a table that exists to stop a check
+reconsidering the same upload twice.
+
+`unfollow` says so in the payload when the follow spent anything inside the
+window, because the budget line printed underneath it is about to look
+unchanged, and an unfollow that appears to have done nothing is worse than the
+hole was. Retention is 30 days, the same clock `job_events` and `ask_budget`
+use; the prune runs when a check is enqueued rather than at boot, since rows
+arrive on that same event and a box with no active follows has nothing to
+delete. (Tom, 2026-08-28, answering §11.7.)
 
 ## 6. The decision vocabulary
 
@@ -518,16 +533,19 @@ Real forks. Everything above is a decision.
    thing to explain twice on the detail page. Kept for the first cut; say if the
    detail page reads worse for it.
 
-7. **Where should a spend live, so unfollowing does not refund it?** §5's known
-   hole: the budget sums `follow_seen`, `collections` cascades to it, and an
-   unfollow therefore returns hours already spent on download and GPU to the
-   rolling window. The two honest fixes both cost something. *Keep the rows*:
-   `follow_seen.collection_id` becomes nullable with `ON DELETE SET NULL`, and
-   every read in `follows/store.py` grows a "belongs to a live follow" clause —
-   cheap to write, and it leaves orphan ledger rows nothing on any surface can
-   explain. *Record the spend separately*: an append-only row per accepted
-   candidate, pruned on the same 30-day clock as `job_events` — one more table,
-   but the budget stops being a property of a table that exists for another
-   reason. There is also the third answer, which is that a corpus with a handful
-   of follows will never notice, and a documented hole is cheaper than either.
-   It is a real fork and it is yours.
+7. ~~**Where should a spend live, so unfollowing does not refund it?**~~
+   **Answered (Tom, 2026-08-28): record the spend separately.** `follow_spend`,
+   an append-only row per accepted candidate, written in the ledger row's own
+   transaction and pruned on the same 30-day clock as `job_events` (migration
+   0007, §5 above). The cheaper fix — nullifying the owner on `follow_seen` —
+   was rejected for leaving rows on a *rendered* ledger that no surface can
+   explain.
+
+   The third answer, "a corpus with a handful of follows will never notice", was
+   the strongest of the three until the surface was looked at again:
+   `follow-channel` has five actions and none of them is `edit`. Rules can only
+   be changed on the dashboard, so a caller driving this box through MCP alone
+   changes a rule by unfollowing and following again. The refund was not on a
+   rare path for that caller. It was on the only path they had. Whether
+   `action="edit"` should exist is a separate question and is not answered
+   here.
