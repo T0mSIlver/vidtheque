@@ -98,6 +98,38 @@ async def test_unfollowing_keeps_the_videos_it_brought_in(assembled: Assembled) 
     assert after == before
 
 
+async def test_unfollowing_says_the_day_it_already_spent_is_not_refunded(
+    assembled: Assembled,
+) -> None:
+    """The budget line below it is about to look unchanged; the payload says why.
+
+    Before migration 0007 it would have dropped, because unfollowing deleted the
+    rows the budget summed. An operator who reads "16.0h of 16.0h" straight after
+    unfollowing needs the sentence, or the unfollow looks like it failed.
+    """
+    deps = assembled.deps
+    await follow(deps, url=CHANNEL)
+    await deps.db.write(
+        lambda c: c.execute(
+            "INSERT INTO follow_spend (collection_id, source_id, duration_s) "
+            "SELECT collection_id, 'vid00000001', 5400.0 FROM follows"
+        )
+    )
+
+    text = body(await follow(deps, url=CHANNEL, action="unfollow"))
+
+    assert "Not a refund: the 1.5h this follow accepted in the last 24h stay spent" in text
+    assert "Budget: 1.5h" in text
+
+
+async def test_an_unfollow_that_spent_nothing_today_says_nothing_about_refunds(
+    assembled: Assembled,
+) -> None:
+    await follow(assembled.deps, url=CHANNEL)
+    text = body(await follow(assembled.deps, url=CHANNEL, action="unfollow"))
+    assert "Not a refund" not in text
+
+
 async def test_a_playlist_url_is_followed_as_a_playlist(assembled: Assembled) -> None:
     result = await follow(assembled.deps, url=PLAYLIST)
     assert structured(result)["follow"]["kind"] == "playlist"
