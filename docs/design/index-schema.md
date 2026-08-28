@@ -698,10 +698,12 @@ CREATE TABLE follows (
   last_new_at      INTEGER,
   last_error_code  TEXT,
   last_error_message TEXT,
+  fail_count       INTEGER NOT NULL DEFAULT 0 CHECK (fail_count >= 0),
   created_at       INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at       INTEGER NOT NULL DEFAULT (unixepoch())
 ) STRICT;
-CREATE INDEX follows_due ON follows(next_check_at) WHERE state = 'active';
+CREATE INDEX follows_due ON follows(next_check_at)
+  WHERE state IN ('active', 'failing');
 
 CREATE TABLE follow_seen (
   id            INTEGER PRIMARY KEY,
@@ -771,6 +773,20 @@ survives that and `decided_at` does not. `follow_seen_budget` is partial because
 `queued` is the only decision it counts — it served the daily budget until 0007
 and now serves the *brought in* totals the Following page and `corpus-summary`
 print.
+
+**`fail_count` is what makes `failing` recoverable** (migration 0008,
+following.md §3). It counts *consecutive* failed checks and is cleared by the
+first check that completes. Below `FAILING_MAX_TRIES` the follow stays due —
+once a day, never sooner than its own interval — and at seven it stops being
+due and waits for a human. `follows_due` is partial on both states because that
+is now the set the scheduler enqueues, and `follows/store.py` spells the
+predicate once (`_SCHEDULABLE`) so `due()` and `check_now()` cannot drift: a
+payload that armed a row nothing reads would print "due now" about a check that
+could never be queued.
+
+There is deliberately no fourth `state` value for "gave up". PRODUCT.md's rule
+is that no surface invents a state vocabulary, and the difference is a count,
+not a state — the surfaces print `retry 2 of 7` from this column.
 
 **`follow_spend` exists so the daily budget cannot be refunded** (migration
 0007, following.md §5). The budget was a `SUM(duration_s)` over `follow_seen`

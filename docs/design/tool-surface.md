@@ -2424,11 +2424,20 @@ Four precisions those lines are carrying deliberately:
   queues on the next tick (`following.md` §3), and the payload says "has not run
   yet" rather than naming a job id it cannot have. A check already `queued` or
   `running` is *reported* — "that one does the work" — never duplicated.
-- **`check_now` on a paused follow schedules nothing** and says so: `Not
-  scheduled: … is paused, and a paused follow is never checked.`
-  `store.check_now` leaves a paused row alone, so claiming a check was scheduled
-  would be a claim the database contradicts. `structuredContent` carries
-  `scheduled: false`.
+- **`check_now` schedules nothing on a follow the scheduler will not enqueue**,
+  and says so: `Not scheduled: … is paused, and a paused follow is never
+  checked.` `store.check_now` arms exactly the set `due()` reads, so claiming a
+  check was scheduled would be a claim the database contradicts.
+  `structuredContent` carries `scheduled: false`. A `failing` follow that has
+  used up its retries is refused the same way, naming the count — `is failing
+  and has stopped retrying after 7 consecutive failures` — and one that is still
+  retrying is scheduled normally, because it genuinely will be.
+- **`failing` says whether it is coming back.** The state line prints `failing
+  (retry 2 of 7, once a day)` or `failing (gave up after 7 tries — resume to try
+  again)`, and `structuredContent.follow` carries `consecutive_failures` and
+  `retrying` so a structured-only client need not parse the sentence. The next
+  check reads `—` whenever nothing will act on it, which is the same rule a
+  paused follow already followed (following.md §3, migration 0008).
 - **`resume` re-arms the clock to now.** The payload states it because the
   assumption an operator would otherwise make — that a fortnight paused is a
   fortnight of checks owed — is exactly the catch-up burst the daily budget

@@ -629,31 +629,31 @@ async def test_a_paused_follow_does_not_owe_a_week_of_checks(db) -> None:
     assert follow["last_error_code"] is None and follow["last_error_message"] is None
 
 
-async def test_check_now_wakes_an_active_follow_and_leaves_every_other_state_alone(db) -> None:
-    """`failing` is here for the same reason as `paused`, and is easier to get wrong.
+async def test_check_now_arms_exactly_what_the_scheduler_will_enqueue(db) -> None:
+    """Arming anything else sets a clock nobody reads.
 
-    `due()` enqueues active follows only, so arming anything else sets a clock
-    nobody reads — and the caller then prints "due now" about a check that can
-    never be queued. That is a false receipt, on the feature whose whole design
-    is receipts that are true. A channel that 404'd once leaves the follow
-    `failing`, and "check now" is exactly the gesture an operator makes after
-    fixing the URL, so it has to say that resume is what re-arms it.
+    The caller then prints "due now" about a check that can never be queued —
+    a false receipt, on the feature whose whole design is receipts that are
+    true. Since 0008 the set includes a `failing` follow with retries left, and
+    excludes one that has used them up.
     """
     active = await make_follow(db, title="A")
     paused = await make_follow(db, title="B")
-    failing = await make_follow(db, title="C")
-    for collection_id in (active, paused, failing):
+    retrying = await make_follow(db, title="C")
+    gave_up = await make_follow(db, title="D")
+    for collection_id in (active, paused, retrying, gave_up):
         await arm(db, collection_id, +9000)
     await db.write(lambda c: store.set_state(c, paused, "paused"))
-    await db.write(lambda c: store.set_state(c, failing, "failing"))
+    await fail_check(db, retrying, times=1)
+    await fail_check(db, gave_up, times=store.FAILING_MAX_TRIES)
 
-    for collection_id in (active, paused, failing):
+    for collection_id in (active, paused, retrying, gave_up):
         await db.write(lambda c: store.check_now(c, collection_id))
 
     due = await db.read(lambda c: store.due(c, 10))
-    assert [int(row["collection_id"]) for row in due] == [active]
+    assert sorted(int(row["collection_id"]) for row in due) == sorted([active, retrying])
     # And the clock of the two it left alone was not touched at all.
-    for collection_id in (paused, failing):
+    for collection_id in (paused, gave_up):
         row = await db.read(lambda c: store.get(c, collection_id))
         assert int(row["next_check_at"]) > 0
 
@@ -826,6 +826,16 @@ async def record(db: Database, collection_id: int, source_id: str, **fields: Any
     await db.write(
         lambda c: store.record_seen(c, collection_id, source_id=source_id, **payload)
     )
+
+
+async def fail_check(db: Database, collection_id: int, *, times: int) -> None:
+    """`times` consecutive failed checks, without a fake source for each one."""
+    for _ in range(times):
+        await db.write(
+            lambda c: store.note_failure(
+                c, collection_id, "E_UNSUPPORTED_SOURCE", "gone", interval_s=21_600
+            )
+        )
 
 
 async def arm(db: Database, collection_id: int, offset_s: int) -> None:
@@ -1260,8 +1270,10 @@ async def test_a_channel_that_is_gone_marks_the_follow_failing_and_records_why(d
     assert follow["state"] == "failing"
     assert follow["last_error_code"] == "E_UNSUPPORTED_SOURCE"
     assert "does not exist" in str(follow["last_error_message"])
-    # A failing follow is not due, so it is not re-checked every tick.
+    assert int(follow["fail_count"]) == 1
+    # Not due yet: the retry clock is a day, so it is not re-checked every tick.
     assert await db.read(lambda c: store.due(c, 10)) == []
+    assert int(follow["next_check_at"]) >= now() + store.FAILING_RETRY_INTERVAL_S - 5
 
 
 async def test_a_check_that_found_nothing_still_moves_the_clock(db) -> None:
@@ -1510,11 +1522,12 @@ async def test_the_switch_that_turns_follow_checks_off_enqueues_nothing(db) -> N
     assert await rows(db, "SELECT id FROM jobs") == []
 
 
-async def test_a_paused_or_failing_follow_is_never_enqueued(db) -> None:
+async def test_a_paused_or_given_up_follow_is_never_enqueued(db) -> None:
     paused = await make_follow(db, title="A")
-    failing = await make_follow(db, title="B")
+    gave_up = await make_follow(db, title="B")
     await db.write(lambda c: store.set_state(c, paused, "paused"))
-    await db.write(lambda c: store.set_state(c, failing, "failing"))
+    await fail_check(db, gave_up, times=store.FAILING_MAX_TRIES)
+    await arm(db, gave_up, -600)
 
     assert await enqueue_due(db) == 0
     assert await rows(db, "SELECT id FROM jobs") == []
@@ -1638,3 +1651,118 @@ async def test_a_tick_with_nothing_due_prunes_nothing(db) -> None:
     assert await enqueue_due(db) == 0
 
     assert len(await rows(db, "SELECT id FROM follow_spend")) == 1
+
+
+# =============================================== `failing` retries, then stops
+
+
+async def test_a_failed_check_retries_daily_rather_than_at_the_follow_interval(
+    db,
+) -> None:
+    """A check against something that is not there buys nothing, so it slows down.
+
+    The scheduler had already pushed the clock out by one interval when it
+    queued this check; the failure pushes it to a day.
+    """
+    collection_id = await make_follow(db, check_interval_s=21_600)
+    source = FakeChannel(expand_raises=SourceError("This channel does not exist"))
+
+    with pytest.raises(ItemFailed):
+        await run_check(db, collection_id, source)
+
+    follow = await db.read(lambda c: store.get(c, collection_id))
+    assert int(follow["fail_count"]) == 1
+    assert int(follow["next_check_at"]) - now() > 21_600
+
+
+async def test_the_retry_clock_is_never_sooner_than_the_follows_own_interval(db) -> None:
+    """Or a broken follow would poll a source more often than a working one."""
+    weekly = 7 * 86_400
+    collection_id = await make_follow(db, check_interval_s=weekly)
+    source = FakeChannel(expand_raises=SourceError("This channel does not exist"))
+
+    with pytest.raises(ItemFailed):
+        await run_check(db, collection_id, source)
+
+    follow = await db.read(lambda c: store.get(c, collection_id))
+    assert int(follow["next_check_at"]) - now() >= weekly - 5
+
+
+async def test_a_channel_that_comes_back_clears_the_failure_and_the_count(db) -> None:
+    """The case the old rule could not tell apart from a renamed channel.
+
+    A channel private for an afternoon, or a yt-dlp build that broke overnight,
+    raises the same `SourceError` as one that is gone for good — and used to
+    leave the follow parked until somebody opened the dashboard.
+    """
+    collection_id = await make_follow(db)
+    gone = FakeChannel(expand_raises=SourceError("This channel does not exist"))
+    for _ in range(2):
+        with pytest.raises(ItemFailed):
+            await run_check(db, collection_id, gone)
+    parked = await db.read(lambda c: store.get(c, collection_id))
+    assert (str(parked["state"]), int(parked["fail_count"])) == ("failing", 2)
+
+    await run_check(db, collection_id, FakeChannel(videos=[]))
+
+    back = await db.read(lambda c: store.get(c, collection_id))
+    assert str(back["state"]) == "active"
+    assert int(back["fail_count"]) == 0
+    assert back["last_error_code"] is None
+
+
+async def test_a_week_of_failures_stops_the_retries_rather_than_polling_forever(
+    db,
+) -> None:
+    """§11.4's objection to a plain daily retry, honoured: a channel that is
+    really gone must not be asked about for a year."""
+    collection_id = await make_follow(db)
+    source = FakeChannel(expand_raises=SourceError("This channel does not exist"))
+
+    for attempt in range(store.FAILING_MAX_TRIES):
+        await arm(db, collection_id, -600)
+        assert len(await db.read(lambda c: store.due(c, 10))) == 1, attempt
+        with pytest.raises(ItemFailed):
+            await run_check(db, collection_id, source)
+
+    await arm(db, collection_id, -600)
+    assert await db.read(lambda c: store.due(c, 10)) == []
+    follow = await db.read(lambda c: store.get(c, collection_id))
+    assert int(follow["fail_count"]) == store.FAILING_MAX_TRIES
+    assert str(follow["state"]) == "failing"
+
+
+async def test_resume_is_the_way_back_from_a_follow_that_gave_up(db) -> None:
+    collection_id = await make_follow(db)
+    await fail_check(db, collection_id, times=store.FAILING_MAX_TRIES)
+
+    await db.write(lambda c: store.set_state(c, collection_id, "active"))
+
+    follow = await db.read(lambda c: store.get(c, collection_id))
+    assert (str(follow["state"]), int(follow["fail_count"])) == ("active", 0)
+    assert len(await db.read(lambda c: store.due(c, 10))) == 1
+
+
+async def test_a_check_that_completes_does_not_un_pause_a_follow(db) -> None:
+    """A human may pause a follow while its check is in flight, and a check
+    that finishes afterwards must not undo that."""
+    collection_id = await make_follow(db)
+    await db.write(lambda c: store.set_state(c, collection_id, "paused"))
+
+    await db.write(lambda c: store.note_success(c, collection_id))
+
+    follow = await db.read(lambda c: store.get(c, collection_id))
+    assert str(follow["state"]) == "paused"
+
+
+async def test_a_rate_limit_still_does_not_count_against_the_retries(db) -> None:
+    """One 429 is an operating condition, not a channel that is gone: the
+    queue's own backoff owns that wait and the counter must not move."""
+    collection_id = await make_follow(db)
+    source = FakeChannel(expand_raises=RateLimited("HTTP Error 429"))
+
+    with pytest.raises(ItemFailed):
+        await run_check(db, collection_id, source)
+
+    follow = await db.read(lambda c: store.get(c, collection_id))
+    assert (str(follow["state"]), int(follow["fail_count"])) == ("active", 0)
