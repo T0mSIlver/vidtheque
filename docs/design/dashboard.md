@@ -2077,6 +2077,14 @@ well as a colour, PRODUCT.md), the three clocks (last check, last arrival, next
 check), the last error code if there is one, and the rule compressed to
 **facts** — `/videos · 8:00 floor · 2 title term(s) · 5/check · every 6h`.
 
+A `failing` row carries one more fact, and it is the one that decides whether
+the operator has to do anything: `retry 2 of 7` while the check is still coming
+back on its own, `gave up` once it has stopped (following.md §3). Not a fourth
+state word — the count is the receipt. The detail page spells it out (`retry 2
+of 7, once a day` / `gave up after 7 tries`), offers **Check now** only while
+the scheduler would actually enqueue it, and prints `—` for the next check when
+it would not.
+
 That compression is deliberate and it is not a second `describe`. The sentence
 renderer is the only thing that renders a policy as English, and it lives on the
 follow's own page; sixty follows scanned at 03:00 are a column to compare, not

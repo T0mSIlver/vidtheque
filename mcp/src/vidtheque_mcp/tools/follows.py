@@ -360,20 +360,27 @@ async def _check_now(
 ) -> CallToolResult:
     collection_id = int(row["collection_id"])
     name = str(row["title"])
-    if str(row["state"]) in ("paused", "failing"):
-        # `store.check_now` arms an *active* follow and nothing else, and the
-        # scheduler only ever enqueues an active one — so saying a check was
-        # scheduled would be a claim the database contradicts. `failing` is here
-        # for the same reason as `paused` and it is the easier one to get wrong:
-        # a channel that 404'd once leaves the follow failing, and "check now"
-        # is exactly the gesture an operator makes after fixing the URL. It has
-        # to say that resume is what re-arms it, rather than silently doing
+    paused = str(row["state"]) == "paused"
+    gave_up = str(row["state"]) == "failing" and not store.retries_left(row)
+    if paused or gave_up:
+        # `store.check_now` arms exactly what the scheduler enqueues, so saying
+        # a check was scheduled on anything else would be a claim the database
+        # contradicts. A `failing` follow with retries left is not in here any
+        # more: since 0008 it is schedulable, and "check now" after a channel
+        # comes back is exactly the gesture. One that has used them up still
+        # needs resume, and has to be told so rather than silently doing
         # nothing while printing a time.
-        paused = str(row["state"]) == "paused"
         rules = Rules.from_row(row)
+        why = (
+            "paused, and a paused follow is never checked"
+            if paused
+            else (
+                f"failing and has stopped retrying after {int(row['fail_count'])} "
+                "consecutive failures"
+            )
+        )
         lines = [
-            f"Not scheduled: {name} is {row['state']}, and a {row['state']} follow is "
-            "never checked. Nothing was queued.",
+            f"Not scheduled: {name} is {why}. Nothing was queued.",
             f"Rule (kept): {describe(rules, name=name)}",
         ]
         if not paused:
@@ -446,12 +453,15 @@ async def _state_lines(
     deps: Deps, row: sqlite3.Row, rules: Rules, settings: PipelineSettings
 ) -> list[str]:
     """State, mode, the two clocks, the corpus-wide budget. Always this size."""
-    # A paused follow has a `next_check_at` and it means nothing — `due` filters
-    # on `state = 'active'`. Printing the timestamp anyway would be the payload
-    # promising a check the scheduler will never make.
-    due = "—" if row["state"] == "paused" else iso_minute(row["next_check_at"])
+    # A follow the scheduler will not enqueue has a `next_check_at` and it means
+    # nothing. Printing the timestamp anyway would be the payload promising a
+    # check that will never be made.
+    scheduled = str(row["state"]) == "active" or (
+        str(row["state"]) == "failing" and store.retries_left(row)
+    )
+    due = iso_minute(row["next_check_at"]) if scheduled else "—"
     lines = [
-        f"State: {row['state']} · {_every(rules)} · next check {due} · last check "
+        f"State: {_state_word(row)} · {_every(rules)} · next check {due} · last check "
         f"{iso_minute(row['last_sync_at']) if row['last_sync_at'] else 'never'}",
     ]
     if rules.mode == "review":
@@ -474,6 +484,23 @@ async def _state_lines(
             "— the follow is stored and idle."
         )
     return lines
+
+
+def _state_word(row: sqlite3.Row) -> str:
+    """`failing` covers two situations, so the number comes with it.
+
+    Not a fourth state word: PRODUCT.md's rule is that no surface invents a
+    state vocabulary, and "still trying" versus "gave up" is a count, not a
+    state (migration 0008). The same reason a skip prints `4:12, shorter than
+    your 8:00 floor` rather than the word "short".
+    """
+    state = str(row["state"])
+    if state != "failing":
+        return state
+    tries = int(row["fail_count"] or 0)
+    if store.retries_left(row):
+        return f"failing (retry {tries} of {store.FAILING_MAX_TRIES}, once a day)"
+    return f"failing (gave up after {tries} tries — resume to try again)"
 
 
 def _budget_line(spent_s: float, settings: PipelineSettings) -> str:
@@ -539,6 +566,11 @@ def _follow_fields(row: sqlite3.Row) -> dict[str, Any]:
         "kind": str(row["kind"]),
         "source_url": middle_truncate(str(row["source_url"]), MAX_URL_CHARS),
         "state": str(row["state"]),
+        # `state` alone cannot say whether a `failing` follow is coming back on
+        # its own, and a structured-only client should not have to parse the
+        # sentence to find out (migration 0008).
+        "consecutive_failures": int(row["fail_count"] or 0),
+        "retrying": str(row["state"]) == "failing" and store.retries_left(row),
         "mode": str(row["mode"]),
         "tabs": str(row["tabs"]),
         "check_interval_s": int(row["check_interval_s"]),

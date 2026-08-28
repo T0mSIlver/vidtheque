@@ -138,7 +138,16 @@
         {%- for fact in follow.facts %}<span class="fact mono">{{ fact }}</span>{% if not loop.last %}<span class="sep">·</span>{% endif %}{% endfor -%}
       </td>
       <td data-label="State">
+        {# `failing` covers two situations and the row has to say which: a
+           follow retrying daily needs nothing from anyone, one that gave up is
+           waiting on a human. The count is the receipt, not a fourth state
+           word (migration 0008). #}
         <span class="pill tone-{{ follow.state | tone }}">{{ follow.state }}</span>
+        {% if follow.retrying %}
+        <span class="fact">retry {{ follow.tries }} of {{ follow.max_tries }}</span>
+        {% elif follow.gave_up %}
+        <span class="fact">gave up</span>
+        {% endif %}
         {% if follow.error_code %}<span class="pill pill-small tone-bad">{{ follow.error_code }}</span>{% endif %}
       </td>
       <td data-label="Last check"><time>{{ follow.last_check | minute }}</time></td>

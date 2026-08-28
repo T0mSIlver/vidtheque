@@ -2189,6 +2189,23 @@ def _rule_facts(rules: follow_rules.Rules) -> list[str]:
     return facts
 
 
+def _retry_fields(row: sqlite3.Row) -> dict[str, Any]:
+    """What `failing` alone cannot say: is the check coming back on its own?
+
+    Since migration 0008 a follow whose channel did not list is retried once a
+    day for a week before it waits for a human. Both situations are `failing`,
+    and the difference is the count rather than a fourth state word
+    (following.md §11.4).
+    """
+    failing = str(row["state"]) == "failing"
+    return {
+        "tries": int(row["fail_count"] or 0),
+        "max_tries": follows_store.FAILING_MAX_TRIES,
+        "retrying": failing and follows_store.retries_left(row),
+        "gave_up": failing and not follows_store.retries_left(row),
+    }
+
+
 def _follow_row(row: sqlite3.Row) -> dict[str, Any]:
     """One line of the table. Everything on it came off the row itself."""
     rules = follow_rules.Rules.from_row(row)
@@ -2201,6 +2218,7 @@ def _follow_row(row: sqlite3.Row) -> dict[str, Any]:
         "last_new": row["last_new_at"],
         "next_check": row["next_check_at"],
         "error_code": row["last_error_code"],
+        **_retry_fields(row),
     }
 
 
@@ -2454,6 +2472,7 @@ async def follow_detail(request: Request) -> Response:
                 "last_new": row["last_new_at"],
                 "error_code": row["last_error_code"],
                 "error_message": row["last_error_message"],
+                **_retry_fields(row),
             },
             # The rule as one sentence, from the module that owns the sentence.
             # There is no second renderer of it anywhere on this surface.

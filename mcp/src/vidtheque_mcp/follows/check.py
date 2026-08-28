@@ -113,7 +113,10 @@ class FollowCheck:
         await self.db.write(store.link_landed)
         if outcome.queued:
             await self.db.write(lambda c: store.note_arrivals(c, collection_id))
-        await self.db.write(lambda c: store.record_error(c, collection_id, None, None))
+        # A check that completed is the only thing that clears `failing`, and it
+        # clears the counter with it: seven *consecutive* failures, not seven
+        # ever (migration 0008).
+        await self.db.write(lambda c: store.note_success(c, collection_id))
         await ctx.log(outcome.sentence(), "info", stage="fetch")
         if outcome.unjudged:
             await ctx.log(
@@ -157,16 +160,24 @@ class FollowCheck:
             except SourceError as exc:
                 # The channel itself is the problem — renamed, deleted, or
                 # never a channel. That is what `failing` means, and it is set
-                # here rather than by the queue's backoff because no amount of
-                # waiting fixes it.
-                await self.db.write(
-                    lambda c: store.set_state(c, int(follow["collection_id"]), "failing")
-                )
-                await self.db.write(
-                    lambda c: store.record_error(
-                        c, int(follow["collection_id"]), "E_UNSUPPORTED_SOURCE", str(exc)[:400]
+                # here rather than by the queue's backoff, which exists for a
+                # source pushing back rather than for a source that is gone.
+                #
+                # But the same exception covers a channel that was private for
+                # an afternoon and a yt-dlp build that broke overnight, and both
+                # of those come back on their own. So `failing` is counted and
+                # retried daily rather than parked (migration 0008): a week of
+                # tries, then it waits for a human.
+                tries = await self.db.write(
+                    lambda c: store.note_failure(
+                        c,
+                        int(follow["collection_id"]),
+                        "E_UNSUPPORTED_SOURCE",
+                        str(exc)[:400],
+                        interval_s=rules.check_interval_s,
                     )
                 )
+                await ctx.log(_failure_sentence(tries), "warn", stage="fetch")
                 raise ItemFailed("E_UNSUPPORTED_SOURCE", str(exc), retryable=False) from exc
             for entry in entries:
                 # Revalidate every child, for the same reason `_maybe_expand`
@@ -490,6 +501,24 @@ class FollowCheck:
                 store.record_spend(conn, collection_id, candidate.source_id, spend_s)
 
         await self.db.write(write)
+
+
+def _failure_sentence(tries: int) -> str:
+    """What the job event says, in the number rather than in a mood.
+
+    An operator reading the war-story page needs to know whether this follow is
+    coming back on its own, and `failing` alone cannot tell them.
+    """
+    left = store.FAILING_MAX_TRIES - tries
+    if left > 0:
+        return (
+            f"the channel did not list: failure {tries} of {store.FAILING_MAX_TRIES}. "
+            f"Retrying once a day — {left} left before this follow waits for you."
+        )
+    return (
+        f"the channel did not list {tries} times running, so this follow has stopped "
+        "retrying. Resume it to try again."
+    )
 
 
 def _in_horizon(
