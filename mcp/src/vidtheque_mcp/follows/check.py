@@ -408,6 +408,9 @@ class FollowCheck:
                 f"queued as {job_public_id}",
                 judged_from=judged_from,
                 job_id=int(job_row_id["id"]) if job_row_id else None,
+                # The same number the loop above added to its running total, so
+                # the durable sum and the in-flight one cannot disagree.
+                spend_s=float(candidate.duration_s or 0.0),
             )
         outcome.queued = len(queueing)
         outcome.job_public_id = job_public_id
@@ -456,10 +459,20 @@ class FollowCheck:
         judged_from: str = "listing",
         video_id: int | None = None,
         job_id: int | None = None,
+        spend_s: float | None = None,
     ) -> None:
-        await self.db.write(
-            lambda c: store.record_seen(
-                c,
+        """One ledger row, and — for an accepted candidate — its spend, together.
+
+        `spend_s` rides in the same transaction as the ledger row rather than in
+        a second write, because the two are one fact: this candidate was
+        accepted and it costs this many seconds of the day. A crash between two
+        writes would leave the budget disagreeing with the ledger in whichever
+        direction the interleaving picked.
+        """
+
+        def write(conn: sqlite3.Connection) -> None:
+            store.record_seen(
+                conn,
                 collection_id,
                 source_id=candidate.source_id,
                 url=candidate.url,
@@ -473,7 +486,10 @@ class FollowCheck:
                 video_id=video_id,
                 job_id=job_id,
             )
-        )
+            if spend_s is not None:
+                store.record_spend(conn, collection_id, candidate.source_id, spend_s)
+
+        await self.db.write(write)
 
 
 def _in_horizon(

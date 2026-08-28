@@ -576,15 +576,18 @@ async def test_a_re_decision_never_forgets_a_number_it_already_had(db) -> None:
 
 
 async def test_the_daily_budget_counts_accepted_video_and_only_inside_the_window(db) -> None:
-    """A budget that counted holds would spend itself on videos it never took."""
+    """A budget that counted holds would spend itself on videos it never took.
+
+    Since 0007 the sum is over `follow_spend` and not over the ledger, so holds
+    and skips are not *excluded by the query* — they never write a spend row at
+    all. What is left for the query to get right is the window.
+    """
     collection_id = await make_follow(db)
-    await record(db, collection_id, "vid00000001", decision="queued", duration_s=3600.0)
-    await record(db, collection_id, "vid00000002", decision="held_budget", duration_s=7200.0)
-    await record(db, collection_id, "vid00000003", decision="skipped_duration", duration_s=60.0)
-    await record(db, collection_id, "vid00000004", decision="queued", duration_s=1800.0)
+    await db.write(lambda c: store.record_spend(c, collection_id, "vid00000001", 3600.0))
+    await db.write(lambda c: store.record_spend(c, collection_id, "vid00000004", 1800.0))
     await db.write(
         lambda c: c.execute(
-            "UPDATE follow_seen SET decided_at = unixepoch() - 90000 WHERE source_id = ?",
+            "UPDATE follow_spend SET spent_at = unixepoch() - 90000 WHERE source_id = ?",
             ("vid00000004",),
         )
     )
@@ -941,9 +944,7 @@ async def test_a_budget_hold_becomes_a_queue_when_the_window_frees(db) -> None:
 
     # A day passes: yesterday's hour is no longer inside the rolling window.
     await db.write(
-        lambda c: c.execute(
-            "UPDATE follow_seen SET decided_at = unixepoch() - 90000 WHERE decision = 'queued'"
-        )
+        lambda c: c.execute("UPDATE follow_spend SET spent_at = unixepoch() - 90000")
     )
     await db.write(
         lambda c: c.execute(
@@ -1530,3 +1531,110 @@ async def test_one_tick_bounds_the_burst_after_a_long_downtime(db) -> None:
     # The rest stay due and go on the next tick, oldest clock first.
     assert await enqueue_due(db) == 2
     assert len(await rows(db, "SELECT id FROM jobs")) == 5
+
+
+# ================================================ the budget survives an unfollow
+
+
+async def test_unfollowing_does_not_hand_back_the_hours_it_already_spent(db) -> None:
+    """§11.7, answered by migration 0007.
+
+    The budget used to be a sum over `follow_seen`, and `collections` cascades
+    to it. So the gesture that stops a follow also erased the record of what it
+    had spent today, and every other follow's next check saw those hours as
+    free. Sixteen hours of ceiling, thirty-two hours of download.
+    """
+    collection_id = await make_follow(db, max_per_check=10)
+    await backdate_follow(db, collection_id, 3600)
+    source = FakeChannel(
+        videos=[entry("vid00000001", duration_s=3600.0, published_at=now() - 600)]
+    )
+    await run_check(db, collection_id, source, daily_budget_s=7200.0)
+    assert await db.read(store.budget_spent_s) == 3600.0
+
+    await db.write(lambda c: store.delete(c, collection_id))
+
+    assert await db.read(store.budget_spent_s) == 3600.0
+    assert await rows(db, "SELECT id FROM follow_seen") == []  # the ledger did cascade
+    spend = await rows(db, "SELECT collection_id, duration_s FROM follow_spend")
+    assert len(spend) == 1
+    # The hour is still spent; the follow that spent it is gone.
+    assert spend[0]["collection_id"] is None
+    assert spend[0]["duration_s"] == 3600.0
+
+
+async def test_only_a_queued_candidate_writes_a_spend_row(db) -> None:
+    """A hold costs nothing, so it must leave nothing behind that a sum can find."""
+    collection_id = await make_follow(db, max_per_check=10)
+    await backdate_follow(db, collection_id, 3600)
+    source = FakeChannel(
+        videos=[
+            entry("vid00000001", duration_s=3600.0, published_at=now() - 600),
+            entry("vid00000002", duration_s=3600.0, published_at=now() - 500),
+        ]
+    )
+
+    outcome = await run_check(db, collection_id, source, daily_budget_s=3600.0)
+
+    assert (outcome.queued, outcome.held) == (1, 1)
+    spend = await rows(db, "SELECT source_id FROM follow_spend")
+    assert [row["source_id"] for row in spend] == ["vid00000001"]
+
+
+async def test_an_accepted_candidate_of_unknown_length_spends_nothing_but_is_recorded(
+    db,
+) -> None:
+    """0006's rule, carried across: an unmeasurable duration is not zero hours of
+    video, but it is the only number the check has. The row count stays "what
+    was accepted" while the sum stays honest about what it could measure."""
+    collection_id = await make_follow(db, max_per_check=10)
+    await backdate_follow(db, collection_id, 3600)
+    source = FakeChannel(
+        videos=[entry("vid00000001", duration_s=None, published_at=now() - 600)]
+    )
+
+    await run_check(db, collection_id, source, daily_budget_s=3600.0)
+
+    assert await db.read(store.budget_spent_s) == 0.0
+    assert len(await rows(db, "SELECT id FROM follow_spend")) == 1
+
+
+async def test_spend_rows_are_pruned_at_the_retention_window_when_a_check_is_queued(
+    db,
+) -> None:
+    """Retention runs on the event that fills the table, not at boot: rows arrive
+    only when a check queues something, so a box with no active follows adds
+    nothing and has nothing to delete."""
+    collection_id = await make_follow(db)
+    await arm(db, collection_id, -600)
+    await db.write(lambda c: store.record_spend(c, collection_id, "vid00000001", 60.0))
+    await db.write(lambda c: store.record_spend(c, collection_id, "vid00000002", 60.0))
+    await db.write(
+        lambda c: c.execute(
+            "UPDATE follow_spend SET spent_at = unixepoch() - ? WHERE source_id = ?",
+            (store.SPEND_KEEP_DAYS * 86_400 + 60, "vid00000002"),
+        )
+    )
+
+    assert await enqueue_due(db) == 1
+
+    kept = await rows(db, "SELECT source_id FROM follow_spend")
+    assert [row["source_id"] for row in kept] == ["vid00000001"]
+
+
+async def test_a_tick_with_nothing_due_prunes_nothing(db) -> None:
+    """The self-balancing half of the sentence above, asserted rather than asserted
+    about: an idle box must not run a DELETE on every one of its two-second ticks."""
+    collection_id = await make_follow(db)
+    await arm(db, collection_id, +600)
+    await db.write(lambda c: store.record_spend(c, collection_id, "vid00000001", 60.0))
+    await db.write(
+        lambda c: c.execute(
+            "UPDATE follow_spend SET spent_at = unixepoch() - ?",
+            (store.SPEND_KEEP_DAYS * 86_400 + 60,),
+        )
+    )
+
+    assert await enqueue_due(db) == 0
+
+    assert len(await rows(db, "SELECT id FROM follow_spend")) == 1

@@ -2437,6 +2437,12 @@ Four precisions those lines are carrying deliberately:
   `follows`, `follow_seen` and `collection_videos`, while `jobs.collection_id` is
   `ON DELETE SET NULL` — so an unfollow never takes a job's history with it and
   never touches a video. The removed rule is printed once, on its way out.
+- **`unfollow` says the day it spent is not refunded**, when the follow accepted
+  anything inside the budget window: `Not a refund: the 1.5h this follow accepted
+  in the last 24h stay spent.` The budget line printed underneath is about to
+  look unchanged — it used to drop, because the sum was over rows the delete
+  cascaded to — and an unfollow that appears to have done nothing is worse than
+  the hole it closed (following.md §5, migration 0007).
 
 **Rule arguments sent to a state action are noted, never silently dropped.** A
 call like `action="pause" min_duration="8:00"` appends
