@@ -137,6 +137,35 @@ when the pipeline is off (`VIDTHEQUE_RUN_PIPELINE=0`): a check queued in a
 process that will never claim it is worse than no check, because the dashboard
 would show it waiting forever.
 
+**`failing` is a week of daily retries, not a parking space.** A listing that
+raises `SourceError` sets the follow `failing` — the channel itself is the
+problem, and the queue's backoff exists for a source pushing back rather than
+for a source that is gone. That was originally terminal: `due()` selected active
+follows, so nothing scheduled it again and only a human pressing Resume could.
+
+Right for a renamed channel, wrong for the two situations that raise the same
+exception: a channel private for an afternoon, and a broken yt-dlp build — the
+second of which this repo has already paid for once (`docs/LESSONS.md`). Both
+recover on their own, and both left a follow quietly indexing nothing until
+somebody opened the Following page.
+
+So the failure is counted. `follows.fail_count` is **consecutive** failed
+checks, cleared by the first check that completes; while it is below
+`FAILING_MAX_TRIES` (7) the follow stays due, once a day. At seven it stops
+being due and waits for a human, which is the old behaviour arrived at by a
+week of evidence rather than by one exception. The retry clock is a day, and
+never sooner than the follow's own interval — a broken follow must not poll a
+source more often than a working one.
+
+`failing` therefore covers two situations, and there is no fourth state word
+for the difference: it is a count, and the count is the receipt. Every surface
+prints `retry 2 of 7` or `gave up after 7 tries` from `fail_count`, the same way
+a skip prints `4:12, shorter than your 8:00 floor` rather than the word "short".
+`check_now` arms exactly what the scheduler enqueues, so it now works on a
+retrying follow — the gesture an operator makes when a channel comes back — and
+still refuses, naming Resume, on one that gave up. (Tom, 2026-08-28, answering
+§11.4; migration 0008.)
+
 ## 4. The rules, and the order they run in
 
 A check extracts **one flat listing per watched tab** (`MAX_LISTING = 50`
@@ -504,14 +533,14 @@ Real forks. Everything above is a decision.
    config, a deliverability problem, and a second thing to secure). My
    inclination is the first two and never the last two. Confirm.
 
-4. **Should `failing` clear itself?** A follow whose channel 404s is set
-   `failing` by the check and stays there until a human resumes it — deliberate,
-   because no amount of waiting fixes a renamed channel. But a channel that was
-   briefly private, or a one-off extractor break, produces the same state and
-   would recover on its own. The alternative is `failing` with a slow retry
-   (say, one check a day) that clears on the first success. That is friendlier
-   and it is also how a follow quietly keeps making requests against something
-   that will never work again.
+4. ~~**Should `failing` clear itself?**~~ **Answered (Tom, 2026-08-28): yes,
+   for a week.** A daily retry that clears on the first success, bounded at
+   seven consecutive failures — §3 above, migration 0008. The question's own
+   objection to a plain daily retry stands and is what the bound is for: it is
+   also how a follow keeps making requests forever against something that will
+   never work again, on a box that gets blocked for asking too fast. The
+   distinction between "still trying" and "gave up" is `fail_count`, not a
+   fourth state word.
 
 5. **Is a `note:` enough when `VIDTHEQUE_FOLLOW_CHECKS=0`?** As shipped,
    `follow-channel` creates the follow and prints *the follow is stored and
