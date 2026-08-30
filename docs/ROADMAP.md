@@ -180,20 +180,13 @@ over, as a field on the card because it is policy text. Off the cues endpoint
 went `at`, `conf` and `chunk`. The readiness observation's ISO-8601
 `checked_at` went the same way, leaving the epoch under the same name.
 
-### 1. Turn following on — no code, and it is why the corpus stopped growing
-
-CT 9002 has **zero follows and zero collections**. `VIDTHEQUE_FOLLOW_CHECKS`
-defaults to `1`, so the machinery is armed with nothing to check, and the last
-video was indexed 2026-08-19. The follow contract shipped in 0.0.5 and has
-never had a row. One `follow-channel action=follow` closes it.
-
-### 2. F11 — no tool parameter has a description
+### 1. F11 — no tool parameter has a description
 
 `Field(description=…)` appears nowhere in `mcp/src`. Every parameter's meaning
 lives in the tool description prose instead, which is the budget §3 is trying to
 protect. Mechanical, wide, and it touches every tool signature.
 
-### 3. `cancel-job` and `delete-video` — F12's unfinished half
+### 2. `cancel-job` and `delete-video` — F12's unfinished half
 
 A queued job cannot be cancelled and an indexed video cannot be deleted through
 the surface; `docs/takedown.md` deletes with raw SQL against a live database,
@@ -201,7 +194,7 @@ including the vec0 trigger and FK-pragma dance. F12's read-only posture shipped
 (`public/readonly.py` derives `WRITE_TOOLS` from the annotations); the inverses
 did not. Takes the surface to twelve, so it is a contract change, not a patch.
 
-### 6. **Closed 2026-09-05** — a DOM-level test harness for the public page
+### 3. **Closed 2026-09-05** — a DOM-level test harness for the public page
 
 The page said it in its own docstring: *"What the page does with that — a
 notice under the rows it already has, rather than a wipe — needs a DOM-level
@@ -219,7 +212,7 @@ was in. Closed by replacement rather than by instrumentation — worth the
 distinction, because the assertion it wanted still has to exist on the React
 page, and that is `web/`'s to carry, not this file's.
 
-### 5. F1 — structured OCR, the big one
+### 4. F1 — structured OCR, the big one
 
 OCR reaches every query as `group_concat(o.text, ' | ' ORDER BY o.line_no)`, so
 a table's cell loses its header and a two-column slide interleaves. The design
@@ -227,14 +220,14 @@ bench calls this the single highest-value change on its list. It touches OCR
 extraction in `pipeline/`, the `ocr_lines` shape, and every query that flattens
 it. Multi-session work.
 
-### 6. The channel-count quirk — needs re-diagnosis before it is a ticket
+### 5. The channel-count quirk — needs re-diagnosis before it is a ticket
 
 Carried on a backlog since 2026-08-09 and never described anywhere. The string
 "channel-count" appears in no other file, and `library.py:392` /
 `queries.py:1487` are unchanged since before it was written. Someone has to
 reproduce it before it can be scoped.
 
-### 7. A wrong method on `/api/*` answers 404, not 405
+### 6. A wrong method on `/api/*` answers 404, not 405
 
 `Mount("/", app=mcp_app)` is last in the route list and matches everything.
 Starlette scores a path-match-method-mismatch as a *partial* match and prefers
@@ -243,6 +236,17 @@ any later full match, so the mount answers first: `GET /api/ask` and
 fix is not a reorder — it is either an explicit method-aware shim above the
 mount, or accepting it and saying so in the contract. Pinned by
 `test_a_wrong_method_is_a_404_because_the_mcp_mount_outranks_the_405`.
+
+### Backfill, or let the gap stand — the one decision the two follows left open
+
+`backfill=0` on both, so the first check marked the whole back catalogue
+`skipped_horizon` and queued nothing: following brings in what is published
+*from now*. The corpus's newest video is 2026-08-19 and the follows were made
+2026-08-30, so eleven days of uploads from `@aiDotEngineer` and `@t3dotgg` are
+in neither. Closing that gap is `index-video` on the URLs, or unfollow and
+follow again with `backfill=N` — there is no `action="edit"`, which is the same
+missing verb `following.md` §11.7 names. Tom's call, because it is a download
+burst and GPU time rather than a bug.
 
 ### Still deferred, unchanged, and still correctly deferred
 
@@ -273,6 +277,7 @@ shipped by reading the code and running its tests.
 | F6 zero-hit transcript leg says nothing about why | 2026-08-28, `search.py` |
 | F10 cap footer fires on a corpus too small to bind | 2026-08-28 — and it was naming the wrong video |
 | HTTP envelope cases untested | 2026-08-28, `test_public_envelopes.py` — and they found the boot defect below |
+| Following was never turned on | 2026-08-30 — `@aiDotEngineer` and `@t3dotgg`, /videos, 5 per check, `backfill=0`; both first checks listed clean |
 | following Q4 `failing` never clears itself | 2026-08-28, migration `0008_follow_retry.sql` — daily retry, bounded at seven, `fail_count` is the receipt |
 | following Q7 unfollow refunds the daily budget | 2026-08-28, migration `0007_follow_spend.sql` — the spend outlives its follow, and `unfollow` says so |
 | Demo page boots `undefined` when the search bucket is spent | 2026-08-28 — `/api/meta` shares the bucket; a 429 has a JSON body, so `.json()` resolved and the catch never fired |
