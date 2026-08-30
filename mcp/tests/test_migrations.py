@@ -349,3 +349,71 @@ def test_an_old_sqlite_fails_with_a_named_error_not_a_syntax_error(
     monkeypatch.setattr(migrations.sqlite3, "sqlite_version", "3.40.1")
     with pytest.raises(migrations.MigrationError, match=r"3\.40\.1 .* 3\.44\.0"):
         migrations.migrate(fresh)
+
+
+def test_the_spend_table_carries_todays_budget_across_the_upgrade(
+    fresh: sqlite3.Connection, tmp_path: Path
+) -> None:
+    """0007 moves the budget off the ledger, and must not grant a fresh day doing it.
+
+    Without the backfill the first check after the deploy reads an empty table
+    and hands out a full sixteen hours to a day that may already have spent
+    them — the refund this migration exists to close, given away once by the
+    fix. Rows older than the retention window stay behind.
+    """
+    _migrate_up_to(fresh, 6, tmp_path / "staged")
+    fresh.execute(
+        "INSERT INTO collections (kind, slug, title, source_url) "
+        "VALUES ('channel', 'c', 'C', 'https://www.youtube.com/@c')"
+    )
+    cid = fresh.execute("SELECT id FROM collections").fetchone()[0]
+    fresh.execute("INSERT INTO follows (collection_id) VALUES (?)", (cid,))
+    for source_id, decision, duration, age in (
+        ("vid00000001", "queued", 3600.0, 600),
+        ("vid00000002", "held_budget", 7200.0, 600),
+        ("vid00000003", "queued", None, 600),
+        ("vid00000004", "queued", 1800.0, 40 * 86_400),
+    ):
+        fresh.execute(
+            "INSERT INTO follow_seen (collection_id, source_id, url, duration_s, decision, "
+            "decided_at) VALUES (?, ?, 'https://v', ?, ?, unixepoch() - ?)",
+            (cid, source_id, duration, decision, age),
+        )
+
+    assert migrations.migrate(fresh)[0] == 7
+
+    carried = dict(fresh.execute("SELECT source_id, duration_s FROM follow_spend").fetchall())
+    # The hold is not a spend, and the row past retention does not come back.
+    assert carried == {"vid00000001": 3600.0, "vid00000003": 0.0}
+    spent = fresh.execute(
+        "SELECT SUM(duration_s) FROM follow_spend WHERE spent_at > unixepoch() - 86400"
+    ).fetchone()[0]
+    assert spent == 3600.0
+
+
+def test_unfollowing_orphans_the_spend_rather_than_deleting_it(
+    fresh: sqlite3.Connection,
+) -> None:
+    """The cascade is what made the budget refundable; here it is `SET NULL`."""
+    migrations.migrate(fresh)
+    fresh.execute(
+        "INSERT INTO collections (kind, slug, title, source_url) "
+        "VALUES ('channel', 'c', 'C', 'https://www.youtube.com/@c')"
+    )
+    cid = fresh.execute("SELECT id FROM collections").fetchone()[0]
+    fresh.execute("INSERT INTO follows (collection_id) VALUES (?)", (cid,))
+    fresh.execute(
+        "INSERT INTO follow_seen (collection_id, source_id, url, decision) "
+        "VALUES (?, 'v', 'https://v', 'queued')",
+        (cid,),
+    )
+    fresh.execute(
+        "INSERT INTO follow_spend (collection_id, source_id, duration_s) VALUES (?, 'v', 3600.0)",
+        (cid,),
+    )
+
+    fresh.execute("DELETE FROM collections WHERE id = ?", (cid,))
+
+    assert fresh.execute("SELECT COUNT(*) FROM follow_seen").fetchone()[0] == 0
+    row = fresh.execute("SELECT collection_id, duration_s FROM follow_spend").fetchone()
+    assert (row[0], row[1]) == (None, 3600.0)

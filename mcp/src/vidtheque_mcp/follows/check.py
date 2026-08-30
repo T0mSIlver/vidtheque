@@ -113,7 +113,10 @@ class FollowCheck:
         await self.db.write(store.link_landed)
         if outcome.queued:
             await self.db.write(lambda c: store.note_arrivals(c, collection_id))
-        await self.db.write(lambda c: store.record_error(c, collection_id, None, None))
+        # A check that completed is the only thing that clears `failing`, and it
+        # clears the counter with it: seven *consecutive* failures, not seven
+        # ever (migration 0008).
+        await self.db.write(lambda c: store.note_success(c, collection_id))
         await ctx.log(outcome.sentence(), "info", stage="fetch")
         if outcome.unjudged:
             await ctx.log(
@@ -157,16 +160,24 @@ class FollowCheck:
             except SourceError as exc:
                 # The channel itself is the problem — renamed, deleted, or
                 # never a channel. That is what `failing` means, and it is set
-                # here rather than by the queue's backoff because no amount of
-                # waiting fixes it.
-                await self.db.write(
-                    lambda c: store.set_state(c, int(follow["collection_id"]), "failing")
-                )
-                await self.db.write(
-                    lambda c: store.record_error(
-                        c, int(follow["collection_id"]), "E_UNSUPPORTED_SOURCE", str(exc)[:400]
+                # here rather than by the queue's backoff, which exists for a
+                # source pushing back rather than for a source that is gone.
+                #
+                # But the same exception covers a channel that was private for
+                # an afternoon and a yt-dlp build that broke overnight, and both
+                # of those come back on their own. So `failing` is counted and
+                # retried daily rather than parked (migration 0008): a week of
+                # tries, then it waits for a human.
+                tries = await self.db.write(
+                    lambda c: store.note_failure(
+                        c,
+                        int(follow["collection_id"]),
+                        "E_UNSUPPORTED_SOURCE",
+                        str(exc)[:400],
+                        interval_s=rules.check_interval_s,
                     )
                 )
+                await ctx.log(_failure_sentence(tries), "warn", stage="fetch")
                 raise ItemFailed("E_UNSUPPORTED_SOURCE", str(exc), retryable=False) from exc
             for entry in entries:
                 # Revalidate every child, for the same reason `_maybe_expand`
@@ -408,6 +419,9 @@ class FollowCheck:
                 f"queued as {job_public_id}",
                 judged_from=judged_from,
                 job_id=int(job_row_id["id"]) if job_row_id else None,
+                # The same number the loop above added to its running total, so
+                # the durable sum and the in-flight one cannot disagree.
+                spend_s=float(candidate.duration_s or 0.0),
             )
         outcome.queued = len(queueing)
         outcome.job_public_id = job_public_id
@@ -456,10 +470,20 @@ class FollowCheck:
         judged_from: str = "listing",
         video_id: int | None = None,
         job_id: int | None = None,
+        spend_s: float | None = None,
     ) -> None:
-        await self.db.write(
-            lambda c: store.record_seen(
-                c,
+        """One ledger row, and — for an accepted candidate — its spend, together.
+
+        `spend_s` rides in the same transaction as the ledger row rather than in
+        a second write, because the two are one fact: this candidate was
+        accepted and it costs this many seconds of the day. A crash between two
+        writes would leave the budget disagreeing with the ledger in whichever
+        direction the interleaving picked.
+        """
+
+        def write(conn: sqlite3.Connection) -> None:
+            store.record_seen(
+                conn,
                 collection_id,
                 source_id=candidate.source_id,
                 url=candidate.url,
@@ -473,7 +497,28 @@ class FollowCheck:
                 video_id=video_id,
                 job_id=job_id,
             )
+            if spend_s is not None:
+                store.record_spend(conn, collection_id, candidate.source_id, spend_s)
+
+        await self.db.write(write)
+
+
+def _failure_sentence(tries: int) -> str:
+    """What the job event says, in the number rather than in a mood.
+
+    An operator reading the war-story page needs to know whether this follow is
+    coming back on its own, and `failing` alone cannot tell them.
+    """
+    left = store.FAILING_MAX_TRIES - tries
+    if left > 0:
+        return (
+            f"the channel did not list: failure {tries} of {store.FAILING_MAX_TRIES}. "
+            f"Retrying once a day — {left} left before this follow waits for you."
         )
+    return (
+        f"the channel did not list {tries} times running, so this follow has stopped "
+        "retrying. Resume it to try again."
+    )
 
 
 def _in_horizon(

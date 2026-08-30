@@ -698,10 +698,12 @@ CREATE TABLE follows (
   last_new_at      INTEGER,
   last_error_code  TEXT,
   last_error_message TEXT,
+  fail_count       INTEGER NOT NULL DEFAULT 0 CHECK (fail_count >= 0),
   created_at       INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at       INTEGER NOT NULL DEFAULT (unixepoch())
 ) STRICT;
-CREATE INDEX follows_due ON follows(next_check_at) WHERE state = 'active';
+CREATE INDEX follows_due ON follows(next_check_at)
+  WHERE state IN ('active', 'failing');
 
 CREATE TABLE follow_seen (
   id            INTEGER PRIMARY KEY,
@@ -727,6 +729,15 @@ CREATE TABLE follow_seen (
 ) STRICT;
 CREATE INDEX follow_seen_recent ON follow_seen(collection_id, decided_at DESC);
 CREATE INDEX follow_seen_budget ON follow_seen(decided_at) WHERE decision = 'queued';
+
+CREATE TABLE follow_spend (
+  id            INTEGER PRIMARY KEY,
+  collection_id INTEGER REFERENCES collections(id) ON DELETE SET NULL,
+  source_id     TEXT    NOT NULL,
+  duration_s    REAL    NOT NULL,
+  spent_at      INTEGER NOT NULL DEFAULT (unixepoch())
+) STRICT;
+CREATE INDEX follow_spend_window ON follow_spend(spent_at);
 ```
 
 `follows` is **keyed by `collection_id`**, not by an id of its own: the follow *is*
@@ -759,7 +770,41 @@ it is not zero, and a rule with a floor must not treat it as one.
 upload every six hours for a year. Rows are upserted, and the one re-decision that
 matters is `held_budget → queued` when the daily window frees; `first_seen_at`
 survives that and `decided_at` does not. `follow_seen_budget` is partial because
-`queued` is the only decision the rolling-24h sum counts.
+`queued` is the only decision it counts — it served the daily budget until 0007
+and now serves the *brought in* totals the Following page and `corpus-summary`
+print.
+
+**`fail_count` is what makes `failing` recoverable** (migration 0008,
+following.md §3). It counts *consecutive* failed checks and is cleared by the
+first check that completes. Below `FAILING_MAX_TRIES` the follow stays due —
+once a day, never sooner than its own interval — and at seven it stops being
+due and waits for a human. `follows_due` is partial on both states because that
+is now the set the scheduler enqueues, and `follows/store.py` spells the
+predicate once (`_SCHEDULABLE`) so `due()` and `check_now()` cannot drift: a
+payload that armed a row nothing reads would print "due now" about a check that
+could never be queued.
+
+There is deliberately no fourth `state` value for "gave up". PRODUCT.md's rule
+is that no surface invents a state vocabulary, and the difference is a count,
+not a state — the surfaces print `retry 2 of 7` from this column.
+
+**`follow_spend` exists so the daily budget cannot be refunded** (migration
+0007, following.md §5). The budget was a `SUM(duration_s)` over `follow_seen`
+rows decided inside a rolling day, and `collections` cascades to `follow_seen` —
+so unfollowing returned hours the box had already spent on download and GPU to
+the window, and the day could run to roughly twice its ceiling. One row is
+written per accepted candidate, in the same transaction as the `queued` ledger
+row, and `collection_id` is `ON DELETE SET NULL`: an orphan here is not a
+decision nobody can explain, it is an hour that really was spent by a follow
+that is gone.
+
+Rows are kept 30 days, the clock `job_events` and `ask_budget` already use, so
+this box has one retention story rather than three; the budget itself reads only
+the last 24 hours and the rest is what following cost last week. The prune runs
+when a check is enqueued (`follows/scheduler.py`) rather than at boot, because
+rows arrive on that same event — a box with no active follows adds nothing and
+has nothing to delete. `source_id` is not unique: a candidate re-queued after
+its video row was deleted really did cost a second download.
 
 ### 1.9 `jobs` and `job_items`
 

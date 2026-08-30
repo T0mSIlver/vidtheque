@@ -13,6 +13,7 @@ from mcp_types import TextContent
 
 from vidtheque_mcp.app import Assembled
 from vidtheque_mcp.public.readonly import WRITE_TOOLS, hidden_tools
+from vidtheque_mcp.follows import store as follows_store
 from vidtheque_mcp.tools import follows as follows_tool
 from vidtheque_mcp.tools import library
 
@@ -96,6 +97,38 @@ async def test_unfollowing_keeps_the_videos_it_brought_in(assembled: Assembled) 
         lambda c: c.execute("SELECT COUNT(*) AS n FROM videos").fetchone()["n"]
     )
     assert after == before
+
+
+async def test_unfollowing_says_the_day_it_already_spent_is_not_refunded(
+    assembled: Assembled,
+) -> None:
+    """The budget line below it is about to look unchanged; the payload says why.
+
+    Before migration 0007 it would have dropped, because unfollowing deleted the
+    rows the budget summed. An operator who reads "16.0h of 16.0h" straight after
+    unfollowing needs the sentence, or the unfollow looks like it failed.
+    """
+    deps = assembled.deps
+    await follow(deps, url=CHANNEL)
+    await deps.db.write(
+        lambda c: c.execute(
+            "INSERT INTO follow_spend (collection_id, source_id, duration_s) "
+            "SELECT collection_id, 'vid00000001', 5400.0 FROM follows"
+        )
+    )
+
+    text = body(await follow(deps, url=CHANNEL, action="unfollow"))
+
+    assert "Not a refund: the 1.5h this follow accepted in the last 24h stay spent" in text
+    assert "Budget: 1.5h" in text
+
+
+async def test_an_unfollow_that_spent_nothing_today_says_nothing_about_refunds(
+    assembled: Assembled,
+) -> None:
+    await follow(assembled.deps, url=CHANNEL)
+    text = body(await follow(assembled.deps, url=CHANNEL, action="unfollow"))
+    assert "Not a refund" not in text
 
 
 async def test_a_playlist_url_is_followed_as_a_playlist(assembled: Assembled) -> None:
@@ -196,27 +229,85 @@ async def test_a_playlist_cannot_be_given_tabs_it_does_not_have(
     assert structured(result)["follow"]["tabs"] == "videos"
 
 
-async def test_check_now_on_a_failing_follow_does_not_promise_a_check(
-    assembled: Assembled,
-) -> None:
-    """The scheduler enqueues active follows only, so anything else must say so."""
-    deps = assembled.deps
-    created = await follow(deps, url=CHANNEL)
-    slug = structured(created)["follow"]["slug"]
+async def _make_failing(deps, tries: int) -> None:
+    """`tries` consecutive failed checks on the one follow this module makes."""
     await deps.db.write(
         lambda c: c.execute(
-            "UPDATE follows SET state = 'failing', last_error_message = 'channel is gone' "
-            "WHERE collection_id = (SELECT id FROM collections WHERE slug = ?)",
-            (slug,),
+            "UPDATE follows SET state = 'failing', fail_count = ?, "
+            "last_error_message = 'channel is gone'",
+            (tries,),
         )
     )
 
+
+async def test_check_now_on_a_follow_that_gave_up_does_not_promise_a_check(
+    assembled: Assembled,
+) -> None:
+    """The scheduler will not enqueue it, so the payload must not say it will."""
+    deps = assembled.deps
+    await follow(deps, url=CHANNEL)
+    await _make_failing(deps, follows_store.FAILING_MAX_TRIES)
+
     result = await follow(deps, url=CHANNEL, action="check_now")
     text = body(result)
-    assert "Not scheduled" in text and "failing" in text
+    assert "Not scheduled" in text
+    assert "stopped retrying after 7 consecutive failures" in text
     assert "channel is gone" in text  # and it says what went wrong
     assert structured(result)["scheduled"] is False
     assert "resume" in text
+
+
+async def test_check_now_on_a_follow_still_retrying_schedules_the_check(
+    assembled: Assembled,
+) -> None:
+    """Since 0008 it is schedulable, so the button does what it says.
+
+    This is the gesture an operator makes when the channel comes back, and it
+    used to have to be spelled pause-then-resume.
+    """
+    deps = assembled.deps
+    await follow(deps, url=CHANNEL)
+    await _make_failing(deps, 2)
+
+    result = await follow(deps, url=CHANNEL, action="check_now")
+    text = body(result)
+    assert "Due now" in text
+    assert structured(result)["scheduled"] is True
+    assert "failing (retry 2 of 7, once a day)" in text
+
+
+async def test_the_state_line_says_whether_a_failing_follow_is_coming_back(
+    assembled: Assembled,
+) -> None:
+    """`failing` covers two situations and the payload has to say which."""
+    deps = assembled.deps
+    await follow(deps, url=CHANNEL)
+
+    await _make_failing(deps, 3)
+    retrying = await follow(deps, url=CHANNEL, action="check_now")
+    assert "failing (retry 3 of 7, once a day)" in body(retrying)
+
+    await _make_failing(deps, follows_store.FAILING_MAX_TRIES)
+    done = await follow(deps, url=CHANNEL, action="check_now")
+    text = body(done)
+    assert "failing (gave up after 7 tries — resume to try again)" in text
+    # …and the clock it will never act on is not printed as though it will.
+    assert "next check —" in text
+
+
+async def test_the_structured_payload_carries_the_count_not_just_the_word(
+    assembled: Assembled,
+) -> None:
+    """A structured-only client must not have to parse the sentence."""
+    deps = assembled.deps
+    await follow(deps, url=CHANNEL)
+    await _make_failing(deps, 2)
+
+    fields = structured(await follow(deps, url=CHANNEL, action="check_now"))["follow"]
+
+    assert fields["state"] == "failing"
+    assert fields["consecutive_failures"] == 2
+    assert fields["retrying"] is True
 
 
 async def test_an_unknown_follow_names_what_was_tried(assembled: Assembled) -> None:

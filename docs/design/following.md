@@ -137,6 +137,35 @@ when the pipeline is off (`VIDTHEQUE_RUN_PIPELINE=0`): a check queued in a
 process that will never claim it is worse than no check, because the dashboard
 would show it waiting forever.
 
+**`failing` is a week of daily retries, not a parking space.** A listing that
+raises `SourceError` sets the follow `failing` — the channel itself is the
+problem, and the queue's backoff exists for a source pushing back rather than
+for a source that is gone. That was originally terminal: `due()` selected active
+follows, so nothing scheduled it again and only a human pressing Resume could.
+
+Right for a renamed channel, wrong for the two situations that raise the same
+exception: a channel private for an afternoon, and a broken yt-dlp build — the
+second of which this repo has already paid for once (`docs/LESSONS.md`). Both
+recover on their own, and both left a follow quietly indexing nothing until
+somebody opened the Following page.
+
+So the failure is counted. `follows.fail_count` is **consecutive** failed
+checks, cleared by the first check that completes; while it is below
+`FAILING_MAX_TRIES` (7) the follow stays due, once a day. At seven it stops
+being due and waits for a human, which is the old behaviour arrived at by a
+week of evidence rather than by one exception. The retry clock is a day, and
+never sooner than the follow's own interval — a broken follow must not poll a
+source more often than a working one.
+
+`failing` therefore covers two situations, and there is no fourth state word
+for the difference: it is a count, and the count is the receipt. Every surface
+prints `retry 2 of 7` or `gave up after 7 tries` from `fail_count`, the same way
+a skip prints `4:12, shorter than your 8:00 floor` rather than the word "short".
+`check_now` arms exactly what the scheduler enqueues, so it now works on a
+retrying follow — the gesture an operator makes when a channel comes back — and
+still refuses, naming Resume, on one that gave up. (Tom, 2026-08-28, answering
+§11.4; migration 0008.)
+
 ## 4. The rules, and the order they run in
 
 A check extracts **one flat listing per watched tab** (`MAX_LISTING = 50`
@@ -268,16 +297,31 @@ to *now*, not to when it would have been due. The catch-up burst that would
 otherwise produce is exactly what the budget exists to prevent, so it must not
 be created in the first place.
 
-**Unfollowing frees the spend, and that is a known hole rather than a design.**
-The sum is over `follow_seen`, and `collections` cascades to it, so a follow
-that accepted six hours today and is deleted this evening takes those six hours
-out of the rolling window with it — every other follow's next check sees them as
-free, and the day can run to roughly twice the ceiling. It is recorded here
-rather than fixed because the fix is a choice about where a spend lives, not a
-patch: either the queued rows survive their follow (re-parented or nullified
-instead of cascaded), or the spend is written at accept time to something
-append-only that is not the ledger. Both add a table or a nullable owner to a
-schema that currently reads cleanly, and neither is worth guessing at. §11.7.
+**Unfollowing is not a refund.** The sum used to be over `follow_seen`, and
+`collections` cascades to it, so a follow that accepted six hours today and was
+deleted this evening took those hours out of the rolling window with it: every
+other follow's next check saw them as free and the day could run to roughly
+twice the ceiling. Migration 0007 moves the spend to its own table,
+`follow_spend`, written in the same transaction as the `queued` ledger row and
+`ON DELETE SET NULL` rather than cascaded. An orphan row is not a decision
+nobody can explain — it is an hour that really was spent by a follow that is
+gone, which is exactly what the ceiling has to keep believing.
+
+The rejected alternative was the cheaper one: nullify the owner on `follow_seen`
+itself and add a "belongs to a live follow" clause to every read. `follow_seen`
+is *rendered* — the detail page reads it newest-first as the band of what a
+follow passed over — and a ledger row whose follow is gone is a decision no
+surface has an honest sentence for. The second reason outlasts the first: the
+budget stopped being a property of a table that exists to stop a check
+reconsidering the same upload twice.
+
+`unfollow` says so in the payload when the follow spent anything inside the
+window, because the budget line printed underneath it is about to look
+unchanged, and an unfollow that appears to have done nothing is worse than the
+hole was. Retention is 30 days, the same clock `job_events` and `ask_budget`
+use; the prune runs when a check is enqueued rather than at boot, since rows
+arrive on that same event and a box with no active follows has nothing to
+delete. (Tom, 2026-08-28, answering §11.7.)
 
 ## 6. The decision vocabulary
 
@@ -489,14 +533,14 @@ Real forks. Everything above is a decision.
    config, a deliverability problem, and a second thing to secure). My
    inclination is the first two and never the last two. Confirm.
 
-4. **Should `failing` clear itself?** A follow whose channel 404s is set
-   `failing` by the check and stays there until a human resumes it — deliberate,
-   because no amount of waiting fixes a renamed channel. But a channel that was
-   briefly private, or a one-off extractor break, produces the same state and
-   would recover on its own. The alternative is `failing` with a slow retry
-   (say, one check a day) that clears on the first success. That is friendlier
-   and it is also how a follow quietly keeps making requests against something
-   that will never work again.
+4. ~~**Should `failing` clear itself?**~~ **Answered (Tom, 2026-08-28): yes,
+   for a week.** A daily retry that clears on the first success, bounded at
+   seven consecutive failures — §3 above, migration 0008. The question's own
+   objection to a plain daily retry stands and is what the bound is for: it is
+   also how a follow keeps making requests forever against something that will
+   never work again, on a box that gets blocked for asking too fast. The
+   distinction between "still trying" and "gave up" is `fail_count`, not a
+   fourth state word.
 
 5. **Is a `note:` enough when `VIDTHEQUE_FOLLOW_CHECKS=0`?** As shipped,
    `follow-channel` creates the follow and prints *the follow is stored and
@@ -518,16 +562,19 @@ Real forks. Everything above is a decision.
    thing to explain twice on the detail page. Kept for the first cut; say if the
    detail page reads worse for it.
 
-7. **Where should a spend live, so unfollowing does not refund it?** §5's known
-   hole: the budget sums `follow_seen`, `collections` cascades to it, and an
-   unfollow therefore returns hours already spent on download and GPU to the
-   rolling window. The two honest fixes both cost something. *Keep the rows*:
-   `follow_seen.collection_id` becomes nullable with `ON DELETE SET NULL`, and
-   every read in `follows/store.py` grows a "belongs to a live follow" clause —
-   cheap to write, and it leaves orphan ledger rows nothing on any surface can
-   explain. *Record the spend separately*: an append-only row per accepted
-   candidate, pruned on the same 30-day clock as `job_events` — one more table,
-   but the budget stops being a property of a table that exists for another
-   reason. There is also the third answer, which is that a corpus with a handful
-   of follows will never notice, and a documented hole is cheaper than either.
-   It is a real fork and it is yours.
+7. ~~**Where should a spend live, so unfollowing does not refund it?**~~
+   **Answered (Tom, 2026-08-28): record the spend separately.** `follow_spend`,
+   an append-only row per accepted candidate, written in the ledger row's own
+   transaction and pruned on the same 30-day clock as `job_events` (migration
+   0007, §5 above). The cheaper fix — nullifying the owner on `follow_seen` —
+   was rejected for leaving rows on a *rendered* ledger that no surface can
+   explain.
+
+   The third answer, "a corpus with a handful of follows will never notice", was
+   the strongest of the three until the surface was looked at again:
+   `follow-channel` has five actions and none of them is `edit`. Rules can only
+   be changed on the dashboard, so a caller driving this box through MCP alone
+   changes a rule by unfollowing and following again. The refund was not on a
+   rare path for that caller. It was on the only path they had. Whether
+   `action="edit"` should exist is a separate question and is not answered
+   here.

@@ -2424,11 +2424,20 @@ Four precisions those lines are carrying deliberately:
   queues on the next tick (`following.md` §3), and the payload says "has not run
   yet" rather than naming a job id it cannot have. A check already `queued` or
   `running` is *reported* — "that one does the work" — never duplicated.
-- **`check_now` on a paused follow schedules nothing** and says so: `Not
-  scheduled: … is paused, and a paused follow is never checked.`
-  `store.check_now` leaves a paused row alone, so claiming a check was scheduled
-  would be a claim the database contradicts. `structuredContent` carries
-  `scheduled: false`.
+- **`check_now` schedules nothing on a follow the scheduler will not enqueue**,
+  and says so: `Not scheduled: … is paused, and a paused follow is never
+  checked.` `store.check_now` arms exactly the set `due()` reads, so claiming a
+  check was scheduled would be a claim the database contradicts.
+  `structuredContent` carries `scheduled: false`. A `failing` follow that has
+  used up its retries is refused the same way, naming the count — `is failing
+  and has stopped retrying after 7 consecutive failures` — and one that is still
+  retrying is scheduled normally, because it genuinely will be.
+- **`failing` says whether it is coming back.** The state line prints `failing
+  (retry 2 of 7, once a day)` or `failing (gave up after 7 tries — resume to try
+  again)`, and `structuredContent.follow` carries `consecutive_failures` and
+  `retrying` so a structured-only client need not parse the sentence. The next
+  check reads `—` whenever nothing will act on it, which is the same rule a
+  paused follow already followed (following.md §3, migration 0008).
 - **`resume` re-arms the clock to now.** The payload states it because the
   assumption an operator would otherwise make — that a fortnight paused is a
   fortnight of checks owed — is exactly the catch-up burst the daily budget
@@ -2437,6 +2446,12 @@ Four precisions those lines are carrying deliberately:
   `follows`, `follow_seen` and `collection_videos`, while `jobs.collection_id` is
   `ON DELETE SET NULL` — so an unfollow never takes a job's history with it and
   never touches a video. The removed rule is printed once, on its way out.
+- **`unfollow` says the day it spent is not refunded**, when the follow accepted
+  anything inside the budget window: `Not a refund: the 1.5h this follow accepted
+  in the last 24h stay spent.` The budget line printed underneath is about to
+  look unchanged — it used to drop, because the sum was over rows the delete
+  cascaded to — and an unfollow that appears to have done nothing is worse than
+  the hole it closed (following.md §5, migration 0007).
 
 **Rule arguments sent to a state action are noted, never silently dropped.** A
 call like `action="pause" min_duration="8:00"` appends

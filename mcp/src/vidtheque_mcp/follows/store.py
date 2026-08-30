@@ -20,6 +20,18 @@ from typing import Any, Iterable, Sequence
 
 from .rules import Rules, joined
 
+# A `failing` follow is retried this often, and only this many times before it
+# stops being due and waits for a human (following.md §11.4, migration 0008).
+# One a day for a week: long enough to outlast a private afternoon or a broken
+# yt-dlp build, short enough that a deleted channel is not polled for a year.
+FAILING_RETRY_INTERVAL_S = 86_400
+FAILING_MAX_TRIES = 7
+
+# How long a `follow_spend` row is kept. The budget window is a day; this is
+# the same 30 days `job_events` and `ask_budget` use, so the retention story on
+# this box is one sentence rather than three.
+SPEND_KEEP_DAYS = 30
+
 # The columns a follow row is made of, in one place so the read paths and the
 # update path cannot drift about what is settable.
 RULE_COLUMNS = (
@@ -51,12 +63,20 @@ SELECT c.id            AS collection_id,
        f.state, f.tabs, f.min_duration_s, f.max_duration_s,
        f.title_include, f.title_exclude, f.channels, f.tags,
        f.backfill, f.max_per_check, f.mode, f.check_interval_s,
-       f.next_check_at, f.last_new_at,
+       f.next_check_at, f.last_new_at, f.fail_count,
        f.last_error_code, f.last_error_message,
        f.created_at, f.updated_at
   FROM follows f
   JOIN collections c ON c.id = f.collection_id
 """
+
+# Which follows the scheduler will enqueue, in one place: `due()` reads it and
+# `check_now()` arms exactly the same set, so a payload can never promise a
+# check on a row nothing will pick up. Takes `FAILING_MAX_TRIES` as a parameter
+# rather than inlining it, so the constant has one definition. Unaliased:
+# `collections` has neither column, so it reads the same inside the join `due()`
+# builds and inside the bare `UPDATE follows` `check_now()` runs.
+_SCHEDULABLE = "(state = 'active' OR (state = 'failing' AND fail_count < ?))"
 
 _SLUG_STRIP = re.compile(r"[^a-z0-9]+")
 
@@ -152,7 +172,7 @@ def set_state(conn: sqlite3.Connection, collection_id: int, state: str) -> None:
     if state == "active":
         conn.execute(
             "UPDATE follows SET state = 'active', next_check_at = unixepoch(), "
-            "last_error_code = NULL, last_error_message = NULL, "
+            "fail_count = 0, last_error_code = NULL, last_error_message = NULL, "
             "updated_at = unixepoch() WHERE collection_id = ?",
             (collection_id,),
         )
@@ -164,19 +184,24 @@ def set_state(conn: sqlite3.Connection, collection_id: int, state: str) -> None:
 
 
 def check_now(conn: sqlite3.Connection, collection_id: int) -> None:
-    """Make an active follow due immediately. Anything else is left alone.
+    """Make a schedulable follow due immediately. Anything else is left alone.
 
-    `state = 'active'` rather than `state <> 'paused'`, so this says exactly
-    what `due()` means. The looser spelling armed a `failing` follow — set
-    `next_check_at = 0` on a row the scheduler filters out — and the caller then
+    The predicate is `due()`'s, spelled the same way on purpose. It used to be
+    `state <> 'paused'`, which armed a `failing` follow the scheduler filters
+    out — `next_check_at = 0` on a row nothing reads — and the caller then
     printed "due now" about a check that could never be queued. A false receipt
-    on the feature whose entire design is receipts that are true. Recovery from
-    `failing` is `set_state(..., 'active')`, which is what `resume` calls.
+    on the feature whose entire design is receipts that are true.
+
+    Since 0008 a `failing` follow that has not used up its retries *is*
+    schedulable, so this arms it: "check now" after a channel comes back is
+    exactly the gesture, and it no longer has to be spelled pause-then-resume.
+    A follow that gave up is left alone, and recovery from that is
+    `set_state(..., 'active')`, which is what `resume` calls.
     """
     conn.execute(
         "UPDATE follows SET next_check_at = 0, updated_at = unixepoch() "
-        "WHERE collection_id = ? AND state = 'active'",
-        (collection_id,),
+        "WHERE collection_id = ? AND " + _SCHEDULABLE,
+        (collection_id, FAILING_MAX_TRIES),
     )
 
 
@@ -207,6 +232,61 @@ def record_error(
     )
 
 
+def note_failure(
+    conn: sqlite3.Connection,
+    collection_id: int,
+    code: str,
+    message: str,
+    *,
+    interval_s: int,
+) -> int:
+    """The channel itself is the problem: mark it, count it, slow it down.
+
+    Returns the consecutive-failure count after this one, which is what the
+    surfaces print. The retry clock is a day rather than the follow's own
+    interval because a check against something that is not there buys nothing —
+    but never *sooner* than that interval, or a broken follow would poll a
+    source more often than a working one.
+    """
+    conn.execute(
+        "UPDATE follows SET state = 'failing', fail_count = fail_count + 1, "
+        "last_error_code = ?, last_error_message = ?, "
+        "next_check_at = unixepoch() + ?, updated_at = unixepoch() "
+        "WHERE collection_id = ?",
+        (code, message, max(int(interval_s), FAILING_RETRY_INTERVAL_S), collection_id),
+    )
+    row = conn.execute(
+        "SELECT fail_count FROM follows WHERE collection_id = ?", (collection_id,)
+    ).fetchone()
+    return int(row["fail_count"]) if row is not None else 0
+
+
+def note_success(conn: sqlite3.Connection, collection_id: int) -> None:
+    """A check that completed: forget the last error and the failure count.
+
+    Not `set_state(..., 'active')`, which also re-arms the clock to *now*. That
+    is right for a human pressing Resume and wrong here, because `schedule_next`
+    has already put the next check an interval away. A `paused` follow keeps its
+    state: a human may have paused it while the check was in flight.
+    """
+    conn.execute(
+        "UPDATE follows SET "
+        "state = CASE WHEN state = 'failing' THEN 'active' ELSE state END, "
+        "fail_count = 0, last_error_code = NULL, last_error_message = NULL, "
+        "updated_at = unixepoch() WHERE collection_id = ?",
+        (collection_id,),
+    )
+
+
+def retries_left(row: sqlite3.Row) -> bool:
+    """Is this `failing` follow one the check will still come back to?
+
+    The distinction `failing` alone cannot carry, read off the number rather
+    than off a fourth state word (migration 0008).
+    """
+    return int(row["fail_count"] or 0) < FAILING_MAX_TRIES
+
+
 def note_arrivals(conn: sqlite3.Connection, collection_id: int) -> None:
     conn.execute(
         "UPDATE follows SET last_new_at = unixepoch() WHERE collection_id = ?",
@@ -220,6 +300,11 @@ def delete(conn: sqlite3.Connection, collection_id: int) -> None:
     `collections` cascades to `follows`, `follow_seen` and `collection_videos`,
     and `jobs.collection_id` is `ON DELETE SET NULL`, so an unfollow never takes
     a job's history with it.
+
+    `follow_spend` is `ON DELETE SET NULL` for a stronger reason than the jobs
+    table: the cascade used to reach the rows the daily budget sums, so deleting
+    a follow handed back hours the box had already spent (migration 0007). The
+    spend outlives its follow deliberately.
     """
     conn.execute("DELETE FROM collections WHERE id = ?", (collection_id,))
 
@@ -272,17 +357,22 @@ def list_follows(
 
 
 def due(conn: sqlite3.Connection, limit: int = 5) -> list[sqlite3.Row]:
-    """Active follows whose clock has come round, oldest first.
+    """Follows whose clock has come round, oldest first.
 
     Oldest-first is what makes the shared daily budget fair: whoever has waited
     longest spends it first, rather than whoever happens to sort first by id.
+
+    Active, and — since 0008 — `failing` with retries left. A channel that was
+    private for an afternoon and one that was renamed for good raise the same
+    exception, so the check comes back for a week before it believes the second
+    reading (following.md §11.4).
     """
     return list(
         conn.execute(
             _SELECT
-            + " WHERE f.state = 'active' AND f.next_check_at <= unixepoch() "
+            + " WHERE " + _SCHEDULABLE + " AND f.next_check_at <= unixepoch() "
             "ORDER BY f.next_check_at, c.id LIMIT ?",
-            (limit,),
+            (FAILING_MAX_TRIES, limit),
         )
     )
 
@@ -499,6 +589,50 @@ def link_landed(conn: sqlite3.Connection) -> int:
 # -------------------------------------------------------------------- budget
 
 
+def record_spend(
+    conn: sqlite3.Connection, collection_id: int, source_id: str, duration_s: float
+) -> None:
+    """Write one accepted candidate's hours where an unfollow cannot take them back.
+
+    Called in the same transaction as the `queued` ledger row, because a budget
+    that can lose its write is a budget that occasionally grants a day twice.
+    """
+    conn.execute(
+        "INSERT INTO follow_spend (collection_id, source_id, duration_s) VALUES (?, ?, ?)",
+        (collection_id, source_id, float(duration_s)),
+    )
+
+
+def prune_spend(conn: sqlite3.Connection) -> int:
+    """Drop spend rows past the retention window. Returns rows deleted.
+
+    Same 30 days as `job_events` and `ask_budget`, so the box has one retention
+    story rather than three. The budget itself only ever reads the last 24
+    hours; the rest is the record of what following cost last week, which
+    outlives the ledger rows it was derived from.
+    """
+    cursor = conn.execute(
+        "DELETE FROM follow_spend WHERE spent_at < unixepoch() - ?",
+        (SPEND_KEEP_DAYS * 86_400,),
+    )
+    return cursor.rowcount if cursor.rowcount and cursor.rowcount > 0 else 0
+
+
+def spend_of_s(
+    conn: sqlite3.Connection, collection_id: int, window_s: int = 86_400
+) -> float:
+    """One follow's share of the window, for the sentence an unfollow owes.
+
+    Read before the delete, because the delete is what nulls the owner.
+    """
+    row = conn.execute(
+        "SELECT COALESCE(SUM(duration_s), 0) AS spent FROM follow_spend "
+        "WHERE collection_id = ? AND spent_at > unixepoch() - ?",
+        (collection_id, int(window_s)),
+    ).fetchone()
+    return float(row["spent"] or 0.0)
+
+
 def budget_spent_s(conn: sqlite3.Connection, window_s: int = 86_400) -> float:
     """Seconds of video accepted by every follow together in the rolling window.
 
@@ -509,10 +643,15 @@ def budget_spent_s(conn: sqlite3.Connection, window_s: int = 86_400) -> float:
     because `judge_duration` holds an unknown duration for review whenever a
     length rule exists, and a follow with no length rule has no opinion about
     long videos anyway.
+
+    The sum is over `follow_spend`, not over the ledger. It used to be the
+    ledger, and `collections` cascades to the ledger, so unfollowing refunded
+    hours the box had already spent on download and GPU (migration 0007,
+    following.md §5).
     """
     row = conn.execute(
-        "SELECT COALESCE(SUM(duration_s), 0) AS spent FROM follow_seen "
-        "WHERE decision = 'queued' AND decided_at > unixepoch() - ?",
+        "SELECT COALESCE(SUM(duration_s), 0) AS spent FROM follow_spend "
+        "WHERE spent_at > unixepoch() - ?",
         (int(window_s),),
     ).fetchone()
     return float(row["spent"] or 0.0)

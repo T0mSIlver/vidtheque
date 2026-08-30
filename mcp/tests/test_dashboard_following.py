@@ -697,3 +697,55 @@ def test_the_following_templates_never_reach_for_safe(template: str) -> None:
     assert "|safe" not in text
     # And no inline script: the pages stay CSP-ready.
     assert "<script" not in text
+
+
+def _make_failing(client, tries: int, slug: str = "andrej-karpathy") -> None:
+    """`tries` consecutive failed checks on one seeded follow."""
+    conn = sqlite3.connect(client.app.state.assembled.settings.data_dir / "vidtheque.db")
+    try:
+        conn.execute(
+            "UPDATE follows SET state = 'failing', fail_count = ?, "
+            "last_error_code = 'E_UNSUPPORTED_SOURCE', "
+            "last_error_message = 'This channel does not exist' "
+            "WHERE collection_id = (SELECT id FROM collections WHERE slug = ?)",
+            (tries, slug),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_a_failing_follow_says_whether_it_is_coming_back(tmp_path: Path) -> None:
+    """`failing` covers two situations since 0008, and the row has to say which.
+
+    A follow retrying daily needs nothing from anyone; one that gave up is
+    waiting on a human. Sorting them out by reading the error message is not a
+    surface, it is a puzzle.
+    """
+    with owner_client(tmp_path) as client:
+        _make_failing(client, 2)
+        listing = page(client, f"{ROOT}/following")
+        assert 'class="pill tone-bad">failing<' in listing
+        assert "retry 2 of 7" in listing
+
+        detail = page(client, f"{ROOT}/following/andrej-karpathy")
+        assert "retry 2 of 7, once a day" in detail
+        # It is schedulable, so the control that says so is offered. The button,
+        # not the help text below it, which names the control either way.
+        assert ">Check now</button>" in detail
+
+
+def test_a_follow_that_gave_up_offers_try_again_and_no_next_check(
+    tmp_path: Path,
+) -> None:
+    with owner_client(tmp_path) as client:
+        _make_failing(client, 7)
+        listing = page(client, f"{ROOT}/following")
+        assert "gave up" in listing
+        assert "retry" not in listing
+
+        detail = page(client, f"{ROOT}/following/andrej-karpathy")
+        assert "gave up after 7 tries" in detail
+        assert "Try again" in detail
+        # Nothing will enqueue it, so no clock is promised and no button lies.
+        assert ">Check now</button>" not in detail

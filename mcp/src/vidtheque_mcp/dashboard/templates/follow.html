@@ -24,6 +24,11 @@
     <h1>{{ follow.name }}</h1>
     <p class="pagehead-meta">
       <span class="pill tone-{{ follow.state | tone }}">{{ follow.state }}</span><span class="sep">·</span>
+      {% if follow.retrying %}
+      <span class="fact">retry {{ follow.tries }} of {{ follow.max_tries }}, once a day</span><span class="sep">·</span>
+      {% elif follow.gave_up %}
+      <span class="fact">gave up after {{ follow.tries }} tries</span><span class="sep">·</span>
+      {% endif %}
       <span class="fact">{{ follow.kind }}</span><span class="sep">·</span>
       <span class="fact">brought in <span class="mono">{{ brought_in | count }}</span></span>
     </p>
@@ -51,7 +56,13 @@
     </li>
     <li class="minirow">
       <span>next check</span>
-      <span class="minirow-figure"><time>{{ follow.next_check | minute }}</time></span>
+      {# A follow nothing will enqueue has a `next_check_at` and it means
+         nothing; printing it would promise a check that is not coming. #}
+      <span class="minirow-figure">
+        {%- if follow.state == 'active' or follow.retrying -%}
+        <time>{{ follow.next_check | minute }}</time>
+        {%- else -%}—{%- endif -%}
+      </span>
     </li>
     <li class="minirow">
       <span>last arrival</span>
@@ -98,7 +109,10 @@
       <button class="ghost" type="submit">Pause</button>
       {% endif %}
     </form>
-    {% if follow.state == 'active' %}
+    {# Offered to a retrying follow too: since 0008 the scheduler enqueues one,
+       so the button does what it says. A follow that gave up is left with
+       Try again, which is the control that clears the count. #}
+    {% if follow.state == 'active' or follow.retrying %}
     <form class="rowform" method="post" action="{{ root }}/following/{{ follow.slug }}/check">
       <button class="ghost" type="submit">Check now</button>
     </form>

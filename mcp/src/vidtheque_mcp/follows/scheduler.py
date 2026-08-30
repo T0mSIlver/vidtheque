@@ -72,4 +72,11 @@ def _enqueue(conn: sqlite3.Connection, limit: int) -> int:
         # channel that 404s is re-checked on every tick forever.
         store.schedule_next(conn, collection_id, int(follow["check_interval_s"]))
         enqueued += 1
+    if enqueued:
+        # `follow_spend` retention, on the event that fills it rather than at
+        # boot. Rows arrive only when a check queues something, so pruning on
+        # the same event is self-balancing: a box with no active follows adds
+        # nothing and has nothing to delete. It also costs a `DELETE` on an
+        # indexed range at most once per check, which is hours apart.
+        store.prune_spend(conn)
     return enqueued

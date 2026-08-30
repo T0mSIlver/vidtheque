@@ -576,15 +576,18 @@ async def test_a_re_decision_never_forgets_a_number_it_already_had(db) -> None:
 
 
 async def test_the_daily_budget_counts_accepted_video_and_only_inside_the_window(db) -> None:
-    """A budget that counted holds would spend itself on videos it never took."""
+    """A budget that counted holds would spend itself on videos it never took.
+
+    Since 0007 the sum is over `follow_spend` and not over the ledger, so holds
+    and skips are not *excluded by the query* — they never write a spend row at
+    all. What is left for the query to get right is the window.
+    """
     collection_id = await make_follow(db)
-    await record(db, collection_id, "vid00000001", decision="queued", duration_s=3600.0)
-    await record(db, collection_id, "vid00000002", decision="held_budget", duration_s=7200.0)
-    await record(db, collection_id, "vid00000003", decision="skipped_duration", duration_s=60.0)
-    await record(db, collection_id, "vid00000004", decision="queued", duration_s=1800.0)
+    await db.write(lambda c: store.record_spend(c, collection_id, "vid00000001", 3600.0))
+    await db.write(lambda c: store.record_spend(c, collection_id, "vid00000004", 1800.0))
     await db.write(
         lambda c: c.execute(
-            "UPDATE follow_seen SET decided_at = unixepoch() - 90000 WHERE source_id = ?",
+            "UPDATE follow_spend SET spent_at = unixepoch() - 90000 WHERE source_id = ?",
             ("vid00000004",),
         )
     )
@@ -626,31 +629,31 @@ async def test_a_paused_follow_does_not_owe_a_week_of_checks(db) -> None:
     assert follow["last_error_code"] is None and follow["last_error_message"] is None
 
 
-async def test_check_now_wakes_an_active_follow_and_leaves_every_other_state_alone(db) -> None:
-    """`failing` is here for the same reason as `paused`, and is easier to get wrong.
+async def test_check_now_arms_exactly_what_the_scheduler_will_enqueue(db) -> None:
+    """Arming anything else sets a clock nobody reads.
 
-    `due()` enqueues active follows only, so arming anything else sets a clock
-    nobody reads — and the caller then prints "due now" about a check that can
-    never be queued. That is a false receipt, on the feature whose whole design
-    is receipts that are true. A channel that 404'd once leaves the follow
-    `failing`, and "check now" is exactly the gesture an operator makes after
-    fixing the URL, so it has to say that resume is what re-arms it.
+    The caller then prints "due now" about a check that can never be queued —
+    a false receipt, on the feature whose whole design is receipts that are
+    true. Since 0008 the set includes a `failing` follow with retries left, and
+    excludes one that has used them up.
     """
     active = await make_follow(db, title="A")
     paused = await make_follow(db, title="B")
-    failing = await make_follow(db, title="C")
-    for collection_id in (active, paused, failing):
+    retrying = await make_follow(db, title="C")
+    gave_up = await make_follow(db, title="D")
+    for collection_id in (active, paused, retrying, gave_up):
         await arm(db, collection_id, +9000)
     await db.write(lambda c: store.set_state(c, paused, "paused"))
-    await db.write(lambda c: store.set_state(c, failing, "failing"))
+    await fail_check(db, retrying, times=1)
+    await fail_check(db, gave_up, times=store.FAILING_MAX_TRIES)
 
-    for collection_id in (active, paused, failing):
+    for collection_id in (active, paused, retrying, gave_up):
         await db.write(lambda c: store.check_now(c, collection_id))
 
     due = await db.read(lambda c: store.due(c, 10))
-    assert [int(row["collection_id"]) for row in due] == [active]
+    assert sorted(int(row["collection_id"]) for row in due) == sorted([active, retrying])
     # And the clock of the two it left alone was not touched at all.
-    for collection_id in (paused, failing):
+    for collection_id in (paused, gave_up):
         row = await db.read(lambda c: store.get(c, collection_id))
         assert int(row["next_check_at"]) > 0
 
@@ -825,6 +828,16 @@ async def record(db: Database, collection_id: int, source_id: str, **fields: Any
     )
 
 
+async def fail_check(db: Database, collection_id: int, *, times: int) -> None:
+    """`times` consecutive failed checks, without a fake source for each one."""
+    for _ in range(times):
+        await db.write(
+            lambda c: store.note_failure(
+                c, collection_id, "E_UNSUPPORTED_SOURCE", "gone", interval_s=21_600
+            )
+        )
+
+
 async def arm(db: Database, collection_id: int, offset_s: int) -> None:
     await db.write(
         lambda c: c.execute(
@@ -941,9 +954,7 @@ async def test_a_budget_hold_becomes_a_queue_when_the_window_frees(db) -> None:
 
     # A day passes: yesterday's hour is no longer inside the rolling window.
     await db.write(
-        lambda c: c.execute(
-            "UPDATE follow_seen SET decided_at = unixepoch() - 90000 WHERE decision = 'queued'"
-        )
+        lambda c: c.execute("UPDATE follow_spend SET spent_at = unixepoch() - 90000")
     )
     await db.write(
         lambda c: c.execute(
@@ -1259,8 +1270,10 @@ async def test_a_channel_that_is_gone_marks_the_follow_failing_and_records_why(d
     assert follow["state"] == "failing"
     assert follow["last_error_code"] == "E_UNSUPPORTED_SOURCE"
     assert "does not exist" in str(follow["last_error_message"])
-    # A failing follow is not due, so it is not re-checked every tick.
+    assert int(follow["fail_count"]) == 1
+    # Not due yet: the retry clock is a day, so it is not re-checked every tick.
     assert await db.read(lambda c: store.due(c, 10)) == []
+    assert int(follow["next_check_at"]) >= now() + store.FAILING_RETRY_INTERVAL_S - 5
 
 
 async def test_a_check_that_found_nothing_still_moves_the_clock(db) -> None:
@@ -1509,11 +1522,12 @@ async def test_the_switch_that_turns_follow_checks_off_enqueues_nothing(db) -> N
     assert await rows(db, "SELECT id FROM jobs") == []
 
 
-async def test_a_paused_or_failing_follow_is_never_enqueued(db) -> None:
+async def test_a_paused_or_given_up_follow_is_never_enqueued(db) -> None:
     paused = await make_follow(db, title="A")
-    failing = await make_follow(db, title="B")
+    gave_up = await make_follow(db, title="B")
     await db.write(lambda c: store.set_state(c, paused, "paused"))
-    await db.write(lambda c: store.set_state(c, failing, "failing"))
+    await fail_check(db, gave_up, times=store.FAILING_MAX_TRIES)
+    await arm(db, gave_up, -600)
 
     assert await enqueue_due(db) == 0
     assert await rows(db, "SELECT id FROM jobs") == []
@@ -1530,3 +1544,225 @@ async def test_one_tick_bounds_the_burst_after_a_long_downtime(db) -> None:
     # The rest stay due and go on the next tick, oldest clock first.
     assert await enqueue_due(db) == 2
     assert len(await rows(db, "SELECT id FROM jobs")) == 5
+
+
+# ================================================ the budget survives an unfollow
+
+
+async def test_unfollowing_does_not_hand_back_the_hours_it_already_spent(db) -> None:
+    """§11.7, answered by migration 0007.
+
+    The budget used to be a sum over `follow_seen`, and `collections` cascades
+    to it. So the gesture that stops a follow also erased the record of what it
+    had spent today, and every other follow's next check saw those hours as
+    free. Sixteen hours of ceiling, thirty-two hours of download.
+    """
+    collection_id = await make_follow(db, max_per_check=10)
+    await backdate_follow(db, collection_id, 3600)
+    source = FakeChannel(
+        videos=[entry("vid00000001", duration_s=3600.0, published_at=now() - 600)]
+    )
+    await run_check(db, collection_id, source, daily_budget_s=7200.0)
+    assert await db.read(store.budget_spent_s) == 3600.0
+
+    await db.write(lambda c: store.delete(c, collection_id))
+
+    assert await db.read(store.budget_spent_s) == 3600.0
+    assert await rows(db, "SELECT id FROM follow_seen") == []  # the ledger did cascade
+    spend = await rows(db, "SELECT collection_id, duration_s FROM follow_spend")
+    assert len(spend) == 1
+    # The hour is still spent; the follow that spent it is gone.
+    assert spend[0]["collection_id"] is None
+    assert spend[0]["duration_s"] == 3600.0
+
+
+async def test_only_a_queued_candidate_writes_a_spend_row(db) -> None:
+    """A hold costs nothing, so it must leave nothing behind that a sum can find."""
+    collection_id = await make_follow(db, max_per_check=10)
+    await backdate_follow(db, collection_id, 3600)
+    source = FakeChannel(
+        videos=[
+            entry("vid00000001", duration_s=3600.0, published_at=now() - 600),
+            entry("vid00000002", duration_s=3600.0, published_at=now() - 500),
+        ]
+    )
+
+    outcome = await run_check(db, collection_id, source, daily_budget_s=3600.0)
+
+    assert (outcome.queued, outcome.held) == (1, 1)
+    spend = await rows(db, "SELECT source_id FROM follow_spend")
+    assert [row["source_id"] for row in spend] == ["vid00000001"]
+
+
+async def test_an_accepted_candidate_of_unknown_length_spends_nothing_but_is_recorded(
+    db,
+) -> None:
+    """0006's rule, carried across: an unmeasurable duration is not zero hours of
+    video, but it is the only number the check has. The row count stays "what
+    was accepted" while the sum stays honest about what it could measure."""
+    collection_id = await make_follow(db, max_per_check=10)
+    await backdate_follow(db, collection_id, 3600)
+    source = FakeChannel(
+        videos=[entry("vid00000001", duration_s=None, published_at=now() - 600)]
+    )
+
+    await run_check(db, collection_id, source, daily_budget_s=3600.0)
+
+    assert await db.read(store.budget_spent_s) == 0.0
+    assert len(await rows(db, "SELECT id FROM follow_spend")) == 1
+
+
+async def test_spend_rows_are_pruned_at_the_retention_window_when_a_check_is_queued(
+    db,
+) -> None:
+    """Retention runs on the event that fills the table, not at boot: rows arrive
+    only when a check queues something, so a box with no active follows adds
+    nothing and has nothing to delete."""
+    collection_id = await make_follow(db)
+    await arm(db, collection_id, -600)
+    await db.write(lambda c: store.record_spend(c, collection_id, "vid00000001", 60.0))
+    await db.write(lambda c: store.record_spend(c, collection_id, "vid00000002", 60.0))
+    await db.write(
+        lambda c: c.execute(
+            "UPDATE follow_spend SET spent_at = unixepoch() - ? WHERE source_id = ?",
+            (store.SPEND_KEEP_DAYS * 86_400 + 60, "vid00000002"),
+        )
+    )
+
+    assert await enqueue_due(db) == 1
+
+    kept = await rows(db, "SELECT source_id FROM follow_spend")
+    assert [row["source_id"] for row in kept] == ["vid00000001"]
+
+
+async def test_a_tick_with_nothing_due_prunes_nothing(db) -> None:
+    """The self-balancing half of the sentence above, asserted rather than asserted
+    about: an idle box must not run a DELETE on every one of its two-second ticks."""
+    collection_id = await make_follow(db)
+    await arm(db, collection_id, +600)
+    await db.write(lambda c: store.record_spend(c, collection_id, "vid00000001", 60.0))
+    await db.write(
+        lambda c: c.execute(
+            "UPDATE follow_spend SET spent_at = unixepoch() - ?",
+            (store.SPEND_KEEP_DAYS * 86_400 + 60,),
+        )
+    )
+
+    assert await enqueue_due(db) == 0
+
+    assert len(await rows(db, "SELECT id FROM follow_spend")) == 1
+
+
+# =============================================== `failing` retries, then stops
+
+
+async def test_a_failed_check_retries_daily_rather_than_at_the_follow_interval(
+    db,
+) -> None:
+    """A check against something that is not there buys nothing, so it slows down.
+
+    The scheduler had already pushed the clock out by one interval when it
+    queued this check; the failure pushes it to a day.
+    """
+    collection_id = await make_follow(db, check_interval_s=21_600)
+    source = FakeChannel(expand_raises=SourceError("This channel does not exist"))
+
+    with pytest.raises(ItemFailed):
+        await run_check(db, collection_id, source)
+
+    follow = await db.read(lambda c: store.get(c, collection_id))
+    assert int(follow["fail_count"]) == 1
+    assert int(follow["next_check_at"]) - now() > 21_600
+
+
+async def test_the_retry_clock_is_never_sooner_than_the_follows_own_interval(db) -> None:
+    """Or a broken follow would poll a source more often than a working one."""
+    weekly = 7 * 86_400
+    collection_id = await make_follow(db, check_interval_s=weekly)
+    source = FakeChannel(expand_raises=SourceError("This channel does not exist"))
+
+    with pytest.raises(ItemFailed):
+        await run_check(db, collection_id, source)
+
+    follow = await db.read(lambda c: store.get(c, collection_id))
+    assert int(follow["next_check_at"]) - now() >= weekly - 5
+
+
+async def test_a_channel_that_comes_back_clears_the_failure_and_the_count(db) -> None:
+    """The case the old rule could not tell apart from a renamed channel.
+
+    A channel private for an afternoon, or a yt-dlp build that broke overnight,
+    raises the same `SourceError` as one that is gone for good — and used to
+    leave the follow parked until somebody opened the dashboard.
+    """
+    collection_id = await make_follow(db)
+    gone = FakeChannel(expand_raises=SourceError("This channel does not exist"))
+    for _ in range(2):
+        with pytest.raises(ItemFailed):
+            await run_check(db, collection_id, gone)
+    parked = await db.read(lambda c: store.get(c, collection_id))
+    assert (str(parked["state"]), int(parked["fail_count"])) == ("failing", 2)
+
+    await run_check(db, collection_id, FakeChannel(videos=[]))
+
+    back = await db.read(lambda c: store.get(c, collection_id))
+    assert str(back["state"]) == "active"
+    assert int(back["fail_count"]) == 0
+    assert back["last_error_code"] is None
+
+
+async def test_a_week_of_failures_stops_the_retries_rather_than_polling_forever(
+    db,
+) -> None:
+    """§11.4's objection to a plain daily retry, honoured: a channel that is
+    really gone must not be asked about for a year."""
+    collection_id = await make_follow(db)
+    source = FakeChannel(expand_raises=SourceError("This channel does not exist"))
+
+    for attempt in range(store.FAILING_MAX_TRIES):
+        await arm(db, collection_id, -600)
+        assert len(await db.read(lambda c: store.due(c, 10))) == 1, attempt
+        with pytest.raises(ItemFailed):
+            await run_check(db, collection_id, source)
+
+    await arm(db, collection_id, -600)
+    assert await db.read(lambda c: store.due(c, 10)) == []
+    follow = await db.read(lambda c: store.get(c, collection_id))
+    assert int(follow["fail_count"]) == store.FAILING_MAX_TRIES
+    assert str(follow["state"]) == "failing"
+
+
+async def test_resume_is_the_way_back_from_a_follow_that_gave_up(db) -> None:
+    collection_id = await make_follow(db)
+    await fail_check(db, collection_id, times=store.FAILING_MAX_TRIES)
+
+    await db.write(lambda c: store.set_state(c, collection_id, "active"))
+
+    follow = await db.read(lambda c: store.get(c, collection_id))
+    assert (str(follow["state"]), int(follow["fail_count"])) == ("active", 0)
+    assert len(await db.read(lambda c: store.due(c, 10))) == 1
+
+
+async def test_a_check_that_completes_does_not_un_pause_a_follow(db) -> None:
+    """A human may pause a follow while its check is in flight, and a check
+    that finishes afterwards must not undo that."""
+    collection_id = await make_follow(db)
+    await db.write(lambda c: store.set_state(c, collection_id, "paused"))
+
+    await db.write(lambda c: store.note_success(c, collection_id))
+
+    follow = await db.read(lambda c: store.get(c, collection_id))
+    assert str(follow["state"]) == "paused"
+
+
+async def test_a_rate_limit_still_does_not_count_against_the_retries(db) -> None:
+    """One 429 is an operating condition, not a channel that is gone: the
+    queue's own backoff owns that wait and the counter must not move."""
+    collection_id = await make_follow(db)
+    source = FakeChannel(expand_raises=RateLimited("HTTP Error 429"))
+
+    with pytest.raises(ItemFailed):
+        await run_check(db, collection_id, source)
+
+    follow = await db.read(lambda c: store.get(c, collection_id))
+    assert (str(follow["state"]), int(follow["fail_count"])) == ("active", 0)
