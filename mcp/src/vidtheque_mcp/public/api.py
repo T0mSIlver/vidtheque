@@ -358,6 +358,54 @@ async def videos_endpoint(request: Request) -> JSONResponse:
     return JSONResponse({"videos": videos, "pagination": payload.get("pagination", {})})
 
 
+async def video_endpoint(request: Request) -> JSONResponse:
+    """One video, straight from `video-summary` (demo-site.md §2.2.1).
+
+    Same posture as the listing: the tool's structured payload verbatim plus
+    the URLs only the facade can mint — a cover `thumb`, and `thumb` /
+    `thumb_large` on every on-screen-text highlight, since a page cannot build
+    a frame URL of its own (§5). The `next:` guidance is left out: it is
+    written for an MCP client and names tools a browser cannot call.
+    """
+    deps: Deps = request.app.state.assembled.deps
+    video_id = request.path_params["video_id"]
+    result = await library.video_summary(
+        deps,
+        video_id,
+        include_speakers=False,
+        include_links=False,
+        include_guidance=False,
+        # Public bounds, fixed: the page shows what fits, not what a caller asks
+        # for. The owner's agent has the tool itself for the wider cut.
+        max_chapters=50,
+        max_key_texts=12,
+        max_ocr_highlights=12,
+        max_chars=400,
+    )
+    if result.is_error:
+        return _error_response(result.structured_content, "video lookup failed")
+
+    payload = dict(result.structured_content or {})
+    covers = await deps.db.read(lambda c: _cover_frames(c, [video_id]))
+    payload["thumb"] = thumb_url(deps, covers.get(video_id))
+    # The humanising layer (§2.4): the tool's truncation marker tells an agent
+    # to pass `max_text_chars=0`, which a page cannot; a reader gets an ellipsis.
+    payload["key_texts"] = [
+        {**cue, "text": humanize.snippet(cue.get("text"))}
+        for cue in payload.get("key_texts", [])
+    ]
+    payload["ocr_highlights"] = [
+        {
+            **frame,
+            "screen_text": humanize.snippet(frame.get("screen_text")),
+            "thumb": thumb_url(deps, frame.get("frame_id"), THUMB_WIDTH),
+            "thumb_large": thumb_url(deps, frame.get("frame_id"), LIGHTBOX_WIDTH),
+        }
+        for frame in payload.get("ocr_highlights", [])
+    ]
+    return JSONResponse(payload)
+
+
 def _cover_frames(conn: sqlite3.Connection, public_ids: list[str]) -> dict[str, str]:
     """The lowest non-duplicate keyframe ordinal per video — a cover image.
 
@@ -467,6 +515,7 @@ def api_routes(prefix: str = "", *, ask: bool = True, demo: bool = False) -> lis
             methods=["GET"],
         ),
         Route(f"{prefix}/api/videos", videos_endpoint, methods=["GET"]),
+        Route(f"{prefix}/api/videos/{{video_id}}", video_endpoint, methods=["GET"]),
         Route(f"{prefix}/api/meta", meta_endpoint, methods=["GET"]),
     ]
     if ask:
