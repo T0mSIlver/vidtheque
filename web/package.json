@@ -9,7 +9,7 @@
     "lint": "eslint",
     "tokens": "node scripts/tokens.mjs",
     "tokens:check": "node scripts/tokens.mjs --check",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
   },

@@ -1,0 +1,176 @@
+.main {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: var(--gap-head) var(--gut) var(--beat);
+}
+
+.article {
+  display: grid;
+  gap: var(--gap-block);
+}
+
+.head {
+  display: grid;
+  grid-template-columns: minmax(0, 30rem) minmax(0, 1fr);
+  gap: var(--s8);
+  align-items: start;
+}
+
+@media (max-width: 780px) {
+  .head {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.cover {
+  min-width: 0;
+}
+
+.kicker {
+  composes: t-label from global;
+  color: var(--gold);
+  margin-bottom: var(--s3);
+}
+
+.title {
+  composes: t-headline from global;
+  margin-bottom: var(--s5);
+  overflow-wrap: anywhere;
+}
+
+.lede {
+  composes: t-lede from global;
+  color: var(--muted);
+  max-width: var(--lede);
+}
+
+.lede a {
+  color: var(--gold);
+}
+
+.facts {
+  composes: t-machine from global;
+  color: var(--fg2);
+  margin-bottom: var(--s5);
+}
+
+/* The receipt slab: `youtu.be/ID?t=` in gold, the one thing worth clicking. */
+.receipt {
+  composes: t-machine from global;
+  display: inline-block;
+  padding: 9px 11px;
+  color: var(--gold);
+  background: var(--gold-6);
+  border: 1px solid var(--gold);
+  font-weight: 600;
+}
+
+.receipt:hover,
+.receipt:focus-visible {
+  background: var(--gold-12);
+}
+
+.section {
+  display: grid;
+  gap: var(--s4);
+}
+
+.label {
+  composes: t-label from global;
+  color: var(--fg2);
+  padding-bottom: var(--s2);
+  border-bottom: 1px solid var(--line);
+}
+
+.chapters {
+  list-style: none;
+  display: grid;
+  gap: 1px;
+}
+
+/* `composes` only works on a plain class selector, so the row gets one. */
+.chapter {
+  composes: t-cell from global;
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: var(--s3);
+  padding: var(--s2) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.chapter:hover,
+.chapter:focus-visible {
+  color: var(--gold);
+}
+
+.time {
+  composes: t-machine from global;
+  color: var(--gold);
+}
+
+.quotes {
+  list-style: none;
+  display: grid;
+  gap: var(--s5);
+}
+
+.quote {
+  composes: t-quote from global;
+  max-width: var(--quote);
+  padding-left: 14px;
+  border-left: 1px solid var(--gold);
+  margin-bottom: var(--s2);
+}
+
+.frames {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  gap: var(--s6) var(--s5);
+}
+
+.frameItem {
+  display: grid;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.seen {
+  composes: t-machine-sm from global;
+  color: var(--fg2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  align-items: baseline;
+  overflow-wrap: anywhere;
+}
+
+.seenTag {
+  composes: t-tag from global;
+  padding: 2.5px 6px;
+  background: var(--seen);
+  color: var(--seen-ink);
+}
+
+/* skeleton */
+.ghostFrame {
+  display: block;
+  aspect-ratio: 16 / 9;
+  background: var(--plate);
+  box-shadow: var(--edge);
+}
+
+.ghostLine {
+  display: block;
+  height: 10px;
+  width: 8rem;
+  background: var(--plate2);
+  margin-bottom: var(--s4);
+}
+
+.ghostTitle {
+  display: block;
+  height: 2.4rem;
+  width: 80%;
+  background: var(--plate2);
+}
