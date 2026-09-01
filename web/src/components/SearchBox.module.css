@@ -1,0 +1,70 @@
+.form {
+  display: grid;
+  gap: var(--s3);
+  max-width: var(--query-w, 44rem);
+}
+
+.bar {
+  display: flex;
+  border: 1px solid var(--seam2);
+  background: var(--console);
+}
+
+.input {
+  composes: t-query from global;
+  flex: 1;
+  min-width: 0;
+  height: 2.75rem;
+  padding: 0 13px;
+  background: transparent;
+  color: var(--fg);
+  border: 0;
+}
+
+.input::placeholder {
+  color: var(--fg3);
+}
+
+.go {
+  composes: t-action from global;
+  padding: 0 20px 0 22px;
+  background: var(--gold);
+  color: var(--gold-ink);
+  border: 0;
+  cursor: pointer;
+}
+
+.go:hover,
+.go:focus-visible {
+  background: var(--gold-hi);
+}
+
+.go:disabled {
+  background: var(--gold-44);
+  cursor: default;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+.chip {
+  composes: t-label-sm from global;
+  height: 2.125rem;
+  padding: 0 12px;
+  background: transparent;
+  color: var(--fg3);
+  border: 1px solid var(--seam);
+  cursor: pointer;
+}
+
+.chip:hover {
+  color: var(--fg);
+}
+
+.chip[aria-checked="true"] {
+  background: var(--gold-12);
+  color: var(--gold);
+}

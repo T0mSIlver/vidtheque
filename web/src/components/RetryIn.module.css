@@ -1,0 +1,31 @@
+.box {
+  composes: t-cell from global;
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  padding: var(--s3) var(--s4);
+  color: var(--tone-warn);
+  background: var(--tone-warn-bg);
+  border: 1px solid var(--tone-warn-line);
+}
+
+.retry {
+  composes: t-label from global;
+  height: 2.125rem;
+  padding: 0 var(--s3);
+  background: transparent;
+  color: var(--fg2);
+  border: 1px solid var(--seam2);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+.retry:disabled {
+  color: var(--fg3);
+  cursor: default;
+}
+
+.retry:not(:disabled):hover {
+  color: var(--gold);
+  border-color: var(--gold-44);
+}
