@@ -80,6 +80,50 @@ export const VideosResponse = z.object({
 });
 export type VideosResponse = z.infer<typeof VideosResponse>;
 
+// One video, from `GET /api/videos/{id}` (demo-site.md §2.2.1): the
+// video-summary tool's payload plus the frame URLs only the facade can mint.
+export const Chapter = z.object({
+  start: z.number(),
+  title: z.string(),
+  link: z.url(),
+});
+export type Chapter = z.infer<typeof Chapter>;
+
+export const KeyText = z.object({
+  start: z.number(),
+  text: z.string().nullable(),
+  link: z.url(),
+});
+export type KeyText = z.infer<typeof KeyText>;
+
+export const OcrHighlight = z.object({
+  t: z.number(),
+  frame_id: z.string(),
+  screen_text: z.string().nullable(),
+  link: z.url(),
+  thumb: z.url().nullable(),
+  thumb_large: z.url().nullable(),
+});
+export type OcrHighlight = z.infer<typeof OcrHighlight>;
+
+export const VideoDetail = z.object({
+  video_id: z.string(),
+  title: z.string(),
+  channel: z.string(),
+  published: z.string(),
+  duration: z.string(),
+  indexed_at: z.string(),
+  link: z.url(),
+  keyframes: z.number().int(),
+  data_status: z.string(),
+  tags: z.array(z.string()).optional(),
+  chapters: z.array(Chapter).optional(),
+  key_texts: z.array(KeyText).optional(),
+  ocr_highlights: z.array(OcrHighlight).optional(),
+  thumb: z.url().nullable(),
+});
+export type VideoDetail = z.infer<typeof VideoDetail>;
+
 export const Meta = z.object({
   name: z.string(),
   version: z.string(),

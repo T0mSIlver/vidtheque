@@ -10,6 +10,7 @@ import {
   ErrorEnvelope,
   Meta,
   SearchResponse,
+  VideoDetail,
   VideosResponse,
 } from "./schemas";
 
@@ -83,6 +84,9 @@ export function createClient(config: ClientConfig) {
     },
     videos(params: { q?: string; channel?: string; limit?: number; offset?: number } = {}, opts?: RequestOptions) {
       return get("/api/videos", params, VideosResponse, opts);
+    },
+    video(videoId: string, opts?: RequestOptions) {
+      return get(`/api/videos/${encodeURIComponent(videoId)}`, {}, VideoDetail, opts);
     },
     meta(opts?: RequestOptions) {
       return get("/api/meta", {}, Meta, opts);
