@@ -12,7 +12,9 @@ pnpm install          # once
 pnpm dev              # http://localhost:3000, against VIDTHEQUE_API_URL
 pnpm build && pnpm start
 pnpm lint
-pnpm exec tsc --noEmit
+pnpm typecheck        # next typegen, then tsc
+pnpm test             # Vitest: unit tests in Node, component tests in jsdom
+pnpm tokens           # regenerate src/styles from DESIGN.md; tokens:check in CI
 ```
 
 `AGENTS.md` and `CLAUDE.md` in this directory are written by `next dev` and
