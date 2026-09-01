@@ -1,0 +1,129 @@
+.card {
+  background: var(--plate);
+  border: 1px solid var(--seam2);
+}
+
+.head {
+  display: grid;
+  grid-template-columns: 10rem minmax(0, 1fr);
+  gap: var(--s4);
+  padding: var(--s4);
+  background: var(--plate2);
+  border-bottom: 1px solid var(--seam);
+}
+
+.cover {
+  min-width: 0;
+}
+
+.headText {
+  display: grid;
+  gap: var(--s2);
+  align-content: start;
+  min-width: 0;
+}
+
+.title {
+  composes: t-cell-strong from global;
+  overflow-wrap: anywhere;
+}
+
+.title:hover,
+.title:focus-visible {
+  color: var(--gold);
+}
+
+.headMeta {
+  composes: t-cell from global;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+}
+
+/* The talk's id and the count are the machine's. */
+.id {
+  composes: t-machine-sm from global;
+  color: var(--fg3);
+}
+
+.moments {
+  list-style: none;
+}
+
+.moment {
+  display: grid;
+  grid-template-columns: 4rem auto minmax(0, 1fr) auto;
+  gap: var(--s3);
+  align-items: baseline;
+  padding: var(--s2) var(--s4);
+  border-bottom: 1px solid var(--seam);
+}
+
+.moment:last-child {
+  border-bottom: 0;
+}
+
+@media (max-width: 780px) {
+  .moment {
+    grid-template-columns: 4rem minmax(0, 1fr);
+  }
+  .text {
+    grid-column: 1 / -1;
+  }
+}
+
+.time {
+  composes: t-machine from global;
+  color: var(--gold);
+}
+
+.badges {
+  display: flex;
+  gap: var(--s1);
+}
+
+.badge {
+  composes: t-tag from global;
+  padding: 2.5px 6px;
+  color: var(--fg2);
+  border: 1px solid var(--seam2);
+}
+
+/* The Lime Rule: on-screen text is the one thing lime marks. */
+.seen {
+  color: var(--seen-ink);
+  background: var(--seen);
+  border-color: var(--seen);
+}
+
+.text {
+  composes: t-cell from global;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.text:hover,
+.text:focus-visible {
+  color: var(--gold);
+}
+
+.muted {
+  color: var(--fg3);
+}
+
+/* The small receipt slab: border and ink, no fill, so ten of them down a
+   page do not spend the accent on the list. */
+.receipt {
+  composes: t-machine-sm from global;
+  padding: 3px 7px;
+  color: var(--gold);
+  border: 1px solid var(--gold-44);
+  white-space: nowrap;
+}
+
+.receipt:hover,
+.receipt:focus-visible {
+  background: var(--gold-12);
+}
