@@ -147,6 +147,53 @@ export const Meta = z.object({
 });
 export type Meta = z.infer<typeof Meta>;
 
+// `POST /api/ask` (demo-site.md §3, §3.5). The answer arrives whole, once;
+// what streams before it is the work, one event per tool call.
+export const Citation = z.object({
+  n: z.number().int(),
+  video_id: z.string(),
+  title: z.string(),
+  channel: z.string(),
+  t: z.number(),
+  timestamp: z.string(),
+  link: z.url().nullable(),
+  thumb: z.url().nullable(),
+  thumb_large: z.url().nullable(),
+  source: z.string().nullable(),
+  text: z.string().nullable(),
+});
+export type Citation = z.infer<typeof Citation>;
+
+export const AskAnswer = z.object({
+  answer: z.string(),
+  citations: z.array(Citation),
+  rounds: z.number().int().optional(),
+  model: z.string().nullable(),
+});
+export type AskAnswer = z.infer<typeof AskAnswer>;
+
+// The §3.4 body: the same shape as a 503's JSON and a stream's error event.
+export const AskDegraded = z.object({
+  error: z.string(),
+  reason: z.string(),
+  message: z.string(),
+  retry_after_s: z.number().nullable(),
+});
+export type AskDegraded = z.infer<typeof AskDegraded>;
+
+export const AskEvent = z.discriminatedUnion("event", [
+  z.object({
+    event: z.literal("activity"),
+    id: z.number().int(),
+    phase: z.enum(["start", "done"]),
+    text: z.string().optional(),
+    result: z.string().optional(),
+  }),
+  z.object({ event: z.literal("answer"), payload: AskAnswer }),
+  z.object({ event: z.literal("error"), status: z.number().int(), payload: AskDegraded }),
+]);
+export type AskEvent = z.infer<typeof AskEvent>;
+
 // Every non-2xx answer from the facade: a code, a sentence, and what to do next.
 export const ErrorEnvelope = z.object({
   error: z.string(),

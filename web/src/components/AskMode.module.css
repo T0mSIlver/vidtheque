@@ -1,0 +1,211 @@
+.ask {
+  display: grid;
+  gap: var(--s4);
+}
+
+.form {
+  display: flex;
+  max-width: var(--query-w, 44rem);
+  border: 1px solid var(--seam2);
+  background: var(--console);
+}
+
+.input {
+  composes: t-query from global;
+  flex: 1;
+  min-width: 0;
+  height: 2.75rem;
+  padding: 0 13px;
+  background: transparent;
+  color: var(--fg);
+  border: 0;
+}
+
+.input::placeholder {
+  color: var(--fg3);
+}
+
+.go {
+  composes: t-action from global;
+  padding: 0 20px 0 22px;
+  background: var(--gold);
+  color: var(--gold-ink);
+  border: 0;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.go:disabled {
+  background: var(--gold-44);
+  cursor: default;
+}
+
+.switch {
+  composes: t-label from global;
+}
+
+.switch a {
+  color: var(--fg2);
+}
+
+.switch a:hover {
+  color: var(--gold);
+}
+
+/* The work log: the console, one line per tool call. */
+.log {
+  composes: t-log from global;
+  list-style: none;
+  padding: clamp(22px, 2.4vw, 36px) clamp(18px, 2.4vw, 36px);
+  background: var(--console);
+  color: var(--fg2);
+  border: 1px solid var(--seam2);
+  max-width: var(--prose);
+}
+
+.log li {
+  display: flex;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+
+.logText {
+  color: var(--fg);
+}
+
+.logResult {
+  color: var(--fg2);
+}
+
+.logResult::before {
+  content: "→ ";
+  color: var(--fg3);
+}
+
+/* The one line still running carries the caret: the machine is inside the
+   corpus, and that is the only thing on this page that blinks. */
+.running .logText::after {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 17px;
+  margin-left: var(--s2);
+  vertical-align: text-bottom;
+  background: var(--gold);
+  animation: var(--blink);
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.running .logText::after {
+  animation-name: blink;
+}
+
+.answer {
+  display: grid;
+  gap: var(--s4);
+  padding: var(--s6);
+  background: var(--plate);
+  border: 1px solid var(--seam2);
+}
+
+.para {
+  composes: t-prose from global;
+  max-width: var(--prose);
+}
+
+.label {
+  composes: t-label from global;
+  color: var(--fg2);
+  padding-bottom: var(--s2);
+  border-bottom: 1px solid var(--line);
+  margin-top: var(--s2);
+}
+
+.sources {
+  list-style: none;
+  display: grid;
+  gap: var(--s4);
+}
+
+.source {
+  display: grid;
+  grid-template-columns: 2.5rem 10rem minmax(0, 1fr);
+  gap: var(--s3);
+  align-items: start;
+}
+
+@media (max-width: 780px) {
+  .source {
+    grid-template-columns: 2.5rem minmax(0, 1fr);
+  }
+}
+
+.n {
+  composes: t-machine from global;
+  color: var(--gold);
+}
+
+.sourceText {
+  display: grid;
+  gap: var(--s1);
+  min-width: 0;
+}
+
+.sourceTitle {
+  composes: t-cell-strong from global;
+}
+
+.sourceTitle:hover {
+  color: var(--gold);
+}
+
+.sourceMeta {
+  composes: t-cell from global;
+  color: var(--muted);
+}
+
+.mono {
+  composes: t-machine-sm from global;
+}
+
+.snippet {
+  composes: t-cell from global;
+  color: var(--fg2);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The filled slab: the sources are the payoff, so they get the accent. */
+.receipt {
+  composes: t-machine-sm from global;
+  justify-self: start;
+  padding: 6px 9px;
+  color: var(--gold-ink);
+  background: var(--gold);
+  font-weight: 700;
+}
+
+.foot {
+  composes: t-machine-sm from global;
+  color: var(--fg3);
+}
+
+.degraded {
+  composes: t-cell from global;
+  display: grid;
+  gap: var(--s2);
+  padding: var(--s4);
+  color: var(--tone-warn);
+  background: var(--tone-warn-bg);
+  border: 1px solid var(--tone-warn-line);
+}
+
+.degraded a {
+  color: var(--gold);
+}
