@@ -48,6 +48,9 @@ operational rules an incident or a launch paid for.
 - No self-hosted CI runners, ever (public repo, drive-by PR risk).
 - Tom's box (3090, llama.cpp VRAM lease via `GPU_ACQUIRE_CMD` hooks) is
   context for deploy work, not a shipped default — see the founding handoff.
+- `web/` is the Next.js front end (pnpm, TypeScript, CSS Modules), a separate
+  deployable over the `/api/*` facade. DESIGN.md's no-build-step rule binds
+  the Python-served pages, not `web/`. `pnpm lint` and `tsc --noEmit` green.
 
 ## Git — multi-agent, incident-derived; follow exactly
 
