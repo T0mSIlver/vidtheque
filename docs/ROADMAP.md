@@ -66,6 +66,11 @@ does with that — a notice under the rows it already has, rather than a wipe �
 needs a DOM-level harness and is not asserted here."* Cross-cutting: a tooling
 choice and CI wiring, and the repo's rule against self-hosted runners bounds it.
 
+*2026-09-01:* the Next.js front end in `web/` has one — Vitest, jsdom and
+Testing Library, `pnpm test`, with the ask stream exercised against a recorded
+real response. The Python-served demo page still does not, and this line stays
+open for it.
+
 ### 7. F1 — structured OCR, the big one
 
 OCR reaches every query as `group_concat(o.text, ' | ' ORDER BY o.line_no)`, so
