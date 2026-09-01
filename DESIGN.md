@@ -1062,7 +1062,10 @@ Archivo arrived with lab v4 (commit `1251269`).
 **Rules for the builders:**
 
 1. `public/static/fonts/` is the **document of record**. New face, new subset,
-   new version: it lands there first.
+   new version: it lands there first. *Amended 2026-09-01:* the Next.js front
+   end in `web/` is a separate deployable and carries a byte-identical copy at
+   `web/src/fonts/`, loaded through `next/font/local`;
+   `mcp/tests/test_web_assets.py` fails the suite the day the two differ.
 2. The dashboard serves the **same files through an alias** (amended
    2026-08-11: the byte-identical copy at `dashboard/static/fonts/` is gone).
    `public/static/*` is only routed under `VIDTHEQUE_PUBLIC_READONLY=1`
@@ -1152,4 +1155,8 @@ the same commit as their CSS, and says so:
   `dup_of`, `stage`, `model_key`, `job item`, `not_before`, `index_state`,
   `data_status` are the vocabulary and a designer does not get to tidy them.
 - **Don't** import a colour package, add a build step, or make a runtime request
-  to anything off this box.
+  to anything off this box. *Amended 2026-09-01:* this binds the three
+  Python-served surfaces. `web/`, the Next.js front end, has a build step by
+  nature; what it inherits is the token rule — `web/scripts/tokens.mjs`
+  generates its `tokens.css` and `type.css` from this file's frontmatter, so
+  the fourth surface has no hand-written copy of the palette to drift.
