@@ -8,7 +8,14 @@ export function mockNavigation(search = "") {
   const replace = vi.fn();
   const refresh = vi.fn();
   vi.doMock("next/navigation", () => ({
-    useRouter: () => ({ push, replace, refresh, back: vi.fn(), forward: vi.fn(), prefetch: vi.fn() }),
+    useRouter: () => ({
+      push,
+      replace,
+      refresh,
+      back: vi.fn(),
+      forward: vi.fn(),
+      prefetch: vi.fn(),
+    }),
     useSearchParams: () => new URLSearchParams(search),
     usePathname: () => "/",
     notFound: () => {
