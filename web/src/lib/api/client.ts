@@ -57,7 +57,12 @@ export function createClient(config: ClientConfig) {
   const ipHeader = config.clientIpHeader ?? "CF-Connecting-IP";
   const doFetch = config.fetch ?? fetch;
 
-  async function get<T>(path: string, params: Params, schema: ZodType<T>, opts: RequestOptions = {}): Promise<T> {
+  async function get<T>(
+    path: string,
+    params: Params,
+    schema: ZodType<T>,
+    opts: RequestOptions = {},
+  ): Promise<T> {
     const url = new URL(base + path);
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined && value !== "") url.searchParams.set(key, String(value));
@@ -77,12 +82,22 @@ export function createClient(config: ClientConfig) {
 
   return {
     search(
-      params: { q: string; content_type?: ContentType; limit?: number; offset?: number; channel?: string; video_id?: string },
+      params: {
+        q: string;
+        content_type?: ContentType;
+        limit?: number;
+        offset?: number;
+        channel?: string;
+        video_id?: string;
+      },
       opts?: RequestOptions,
     ) {
       return get("/api/search", params, SearchResponse, opts);
     },
-    videos(params: { q?: string; channel?: string; limit?: number; offset?: number } = {}, opts?: RequestOptions) {
+    videos(
+      params: { q?: string; channel?: string; limit?: number; offset?: number } = {},
+      opts?: RequestOptions,
+    ) {
       return get("/api/videos", params, VideosResponse, opts);
     },
     video(videoId: string, opts?: RequestOptions) {

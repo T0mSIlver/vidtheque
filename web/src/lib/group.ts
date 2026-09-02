@@ -17,7 +17,13 @@ export function groupByVideo(hits: readonly Hit[]): VideoGroup[] {
   for (const hit of hits) {
     let group = groups.get(hit.video_id);
     if (!group) {
-      group = { video_id: hit.video_id, title: hit.title, channel: hit.channel, thumb: null, hits: [] };
+      group = {
+        video_id: hit.video_id,
+        title: hit.title,
+        channel: hit.channel,
+        thumb: null,
+        hits: [],
+      };
       groups.set(hit.video_id, group);
     }
     group.hits.push(hit);

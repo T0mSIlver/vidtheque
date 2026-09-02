@@ -51,7 +51,11 @@ function Moment({ hit }: { hit: Hit }) {
           </span>
         ))}
       </span>
-      <a href={hit.link} rel="noreferrer" className={`${styles.text} ${frameOnly ? styles.muted : ""}`}>
+      <a
+        href={hit.link}
+        rel="noreferrer"
+        className={`${styles.text} ${frameOnly ? styles.muted : ""}`}
+      >
         {spokenOnly && hit.text ? `“${hit.text}”` : hit.text}
       </a>
       <a href={hit.link} rel="noreferrer" className={styles.receipt}>

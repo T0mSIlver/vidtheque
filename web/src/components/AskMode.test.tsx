@@ -53,7 +53,12 @@ describe("AskMode", () => {
       "fetch",
       vi.fn(async () =>
         Response.json(
-          { error: "llm_unavailable", reason: "no_key", message: "LLM mode unavailable — use search.", retry_after_s: 60 },
+          {
+            error: "llm_unavailable",
+            reason: "no_key",
+            message: "LLM mode unavailable — use search.",
+            retry_after_s: 60,
+          },
           { status: 503 },
         ),
       ),
@@ -65,6 +70,9 @@ describe("AskMode", () => {
     const pane = await screen.findByRole("status");
     expect(pane).toHaveTextContent("LLM mode unavailable — use search.");
     expect(pane).toHaveTextContent("try again in 60s");
-    expect(screen.getByRole("link", { name: "Search instead" })).toHaveAttribute("href", "/?q=anything");
+    expect(screen.getByRole("link", { name: "Search instead" })).toHaveAttribute(
+      "href",
+      "/?q=anything",
+    );
   });
 });

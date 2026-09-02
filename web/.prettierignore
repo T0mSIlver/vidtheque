@@ -1,0 +1,6 @@
+.next
+node_modules
+pnpm-lock.yaml
+src/styles/tokens.css
+src/styles/type.css
+src/lib/__fixtures__

@@ -35,7 +35,16 @@ describe("ResultGroup", () => {
           title: "Let's build GPT",
           channel: "Andrej Karpathy",
           thumb: null,
-          hits: [hit({}), hit({ start: 430, timestamp: "7:10", source: "ocr", text: "kv cache size", link: "https://youtu.be/kCc8FmEb1nY?t=428" })],
+          hits: [
+            hit({}),
+            hit({
+              start: 430,
+              timestamp: "7:10",
+              source: "ocr",
+              text: "kv cache size",
+              link: "https://youtu.be/kCc8FmEb1nY?t=428",
+            }),
+          ],
         }}
       />,
     );

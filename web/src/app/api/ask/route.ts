@@ -13,24 +13,34 @@ const ASK_TIMEOUT_MS = 200_000;
 
 export async function POST(request: NextRequest): Promise<Response> {
   const base = process.env.VIDTHEQUE_API_URL;
-  if (!base) return Response.json({ error: "E_CONFIG", message: "VIDTHEQUE_API_URL is not set" }, { status: 500 });
+  if (!base)
+    return Response.json(
+      { error: "E_CONFIG", message: "VIDTHEQUE_API_URL is not set" },
+      { status: 500 },
+    );
 
   let q = "";
   try {
     const body: unknown = await request.json();
-    if (body && typeof body === "object" && "q" in body) q = String((body as { q: unknown }).q ?? "");
+    if (body && typeof body === "object" && "q" in body)
+      q = String((body as { q: unknown }).q ?? "");
   } catch {
     /* an empty or non-JSON body is an empty question */
   }
   q = q.trim().slice(0, 400);
-  if (!q) return Response.json({ error: "E_EMPTY_QUERY", message: "ask needs a question." }, { status: 400 });
+  if (!q)
+    return Response.json(
+      { error: "E_EMPTY_QUERY", message: "ask needs a question." },
+      { status: 400 },
+    );
 
   const headers = new Headers({
     accept: "text/event-stream",
     "content-type": "application/json",
   });
   const ipHeader = process.env.VIDTHEQUE_CLIENT_IP_HEADER ?? "CF-Connecting-IP";
-  const ip = request.headers.get(ipHeader) ?? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  const ip =
+    request.headers.get(ipHeader) ?? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   if (ip) headers.set(ipHeader, ip);
 
   // The visitor closing the tab aborts this fetch, which closes the upstream

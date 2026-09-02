@@ -9,8 +9,7 @@ import { api, ApiError, type ContentType, type SearchResponse } from "@/lib/api"
 export const SEARCH_PAGE = 10;
 
 export type SearchOutcome =
-  | { kind: "ok"; page: SearchResponse }
-  | { kind: "rate_limited"; retryAfter: number };
+  { kind: "ok"; page: SearchResponse } | { kind: "rate_limited"; retryAfter: number };
 
 export async function searchCorpus(params: {
   q: string;

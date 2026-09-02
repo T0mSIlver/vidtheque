@@ -48,7 +48,11 @@ export function AskMode({ initialQ }: { initialQ: string }) {
       if (!res.body || !res.headers.get("content-type")?.startsWith("text/event-stream")) {
         // A 429, a 503 before the stream opened, or a proxy error: one body.
         const body = AskDegraded.safeParse(await res.json().catch(() => null));
-        setPhase({ kind: "degraded", lines, body: body.success ? body.data : unreachable(res.status) });
+        setPhase({
+          kind: "degraded",
+          lines,
+          body: body.success ? body.data : unreachable(res.status),
+        });
         return;
       }
       for await (const raw of readJsonEvents(res.body)) {
@@ -120,7 +124,9 @@ function WorkLog({ lines, live }: { lines: Line[]; live: boolean }) {
           {l.result !== undefined ? <span className={styles.logResult}>{l.result}</span> : null}
         </li>
       ))}
-      {live && lines.length === 0 ? <li className={styles.running}>Reading the question…</li> : null}
+      {live && lines.length === 0 ? (
+        <li className={styles.running}>Reading the question…</li>
+      ) : null}
     </ol>
   );
 }
@@ -175,7 +181,9 @@ function Degraded({ body, q }: { body: AskDegraded; q: string }) {
   return (
     <div className={styles.degraded} role="status">
       <p>{body.message}</p>
-      {body.retry_after_s ? <p className={styles.mono}>try again in {body.retry_after_s}s</p> : null}
+      {body.retry_after_s ? (
+        <p className={styles.mono}>try again in {body.retry_after_s}s</p>
+      ) : null}
       <p>
         <Link href={q.trim() ? `/?q=${encodeURIComponent(q.trim())}` : "/"}>Search instead</Link>
       </p>
