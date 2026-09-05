@@ -15,6 +15,7 @@ import {
   Reading,
   Sep,
   StatePair,
+  Unbroken,
   Unit,
 } from "./parts";
 import { useSession } from "./session";
@@ -71,8 +72,10 @@ function Loaded({ data }: { data: Overview }) {
   return (
     <>
       <PageHead title="Corpus overview">
-        <StatePair label="data_status" word={corpus.data_status} />
-        <Sep />
+        <Unbroken>
+          <StatePair label="data_status" word={corpus.data_status} />
+          <Sep />
+        </Unbroken>
         <Fact label="indexed" value={at(corpus.last_indexed)} />
       </PageHead>
 
@@ -132,11 +135,11 @@ function Loaded({ data }: { data: Overview }) {
               // and never inside it.
               <>
                 published{" "}
-                <span className={styles.fact}>
+                <Unbroken>
                   <span className={styles.mono}>{day(corpus.published.oldest)}</span>
-                  <Sep />
+                  <Sep>–</Sep>
                   <span className={styles.mono}>{day(corpus.published.newest)}</span>
-                </span>
+                </Unbroken>
               </>,
             ]}
           >
