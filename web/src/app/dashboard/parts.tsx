@@ -471,9 +471,9 @@ export function ReadFailure({ error, onRetry }: { error: unknown; onRetry: () =>
         {error.next ? <p className={styles.refusalNext}>{error.next}</p> : null}
         {session?.login_url ? (
           <p className={styles.refusalAction}>
-            <a className={styles.signin} href={session.login_url}>
+            <DashLink className={styles.signin} href={session.login_url}>
               Sign in
-            </a>
+            </DashLink>
           </p>
         ) : null}
       </div>
