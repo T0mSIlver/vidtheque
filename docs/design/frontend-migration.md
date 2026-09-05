@@ -195,20 +195,25 @@ What each side owns, once a page is ported:
 | `GET /dashboard` | **Next** | *landed 2026-09-05* |
 | `GET /dashboard/ledger` | **Next** | *landed 2026-09-05* |
 | `GET /dashboard/videos`, `GET /dashboard/videos/{id}` | **Next** | *landed 2026-09-05* |
-| `GET /dashboard/search` | **Next** | pending — Python's HTML |
-| `GET /dashboard/jobs`, `GET /dashboard/jobs/{id}` | **Next** | pending — Python's HTML |
+| `GET /dashboard/search` | **Next** | *landed 2026-09-05* |
+| `GET /dashboard/jobs`, `GET /dashboard/jobs/{id}` | **Next** | *landed 2026-09-05* |
 | `GET /dashboard/following`, `GET /dashboard/following/{slug}` | **Next** | *landed 2026-09-05* |
 | `POST /dashboard/following` | Python | **the one path split by method** |
+| `GET /dashboard/index` | **Next** | *in progress — 2026-09-05* |
+| `POST /dashboard/index` | Python | shares its path with the form, following's collision again |
 | `/dashboard/api/*` | Python | for good |
 | `/dashboard/static/*` | Python | for good |
 | `/dashboard/login`, `/dashboard/logout` | Python | for good |
-| `/dashboard/index` (the form and its POST) | Python | for good |
 | every other `POST /dashboard/*` | Python | for good |
 
 Exact page GETs again, not a prefix: `/dashboard`-anything is Python's unless
 it is one of the paths above. **Until a page is ported, Python keeps serving
 its HTML** — the list is the destination, and a row becomes true the day that
 React page lands, page by page as `docs/ROADMAP.md` tracks it.
+
+*Tally, 2026-09-05:* nine of the ten `GET /dashboard/*` pages this table names
+are Next's now — search's landing (dashboard.md §14.2) leaves `/dashboard/index`
+as the one a sibling is porting, so it is *in progress* above, not landed.
 
 The `web/` side expresses this split in its development rewrites and in the
 matcher of the middleware that sends the document policy (§1b). That is
@@ -723,6 +728,14 @@ Four things worth knowing before writing the pages:
   items never resolved to a video has nothing in focus, and `stages` is then
   the seven pipeline rows with every state `absent` — the pipeline's shape, not
   a claim about the job. Render the panel on `focus`, not on `stages.length`.
+
+**The React list reads `filters` and `notes` back, 2026-09-05.** It had been
+reading its own URL for both — a `state=nonsense` that fell back to `all` was
+printed over a table of every job, with the sentence saying so nowhere on the
+page. The narrowing strip now names the filters the payload's own `filters`
+says ran, not the ones the query string asked for, and the empty state chooses
+its wording from that same echo: a filter that took every row out reads
+differently from an instance that has never queued anything.
 
 ## 7. The projection, per field
 

@@ -2027,6 +2027,40 @@ changes under the reader, and a shared cache must not hold it — but the fix
 belongs in `public/api.py`, for all four handlers at once and on both prefixes,
 not as a side effect of this page.
 
+### 14.3 The page landed (2026-09-05)
+
+§14.2 was the contract check before the page was written; this is what the page
+does with it. It reads `GET /dashboard/api/search` under the handler's own
+parameter names — `q`, `content_type`, `channel`, `limit`, `max_text_chars`,
+`offset` — rather than a second spelling of them, so a `/dashboard/search?…`
+bookmarked against the Jinja page still means the same thing here. It sends no
+`limit` of its own and paginates off `pagination.limit`, the number the clamp
+actually accepted: a credentialed caller (bearer, session or trusted peer) reads
+this prefix's owner clamp, default 20 and ceiling 50, and an anonymous caller on
+the same prefix reads the public one, default 10 and ceiling 20 — both §2.4's
+existing matrix, neither a new policy for this page to carry.
+
+The inside-link arithmetic (§14.1) is reimplemented in TypeScript rather than
+read off the payload, because the link is built before the video's own detail
+has loaded: `FRAME_PAGE = 24` is pinned to `read_models.FRAME_PAGE`, the
+default the detail endpoint applies when no `frames=` is asked for, and a
+change to the Python constant has to be mirrored here or the two surfaces
+disagree about which page a frame lands on. The frames on the row are built by
+the page itself at 192 and 1280 — both members of `variants.py`'s allowed set,
+per §14.2 — and authorised by the session cookie a signed-in same-origin page
+already carries, not by a signature the facade minted.
+
+The four derivations — the receipt, the inside link, the evidence badges and
+the highlight — were checked differentially against the Python they replace
+(`views._search_receipt`, `_search_inside`, `_search_evidence`,
+`_highlighted`), case by case: the highlight over 13 cases, the receipt over
+10, the inside link over 8. One divergence survived the check and is left as
+such: which of two equal-length terms wins the highlight cap is Python's set
+order on one side and the query's own left-to-right order on the other. Neither
+order is a claim about ranking — a mark is "these are your words, here," never
+why a hit ranked — so the divergence is cosmetic and is recorded here rather
+than chased.
+
 ## 15. Current pipeline readiness (2026-08-12)
 
 The overview gains one display-only readiness panel. It is a measurement made
