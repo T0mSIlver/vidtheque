@@ -16,7 +16,7 @@ describe("SearchBox", () => {
     await user.click(screen.getByRole("radio", { name: "on-screen" }));
     await user.type(screen.getByLabelText("Search the corpus"), "kv cache{Enter}");
 
-    expect(push).toHaveBeenCalledWith("/?q=kv+cache&type=ocr");
+    expect(push).toHaveBeenCalledWith("/demo?q=kv+cache&type=ocr");
   });
 
   it("reads the query and type back from the URL", async () => {
