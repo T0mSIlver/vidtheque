@@ -41,6 +41,13 @@ initial reader, API client, search, Ask, and component tests.
   switching traffic. *The removal half is done (2026-09-06): every replaced
   template, script and style is deleted, and the callers all had replacements
   first — dashboard.md §23 is the record. Research stays append-only.*
+  **The deployment half landed the same day and the checklist below now lives
+  in one place: `frontend-migration.md` §10.** `deploy/Caddyfile` is the edge
+  that expresses §1a and §1d, the compose stack and the systemd box both run
+  it, and §10 carries the eight through-the-edge checks, both rollback paths,
+  and what is deleted after cutover (the development shim, on the day
+  development runs behind the edge too — not before). What is left here is the
+  running of it, on the box, with Tom.
   Through the edge: `GET /` returns the landing, `GET /demo` the reader, and
   each carries the four document headers (demo-site.md §7 item 0). Python has
   no page at `/` any more, so a misrouted edge shows the MCP mount's 404.
