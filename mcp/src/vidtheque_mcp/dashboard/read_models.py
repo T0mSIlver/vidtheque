@@ -1070,11 +1070,6 @@ class VideoDetailReads:
     cue_totals: dict[str, int]
     tags: list[str]
     history: list[dict[str, Any]]
-    cues: list[sqlite3.Row] | None = None
-    cues_more: bool = False
-    cue_page: int = 0
-    cue_offset: int = 0
-    chunks: list[sqlite3.Row] = field(default_factory=list)
 
 
 async def video_detail_reads(
@@ -1083,8 +1078,6 @@ async def video_detail_reads(
     *,
     frame_page: int,
     frame_offset: int,
-    cue_page: int | None = None,
-    cue_offset: int = 0,
     redact: bool = False,
 ) -> VideoDetailReads | None:
     """Everything `GET /dashboard/videos/{id}` reads. ``None`` for an unknown id.
@@ -1127,14 +1120,13 @@ async def video_detail_reads(
     frame_rows = await db.read(
         lambda c: queries.keyframe_page(c, vid, frame_offset, frame_page)
     )
-    cue_rows: list[sqlite3.Row] | None = None
-    if cue_page is not None:
-        cue_rows = await db.read(
-            lambda c: queries.cue_page(c, vid, cue_offset, cue_page)
-        )
     # The transcript header is totals, not a position (Tom, 2026-08-10, round
     # 4). Read beside the counts because it answers the same question — how
-    # much of this video is there — and never on a listing page.
+    # much of this video is there — and never on a listing page. The cues
+    # themselves are not read here and never were on this path: they are
+    # `GET /dashboard/api/videos/{video_id}/cues`, which pages them under its
+    # own clamps. The Jinja detail page read the first batch inline and passed
+    # a `cue_page` to say so; that parameter went with the page (2026-09-06).
     cue_totals = await db.read(lambda c: queries.cue_text_totals(c, vid))
     tag_map = await db.read(lambda c: queries.video_tags(c, [vid]))
     history_rows = await db.read(
@@ -1143,24 +1135,12 @@ async def video_detail_reads(
 
     frames_more = len(frame_rows) > frame_page
     frame_rows = frame_rows[:frame_page]
-    cues_more = False
-    if cue_rows is not None and cue_page is not None:
-        cues_more = len(cue_rows) > cue_page
-        cue_rows = cue_rows[:cue_page]
 
     ocr_lines = await db.read(
         lambda c: queries.ocr_for_frames(
             c, [int(f["id"]) for f in frame_rows], OCR_LINE_CAP
         )
     )
-    chunks: list[sqlite3.Row] = []
-    if cue_rows:
-        chunks = await db.read(
-            lambda c: queries.chunk_spans(
-                c, vid, int(cue_rows[0]["id"]), int(cue_rows[-1]["id"])
-            )
-        )
-
     return VideoDetailReads(
         row=row,
         vid=vid,
@@ -1197,11 +1177,6 @@ async def video_detail_reads(
             }
             for job in history_rows
         ],
-        cues=cue_rows,
-        cues_more=cues_more,
-        cue_page=cue_page or 0,
-        cue_offset=cue_offset,
-        chunks=chunks,
     )
 
 
