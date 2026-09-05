@@ -16,6 +16,7 @@ import {
   RATE_REFUSAL,
   TRAP_SEARCH,
 } from "@/test/search-fixtures";
+import { countingDownFrom } from "@/test/retry";
 
 // The page that answers the question the corpus exists for. Its job is to say
 // what matched, what kind of thing it is evidence of, and *which second*, and
@@ -370,7 +371,7 @@ describe("the owner's search page", () => {
       { search: "q=cache" },
     );
 
-    const retry = await screen.findByRole("button", { name: "retry in 24s" });
+    const retry = await screen.findByRole("button", { name: countingDownFrom(24) });
     expect(retry).toBeDisabled();
     expect(screen.getByText(RATE_REFUSAL.message)).toBeInTheDocument();
   });

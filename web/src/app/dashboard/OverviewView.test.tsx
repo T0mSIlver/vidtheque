@@ -7,6 +7,7 @@ import {
   OWNER_OVERVIEW,
   OWNER_SESSION,
 } from "@/test/dashboard-fixtures";
+import { countingDownFrom } from "@/test/retry";
 
 // The page renders against two payloads, not one. `docs/ROADMAP.md` names the
 // failure this guards: a page that renders a field the projection drops. So
@@ -239,7 +240,7 @@ describe("the corpus overview", () => {
       });
 
       expect(await screen.findByText("Too many dashboard requests.")).toBeInTheDocument();
-      const retry = screen.getByRole("button", { name: "retry in 24s" });
+      const retry = screen.getByRole("button", { name: countingDownFrom(24) });
       expect(retry).toBeDisabled();
     });
   });

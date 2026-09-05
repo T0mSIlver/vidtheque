@@ -12,6 +12,7 @@ import {
   NO_FOLLOWS,
   NOT_A_CHANNEL,
 } from "@/test/following-fixtures";
+import { countingDownFrom } from "@/test/retry";
 
 // The follows table exists to answer one question in one glance: what is this
 // box watching while nobody is looking, and what is it holding back. So the
@@ -252,7 +253,7 @@ describe("the follows table", () => {
     });
 
     expect(await screen.findByText("Too many dashboard requests for now.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "retry in 9s" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: countingDownFrom(9) })).toBeDisabled();
   });
 
   describe("the add form", () => {

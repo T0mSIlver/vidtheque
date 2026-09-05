@@ -2,6 +2,7 @@
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEMO_LEDGER, DEMO_SESSION, OWNER_LEDGER, OWNER_SESSION } from "@/test/dashboard-fixtures";
+import { countingDownFrom } from "@/test/retry";
 
 // Nothing on this page is new information; what it must not do is disagree with
 // the page the numbers came from. So the assertions are the counts, the state
@@ -182,7 +183,7 @@ describe("the ledger", () => {
         headers: { "retry-after": "12" },
       });
 
-      expect(await screen.findByRole("button", { name: "retry in 12s" })).toBeDisabled();
+      expect(await screen.findByRole("button", { name: countingDownFrom(12) })).toBeDisabled();
     });
 
     // A payload that does not match the contract fails at the boundary rather
