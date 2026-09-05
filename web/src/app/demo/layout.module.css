@@ -1,0 +1,61 @@
+/* The reader's footer (demo-site.md §6 item 7). Muted, and never culled: the
+   attribution line is the page-visible half of a public commitment, so it is
+   styled quiet rather than made optional. */
+.footer {
+  border-top: 1px solid var(--seam);
+  background: var(--void);
+}
+
+.inner {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: var(--gap-block) var(--gut) clamp(34px, 4vw, 56px);
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: clamp(24px, 3vw, 60px);
+  align-items: end;
+}
+
+.line {
+  composes: t-cell from global;
+  color: var(--fg2);
+  max-width: 56ch;
+}
+
+.line + .line {
+  margin-top: var(--s3);
+}
+
+.lnk {
+  color: var(--gold);
+  border-bottom: 1px solid var(--gold-44);
+}
+
+/* The signature, at the end — the one place the word is allowed to be large. */
+.mark {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+}
+
+.markWord {
+  composes: t-brand-lg from global;
+  color: var(--fg);
+}
+
+.markWord i {
+  font-style: normal;
+  color: var(--gold);
+}
+
+/* --bp-hand: multi-column grids go to one column. */
+@media (max-width: 780px) {
+  .inner {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s6);
+  }
+
+  .mark {
+    justify-content: flex-start;
+  }
+}
