@@ -109,7 +109,13 @@ mode this list exists to prevent.
 - **Following** — the list, the detail bands and the six writes; absent
   entirely when the deployment registers no write side (dashboard.md §18). All
   six answer the follow row typed as of 2026-09-05, and are 404 on both
-  branches where the surface is absent (dashboard.md §21).
+  branches where the surface is absent (dashboard.md §21). *The read contract
+  landed 2026-09-05*: `/dashboard/api/following` and `/dashboard/api/following/
+  {slug}`, registered with the write routes so they disappear with the pages
+  (dashboard.md §22; frontend-migration.md §6b). The two pages themselves are
+  pending, and they own three things Python no longer sends — the rule
+  compressed to facts, the rule as an English sentence, and the near-miss line
+  around a typed `near_miss` that is `null` when there is nothing to say.
 - **Session and login** — the sign-in page, the cookie flow and sign-out.
   `/dashboard/api/session` describes the deployment; the login POST itself has
   no JSON twin yet.
