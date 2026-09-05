@@ -115,10 +115,15 @@ function Loaded({
     <>
       <Crumbs videoId={video.video_id} />
 
+      {/* Every separator is glued to the fact *before* it and followed by a
+          real space. JSX drops the whitespace between two elements when it
+          holds a newline, so without the explicit `{" "}` these strips have no
+          break opportunity at all and a header runs 56px off a 390px screen
+          (measured, 2026-09-05). */}
       <PageHead title={video.title}>
         <Unbroken>
           <StatePair label="index_state" word={video.index_state} />
-        </Unbroken>
+        </Unbroken>{" "}
         {/* `video-summary`'s own word, verbatim, and only when it says
             something `index_state` did not — §4.5 keeps the four vocabularies
             apart, so a bare `ready` beside a bare `no_frames` would read as the
@@ -133,21 +138,20 @@ function Loaded({
 
       <p className={styles.facts}>
         {video.channel}
-        <Sep />
-        <Fact label="published" value={day(video.published_at)} />
-        <Sep />
+        <Sep /> <Fact label="published" value={day(video.published_at)} />
+        <Sep />{" "}
         <Unbroken>
           <span className={dash.mono}>{duration(video.duration_s)}</span>
         </Unbroken>
         {video.language ? (
           <>
-            <Sep />
+            <Sep />{" "}
             <Unbroken>
               <span className={dash.mono}>{video.language}</span>
             </Unbroken>
           </>
         ) : null}
-        <Sep />
+        <Sep />{" "}
         {video.indexed_at ? (
           <Fact label="indexed" value={at(video.indexed_at)} />
         ) : (
@@ -161,7 +165,7 @@ function Loaded({
         </a>
         {video.tags.length ? (
           <>
-            <Sep />
+            <Sep />{" "}
             <span className={styles.taglist}>
               {video.tags.map((tag) => (
                 <DashLink
@@ -278,9 +282,9 @@ function Loaded({
 
       {data.chapters.length ? (
         <Panel id="chapters" title="Chapters">
-          <ol className={`${dash.rowlist} ${dash.tight}`}>
+          <ol className={styles.chapters}>
             {data.chapters.map((chapter) => (
-              <li className={dash.minirow} key={`${chapter.start_s}-${chapter.title}`}>
+              <li className={styles.chapter} key={`${chapter.start_s}-${chapter.title}`}>
                 <a
                   className={styles.at}
                   href={chapter.link ?? video.url}
@@ -679,7 +683,7 @@ function Card({
       </p>
       <p className={`${styles.framemeta} ${styles.muted}`}>
         shot {frame.shot_id}
-        <Sep />
+        <Sep />{" "}
         {frame.dup_of_ord !== null ? (
           <span className={styles.dupnote}>duplicate of #{frame.dup_of_ord}</span>
         ) : (
@@ -811,10 +815,8 @@ function Transcript({ transcript }: { transcript: VideoDetail["transcript"] }) {
           question, and it has three answers. */}
       <p className={styles.cuepos}>
         <span className={dash.mono}>{count(transcript.cues)}</span> cues
-        <Sep />
-        <span className={dash.mono}>{count(transcript.words)}</span> words
-        <Sep />
-        <span className={dash.mono}>{count(transcript.chars)}</span> chars
+        <Sep /> <span className={dash.mono}>{count(transcript.words)}</span> words
+        <Sep /> <span className={dash.mono}>{count(transcript.chars)}</span> chars
       </p>
       <div className={styles.cuebox} onScroll={onScroll} ref={box} tabIndex={0}>
         <ol className={styles.cues}>

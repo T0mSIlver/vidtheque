@@ -285,6 +285,12 @@
   min-width: 16rem;
 }
 
+/* A state is one word and reads as one: `indexing` broke over two lines in a
+   narrow column and came out as "index ing". */
+.colState {
+  white-space: nowrap;
+}
+
 .rowTitle {
   composes: t-cell-strong from global;
   display: block;
@@ -330,6 +336,10 @@
   width: 1.25rem;
   height: 1.25rem;
   letter-spacing: 0;
+  /* The letters are the tool's own `t/o/f`, and they are lowercase there. The
+     label face uppercases by default; this is the one place that would be the
+     page respelling a value. */
+  text-transform: none;
   border: 1px solid var(--seam);
 }
 

@@ -51,6 +51,12 @@ const INDEX_STATES = ["pending", "indexing", "ready", "failed", "stale"];
 const HAS_VALUES = ["any", "transcript", "ocr", "frames", "all"];
 const ORDERS = ["recency", "title", "duration", "indexed_at", "relevance"];
 
+// A picker sitting on the value the API would have used anyway. Sending it is
+// not wrong, but it puts `&index_state=all&has=any` on every link a reader
+// copies out of the address bar to say nothing at all — and it makes two URLs
+// for one query, which is the state of "no filters" spelled two ways.
+const DEFAULTS: Record<string, string> = { index_state: "all", has: "any" };
+
 // Which column head wears the accent underline, and which way that order runs
 // (`_LIST_ORDER`): titles A→Z, everything else newest or longest first. There
 // is no opposite variant to toggle to, so a head is a statement, not a switch.
@@ -93,7 +99,15 @@ export function VideosView() {
         <Narrowing search={search} />
       </PageHead>
 
-      {state.status !== "failed" || badFilter ? <Filters search={search} /> : null}
+      {state.status !== "failed" || badFilter ? (
+        // The resolved page size stands in the empty Rows box: the Jinja form
+        // echoed the accepted `limit` into the field, and a blank box over a
+        // page of fifty says nothing about how big a page is.
+        <Filters
+          search={search}
+          limit={state.status === "ready" ? state.data.pagination.limit : undefined}
+        />
+      ) : null}
 
       {state.status === "loading" ? <Reading /> : null}
 
@@ -150,11 +164,16 @@ function Narrowing({ search }: { search: string }) {
   if (!facts.length) return null;
   return (
     <>
+      {/* The separator belongs to the fact before it, and the space after it
+          is written out: JSX drops whitespace that holds a newline, so without
+          it the strip has no break opportunity and runs off a narrow screen. */}
       {facts.map(([label, text], index) => (
-        <Unbroken key={label}>
-          <Fact label={label} value={text} />
-          {index < facts.length - 1 ? <Sep /> : null}
-        </Unbroken>
+        <span key={label}>
+          <Unbroken>
+            <Fact label={label} value={text} />
+            {index < facts.length - 1 ? <Sep /> : null}
+          </Unbroken>{" "}
+        </span>
       ))}
     </>
   );
@@ -169,7 +188,7 @@ function Narrowing({ search }: { search: string }) {
  * that arrived. Controlled inputs here would mean a state to keep in step with
  * a URL that is already the state.
  */
-function Filters({ search }: { search: string }) {
+function Filters({ search, limit }: { search: string; limit?: number }) {
   const router = useRouter();
   const params = new URLSearchParams(search);
   const value = (key: string, fallback = "") => params.get(key) ?? fallback;
@@ -180,10 +199,13 @@ function Filters({ search }: { search: string }) {
     const next = new URLSearchParams();
     for (const key of FILTERS) {
       const entry = form.get(key);
-      // An empty control is not a filter. The Jinja form sent all nine keys
-      // whether or not they held anything, which made every link on the page
-      // carry `&channel=&tags=&published_after=` for the reader to send on.
-      if (typeof entry === "string" && entry.trim()) next.set(key, entry.trim());
+      if (typeof entry !== "string") continue;
+      const chosen = entry.trim();
+      // An empty control is not a filter, and neither is a picker resting on
+      // the value the API would have used anyway. The Jinja form sent all nine
+      // keys whatever they held, which made every link on the page carry
+      // `&channel=&tags=&published_after=` for the reader to send on.
+      if (chosen && chosen !== DEFAULTS[key]) next.set(key, chosen);
     }
     router.push(next.toString() ? `${ROOT}/videos?${next}` : `${ROOT}/videos`);
   }
@@ -334,6 +356,7 @@ function Filters({ search }: { search: string }) {
           min={1}
           max={100}
           defaultValue={value("limit")}
+          placeholder={limit === undefined ? undefined : String(limit)}
           inputMode="numeric"
         />
       </div>
@@ -494,8 +517,7 @@ function Row({ row }: { row: LibraryRow }) {
         </DashLink>
         <span className={styles.rowMeta}>
           {row.channel}
-          <Sep />
-          <code>{row.video_id}</code>
+          <Sep /> <code>{row.video_id}</code>
         </span>
       </th>
       <td data-label="Published">
@@ -504,7 +526,7 @@ function Row({ row }: { row: LibraryRow }) {
       <td className={dash.num} data-label="Duration">
         {duration(row.duration_s)}
       </td>
-      <td data-label="State">
+      <td className={styles.colState} data-label="State">
         <Pill state={row.index_state} />
       </td>
       <td data-label="Coverage">
