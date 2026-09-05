@@ -2,7 +2,7 @@
 
 import styles from "./page.module.css";
 
-// The root error boundary: a failed search read that was not a 429. The
+// The demo's error boundary: a failed search read that was not a 429. The
 // message is deliberately generic; in production the server sends only a
 // digest for anything thrown during render.
 export default function SearchError({

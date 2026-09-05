@@ -105,7 +105,7 @@ describe("AskMode", () => {
     expect(pane).toHaveTextContent("try again in 60s");
     expect(screen.getByRole("link", { name: "Search instead" })).toHaveAttribute(
       "href",
-      "/?q=anything",
+      "/demo?q=anything",
     );
   });
 

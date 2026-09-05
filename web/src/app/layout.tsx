@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { Rail } from "@/components/Rail";
 import { mono, sans } from "@/styles/fonts";
 import "@/styles/tokens.css";
 import "@/styles/type.css";
@@ -18,13 +17,13 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
+// The ground and nothing else. The rail is not here: `/` is the landing and it
+// carries its own, floating over the hero, so the reader's header belongs to
+// the segments that read (`/demo`, `/videos`) rather than to every page.
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${sans.variable} ${mono.variable}`}>
-      <body>
-        <Rail />
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
