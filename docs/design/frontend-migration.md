@@ -190,19 +190,19 @@ forwarded cookie costs the whole property.
 
 What each side owns, once a page is ported:
 
-| Path | Served by |
-| --- | --- |
-| `GET /dashboard` | **Next** |
-| `GET /dashboard/ledger` | **Next** |
-| `GET /dashboard/videos`, `GET /dashboard/videos/{id}` | **Next** |
-| `GET /dashboard/search` | **Next** |
-| `GET /dashboard/jobs`, `GET /dashboard/jobs/{id}` | **Next** |
-| `GET /dashboard/following`, `GET /dashboard/following/{slug}` | **Next** |
-| `/dashboard/api/*` | Python |
-| `/dashboard/static/*` | Python |
-| `/dashboard/login`, `/dashboard/logout` | Python |
-| `/dashboard/index` (the form and its POST) | Python |
-| every other `POST /dashboard/*` | Python |
+| Path | Served by | |
+| --- | --- | --- |
+| `GET /dashboard` | **Next** | *landed 2026-09-05* |
+| `GET /dashboard/ledger` | **Next** | *landed 2026-09-05* |
+| `GET /dashboard/videos`, `GET /dashboard/videos/{id}` | **Next** | pending — Python's HTML |
+| `GET /dashboard/search` | **Next** | pending — Python's HTML |
+| `GET /dashboard/jobs`, `GET /dashboard/jobs/{id}` | **Next** | pending — Python's HTML |
+| `GET /dashboard/following`, `GET /dashboard/following/{slug}` | **Next** | pending — Python's HTML |
+| `/dashboard/api/*` | Python | for good |
+| `/dashboard/static/*` | Python | for good |
+| `/dashboard/login`, `/dashboard/logout` | Python | for good |
+| `/dashboard/index` (the form and its POST) | Python | for good |
+| every other `POST /dashboard/*` | Python | for good |
 
 Exact page GETs again, not a prefix: `/dashboard`-anything is Python's unless
 it is one of the paths above. **Until a page is ported, Python keeps serving
@@ -212,6 +212,26 @@ React page lands, page by page as `docs/ROADMAP.md` tracks it.
 The `web/` side expresses this split in its development rewrites and in the
 matcher of the middleware that sends the document policy (§1b). That is
 configuration catching up with the rule; the rule is the table.
+
+**How the two configurations say it** *(landed 2026-09-05, with the first two
+pages)*. Both are ordered so that the rule above is what a request meets, and
+both are lists a port has to add itself to:
+
+- **The development rewrites** are two lists, not one. Python's non-pages under
+  `/dashboard` are named **explicitly** — `/dashboard/api/:path*`,
+  `/dashboard/static/:path*`, `/dashboard/login`, `/dashboard/logout`,
+  `/dashboard/index` — and forwarded in `beforeFiles`, so the router never
+  looks for a page that could shadow one of them. The catch-all for the rest of
+  `/dashboard` is in `afterFiles`, which is consulted *after* the router has
+  looked: a ported page wins its own path, and every path with no page yet
+  falls through to Python's HTML exactly as before. Porting a page adds a page
+  and deletes nothing here.
+- **The document-policy matcher names each ported page literally.** The
+  page-wide entry excludes the whole `/dashboard` prefix — the JSON under it is
+  not a document and the unported pages carry Python's own policy — so a ported
+  page is named back in, one entry per path. That list is therefore *the record
+  of what is ported*, and a port that forgets to add its path ships a document
+  with no CSP on it. Deliberately not a prefix, for exactly that reason.
 
 ## 2. What landed
 
@@ -432,6 +452,32 @@ existing behaviour rather than a new rule:
 **Never in this payload:** the token, the password, which of the two matched,
 `PUBLIC_URL`, the worker URL, the database path, the trusted CIDRs, the
 declared model ids, the drift reason.
+
+**What the shell does with it** *(landed 2026-09-05, with the first two
+pages)*. §1d says a `401` from the API is what sends the browser to the login
+page; these are the two rules that follow from it, and they belong here because
+both are readings of this payload rather than of a page's own state.
+
+- **The 401, in one place, and only where there is somewhere to go.** The
+  browser client answers a refused read by asking this endpoint — outside the
+  gate, so that second request cannot itself be refused — and navigates to
+  `login_url` with a `?next=` return path, the parameter `writes.login` already
+  reads and `writes._safe_next` already fences to this surface. It navigates
+  **only when `login_url` is non-null**: a token-gated read-only instance gates
+  its reads and registers no login page, so it can refuse a reader while having
+  nowhere to send them, and a redirect there would be a 404. When it is null the
+  page renders its signed-out state instead. **One navigation per page load** —
+  a page has several reads in flight and three simultaneous 401s must not mean
+  three navigations.
+- **The rail reads three fields and each answers a different question.**
+  Sign-out shows on `signed_in || has_session_cookie`, because the reader who
+  most needs the button is the one whose row expired under a cookie the browser
+  still holds. The **Manage** group shows on `write_side`, which is whether
+  this deployment registers writes at all — not `writes_allowed`, the
+  database's own flag, which can be true where there is no write side. The
+  demo's line shows on `readonly`, and it says only that nothing here writes:
+  `auth=` names an environment variable and "indexing refused" is a sentence
+  about a worker nobody visiting the demo can reach (§2.4).
 
 ## 6a. `GET /dashboard/api/library` and `/dashboard/api/library/{video_id}`
 
