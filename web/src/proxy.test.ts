@@ -146,6 +146,11 @@ describe("proxy", () => {
       // the production proxy has to route by method.
       "/dashboard/following",
       "/dashboard/following/andrej-karpathy",
+      // The second path split by method, and the last `/dashboard` GET to come
+      // off Jinja. `POST /dashboard/index` is the form's route and stays
+      // Python's, which this matcher can no more say than it can for the
+      // follows table above it.
+      "/dashboard/index",
     ]) {
       expect(matches(path), path).toBe(true);
     }
@@ -161,7 +166,6 @@ describe("proxy", () => {
       "/dashboard/api/jobs/job_finished01",
       "/dashboard/login",
       "/dashboard/logout",
-      "/dashboard/index",
       // The search page's own JSON, which is the facade's handler under this
       // prefix — a read, not a document, and Python's like the other four.
       "/dashboard/api/search",
