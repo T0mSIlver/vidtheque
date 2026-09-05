@@ -22,11 +22,19 @@ is the document of record for both variables.
 ## One origin, two servers
 
 In production a reverse proxy puts both behind one origin and routes by path:
-the exact page GETs — `/`, `/demo`, `/videos`, `/videos/{id}` — reach Next, and
-everything else reaches Python (`/api/*`, `/frames/*`, `/mcp`, `/auth/*`,
-`/.well-known/*`, `/healthz`, `/dashboard/*`, `/videos/{id}/export.md`). The
-browser therefore calls Python directly, and this server owns no endpoint of
-its own.
+the exact page GETs — `/`, `/demo`, `/videos`, `/videos/{id}`, `/dashboard`,
+`/dashboard/ledger` — reach Next, and everything else reaches Python (`/api/*`,
+`/frames/*`, `/mcp`, `/auth/*`, `/.well-known/*`, `/healthz`,
+`/videos/{id}/export.md`, and the rest of `/dashboard/*`). The browser
+therefore calls Python directly, and this server owns no endpoint of its own.
+
+The dashboard is being ported a page at a time, so that list grows: a ported
+page is named in `proxy.ts`'s matcher, which gives it the document policy, and
+the router finds it before `next.config.ts`'s `afterFiles` rewrite hands the
+rest of the prefix to the Jinja pages. Its data is not this server's — the
+browser reads `/dashboard/api/*` itself, same-origin, with the session cookie
+(`src/lib/dashboard/`), so Next never sees a credential and caches nothing per
+reader.
 
 `POST /api/ask` is Python's, and only Python's. The ask pane posts to a
 same-origin `/api/ask` and reads the event stream the API sends; nothing here

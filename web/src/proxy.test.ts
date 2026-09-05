@@ -95,9 +95,11 @@ describe("proxy", () => {
     expect(csp).toContain("object-src 'none'");
   });
 
-  // The `source` carries no path-to-regexp parameters, so it is already the
-  // regular expression Next compiles it into, and a test can just run it.
-  const matches = (path: string) => new RegExp(`^${config.matcher[0].source}$`).test(path);
+  // No entry's `source` carries a path-to-regexp parameter, so each one is
+  // already the regular expression Next compiles it into and a test can just
+  // run them. A path matches when any entry does, which is what Next does too.
+  const matches = (path: string) =>
+    config.matcher.some((entry) => new RegExp(`^${entry.source}$`).test(path));
 
   it("runs on the documents and nothing else", () => {
     for (const path of ["/", "/demo", "/videos", "/videos/kCc8FmEb1nY"]) {
@@ -112,12 +114,40 @@ describe("proxy", () => {
       "/auth/login",
       "/.well-known/oauth-authorization-server",
       "/healthz",
-      "/dashboard/videos",
       "/icon.svg",
       "/favicon.ico",
       // Three segments, so it is not the `/videos/[id]` page and Python owns
       // it — the one entry of that list the prefixes above do not cover.
       "/videos/kCc8FmEb1nY/export.md",
+    ]) {
+      expect(matches(path), path).toBe(false);
+    }
+  });
+
+  // `/dashboard` stopped being wholly Python's when the first two pages were
+  // ported. The split is per path and not per prefix, and it is the same split
+  // `next.config.ts` routes: the pages this app serves are documents and get
+  // the policy, and everything else under the prefix reaches Python untouched —
+  // the JSON the pages read, the stylesheet and fonts the unported pages load,
+  // the session flow, and every page still rendered by Jinja.
+  it("covers the dashboard pages this app serves, and no other dashboard path", () => {
+    for (const path of ["/dashboard", "/dashboard/ledger"]) {
+      expect(matches(path), path).toBe(true);
+    }
+    for (const path of [
+      "/dashboard/api/session",
+      "/dashboard/api/overview",
+      "/dashboard/static/dashboard.css",
+      "/dashboard/static/fonts/archivo-latin-wght-normal.woff2",
+      "/dashboard/login",
+      "/dashboard/logout",
+      "/dashboard/index",
+      "/dashboard/videos",
+      "/dashboard/videos/kCc8FmEb1nY",
+      "/dashboard/jobs",
+      "/dashboard/following",
+      // Not a page here either: a sub-path of one that is.
+      "/dashboard/ledger/anything",
     ]) {
       expect(matches(path), path).toBe(false);
     }

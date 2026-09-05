@@ -60,8 +60,10 @@ function policy(nonce: string, isDev: boolean): string {
     // origin and the proxy in front hands it to Python.
     `connect-src ${dev ? dev.connect : "'self'"}`,
     "frame-ancestors 'none'",
-    // The demo's search box is a real form. A policy that only holds while the
-    // JavaScript works is the wrong shape.
+    // The demo's search box is a real form, and so is the dashboard rail's
+    // Sign out — a POST to Python's `/dashboard/logout`, same origin, which
+    // this allows and which needs no JavaScript to work. A policy that only
+    // holds while the JavaScript works is the wrong shape.
     "form-action 'self'",
     "base-uri 'none'",
     "object-src 'none'",
@@ -86,6 +88,24 @@ export function proxy(request: NextRequest): NextResponse {
   return response;
 }
 
+// The two `/dashboard` pages this app serves. The exclusion above keeps the
+// whole prefix out — `/dashboard/api/*` is JSON the pages fetch, and every page
+// not yet ported is Python's HTML, which carries its own policy — so the ported
+// ones are named back in, one entry each. That is deliberately not a prefix:
+// the list is the record of what has been ported, and a port that forgets to
+// add its path here ships a document with no CSP on it, which is a failure the
+// build cannot miss for long. `next.config.ts` says the same thing from the
+// routing side.
+const DASHBOARD_PAGES = ["/dashboard", "/dashboard/ledger"];
+
+// A prefetch fetches an RSC payload rather than a document, and the scripts a
+// navigation then loads are loaded by scripts that already ran, which is
+// exactly what `'strict-dynamic'` allows.
+const NOT_A_PREFETCH = [
+  { type: "header", key: "next-router-prefetch" },
+  { type: "header", key: "purpose", value: "prefetch" },
+];
+
 export const config = {
   matcher: [
     {
@@ -98,15 +118,13 @@ export const config = {
       // along. That list is `PYTHON_PATHS` in `next.config.ts`, and the export
       // is the one entry of it that is not a prefix — three segments under
       // `/videos`, so it needs the id spelled out to be excluded at all.
-      // Prefetches are excluded too — they fetch an RSC payload, and the
-      // scripts a navigation then loads are loaded by scripts that already
-      // ran, which is exactly what `'strict-dynamic'` allows.
+      // `dashboard` is the one prefix that is not wholly Python's any more; the
+      // entries after this one name the pages that are this app's.
+      // Prefetches are excluded too, for the reason `NOT_A_PREFETCH` gives.
       source:
         "/((?!_next|api|frames|mcp|auth|\\.well-known|healthz|dashboard|landing|favicon\\.ico|icon\\.svg|videos/[^/]+/export\\.md).*)",
-      missing: [
-        { type: "header", key: "next-router-prefetch" },
-        { type: "header", key: "purpose", value: "prefetch" },
-      ],
+      missing: NOT_A_PREFETCH,
     },
+    ...DASHBOARD_PAGES.map((source) => ({ source, missing: NOT_A_PREFETCH })),
   ],
 };
