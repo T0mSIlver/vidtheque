@@ -51,6 +51,7 @@ for, whereas `/api/*` under a prefix rule is the whole facade in one line.
 | `/frames/*` | Python |
 | `/mcp` | Python |
 | `/auth/*`, `/.well-known/*` | Python |
+| `/authorize`, `/token`, `/register`, `/revoke` — registered at the root under `VIDTHEQUE_AUTH=oauth` (§10, *added 2026-09-06*) | Python |
 | `/healthz` | Python |
 | `/videos/{id}/export.md` | Python |
 | `/dashboard` page GETs | **Next** (*landed 2026-09-06* — §1d) |
