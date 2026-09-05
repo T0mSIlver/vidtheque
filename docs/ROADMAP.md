@@ -86,6 +86,15 @@ mode this list exists to prevent.
   already shares.
 - **Jobs** — the list, the job detail page, and a poll target that replaces
   `static/jobs.js` without moving the 2 s tick or its server-side clamp.
+  *The read half landed 2026-09-05:* `GET /dashboard/jobs` and
+  `GET /dashboard/jobs/{job_id}` are Next's, named in the ownership table and
+  in the document-policy matcher (frontend-migration.md §1d). *The payload gaps
+  closed the same day:* the two poll targets carried nine fewer fields than the
+  templates rendered — no row headline, no echoed filters, no `notes`, and none
+  of `counts`, `error_counts`, `items_capped`, `degraded`, `focus` or `stages`
+  on one job. All nine are on the wire now, and the tick still costs two reads
+  (dashboard.md §5.4, frontend-migration.md §6c). `static/jobs.js` and the
+  `text` blocks it reads go with the Jinja pages, not before them.
 - **Jobs controls** — cancel and retry-failed: the first writes to cross, so
   the first to need §3.3's cookie and Origin rules expressed over `fetch`.
   *The write contract landed 2026-09-05* for all twelve writes at once, because

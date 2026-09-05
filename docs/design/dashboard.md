@@ -818,6 +818,44 @@ policy text rather than a rendering — the sentence that says what the
 percentage is computed over — and it survives that deletion, in `notes` or
 beside it, as the jobs contract will say when it is written.
 
+*Amended 2026-09-05 (the React port), and this half did ask for code.* The
+two pages are Next's now, and a React table reading `/dashboard/api/jobs` had
+a count where a title goes: **nine fields the templates rendered never reached
+the payloads.** They do now, typed, additively, beside the `text` block above.
+
+| Payload | Grew | Was |
+| --- | --- | --- |
+| `/api/jobs`, per card | `contents` — `{title, more, channel, note}` | the page's own third read, deliberately off the tick |
+| `/api/jobs` | `filters` — the resolved `state`, `kind`, `error_code`, `degraded`, `order` | nothing echoed; `limit`/`offset` stay in `pagination` |
+| `/api/jobs` | `notes` — a `note:` per bound that moved or value that fell back | silence |
+| `/api/jobs/{id}` | `counts`, `error_counts`, `items_capped` | assembled for the template, dropped on the way out |
+| `/api/jobs/{id}` | `degraded`, `focus`, `stages` | the same — including the degraded list, the panel this page exists for |
+
+**The tick's budget is unchanged, and the page is one read cheaper.** What a
+job holds does not change between two ticks, which is why `contents` was the
+page's alone — but the payload a React table renders *is* the payload the tick
+reads, so the field had to arrive without a third read. The page's two per-row
+questions are two grouped statements over one set of ids, so they travel in one
+read: **the list is two reads for one row or a hundred (it was three for the
+page, two for the tick), and one job's page is seven, unchanged.** The detail's
+six fields cost nothing at all — `_job_detail` has always assembled them for
+every caller.
+
+**`notes` is the `all` invariant reaching this surface.** `state=nonsense` has
+always fallen back to `all`, silently, which is a listing answering a question
+nobody asked. Each of `state`, `kind`, `order` and `degraded` now names the
+value that ran, in §20's wording, and `limit`/`offset` say when a clamp moved
+them. An `error_code` longer than 64 characters says it was cut rather than
+filtering on a prefix. Nothing is said when nothing moved.
+
+**The projection is unchanged, because it was never a second rule.** The row
+headline is corpus — a title and a channel, published by id on two other pages
+— and the submitted URL that resolved to them is not, and is not sent. The
+degraded list's `error` is dropped where the list is built, and the stage table
+reads neither `model_key` nor a stage `error` at all, which is §20's two
+`null`s arrived at by not asking. `focus` is a job item and carries the item's
+own redaction.
+
 **Does not show.** `args_json` verbatim — it can carry cookiefile paths,
 politeness overrides and raw URLs; render the parsed fields. Stack traces (there
 are none: `error` is truncated to 500 chars at `pipeline/store.py:183`). And in
