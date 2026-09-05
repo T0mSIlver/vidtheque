@@ -1683,12 +1683,17 @@ shown.
    yours to check.** `_DOCUMENT_HEADERS` — the CSP with no `unsafe-` word in
    it, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer` —
    left `public/` with the two pages that carried it. It is the front end's to
-   send now, from the reverse proxy, `next.config.ts:headers()` or a middleware
-   in `web/`, and no test in `mcp/` can see whether it does. This is the one
+   send now, and one file sends it: `web/src/proxy.ts`, a middleware over every
+   document `web/` serves — not the reverse proxy and not
+   `next.config.ts:headers()`, the other two candidates this entry named when
+   it was written. No test in `mcp/` can see whether it does. This is the one
    thing the removal handed over rather than kept, so it is the one thing to
-   confirm before traffic switches: **all four headers, on `/` and on `/demo`,
-   with the same policy on both**, which is what the old single helper
-   guaranteed by construction and two independent surfaces do not.
+   confirm before traffic switches: **`GET /` and `GET /demo` each answer with
+   all four headers, and with the same `Content-Security-Policy` value** —
+   which is what the old single helper guaranteed by construction and two
+   independent surfaces do not. `frontend-migration.md` §1b writes out the
+   policy that file sends in production, `style-src 'unsafe-inline'` and the
+   dropped `data:` included, so the comparison has an exact string to make.
    `frame-ancestors 'none'` matters most — `/api/ask` spends money, and framing
    it is how a stranger spends it with someone else's clicks. Whatever sends
    it needs a test on the surface that sends it; the 2026-08-10 audit's verdict

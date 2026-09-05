@@ -59,7 +59,8 @@ for, whereas `/api/*` under a prefix rule is the whole facade in one line.
 being removed in a sibling change: browsers call Python directly (decision 2),
 and an ask relayed through Next would put a second process on the path of the
 one request that spends money and is charged to a per-IP and a per-day bucket
-keyed on the caller's address.
+keyed on the caller's address. *Landed 2026-09-05: the handler is deleted, so
+that endpoint has one implementation again — §1c.*
 
 *Landed 2026-09-05:* `public_routes()` no longer registers `GET /`, `GET /demo`
 or `GET /static/{asset:path}` — it returns the facade and nothing else, and the
@@ -72,6 +73,93 @@ demo-site.md §7 item 0 is the handover and the check on it — and the
 `public/static/fonts/` stays: DESIGN.md makes it the document of record for the
 two faces, `dashboard/__init__.py` aliases `/dashboard/static/fonts/` onto it,
 and `test_web_assets.py` diffs `web/src/fonts/` against it.
+
+## 1b. The document policy the pages carry
+
+*Recorded 2026-09-05.* `_DOCUMENT_HEADERS` left Python with the pages it was
+written for (§1a), and `web/src/proxy.ts` is what sends it now — on every
+document this front end serves, which is `/`, `/demo`, `/videos` and
+`/videos/{id}`. In production the policy is, verbatim:
+
+```
+default-src 'self'; script-src 'self' 'nonce-<per request>' 'strict-dynamic';
+style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self';
+connect-src 'self'; frame-ancestors 'none'; form-action 'self';
+base-uri 'none'; object-src 'none'
+```
+
+with `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` and
+`Referrer-Policy: no-referrer` beside it — the same four headers Python sent,
+which is what demo-site.md §7 item 0's check is a check on.
+
+Development, and only development, widens three directives: `'unsafe-eval'` on
+`script-src`, because React rebuilds server stacks in the browser with it;
+`data:`, `blob:` and the `VIDTHEQUE_API_URL` origin on `img-src`, because the
+two processes are on two ports and the frame URLs the API hands back name its
+host rather than this one; `ws:` and that same origin on `connect-src`, for the
+HMR socket and the dev overlay. `NODE_ENV=production` gets none of it.
+
+Two directives diverge from the policy Python sent, deliberately:
+
+- **`style-src` gains `'unsafe-inline'`.** `EvidenceFrame` positions each OCR
+  box with a `style=` attribute computed from that box's own coordinates, and
+  the hero's lift and the 16:9 frame box do the same. React renders those as
+  inline style attributes, which `style-src 'self'` refuses. CSSOM writes from
+  a script (`el.style.transform`) were never governed by CSP and are not what
+  this buys.
+- **`img-src` loses `data:`.** Python's landing carried its favicon as a
+  `data:image/svg+xml` URL in a `<link rel="icon">`; the mark is
+  `web/src/app/icon.svg` now, a file on this origin, so the scheme has nothing
+  left to allow. `img-src 'self'` therefore also depends on `/frames/*` being
+  same-origin — true in production because §1a's split makes it true, and true
+  in development because of the rewrite in §1c.
+
+`script-src` is the shape change rather than a divergence. A React page cannot
+say `script-src 'self'` and mean it: the framework ships an inline bootstrap
+and streams its payload as more inline scripts, so the policy is the nonce
+form, with `'strict-dynamic'` covering the chunks those scripts load and
+`'self'` left beside it for the browsers that ignore `'strict-dynamic'`.
+
+**What the nonce costs.** It is worth something only if it is new every
+request, so every document renders per request: `app/layout.tsx` calls
+`connection()`, and Cache Components stays off in `next.config.ts`, because a
+partial prerender serves a shell built at build time and a build cannot carry a
+per-request token. Data caching survives that move in `web/src/lib/library.ts`,
+where the two library reads are `unstable_cache` with the periods the named
+lifetimes had — `listVideos` revalidates at 60 s, `getVideo` at 3600 s, both
+tagged (`library`, and `video-{id}` for the second), both serving the stale
+copy while the fresh one is fetched. Two things are honestly gone: the `expire`
+component of a named lifetime, the age at which a stale copy stops being served
+at all, has no `unstable_cache` equivalent (the `stale` half went with the
+prerender either way), and nothing in the tree calls `revalidateTag` — the tags
+are written for an invalidation that does not exist yet.
+
+## 1c. One origin in development, too
+
+*Recorded 2026-09-05.* Production is one origin because a reverse proxy makes
+it one (§1a). Development runs Next on `:3000` and Python on `:8080`, and the
+browser still has to see one origin: Python's CSRF origin check reads a request
+from `localhost:3000` against its own `localhost:8080` as cross-site and
+refuses the write, which is a refusal no CORS header should be asked to lift.
+So `web/next.config.ts` forwards Python's prefixes — `/api/*`, `/frames/*`,
+`/mcp`, `/auth/*`, `/.well-known/*`, `/healthz`, `/dashboard/*` and
+`/videos/{id}/export.md` — to `VIDTHEQUE_API_URL` with `rewrites()` whenever
+`NODE_ENV` is not `production`. In production the list is empty, because the
+proxy is doing it. **No CORS anywhere**, by decision 4, and this is the one
+place it was tempting to reach for.
+
+`POST /api/ask` therefore has one implementation, Python's:
+`web/src/app/api/ask/route.ts` is deleted rather than disabled, so the event
+vocabulary demo-site.md §3.5 defines has one owner, and the request that spends
+money crosses one process fewer.
+
+`VIDTHEQUE_CLIENT_IP_HEADER` narrows to the same seam. It applies only to the
+reads this server makes for itself — search, videos and meta, in
+`web/src/lib/api/client.ts` — which are the only requests that leave Next for
+Python. Browser traffic reaches Python directly and carries the visitor's
+address without help. The header must still equal the instance's
+`VIDTHEQUE_TRUSTED_IP_HEADER`, or every visitor this server reads for shares
+one rate-limit bucket.
 
 ## 2. What landed
 
