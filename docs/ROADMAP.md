@@ -41,13 +41,17 @@ initial reader, API client, search, Ask, and component tests.
   switching traffic. Remove replaced templates, scripts, styles, and obsolete
   instructions only after their callers have replacements. Research stays
   append-only.
+  Through the edge: `GET /` returns the landing, `GET /demo` the reader, and
+  each carries the four document headers (demo-site.md §7 item 0). Python has
+  no page at `/` any more, so a misrouted edge shows the MCP mount's 404.
 
 The dashboard port, page by page. Each needs its JSON contract first, then its
 React page, verified against **both** the owner and the public read-only
 projection — a page that renders a field the projection drops is the failure
 mode this list exists to prevent.
 
-- **Overview and ledger pages** — the JSON exists; the React pages do not.
+- **Overview and ledger pages** — the JSON exists; the React pages are in
+  progress today (2026-09-05).
 - **Videos** — the table, its filters and ordering, and the video detail page,
   including the frames strip and the cue pagination.
 - **Search** — the owner inspection page, over the handler `/api/search`
