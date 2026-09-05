@@ -1,0 +1,29 @@
+# Build context for web/Dockerfile, whose context is THIS directory (the app is
+# self-contained: nothing in the build reads the repo root, and `pnpm build`
+# never runs `tokens:check`, which is the one script that does).
+#
+# node_modules is the entry that matters. It is ~600 MB of pnpm store links on
+# a developer's machine, it is architecture-specific (`@next/swc-*`), and the
+# image installs its own from the committed lockfile — sending it would be slow
+# and wrong in the same line.
+node_modules
+.next
+out
+coverage
+*.tsbuildinfo
+
+# Never in an image, and `.env.example` is documentation the container has no
+# use for. The two runtime variables are passed in, never baked (see the
+# Dockerfile's header).
+.env*
+
+# Repo furniture and the editors' files: none of it is read by `next build`.
+.git
+.gitignore
+.dockerignore
+Dockerfile
+.prettierignore
+.prettierrc
+AGENTS.md
+CLAUDE.md
+README.md
