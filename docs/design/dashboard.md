@@ -2277,6 +2277,17 @@ presence, which is the opposite of the chrome's field and for the opposite
 reason: the chrome's question is "is there a cookie to clear", this one's is
 "will the next request be served".
 
+**Both questions, both answered (Tom, 2026-09-05).** The payload carries
+`has_session_cookie` beside `signed_in`: whether the browser sent a
+`vidtheque_session` cookie at all, valid or not. `api.py` reads it with
+`SESSION_COOKIE in request.cookies`, the same lookup from the same constant as
+`views._chrome`, so the rail and the JSON cannot drift apart. It authorizes
+nothing — a stale cookie reads `true` here and `false` in `signed_in`, and that
+pair is the case the rail was built for: §3.2's cookie is `HttpOnly`, so a
+React shell cannot see it, and without this field a browser holding a dead
+cookie would be offered no way to clear it. The shell shows **Sign out** when
+either field is true and renders the dashboard on `signed_in` alone.
+
 **Does not add.** A write, a parameter, a clamp, a CORS policy, an env var, a
 second query layer, or a page. The Jinja pages keep serving until all three
 surfaces are at parity (`DECISIONS.md`), and the remaining ports —

@@ -202,7 +202,8 @@ run the same code and the same number of database reads as before.
   templates does not join this contract by default.
 - **No display roundings either.** `corpus_rollup` carries `hours` beside
   `duration_s` and its own SQL comment calls it "a display rounding"; the JSON
-  sends the seconds only.
+  sends the seconds only. *Settled 2026-09-05 (Tom): `hours` stays dropped from
+  the overview payload — `duration_s` is the figure, and React divides.*
 
 ## 4. `GET /dashboard/api/overview`
 
@@ -291,6 +292,7 @@ since phase 1, and the endpoint is on the same rate-limit bucket.
   "authenticated": false,      // may this caller read the data endpoints
   "is_owner": false,           // did they *prove* it ("open" is not a credential)
   "signed_in": false,          // a validated session row, never cookie presence
+  "has_session_cookie": false, // did the browser send one at all, valid or not
   "policy": "public",          // public | owner — the clamp policy they earn
   "login_url": "/dashboard/login",   // null when there is no write side
   "sign_in_hint": "Sign in at /dashboard/login, or send Authorization: …",
@@ -302,13 +304,25 @@ since phase 1, and the endpoint is on the same rate-limit bucket.
 cookie looked up in `login_sessions` and found unexpired. A cookie the browser
 still holds after its row is gone reads `false`, which is the whole point.
 
+*Added 2026-09-05 (Tom): `has_session_cookie`.* The payload carries **both**
+facts, because they answer different questions and the shell needs both.
+`signed_in` is authorization: will the next request be served.
+`has_session_cookie` is `vidtheque_session in request.cookies` — the same
+lookup `views._chrome` makes, from the same constant, so the two cannot drift —
+and it authorizes nothing. It is "is there a cookie to clear", which is why the
+HTML rail's own `signed_in` has always been cookie presence: a stale cookie
+must still get a **Sign out** button rather than silence. The React shell
+therefore shows sign-out when **either** is true, and renders the dashboard on
+`signed_in` alone. The cookie is `HttpOnly`, so a shell cannot read it itself;
+without this field the stale-cookie case is invisible to React.
+
 Three fields whose reading is easy to get wrong, and each one is a page's
 existing behaviour rather than a new rule:
 
 - `signed_in` here is **not** `base.html`'s `signed_in`, which is the cookie's
-  mere presence — deliberately, so a stale cookie still gets a **Sign out**
-  button to clear it. A React shell wanting that affordance reads the cookie it
-  can see, not this field; this one answers "will the next request be served".
+  mere presence. That is what `has_session_cookie` is, side by side with it —
+  the rail's field and the gate's answer, named apart so neither has to stand
+  in for the other.
 - `sign_in_hint` is `null` in `VIDTHEQUE_AUTH=none`. The string
   `access.sign_in_hint` builds names a bearer unconditionally, which is correct
   where it is used — a 401 page, in a mode that takes one — and untrue as a
