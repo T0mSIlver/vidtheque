@@ -5,19 +5,20 @@ import type { NextConfig } from "next";
 // `/videos`, `/videos/{id}`, and under the dashboard `/dashboard`,
 // `/dashboard/ledger`, `/dashboard/search`, `/dashboard/videos`, `/dashboard/videos/{video_id}`,
 // `/dashboard/jobs`, `/dashboard/jobs/{job_id}`, `/dashboard/following`,
-// `/dashboard/following/{slug}` and `/dashboard/index`) reach Next, and
+// `/dashboard/following/{slug}`, `/dashboard/index` and `/dashboard/login`)
+// reach Next, and
 // `/api/*`, `/frames/*`,
 // `/mcp`, `/auth/*`, `/.well-known/*`, `/healthz`, `/videos/{id}/export.md`
 // and the rest of `/dashboard/*` reach Python. Routing that split is the
 // reverse proxy's job, not this file's.
 //
-// **`/dashboard/following` and `/dashboard/index` are the two paths both own,
-// and the proxy has to split each by method**: the `GET` is the page this app
-// serves, and the `POST` to the identical path is that page's form route, which
-// stays Python's like every other write on this surface
+// **`/dashboard/following`, `/dashboard/index` and `/dashboard/login` are the
+// three paths both own, and the proxy has to split each by method**: the `GET`
+// is the page this app serves, and the `POST` to the identical path is that
+// page's write, which stays Python's like every other write on this surface
 // (frontend-migration.md §1d). Every other write has a segment its page does
-// not — three under its section rather than two — so these are the only two,
-// and neither can be written as a path anywhere in this repo, because a rewrite
+// not — three under its section rather than two — so these are the only three,
+// and none can be written as a path anywhere in this repo, because a rewrite
 // and a middleware matcher both match paths and not methods.
 //
 // Development runs the two on separate ports, and the browser still has to see
@@ -39,25 +40,30 @@ const PYTHON_PATHS = [
   "/healthz",
   // The dashboard's non-pages, by name. `/dashboard/api/*` is the JSON the
   // React pages read with the session cookie, `/dashboard/static/*` is the
-  // stylesheet and the fonts the pages Python still renders load, and the two
-  // routes after them are the session flow — every one of them a thing Python
-  // owns for good. A Next page must never shadow one of these.
+  // stylesheet and the fonts the pages Python still renders load, and
+  // `/dashboard/logout` is the write that ends a session — every one of them a
+  // thing Python owns for good. A Next page must never shadow one of these.
   //
-  // `/dashboard/index` was here until its page landed. Its `GET` is Next's now
-  // and its `POST` is still Python's, which is a split by method and not by
-  // path — so it is in `PYTHON_FORM_POSTS` below rather than here.
+  // `/dashboard/index` and `/dashboard/login` were here until their pages
+  // landed. Their `GET`s are Next's now and their `POST`s are still Python's,
+  // which is a split by method and not by path — so they are in
+  // `PYTHON_FORM_POSTS` below rather than here. `logout` never had a page of
+  // its own and stays.
   "/dashboard/api/:path*",
   "/dashboard/static/:path*",
-  "/dashboard/login",
   "/dashboard/logout",
   // Three segments, so the `/videos/[id]` page never matched it anyway; it is
   // listed for the same reason the proxy lists it — the export is Python's.
   "/videos/:id/export.md",
 ];
 
-// The two writes whose path is a *ported page's* path: `POST /dashboard/following`
-// is the add form's route beside the follows table, and `POST /dashboard/index`
-// is the index form's beside the form page.
+// The three writes whose path is a *ported page's* path: `POST
+// /dashboard/following` is the add form's route beside the follows table,
+// `POST /dashboard/index` is the index form's beside the form page, and `POST
+// /dashboard/login` is the one that mints the session cookie beside the
+// sign-in page — the last of them the sharpest, because what makes it Python's
+// is the `Set-Cookie` on its response, and an `HttpOnly` cookie is not a thing
+// a React shell can mint.
 //
 // A rewrite cannot key on a method — `has` reads headers, cookies, the query
 // and the host, and nothing else — and these have to be in `beforeFiles`,
@@ -85,6 +91,7 @@ const FORM_ENCODED = [
 const PYTHON_FORM_POSTS = [
   { source: "/dashboard/following", has: FORM_ENCODED },
   { source: "/dashboard/index", has: FORM_ENCODED },
+  { source: "/dashboard/login", has: FORM_ENCODED },
 ];
 
 // The rest of `/dashboard`, which is being ported one page at a time
@@ -96,11 +103,11 @@ const PYTHON_FORM_POSTS = [
 // `/dashboard/following/{slug}/…` writes. Each port deletes nothing here; it
 // just adds a page the router finds first.
 //
-// **Two exceptions, and they are `PYTHON_FORM_POSTS` above.** `POST
-// /dashboard/following` and `POST /dashboard/index` share their paths with
-// ported pages, so this catch-all never sees them: the router finds the page
-// first and Next answers the write with a document. Those two are forwarded in
-// `beforeFiles` under a header condition instead.
+// **Three exceptions, and they are `PYTHON_FORM_POSTS` above.** `POST
+// /dashboard/following`, `POST /dashboard/index` and `POST /dashboard/login`
+// share their paths with ported pages, so this catch-all never sees them: the
+// router finds the page first and Next answers the write with a document. Those
+// three are forwarded in `beforeFiles` under a header condition instead.
 const DASHBOARD_UNPORTED = ["/dashboard", "/dashboard/:path*"];
 
 // Cache Components is deliberately absent. It was on, and it is what made

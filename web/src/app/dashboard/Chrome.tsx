@@ -116,9 +116,14 @@ export function Chrome({ children }: { children: ReactNode }) {
                 </button>
               </form>
             ) : deployment?.login_url ? (
-              <a className={styles.signin} href={deployment.login_url}>
+              // A `DashLink`, like every other link into this surface: the
+              // sign-in page is this app's now, so it is reached by swapping
+              // the React tree rather than by loading a document.
+              // `login_url` is the instance's own path, so `isPorted` is still
+              // the thing that decides — this rail names no route of its own.
+              <DashLink className={styles.signin} href={deployment.login_url}>
                 Sign in
-              </a>
+              </DashLink>
             ) : null}
           </div>
         </header>

@@ -19,13 +19,15 @@ const PAGES: string[] = [
   `${ROOT}/search`,
   `${ROOT}/videos`,
   `${ROOT}/jobs`,
-  // The other two `GET`-only entries. `POST /dashboard/following` is the add
-  // form's route and `POST /dashboard/index` is the index form's — one path,
-  // two owners, split by method — and nothing in this file or in `proxy.ts` can
-  // say so, because both are path-only. It is the *link* question these answer,
-  // and a link is a `GET`.
+  // The three `GET`-only entries. `POST /dashboard/following` is the add form's
+  // route, `POST /dashboard/index` is the index form's, and `POST
+  // /dashboard/login` is the one that mints the session cookie — one path, two
+  // owners, split by method — and nothing in this file or in `proxy.ts` can say
+  // so, because both are path-only. It is the *link* question these answer, and
+  // a link is a `GET`.
   `${ROOT}/following`,
   `${ROOT}/index`,
+  `${ROOT}/login`,
 ];
 
 // The three ported pages with an id in them. None is a prefix, and one segment
