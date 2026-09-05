@@ -4,7 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Pill } from "@/components/Pill";
 import { dashboard, DashboardError, ROOT } from "@/lib/dashboard/client";
-import type { FollowDetail, FollowJob, FollowRow, SeenRow } from "@/lib/dashboard/schemas";
+import type { FollowDetail, FollowDetailRow, FollowJob, SeenRow } from "@/lib/dashboard/schemas";
 import { at, count, DASH, day, duration, iso } from "@/lib/format";
 import dash from "../../dashboard.module.css";
 import {
@@ -123,30 +123,15 @@ function Loaded({
   slug: string;
   search: string;
 }) {
-  // A write answers with the row, and the page re-reads on top of it. Both,
-  // deliberately: the row is the receipt the reader is owed *now*, and the
-  // re-read is what catches the fields a write outcome has no room for — §21's
-  // follow block carries no `last_error_code`, and a resume clears one.
-  const [fresh, setFresh] = useState<FollowDetail | null>(null);
-  const [written, setWritten] = useState<FollowRow | null>(null);
-  const data = fresh ?? initial;
-  const follow = { ...data.follow, ...(written ?? {}) };
-
-  const catchUp = useCallback(
-    (row: FollowRow) => {
-      setWritten(row);
-      dashboard
-        .follow(slug, apiQuery(search))
-        .then((next) => {
-          setFresh(next);
-          setWritten(null);
-        })
-        // A failed re-read leaves the row the write answered with on screen,
-        // which is the truest thing this page holds either way.
-        .catch(() => undefined);
-    },
-    [slug, search],
-  );
+  // A write answers with the row and that is the end of it. §21's follow block
+  // is `read_models.follow_row_json_with_error` — the same function §22's read
+  // builds the detail from — so it carries `last_error_code` and
+  // `last_error_message` as well, which are the two columns a `resume` clears.
+  // The page used to re-read after every write to find that out; a complete row
+  // makes the second request a choice, and this page does not make it.
+  const [written, setWritten] = useState<FollowDetailRow | null>(null);
+  const data = initial;
+  const follow = written ?? data.follow;
 
   useEffect(() => {
     document.title = `${data.follow.title} — vidtheque`;
@@ -168,7 +153,7 @@ function Loaded({
         </span>
       </PageHead>
 
-      <Rule data={data} follow={follow} onWritten={catchUp} />
+      <Rule data={data} follow={follow} onWritten={setWritten} />
       <Ledger data={data} />
       <PassedOver data={data} slug={slug} search={search} />
     </>
@@ -199,7 +184,7 @@ function Rule({
 }: {
   data: FollowDetail;
   follow: FollowDetail["follow"];
-  onWritten: (row: FollowRow) => void;
+  onWritten: (row: FollowDetailRow) => void;
 }) {
   const { rendered } = useWriteSide();
   return (
@@ -233,11 +218,14 @@ function Rule({
 
       {/* The last thing that went wrong, printed whether or not the state is
           `failing`: one rate limit does not fail a follow, and a reader looking
-          at a green pill still wants to know what the last check hit. */}
-      {data.follow.last_error_code ? (
+          at a green pill still wants to know what the last check hit.
+
+          Off the row a write answered with, when there is one — a `resume`
+          clears both columns, and this is the line that has to go with them. */}
+      {follow.last_error_code ? (
         <p className={styles.lasterror}>
-          <Pill state={data.follow.last_error_code} tone="bad" />
-          <span className={styles.errText}>{data.follow.last_error_message ?? DASH}</span>
+          <Pill state={follow.last_error_code} tone="bad" />
+          <span className={styles.errText}>{follow.last_error_message ?? DASH}</span>
         </p>
       ) : null}
 
@@ -268,7 +256,7 @@ function Rule({
             <em>Unfollow</em> stops the checks and leaves every video this follow brought in — they
             are corpus, not membership.
           </p>
-          <RulesDisclosure follow={data.follow} onWritten={onWritten} />
+          <RulesDisclosure follow={follow} onWritten={onWritten} />
         </>
       ) : null}
     </Panel>

@@ -378,10 +378,11 @@ function AddForm({
   const send = useCallback(() => dashboard.followChannel(fields.current), []);
   const [write, run] = useWrite(send, (outcome) => {
     // `already_following` made nothing, so there is no row to insert — and the
-    // one it names is already in the table this page read.
-    if (outcome.follow && !outcome.already_following) {
-      onMade({ ...outcome.follow, last_error_code: null });
-    }
+    // one it names is already in the table this page read. What comes back is
+    // §21's block, which is the detail row, so it is already the shape this
+    // table draws — including the error column, which on a new follow is null
+    // because nothing has checked it yet.
+    if (outcome.follow && !outcome.already_following) onMade(outcome.follow);
   });
 
   return (

@@ -965,6 +965,15 @@ export type FollowDetail = z.infer<typeof FollowDetail>;
 // row, ints, booleans — because the formatting is this side's and the only
 // policy text on a write is the refusal's, which travels in `PartialRefusal`.
 
+// **The block on a write outcome is the *detail* row, not the bare one.**
+// §21 builds it with `read_models.follow_row_json_with_error`, which is the
+// same function §22's detail read calls — one function, so an outcome and a
+// read cannot describe a follow two ways — and that block carries the two
+// failure columns. They are on it because a `resume` *clears* them: `set_state`
+// nulls both when it resumes, and an outcome that carried neither left the page
+// rendering an error the write had just wiped. With them, the outcome is a
+// complete row and the page needs no re-read to find that out.
+
 /** `POST /dashboard/following` — the add form.
  *
  *  `already_following` is the tool's own field, and the difference a redirect
@@ -973,7 +982,7 @@ export type FollowDetail = z.infer<typeof FollowDetail>;
  *  safe. `follow` is nullable because the handler answers `null` when the tool
  *  gave it no slug to re-read. */
 export const FollowCreated = z.object({
-  follow: FollowRow.nullable(),
+  follow: FollowDetailRow.nullable(),
   already_following: z.boolean(),
 });
 export type FollowCreated = z.infer<typeof FollowCreated>;
@@ -982,7 +991,7 @@ export type FollowCreated = z.infer<typeof FollowCreated>;
  *  write**. `set_state` re-arms the clock when it resumes, so a payload built
  *  from the row the handler read first would name the new state and the old
  *  `next_check_at` in one breath. */
-export const FollowWritten = z.object({ follow: FollowRow });
+export const FollowWritten = z.object({ follow: FollowDetailRow });
 export type FollowWritten = z.infer<typeof FollowWritten>;
 
 /** `POST /dashboard/following/{slug}/delete`.

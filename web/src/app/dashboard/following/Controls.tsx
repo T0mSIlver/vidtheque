@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { Pill } from "@/components/Pill";
 import { dashboard, ROOT } from "@/lib/dashboard/client";
-import type { FollowDetailRow, FollowRow } from "@/lib/dashboard/schemas";
+import type { FollowDetailRow } from "@/lib/dashboard/schemas";
 import dash from "../dashboard.module.css";
 import { DashLink, refusalOf, useWrite, type Write } from "../parts";
 import styles from "./following.module.css";
@@ -23,12 +23,13 @@ import { RuleFields, RuleForm, ruleValues } from "./parts";
 // payload built from the row the handler read first would name the new state
 // and the old `next_check_at` in one breath.
 //
-// `onWritten` is how the page catches up: the outcome carries the row, and the
-// page also re-reads, because the follow block a write answers with has no
-// `last_error_code` on it and a resume clears one.
+// `onWritten` is how the page catches up, and it is the *whole* catching up:
+// §21's follow block carries `last_error_code` and `last_error_message`, so the
+// row a write answers with is a complete one — including the failure a resume
+// just cleared — and there is nothing left for a second read to find.
 
-/** What a control hands back: the row as it stands, and the page's own re-read. */
-export type Written = (follow: FollowRow) => void;
+/** What a control hands back: the follow as it stands after the write. */
+export type Written = (follow: FollowDetailRow) => void;
 
 /**
  * Pause, resume and try-again — one route with the verb in the body.
@@ -39,7 +40,13 @@ export type Written = (follow: FollowRow) => void;
  * 404'd once reachable solely through pause-then-resume, while `Check now`
  * printed a time and queued nothing.
  */
-export function StateControl({ follow, onWritten }: { follow: FollowRow; onWritten: Written }) {
+export function StateControl({
+  follow,
+  onWritten,
+}: {
+  follow: FollowDetailRow;
+  onWritten: Written;
+}) {
   const paused = follow.state === "paused" || follow.state === "failing";
   const action = paused ? "resume" : "pause";
   const send = useCallback(
@@ -64,7 +71,13 @@ export function StateControl({ follow, onWritten }: { follow: FollowRow; onWritt
  *  claims a `follow_check` on its next tick. The row that comes back says so —
  *  `next_check_at: 0` is due immediately — which is why the button answers
  *  with the clock rather than with a sentence about what will happen. */
-export function CheckControl({ follow, onWritten }: { follow: FollowRow; onWritten: Written }) {
+export function CheckControl({
+  follow,
+  onWritten,
+}: {
+  follow: FollowDetailRow;
+  onWritten: Written;
+}) {
   const send = useCallback(() => dashboard.checkFollowNow(follow.slug), [follow.slug]);
   const [write, run] = useWrite(send, (outcome) => onWritten(outcome.follow));
 
