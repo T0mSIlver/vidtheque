@@ -16,24 +16,25 @@ sentence, the slide, and the second it happened (`https://youtu.be/ID?t=123`).
 
 ## Quickstart
 
-Releases ship as published images — `ghcr.io/t0msilver/vidtheque-{mcp,worker}`:
+Releases ship as published images — `ghcr.io/t0msilver/vidtheque-{mcp,web,worker}`:
 
 ```bash
 mkdir vidtheque && cd vidtheque
 REL=https://raw.githubusercontent.com/T0mSIlver/vidtheque/v0.0.6/deploy
-curl -fsSLO "$REL/docker-compose.yml" -O "$REL/compose.release.example.yml"
+curl -fsSLO "$REL/docker-compose.yml" -O "$REL/compose.release.example.yml" -O "$REL/Caddyfile"
 curl -fsSL -o .env "$REL/.env.example"   # the document of record for every knob
 echo "IMAGE_TAG=0.0.6" >> .env
 docker compose -f docker-compose.yml -f compose.release.example.yml up -d
 curl localhost:8080/healthz
 ```
 
-The worker image is amd64 + CUDA (~28 GB — what GPU torch genuinely weighs);
-the mcp image is CPU-only, multi-arch, and runs on a Pi. No GPU? Drop the
-worker: a hosted OpenAI-compatible provider covers the transcript leg, and
-YouTube captions are the zero-GPU indexing path. `deploy/vidtheque-update.sh`
-makes upgrades one command; pin exact tags — `v0.0.x` schemas can still
-change. To build from source instead: clone this repo, `cp deploy/.env.example
+Caddy is the one origin over the web and mcp images, by the route table in that
+Caddyfile; all three ship from the first release after 0.0.6. The worker image
+is amd64 + CUDA (~28 GB — what GPU torch genuinely weighs); the mcp image is
+CPU-only, multi-arch, and runs on a Pi. No GPU? Drop the worker: a hosted
+OpenAI-compatible provider covers the transcript leg, and YouTube captions are
+the zero-GPU indexing path. `deploy/vidtheque-update.sh` makes upgrades one
+command; pin exact tags — `v0.0.x` schemas can still change. To build from source instead: clone this repo, `cp deploy/.env.example
 deploy/.env`, then `docker compose -f deploy/docker-compose.yml up -d`.
 
 ## Follow the builders
@@ -61,7 +62,7 @@ lands on the second.
 ## Architecture
 
 Two services, one repo, HTTP between them — never a shared Python import. The
-front end in `web/` is a third deployable, over the same HTTP.
+front end in `web/` is a third deployable; a Caddy edge puts both on one origin.
 
 ```mermaid
 flowchart LR

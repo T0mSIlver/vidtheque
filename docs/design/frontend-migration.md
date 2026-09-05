@@ -998,3 +998,88 @@ nothing under it. That is what keeps `form-action 'self'` a policy that holds
 rather than one that only holds while the JavaScript has loaded: a click that
 lands before this tree has hydrated still reaches Python and still gets the
 `303` the Jinja page always sent.
+
+## 10. The cutover: the edge, and what has to be true before it (2026-09-06)
+
+*Recorded 2026-09-06 with the deployment files. §1a and §1d say which process
+owns which path and say plainly that nothing in this repo can express it. This
+section names the file that does, and the checks that prove it did.*
+
+**`deploy/Caddyfile` is the implementation.** One rule table, both topologies:
+`cloudflared → caddy → { web, mcp }` on the public box, and `caddy` alone in
+front of both on a private one. Its `@python` matcher is §1a's list plus
+`/dashboard/api/*`, `/dashboard/logout` and `/dashboard/`; its
+`@dashboard_writes` matcher is `method POST` over the whole `/dashboard`
+prefix, which is §1d's last table row and the three method-split paths in one
+rule rather than four; and everything else reaches Next. Four values that are a
+machine's shape rather than a contract — the port, the interface and the two
+upstreams — are environment placeholders whose defaults are the compose
+answers, so the table is never copied. Nothing else is configured there: no
+CORS, no security headers (they are `proxy.ts`'s, per request, and an edge
+cannot see a nonce), no buffering (measured: SSE and NDJSON both arrive as
+produced).
+
+**One correction to §1a's table, found while writing that file.** Under
+`VIDTHEQUE_AUTH=oauth` the MCP SDK registers its own handlers at the **root** —
+`/authorize`, `/token`, `/register`, `/revoke` (`auth/modes.py`, via
+`create_auth_routes`; the metadata advertises `issuer_url + "/token"`) — not
+under `/auth/`, which holds only the login and consent pages. An edge that
+routed `/auth/*` and stopped there would hand a client's token exchange to the
+front end. The public deployment is `AUTH=none` and registers none of them,
+which is why nothing has noticed. They are Python's, and the Caddyfile names
+them.
+
+**The checklist, through the edge, before the URL points at it.** Each line is
+a row of §1a or §1d, and content type is the assertion — a page is `text/html`
+from Next, an API is JSON from Python:
+
+1. `GET /` and `GET /demo` render, and each carries the four document headers
+   (§1b), with a **different** CSP nonce on two consecutive requests — a
+   repeated nonce means a prerendered shell and a policy that protects nothing.
+2. `GET /videos`, `GET /videos/{id}` render; `GET /videos/{id}/export.md` is
+   Python's.
+3. `POST /dashboard/following`, `POST /dashboard/index` and
+   `POST /dashboard/login` reach **Python**, form-encoded, and answer JSON or a
+   `303` — never `text/html`. This is the one the whole method split exists for
+   and the one nothing else catches: a `200 text/html` here is the page
+   swallowing its own write.
+4. Sign-in end to end in a browser: the form posts, the `Set-Cookie` lands, the
+   shell navigates to the fenced `next`, and the reader's next
+   `/dashboard/api/*` read is authorized.
+5. Frames are same-origin: every thumbnail loads under `img-src 'self'`
+   (§1b) — a broken frame under this policy is a CSP refusal, not a 404.
+6. `/mcp` and `POST /api/ask` stream *through* the edge — the timestamps
+   spread, not one burst at the end (`docs/deploy-public.md` §7.3).
+7. `GET /healthz` answers through the edge, which is now how the deploy scripts
+   check it: it proves the routing and the process in one request.
+8. Rate-limit buckets key on the tunnel's header, not on the edge: two devices
+   on two networks get two buckets (deploy-public.md §7.4). The edge forwards
+   `CF-Connecting-IP` unchanged and validates nothing — what makes that sound
+   is that it is published on loopback and mcp has no published port at all.
+
+**Rollback.** The tunnel is still the whole exposure, so stopping the connector
+is still the rollback and is still seconds. Under it, the two paths differ:
+
+- **The image box** (`deploy/vidtheque-update.sh`): `vidtheque-update
+  <previous tag>` sets `IMAGE_TAG` and re-runs compose. What changed is that
+  the script fetches `deploy/Caddyfile` beside the two compose files, pinned to
+  the same tag, so a rollback restores the *route table* the old images expect
+  along with the images. The previous images are still on disk, which is what
+  makes it a restart rather than a pull.
+- **The git box** (`deploy/staging/`): a deployment of an earlier ref, which
+  now re-runs `pnpm install --frozen-lockfile && pnpm build` and re-installs
+  the Caddyfile before restarting. A ref from *before* this cutover has
+  neither, so rolling back past it is a hand-run job — stop `vidtheque-caddy`
+  and `vidtheque-web`, point the tunnel back at `127.0.0.1:8100` — and
+  `deploy/staging/install.md` §11 says so.
+
+**What is deleted after cutover, and it is not deleted here.**
+`next.config.ts`'s `PYTHON_FORM_POSTS` shim keys three rewrites on
+`content-type: application/x-www-form-urlencoded` because a rewrite cannot key
+on a method (§1d). It is development-only and it goes **the day development
+runs behind the edge too** — not the day production does.
+`deploy/compose.local.example.yml` carries the guidance for that: run the stack
+with caddy in front and point the `web` service at a dev server, and the thing
+under test is the thing that will be deployed. Until someone does that and the
+shim is removed in a commit of its own, it stays, because deleting it first
+would break every local write.
