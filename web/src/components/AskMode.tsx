@@ -136,7 +136,9 @@ export function AskMode({ initialQ }: { initialQ: string }) {
         </button>
       </form>
       <p className={styles.switch}>
-        <Link href={q.trim() ? `/?q=${encodeURIComponent(q.trim())}` : "/"}>search instead →</Link>
+        <Link href={q.trim() ? `/demo?q=${encodeURIComponent(q.trim())}` : "/demo"}>
+          search instead →
+        </Link>
       </p>
 
       {phase.kind !== "idle" ? <WorkLog lines={phase.lines} live={busy} /> : null}
@@ -257,7 +259,9 @@ function Degraded({ body, q, onRetry }: { body: AskFailure; q: string; onRetry: 
         </button>
       </p>
       <p>
-        <Link href={q.trim() ? `/?q=${encodeURIComponent(q.trim())}` : "/"}>Search instead</Link>
+        <Link href={q.trim() ? `/demo?q=${encodeURIComponent(q.trim())}` : "/demo"}>
+          Search instead
+        </Link>
       </p>
     </div>
   );

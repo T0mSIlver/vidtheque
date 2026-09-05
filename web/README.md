@@ -1,8 +1,10 @@
 # web — the Next.js front end
 
 A separate deployable that talks to a vidtheque instance over its public
-`/api/*` facade (`docs/design/demo-site.md` §2). The Python-served pages at
-`/`, `/demo` and `/dashboard` are untouched by anything in here.
+`/api/*` facade (`docs/design/demo-site.md` §2). It serves the same two front
+doors on its own origin — the landing at `/`, the reader at `/demo` (§1) — and
+reads the instance only through the facade. The Python-served copies of those
+pages, and `/dashboard`, which has no counterpart here, are untouched.
 
 Next.js 16 (App Router), React 19, TypeScript, CSS Modules on the design
 tokens from `DESIGN.md`. No Tailwind, no component library.
@@ -32,8 +34,10 @@ pnpm build          # production build
 ```
 
 CI runs on GitHub-hosted runners: Node 24.18.0, pnpm from `packageManager`, no
-GPU and no live backend. Nothing here needs one — every page reads its data at
-request time inside a `<Suspense>` boundary, so the build never calls the API.
+GPU and no live backend. Nothing here needs one — the landing prerenders to
+static HTML from a checked-in corpus readout, and every page that does read the
+corpus reads it at request time inside a `<Suspense>` boundary, so the build
+never calls the API.
 
 `vitest.config.mts` pins `NODE_ENV=test` at config load. Vitest only defaults
 it when it is unset, and a shell exporting `NODE_ENV=production` otherwise

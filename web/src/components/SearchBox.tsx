@@ -5,9 +5,9 @@ import { useState, useTransition } from "react";
 import { ContentType } from "@/lib/api/schemas";
 import styles from "./SearchBox.module.css";
 
-// The one interactive boundary on the search page. The URL is the state:
-// submitting navigates to `/?q=…&type=…`, and the Server Component that owns
-// the results re-renders for the new URL. No fetch here, no results state,
+// The one interactive boundary on the demo page. The URL is the state:
+// submitting navigates to `/demo?q=…&type=…`, and the Server Component that
+// owns the results re-renders for the new URL. No fetch here, no results state,
 // no sequence guard against stale responses — the router serialises
 // navigations, which is the job app.js did by hand with `state.seq`.
 //
@@ -49,7 +49,7 @@ export function SearchBox() {
     const next = new URLSearchParams();
     if (q.trim()) next.set("q", q.trim());
     if (type !== "all") next.set("type", type);
-    startTransition(() => router.push(`/?${next}`));
+    startTransition(() => router.push(`/demo?${next}`));
   }
 
   return (
