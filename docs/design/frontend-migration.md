@@ -53,7 +53,8 @@ for, whereas `/api/*` under a prefix rule is the whole facade in one line.
 | `/auth/*`, `/.well-known/*` | Python |
 | `/healthz` | Python |
 | `/videos/{id}/export.md` | Python |
-| `/dashboard/*` — pages, `/dashboard/api/*`, `/dashboard/static/*` | Python, until its own port lands — §1d |
+| `/dashboard` page GETs | **Next** (*landed 2026-09-06* — §1d) |
+| `/dashboard/api/*`, the fourteen `POST`s, `/dashboard/` | Python — §1d |
 | anything else | Python (`Mount("/", mcp_app)`, which 404s) |
 
 **`POST /api/ask` is Python's**, and the Next route handler that shadowed it is
@@ -72,8 +73,9 @@ whatever serves the pages sends and which no test in `mcp/` can see —
 demo-site.md §7 item 0 is the handover and the check on it — and the
 `static/lab/` denylist, which was a property of the asset route.
 `public/static/fonts/` stays: DESIGN.md makes it the document of record for the
-two faces, `dashboard/__init__.py` aliases `/dashboard/static/fonts/` onto it,
-and `test_web_assets.py` diffs `web/src/fonts/` against it.
+two faces and `test_web_assets.py` diffs `web/src/fonts/` against it. Nothing
+routes it — the dashboard aliased `/dashboard/static/fonts/` onto it until
+2026-09-06, and that route went with the dashboard's own pages.
 
 ## 1b. The document policy the pages carry
 
@@ -204,8 +206,16 @@ What each side owns, once a page is ported:
 | `GET /dashboard/login` | **Next** | *landed 2026-09-05* |
 | `POST /dashboard/login`, `/dashboard/logout` | Python | for good |
 | `/dashboard/api/*` | Python | for good |
-| `/dashboard/static/*` | Python | for good |
 | every other `POST /dashboard/*` | Python | for good |
+| `GET /dashboard/` | Python | a `308` to `/dashboard`, which is Next's |
+
+*Amended 2026-09-06: three rows left this table rather than changing.*
+`/dashboard/static/*` is gone — the stylesheet, the two scripts and the
+`fonts/` alias went with the pages, and the web app serves its own assets. So
+did `GET /dashboard/login` and `GET /dashboard/index` **on the Python side**:
+both were Jinja pages and both are now `POST`-only paths here, which is what
+makes the method split below a split rather than a shadowing. Python registers
+no `GET` under this prefix that answers with a document.
 
 Exact page GETs again, not a prefix: `/dashboard`-anything is Python's unless
 it is one of the paths above. **Until a page is ported, Python keeps serving
@@ -215,6 +225,12 @@ React page lands, page by page as `docs/ROADMAP.md` tracks it.
 *Tally, 2026-09-05:* all eleven `GET /dashboard/*` pages this table names are
 Next's now — the sign-in page's landing was the last of them, and every row
 above reads *landed*.
+
+*Closed 2026-09-06:* the sentence above has no cases left, and the Python HTML
+it described is deleted — `views.py`, `templates/`, `static/`, the asset route
+and `jinja2` (dashboard.md §23). A misrouted edge no longer finds an older page
+under a ported path; it finds the `Mount("/")` 404, exactly as `/` and `/demo`
+do since §1a.
 
 The `web/` side expresses this split in its development rewrites and in the
 matcher of the middleware that sends the document policy (§1b). That is
@@ -233,6 +249,11 @@ both are lists a port has to add itself to:
   looked: a ported page wins its own path, and every path with no page yet
   falls through to Python's HTML exactly as before. Porting a page adds a page
   and deletes nothing here.
+
+  *Two entries are dead as of 2026-09-06 and are `web/`'s to remove:*
+  `/dashboard/static/:path*` forwards to a route that no longer exists, and the
+  `afterFiles` catch-all now falls through to a 404 rather than to Python's
+  HTML — which is correct, and is no longer the thing it was written for.
 - **The document-policy matcher names each ported page literally.** The
   page-wide entry excludes the whole `/dashboard` prefix — the JSON under it is
   not a document and the unported pages carry Python's own policy — so a ported

@@ -66,14 +66,14 @@ front end in `web/` is a third deployable, over the same HTTP.
 ```mermaid
 flowchart LR
     client["MCP client<br/>(Claude, …)"] -->|MCP| MCP
-    browser["Browser"] -->|"/ · /demo · /videos"| Web
-    browser -->|"/dashboard · /frames"| MCP
+    browser["Browser"] -->|"/ · /demo · /videos · /dashboard"| Web
+    browser -->|"/dashboard/api · /dashboard POSTs · /frames"| MCP
     subgraph Web ["web/ — Next.js front end"]
-        pages["landing · demo · library"]
+        pages["landing · demo · library · dashboard"]
     end
     Web -->|"/api/*"| MCP
     subgraph MCP ["mcp/ — CPU, multi-arch (runs on a Pi)"]
-        surface["MCP tools · OAuth (CIMD)<br/>/api facade · dashboard"] ---
+        surface["MCP tools · OAuth (CIMD)<br/>/api facade · dashboard JSON + writes"] ---
         pipeline["yt-dlp fetch · scene detection<br/>job queue"] ---
         store[("SQLite + sqlite-vec + FTS5<br/>keyframe JPEGs")]
     end

@@ -703,7 +703,7 @@ needs one hex and not three.
   the obvious pick, the vendored dark `amber-11` #ffca16, sits 7° of hue from
   `--gold` and would read as the accent, which the One Signal Rule forbids.
 - **Signal Red** (`--tone-bad` #ff9592): failed, refused, drifted, degraded.
-  9.14:1 / 7.86:1. The dark `red-11` already vendored in `dashboard.css`.
+  9.14:1 / 7.86:1. The dark `red-11` the dashboard's stylesheet vendored.
 - **Instrument Blue** (`--tone-work` #70b8ff): running, indexing, mid-pipeline.
   9.16:1 / 7.88:1. The dark `blue-11` already vendored.
 - **Fg2** (`--tone-wait` / `--tone-neutral`): queued, skipped, absent,
@@ -711,9 +711,12 @@ needs one hex and not three.
   colour, not a fifth one.
 
 Provenance, so nobody re-derives it: ok / bad / work are the dark Radix steps
-already vendored in `dashboard/static/dashboard.css` (`grass-11`, `red-11`,
-`blue-11`), carried over unchanged because they were measured for a dark ground
-and this ground is darker still. warn is new and hand-held. wait is ours.
+`dashboard/static/dashboard.css` vendored (`grass-11`, `red-11`, `blue-11`),
+carried over unchanged because they were measured for a dark ground and this
+ground is darker still. warn is new and hand-held. wait is ours. *That file was
+deleted with the dashboard's pages on 2026-09-06; the three steps live in
+`web/src/styles/tokens.css` now, and the names are kept here because they are
+what a reader greps Radix for.*
 
 ### The film filters
 
@@ -1067,44 +1070,41 @@ Archivo arrived with lab v4 (commit `1251269`).
    end in `web/` is a separate deployable and carries a byte-identical copy at
    `web/src/fonts/`, loaded through `next/font/local`;
    `mcp/tests/test_web_assets.py` fails the suite the day the two differ.
-2. The dashboard serves the **same files through an alias** (amended
-   2026-08-11: the byte-identical copy at `dashboard/static/fonts/` is gone).
-   Nothing routes `public/static/*` any more (amended 2026-09-05: the pages
-   and the `/static/` asset route left for `web/`, `public/__init__.py`), while
-   the dashboard's own asset route is always registered — so that route maps
-   its `fonts/` prefix onto the document of record (`dashboard/__init__.py`,
-   `_FONTS_DIR`) instead of keeping a copy that can drift.
-   `/dashboard/static/fonts/…` still serves in a private deployment; there is
-   no second copy to keep identical.
+2. **Nothing in `mcp/` routes these files.** The public `/static/` asset route
+   left with the welcome page (2026-09-05) and the dashboard's `fonts/` alias
+   left with its own pages (2026-09-06), so the directory is a record rather
+   than a served path. It had been the alias since 2026-08-11, which is when
+   the byte-identical copy at `dashboard/static/fonts/` went; the copy that
+   exists now is `web/src/fonts/`, and rule 1's diff is what keeps it honest.
 3. **`@font-face src` is relative** (`fonts/…woff2`), never built from
    `PUBLIC_URL`. These surfaces are served through an SSH tunnel on a port
    nobody predicted.
 4. `font-display: block` for both, matching v5: these faces carry the display
    voice and a FOUT on a 5.6rem headline is worse than 100ms of nothing. Only
    the text face is preloaded.
-5. **The dashboard's asset route types responses by suffix** (`_MEDIA` in
-   `dashboard/__init__.py`; `.woff2` landed there the commit the fonts shipped,
-   amended 2026-08-12 to say so, and it is the last such map in Python since
-   `public/__init__.py`'s route left on 2026-09-05). Whoever ships an asset
-   with a new suffix adds its media type in the same commit, the way the fonts
-   did.
+5. ~~**The dashboard's asset route types responses by suffix**~~ *(retired
+   2026-09-06.)* `_MEDIA` in `dashboard/__init__.py` was the last such map in
+   Python and it went with that route. The rule it existed for — a font served
+   as `text/javascript` stops loading the moment anything in front of the app
+   sets `X-Content-Type-Options: nosniff` — is now whatever serves the assets,
+   which is `web/`.
 
 ## Migration notes for the rebuild
 
 The old system is pinned by tests. Whoever gets there first updates them, in
 the same commit as their CSS, and says so:
 
-- `test_dashboard.py::test_the_dashboard_palette_matches_the_front_ends`
-  asserts twelve `--bg/--fg/--muted/--line/--accent/--raised` declarations (six
-  per scheme, two schemes) and that the two files agree; since 2026-09-05 the
-  second file is `web/src/styles/tokens.css`, generated from this one. The
-  system is now single-scheme, so the expected count is **six**. Keep the
-  assertion that the two files agree — that is what stops the surfaces becoming
-  two visual worlds, and it is the reason the six role aliases exist in the
-  frontmatter above.
-- `test_dashboard.py::test_both_schemes_and_a_mobile_viewport_are_declared`
-  expects two `theme-color` metas and `content="light dark"`. Dark only now:
-  one `theme-color` (`#040405`) and `content="dark"`.
+- ~~`test_dashboard.py::test_the_dashboard_palette_matches_the_front_ends`~~
+  and ~~`test_dashboard.py::test_both_schemes_and_a_mobile_viewport_are
+  _declared`~~ *(deleted 2026-09-06 with the stylesheet and the templates they
+  read — dashboard.md §23.)* The first asserted twelve
+  `--bg/--fg/--muted/--line/--accent/--raised` declarations and that
+  `dashboard.css` and `web/src/styles/tokens.css` agreed; the second asserted
+  two `theme-color` metas. **Both properties still matter and no test in `mcp/`
+  can see them any more**: there is one stylesheet now,
+  `web/src/styles/tokens.css`, generated from this file, and whoever rebuilds
+  the system asserts the six declarations and the single `theme-color`
+  (`#040405`, `content="dark"`) in `web/`.
 - Any test asserting a radius, a serif wordmark, `--font-display`, or a
   warm-paper hex.
 - `.impeccable/design.json` is a generated mirror of this file's frontmatter and
