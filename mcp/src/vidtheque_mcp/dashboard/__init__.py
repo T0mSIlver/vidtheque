@@ -124,6 +124,10 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
                         "next": sign_in_hint(mode, login=write_side),
                     },
                     status_code=401,
+                    # A refused read of the owner surface describes nothing
+                    # stable enough to cache; `api.NO_STORE` is the same
+                    # header every other `/dashboard/api/*` response carries.
+                    headers=api.NO_STORE,
                 )
             return views.sign_in_page(request, mode, login=write_side)
 

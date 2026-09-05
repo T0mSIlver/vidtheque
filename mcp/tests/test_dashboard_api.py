@@ -129,6 +129,15 @@ def test_the_two_corpus_reads_sit_behind_the_pages_own_gate(tmp_path: Path) -> N
             assert client.get(path, headers=BEARER).status_code == 200
 
 
+def test_the_json_401_is_not_cacheable(tmp_path: Path) -> None:
+    """A refused read of the owner surface is still a read of it — a shared
+    cache holding the 401 would go on answering it after the caller signs in."""
+    with owner_client(tmp_path) as client:
+        refused = client.get(OVERVIEW)
+        assert refused.status_code == 401
+        assert refused.headers["cache-control"] == "no-store"
+
+
 def test_a_session_cookie_reads_the_json_and_a_stale_one_does_not(
     tmp_path: Path,
 ) -> None:
