@@ -441,7 +441,7 @@ function Decisions({ counts }: { counts: FollowDetail["counts"] }) {
   return (
     <p className={styles.decisions}>
       {entries.map(([decision, n]) => (
-        <span className={styles.decisions} key={decision}>
+        <span className={styles.decision} key={decision}>
           <Pill state={decision} />
           <span className={styles.decisionN}>×{n}</span>
         </span>
@@ -463,7 +463,7 @@ function SeenLine({ item, slug, actions }: { item: SeenRow; slug: string; action
           `held_budget` is re-decided on the next check — that is the whole
           difference between a budget and a filter — and `held_review` is
           waiting on a person and will wait forever if nobody looks. */}
-      <td data-label="Decision">
+      <td className={styles.colDecision} data-label="Decision">
         <Pill state={item.decision} />
         {item.decision === "held_budget" ? (
           <span className={styles.rowMeta}>re-decided on the next check</span>
@@ -471,10 +471,10 @@ function SeenLine({ item, slug, actions }: { item: SeenRow; slug: string; action
           <span className={styles.rowMeta}>waiting on you</span>
         ) : null}
       </td>
-      <td className={dash.num} data-label="Length">
+      <td className={`${dash.num} ${styles.colWhen}`} data-label="Length">
         {duration(item.duration_s)}
       </td>
-      <td data-label="Published">
+      <td className={styles.colWhen} data-label="Published">
         <time dateTime={iso(item.published_at)}>{day(item.published_at)}</time>
       </td>
       <td className={styles.colWhy} data-label="Why">

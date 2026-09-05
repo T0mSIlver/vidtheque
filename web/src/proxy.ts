@@ -176,5 +176,30 @@ export const config = {
         { type: "header", key: "purpose", value: "prefetch" },
       ],
     },
+    {
+      // The follows table. **This entry is a path, and the split here is by
+      // method**: `GET /dashboard/following` is this page and
+      // `POST /dashboard/following` is the add form's route, which stays
+      // Python's like every other write. This matcher cannot say that — it
+      // matches paths, and it is only about which documents carry the policy —
+      // so the production proxy has to route this one path by method, and it
+      // is the only path under `/dashboard` where the two owners collide.
+      source: "/dashboard/following",
+      missing: [
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ],
+    },
+    {
+      // One follow's page, on the one-segment rule the other two details
+      // follow. Its five writes — `state`, `check`, `rules`, `delete` and
+      // `queue` — have three segments under this section and are therefore not
+      // matched, which is what keeps them Python's with no exception.
+      source: "/dashboard/following/([^/]+)",
+      missing: [
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ],
+    },
   ],
 };
