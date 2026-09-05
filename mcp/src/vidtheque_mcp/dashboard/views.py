@@ -840,6 +840,15 @@ async def cues_json(request: Request) -> Response:
     `has_more` and not a total: the page's own "of N" comes from
     `per_video_counts`, which it already read for the counts band, so nothing
     here duplicates a count query.
+
+    **Typed fields beside the strings** (Tom, 2026-09-05). This endpoint
+    predates DECISIONS.md's typed-values rule and was the one place where the
+    typed half was *missing* rather than merely duplicated: `at`, `conf` and
+    `chunk` are renderings of numbers the read already had. `start_s`, `end_s`,
+    `avg_logprob`, `chunk_opens` and `chunk_closes` are those numbers, under
+    `_cue_rows`' own names, and the strings stay until the page that reads them
+    goes — `static/dashboard.js` assigns them verbatim and porting the video
+    detail page is what deletes them (frontend-migration.md §3).
     """
     db = request.app.state.assembled.db
     video_id = str(request.path_params["video_id"])
@@ -873,6 +882,22 @@ async def cues_json(request: Request) -> Response:
         {
             "cues": [
                 {
+                    # The typed half. Seconds as floats, because a cue boundary
+                    # is not a whole second and `t` has always rounded it down;
+                    # the log-probability as the number it is; and the chunk as
+                    # the five fields the sentence below is composed from, so a
+                    # client can say "chunk 3" without parsing " · ".
+                    "start_s": float(cue["start_s"]),
+                    "end_s": float(cue["end_s"]),
+                    "avg_logprob": None
+                    if cue["avg_logprob"] is None
+                    else float(cue["avg_logprob"]),
+                    "chunk_opens": cue["chunk_opens"],
+                    # `in_chunk` is these two facts collapsed into one bool, and
+                    # a marker at the end of a chunk is not a marker at the
+                    # start of one — the page draws them differently.
+                    "chunk_closes": cue["chunk_closes"],
+                    # The rendered half, unchanged.
                     "at": clock(cue["start_s"]),
                     "t": int(cue["start_s"]),
                     "text": cue["text"],

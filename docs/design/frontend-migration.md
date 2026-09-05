@@ -264,6 +264,32 @@ second read.
   sends the seconds only. *Settled 2026-09-05 (Tom): `hours` stays dropped from
   the overview payload — `duration_s` is the figure, and React divides.*
 
+**The three older endpoints, and the rule for them** *(settled 2026-09-05 by
+Tom)*. `/dashboard/api/jobs`, `/dashboard/api/jobs/{job_id}` and
+`/dashboard/api/videos/{video_id}/cues` predate decision 5: they are the Jinja
+scripts' own poll targets and they answer in rendered strings, which is what a
+React page cannot read. The rule is **typed fields beside the strings, strings
+cut at the port**: add the typed half now, additively, and delete a rendered
+string in the same commit that deletes the Jinja page or script that reads it.
+Changing them any earlier changes what `static/jobs.js` and
+`static/dashboard.js` receive, and those pages are still serving.
+
+- **The two jobs routes need no change today.** The typed half is already
+  beside the `text` block — `progress`, `wall_s`, `ran_s`, `waited_s`,
+  `defer_s`, `created_at`/`started_at`/`finished_at`, per item
+  `attempts`/`max_attempts`, per event `at`. What goes at the port is `text`
+  itself (and the items' `text`, and each event's `at_text`); `basis`, the
+  sentence saying what the percentage is computed over, is policy text and
+  survives, in `notes` or beside it.
+- **The cues route was the one with a missing half**, not a duplicated one.
+  *Landed 2026-09-05:* it carries `start_s` and `end_s` as floats,
+  `avg_logprob` as a float or `null`, `chunk_opens` — the chunk's `seq`,
+  `start_s`, `end_s`, `n_words`, `n_chars` — and `chunk_closes`, all under
+  `views._cue_rows`' own names, because those are the values `at`, `conf` and
+  `chunk` were renderings of. `in_chunk` is the two markers collapsed and
+  stays; both are sent, because a chunk's last cue is not its first. The
+  strings are untouched, and dashboard.md §5.3 is the contract entry.
+
 ## 4. `GET /dashboard/api/overview`
 
 The corpus overview page's reads (`views.overview`), typed.

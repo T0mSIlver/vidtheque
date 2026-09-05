@@ -693,6 +693,22 @@ came in via captions (measured on the first batch, 2026-08-09). Chunk boundaries
 `chunks` (`first_cue_id` / `last_cue_id`), because "what exactly is the
 embedding unit" is one of the questions this page exists to answer.
 
+*Amended 2026-09-05 (Tom): typed fields beside the strings, strings cut at the
+port.* The batch endpoint the scrollbox appends from,
+`GET /dashboard/api/videos/{video_id}/cues`, answered in rendered strings only
+— `at` a `clock()`, `conf` a formatted float, `chunk` a composed sentence —
+which is what DECISIONS.md's typed-values rule (2026-09-05) says a payload must
+not do, and it was the one of the three offenders where the typed half was
+missing rather than merely duplicated. It carries `start_s`, `end_s`,
+`avg_logprob`, `chunk_opens` (the chunk's `seq`, `start_s`, `end_s`, `n_words`,
+`n_chars`) and `chunk_closes` **beside** the strings now, under
+`views._cue_rows`' own names, because those are the values the endpoint was
+rendering away. `in_chunk` collapses the two markers into one bool and stays;
+both markers are sent, because a chunk's last cue is not its first. The strings
+are unchanged and stay while `static/dashboard.js` is their only reader — the
+rule is: **add the typed half now, additively; delete a rendered string in the
+same commit that deletes the Jinja page or script that reads it.**
+
 **OCR browser.** `ocr_frames` (the searchable unit, `0003_ocr_frame_fts.sql:40`)
 per keyframe, with the `ocr_lines` behind it: `line_no`, `text`, `conf`, and the
 box `x0,y0,x1,y1`. Those coordinates are **already normalised 0–1 at write time**
@@ -753,6 +769,19 @@ long-lived connection per open tab, against a single-process server that also
 holds the only SQLite writer, for a page watched for minutes a week, is a
 lifecycle problem bought with nothing. The tick rate is also clamped
 server-side by the rate limiter, so a stuck tab cannot become a load generator.
+
+*Amended 2026-09-05 (Tom): the same rule as §5.3's, and here it asks for no
+code today.* `/dashboard/api/jobs` and `/dashboard/api/jobs/{job_id}` — the
+poll targets — carry a server-built `text` block (`progress`, `counts`,
+`tally`, `basis`, `wall`/`ran`/`waited`/`defer`, `finished`; per item
+`attempts`, `took`, `stage`; per event `at_text`), and the typed half is
+already there beside every one of those: `progress`, `wall_s`, `ran_s`,
+`waited_s`, `defer_s`, the three clocks, `attempts`/`max_attempts`, `at`. So
+nothing is added; the `text` blocks are deleted in the commit that deletes
+`static/jobs.js` and the pages it drives. `basis` is the one entry that is
+policy text rather than a rendering — the sentence that says what the
+percentage is computed over — and it survives that deletion, in `notes` or
+beside it, as the jobs contract will say when it is written.
 
 **Does not show.** `args_json` verbatim — it can carry cookiefile paths,
 politeness overrides and raw URLs; render the parsed fields. Stack traces (there
