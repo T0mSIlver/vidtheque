@@ -70,14 +70,14 @@ export function JobsView() {
   return (
     <>
       <PageHead title="Jobs">
+        {/* No separator in front of the cadence: `Narrowing` glues one to the
+            end of every fact it prints, so a strip with nothing narrowing it
+            would otherwise open on a middot. */}
         <Narrowing search={search} />
         {data ? (
-          <>
-            <Sep />{" "}
-            <Unbroken>
-              <Fact label="refresh" value={`${Math.round(data.poll_ms / 1000)}s`} />
-            </Unbroken>
-          </>
+          <Unbroken>
+            <Fact label="refresh" value={`${Math.round(data.poll_ms / 1000)}s`} />
+          </Unbroken>
         ) : null}
       </PageHead>
 
