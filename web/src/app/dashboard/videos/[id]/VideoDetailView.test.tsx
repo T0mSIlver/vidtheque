@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
@@ -85,8 +85,11 @@ describe("the video detail", () => {
       "href",
       "https://youtu.be/kCc8FmEb1nY",
     );
-    // The document is named after data the server never saw.
-    expect(document.title).toBe("Let's build GPT: from scratch — vidtheque");
+    // The document is named after data the server never saw, in the effect
+    // that runs once the read lands — so it is waited for like every other
+    // consequence of that read, rather than read out of the render that
+    // happened to be on screen when the assertion ran.
+    await waitFor(() => expect(document.title).toBe("Let's build GPT: from scratch — vidtheque"));
   });
 
   it("counts what was stored, and where the cues came from", async () => {
