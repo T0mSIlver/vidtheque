@@ -45,14 +45,17 @@ import {
   Following,
   FollowQueued,
   FollowWritten,
+  IndexOutcome,
   JobDetail,
   Jobs,
   Ledger,
   Library,
   Overview,
   PartialRefusal,
+  ReindexOutcome,
   RetryOutcome,
   Session,
+  TagsOutcome,
   VideoDetail,
 } from "./schemas";
 
@@ -335,6 +338,39 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
       return postForm(path, {}, RetryOutcome, [409]);
     },
 
+    // The three writes on the corpus itself (dashboard.md §5.5, §21). Like the
+    // following six, not one of them decides anything: `index` and `reindex` go
+    // through `tools/indexing.index_video` and `tags` through
+    // `tools/library.tag_video` — the same calls the model makes — so the URL
+    // parsing, the expansion bound, the namespace rules and the ten-tag cap are
+    // all *there*. This side sends the form as typed and renders what came back.
+
+    /** `POST /dashboard/index` — a batch, split server-side into jobs of ten.
+     *
+     *  The fields are the Jinja form's, exactly, and every one of them goes as
+     *  typed: `max_items` is clamped by the handler and the URL list is capped
+     *  by it, so a value corrected here would be a bound the operator is never
+     *  told about. `409` is read rather than thrown for the same reason
+     *  `retry`'s is — nothing was accepted, and why is on the receipt. */
+    indexUrls(fields: Record<string, string>) {
+      return postForm(`${ROOT}/index`, fields, IndexOutcome, [409]);
+    },
+    /** `POST /dashboard/videos/{video_id}/reindex` — one row, forced.
+     *
+     *  No fields: the Jinja form posts none either, and the video is named by
+     *  the path. `expand=none` and `force_reindex` are the handler's, so this
+     *  button cannot queue a surprise playlist. */
+    reindexVideo(videoId: string) {
+      return postForm(`${videoPath(videoId)}/reindex`, {}, ReindexOutcome);
+    },
+    /** `POST /dashboard/videos/{video_id}/tags` — add and remove, one form.
+     *
+     *  Both fields go as typed. The row's tags come back read back *after* the
+     *  write, which is the question the panel is showing. */
+    setVideoTags(videoId: string, fields: Record<string, string>) {
+      return postForm(`${videoPath(videoId)}/tags`, fields, TagsOutcome);
+    },
+
     // The six following writes (dashboard.md §18.5, §21). Not one of them
     // decides anything: five go through `tools/follows.follow_channel` — the
     // same call the model makes — and the sixth through the validator that
@@ -435,6 +471,12 @@ function insideTheApi(endpoint: string): string | null {
  *  typed, so it is encoded exactly as a video id and a job id are. */
 function followPath(slug: string): string {
   return `${ROOT}/following/${encodeURIComponent(slug)}`;
+}
+
+/** One video's write prefix. Encoded for the same reason: an id off a payload
+ *  is still a path segment, and these two routes have a third one after it. */
+function videoPath(videoId: string): string {
+  return `${ROOT}/videos/${encodeURIComponent(videoId)}`;
 }
 
 /** A query string, or nothing at all — never a bare `?` on a request with no

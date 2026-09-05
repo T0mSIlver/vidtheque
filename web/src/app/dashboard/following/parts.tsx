@@ -4,6 +4,7 @@ import type { FormEvent, ReactNode } from "react";
 import type { FollowDetail, FollowRow } from "@/lib/dashboard/schemas";
 import { at, DASH, duration, hms } from "@/lib/format";
 import dash from "../dashboard.module.css";
+import { CHANNEL_BOXES, formFields } from "../parts";
 import styles from "./following.module.css";
 
 // What the two following pages are built from.
@@ -21,7 +22,10 @@ import styles from "./following.module.css";
 
 /** The check's own vocabularies, from the modules that own them —
  *  `follows/rules.py`'s `TABS`, `MODES`, `MAX_BACKFILL`, `MAX_PER_CHECK` and
- *  `MIN_CHECK_INTERVAL_S`, and `dashboard/writes.py`'s `CHANNEL_BOXES`.
+ *  `MIN_CHECK_INTERVAL_S`. The three channel boxes are `parts.tsx`'s, for the
+ *  reason `dashboard/writes.py` gives for owning them there: the index form
+ *  ticks the same three for the same parameter, and a second copy of the
+ *  labels is how one thing gets described two ways.
  *
  *  These are the one thing on this page that is **copied** rather than read:
  *  the Jinja form takes them from a `choices` context these two payloads do
@@ -31,11 +35,6 @@ import styles from "./following.module.css";
  *  is the only thing that clamps. */
 export const TABS = ["videos", "streams", "shorts"] as const;
 export const MODES = ["auto", "review"] as const;
-export const CHANNEL_BOXES: [string, string, string][] = [
-  ["transcript", "Transcript", "what was said, from the audio or the captions"],
-  ["ocr", "On-screen text", "what the frames read, per keyframe"],
-  ["frames", "Frame embeddings", "visual search over the keyframes"],
-];
 export const MAX_BACKFILL = 25;
 export const MAX_PER_CHECK = 25;
 export const MIN_CHECK_INTERVAL_S = 900;
@@ -128,22 +127,6 @@ export function nextCheckWords(follow: FollowRow, checksEnabled?: boolean): stri
  *  `24h 00m`, because it is a setting and not a measurement. */
 export function windowWords(seconds: number): string {
   return seconds % 3600 === 0 ? `${seconds / 3600}h` : duration(seconds);
-}
-
-/** The rule the form posts, as the fields Python's two callers read.
- *
- *  Straight off the submitted `<form>`, so an unticked checkbox is absent
- *  exactly as it is in a browser's own submission — which is what
- *  `_follow_rule_form` reads when it collapses three ticked channels to the
- *  tool's word `all`. Nothing is corrected on the way out: every bound is
- *  `follows/params.build_rules`', and one applied here would be a second
- *  validator, which is the thing §5.5 exists to argue against. */
-export function formFields(form: HTMLFormElement): Record<string, string> {
-  const fields: Record<string, string> = {};
-  for (const [name, value] of new FormData(form).entries()) {
-    if (typeof value === "string") fields[name] = value;
-  }
-  return fields;
 }
 
 /** What a form's controls start out holding: empty for the add form, and the
