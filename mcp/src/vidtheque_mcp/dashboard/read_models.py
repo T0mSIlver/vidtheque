@@ -571,7 +571,7 @@ def video_facts(
 
 def date_filters(
     params: Any, now: int
-) -> tuple[dict[str, int | None], dict[str, str], dict[str, Any] | None]:
+) -> tuple[dict[str, int | None], dict[str, str], list[str], dict[str, Any] | None]:
     """Resolve the four date inputs to clamped epochs, plus what to echo back.
 
     Resolved **here** rather than passed through as strings, for one reason
@@ -592,31 +592,43 @@ def date_filters(
     day and whose filter means a moment, and a range that quietly drops
     everything published on its own end date reads as a bug because it is one.
 
-    The third element is the tool's own typed refusal when a value will not
-    parse, rendered rather than dropped: `timeparse` treats an unparseable
-    filter as a hard error precisely because a silently ignored filter is a
-    page reporting the wrong result set with total confidence.
+    The third element is the list of bounds that *moved* on the way through —
+    a clamp to the floor or the ceiling, or an instant snapped down to its day
+    — named the way `clamp_note` names a moved number, because the form is not
+    the only caller: the page echoes the resolved day into its own picker,
+    and a JSON reader has no picker to read it out of. A date that parsed to
+    exactly the day it asked for says nothing, which keeps the disclosure to
+    the requests where the server answered a different question.
+
+    The fourth is the tool's own typed refusal when a value will not parse,
+    rendered rather than dropped: `timeparse` treats an unparseable filter as a
+    hard error precisely because a silently ignored filter is a page reporting
+    the wrong result set with total confidence.
     """
     resolved: dict[str, int | None] = {}
     echo: dict[str, str] = {}
+    moved: list[str] = []
     for name in DATE_PARAMS:
         raw = (params.get(name) or "").strip()[:DATE_MAX_CHARS]
         if not raw:
             resolved[name], echo[name] = None, ""
             continue
         try:
-            value = int(parse_corpus_time(raw, name) or 0)
+            asked = int(parse_corpus_time(raw, name) or 0)
         except ToolError as error:
             return (
                 resolved,
                 echo,
+                moved,
                 {"code": error.code, "message": error.message, "next": error.next_hint},
             )
-        value = max(DATE_FLOOR, min(now + DATE_CEILING_S, value))
+        value = max(DATE_FLOOR, min(now + DATE_CEILING_S, asked))
         day = value - value % DAY_S
         resolved[name] = day + (DAY_S if name.endswith("_before") else 0)
         echo[name] = iso_day(max(day, DATE_FLOOR))
-    return resolved, echo, None
+        if day != asked:
+            moved.append(f"{name}={raw} → {echo[name]}")
+    return resolved, echo, moved, None
 
 
 def _choice(raw: str | None, allowed: tuple[str, ...], default: str) -> str:
@@ -690,7 +702,7 @@ async def videos_reads(request: Request) -> VideosReads:
     limit = clamp(params.get("limit"), 1, OWNER_CLAMPS.videos_max_limit,  # type: ignore[arg-type]
                   OWNER_CLAMPS.videos_default_limit)
     offset = clamp(params.get("offset"), 0, OWNER_CLAMPS.offset_max, 0)  # type: ignore[arg-type]
-    dates, date_echo, date_error = date_filters(params, int(time.time()))
+    dates, date_echo, date_moved, date_error = date_filters(params, int(time.time()))
 
     # Policy text, and Python's by the same rule as a refusal message: a value
     # the server did not honour has to say so, in words, on the payload that
@@ -709,6 +721,16 @@ async def videos_reads(request: Request) -> VideosReads:
         notes.append(
             f"note: clamped server-side: {', '.join(moved)}. The bounds are this "
             "deployment's, not the URL's; page with offset instead of raising limit."
+        )
+    # The same rule for the other four bounds, and they move for a second
+    # reason as well as a clamp: every date is filtered as a whole UTC day, so
+    # an instant becomes the day around it. Either way the query ran on
+    # something other than what the URL said, and the payload names both.
+    if date_moved:
+        notes.append(
+            f"note: resolved server-side: {', '.join(date_moved)}. Each bound is "
+            "filtered as a whole UTC day, inside a floor of 1970-01-01 and a "
+            "ceiling a year from now; the day named here is the one that ran."
         )
     for name, raw, allowed, chosen in (
         ("has", params.get("has"), HAS_VALUES, has),
