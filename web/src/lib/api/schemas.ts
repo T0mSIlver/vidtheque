@@ -8,6 +8,16 @@
 // the contract: an unknown field is ignored (DECISIONS.md, frame embeddings).
 import { z } from "zod";
 
+// Zod compiles a validator with `new Function` when it can, and finds out
+// whether it can by calling `Function("")` the first time something parses.
+// In the browser that call is refused — the page's `script-src` carries no
+// `'unsafe-eval'` (see `proxy.ts`) — and the browser reports the refusal,
+// which puts a CSP violation in the console for a feature probe that was
+// always going to fall back. `jitless` makes the fallback the decision, on
+// both sides of the boundary: these schemas parse a few small objects per
+// request and one small event per stream frame, and never needed a compiler.
+z.config({ jitless: true });
+
 // Every URL in a payload is rendered: as an anchor's href, or as an image's
 // src. `javascript:` and `data:` are URLs by the parser's reckoning and
 // scripts by the browser's, and the facade has no reason to mint either, so

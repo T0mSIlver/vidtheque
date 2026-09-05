@@ -28,12 +28,14 @@ const PYTHON_PATHS = [
   "/videos/:id/export.md",
 ];
 
+// Cache Components is deliberately absent. It was on, and it is what made
+// `/demo`, `/videos` and `/videos/[id]` partial prerenders — a static shell
+// with the request-time part streamed in. A shell built at build time carries
+// scripts stamped with no nonce, and `proxy.ts` mints a new one per request,
+// so the two cannot both be true (Next's own CSP guide says as much). The
+// pages render per request instead, and the reads that were `"use cache"` are
+// `unstable_cache` in `src/lib/library.ts`.
 const nextConfig: NextConfig = {
-  // Explicit caching: data is cached where a function says `"use cache"` and
-  // names a lifetime; anything read at request time must sit inside a
-  // <Suspense> boundary, and the build fails otherwise.
-  cacheComponents: true,
-
   async rewrites() {
     const base = process.env.VIDTHEQUE_API_URL?.replace(/\/+$/, "");
     if (process.env.NODE_ENV === "production" || !base) return [];

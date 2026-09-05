@@ -44,6 +44,35 @@ The reads this server does for itself — search, videos, meta in
 requests that forward the visitor's address under `VIDTHEQUE_CLIENT_IP_HEADER`,
 so the API's per-IP limiter keys on the visitor rather than on this process.
 
+## Headers, and what they cost
+
+`src/proxy.ts` sends every document the headers the Python instance sends with
+its own two pages — `frame-ancestors 'none'` with the `X-Frame-Options: DENY`
+twin, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff` — and a
+CSP of the same shape, in the nonce form a React page needs:
+
+```
+default-src 'self'; script-src 'self' 'nonce-<fresh per request>'
+'strict-dynamic'; style-src 'self' 'unsafe-inline'; img-src 'self';
+font-src 'self'; connect-src 'self'; frame-ancestors 'none';
+form-action 'self'; base-uri 'none'; object-src 'none'
+```
+
+`style-src` is the one directive looser than Python's, because React renders
+the OCR boxes' coordinates and the 16:9 frame as `style=` attributes.
+Development adds `'unsafe-eval'` (React rebuilds server stacks with it), the
+API origin on `img-src` and `connect-src` (two ports, so frame URLs point at
+the other one) and `ws:` for the HMR socket.
+
+The nonce is what the price is paid for: it is new every request, so every
+document is rendered per request — `connection()` in the root layout says so —
+and Cache Components is off, since a partial prerender would serve a shell
+whose scripts were stamped with a nonce that was never issued. Data caching
+survives that: `src/lib/library.ts` holds the library's two reads in
+`unstable_cache` with the periods the named lifetimes had, 60s for the list and
+an hour for a video, both serving the stale copy while the fresh one is
+fetched. Search is deliberately uncached, and says why in its own file.
+
 ## Checks
 
 `make web-check` from the repo root runs all of them, in this order, which is
@@ -59,10 +88,9 @@ pnpm build          # production build
 ```
 
 CI runs on GitHub-hosted runners: Node 24.18.0, pnpm from `packageManager`, no
-GPU and no live backend. Nothing here needs one — the landing prerenders to
-static HTML from a checked-in corpus readout, and every page that does read the
-corpus reads it at request time inside a `<Suspense>` boundary, so the build
-never calls the API.
+GPU and no live backend. Nothing here needs one — the landing renders from a
+checked-in corpus readout, and every page that does read the corpus reads it at
+request time inside a `<Suspense>` boundary, so the build never calls the API.
 
 `vitest.config.mts` pins `NODE_ENV=test` at config load. Vitest only defaults
 it when it is unset, and a shell exporting `NODE_ENV=production` otherwise
