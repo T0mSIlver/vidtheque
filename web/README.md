@@ -2,9 +2,9 @@
 
 A separate deployable that talks to a vidtheque instance over its public
 `/api/*` facade (`docs/design/demo-site.md` §2). It serves the same two front
-doors on its own origin — the landing at `/`, the reader at `/demo` (§1) — and
-reads the instance only through the facade. The Python-served copies of those
-pages, and `/dashboard`, which has no counterpart here, are untouched.
+doors — the landing at `/`, the reader at `/demo` (§1) — and reads the instance
+only through the facade. The Python-served copies of those pages, and
+`/dashboard`, which has no counterpart here, are untouched.
 
 Next.js 16 (App Router), React 19, TypeScript, CSS Modules on the design
 tokens from `DESIGN.md`. No Tailwind, no component library.
@@ -18,6 +18,31 @@ pnpm build && pnpm start
 Copy `.env.example` to `.env.local` before `pnpm dev`: `VIDTHEQUE_API_URL` is
 required and the app throws without it. `deploy/.env.example` at the repo root
 is the document of record for both variables.
+
+## One origin, two servers
+
+In production a reverse proxy puts both behind one origin and routes by path:
+the exact page GETs — `/`, `/demo`, `/videos`, `/videos/{id}` — reach Next, and
+everything else reaches Python (`/api/*`, `/frames/*`, `/mcp`, `/auth/*`,
+`/.well-known/*`, `/healthz`, `/dashboard/*`, `/videos/{id}/export.md`). The
+browser therefore calls Python directly, and this server owns no endpoint of
+its own.
+
+`POST /api/ask` is Python's, and only Python's. The ask pane posts to a
+same-origin `/api/ask` and reads the event stream the API sends; nothing here
+re-frames it, so the event vocabulary in `demo-site.md` §3.5 has one owner and
+the ninety seconds of a streamed answer cross one process fewer.
+
+`pnpm dev` runs the two on separate ports, so `next.config.ts` reproduces the
+same split with `rewrites()` and the browser stays on one origin there too —
+Python reads a request from `localhost:3000` against `localhost:8080` as
+cross-site and refuses the write, which no CORS header would fix. The rewrites
+are off in production, where the proxy is doing it.
+
+The reads this server does for itself — search, videos, meta in
+`src/lib/api/client.ts` — go straight to `VIDTHEQUE_API_URL` and are the only
+requests that forward the visitor's address under `VIDTHEQUE_CLIENT_IP_HEADER`,
+so the API's per-IP limiter keys on the visitor rather than on this process.
 
 ## Checks
 
