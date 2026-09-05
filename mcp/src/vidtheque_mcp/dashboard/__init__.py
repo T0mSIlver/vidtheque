@@ -10,7 +10,7 @@ transcribed a video or whether OCR quietly failed on forty of them.
 is Next's (`docs/design/frontend-migration.md` §1d), so what this group
 registers is three things and nothing else: `/dashboard/api/*` — the JSON the
 React pages read, plus the same handlers `/api/*` uses, which is the facade a
-private deployment could not have before (demo-site.md §7.4) — the fourteen
+private deployment could not have before (demo-site.md §7.4) — the thirteen
 `POST`s, and the `/dashboard/` → `/dashboard` redirect. There is no template,
 no stylesheet and no asset route; the front end serves its own.
 

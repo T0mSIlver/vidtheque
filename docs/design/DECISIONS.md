@@ -86,11 +86,12 @@ receives is `docs/design/frontend-migration.md` §9.
 ## The Python dashboard HTML is gone, decided by Tom, 2026-09-06
 
 Every `GET /dashboard*` page is served by the Next.js app, so the Python HTML
-surface under that prefix is deleted rather than kept as a fallback: the eleven
-page handlers and `views.py`, the twelve Jinja templates, `dashboard.css` and
+surface under that prefix is deleted rather than kept as a fallback: the nine
+page handlers in `views.py` and the two the write side served as `GET`s (the
+index form, the sign-in page), the fifteen Jinja templates, `dashboard.css` and
 the two ES modules, the `/dashboard/static/*` asset route, the Jinja
 environment, and `jinja2` as a dependency of `mcp/`. Python keeps
-`/dashboard/api/*`, the fourteen `POST`s and the `/dashboard/` redirect. This
+`/dashboard/api/*`, the thirteen `POST`s and the `/dashboard/` redirect. This
 completes the cutover the first entry above made conditional on parity.
 
 Two consequences Tom settled with it. **A refusal answers the same envelope in

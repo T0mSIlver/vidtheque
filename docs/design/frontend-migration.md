@@ -54,7 +54,7 @@ for, whereas `/api/*` under a prefix rule is the whole facade in one line.
 | `/healthz` | Python |
 | `/videos/{id}/export.md` | Python |
 | `/dashboard` page GETs | **Next** (*landed 2026-09-06* — §1d) |
-| `/dashboard/api/*`, the fourteen `POST`s, `/dashboard/` | Python — §1d |
+| `/dashboard/api/*`, the thirteen `POST`s, `/dashboard/` | Python — §1d |
 | anything else | Python (`Mount("/", mcp_app)`, which 404s) |
 
 **`POST /api/ask` is Python's**, and the Next route handler that shadowed it is

@@ -104,7 +104,7 @@ const PYTHON_FORM_POSTS = [
 //
 // A `GET` that reaches Python through here now gets a `404`, not a page: the
 // Jinja surface was deleted on 2026-09-06 and what Python still answers under
-// this prefix is `/dashboard/api/*`, the fourteen POSTs and the `/dashboard/`
+// this prefix is `/dashboard/api/*`, the thirteen POSTs and the `/dashboard/`
 // redirect (dashboard.md §23). So this catch-all is what makes a path with no
 // React page 404 rather than render one, which is the same answer either
 // process would give.
