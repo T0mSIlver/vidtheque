@@ -53,6 +53,20 @@
   max-width: var(--note);
 }
 
+/* A decision is one word even when it is `skipped_duration`, a length is one
+   span and a date is one date: a value broken across two lines is a value the
+   reader has to reassemble before they can compare it down the column. What
+   wraps inside these cells is the note under the word, which says so. */
+.colDecision,
+.colWhen {
+  white-space: nowrap;
+}
+
+.colDecision .rowMeta,
+.colWhy .rowMeta {
+  white-space: normal;
+}
+
 .colActions {
   white-space: nowrap;
 }
@@ -216,8 +230,17 @@
   border-top: 1px solid var(--seam);
 }
 
+/* `t-label`'s own values rather than `composes: t-label from global`: composes
+   takes a simple class selector only, and a disclosure's control is reached
+   through the element that owns it. */
 .disclose > summary {
-  composes: t-label from global;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: var(--w-mono-label);
+  line-height: 1.4;
+  letter-spacing: 0.19em;
+  text-transform: uppercase;
+  font-variant-ligatures: none;
   display: flex;
   gap: var(--s2);
   align-items: center;
@@ -303,6 +326,13 @@
   gap: var(--s2);
   align-items: center;
   margin-top: var(--s3);
+}
+
+.decision {
+  display: inline-flex;
+  gap: var(--s1);
+  align-items: center;
+  white-space: nowrap;
 }
 
 .decisionN {

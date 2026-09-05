@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { isPorted } from "./app/dashboard/ported";
 import { config, proxy } from "./proxy";
 
 // The four headers are the whole of what this front end promises about how a
@@ -138,6 +139,12 @@ describe("proxy", () => {
       "/dashboard/videos/kCc8FmEb1nY",
       "/dashboard/jobs",
       "/dashboard/jobs/job_finished01",
+      // The follows table's path is here for its `GET`. The `POST` to the very
+      // same path is the add form's and stays Python's — a split this matcher
+      // cannot express, because it matches paths and not methods, and the one
+      // the production proxy has to route by method.
+      "/dashboard/following",
+      "/dashboard/following/andrej-karpathy",
     ]) {
       expect(matches(path), path).toBe(true);
     }
@@ -154,19 +161,53 @@ describe("proxy", () => {
       "/dashboard/login",
       "/dashboard/logout",
       "/dashboard/index",
-      "/dashboard/following",
+      "/dashboard/search",
       // The row actions are Python's `POST`s and have a segment the detail
       // page does not: three under their section, not two. The two jobs writes
-      // are the ones the ported page itself calls, so this is the assertion
-      // that keeps them Python's.
+      // and the five following writes are the ones the ported pages themselves
+      // call, so this is the assertion that keeps them Python's.
       "/dashboard/videos/kCc8FmEb1nY/reindex",
       "/dashboard/videos/kCc8FmEb1nY/tags",
       "/dashboard/jobs/job_running001/cancel",
       "/dashboard/jobs/job_finished01/retry",
+      "/dashboard/following/andrej-karpathy/state",
+      "/dashboard/following/andrej-karpathy/check",
+      "/dashboard/following/andrej-karpathy/rules",
+      "/dashboard/following/andrej-karpathy/delete",
+      "/dashboard/following/andrej-karpathy/queue",
       // Not a page here either: a sub-path of one that is.
       "/dashboard/ledger/anything",
     ]) {
       expect(matches(path), path).toBe(false);
     }
+  });
+
+  // Porting a page adds it to three lists (frontend-migration.md §1d): this
+  // matcher, `next.config.ts`'s comment, and `ported.ts`, which every link into
+  // the surface asks. A page in one and not the other ships either a document
+  // with no CSP on it or a `Link` into a route this app does not serve, so the
+  // two lists that are code are asserted against each other here.
+  it("agrees with the list every link into this surface asks", () => {
+    for (const path of [
+      "/dashboard",
+      "/dashboard/ledger",
+      "/dashboard/videos",
+      "/dashboard/videos/kCc8FmEb1nY",
+      "/dashboard/jobs",
+      "/dashboard/jobs/job_finished01",
+      "/dashboard/following",
+      "/dashboard/following/andrej-karpathy",
+      "/dashboard/search",
+      "/dashboard/index",
+      "/dashboard/login",
+      "/dashboard/following/andrej-karpathy/delete",
+      "/dashboard/jobs/job_finished01/retry",
+    ]) {
+      expect(isPorted(path), path).toBe(matches(path));
+    }
+    // A query is not part of the question a link asks, and it is not part of
+    // the one the matcher answers either.
+    expect(isPorted("/dashboard/following?offset=25")).toBe(true);
+    expect(isPorted("/dashboard/following/andrej-karpathy?limit=5#passed")).toBe(true);
   });
 });

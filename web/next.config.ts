@@ -4,10 +4,20 @@ import type { NextConfig } from "next";
 // behind one reverse proxy on one origin: exact page GETs (`/`, `/demo`,
 // `/videos`, `/videos/{id}`, and under the dashboard `/dashboard`,
 // `/dashboard/ledger`, `/dashboard/videos`, `/dashboard/videos/{video_id}`,
-// `/dashboard/jobs` and `/dashboard/jobs/{job_id}`) reach Next, and `/api/*`,
-// `/frames/*`, `/mcp`, `/auth/*`, `/.well-known/*`, `/healthz`,
-// `/videos/{id}/export.md` and the rest of `/dashboard/*` reach Python.
-// Routing that split is the reverse proxy's job, not this file's.
+// `/dashboard/jobs`, `/dashboard/jobs/{job_id}`, `/dashboard/following` and
+// `/dashboard/following/{slug}`) reach Next, and `/api/*`, `/frames/*`,
+// `/mcp`, `/auth/*`, `/.well-known/*`, `/healthz`, `/videos/{id}/export.md`
+// and the rest of `/dashboard/*` reach Python. Routing that split is the
+// reverse proxy's job, not this file's.
+//
+// **`/dashboard/following` is the one path both own, and the proxy has to
+// split it by method**: the `GET` is the follows table this app serves, and
+// the `POST` to the identical path is the add form's route, which stays
+// Python's like every other write on this surface (frontend-migration.md §1d,
+// last row). Every other write has a segment its page does not — three under
+// its section rather than two — so this is the only exception, and it cannot
+// be written as a path anywhere in this repo, because a rewrite and a
+// middleware matcher both match paths and not methods.
 //
 // Development runs the two on separate ports, and the browser still has to see
 // one origin: Python reads a request from `localhost:3000` against its own
@@ -42,14 +52,50 @@ const PYTHON_PATHS = [
   "/videos/:id/export.md",
 ];
 
+// The one write whose path is a *ported page's* path: `POST /dashboard/following`
+// is the add form's route and `GET /dashboard/following` is the follows table.
+//
+// A rewrite cannot key on a method — `has` reads headers, cookies, the query
+// and the host, and nothing else — and this one has to be in `beforeFiles`,
+// because in `afterFiles` the router has already found the page and Next
+// answers the POST itself with a document. So it keys on the header every write
+// on this surface sends and no document navigation ever sends: the form
+// encoding of its body (frontend-migration.md §9 — a form-encoded body is one
+// of the three things a write carries, along with the cookie and an `Accept`
+// that prefers JSON).
+//
+// **This is a development shim, not the rule.** In production the two
+// processes sit behind one proxy and that proxy splits this path by method,
+// which is what §1d records. Nothing in this repo can express that, because
+// both configurations that route it here match paths.
+const PYTHON_FORM_POSTS = [
+  {
+    source: "/dashboard/following",
+    has: [
+      {
+        type: "header" as const,
+        key: "content-type",
+        value: "application/x-www-form-urlencoded.*",
+      },
+    ],
+  },
+];
+
 // The rest of `/dashboard`, which is being ported one page at a time
 // (docs/ROADMAP.md). `afterFiles` is the whole point: it is consulted *after*
-// the router has looked for a page, so the six pages in `src/app/dashboard/`
+// the router has looked for a page, so the eight pages in `src/app/dashboard/`
 // win their own paths, and everything with no page yet — `/dashboard/search`,
-// `/dashboard/following`, every POST behind them, `/dashboard/jobs/{id}/cancel`
-// and `/dashboard/videos/{id}/tags` included — falls through to the Jinja
+// every POST behind these pages, `/dashboard/jobs/{id}/cancel`,
+// `/dashboard/videos/{id}/tags` and the five
+// `/dashboard/following/{slug}/…` writes included — falls through to the Jinja
 // pages exactly as before. Each port deletes nothing here; it just adds a page
 // the router finds first.
+//
+// **One exception, and it is `PYTHON_FORM_POSTS` above.** `POST
+// /dashboard/following` shares its path with a ported page, so this catch-all
+// never sees it: the router finds the page first and Next answers the write
+// with a document. That one is forwarded in `beforeFiles` under a header
+// condition instead.
 const DASHBOARD_UNPORTED = ["/dashboard", "/dashboard/:path*"];
 
 // Cache Components is deliberately absent. It was on, and it is what made
@@ -64,7 +110,10 @@ const nextConfig: NextConfig = {
     const base = process.env.VIDTHEQUE_API_URL?.replace(/\/+$/, "");
     if (process.env.NODE_ENV === "production" || !base) return [];
     return {
-      beforeFiles: PYTHON_PATHS.map((source) => ({ source, destination: base + source })),
+      beforeFiles: [
+        ...PYTHON_PATHS.map((source) => ({ source, destination: base + source })),
+        ...PYTHON_FORM_POSTS.map((entry) => ({ ...entry, destination: base + entry.source })),
+      ],
       afterFiles: DASHBOARD_UNPORTED.map((source) => ({ source, destination: base + source })),
       fallback: [],
     };

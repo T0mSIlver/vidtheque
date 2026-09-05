@@ -13,13 +13,28 @@ import { ROOT } from "@/lib/dashboard/client";
 // ledger's figures and by the videos table's own tags — so it is answered
 // once, here. Porting a page adds its path to this list, names it in
 // `proxy.ts`'s matcher, and changes nothing else.
-const PAGES: string[] = [ROOT, `${ROOT}/ledger`, `${ROOT}/videos`, `${ROOT}/jobs`];
+const PAGES: string[] = [
+  ROOT,
+  `${ROOT}/ledger`,
+  `${ROOT}/videos`,
+  `${ROOT}/jobs`,
+  // `GET` only. `POST /dashboard/following` is the add form's route — one path,
+  // two owners, split by method — and nothing in this file or in `proxy.ts`
+  // can say so, because both are path-only. It is the *link* question these
+  // answer, and a link is a `GET`.
+  `${ROOT}/following`,
+];
 
-// The two ported pages with an id in them. Neither is a prefix, and one
-// segment is the whole reason: `/dashboard/videos/{id}/reindex` and
-// `/dashboard/jobs/{id}/cancel` are POSTs Python owns, and they have three
-// segments under their section rather than two.
-const DETAIL = [new RegExp(`^${ROOT}/videos/[^/]+$`), new RegExp(`^${ROOT}/jobs/[^/]+$`)];
+// The three ported pages with an id in them. None is a prefix, and one segment
+// is the whole reason: `/dashboard/videos/{id}/reindex`,
+// `/dashboard/jobs/{id}/cancel` and the five
+// `/dashboard/following/{slug}/…` writes are POSTs Python owns, and they have
+// three segments under their section rather than two.
+const DETAIL = [
+  new RegExp(`^${ROOT}/videos/[^/]+$`),
+  new RegExp(`^${ROOT}/jobs/[^/]+$`),
+  new RegExp(`^${ROOT}/following/[^/]+$`),
+];
 
 /** Does this app serve the page `href` points at? Query and fragment are not
  *  part of the question — `/dashboard/videos?index_state=failed` is the videos
