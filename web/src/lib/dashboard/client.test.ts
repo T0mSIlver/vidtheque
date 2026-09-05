@@ -285,4 +285,146 @@ describe("the dashboard client", () => {
     expect(error).toBeInstanceOf(DashboardShapeError);
     expect((error as DashboardShapeError).path).toBe(OVERVIEW_PATH);
   });
+
+  // ----------------------------------------------------------- the writes
+
+  // One URL answers both the Jinja form and this `fetch` (dashboard.md §21),
+  // and exactly three things on the request decide which answer comes back. So
+  // the first assertion is the request itself, and the rest are the four
+  // shapes a caller has to handle by shape rather than by route.
+  describe("a write", () => {
+    const CANCEL = "/dashboard/jobs/job_running001/cancel";
+    const OUTCOME = { job_id: "job_running001", state: "running", cancel_requested: true };
+
+    it("posts a form to Python's own route, with the cookie and a typed Accept", async () => {
+      const { calls, fetchImpl } = fake({ [CANCEL]: { body: OUTCOME } });
+
+      const outcome = await createDashboardClient({ fetch: fetchImpl }).cancelJob("job_running001");
+
+      expect(outcome).toEqual(OUTCOME);
+      const { path, init } = calls[0];
+      expect(path).toBe(CANCEL);
+      expect(init.method).toBe("POST");
+      // The cookie is ambient and the browser attaches it; `same-origin` is
+      // `fetch`'s default only for a same-origin request, so it is said.
+      expect(init.credentials).toBe("same-origin");
+      expect(init.cache).toBe("no-store");
+      const headers = init.headers as Record<string, string>;
+      expect(headers.accept).toBe("application/json");
+      expect(headers["content-type"]).toBe("application/x-www-form-urlencoded");
+      // No CSRF token, because there is none to send: `access.require_write`
+      // asks an ambient credential for positive same-origin evidence, and the
+      // browser sends `Sec-Fetch-Site` itself — a header script cannot forge.
+      expect(Object.keys(headers)).toHaveLength(2);
+      expect(init.body).toBe("");
+    });
+
+    // A path with a `/` in the id would otherwise reach a different route with
+    // the session cookie attached.
+    it("encodes the id it was given", async () => {
+      const { calls, fetchImpl } = fake({});
+      await createDashboardClient({ fetch: fetchImpl })
+        .cancelJob("../../logout")
+        .catch(() => undefined);
+      expect(calls[0].path).toBe("/dashboard/jobs/..%2F..%2Flogout/cancel");
+    });
+
+    it("throws the refusal envelope, with its code and its next step", async () => {
+      const { fetchImpl } = fake({
+        [CANCEL]: {
+          status: 400,
+          body: {
+            error: "E_BAD_PARAM",
+            message: 'Job "job_running001" is already failed.',
+            next: "only queued or running jobs can be cancelled.",
+          },
+        },
+      });
+
+      const error = await createDashboardClient({ fetch: fetchImpl })
+        .cancelJob("job_running001")
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(DashboardError);
+      expect((error as DashboardError).status).toBe(400);
+      expect((error as DashboardError).code).toBe("E_BAD_PARAM");
+      // Policy text, rendered by the page and composed in Python.
+      expect((error as DashboardError).message).toContain("already failed");
+      expect((error as DashboardError).next).toContain("only queued or running");
+    });
+
+    it("carries Retry-After off a refused write", async () => {
+      const { fetchImpl } = fake({
+        [CANCEL]: {
+          status: 429,
+          body: { error: "E_RATE_LIMIT", message: "Too many requests.", retry_after_s: 30 },
+          headers: { "retry-after": "30" },
+        },
+      });
+
+      const error = await createDashboardClient({ fetch: fetchImpl })
+        .cancelJob("job_running001")
+        .catch((e: unknown) => e);
+
+      expect((error as DashboardError).status).toBe(429);
+      expect((error as DashboardError).retryAfter).toBe(30);
+    });
+
+    // The same rule as a refused read: the 401 is what sends the browser to the
+    // sign-in page, and it is decided in one place for both.
+    it("sends the browser to sign in when the session went away", async () => {
+      const navigate = vi.fn();
+      const { fetchImpl } = fake({
+        [CANCEL]: { status: 401, body: { error: "E_AUTH_REQUIRED" } },
+        [SESSION_PATH]: { body: SESSION },
+      });
+
+      const error = await createDashboardClient({
+        fetch: fetchImpl,
+        navigate,
+        currentPath: () => "/dashboard/jobs",
+      })
+        .cancelJob("job_running001")
+        .catch((e: unknown) => e);
+
+      expect((error as DashboardError).status).toBe(401);
+      await vi.waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
+      expect(navigate).toHaveBeenCalledWith("/dashboard/login?next=%2Fdashboard%2Fjobs");
+    });
+
+    it("is still an error the page can print when the box is unreachable", async () => {
+      const fetchImpl = (async () => {
+        throw new TypeError("Failed to fetch");
+      }) as typeof fetch;
+
+      const error = await createDashboardClient({ fetch: fetchImpl })
+        .cancelJob("job_running001")
+        .catch((e: unknown) => e);
+
+      // Not a `DashboardError`: nothing refused it, so there is no code and no
+      // `next:` line to print. The page says what it has.
+      expect(error).toBeInstanceOf(TypeError);
+      expect((error as Error).message).toBe("Failed to fetch");
+    });
+
+    // `retry` answers `409` when every batch was refused, and the body is still
+    // the receipt — the refusals are on it, in `errors`.
+    it("reads the retry receipt out of a 409 rather than throwing it", async () => {
+      const receipt = {
+        from_job_id: "job_finished01",
+        selected: 2,
+        jobs: [],
+        errors: [{ error: "E_RATE_LIMIT", message: "the source rate-limited this box." }],
+        preserved: { channels: "all", tags: [], priority: "normal" },
+      };
+      const { fetchImpl } = fake({
+        "/dashboard/jobs/job_finished01/retry": { status: 409, body: receipt },
+      });
+
+      const outcome = await createDashboardClient({ fetch: fetchImpl }).retryJob("job_finished01");
+      expect(outcome.jobs).toHaveLength(0);
+      expect(outcome.errors[0].error).toBe("E_RATE_LIMIT");
+      expect(outcome.selected).toBe(2);
+    });
+  });
 });
