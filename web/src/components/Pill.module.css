@@ -1,0 +1,42 @@
+.pill {
+  composes: t-label-sm from global;
+  display: inline-block;
+  padding: 1px var(--s2);
+  border: 1px solid var(--tone-neutral-line);
+  background: var(--tone-neutral-bg);
+  color: var(--tone-neutral);
+}
+
+.neutral {
+  /* the base */
+}
+
+.ok {
+  color: var(--tone-ok);
+  background: var(--tone-ok-bg);
+  border-color: var(--tone-ok-line);
+}
+
+.warn {
+  color: var(--tone-warn);
+  background: var(--tone-warn-bg);
+  border-color: var(--tone-warn-line);
+}
+
+.bad {
+  color: var(--tone-bad);
+  background: var(--tone-bad-bg);
+  border-color: var(--tone-bad-line);
+}
+
+.work {
+  color: var(--tone-work);
+  background: var(--tone-work-bg);
+  border-color: var(--tone-work-line);
+}
+
+.wait {
+  color: var(--tone-wait);
+  background: var(--tone-wait-bg);
+  border-color: var(--tone-wait-line);
+}

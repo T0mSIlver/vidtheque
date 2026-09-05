@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Rail } from "@/components/Rail";
 import { mono, sans } from "@/styles/fonts";
 import "@/styles/tokens.css";
 import "@/styles/type.css";
@@ -20,7 +21,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${sans.variable} ${mono.variable}`}>
-      <body>{children}</body>
+      <body>
+        <Rail />
+        {children}
+      </body>
     </html>
   );
 }

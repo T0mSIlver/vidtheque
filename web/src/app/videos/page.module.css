@@ -1,0 +1,80 @@
+.main {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: var(--gap-head) var(--gut) var(--beat);
+}
+
+.headline {
+  composes: t-headline from global;
+  margin-bottom: var(--gap-head);
+}
+
+.count {
+  composes: t-machine-sm from global;
+  color: var(--fg3);
+  margin-bottom: var(--s4);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: var(--s6) var(--s5);
+}
+
+.pager {
+  composes: t-label from global;
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--s10);
+  color: var(--gold);
+}
+
+.empty {
+  composes: t-lede from global;
+  color: var(--muted);
+  max-width: var(--lede);
+}
+
+.machine {
+  composes: t-machine-sm from global;
+  color: var(--fg3);
+}
+
+.retry {
+  composes: t-label from global;
+  margin-top: var(--s5);
+  height: 2.125rem;
+  padding: 0 var(--s3);
+  background: transparent;
+  color: var(--fg2);
+  border: 1px solid var(--seam2);
+  cursor: pointer;
+}
+
+.retry:hover,
+.retry:focus-visible {
+  color: var(--gold);
+  border-color: var(--gold-44);
+}
+
+/* The skeleton: shape, no motion. Nothing is working that a shimmer could
+   report; the request in flight is reported by the rows landing. */
+.ghost {
+  list-style: none;
+  display: grid;
+  gap: var(--s2);
+}
+
+.ghostFrame {
+  display: block;
+  aspect-ratio: 16 / 9;
+  background: var(--plate);
+  box-shadow: var(--edge);
+}
+
+.ghostLine {
+  display: block;
+  height: 14px;
+  width: 70%;
+  background: var(--plate2);
+}

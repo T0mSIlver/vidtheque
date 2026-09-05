@@ -1,0 +1,38 @@
+.item {
+  list-style: none;
+  min-width: 0;
+}
+
+.link {
+  display: grid;
+  gap: var(--s2);
+}
+
+.title {
+  composes: t-cell-strong from global;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+.link:hover .title,
+.link:focus-visible .title {
+  color: var(--gold);
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2) var(--s3);
+}
+
+.channel {
+  composes: t-cell from global;
+  color: var(--muted);
+}
+
+/* Two channels: the duration and the date are the machine's, so they are mono. */
+.machine {
+  composes: t-machine-sm from global;
+  color: var(--fg3);
+}
