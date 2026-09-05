@@ -96,13 +96,18 @@ mode this list exists to prevent.
   timeline has the bars and their links and not the hover. Same shape of
   follow-up as the lightbox.
 - **Search** — the owner inspection page, over the handler `/api/search`
-  already shares. *Checked field by field 2026-09-05: no new contract is
-  needed.* The page reads `GET /dashboard/api/search` — that same handler under
-  the dashboard prefix, gated, under the caller's clamps — and the owner-only
-  set is empty: everything §14.1 renders is a field already on the wire or a
-  rendering over one, and the payload carries six fields the page does not draw.
-  Three traps and the frame-width divergence are written down in dashboard.md
-  §14.2. The page itself is pending.
+  already shares. *Landed 2026-09-05:* `GET /dashboard/search` is Next's, named
+  in the ownership table and the document-policy matcher
+  (frontend-migration.md §1d — nine of the ten `/dashboard` GET pages are React
+  now, `/dashboard/index` the last, in progress). It reads
+  `GET /dashboard/api/search`
+  under the handler's own parameter names, so a bookmarked query still resolves,
+  and paginates off the payload's own `pagination.limit` rather than a size it
+  picks — the owner-only set stayed empty, exactly as the 2026-09-05 field check
+  found before the page was written. The four derivations were checked
+  differentially against the Jinja page's own cases; the traps, the
+  frame-width divergence and the one surviving discrepancy are dashboard.md
+  §14.2 and §14.3.
 - **Jobs** — the list, the job detail page, and a poll target that replaces
   `static/jobs.js` without moving the 2 s tick or its server-side clamp.
   *The read half landed 2026-09-05:* `GET /dashboard/jobs` and
@@ -113,7 +118,11 @@ mode this list exists to prevent.
   of `counts`, `error_counts`, `items_capped`, `degraded`, `focus` or `stages`
   on one job. All nine are on the wire now, and the tick still costs two reads
   (dashboard.md §5.4, frontend-migration.md §6c). `static/jobs.js` and the
-  `text` blocks it reads go with the Jinja pages, not before them.
+  `text` blocks it reads go with the Jinja pages, not before them. *The echo is
+  consumed, 2026-09-05:* the list had been reading `filters` off its own URL
+  rather than the payload's; the narrowing strip and the empty state now decide
+  from `filters` and `notes` as sent, so a value that fell back reads as what
+  actually ran (frontend-migration.md §6c).
 - **Jobs controls** — cancel and retry-failed: the first writes to cross, so
   the first to need §3.3's cookie and Origin rules expressed over `fetch`.
   *The write contract landed 2026-09-05* for all twelve writes at once, because
