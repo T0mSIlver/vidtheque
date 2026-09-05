@@ -39,7 +39,6 @@ from ..jobs import store as jobs_store
 # paginate the browsable corpus at 24 rows to protect nothing.
 from ..public.api import CONTENT_TYPES, OWNER_CLAMPS, _cover_frames, search_payload
 from ..follows import rules as follow_rules
-from ..follows import store as follows_store
 from ..text import clamp, clock, duration_clock, iso_day, iso_minute, iso_z, split_csv
 from ..timeparse import parse_corpus_time
 from ..tools import library
@@ -63,9 +62,21 @@ from .read_models import tool_error as _tool_error
 from .read_models import HAS_VALUES, VIDEO_ORDERS, video_detail_reads, videos_reads
 from .read_models import video_header as _video_header
 
-# Re-exported deliberately (the redundant alias is the marker): the bound is
-# `read_models`' now, and a test reads it off this module.
+# The following pages' half, moved the same way on 2026-09-05 (§22): the two
+# pagers, the caps, the passed-over decision list, the deployment settings the
+# band shows, and the near-miss arithmetic the one derived line is read out of.
+from .read_models import follow_detail_reads, following_reads
+from .read_models import near_miss as _near_miss_count
+
+# Re-exported deliberately (the redundant alias is the marker): the bounds are
+# `read_models`' now, and the suites that cover these pages read them off this
+# module — the page is where a page's caps are looked up.
 from .read_models import WORKER_STATUS_TIMEOUT_S as WORKER_STATUS_TIMEOUT_S
+from .read_models import FOLLOW_PAGE as FOLLOW_PAGE
+from .read_models import FOLLOW_PAGE_MAX as FOLLOW_PAGE_MAX
+from .read_models import NEAR_MISS_S as NEAR_MISS_S
+from .read_models import SEEN_PAGE as SEEN_PAGE
+from .read_models import SEEN_PAGE_MAX as SEEN_PAGE_MAX
 from .read_models import (
     CUE_PAGE,
     CUE_PAGE_MAX,
@@ -1470,65 +1481,13 @@ async def job_json(request: Request) -> Response:
 
 
 # ----------------------------------------------------------------- following
-
-# Page sizes, server-side and double-capped like every other list on this
-# surface. The two lists are bounded independently of one another because they
-# are different costs: the follow list is a join of two small tables, and the
-# ledger is the one that grows for the life of the deployment.
-FOLLOW_PAGE = 25
-FOLLOW_PAGE_MAX = 100
-SEEN_PAGE = 25
-SEEN_PAGE_MAX = 100
-
-# The two job lists on a follow's page. Bounded independently of `limit`,
-# because neither of them is what the pager pages.
-CHECK_CAP = 10
-INDEX_JOB_CAP = 10
-
-# How many held candidates the list page names above the table. The band's job
-# is to say *that* something is waiting and give it a door, not to be a second
-# ledger — the follow's own page is where the rows are read.
-HELD_BAND_CAP = 5
-
-# What counts as "nearly" for the one derived sentence above the ledger. Sixty
-# seconds because a length rule is typed in minutes, and a minute is the
-# smallest gap an operator would call a near miss. The page prints the number
-# in the sentence, from this constant, so the two cannot disagree.
-NEAR_MISS_S = 60
-
-# Every decision except `queued` — which is to say, every candidate that did
-# **not** become a video. This band is the point of the page: a follow that
-# quietly drops a four-minute talk because its floor is eight would be the one
-# place this index goes silent (migration 0006's own argument).
-PASSED_OVER = (
-    "held_budget",
-    "held_review",
-    "skipped_tab",
-    "skipped_title",
-    "skipped_duration",
-    "skipped_horizon",
-    "already_indexed",
-    "failed",
-)
-
-
-def _follow_daily_hours(assembled: Any) -> float:
-    """The ceiling the check enforces, read from where the check reads it.
-
-    ``PipelineSettings.follow_daily_hours`` is resolved once at boot and handed
-    to the runner; a build with the pipeline off (every test, and any deployment
-    running the queue elsewhere) has no runner settings to ask, so the
-    environment is re-read rather than guessed at. Zero means the operator
-    turned the ceiling off, and the page says so in words rather than printing
-    "of 0h", which reads as "no budget left" and means the opposite.
-    """
-    from ..pipeline.settings import PipelineSettings
-
-    settings = getattr(getattr(assembled.runner, "pipeline", None), "settings", None)
-    hours = getattr(settings, "follow_daily_hours", None)
-    if hours is None:
-        hours = PipelineSettings.from_env().follow_daily_hours
-    return float(hours)
+#
+# The page sizes, the two job caps, the held band, the near-miss threshold, the
+# passed-over decision list and the reads themselves are `read_models`' now
+# (§22, 2026-09-05), so `/dashboard/api/following` answers out of the same
+# assembly rather than a second copy of it. Imported back under the names this
+# module has always used, and re-exported: the two page-size caps and the
+# threshold are read off *this* module by the suite that covers the pages.
 
 
 def _rule_facts(rules: follow_rules.Rules) -> list[str]:
@@ -1648,42 +1607,26 @@ def _follow_form_values(row: sqlite3.Row | None = None) -> dict[str, Any]:
 async def following(request: Request) -> Response:
     """`GET /dashboard/following` — every follow, and what they are costing.
 
-    Four reads for the whole page whatever the row count: the totals band, the
-    rolling budget, one page of follows probed one row past its limit, and the
-    held band. No per-follow round trip, because a table that costs a query per
-    line is a table that stops being loadable at the size it exists for (§6.3).
+    Four reads for the whole page whatever the row count, and they are
+    `read_models.following_reads`' — the same four `/dashboard/api/following`
+    makes, in the same order, under the same clamps. What is left here is the
+    page: the rule compressed to facts, the budget as words, and the form.
     """
-    assembled = request.app.state.assembled
-    db = assembled.db
-    params = request.query_params
-    limit = clamp(params.get("limit"), 1, FOLLOW_PAGE_MAX, FOLLOW_PAGE)  # type: ignore[arg-type]
-    offset = clamp(params.get("offset"), 0, OWNER_CLAMPS.offset_max, 0)  # type: ignore[arg-type]
-
-    totals = await db.read(follows_store.totals)
-    spent_s = await db.read(follows_store.budget_spent_s)
-    rows = await db.read(
-        lambda c: follows_store.list_follows(c, limit=limit, offset=offset)
-    )
-    has_more = len(rows) > limit
-    rows = rows[:limit]
-    held_rows = await db.read(lambda c: follows_store.held(c, HELD_BAND_CAP))
-    held_more = len(held_rows) > HELD_BAND_CAP
-    held_rows = held_rows[:HELD_BAND_CAP]
-
-    ceiling_h = _follow_daily_hours(assembled)
+    data = await following_reads(request)
+    ceiling_h = data.settings["daily_hours"]
     return _render(
         "following.html",
         {
             **_chrome(request, "following"),
             "title": "Following",
-            "follows": [_follow_row(row) for row in rows],
-            "totals": totals,
+            "follows": [_follow_row(row) for row in data.rows],
+            "totals": data.totals,
             "budget": {
                 # Hours of *video*, not GPU-minutes: the check knows a
                 # candidate's length before it knows what indexing it will
                 # cost, and hours-of-video is the number an operator reasons
                 # about (`follows/store.budget_spent_s`).
-                "spent": span(int(spent_s)),
+                "spent": span(int(data.spent_s)),
                 "ceiling": f"{ceiling_h:g}h" if ceiling_h else None,
             },
             "held": [
@@ -1692,17 +1635,21 @@ async def following(request: Request) -> Response:
                     "slug": str(row["follow_slug"]),
                     "follow": str(row["follow_title"] or row["follow_slug"]),
                 }
-                for row in held_rows
+                for row in data.held
             ],
-            "held_more": held_more,
+            "held_more": data.held_more,
             "form": _follow_form_values(),
             "choices": _follow_choices(),
             # §5.5's honest refusal, for the follow form too: `follow_channel`
             # raises `E_FEATURE_DISABLED` on the same condition `index_video`
             # does, so the page says so above the controls rather than after a
             # submission.
-            "vectors": assembled.db.vectors,
-            "pagination": {"limit": limit, "offset": offset, "has_more": has_more},
+            "vectors": data.vectors,
+            "pagination": {
+                "limit": data.limit,
+                "offset": data.offset,
+                "has_more": data.has_more,
+            },
         },
     )
 
@@ -1727,31 +1674,19 @@ def _seen_row(row: sqlite3.Row) -> dict[str, Any]:
 
 
 def _near_miss(rows: list[sqlite3.Row], rules: follow_rules.Rules) -> str | None:
-    """The one derived line above the ledger, or nothing at all.
+    """The one derived line above the ledger, as a sentence — or nothing at all.
 
-    Read out of the rows this page already fetched, at render time — no second
-    query, no stored aggregate, and no sentence when the number is zero. A
-    "0 of the last 20" line is a fact about nothing dressed as a finding, and
-    this band is the one place on the surface that must stay believable.
+    The arithmetic is `read_models.near_miss`, so the JSON carries the same
+    count off the same rows; what stays here is the English. It is still read
+    out of the rows this page already fetched, at render time, and it is still
+    absent rather than zero: a "0 of the last 20" line is a fact about nothing
+    dressed as a finding, and this band is the one place on the surface that
+    must stay believable.
     """
-    low, high = rules.min_duration_s, rules.max_duration_s
-    if low is None and high is None:
+    found = _near_miss_count(rows, rules)
+    if found is None:
         return None
-    near = 0
-    for row in rows:
-        if str(row["decision"]) != "skipped_duration" or row["duration_s"] is None:
-            continue
-        seconds = float(row["duration_s"])
-        if low is not None and 0 <= low - seconds <= NEAR_MISS_S:
-            near += 1
-        elif high is not None and 0 <= seconds - high <= NEAR_MISS_S:
-            near += 1
-    if not near:
-        return None
-    if low is not None and high is not None:
-        edge = "length rule"
-    else:
-        edge = "floor" if low is not None else "ceiling"
+    near, edge = found
     verb = "was" if near == 1 else "were"
     return (
         f"{near} of the last {len(rows)} passed over {verb} within "
@@ -1764,13 +1699,14 @@ async def follow_detail(request: Request) -> Response:
 
     Three bands in one order, and the third is the point: what this follow
     passed over, with the sentence carrying the number that made each decision.
-    The ledger probes one row past its limit rather than counting, and the two
-    job lists are bounded independently of that limit.
+    The reads are `read_models.follow_detail_reads`', shared with
+    `/dashboard/api/following/{slug}`: the ledger probes one row past its limit
+    rather than counting, and the two job lists are bounded independently of
+    that limit.
     """
-    db = request.app.state.assembled.db
     slug = str(request.path_params["slug"])
-    row = await db.read(lambda c: follows_store.by_slug(c, slug))
-    if row is None:
+    data = await follow_detail_reads(request, slug)
+    if data is None:
         return _render(
             "error.html",
             {
@@ -1786,28 +1722,8 @@ async def follow_detail(request: Request) -> Response:
             status=404,
         )
 
-    collection_id = int(row["collection_id"])
-    params = request.query_params
-    limit = clamp(params.get("limit"), 1, SEEN_PAGE_MAX, SEEN_PAGE)  # type: ignore[arg-type]
-    offset = clamp(params.get("offset"), 0, OWNER_CLAMPS.offset_max, 0)  # type: ignore[arg-type]
-
-    rules = follow_rules.Rules.from_row(row)
-    name = str(row["title"] or row["slug"])
-    seen = await db.read(
-        lambda c: follows_store.seen_page(
-            c, collection_id, decisions=PASSED_OVER, limit=limit, offset=offset
-        )
-    )
-    has_more = len(seen) > limit
-    seen = seen[:limit]
-    checks = await db.read(
-        lambda c: follows_store.recent_checks(c, collection_id, CHECK_CAP)
-    )
-    index_jobs = await db.read(
-        lambda c: follows_store.index_jobs(c, collection_id, INDEX_JOB_CAP)
-    )
-    in_flight = await db.read(lambda c: follows_store.check_in_flight(c, collection_id))
-    counts = await db.read(lambda c: follows_store.counts(c, collection_id))
+    row, rules, name, seen = data.row, data.rules, data.name, data.seen
+    checks, index_jobs, in_flight = data.checks, data.index_jobs, data.in_flight
 
     return _render(
         "follow.html",
@@ -1829,7 +1745,7 @@ async def follow_detail(request: Request) -> Response:
             # The rule as one sentence, from the module that owns the sentence.
             # There is no second renderer of it anywhere on this surface.
             "sentence": follow_rules.describe(rules, name=name),
-            "brought_in": int(counts.get("queued", 0)),
+            "brought_in": int(data.counts.get("queued", 0)),
             "checks": [
                 {
                     "job_id": str(check["public_id"]),
@@ -1856,6 +1772,10 @@ async def follow_detail(request: Request) -> Response:
             "near_miss": _near_miss(seen, rules),
             "form": _follow_form_values(row),
             "choices": _follow_choices(),
-            "pagination": {"limit": limit, "offset": offset, "has_more": has_more},
+            "pagination": {
+                "limit": data.limit,
+                "offset": data.offset,
+                "has_more": data.has_more,
+            },
         },
     )

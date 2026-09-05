@@ -18,9 +18,14 @@ edge**, and policy text (refusals, the clamp notes, the redaction itself) still
 Python's.
 
 Moved out of `views.py` unchanged: the overview and the ledger on 2026-09-05,
-the videos table and the detail page the same day (dashboard.md §20). `views.py`
-imports these back under their old private names, so the Jinja pages call the
-same code, in the same order, under the same bounds they always did.
+the videos table and the detail page the same day (dashboard.md §20), the two
+following pages the same day again (§22). `views.py` imports these back under
+their old private names, so the Jinja pages call the same code, in the same
+order, under the same bounds they always did.
+
+The follow half carries one thing the others do not: `follow_row_json`, the
+typed shape a follow travels in, which `writes.py` answers a write outcome with
+and `api.py` answers a read with. One row, one shape, one place.
 """
 
 from __future__ import annotations
@@ -37,6 +42,8 @@ from starlette.requests import Request
 
 from ..db import queries
 from ..errors import ToolError
+from ..follows import rules as follow_rules
+from ..follows import store as follows_store
 from ..jobs import store as jobs_store
 from ..public.api import OWNER_CLAMPS, _cover_frames, thumb_url
 from ..text import clamp, iso_day, iso_z, split_csv
@@ -1175,4 +1182,271 @@ async def video_detail_reads(
         cue_page=cue_page or 0,
         cue_offset=cue_offset,
         chunks=chunks,
+    )
+
+
+# --------------------------------------------------------- §18 the follow side
+
+# The two pagers on the Following surface. Both clamp server-side and both
+# probe one row past the limit rather than counting, like every list here.
+FOLLOW_PAGE = 25
+FOLLOW_PAGE_MAX = 100
+SEEN_PAGE = 25
+SEEN_PAGE_MAX = 100
+
+# The two job lists on a follow's page. Bounded independently of `limit`,
+# because neither of them is what the pager pages.
+CHECK_CAP = 10
+INDEX_JOB_CAP = 10
+
+# How many held candidates the list names above the table. The band's job is to
+# say *that* something is waiting and give it a door, not to be a second ledger
+# — the follow's own page is where the rows are read.
+HELD_BAND_CAP = 5
+
+# What counts as "nearly" for the one derived observation above the ledger.
+# Sixty seconds because a length rule is typed in minutes, and a minute is the
+# smallest gap an operator would call a near miss. Both surfaces carry the
+# number from this constant — the page inside its sentence, the JSON as a field
+# — so the threshold and the words around it cannot disagree.
+NEAR_MISS_S = 60
+
+# Every decision except `queued` — which is to say, every candidate that did
+# **not** become a video. This band is the point of the follow's page: a follow
+# that quietly drops a four-minute talk because its floor is eight would be the
+# one place this index goes silent (migration 0006's own argument).
+PASSED_OVER = (
+    "held_budget",
+    "held_review",
+    "skipped_tab",
+    "skipped_title",
+    "skipped_duration",
+    "skipped_horizon",
+    "already_indexed",
+    "failed",
+)
+
+
+def follow_settings(assembled: Any) -> dict[str, Any]:
+    """The two deployment settings that govern a follow, read where it reads them.
+
+    ``PipelineSettings`` is resolved once at boot and handed to the runner; a
+    build with the pipeline off (every test, and any deployment running the
+    queue elsewhere) has no runner settings to ask, so the environment is
+    re-read rather than guessed at. ``daily_hours`` of zero means the operator
+    turned the ceiling off — the page says so in words rather than printing
+    "of 0h", which reads as "no budget left" and means the opposite.
+    """
+    from ..pipeline.settings import PipelineSettings
+
+    settings = getattr(getattr(assembled.runner, "pipeline", None), "settings", None)
+    hours = getattr(settings, "follow_daily_hours", None)
+    checks = getattr(settings, "follow_checks", None)
+    if hours is None or checks is None:
+        from_env = PipelineSettings.from_env()
+        hours = from_env.follow_daily_hours if hours is None else hours
+        checks = from_env.follow_checks if checks is None else checks
+    return {"daily_hours": float(hours), "checks": bool(checks)}
+
+
+def _epoch(value: Any) -> int | None:
+    """A stored unix stamp as an int, or ``None`` where the row has none."""
+    return None if value is None else int(value)
+
+
+def follow_row_json(row: Any) -> dict[str, Any]:
+    """One follow row, typed — identity, state, clocks and every rule column.
+
+    The single shape a follow travels in on this surface: a write outcome
+    answers with it (dashboard.md §21) and so does a read (§22), because a
+    payload that described a follow one way after a pause and another way on
+    the page that listed it would be two contracts for one row.
+    `tools/follows._follow_fields` answers the same question for the model in
+    `iso_minute` strings, which is what a dashboard payload may not carry
+    (`DECISIONS.md`, 2026-09-05).
+
+    The rules come out of :meth:`~vidtheque_mcp.follows.rules.Rules.from_row` —
+    the parser the check itself uses — so the payload and the check cannot
+    disagree about what a CSV column meant.
+    """
+    rules = follow_rules.Rules.from_row(row)
+    return {
+        "slug": str(row["slug"]),
+        "title": str(row["title"]),
+        "kind": str(row["kind"]),
+        "source_url": str(row["source_url"]),
+        "state": str(row["state"]),
+        "mode": rules.mode,
+        "tabs": list(rules.tabs),
+        "channels": rules.channels,
+        "tags": list(rules.tags),
+        "min_duration_s": rules.min_duration_s,
+        "max_duration_s": rules.max_duration_s,
+        "title_include": list(rules.title_include),
+        "title_exclude": list(rules.title_exclude),
+        "backfill": rules.backfill,
+        "max_per_check": rules.max_per_check,
+        "check_interval_s": rules.check_interval_s,
+        "next_check_at": _epoch(row["next_check_at"]),
+        "last_check_at": _epoch(row["last_sync_at"]),
+        "last_new_at": _epoch(row["last_new_at"]),
+    }
+
+
+def near_miss(
+    rows: list[sqlite3.Row], rules: follow_rules.Rules
+) -> tuple[int, str] | None:
+    """How many of *these* rows the length rule turned away by a whisker.
+
+    Read out of the rows the caller already fetched — no second query and no
+    stored aggregate — and ``None`` rather than a zero when the count is zero
+    or the follow has no length rule at all. A "0 of the last 25" finding is a
+    fact about nothing dressed as a finding, and this is the one band on the
+    surface that has to stay believable, so the omission belongs to both
+    surfaces rather than being a rendering choice on one of them.
+    """
+    low, high = rules.min_duration_s, rules.max_duration_s
+    if low is None and high is None:
+        return None
+    near = 0
+    for row in rows:
+        if str(row["decision"]) != "skipped_duration" or row["duration_s"] is None:
+            continue
+        seconds = float(row["duration_s"])
+        if low is not None and 0 <= low - seconds <= NEAR_MISS_S:
+            near += 1
+        elif high is not None and 0 <= seconds - high <= NEAR_MISS_S:
+            near += 1
+    if not near:
+        return None
+    if low is not None and high is not None:
+        edge = "length rule"
+    else:
+        edge = "floor" if low is not None else "ceiling"
+    return near, edge
+
+
+@dataclass(frozen=True)
+class FollowingReads:
+    """`GET /dashboard/following`'s whole read — four queries, whatever the rows.
+
+    The totals band, the rolling budget, one page of follows probed one row
+    past its limit, and the held band. No per-follow round trip: a table that
+    costs a query per line stops being loadable at the size it exists for
+    (§6.3).
+    """
+
+    totals: dict[str, int]
+    spent_s: float
+    settings: dict[str, Any]
+    vectors: bool
+    rows: list[sqlite3.Row]
+    has_more: bool
+    held: list[sqlite3.Row]
+    held_more: bool
+    limit: int
+    offset: int
+
+
+async def following_reads(request: Request) -> FollowingReads:
+    """The list page's reads, in the order and under the bounds they have had."""
+    assembled = request.app.state.assembled
+    db = assembled.db
+    params = request.query_params
+    limit = clamp(params.get("limit"), 1, FOLLOW_PAGE_MAX, FOLLOW_PAGE)  # type: ignore[arg-type]
+    offset = clamp(params.get("offset"), 0, OWNER_CLAMPS.offset_max, 0)  # type: ignore[arg-type]
+
+    totals = await db.read(follows_store.totals)
+    spent_s = await db.read(follows_store.budget_spent_s)
+    rows = await db.read(
+        lambda c: follows_store.list_follows(c, limit=limit, offset=offset)
+    )
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    held_rows = await db.read(lambda c: follows_store.held(c, HELD_BAND_CAP))
+    held_more = len(held_rows) > HELD_BAND_CAP
+    held_rows = held_rows[:HELD_BAND_CAP]
+
+    return FollowingReads(
+        totals=totals,
+        spent_s=spent_s,
+        settings=follow_settings(assembled),
+        # §5.5's honest refusal: `follow_channel` raises `E_FEATURE_DISABLED`
+        # on the same condition `index_video` does, so the surface says so
+        # above the controls rather than after a submission.
+        vectors=bool(db.vectors),
+        rows=rows,
+        has_more=has_more,
+        held=held_rows,
+        held_more=held_more,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@dataclass(frozen=True)
+class FollowDetailReads:
+    """`GET /dashboard/following/{slug}`'s reads — the three bands, once.
+
+    ``seen`` is the passed-over ledger, probed one row past `limit`; the two
+    job lists are capped independently of it, because neither is what the pager
+    pages. ``None`` from the assembler is a slug nobody follows, and the caller
+    answers with the refusal its own medium takes.
+    """
+
+    row: sqlite3.Row
+    collection_id: int
+    rules: follow_rules.Rules
+    name: str
+    seen: list[sqlite3.Row]
+    has_more: bool
+    checks: list[sqlite3.Row]
+    index_jobs: list[sqlite3.Row]
+    in_flight: sqlite3.Row | None
+    counts: dict[str, int]
+    limit: int
+    offset: int
+
+
+async def follow_detail_reads(request: Request, slug: str) -> FollowDetailReads | None:
+    """Everything the follow's page reads. ``None`` for a slug nobody follows."""
+    db = request.app.state.assembled.db
+    row = await db.read(lambda c: follows_store.by_slug(c, slug))
+    if row is None:
+        return None
+
+    collection_id = int(row["collection_id"])
+    params = request.query_params
+    limit = clamp(params.get("limit"), 1, SEEN_PAGE_MAX, SEEN_PAGE)  # type: ignore[arg-type]
+    offset = clamp(params.get("offset"), 0, OWNER_CLAMPS.offset_max, 0)  # type: ignore[arg-type]
+
+    seen = await db.read(
+        lambda c: follows_store.seen_page(
+            c, collection_id, decisions=PASSED_OVER, limit=limit, offset=offset
+        )
+    )
+    has_more = len(seen) > limit
+    seen = seen[:limit]
+    checks = await db.read(
+        lambda c: follows_store.recent_checks(c, collection_id, CHECK_CAP)
+    )
+    index_jobs = await db.read(
+        lambda c: follows_store.index_jobs(c, collection_id, INDEX_JOB_CAP)
+    )
+    in_flight = await db.read(lambda c: follows_store.check_in_flight(c, collection_id))
+    counts = await db.read(lambda c: follows_store.counts(c, collection_id))
+
+    return FollowDetailReads(
+        row=row,
+        collection_id=collection_id,
+        rules=follow_rules.Rules.from_row(row),
+        name=str(row["title"] or row["slug"]),
+        seen=seen,
+        has_more=has_more,
+        checks=checks,
+        index_jobs=index_jobs,
+        in_flight=in_flight,
+        counts=counts,
+        limit=limit,
+        offset=offset,
     )
