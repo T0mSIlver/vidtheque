@@ -42,6 +42,16 @@ bench: ## Run a bench scenario (SCENARIO=… BENCH_ARGS='--out bench/runs/')
 bench-list: ## List bundled bench scenarios
 	uv run python bench/run.py --list
 
+.PHONY: web-check
+web-check: ## Run every web/ check CI runs, in the same order
+	cd web && pnpm install --frozen-lockfile
+	cd web && pnpm tokens:check
+	cd web && pnpm format:check
+	cd web && pnpm lint
+	cd web && pnpm test
+	cd web && pnpm typecheck
+	cd web && pnpm build
+
 .PHONY: images
 images: ## Build both container images locally
 	docker build -f worker/Dockerfile -t vidtheque-worker:dev .
