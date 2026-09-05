@@ -156,6 +156,11 @@ export const Ledger = z.object({
     chunks: count(),
     tags: count(),
     channels: count(),
+    // The span the band prints under the video count, and deliberately the
+    // overview's field: same name, same shape, off the same rollup, because
+    // one fact with two spellings is how the two pages start disagreeing
+    // about the corpus. Both halves are `null` on an empty one.
+    published: z.object({ oldest: epoch().nullable(), newest: epoch().nullable() }),
     last_indexed: epoch().nullable(),
   }),
   // Sums to `corpus.videos` by construction.

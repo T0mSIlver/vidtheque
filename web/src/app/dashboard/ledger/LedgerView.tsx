@@ -2,7 +2,7 @@
 
 import { dashboard, ROOT } from "@/lib/dashboard/client";
 import type { Ledger } from "@/lib/dashboard/schemas";
-import { at, bytes, count, hours } from "@/lib/format";
+import { at, bytes, count, day, hours } from "@/lib/format";
 import styles from "../dashboard.module.css";
 import {
   CountLink,
@@ -83,13 +83,26 @@ function Loaded({ data }: { data: Ledger }) {
           The corpus
         </h2>
         <dl className={styles.ledger}>
-          {/* The Jinja band carries a `published <oldest> – <newest>` note
-              under this figure. `GET /dashboard/api/ledger` does not send the
-              span — the overview's payload is the only one that does
-              (frontend-migration.md §5 against §4) — so the note is absent
-              rather than rendered as two dashes, and the gap is a line in the
-              report rather than a second request for two dates. */}
-          <Figure label="videos">
+          {/* When *these videos* were published, off the payload's own
+              `corpus.published` (frontend-migration.md §5) — the overview's
+              field, printed the overview's way, because a reader moving
+              between the two pages must not be shown one fact in two
+              spellings. The two dates are one unbreakable unit, so the note
+              wraps in front of the range and never inside it, and an empty
+              corpus has no oldest video: `day` prints the dash for both. */}
+          <Figure
+            label="videos"
+            notes={[
+              <>
+                published{" "}
+                <Unbroken>
+                  <span className={styles.mono}>{day(corpus.published.oldest)}</span>
+                  <Sep>–</Sep>
+                  <span className={styles.mono}>{day(corpus.published.newest)}</span>
+                </Unbroken>
+              </>,
+            ]}
+          >
             <DashLink href={`${ROOT}/videos?index_state=all`}>{count(corpus.videos)}</DashLink>
           </Figure>
           <Figure label="runtime" notes={[<>{count(corpus.duration_s)} seconds indexed</>]}>
