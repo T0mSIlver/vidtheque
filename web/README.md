@@ -1,10 +1,13 @@
 # web — the Next.js front end
 
 A separate deployable that talks to a vidtheque instance over its public
-`/api/*` facade (`docs/design/demo-site.md` §2). It serves the same two front
-doors — the landing at `/`, the reader at `/demo` (§1) — and reads the instance
-only through the facade. The Python-served copies of those pages, and
-`/dashboard`, which has no counterpart here, are untouched.
+`/api/*` facade (`docs/design/demo-site.md` §2). It serves the two front doors —
+the landing at `/`, the reader at `/demo` (§1) — reading the instance only
+through the facade, and the whole of `/dashboard`, which reads
+`/dashboard/api/*` in the browser with the session cookie. **Every page on both
+surfaces is served from here.** Python's own copies of the front doors left on
+2026-09-05 and its dashboard HTML on 2026-09-06; that package renders nothing
+now (`docs/design/dashboard.md` §23).
 
 Next.js 16 (App Router), React 19, TypeScript, CSS Modules on the design
 tokens from `DESIGN.md`. No Tailwind, no component library.
@@ -22,16 +25,22 @@ is the document of record for both variables.
 ## One origin, two servers
 
 In production a reverse proxy puts both behind one origin and routes by path:
-the exact page GETs — `/`, `/demo`, `/videos`, `/videos/{id}`, `/dashboard`,
-`/dashboard/ledger` — reach Next, and everything else reaches Python (`/api/*`,
-`/frames/*`, `/mcp`, `/auth/*`, `/.well-known/*`, `/healthz`,
-`/videos/{id}/export.md`, and the rest of `/dashboard/*`). The browser
-therefore calls Python directly, and this server owns no endpoint of its own.
+the exact page GETs — `/`, `/demo`, `/videos`, `/videos/{id}`, and under the
+dashboard `/dashboard`, `/dashboard/ledger`, `/dashboard/search`,
+`/dashboard/videos`, `/dashboard/videos/{id}`, `/dashboard/jobs`,
+`/dashboard/jobs/{id}`, `/dashboard/following`, `/dashboard/following/{slug}`,
+`/dashboard/index` and `/dashboard/login` — reach Next, and everything else
+reaches Python (`/api/*`, `/frames/*`, `/mcp`, `/auth/*`, `/.well-known/*`,
+`/healthz`, `/videos/{id}/export.md`, and the rest of `/dashboard/*`, which is
+`/dashboard/api/*`, the fourteen POSTs and the `/dashboard/` redirect). The
+browser therefore calls Python directly, and this server owns no endpoint of
+its own.
 
-The dashboard is being ported a page at a time, so that list grows: a ported
-page is named in `proxy.ts`'s matcher, which gives it the document policy, and
-the router finds it before `next.config.ts`'s `afterFiles` rewrite hands the
-rest of the prefix to the Jinja pages. Its data is not this server's — the
+The last three of those page paths are also POST routes Python keeps, so the
+proxy splits each by method: the `GET` is the page here, the `POST` is the
+page's write. Every dashboard page is named in `proxy.ts`'s matcher, which
+gives it the document policy, and in `src/app/dashboard/ported.ts`, which is
+what every link into the surface asks. Its data is not this server's — the
 browser reads `/dashboard/api/*` itself, same-origin, with the session cookie
 (`src/lib/dashboard/`), so Next never sees a credential and caches nothing per
 reader.
@@ -54,10 +63,11 @@ so the API's per-IP limiter keys on the visitor rather than on this process.
 
 ## Headers, and what they cost
 
-`src/proxy.ts` sends every document the headers the Python instance sends with
-its own two pages — `frame-ancestors 'none'` with the `X-Frame-Options: DENY`
-twin, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff` — and a
-CSP of the same shape, in the nonce form a React page needs:
+`src/proxy.ts` sends every document the headers the Python instance sent with
+its own pages while it had them — `frame-ancestors 'none'` with the
+`X-Frame-Options: DENY` twin, `Referrer-Policy: no-referrer`,
+`X-Content-Type-Options: nosniff` — and a CSP of the same shape, in the nonce
+form a React page needs:
 
 ```
 default-src 'self'; script-src 'self' 'nonce-<fresh per request>'
@@ -66,7 +76,7 @@ font-src 'self'; connect-src 'self'; frame-ancestors 'none';
 form-action 'self'; base-uri 'none'; object-src 'none'
 ```
 
-`style-src` is the one directive looser than Python's, because React renders
+`style-src` is the one directive looser than Python's was, because React renders
 the OCR boxes' coordinates and the 16:9 frame as `style=` attributes.
 Development adds `'unsafe-eval'` (React rebuilds server stacks with it), the
 API origin on `img-src` and `connect-src` (two ports, so frame URLs point at
