@@ -197,7 +197,8 @@ What each side owns, once a page is ported:
 | `GET /dashboard/videos`, `GET /dashboard/videos/{id}` | **Next** | *landed 2026-09-05* |
 | `GET /dashboard/search` | **Next** | pending — Python's HTML |
 | `GET /dashboard/jobs`, `GET /dashboard/jobs/{id}` | **Next** | pending — Python's HTML |
-| `GET /dashboard/following`, `GET /dashboard/following/{slug}` | **Next** | pending — Python's HTML |
+| `GET /dashboard/following`, `GET /dashboard/following/{slug}` | **Next** | *landed 2026-09-05* |
+| `POST /dashboard/following` | Python | **the one path split by method** |
 | `/dashboard/api/*` | Python | for good |
 | `/dashboard/static/*` | Python | for good |
 | `/dashboard/login`, `/dashboard/logout` | Python | for good |
@@ -245,6 +246,32 @@ without an exception written for it. The development rewrites needed no change
 at all — the `/dashboard` catch-all is in `afterFiles`, so the router finds
 these two pages first.
 
+**The two following pages, and the one path that is routed by method**
+*(landed 2026-09-05)*. `GET /dashboard/following` and
+`GET /dashboard/following/{slug}` are Next's, in the matcher and in
+`ported.ts` like the rest. What is different about this pair is the row above:
+**`POST /dashboard/following` is the add form's route and shares its path with
+the list page** — every other write on this surface has a segment its page does
+not (`…/{slug}/state`, `…/{video_id}/tags`), so this is the only collision
+under `/dashboard`, and the table's "every other `POST /dashboard/*`" cannot
+resolve it on path alone.
+
+**Production routes that path by method**: `GET` → Next, `POST` → Python. That
+is the reverse proxy's rule and it is written here because nothing in this repo
+can express it — a Next rewrite and a middleware matcher both match paths, not
+methods. It is a cutover check (`docs/ROADMAP.md`): a `POST` to
+`/dashboard/following` through the edge must reach Python, or the add form
+answers with a document from a page that never saw the write.
+
+**Development uses a shim, and it is not the rule.** `web/next.config.ts` keys
+a `beforeFiles` rewrite on `content-type: application/x-www-form-urlencoded` —
+the header every write on this surface sends (§9) and no document navigation
+ever does — because `beforeFiles` is the only stage that runs before the router
+finds the page, and `has` reads headers, cookies, the query and the host, and
+nothing else. It is a development-only entry, deleted the day development runs
+both processes behind one proxy, and it must not be read as the production
+arrangement.
+
 A third list joined those two with these pages, and it is the one a component
 asks: `web/src/app/dashboard/ported.ts` holds the ported page paths — `ROOT`,
 `ROOT/ledger`, `ROOT/videos`, plus the same one-segment pattern for the detail
@@ -279,16 +306,18 @@ routes, and `views.py` now calls the assemblers instead of holding them.
 `pipeline_readiness`, `redacted`, `declared_models`, `video_header`,
 `stage_rows`, `shot_rows`, `frame_cards`, `coverage_pills`/`coverage_flags`,
 `video_facts`, `date_filters`, `file_size`, `tool_error`, `thumb`,
-`following_reads`, `follow_detail_reads`, `follow_row_json`, `follow_settings`,
-`near_miss`, and the caps below. `views.py` imports them back under the names
+`following_reads`, `follow_detail_reads`, `follow_row_json`,
+`follow_row_json_with_error`, `follow_settings`, `near_miss`, and the caps
+below. `views.py` imports them back under the names
 it always used, so the Jinja pages run the same code and the same number of
 database reads as before — the videos table's cover-frame query grew three
 columns rather than gaining a second read, and the two following pages gained
 nothing at all.
 
 `follow_row_json` is the one entry there that a *write* also answers with:
-`writes.py` imports it back as `_follow_payload`, so §21's outcome and §6b's
-read describe a follow identically rather than by two functions agreeing.
+`writes.py` imports its with-the-failure form, `follow_row_json_with_error`,
+back as `_follow_payload`, so §21's outcome and §6b's detail read describe a
+follow identically rather than by two functions agreeing.
 
 ## 3. Common behaviour
 
@@ -609,8 +638,10 @@ What a page gets, in one sentence each: the list sends `order` explicitly
 budget as `spent_s`/`ceiling_h`/`window_s`, the two deployment booleans
 `checks_enabled` and `vectors`, one row per follow, and the held band capped
 independently of the pager. The detail sends the same follow row plus its error
-code and message, the decision counts, the two job lists as job ids, the
-in-flight check, and the passed-over ledger with `reason` verbatim.
+code and message, `checks_enabled` beside it *(added 2026-09-05 — this page is
+about one follow's clock, and with checks off that clock is a schedule nothing
+will run)*, the decision counts, the two job lists as job ids, the in-flight
+check, and the passed-over ledger with `reason` verbatim.
 
 Three things worth knowing before writing the pages:
 
@@ -627,6 +658,31 @@ Three things worth knowing before writing the pages:
 - **`reason` is the exception and is not a rendering.** It is the receipt the
   check wrote and it already carries the number that made the decision; print
   it, do not re-derive it.
+
+**The form's vocabulary does not travel** *(recorded 2026-09-05, with the
+pages)*. These payloads carry a follow's *rules*; they carry none of the
+*options* the add-and-edit form offers, because the Jinja form reads those out
+of a `views._follow_choices` context neither payload has and putting them on
+the wire would be Python owning the controls of a React form. So the React
+pages **hard-code them**, in `web/src/app/dashboard/following/parts.tsx`, under
+a comment naming the module each one comes from:
+
+| Copied into `parts.tsx` | Owned by |
+| --- | --- |
+| `TABS`, `MODES`, `MAX_BACKFILL`, `MAX_PER_CHECK`, `MIN_CHECK_INTERVAL_S`, `DEFAULT_CHECK_INTERVAL_S` | `mcp/src/vidtheque_mcp/follows/rules.py` |
+| `CHANNEL_BOXES` (the three boxes, their labels and their notes) | `mcp/src/vidtheque_mcp/dashboard/writes.py` — public there because the index form ticks the same three for the same parameter |
+
+**The rule that comes with it: a vocabulary Python grows has to be added there
+too.** A fourth tab or a third mode is a control the React form will not offer
+until somebody edits that file, and nothing fails loudly when they do not — the
+copy is the price of not shipping a `choices` payload, and this line is the
+only thing that collects it.
+
+They are **options and ceilings on a control, never a bound**: nothing in
+`parts.tsx` validates, every value goes to the server as typed, and
+`follows/params.build_rules` is the only thing that clamps or refuses — its
+floor is that same `MIN_CHECK_INTERVAL_S`, and a value under it comes back
+`400 E_BAD_PARAM` in Python's own sentence, on both branches.
 
 ## 6c. `GET /dashboard/api/jobs` and `/dashboard/api/jobs/{job_id}`
 
