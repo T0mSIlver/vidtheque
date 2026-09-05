@@ -41,11 +41,17 @@
 #
 #        docker compose -f deploy/docker-compose.yml \
 #                       -f deploy/compose.release.example.yml config --format json \
-#          | jq '[.services.mcp, .services.worker] | map(has("build") | not) | all'
+#          | jq '[.services.mcp, .services.worker, .services.web] | map(has("build") | not) | all'
 #
 #      must print `true`, and the same command with
-#      `jq '[.services.mcp, .services.worker] | map(.image)'` must print the
-#      two ghcr.io references at the tag you meant to deploy.
+#      `jq '[.services.mcp, .services.worker, .services.web] | map(.image)'`
+#      must print the three ghcr.io references at the tag you meant to deploy.
+#      THREE SINCE THE FRONT END MOVED TO NEXT.js — a box that ran a release
+#      before the edge existed and forgets this file's new `web` block builds
+#      the front end from a checkout it does not have.
+#
+#      `caddy` is NOT in this file: the base file already names a published
+#      image for it, pinned by digest, and there is nothing to swap.
 #
 #      **`:?` FAILS EVERY COMPOSE COMMAND WHEN IMAGE_TAG IS UNSET**, including
 #      `ps`, `logs` and `down`. That is deliberate: an empty tag interpolates
@@ -56,7 +62,7 @@
 #
 # This overlay adds ONE environment variable, IMAGE_TAG, and it has an entry in
 # deploy/.env.example, which stays the document of record. Nothing inside the
-# containers reads it — it is a compose-level variable, like MCP_PORT.
+# containers reads it — it is a compose-level variable, like EDGE_PORT.
 
 services:
   mcp:
@@ -68,4 +74,12 @@ services:
     # linux/amd64 only, CUDA, ~28 GB. Pulling it the first time is a long
     # coffee; the layers are shared with nothing else on the box.
     image: ghcr.io/t0msilver/vidtheque-worker:${IMAGE_TAG:?set IMAGE_TAG in deploy/.env — the GHCR tag with no leading v, e.g. 0.0.1}
+    build: !reset null
+
+  web:
+    # linux/amd64 only as well, and for a duller reason than the worker's: an
+    # arm64 leg is a full Next compile under QEMU on the release tag's critical
+    # path (.github/workflows/build-web.yml says so at the top of the job).
+    # ~275 MB — the traced server bundle, not a checkout.
+    image: ghcr.io/t0msilver/vidtheque-web:${IMAGE_TAG:?set IMAGE_TAG in deploy/.env — the GHCR tag with no leading v, e.g. 0.0.1}
     build: !reset null
