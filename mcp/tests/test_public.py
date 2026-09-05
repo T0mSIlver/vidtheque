@@ -331,6 +331,32 @@ def test_meta_reports_the_endpoint_and_the_ask_state(tmp_path: Path) -> None:
     assert payload["limits"]["ask_per_day"] == 50
 
 
+def test_every_facade_response_forbids_a_cache(public_client: TestClient) -> None:
+    """`no-store` on all four reads and on a refusal (demo-site.md §2).
+
+    The facade describes a corpus that changes under the reader, and the same
+    handlers answer `/dashboard/api/*` behind the owner gate, where a
+    management read must not be held by a shared cache. A handler here cannot
+    see which prefix it was reached through, so the header is unconditional
+    and both surfaces get it from one line.
+    """
+    for path in (
+        "/api/search?q=cache",
+        "/api/videos",
+        "/api/videos/kCc8FmEb1nY",
+        "/api/meta",
+    ):
+        response = public_client.get(path)
+        assert response.status_code == 200, path
+        assert response.headers["cache-control"] == "no-store", path
+
+    # A typed refusal is a response too, and it is the one a cache would be
+    # most eager to keep: same URL, same 404, forever.
+    refused = public_client.get("/api/videos/nope00000ab")
+    assert refused.status_code == 404
+    assert refused.headers["cache-control"] == "no-store"
+
+
 # ------------------------------------------------ 3. the pages are not here
 
 

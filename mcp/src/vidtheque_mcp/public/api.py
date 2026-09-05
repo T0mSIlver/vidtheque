@@ -76,6 +76,17 @@ THUMB_QUALITY = 70
 
 CONTENT_TYPES = ("all", "transcript", "ocr", "frame")
 
+# Every response this module returns, on both prefixes. Two reasons, and either
+# one is enough on its own: the facade describes a corpus that changes under the
+# reader — a video finishes indexing, a follow lands, a job fails — so a held
+# page is a page that lies; and these same handlers are `/dashboard/api/*`
+# behind the owner gate, where a management read must never sit in a shared
+# cache. It is a module constant rather than a per-route decision because a
+# handler here cannot see which prefix it was reached through (`api_routes`),
+# and a conditional on something a handler cannot know is a conditional that
+# gets it wrong.
+NO_STORE = {"Cache-Control": "no-store"}
+
 
 # --------------------------------------------------------------------- policy
 
@@ -209,6 +220,7 @@ def _error_response(structured: dict[str, Any] | None, fallback: str) -> JSONRes
             "next": payload.get("next"),
         },
         status_code=HTTP_STATUS.get(code, 500),
+        headers=NO_STORE,
     )
 
 
@@ -322,7 +334,7 @@ async def search_payload(
 
 async def search_endpoint(request: Request, *, demo: bool = False) -> JSONResponse:
     payload, status = await search_payload(request, demo=demo)
-    return JSONResponse(payload, status_code=status)
+    return JSONResponse(payload, status_code=status, headers=NO_STORE)
 
 
 async def videos_endpoint(request: Request) -> JSONResponse:
@@ -355,7 +367,10 @@ async def videos_endpoint(request: Request) -> JSONResponse:
     covers = await deps.db.read(lambda c: _cover_frames(c, [v["video_id"] for v in videos]))
     for video in videos:
         video["thumb"] = thumb_url(deps, covers.get(video["video_id"]))
-    return JSONResponse({"videos": videos, "pagination": payload.get("pagination", {})})
+    return JSONResponse(
+        {"videos": videos, "pagination": payload.get("pagination", {})},
+        headers=NO_STORE,
+    )
 
 
 async def video_endpoint(request: Request) -> JSONResponse:
@@ -403,7 +418,7 @@ async def video_endpoint(request: Request) -> JSONResponse:
         }
         for frame in payload.get("ocr_highlights", [])
     ]
-    return JSONResponse(payload)
+    return JSONResponse(payload, headers=NO_STORE)
 
 
 def _cover_frames(conn: sqlite3.Connection, public_ids: list[str]) -> dict[str, str]:
@@ -474,7 +489,8 @@ async def meta_endpoint(request: Request) -> JSONResponse:
                 "ask_per_day": public.ask_per_day,
             },
             "repo": REPO_URL,
-        }
+        },
+        headers=NO_STORE,
     )
 
 
