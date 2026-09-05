@@ -7,7 +7,7 @@ things that turned out to be *already done* are recorded at the bottom so
 nobody rediscovers them a third time.
 
 Ordered by how self-contained the work is, not by value. Value is Tom's call
-and the two marked **[Tom]** are decisions before they are tickets.
+and anything marked **[Tom]** is a decision before it is a ticket.
 
 ---
 
@@ -50,15 +50,24 @@ React page, verified against **both** the owner and the public read-only
 projection — a page that renders a field the projection drops is the failure
 mode this list exists to prevent.
 
-- **Overview and ledger pages** — the JSON exists; the React pages are in
-  progress today (2026-09-05).
+- **Overview and ledger pages** — *landed 2026-09-05.* `GET /dashboard` and
+  `GET /dashboard/ledger` are Next's, fetching `/dashboard/api/overview` and
+  `/dashboard/api/ledger` in the browser under the session cookie, with the
+  management chassis — the rail, the session read and the sign-out form — under
+  them. Both are named in the ownership table and in the document-policy
+  matcher, which is the record of what is ported
+  (`docs/design/frontend-migration.md` §1d, §6). The ledger payload gained
+  `corpus.published` on the way, because the band prints a span the JSON had no
+  field for (dashboard.md §19). Python still renders every other
+  `/dashboard` page.
 - **Videos** — the table, its filters and ordering, and the video detail page,
   including the frames strip and the cue pagination. *Contract landed
-  2026-09-05, page pending:* `/dashboard/api/library` and
-  `/dashboard/api/library/{video_id}` (dashboard.md §20 — the name is not
+  2026-09-05, the React pages in progress the same day:* `/dashboard/api/library`
+  and `/dashboard/api/library/{video_id}` (dashboard.md §20 — the name is not
   `videos` because the facade already holds that path at this prefix). The
   detail points at the existing cues endpoint rather than serving cues, and
-  that endpoint still answers in rendered strings — see the note below.
+  that endpoint now carries the typed fields a transcript pane needs beside its
+  strings — see the note below.
 - **Search** — the owner inspection page, over the handler `/api/search`
   already shares.
 - **Jobs** — the list, the job detail page, and a poll target that replaces
@@ -74,12 +83,12 @@ mode this list exists to prevent.
   `/dashboard/api/session` describes the deployment; the login POST itself has
   no JSON twin yet.
 
-**[Tom] Three existing JSON endpoints answer in rendered strings**, which is
+**Three existing JSON endpoints answer in rendered strings**, which is
 what the typed-values decision (DECISIONS.md, 2026-09-05) says they must not.
 They predate it and they are the Jinja scripts' own poll targets, so nothing is
 broken today — but a React page cannot read them as they are. Found while
-landing the videos contract, 2026-09-05, and left alone because changing them
-changes what `static/jobs.js` and `static/dashboard.js` receive:
+landing the videos contract, 2026-09-05, and left alone at first because
+changing them changes what `static/jobs.js` and `static/dashboard.js` receive:
 
 - `/dashboard/api/jobs` — each job carries a `text` object built server-side:
   `progress` (`"73%"`), `counts`, `tally`, `basis`, and `wall`/`ran`/`waited`/
@@ -91,19 +100,25 @@ changes what `static/jobs.js` and `static/dashboard.js` receive:
 - `/dashboard/api/jobs/{job_id}` — the same `text` on the job, plus per item
   `text.attempts` (`"2/3"`), `text.took` and `text.stage` (`"stt 42%"`), and
   per event an `at_text` `iso_minute` stamp beside the epoch `at`.
-- `/dashboard/api/videos/{id}/cues` — the one where the typed half is missing
+- `/dashboard/api/videos/{id}/cues` — the one where the typed half was missing
   rather than merely duplicated. It sends `t` (start, whole seconds) and then
   `at` as a `clock()` string, `conf` as `f"{logprob:.2f}"`, and `chunk` as a
-  composed sentence (`"chunk 3 · 1:02–1:48 · 210 words · 1180 chars"`). A React
-  transcript pane needs `start_s`/`end_s` as floats, `avg_logprob` as a number
-  and the chunk's `seq`/`start_s`/`end_s`/`n_words`/`n_chars` as fields, which
-  is a shape change rather than a subtraction. `read_models` has no assembler
-  for it yet: `views._cue_rows` already produces exactly those typed fields and
-  the endpoint renders them on the way out.
+  composed sentence (`"chunk 3 · 1:02–1:48 · 210 words · 1180 chars"`).
+  *Landed 2026-09-05:* `start_s` and `end_s` as floats, `avg_logprob` as a
+  float or `null`, `chunk_opens` (`seq`, `start_s`, `end_s`, `n_words`,
+  `n_chars`) and `chunk_closes`, all beside the unchanged strings and all under
+  `views._cue_rows`' own names — it already produced exactly those values and
+  the endpoint rendered them on the way out (dashboard.md §5.3,
+  frontend-migration.md §3).
 
-The choice is Tom's, and it is the same one in three places: add the typed
-fields beside the strings and let the old scripts keep reading their half until
-the pages are ported, or cut the strings when each page lands.
+**Settled 2026-09-05 (Tom): typed fields beside the strings, strings cut at the
+port.** Add the typed half now, additively, and delete a rendered string in the
+same commit that deletes the Jinja page or script that reads it. The cues
+endpoint was the only one that needed code — the two jobs routes already carry
+their typed half — so what is left on this line is a deletion each porting
+commit performs: the jobs `text` blocks (keeping `basis`, the one sentence in
+them that is policy text) with `static/jobs.js`, and the cues strings with the
+video detail page.
 
 ### 1. Turn following on — no code, and it is why the corpus stopped growing
 
