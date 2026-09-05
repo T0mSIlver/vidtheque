@@ -31,6 +31,32 @@ behavior, payload bounds, and the HTTP-only `mcp/` to `worker/` boundary
 still apply. Migration work and remaining design choices live in
 `docs/ROADMAP.md`.
 
+## Dashboard pages fetch client-side, decided by Tom, 2026-09-05
+
+Next serves a data-free shell for every `/dashboard*` page. The browser then
+calls `/dashboard/api/*` same-origin, carrying its own `vidtheque_session`
+cookie, and React renders from that response. Every write is a browser call to
+Python's existing `POST` routes under `/dashboard/*`, under the cookie and
+Origin rules of `dashboard.md` §3.3. Next never sees the cookie, forwards
+nothing on a visitor's behalf, and caches nothing per user.
+
+Two consequences that fall out rather than needing rules of their own. The
+public read-only projection works unchanged, because the API already answers
+anonymous reads there. And a `401` from the API is what sends the browser to
+the login page — the refusal is the signal, so there is no second place where
+authorization is decided.
+
+Tom rejected server rendering with cookie forwarding: it makes Next a
+credential relay that has to forward the session cookie and the visitor's
+address on every read and must never cache a response across users, which is
+three ways to leak one reader's dashboard to another. A hybrid — some pages
+rendered on the server, some fetched — was rejected for the same reason, since
+one forwarded cookie is the whole cost.
+
+Route ownership under `/dashboard` follows in
+`docs/design/frontend-migration.md`; this record is the choice, not its
+expression in configuration.
+
 ## Decided by Tom (2026-08-08)
 
 1. **MCP stack: official `mcp` SDK 2.0** (2026-07-28 spec). No fastmcp
