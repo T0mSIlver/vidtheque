@@ -13,6 +13,26 @@ and the two marked **[Tom]** are decisions before they are tickets.
 
 ## Open
 
+### Frontend replacement: landing, demo, and management dashboard
+
+Tom chose a complete Next.js and React replacement before traffic switches
+on 2026-09-05. See `docs/design/DECISIONS.md`. PRs #23 through #30 supply the
+initial reader, API client, search, Ask, and component tests.
+
+- Review and merge the initial stack with frontend checks in hosted CI.
+- Decide the browser-to-Python request path with Tom before changing routing,
+  session forwarding, or the trusted-client-IP boundary.
+- Port the landing and demo while preserving their URLs and locked positioning.
+- Replace dashboard overview, video browsing and inspection, search, jobs and
+  job details, ledger, indexing, tags, job cancellation and retry, following,
+  login, and logout. Verify owner access and the public read-only projection.
+- Define the Python HTTP contracts needed by these pages. Keep state and
+  operation policy in `mcp/`; remove presentation dependencies as pages move.
+- Verify deployment, rollback, browser workflows, and CPU-only checks before
+  switching traffic. Remove replaced templates, scripts, styles, and obsolete
+  instructions only after their callers have replacements. Research stays
+  append-only.
+
 ### 1. Turn following on — no code, and it is why the corpus stopped growing
 
 CT 9002 has **zero follows and zero collections**. `VIDTHEQUE_FOLLOW_CHECKS`
