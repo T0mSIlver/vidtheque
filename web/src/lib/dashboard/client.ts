@@ -18,9 +18,10 @@
 // * A typed error carrying the status, the refusal code, the `next:` line and
 //   `Retry-After`. The pages render the API's own message — policy text stays
 //   Python's (§1 decision 5).
-// * **The 401, in one place.** A refused read sends the browser to Python's
-//   sign-in page with somewhere to come back to, and the page renders its
-//   signed-out state meanwhile.
+// * **The 401, in one place.** A refused read sends the browser to the sign-in
+//   page with somewhere to come back to, and the page renders its signed-out
+//   state meanwhile. The one exception is the sign-in page's own write, whose
+//   `401` would send a reader to the page they are typing into.
 //
 // The write half arrived with the jobs pages (dashboard.md §21,
 // frontend-migration.md §9) and adds no fourth rule: a write is a `POST` to the
@@ -55,6 +56,7 @@ import {
   ReindexOutcome,
   RetryOutcome,
   Session,
+  SignedIn,
   TagsOutcome,
   VideoDetail,
 } from "./schemas";
@@ -103,6 +105,13 @@ export const navigation = {
   go(url: string) {
     if (typeof window !== "undefined") window.location.assign(url);
   },
+  /** The same navigation without a history entry — what a `303` is. The
+   *  sign-in page uses it for both of its exits: a reader who signs in, and a
+   *  reader who was signed in already, must not land back on the sign-in page
+   *  by pressing Back. */
+  replace(url: string) {
+    if (typeof window !== "undefined") window.location.replace(url);
+  },
   path(): string {
     return typeof window === "undefined" ? ROOT : window.location.pathname;
   },
@@ -135,8 +144,10 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
    * exactly then, which is why this asks rather than assumes. The endpoint is
    * outside the read gate, so this second request cannot itself be refused.
    *
-   * The return path is `?next=`, the parameter `writes.login` already reads and
-   * `writes._safe_next` already fences to this surface.
+   * The return path is `?next=`, the parameter the sign-in page reads off its
+   * own URL and `writes._safe_next` fences on the way back out. It leaves by a
+   * document navigation rather than by a `Link`: this refusal arrived at a
+   * `fetch`, so there is no router event to ride on.
    */
   async function toSignIn(): Promise<void> {
     if (leaving) return;
@@ -199,15 +210,21 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
    * in `DashboardError` exactly as a read's does. `401` is the same signal too:
    * authorization is decided in one place and no page keeps a rule of its own.
    *
-   * `alsoRead` is for the one status that is not a refusal: `retry` answers
-   * `409` when *nothing* was accepted, and the body is still the receipt — the
-   * job it came from, what it selected, and the refusals in `errors` (§21).
+   * `alsoRead` is for the statuses that are not refusals: `retry` and `index`
+   * answer `409` when *nothing* was accepted, and the body is still the
+   * receipt — the job it came from, what it selected, and the refusals in
+   * `errors` (§21).
+   *
+   * `gated: false` is for the one write whose `401` is not that signal.
+   * `POST /dashboard/login` refuses a wrong secret with `E_BAD_CREDENTIAL` at
+   * `401`, and sending *that* reader to the sign-in page is a loop, because
+   * they are on it (§21).
    */
   async function postForm<T>(
     path: string,
     fields: Record<string, string>,
     schema: ZodType<T>,
-    alsoRead: number[] = [],
+    opts: { alsoRead?: number[]; gated?: boolean } = {},
   ): Promise<T> {
     const res = await doFetch(path, {
       method: "POST",
@@ -219,9 +236,9 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
       credentials: "same-origin",
       cache: "no-store",
     });
-    if (!res.ok && !alsoRead.includes(res.status)) {
+    if (!res.ok && !(opts.alsoRead ?? []).includes(res.status)) {
       const error = await toError(res);
-      if (error.status === 401) void toSignIn();
+      if (error.status === 401 && opts.gated !== false) void toSignIn();
       throw error;
     }
     const parsed = schema.safeParse(await res.json());
@@ -322,6 +339,24 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
       return get(`${ROOT}/api/session`, Session, { signal, gated: false });
     },
 
+    /** `POST /dashboard/login` — the secret, and where the reader was going.
+     *
+     *  The thirteenth write, and the only one that carries no session cookie:
+     *  not having one is the point of the page. Everything else is the same
+     *  three things — the form-encoded body, `Accept: application/json`, and a
+     *  request the browser vouches for as same-origin (§21).
+     *
+     *  `gated: false` is the whole difference. Every other `401` on this
+     *  surface means "go and sign in" and this client acts on it by navigating
+     *  to the sign-in page; here the `401` is `E_BAD_CREDENTIAL`, the refusal
+     *  of the sign-in page's own write, and acting on it would send the reader
+     *  to the page they are typing into. The page renders the instance's
+     *  sentence instead — the same one for both secrets, so nothing on this
+     *  side can infer which field was wrong. */
+    signIn(fields: Record<string, string>) {
+      return postForm(`${ROOT}/login`, fields, SignedIn, { gated: false });
+    },
+
     // ------------------------------------------------------------- writes
 
     /** `POST /dashboard/jobs/{job_id}/cancel`. No fields: the Jinja form posts
@@ -335,7 +370,7 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
      *  was refused, and the refusals are on the receipt. */
     retryJob(jobId: string) {
       const path = `${ROOT}/jobs/${encodeURIComponent(jobId)}/retry`;
-      return postForm(path, {}, RetryOutcome, [409]);
+      return postForm(path, {}, RetryOutcome, { alsoRead: [409] });
     },
 
     // The three writes on the corpus itself (dashboard.md §5.5, §21). Like the
@@ -353,7 +388,7 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
      *  told about. `409` is read rather than thrown for the same reason
      *  `retry`'s is — nothing was accepted, and why is on the receipt. */
     indexUrls(fields: Record<string, string>) {
-      return postForm(`${ROOT}/index`, fields, IndexOutcome, [409]);
+      return postForm(`${ROOT}/index`, fields, IndexOutcome, { alsoRead: [409] });
     },
     /** `POST /dashboard/videos/{video_id}/reindex` — one row, forced.
      *

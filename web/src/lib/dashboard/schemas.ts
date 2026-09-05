@@ -227,6 +227,20 @@ export const Session = z.object({
 });
 export type Session = z.infer<typeof Session>;
 
+/** What `POST /dashboard/login` answers a client with (dashboard.md §21).
+ *
+ *  `next` is where the reader was going, already fenced to this surface by
+ *  `writes._safe_next` — and fenced again by the page before it navigates: a
+ *  redirect target that arrived over the wire is an input, and the page that
+ *  mints the session cookie is the worst place on this surface to have an open
+ *  redirect. The cookie itself is on the response's `Set-Cookie` and is
+ *  `HttpOnly`, so nothing here can see it and nothing here has to. */
+export const SignedIn = z.object({
+  signed_in: z.boolean(),
+  next: z.string(),
+});
+export type SignedIn = z.infer<typeof SignedIn>;
+
 // ----------------------------------------------------------------- library
 
 // The videos table and the video detail (dashboard.md §20). Two payloads at
