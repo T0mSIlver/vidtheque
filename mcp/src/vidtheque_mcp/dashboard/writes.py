@@ -62,7 +62,7 @@ from ..tools import indexing, library
 from ..tools.base import Deps
 from .access import auth_required, bad_origin, credential, origin_ok, require_write
 from .api import NO_STORE
-from .read_models import follow_row_json
+from .read_models import follow_row_json_with_error
 from .settings import ROOT
 from .views import _chrome, _render, _tool_error
 
@@ -1126,12 +1126,19 @@ async def _follow_action(request: Request, action: str, back: str) -> Response:
     return _see(back.format(slug=slug))
 
 
-# One follow row, typed — the outcome every follow write here answers with, and
-# since §22 the block the two following reads answer with as well. It moved to
-# `read_models.py` on 2026-09-05 for that second caller and is imported back
-# under the name this module has always used: a read and a write outcome must
-# describe a follow identically, and they do so by being one function.
-_follow_payload = follow_row_json
+# One follow row, typed, with the last failure on it — the outcome every follow
+# write here answers with, and the block `/dashboard/api/following/{slug}`
+# answers with as well. It lives in `read_models.py` since 2026-09-05, for that
+# second caller, and is imported back under the name this module has always
+# used: a read and a write outcome must describe a follow identically, and they
+# do so by being one function.
+#
+# The failure is on it because `set_state` clears `last_error_code` and
+# `last_error_message` when it resumes a follow. An outcome that carried
+# neither left the page showing an error the write had just cleared, so the
+# page re-read after every write; with the two columns here the row a write
+# answers with is complete (§21, 2026-09-05).
+_follow_payload = follow_row_json_with_error
 
 
 async def _follow_json(request: Request, slug: str) -> Response:
