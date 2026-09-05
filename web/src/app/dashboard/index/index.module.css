@@ -1,5 +1,6 @@
-/* The index form — `templates/index.html`, read out of
-   `dashboard/static/dashboard.css`.
+/* The index form. Its values came out of `templates/index.html` and
+   `dashboard/static/dashboard.css`, both retired on 2026-09-06; DESIGN.md is
+   the source now.
 
    The plate, the fields, the pickers and both checkbox shapes are
    `dashboard.module.css`'s. What is here is the vocabulary only this page has:

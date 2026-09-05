@@ -1,7 +1,8 @@
 /* The management chassis: a persistent rail, a content column, a signature at
-   the foot. Read out of `dashboard/static/dashboard.css` and
-   `templates/base.html`, which are still serving the pages this port has not
-   reached, so the two halves of the surface stay one surface while it happens.
+   the foot. The values were read out of `dashboard/static/dashboard.css` and
+   `templates/base.html` while both surfaces were live, so the two halves would
+   stay one surface across the port; both were deleted on 2026-09-06 and
+   DESIGN.md is the source now.
 
    The three lengths below are the dashboard's own and are declared here rather
    than in `styles/tokens.css`, which is generated from DESIGN.md's frontmatter:
