@@ -2670,16 +2670,21 @@ def test_signing_out_drops_the_row_not_just_the_cookie(tmp_path: Path) -> None:
         assert client.get(ROOT).status_code == 401
 
 
-def test_an_expired_browser_session_is_sent_back_to_the_login(tmp_path: Path) -> None:
-    """A form POST from a page whose cookie died gets a page, not a JSON blob."""
+def test_an_expired_browser_session_is_refused_in_one_shape(tmp_path: Path) -> None:
+    """A form POST from a page whose cookie died gets the envelope.
+
+    It used to get a 303 to the Jinja sign-in page. There is no Jinja sign-in
+    page, so the 401 is the whole refusal in both media and it is the shell
+    that decides to navigate (§21, 2026-09-05).
+    """
     with owner_client(tmp_path) as client:
         refused = client.post(
             f"{ROOT}/videos/kCc8FmEb1nY/reindex",
             headers={**SAME_ORIGIN, "Accept": "text/html"},
             follow_redirects=False,
         )
-        assert refused.status_code == 303
-        assert refused.headers["location"].startswith(f"{ROOT}/login?next=")
+        assert refused.status_code == 401
+        assert refused.json()["error"] == "E_AUTH_REQUIRED"
 
 
 # --- 8.4 the index form
@@ -2955,16 +2960,14 @@ def test_re_indexing_a_video_a_live_job_holds_is_the_tools_refusal(
 ) -> None:
     """`kCc8FmEb1nY` is mid-`stt` in the fixture's running job.
 
-    The button does not get to override that, and the page does not invent its
-    own wording for it: this is `index-video`'s `E_INDEXING`, verbatim, with a
-    way back to the video it was pressed on.
+    The button does not get to override that, and the surface does not invent
+    its own wording for it: this is `index-video`'s `E_INDEXING`, verbatim.
     """
     with owner_client(tmp_path) as client:
         sign_in(client)
         held = client.post(f"{ROOT}/videos/kCc8FmEb1nY/reindex", headers=SAME_ORIGIN)
         assert held.status_code == 409
-        assert "E_INDEXING" in held.text
-        assert f"{ROOT}/videos/kCc8FmEb1nY" in held.text
+        assert held.json()["error"] == "E_INDEXING"
 
 
 def test_re_indexing_an_unknown_video_is_a_typed_404(tmp_path: Path) -> None:
