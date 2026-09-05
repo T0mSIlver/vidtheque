@@ -1,11 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Pill } from "@/components/Pill";
-import { DashboardError } from "@/lib/dashboard/client";
 import type { JobCard } from "@/lib/dashboard/schemas";
 import { count, duration } from "@/lib/format";
-import { useSession } from "../session";
 import styles from "./jobs.module.css";
 
 // What the two jobs pages are built from. Every piece is on the Jinja pages
@@ -172,74 +170,9 @@ export function jobHeadline(job: JobCard): string {
   return `${count(job.n_items)} item(s)`;
 }
 
-// ------------------------------------------------------------- the writes
-
-/** One write, in the four states a control has to be able to draw. */
-export type Write<T> =
-  | { status: "idle" }
-  | { status: "sending" }
-  | { status: "done"; outcome: T }
-  | { status: "failed"; error: unknown };
-
-/**
- * A control that POSTs once and shows what came back.
- *
- * The outcome is rendered inline because that is the reason these routes
- * answer inline at all: a cancel whose only evidence is the next 2 s tick is a
- * button that looks broken, and the state the job is *now* in — settled
- * `cancelled`, or `running` with the request recorded — is precisely what a
- * poll cannot tell an operator (dashboard.md §21).
- *
- * `onDone` is how the page brings the tick back: a job that was terminal has a
- * stopped poll, and a retry has just made something live again.
- */
-export function useWrite<T>(send: () => Promise<T>, onDone?: (outcome: T) => void) {
-  const [state, setState] = useState<Write<T>>({ status: "idle" });
-
-  const run = useCallback(() => {
-    setState({ status: "sending" });
-    send().then(
-      (outcome) => {
-        setState({ status: "done", outcome });
-        onDone?.(outcome);
-      },
-      (error: unknown) => setState({ status: "failed", error }),
-    );
-  }, [send, onDone]);
-
-  return [state, run] as const;
-}
-
-/** Why a write was refused, in the API's own words. Code, message and the
- *  `next:` line are policy text and stay Python's; `403 E_BAD_ORIGIN` is the
- *  one that is a bug on this side rather than in the reader's session. */
-export function refusalOf(error: unknown): { code: string; message: string; next?: string } {
-  if (error instanceof DashboardError) {
-    return { code: error.code, message: error.message, next: error.next };
-  }
-  return {
-    code: "E_UNREACHABLE",
-    message: error instanceof Error ? error.message : "The write did not reach the instance.",
-  };
-}
-
-/**
- * Should this deployment draw a write control at all?
- *
- * `write_side` is whether the routes are registered — in
- * `VIDTHEQUE_PUBLIC_READONLY=1` and `VIDTHEQUE_AUTH=none` they are not, so
- * there is **no control**, disabled or otherwise: a button that 404s is worse
- * than a button that is not there (dashboard.md §2.3, §3.2 rule 3, §18.1).
- *
- * `writes_allowed` is the database's own flag and is a different question, so
- * it disables rather than removes — and only the controls that feed
- * `index_video`. Cancel writes the job row, not the index, and stays live
- * exactly when an operator most needs it to (§5.5, and `job.html`'s own rule).
- */
-export function useWriteSide(): { rendered: boolean; indexable: boolean } {
-  const session = useSession();
-  return {
-    rendered: Boolean(session?.write_side),
-    indexable: Boolean(session?.writes_allowed),
-  };
-}
+// The three things a write control needs — `useWrite`, `refusalOf` and
+// `useWriteSide` — were here while the jobs pages were the only pages that
+// wrote. The following pages write too, and two transcriptions of one control
+// is how two pages on one surface start behaving like two surfaces, so they
+// live in `../parts.tsx` now, where that module's own comment says the shared
+// vocabulary goes.

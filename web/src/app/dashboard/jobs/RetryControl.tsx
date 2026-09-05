@@ -4,9 +4,8 @@ import { useCallback } from "react";
 import { dashboard, ROOT } from "@/lib/dashboard/client";
 import type { JobCard, RetryOutcome } from "@/lib/dashboard/schemas";
 import dash from "../dashboard.module.css";
-import { DashLink, Sep } from "../parts";
+import { DashLink, refusalOf, Sep, useWrite, useWriteSide } from "../parts";
 import styles from "./jobs.module.css";
-import { refusalOf, useWrite, useWriteSide } from "./parts";
 
 // Retry the failed and degraded items of a finished job —
 // `POST /dashboard/jobs/{id}/retry` (dashboard.md §16.2, §21).

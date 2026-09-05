@@ -14,13 +14,15 @@ import {
   Panel,
   ReadFailure,
   Reading,
+  refusalOf,
   Sep,
   Unbroken,
+  useWriteSide,
 } from "../../parts";
 import { useJobsPoll } from "../../useJobsPoll";
 import { CancelControl } from "../CancelControl";
 import styles from "../jobs.module.css";
-import { countsOf, JobStates, Progress, refusalOf, tallyOf, useWriteSide } from "../parts";
+import { countsOf, JobStates, Progress, tallyOf } from "../parts";
 import { retryable, RetryControl } from "../RetryControl";
 
 // One job's war story — `templates/job.html`, reading
