@@ -131,7 +131,12 @@ describe("proxy", () => {
   // the JSON the pages read, the stylesheet and fonts the unported pages load,
   // the session flow, and every page still rendered by Jinja.
   it("covers the dashboard pages this app serves, and no other dashboard path", () => {
-    for (const path of ["/dashboard", "/dashboard/ledger", "/dashboard/videos"]) {
+    for (const path of [
+      "/dashboard",
+      "/dashboard/ledger",
+      "/dashboard/videos",
+      "/dashboard/videos/kCc8FmEb1nY",
+    ]) {
       expect(matches(path), path).toBe(true);
     }
     for (const path of [
@@ -139,7 +144,7 @@ describe("proxy", () => {
       "/dashboard/api/overview",
       "/dashboard/api/library",
       "/dashboard/api/library/kCc8FmEb1nY",
-      "/dashboard/videos/kCc8FmEb1nY",
+      "/dashboard/api/videos/kCc8FmEb1nY/cues",
       "/dashboard/static/dashboard.css",
       "/dashboard/static/fonts/archivo-latin-wght-normal.woff2",
       "/dashboard/login",
@@ -147,6 +152,10 @@ describe("proxy", () => {
       "/dashboard/index",
       "/dashboard/jobs",
       "/dashboard/following",
+      // The row actions are Python's `POST`s and have a segment the detail
+      // page does not: three under `/videos`, not two.
+      "/dashboard/videos/kCc8FmEb1nY/reindex",
+      "/dashboard/videos/kCc8FmEb1nY/tags",
       // Not a page here either: a sub-path of one that is.
       "/dashboard/ledger/anything",
     ]) {
