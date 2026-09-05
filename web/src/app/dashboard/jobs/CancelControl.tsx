@@ -4,8 +4,8 @@ import { useCallback } from "react";
 import { Pill } from "@/components/Pill";
 import { dashboard } from "@/lib/dashboard/client";
 import type { JobCard } from "@/lib/dashboard/schemas";
+import { refusalOf, useWrite } from "../parts";
 import styles from "./jobs.module.css";
-import { refusalOf, useWrite } from "./parts";
 
 // Cancel, on a job that can still be cancelled — `POST /dashboard/jobs/{id}/cancel`
 // (dashboard.md §16.1, §21).

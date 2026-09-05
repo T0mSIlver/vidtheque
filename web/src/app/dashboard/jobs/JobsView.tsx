@@ -6,19 +6,21 @@ import { dashboard, ROOT } from "@/lib/dashboard/client";
 import type { JobCard, Jobs } from "@/lib/dashboard/schemas";
 import { at, DASH } from "@/lib/format";
 import dash from "../dashboard.module.css";
-import { DashLink, Fact, PageHead, ReadFailure, Reading, Sep, Unbroken } from "../parts";
+import {
+  DashLink,
+  Fact,
+  PageHead,
+  ReadFailure,
+  Reading,
+  refusalOf,
+  Sep,
+  Unbroken,
+  useWriteSide,
+} from "../parts";
 import { useJobsPoll } from "../useJobsPoll";
 import { CancelControl } from "./CancelControl";
 import styles from "./jobs.module.css";
-import {
-  countsOf,
-  jobHeadline,
-  JobStates,
-  Progress,
-  refusalOf,
-  useWriteSide,
-  WallClock,
-} from "./parts";
+import { countsOf, jobHeadline, JobStates, Progress, WallClock } from "./parts";
 
 // The jobs table — `templates/jobs.html`, reading `GET /dashboard/api/jobs` in
 // the browser (dashboard.md §5.4, §16.3).

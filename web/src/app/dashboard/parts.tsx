@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { AnchorHTMLAttributes, ReactNode } from "react";
+import { useCallback, useState, type AnchorHTMLAttributes, type ReactNode } from "react";
 import { Pill, type Tone } from "@/components/Pill";
 import { RetryIn } from "@/components/RetryIn";
 import { DashboardError } from "@/lib/dashboard/client";
@@ -306,6 +306,87 @@ export function Readiness({
       {children}
     </Panel>
   );
+}
+
+// --------------------------------------------------------------- the write
+
+// The three pieces every write control on this surface is built from. They
+// arrived with the jobs pages' Cancel and Retry and moved here when the
+// following pages started writing too: one control drawn twice is how two
+// pages start disagreeing about what a refusal looks like.
+
+/** One write, in the four states a control has to be able to draw. */
+export type Write<T> =
+  | { status: "idle" }
+  | { status: "sending" }
+  | { status: "done"; outcome: T }
+  | { status: "failed"; error: unknown };
+
+/**
+ * A control that POSTs once and shows what came back.
+ *
+ * The outcome is rendered inline because that is the reason these routes
+ * answer inline at all: a cancel whose only evidence is the next 2 s tick is a
+ * button that looks broken, and the state the job is *now* in — settled
+ * `cancelled`, or `running` with the request recorded — is precisely what a
+ * poll cannot tell an operator (dashboard.md §21). The following pages have no
+ * poll at all, so for them it is the only evidence there is.
+ *
+ * `onDone` is what a page does with the receipt: the jobs pages bring the tick
+ * back with it, and the following pages put the returned row back in the table
+ * — the row is the follow as it stands *after* the write, re-read by Python.
+ */
+export function useWrite<T>(send: () => Promise<T>, onDone?: (outcome: T) => void) {
+  const [state, setState] = useState<Write<T>>({ status: "idle" });
+
+  const run = useCallback(() => {
+    setState({ status: "sending" });
+    send().then(
+      (outcome) => {
+        setState({ status: "done", outcome });
+        onDone?.(outcome);
+      },
+      (error: unknown) => setState({ status: "failed", error }),
+    );
+  }, [send, onDone]);
+
+  return [state, run] as const;
+}
+
+/** Why a write was refused, in the API's own words. Code, message and the
+ *  `next:` line are policy text and stay Python's; `403 E_BAD_ORIGIN` is the
+ *  one that is a bug on this side rather than in the reader's session. */
+export function refusalOf(error: unknown): { code: string; message: string; next?: string } {
+  if (error instanceof DashboardError) {
+    return { code: error.code, message: error.message, next: error.next };
+  }
+  return {
+    code: "E_UNREACHABLE",
+    message: error instanceof Error ? error.message : "The write did not reach the instance.",
+  };
+}
+
+/**
+ * Should this deployment draw a write control at all?
+ *
+ * `write_side` is whether the routes are registered — in
+ * `VIDTHEQUE_PUBLIC_READONLY=1` and `VIDTHEQUE_AUTH=none` they are not, so
+ * there is **no control**, disabled or otherwise: a button that 404s is worse
+ * than a button that is not there (dashboard.md §2.3, §3.2 rule 3, §18.1). On
+ * the following pages it decides more than a control: the whole surface is
+ * registered with the writes, so `false` means the page itself is not there.
+ *
+ * `writes_allowed` is the database's own flag and is a different question, so
+ * it disables rather than removes — and only the controls that feed
+ * `index_video`. Cancel writes the job row, not the index, and stays live
+ * exactly when an operator most needs it to (§5.5, and `job.html`'s own rule).
+ */
+export function useWriteSide(): { rendered: boolean; indexable: boolean } {
+  const session = useSession();
+  return {
+    rendered: Boolean(session?.write_side),
+    indexable: Boolean(session?.writes_allowed),
+  };
 }
 
 // ---------------------------------------------------------------- the read
