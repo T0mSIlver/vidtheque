@@ -20,10 +20,10 @@
    nowhere else. What it does not spend: display type, imagery as decoration,
    shadows, spectacle, motion that is not a machine working.
 
-   The first six custom properties are asserted equal to public/static/demo/style.css
-   (test_dashboard.py::test_the_dashboard_palette_matches_the_demos) — the thing
-   that stops the two surfaces drifting into two visual worlds. They are pinned
-   aliases and carry no value of their own.
+   The first six custom properties are asserted equal to web/src/styles/tokens.css
+   (test_dashboard.py::test_the_dashboard_palette_matches_the_front_ends) — the
+   thing that stops the two surfaces drifting into two visual worlds. They are
+   pinned aliases and carry no value of their own.
 
    Fonts are vendored, latin subset, relative `src` — static/fonts/PROVENANCE.md
    has the sizes, the licences and the two things checked inside the files. */
@@ -33,8 +33,8 @@
 /* Relative, not `{{ root }}`-absolute and never PUBLIC_URL: this stylesheet is
    loaded from an SSH tunnel on a port nobody predicted. The copies here are
    byte-identical to public/static/fonts/, which is the document of record —
-   `public/static/*` is only routed under VIDTHEQUE_PUBLIC_READONLY=1, so a
-   dashboard font served from there 404s in a private deployment. */
+   nothing routes `/static/*` any more (the pages left for web/ on 2026-09-05),
+   so a dashboard font can only be served through this surface's own route. */
 
 @font-face {
   font-family: "Archivo VF";
@@ -68,8 +68,9 @@
    contract they are. The palette test resolves each one through its aliases and
    compares the two surfaces as mappings, so they are held to the same *colour*
    without either file being forced into the other's spelling or ordering.
-   Adding a seventh here means adding it to public/static/demo/style.css in the same
-   commit — which is exactly the friction it exists to create. */
+   Adding a seventh here means declaring it in DESIGN.md's frontmatter and
+   regenerating tokens.css (`pnpm tokens`) in the same commit — which is exactly
+   the friction it exists to create. */
 
 :root {
   color-scheme: dark;
