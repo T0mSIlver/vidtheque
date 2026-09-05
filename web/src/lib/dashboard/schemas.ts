@@ -530,3 +530,221 @@ export const PartialRefusal = z.object({
   next: z.string().nullable().optional(),
 });
 export type PartialRefusal = z.infer<typeof PartialRefusal>;
+
+// ------------------------------------------------------------------- jobs
+
+// `GET /dashboard/api/jobs` and `/dashboard/api/jobs/{job_id}` — the two poll
+// targets `static/jobs.js` has read since phase 2, and the oldest JSON on this
+// surface (dashboard.md §5.4).
+//
+// **They answer in two halves, and this file reads one of them.** Beside every
+// typed field is a `text` block the server rendered for a script that carries
+// no formatter — `progress`, `counts`, `tally`, `wall`, `ran`, `waited`,
+// `defer`, `finished`, and per item `attempts`, `took`, `stage`. Every one of
+// those is a rendering of a number that is already here, so these pages render
+// from the numbers and read none of the strings: that is decision 5, and the
+// strings are cut in the commit that deletes `static/jobs.js`
+// (frontend-migration.md §3).
+//
+// `basis` is the exception the contract names. It is not a rendering of
+// anything — it is the sentence saying what the percentage is *computed over*,
+// which is policy text and stays Python's. It survives that cut "in `notes` or
+// beside it", so it is read from both places and both are optional: this shell
+// works against the instance that still nests it under `text`, and against the
+// one that has moved it out.
+const basisOf = () => z.object({ basis: z.string().optional() }).nullable().optional();
+
+// What a job *contains*, from its own items: the first video's title with the
+// rest counted after it, and the channel a batch was expanded from when every
+// resolved item came from one.
+//
+// **Optional, because the poll target does not send it today.** The Jinja page
+// reads it in a separate grouped query and deliberately keeps it off the tick —
+// what a job contains does not change between two ticks — so
+// `/dashboard/api/jobs` carries no title at all and a React row falls back to
+// the item count it does have. The day the payload grows the field, the
+// fallback stops being reached and nothing else moves.
+export const JobContents = z.object({
+  title: z.string().nullable(),
+  more: count(),
+  channel: z.string().nullable(),
+  note: z.string().nullable(),
+});
+export type JobContents = z.infer<typeof JobContents>;
+
+export const JobCard = z.object({
+  job_id: z.string(),
+  // The store's own words — `queued|running|done|failed|cancelled` — as
+  // strings, so a state the queue grows renders neutral instead of failing.
+  state: z.string(),
+  kind: z.string(),
+  priority: count(),
+  // Already a whole percent: `_job_card` rounds `jobs.progress` server-side.
+  progress: count(),
+  n_items: count(),
+  n_done: count(),
+  n_failed: count(),
+  n_skipped: count(),
+  n_cancelled: count(),
+  cancel_requested: z.boolean(),
+  created_at: epoch(),
+  started_at: clockOf(),
+  finished_at: clockOf(),
+  // The three durations, and which of them are `null` is the fact: a job that
+  // was never claimed has waited and has not run (dashboard.md §5.4).
+  waited_s: count().nullable(),
+  ran_s: count().nullable(),
+  wall_s: count().nullable(),
+  // `queued|running` — the store's own liveness, and the poll's stop condition.
+  live: z.boolean(),
+  // Seconds of `not_before` still to run, and `0` on anything but a queued
+  // job: the stamp on a running row is what the last deferral left behind, and
+  // a countdown against it would invent a wait that is not happening.
+  defer_s: count(),
+  error_code: z.string().nullable(),
+  // `null` in the projection: the pipeline quoting yt-dlp about the operator's
+  // own box (§2.4).
+  error_message: z.string().nullable(),
+  // How many of this job's `done` items have a failed stage underneath them.
+  degraded: count(),
+  contents: JobContents.optional(),
+  basis: z.string().optional(),
+  text: basisOf(),
+});
+export type JobCard = z.infer<typeof JobCard>;
+
+export const JobItem = z.object({
+  item_id: count(),
+  seq: count(),
+  state: z.string(),
+  stage: z.string().nullable(),
+  stage_pct: count(),
+  attempts: count(),
+  max_attempts: count(),
+  // The half of "will this retry" a row can actually answer:
+  // `ItemFailed.retryable` is not persisted (§4.4).
+  retries_left: count(),
+  video_id: z.string().nullable(),
+  title: z.string().nullable(),
+  channel: z.string().nullable(),
+  duration_s: seconds().nullable(),
+  // `null` in the projection — the submitted URL is `args_json` by another
+  // name. The video it resolved to is not, and stays.
+  source_url: z.string().nullable(),
+  error_code: z.string().nullable(),
+  error_message: z.string().nullable(),
+  started_at: clockOf(),
+  finished_at: clockOf(),
+  took_s: count().nullable(),
+  text: basisOf(),
+});
+export type JobItem = z.infer<typeof JobItem>;
+
+export const JobEvent = z.object({
+  id: count(),
+  at: epoch(),
+  level: z.string(),
+  stage: z.string().nullable(),
+  item_id: count().nullable(),
+  // `null` in the projection: the runner writes yt-dlp's string into it and a
+  // reclaim writes the item's URL, and there is no structured half to keep.
+  message: z.string().nullable(),
+});
+export type JobEvent = z.infer<typeof JobEvent>;
+
+export const Jobs = z.object({
+  now: epoch(),
+  // The server's own cadence. Clamped again in the browser: a page that took
+  // its interval from a payload alone would poll as fast as a payload said.
+  poll_ms: count(),
+  // Is anything `queued|running`? When nothing is, there is nothing to poll
+  // for and the tab stops being a load generator against the process that
+  // also holds the only SQLite writer.
+  live: z.boolean(),
+  jobs: z.array(JobCard),
+  pagination: z.object({ limit: count(), offset: count(), has_more: z.boolean() }),
+});
+export type Jobs = z.infer<typeof Jobs>;
+
+// One job's war story. Six of the things the Jinja page renders are assembled
+// in `views._job_detail` and **not sent on this payload** — `counts`,
+// `error_counts`, `degraded`, `focus`, `stages` and `items_capped` — so each is
+// optional here and the panel that renders it is absent rather than empty
+// until the payload carries it.
+export const JobDetail = z.object({
+  now: epoch(),
+  poll_ms: count(),
+  live: z.boolean(),
+  job: JobCard,
+  items: z.array(JobItem),
+  events: z.array(JobEvent),
+  items_capped: z.boolean().optional(),
+  // `{state: n}` over every item — the tally the job card's own five counts
+  // already carry, read only if it arrives.
+  counts: z.record(z.string(), count()).optional(),
+  error_counts: z.record(z.string(), count()).optional(),
+  degraded: z
+    .array(
+      z.object({
+        seq: count(),
+        video_id: z.string().nullable(),
+        stage: z.string(),
+        error: z.string().nullable(),
+      }),
+    )
+    .optional(),
+  focus: JobItem.nullable().optional(),
+  stages: z
+    .array(
+      z.object({
+        stage: z.string(),
+        state: z.string(),
+        started_at: clockOf(),
+        finished_at: clockOf(),
+        took_s: count().nullable(),
+      }),
+    )
+    .optional(),
+});
+export type JobDetail = z.infer<typeof JobDetail>;
+
+// ------------------------------------------------------------- the writes
+
+// The two typed outcomes this surface's controls read (dashboard.md §21).
+// Values only — the store's own state word, ints, a boolean, a list — because
+// the formatting is React's and the only policy text on a write is the
+// refusal's, which travels in `PartialRefusal`.
+
+/** `POST /dashboard/jobs/{job_id}/cancel`.
+ *
+ *  `state` is the state the job is in *now*, and which of the two it is, is the
+ *  reason this route answers inline at all: queued work settles `cancelled`
+ *  immediately, running work stays `running` with the request recorded until
+ *  the pipeline reaches its next stage boundary. A 2 s poll cannot tell an
+ *  operator which of those just happened. */
+export const CancelOutcome = z.object({
+  job_id: z.string(),
+  state: z.string(),
+  cancel_requested: z.boolean(),
+});
+export type CancelOutcome = z.infer<typeof CancelOutcome>;
+
+/** `POST /dashboard/jobs/{job_id}/retry`.
+ *
+ *  Every new job, always as a list: the Jinja page goes straight to the new job
+ *  when there is exactly one, and a client that always reads `jobs` is a client
+ *  with no special case. `200` when anything was accepted, `409` when nothing
+ *  was — and the `409` carries this same shape with the refusals in `errors`,
+ *  so it is a payload to read rather than an error to throw. */
+export const RetryOutcome = z.object({
+  from_job_id: z.string(),
+  selected: count(),
+  jobs: z.array(z.object({ job_id: z.string(), items: count() })),
+  errors: z.array(PartialRefusal),
+  preserved: z.object({
+    channels: z.string(),
+    tags: z.array(z.string()),
+    priority: z.string(),
+  }),
+});
+export type RetryOutcome = z.infer<typeof RetryOutcome>;

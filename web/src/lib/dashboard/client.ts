@@ -1,4 +1,4 @@
-// The dashboard's reads, from the browser.
+// The dashboard's reads and writes, from the browser.
 //
 // This is the one module in `web/` that talks to Python from the *client*, and
 // it is deliberately not `lib/api`'s pattern. That client is server-only: it
@@ -21,13 +21,27 @@
 // * **The 401, in one place.** A refused read sends the browser to Python's
 //   sign-in page with somewhere to come back to, and the page renders its
 //   signed-out state meanwhile.
+//
+// The write half arrived with the jobs pages (dashboard.md §21,
+// frontend-migration.md §9) and adds no fourth rule: a write is a `POST` to the
+// *same* `/dashboard/*` route the Jinja form posts to, with the same cookie,
+// the same form-encoded body, and `Accept: application/json` — which is the
+// only thing that switches the answer from a `303` to a typed outcome. There is
+// no CSRF token on this surface and none is planned: `dashboard/access.py`
+// asks an ambient credential for positive same-origin evidence instead, and a
+// same-origin `fetch` sends `Sec-Fetch-Site: same-origin` itself — a header
+// script cannot forge, so there is nothing for this file to attach.
 import type { ZodType } from "zod";
 import {
+  CancelOutcome,
   CuePage,
+  JobDetail,
+  Jobs,
   Ledger,
   Library,
   Overview,
   PartialRefusal,
+  RetryOutcome,
   Session,
   VideoDetail,
 } from "./schemas";
@@ -151,6 +165,57 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
     return parsed.data;
   }
 
+  /**
+   * One write, to the route the Jinja form posts to (frontend-migration.md §9).
+   *
+   * All three of these travel together or the write is not the one the
+   * contract describes:
+   *
+   * * `credentials: "same-origin"` — `fetch`'s default only for a same-origin
+   *   request, so it is said rather than assumed. Next never sees this cookie
+   *   and the browser is the only thing that holds it.
+   * * `Accept: application/json` — the whole switch. Nothing else picks the
+   *   typed outcome over the `303` a form navigation gets, and a wildcard
+   *   `Accept` will not: a request for anything is not a request for a typed
+   *   outcome, which is what makes the strictness safe.
+   * * a **form-encoded body**. None of the thirteen handlers parses a JSON
+   *   body; they read a form on both branches.
+   *
+   * A refusal is the same envelope a read is refused with, at the code's own
+   * status and with `Retry-After` when the refusal named a delay, so it lands
+   * in `DashboardError` exactly as a read's does. `401` is the same signal too:
+   * authorization is decided in one place and no page keeps a rule of its own.
+   *
+   * `alsoRead` is for the one status that is not a refusal: `retry` answers
+   * `409` when *nothing* was accepted, and the body is still the receipt — the
+   * job it came from, what it selected, and the refusals in `errors` (§21).
+   */
+  async function postForm<T>(
+    path: string,
+    fields: Record<string, string>,
+    schema: ZodType<T>,
+    alsoRead: number[] = [],
+  ): Promise<T> {
+    const res = await doFetch(path, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams(fields).toString(),
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+    if (!res.ok && !alsoRead.includes(res.status)) {
+      const error = await toError(res);
+      if (error.status === 401) void toSignIn();
+      throw error;
+    }
+    const parsed = schema.safeParse(await res.json());
+    if (!parsed.success) throw new DashboardShapeError(path, parsed.error);
+    return parsed.data;
+  }
+
   return {
     overview(signal?: AbortSignal) {
       return get(`${ROOT}/api/overview`, Overview, { signal });
@@ -188,10 +253,42 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
       }
       return get(`${path}${suffix(query)}`, CuePage, { signal });
     },
+    /**
+     * The jobs table, and the 2 s tick that keeps it true.
+     *
+     * `query` is the page's own URL filtered to the parameters the view takes,
+     * passed through untouched for the reason every other list here does:
+     * `list_jobs` owns every predicate, and a value corrected on this side
+     * would be a bound the reader is never told about.
+     */
+    jobs(query: URLSearchParams, signal?: AbortSignal) {
+      return get(`${ROOT}/api/jobs${suffix(query)}`, Jobs, { signal });
+    },
+    /** One job — its card, its items and the tail of its event log. */
+    job(jobId: string, signal?: AbortSignal) {
+      return get(`${ROOT}/api/jobs/${encodeURIComponent(jobId)}`, JobDetail, { signal });
+    },
     /** Outside the read gate: a signed-out browser may ask what this deployment is. */
     session(signal?: AbortSignal) {
       return get(`${ROOT}/api/session`, Session, { signal, gated: false });
     },
+
+    // ------------------------------------------------------------- writes
+
+    /** `POST /dashboard/jobs/{job_id}/cancel`. No fields: the Jinja form posts
+     *  none either, and the job is named by the path. */
+    cancelJob(jobId: string) {
+      const path = `${ROOT}/jobs/${encodeURIComponent(jobId)}/cancel`;
+      return postForm(path, {}, CancelOutcome);
+    },
+    /** `POST /dashboard/jobs/{job_id}/retry` — the failed and degraded items,
+     *  and nothing else. `409` is read rather than thrown: it means every batch
+     *  was refused, and the refusals are on the receipt. */
+    retryJob(jobId: string) {
+      const path = `${ROOT}/jobs/${encodeURIComponent(jobId)}/retry`;
+      return postForm(path, {}, RetryOutcome, [409]);
+    },
+    postForm,
   };
 }
 
