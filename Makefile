@@ -53,6 +53,7 @@ web-check: ## Run every web/ check CI runs, in the same order
 	cd web && pnpm build
 
 .PHONY: images
-images: ## Build both container images locally
+images: ## Build the three container images locally
 	docker build -f worker/Dockerfile -t vidtheque-worker:dev .
 	docker build -f mcp/Dockerfile -t vidtheque-mcp:dev .
+	docker build -f web/Dockerfile -t vidtheque-web:dev web
