@@ -69,7 +69,7 @@ from ..auth.login import SESSION_COOKIE
 from ..db import queries
 from ..errors import HTTP_STATUS
 from ..public.api import OWNER_CLAMPS, PUBLIC_CLAMPS
-from ..text import clamp, clock
+from ..text import clamp
 from .access import peer_trusted, sign_in_hint, write_side_enabled
 from .read_models import (
     BUDGET_WINDOW_S,
@@ -143,14 +143,10 @@ def _seconds(value: Any) -> float | None:
 def _readiness(readiness: dict[str, Any]) -> dict[str, Any]:
     """The pipeline observation, field by field rather than passed through.
 
-    Two reasons it is copied out instead of forwarded. The clock: the page's
-    `checked_at` is an ISO-8601 string because a `<time datetime=...>` attribute
-    wants one, and this surface sends `read_models`' epoch seconds off the same
-    reading, because React formats dates. And the shape: a field added to the
-    dict for the templates would otherwise join this contract the day it is
-    written, which is how an operator-only value reaches a payload nobody
-    re-reviewed. `worker` stays `None` whole in the projection - the probe was
-    never made.
+    Copied out instead of forwarded because of the shape: a field added to the
+    assembler's dict would otherwise join this contract the day it is written,
+    which is how an operator-only value reaches a payload nobody re-reviewed.
+    `worker` stays `None` whole in the projection - the probe was never made.
     """
     worker = readiness["worker"]
     return {
@@ -176,7 +172,7 @@ def _readiness(readiness: dict[str, Any]) -> dict[str, Any]:
                 for model in worker["models"]
             ],
         },
-        "checked_at": readiness["checked_at_s"],
+        "checked_at": readiness["checked_at"],
     }
 
 
@@ -1059,12 +1055,14 @@ async def cues_json(request: Request) -> Response:
     `per_video_counts`, which the detail read already made for its counts band,
     so nothing here duplicates a count query.
 
-    **Typed fields beside the strings** (Tom, 2026-09-05). This endpoint
-    predates DECISIONS.md's typed-values rule and was the one place where the
-    typed half was *missing* rather than merely duplicated: `at`, `conf` and
-    `chunk` are renderings of numbers the read already had. `start_s`, `end_s`,
-    `avg_logprob`, `chunk_opens` and `chunk_closes` are those numbers, under
-    `_cue_rows`' own names (frontend-migration.md §3).
+    **Typed fields, and the strings they replaced** (frontend-migration.md §3).
+    This endpoint predates DECISIONS.md's typed-values rule and was the one
+    place where the typed half was *missing* rather than merely duplicated: it
+    sent `at`, `conf` and `chunk` — a `clock()`, a two-decimal log-probability
+    and a composed sentence — and the numbers behind them were added beside
+    them on 2026-09-05. The strings went on 2026-09-06 with the script that
+    read them; `start_s`, `end_s`, `avg_logprob`, `chunk_opens` and
+    `chunk_closes` are what is left, under `_cue_rows`' own names.
     """
     db = request.app.state.assembled.db
     video_id = str(request.path_params["video_id"])
@@ -1098,11 +1096,11 @@ async def cues_json(request: Request) -> Response:
         {
             "cues": [
                 {
-                    # The typed half. Seconds as floats, because a cue boundary
-                    # is not a whole second and `t` has always rounded it down;
-                    # the log-probability as the number it is; and the chunk as
-                    # the five fields the sentence below is composed from, so a
-                    # client can say "chunk 3" without parsing " · ".
+                    # Seconds as floats, because a cue boundary is not a whole
+                    # second and `t` has always rounded it down; the
+                    # log-probability as the number it is; and the chunk as the
+                    # five fields a label is composed from, so a client can say
+                    # "chunk 3" without parsing " · ".
                     "start_s": float(cue["start_s"]),
                     "end_s": float(cue["end_s"]),
                     "avg_logprob": None
@@ -1111,26 +1109,12 @@ async def cues_json(request: Request) -> Response:
                     "chunk_opens": cue["chunk_opens"],
                     # `in_chunk` is these two facts collapsed into one bool, and
                     # a marker at the end of a chunk is not a marker at the
-                    # start of one — the page draws them differently.
+                    # start of one — a reader draws them differently.
                     "chunk_closes": cue["chunk_closes"],
-                    # The rendered half, unchanged.
-                    "at": clock(cue["start_s"]),
                     "t": int(cue["start_s"]),
                     "text": cue["text"],
                     "speaker": cue["speaker"],
-                    "conf": None
-                    if cue["avg_logprob"] is None
-                    else f"{cue['avg_logprob']:.2f}",
                     "in_chunk": bool(cue["chunk_opens"] or cue["chunk_closes"]),
-                    "chunk": None
-                    if cue["chunk_opens"] is None
-                    else (
-                        f"chunk {cue['chunk_opens']['seq']} · "
-                        f"{clock(cue['chunk_opens']['start_s'])}–"
-                        f"{clock(cue['chunk_opens']['end_s'])} · "
-                        f"{cue['chunk_opens']['n_words']} words · "
-                        f"{cue['chunk_opens']['n_chars']} chars"
-                    ),
                 }
                 for cue in _cue_rows(cue_rows, chunks)
             ],

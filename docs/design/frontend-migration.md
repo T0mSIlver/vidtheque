@@ -412,6 +412,10 @@ Changing them any earlier changes what `static/jobs.js` and
   itself (and the items' `text`, and each event's `at_text`); `basis`, the
   sentence saying what the percentage is computed over, is policy text and
   survives, in `notes` or beside it.
+
+  *Landed 2026-09-06:* both `text` blocks and `at_text` are gone, and `basis`
+  is **beside** — a field on the card. `notes` is the list of bounds that moved
+  on this request, and a sentence true of every card is not one of them.
 - **The cues route was the one with a missing half**, not a duplicated one.
   *Landed 2026-09-05:* it carries `start_s` and `end_s` as floats,
   `avg_logprob` as a float or `null`, `chunk_opens` — the chunk's `seq`,
@@ -440,6 +444,15 @@ strings are cut from the endpoint — in the commit that deletes
 `static/dashboard.js`'s scrollbox, per the rule above — `at`, `conf` and `chunk`
 leave `schemas.ts`, the three fallbacks go with them, and the typed fields stop
 being optional. Nothing else on either page moves.
+
+*Landed 2026-09-06, Python's half.* `static/dashboard.js` went with the video
+detail page, so `at`, `conf` and `chunk` are off the wire. **`web/` has the
+other half to do and it is the paragraph above, unchanged:** the `Cue` schema's
+three string fields come out, `CueRow`'s three fallbacks come out, and
+`start_s`, `avg_logprob` and `chunk_opens` stop being optional. Until it does,
+the page renders from the typed fields it already prefers and the fallbacks are
+dead branches rather than broken ones — the schema is what fails first, because
+it requires three fields the endpoint no longer sends.
 
 ## 4. `GET /dashboard/api/overview`
 
