@@ -331,10 +331,9 @@ describe("the index form", () => {
     });
   });
 
-  // The seeding link a video's detail page carries: `urls` and `expand`, which
-  // are `_prefilled_index_form`'s parameters. A prefill is a draft — nothing
-  // here normalises a URL or decides anything, and the POST stays the only
-  // thing that interprets it.
+  // The seeding link a video's detail page carries: `urls` and `expand`. A
+  // prefill is a draft — nothing here normalises a URL or decides anything, and
+  // the POST stays the only thing that interprets it.
   describe("the prefill", () => {
     it("seeds the controls from the link that queued more from a channel", async () => {
       await mount({
@@ -350,6 +349,26 @@ describe("the index form", () => {
 
       expect(await screen.findByLabelText("Tags")).toHaveValue("topic:attention");
       expect(screen.getByLabelText("Expand")).toHaveValue("playlist");
+    });
+
+    // The two character bounds are this page's own: the Jinja handler that held
+    // them is deleted, and the mcp test that pinned them went with it. These
+    // are the numbers it enforced, so a link that worked against Python still
+    // lands the same draft here.
+    it("cuts a `urls` parameter at 16,384 characters", async () => {
+      const search = new URLSearchParams({ urls: "u".repeat(16_384 + 500) }).toString();
+
+      await mount({ search });
+
+      expect(await screen.findByLabelText("URLs")).toHaveValue("u".repeat(16_384));
+    });
+
+    it("cuts a `tags` parameter at 800", async () => {
+      const search = new URLSearchParams({ tags: "t".repeat(800 + 50) }).toString();
+
+      await mount({ search });
+
+      expect(await screen.findByLabelText("Tags")).toHaveValue("t".repeat(800));
     });
 
     it("posts the seeded draft as typed", async () => {

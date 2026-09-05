@@ -59,14 +59,18 @@ const URLS_PER_JOB = 10;
 const MAX_FORM_URLS = 200;
 const MAX_ITEMS = 200;
 
-/** What the controls start out holding — `writes._index_form_values`. */
+/** What the controls start out holding. */
 const DEFAULTS = { expand: "playlist", maxItems: 25, priority: "normal" };
 
-/** The prefill's own bounds, which are the Jinja handler's
- *  (`MAX_PREFILL_URLS_CHARS`, `MAX_PREFILL_TAGS_CHARS`). A `GET` parameter is
- *  an input like any other, and these cap what a deep link may pour into a
+/** The prefill's own bounds, and this page's to keep. A `GET` parameter is an
+ *  input like any other, and these cap what a deep link may pour into a
  *  control. They bound the *prefill* and nothing else: what the form then posts
- *  is bounded by the handler, at `MAX_FORM_URLS` URLs. */
+ *  is bounded by the handler, at `MAX_FORM_URLS` URLs.
+ *
+ *  The two numbers are the ones the deleted Jinja handler enforced, carried
+ *  over unchanged so a link that worked against it still works here. Python
+ *  holds no copy now, so nothing mirrors them and nothing can drift from them —
+ *  `IndexView.test.tsx` is where they are pinned. */
 const MAX_PREFILL_URLS_CHARS = 16_384;
 const MAX_PREFILL_TAGS_CHARS = 800;
 
@@ -478,9 +482,8 @@ function Receipt({ outcome }: { outcome: IndexOutcome }) {
 }
 
 /**
- * The seeding parameters, copied into controls and nowhere else —
- * `writes._prefilled_index_form`, which is what "Queue more from this channel"
- * on a video's detail page links to.
+ * The seeding parameters, copied into controls and nowhere else. "Queue more
+ * from this channel" on a video's detail page is what links here.
  *
  * This deliberately does not normalise a URL, validate a tag, or decide
  * anything: a prefill is a draft the operator may still edit, and the `POST` is
