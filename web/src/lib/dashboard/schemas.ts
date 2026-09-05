@@ -543,25 +543,22 @@ export type PartialRefusal = z.infer<typeof PartialRefusal>;
 // ------------------------------------------------------------------- jobs
 
 // `GET /dashboard/api/jobs` and `/dashboard/api/jobs/{job_id}` — the two poll
-// targets `static/jobs.js` has read since phase 2, and the oldest JSON on this
+// targets `static/jobs.js` read since phase 2, and the oldest JSON on this
 // surface (dashboard.md §5.4).
 //
-// **They answer in two halves, and this file reads one of them.** Beside every
-// typed field is a `text` block the server rendered for a script that carries
-// no formatter — `progress`, `counts`, `tally`, `wall`, `ran`, `waited`,
-// `defer`, `finished`, and per item `attempts`, `took`, `stage`. Every one of
-// those is a rendering of a number that is already here, so these pages render
-// from the numbers and read none of the strings: that is decision 5, and the
-// strings are cut in the commit that deletes `static/jobs.js`
-// (frontend-migration.md §3).
+// They used to answer in two halves: beside every typed field, a `text` block
+// the server rendered for that script, which carried no formatter —
+// `progress`, `counts`, `tally`, `wall`, `ran`, `waited`, `defer`, `finished`,
+// and per item `attempts`, `took`, `stage`, plus each event's `at_text`. Every
+// one was a rendering of a number sent beside it, so they went with the script
+// on 2026-09-06 (dashboard.md §23) and nothing here ever read them.
 //
-// `basis` is the exception the contract names. It is not a rendering of
-// anything — it is the sentence saying what the percentage is *computed over*,
-// which is policy text and stays Python's. It survives that cut "in `notes` or
-// beside it", so it is read from both places and both are optional: this shell
-// works against the instance that still nests it under `text`, and against the
-// one that has moved it out.
-const basisOf = () => z.object({ basis: z.string().optional() }).nullable().optional();
+// `basis` is the exception the contract named, and it survived as a field on
+// the card: not a rendering of anything, but the sentence saying what the
+// percentage is *computed over*, which is policy text and stays Python's. It
+// is optional because it moved — an instance that predates that cut nests it
+// under `text`, where this shell no longer looks, and a card without it draws
+// the tally alone.
 
 // What a job *contains*, from its own items: the first video's title with the
 // rest counted after it, and the channel a batch was expanded from when every
@@ -616,7 +613,6 @@ export const JobCard = z.object({
   degraded: count(),
   contents: JobContents.optional(),
   basis: z.string().optional(),
-  text: basisOf(),
 });
 export type JobCard = z.infer<typeof JobCard>;
 
@@ -643,7 +639,6 @@ export const JobItem = z.object({
   started_at: clockOf(),
   finished_at: clockOf(),
   took_s: count().nullable(),
-  text: basisOf(),
 });
 export type JobItem = z.infer<typeof JobItem>;
 

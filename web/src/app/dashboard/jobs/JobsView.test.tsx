@@ -84,13 +84,18 @@ describe("the jobs table", () => {
     expect(screen.getByRole("status")).toHaveTextContent("3 shown.");
     expect(screen.getAllByRole("row")).toHaveLength(4); // three jobs and the head
 
-    // The three durations are formatted here from the payload's seconds, never
-    // read out of its `text` block.
+    // The three durations are formatted here from the payload's seconds. The
+    // payload sends no rendered strings at all now, bar `basis`.
     const running = rowOf("job_running001");
     expect(within(running).getByText("running")).toBeInTheDocument();
     expect(within(running).getByText("10%")).toBeInTheDocument();
     expect(within(running).getByText("0/2 done")).toBeInTheDocument();
     expect(within(running).getByText("20m 00s")).toBeInTheDocument();
+    // The tally is composed from the five counts; the sentence under it is the
+    // one string the card carries, because it is policy and not a formatting.
+    const hint = within(running).getByRole("tooltip");
+    expect(hint).toHaveTextContent("0 done · 0 failed · 0 skipped · 0 cancelled · 2 still to run");
+    expect(hint).toHaveTextContent("of 2 item(s).");
 
     const finished = rowOf("job_finished01");
     expect(within(finished).getByText("1/2 done · 1 failed")).toBeInTheDocument();
