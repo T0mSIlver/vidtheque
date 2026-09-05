@@ -1327,3 +1327,196 @@ def test_neither_following_payload_carries_a_rendered_clock(tmp_path: Path) -> N
             # The sentence renderers, by the words only they produce.
             assert "Every 6 hours" not in raw
             assert "passed over" not in raw
+
+
+# --------------------------------------------- the jobs table (§5.4, the list)
+
+# The two oldest JSON routes on this surface, and the two the React port found
+# short: the poll target had no row headline, and neither payload said what it
+# had filtered on.
+JOBS = f"{ROOT}/api/jobs"
+JOB = f"{ROOT}/api/jobs/job_finished01"
+RUNNING = f"{ROOT}/api/jobs/job_running001"
+
+
+def _typed(value):  # type: ignore[no-untyped-def]
+    """The payload with every `text` block dropped.
+
+    The jobs pair is the one place on this surface that still carries rendered
+    strings beside its numbers — a script with no formatter of its own reads
+    them, and §5.4 deletes them with that script. The scans below are about the
+    *typed* half, which is the half a React page reads and the half that has to
+    be complete on its own.
+    """
+    if isinstance(value, dict):
+        return {k: _typed(v) for k, v in value.items() if k != "text"}
+    if isinstance(value, list):
+        return [_typed(v) for v in value]
+    return value
+
+
+def test_the_jobs_list_says_what_each_row_holds(tmp_path: Path) -> None:
+    """The row headline, on the payload as well as the page (§5.4, 2026-09-05).
+
+    A jobs table whose rows print only `job_uid` is a list of opaque handles,
+    which is why the Jinja page grew `contents` in the first place — and the
+    poll target went without it, so a React table had a count where the title
+    goes. It is on both now, out of one grouped read.
+    """
+    with make_client(tmp_path) as client:
+        payload = read(client, JOBS)
+    rows = {row["job_id"]: row for row in payload["jobs"]}
+
+    running = rows["job_running001"]["contents"]
+    # Two items, one of them resolved: the first video's title, the rest
+    # counted after it, and the channel every resolved item came from.
+    assert running["title"] == "Let's build GPT: from scratch"
+    assert running["more"] == 1
+    assert running["channel"] == "Andrej Karpathy"
+    assert running["note"] is None
+
+    # A job whose items have not been fetched has no title to print, and says
+    # so with the count it does have rather than borrowing the id as a name.
+    assert rows["job_deferred01"]["contents"] == {
+        "title": None,
+        "more": 0,
+        "channel": None,
+        "note": "1 item(s), none fetched yet",
+    }
+
+
+def test_the_jobs_list_echoes_the_filters_it_actually_ran(tmp_path: Path) -> None:
+    """What narrowed the set, resolved server-side and sent back.
+
+    The page re-prints its own values into its band; a JSON caller has no band,
+    so it reads them here. `error_code` is `None` rather than the form's empty
+    string, and `limit`/`offset` stay in `pagination` — one fact, one spelling.
+    """
+    with make_client(tmp_path) as client:
+        default = read(client, JOBS)
+        narrowed = read(
+            client, f"{JOBS}?state=failed&kind=index&error_code=E_SOURCE&order=priority"
+        )
+
+    assert default["filters"] == {
+        "state": "all",
+        "kind": "all",
+        "error_code": None,
+        "degraded": False,
+        "order": "newest",
+    }
+    assert default["notes"] == []
+    assert narrowed["filters"] == {
+        "state": "failed",
+        "kind": "index",
+        "error_code": "E_SOURCE",
+        "degraded": False,
+        "order": "priority",
+    }
+
+
+def test_a_jobs_filter_that_fell_back_says_so_rather_than_going_quiet(
+    tmp_path: Path,
+) -> None:
+    """The `all` invariant, on the payload that had no way to state it.
+
+    `state=nonsense` has always fallen back to `all` — the right behaviour, and
+    silent, which is the half that is wrong: a listing answering a question
+    nobody asked, with nothing on it saying so, is the wrong result set
+    reported with total confidence. Each vocabulary names the value that ran.
+    """
+    with make_client(tmp_path) as client:
+        payload = read(
+            client,
+            f"{JOBS}?state=nonsense&kind=sideways&order=alphabetical&degraded=yes",
+        )
+
+    assert payload["filters"]["state"] == "all"
+    assert payload["filters"]["kind"] == "all"
+    assert payload["filters"]["order"] == "newest"
+    assert payload["filters"]["degraded"] is False
+    notes = payload["notes"]
+    assert any("state='nonsense'" in note and "state=all" in note for note in notes)
+    assert any("kind='sideways'" in note for note in notes)
+    assert any("order='alphabetical'" in note for note in notes)
+    assert any("degraded='yes'" in note for note in notes)
+    for note in notes:
+        assert note.startswith("note: ")
+    # The rows are the unnarrowed set, which is what the notes are about.
+    assert len(payload["jobs"]) == 3
+
+
+def test_the_jobs_list_clamps_every_bound_and_says_when_one_moved(
+    tmp_path: Path,
+) -> None:
+    """Server-side clamps, named — the same wording as the videos table's (§20).
+
+    And silent when nothing moved: a payload that announced a clamp on every
+    request is a line nobody reads by the second page.
+    """
+    with make_client(tmp_path) as client:
+        clamped = read(client, f"{JOBS}?limit=100000&offset=99999999")
+        quiet = read(client, f"{JOBS}?limit=25")
+        long_code = read(client, f"{JOBS}?error_code={'E' * 200}")
+
+    assert clamped["pagination"]["limit"] == 100
+    assert clamped["pagination"]["offset"] == 10_000
+    assert any(
+        "limit=100000 → 100" in note and "offset=99999999 → 10000" in note
+        for note in clamped["notes"]
+    )
+    assert quiet["notes"] == []
+    # A code is a token, not a sentence: the filter carries 64 characters and
+    # says it cut the rest, rather than filtering on a prefix in silence.
+    assert len(long_code["filters"]["error_code"]) == 64
+    assert any("error_code was cut" in note for note in long_code["notes"])
+
+
+def test_the_jobs_list_keeps_the_projection_on_the_fields_it_grew(
+    tmp_path: Path,
+) -> None:
+    """§2.4 on the row headline: the title and the channel are corpus, the
+    submitted URL is not — it is `args_json`'s content by another name.
+
+    The page and the payload apply one rule, because they are one assembly:
+    neither reads a field the other drops.
+    """
+    with make_client(tmp_path, public=DEMO) as demo:
+        payload = read(demo, JOBS)
+    rows = {row["job_id"]: row for row in payload["jobs"]}
+
+    assert rows["job_running001"]["contents"]["title"] == "Let's build GPT: from scratch"
+    assert rows["job_running001"]["contents"]["channel"] == "Andrej Karpathy"
+    assert rows["job_deferred01"]["error_code"] == "E_RATE_LIMIT"
+    assert rows["job_deferred01"]["error_message"] is None
+    raw = json.dumps(payload)
+    for leaked in (
+        "cookiefile",
+        "/home/dev/.cookies.txt",
+        "youtu.be/deferredvid",
+        "Sign in to confirm",
+        str(tmp_path),
+    ):
+        assert leaked not in raw, f"{leaked} is in the demo payload"
+
+
+def test_the_jobs_lists_new_fields_carry_no_rendered_clock(tmp_path: Path) -> None:
+    """The typed rule, on the half of this payload that is not the `text` block.
+
+    The jobs pair is the one place here that still ships rendered strings, and
+    they are fenced: every one is under `text`, every one renders a number sent
+    beside it, and §5.4 deletes the block with `static/jobs.js`. Nothing added
+    on 2026-09-05 may join them.
+    """
+    with make_client(tmp_path) as client:
+        payload = read(client, f"{JOBS}?limit=100000")
+    grown = json.dumps(
+        {
+            "contents": [_typed(row["contents"]) for row in payload["jobs"]],
+            "filters": payload["filters"],
+            "notes": payload["notes"],
+        }
+    )
+    assert not ISO_STAMP.search(grown), "a rendered date reached the jobs list"
+    assert not SPOKEN_DURATION.search(grown), "a rendered duration reached the jobs list"
+    assert not re.search(r'"\d+:\d{2}(?::\d{2})?"', grown)
