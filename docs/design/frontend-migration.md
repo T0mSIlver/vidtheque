@@ -606,6 +606,69 @@ clocks, and a scan of both payloads for a rendered clock — including a bare
 `1:56:40`, which is the shape `list-videos` would have travelled with had the
 records been forwarded.
 
-Writes, CORS and cross-origin sessions, the remaining read endpoints, the React
-pages and the cutover are `docs/ROADMAP.md`'s. No schema for them is stated here
-until it exists.
+CORS and cross-origin sessions, the remaining read endpoints, the React pages
+and the cutover are `docs/ROADMAP.md`'s. No schema for them is stated here until
+it exists. The writes have one now — §9.
+
+## 9. The write side, for the client (2026-09-05)
+
+*Recorded 2026-09-05, from `DECISIONS.md` ("Dashboard writes answer by content
+negotiation"). The contract is `dashboard.md` §21; this is what the browser
+half of it does.*
+
+Python's existing `POST /dashboard/*` routes are the write API. There is no
+`/dashboard/api/*` twin for a write and there will not be one: one URL answers
+both the form and the `fetch`, so there is one route to guard, one bucket to
+charge and one contract to keep.
+
+**What the client sends**, and all three are required together:
+
+- the **session cookie, same-origin** — `credentials: "same-origin"`, which is
+  `fetch`'s default only for same-origin requests, so say it. Next never sees
+  this cookie (§1d) and the browser is the only thing that holds it;
+- **`Accept: application/json`**. Nothing else switches the branch: no query
+  parameter, no header of ours. It must outrank `text/html` if that is named at
+  all, and `*/*` is not enough — a request for anything is not a request for a
+  typed outcome;
+- a **form-encoded body** —
+  `Content-Type: application/x-www-form-urlencoded` — with the fields the Jinja
+  form posts today. The handlers read a form on both branches and none of them
+  parses a JSON body.
+
+The browser must also be *on* this origin for the write to pass §3.3: the
+session cookie is ambient, so the handler requires `Sec-Fetch-Site:
+same-origin` (which the browser sets itself and script cannot forge) or an
+`Origin` matching `PUBLIC_URL`. A same-origin `fetch` from a ported page sends
+both without being asked; a page served from a second origin would be refused
+with `E_BAD_ORIGIN`, which is the cross-origin work `docs/ROADMAP.md` still
+tracks.
+
+**What it gets back.** On success, `200` and the typed outcome for that route —
+the table in `dashboard.md` §21, which is where the payloads are specified so
+they are specified once. On refusal, the envelope this document's §3 already
+describes: `{"error", "message", "next"}` at the code's own status, plus
+`retry_after_s` and a `Retry-After` header when the refusal named a delay. Both
+carry `Cache-Control: no-store`.
+
+Three responses a client has to handle by shape rather than by route:
+
+- **`401`** is the signal to send the reader to the sign-in page. It is the
+  same rule as for a read (§3, §1d): authorization is decided in one place and
+  the shell has no rule of its own to keep in step.
+- **`403 E_BAD_ORIGIN`** is a bug in the client, not in the reader's session —
+  a write that left the origin, or one made from a page Next served from
+  somewhere else.
+- **`404`** on a write path means this deployment registers no write side
+  (`VIDTHEQUE_PUBLIC_READONLY=1`, or `VIDTHEQUE_AUTH=none`), so the affordance
+  should not have been rendered. `/dashboard/api/session` is what the shell
+  asks first (§6).
+
+**Formatting is still the client's.** The outcomes carry ints, epoch seconds,
+booleans and lists — a job's state as the store's own word, a follow's
+`next_check_at` as an epoch where the MCP tool sends an `iso_minute` string.
+The refusal text is the exception and is deliberate: `message` and `next` are
+policy and stay Python's (decision 5).
+
+`POST /dashboard/login` is **not** part of this: it has no JSON twin yet and
+answers a refused sign-in with a re-rendered form. The sign-in flow is
+`docs/ROADMAP.md`'s.

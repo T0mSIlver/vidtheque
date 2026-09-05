@@ -2567,3 +2567,101 @@ tool parameter, or a page. It does not change the facade's routes at this
 prefix, the cues endpoint, or any clamp number: the table's bounds are §5.2's
 owner policy and the detail's are §5.3's, which is what the pages already
 enforced. The React pages themselves are `docs/ROADMAP.md`'s.
+
+
+## 21. The write side, negotiated (2026-09-05)
+
+`DECISIONS.md` (2026-09-05, "Dashboard writes answer by content negotiation"):
+every write route here keeps **one URL** and answers in the medium the caller
+asked for. §19 and §20 gave the read pages a JSON twin; this is the other half,
+and it adds no route, no parameter, no clamp and no env var.
+
+**The rule.** A handler answers JSON when the request's `Accept` **prefers** it
+— `application/json` named, with a `q` above `text/html`'s or with no
+`text/html` present at all. Everything else gets the `303` it has always got.
+The strictness is the whole safety of the change: a browser's `*/*`, and
+`fetch`'s own default, is a request for anything and not a request for a typed
+outcome, and Chrome's `text/html,…,*/*;q=0.8` is a page. A tie goes to the
+page, because the redirect is the older contract. `writes._accepts_json` is the
+only place that decides, and every handler calls it, so the thirteen writes
+cannot drift apart.
+
+**What does not change.** The route, the guard (`_guard` → `require_write`),
+§3.3's Origin rule, the rate bucket, and the deployments that register no write
+side at all. The Origin rule is about the *credential*, not the medium: the
+session cookie is ambient whether a form or a `fetch` sends it, so a JSON write
+carrying it needs the same positive same-origin evidence and is refused with
+the same `E_BAD_ORIGIN` at the same 403. A bearer is still not ambient, so
+`curl` still needs no ceremony. In `VIDTHEQUE_PUBLIC_READONLY=1` and in
+`VIDTHEQUE_AUTH=none` every path below is **404 on both branches** — §2.3's
+rule, and negotiation must not be a way to reach a route that is not
+registered. Bodies stay form-encoded on both branches; nothing here parses a
+JSON body.
+
+**Two refusals, one policy.** A refusal leaves through `_error_page` as it
+already did, and that function now picks the medium: the error page, or the
+envelope `/dashboard/api/*` already answers with —
+`{"error", "message", "next"}` at `errors.HTTP_STATUS`'s status for the code,
+with `retry_after_s` and a `Retry-After` header **when the refusal named a
+delay** and neither otherwise. The code, the message and the `next:` line are
+policy text and stay Python's, in both media (`DECISIONS.md`, decision 5).
+`401` is the one asymmetry, and it predates this: a *navigating* browser is
+sent to `{ROOT}/login?next=…`, a JSON caller is told `E_AUTH_REQUIRED` and
+decides for itself, which is the arrangement `DECISIONS.md` names — the refusal
+is the signal that sends the browser to the login page.
+
+**The outcomes, per route.** Typed values only: ints, epoch seconds, booleans
+and lists. No rendered clock, no spoken duration, no sentence a page composed.
+
+| Route | Success payload |
+| --- | --- |
+| `POST /jobs/{job_id}/cancel` | `{"job_id", "state", "cancel_requested": true}` |
+| `POST /jobs/{job_id}/retry` | `{"from_job_id", "selected", "jobs": [{"job_id", "items"}], "errors": [envelope], "preserved": {"channels", "tags": [], "priority"}}` |
+| `POST /index` | `{"jobs": [{"job_id", "items", "urls": []}], "already_indexed": [], "errors": [envelope + "urls"], "batches", "urls"}` |
+| `POST /videos/{video_id}/reindex` | `{"video_id", "job_id"}` |
+| `POST /videos/{video_id}/tags` | `{"video_id", "tags": []}` |
+| `POST /logout` | `{"signed_out": true}`, with the cookie cleared |
+| `POST /following` | `{"follow": {…}, "already_following"}` |
+| `POST /following/{slug}/state` | `{"follow": {…}}` |
+| `POST /following/{slug}/check` | `{"follow": {…}}` |
+| `POST /following/{slug}/rules` | `{"follow": {…}}` |
+| `POST /following/{slug}/delete` | `{"slug", "deleted": true, "videos_kept"}` |
+| `POST /following/{slug}/queue` | `{"slug", "url", "job_id"}` |
+
+`POST /login` is not on this list: it has no JSON twin yet
+(`docs/ROADMAP.md`), and its refusal is a re-rendered form rather than an
+envelope.
+
+Five of those are worth a sentence each, because the payload is not the
+obvious one:
+
+- **`cancel` sends the state the job is actually in.** Queued work settles now
+  (`cancelled`) and running work does not (`running`, with the request
+  recorded, §16.1). Which of the two just happened is the reason this route
+  answers inline at all — a 2 s poll cannot tell the operator that.
+- **`retry` and `index` do not take the one-job redirect shortcut.** The pages
+  go straight to the new job when there is exactly one; a client that always
+  reads `jobs` is a client with no special case. Their status is the pages'
+  own: `200` when anything was accepted, `409` when nothing was.
+- **`tags` answers the row's tags *after* the write**, read back. `tag_video`
+  reports what it added and removed across a batch, which is not the question
+  the panel that made the call is showing.
+- **The follow block is the row, typed** — identity, state and every rule
+  column, with epochs where `tools/follows._follow_fields` sends `iso_minute`
+  strings, and built from `Rules.from_row` so the payload and the check cannot
+  disagree about what a CSV column meant. It is re-read after the write:
+  `set_state` re-arms the clock when it resumes, so a payload built from the
+  row the handler read first would name the new state and the old
+  `next_check_at` in one breath.
+- **Nothing asked for is nothing done, on both branches.** `tags` with neither
+  field and `queue` with no `url` answer `200` with the unchanged row rather
+  than a refusal — the form's policy, not a second one written for the JSON
+  caller.
+
+**The end of it.** The redirect branch is deleted with the last Jinja page, and
+`_wants_html`, `_to_login` and `_see` go with it. Until then both are live and
+`mcp/tests/test_dashboard_writes_json.py` asserts both.
+
+**Does not add.** A route, a parameter, a clamp number, an env var, a CORS
+policy, a JSON request body, or a second guard. The React pages that will call
+these are `docs/ROADMAP.md`'s.
