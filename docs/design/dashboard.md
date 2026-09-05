@@ -713,12 +713,19 @@ not do, and it was the one of the three offenders where the typed half was
 missing rather than merely duplicated. It carries `start_s`, `end_s`,
 `avg_logprob`, `chunk_opens` (the chunk's `seq`, `start_s`, `end_s`, `n_words`,
 `n_chars`) and `chunk_closes` **beside** the strings now, under
-`views._cue_rows`' own names, because those are the values the endpoint was
+`api._cue_rows`' own names, because those are the values the endpoint was
 rendering away. `in_chunk` collapses the two markers into one bool and stays;
 both markers are sent, because a chunk's last cue is not its first. The strings
-are unchanged and stay while `static/dashboard.js` is their only reader — the
-rule is: **add the typed half now, additively; delete a rendered string in the
-same commit that deletes the Jinja page or script that reads it.**
+stay while `static/dashboard.js` is their only reader — the rule is: **add the
+typed half now, additively; delete a rendered string in the same commit that
+deletes the Jinja page or script that reads it.**
+
+*Landed 2026-09-06: the strings are gone.* `static/dashboard.js` went with the
+video detail page, so `at`, `conf` and `chunk` left the payload in the same
+commit, exactly as the rule says. What a cue carries is `start_s`, `end_s`,
+`avg_logprob`, `chunk_opens`, `chunk_closes`, `in_chunk`, `t`, `text` and
+`speaker` — `t` stays because it is the whole-second start a `?t=` deeplink
+takes, not a rendering of one.
 
 **OCR browser.** `ocr_frames` (the searchable unit, `0003_ocr_frame_fts.sql:40`)
 per keyframe, with the `ocr_lines` behind it: `line_no`, `text`, `conf`, and the
@@ -817,6 +824,16 @@ nothing is added; the `text` blocks are deleted in the commit that deletes
 policy text rather than a rendering — the sentence that says what the
 percentage is computed over — and it survives that deletion, in `notes` or
 beside it, as the jobs contract will say when it is written.
+
+*Landed 2026-09-06.* `static/jobs.js` went with the pages, so both `text`
+blocks and the per-event `at_text` went with it: nine renderings, every one of
+a number sent beside it. **`basis` survives as a field on the card**, not
+inside `notes` — `notes` is the list of bounds that moved on *this* request and
+a sentence that is true of every card is not one of them. The readiness
+observation lost its second shape in the same commit: `_stamped` wrote
+`checked_at` as an ISO-8601 string for a `<time datetime=…>` attribute and
+`checked_at_s` as the epoch, and there is one field now, `checked_at`, in epoch
+seconds — which is the name and the type the payload always sent.
 
 *Amended 2026-09-05 (the React port), and this half did ask for code.* The
 two pages are Next's now, and a React table reading `/dashboard/api/jobs` had

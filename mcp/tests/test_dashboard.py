@@ -1879,21 +1879,14 @@ def test_the_version_is_one_string_everywhere(tmp_path: Path) -> None:
         assert client.get(f"{ROOT}/api/session").json()["version"] == __version__
 
 
-def test_the_transcript_batches_arrive_preformatted(client: TestClient) -> None:
-    """The appender's source. Same clamps as the page, every string formatted
-    server-side, `has_more` and never a total."""
+def test_the_cue_pager_clamps_and_never_counts(client: TestClient) -> None:
+    """The transcript pane's source: the server's bounds, not the URL's."""
     payload = client.get(
         f"{ROOT}/api/videos/kCc8FmEb1nY/cues?offset=0&limit=100000"
     ).json()
     assert payload["limit"] == 200  # CUE_PAGE_MAX, not the URL's number
     assert payload["has_more"] is False
     assert "total" not in payload
-    cue = payload["cues"][0]
-    # The script assigns these verbatim; it owns no clock and no chunk label.
-    assert re.fullmatch(r"\d+:\d\d(:\d\d)?", cue["at"])
-    # The rendered half is still all here — the typed fields beside it
-    # (test_dashboard_api.py) are additive until this page is ported.
-    assert {"at", "t", "text", "speaker", "conf", "in_chunk", "chunk"} <= set(cue)
     assert client.get(f"{ROOT}/api/videos/nosuchvideo1/cues").status_code == 404
 
 
