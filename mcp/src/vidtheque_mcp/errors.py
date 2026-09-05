@@ -36,6 +36,10 @@ HTTP_STATUS: dict[str, int] = {
     "E_BAD_PARAM": 400,
     "E_EMPTY_QUERY": 400,
     "E_ORDER_SCOPE": 400,
+    # Dashboard-only, and deliberately not `E_AUTH_REQUIRED`: the React shell
+    # answers a 401 with that code by sending the reader to the sign-in page,
+    # which on the sign-in page itself is a loop (dashboard.md §21).
+    "E_BAD_CREDENTIAL": 401,
     "E_UNKNOWN_VIDEO": 404,
     "E_UNKNOWN_FRAME": 404,
     "E_UNKNOWN_JOB": 404,
