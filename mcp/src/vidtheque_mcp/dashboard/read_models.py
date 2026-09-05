@@ -19,9 +19,16 @@ Python's.
 
 Moved out of `views.py` unchanged: the overview and the ledger on 2026-09-05,
 the videos table and the detail page the same day (dashboard.md §20), the two
-following pages the same day again (§22). `views.py` imports these back under
-their old private names, so the Jinja pages call the same code, in the same
-order, under the same bounds they always did.
+following pages the same day again (§22), and the jobs table and one job's war
+story the same day (§5.4). `views.py` imports these back under their old
+private names, so the Jinja pages call the same code, in the same order, under
+the same bounds they always did.
+
+The jobs half carries the one exception to "nothing here formats a value": the
+`text` block beside every typed job field, which `static/jobs.js` reads because
+it has no formatter of its own. It is transitional and the contract says so —
+it is deleted in the commit that deletes that script (§5.4, 2026-09-05) — and
+every string in it is a rendering of a number sent beside it.
 
 The follow half carries one thing the others do not: `follow_row_json`, the
 typed shape a follow travels in, which `writes.py` answers a write outcome with
@@ -46,10 +53,11 @@ from ..follows import rules as follow_rules
 from ..follows import store as follows_store
 from ..jobs import store as jobs_store
 from ..public.api import OWNER_CLAMPS, _cover_frames, thumb_url
-from ..text import clamp, iso_day, iso_z, split_csv
+from ..text import clamp, iso_day, iso_minute, iso_z, split_csv
 from ..timeparse import parse_corpus_time
 from ..tools import library
 from ..tools.base import Deps
+from .render import span
 
 # The fixed width set (dashboard.md §6.4). Three variants per frame in the
 # `derived/` cache, not one per browser window — and never inline base64, which
@@ -1183,6 +1191,391 @@ async def video_detail_reads(
         cue_offset=cue_offset,
         chunks=chunks,
     )
+
+
+# ------------------------------------------------------------------ §5.4 jobs
+
+# Owner clamps again, server-side. A job page is cheap — two reads for the
+# list, six for the detail, whatever the row count — but "cheap" is not
+# "unbounded" and the URL is an input.
+JOB_PAGE = 25
+JOB_PAGE_MAX = 100
+ITEM_CAP = 200  # `index-video` cannot create more: max_items clamps to 200
+EVENT_CAP = 60
+DEGRADED_CAP = 40
+
+JOB_STATES = ("all", "active", "failed", "done")
+# `follow_check` is a `jobs.kind` since migration 0006, so it is a filter here
+# the day it is a kind: a job the queue can hold and this view cannot select
+# for is a job an operator triages by reading past it.
+JOB_KINDS = ("all", "index", "reindex", "delete", "follow_check")
+JOB_ORDERS = ("newest", "priority", "wall_clock")
+
+# 2 s while anything is `queued|running`, stopped when nothing is (§5.4). Not
+# an env var: a poll interval that is a deployment knob is a poll interval
+# somebody sets to 100 ms, and the rate limiter would then be the only thing
+# saying no. The page ships the number to its own script and to nothing else.
+POLL_MS = 2_000
+
+# The states that mean "this will change under the reader".
+LIVE_STATES = ("queued", "running")
+
+
+def counts_line(card: dict[str, Any]) -> str:
+    parts = [f"{card['n_done']}/{card['n_items']} done"]
+    for key, word in (("n_failed", "failed"), ("n_skipped", "skipped"),
+                      ("n_cancelled", "cancelled")):
+        if card[key]:
+            parts.append(f"{card[key]} {word}")
+    return " · ".join(parts)
+
+
+def job_card(
+    row: sqlite3.Row, now: int, *, degraded: int = 0, redact: bool = False
+) -> dict[str, Any]:
+    """One job, with the three durations it actually has.
+
+    The semantics are the fixed ones (`jobs/store.claim_next`): `started_at` is
+    the **first** claim, not the most recent, so `created_at → finished_at` is
+    the honest wall clock and `started_at → finished_at` is time on the runner.
+    A deferred job spends the difference waiting, which is the whole reason for
+    printing both — a 92-minute overnight job that reported "started 40s ago"
+    is what the fix was for.
+    """
+    state = str(row["state"])
+    created = int(row["created_at"] or 0)
+    started = row["started_at"]
+    finished = row["finished_at"]
+    started = int(started) if started is not None else None
+    finished = int(finished) if finished is not None else None
+    live = state in LIVE_STATES
+    end = finished if finished is not None else (now if live else None)
+    card = {
+        "job_id": str(row["public_id"]),
+        "state": state,
+        "kind": str(row["kind"]),
+        "priority": int(row["priority"]),
+        "progress": int(round(float(row["progress"] or 0.0) * 100)),
+        "n_items": int(row["n_items"] or 0),
+        "n_done": int(row["n_done"] or 0),
+        "n_failed": int(row["n_failed"] or 0),
+        "n_skipped": int(row["n_skipped"] or 0),
+        "n_cancelled": int(row["n_cancelled"] or 0),
+        "cancel_requested": bool(row["cancel_requested"]),
+        "created_at": created,
+        "started_at": started,
+        "finished_at": finished,
+        # Queued and never claimed: it has waited, it has not run.
+        "waited_s": None if started is None else max(0, started - created),
+        "ran_s": None if started is None or end is None else max(0, end - started),
+        "wall_s": None if end is None else max(0, end - created),
+        "live": live,
+        # The line that was missing. Only a *queued* job is actually being held
+        # off — `not_before` on a running row is a stamp the last deferral left
+        # behind, and a countdown against it would invent a wait that is not
+        # happening.
+        "defer_s": int(row["defer_s"] or 0) if state == "queued" else 0,
+        "error_code": row["error_code"],
+        "error_message": None if redact else row["error_message"],
+        "degraded": int(degraded),
+    }
+    # Every changing value, formatted once, server-side. The page renders these
+    # strings and the 2 s tick assigns the same strings to the same nodes, so
+    # the poller needs no formatter of its own and cannot drift into a second
+    # way of saying "4m 12s" (the one exception is the countdown between ticks,
+    # which is arithmetic on a number this already sent).
+    # What the percentage is made of, and what it is computed over (Tom,
+    # 2026-08-10, round 4: "the progress % is unexplained"). All five buckets,
+    # always, including the zeroes — the point of the line is that they add up
+    # to `n_items`, and a tally with terms missing does not visibly add up.
+    pending = max(
+        0,
+        card["n_items"]
+        - card["n_done"]
+        - card["n_failed"]
+        - card["n_skipped"]
+        - card["n_cancelled"],
+    )
+    card["text"] = {
+        "progress": f"{card['progress']}%",
+        "counts": counts_line(card),
+        "tally": " · ".join(
+            (
+                f"{card['n_done']} done",
+                f"{card['n_failed']} failed",
+                f"{card['n_skipped']} skipped",
+                f"{card['n_cancelled']} cancelled",
+                f"{pending} still to run",
+            )
+        ),
+        # The rule, in the one place a reader can ask for it. `jobs_store.STAGES`
+        # rather than a literal 7, because the fraction in `_ITEM_FRACTION` is
+        # divided by that same tuple's length.
+        "basis": (
+            f"of {card['n_items']} item(s). An item still in the pipeline counts "
+            f"the stages it has finished, out of {len(jobs_store.STAGES)}."
+        ),
+        "wall": span(card["wall_s"]),
+        "ran": span(card["ran_s"]),
+        "waited": span(card["waited_s"]),
+        "defer": span(card["defer_s"]),
+        # When it stopped, not only when it was asked for (Tom, 2026-08-13:
+        # "created is not enough"). `created_at` answers "when did I queue
+        # this"; the operator arriving at 03:00 is asking "when did the batch
+        # actually end", and until now the only page that said so was the job's
+        # own. A job that has not finished says so with the em dash this
+        # surface already uses for "not recorded" (`render.dash`) rather than
+        # with an empty cell — and because a running job *acquires* the value
+        # under the reader, it is formatted here and patched by the tick, like
+        # every other changing string on this row.
+        "finished": iso_minute(finished) if finished else "—",
+    }
+    return card
+
+
+def job_item(row: sqlite3.Row, now: int, *, redact: bool = False) -> dict[str, Any]:
+    state = str(row["state"])
+    started = row["started_at"]
+    finished = row["finished_at"]
+    started = int(started) if started is not None else None
+    finished = int(finished) if finished is not None else None
+    end = finished if finished is not None else (now if state == "running" else None)
+    attempts = int(row["attempts"] or 0)
+    max_attempts = int(row["max_attempts"] or 0)
+    item = {
+        "item_id": int(row["id"]),
+        "seq": int(row["seq"]),
+        "state": state,
+        "stage": row["stage"],
+        "stage_pct": int(round(float(row["stage_pct"] or 0.0) * 100)),
+        "attempts": attempts,
+        "max_attempts": max_attempts,
+        # `ItemFailed.retryable` is not persisted (§4.4), so no row can say
+        # "this will retry". This is the half of the inference the item carries;
+        # the other half is the job's countdown.
+        "retries_left": max(0, max_attempts - attempts) if state == "queued" else 0,
+        "video_id": row["public_id"],
+        "title": row["title"],
+        "channel": row["channel_name"],
+        "duration_s": row["duration_s"],
+        # The submitted URL is the redacted field: it is `args_json`'s content
+        # by another name. The *video* it resolved to is not — the demo lists
+        # that video, by id and title, on two other pages.
+        "source_url": None if redact else str(row["source_url"]),
+        "error_code": row["error_code"],
+        "error_message": None if redact else row["error_message"],
+        "started_at": started,
+        "finished_at": finished,
+        "took_s": None if started is None or end is None else max(0, end - started),
+    }
+    item["text"] = {
+        "attempts": f"{attempts}/{max_attempts}",
+        "took": span(item["took_s"]),
+        "stage": (
+            f"{item['stage']} {item['stage_pct']}%" if item["stage"] else "—"
+        ),
+    }
+    return item
+
+
+def job_event(row: sqlite3.Row, *, redact: bool = False) -> dict[str, Any]:
+    """One `job_events` row, with its message dropped in the demo projection.
+
+    The message is the one field on this surface that is *both* redacted things
+    at once: the runner writes `"retrying in {delay}s after {code}: {message}"`
+    with yt-dlp's string inside it, and a reclaim writes the item's URL. There
+    is no structured half to keep, so demo mode keeps the shape of the log —
+    when, how loud, which stage — and none of the prose. The clocks survive,
+    which is what §10.4 asked the demo to keep.
+    """
+    return {
+        "id": int(row["id"]),
+        "at": int(row["at"]),
+        # Formatted here so an event that arrives on a tick is stamped the same
+        # way as one that arrived with the page, by the same function.
+        "at_text": iso_minute(int(row["at"])),
+        "level": str(row["level"]),
+        "stage": row["stage"],
+        "item_id": row["item_id"],
+        "message": None if redact else str(row["message"]),
+    }
+
+
+def job_contents(card: dict[str, Any], row: sqlite3.Row | None) -> dict[str, Any]:
+    """The line that says what a job holds, from its own items.
+
+    A jobs table whose rows print only `job_uid` is a list of opaque handles
+    (Tom, 2026-08-10, round 4). What the reader wants is what went in: the first
+    video's title with the rest counted after it, and — when every item that has
+    resolved so far came from one channel — that channel's name, which is the
+    playlist or channel a batch was expanded from by another route.
+
+    The submitted URL is **not** here and must not be: §2.4's redaction table
+    drops it in the demo projection, and the title and channel it resolved to
+    are corpus, published on two other pages. Keeping one rule for both modes
+    is what stops the two drifting apart.
+
+    A job whose items have not been fetched yet has no title to print, and says
+    so with the count it does have rather than borrowing the id as a name.
+    """
+    n_items = int(card["n_items"])
+    if row is None or not row["first_title"]:
+        return {
+            "title": None,
+            "more": 0,
+            "channel": None,
+            "note": f"{n_items} item(s), none fetched yet",
+        }
+    return {
+        "title": str(row["first_title"]),
+        "more": max(0, n_items - 1),
+        # One channel across every resolved item, or none named at all: "two of
+        # these came from somewhere else" is not a fact a row can print in three
+        # words, and naming only the first would be a claim about the rest.
+        "channel": str(row["channel"]) if int(row["channels"]) == 1 and row["channel"] else None,
+        "note": None,
+    }
+
+
+async def job_page(
+    db: Any,
+    state: str,
+    limit: int,
+    offset: int,
+    redact: bool,
+    error_code: str = "",
+    kind: str = "all",
+    degraded_only: bool = False,
+    order: str = "newest",
+) -> tuple[list[dict[str, Any]], bool, int]:
+    """Two reads for the whole page, whatever the row count (§6.3).
+
+    One probe row past the limit rather than a count, exactly as the videos
+    table pages, and one grouped `degraded_counts` for every row on the page
+    rather than a probe per row.
+    """
+    rows = await db.read(
+        lambda c: jobs_store.list_jobs(
+            c,
+            state,
+            limit + 1,
+            offset,
+            error_code=error_code or None,
+            kind=None if kind == "all" else kind,
+            degraded_only=degraded_only,
+            order=order,
+        )
+    )
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    degraded = await db.read(
+        lambda c: jobs_store.degraded_counts(c, [int(r["id"]) for r in rows])
+    )
+    now = int(time.time())
+    cards = [
+        job_card(row, now, degraded=degraded.get(int(row["id"]), 0), redact=redact)
+        for row in rows
+    ]
+    return cards, has_more, now
+
+
+async def job_detail_reads(db: Any, job_id: str, redact: bool) -> dict[str, Any] | None:
+    """One job, its items, the stage table of the item in focus, and the tail.
+
+    Six reads, and six however many items the job has. The stage table is read
+    for the **one** item the job is actually on — running, else the last one to
+    finish — because seven stage rows per item is precisely the fan-out §6.3
+    forbids, and every other item's stages are one click away on its own video
+    page.
+    """
+    row = await db.read(lambda c: jobs_store.get_job(c, job_id))
+    if row is None:
+        return None
+    internal_id = int(row["id"])
+    now = int(time.time())
+
+    item_rows = await db.read(lambda c: jobs_store.job_items(c, internal_id, ITEM_CAP))
+    counts = await db.read(lambda c: jobs_store.item_counts(c, internal_id))
+    error_counts = await db.read(lambda c: jobs_store.item_error_counts(c, internal_id))
+    degraded_rows = await db.read(
+        lambda c: jobs_store.degraded_items(c, internal_id, DEGRADED_CAP)
+    )
+    events = await db.read(
+        lambda c: jobs_store.job_event_page(c, internal_id, None, EVENT_CAP)
+    )
+
+    items = [job_item(item, now, redact=redact) for item in item_rows]
+    # The item the stage table is about. It has to have a video: `video_stages`
+    # is keyed on one, and an item that never resolved to a video (a bad URL, a
+    # bot-check on the fetch) has no stages to show — seven `absent` rows under
+    # a heading with no name is a panel pretending to have an answer.
+    resolved = [i for i in item_rows if i["video_id"] is not None]
+    focus = next((i for i in resolved if str(i["state"]) == "running"), None)
+    if focus is None:
+        finished = [i for i in resolved if i["finished_at"] is not None]
+        focus = max(finished, key=lambda i: int(i["finished_at"])) if finished else None
+    stages: dict[str, sqlite3.Row] = {}
+    if focus is not None:
+        video_id = int(focus["video_id"])
+        stages = await db.read(lambda c: jobs_store.item_stages(c, video_id))
+
+    degraded = [
+        {
+            "seq": int(entry["seq"]),
+            "video_id": entry["public_id"],
+            "stage": str(entry["stage"]),
+            "error": None if redact else entry["error"],
+        }
+        for entry in degraded_rows
+    ]
+    return {
+        "job": job_card(
+            row, now, degraded=len({d["seq"] for d in degraded}), redact=redact
+        ),
+        "items": items,
+        "items_capped": len(item_rows) >= ITEM_CAP,
+        "counts": counts,
+        "error_counts": error_counts,
+        "degraded": degraded,
+        "events": [job_event(event, redact=redact) for event in events],
+        "focus": None if focus is None else job_item(focus, now, redact=redact),
+        "stages": focus_stages(stages),
+        "now": now,
+        "live": str(row["state"]) in LIVE_STATES,
+    }
+
+
+def focus_stages(stages: dict[str, sqlite3.Row]) -> list[dict[str, Any]]:
+    """The seven `video_stages` rows for the item in focus, in pipeline order.
+
+    Durations included, and they are the answer to "what does indexing a video
+    cost" — which is why they survive the demo projection whole (§10.4). A
+    stage with no row yet is `absent`, the same word the provenance panel uses,
+    rather than a blank the reader has to interpret.
+    """
+    rows = []
+    for stage in queries.STAGE_ORDER:
+        row = stages.get(stage)
+        if row is None:
+            rows.append({"stage": stage, "state": "absent", "started_at": None,
+                         "finished_at": None, "took_s": None})
+            continue
+        started = row["started_at"]
+        finished = row["finished_at"]
+        rows.append(
+            {
+                "stage": stage,
+                "state": str(row["state"]),
+                "started_at": started,
+                "finished_at": finished,
+                "took_s": (
+                    None
+                    if started is None or finished is None or finished < started
+                    else int(finished) - int(started)
+                ),
+            }
+        )
+    return rows
 
 
 # --------------------------------------------------------- §18 the follow side
