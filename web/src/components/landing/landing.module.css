@@ -1,0 +1,1750 @@
+/* THE LANDING PAGE — PROJECTION ROOM.
+   Ported rule-for-rule from `mcp/src/vidtheque_mcp/public/static/landing/landing.css`,
+   which DESIGN.md names the reference implementation of the visual system.
+   Nothing here is a redesign; where a value moved it moved into a token.
+
+   What is gone, because it already exists once in this app:
+     - the `@font-face` pair — next/font loads the same two files (styles/fonts.ts)
+       and globals.css binds them to `--sans` / `--mono`;
+     - the `:root` block — every custom property it declared is in
+       styles/tokens.css, generated from DESIGN.md, at the same values;
+     - the reset and the `body` rule — globals.css, ported from the demo.
+
+   What is different: the selectors are module-scoped, so element selectors are
+   nested under `.landing` rather than written globally, and the six ids the
+   script used to address (`#benchframe`, `#corpus`, `#wallband`, `#run`) are
+   classes. Class names and their meanings are otherwise the originals'. */
+
+/* The scroll-behavior belongs to the scrolling element, and the one anchor on
+   this page ("+ follow a channel" → the quickstart) is the reason it is here.
+   Scoped with :has so the reader surfaces keep the app default. */
+:global(html):has(.landing) {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(html):has(.landing) {
+    scroll-behavior: auto;
+  }
+}
+
+/* The display ladder at its top rungs — the landing's own register
+   (DESIGN.md, "Per-surface guidance"). CSS Modules only composes on a simple
+   selector, so the ladder rung is a class on the element rather than a rule
+   on `h1`/`h2`; the values are the ones the stylesheet had. */
+.h1 {
+  composes: t-display from global;
+  color: var(--fg-max);
+  text-wrap: balance;
+}
+
+.h1 em {
+  font-style: normal;
+  color: var(--gold);
+  font-weight: var(--w-display);
+}
+
+.h2 {
+  composes: t-headline from global;
+  text-wrap: balance;
+}
+
+.h2 em {
+  font-style: normal;
+  color: var(--gold);
+  font-weight: 210;
+}
+
+.wrap {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 var(--gut);
+}
+
+.id {
+  font-family: var(--mono);
+  font-variant-ligatures: none;
+  text-transform: none;
+}
+
+/* The micro-label: the machine's own voice, everywhere on this page. */
+.label {
+  composes: t-label from global;
+  color: var(--fg3);
+}
+
+.label.seen {
+  color: var(--seen);
+}
+
+.gold {
+  color: var(--gold);
+}
+
+.kick {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.kick s {
+  display: block;
+  width: 34px;
+  height: 1px;
+  background: var(--gold);
+  text-decoration: none;
+  flex: none;
+}
+
+.lede {
+  composes: t-lede from global;
+  color: var(--fg2);
+  max-width: var(--lede);
+}
+
+.lede b {
+  color: var(--fg);
+  font-weight: var(--w-strong);
+}
+
+/* ── top rail — floats over the room ─────────────────────────────── */
+.rail {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  border-bottom: 1px solid var(--seam-over);
+}
+
+.railin {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 15px 0 14px;
+}
+
+.mark b {
+  font-family: var(--sans);
+  font-weight: var(--w-strong);
+  font-size: 16.5px;
+  letter-spacing: -0.035em;
+  color: var(--fg);
+}
+
+.mark b i {
+  font-style: normal;
+  color: var(--gold);
+}
+
+.railmeta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* ── beat 1 · the room ───────────────────────────────────────────── */
+.hero {
+  position: relative;
+  isolation: isolate;
+  min-height: 100svh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--seam);
+}
+
+/* the gate breathes. Amplitude is deliberately small: the lit tile is placed
+   with measured clearance from the copy and the light table, and that
+   clearance has to survive the whole drift cycle. */
+@keyframes drift {
+  0% {
+    transform: translate3d(-0.5%, -0.4%, 0) scale(1.012);
+  }
+  50% {
+    transform: translate3d(0.4%, 0.3%, 0) scale(1.024);
+  }
+  100% {
+    transform: translate3d(-0.2%, 0.5%, 0) scale(1.012);
+  }
+}
+
+.wallwrap {
+  position: absolute;
+  inset: -5%;
+  z-index: 0;
+  overflow: hidden;
+  animation: drift var(--drift-gate);
+}
+
+/* v1's wall texture: the frames butt, no gap and no hairline between them —
+   one surface, not a grid of cards (Tom, 2026-08-10). */
+.wall {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  gap: 0;
+  background: #07070a;
+  grid-auto-rows: 1fr;
+}
+
+.wt {
+  position: relative;
+  overflow: hidden;
+  background: #07070a;
+}
+
+.wt img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: var(--film-rest);
+  transition: filter var(--t-film) linear;
+}
+
+.wall.searching .wt img {
+  filter: var(--film-dim);
+}
+
+/* the found tile is under the scrim, so it is lit past it, not just to normal */
+.wall .wt.hit img {
+  filter: var(--film-lit);
+  transition-duration: var(--t-state);
+}
+
+.wall .wt.hit {
+  z-index: 2;
+}
+
+.wall .wt.hit::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: var(--edge-hit);
+}
+
+.wall .wt.hit::before {
+  content: "src";
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  background: var(--gold);
+  color: var(--gold-ink);
+  font-family: var(--mono);
+  font-size: 7.5px;
+  font-weight: var(--w-mono-tag);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 2px 5px;
+  line-height: 1.2;
+}
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      102deg,
+      rgba(4, 4, 5, 0.9) 0%,
+      rgba(4, 4, 5, 0.62) 30%,
+      rgba(4, 4, 5, 0.26) 58%,
+      rgba(4, 4, 5, 0.1) 100%
+    ),
+    linear-gradient(
+      to bottom,
+      rgba(4, 4, 5, 0.62) 0%,
+      rgba(4, 4, 5, 0.06) 22%,
+      rgba(4, 4, 5, 0.06) 70%,
+      rgba(4, 4, 5, 0.72) 100%
+    );
+}
+
+.heroin {
+  position: relative;
+  z-index: 5;
+  flex: 1;
+  max-width: var(--maxw);
+  margin: 0 auto;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1.06fr) minmax(0, 0.94fr);
+  align-items: center;
+  gap: clamp(28px, 3.4vw, 60px);
+  padding: clamp(84px, 9vh, 120px) var(--gut) clamp(64px, 7vh, 90px);
+}
+
+.herocopy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--gap-copy);
+  max-width: 37rem;
+}
+
+.herocopy .lede {
+  color: var(--fg-over);
+  text-shadow: 0 1px 18px rgba(0, 0, 0, 0.85);
+  max-width: 46ch;
+}
+
+.herocopy .lede b {
+  color: var(--fg-max);
+}
+
+/* the query bar: the machine's one input */
+.slug {
+  width: 100%;
+  max-width: 560px;
+  display: flex;
+  align-items: stretch;
+  height: 52px;
+  background: rgba(8, 8, 11, 0.94);
+  border: 1px solid var(--seam2);
+  box-shadow: var(--drop-sm);
+}
+
+.slug .ic {
+  width: 44px;
+  display: grid;
+  place-items: center;
+  color: var(--gold);
+  border-right: 1px solid var(--seam);
+}
+
+.slug .ic svg {
+  width: 13px;
+  height: 13px;
+}
+
+.slug .q {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 13px;
+  font-family: var(--mono);
+  font-size: 13.5px;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  font-variant-ligatures: none;
+}
+
+.caret {
+  display: inline-block;
+  width: 8px;
+  height: 17px;
+  background: var(--gold);
+  margin-left: 3px;
+  flex: none;
+  opacity: 0;
+}
+
+.slug.typing .caret {
+  opacity: 1;
+  animation: blink var(--blink);
+}
+
+@keyframes blink {
+  0%,
+  52% {
+    opacity: 1;
+  }
+  53%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.slug .st {
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border-left: 1px solid var(--seam);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: var(--w-mono-tag);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--fg3);
+  background: var(--console);
+  white-space: nowrap;
+}
+
+.slug .st[data-s="reading"],
+.slug .st[data-s="scanning"] {
+  background: var(--gold);
+  color: var(--gold-ink);
+}
+
+.slug .st[data-s="lifted"] {
+  color: var(--gold);
+}
+
+.ctarow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+/* `line-height:normal` is stated because the CTA is an `<a>` (it points at
+   /demo): a form control does not inherit line-height, so the button was on
+   `normal` and an anchor takes the body's 1.55 — two pixels of button height,
+   and the hero column is centred, so it moved the H1, the lede and the query
+   bar a pixel each. `normal` is what the button had; it is measured, at 46px. */
+.cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--gold);
+  color: var(--gold-ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: var(--w-action);
+  letter-spacing: -0.012em;
+  line-height: normal;
+  padding: 14px 20px 14px 22px;
+  border: 1px solid var(--gold);
+  cursor: pointer;
+  transition: background var(--t-fast) ease;
+}
+
+.cta:hover {
+  background: var(--gold-hi);
+}
+
+.cta svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  border: 1px solid var(--seam2);
+  background: rgba(8, 8, 11, 0.9);
+}
+
+.chips button {
+  padding: 0 12px;
+  height: 44px;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--seam);
+  color: var(--fg3);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  font-variant-ligatures: none;
+  max-width: 38vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color var(--t-fast) ease;
+}
+
+.chips button:last-child {
+  border-right: 0;
+}
+
+.chips button:hover {
+  color: var(--fg);
+}
+
+.chips button.on {
+  background: var(--gold-12);
+  color: var(--gold);
+}
+
+/* the light table — where the lifted frame lands */
+.bench {
+  position: relative;
+  width: 100%;
+  background: var(--plate);
+  border: 1px solid var(--seam2);
+  box-shadow: 0 44px 90px -28px rgba(0, 0, 0, 0.95);
+  opacity: 1;
+  transition: opacity 0.3s linear;
+}
+
+/* between questions the table steps back, but not so far that the wall
+   reads through it — the frames behind it are v1-sized now */
+.bench.idle {
+  opacity: 0.72;
+}
+
+/* veiled: laid out at final size but not yet shown — the lift is in flight.
+   The frame slot itself stays, empty, as the landing pad; hiding the image
+   and the boxes rather than the figure, because the bench is populated with
+   an inline opacity and inline beats a class. */
+.bench.veil .frame > img,
+.bench.veil .frame .det,
+.bench.veil .benchsay,
+.bench.veil .benchfoot {
+  opacity: 0;
+}
+
+.bench::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: -1px;
+  width: 12px;
+  height: 1px;
+  background: var(--gold);
+}
+
+.bench::after {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: -1px;
+  width: 1px;
+  height: 12px;
+  background: var(--gold);
+}
+
+.benchhead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--seam);
+  background: var(--plate2);
+  min-height: 32px;
+  flex-wrap: wrap;
+}
+
+.benchhead .r {
+  margin-left: auto;
+}
+
+.benchsay {
+  padding: 16px 18px 15px;
+  border-top: 1px solid var(--seam);
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.said {
+  composes: t-quote from global;
+  color: var(--fg);
+  border-left: 1px solid var(--gold);
+  padding-left: 14px;
+  max-width: var(--quote);
+  text-wrap: pretty;
+}
+
+.who {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.who strong {
+  font-size: 14px;
+  font-weight: 520;
+  letter-spacing: -0.02em;
+}
+
+.who em {
+  font-style: normal;
+  font-size: 13px;
+  color: var(--fg2);
+  font-weight: var(--w-body);
+}
+
+.who em::before {
+  content: "";
+  display: inline-block;
+  width: 1px;
+  height: 9px;
+  background: var(--seam2);
+  margin-right: 10px;
+  vertical-align: baseline;
+}
+
+.benchfoot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--seam);
+  padding: 11px 16px;
+  background: var(--plate2);
+}
+
+.benchfoot .r {
+  margin-left: auto;
+}
+
+/* the frame and its detections — boxes exactly where ocr_lines put them */
+.frame {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: var(--black);
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* the table's slot before anything has been lifted onto it */
+.benchSlot {
+  opacity: 0;
+}
+
+.frame > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: var(--edge);
+}
+
+.det {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--w);
+  height: var(--h);
+  outline: 1px solid var(--seen-24);
+  pointer-events: none;
+}
+
+.det.on {
+  outline: 1.5px solid var(--seen);
+}
+
+.tab {
+  composes: t-tag from global;
+  position: absolute;
+  left: -1.5px;
+  bottom: 100%;
+  margin-bottom: 3px;
+  background: var(--seen);
+  color: var(--seen-ink);
+  padding: 2.5px 6px;
+  white-space: nowrap;
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+
+.tab i {
+  font-style: normal;
+  font-weight: var(--w-strong);
+  opacity: 0.66;
+  letter-spacing: 0.06em;
+  text-transform: none;
+}
+
+@keyframes acq {
+  from {
+    opacity: 0;
+    transform: scale(1.06);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.frame.acq .det {
+  animation: acq var(--t-acquire) var(--ease-acquire) backwards;
+  animation-delay: calc(var(--i) * 46ms + 120ms);
+}
+
+/* the lift — a frame coming off the wall.
+   Sized at the landing rect and scaled DOWN onto the source tile, so the
+   flight is one composited transform: no per-frame layout, no jitter, and
+   the two rects are both 16:9 so nothing is ever squashed. The outline is
+   counter-scaled at the start so it reads as 2px the whole way. */
+.lift {
+  position: fixed;
+  z-index: 60;
+  overflow: hidden;
+  background: var(--black);
+  pointer-events: none;
+  transform-origin: 0 0;
+  will-change: transform;
+  outline: 2px solid var(--gold);
+  box-shadow: 0 40px 90px -20px rgba(0, 0, 0, 0.95);
+  transition:
+    transform var(--t-lift) var(--ease-lift),
+    outline-width var(--t-lift) var(--ease-lift);
+}
+
+.lift img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* the landing pad: the table's empty frame slot is drawn while the frame is
+   still in the air, so the lift is visibly going somewhere */
+.bench.veil .frame {
+  outline: 1px solid var(--gold-24);
+  outline-offset: -1px;
+}
+
+/* the receipt slab */
+.receipt {
+  display: inline-flex;
+  align-items: stretch;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: var(--w-action);
+  line-height: 1;
+  border: 1px solid var(--gold);
+  color: var(--gold);
+  background: var(--gold-6);
+  letter-spacing: -0.01em;
+  font-variant-ligatures: none;
+  align-self: flex-start;
+  transition: background var(--t-fast) ease;
+}
+
+.receipt span {
+  padding: 9px 0 9px 11px;
+  display: flex;
+  align-items: center;
+}
+
+.receipt span.vid {
+  padding-left: 0;
+  color: var(--fg);
+}
+
+.receipt b {
+  background: var(--gold);
+  color: var(--gold-ink);
+  padding: 9px 11px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: var(--w-mono-tag);
+  margin-left: 11px;
+}
+
+.receipt svg {
+  width: 9px;
+  height: 9px;
+  flex: none;
+}
+
+.receipt.sm {
+  font-size: 11px;
+}
+
+.receipt.sm span {
+  padding: 6px 0 6px 8px;
+}
+
+.receipt.sm span.vid {
+  padding-left: 0;
+}
+
+.receipt.sm b {
+  padding: 6px 8px;
+  margin-left: 8px;
+}
+
+.receipt:hover {
+  background: var(--gold-12);
+}
+
+.herofoot {
+  position: relative;
+  z-index: 5;
+  border-top: 1px solid var(--seam-over);
+}
+
+.herofoot .in {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  flex-wrap: wrap;
+}
+
+/* ── section chassis ─────────────────────────────────────────────── */
+.beat {
+  position: relative;
+  background: var(--void);
+  padding: var(--beat) 0;
+  border-bottom: 1px solid var(--seam);
+}
+
+.bhead {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: var(--note);
+}
+
+.bhead h2 {
+  max-width: 20ch;
+}
+
+.legendrow {
+  display: flex;
+  gap: clamp(18px, 2.6vw, 44px);
+  flex-wrap: wrap;
+  margin-top: var(--gap-head);
+}
+
+.lg {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  max-width: 34ch;
+}
+
+.lg i {
+  width: 11px;
+  height: 11px;
+  display: block;
+  flex: none;
+  transform: translateY(1px);
+}
+
+.lg i.hd {
+  background: var(--gold);
+}
+
+.lg i.sn {
+  outline: 1.5px solid var(--seen);
+  outline-offset: -1.5px;
+  background: var(--seen-10);
+}
+
+.lg i.fr {
+  background: var(--plate3);
+  outline: 1px solid var(--seam2);
+}
+
+.lg p {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fg2);
+}
+
+.lg p b {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: var(--w-mono-tag);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fg);
+}
+
+/* ── beat 2 · the bench of stills ────────────────────────────────── */
+.plates {
+  margin-top: var(--gap-block);
+  border-top: 1px solid var(--seam);
+}
+
+.plate {
+  position: relative;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1.02fr) minmax(0, 1fr);
+  gap: 0 clamp(20px, 2.6vw, 44px);
+  align-items: center;
+  padding: clamp(26px, 3vw, 44px) 0;
+  border-bottom: 1px solid var(--seam);
+}
+
+.plate .vlab {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: var(--w-mono-label);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--fg3);
+  border-left: 1px solid var(--seam);
+  padding-left: 4px;
+  font-variant-ligatures: none;
+}
+
+.plate .vlab u {
+  text-decoration: none;
+  color: var(--gold);
+}
+
+.plate .th {
+  position: relative;
+  background: var(--plate);
+  border: 1px solid var(--seam2);
+  padding: 8px;
+}
+
+.plate .bd {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.plate:nth-child(even) {
+  grid-template-columns: 52px minmax(0, 1fr) minmax(0, 1.02fr);
+}
+
+.plate:nth-child(even) .th {
+  order: 3;
+}
+
+.plate:nth-child(even) .bd {
+  order: 2;
+}
+
+.seenline {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--seen);
+  min-width: 0;
+  font-variant-ligatures: none;
+}
+
+.seenline .ll {
+  color: var(--fg3);
+  flex: none;
+  letter-spacing: 0.16em;
+  font-size: 9.5px;
+  font-weight: var(--w-mono-tag);
+  text-transform: uppercase;
+  padding-top: 2px;
+}
+
+.seenline p {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.note {
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--gold);
+  letter-spacing: 0.005em;
+  font-variant-ligatures: none;
+  max-width: var(--note);
+}
+
+.note::before {
+  content: "note: ";
+  color: var(--fg3);
+}
+
+.mfoot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.mfoot .r {
+  margin-left: auto;
+}
+
+/* the ledger — counts up when the machine shows its books */
+.ledger {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--seam2);
+  background: var(--plate);
+  margin-top: var(--gap-block);
+}
+
+.ledger div {
+  padding: 20px 22px 22px;
+  border-right: 1px solid var(--seam);
+  min-width: 0;
+}
+
+.ledger div:last-child {
+  border-right: 0;
+}
+
+.ledger dt {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: var(--w-mono-label);
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+  color: var(--fg3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ledger dd {
+  font-family: var(--mono);
+  font-size: clamp(1.6rem, 2.5vw, 2.5rem);
+  font-weight: 300;
+  letter-spacing: -0.045em;
+  margin-top: 9px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+
+.ledger dd u {
+  text-decoration: none;
+  color: var(--gold);
+  font-size: 0.44em;
+  font-weight: var(--w-strong);
+  letter-spacing: 0;
+  margin-left: 2px;
+}
+
+.ledgernote {
+  margin-top: 12px;
+}
+
+/* ── beat 3 · the wall, full width, drifting (v4's treatment, Tom's pick) ──
+   Alternating rows, a constant few px/s, every tile carrying its own id and
+   timecode. The corpus was watched; the wall moves at reading pace and at
+   nothing else. Class names carry a b- prefix: this page already spends
+   .wt on the hero wall and .slug on the query bar. */
+.corpus {
+  padding-bottom: clamp(44px, 5vw, 84px);
+}
+
+.wallband {
+  margin-top: var(--gap-block);
+  border-top: 1px solid var(--seam);
+  border-bottom: 1px solid var(--seam);
+  background: var(--pitch);
+  overflow: hidden;
+}
+
+.wrow {
+  overflow: hidden;
+  border-bottom: 1px solid var(--seam);
+}
+
+.wrow:last-child {
+  border-bottom: 0;
+}
+
+.wtrack {
+  display: flex;
+  gap: 1px;
+  width: max-content;
+  animation: wdrift var(--drift-band);
+}
+
+.wtrack.rev {
+  animation-direction: reverse;
+}
+
+@keyframes wdrift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(calc(-1 * var(--shift, 3000px)), 0, 0);
+  }
+}
+
+.bwt {
+  position: relative;
+  flex: none;
+  width: clamp(132px, 13.4vw, 200px);
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--black);
+}
+
+.bwt img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: var(--film-band);
+  transition: filter 0.2s linear;
+}
+
+.bwt:hover img {
+  filter: var(--film-full);
+}
+
+.bwt a {
+  display: block;
+  position: relative;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.bwt a:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: -2px;
+}
+
+.bwt::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.045);
+}
+
+.bwt .bslug {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 2.5px 5px 3px;
+  background: rgba(3, 5, 8, 0.72);
+  font-family: var(--mono);
+  font-size: 7.5px;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  color: var(--slug-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  font-variant-ligatures: none;
+}
+
+.bwt .bslug b {
+  font-weight: var(--w-mono-label);
+  color: var(--slug-ink-dim);
+}
+
+/* the roadmap affordance: honest about being next — dashed, gold, no fill */
+.follow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  outline: 1px dashed var(--gold-44);
+  outline-offset: -4px;
+  padding: 16px;
+  margin-top: clamp(20px, 2.2vw, 30px);
+  text-align: center;
+  background: var(--pitch);
+  transition: background 0.18s ease;
+}
+
+.follow:hover {
+  background: var(--gold-6);
+}
+
+.follow span {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: var(--w-mono-label);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gold);
+  line-height: 1.4;
+}
+
+.followsub {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--fg3);
+  letter-spacing: 0.02em;
+  display: block;
+  text-transform: none;
+  font-weight: 400;
+  margin-top: 4px;
+}
+
+.bandmeta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding: 16px 0 0;
+}
+
+/* ── beat 4 · the booth log — v4's terminal (v1's look, v2's air) ──────
+   Tom's pick, 2026-08-10: the transcript reads as a transcript, not as a
+   results table. Only v5's typing-in of the question is kept on top of it,
+   because the motion law's inventory lists it. */
+.term {
+  border: 1px solid var(--seam2);
+  background: var(--console);
+  box-shadow: 0 40px 90px -34px rgba(0, 0, 0, 0.9);
+  margin-top: var(--gap-block);
+}
+
+.termhead {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--seam);
+  background: var(--plate2);
+  flex-wrap: wrap;
+}
+
+.termhead .r {
+  margin-left: auto;
+}
+
+.termbody {
+  padding: clamp(22px, 2.4vw, 36px) clamp(18px, 2.4vw, 36px) clamp(26px, 2.8vw, 40px);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.85;
+  font-variant-ligatures: none;
+  color: var(--fg2);
+  overflow-x: auto;
+}
+
+.termbody .ask {
+  display: flex;
+  gap: 13px;
+  align-items: flex-start;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--seam);
+  margin-bottom: 24px;
+}
+
+.termbody .ask .pfx {
+  color: var(--gold);
+  font-weight: var(--w-mono-tag);
+  flex: none;
+  padding-top: 5px;
+}
+
+.termq {
+  composes: t-question from global;
+  color: var(--fg);
+  max-width: 52ch;
+  min-height: 1.3em;
+}
+
+.termbody .ask .caret2 {
+  display: none;
+  width: 8px;
+  height: 15px;
+  background: var(--gold);
+  flex: none;
+  margin-top: 7px;
+}
+
+.term.typingq .ask .caret2 {
+  display: block;
+  animation: blink var(--blink);
+}
+
+.termrest {
+  transition: opacity var(--t-veil) linear;
+}
+
+.term.veiled .termrest {
+  opacity: 0;
+}
+
+.call {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--fg);
+  margin: 22px 0 2px;
+}
+
+.call .k {
+  color: var(--gold);
+  font-weight: var(--w-mono-label);
+}
+
+.call .arg {
+  color: var(--fg2);
+}
+
+.ret {
+  color: var(--fg3);
+  margin-bottom: 6px;
+}
+
+.say {
+  composes: t-prose from global;
+  color: var(--fg);
+  max-width: var(--prose);
+  margin: 16px 0 18px;
+}
+
+/* the log's closing paragraph sits on the foot */
+.say.last {
+  margin-bottom: 0;
+}
+
+.say b {
+  font-weight: 560;
+}
+
+.say .id {
+  font-size: 0.9em;
+  color: var(--fg);
+}
+
+.qcite {
+  border-left: 1px solid var(--gold);
+  padding: 4px 0 4px 16px;
+  margin: 0 0 20px;
+}
+
+.qcite p {
+  font-family: var(--sans);
+  font-size: 15.5px;
+  line-height: 1.55;
+  color: var(--fg);
+  font-weight: var(--w-body);
+  max-width: var(--prose);
+}
+
+.qcite .who2 {
+  margin-top: 9px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: baseline;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--fg3);
+}
+
+.qcite .who2 b {
+  color: var(--fg2);
+  font-weight: var(--w-mono-label);
+}
+
+.qcite .who2 a {
+  color: var(--gold);
+}
+
+.qcite .who2 a:hover {
+  text-decoration: underline;
+}
+
+.termfoot {
+  border-top: 1px solid var(--seam);
+  padding: 18px;
+  background: var(--plate2);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.termfoot .note {
+  max-width: 112ch;
+}
+
+/* ── beat 5 · quickstart + footer ────────────────────────────────── */
+.starts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: var(--gap-block);
+}
+
+.start {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  min-width: 0;
+}
+
+.copybox {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--seam2);
+  background: var(--plate);
+  min-width: 0;
+}
+
+.copybox code {
+  flex: 1 1 0;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--fg);
+  padding: 14px 16px;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-variant-ligatures: none;
+  letter-spacing: -0.01em;
+}
+
+.copybox code i {
+  font-style: normal;
+  color: var(--fg3);
+}
+
+.copybox button {
+  border: 0;
+  border-left: 1px solid var(--seam2);
+  background: transparent;
+  color: var(--gold);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: var(--w-mono-tag);
+  letter-spacing: 0.19em;
+  padding: 0 15px;
+  cursor: pointer;
+  transition:
+    background var(--t-fast) ease,
+    color var(--t-fast) ease;
+}
+
+.copybox button:hover {
+  background: var(--gold);
+  color: var(--gold-ink);
+}
+
+.startnote {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg3);
+  letter-spacing: 0.02em;
+  line-height: 1.6;
+  font-variant-ligatures: none;
+}
+
+.fbase {
+  margin-top: clamp(24px, 2.6vw, 38px);
+  padding-top: 16px;
+  border-top: 1px solid var(--seam);
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+
+.fbase .r {
+  margin-left: auto;
+}
+
+/* the last beat sits on the footer, not on a seam */
+.run {
+  border-bottom: 0;
+}
+
+.footer {
+  background: var(--void);
+  padding: clamp(40px, 4.6vw, 64px) 0 clamp(44px, 5vw, 70px);
+}
+
+.fgrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: clamp(24px, 3vw, 60px);
+  align-items: start;
+}
+
+.fgrid p {
+  font-size: 14.5px;
+  line-height: 1.62;
+  color: var(--fg2);
+  max-width: 56ch;
+  font-weight: var(--w-body);
+}
+
+.fgrid p + p,
+.fgrid .label + p {
+  margin-top: 12px;
+}
+
+.fgrid a.lnk {
+  color: var(--gold);
+  border-bottom: 1px solid var(--gold-44);
+}
+
+.fmark {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+}
+
+.fmarkWord {
+  composes: t-brand-lg from global;
+  color: var(--fg);
+}
+
+.fmarkWord i {
+  font-style: normal;
+  color: var(--gold);
+}
+
+/* ── responsive ──────────────────────────────────────────────────── */
+@media (max-width: 1120px) {
+  /* stacked: the lane between the copy and the light table is sized in JS to
+     one wall tile plus air, so the found frame has somewhere clear to sit
+     directly above the table it is about to land on. minmax(0,·) because a
+     bare 1fr lets the table's longest mono token widen the whole hero. */
+  .heroin {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    row-gap: var(--lane, 112px);
+    column-gap: 30px;
+    padding-top: clamp(76px, 10vh, 110px);
+  }
+
+  .herocopy {
+    max-width: 44rem;
+    min-width: 0;
+  }
+
+  .bench {
+    max-width: 640px;
+    min-width: 0;
+  }
+
+  .plate {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .plate .th {
+    grid-column: 2;
+    margin-bottom: 14px;
+  }
+
+  .plate .bd {
+    grid-column: 2;
+  }
+
+  .plate:nth-child(even) {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .plate:nth-child(even) .th {
+    order: 0;
+  }
+
+  .plate:nth-child(even) .bd {
+    order: 0;
+  }
+
+  .ledger {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ledger div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .ledger div:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--seam);
+  }
+}
+
+@media (max-width: 780px) {
+  .landing {
+    font-size: 15px;
+  }
+
+  .hero {
+    min-height: 0;
+  }
+
+  .heroin {
+    padding-top: 84px;
+    padding-bottom: 44px;
+  }
+
+  .slug {
+    height: 46px;
+  }
+
+  .slug .q {
+    font-size: 11px;
+    padding: 0 10px;
+  }
+
+  .slug .st {
+    font-size: 7.6px;
+    padding: 0 9px;
+    letter-spacing: 0.13em;
+  }
+
+  .caret {
+    width: 6px;
+    height: 13px;
+  }
+
+  .chips button {
+    max-width: none;
+    flex: 1 1 auto;
+    height: 40px;
+    font-size: 9px;
+  }
+
+  .cta {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .hideS {
+    display: none;
+  }
+
+  .railin {
+    padding: 12px 0;
+    gap: 10px;
+  }
+
+  .railmeta {
+    gap: 9px;
+  }
+
+  .railmeta .label {
+    font-size: 8.6px;
+    letter-spacing: 0.15em;
+  }
+
+  .mark b {
+    font-size: 15px;
+  }
+
+  .frame .det .tab {
+    display: none;
+  }
+
+  .benchhead {
+    font-size: 9px;
+    gap: 8px;
+  }
+
+  .plate,
+  .plate:nth-child(even) {
+    grid-template-columns: 1fr;
+    padding: 22px 0;
+  }
+
+  .plate .vlab {
+    writing-mode: horizontal-tb;
+    transform: none;
+    border-left: 0;
+    padding: 0 0 12px;
+    justify-content: flex-start;
+    letter-spacing: 0.19em;
+  }
+
+  .plate .th,
+  .plate .bd {
+    grid-column: 1;
+  }
+
+  .plate:nth-child(even) .th {
+    order: 0;
+  }
+
+  .plate:nth-child(even) .bd {
+    order: 0;
+  }
+
+  .ledger {
+    grid-template-columns: 1fr;
+  }
+
+  .ledger div {
+    border-right: 0;
+    border-bottom: 1px solid var(--seam);
+    padding: 15px 16px 16px;
+  }
+
+  .ledger div:last-child {
+    border-bottom: 0;
+  }
+
+  .ledger dd {
+    font-size: 1.9rem;
+  }
+
+  .termbody {
+    font-size: 11.5px;
+  }
+
+  .say,
+  .qcite p {
+    font-size: 14.5px;
+  }
+
+  /* at 390 the wall band's own tiles carry the id; the slug stays, the
+     hairline goes — same reasoning as the hero wall */
+  .bwt {
+    width: clamp(116px, 32vw, 150px);
+  }
+
+  .starts {
+    grid-template-columns: 1fr;
+  }
+
+  .fgrid {
+    grid-template-columns: 1fr;
+    gap: 26px;
+  }
+
+  .fmark {
+    justify-content: flex-start;
+  }
+}
+
+/* the whole page freezes: end states only */
+@media (prefers-reduced-motion: reduce) {
+  .wallwrap,
+  .wtrack {
+    animation: none;
+  }
+
+  .slug.typing .caret,
+  .term.typingq .ask .caret2 {
+    animation: none;
+  }
+
+  .frame.acq .det {
+    animation: none;
+  }
+
+  .wt img,
+  .bwt img,
+  .follow,
+  .termrest,
+  .bench,
+  .lift {
+    transition: none;
+  }
+
+  .term.veiled .termrest {
+    opacity: 1;
+  }
+}
