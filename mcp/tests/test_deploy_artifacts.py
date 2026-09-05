@@ -50,13 +50,15 @@ def _service_block(text: str, service: str) -> str:
 def test_the_public_overlay_replaces_the_ports_it_means_to_replace() -> None:
     text = OVERLAY.read_text(encoding="utf-8")
 
-    mcp = _service_block(text, "mcp")
-    assert "ports: !override" in mcp, (
+    # The edge owns the publication since the front end moved to Next.js: caddy
+    # is the one origin and the only service the base file publishes at all.
+    caddy = _service_block(text, "caddy")
+    assert "ports: !override" in caddy, (
         "without !override Compose APPENDS, so the base file's 0.0.0.0 "
         "publication survives beside the loopback one and the origin stays "
         "reachable off-box (audit B-1)"
     )
-    assert "127.0.0.1:" in mcp
+    assert "127.0.0.1:" in caddy
 
     worker = _service_block(text, "worker")
     assert "ports: !reset" in worker, (
@@ -64,6 +66,39 @@ def test_the_public_overlay_replaces_the_ports_it_means_to_replace() -> None:
         "mcp reaches it over the compose network, so it needs no host "
         "publication at all (audit F-12)"
     )
+
+
+def test_only_the_edge_is_published() -> None:
+    """The trusted-header argument rests on there being ONE way in.
+
+    `mcp` published a host port until the edge existed, and the public overlay
+    bound it to loopback. Now caddy is the only client either server has, so
+    neither is published in the base file at all — a second listener would be a
+    second way to reach Python and forge `CF-Connecting-IP`, which is exactly
+    what docs/deploy-public.md §4 says must not exist.
+    """
+    base = BASE.read_text(encoding="utf-8")
+    for service in ("mcp", "web"):
+        assert "ports:" not in _service_block(base, service), (
+            f"{service} must not publish a host port: caddy reaches it on the "
+            "compose network, and the edge is the only listener"
+        )
+    assert "ports:" in _service_block(base, "caddy"), "the edge is published"
+
+
+def test_the_front_end_is_handed_neither_secret() -> None:
+    """The same rule as the worker's, for the same reason (audit F-7).
+
+    The front end needs two variables and the whole `.env` would give it the
+    OpenRouter key and the tunnel token, readable from `docker inspect` on a
+    process the internet talks to. Its client-IP header is interpolated from
+    the instance's trusted header rather than written twice, because the two
+    must be equal (frontend-migration.md §1c).
+    """
+    web = _service_block(BASE.read_text(encoding="utf-8"), "web")
+    assert "env_file" not in web
+    assert "VIDTHEQUE_API_URL: http://mcp:8080" in web
+    assert "VIDTHEQUE_CLIENT_IP_HEADER: ${VIDTHEQUE_TRUSTED_IP_HEADER" in web
 
 
 def test_the_env_gap_is_closed_in_the_base_file() -> None:
@@ -91,12 +126,22 @@ def test_the_worker_is_handed_neither_secret() -> None:
         assert "env_file" not in worker
 
 
-@pytest.mark.parametrize("image", ["cloudflared"])
+@pytest.mark.parametrize("image", ["cloudflared", "caddy"])
 def test_no_deployment_image_floats_on_latest(image: str) -> None:
     """`:latest` on the container terminating the public hostname is whatever
-    the registry serves next time somebody pulls."""
+    the registry serves next time somebody pulls. The edge is the same class of
+    decision one hop in: it decides which process answers a request."""
     block = _service_block(BASE.read_text(encoding="utf-8"), image)
     assert ":latest" not in block, f"{image} must be pinned"
+
+
+def test_the_edge_image_is_pinned_by_digest() -> None:
+    """A tag is a name the registry may repoint; the digest is the artifact."""
+    caddy = _service_block(BASE.read_text(encoding="utf-8"), "caddy")
+    assert re.search(r"image: caddy:[^\s]*@sha256:[0-9a-f]{64}", caddy), (
+        "the edge decides which of two processes answers a request — pin it "
+        "by digest, not only by tag"
+    )
 
 
 LOCAL = DEPLOY / "compose.local.example.yml"
@@ -109,3 +154,62 @@ def test_the_local_overlay_replaces_the_volume_it_means_to_replace() -> None:
     mcp = _service_block(LOCAL.read_text(encoding="utf-8"), "mcp")
     assert "volumes: !override" in mcp
     assert ":/data" in mcp
+
+
+CADDYFILE = DEPLOY / "Caddyfile"
+
+
+def test_the_edge_routes_every_path_python_owns() -> None:
+    """The route table is a contract (frontend-migration.md §1a), and the only
+    place it is executable is a file no test in this repo can run. So the shape
+    is guarded the way the merge tags above are: a path dropped from this
+    matcher is a path served by the front end, which has no route for it.
+    """
+    text = _strip_comments(CADDYFILE.read_text(encoding="utf-8"))
+    matcher = re.search(r"^\s*@python path (.+)$", text, re.M)
+    assert matcher, "the @python matcher is the whole of §1a"
+    paths = set(matcher.group(1).split())
+    for path in (
+        "/api/*",
+        "/frames/*",
+        "/mcp*",
+        "/auth/*",
+        "/.well-known/*",
+        "/healthz",
+        "/dashboard/api/*",
+        "/dashboard/logout",
+        "/videos/*/export.md",
+        # The SDK registers these at the root under oauth, not under /auth/
+        # (auth/modes.py's create_auth_routes) — frontend-migration.md §10.
+        "/authorize",
+        "/token",
+        "/register",
+        "/revoke",
+    ):
+        assert path in paths, f"{path} is Python's and the edge must route it"
+
+
+def test_the_edge_routes_dashboard_writes_by_method() -> None:
+    """§1d's three collisions — POST /dashboard/{following,index,login} — share
+    a path with a page the front end serves, and every other dashboard write is
+    a segment deeper. One method matcher over the prefix covers all of them; a
+    proxy that resolved any of them on path alone would answer a write with a
+    document and nothing would say so.
+    """
+    text = _strip_comments(CADDYFILE.read_text(encoding="utf-8"))
+    block = re.search(r"@dashboard_writes \{(.+?)\}", text, re.S)
+    assert block, "the method split is what nothing else in the repo can express"
+    body = block.group(1).split()
+    assert "method" in body and "POST" in body
+    assert "/dashboard" in body and "/dashboard/*" in body
+
+
+def test_the_edge_sends_no_document_headers_of_its_own() -> None:
+    """The CSP and its three companions are `web/src/proxy.ts`'s, per request
+    and with a nonce the edge cannot see (§1b). One set of headers, one sender.
+    """
+    text = _strip_comments(CADDYFILE.read_text(encoding="utf-8")).lower()
+    for directive in ("content-security-policy", "x-frame-options", "header "):
+        assert (
+            directive not in text
+        ), "the document policy belongs to whatever renders the document"
