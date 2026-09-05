@@ -16,8 +16,6 @@ holds three variants per keyframe instead of one per browser window.
 from __future__ import annotations
 
 import asyncio
-import json
-import os
 import re
 import sqlite3
 import time
@@ -39,29 +37,31 @@ from ..jobs import store as jobs_store
 # policies here is rows-per-page and how far an offset may walk, on a listing
 # the demo publishes in full anyway — so keying it off the credential would
 # paginate the browsable corpus at 24 rows to protect nothing.
-from ..public.api import (
-    CONTENT_TYPES,
-    OWNER_CLAMPS,
-    _cover_frames,
-    search_payload,
-    thumb_url,
-)
+from ..public.api import CONTENT_TYPES, OWNER_CLAMPS, _cover_frames, search_payload
 from ..follows import rules as follow_rules
 from ..follows import store as follows_store
 from ..text import clamp, clock, duration_clock, iso_day, iso_minute, iso_z, split_csv
 from ..timeparse import parse_corpus_time
 from ..tools import library
 from ..tools.base import Deps
+# The shared half of the overview and the ledger — the reads, the width set,
+# the projection predicate and the worker probe — moved to `read_models.py` on
+# 2026-09-05 so `api.py` answers out of the same code rather than a second copy
+# of the same SQL. Imported back under the names this module has always used:
+# the pages call exactly what they called before.
+from .read_models import DETAIL_WIDTH, FAILED_WINDOW_S, LIGHTBOX_WIDTH, STRIP_WIDTH
+from .read_models import declared_models as _declared_models
+from .read_models import ledger_reads, overview_reads
+from .read_models import pipeline_readiness as _pipeline_readiness
+from .read_models import redacted as _redacted
+from .read_models import thumb as _thumb
+from .read_models import tool_error as _tool_error
+
+# Re-exported deliberately (the redundant alias is the marker): the bound is
+# `read_models`' now, and a test reads it off this module.
+from .read_models import WORKER_STATUS_TIMEOUT_S as WORKER_STATUS_TIMEOUT_S
 from .render import build_environment, elapsed, span
 from .settings import ROOT
-
-# The fixed width set (§6.4). Three variants per frame in the `derived/` cache,
-# not one per browser window — and never inline base64, which is the byte
-# analogue of the token blowup that invariant exists to prevent.
-STRIP_WIDTH = 192
-DETAIL_WIDTH = 512
-LIGHTBOX_WIDTH = 1280
-FRAME_QUALITY = 70
 
 # Page sizes. Owner clamps, still server-side: `?frames=100000` is clamped.
 FRAME_PAGE = 24
@@ -69,9 +69,6 @@ FRAME_PAGE_MAX = 96
 CUE_PAGE = 50
 CUE_PAGE_MAX = 200
 SHOT_CAP = 2_000
-CHANNEL_CAP = 12
-TAG_CAP = 24
-RECENT_CAP = 8
 VIDEO_HISTORY_CAP = 10
 OCR_LINE_CAP = 600
 # `OCR_PREVIEW_LINES` is gone (Tom, 2026-08-10). It bounded a per-frame digest
@@ -84,33 +81,7 @@ OCR_LINE_CAP = 600
 # overnight batch writes sixty events and the panel printed all of them.
 EVENT_PREVIEW = 8
 
-# A health panel must never become the slowest dependency of the page that
-# reports it. `/status` is deliberately lock-free on the worker; this is the
-# corresponding client-side wall-clock bound. The response cap is defensive —
-# the shipped worker returns a few kilobytes — and stops a mispointed URL from
-# turning an overview request into an unbounded JSON parse.
-WORKER_STATUS_TIMEOUT_S = 1.0
-WORKER_STATUS_MAX_BYTES = 64 * 1024
-WORKER_BACKEND_CAP = 12
-
 _ENV = build_environment()
-
-
-def _thumb(deps: Deps, frame_id: str | None, width: int) -> str | None:
-    """Every frame on a dashboard page, as a **relative** `/frames/…` path.
-
-    The one place this surface differs from the MCP one on URLs, and the
-    difference is which of the two has a page around it. An agent gets an
-    absolute, self-contained, authenticated URL because nothing on its side
-    resolves a path; a browser reading this page already knows the host it
-    fetched the page from, and it is more likely to be right than
-    ``PUBLIC_URL`` is — a preview on a tunnelled port rendered every thumbnail
-    against a dead origin (dashboard.md §8, phase 2).
-
-    The signature is unaffected: it covers the frame, the width, the quality
-    and the expiry, never the origin.
-    """
-    return thumb_url(deps, frame_id, width, absolute=False)
 
 
 def _render(name: str, context: dict[str, Any], status: int = 200) -> HTMLResponse:
@@ -154,36 +125,6 @@ def _chrome(request: Request, page: str) -> dict[str, Any]:
     }
 
 
-def _redacted(request: Request) -> bool:
-    """Is this the demo's read-only projection rather than the owner's page?
-
-    The same flag that has always decided which half of vidtheque you get, and
-    the whole of §2.4's right-hand column. It is deliberately a property of the
-    **deployment**, not of the reader: a read-only instance that also has a
-    credential configured still serves the projection, because the projection
-    is what that mode *is*.
-
-    Two rules follow it, and phase 4 is the second one arriving:
-
-    * the **jobs** view (phase 2) keeps its states, its codes, its counts and
-      **all of its clocks** — showing a visitor what indexing a video costs in
-      time is the view's stated purpose there (§10.4) — and drops source URLs,
-      because `jobs.args_json` carries whatever was submitted, and error text,
-      because yt-dlp's failure strings carry cookiefile paths, player clients
-      and the operator's politeness settings;
-    * the **corpus overview** (phase 4) keeps the corpus — counts, channels,
-      tags, coverage, arrivals — and drops the operator's box: the declared
-      model ids and their dimensions, the drift reason, the byte totals, and
-      the `VIDTHEQUE_AUTH` line in the rail. §2.4 promised "no settings, no
-      paths"; the model ids *are* settings, and the runbook's audit
-      (`docs/deploy-public.md` §1.1) found them on the page.
-
-    The videos table and the video detail page are **not** redacted: §2.4 gives
-    them to the demo whole, and everything on them is corpus, not deployment.
-    """
-    return bool(request.app.state.assembled.public.enabled)
-
-
 def sign_in_page(request: Request, mode: str, *, login: bool = True) -> Response:
     """The 401 an unauthenticated browser gets — a page, not a JSON blob."""
     from .access import sign_in_hint
@@ -206,25 +147,7 @@ def sign_in_page(request: Request, mode: str, *, login: bool = True) -> Response
     )
 
 
-def _tool_error(result: Any) -> dict[str, Any] | None:
-    if not result.is_error:
-        return None
-    payload = dict(result.structured_content or {})
-    payload.setdefault("code", "E_INTERNAL")
-    payload.setdefault("message", "the query layer refused this request.")
-    payload.setdefault("next", None)
-    return payload
-
-
 # ---------------------------------------------------------------- §5.1 corpus
-
-
-# How far back "recently failed" reaches on the overview (§5.1). A day, because
-# the question the line answers is "what failed while I was asleep" — a corpus
-# that had a bad week six months ago must not light this up forever. The page
-# prints the window in the sentence, from this constant, so the number and the
-# words it sits in can never disagree.
-FAILED_WINDOW_S = 86_400
 
 
 async def overview(request: Request) -> Response:
@@ -247,58 +170,18 @@ async def _overview_page(
     request: Request, readiness_task: asyncio.Task[dict[str, Any]], *, redact: bool
 ) -> Response:
     assembled = request.app.state.assembled
-    deps: Deps = assembled.deps
-    db = assembled.db
 
-    summary = await library.corpus_summary(
-        deps,
-        max_channels=CHANNEL_CAP,
-        max_tags=TAG_CAP,
-        include_recent=False,
-        include_guidance=False,
-    )
-    error = _tool_error(summary)
-    if error is not None:  # pragma: no cover - corpus_summary has no error path
+    # The reads themselves are `read_models.overview_reads` — the same call
+    # `/dashboard/api/overview` makes, so the page and the JSON can never
+    # answer out of two different passes over the corpus.
+    data = await overview_reads(request, readiness_task, redact=redact)
+    if data.error is not None:  # pragma: no cover - corpus_summary has no error path
         return _render(
             "error.html",
-            {**_chrome(request, "corpus"), "error": error, "title": "Corpus"},
-            status=HTTP_STATUS.get(error["code"], 500),
+            {**_chrome(request, "corpus"), "error": data.error, "title": "Corpus"},
+            status=HTTP_STATUS.get(data.error["code"], 500),
         )
-    payload = summary.structured_content or {}
-
-    # `corpus_summary` builds its rollup for the lines it prints; this reads it
-    # again for the three fields the payload does not carry (OCR lines, the
-    # published span, the last-indexed clock). One flat statement, twice, is
-    # the price of not re-deriving `data_status` here — §4.5 is not negotiable.
-    rollup = await db.read(queries.corpus_rollup)
-    pool = await db.read(lambda c: queries.resolve_videos(c, queries.CorpusFilter()))
-    recent = await db.read(lambda c: queries.recent_indexed(c, pool, RECENT_CAP))
-    # The queue, in one row (§5.1). Read in both modes: what the machine is
-    # doing is corpus-shaped, not operator-shaped, and the jobs view the
-    # numbers link into is already part of the demo projection (§10.4).
-    health = await db.read(
-        lambda c: jobs_store.job_health(c, int(time.time()) - FAILED_WINDOW_S)
-    )
-    # The one read the projection skips rather than redacts: a byte total of
-    # the operator's disk is not a fact about the corpus, and not asking for it
-    # is cheaper and more honest than asking and then not printing it.
-    keyframe_bytes = None if redact else await db.read(queries.keyframe_bytes_total)
-
-    covers = await db.read(
-        lambda c: _cover_frames(c, [str(r["public_id"]) for r in recent])
-    )
-    recent_rows = [
-        {
-            "video_id": str(row["public_id"]),
-            "title": str(row["title"]),
-            "channel": row["channel_name"] or "",
-            "duration_s": row["duration_s"],
-            "indexed_at": row["indexed_at"],
-            "thumb": _thumb(deps, covers.get(str(row["public_id"])), STRIP_WIDTH),
-        }
-        for row in recent
-    ]
-    readiness = await readiness_task
+    payload = data.corpus or {}
 
     return _render(
         "overview.html",
@@ -306,15 +189,15 @@ async def _overview_page(
             **_chrome(request, "corpus"),
             "title": "Corpus",
             "corpus": payload,
-            "rollup": rollup,
-            "recent": recent_rows,
+            "rollup": data.rollup,
+            "recent": data.recent,
             "channels": payload.get("channels", []),
             "tags": payload.get("tags", {}),
             "gaps": payload.get("gaps", {}),
             # §5.1's job line, and the two links it is made of. The window is
             # in the context rather than in the copy so the sentence and the
             # query behind it are the same number.
-            "jobs": health,
+            "jobs": data.health,
             "failed_window_h": FAILED_WINDOW_S // 3600,
             # The three the projection drops (§2.4). `None` rather than absent:
             # `StrictUndefined` is on, so a template that forgets the guard is a
@@ -325,115 +208,10 @@ async def _overview_page(
             # operator; the *state* it caused is the visitor's business, because
             # search answers differently without the vector legs.
             "drift_reason": None if redact else assembled.db.vectors.reason,
-            "storage": None
-            if redact
-            else {
-                "keyframes": keyframe_bytes,
-                # os.stat, not a directory walk: the file knows its own size and
-                # the keyframe bytes are a column (§5.1).
-                "database": _file_size(assembled.settings.db_path),
-            },
-            "readiness": readiness,
+            "storage": data.storage,
+            "readiness": data.readiness,
         },
     )
-
-
-async def _pipeline_readiness(request: Request, *, redact: bool) -> dict[str, Any]:
-    """One bounded current-state observation of the local pipeline boundary.
-
-    The projection does not make the worker request at all: worker reachability
-    and checkpoint ids are operator infrastructure, while MCP/database
-    readiness and the vector-search *effect* are already observable through
-    the page and its search results. There is no cache and no history; the
-    timestamp is the clock of this observation.
-    """
-    assembled = request.app.state.assembled
-    readiness: dict[str, Any] = {
-        "mcp": "ready",
-        "database": "ready",
-        "vectors": {
-            "enabled": assembled.db.vectors.enabled,
-            "reason": None if redact else assembled.db.vectors.reason,
-        },
-        "worker": None,
-        "checked_at": None,
-    }
-    if redact:
-        readiness["checked_at"] = iso_z(time.time())
-        return readiness
-
-    worker_url = assembled.settings.worker_url.rstrip("/")
-    http = assembled.worker_status_http
-    if not worker_url or http is None:
-        readiness["worker"] = {
-            "state": "unconfigured",
-            "detail": "No worker URL is configured.",
-            "models": [],
-        }
-        readiness["checked_at"] = iso_z(time.time())
-        return readiness
-
-    worker: dict[str, Any] = {
-        "state": "unavailable",
-        "detail": "The worker did not answer its status check.",
-        "models": [],
-    }
-    try:
-        body: Any = None
-        parsed = False
-        too_large = False
-        # `asyncio.timeout` is the wall-clock bound §15 promises. httpx's
-        # `timeout=` alone is per-operation and its read leg resets on every
-        # chunk, so a peer trickling one byte per 900 ms would stay under it
-        # for as long as it cared to — with the overview awaiting the whole
-        # time.
-        async with asyncio.timeout(WORKER_STATUS_TIMEOUT_S):
-            async with http.stream(
-                "GET", f"{worker_url}/status", timeout=WORKER_STATUS_TIMEOUT_S
-            ) as response:
-                if response.status_code >= 400:
-                    worker["detail"] = f"The worker answered HTTP {response.status_code}."
-                else:
-                    content = bytearray()
-                    async for chunk in response.aiter_bytes():
-                        if len(content) + len(chunk) > WORKER_STATUS_MAX_BYTES:
-                            too_large = True
-                            break
-                        content.extend(chunk)
-                    if too_large:
-                        worker["detail"] = "The worker status response exceeded 64 kB."
-                    else:
-                        body = json.loads(content)
-                        parsed = True
-        if parsed:
-            backends = body.get("backends") if isinstance(body, dict) else None
-            if not isinstance(backends, list):
-                worker["detail"] = "The worker returned an invalid status response."
-            else:
-                models = []
-                for backend in backends[:WORKER_BACKEND_CAP]:
-                    if not isinstance(backend, dict) or not backend.get("model"):
-                        continue
-                    models.append(
-                        {
-                            "task": str(backend.get("task") or "unknown"),
-                            "model": str(backend["model"]),
-                            "loaded": bool(backend.get("loaded")),
-                        }
-                    )
-                worker = {
-                    "state": "ready",
-                    "detail": "Reachable over HTTP.",
-                    "models": models,
-                }
-    except Exception:
-        # Transport, timeout, status JSON and protocol errors are all the same
-        # current fact to the operator. Exception text can contain the worker
-        # hostname and is not useful enough to put into HTML.
-        pass
-    readiness["worker"] = worker
-    readiness["checked_at"] = iso_z(time.time())
-    return readiness
 
 
 # ---------------------------------------------------------------- §17 ledger
@@ -467,35 +245,10 @@ async def ledger(request: Request) -> Response:
 async def _ledger_page(
     request: Request, readiness_task: asyncio.Task[dict[str, Any]], *, redact: bool
 ) -> Response:
-    assembled = request.app.state.assembled
-    db = assembled.db
-
-    rollup = await db.read(queries.corpus_rollup)
-    ledger = await db.read(queries.corpus_ledger)
-    # `gaps` for one of its five numbers, and that is deliberate: the
-    # "transcript but no on-screen text" set is the one figure here that is a
-    # judgement about coverage rather than a column, and a second copy of that
-    # SQL is how the overview and this page start disagreeing about what a gap
-    # is. The other four terms it computes are cheap counts this page reads
-    # more precisely elsewhere.
-    gaps = await db.read(queries.gaps)
-    backlog = await db.read(queries.embed_backlog)
-    jobs_by_state = await db.read(jobs_store.job_state_counts)
-    health = await db.read(
-        lambda c: jobs_store.job_health(c, int(time.time()) - FAILED_WINDOW_S)
-    )
-    # The same read the overview skips rather than redacts, for the same reason:
-    # a byte total of the operator's disk is not a fact about the corpus, and
-    # not asking is cheaper and more honest than asking and not printing (§2.4).
-    storage = (
-        None
-        if redact
-        else {
-            "keyframes": await db.read(queries.keyframe_bytes_total),
-            "database": _file_size(assembled.settings.db_path),
-        }
-    )
-    readiness = await readiness_task
+    # The same reads `/dashboard/api/ledger` makes, in the same order and under
+    # the same projection rule — `read_models.ledger_reads`.
+    data = await ledger_reads(request, readiness_task, redact=redact)
+    rollup = data.rollup
 
     return _render(
         "ledger.html",
@@ -503,20 +256,20 @@ async def _ledger_page(
             **_chrome(request, "ledger"),
             "title": "Ledger",
             "rollup": rollup,
-            "ledger": ledger,
+            "ledger": data.ledger,
             # `corpus-summary`'s `videos` without the tool call: the rollup
             # already splits the corpus into ready and not-ready, and the two
             # add up to it by construction (`_CORPUS_SQL`'s `<> 'ready'`). This
             # page has no use for the channel and tag *lists* the tool would
             # also build, so it does not ask for them.
             "corpus_videos": int(rollup["videos_ready"]) + int(rollup["videos_pending"]),
-            "gaps": gaps,
-            "backlog": backlog,
-            "jobs": jobs_by_state,
-            "health": health,
+            "gaps": data.gaps,
+            "backlog": data.backlog,
+            "jobs": data.jobs_by_state,
+            "health": data.health,
             "failed_window_h": FAILED_WINDOW_S // 3600,
-            "storage": storage,
-            "readiness": readiness,
+            "storage": data.storage,
+            "readiness": data.readiness,
             # The clock of this reading. Every figure on the page was counted
             # inside this request, so the page carries one timestamp and not a
             # per-panel one — there is no cache and no sample behind any of them.
@@ -818,42 +571,6 @@ async def search(request: Request) -> Response:
         },
         status=status,
     )
-
-
-def _file_size(path: Any) -> int:
-    try:
-        return int(os.stat(path).st_size)
-    except OSError:  # pragma: no cover - the db exists by the time a page loads
-        return 0
-
-
-# The rows of `config` a human wants next to the live vector state. Deliberately
-# a fixed list rather than "everything in `config`": that table also carries
-# dimensions and storage formats, which are the schema's business.
-_MODEL_KEYS = (
-    ("stt.model", "transcription"),
-    ("text_embed.model", "transcript embeddings"),
-    ("frame_embed.model", "frame embeddings"),
-    ("ocr.model", "on-screen text"),
-)
-
-
-def _declared_models(config: dict[str, str]) -> list[dict[str, str]]:
-    """What the corpus says it was built with (§4.1 caveat 2).
-
-    `config` is written by migrations and read once at boot. It is the
-    *declared* model, never the worker's reported one — the live answer is the
-    vector state beside it, which is what `note_worker_drift` disables on a
-    mismatch. Showing the pair is the point.
-    """
-    rows = []
-    for key, label in _MODEL_KEYS:
-        value = config.get(key)
-        if not value:
-            continue
-        dim = config.get(key.replace(".model", ".dim"))
-        rows.append({"label": label, "key": key, "value": value, "dim": dim or ""})
-    return rows
 
 
 # ---------------------------------------------------------------- §5.2 videos
