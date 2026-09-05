@@ -483,22 +483,21 @@ export type VideoDetail = z.infer<typeof VideoDetail>;
 // -------------------------------------------------------------- transcript
 
 // `GET /dashboard/api/videos/{video_id}/cues` — the one read these pages make
-// that predates the JSON slice. It has served the Jinja scrollbox since
-// 2026-08-10, and it answers in *two* halves.
+// that predates the JSON slice. It has served the transcript scrollbox since
+// 2026-08-10, and it answers in numbers.
 //
-// The typed half (`start_s`, `end_s`, `avg_logprob`, `chunk_opens`,
-// `chunk_closes`) is what decision 5 asks for and what this page renders from.
-// The rendered half (`at`, `conf`, `chunk`) is what the endpoint has always
-// sent, for a script that carries no formatter of its own.
-//
-// **The typed fields are optional and the strings are the fallback**, so this
-// shell renders against an instance that predates the addition. When the
-// strings are cut from the endpoint, `at`, `conf` and `chunk` come out of here
-// and the three fallbacks in `Transcript` go with them.
+// It used to answer in two halves: these five typed fields beside `at`, `conf`
+// and `chunk`, three strings pre-rendered for a script that carried no
+// formatter of its own. That script went with the Python pages on 2026-09-06
+// and the strings went with it (dashboard.md §23), so the typed half is
+// required here and the timecode, the log-probability and the chunk label are
+// this page's to compose. `t` stays: it is the whole-second start a `?t=`
+// deeplink takes, not a rendering. A payload from an instance that still sends
+// the strings parses — Zod strips what this object does not name.
 export const Cue = z.object({
-  start_s: seconds().optional(),
-  end_s: seconds().optional(),
-  avg_logprob: z.number().nullable().optional(),
+  start_s: seconds(),
+  end_s: seconds(),
+  avg_logprob: z.number().nullable(),
   chunk_opens: z
     .object({
       seq: count(),
@@ -507,18 +506,14 @@ export const Cue = z.object({
       n_chars: count(),
       n_words: count(),
     })
-    .nullable()
-    .optional(),
-  chunk_closes: z.boolean().optional(),
-  at: z.string(),
+    .nullable(),
+  chunk_closes: z.boolean(),
   t: count(),
   text: z.string(),
   speaker: z.string().nullable(),
-  conf: z.string().nullable(),
   // The two markers collapsed into one bool: a chunk's last cue is not its
   // first, and the panel draws them differently.
   in_chunk: z.boolean(),
-  chunk: z.string().nullable(),
 });
 export type Cue = z.infer<typeof Cue>;
 

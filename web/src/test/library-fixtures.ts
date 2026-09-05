@@ -1038,7 +1038,7 @@ export const DEMO_HALF = {
   notes: [],
 };
 
-/** One page of three cues, with both halves of the endpoint's answer: the typed fields this page renders from and the rendered strings it falls back to. */
+/** One page of three cues, as the endpoint answers it: numbers only, with the timecode, the confidence and the chunk label left for the page to compose. */
 export const OWNER_CUES = {
   cues: [
     {
@@ -1053,27 +1053,21 @@ export const OWNER_CUES = {
         n_words: 54,
       },
       chunk_closes: false,
-      at: "0:00",
       t: 0,
       text: "we cache the keys and the values at every new token",
       speaker: null,
-      conf: null,
       in_chunk: true,
-      chunk: "chunk 0 · 0:00–7:03 · 54 words · 297 chars",
     },
     {
       start_s: 3.0,
       end_s: 5.8,
-      avg_logprob: null,
+      avg_logprob: -0.42,
       chunk_opens: null,
       chunk_closes: false,
-      at: "0:03",
       t: 3,
       text: "otherwise you would recompute attention over the entire prefix",
       speaker: null,
-      conf: null,
       in_chunk: false,
-      chunk: null,
     },
     {
       start_s: 6.0,
@@ -1081,13 +1075,10 @@ export const OWNER_CUES = {
       avg_logprob: null,
       chunk_opens: null,
       chunk_closes: false,
-      at: "0:06",
       t: 6,
       text: "which is quadratic in the sequence length",
       speaker: null,
-      conf: null,
       in_chunk: false,
-      chunk: null,
     },
   ],
   offset: 0,
