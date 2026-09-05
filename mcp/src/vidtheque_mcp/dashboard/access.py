@@ -69,6 +69,7 @@ from .settings import ROOT
 __all__ = [
     "WRITE_ROUTES",
     "auth_required",
+    "bad_origin",
     "credential",
     "origin_evidence",
     "origin_ok",
@@ -174,6 +175,22 @@ def auth_required(mode: str) -> JSONResponse:
     )
 
 
+def bad_origin() -> JSONResponse:
+    """The cross-origin refusal, in one place.
+
+    :func:`require_write` raises it for the twelve guarded writes and
+    `writes.login` raises it for the one write that runs ahead of the guard —
+    the same code, the same status and the same sentence, because two wordings
+    for one rule is how a client learns to match on prose.
+    """
+    return _refusal(
+        "E_BAD_ORIGIN",
+        "That request came from another origin.",
+        "use the dashboard on this server's own PUBLIC_URL.",
+        403,
+    )
+
+
 def peer_trusted(request: Request) -> bool:
     """Is the socket peer inside ``VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS``?
 
@@ -229,10 +246,5 @@ async def require_write(request: Request) -> Response | None:
 
     evidence = origin_evidence(request)
     if evidence == "cross" or (evidence == "absent" and held == "session"):
-        return _refusal(
-            "E_BAD_ORIGIN",
-            "That request came from another origin.",
-            "use the dashboard on this server's own PUBLIC_URL.",
-            403,
-        )
+        return bad_origin()
     return None

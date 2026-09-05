@@ -22,6 +22,7 @@ writes), because a second seed of the same corpus is a second corpus.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -29,10 +30,19 @@ import pytest
 from starlette.requests import Request
 from starlette.testclient import TestClient
 
+from vidtheque_mcp.auth.login import SESSION_COOKIE
 from vidtheque_mcp.dashboard import ROOT
-from vidtheque_mcp.dashboard.writes import MAX_FORM_URLS, _accepts_json
+from vidtheque_mcp.dashboard.writes import BAD_SECRET, MAX_FORM_URLS, _accepts_json
 
-from .test_dashboard import BEARER, SAME_ORIGIN, make_client, owner_client, sign_in
+from .test_dashboard import (
+    BEARER,
+    PASSWORD,
+    SAME_ORIGIN,
+    TOKEN,
+    make_client,
+    owner_client,
+    sign_in,
+)
 from .test_dashboard_following import _empty_corpus as empty_follows
 from .test_dashboard_following import make_client as follows_make_client
 from .test_dashboard_following import owner_client as follows_client
@@ -359,6 +369,173 @@ def test_signing_out_answers_typed_and_still_clears_the_cookie(
         # The row went with it, so the next write is refused, not merely
         # cookie-less.
         assert post(client, f"{ROOT}/jobs/job_running001/cancel").status_code == 401
+
+
+# ------------------------------- 3a. signing in, the thirteenth negotiated write
+
+
+def test_signing_in_answers_typed_and_still_mints_the_cookie(tmp_path: Path) -> None:
+    """The `Set-Cookie` is on both branches, as it is for sign-out.
+
+    A React shell can no more mint an `HttpOnly` cookie than clear one, so the
+    response has to — and `next` rides in the payload because there is no
+    `Location` on this branch for it to ride in.
+    """
+    with owner_client(tmp_path) as client:
+        signed = post(
+            client,
+            f"{ROOT}/login",
+            data={"password": PASSWORD, "next": f"{ROOT}/jobs"},
+        )
+        assert signed.status_code == 200
+        assert signed.json() == {"signed_in": True, "next": f"{ROOT}/jobs"}
+        assert signed.headers["cache-control"] == "no-store"
+
+        cookie = signed.headers["set-cookie"]
+        assert cookie.startswith(f"{SESSION_COOKIE}=")
+        assert "HttpOnly" in cookie and "SameSite=lax" in cookie and "Path=/" in cookie
+        assert "Secure" not in cookie  # PUBLIC_URL is http in this fixture
+
+        # The same row the 303 branch writes, and a working credential.
+        store = client.app.state.assembled.auth.store
+        assert store is not None
+        assert store.load_session(client.cookies.get(SESSION_COOKIE)) == "owner"
+        assert post(client, f"{ROOT}/jobs/job_running001/cancel").status_code == 200
+
+
+def test_the_next_in_the_payload_is_fenced_like_the_redirect(tmp_path: Path) -> None:
+    """`_safe_next`, on both branches — an open redirect the shell performs is
+    still an open redirect on the page that mints the session cookie."""
+    for away in ("https://evil.example/steal", "//evil.example", "/etc/passwd"):
+        with owner_client(tmp_path) as client:
+            signed = post(
+                client, f"{ROOT}/login", data={"password": PASSWORD, "next": away}
+            )
+            assert signed.json()["next"] == ROOT, away
+
+
+def test_a_refused_sign_in_is_typed_and_names_no_secret(tmp_path: Path) -> None:
+    """`E_BAD_CREDENTIAL`, not `E_AUTH_REQUIRED` — and one sentence for both
+    secrets, so the refusal is not a hint about which one this instance has.
+
+    `E_AUTH_REQUIRED` is what sends the shell to the sign-in page (§1d), which
+    on the sign-in page's own POST would be a loop.
+    """
+    with owner_client(tmp_path) as password_mode:
+        wrong = post(password_mode, f"{ROOT}/login", data={"password": "hunter2"})
+        assert wrong.status_code == 401
+        assert wrong.json()["error"] == "E_BAD_CREDENTIAL"
+        assert wrong.json()["message"] == BAD_SECRET
+        assert wrong.json()["next"]
+        assert wrong.headers["cache-control"] == "no-store"
+        assert not password_mode.cookies.get(SESSION_COOKIE)
+
+        # The token is the other secret this deployment accepts, and getting it
+        # wrong is refused identically.
+        mistyped = post(password_mode, f"{ROOT}/login", data={"password": TOKEN[:-1]})
+        assert mistyped.json() == wrong.json()
+
+    # A deployment whose only secret is the token says exactly the same thing:
+    # nothing in the refusal tells a prober which secret exists.
+    with owner_client(tmp_path, password=None) as token_mode:
+        assert post(token_mode, f"{ROOT}/login", data={"password": PASSWORD}).json() == (
+            wrong.json()
+        )
+        assert (
+            post(token_mode, f"{ROOT}/login", data={"password": TOKEN}).json()["signed_in"]
+            is True
+        )
+
+
+def test_the_sign_in_carries_the_same_origin_rule_on_both_branches(
+    tmp_path: Path,
+) -> None:
+    """The login runs ahead of `require_write` — it has no credential to check —
+    so it raises `access.bad_origin()` itself rather than a second wording."""
+    from vidtheque_mcp.dashboard.access import bad_origin
+
+    with owner_client(tmp_path) as client:
+        cross = client.post(
+            f"{ROOT}/login",
+            data={"password": PASSWORD},
+            headers={**CROSS_ORIGIN, **JSON},
+            follow_redirects=False,
+        )
+        assert cross.status_code == 403
+        assert cross.json() == json.loads(bad_origin().body)
+        assert cross.headers["cache-control"] == "no-store"
+        assert not client.cookies.get(SESSION_COOKIE)
+
+        # The rendered page keeps its own sentence — visible copy, not a code.
+        form = client.post(
+            f"{ROOT}/login", data={"password": PASSWORD}, headers={**CROSS_ORIGIN, **FORM}
+        )
+        assert form.status_code == cross.status_code
+        assert "another origin" in form.text
+
+
+def test_the_sign_in_form_branch_is_untouched(tmp_path: Path) -> None:
+    """The 303 and the re-rendered form, exactly as they were."""
+    with owner_client(tmp_path) as client:
+        good = client.post(
+            f"{ROOT}/login",
+            data={"password": PASSWORD, "next": f"{ROOT}/jobs"},
+            headers={**SAME_ORIGIN, **FORM},
+            follow_redirects=False,
+        )
+        assert good.status_code == 303
+        assert good.headers["location"] == f"{ROOT}/jobs"
+        assert good.headers["set-cookie"].startswith(f"{SESSION_COOKIE}=")
+
+        wrong = client.post(
+            f"{ROOT}/login", data={"password": "hunter2"}, headers={**SAME_ORIGIN, **FORM}
+        )
+        assert wrong.status_code == 401
+        assert BAD_SECRET in wrong.text
+        assert "E_BAD_CREDENTIAL" not in wrong.text
+
+
+def test_the_sign_in_bucket_refuses_in_json_whatever_was_asked_for(
+    tmp_path: Path,
+) -> None:
+    """The 429 is the limiter's, ahead of the handler, so it is JSON on both
+    branches — asserted rather than assumed, because it is the one refusal on
+    this route the negotiation does not reach."""
+    from vidtheque_mcp.public import LOGIN_PER_MIN
+
+    with owner_client(tmp_path) as client:
+        guesses = [
+            post(client, f"{ROOT}/login", data={"password": "guess"})
+            for _ in range(LOGIN_PER_MIN + 1)
+        ]
+        assert guesses[0].status_code == 401
+        limited = guesses[-1]
+        assert limited.status_code == 429
+        assert limited.json()["error"] == "E_RATE_LIMIT"
+        assert limited.json()["retry_after_s"] >= 1
+        assert limited.headers["retry-after"] == str(limited.json()["retry_after_s"])
+
+        navigating = client.post(
+            f"{ROOT}/login", data={"password": "guess"}, headers={**SAME_ORIGIN, **FORM}
+        )
+        assert navigating.status_code == 429
+        assert navigating.json()["error"] == "E_RATE_LIMIT"
+        assert navigating.json()["retry_after_s"] >= 1
+
+
+def test_a_deployment_with_no_sign_in_page_is_404_on_both_branches(
+    tmp_path: Path,
+) -> None:
+    """§2.3 again: the login page is part of the write side, so where the write
+    side is not registered it is absent rather than refusing — and negotiation
+    is not a way to reach it."""
+    with owner_client(tmp_path, readonly=True) as demo:
+        assert demo.post(f"{ROOT}/login", headers=JSON).status_code == 404
+        assert demo.post(f"{ROOT}/login", headers=FORM).status_code == 404
+
+    with make_client(tmp_path) as none_mode:  # VIDTHEQUE_AUTH=none
+        assert none_mode.post(f"{ROOT}/login", headers=JSON).status_code == 404
+        assert none_mode.post(f"{ROOT}/login", headers=FORM).status_code == 404
 
 
 # --------------------------------------------- 4. the guard, on both branches

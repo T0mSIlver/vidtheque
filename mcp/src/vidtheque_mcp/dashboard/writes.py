@@ -60,7 +60,7 @@ from ..text import clamp
 from ..tools import follows as follows_tool
 from ..tools import indexing, library
 from ..tools.base import Deps
-from .access import auth_required, credential, origin_ok, require_write
+from .access import auth_required, bad_origin, credential, origin_ok, require_write
 from .api import NO_STORE
 from .read_models import follow_row_json
 from .settings import ROOT
@@ -288,11 +288,44 @@ def _login_context(
     }
 
 
+# One sentence for both secrets and both failure shapes — the re-rendered form
+# and the envelope. "Wrong password" against a deployment that accepts the token
+# instead would be a hint about which secret exists, and a JSON caller reading a
+# different sentence from the page's would be that hint with extra steps.
+BAD_SECRET = "That secret does not match this instance."
+
+
+def _bad_credential() -> JSONResponse:
+    """A refused sign-in, typed — and deliberately **not** `E_AUTH_REQUIRED`.
+
+    Every other 401 on this surface means "go and sign in", and the React shell
+    acts on it by navigating to the sign-in page (§21, frontend-migration.md
+    §1d). On the sign-in page's own POST that rule is a loop, so the refusal
+    carries its own code and the shell can tell "your session went" from "that
+    secret is wrong" without knowing which route it called.
+    """
+    return _refusal_json(
+        {
+            "code": "E_BAD_CREDENTIAL",
+            "message": BAD_SECRET,
+            # Neutral about which secret this deployment holds: the page that
+            # asked already says, and the refusal must not be a second answer.
+            "next": "the sign-in page names which secret this deployment accepts.",
+        }
+    )
+
+
 async def login(request: Request) -> Response:
     """`GET|POST /dashboard/login` — the secret, once, for the existing cookie.
 
     Registered only where the write side is (`write_side_enabled`): a sign-in
     that grants nothing is a probe magnet with a password field on it.
+
+    The POST is the thirteenth write to answer two ways (§21): the 303 the
+    Jinja form expects, or `{"signed_in": true, "next": …}` carrying the same
+    `Set-Cookie` — on the response either way, because a React shell cannot
+    mint an `HttpOnly` cookie itself. The GET is untouched: "am I signed in" is
+    `/dashboard/api/session`'s question, not this route's.
     """
     assembled = request.app.state.assembled
     settings = assembled.settings
@@ -312,6 +345,14 @@ async def login(request: Request) -> Response:
     # Origin rule as every other write. It cannot carry the credential half —
     # not having one is the point of the page.
     if not origin_ok(request):
+        if _accepts_json(request):
+            # `access.bad_origin()` verbatim, so there is one origin refusal on
+            # this surface and not two. The form branch keeps its own sentence:
+            # it is visible copy on a rendered page, and the shared one is
+            # written for a client reading a code.
+            refusal = bad_origin()
+            refusal.headers.update(NO_STORE)
+            return refusal
         return _render(
             "login.html",
             _login_context(
@@ -324,21 +365,21 @@ async def login(request: Request) -> Response:
 
     supplied = str(form.get("password") or "")
     if not _accepted(settings, supplied):
-        # One message for both secrets and both failure shapes. "Wrong
-        # password" against a deployment that accepts the token instead would
-        # be a hint about which secret exists.
+        if _accepts_json(request):
+            return _bad_credential()
         return _render(
             "login.html",
-            _login_context(
-                request, error="That secret does not match this instance.", next_url=next_url
-            ),
+            _login_context(request, error=BAD_SECRET, next_url=next_url),
             status=401,
         )
 
     sid = secrets.token_urlsafe(32)
     ttl = settings.login_session_ttl_s
     store.save_session(sid, OWNER_SUBJECT, int(time.time()) + ttl)
-    response = _see(next_url)
+    # `next` rides in the payload rather than in a `Location`: the shell that
+    # asked for JSON navigates itself, and it goes to the target `_safe_next`
+    # already fenced — the same fence the 303 branch redirects to.
+    response = _outcome(request, {"signed_in": True, "next": next_url}, back=next_url)
     response.set_cookie(
         SESSION_COOKIE,
         sid,
