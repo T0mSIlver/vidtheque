@@ -22,7 +22,15 @@
 //   sign-in page with somewhere to come back to, and the page renders its
 //   signed-out state meanwhile.
 import type { ZodType } from "zod";
-import { Ledger, Overview, PartialRefusal, Session } from "./schemas";
+import {
+  CuePage,
+  Ledger,
+  Library,
+  Overview,
+  PartialRefusal,
+  Session,
+  VideoDetail,
+} from "./schemas";
 
 /** `/dashboard`, this surface's root on both servers. */
 export const ROOT = "/dashboard";
@@ -150,6 +158,35 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
     ledger(signal?: AbortSignal) {
       return get(`${ROOT}/api/ledger`, Ledger, { signal });
     },
+    /**
+     * The videos table. `query` is the page's own URL, filtered down to the
+     * parameters the contract lists and passed through untouched: every bound
+     * is server-side (§20), so a value this client "helpfully" corrected would
+     * be a clamp the reader is never told about.
+     */
+    library(query: URLSearchParams, signal?: AbortSignal) {
+      return get(`${ROOT}/api/library${suffix(query)}`, Library, { signal });
+    },
+    /** One video's panels, minus the transcript — that is `cues`. */
+    video(videoId: string, query: URLSearchParams, signal?: AbortSignal) {
+      const path = `${ROOT}/api/library/${encodeURIComponent(videoId)}`;
+      return get(`${path}${suffix(query)}`, VideoDetail, { signal });
+    },
+    /**
+     * A page of one video's cues.
+     *
+     * The endpoint is named *by the detail payload* rather than built here
+     * (§20: "the transcript is a pointer"), so the bounds and the path stay
+     * Python's. It is still checked against this prefix before being fetched:
+     * a payload naming somewhere else is a contract change, not a redirect
+     * this client should follow.
+     */
+    cues(endpoint: string, query: URLSearchParams, signal?: AbortSignal) {
+      if (!endpoint.startsWith(`${ROOT}/api/`)) {
+        return Promise.reject(new DashboardShapeError(endpoint, "not a /dashboard/api path"));
+      }
+      return get(`${endpoint}${suffix(query)}`, CuePage, { signal });
+    },
     /** Outside the read gate: a signed-out browser may ask what this deployment is. */
     session(signal?: AbortSignal) {
       return get(`${ROOT}/api/session`, Session, { signal, gated: false });
@@ -174,3 +211,10 @@ async function toError(res: Response): Promise<DashboardError> {
 
 /** The instance the pages use. Same origin, real cookie, real navigation. */
 export const dashboard = createDashboardClient();
+
+/** A query string, or nothing at all — never a bare `?` on a request with no
+ *  parameters, which would make two spellings of one URL. */
+function suffix(query: URLSearchParams): string {
+  const search = query.toString();
+  return search ? `?${search}` : "";
+}
