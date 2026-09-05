@@ -1,0 +1,70 @@
+/* The sign-in page — `templates/login.html`, read out of
+   `dashboard/static/dashboard.css`.
+
+   The panel, the field, the button and the refusal pill are
+   `dashboard.module.css`'s. What is here is the one thing only this page has:
+   a page with a single job, and therefore the one layout on this surface that
+   is not a full-bleed grid — a `--prose`-wide column under the page head's own
+   band, exactly as the error page is a header band and one panel. Nothing here
+   is a card; the field sits under the same hairline every other panel sits
+   under. */
+
+/* The panel's hairline runs the column, like every other panel on this
+   surface; it is the *form* under it that is measured. A rule that stopped
+   where the field stops would be a second width on a page with one object on
+   it. */
+.form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s3) var(--s4);
+  margin-top: var(--s4);
+  max-width: var(--prose);
+}
+
+/* A password is a short string and should look like one — it does not take the
+   band's flexible lane, and on a phone it takes the width there is. */
+.secret {
+  flex: 0 1 20rem;
+  min-width: 12rem;
+}
+
+.secret > input {
+  width: 100%;
+}
+
+/* The refusal, on one baseline: the word in its tone, the instance's sentence
+   beside it, and the code a client would have matched on last. It wraps as a
+   sentence rather than as three columns, because it is one. */
+.error {
+  composes: t-cell from global;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s2);
+  align-items: baseline;
+  margin-top: var(--s3);
+  max-width: var(--note);
+  color: var(--fg);
+}
+
+.code {
+  composes: t-machine-sm from global;
+  color: var(--mark);
+}
+
+/* The countdown carries its own box, so this only places it. */
+.limited {
+  margin-top: var(--s3);
+}
+
+.note {
+  composes: t-cell from global;
+  margin-top: var(--s4);
+  max-width: var(--note);
+  color: var(--muted);
+}
+
+.note code {
+  font-family: var(--mono);
+  font-variant-ligatures: none;
+}
