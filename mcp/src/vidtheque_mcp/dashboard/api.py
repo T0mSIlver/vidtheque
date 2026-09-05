@@ -27,7 +27,8 @@ browser has to be able to ask what this deployment expects of it, and the 401
 page has been telling an anonymous caller the auth mode and the sign-in hint
 since phase 1 — so the endpoint publishes that same pair and nothing else. No
 secret, no path, no model id, no URL of the operator's own infrastructure, and
-`signed_in` is the *validated* session, never the presence of a cookie.
+`signed_in` is the *validated* session, never the presence of a cookie; the
+cookie's mere presence is the separate `has_session_cookie`.
 """
 
 from __future__ import annotations
@@ -41,6 +42,7 @@ from starlette.responses import JSONResponse, Response
 
 from .. import __version__
 from ..auth.credential import credential, is_owner
+from ..auth.login import SESSION_COOKIE
 from ..errors import HTTP_STATUS
 from ..public.api import OWNER_CLAMPS, PUBLIC_CLAMPS
 from .access import peer_trusted, sign_in_hint, write_side_enabled
@@ -351,6 +353,15 @@ async def session(request: Request) -> Response:
     after its row has gone is exactly the case that must read `false`, because
     it is the one that would otherwise render a dashboard shell for a caller
     every subsequent request refuses.
+
+    `has_session_cookie` is the other fact, and both are needed (Tom,
+    2026-09-05). It is `SESSION_COOKIE in request.cookies` — the same lookup
+    `views._chrome` makes, from the same constant, so the two cannot drift —
+    and it authorizes nothing. It answers "is there a cookie to clear", which
+    is why the HTML rail's own `signed_in` has always been cookie presence: a
+    stale cookie must still get a **Sign out** button. The React shell renders
+    that button when either field is true, and renders the dashboard on
+    `signed_in` alone.
     """
     assembled = request.app.state.assembled
     settings = assembled.settings
@@ -379,6 +390,10 @@ async def session(request: Request) -> Response:
             # which is the distinction the clamp policy turns on.
             "is_owner": owner,
             "signed_in": held == "session",
+            # The cookie's mere presence, which is not authorization: a stale
+            # cookie reads `true` here and `false` above, and that pair is what
+            # lets a shell offer sign-out to a browser the server refuses.
+            "has_session_cookie": SESSION_COOKIE in request.cookies,
             "policy": (OWNER_CLAMPS if owner else PUBLIC_CLAMPS).name,
             # Where a human signs in, when this deployment has anywhere.
             "login_url": f"{ROOT}/login" if write_side else None,

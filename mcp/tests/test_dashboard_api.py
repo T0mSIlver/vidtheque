@@ -134,6 +134,7 @@ def test_the_session_endpoint_answers_a_signed_out_browser(tmp_path: Path) -> No
         assert body["authenticated"] is False
         assert body["is_owner"] is False
         assert body["signed_in"] is False
+        assert body["has_session_cookie"] is False
         assert body["policy"] == "public"
         # There is a write side here, so there is somewhere to sign in and the
         # client can say which secret this instance takes.
@@ -178,6 +179,37 @@ def test_signed_in_is_the_validated_session_never_the_cookie(tmp_path: Path) -> 
         bearer = read(client, SESSION, headers=BEARER)
         assert (bearer["is_owner"], bearer["signed_in"]) == (True, False)
         assert bearer["policy"] == "owner"
+
+
+def test_has_session_cookie_is_the_cookie_and_signed_in_is_the_row(
+    tmp_path: Path,
+) -> None:
+    """The two facts the payload carries side by side (Tom, 2026-09-05).
+    `signed_in` is authorization; `has_session_cookie` is whether there is a
+    cookie to clear — the question the HTML rail has always asked, so a stale
+    cookie still gets a sign-out button rather than a dashboard shell."""
+    with owner_client(tmp_path) as client:
+        store = client.app.state.assembled.auth.store
+        assert store is not None
+        store.save_session("live", "owner", int(time.time()) + 600)
+        store.save_session("dead", "owner", int(time.time()) - 1)
+
+        # No cookie at all: nothing to clear, and nothing to serve.
+        none = read(client, SESSION)
+        assert (none["has_session_cookie"], none["signed_in"]) == (False, False)
+
+        client.cookies.set(SESSION_COOKIE, "live")
+        live = read(client, SESSION)
+        assert (live["has_session_cookie"], live["signed_in"]) == (True, True)
+
+        # A cookie whose row has expired, and one that never had a row: both
+        # are a cookie the browser will keep sending until something clears it.
+        for value in ("dead", "never-existed"):
+            client.cookies.set(SESSION_COOKIE, value)
+            stale = read(client, SESSION)
+            assert stale["has_session_cookie"] is True, value
+            assert stale["signed_in"] is False, value
+            assert stale["authenticated"] is False, value
 
 
 def test_the_session_endpoint_describes_the_deployment_it_is_in(
