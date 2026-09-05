@@ -147,9 +147,10 @@ describe("the videos table", () => {
     await userEvent.selectOptions(screen.getByLabelText("Coverage"), "ocr");
     await userEvent.click(screen.getByRole("button", { name: "Apply" }));
 
-    // No `&channel=&tags=&published_after=` — an empty control is not a filter,
-    // and this URL is one somebody sends.
-    expect(nav.push).toHaveBeenCalledWith("/dashboard/videos?q=attention&index_state=all&has=ocr");
+    // No `&channel=&tags=&published_after=`, and no `index_state=all` either —
+    // an empty control is not a filter and neither is a picker resting on the
+    // value the API would have used anyway. This URL is one somebody sends.
+    expect(nav.push).toHaveBeenCalledWith("/dashboard/videos?q=attention&has=ocr");
   });
 
   it("pages with the query carried and one number changed", async () => {

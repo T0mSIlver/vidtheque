@@ -507,6 +507,26 @@ a.at:hover {
   color: var(--muted);
 }
 
+/* --------------------------------------------------------------- chapters */
+
+/* A timecode and a title, in that order and next to each other. Deliberately
+   not the shared `minirow`, which is a three-column row built for the
+   overview's channels: with two children its space-between throws the title to
+   the far end of a 1400px column, half a metre from the time it belongs to. */
+.chapters {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chapter {
+  composes: t-cell from global;
+  display: flex;
+  gap: var(--s3);
+  align-items: baseline;
+  padding: 2px 0;
+}
+
 /* ------------------------------------------------------------------ pager */
 
 .pager {
