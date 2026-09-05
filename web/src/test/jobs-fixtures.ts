@@ -9,11 +9,11 @@
 // already spent, and one finished carrying both kinds of loss, the item that
 // failed loudly and the item that succeeded with a stage missing underneath.
 //
-// **The `text` block is dropped except for `basis`.** Everything else in it is
-// a rendering of a number that is already on the payload, and these pages
-// render from the numbers (frontend-migration.md §1 decision 5). `basis` is the
-// sentence saying what the percentage is computed over, which is policy text —
-// it survives the cut and it is read.
+// **There is no `text` block.** Every string in it was a rendering of a number
+// already on the payload, and it went with `static/jobs.js` on 2026-09-06
+// (dashboard.md §23); these pages render from the numbers (frontend-migration.md
+// §1 decision 5). `basis` survives as a field on the card — the sentence saying
+// what the percentage is computed over, which is policy text — and it is read.
 //
 // `filters` and `notes` are the list's other half: the predicates the listing
 // actually ran with, and the sentence a bound or a fallback owes the reader.
@@ -55,7 +55,7 @@ export const DEFERRED_JOB = {
   error_code: "E_RATE_LIMIT",
   error_message: "the source rate-limited this box; cookiefile /home/dev/.cookies.txt",
   degraded: 0,
-  text: { basis: BASIS(1) },
+  basis: BASIS(1),
 };
 
 export const RUNNING_JOB = {
@@ -81,7 +81,7 @@ export const RUNNING_JOB = {
   error_code: null,
   error_message: null,
   degraded: 0,
-  text: { basis: BASIS(2) },
+  basis: BASIS(2),
 };
 
 export const FINISHED_JOB = {
@@ -109,7 +109,7 @@ export const FINISHED_JOB = {
   // One `done` item whose `ocr` stage failed underneath it: `n_failed` does not
   // see it, and this is the count that does.
   degraded: 1,
-  text: { basis: BASIS(2) },
+  basis: BASIS(2),
 };
 
 /** Nothing was asked for, so nothing fell back and nothing moved. */
