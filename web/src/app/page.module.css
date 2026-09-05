@@ -1,0 +1,23 @@
+.main {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: var(--beat) var(--gut);
+}
+
+/* The Font-Logo Rule: the logo is the word in the text face, with the full
+   stop in gold. */
+.mark {
+  composes: t-brand-lg from global;
+}
+
+.dot {
+  color: var(--gold);
+  font-style: normal;
+}
+
+.lede {
+  composes: t-lede from global;
+  max-width: var(--lede);
+  margin-top: var(--s6);
+  color: var(--muted);
+}
