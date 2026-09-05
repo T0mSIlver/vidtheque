@@ -30,17 +30,20 @@ from vidtheque_mcp.dashboard.read_models import (
     BUDGET_WINDOW_S,
     CHANNEL_CAP,
     CHECK_CAP,
+    EVENT_CAP,
     FAILED_WINDOW_S,
     FOLLOW_PAGE,
     FOLLOW_PAGE_MAX,
     HELD_BAND_CAP,
     INDEX_JOB_CAP,
     NEAR_MISS_S,
+    OCR_LINE_CAP,
     RECENT_CAP,
     SEEN_PAGE_MAX,
     TAG_CAP,
 )
 from vidtheque_mcp.dashboard.settings import DashboardSettings
+from vidtheque_mcp.db.connection import open_write_connection
 from vidtheque_mcp.text import clock, iso_day
 
 from .test_dashboard import (
@@ -52,6 +55,7 @@ from .test_dashboard import (
     make_client,
     owner_client,
 )
+from .test_dashboard import _corpus as corpus_dir
 
 # The follow fixture and its two deployments (§22). Aliased rather than
 # imported over the names above: this file asks `test_dashboard.py`'s corpus
@@ -1729,3 +1733,325 @@ def test_the_job_details_new_fields_carry_no_rendered_clock(tmp_path: Path) -> N
             assert not ISO_STAMP.search(grown), f"a rendered date reached {path}"
             assert not SPOKEN_DURATION.search(grown), f"a rendered duration reached {path}"
             assert not re.search(r'"\d+:\d{2}(?::\d{2})?"', grown), path
+
+
+# ------------------------------------ what only the Jinja pages used to pin
+#
+# The markup suite went with the pages it read (2026-09-06). Six things it was
+# the only witness to are here instead, because none of them is a fact about
+# HTML: the §6.3 read-count shape, the OCR double cap, the history cap, the
+# event tail, the two time axes over real rows, and the relative frame URL.
+
+
+def _count_reads(client: TestClient, path: str, **kwargs) -> int:
+    """How many database reads one request costs.
+
+    §6.3's rule is a *shape*, not a threshold: one row and a hundred must cost
+    the same number of reads, and the only way to say that is to count them.
+    """
+    db = client.app.state.assembled.db
+    original = db.read
+    calls = 0
+
+    async def spy(fn, budget_s=None):  # type: ignore[no-untyped-def]
+        nonlocal calls
+        calls += 1
+        return await original(fn, budget_s)
+
+    db.read = spy  # type: ignore[method-assign]
+    try:
+        assert client.get(path, **kwargs).status_code == 200, path
+    finally:
+        db.read = original  # type: ignore[method-assign]
+    return calls
+
+
+def test_no_read_on_this_surface_issues_a_query_per_row(tmp_path: Path) -> None:
+    """§6.3, measured — and measured on the payloads now, not on the pages.
+
+    Every one of these was the page's assertion first, because the page was the
+    only caller. The assembly is shared, so the count is the same count; what
+    changes is which handler is asked for it.
+    """
+    with make_client(tmp_path) as client:
+        # The table: fifty rows must not become two hundred coverage probes.
+        one = _count_reads(client, f"{LIBRARY}?limit=1")
+        many = _count_reads(client, f"{LIBRARY}?limit=100")
+        assert one == many < 10, f"{one} reads for 1 row, {many} for 100"
+
+        # The detail: one keyframe and ninety-six cost the same.
+        small = _count_reads(client, f"{LIBRARY}/{FIRST}?frames=1")
+        large = _count_reads(client, f"{LIBRARY}/{FIRST}?frames=96")
+        assert small == large < 20, f"{small} reads for 1 frame, {large} for 96"
+
+        # The cue pager, which is the one read a scrollbox repeats.
+        cues = f"{ROOT}/api/videos/{FIRST}/cues"
+        assert _count_reads(client, f"{cues}?limit=1") == _count_reads(
+            client, f"{cues}?limit=200"
+        )
+
+        # The jobs table: the degraded badge and the row headline are one
+        # grouped read over the ids the page read, not a probe per job.
+        jobs_one = _count_reads(client, f"{JOBS}?limit=1")
+        jobs_many = _count_reads(client, f"{JOBS}?limit=100")
+        assert jobs_one == jobs_many <= 4, f"{jobs_one} for 1 job, {jobs_many} for 100"
+        assert _count_reads(client, JOB) <= 8
+
+        # The ledger is a page of aggregates, so its cost is a constant: every
+        # figure is a whole-table or index count and none is a probe per video.
+        assert _count_reads(client, LEDGER) <= 8
+
+
+DENSE_SLIDE_LINES = 30
+
+
+def _dense_corpus(tmp_path: Path) -> Path:
+    """The fixture corpus with one keyframe carrying a slide's worth of text."""
+    data = corpus_dir(tmp_path)
+    conn = open_write_connection(data / "vidtheque.db")
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        keyframe = conn.execute(
+            "SELECT k.id, k.video_id, k.t_s FROM keyframes k "
+            "JOIN videos v ON v.id = k.video_id "
+            "WHERE v.source_id = 'kCc8FmEb1nY' ORDER BY k.ord LIMIT 1"
+        ).fetchone()
+        start = int(
+            conn.execute(
+                "SELECT COALESCE(MAX(line_no), -1) + 1 FROM ocr_lines WHERE keyframe_id = ?",
+                (keyframe["id"],),
+            ).fetchone()[0]
+        )
+        for offset in range(DENSE_SLIDE_LINES):
+            conn.execute(
+                "INSERT INTO ocr_lines (keyframe_id, video_id, t_s, line_no, text, conf, "
+                "x0, y0, x1, y1) VALUES (?, ?, ?, ?, ?, 0.9, 0, 0, 1, 1)",
+                (
+                    keyframe["id"],
+                    keyframe["video_id"],
+                    keyframe["t_s"],
+                    start + offset,
+                    f"block_bytes = 2 * block_size * num_kv_heads, row {offset}",
+                ),
+            )
+        conn.execute("COMMIT")
+    finally:
+        conn.close()
+    return data
+
+
+def test_a_dense_slide_sends_every_line_it_read_with_a_box_for_each(
+    tmp_path: Path,
+) -> None:
+    """The OCR panel is a scrollbox of every line, and the linkage is by index.
+
+    The page's version of this counted `<li class="ocrline">`s against
+    `<span class="ocrbox">`es. The fact underneath is the payload's: a line and
+    its box arrive together, in the frame's own order, so a client can pair
+    them by position without a second read — and the *page's* budget, the outer
+    half of §5.3's double cap, is a field rather than a silence.
+    """
+    _dense_corpus(tmp_path)
+    with make_client(tmp_path) as client:
+        body = read(client, f"{LIBRARY}/{FIRST}?frames=96")
+
+    frames = {frame["frame_id"]: frame for frame in body["frames"]["frames"]}
+    dense = frames[f"{FIRST}-00000"]
+    # Every line the read returned, in one list — the slide plus the fixture's
+    # own line — each with a box beside it and none of them dropped.
+    assert len(dense["lines"]) == DENSE_SLIDE_LINES + 1
+    assert all(len(line["box"]) == 4 for line in dense["lines"])
+    assert [line["line_no"] for line in dense["lines"]] == list(
+        range(len(dense["lines"]))
+    )
+    # The budget is on the payload whether or not it bound, so a client never
+    # has to guess whether a short list is the whole list.
+    assert body["frames"]["ocr_line_cap"] == OCR_LINE_CAP
+    assert body["frames"]["ocr_lines_capped"] is False
+
+
+def test_the_indexing_history_is_the_latest_ten_and_says_what_went_wrong(
+    tmp_path: Path,
+) -> None:
+    """§16.4: bounded, newest first, never counted — and the table above it is
+    unchanged, because history is a detail-only read."""
+    with make_client(tmp_path) as client:
+        conn = open_write_connection(client.app.state.assembled.db.path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            video = int(
+                conn.execute(
+                    f"SELECT id FROM videos WHERE public_id='{FIRST}'"
+                ).fetchone()[0]
+            )
+            for n in range(12):
+                cursor = conn.execute(
+                    "INSERT INTO jobs (owner_id, public_id, kind, args_json, n_items, "
+                    "state, created_at, started_at, finished_at) VALUES "
+                    "(1, ?, 'reindex', '{}', 1, 'done', unixepoch() + ?, "
+                    "unixepoch() + ?, unixepoch() + ?)",
+                    (f"job_history{n:02d}", n, n, n + 1),
+                )
+                conn.execute(
+                    "INSERT INTO job_items (job_id, seq, source_url, video_id, state, "
+                    f"finished_at) VALUES (?, 0, 'https://youtu.be/{FIRST}', ?, "
+                    "'done', unixepoch() + ?)",
+                    (int(cursor.lastrowid), video, n + 1),
+                )
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+
+        body = read(client, f"{LIBRARY}/{FIRST}")
+        ids = [job["job_id"] for job in body["job_history"]["jobs"]]
+        assert len(ids) == body["job_history"]["cap"] == 10
+        assert "job_history11" in ids and "job_history02" in ids
+        assert "job_history01" not in ids  # the eleventh run, dropped by the cap
+        assert "total" not in body["job_history"]
+
+        # The listing did not grow a per-row history query on the way.
+        assert _count_reads(client, f"{LIBRARY}?limit=1") == _count_reads(
+            client, f"{LIBRARY}?limit=100"
+        )
+
+        # A run that failed carries the code it failed with and the stage that
+        # went missing under a job that reported success.
+        degraded = read(client, f"{LIBRARY}/eMlx5fFNoYc")["job_history"]["jobs"]
+        entry = next(job for job in degraded if job["job_id"] == "job_finished01")
+        assert entry["state"] == "failed" and entry["kind"] == "index"
+        assert entry["degraded_stages"] == ["ocr"]
+
+
+def test_the_event_tail_is_newest_first_and_bounded(tmp_path: Path) -> None:
+    """The other unbounded block on the war-story page.
+
+    An overnight batch writes eighty events and the payload carries
+    `EVENT_CAP` of them — the **newest**, in the order they happened, so the
+    half that is dropped is the half that has scrolled out of relevance. The
+    page split them into a preview and a drawer; that split was the page's, and
+    what survives it is the cap and which end of the log it keeps.
+    """
+    data = corpus_dir(tmp_path)
+    conn = open_write_connection(data / "vidtheque.db")
+    try:
+        job = int(
+            conn.execute(
+                "SELECT id FROM jobs WHERE public_id='job_deferred01'"
+            ).fetchone()[0]
+        )
+        conn.execute("BEGIN IMMEDIATE")
+        for n in range(EVENT_CAP + 20):
+            conn.execute(
+                "INSERT INTO job_events (job_id, at, level, message) VALUES "
+                "(?, unixepoch() - ?, 'info', ?)",
+                (job, EVENT_CAP + 120 - n, f"stage keyframe: decoded {n * 250} frames"),
+            )
+        conn.execute("COMMIT")
+    finally:
+        conn.close()
+
+    with make_client(tmp_path) as client:
+        body = read(client, f"{ROOT}/api/jobs/job_deferred01")
+
+    events = body["events"]
+    assert len(events) == EVENT_CAP
+    stamps = [event["at"] for event in events]
+    assert stamps == sorted(stamps, reverse=True), "newest first"
+    # The cap took the near end, not the far one: the most recent event is in
+    # the payload and the oldest of the eighty is not.
+    messages = [event["message"] for event in events]
+    assert f"stage keyframe: decoded {(EVENT_CAP + 19) * 250} frames" in messages
+    assert "stage keyframe: decoded 0 frames" not in messages
+    # The deferral's own receipt is in the tail rather than described: it is
+    # the only place a non-rate-limit deferral exists at all (§4.4).
+    assert body["job"]["error_code"] == "E_RATE_LIMIT"
+
+
+def test_the_two_time_axes_pick_different_things(tmp_path: Path) -> None:
+    """CLAUDE.md's invariant, over rows rather than over parameters.
+
+    `published_*` picks videos and `indexed_*` picks when this box did the
+    work. The fixture publishes across 2023–2025 and indexed its three ready
+    videos at one moment, so a filter that confused the two is visible here.
+    """
+    with make_client(tmp_path) as client:
+
+        def ids(query: str) -> set[str]:
+            return {row["video_id"] for row in read(client, f"{LIBRARY}?{query}")["videos"]}
+
+        assert FIRST not in ids("published_after=2024-01-01")  # published 2023-01-17
+        assert {"zduSFxRajkE", "eMlx5fFNoYc"} <= ids("published_after=2024-01-01")
+
+        # The named day is *included*: `< before` is the clause, so `before`
+        # resolves to the start of the next day. A range that dropped
+        # everything published on its own end date would read as a bug.
+        on_the_day = ids("published_before=2024-02-20")
+        assert {"zduSFxRajkE", FIRST} <= on_the_day and "eMlx5fFNoYc" not in on_the_day
+
+        # The other axis — and the video that never finished has no
+        # `indexed_at` at all, so it is not caught by it.
+        indexed = ids("indexed_after=2025-06-01")
+        assert FIRST in indexed and HALF not in indexed
+        assert HALF in ids("index_state=indexing")
+
+
+def test_a_generous_date_spelling_resolves_to_a_day_and_says_which(
+    tmp_path: Path,
+) -> None:
+    """`today` and `30d` are inputs a human types into a URL; the payload
+    answers with the UTC day they became.
+
+    The entry point stays generous and the canonical form is the resolved day,
+    which is what the query actually filtered on — and a spelling that landed
+    somewhere other than the day it named says so, because applying one
+    silently is the narrowing CLAUDE.md forbids.
+    """
+    with make_client(tmp_path) as client:
+        now = int(time.time())
+        start_of_today = now - now % 86_400
+        # A day-shaped word resolves to that day exactly, so there is nothing
+        # to disclose and nothing is said.
+        relative = read(client, f"{LIBRARY}?indexed_after=today")
+        assert relative["filters"]["indexed_after"] == start_of_today
+        assert relative["notes"] == []
+
+        # An instant-shaped one lands mid-day and is snapped down to it, which
+        # is a different question from the one asked and says so.
+        ago = read(client, f"{LIBRARY}?published_after=30d ago")
+        day = iso_day(now - 30 * 86_400)
+        assert ago["filters"]["published_after"] % 86_400 == 0
+        assert f"published_after=30d ago → {day}" in " ".join(ago["notes"])
+
+        # An overlong value is truncated before it reaches the parser rather
+        # than handed to it whole.
+        assert client.get(f"{LIBRARY}?published_after={'9' * 400}").status_code in (
+            200,
+            400,
+        )
+
+
+def test_a_dashboard_frame_url_is_relative_and_still_signed(tmp_path: Path) -> None:
+    """A page knows its own host better than `PUBLIC_URL` does.
+
+    A preview on a tunnelled port rendered every thumbnail against a dead
+    origin, so this surface hands back a path. The signer covers the frame, the
+    width, the quality and the expiry and never the origin, so dropping the
+    origin cannot invalidate anything — and the facade, whose reader is an
+    agent with no page to resolve against, still sends absolute URLs.
+    """
+    base = "http://localhost:8080"
+    with make_client(tmp_path, auth_mode="token", token=TOKEN) as client:
+        table = read(client, LIBRARY, headers=BEARER)
+        thumbs = [row["thumb"] for row in table["videos"] if row["thumb"]]
+        assert thumbs and all(thumb.startswith("/frames/") for thumb in thumbs)
+
+        # No bearer, no cookie: the signature on the relative URL is the whole
+        # credential, exactly as it is on an absolute one.
+        assert "sig=" in thumbs[0] and "exp=" in thumbs[0]
+        assert client.get(thumbs[0]).status_code == 200
+        assert client.get(thumbs[0].split("&sig=")[0] + "&sig=forged").status_code == 401
+
+        # The facade at the same prefix is unchanged.
+        facade = read(client, FACADE, headers=BEARER)
+        absolute = [row["thumb"] for row in facade["videos"] if row["thumb"]]
+        assert absolute and all(url.startswith(f"{base}/frames/") for url in absolute)
