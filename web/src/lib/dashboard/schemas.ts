@@ -281,9 +281,12 @@ export const Library = z.object({
   redacted: z.boolean(),
   // Explicit, never inferred from the presence of `q`.
   order: z.string(),
-  // The filters the query actually ran with, resolved to epochs. `_before` is
-  // *exclusive* — the start of the day after the one asked for — so a date
-  // input is seeded from the URL the reader typed, never from this echo.
+  // The filters the query actually ran with, resolved to epochs — which is
+  // what the date controls are seeded from, because the server clamps each
+  // bound and snaps it to a UTC day before filtering and a box showing the raw
+  // URL would name a filter that never ran. `_before` is *exclusive*, the
+  // start of the day after the one asked for, so it is read back a day earlier
+  // to get the date the reader typed.
   filters: z.object({
     q: z.string().nullable(),
     channel: z.string().nullable(),
