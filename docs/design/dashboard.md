@@ -3130,21 +3130,23 @@ was removed and what the sections above should now be read as.
 - `/dashboard/api/*` — the reads in §19, §20, §22, the two jobs routes and the
   cue pager in §5.4/§5.3, plus the `/api/*` facade registered at this prefix
   (§2.5.1) and the ungated `/dashboard/api/session` (§19);
-- the **fourteen POSTs** — §21's thirteen plus `POST /dashboard/following`,
-  each keeping its URL, its guard, its Origin rule and its rate bucket;
+- the **thirteen POSTs** of §21, each keeping its URL, its guard, its Origin
+  rule and its rate bucket;
 - `GET /dashboard/` → `308` → `/dashboard`, which only declines to 404 a
   trailing slash. Where it lands is the front end's.
 
-**What was deleted.** `views.py` and its eleven page handlers (the overview,
-the ledger, the videos table, the video detail, search, the jobs table, one
-job's war story, the following list, a follow's detail, the index form and the
-sign-in page); `templates/` — twelve files including `base.html` and
-`error.html`; `static/` — `dashboard.css`, `dashboard.js`, `jobs.js`; the
-`/dashboard/static/{asset:path}` route with its `fonts/` alias and its `_MEDIA`
-suffix map; `render.py`, which was the Jinja environment, its nine filters and
-the `_TONES` table; `writes.login`'s `GET`, `writes.index_form` and
-`_prefilled_index_form` with the two prefill character bounds; and `jinja2` from
-`mcp/pyproject.toml`, because this package renders no HTML at all now.
+**What was deleted.** `views.py` and its nine page handlers (the overview, the
+ledger, the videos table, the video detail, search, the jobs table, one job's
+war story, the following list and a follow's detail) — the other two pages, the
+index form and the sign-in page, were `GET`s on write-side routes in
+`writes.py` and are named below; `templates/` — fifteen files including
+`base.html` and `error.html`; `static/` — `dashboard.css`, `dashboard.js`,
+`jobs.js`; the `/dashboard/static/{asset:path}` route with its `fonts/` alias
+and its `_MEDIA` suffix map; `render.py`, which was the Jinja environment, its
+nine filters and the `_TONES` table; `writes.login`'s `GET`,
+`writes.index_form` and `_prefilled_index_form` with the two prefill character
+bounds; and `jinja2` from `mcp/pyproject.toml`, because this package renders no
+HTML at all now.
 
 **One refusal, both branches.** `_error_page` is gone and `_refusal_json`
 serves every refusal on the write side, at the same status, with the same

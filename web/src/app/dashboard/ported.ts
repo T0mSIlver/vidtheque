@@ -9,7 +9,7 @@ import { ROOT } from "@/lib/dashboard/client";
 // for a route that does not exist.
 //
 // Every page is here now, and the question is still the right one to ask:
-// `/dashboard` holds the fourteen POSTs, `/dashboard/api/*` and `/dashboard/logout`,
+// `/dashboard` holds the thirteen POSTs, `/dashboard/api/*` and `/dashboard/logout`,
 // none of which is a page, and a link is a `GET` that has to land on one.
 //
 // It is asked by the rail, by the overview's arrivals, by the ledger's figures
