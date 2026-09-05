@@ -44,6 +44,19 @@ initial reader, API client, search, Ask, and component tests.
   Through the edge: `GET /` returns the landing, `GET /demo` the reader, and
   each carries the four document headers (demo-site.md §7 item 0). Python has
   no page at `/` any more, so a misrouted edge shows the MCP mount's 404.
+  And **a `POST` to `/dashboard/following` through the edge reaches Python**:
+  it is the one path both processes own, split by method — `GET` to Next, the
+  add form's `POST` to Python (frontend-migration.md §1d). A proxy that routes
+  it on path alone answers the write with a document and nothing says so.
+  Development has a shim for that one path, not the rule: `web/next.config.ts`
+  forwards it in `beforeFiles` on the `application/x-www-form-urlencoded`
+  content type, and that entry is deleted the day development runs both
+  processes behind one proxy.
+  In the deletion round, `templates/following.html` has one line to fix or drop
+  rather than move: it prints `Indexing is disabled on this instance ({{
+  vectors.reason }})` and its context has carried a bool since the read
+  assembly moved, so the parenthesis renders empty. No test reads that sentence
+  on this page, and the React page states the same refusal without the reason.
 
 The dashboard port, page by page. Each needs its JSON contract first, then its
 React page, verified against **both** the owner and the public read-only
@@ -121,16 +134,25 @@ mode this list exists to prevent.
   detail's **Manage this video** panel, `POST /dashboard/videos/{id}/tags`,
   which the React detail does not render at all. The write answers the row's
   tags after the write (dashboard.md §21).
-- **Following** — the list, the detail bands and the six writes; absent
-  entirely when the deployment registers no write side (dashboard.md §18). All
-  six answer the follow row typed as of 2026-09-05, and are 404 on both
-  branches where the surface is absent (dashboard.md §21). *The read contract
-  landed 2026-09-05*: `/dashboard/api/following` and `/dashboard/api/following/
-  {slug}`, registered with the write routes so they disappear with the pages
-  (dashboard.md §22; frontend-migration.md §6b). The two pages themselves are
-  pending, and they own three things Python no longer sends — the rule
-  compressed to facts, the rule as an English sentence, and the near-miss line
-  around a typed `near_miss` that is `null` when there is nothing to say.
+- **Following** — *landed 2026-09-05*, list, detail and all six writes.
+  `GET /dashboard/following` and `GET /dashboard/following/{slug}` are Next's,
+  in the ownership table, in the document-policy matcher and in `ported.ts`
+  (frontend-migration.md §1d); they read `/dashboard/api/following` and
+  `/dashboard/api/following/{slug}`, which are registered with the write routes
+  so the whole surface — pages, JSON and writes — is 404 together where the
+  deployment declines it (dashboard.md §18.6, §21, §22). Two payload gaps the
+  pages found closed the same day: the detail read says `checks_enabled`,
+  because with follow checks off its clocks are a schedule nothing will run;
+  and every write outcome now carries `last_error_code` and
+  `last_error_message`, because `resume` clears an error the outcome did not
+  show and the page was re-reading after every write to find out. What the
+  React pages own that Python does not send: the rule as facts and **no**
+  English sentence (Tom, 2026-09-05 — `follows.rules.describe` stays the MCP
+  tools' renderer), the near-miss line around a typed `near_miss` that is
+  `null` when there is nothing to say, and the unfollow confirmation, which
+  carries what a redirect used to say. One route needs the edge to know it:
+  `POST /dashboard/following` shares the list page's path — see the cutover
+  bullet above.
 - **Session and login** — the sign-in page, the cookie flow and sign-out.
   `/dashboard/api/session` describes the deployment. *The login POST's JSON
   twin landed 2026-09-05*: `POST /dashboard/login` answers `{"signed_in",
