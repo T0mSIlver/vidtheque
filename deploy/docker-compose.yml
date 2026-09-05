@@ -131,6 +131,12 @@ services:
     image: caddy:${CADDY_VERSION:-2.11.4@sha256:df7f1c2fb114453b951de51a98efc010db1655a92c2e86be6706714e2417a78d}
     restart: unless-stopped
     volumes:
+      # THE FILE HAS TO BE THERE. Compose creates a missing bind source as a
+      # DIRECTORY, so a deployment that fetched the two compose files and not
+      # this one gets `/etc/caddy/Caddyfile` as an empty directory and an edge
+      # that will not start. `deploy/vidtheque-update.sh` fetches it beside
+      # them, pinned to the same release tag, and the README's quickstart curls
+      # it — one more `-O`, for exactly this reason.
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     # No volume for /data: TLS terminates in front of this container (the
     # tunnel, or the LAN), so caddy never asks for a certificate and has
