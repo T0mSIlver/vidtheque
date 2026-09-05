@@ -459,21 +459,21 @@ value, not policy text. `in_chunk` is what styles a cue as inside its chunk;
 `chunk_closes` and the cue's `end_s` are declared in `schemas.ts` and read by
 nothing yet.
 
-The three typed fields are **optional** in that schema and the three strings are
-required, which is the shape of "the strings are the fallback". When the
-strings are cut from the endpoint — in the commit that deletes
-`static/dashboard.js`'s scrollbox, per the rule above — `at`, `conf` and `chunk`
-leave `schemas.ts`, the three fallbacks go with them, and the typed fields stop
-being optional. Nothing else on either page moves.
+That reader is how the panel read while both halves were on the wire: the typed
+fields were **optional** in the schema and the three strings required, which is
+the shape of "the strings are the fallback".
 
-*Landed 2026-09-06, Python's half.* `static/dashboard.js` went with the video
-detail page, so `at`, `conf` and `chunk` are off the wire. **`web/` has the
-other half to do and it is the paragraph above, unchanged:** the `Cue` schema's
-three string fields come out, `CueRow`'s three fallbacks come out, and
-`start_s`, `avg_logprob` and `chunk_opens` stop being optional. Until it does,
-the page renders from the typed fields it already prefers and the fallbacks are
-dead branches rather than broken ones — the schema is what fails first, because
-it requires three fields the endpoint no longer sends.
+*Landed 2026-09-06, both sides — the strings are cut.* Python's half went with
+the video detail page: `static/dashboard.js` was the only reader of `at`, `conf`
+and `chunk`, and they are off the wire. `web/`'s half is d7c1cd9 — the three
+string fields are out of the `Cue` schema, `CueRow`'s three fallbacks are out
+with them, and `start_s`, `end_s`, `avg_logprob`, `chunk_opens` and
+`chunk_closes` are **required**. What made them optional was the fallback
+itself — an instance predating `start_s` had only the strings — and there is no
+such instance left to render against. `t` stays — it is the whole-second
+start a `?t=` deeplink takes, a value and not a rendering. A payload that still
+carries the three strings parses either way, because Zod strips what the object
+does not name. Nothing else on either page moved.
 
 ## 4. `GET /dashboard/api/overview`
 
