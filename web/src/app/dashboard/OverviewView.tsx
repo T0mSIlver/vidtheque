@@ -238,7 +238,7 @@ function Loaded({ data }: { data: Overview }) {
                 <li className={styles.row} key={video.video_id}>
                   <DashLink
                     className={styles.shot}
-                    href={`${ROOT}/videos/${video.video_id}`}
+                    href={`${ROOT}/videos/${encodeURIComponent(video.video_id)}`}
                     tabIndex={-1}
                     aria-hidden="true"
                   >
@@ -262,7 +262,7 @@ function Loaded({ data }: { data: Overview }) {
                     )}
                   </DashLink>
                   <div className={styles.rowBody}>
-                    <DashLink className={styles.rowTitle} href={`${ROOT}/videos/${video.video_id}`}>
+                    <DashLink className={styles.rowTitle} href={`${ROOT}/videos/${encodeURIComponent(video.video_id)}`}>
                       {video.title}
                     </DashLink>
                     {/* The break opportunity sits after the separator: a

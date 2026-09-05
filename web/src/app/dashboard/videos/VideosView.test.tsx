@@ -175,6 +175,17 @@ describe("the videos table", () => {
     expect(head.getByText("… – 2026-09-05")).toBeInTheDocument();
   });
 
+  // The rows box has no ceiling of its own: that number is
+  // `OWNER_CLAMPS.videos_max_limit`, which this page has no copy of and which
+  // a deployment may have moved. The clamp and its note are the control.
+  it("leaves the page size to the server's own ceiling", async () => {
+    await mount({ body: OWNER_LIBRARY }, { search: "index_state=all" });
+
+    const rows = await screen.findByLabelText("Rows");
+    expect(rows).toHaveAttribute("min", "1");
+    expect(rows).not.toHaveAttribute("max");
+  });
+
   it("turns the band into a URL on submit, and drops what is empty", async () => {
     const nav = await mount({ body: OWNER_LIBRARY }, { search: "index_state=all" });
     await screen.findByRole("status");
