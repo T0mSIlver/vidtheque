@@ -15,6 +15,11 @@
 // sentence saying what the percentage is computed over, which is policy text —
 // it survives the cut and it is read.
 //
+// `filters` and `notes` are the list's other half: the predicates the listing
+// actually ran with, and the sentence a bound or a fallback owes the reader.
+// Four listings below differ only in those two, because the four screens they
+// draw are the four the page has to tell apart.
+//
 // The projection is not a copy with fields blanked: it is what
 // `VIDTHEQUE_PUBLIC_READONLY=1` actually sends, which is `null` where the read
 // was taken and the value withheld — the job's error message, an item's
@@ -107,6 +112,15 @@ export const FINISHED_JOB = {
   text: { basis: BASIS(2) },
 };
 
+/** Nothing was asked for, so nothing fell back and nothing moved. */
+const NO_FILTERS = {
+  state: "all",
+  kind: "all",
+  error_code: null,
+  degraded: false,
+  order: "newest",
+};
+
 export const OWNER_JOBS = {
   now: NOW,
   poll_ms: 2000,
@@ -114,6 +128,8 @@ export const OWNER_JOBS = {
   live: true,
   jobs: [DEFERRED_JOB, RUNNING_JOB, FINISHED_JOB],
   pagination: { limit: 25, offset: 0, has_more: false },
+  filters: NO_FILTERS,
+  notes: [],
 };
 
 /** Nothing is live: the page reads once and stops. */
@@ -124,6 +140,37 @@ export const SETTLED_JOBS = {
 };
 
 export const EMPTY_JOBS = { ...OWNER_JOBS, live: false, jobs: [] };
+
+/** Empty because a filter took every row out, which is the other empty. */
+export const NARROWED_EMPTY_JOBS = {
+  ...EMPTY_JOBS,
+  filters: { ...NO_FILTERS, state: "failed" },
+};
+
+/** `state=nonsense&degraded=maybe`: both fell back, and the payload says so
+ *  while `filters` names the values that actually ran. The two sentences are
+ *  `read_models.choice_note`'s, verbatim. */
+export const FELL_BACK_JOBS = {
+  ...OWNER_JOBS,
+  filters: NO_FILTERS,
+  notes: [
+    "note: state='nonsense' is not one of all, active, failed, done; this listing used state=all.",
+    "note: degraded='maybe' is not one of 1; this listing used degraded=0.",
+  ],
+};
+
+/** `limit=100000&offset=99999999`: both bounds moved, and the page shows the
+ *  numbers that answered rather than the ones the URL asked for. */
+export const CLAMPED_JOBS = {
+  ...OWNER_JOBS,
+  live: false,
+  jobs: [],
+  pagination: { limit: 100, offset: 10_000, has_more: false },
+  notes: [
+    "note: clamped server-side: limit=100000 → 100, offset=99999999 → 10000. The bounds are " +
+      "this deployment's, not the URL's; page with offset instead of raising limit.",
+  ],
+};
 
 /** The projection drops the job's error message and keeps its code. */
 export const DEMO_JOBS = {

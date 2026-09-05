@@ -75,7 +75,7 @@ export function JobsView() {
         {/* No separator in front of the cadence: `Narrowing` glues one to the
             end of every fact it prints, so a strip with nothing narrowing it
             would otherwise open on a middot. */}
-        <Narrowing search={search} />
+        <Narrowing filters={data?.filters} />
         {data ? (
           <Unbroken>
             <Fact label="refresh" value={`${Math.round(data.poll_ms / 1000)}s`} />
@@ -96,24 +96,22 @@ export function JobsView() {
 
 /** What is actually narrowing the table, on the title's own baseline.
  *
- *  The URL's values rather than an echo, because this payload has none: the
- *  videos table reads `filters` and `notes` back off its own, and
- *  `/dashboard/api/jobs` sends neither — so an unknown `state` the server fell
- *  back on is printed here as it was asked for. The one bound that *is* echoed
- *  is `limit`, and the Rows box shows it.
+ *  The payload's `filters`, not the URL's words: `state=nonsense` falls back to
+ *  `all` server-side, and a strip printing `state nonsense` over a table of
+ *  every job would be the page vouching for a filter that never ran. The
+ *  sentence saying it fell back is `notes`, printed above the table. Nothing is
+ *  narrowing until the first read lands, which is why this draws nothing at
+ *  all while the page is still reading.
  *
  *  The order is deliberately not here: every entry is a *narrowing*, and an
  *  order takes no rows out. */
-function Narrowing({ search }: { search: string }) {
-  const params = new URLSearchParams(search);
-  const value = (key: string) => params.get(key)?.trim() || "";
-
+function Narrowing({ filters }: { filters?: Jobs["filters"] }) {
   const facts: [string, string][] = [];
-  for (const key of ["state", "kind", "error_code"] as const) {
-    const chosen = value(key);
-    if (chosen && chosen !== DEFAULTS[key]) facts.push([key.replace("_", " "), chosen]);
-  }
-  if (value("degraded") === "1") facts.push(["degraded", "only"]);
+  if (!filters) return null;
+  if (filters.state !== DEFAULTS.state) facts.push(["state", filters.state]);
+  if (filters.kind !== DEFAULTS.kind) facts.push(["kind", filters.kind]);
+  if (filters.error_code) facts.push(["error code", filters.error_code]);
+  if (filters.degraded) facts.push(["degraded", "only"]);
 
   return (
     <>
@@ -247,10 +245,33 @@ function Filters({ search, limit }: { search: string; limit?: number }) {
 function Table({ data, search, stopped }: { data: Jobs; search: string; stopped: unknown }) {
   const { rendered } = useWriteSide();
   const rows = data.jobs;
-  if (!rows.length) return <Empty search={search} />;
+
+  // Where a moved bound and a fallen-back filter are disclosed. The Jinja page
+  // echoed an accepted `limit` back into the field the reader typed it into; a
+  // payload has no form, so the sentence rides on `notes` — policy text,
+  // rendered here and composed in Python. Above the empty state too: a listing
+  // that answered a different question than the one asked has to say so
+  // whether or not it found rows.
+  const notes = data.notes.length ? (
+    <ul className={dash.notes}>
+      {data.notes.map((note) => (
+        <li key={note}>{note}</li>
+      ))}
+    </ul>
+  ) : null;
+
+  if (!rows.length) {
+    return (
+      <>
+        {notes}
+        <Empty filters={data.filters} />
+      </>
+    );
+  }
 
   return (
     <>
+      {notes}
       <p className={dash.tablecount} role="status">
         <span>
           <span className={dash.shown}>{rows.length}</span> shown
@@ -395,16 +416,16 @@ function Pager({ pagination, search }: { pagination: Jobs["pagination"]; search:
 }
 
 /** No rows, in the two ways that happens: a filter that matched nothing, and
- *  an instance that has never queued anything at all. */
-function Empty({ search }: { search: string }) {
+ *  an instance that has never queued anything at all.
+ *
+ *  Which of the two it is comes off the echo, for the strip's reason: a
+ *  `state=nonsense` that fell back to `all` narrowed nothing, and blaming a
+ *  filter that never ran for an empty instance is the wrong screen. */
+function Empty({ filters }: { filters: Jobs["filters"] }) {
   const { rendered } = useWriteSide();
-  const params = new URLSearchParams(search);
-  const state = params.get("state")?.trim();
+  const state = filters.state === DEFAULTS.state ? "" : filters.state;
   const narrowed = Boolean(
-    (state && state !== "all") ||
-    params.get("kind")?.trim() ||
-    params.get("error_code")?.trim() ||
-    params.get("degraded")?.trim(),
+    state || filters.kind !== DEFAULTS.kind || filters.error_code || filters.degraded,
   );
 
   return (
@@ -416,7 +437,7 @@ function Empty({ search }: { search: string }) {
         {narrowed ? (
           <>
             The filters are narrowing it
-            {state && state !== "all" ? (
+            {state ? (
               <>
                 {" "}
                 to <code>{state}</code>
