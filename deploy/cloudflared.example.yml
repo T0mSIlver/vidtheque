@@ -42,21 +42,27 @@ credentials-file: /home/YOUR_USER/.cloudflared/00000000-0000-0000-0000-000000000
 # Rules are evaluated top to bottom, first match wins, and the file MUST end
 # with a catch-all. A rule with no `hostname` matches every hostname.
 ingress:
-  # vidtheque is one origin serving everything: the demo page at `/`, the
-  # `/api/*` facade, `/frames/*`, `/dashboard/*`, the MCP transport at `/mcp`,
-  # `/healthz`, and (under VIDTHEQUE_AUTH=oauth) `/auth/*` and
-  # `/.well-known/*`. One rule, no path splitting.
+  # vidtheque is one origin serving everything: the landing at `/`, the reader
+  # at `/demo`, the `/api/*` facade, `/frames/*`, `/dashboard/*`, the MCP
+  # transport at `/mcp`, `/healthz`, and (under VIDTHEQUE_AUTH=oauth) `/auth/*`
+  # and `/.well-known/*`. One rule, no path splitting.
   #
-  # The service URL is where cloudflared reaches vidtheque *from where
-  # cloudflared runs*:
-  #   host-installed cloudflared + scripts/dev_stack.sh  -> http://127.0.0.1:8100
-  #   host-installed cloudflared + docker compose         -> http://127.0.0.1:8080
-  #   cloudflared inside the compose network              -> http://mcp:8080
+  # **PATH ROUTING IS NOT ABSENT, IT MOVED.** Two processes serve that list now
+  # — the Next.js front end serves the pages, Python serves everything else,
+  # and three paths are split by METHOD — and the rule that decides is
+  # `deploy/Caddyfile`. Keep this one rule: the tunnel hands every request to
+  # the edge, which is the only thing that knows the split, and an ingress
+  # `path:` regex here could only ever be a second, staler copy of it.
+  #
+  # The service URL is therefore THE EDGE, from where cloudflared runs:
+  #   host-installed cloudflared + systemd units (deploy/staging) -> http://127.0.0.1:8080
+  #   host-installed cloudflared + docker compose                 -> http://127.0.0.1:8080
+  #   cloudflared inside the compose network                      -> http://caddy:80
   # Plain http is correct here and is not a downgrade: this hop is inside the
   # box. TLS is terminated at Cloudflare's edge, which is what makes
   # PUBLIC_URL an https:// URL (see the runbook, "the hostname mapping").
   - hostname: vidtheque.example.com
-    service: http://127.0.0.1:8100
+    service: http://127.0.0.1:8080
 
   # OPTIONAL — keep the management dashboard off the public hostname.
   # `path` is a REGULAR EXPRESSION, not a prefix, and this rule must come
