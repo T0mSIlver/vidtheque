@@ -2,17 +2,18 @@ import { ROOT } from "@/lib/dashboard/client";
 
 // Which `/dashboard` pages this app serves, in one list.
 //
-// The port is page by page (frontend-migration.md §1d), so on any given day
-// half this surface is React and half is still Jinja, and *every* link into it
-// has to know which half it is pointing at: a page this app serves is reached
-// with `Link`, which swaps the React tree, and a page Python still renders is a
-// plain anchor, because a client-side navigation to it would ask this app's
-// router for a route that does not exist.
+// The port ran page by page (frontend-migration.md §1d), so *every* link into
+// this surface had to know which half it pointed at: a page this app serves is
+// reached with `Link`, which swaps the React tree, and anything else is a plain
+// anchor, because a client-side navigation to it would ask this app's router
+// for a route that does not exist.
 //
-// That question is asked by the rail, by the overview's arrivals, by the
-// ledger's figures and by the videos table's own tags — so it is answered
-// once, here. Porting a page adds its path to this list, names it in
-// `proxy.ts`'s matcher, and changes nothing else.
+// Every page is here now, and the question is still the right one to ask:
+// `/dashboard` holds the fourteen POSTs, `/dashboard/api/*` and `/dashboard/logout`,
+// none of which is a page, and a link is a `GET` that has to land on one.
+//
+// It is asked by the rail, by the overview's arrivals, by the ledger's figures
+// and by the videos table's own tags — so it is answered once, here.
 const PAGES: string[] = [
   ROOT,
   `${ROOT}/ledger`,
