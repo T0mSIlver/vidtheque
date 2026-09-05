@@ -146,11 +146,15 @@ describe("proxy", () => {
       // the production proxy has to route by method.
       "/dashboard/following",
       "/dashboard/following/andrej-karpathy",
-      // The second path split by method, and the last `/dashboard` GET to come
-      // off Jinja. `POST /dashboard/index` is the form's route and stays
-      // Python's, which this matcher can no more say than it can for the
-      // follows table above it.
+      // The second path split by method. `POST /dashboard/index` is the form's
+      // route and stays Python's, which this matcher can no more say than it
+      // can for the follows table above it.
       "/dashboard/index",
+      // The third, and the last `/dashboard` GET to come off Jinja. `POST
+      // /dashboard/login` is the write that mints the session cookie and stays
+      // Python's for a reason no proxy rule could change: the cookie is on that
+      // response and it is `HttpOnly`.
+      "/dashboard/login",
     ]) {
       expect(matches(path), path).toBe(true);
     }
@@ -164,7 +168,6 @@ describe("proxy", () => {
       "/dashboard/static/fonts/archivo-latin-wght-normal.woff2",
       "/dashboard/api/jobs",
       "/dashboard/api/jobs/job_finished01",
-      "/dashboard/login",
       "/dashboard/logout",
       // The search page's own JSON, which is the facade's handler under this
       // prefix — a read, not a document, and Python's like the other four.
@@ -184,6 +187,7 @@ describe("proxy", () => {
       "/dashboard/following/andrej-karpathy/queue",
       // Not a page here either: a sub-path of one that is.
       "/dashboard/ledger/anything",
+      "/dashboard/login/anything",
     ]) {
       expect(matches(path), path).toBe(false);
     }
@@ -208,6 +212,9 @@ describe("proxy", () => {
       "/dashboard/search/anything",
       "/dashboard/index",
       "/dashboard/login",
+      // The other half of the session flow, and the one with no page: signing
+      // out is a write and nothing else, so both lists leave it out.
+      "/dashboard/logout",
       "/dashboard/following/andrej-karpathy/delete",
       "/dashboard/jobs/job_finished01/retry",
     ]) {

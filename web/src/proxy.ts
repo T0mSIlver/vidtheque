@@ -231,5 +231,19 @@ export const config = {
         { type: "header", key: "purpose", value: "prefetch" },
       ],
     },
+    {
+      // The sign-in page, and the **third** path split by method: `GET
+      // /dashboard/login` is this page and `POST /dashboard/login` is the write
+      // that mints the session cookie, which stays Python's — an `HttpOnly`
+      // cookie is not a thing a React shell could set. The document policy is
+      // why this entry matters here: `form-action 'self'` is what lets the
+      // page's own `fetch` reach that `POST`, and a page shipped without the
+      // policy would be the one page on this surface that types a secret.
+      source: "/dashboard/login",
+      missing: [
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ],
+    },
   ],
 };
