@@ -32,7 +32,7 @@ dashboard `/dashboard`, `/dashboard/ledger`, `/dashboard/search`,
 `/dashboard/index` and `/dashboard/login` — reach Next, and everything else
 reaches Python (`/api/*`, `/frames/*`, `/mcp`, `/auth/*`, `/.well-known/*`,
 `/healthz`, `/videos/{id}/export.md`, and the rest of `/dashboard/*`, which is
-`/dashboard/api/*`, the fourteen POSTs and the `/dashboard/` redirect). The
+`/dashboard/api/*`, the thirteen POSTs and the `/dashboard/` redirect). The
 browser therefore calls Python directly, and this server owns no endpoint of
 its own.
 
