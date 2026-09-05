@@ -765,6 +765,59 @@ export const RetryOutcome = z.object({
 });
 export type RetryOutcome = z.infer<typeof RetryOutcome>;
 
+/** `POST /dashboard/index` — the form that queues a batch.
+ *
+ *  The one thing the form does that the tool does not is a real batch: the MCP
+ *  surface keeps its ten-URL cap and this route splits server-side instead
+ *  (§10.7), so `batches` and `urls` are what makes a job count explicable — a
+ *  split the operator cannot see is a job count they cannot account for.
+ *
+ *  It does not take the one-job redirect shortcut either: the page goes
+ *  straight to the new job when there is exactly one, and a client that always
+ *  reads `jobs` is a client with no special case. `200` when anything was
+ *  accepted, `409` when nothing was — and the `409` carries this same shape
+ *  with every refusal in `errors`, so it is a receipt to read rather than an
+ *  error to throw.
+ *
+ *  `already_indexed` is video ids: `index_video` leaves a finished video alone
+ *  unless the submission forced a rebuild, which is a fact about the corpus and
+ *  not a failure. Each refusal carries the batch of URLs it was refused for,
+ *  because a submission split into twenty jobs has twenty ways to fail
+ *  partially. */
+export const IndexOutcome = z.object({
+  jobs: z.array(z.object({ job_id: z.string(), items: count(), urls: z.array(z.string()) })),
+  already_indexed: z.array(z.string()),
+  errors: z.array(PartialRefusal.extend({ urls: z.array(z.string()) })),
+  batches: count(),
+  urls: count(),
+});
+export type IndexOutcome = z.infer<typeof IndexOutcome>;
+
+/** `POST /dashboard/videos/{video_id}/reindex` — force, one video.
+ *
+ *  `force_reindex` on this row's own URL with `expand=none`, so there is always
+ *  exactly one job. `job_id` is nullable for the branch where the tool made
+ *  none, which a forced rebuild does not reach — a page that assumed a string
+ *  there would render `undefined` on the day it does. */
+export const ReindexOutcome = z.object({
+  video_id: z.string(),
+  job_id: z.string().nullable(),
+});
+export type ReindexOutcome = z.infer<typeof ReindexOutcome>;
+
+/** `POST /dashboard/videos/{video_id}/tags` — the row's tags *after* the write,
+ *  read back.
+ *
+ *  Not what was added and removed: `tag_video` reports that across a batch, and
+ *  it is not the question the panel that made the call is showing. Nothing
+ *  asked for is nothing done on both branches, so a submission with neither
+ *  field answers `200` with the tags unchanged. */
+export const TagsOutcome = z.object({
+  video_id: z.string(),
+  tags: z.array(z.string()),
+});
+export type TagsOutcome = z.infer<typeof TagsOutcome>;
+
 // -------------------------------------------------------------- following
 
 // `GET /dashboard/api/following` and `/dashboard/api/following/{slug}`
