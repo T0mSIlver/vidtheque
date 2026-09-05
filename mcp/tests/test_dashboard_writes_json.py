@@ -651,6 +651,10 @@ def test_creating_a_follow_answers_the_row_and_whether_it_is_new(
         assert isinstance(follow["check_interval_s"], int)
         assert isinstance(follow["next_check_at"], int)
         assert follow["last_check_at"] is None
+        # A follow nothing has checked yet has no failure, and the outcome says
+        # so with the same two fields every other outcome carries.
+        assert follow["last_error_code"] is None
+        assert follow["last_error_message"] is None
 
         again = post(client, f"{ROOT}/following", data=body)
         assert again.json()["already_following"] is True
@@ -667,18 +671,36 @@ def test_creating_a_follow_answers_the_row_and_whether_it_is_new(
 
 
 def test_pause_resume_and_check_answer_the_row_they_changed(tmp_path: Path) -> None:
-    """Re-read, never assumed: `set_state` re-arms the clock when it resumes."""
+    """Re-read, never assumed: `set_state` re-arms the clock when it resumes.
+
+    And it clears the last failure while it is there, which is why the outcome
+    carries `last_error_code` and `last_error_message` at all: a page that
+    rendered from an outcome without them would go on showing the error the
+    write had just cleared, so it had to re-read after every write to find out.
+    The fixture's follow carries an `E_RATE_LIMIT`, so both directions of that
+    are visible on one row.
+    """
     slug = "andrej-karpathy"
     with follows_client(tmp_path) as client:
         follows_sign_in(client)
         paused = post(client, f"{ROOT}/following/{slug}/state", data={"action": "pause"})
         assert paused.status_code == 200
         assert paused.json()["follow"]["state"] == "paused"
+        # A pause changes no error, so the outcome still names the one on the
+        # row — the code the table prints and the extractor's own message.
+        assert paused.json()["follow"]["last_error_code"] == "E_RATE_LIMIT"
+        assert (
+            paused.json()["follow"]["last_error_message"]
+            == "the source rate-limited this box"
+        )
 
         resumed = post(
             client, f"{ROOT}/following/{slug}/state", data={"action": "resume"}
         )
         assert resumed.json()["follow"]["state"] == "active"
+        # …and a resume clears it, on the outcome as well as in the row.
+        assert resumed.json()["follow"]["last_error_code"] is None
+        assert resumed.json()["follow"]["last_error_message"] is None
 
         checked = post(client, f"{ROOT}/following/{slug}/check")
         assert checked.status_code == 200
@@ -714,6 +736,11 @@ def test_editing_the_rules_answers_the_rule_the_store_kept(tmp_path: Path) -> No
         assert follow["max_per_check"] == 3
         assert follow["mode"] == "review"
         assert follow["channels"] == "transcript"
+        # The failure travels on every outcome, not only on the write that can
+        # clear it: an edit leaves the row's error alone and says so, so a page
+        # can render the whole row from what it just got back.
+        assert follow["last_error_code"] == "E_RATE_LIMIT"
+        assert follow["last_error_message"] == "the source rate-limited this box"
 
         # The floor the shared validator owns, refused in its own words — not
         # clamped silently, and not clamped differently for this branch.

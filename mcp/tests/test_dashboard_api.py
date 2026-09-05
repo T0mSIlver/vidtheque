@@ -21,6 +21,7 @@ import time
 from pathlib import Path
 
 import httpx2 as httpx
+import pytest
 from starlette.testclient import TestClient
 
 from vidtheque_mcp.auth.login import SESSION_COOKIE
@@ -1225,8 +1226,9 @@ def test_a_read_and_a_write_describe_a_follow_identically(tmp_path: Path) -> Non
 
     A client that pauses a follow and then re-lists it must not be handed two
     shapes for the same row. The write re-reads after the write; the read reads
-    the same columns through the same `Rules.from_row`, so the two payloads are
-    the same dictionary with the list's own error column added.
+    the same columns through the same `Rules.from_row`, so the outcome and the
+    detail are the same dictionary — and the list is that dictionary minus the
+    message its table has no column for.
     """
     with follow_owner(tmp_path) as client:
         sign_in(client)
@@ -1243,12 +1245,13 @@ def test_a_read_and_a_write_describe_a_follow_identically(tmp_path: Path) -> Non
         detail = read(client, FOLLOW, headers=BEARER)["follow"]
 
     assert row["state"] == "paused"
-    # Same keys, same values — the read adds the error column and the detail
-    # adds the message, and neither renames or re-types anything.
-    assert {key: row[key] for key in outcome} == outcome
-    assert set(row) - set(outcome) == {"last_error_code"}
-    assert {key: detail[key] for key in outcome} == outcome
-    assert set(detail) - set(outcome) == {"last_error_code", "last_error_message"}
+    # The outcome and the detail are one function, key for key and value for
+    # value: nothing is renamed, re-typed or re-read into a second shape.
+    assert detail == outcome
+    # The list is the one payload that stops at the code. Everything it does
+    # carry, it carries identically.
+    assert set(outcome) - set(row) == {"last_error_message"}
+    assert {key: outcome[key] for key in row} == row
 
 
 def test_the_follow_detail_is_the_three_bands_typed(tmp_path: Path) -> None:
@@ -1262,6 +1265,9 @@ def test_the_follow_detail_is_the_three_bands_typed(tmp_path: Path) -> None:
     assert body["follow"]["check_interval_s"] == 21_600
     assert body["follow"]["last_error_code"] == "E_RATE_LIMIT"
     assert body["follow"]["last_error_message"] == "the source rate-limited this box"
+    # The deployment fact the clocks above are read against, on this payload as
+    # well as on the list's.
+    assert body["checks_enabled"] is True
     # The sentence is not sent: `describe` renders a policy as English and the
     # columns above are what it renders. One renderer, and it is not this one.
     assert "sentence" not in body["follow"] and "sentence" not in body
@@ -1309,6 +1315,28 @@ def test_the_follow_detail_is_the_three_bands_typed(tmp_path: Path) -> None:
         "within_s": NEAR_MISS_S,
         "edge": "floor",
     }
+
+
+def test_both_payloads_say_when_follow_checks_are_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The one fact on these payloads that is about the box, not the follow.
+
+    With `VIDTHEQUE_FOLLOW_CHECKS=0` every `next_check_at` on both payloads is
+    a time at which nothing will happen. Neither page could say so from the
+    columns beside it — no arithmetic over a row produces "the scheduler is
+    off" — so it is a field on both, and it names no environment variable.
+    """
+    monkeypatch.setenv("VIDTHEQUE_FOLLOW_CHECKS", "0")
+    with follow_owner(tmp_path) as client:
+        listing = read(client, FOLLOWING, headers=BEARER)
+        detail = read(client, FOLLOW, headers=BEARER)
+
+    assert listing["checks_enabled"] is False
+    assert detail["checks_enabled"] is False
+    # The clock is still sent, because it is still what the row says: the fact
+    # above is what tells a page how to read it.
+    assert isinstance(detail["follow"]["next_check_at"], int)
 
 
 def test_the_near_miss_is_absent_rather_than_zero(tmp_path: Path) -> None:
