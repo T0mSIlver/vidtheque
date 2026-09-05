@@ -2,7 +2,7 @@
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEMO_LEDGER, DEMO_SESSION, OWNER_LEDGER, OWNER_SESSION } from "@/test/dashboard-fixtures";
-import { countingDownFrom } from "@/test/retry";
+import { firstPaint } from "@/test/retry";
 
 // Nothing on this page is new information; what it must not do is disagree with
 // the page the numbers came from. So the assertions are the counts, the state
@@ -176,14 +176,18 @@ describe("the ledger", () => {
       expect(screen.getByText("Sign in at /dashboard/login.")).toBeInTheDocument();
     });
 
+    // Under a stopped clock: the label has to be the delay the limiter named,
+    // and a page that halved it would count down just as convincingly.
     it("counts down a 429", async () => {
-      await mount({
-        status: 429,
-        body: { error: "E_RATE_LIMIT", message: "Too many dashboard requests.", next: null },
-        headers: { "retry-after": "12" },
-      });
+      await firstPaint(() =>
+        mount({
+          status: 429,
+          body: { error: "E_RATE_LIMIT", message: "Too many dashboard requests.", next: null },
+          headers: { "retry-after": "12" },
+        }),
+      );
 
-      expect(await screen.findByRole("button", { name: countingDownFrom(12) })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "retry in 12s" })).toBeDisabled();
     });
 
     // A payload that does not match the contract fails at the boundary rather

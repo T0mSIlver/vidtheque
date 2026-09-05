@@ -7,7 +7,7 @@ import {
   OWNER_OVERVIEW,
   OWNER_SESSION,
 } from "@/test/dashboard-fixtures";
-import { countingDownFrom } from "@/test/retry";
+import { firstPaint } from "@/test/retry";
 
 // The page renders against two payloads, not one. `docs/ROADMAP.md` names the
 // failure this guards: a page that renders a field the projection drops. So
@@ -230,18 +230,22 @@ describe("the corpus overview", () => {
       expect(document.body.textContent).not.toContain("undefined");
     });
 
+    // Under a stopped clock, so the label is the limiter's own delay and not
+    // whichever second the box got here: a page halving `Retry-After` counts
+    // down just as convincingly.
     it("counts down a 429 rather than inventing a wait", async () => {
       const { mockNavigation } = await import("@/test/next");
       mockNavigation("", "/dashboard");
-      await mount({
-        status: 429,
-        body: { error: "E_RATE_LIMIT", message: "Too many dashboard requests.", next: null },
-        headers: { "retry-after": "24" },
-      });
+      await firstPaint(() =>
+        mount({
+          status: 429,
+          body: { error: "E_RATE_LIMIT", message: "Too many dashboard requests.", next: null },
+          headers: { "retry-after": "24" },
+        }),
+      );
 
-      expect(await screen.findByText("Too many dashboard requests.")).toBeInTheDocument();
-      const retry = screen.getByRole("button", { name: countingDownFrom(24) });
-      expect(retry).toBeDisabled();
+      expect(screen.getByText("Too many dashboard requests.")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "retry in 24s" })).toBeDisabled();
     });
   });
 });

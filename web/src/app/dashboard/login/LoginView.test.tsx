@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
-import { countingDownFrom } from "@/test/retry";
+import { firstPaint, settled } from "@/test/retry";
 
 // The sign-in page reads nothing and writes once, so the assertions are: which
 // secret it says this deployment takes, what it does with a reader who is
@@ -339,24 +339,34 @@ describe("the sign-in page", () => {
     // thing there is to do on this page, so the delay the limiter named is the
     // whole answer.
     it("counts down the limiter's own delay rather than inventing one", async () => {
-      await mount({
-        session: SIGNED_OUT,
-        post: {
-          status: 429,
-          body: {
-            error: "E_RATE_LIMIT",
-            message: "Too many requests — 10 per minute.",
-            retry_after_s: 9,
+      // The clock is stopped before the page mounts, so the label below is the
+      // nine the limiter named and not the second the box got here — and this
+      // page has the fallback that would otherwise hide the difference, since
+      // `retryAfter ?? 60` counts down just as convincingly.
+      await firstPaint(() =>
+        mount({
+          session: SIGNED_OUT,
+          post: {
+            status: 429,
+            body: {
+              error: "E_RATE_LIMIT",
+              message: "Too many requests — 10 per minute.",
+              retry_after_s: 9,
+            },
+            headers: { "retry-after": "9" },
           },
-          headers: { "retry-after": "9" },
-        },
-      });
-      await screen.findByLabelText(/VIDTHEQUE_/);
+        }),
+      );
+      // `fireEvent` rather than `userEvent` for this one: a stopped clock never
+      // fires the timers `userEvent` puts between its keystrokes, and what is
+      // under test here is the label, not the typing.
+      const secret = screen.getByLabelText(/VIDTHEQUE_/);
+      fireEvent.change(secret, { target: { value: "hunter2" } });
+      fireEvent.submit(secret.closest("form") as HTMLFormElement);
+      await settled();
 
-      await signIn("hunter2");
-
-      expect(await screen.findByText("Too many requests — 10 per minute.")).toBeInTheDocument();
-      expect(await screen.findByRole("button", { name: countingDownFrom(9) })).toBeDisabled();
+      expect(screen.getByText("Too many requests — 10 per minute.")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "retry in 9s" })).toBeDisabled();
       // One refusal, drawn once: the countdown is the whole message.
       expect(screen.queryByText("refused")).not.toBeInTheDocument();
     });
