@@ -62,6 +62,7 @@ from ..tools import indexing, library
 from ..tools.base import Deps
 from .access import auth_required, credential, origin_ok, require_write
 from .api import NO_STORE
+from .read_models import follow_row_json
 from .settings import ROOT
 from .views import _chrome, _render, _tool_error
 
@@ -1084,37 +1085,12 @@ async def _follow_action(request: Request, action: str, back: str) -> Response:
     return _see(back.format(slug=slug))
 
 
-def _follow_payload(row: Any) -> dict[str, Any]:
-    """One follow row, typed — the outcome every follow write here answers with.
-
-    `tools/follows._follow_fields` answers the same question for the model and
-    answers it in `iso_minute` strings, which is what a dashboard payload may
-    not carry (DECISIONS.md, 2026-09-05). So this is the browser's shape of the
-    same row, and its rules come out of `Rules.from_row` — the parser the check
-    itself uses — so the two cannot disagree about what a CSV column meant.
-    """
-    rules = FollowRules.from_row(row)
-    return {
-        "slug": str(row["slug"]),
-        "title": str(row["title"]),
-        "kind": str(row["kind"]),
-        "source_url": str(row["source_url"]),
-        "state": str(row["state"]),
-        "mode": rules.mode,
-        "tabs": list(rules.tabs),
-        "channels": rules.channels,
-        "tags": list(rules.tags),
-        "min_duration_s": rules.min_duration_s,
-        "max_duration_s": rules.max_duration_s,
-        "title_include": list(rules.title_include),
-        "title_exclude": list(rules.title_exclude),
-        "backfill": rules.backfill,
-        "max_per_check": rules.max_per_check,
-        "check_interval_s": rules.check_interval_s,
-        "next_check_at": _epoch(row["next_check_at"]),
-        "last_check_at": _epoch(row["last_sync_at"]),
-        "last_new_at": _epoch(row["last_new_at"]),
-    }
+# One follow row, typed — the outcome every follow write here answers with, and
+# since §22 the block the two following reads answer with as well. It moved to
+# `read_models.py` on 2026-09-05 for that second caller and is imported back
+# under the name this module has always used: a read and a write outcome must
+# describe a follow identically, and they do so by being one function.
+_follow_payload = follow_row_json
 
 
 async def _follow_json(request: Request, slug: str) -> Response:
