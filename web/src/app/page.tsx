@@ -6,7 +6,7 @@ import { RetryIn } from "@/components/RetryIn";
 import { SearchBox } from "@/components/SearchBox";
 import { ContentType } from "@/lib/api";
 import { groupByVideo } from "@/lib/group";
-import { searchCorpus, SEARCH_PAGE } from "@/lib/search";
+import { searchCorpus } from "@/lib/search";
 import styles from "./page.module.css";
 
 const EXAMPLES = ["kv cache", "context engineering", "MCP servers", "evals in production"];
@@ -65,6 +65,11 @@ async function Results({
   if (results.length === 0) {
     return (
       <div className={styles.empty}>
+        {notes.map((note) => (
+          <p key={note} className={styles.note}>
+            {note}
+          </p>
+        ))}
         <p>
           {data_status === "empty"
             ? "Nothing is indexed in this corpus yet."
@@ -83,11 +88,12 @@ async function Results({
   }
 
   const groups = groupByVideo(results);
+  const pageOffset = pagination.offset;
   const query = new URLSearchParams({ q, ...(type !== "all" ? { type } : {}) });
   return (
     <section className={styles.results} aria-label="Results">
       <p className={styles.count}>
-        {offset + 1}–{offset + results.length}
+        {pageOffset + 1}–{pageOffset + results.length}
         {pagination.approx_total != null ? ` of about ${pagination.approx_total}` : ""} ·{" "}
         {groups.length} {groups.length === 1 ? "talk" : "talks"}
       </p>
@@ -102,13 +108,15 @@ async function Results({
         ))}
       </div>
       <nav className={styles.pager} aria-label="Pages">
-        {offset > 0 ? (
-          <Link href={`/?${query}&offset=${Math.max(0, offset - SEARCH_PAGE)}`}>← previous</Link>
+        {pageOffset > 0 ? (
+          <Link href={`/?${query}&offset=${Math.max(0, pageOffset - pagination.limit)}`}>
+            ← previous
+          </Link>
         ) : (
           <span />
         )}
-        {pagination.has_more ? (
-          <Link href={`/?${query}&offset=${offset + SEARCH_PAGE}`}>more results →</Link>
+        {pagination.has_more && offset === pageOffset ? (
+          <Link href={`/?${query}&offset=${pageOffset + pagination.limit}`}>more results →</Link>
         ) : null}
       </nav>
     </section>
