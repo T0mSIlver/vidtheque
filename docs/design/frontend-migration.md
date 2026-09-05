@@ -190,7 +190,7 @@ forwarded cookie costs the whole property.
 
 What each side owns, once a page is ported:
 
-| Path | Served by | |
+| Path | Served by | Today |
 | --- | --- | --- |
 | `GET /dashboard` | **Next** | *landed 2026-09-05* |
 | `GET /dashboard/ledger` | **Next** | *landed 2026-09-05* |
