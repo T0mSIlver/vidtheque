@@ -1,0 +1,134 @@
+# vidtheque — the edge. ONE ORIGIN, TWO SERVERS.
+#
+# This file is the implementation of `docs/design/frontend-migration.md` §1a and
+# §1d: the route ownership those sections settle is a proxy rule, and this is
+# the proxy. Nothing in `web/` or `mcp/` can express it — a Next rewrite and a
+# middleware matcher both match paths, and two of the rules below are by method.
+#
+# Topology, both ways round:
+#
+#   public box   cloudflared -> caddy (loopback) -> { web:3000, mcp:8080 }
+#   private box  browser     -> caddy (LAN)      -> { web:3000, mcp:8080 }
+#
+# **TLS is terminated in front of this file, never by it.** On the public box
+# that is Cloudflare's edge, and the tunnel's hop to caddy is plain http inside
+# the machine; on a LAN it is plain http on the wire, which is the same posture
+# the compose file had before an edge existed. So the site address below is a
+# port and nothing else, and automatic HTTPS is off rather than merely unused:
+# this server never asks for a certificate and never redirects to one.
+#
+# WHAT THIS FILE DOES NOT DO, deliberately:
+#
+#   * No security headers. The CSP, `X-Frame-Options`, `nosniff` and
+#     `Referrer-Policy` on every document are `web/src/proxy.ts`'s, per request
+#     and with a fresh nonce (§1b); the API's `Cache-Control: no-store` is
+#     Python's. An edge that added its own would either duplicate them or
+#     contradict a nonce it cannot see.
+#   * No CORS, and nothing that would need it. One origin is the whole point
+#     (decision 4).
+#   * No response buffering configuration. Measured on caddy 2.11.4 against a
+#     chunked upstream: both `text/event-stream` (the `/mcp` transport, and
+#     `/api/ask` as the page asks for it) and `application/x-ndjson` (ask's
+#     other framing) arrive as they are produced with nothing set. If a future
+#     version ever holds them, `flush_interval -1` on the python upstream is the
+#     lever — and the same measurement, not this comment, is what should decide
+#     that it is needed.
+#   * No timeouts on the proxied response. `VIDTHEQUE_ASK_TIMEOUT_S` is 180 s
+#     and the transport has no response timeout by default, so the budget stays
+#     the application's.
+{
+	# TLS terminates upstream (see the header). Off rather than absent: a
+	# port-only site would not get a certificate anyway, and saying so is
+	# cheaper than reasoning about it at three in the morning.
+	auto_https off
+}
+
+# The edge listens on :80 inside the container. WHERE THAT PORT IS PUBLISHED is
+# the security decision and it lives in the compose files, not here:
+# `127.0.0.1:${EDGE_PORT}:80` under deploy/compose.public.example.yml, so
+# cloudflared is the only way in, and `${EDGE_PORT}:80` in the base file for a
+# private box on a LAN.
+:80 {
+	# Access logs to stderr, which is `docker compose logs caddy` and the
+	# journal. Worth having on a cutover day: this is the one place that can
+	# say which upstream answered a request. The client address in them is
+	# cloudflared's — the visitor's is in `CF-Connecting-IP`, below.
+	log
+
+	# ---------------------------------------------------------------------
+	# §1a — Python owns everything that is not a page.
+	#
+	# Prefixes where nothing under them is ever a page (`/api/*`, `/frames/*`,
+	# `/auth/*`, `/.well-known/*`), the MCP transport, the health check, the
+	# dashboard's JSON and its sign-out, and the one export that lives under a
+	# page's path. `/dashboard/` with the slash is Python's `308` to
+	# `/dashboard`, which is Next's — §1d's last table row.
+	#
+	# `/mcp*` rather than `/mcp`: the transport answers on the mount, and a
+	# session path under it must not fall through to a 404 from the app that
+	# does not own it.
+	#
+	# **The last four are not in §1a's table and belong there.** Under
+	# `VIDTHEQUE_AUTH=oauth` the MCP SDK's own handlers are registered at the
+	# ROOT — `/authorize`, `/token`, `/register`, `/revoke`
+	# (`auth/modes.py`'s `create_auth_routes`, and `issuer_url + "/token"` is
+	# what the metadata advertises) — not under `/auth/`, which holds only the
+	# login and consent pages. An edge that routed by `/auth/*` alone would
+	# hand a client's token exchange to the front end, which has no route
+	# there: OAuth would fail at the one step nothing else exercises. The
+	# public box is `AUTH=none` and registers none of them; a private box on
+	# oauth registers all four.
+	@python path /api/* /frames/* /mcp* /auth/* /.well-known/* /healthz /dashboard/api/* /dashboard/logout /dashboard/ /videos/*/export.md /authorize /token /register /revoke
+
+	# ---------------------------------------------------------------------
+	# §1d — every write under /dashboard is Python's, decided by method.
+	#
+	# Three of these share a path with a page this proxy sends to Next:
+	# `POST /dashboard/following`, `POST /dashboard/index` and
+	# `POST /dashboard/login` — the form's route beside the follows table, the
+	# index form's beside its page, and the one whose `Set-Cookie` is the whole
+	# write. A proxy that routed any of the three on path alone would answer a
+	# write with a document and nothing would say so.
+	#
+	# Written as the whole prefix rather than as those three, because the
+	# table's last row is "every other `POST /dashboard/*`" and the rest of the
+	# fourteen live a segment deeper — `…/{video_id}/tags`,
+	# `…/{video_id}/reindex`, `…/{job_id}/cancel`, the five follow writes. Next
+	# serves no POST at any of them: naming only the collisions would send
+	# those to an app with no route there, and the reader would see a 404 from
+	# the page layer instead of the outcome Python computed.
+	@dashboard_writes {
+		method POST
+		path /dashboard /dashboard/*
+	}
+
+	# The `Host` header reaches both upstreams UNTOUCHED, which is caddy's
+	# default and is load-bearing twice over: the MCP transport's
+	# DNS-rebinding guard compares exactly that header against
+	# `VIDTHEQUE_PUBLIC_HOSTNAME` (a rewrite here is how you earn a 421 on
+	# `/mcp` while every other route looks perfect — deploy-public.md §3.2),
+	# and the write routes' Origin check is against `PUBLIC_URL`.
+	#
+	# `CF-Connecting-IP` reaches Python UNCHANGED too, because that is the
+	# header its rate limiter buckets on (`VIDTHEQUE_TRUSTED_IP_HEADER`) and
+	# only cloudflared can put a true value on it. Nothing here validates it —
+	# nothing can. What makes trusting it sound is that the edge is published
+	# on loopback and the tunnel is the only path in, and that mcp now has no
+	# published port at all: a request from the LAN cannot reach Python to
+	# forge one. That is a stronger claim than the loopback bind alone used to
+	# make (deploy-public.md §4).
+	#
+	# caddy also adds `X-Forwarded-For`, `-Proto` and `-Host`. Python reads
+	# none of them — the trusted header is the only address it takes and every
+	# absolute URL comes from `PUBLIC_URL` — so they are inert here rather than
+	# a second source of truth.
+	reverse_proxy @python mcp:8080
+	reverse_proxy @dashboard_writes mcp:8080
+
+	# Everything else is a page GET, Next's build output, or something that
+	# belongs to neither and gets Next's 404: `/`, `/demo`, `/videos`,
+	# `/videos/{id}`, the eleven `/dashboard` pages, `/_next/*`, `/landing/*`.
+	# An unmatched path 404s from the app that serves the pages, which is the
+	# same answer either process would give (§1d, closed 2026-09-06).
+	reverse_proxy web:3000
+}
