@@ -23,10 +23,22 @@ const TYPES: { value: ContentType; label: string }[] = [
 export function SearchBox() {
   const router = useRouter();
   const params = useSearchParams();
-  const [q, setQ] = useState(params.get("q") ?? "");
-  const [type, setType] = useState<ContentType>(
-    ContentType.catch("all").parse(params.get("type") ?? "all"),
-  );
+  const urlQ = params.get("q") ?? "";
+  const urlType = ContentType.catch("all").parse(params.get("type") ?? "all");
+
+  // The box is the URL's, except while it is being typed into. So: keep the
+  // draft across renders, and take the URL back the moment it genuinely
+  // changes under us — an example link, the back button, a link from another
+  // page. Seeding from the URL once left the box showing a stale query after
+  // every navigation this form did not make.
+  const [draft, setDraft] = useState({ q: urlQ, type: urlType });
+  const [seen, setSeen] = useState({ q: urlQ, type: urlType });
+  if (seen.q !== urlQ || seen.type !== urlType) {
+    setSeen({ q: urlQ, type: urlType });
+    setDraft({ q: urlQ, type: urlType });
+  }
+  const { q, type } = draft;
+
   // A transition keeps the current page interactive while the next one
   // renders on the server, and `pending` is the honest signal that the
   // machine is working.
@@ -47,7 +59,7 @@ export function SearchBox() {
           type="search"
           name="q"
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={(e) => setDraft((d) => ({ ...d, q: e.target.value }))}
           placeholder="what did they say about…"
           aria-label="Search the corpus"
           autoComplete="off"
@@ -64,7 +76,7 @@ export function SearchBox() {
             type="button"
             role="radio"
             aria-checked={type === t.value}
-            onClick={() => setType(t.value)}
+            onClick={() => setDraft((d) => ({ ...d, type: t.value }))}
             className={styles.chip}
           >
             {t.label}
