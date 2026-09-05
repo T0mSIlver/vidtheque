@@ -255,17 +255,32 @@ export const IN_FLIGHT_DETAIL = { ...FOLLOW_DETAIL, in_flight: "job_followchk2" 
 
 // ---------------------------------------------------------- write outcomes
 
-export const PAUSED_OUTCOME = { follow: { ...KARPATHY, state: "paused" } };
-export const RESUMED_OUTCOME = { follow: { ...KARPATHY, state: "active" } };
+// Every block here is the *detail* row, because §21 builds it with the function
+// §22's detail read calls: identity, every rule column, and the two failure
+// columns. `KARPATHY` is the table's row, so each outcome names its own
+// `last_error_message` — and a `resume` is the one that nulls both, which is
+// the whole reason they travel on an outcome at all.
+const FAILING = {
+  ...KARPATHY,
+  last_error_message: "the source rate-limited this box",
+};
+
+export const PAUSED_OUTCOME = { follow: { ...FAILING, state: "paused" } };
+
+/** `set_state` nulls both error columns when it resumes, so the row that comes
+ *  back is the receipt for the error going away as well as for the state. */
+export const RESUMED_OUTCOME = {
+  follow: { ...FAILING, state: "active", last_error_code: null, last_error_message: null },
+};
 
 /** `check_now` writes `next_check_at = 0`: due immediately, which is a value
  *  and not a missing clock — the row is the receipt for that. */
-export const CHECKED_OUTCOME = { follow: { ...KARPATHY, next_check_at: 0 } };
+export const CHECKED_OUTCOME = { follow: { ...FAILING, next_check_at: 0 } };
 
 /** The rule the store *kept*, read back: a nine-minute floor and four a check,
  *  which is what was posted. */
 export const RULES_OUTCOME = {
-  follow: { ...KARPATHY, min_duration_s: 540, max_per_check: 4 },
+  follow: { ...FAILING, min_duration_s: 540, max_per_check: 4 },
 };
 
 export const CREATED_OUTCOME = {
@@ -278,13 +293,15 @@ export const CREATED_OUTCOME = {
     min_duration_s: null,
     last_check_at: null,
     last_new_at: null,
+    last_error_code: null,
+    last_error_message: null,
   },
   already_following: false,
 };
 
 /** The tool returns the existing follow rather than making a second one, which
  *  is what makes a retried submission safe. */
-export const ALREADY_FOLLOWING = { follow: KARPATHY, already_following: true };
+export const ALREADY_FOLLOWING = { follow: FAILING, already_following: true };
 
 export const DELETED_OUTCOME = { slug: "andrej-karpathy", deleted: true, videos_kept: 1 };
 
