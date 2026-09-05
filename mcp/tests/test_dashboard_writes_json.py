@@ -33,6 +33,7 @@ from starlette.testclient import TestClient
 from vidtheque_mcp.auth.login import SESSION_COOKIE
 from vidtheque_mcp.dashboard import ROOT
 from vidtheque_mcp.dashboard.writes import BAD_SECRET, MAX_FORM_URLS, _accepts_json
+from vidtheque_mcp.db.connection import open_write_connection
 
 from .test_dashboard import (
     BEARER,
@@ -198,6 +199,15 @@ def test_cancel_answers_the_state_the_job_is_actually_in(tmp_path: Path) -> None
         deferred = post(client, f"{ROOT}/jobs/job_deferred01/cancel")
         assert deferred.json()["state"] == "cancelled"
 
+        # And the read the page used to be says the same two things: the
+        # running job is still running with the request recorded, and the
+        # queued one settled *and* stopped counting down — a cancelled job
+        # with a live `not_before` would be a countdown to nothing.
+        still = client.get(f"{ROOT}/api/jobs/job_running001").json()["job"]
+        assert still["state"] == "running" and still["cancel_requested"] is True
+        settled = client.get(f"{ROOT}/api/jobs/job_deferred01").json()["job"]
+        assert settled["state"] == "cancelled" and settled["defer_s"] == 0
+
 
 def test_cancel_refuses_in_the_envelope_at_the_codes_own_status(
     tmp_path: Path,
@@ -301,6 +311,115 @@ def test_the_index_forms_own_bounds_refuse_in_the_envelope(tmp_path: Path) -> No
         assert bad_tag.json()["jobs"] == []
         assert bad_tag.json()["errors"][0]["error"] == "E_BAD_PARAM"
         assert bad_tag.json()["errors"][0]["urls"] == ["vid00000042"]
+
+
+def test_the_index_form_refuses_honestly_when_indexing_is_disabled(
+    tmp_path: Path,
+) -> None:
+    """§5.5: the tool's own `E_FEATURE_DISABLED`, not a doomed submission.
+
+    The Jinja form rendered its controls disabled with the reason on them and
+    this was the assertion under that; the React page states the same refusal
+    from `/dashboard/api/session`, and what stays Python's either way is the
+    refusal the POST answers with.
+    """
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        client.app.state.assembled.db.writes_allowed = False
+        try:
+            refused = post(client, f"{ROOT}/index", data={"urls": "vid00000043"})
+            assert refused.status_code == 409
+            assert refused.json()["errors"][0]["error"] == "E_FEATURE_DISABLED"
+            assert refused.json()["jobs"] == []
+        finally:
+            client.app.state.assembled.db.writes_allowed = True
+
+
+def test_retry_selects_only_the_repairable_items_and_keeps_the_policy(
+    tmp_path: Path,
+) -> None:
+    """§16.2, at the rows rather than at the receipt.
+
+    The outcome above says how many were selected; this says *which*, and what
+    the new job inherited. Successful items are deliberately not re-queued, and
+    the original channels, tags, expansion bound and priority ride across —
+    a repair built differently from the run it repairs is a second run, not a
+    retry.
+    """
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        db = client.app.state.assembled.db.path
+        conn = open_write_connection(db)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            job = int(
+                conn.execute(
+                    "SELECT id FROM jobs WHERE public_id='job_finished01'"
+                ).fetchone()[0]
+            )
+            degraded_url = str(
+                conn.execute(
+                    "SELECT source_url FROM job_items WHERE job_id=? AND seq=0", (job,)
+                ).fetchone()[0]
+            )
+            successful = conn.execute(
+                "SELECT id, url FROM videos WHERE public_id='kCc8FmEb1nY'"
+            ).fetchone()
+            conn.execute(
+                "UPDATE jobs SET n_items=3, priority=50, args_json=? WHERE id=?",
+                (
+                    json.dumps(
+                        {
+                            "expand": "none",
+                            "max_items": 25,
+                            "tags": ["topic:repair", "series:jobs"],
+                            "channels": "transcript,ocr",
+                        }
+                    ),
+                    job,
+                ),
+            )
+            conn.execute(
+                "INSERT INTO job_items (job_id, seq, source_url, video_id, state, "
+                "attempts, finished_at) VALUES (?, 2, ?, ?, 'done', 1, unixepoch())",
+                (job, successful["url"], successful["id"]),
+            )
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+
+        receipt = post(client, f"{ROOT}/jobs/job_finished01/retry")
+        assert receipt.status_code == 200
+        payload = receipt.json()
+        assert payload["selected"] == 2
+        assert payload["preserved"] == {
+            "channels": "transcript,ocr",
+            "tags": ["topic:repair", "series:jobs"],
+            "priority": "high",
+        }
+        new_id = payload["jobs"][0]["job_id"]
+        assert new_id != "job_finished01"
+
+        conn = open_write_connection(db)
+        try:
+            new = conn.execute(
+                "SELECT id, args_json, priority, n_items FROM jobs WHERE public_id=?",
+                (new_id,),
+            ).fetchone()
+            items = conn.execute(
+                "SELECT source_url FROM job_items WHERE job_id=? ORDER BY seq",
+                (new["id"],),
+            ).fetchall()
+        finally:
+            conn.close()
+        assert new["priority"] == 50 and new["n_items"] == 2
+        assert json.loads(new["args_json"])["channels"] == "transcript,ocr"
+        assert json.loads(new["args_json"])["tags"] == ["topic:repair", "series:jobs"]
+        assert {row["source_url"] for row in items} == {
+            "https://youtu.be/failedvideo",
+            degraded_url,
+        }
+        assert successful["url"] not in {row["source_url"] for row in items}
 
 
 def test_reindex_answers_the_job_it_queued(tmp_path: Path) -> None:
@@ -412,6 +531,18 @@ def test_the_next_in_the_payload_is_fenced_like_the_redirect(tmp_path: Path) -> 
                 client, f"{ROOT}/login", data={"password": PASSWORD, "next": away}
             )
             assert signed.json()["next"] == ROOT, away
+
+        # The 303 the form navigation still takes is fenced by the same
+        # function, and it is the branch the fence was written for.
+        with owner_client(tmp_path) as browser:
+            redirected = browser.post(
+                f"{ROOT}/login",
+                data={"password": PASSWORD, "next": away},
+                headers={**SAME_ORIGIN, **FORM},
+                follow_redirects=False,
+            )
+            assert redirected.status_code == 303
+            assert redirected.headers["location"] == ROOT, away
 
 
 def test_a_refused_sign_in_is_typed_and_names_no_secret(tmp_path: Path) -> None:
