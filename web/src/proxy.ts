@@ -1,12 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-// Every document this server sends carries the same headers the Python
-// instance sends with its own two pages (`public/__init__.py`,
-// `auth/login.py`): a strict CSP, `frame-ancestors 'none'` with the
-// `X-Frame-Options` twin for the middleboxes that still only read that one,
-// no referrer, no sniffing. The two front doors are the same two front doors;
-// they should not be a different security surface because one is rendered by
-// React.
+// Every document this server sends carries the headers the Python instance
+// sent with the landing and the demo while it served them: a strict CSP,
+// `frame-ancestors 'none'` with the `X-Frame-Options` twin for the
+// middleboxes that still only read that one, no referrer, no sniffing.
+// `auth/login.py` still carries the framing pair for the consent screen. The
+// two front doors are the same two front doors, and they should not become a
+// different security surface for being rendered by React — this file is now
+// the only place they get one at all.
 //
 // The difference is that a React page cannot say `script-src 'self'` and mean
 // it: the framework ships an inline bootstrap script and streams the RSC
