@@ -45,17 +45,15 @@ initial reader, API client, search, Ask, and component tests.
   each carries the four document headers (demo-site.md §7 item 0). Python has
   no page at `/` any more, so a misrouted edge shows the MCP mount's 404.
   And **a `POST` to `/dashboard/following` through the edge reaches Python**,
-  **and so does a `POST` to `/dashboard/index` beside it**: each is a path both
+  **so does a `POST` to `/dashboard/index` beside it**, **and so does a `POST`
+  to `/dashboard/login` beside both** *(2026-09-05)*: each is a path both
   processes own, split by method — `GET` to Next, the form's `POST` to Python
-  (frontend-migration.md §1d). A proxy that routes either on path alone answers
-  the write with a document and nothing says so. Development has a shim for
-  those two paths, not the rule: `web/next.config.ts`'s `PYTHON_FORM_POSTS`
-  forwards them in `beforeFiles` on the `application/x-www-form-urlencoded`
-  content type, and that entry is deleted the day development runs both
-  processes behind one proxy.
-  `/dashboard/login` is the last Jinja `GET` left under `/dashboard` and a
-  sibling is porting it now — the same split will apply to it a third time
-  once it lands, and it is *in progress*, not a cutover check yet.
+  (frontend-migration.md §1d). A proxy that routes any of the three on path
+  alone answers the write with a document and nothing says so. Development has
+  a shim for all three paths, not the rule: `web/next.config.ts`'s
+  `PYTHON_FORM_POSTS` forwards them in `beforeFiles` on the
+  `application/x-www-form-urlencoded` content type, and that entry is deleted
+  the day development runs both processes behind one proxy.
   In the deletion round, `templates/following.html` has one line to fix or drop
   rather than move: it prints `Indexing is disabled on this instance ({{
   vectors.reason }})` and its context has carried a bool since the read
@@ -104,8 +102,8 @@ mode this list exists to prevent.
 - **Search** — the owner inspection page, over the handler `/api/search`
   already shares. *Landed 2026-09-05:* `GET /dashboard/search` is Next's, named
   in the ownership table and the document-policy matcher
-  (frontend-migration.md §1d — nine of the ten `/dashboard` GET pages are React
-  now, `/dashboard/index` the last, in progress). It reads
+  (frontend-migration.md §1d — all eleven `/dashboard` GET pages are React
+  now). It reads
   `GET /dashboard/api/search`
   under the handler's own parameter names, so a bookmarked query still resolves,
   and paginates off the payload's own `pagination.limit` rather than a size it
@@ -173,13 +171,17 @@ mode this list exists to prevent.
   `POST /dashboard/following` shares the list page's path — see the cutover
   bullet above.
 - **Session and login** — the sign-in page, the cookie flow and sign-out.
-  `/dashboard/api/session` describes the deployment. *The login POST's JSON
-  twin landed 2026-09-05*: `POST /dashboard/login` answers `{"signed_in",
+  `/dashboard/api/session` describes the deployment, and the login POST's JSON
+  twin landed 2026-09-05: `POST /dashboard/login` answers `{"signed_in",
   "next"}` with the cookie on the response, and refuses a wrong secret with
   `E_BAD_CREDENTIAL` rather than the `E_AUTH_REQUIRED` a client answers by
-  navigating here (dashboard.md §21; frontend-migration.md §9). The React
-  sign-in page is pending, and it owns the navigation to `next` and the one
-  sentence the server sends for either secret.
+  navigating here (dashboard.md §21). *The React sign-in page landed
+  2026-09-05 too*: `GET /dashboard/login` is Next's, the third path split by
+  method beside `/dashboard/following` and `/dashboard/index`, and the
+  sharpest of the three — the `Set-Cookie` is the write and an `HttpOnly`
+  cookie is not a thing this shell could mint, so the `POST` stays Python's
+  for good (frontend-migration.md §1d, §6, §9). Sign-out has no page of its
+  own; `/dashboard/logout` stays Python's like every other write.
 
 **Three existing JSON endpoints answer in rendered strings**, which is
 what the typed-values decision (DECISIONS.md, 2026-09-05) says they must not.
