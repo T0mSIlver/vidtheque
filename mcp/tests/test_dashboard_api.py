@@ -1520,3 +1520,130 @@ def test_the_jobs_lists_new_fields_carry_no_rendered_clock(tmp_path: Path) -> No
     assert not ISO_STAMP.search(grown), "a rendered date reached the jobs list"
     assert not SPOKEN_DURATION.search(grown), "a rendered duration reached the jobs list"
     assert not re.search(r'"\d+:\d{2}(?::\d{2})?"', grown)
+
+
+# ------------------------------------------- one job's war story (§5.4, typed)
+
+
+def test_the_job_detail_carries_the_panels_the_page_renders(tmp_path: Path) -> None:
+    """The six fields the payload dropped on its way out of `_job_detail`.
+
+    The page has rendered all of them since phase 2 and the poll target sent
+    `job`, `items` and `events`, so a React detail page could show the item
+    table and nothing underneath it — including the degraded list, which is the
+    one panel this page exists for: `done`, `n_failed=0`, and a stage failed
+    underneath, which is a search channel silently missing.
+    """
+    with make_client(tmp_path) as client:
+        finished = read(client, JOB)
+        running = read(client, RUNNING)
+
+    # Items by state, beside the job's own five counts.
+    assert finished["counts"] == {"done": 1, "failed": 1}
+    assert finished["error_counts"] == {"E_SOURCE": 1}
+    assert finished["items_capped"] is False
+
+    # The silent loss, by item, by stage, and on a video a reader can open.
+    assert [row["stage"] for row in finished["degraded"]] == ["ocr"]
+    assert finished["degraded"][0]["seq"] == 0
+    assert isinstance(finished["degraded"][0]["video_id"], str)
+    assert "503" in finished["degraded"][0]["error"]
+
+    # The item the stage table is about: running first, else the last to
+    # finish. A running job is on its running item.
+    assert running["focus"]["state"] == "running"
+    assert running["focus"]["stage"] == "stt"
+    stages = {row["stage"]: row for row in running["stages"]}
+    # All seven, in pipeline order, `absent` where no row exists yet.
+    assert len(running["stages"]) == len(stages) == 7
+    assert stages["fetch"]["state"] in {"done", "absent"}
+    assert any(row["state"] == "absent" for row in running["stages"])
+    assert set(running["stages"][0]) == {
+        "stage",
+        "state",
+        "started_at",
+        "finished_at",
+        "took_s",
+    }
+
+
+def test_a_job_with_nothing_in_focus_sends_the_absence_rather_than_a_shell(
+    tmp_path: Path,
+) -> None:
+    """An item that never resolved to a video has no stages to show.
+
+    `video_stages` is keyed on a video, so the deferred job — one item, never
+    fetched — has nothing to be in focus. `focus` is `null`, which is the field
+    the panel is keyed on: `stages` is still the seven pipeline rows and every
+    one of them is `absent`, because the stage list is the pipeline's shape and
+    not a claim about this job.
+    """
+    with make_client(tmp_path) as client:
+        payload = read(client, f"{ROOT}/api/jobs/job_deferred01")
+
+    assert payload["focus"] is None
+    assert {row["state"] for row in payload["stages"]} == {"absent"}
+    assert payload["counts"] == {"queued": 1}
+    assert payload["error_counts"] == {}
+    assert payload["degraded"] == []
+
+
+def test_the_job_detail_projection_drops_the_operators_prose(tmp_path: Path) -> None:
+    """§2.4 on the six new fields, which is where a stage error would have got
+    out: the degraded list quotes the pipeline quoting the worker, and the
+    stage table would have carried a declared model id if it read one.
+
+    It reads neither. The clocks survive — what indexing a video costs is the
+    demo's business (§10.4) — and so do the codes and the counts.
+    """
+    with make_client(tmp_path, public=DEMO) as demo:
+        finished = read(demo, JOB)
+        running = read(demo, RUNNING)
+
+    assert finished["degraded"][0]["stage"] == "ocr"
+    assert finished["degraded"][0]["error"] is None
+    assert finished["error_counts"] == {"E_SOURCE": 1}
+    assert running["focus"]["source_url"] is None
+    assert running["focus"]["error_message"] is None
+    for row in running["stages"]:
+        assert set(row) == {"stage", "state", "started_at", "finished_at", "took_s"}
+    raw = json.dumps([finished, running])
+    for leaked in (
+        "yt-dlp-2026.07.04",
+        "Qwen/Qwen3-VL-Embedding-2B",
+        "worker returned 503",
+        "Sign in to confirm",
+        "youtu.be/failedvideo",
+        str(tmp_path),
+    ):
+        assert leaked not in raw, f"{leaked} is in the demo payload"
+
+
+def test_the_job_details_new_fields_carry_no_rendered_clock(tmp_path: Path) -> None:
+    """The typed rule again, on the six fields added on 2026-09-05.
+
+    `focus` is a job item and job items carry the transitional `text` block, so
+    the scan is over the typed half — the half a React page reads. What it must
+    not find is a stamp or a spoken duration that only Python could have built.
+    """
+    with make_client(tmp_path) as client:
+        for path in (JOB, RUNNING):
+            payload = read(client, path)
+            grown = json.dumps(
+                _typed(
+                    {
+                        key: payload[key]
+                        for key in (
+                            "items_capped",
+                            "counts",
+                            "error_counts",
+                            "degraded",
+                            "focus",
+                            "stages",
+                        )
+                    }
+                )
+            )
+            assert not ISO_STAMP.search(grown), f"a rendered date reached {path}"
+            assert not SPOKEN_DURATION.search(grown), f"a rendered duration reached {path}"
+            assert not re.search(r'"\d+:\d{2}(?::\d{2})?"', grown), path
