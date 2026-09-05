@@ -18,3 +18,12 @@ tools
 scripts
 mcp/tests
 worker/tests
+.agent-runs
+.fastcontext
+.opencode
+**/node_modules
+**/.next
+**/coverage
+**/*.tsbuildinfo
+**/.env*
+!**/.env.example
