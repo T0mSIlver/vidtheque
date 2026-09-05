@@ -45,6 +45,14 @@ from .test_dashboard import (
 OVERVIEW = f"{ROOT}/api/overview"
 LEDGER = f"{ROOT}/api/ledger"
 SESSION = f"{ROOT}/api/session"
+# The videos table and the video detail page (§20). `library`, not `videos`:
+# `/dashboard/api/videos` is the facade's listing at this prefix and stays it.
+LIBRARY = f"{ROOT}/api/library"
+FACADE = f"{ROOT}/api/videos"
+# The half-indexed video: two stage rows, one of them failed with yt-dlp's
+# prose in it, which is what the detail projection has to lose.
+HALF = "aaaaaaaaaaa"
+FIRST = "kCc8FmEb1nY"
 
 # A drift reason is a config/dimension mismatch written for the operator, and
 # it names what the worker is serving. The *effect* it caused is the visitor's
@@ -519,3 +527,381 @@ def test_the_owner_sees_the_box_the_demo_does_not(tmp_path: Path) -> None:
     assert body["storage"]["database_bytes"] > 0
     # Even here, a byte total is a number and never a path.
     assert str(tmp_path) not in json.dumps(body)
+
+
+# ----------------------------------------------------- the videos table (§20)
+
+
+def test_the_two_video_reads_sit_behind_the_same_gate_and_are_get_only(
+    tmp_path: Path,
+) -> None:
+    with owner_client(tmp_path) as client:
+        for path in (LIBRARY, f"{LIBRARY}/{FIRST}"):
+            refused = client.get(path)
+            assert refused.status_code == 401, path
+            assert refused.json()["error"] == "E_AUTH_REQUIRED"
+            # Nothing about the corpus rides out on a refusal — not even the
+            # title of the video that was asked for.
+            assert "videos" not in refused.json()
+            assert client.get(path, headers=BEARER).status_code == 200, path
+
+    with make_client(tmp_path) as client:
+        registered = {
+            str(route.path): set(route.methods or ())
+            for route in client.app.routes
+            if str(getattr(route, "path", "")).startswith(LIBRARY)
+        }
+        assert set(registered) == {LIBRARY, f"{LIBRARY}/{{video_id}}"}
+        for path, methods in registered.items():
+            assert methods <= {"GET", "HEAD"}, path
+
+
+def test_the_table_and_the_facade_are_two_contracts_and_two_paths(
+    tmp_path: Path,
+) -> None:
+    """`/dashboard/api/videos` is the facade's listing and stays it.
+
+    The two are not a duplicate: the facade answers "what is in the corpus" in
+    the corpus's own shape, with `published` and `duration` already rendered
+    for a reader of the tool's text block, and it lists only what is queryable.
+    The table answers what the management page shows, which is a different set
+    of rows and a different set of columns.
+    """
+    with make_client(tmp_path) as client:
+        # Not `read()`: the facade's handlers answer without `no-store`, which
+        # is their own contract and not this slice's to change.
+        facade = client.get(FACADE).json()
+        table = read(client, LIBRARY)
+
+    assert set(facade) == {"videos", "pagination"}
+    # The facade's records still carry the rendered pair, untouched.
+    assert facade["videos"][0]["published"] == "2024-04-01"
+    assert ":" in facade["videos"][0]["duration"]
+    # …and the three queryable videos, because that is the query surface's
+    # meaning of "in the corpus".
+    assert len(facade["videos"]) == 3
+
+    # The table sees all four, including the one that never finished, and
+    # carries the state the facade has no field for.
+    assert len(table["videos"]) == 4
+    assert {row["index_state"] for row in table["videos"]} == {"ready", "indexing"}
+    assert "published" not in table["videos"][0]
+    assert "duration" not in table["videos"][0]
+
+
+def test_the_videos_table_json_is_the_pages_read_typed(tmp_path: Path) -> None:
+    """The same four rows `/dashboard/videos` renders, in epochs and booleans.
+
+    `all` means all: the half-indexed video is in the corpus and on the table,
+    which is §5.2's default and the reason this page exists at all.
+    """
+    with make_client(tmp_path) as client:
+        body = read(client, LIBRARY)
+
+    assert body["redacted"] is False
+    assert body["counted_at"] <= int(time.time())
+    # Explicit, always — never left for a client to infer from `q`.
+    assert body["order"] == "recency"
+    # The exact count of the filtered set, not the tool's bounded probe: no
+    # `approx_total` and no tilde reaches this payload.
+    assert body["total"] == 4
+    assert body["pagination"] == {"limit": 50, "offset": 0, "has_more": False}
+    assert body["notes"] == []
+    assert body["filters"] == {
+        "q": None,
+        "channel": None,
+        "tags": [],
+        "has": "any",
+        "index_state": "all",
+        "published_after": None,
+        "published_before": None,
+        "indexed_after": None,
+        "indexed_before": None,
+    }
+
+    for row in body["videos"]:
+        assert set(row) == {
+            "video_id",
+            "title",
+            "channel",
+            "published_at",
+            "duration_s",
+            "indexed_at",
+            "index_state",
+            "coverage",
+            "tags",
+            "thumb",
+            "link",
+        }
+        # The two columns `list-videos` renders on its way out, undone.
+        assert isinstance(row["published_at"], int)
+        assert isinstance(row["duration_s"], float)
+        assert row["indexed_at"] is None or isinstance(row["indexed_at"], int)
+        assert set(row["coverage"]) == {"transcript", "ocr", "frames"}
+        assert all(isinstance(v, bool) for v in row["coverage"].values())
+        assert isinstance(row["tags"], list)
+        # A frame URL a browser resolves against the page it is reading.
+        assert row["thumb"] is None or row["thumb"].startswith("/frames/")
+
+    by_id = {row["video_id"]: row for row in body["videos"]}
+    assert by_id[HALF]["index_state"] == "indexing"
+    assert by_id[HALF]["indexed_at"] is None  # it never finished
+    assert by_id[FIRST]["coverage"] == {"transcript": True, "ocr": True, "frames": True}
+    assert by_id[FIRST]["tags"] == ["topic:attention"]
+
+
+def test_the_table_clamps_every_bound_and_says_when_one_moved(
+    tmp_path: Path,
+) -> None:
+    """A limit above the cap is clamped, and the payload says so.
+
+    The page echoes its clamps back into its own form, where a reader sees the
+    accepted number in the box they typed into. A JSON caller has no form, so
+    the sentence is the disclosure — and it is Python's, like every other piece
+    of policy text on this surface.
+    """
+    with make_client(tmp_path) as client:
+        clamped = read(client, f"{LIBRARY}?limit=100000&offset=999999")
+        assert clamped["pagination"]["limit"] == 100  # the owner ceiling
+        assert clamped["pagination"]["offset"] == 10_000
+        notes = " ".join(clamped["notes"])
+        assert "limit=100000 → 100" in notes
+        assert "offset=999999 → 10000" in notes
+
+        # A value the server did not recognise is not honoured and not an
+        # error: it falls back, and says which value answered.
+        coerced = read(client, f"{LIBRARY}?has=banana&index_state=nonsense")
+        assert coerced["filters"]["has"] == "any"
+        assert coerced["filters"]["index_state"] == "all"
+        assert len(coerced["videos"]) == 4
+        text = " ".join(coerced["notes"])
+        assert "has=" in text and "index_state=" in text
+
+        # A number that was inside the bounds says nothing at all.
+        assert read(client, f"{LIBRARY}?limit=2")["notes"] == []
+
+
+def test_the_table_orders_and_filters_the_way_the_page_does(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        titled = read(client, f"{LIBRARY}?order=title")
+        assert titled["order"] == "title"
+        titles = [row["title"] for row in titled["videos"]]
+        assert titles == sorted(titles)
+
+        # `relevance` is the default *with* a query and refused without one:
+        # the tool's own typed refusal, at the status the code maps to.
+        queried = read(client, f"{LIBRARY}?q=cache")
+        assert queried["order"] == "relevance"
+        assert queried["filters"]["q"] == "cache"
+        refused = client.get(f"{LIBRARY}?order=relevance")
+        assert refused.status_code == 400
+        assert refused.json()["error"] == "E_ORDER_SCOPE"
+
+        # One state, and the filtered total moves with it.
+        only = read(client, f"{LIBRARY}?index_state=indexing")
+        assert [row["video_id"] for row in only["videos"]] == [HALF]
+        assert only["total"] == 1
+
+        # Two rows at a time, and `has_more` rather than an exact page count.
+        paged = read(client, f"{LIBRARY}?limit=2")
+        assert len(paged["videos"]) == 2
+        assert paged["pagination"]["has_more"] is True
+        assert paged["total"] == 4
+
+        # The two time axes, never overloaded: `published_*` picks videos, and
+        # the payload echoes the epochs the query actually filtered on — the
+        # `_before` bound exclusive, which is what includes its own date.
+        dated = read(client, f"{LIBRARY}?published_after=2024-01-01")
+        assert dated["filters"]["published_after"] == 1704067200
+        assert dated["filters"]["published_before"] is None
+        assert all(row["published_at"] >= 1704067200 for row in dated["videos"])
+        assert dated["total"] == len(dated["videos"]) < 4
+
+        # A date that will not parse is a refusal, not a dropped filter.
+        bad = client.get(f"{LIBRARY}?indexed_after=nonsense")
+        assert bad.status_code == 400
+        assert bad.json()["error"] == "E_BAD_TIME_FORMAT"
+        assert bad.json()["next"]
+
+
+# ---------------------------------------------------- the video detail (§20)
+
+
+def test_the_detail_json_is_the_pipeline_the_facade_cannot_answer(
+    tmp_path: Path,
+) -> None:
+    """§5.3's panels: the seven stages, the counts, the shots, the strip.
+
+    None of it has an equivalent in `/api/videos/{id}`, which is
+    `video-summary` — the corpus's answer about a video. This is the
+    pipeline's answer about the same video, which is the page's whole argument.
+    """
+    with make_client(tmp_path) as client:
+        body = read(client, f"{LIBRARY}/{FIRST}?frames=2")
+        # The endpoint this payload points at instead of serving cues itself.
+        assert client.get(body["transcript"]["endpoint"]).status_code == 200
+
+    assert body["redacted"] is False
+    video = body["video"]
+    assert video["video_id"] == FIRST
+    assert isinstance(video["published_at"], int)
+    assert isinstance(video["duration_s"], float)
+    # Presence, not location (§5.3): no path to anything on the operator's box.
+    assert set(video) == {
+        "video_id", "title", "channel", "published_at", "duration_s", "language",
+        "index_state", "indexed_at", "added_at", "url", "description", "tags",
+    }
+    # `data_status` verbatim from `video-summary`, never re-derived.
+    assert body["data_status"] == "ok"
+    assert body["summary_error"] is None
+
+    # All seven, with the ones that never ran present rather than missing.
+    assert [stage["stage"] for stage in body["stages"]] == [
+        "fetch", "stt", "chunk", "text_embed", "keyframe", "ocr", "frame_embed",
+    ]
+    assert any(stage["state"] == "absent" for stage in body["stages"])
+    assert any(stage["model_key"] == "seed" for stage in body["stages"])
+
+    counts = body["counts"]
+    assert counts["cues"] == 6 and counts["chunks"] == 1
+    assert counts["keyframes_kept"] < counts["keyframes"]  # the dedup story
+    assert all(isinstance(n, int) for n in counts.values())
+    assert body["cue_origins"] == {"whisperx": 6}
+
+    # The transcript is totals and a pointer. This payload does not serve cues:
+    # the endpoint it names already pages them under the same clamps.
+    assert body["transcript"]["cues"] == 6
+    assert body["transcript"]["endpoint"] == f"{ROOT}/api/videos/{FIRST}/cues"
+    assert "cues" not in body
+
+    # Shots are positions, not percentages: the runtime is on the payload and
+    # the arithmetic belongs to whoever draws the band.
+    shots = body["shots"]["shots"]
+    assert shots and all(shot["end_s"] >= shot["start_s"] for shot in shots)
+    assert all("left" not in shot and "width" not in shot for shot in shots)
+    assert all(shot["preview"].startswith("/frames/") for shot in shots)
+    assert body["shots"]["capped"] is False
+
+    # The strip, paged, with its OCR boxes already normalised 0–1.
+    frames = body["frames"]
+    assert len(frames["frames"]) == 2 and frames["has_more"] is True
+    first = frames["frames"][0]
+    assert first["thumb"].endswith("w=192&q=70")
+    assert first["large"].endswith("w=1280&q=70")
+    assert "base64" not in json.dumps(frames)
+    box = first["lines"][0]["box"]
+    assert len(box) == 4 and all(0.0 <= value <= 1.0 for value in box)
+
+    # The runs that touched this video, capped and never counted (§16.4) — the
+    # code a job failed with, and never the message it failed with.
+    history = body["job_history"]
+    assert [job["job_id"] for job in history["jobs"]] == ["job_running001"]
+    assert history["cap"] == 10
+    job = history["jobs"][0]
+    assert set(job) == {
+        "job_id", "state", "kind", "created_at", "finished_at",
+        "error_code", "degraded_stages",
+    }
+    assert isinstance(job["created_at"], int) and job["finished_at"] is None
+
+
+def test_the_detail_strip_is_clamped_and_pages_independently_of_the_cues(
+    tmp_path: Path,
+) -> None:
+    with make_client(tmp_path) as client:
+        clamped = read(client, f"{LIBRARY}/{FIRST}?frames=100000&frame_offset=999999")
+        assert clamped["frames"]["limit"] == 96
+        assert clamped["frames"]["offset"] == 100_000
+        notes = " ".join(clamped["notes"])
+        assert "frames=100000 → 96" in notes and "frame_offset=999999 → 100000" in notes
+        # Past the end of the strip is an empty page, not a refusal.
+        assert clamped["frames"]["frames"] == []
+        assert clamped["frames"]["has_more"] is False
+
+        second = read(client, f"{LIBRARY}/{FIRST}?frames=1&frame_offset=1")
+        assert [frame["ord"] for frame in second["frames"]["frames"]] == [1]
+        assert second["notes"] == []
+
+
+def test_an_unknown_video_is_a_typed_404_with_a_way_back(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        response = client.get(f"{LIBRARY}/not-a-video")
+        assert response.status_code == 404
+        assert response.headers["cache-control"] == "no-store"
+        body = response.json()
+        assert body["error"] == "E_UNKNOWN_VIDEO"
+        assert "not-a-video" in body["message"]
+        assert body["next"]
+
+
+def test_the_detail_projection_drops_the_operators_prose_and_its_models(
+    tmp_path: Path,
+) -> None:
+    """§2.4, on the one read page that carries the pipeline's own words.
+
+    The demo gets the video detail whole — every panel, every count, every
+    clock — minus the two fields that are the operator's console: `model_key`,
+    a declared model id, and `error`, which is yt-dlp quoted verbatim and
+    carries cookiefile paths and player-client names. The half-indexed video is
+    the one that has both.
+    """
+    with owner_client(tmp_path) as owner:
+        seen = read(owner, f"{LIBRARY}/{HALF}", headers=BEARER)
+    with make_client(tmp_path, public=DEMO) as demo:
+        hidden = read(demo, f"{LIBRARY}/{HALF}")
+        table = read(demo, LIBRARY)
+
+    # The owner sees both, or the projection below proves nothing.
+    assert any(stage["model_key"] == "yt-dlp-2026.07.04" for stage in seen["stages"])
+    assert any(stage["error"] for stage in seen["stages"])
+    assert seen["redacted"] is False
+
+    assert hidden["redacted"] is True
+    assert all(stage["model_key"] is None for stage in hidden["stages"])
+    assert all(stage["error"] is None for stage in hidden["stages"])
+    # …and the shape survives: the states, the versions and the clocks are what
+    # a reader can act on, and dropping them would leave an empty shell.
+    assert [stage["state"] for stage in hidden["stages"]] == [
+        stage["state"] for stage in seen["stages"]
+    ]
+    assert any(stage["state"] == "failed" for stage in hidden["stages"])
+    # The refusal `video-summary` answers a mid-pipeline video with is policy
+    # text, and it stays: it is why the panels below it are thin.
+    assert hidden["summary_error"]["code"] == "E_INDEXING"
+
+    raw = json.dumps(hidden)
+    for leaked in (
+        "Sign in to confirm you are not a bot",
+        "cookiefile",
+        "yt-dlp-2026.07.04",
+        "Qwen/Qwen3-VL-Embedding-2B",
+        "worker:8081",
+        "vidtheque.db",
+        "keyframes/",
+        str(tmp_path),
+    ):
+        assert leaked not in raw, f"{leaked} is in the demo detail payload"
+
+    # The table itself is not redacted — §2.4 gives it to the demo whole,
+    # because everything on it is corpus rather than deployment.
+    assert len(table["videos"]) == 4
+    assert table["redacted"] is True
+
+
+def test_neither_video_payload_carries_a_rendered_clock(tmp_path: Path) -> None:
+    """The same rule as the overview and the ledger, on the two payloads whose
+    source fields are rendered strings to begin with.
+
+    `list-videos` writes `published` as an `iso_day` string and `duration` as a
+    `1:56:40` clock, because its reader is a model reading a `tsv` block. Both
+    would have travelled verbatim if this surface had forwarded the tool's
+    record, which is exactly the failure this scans for.
+    """
+    with owner_client(tmp_path) as client:
+        for path in (LIBRARY, f"{LIBRARY}/{FIRST}", f"{LIBRARY}/{HALF}"):
+            raw = json.dumps(read(client, path, headers=BEARER))
+            assert not ISO_STAMP.search(raw), f"a rendered date reached {path}"
+            assert not SPOKEN_DURATION.search(raw), f"a rendered duration reached {path}"
+            # `duration_clock`'s shape, which no regex above would catch on its
+            # own: a bare `1:56:40` in a payload of seconds.
+            assert not re.search(r'"\d+:\d{2}(?::\d{2})?"', raw), path

@@ -1,11 +1,21 @@
-"""`/dashboard/api/{overview,ledger,session}` — the first slice of the JSON the
-React dashboard reads (`docs/design/frontend-migration.md`).
+"""`/dashboard/api/{overview,ledger,library,session}` — the JSON the React
+dashboard reads (`docs/design/frontend-migration.md`).
 
-Three additive reads. They add no query, no clamp and no policy: `overview` and
-`ledger` are `read_models`' assemblers — the same reads the Jinja pages make,
-under the same projection — shaped into typed JSON, and `session` is what a
+Additive reads, and they add no query and no policy: `overview`, `ledger`,
+`library` and `library/{video_id}` are `read_models`' assemblers — the same
+reads the Jinja pages make, in the same order, under the same projection and
+the same server-side clamps — shaped into typed JSON, and `session` is what a
 browser needs before it can decide whether to render a dashboard or a sign-in
 link.
+
+`library` rather than `videos` because `/dashboard/api/videos` is taken: the
+`/api/*` facade is registered under this prefix too (§2.5.1), and its listing
+is the corpus's own shape — the records `/api/videos` serves the demo, with
+`published` and `duration` already rendered. One path cannot be two contracts,
+and the two are answering different questions: the facade's is "what is in the
+corpus", this one's is "what does the management table show", which needs the
+index state, the coverage booleans, the exact filtered count and the epochs the
+tool spent on prose.
 
 Three rules this module keeps, all of them settled:
 
@@ -45,16 +55,30 @@ from ..auth.credential import credential, is_owner
 from ..auth.login import SESSION_COOKIE
 from ..errors import HTTP_STATUS
 from ..public.api import OWNER_CLAMPS, PUBLIC_CLAMPS
+from ..text import clamp
 from .access import peer_trusted, sign_in_hint, write_side_enabled
 from .read_models import (
+    CUE_PAGE,
+    CUE_PAGE_MAX,
     FAILED_WINDOW_S,
+    FRAME_PAGE,
+    FRAME_PAGE_MAX,
+    OCR_LINE_CAP,
+    SHOT_CAP,
+    VIDEO_HISTORY_CAP,
     LedgerReads,
     OverviewReads,
+    VideosReads,
+    clamp_note,
+    coverage_flags,
     declared_models,
     ledger_reads,
     overview_reads,
     pipeline_readiness,
     redacted,
+    video_detail_reads,
+    video_header,
+    videos_reads,
 )
 from .settings import ROOT
 
@@ -326,6 +350,286 @@ async def ledger(request: Request) -> Response:
             "keyframe_bytes": int(data.storage["keyframes"]),
             "database_bytes": int(data.storage["database"]),
         },
+    }
+    return _json(payload)
+
+
+# --------------------------------------------------------------------- videos
+
+
+def _video_row(row: dict[str, Any]) -> dict[str, Any]:
+    """One table row: the tool's record, with its two rendered columns undone.
+
+    `list-videos` writes `published` as an `iso_day` string and `duration` as a
+    `1:56:40` clock, because its reader is a model reading a `tsv` block. This
+    surface sends the stamps `read_models.video_facts` read beside them, and
+    React renders. `coverage` is the same three booleans the page draws as
+    pills, keyed rather than lettered — the letters are the text block's device.
+    """
+    typed = row.get("typed") or {}
+    return {
+        "video_id": str(row["video_id"]),
+        "title": str(row["title"]),
+        "channel": str(row.get("channel") or ""),
+        "published_at": _epoch(typed.get("published_at")),
+        "duration_s": _seconds(typed.get("duration_s")),
+        "indexed_at": _epoch(typed.get("indexed_at")),
+        # The schema's own word, printed verbatim and never re-derived
+        # (index-schema §4.5).
+        "index_state": str(row["index_state"]),
+        "coverage": coverage_flags(str(row.get("coverage") or "---")),
+        "tags": list(row.get("tag_list") or []),
+        # Relative, like every frame URL on this surface: a browser reading
+        # this dashboard knows the host it fetched from, and `PUBLIC_URL` is
+        # the thing that was wrong behind a tunnel (dashboard.md §8).
+        "thumb": row.get("thumb"),
+        "link": row.get("link"),
+    }
+
+
+async def videos(request: Request) -> Response:
+    """`GET /dashboard/api/library` — the videos table (§5.2), typed.
+
+    **Not `/dashboard/api/videos`**, and the name is the only thing about this
+    endpoint that is not the page's: that path is already the *facade's*
+    listing at this prefix (`public/api.videos_endpoint`), and one path cannot
+    carry two contracts. The facade answers a question about the corpus in the
+    corpus's own shape — the same records `/api/videos` serves the demo, with
+    `published` and `duration` rendered for a reader of the tool's text block.
+    This answers "what does the management table show", which needs six things
+    the facade has no reason to carry: `index_state` (the facade lists only
+    what is queryable and never says which), the coverage booleans, the exact
+    count of the filtered set, the `has`/`tags`/`index_state`/date filters, an
+    explicit `order`, and epochs instead of rendered days.
+
+    Every parameter the page takes, under the same server-side clamps, because
+    they are the same call: `read_models.videos_reads`. A `limit` above the cap
+    is clamped and the payload says so in `notes` — the page echoes its clamps
+    back into its own form, and a JSON caller has no form to read them out of.
+    """
+    data: VideosReads = await videos_reads(request)
+    if data.error is not None:
+        return _refusal(data.error)
+    pagination = data.pagination
+    payload: dict[str, Any] = {
+        "counted_at": int(time.time()),
+        # The videos table is *not* redacted — §2.4 gives it to the demo whole,
+        # because everything on it is corpus rather than deployment. The flag
+        # is here so a client can tell which projection answered it.
+        "redacted": redacted(request),
+        # Explicit, always, and never inferred from the presence of `q`: the
+        # default is `relevance` with a query and `recency` without one.
+        "order": data.order,
+        "filters": {
+            "q": data.filters["q"] or None,
+            "channel": data.filters["channel"] or None,
+            "tags": data.tags,
+            "has": data.filters["has"],
+            "index_state": data.filters["index_state"],
+            # The two axes, never overloaded: `published_*` picks videos,
+            # `offset_*` picks positions inside one and appears nowhere here.
+            # These are the epochs the query actually filtered on, so each
+            # `_after` is the start of its UTC day and each `_before` is the
+            # start of the day *after* the one asked for — the bound is
+            # exclusive, which is what makes `published_before` include its own
+            # date.
+            "published_after": _epoch(data.resolved.get("published_after")),
+            "published_before": _epoch(data.resolved.get("published_before")),
+            "indexed_after": _epoch(data.resolved.get("indexed_after")),
+            "indexed_before": _epoch(data.resolved.get("indexed_before")),
+        },
+        "videos": [_video_row(row) for row in data.rows],
+        "pagination": {
+            "limit": data.limit,
+            "offset": data.offset,
+            "has_more": bool(pagination.get("has_more")),
+        },
+        # The exact count of the filtered set, which is this page's deliberate
+        # divergence from `has_more` alone (§5.2): a tilde above a table with a
+        # Next button is the one thing on the line a reader cannot act on. The
+        # tool's own bounded probe (`approx_total`) is not forwarded — two
+        # totals with different rules is how a client picks the wrong one.
+        "total": data.total,
+        "notes": data.notes,
+    }
+    # Where the last page starts, when a caller has walked past the end. The
+    # tool computes it; forwarded rather than recomputed.
+    if pagination.get("last_offset") is not None:
+        payload["pagination"]["last_offset"] = int(pagination["last_offset"])
+    return _json(payload)
+
+
+async def video(request: Request) -> Response:
+    """`GET /dashboard/api/library/{video_id}` — the detail page (§5.3), typed.
+
+    The panels the page shows, minus the transcript: cues are
+    `/dashboard/api/videos/{video_id}/cues`, which already pages them under the
+    same clamps, and a detail payload that carried a page of them too would be
+    two contracts for one list. The keyframe strip *is* here, paged by `frames`
+    and `frame_offset`, because nothing else serves it and it is the panel §5.3
+    calls the most convincing thing on the page.
+
+    Why the facade is not enough (`/api/videos/{video_id}`, demo-site.md
+    §2.2.1): it is `video-summary`'s payload — chapters, key texts, on-screen
+    highlights, a cover thumbnail — which is the corpus's answer about a video.
+    This is the *pipeline's*: the seven `video_stages` rows with their state,
+    declared model and clocks, the per-video counts, where the cues came from,
+    the shot timeline, every keyframe with its OCR boxes, and the jobs that
+    have touched this video. None of it has an equivalent anywhere in the MCP
+    surface, which is §5.3's whole argument for the page.
+
+    The projection drops two of those fields by not sending them: `model_key`
+    is a declared model id and `error` is the pipeline's prose about the
+    operator's box (§2.4). Everything else on this payload is corpus.
+    """
+    redact = redacted(request)
+    params = request.query_params
+    video_id = str(request.path_params["video_id"])
+    frame_page = clamp(params.get("frames"), 1, FRAME_PAGE_MAX, FRAME_PAGE)  # type: ignore[arg-type]
+    frame_offset = clamp(params.get("frame_offset"), 0, 100_000, 0)  # type: ignore[arg-type]
+
+    data = await video_detail_reads(
+        request,
+        video_id,
+        frame_page=frame_page,
+        frame_offset=frame_offset,
+        # The one read this surface does not take. `cue_page=None` is not a
+        # filter on the answer, it is the absence of a query.
+        cue_page=None,
+        redact=redact,
+    )
+    if data is None:
+        return _json(
+            {
+                "error": "E_UNKNOWN_VIDEO",
+                "message": f'"{video_id}" is not in the corpus.',
+                "next": "browse the videos table for what is indexed.",
+            },
+            status=404,
+        )
+
+    notes = [
+        f"note: clamped server-side: {note}."
+        for note in (
+            clamp_note(params.get("frames"), frame_page, "frames"),
+            clamp_note(params.get("frame_offset"), frame_offset, "frame_offset"),
+        )
+        if note
+    ]
+    counts = data.counts
+    totals = data.cue_totals
+    payload: dict[str, Any] = {
+        "fetched_at": int(time.time()),
+        "redacted": redact,
+        # The `videos` row a human wants, and none of the paths: `media_path`,
+        # `audio_path` and `jpeg_path` are operator detail on a page that might
+        # be screenshotted (§5.1), and the stage table already says whether a
+        # fetch succeeded.
+        "video": video_header(data.row, data.tags),
+        # `video-summary`'s own word for the state of this video, verbatim and
+        # never re-derived here (§4.5) — and its refusal when it has one, which
+        # for a video that never finished the pipeline is the honest answer
+        # beside panels that still have something to say.
+        "data_status": data.summary.get("data_status"),
+        "summary_error": data.summary_error,
+        "chapters": [
+            {
+                "start_s": float(chapter["start"]),
+                "title": str(chapter["title"]),
+                "link": chapter.get("link"),
+            }
+            for chapter in data.summary.get("chapters") or []
+        ],
+        # All seven, with the ones that never ran present as `absent` rather
+        # than missing from the list.
+        "stages": [
+            {
+                "stage": str(stage["stage"]),
+                "state": str(stage["state"]),
+                "model_key": stage["model_key"],
+                "stage_version": stage["stage_version"],
+                "started_at": _epoch(stage["started_at"]),
+                "finished_at": _epoch(stage["finished_at"]),
+                "error": stage["error"],
+            }
+            for stage in data.stages
+        ],
+        # The counts the schema does not denormalize (§4.2) — the one page in
+        # this surface allowed a per-video read at all.
+        "counts": {
+            "cues": int(counts["cues"] or 0),
+            "cues_with_words": int(counts["cues_with_words"] or 0),
+            "chunks": int(counts["chunks"] or 0),
+            "chapters": int(counts["chapters"] or 0),
+            "keyframes": int(counts["keyframes"] or 0),
+            "keyframes_kept": int(counts["keyframes_kept"] or 0),
+            "ocr_frames": int(counts["ocr_frames"] or 0),
+            "ocr_lines": int(counts["ocr_lines"] or 0),
+            # This video's own keyframe bytes, which is corpus: the figure the
+            # projection drops is the *disk*, on the overview and the ledger.
+            "jpeg_bytes": int(counts["jpeg_bytes"] or 0),
+        },
+        # `whisperx | yt_manual | yt_auto` → how many cues came in that way.
+        "cue_origins": {str(k): int(v) for k, v in data.origins.items()},
+        "transcript": {
+            "cues": int(counts["cues"] or 0),
+            "words": int(totals["words"]),
+            "chars": int(totals["chars"]),
+            # Totals, and then where to read the cues themselves. This payload
+            # does not serve them.
+            "endpoint": f"{ROOT}/api/videos/{video_id}/cues",
+            "default_limit": CUE_PAGE,
+            "max_limit": CUE_PAGE_MAX,
+        },
+        "shots": {
+            "shots": [
+                {
+                    "shot_id": int(shot["shot_id"]),
+                    "start_s": float(shot["start_s"]),
+                    "end_s": float(shot["end_s"]),
+                    "frames": int(shot["frames"]),
+                    "kept": int(shot["kept"]),
+                    "ocr_done": int(shot["ocr_done"]),
+                    "first_ord": int(shot["first_ord"]),
+                    "preview": shot["preview"],
+                }
+                for shot in data.shots
+            ],
+            # Positions on the runtime, not percentages of it: the runtime is
+            # `video.duration_s` and the arithmetic is the renderer's.
+            "capped": data.shots_capped,
+            "cap": SHOT_CAP,
+        },
+        "frames": {
+            "frames": data.frames,
+            "limit": frame_page,
+            "offset": frame_offset,
+            "has_more": data.frames_more,
+            # The outer half of §5.3's double cap: when the page's line budget
+            # is spent the per-frame counts under-report by definition, and a
+            # short list that does not say so reads as the whole one.
+            "ocr_line_cap": OCR_LINE_CAP,
+            "ocr_lines_capped": data.ocr_lines_capped,
+        },
+        "job_history": {
+            "jobs": [
+                {
+                    "job_id": str(job["job_id"]),
+                    "state": str(job["state"]),
+                    "kind": str(job["kind"]),
+                    "created_at": _epoch(job["created_at"]),
+                    "finished_at": _epoch(job["finished_at"]),
+                    # The code, never the message: `jobs.error_message` is
+                    # yt-dlp's prose and the jobs view has redacted it since
+                    # phase 4. This list never carried it on either surface.
+                    "error_code": job["error_code"],
+                    "degraded_stages": list(job["degraded_stages"]),
+                }
+                for job in data.history
+            ],
+            "cap": VIDEO_HISTORY_CAP,
+        },
+        "notes": notes,
     }
     return _json(payload)
 
