@@ -20,11 +20,25 @@
 # must show exactly ONE mount at /data.
 #
 # Smoke-testing a private box: `/api/*` is a public-mode route group and 404s
-# here BY DESIGN — that 404 is not a broken install. Check instead:
+# here BY DESIGN — that 404 is not a broken install. Check instead, THROUGH THE
+# EDGE, which is the only listener there is now:
 #
-#   curl -s localhost:8080/healthz
+#   curl -s localhost:${EDGE_PORT:-8080}/healthz
 #   curl -s -H "Authorization: Bearer $VIDTHEQUE_TOKEN" \
-#     localhost:8080/dashboard/api/meta
+#     localhost:${EDGE_PORT:-8080}/dashboard/api/meta
+#
+# DEVELOPING BEHIND THE EDGE, and why it is worth the two minutes. `pnpm dev`
+# runs Next on :3000 and Python on another port, and `web/next.config.ts`
+# reproduces the production split with `rewrites()` so the browser still sees
+# one origin. That file's `PYTHON_FORM_POSTS` block is a shim for the three
+# paths routed by METHOD — a rewrite cannot key on one, so it keys on the form
+# encoding instead — and frontend-migration.md §1d says plainly that it is not
+# the rule and is deleted the day development runs both processes behind one
+# proxy. This is that proxy. Point the base file's `web` service at a
+# `pnpm dev` on the host instead of the built image, or run the stack as it is
+# and use `docker compose up --build web` after a change: either way the shim
+# stops being what routes a write, and the thing under test is the thing that
+# will be deployed.
 #
 # This overlay adds no new environment variables. The host path below is the
 # one thing to edit.

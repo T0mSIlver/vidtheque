@@ -1,6 +1,19 @@
 # vidtheque — reference deployment, for a PRIVATE instance on your own network.
 #
-#   docker compose up -d                      mcp + worker
+#   docker compose up -d                      caddy + web + mcp + worker
+#
+# FOUR SERVICES SINCE THE FRONT END MOVED TO NEXT.js. `caddy` is the origin
+# everything reaches — it routes each request to the front end or to Python by
+# path, and three paths by method, which is the split
+# `docs/design/frontend-migration.md` §1a and §1d settle and which neither
+# process can express on its own. `deploy/Caddyfile` is that rule; this file
+# only decides where the edge is published.
+#
+# So `mcp` HAS NO PUBLISHED PORT ANY MORE. Caddy is its only client and reaches
+# it on this network as http://mcp:8080, and `web` the same way. The smoke test
+# on the box goes through the edge instead:
+#
+#   curl -s http://127.0.0.1:${EDGE_PORT:-8080}/healthz
 #
 # GOING PUBLIC NEEDS THE OVERLAY, NOT THE `tunnel` PROFILE ON ITS OWN.
 # The `mcp` service reads the whole `.env` via `env_file` (so your mode flags
@@ -16,6 +29,7 @@
 #                  --profile tunnel up -d
 #
 # and read docs/deploy-public.md first — §6.1 is this paragraph with receipts.
+# (The bind that matters is now the EDGE's, since it is the only one there is.)
 #
 # No GPU? Dropping the `worker` service and pointing WORKER_URL at a hosted
 # OpenAI-compatible provider covers the transcript leg — `/v1/embeddings`, both
@@ -62,10 +76,74 @@ services:
       TUNNEL_TOKEN: ""
     volumes:
       - vidtheque-data:/data
-    ports:
-      - "${MCP_PORT:-8080}:8080"
+    # NOT PUBLISHED. It was `"${MCP_PORT:-8080}:8080"` until the edge existed,
+    # and MCP_PORT is gone from .env.example with it. Caddy is the only client
+    # and reaches it on this network; a published port here would be a second
+    # way in, which is precisely what makes trusting `CF-Connecting-IP` unsound
+    # (docs/deploy-public.md §4). To reach it on the box for a diagnosis, do it
+    # from inside: `docker compose exec mcp curl -s localhost:8080/healthz`.
     depends_on:
       - worker
+
+  web:
+    # The Next.js front end (`web/Dockerfile`, built from `web/` alone). A
+    # released box runs the published image instead: the GHCR workflow pushes
+    # ghcr.io/t0msilver/vidtheque-web on a `v*` tag beside the other two, and
+    # deploy/compose.release.example.yml swaps it in and resets this `build:`.
+    build:
+      context: ../web
+      dockerfile: Dockerfile
+    image: vidtheque-web:dev
+    restart: unless-stopped
+    # NO `env_file`, deliberately, for the reason the worker has one in the
+    # public overlay's comment (2026-08-10 audit, F-7): this container needs
+    # exactly two variables, and the whole `.env` would hand it
+    # OPENROUTER_API_KEY and TUNNEL_TOKEN — a credential and a key it has no
+    # use for, readable through `docker inspect` on a process the internet
+    # talks to.
+    environment:
+      # The reads THIS SERVER makes for a page — search, videos, meta — inside
+      # the compose network. A browser never uses it: browsers reach Python
+      # through caddy by path, so the session cookie, `/api/ask` and every
+      # frame cross one process fewer (frontend-migration.md §1c, decision 2).
+      VIDTHEQUE_API_URL: http://mcp:8080
+      # The header those reads carry the visitor's address under. It MUST equal
+      # the instance's VIDTHEQUE_TRUSTED_IP_HEADER — hence one variable, read
+      # twice from the same `.env` — or every visitor this server reads for
+      # shares one rate-limit bucket.
+      VIDTHEQUE_CLIENT_IP_HEADER: ${VIDTHEQUE_TRUSTED_IP_HEADER:-CF-Connecting-IP}
+    # Not published either, for the same reason as mcp: caddy reaches it as
+    # http://web:3000 and nothing else has business talking to it.
+    depends_on:
+      - mcp
+
+  caddy:
+    # THE EDGE — the one origin, in both topologies. Its rule is
+    # deploy/Caddyfile, mounted read-only because a proxy that can rewrite its
+    # own configuration is a proxy an application bug can re-route.
+    #
+    # Pinned by DIGEST as well as by tag, which is what the cloudflared entry
+    # below only recommends: this container decides which process answers a
+    # request, so "whatever the registry serves next time" is not a thing to
+    # leave to chance. To move it deliberately:
+    #   docker buildx imagetools inspect caddy:<version>   # prints the digest
+    # and set CADDY_VERSION to `<version>@sha256:<digest>`.
+    image: caddy:${CADDY_VERSION:-2.11.4@sha256:df7f1c2fb114453b951de51a98efc010db1655a92c2e86be6706714e2417a78d}
+    restart: unless-stopped
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    # No volume for /data: TLS terminates in front of this container (the
+    # tunnel, or the LAN), so caddy never asks for a certificate and has
+    # nothing durable to keep.
+    ports:
+      # 0.0.0.0 here, because a private box on a LAN is what this file is for.
+      # THE PUBLIC OVERLAY REPLACES THIS WITH A LOOPBACK PUBLICATION so that
+      # cloudflared is the only way in — that is the bind the runbook's §4
+      # argument rests on, and it is now this line rather than mcp's.
+      - "${EDGE_PORT:-8080}:80"
+    depends_on:
+      - mcp
+      - web
 
   worker:
     build:
@@ -138,8 +216,11 @@ services:
       # compose command for people who never asked for the tunnel. cloudflared
       # complains clearly enough on its own when the token is empty.
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    # The edge, not mcp: the tunnel's ingress points at caddy now, and path
+    # routing lives in deploy/Caddyfile rather than in an ingress rule. Inside
+    # this network that service URL is http://caddy:80.
     depends_on:
-      - mcp
+      - caddy
 
 volumes:
   vidtheque-data:

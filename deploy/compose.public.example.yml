@@ -17,12 +17,19 @@
 #      failure the other way round, booting AUTH=none after configuring token
 #      auth (field report, 2026-08-12). This overlay no longer carries it.)
 #
-#      THE BIND. `"${MCP_PORT:-8080}:8080"` publishes on 0.0.0.0, so the origin
+#      THE BIND. `"${EDGE_PORT:-8080}:80"` publishes on 0.0.0.0, so the origin
 #      is reachable by any route the box has — and a request that did not come
 #      through Cloudflare can forge `CF-Connecting-IP` and mint itself a fresh
 #      rate-limit bucket per request. Binding to loopback makes the tunnel the
 #      only path in, which is the precondition that makes trusting that header
 #      sound. See docs/deploy-public.md, "the trusted-header config item".
+#
+#      IT IS THE EDGE'S BIND NOW, AND IT IS THE ONLY ONE. Until the front end
+#      moved to Next.js this overlay bound `mcp`'s published port to loopback;
+#      the base file publishes no port for `mcp` or `web` at all any more, so
+#      the claim is stronger than it was — there is no second listener to reach
+#      Python by, only caddy's, and caddy is on loopback. The `!override` below
+#      moved to the `caddy` service for that reason.
 #
 #      **`!override` is load-bearing.** Compose merges sequence fields by
 #      APPENDING, so an overlay that simply restates `ports:` produces BOTH
@@ -36,22 +43,46 @@
 #
 #      Then verify the listeners, because the merged model is still only a
 #      claim: `sudo ss -ltnpH | awk '$4 ~ /:(8080|8081)$/'` must show nothing
-#      but 127.0.0.1 and [::1]. (Found by the 2026-08-10 audit, B-1.)
+#      but 127.0.0.1 and [::1]. (Found by the 2026-08-10 audit, B-1.) Two
+#      of those three ports should now show NOTHING AT ALL rather than a
+#      loopback listener — 8081 is the worker, unpublished since that audit,
+#      and 8080 is the edge, the one line that is meant to be there.
 #
 # This overlay adds no new environment variables. Everything it references has
 # an entry in deploy/.env.example, which stays the document of record.
 
 services:
+  caddy:
+    # **`!override` is load-bearing.** Compose merges sequence fields by
+    # APPENDING, so an overlay that simply restates `ports:` produces BOTH
+    # publications — the base file's `0.0.0.0` one and this file's loopback
+    # one. That is what this overlay used to do on `mcp`, and it meant the bind
+    # it promised to fix was still open (audit B-1).
+    ports: !override
+      # Loopback only: cloudflared is the sole way in. Keep the published port
+      # so `curl http://127.0.0.1:8080/healthz` still works on the box for the
+      # smoke tests — that curl now goes THROUGH the edge, which is also how a
+      # visitor's request reaches `/healthz`, so it tests one thing more than
+      # it used to. Drop the whole `ports:` block if cloudflared runs inside
+      # this compose network and reaches the edge as http://caddy:80.
+      - "127.0.0.1:${EDGE_PORT:-8080}:80"
+
   mcp:
     # env_file and the blanked TUNNEL_TOKEN live in the base file now (see the
     # header). Set PUBLIC_URL in .env to the https:// tunnel hostname — the
     # base file interpolates VIDTHEQUE_PUBLIC_URL from it.
-    ports: !override
-      # Loopback only: cloudflared is the sole way in. Keep the published port
-      # so `curl http://127.0.0.1:8080/healthz` still works on the box for the
-      # smoke tests; drop the whole `ports:` block if cloudflared runs inside
-      # this compose network and reaches the service as http://mcp:8080.
-      - "127.0.0.1:${MCP_PORT:-8080}:8080"
+    #
+    # NOTHING TO OVERRIDE HERE ANY MORE. The base file publishes no port for
+    # this service, so there is no `0.0.0.0` bind to close: the origin is
+    # reachable only through caddy, and caddy only through the tunnel. The
+    # service is named anyway, because "why is mcp not in the public overlay"
+    # is a question worth answering in the file rather than in a commit.
+
+  web:
+    # Not published in the base file either, and nothing here changes that. The
+    # front end holds no credential — the browser's session cookie never
+    # reaches it (frontend-migration.md §1d) — but it is still a process with
+    # no business being reachable except through the edge.
 
   worker:
     # NO `env_file` here, deliberately. The base file already names every
@@ -92,9 +123,11 @@ services:
   #     - ./cloudflared.yml:/etc/cloudflared/config.yml:ro
   #     - ${CLOUDFLARED_CREDENTIALS:-./cloudflared-credentials.json}:/etc/cloudflared/credentials.json:ro
   #   depends_on:
-  #     - mcp
+  #     - caddy
   #
   # With that block, the ingress rule's service URL must be the compose-network
-  # name — `http://mcp:8080`, not `http://127.0.0.1:8100` — and
+  # name — `http://caddy:80`, not `http://127.0.0.1:8100` — and
   # `credentials-file:` inside the config must be
-  # `/etc/cloudflared/credentials.json`.
+  # `/etc/cloudflared/credentials.json`. It is the EDGE either way: the tunnel
+  # has one rule and no path splitting, because path splitting now lives in
+  # deploy/Caddyfile where both processes' route ownership is written down.
