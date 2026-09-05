@@ -95,11 +95,14 @@ export const config = {
       // files that need no nonce. The paths the production proxy hands to
       // Python must reach it untouched: in development they are rewritten
       // upstream, and a policy written for these pages has no business riding
-      // along. Prefetches are excluded too — they fetch an RSC payload, and
-      // the scripts a navigation then loads are loaded by scripts that already
+      // along. That list is `PYTHON_PATHS` in `next.config.ts`, and the export
+      // is the one entry of it that is not a prefix — three segments under
+      // `/videos`, so it needs the id spelled out to be excluded at all.
+      // Prefetches are excluded too — they fetch an RSC payload, and the
+      // scripts a navigation then loads are loaded by scripts that already
       // ran, which is exactly what `'strict-dynamic'` allows.
       source:
-        "/((?!_next|api|frames|mcp|auth|\\.well-known|healthz|dashboard|landing|favicon\\.ico|icon\\.svg).*)",
+        "/((?!_next|api|frames|mcp|auth|\\.well-known|healthz|dashboard|landing|favicon\\.ico|icon\\.svg|videos/[^/]+/export\\.md).*)",
       missing: [
         { type: "header", key: "next-router-prefetch" },
         { type: "header", key: "purpose", value: "prefetch" },
