@@ -20,8 +20,8 @@ on 2026-09-05. See `docs/design/DECISIONS.md`. PRs #23 through #30 supply the
 initial reader, API client, search, Ask, and component tests.
 
 - Review and merge the initial stack with frontend checks in hosted CI.
-- Decide the browser-to-Python request path with Tom before changing routing,
-  session forwarding, or the trusted-client-IP boundary.
+- Implement direct browser-to-Python API calls, chosen by Tom. Verify routing,
+  session handling, trusted client addresses, and any cross-origin access.
 - Port the landing and demo while preserving their URLs and locked positioning.
 - Replace dashboard overview, video browsing and inspection, search, jobs and
   job details, ledger, indexing, tags, job cancellation and retry, following,
