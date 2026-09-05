@@ -56,9 +56,30 @@ describe("the ledger", () => {
       "in 3 embedding chunks",
     );
     expect(screen.getByText("on-screen lines").closest("div")).toHaveTextContent("5");
+    // The span under the video count, printed the way the overview prints it:
+    // one fact, one spelling, whichever of the two pages you are reading.
+    expect(screen.getByText("videos").closest("div")).toHaveTextContent(
+      "published 2023-01-17–2025-02-19",
+    );
     // One reading, taken inside one request: the head's `counted` stamp and
     // the readiness panel's health check are the same second, by construction.
     expect(screen.getAllByText("2026-09-05 16:34")).toHaveLength(2);
+  });
+
+  // An empty corpus has no oldest video and no newest one, which is exactly
+  // the corpus an operator is staring at while they wonder why. Both halves
+  // arrive `null` and print the dash — never a made-up date, never the word.
+  it("dashes the published span on a corpus that has none", async () => {
+    await mount({
+      body: {
+        ...OWNER_LEDGER,
+        corpus: { ...OWNER_LEDGER.corpus, published: { oldest: null, newest: null } },
+      },
+    });
+
+    expect(await screen.findByRole("heading", { name: "The ledger" })).toBeInTheDocument();
+    expect(screen.getByText("videos").closest("div")).toHaveTextContent("published —–—");
+    expect(document.body.textContent).not.toMatch(/null|NaN|undefined/);
   });
 
   // The five state words existed only as a filter on the videos table until
@@ -121,6 +142,11 @@ describe("the ledger", () => {
 
     expect(await screen.findByRole("heading", { name: "The ledger" })).toBeInTheDocument();
     expect(screen.getByText("videos").closest("div")).toHaveTextContent("4");
+    // §2.4 drops the operator's box, not the corpus: the span is a fact about
+    // what is in it, so a visitor gets it.
+    expect(screen.getByText("videos").closest("div")).toHaveTextContent(
+      "published 2023-01-17–2025-02-19",
+    );
     expect(screen.getByText("What it is filed under")).toBeInTheDocument();
 
     expect(screen.queryByText("keyframe JPEGs")).not.toBeInTheDocument();
