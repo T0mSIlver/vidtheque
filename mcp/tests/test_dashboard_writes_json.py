@@ -474,8 +474,16 @@ def test_the_sign_in_carries_the_same_origin_rule_on_both_branches(
         assert "another origin" in form.text
 
 
-def test_the_sign_in_form_branch_is_untouched(tmp_path: Path) -> None:
-    """The 303 and the re-rendered form, exactly as they were."""
+def test_the_sign_in_form_branch_keeps_its_303_and_refuses_in_one_shape(
+    tmp_path: Path,
+) -> None:
+    """The 303 stays — a submit before React hydrates is a navigation and needs
+    somewhere to land — and the refusal is the envelope, in both media.
+
+    The wording is the one the form used to render, kept identical for both
+    secrets, so a refusal still says nothing about which one this deployment
+    holds.
+    """
     with owner_client(tmp_path) as client:
         good = client.post(
             f"{ROOT}/login",
@@ -491,8 +499,11 @@ def test_the_sign_in_form_branch_is_untouched(tmp_path: Path) -> None:
             f"{ROOT}/login", data={"password": "hunter2"}, headers={**SAME_ORIGIN, **FORM}
         )
         assert wrong.status_code == 401
-        assert BAD_SECRET in wrong.text
-        assert "E_BAD_CREDENTIAL" not in wrong.text
+        assert wrong.json() == {
+            "error": "E_BAD_CREDENTIAL",
+            "message": BAD_SECRET,
+            "next": "the sign-in page names which secret this deployment accepts.",
+        }
 
 
 def test_the_sign_in_bucket_refuses_in_json_whatever_was_asked_for(
@@ -577,27 +588,21 @@ def test_the_origin_rule_is_the_same_rule_for_a_fetch(tmp_path: Path) -> None:
             assert allowed.status_code == 200, path
 
 
-def test_a_signed_out_fetch_is_told_so_rather_than_redirected(
-    tmp_path: Path,
-) -> None:
+def test_a_signed_out_write_is_told_so_on_both_branches(tmp_path: Path) -> None:
     """The 401 is what sends the browser to the login page (DECISIONS.md).
 
-    A navigating browser still gets the 303 to `/dashboard/login?next=…` it has
-    always got — the refusal is the same one, rendered in the medium that
-    asked.
+    *Amended 2026-09-05:* a navigating browser used to get a 303 to
+    `{ROOT}/login?next=…` instead, because there was a Jinja page at the other
+    end of it that could carry the refusal. There is not, so the refusal is the
+    envelope in both media and the shell reads the 401 and navigates itself.
     """
     with owner_client(tmp_path) as client:
         for path in CORE_WRITES:
-            refused = post(client, path)
-            assert refused.status_code == 401, path
-            assert refused.json()["error"] == "E_AUTH_REQUIRED"
-            assert refused.json()["next"]
-
-            navigating = client.post(
-                path, headers={**SAME_ORIGIN, **FORM}, follow_redirects=False
-            )
-            assert navigating.status_code == 303, path
-            assert navigating.headers["location"].startswith(f"{ROOT}/login?next=")
+            for headers in (JSON, {**SAME_ORIGIN, **FORM}):
+                refused = client.post(path, headers=headers, follow_redirects=False)
+                assert refused.status_code == 401, path
+                assert refused.json()["error"] == "E_AUTH_REQUIRED"
+                assert refused.json()["next"]
 
 
 def test_the_projection_has_no_write_side_on_either_branch(tmp_path: Path) -> None:
