@@ -143,5 +143,18 @@ export const config = {
         { type: "header", key: "purpose", value: "prefetch" },
       ],
     },
+    {
+      // The one ported page with an id in it. Written as a group rather than
+      // `/dashboard/videos/:id` for the same reason the exclusion above is a
+      // lookahead: every source here is already the regular expression Next
+      // compiles it into, which is what lets `proxy.test.ts` run the matcher
+      // rather than reimplement it. One segment, so `/videos/{id}/reindex` —
+      // a POST that stays Python's — is not matched.
+      source: "/dashboard/videos/([^/]+)",
+      missing: [
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ],
+    },
   ],
 };

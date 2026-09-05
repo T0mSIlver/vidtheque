@@ -15,10 +15,15 @@ import { ROOT } from "@/lib/dashboard/client";
 // `proxy.ts`'s matcher, and changes nothing else.
 const PAGES: string[] = [ROOT, `${ROOT}/ledger`, `${ROOT}/videos`];
 
+// `/dashboard/videos/{video_id}`, the one ported page with an id in it. Not a
+// prefix: `/dashboard/videos/{id}/reindex` is a POST Python owns, and it has
+// three segments under `/videos` rather than two.
+const VIDEO_DETAIL = new RegExp(`^${ROOT}/videos/[^/]+$`);
+
 /** Does this app serve the page `href` points at? Query and fragment are not
  *  part of the question — `/dashboard/videos?index_state=failed` is the videos
  *  page with a filter on it. */
 export function isPorted(href: string): boolean {
   const path = href.split("?")[0].split("#")[0];
-  return PAGES.includes(path);
+  return PAGES.includes(path) || VIDEO_DETAIL.test(path);
 }
