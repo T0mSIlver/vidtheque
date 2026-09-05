@@ -11,7 +11,7 @@ import {
   OWNER_VIDEO,
 } from "@/test/library-fixtures";
 import { REINDEX_REFUSED, REINDEXED, TAG_REFUSED, TAGGED } from "@/test/index-fixtures";
-import { countingDownFrom } from "@/test/retry";
+import { firstPaint } from "@/test/retry";
 
 // The page the dashboard exists for: what the pipeline did to one video, what
 // it produced, and what it read off the screen. So the assertions are the
@@ -325,14 +325,18 @@ describe("the video detail", () => {
       ).toBeInTheDocument();
     });
 
+    // Under a stopped clock: the label has to be the delay the limiter named,
+    // and a page that halved it would count down just as convincingly.
     it("counts down a 429", async () => {
-      await mount({
-        status: 429,
-        body: { error: "E_RATE_LIMIT", message: "Too many dashboard requests.", next: null },
-        headers: { "retry-after": "7" },
-      });
+      await firstPaint(() =>
+        mount({
+          status: 429,
+          body: { error: "E_RATE_LIMIT", message: "Too many dashboard requests.", next: null },
+          headers: { "retry-after": "7" },
+        }),
+      );
 
-      expect(await screen.findByRole("button", { name: countingDownFrom(7) })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "retry in 7s" })).toBeDisabled();
     });
 
     it("keeps the page when only the transcript's next batch fails", async () => {

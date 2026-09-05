@@ -11,6 +11,7 @@ import {
   RETRY_RECEIPT,
   RUNNING_JOB_DETAIL,
 } from "@/test/jobs-fixtures";
+import { firstPaint } from "@/test/retry";
 
 // The job's own page is the war story: what it cost, which item it broke on,
 // and — the reason the page exists — what it is waiting for. So the assertions
@@ -169,6 +170,23 @@ describe("one job's page", () => {
     ).toHaveLength(1);
     expect(screen.getByText(/this is the final record/)).toBeInTheDocument();
     void fetcher;
+  });
+
+  // The other 429: refused on the first read, with no war story to keep on the
+  // page. The countdown is then the whole page, and it has to say the delay the
+  // limiter named — under a stopped clock, because `retryAfter ?? 60` is a
+  // fallback that counts down just as convincingly.
+  it("counts down the limiter's own delay when the first read is refused", async () => {
+    await firstPaint(() =>
+      mount({
+        status: 429,
+        body: { error: "E_RATE_LIMIT", message: "Too many dashboard requests for now." },
+        headers: { "retry-after": "5" },
+      }),
+    );
+
+    expect(screen.getByText("Too many dashboard requests for now.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "retry in 5s" })).toBeDisabled();
   });
 
   it("waits out a 429 by the delay it named", async () => {

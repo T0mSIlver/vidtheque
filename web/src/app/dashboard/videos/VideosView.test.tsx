@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
 import { REINDEX_REFUSED, REINDEXED } from "@/test/index-fixtures";
 import { DEMO_LIBRARY, OWNER_LIBRARY, OWNER_LIBRARY_CLAMPED } from "@/test/library-fixtures";
-import { countingDownFrom } from "@/test/retry";
+import { firstPaint } from "@/test/retry";
 
 // The table's job is to say what set it is showing and to be honest about how
 // it was narrowed: the filters are the URL, the count is exact, the clamps are
@@ -388,14 +388,18 @@ describe("the videos table", () => {
       expect(screen.queryByRole("button", { name: "Apply" })).not.toBeInTheDocument();
     });
 
+    // Under a stopped clock: the label has to be the delay the limiter named,
+    // and a page that halved it would count down just as convincingly.
     it("counts down a 429", async () => {
-      await mount({
-        status: 429,
-        body: { error: "E_RATE_LIMIT", message: "Too many dashboard requests.", next: null },
-        headers: { "retry-after": "9" },
-      });
+      await firstPaint(() =>
+        mount({
+          status: 429,
+          body: { error: "E_RATE_LIMIT", message: "Too many dashboard requests.", next: null },
+          headers: { "retry-after": "9" },
+        }),
+      );
 
-      expect(await screen.findByRole("button", { name: countingDownFrom(9) })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "retry in 9s" })).toBeDisabled();
     });
 
     it("says so when the instance answers in a shape it cannot read", async () => {

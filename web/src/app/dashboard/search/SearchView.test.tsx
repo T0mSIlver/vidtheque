@@ -16,7 +16,7 @@ import {
   RATE_REFUSAL,
   TRAP_SEARCH,
 } from "@/test/search-fixtures";
-import { countingDownFrom } from "@/test/retry";
+import { firstPaint } from "@/test/retry";
 
 // The page that answers the question the corpus exists for. Its job is to say
 // what matched, what kind of thing it is evidence of, and *which second*, and
@@ -365,14 +365,17 @@ describe("the owner's search page", () => {
     expect(screen.getByText(AUTH_REFUSAL.message)).toBeInTheDocument();
   });
 
+  // Under a stopped clock: the label has to be the delay the limiter named,
+  // and a page that halved it would count down just as convincingly.
   it("counts down the limiter's own delay, and retries the read", async () => {
-    await mount(
-      { status: 429, body: RATE_REFUSAL, headers: { "retry-after": "24" } },
-      { search: "q=cache" },
+    await firstPaint(() =>
+      mount(
+        { status: 429, body: RATE_REFUSAL, headers: { "retry-after": "24" } },
+        { search: "q=cache" },
+      ),
     );
 
-    const retry = await screen.findByRole("button", { name: countingDownFrom(24) });
-    expect(retry).toBeDisabled();
+    expect(screen.getByRole("button", { name: "retry in 24s" })).toBeDisabled();
     expect(screen.getByText(RATE_REFUSAL.message)).toBeInTheDocument();
   });
 });
