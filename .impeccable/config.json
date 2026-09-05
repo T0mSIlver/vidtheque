@@ -7,7 +7,7 @@
         "rule": "broken-image",
         "value": "*",
         "files": [
-          "mcp/src/vidtheque_mcp/dashboard/templates/video.html"
+          "web/src/app/dashboard/videos/[id]/VideoDetailView.tsx"
         ],
         "createdAt": "2026-08-09T14:25:01.442Z",
         "reason": "Lightbox dialog img is src-less until JS assigns a keyframe on click; src is released on close"
@@ -16,7 +16,7 @@
         "rule": "overused-font",
         "value": "inter",
         "files": [
-          "mcp/src/vidtheque_mcp/dashboard/static/dashboard.css"
+          "web/src/styles/tokens.css"
         ],
         "createdAt": "2026-08-09T15:50:00.000Z",
         "reason": "Inter Variable is pinned by the brief, not reached for: Tom chose Direction C from research/dashboard-design-research-2026-08-09.md, which names it for the human-text channel. This is an Operate surface where a workhorse UI face is the correct register, the file is vendored latin-subset with its OFL text, and there is no display face anywhere on this surface for it to be doing double duty as."
@@ -52,7 +52,7 @@
         "rule": "overused-font",
         "value": "instrument serif",
         "files": [
-          "mcp/src/vidtheque_mcp/dashboard/static/dashboard.css"
+          "web/src/styles/tokens.css"
         ],
         "createdAt": "2026-08-09T18:13:03.356Z",
         "reason": "Named by the research memo, not reached for: Instrument Serif is the display face research/dashboard-design-research-2026-08-09.md 1.2 gives Direction A, and Tom authorised mixing A's brand voice into Direction C for the wordmark. The rule's premise is that a familiar face makes a whole interface feel generic; here the face sets one 8-glyph string twice per page and DESIGN.md's Wordmark-Only Rule forbids a third selector, so it never touches a heading, a label, a figure or a cell. The identity it belongs to is carried by the drawn film-frame mark beside it, the mono/sans provenance split and the ledger, none of which any other product has. Newsreader was the considered alternative from the same memo and was rejected: it is a text serif, and at 20px lowercase it reads as book type rather than as a mark."
