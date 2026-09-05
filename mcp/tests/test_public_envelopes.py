@@ -1,13 +1,16 @@
 """The `/api/*` envelopes nobody had asserted (roadmap item 9).
 
 Listed as untested in `research/website-test-2026-08-09.md` and never turned
-into tests: what a bad parameter answers, what a wrong method answers, what
-`/static/` does with a traversal, and what a visitor who spent the search
-bucket sees on their next page load.
+into tests: what a bad parameter answers, what a wrong method answers, what a
+traversal under `/static/` answers, and what a visitor who spent the search
+bucket is told on their next page load.
 
 The last one found a real defect. `/api/meta` shares the `search` bucket, so a
 rate-limited reload used to boot a page whose meta-derived fields were all
-`undefined` — see `test_the_page_boot_survives_a_spent_search_bucket`.
+`undefined`. The page moved to `web/` on 2026-09-05 and its half of that test
+went with it; what stays here is what Python hands the page — a refusal that
+names its bucket and its retry, rather than a JSON body a client mistakes for
+an answer.
 """
 
 from __future__ import annotations
@@ -77,9 +80,18 @@ def test_a_non_numeric_offset_does_the_same(public_client: TestClient) -> None:
 # ----------------------------------------------------------------- traversal
 
 
-def test_static_refuses_to_walk_out_of_its_directory(public_client: TestClient) -> None:
+def test_no_path_under_static_reaches_the_filesystem(public_client: TestClient) -> None:
+    """There is no `/static/` route to walk out of since 2026-09-05.
+
+    It used to be a real asset handler that resolved a path parameter, and the
+    traversal spellings below were the check that its containment held. The
+    handler moved to the Next.js app with the two pages it served, so these are
+    now 404 by absence rather than by refusal — kept because the *answer* a
+    prober gets is the property, and it did not change.
+    """
     assert public_client.get("/static/../../etc/passwd").status_code == 404
     assert public_client.get("/static/..%2f..%2fetc/passwd").status_code == 404
+    assert public_client.get("/static/demo/app.js").status_code == 404
 
 
 # -------------------------------------------------------------- wrong method
@@ -117,48 +129,37 @@ def test_meta_and_videos_share_the_search_bucket(tmp_path: Path) -> None:
         assert client.get("/api/videos").status_code == 429
 
 
-def test_the_page_boot_survives_a_spent_search_bucket(tmp_path: Path) -> None:
-    """The document still serves while its bootstrap call is refused.
+def test_a_refused_boot_call_says_which_bucket_and_for_how_long(
+    tmp_path: Path,
+) -> None:
+    """The Python half of the boot defect, which is the half that is still here.
 
-    That combination is what made the defect invisible: the HTML is a static
-    asset on no bucket, so the page loads, and only the `/api/meta` fetch is
-    refused. A 429 carries a JSON error body, so `.json()` resolved and every
-    field the boot path read came back `undefined` — the MCP line rendered the
-    string "undefined" and the ask switch hid itself as though the deployment
-    had no key. `app.js` now throws on any non-2xx so the existing failure path
-    runs, and says "rate limited" rather than "could not reach the server".
+    `/api/meta` shares the `search` bucket, so a visitor who reloads after
+    searching gets a 429 on the one call the page boots from. The defect was
+    that the refusal is *JSON* — `.json()` resolved, the client's catch never
+    fired, and every meta-derived field came back `undefined`. What Python owes
+    a client is therefore a refusal it can tell apart from an answer: the
+    status, the named bucket, and a `Retry-After` it can put on the screen.
+    The page that has to act on it is `web/`'s now; this pins what it is given.
     """
     tight = PublicSettings(enabled=True, search_per_min=1)
     with make_client(tmp_path, tight) as client:
         assert client.get("/api/search?q=cache").status_code == 200
-        assert client.get("/api/search?q=cache").status_code == 429
-        page = client.get("/demo")
-        assert page.status_code == 200
-        assert client.get("/api/meta").status_code == 429
-
-    app_js = (
-        Path(__file__).resolve().parents[1]
-        / "src/vidtheque_mcp/public/static/demo/app.js"
-    ).read_text()
-    assert "if (!response.ok) throw new Error(String(response.status));" in app_js
-    assert "too many requests — this page loads again in a minute" in app_js
+        refused = client.get("/api/meta")
+    assert refused.status_code == 429
+    assert refused.json()["bucket"] == "search"
+    assert int(refused.headers["retry-after"]) >= 1
 
 
-def test_a_spent_frame_bucket_refuses_the_image_not_the_page(tmp_path: Path) -> None:
+def test_a_spent_frame_bucket_refuses_the_image_and_nothing_else(
+    tmp_path: Path,
+) -> None:
+    """One bucket per surface: thumbnails cannot starve the JSON the page reads."""
     tight = PublicSettings(enabled=True, frames_per_min=1)
     with make_client(tmp_path, tight) as client:
         assert client.get("/frames/kCc8FmEb1nY-00000.jpg").status_code == 200
         assert client.get("/frames/kCc8FmEb1nY-00000.jpg").status_code == 429
-        assert client.get("/demo").status_code == 200
-
-
-def test_the_demo_page_itself_is_on_no_bucket(tmp_path: Path) -> None:
-    """A static document must not be spendable, or a reload is a denial of service."""
-    tight = PublicSettings(enabled=True, search_per_min=1, frames_per_min=1)
-    with make_client(tmp_path, tight) as client:
-        for _ in range(5):
-            assert client.get("/demo").status_code == 200
-            assert client.get("/").status_code == 200
+        assert client.get("/api/meta").status_code == 200
 
 
 def test_the_private_deployment_registers_no_public_api(
