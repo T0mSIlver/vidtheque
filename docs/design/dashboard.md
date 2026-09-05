@@ -2226,3 +2226,56 @@ worth stating.
   names an operator's standing choices. `corpus-summary include_follows` is
   withheld on the same grounds (tool-surface §4.3).
 - **The vocabulary is `follow`, never `subscribe`** (`positioning.md`, LOCKED).
+
+## 19. The JSON read slice for the React front end (2026-09-05)
+
+The schema is `docs/design/frontend-migration.md`; this section is what the
+addition does to *this* contract, which is where the route group's rules live.
+`DECISIONS.md` (2026-09-05) moves all three surfaces to Next.js and React, so
+the pages below acquire a JSON twin ahead of the cutover. Nothing here changes
+an auth mode, a clamp, a projection rule or a page.
+
+**Three additive `GET` routes**, registered in `dashboard/__init__.py` beside
+the `/dashboard/api/*` group §2.5.1 already defines:
+
+| Route | Gate | Answers |
+| --- | --- | --- |
+| `/dashboard/api/overview` | `guarded`, `json=True` | §5.1's reads, typed |
+| `/dashboard/api/ledger` | `guarded`, `json=True` | §17's reads, typed |
+| `/dashboard/api/session` | **none** | what this deployment expects of this caller |
+
+**One shared assembly, not two.** `dashboard/read_models.py` now holds the
+reads, the width set (§6.4), the projection predicate and the §15 readiness
+observation; `views.py` imports them back under the private names it always
+used. The page and the JSON therefore make the *same* reads in the same order
+under the same bounds — two copies of "what does this box hold" is how a page
+and an API start disagreeing about the corpus, and §2.4's redaction is the half
+where that drift is a disclosure bug rather than a cosmetic one.
+
+**Typed values, and the one field that nearly broke the rule.** Counts are
+integers, clocks are epoch seconds, states are the store's own words, and
+formatting is React's. The readiness observation is stamped once and carried in
+both shapes — ISO-8601 for the page's `<time datetime=…>`, epoch for the JSON —
+and `api.py` copies the block out field by field rather than forwarding the
+page's dict, so a value added for a template does not join the JSON contract by
+default. `corpus_rollup`'s `hours` is not sent at all: §4.8's own comment calls
+it a display rounding.
+
+**`/dashboard/api/session` is outside the read gate, deliberately.** A React
+shell that cannot ask "is there a dashboard for me here" has two options left:
+guess, or probe a data endpoint and read the 401 on every cold load. It is no
+new disclosure — the fields are exactly what `base.html`'s chrome and the
+sign-in page (§3.2) already render to an anonymous browser, and never a secret,
+a path, a model id, a worker URL or which of two secrets matched. It carries no
+corpus, so it is nothing to redact; it sits in the loose `/dashboard` rate
+bucket and not the tight `dashboard_login` one, because it is not a guess at a
+secret. `signed_in` is the **validated** session row rather than the cookie's
+presence, which is the opposite of the chrome's field and for the opposite
+reason: the chrome's question is "is there a cookie to clear", this one's is
+"will the next request be served".
+
+**Does not add.** A write, a parameter, a clamp, a CORS policy, an env var, a
+second query layer, or a page. The Jinja pages keep serving until all three
+surfaces are at parity (`DECISIONS.md`), and the remaining ports —
+jobs and its controls, indexing, follows, the login flow, the cutover — are
+`docs/ROADMAP.md`'s.
