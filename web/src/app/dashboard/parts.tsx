@@ -11,10 +11,10 @@ import styles from "./dashboard.module.css";
 import { isPorted } from "./ported";
 import { useSession } from "./session";
 
-// The vocabulary both ported pages are built from. Every piece of it exists on
-// the Jinja pages that still serve the rest of the surface, and none of it is a
-// card: a panel is a label and a hairline, a figure is a label and a number,
-// and a state is a word in its tone.
+// The vocabulary the pages of this surface are built from — every piece of it
+// read off the Jinja pages it replaced, so the two halves looked like one
+// surface while the port ran. None of it is a card: a panel is a label and a
+// hairline, a figure is a label and a number, and a state is a word in its tone.
 
 export function PageHead({
   title,
@@ -149,12 +149,12 @@ export function Figure({
 }
 
 /**
- * A link into this surface, whichever half of it currently serves the target.
+ * A link into this surface, whether or not its target is a page here.
  *
- * A ported page is reached with `Link` and swaps the React tree; a page Python
- * still renders is a plain anchor, because a client-side navigation to it
- * would ask this app's router for a route it does not have. `ported.ts` is
- * where that is decided, so no caller has to keep the list.
+ * A page this app serves is reached with `Link` and swaps the React tree;
+ * anything else under `/dashboard` is a plain anchor, because a client-side
+ * navigation to it would ask this app's router for a route it does not have.
+ * `ported.ts` is where that is decided, so no caller has to keep the list.
  */
 export function DashLink({
   href,
