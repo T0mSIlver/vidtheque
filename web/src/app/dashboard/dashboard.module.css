@@ -175,6 +175,14 @@
   font-size: clamp(1.6rem, 2.5vw, 2.5rem);
 }
 
+/* Six figures rather than five — the following band's own count, and
+   `dashboard.css`'s `.ledger-6` by another name. It sits in this file rather
+   than in that page's module so the narrow-viewport rules at the foot, which
+   are later than both, still reach it. */
+.ledger6 {
+  grid-template-columns: repeat(6, 1fr);
+}
+
 .figures {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
