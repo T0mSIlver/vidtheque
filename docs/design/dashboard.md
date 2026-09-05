@@ -2317,6 +2317,16 @@ React shell cannot see it, and without this field a browser holding a dead
 cookie would be offered no way to clear it. The shell shows **Sign out** when
 either field is true and renders the dashboard on `signed_in` alone.
 
+**The ledger's published span (Tom, 2026-09-05).** §17's band prints
+"published *oldest* – *newest*" under the video count, and `/api/ledger` had no
+field for it — only `/api/overview` did — so a React ledger could render every
+figure on the page except that one. It carries `corpus.published` now, with the
+overview's name and the overview's shape: `{"oldest", "newest"}`, epoch seconds,
+`null` on both halves when the corpus is empty. One fact must not have two
+spellings across two payloads assembled from the same read, and it *is* the same
+read — `corpus_rollup` was already carrying both stamps for the counts beside
+them, so this adds a field and not a query.
+
 **Does not add.** A write, a parameter, a clamp, a CORS policy, an env var, a
 second query layer, or a page. The Jinja pages keep serving until all three
 surfaces are at parity (`DECISIONS.md`), and the remaining ports —
