@@ -46,7 +46,13 @@ async function Mode({ searchParams }: Pick<PageProps<"/">, "searchParams">) {
   );
 }
 
-async function Results({ q, sp }: { q: string; sp: Record<string, string | string[] | undefined> }) {
+async function Results({
+  q,
+  sp,
+}: {
+  q: string;
+  sp: Record<string, string | string[] | undefined>;
+}) {
   const type = ContentType.catch("all").parse(sp.type ?? "all");
   const offset = Math.max(0, Number.parseInt(String(sp.offset ?? "0"), 10) || 0);
 
@@ -82,8 +88,8 @@ async function Results({ q, sp }: { q: string; sp: Record<string, string | strin
     <section className={styles.results} aria-label="Results">
       <p className={styles.count}>
         {offset + 1}–{offset + results.length}
-        {pagination.approx_total != null ? ` of about ${pagination.approx_total}` : ""} · {groups.length}{" "}
-        {groups.length === 1 ? "talk" : "talks"}
+        {pagination.approx_total != null ? ` of about ${pagination.approx_total}` : ""} ·{" "}
+        {groups.length} {groups.length === 1 ? "talk" : "talks"}
       </p>
       {notes.map((note) => (
         <p key={note} className={styles.note}>
