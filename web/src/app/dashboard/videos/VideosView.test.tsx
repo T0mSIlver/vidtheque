@@ -3,6 +3,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
+import { REINDEX_REFUSED, REINDEXED } from "@/test/index-fixtures";
 import { DEMO_LIBRARY, OWNER_LIBRARY, OWNER_LIBRARY_CLAMPED } from "@/test/library-fixtures";
 import { countingDownFrom } from "@/test/retry";
 
@@ -22,15 +23,24 @@ type Route = { status?: number; body?: unknown; headers?: Record<string, string>
 // accident. One test asserts it deliberately, off the fetch spy.
 async function mount(
   library: Route,
-  { search = "", session = OWNER_SESSION }: { search?: string; session?: unknown } = {},
+  {
+    search = "",
+    session = OWNER_SESSION as unknown,
+    post = { body: REINDEXED } as Route,
+  }: { search?: string; session?: unknown; post?: Route } = {},
 ) {
-  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+  const posts: { path: string; init: RequestInit }[] = [];
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    const route: Route = url.startsWith("/dashboard/api/library")
-      ? library
-      : url === "/dashboard/api/session"
-        ? { body: session }
-        : { status: 404, body: {} };
+    if (init?.method === "POST") posts.push({ path: url, init });
+    const route: Route =
+      init?.method === "POST"
+        ? post
+        : url.startsWith("/dashboard/api/library")
+          ? library
+          : url === "/dashboard/api/session"
+            ? { body: session }
+            : { status: 404, body: {} };
     const text = typeof route.body === "string" ? route.body : JSON.stringify(route.body ?? {});
     return new Response(text, {
       status: route.status ?? 200,
@@ -47,7 +57,7 @@ async function mount(
       <VideosView />
     </Chrome>,
   );
-  return { ...nav, fetcher };
+  return { ...nav, fetcher, posts };
 }
 
 // The table with a date bound echoed back on it. The dates on the wire are the
@@ -266,6 +276,73 @@ describe("the videos table", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("4 shown of 4.");
     expect(screen.getByRole("link", { name: "Let's build GPT: from scratch" })).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/null|NaN|undefined/);
+  });
+
+  // One control and one link per row, present exactly where the write routes
+  // are registered. Not a disabled column in the projection: a control that
+  // cannot work is worse UI than no column (§2.4).
+  describe("the row action", () => {
+    it("queues a forced rebuild from the row, and names the job", async () => {
+      const { posts } = await mount({ body: OWNER_LIBRARY }, { search: "index_state=all" });
+      await screen.findByRole("table");
+
+      const row = screen.getByRole("link", { name: "Let's build GPT: from scratch" }).closest("tr");
+      await userEvent.click(within(row!).getByRole("button", { name: "Re-index" }));
+
+      expect(posts[0].path).toBe("/dashboard/videos/kCc8FmEb1nY/reindex");
+      expect(posts[0].init.method).toBe("POST");
+      expect((posts[0].init.headers as Record<string, string>).accept).toBe("application/json");
+      expect(posts[0].init.credentials).toBe("same-origin");
+
+      expect(await screen.findByRole("link", { name: "job_02e028870c97" })).toHaveAttribute(
+        "href",
+        "/dashboard/jobs/job_02e028870c97",
+      );
+    });
+
+    it("sends the reader to the panel that has room for two text fields", async () => {
+      await mount({ body: OWNER_LIBRARY }, { search: "index_state=all" });
+      await screen.findByRole("table");
+
+      const row = screen.getByRole("link", { name: "Let's build GPT: from scratch" }).closest("tr");
+      expect(within(row!).getByRole("link", { name: "Tag" })).toHaveAttribute(
+        "href",
+        "/dashboard/videos/kCc8FmEb1nY#manage",
+      );
+    });
+
+    it("prints the tool's refusal in the row it was refused for", async () => {
+      await mount(
+        { body: OWNER_LIBRARY },
+        { search: "index_state=all", post: { status: 409, body: REINDEX_REFUSED } },
+      );
+      await screen.findByRole("table");
+
+      const row = screen.getByRole("link", { name: "Let's build GPT: from scratch" }).closest("tr");
+      await userEvent.click(within(row!).getByRole("button", { name: "Re-index" }));
+
+      expect(await within(row!).findByText("E_INDEXING")).toBeInTheDocument();
+      expect(within(row!).getByText("kCc8FmEb1nY is already being indexed.")).toBeInTheDocument();
+    });
+
+    it("disables the action where the database refuses writes", async () => {
+      await mount(
+        { body: OWNER_LIBRARY },
+        { search: "index_state=all", session: { ...OWNER_SESSION, writes_allowed: false } },
+      );
+      await screen.findByRole("table");
+
+      expect(screen.getAllByRole("button", { name: "Re-index" })[0]).toBeDisabled();
+    });
+
+    it("draws no action column at all in the projection", async () => {
+      await mount({ body: DEMO_LIBRARY }, { search: "index_state=all", session: DEMO_SESSION });
+      await screen.findByRole("table");
+
+      expect(screen.queryByRole("columnheader", { name: "Actions" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Re-index" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "Tag" })).not.toBeInTheDocument();
+    });
   });
 
   describe("when the read does not land", () => {
