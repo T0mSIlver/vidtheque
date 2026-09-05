@@ -229,7 +229,7 @@ Returns the tool's structured payload verbatim — `video_id`, `title`,
 `data_status`, `tags`, `chapters[]` (`start`, `title`, `link`),
 `key_texts[]` (`start`, `text`, `link`), `ocr_highlights[]` (`t`,
 `frame_id`, `screen_text`, `link`) — plus what only the facade can mint: a
-cover `thumb` (the listing's rule, `null` without a keyframe), and `thumb` /
+cover `thumb` (the first keyframe at 960 px, `null` without a keyframe), and `thumb` /
 `thumb_large` on every `ocr_highlights` entry, since a page cannot build a
 frame URL of its own (§5). The tool's `next:` guidance is left out: it names
 MCP tools a browser cannot call.
