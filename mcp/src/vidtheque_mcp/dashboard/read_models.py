@@ -32,7 +32,9 @@ every string in it is a rendering of a number sent beside it.
 
 The follow half carries one thing the others do not: `follow_row_json`, the
 typed shape a follow travels in, which `writes.py` answers a write outcome with
-and `api.py` answers a read with. One row, one shape, one place.
+and `api.py` answers a read with — with the last failure on it,
+`follow_row_json_with_error`, for the detail read and for every outcome. One
+row, one shape, one place.
 """
 
 from __future__ import annotations
@@ -1844,6 +1846,34 @@ def follow_row_json(row: Any) -> dict[str, Any]:
     }
 
 
+def follow_row_json_with_error(row: Any) -> dict[str, Any]:
+    """The block above, plus the last failure — its code and its message.
+
+    What the follow *detail* read sends (dashboard.md §22) and, since
+    2026-09-05, what every write outcome sends too (§21). It is one function
+    for the same reason the block itself is: `set_state` clears both columns
+    when it resumes a follow, so an outcome that carried neither left the page
+    that made the call showing an error the write had just cleared — and the
+    page re-read after every write to find that out. With the failure on the
+    outcome the row a write answers with is complete.
+
+    The *list* is the one caller that stays on the block plus the code alone:
+    sixty rows are a column to compare, and a fetch failure's prose is read on
+    the follow's own page.
+
+    `last_error_message` is `follows/check.py`'s `str(exc)[:400]` — the
+    extractor quoted verbatim, the same category as §20's `stages[].error` —
+    and it is the first field that would have to go if this surface ever
+    answered a projection. Neither of these payloads does: both are write-side
+    only, so their reader is the owner.
+    """
+    return {
+        **follow_row_json(row),
+        "last_error_code": row["last_error_code"],
+        "last_error_message": row["last_error_message"],
+    }
+
+
 def near_miss(
     rows: list[sqlite3.Row], rules: follow_rules.Rules
 ) -> tuple[int, str] | None:
@@ -1945,6 +1975,11 @@ class FollowDetailReads:
     job lists are capped independently of it, because neither is what the pager
     pages. ``None`` from the assembler is a slug nobody follows, and the caller
     answers with the refusal its own medium takes.
+
+    ``settings`` is :func:`follow_settings`, read here exactly as the list
+    reads it: `next_check_at` on this row is a time nothing will happen at when
+    follow checks are off, so a surface that could not say so would print a
+    confident lie.
     """
 
     row: sqlite3.Row
@@ -1957,13 +1992,15 @@ class FollowDetailReads:
     index_jobs: list[sqlite3.Row]
     in_flight: sqlite3.Row | None
     counts: dict[str, int]
+    settings: dict[str, Any]
     limit: int
     offset: int
 
 
 async def follow_detail_reads(request: Request, slug: str) -> FollowDetailReads | None:
     """Everything the follow's page reads. ``None`` for a slug nobody follows."""
-    db = request.app.state.assembled.db
+    assembled = request.app.state.assembled
+    db = assembled.db
     row = await db.read(lambda c: follows_store.by_slug(c, slug))
     if row is None:
         return None
@@ -2000,6 +2037,7 @@ async def follow_detail_reads(request: Request, slug: str) -> FollowDetailReads 
         index_jobs=index_jobs,
         in_flight=in_flight,
         counts=counts,
+        settings=follow_settings(assembled),
         limit=limit,
         offset=offset,
     )

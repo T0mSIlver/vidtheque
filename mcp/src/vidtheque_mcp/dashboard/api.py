@@ -85,6 +85,7 @@ from .read_models import (
     declared_models,
     follow_detail_reads,
     follow_row_json,
+    follow_row_json_with_error,
     following_reads,
     ledger_reads,
     near_miss,
@@ -750,14 +751,13 @@ async def session(request: Request) -> Response:
 def _follow_list_row(row: Any) -> dict[str, Any]:
     """A table line: the shared row block, plus the code the column prints.
 
-    The block is `read_models.follow_row_json` and nothing else — the same
-    function a write outcome answers with (§21), so pausing a follow and
-    listing it cannot describe it two ways. What the list adds is the one field
-    the write outcomes have no use for: the last error's *code*, which is what
-    the table's own column shows. The message stays off this payload for the
-    same reason it stays off the page's table — a list of sixty rows is a
-    column to compare, and a fetch failure's prose is read on the follow's own
-    page.
+    The block is `read_models.follow_row_json` and nothing else — the base a
+    write outcome and the detail read both answer with (§21, §22), so pausing a
+    follow and listing it cannot describe it two ways. What the list adds is
+    the last error's *code*, which is what the table's own column shows. The
+    *message* is what it leaves off, and this is now the only payload on the
+    surface that does: a list of sixty rows is a column to compare, and a fetch
+    failure's prose is read on the follow's own page.
     """
     return {**follow_row_json(row), "last_error_code": row["last_error_code"]}
 
@@ -891,18 +891,20 @@ async def follow(request: Request) -> Response:
     return _json(
         {
             "fetched_at": int(time.time()),
-            "follow": {
-                **follow_row_json(row),
-                "last_error_code": row["last_error_code"],
-                # The one string on this payload that is not the operator's own
-                # words: `follows/check.py` records `str(exc)[:400]` when a
-                # source cannot be read at all. It is here because the page
-                # shows it to the same reader — this endpoint answers nowhere
-                # else — and it is the field that would have to go first if
-                # this surface ever answered a projection, beside §20's
-                # `stages[].error` and for the same reason.
-                "last_error_message": row["last_error_message"],
-            },
+            # The row with its last failure on it — code and message — which is
+            # `read_models.follow_row_json_with_error`, the block every write
+            # outcome on this follow answers with too. The message is the one
+            # string here that is not the operator's own words:
+            # `follows/check.py` records `str(exc)[:400]` when a source cannot
+            # be read at all, and it is the field that would have to go first
+            # if this surface ever answered a projection.
+            "follow": follow_row_json_with_error(row),
+            # The same deployment fact the list sends, for the same reason:
+            # with `VIDTHEQUE_FOLLOW_CHECKS` off, the `next_check_at` above is
+            # a time at which nothing will happen, and a page that could not
+            # say so would be confidently wrong. It names no environment
+            # variable, like `/api/session`'s `write_side`.
+            "checks_enabled": bool(data.settings["checks"]),
             # What the follow has brought in, and every decision it has made.
             # One grouped query, already read for the page's own figure.
             "brought_in": int(data.counts.get("queued", 0)),
