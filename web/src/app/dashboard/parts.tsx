@@ -16,7 +16,18 @@ import { useSession } from "./session";
 // card: a panel is a label and a hairline, a figure is a label and a number,
 // and a state is a word in its tone.
 
-export function PageHead({ title, children }: { title: string; children?: ReactNode }) {
+export function PageHead({
+  title,
+  note,
+  children,
+}: {
+  title: string;
+  /** A second line, under the title's own band and above the hairline. Only
+   *  the index form has one: it is the page whose title names a verb, and the
+   *  line says what may be handed to it. */
+  note?: ReactNode;
+  children?: ReactNode;
+}) {
   return (
     <div className={styles.pagehead}>
       <div className={styles.pageheadLine}>
@@ -26,6 +37,7 @@ export function PageHead({ title, children }: { title: string; children?: ReactN
         <h1 className="t-headline">{title}</h1>
         {children ? <p className={styles.meta}>{children}</p> : null}
       </div>
+      {note ? <p className={styles.meta}>{note}</p> : null}
     </div>
   );
 }
@@ -351,6 +363,37 @@ export function useWrite<T>(send: () => Promise<T>, onDone?: (outcome: T) => voi
   }, [send, onDone]);
 
   return [state, run] as const;
+}
+
+/** The three sets a human ticks, and the CSV `index-video` reads — the labels
+ *  and the sentences under them, from `dashboard/writes.py`'s `CHANNEL_BOXES`.
+ *
+ *  Here rather than on either form for the reason that module gives for owning
+ *  them: the index form and the follow form tick the same three boxes for the
+ *  same parameter, and a second copy of the labels is how one thing gets
+ *  described two ways. All three ticked, or none, is the tool's word `all`, and
+ *  which of those a submission meant is the *handler's* reading of it — nothing
+ *  here collapses anything. */
+export const CHANNEL_BOXES: [string, string, string][] = [
+  ["transcript", "Transcript", "what was said, from the audio or the captions"],
+  ["ocr", "On-screen text", "what the frames read, per keyframe"],
+  ["frames", "Frame embeddings", "visual search over the keyframes"],
+];
+
+/** A submitted `<form>`, as the fields Python reads.
+ *
+ *  Straight off the form, so an unticked checkbox is absent exactly as it is in
+ *  a browser's own submission — which is what both `_follow_rule_form` and
+ *  `writes._submitted` count on when they collapse three ticked channels to the
+ *  tool's word `all`. Nothing is corrected on the way out: every bound belongs
+ *  to the handler, and one applied here would be a second validator, which is
+ *  the thing §5.5 exists to argue against. */
+export function formFields(form: HTMLFormElement): Record<string, string> {
+  const fields: Record<string, string> = {};
+  for (const [name, value] of new FormData(form).entries()) {
+    if (typeof value === "string") fields[name] = value;
+  }
+  return fields;
 }
 
 /** Why a write was refused, in the API's own words. Code, message and the
