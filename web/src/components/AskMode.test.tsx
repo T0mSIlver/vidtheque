@@ -198,6 +198,27 @@ describe("AskMode", () => {
     expect(screen.getByText("Forty-two.")).toBeInTheDocument();
   });
 
+  // The answer is the end of the read. Before this, a late `activity` frame
+  // was still consumed, and it put the pane back into `working` — spinner
+  // running, ask button disabled, over an answer already on the screen.
+  it("stays answered when an activity event trails the answer", async () => {
+    const wire = answerFrame("It is the reused attention state.") + ACTIVITY;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => streamResponse(wire)),
+    );
+    const user = userEvent.setup();
+    render(<AskMode initialQ="what is a kv cache" />);
+    await user.click(screen.getByRole("button", { name: "ask" }));
+
+    await waitFor(() => expect(screen.getByLabelText("Answer")).toBeInTheDocument());
+    // Give the trailing frame every chance to land on the settled phase.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByText("It is the reused attention state.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "ask" })).toBeEnabled();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
   it("degrades on a known event that arrived malformed", async () => {
     // An `answer` whose payload is not an answer: dropping it silently would
     // leave the page waiting on a frame that already came and went.

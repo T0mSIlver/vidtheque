@@ -82,6 +82,11 @@ export function AskMode({ initialQ }: { initialQ: string }) {
       }
       // The stream is only finished when it says so. Bytes running out first
       // is a truncated answer, and silence would leave the box looking ready.
+      // The terminal event ends the read, too: a trailing `activity` frame —
+      // a tool call the server logged after it sent the answer — would put the
+      // pane back into `working` over a phase that had already settled, and
+      // the button with it. Breaking here is also what closes the body, by way
+      // of the generator's `finally`.
       let settled = false;
       for await (const raw of readJsonEvents(res.body)) {
         const parsed = AskEvent.safeParse(raw);
@@ -101,9 +106,11 @@ export function AskMode({ initialQ }: { initialQ: string }) {
         } else if (ev.event === "answer") {
           show({ kind: "answered", lines, answer: ev.payload });
           settled = true;
+          break;
         } else {
           show({ kind: "degraded", lines, body: ev.payload });
           settled = true;
+          break;
         }
       }
       if (!settled) show({ kind: "degraded", lines, body: INTERRUPTED });
