@@ -16,6 +16,7 @@ import { ROOT } from "@/lib/dashboard/client";
 const PAGES: string[] = [
   ROOT,
   `${ROOT}/ledger`,
+  `${ROOT}/search`,
   `${ROOT}/videos`,
   `${ROOT}/jobs`,
   // `GET` only. `POST /dashboard/following` is the add form's route — one path,
