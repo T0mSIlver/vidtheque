@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
+import { AskMode } from "@/components/AskMode";
 import { ResultGroup } from "@/components/ResultGroup";
 import { RetryIn } from "@/components/RetryIn";
 import { SearchBox } from "@/components/SearchBox";
@@ -10,26 +11,42 @@ import styles from "./page.module.css";
 
 const EXAMPLES = ["kv cache", "context engineering", "MCP servers", "evals in production"];
 
-// The search page. Static shell; the box is the one Client Component and the
-// results are a Server Component that re-renders for each URL.
+// The search page. Static shell; the mode (search or ask) is read from the
+// URL inside the boundary, the box is the one Client Component in search
+// mode, and the results are a Server Component that re-renders for each URL.
 export default function SearchPage(props: PageProps<"/">) {
   return (
     <main className={styles.main}>
       <h1 className={styles.headline}>Ask the talks.</h1>
-      {/* useSearchParams inside SearchBox needs a Suspense boundary of its own. */}
-      <Suspense fallback={null}>
-        <SearchBox />
-      </Suspense>
       <Suspense fallback={<ResultsSkeleton />}>
-        <Results searchParams={props.searchParams} />
+        <Mode searchParams={props.searchParams} />
       </Suspense>
     </main>
   );
 }
 
-async function Results({ searchParams }: Pick<PageProps<"/">, "searchParams">) {
+// `?ask=1` is the LLM mode: one Client Component owns question and stream.
+// Absent or `ask=0` is search, so every link copied out of search reopens in
+// search (demo-site.md §6.2).
+async function Mode({ searchParams }: Pick<PageProps<"/">, "searchParams">) {
   const sp = await searchParams;
   const q = String(sp.q ?? "").trim();
+  if (sp.ask === "1") return <AskMode initialQ={q} />;
+  return (
+    <>
+      {/* useSearchParams inside SearchBox needs a Suspense boundary of its own. */}
+      <Suspense fallback={null}>
+        <SearchBox />
+      </Suspense>
+      <p className={styles.switch}>
+        <Link href={q ? `/?ask=1&q=${encodeURIComponent(q)}` : "/?ask=1"}>ask instead →</Link>
+      </p>
+      <Results q={q} sp={sp} />
+    </>
+  );
+}
+
+async function Results({ q, sp }: { q: string; sp: Record<string, string | string[] | undefined> }) {
   const type = ContentType.catch("all").parse(sp.type ?? "all");
   const offset = Math.max(0, Number.parseInt(String(sp.offset ?? "0"), 10) || 0);
 

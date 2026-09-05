@@ -1,0 +1,35 @@
+: ok
+
+event: activity
+data: {"event": "activity", "id": 1, "phase": "start", "text": "Searching the corpus for “KV cache”"}
+
+event: activity
+data: {"event": "activity", "id": 1, "phase": "done", "result": "10 hits in 8 talks"}
+
+event: activity
+data: {"event": "activity", "id": 2, "phase": "start", "text": "Searching the corpus for “key-value cache inference”"}
+
+event: activity
+data: {"event": "activity", "id": 2, "phase": "done", "result": "nothing matched"}
+
+event: activity
+data: {"event": "activity", "id": 3, "phase": "start", "text": "Reading the transcript around 6:43 in “Fast Models Need Slow Developers — Sarah Chieng, Cerebras”"}
+
+event: activity
+data: {"event": "activity", "id": 3, "phase": "done", "result": "21 lines of transcript"}
+
+event: activity
+data: {"event": "activity", "id": 4, "phase": "start", "text": "Reading the transcript around 40:32 in “Compression at the Edge — NVIDIA, Unsloth, HuggingFace, Oll…”"}
+
+event: activity
+data: {"event": "activity", "id": 4, "phase": "done", "result": "20 lines of transcript"}
+
+event: activity
+data: {"event": "activity", "id": 5, "phase": "start", "text": "Reading the transcript around 16:19 in “Agents at Scale: Inside MiniMax's Model and the Infrastruct…”"}
+
+event: activity
+data: {"event": "activity", "id": 5, "phase": "done", "result": "16 lines of transcript"}
+
+event: answer
+data: {"event": "answer", "payload": {"answer": "A KV cache stores the key and value representations a transformer computes while generating tokens, so it doesn't have to re-run attention over the whole sequence for every new token. Sarah Chieng (Cerebras) explains it as \"KV cache reuse\": by storing and reusing previously computed token representations, you avoid recalculating attention at every step [2], with on-screen slides in the same talk showing \"store and reuse previously computed token representations\" [2]. In \"Compression at the Edge\" (NVIDIA), panelists discuss KV cache compression—mostly 8-bit and 4-bit—as the next frontier beyond weight compression [1]. Dan Fu and Olive Song (MiniMax) note that with long concurrent requests, the KV cache \"keeps on growing,\" so inference infrastructure becomes \"all about where do you store that cache\" [5]. Sai Krishna Rallabandi's talk adds that editing context invalidates the cache, forcing recomputation [7].", "citations": [{"n": 1, "video_id": "J4_jCrTxMkk", "title": "Compression at the Edge — NVIDIA, Unsloth, HuggingFace, Ollama", "channel": "AI Engineer", "t": 2432, "timestamp": "40:32", "link": "https://youtu.be/J4_jCrTxMkk?t=2430", "thumb": null, "thumb_large": null, "source": "transcript", "text": "So KV cache compression, right?"}, {"n": 2, "video_id": "TeGsFFNqRLA", "title": "Fast Models Need Slow Developers — Sarah Chieng, Cerebras", "channel": "AI Engineer", "t": 403, "timestamp": "6:43", "link": "https://youtu.be/TeGsFFNqRLA?t=401", "thumb": "http://localhost:8080/frames/TeGsFFNqRLA-00022.jpg?w=320&q=70", "thumb_large": "http://localhost:8080/frames/TeGsFFNqRLA-00022.jpg?w=960&q=70", "source": "ocr", "text": "Al models are getting faster | because the entire stack is | Yes | Retrieve from | cache | being optimized at once | Sequence | Input | Tokenization | Available? | Cache | Generate Token | No | Hardware | Compute KV | Pairs | Store in Cache | The physical reason speed is possible | Model Architecture | How we design models to take advantage of | KV Cache Reuse | thathardware | Store and reuse previously computed token | Inference Optimizations | representations to avoid …"}, {"n": 5, "video_id": "AVMr9PMINyo", "title": "Agents at Scale: Inside MiniMax's Model and the Infrastructure Behind It — Dan Fu and Olive Song", "channel": "AI Engineer", "t": 979, "timestamp": "16:19", "link": "https://youtu.be/AVMr9PMINyo?t=977", "thumb": null, "thumb_large": null, "source": "transcript", "text": "But what I wanted to come to you, Dan, for is KV cache. So let's say you have concurrent requests that are 500 to a million thousand context length long. How do you deal with the KV cache that just keeps on growing?"}, {"n": 7, "video_id": "s67bE2Ur3bY", "title": "Wearing the Agent: From Group Chats to Glasses — Sai Krishna Rallabandi", "channel": "AI Engineer", "t": 952, "timestamp": "15:52", "link": "https://youtu.be/s67bE2Ur3bY?t=950", "thumb": "http://localhost:8080/frames/s67bE2Ur3bY-00035.jpg?w=320&q=70", "thumb_large": "http://localhost:8080/frames/s67bE2Ur3bY-00035.jpg?w=960&q=70", "source": "ocr", "text": "Wearing the Agent-AlEWF | Ask Gemini | Δ Not Secure astra.tail8aec8b.ts.net:8000/#/21 | ☆ | Relaunch to update I | AlEngineer | World's Fair | 04· SERVE CHEAP | Don't break the cache | Compact history without shifting the layout — so the KV cache keeps working. | INFERENCE COST | PRESENTED BY | Microsoft | Baseline | 100% | TokenPilot | -61 to 87% | a normal context edit invalidates the cache and you pay to recompute — TokenPilot doesn …"}], "rounds": 2, "model": "deepseek/deepseek-v4-flash-0731"}}
+

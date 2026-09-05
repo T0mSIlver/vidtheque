@@ -100,3 +100,16 @@
   background: var(--plate);
   border-top: 1px solid var(--seam);
 }
+
+.switch {
+  composes: t-label from global;
+}
+
+.switch a {
+  color: var(--fg2);
+}
+
+.switch a:hover,
+.switch a:focus-visible {
+  color: var(--gold);
+}
