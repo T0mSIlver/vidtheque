@@ -6,20 +6,20 @@ agent is the right consumer of the corpus and the wrong consumer of the
 corpus's *plumbing* — nobody should have to ask a language model which model
 transcribed a video or whether OCR quietly failed on forty of them.
 
-Phase 1 is read-only: the corpus overview, the videos table and the video
-detail page, plus `/dashboard/api/*` — the same handlers `/api/*` uses, which is
-also the JSON facade a private deployment could not have before
-(demo-site.md §7.4). Those handlers were bounded by owner clamps *because of the
-prefix* until phase 5 keyed them off the credential instead; see
+**Python serves no page here as of 2026-09-06.** Every `GET /dashboard*` page
+is Next's (`docs/design/frontend-migration.md` §1d), so what this group
+registers is three things and nothing else: `/dashboard/api/*` — the JSON the
+React pages read, plus the same handlers `/api/*` uses, which is the facade a
+private deployment could not have before (demo-site.md §7.4) — the fourteen
+`POST`s, and the `/dashboard/` → `/dashboard` redirect. There is no template,
+no stylesheet and no asset route; the front end serves its own.
+
+Those `/api/*` handlers were bounded by owner clamps *because of the prefix*
+until phase 5 keyed them off the credential instead; see
 `public/api.py:policy_for`.
 
-Phase 2 adds the jobs view and its poll target, still read-only: `not_before`
-as a live countdown, `attempts`, the degraded list and the `job_events` tail
-(§5.4), redacted to codes, counts and clocks in demo mode (§2.4).
-
-The search half of phase 5 adds one server-rendered inspection page over the
-same shared handler as the JSON facade. Agents still use `/mcp`; this route
-group does not acquire a second query layer or an agent-oriented endpoint.
+Agents still use `/mcp`; this route group does not acquire a second query layer
+or an agent-oriented endpoint.
 
 It lives inside the mcp server because all state does (CLAUDE.md), and it never
 speaks MCP: it calls `tools/*` and `db/queries.py` directly, exactly as `/api`
@@ -28,14 +28,12 @@ already does.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from starlette.responses import JSONResponse, RedirectResponse, Response
 from starlette.routing import Route
 
 from ..public.api import api_routes
-from . import api, views, writes
+from . import api, writes
 from .access import (
     WRITE_ROUTES,
     credential,
@@ -59,27 +57,6 @@ __all__ = [
     "write_side_enabled",
 ]
 
-STATIC_DIR = Path(__file__).parent / "static"
-
-# The canonical faces (DESIGN.md, "Fonts — one canonical location"). The copy
-# that used to live beside this file is gone: the asset route aliases `fonts/`
-# onto the document of record, so the two surfaces cannot drift byte by byte.
-_FONTS_DIR = Path(__file__).resolve().parent.parent / "public" / "static" / "fonts"
-
-# Its own asset route rather than `public/static`: that one is registered only
-# in public mode, and a private deployment must not need the demo turned on to
-# get a stylesheet.
-_STATIC_CACHE = "public, max-age=300"
-
-# The three kinds of file in `static/`. A font served as `text/javascript` does
-# load in today's browsers — they sniff woff2 — but it stops loading the moment
-# anything in front of this app sets `X-Content-Type-Options: nosniff`, which is
-# not a bet worth taking on the one asset the whole type system rests on. The
-# fonts also outlive a deploy in a way a stylesheet does not: they are
-# content-stable binaries, so they get the long immutable cache the CSS cannot.
-_MEDIA = {".css": "text/css", ".js": "text/javascript", ".woff2": "font/woff2"}
-_FONT_CACHE = "public, max-age=31536000, immutable"
-
 
 def dashboard_routes(*, write_side: bool = False) -> list[Route]:
     """The route group. Order matters only against ``Mount("/")`` in app.py.
@@ -92,7 +69,7 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
     argument: a route that exists and refuses is a route somebody probes.
     """
 
-    def guarded(handler, json: bool = False):
+    def guarded(handler):
         """Read access: whatever `/frames/*` accepts, minus the signed URL.
 
         In `none` mode this is open, because the corpus is already open through
@@ -108,53 +85,36 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
         is inert: G2a requires the CIDR list empty there, and the settings
         refuse to boot when a CIDR covers the proxy path. The refusal names
         the accepted credentials, rather than making the owner guess.
+
+        The refusal is the envelope, and there is no second branch as of
+        2026-09-06: it used to render a sign-in page when the caller asked for
+        HTML, because the caller could be a browser navigating to a page. A
+        browser never navigates to `/dashboard/api/*` — the shell fetches it —
+        so the 401 is the signal and the shell decides what to do with it
+        (dashboard.md §21, DECISIONS.md 2026-09-05).
         """
 
         async def wrapper(request: Request) -> Response:
             if await credential(request) is not None or peer_trusted(request):
                 return await handler(request)
             mode = request.app.state.assembled.settings.auth_mode
-            if json:
-                return JSONResponse(
-                    {
-                        "error": "E_AUTH_REQUIRED",
-                        "message": "The dashboard needs the owner's token or session.",
-                        # `write_side` rather than a constant: the sign-in page
-                        # is not registered in every deployment that refuses.
-                        "next": sign_in_hint(mode, login=write_side),
-                    },
-                    status_code=401,
-                    # A refused read of the owner surface describes nothing
-                    # stable enough to cache; `api.NO_STORE` is the same
-                    # header every other `/dashboard/api/*` response carries.
-                    headers=api.NO_STORE,
-                )
-            return views.sign_in_page(request, mode, login=write_side)
+            return JSONResponse(
+                {
+                    "error": "E_AUTH_REQUIRED",
+                    "message": "The dashboard needs the owner's token or session.",
+                    # `write_side` rather than a constant: the sign-in page is
+                    # not registered in every deployment that refuses.
+                    "next": sign_in_hint(mode, login=write_side),
+                },
+                status_code=401,
+                # A refused read of the owner surface describes nothing stable
+                # enough to cache; `api.NO_STORE` is the same header every
+                # other `/dashboard/api/*` response carries.
+                headers=api.NO_STORE,
+            )
 
         wrapper.__name__ = getattr(handler, "__name__", "guarded")
         return wrapper
-
-    async def asset(request: Request) -> Response:
-        name = request.path_params["asset"]
-        base = STATIC_DIR
-        if name.startswith("fonts/"):
-            base, name = _FONTS_DIR, name[len("fonts/") :]
-        path = (base / name).resolve()
-        try:  # never serve anything outside the directory being served from
-            path.relative_to(base.resolve())
-        except ValueError:
-            return Response(status_code=404)
-        if not path.is_file():
-            return Response(status_code=404)
-        media = _MEDIA.get(path.suffix)
-        if media is None:  # the OFL texts and the provenance note are not assets
-            return Response(status_code=404)
-        binary = path.suffix == ".woff2"
-        return FileResponse(
-            path,
-            media_type=media if binary else f"{media}; charset=utf-8",
-            headers={"Cache-Control": _FONT_CACHE if binary else _STATIC_CACHE},
-        )
 
     async def trailing_slash(request: Request) -> Response:
         """`/dashboard/` is `/dashboard`, not a 404.
@@ -163,7 +123,8 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
         the last route and it matches everything, so the router finds a handler
         for `/dashboard/` before it ever considers a redirect. Typing the slash
         is not a mistake worth a 404 — and an unguarded redirect leaks nothing,
-        so it sits outside the credential check with the stylesheet.
+        so it sits outside the credential check. The page it redirects to is
+        Next's; this server only refuses to 404 the slash.
         """
         query = request.url.query
         return RedirectResponse(f"{ROOT}?{query}" if query else ROOT, status_code=308)
@@ -173,15 +134,14 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
     # route that forgets to declare itself fails the suite (§2.5.4).
     write_routes: list[Route] = (
         [
-            # The login page is a write route by the same predicate as the
-            # rest, and for the same reason (§3.2 rule 3): it is the only GET
-            # in the group that would exist purely to be probed.
-            Route(f"{ROOT}/login", writes.login, methods=["GET", "POST"]),
+            # The sign-in write is a write route by the same predicate as the
+            # rest, and for the same reason (§3.2 rule 3): a sign-in that
+            # grants nothing is a probe magnet with a password field on it.
+            # Its `GET` went with the Jinja page on 2026-09-06 — the page is
+            # Next's, and "am I signed in" is `/dashboard/api/session`'s
+            # question — so this path is a `POST` like every other write.
+            Route(f"{ROOT}/login", writes.login, methods=["POST"]),
             Route(f"{ROOT}/logout", writes.logout, methods=["POST"]),
-            # The form itself is a read and takes the read gate, so an
-            # unauthenticated browser gets the sign-in page rather than a page
-            # of controls it cannot use.
-            Route(f"{ROOT}/index", guarded(writes.index_form), methods=["GET"]),
             Route(f"{ROOT}/index", writes.index_submit, methods=["POST"]),
             Route(
                 f"{ROOT}/jobs/{{job_id}}/cancel",
@@ -203,38 +163,21 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
                 writes.set_tags,
                 methods=["POST"],
             ),
-            # Following. The two read pages are in this list rather than beside
-            # the other reads, and deliberately: a page whose every affordance
-            # POSTs is a page with nothing on it in a deployment that registers
-            # no write side, and §2.3's argument — a route that exists and
-            # refuses is a route somebody probes — reaches the reads of a
-            # write-only surface the same way it reaches the writes. So
-            # `Following` is absent in `VIDTHEQUE_PUBLIC_READONLY=1` and in
-            # `AUTH=none`, exactly like the rail item that points at it.
-            Route(f"{ROOT}/following", guarded(views.following), methods=["GET"]),
             Route(f"{ROOT}/following", writes.follow_create, methods=["POST"]),
-            # The two pages' JSON twin (§22), and it is in *this* list for the
-            # reason the pages are: §18.6 puts the reads of a write-only surface
-            # under the write-side predicate, so a deployment that registers no
-            # writes has no following endpoint either. A JSON route that
-            # answered where its page 404s would be a way back into a surface
-            # the deployment decided not to serve, which is the probe §2.3
-            # exists to refuse. Ahead of the detail page's own route for the
-            # same reason the writes are ahead of the reads: segment counts
-            # differ today, and ordering means they cannot start not to.
-            Route(
-                f"{ROOT}/api/following",
-                guarded(api.following, json=True),
-                methods=["GET"],
-            ),
+            # The following reads are in *this* list rather than beside the
+            # other reads, and deliberately: §18.6 puts the reads of a
+            # write-only surface under the write-side predicate, so a
+            # deployment that registers no writes has no following endpoint
+            # either. A JSON route that answered where its page 404s would be
+            # a way back into a surface the deployment decided not to serve,
+            # which is the probe §2.3 exists to refuse. The two pages this
+            # rule was written for are Next's now and the rule outlived them:
+            # a shell that can read a follow is a shell that can offer to
+            # change one.
+            Route(f"{ROOT}/api/following", guarded(api.following), methods=["GET"]),
             Route(
                 f"{ROOT}/api/following/{{slug}}",
-                guarded(api.follow, json=True),
-                methods=["GET"],
-            ),
-            Route(
-                f"{ROOT}/following/{{slug}}",
-                guarded(views.follow_detail),
+                guarded(api.follow),
                 methods=["GET"],
             ),
             Route(
@@ -268,18 +211,16 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
     )
 
     return [
-        # Static first: it is the one path under the prefix that carries no
-        # corpus data, and it must load even on the 401 page.
-        Route(f"{ROOT}/static/{{asset:path}}", asset, methods=["GET"]),
         Route(f"{ROOT}/", trailing_slash, methods=["GET"]),
-        # Ahead of the read pages. `/videos/{video_id}` and
-        # `/videos/{video_id}/reindex` differ in segment count so neither can
+        # Ahead of the reads. `/api/following/{slug}` and
+        # `/following/{slug}/state` differ in segment count so neither can
         # shadow the other today, but the ordering means a future read route
         # with a greedier converter cannot quietly swallow a POST either.
         *write_routes,
-        # The same handlers `/api/*` uses — behind the same gate as the pages,
-        # because JSON that skips the credential check is the hole the pages
-        # were guarded against, and under whatever clamps the *caller* earns.
+        # The same handlers `/api/*` uses — behind the same gate as everything
+        # else here, because JSON that skips the credential check is the hole
+        # this prefix was guarded against, and under whatever clamps the
+        # *caller* earns.
         #
         # The clamps used to be pinned to `OWNER_CLAMPS` here, which was right
         # only while the prefix implied the caller. It does not in `AUTH=none`,
@@ -288,69 +229,56 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
         # bound to a bearer or a session and the demo's bound to everyone else
         # (phase 5; `docs/deploy-public.md`'s clamp audit item).
         *[
-            Route(route.path, guarded(route.endpoint, json=True), methods=["GET"])
+            Route(route.path, guarded(route.endpoint), methods=["GET"])
             for route in api_routes(ROOT, ask=False)
         ],
-        # The first JSON slice for the React dashboard
-        # (`docs/design/frontend-migration.md`, 2026-09-05). Same argument as
-        # the poll targets below: `/api/*` answers questions about the *corpus*
-        # in the corpus's own shape, and these two answer "what does this box
-        # hold" and "what is it behind on" — the overview's and the ledger's own
-        # reads (`read_models`), typed. Same gate, and no clamp to state: they
-        # take no parameter, so the pages' caps are the only bounds there are.
-        Route(f"{ROOT}/api/overview", guarded(api.overview, json=True), methods=["GET"]),
-        Route(f"{ROOT}/api/ledger", guarded(api.ledger, json=True), methods=["GET"]),
-        # The videos table and the video detail page, same argument and same
-        # gate (§20). **Not** `/api/videos`: that path at this prefix is the
+        # The React dashboard's own reads (`docs/design/frontend-migration.md`,
+        # 2026-09-05). `/api/*` answers questions about the *corpus* in the
+        # corpus's own shape; these answer "what does this box hold" and "what
+        # is it behind on" — the overview's and the ledger's own reads
+        # (`read_models`), typed. Same gate, and no clamp to state: they take
+        # no parameter, so the assemblers' caps are the only bounds there are.
+        Route(f"{ROOT}/api/overview", guarded(api.overview), methods=["GET"]),
+        Route(f"{ROOT}/api/ledger", guarded(api.ledger), methods=["GET"]),
+        # The videos table and the video detail, same argument and same gate
+        # (§20). **Not** `/api/videos`: that path at this prefix is the
         # facade's listing, two routes up, and its records are the corpus's own
         # shape with `published` and `duration` already rendered for a reader of
-        # the tool's text block. These answer what the *pages* show — index
-        # state, coverage, the exact filtered count, the stage table, the
-        # keyframe strip — so they are a second question, not a second copy, and
-        # they get a name of their own rather than shadowing an answer somebody
-        # already depends on.
-        Route(f"{ROOT}/api/library", guarded(api.videos, json=True), methods=["GET"]),
+        # the tool's text block. These answer what the *management surface*
+        # shows — index state, coverage, the exact filtered count, the stage
+        # table, the keyframe strip — so they are a second question, not a
+        # second copy, and they get a name of their own rather than shadowing
+        # an answer somebody already depends on.
+        Route(f"{ROOT}/api/library", guarded(api.videos), methods=["GET"]),
         Route(
             f"{ROOT}/api/library/{{video_id}}",
-            guarded(api.video, json=True),
+            guarded(api.video),
             methods=["GET"],
         ),
         # **Outside the gate, deliberately.** It carries no corpus and no
         # secret, and a signed-out browser has to be able to ask whether this
         # deployment has a sign-in page at all — `guarded` would make the answer
-        # to "am I signed in?" require being signed in. The 401 page has told an
-        # anonymous caller the auth mode and this hint since phase 1.
+        # to "am I signed in?" require being signed in.
         Route(f"{ROOT}/api/session", api.session, methods=["GET"]),
         # The jobs view's own poll target. Not one of `api_routes`' handlers
         # because `/api/*` answers questions about the *corpus* and this one
         # answers a question about the machine — but the same prefix, the same
         # gate and the same clamps, because a JSON route that skips either is
-        # the hole the pages were guarded against.
-        Route(f"{ROOT}/api/jobs", guarded(views.jobs_json, json=True), methods=["GET"]),
+        # the hole this prefix was guarded against.
+        Route(f"{ROOT}/api/jobs", guarded(api.jobs_json), methods=["GET"]),
         Route(
             f"{ROOT}/api/jobs/{{job_id}}",
-            guarded(views.job_json, json=True),
+            guarded(api.job_json),
             methods=["GET"],
         ),
-        # The transcript scrollbox's own source (2026-08-10). Same argument as
-        # the two above: `/api/*` answers questions about the corpus in the
-        # corpus's own shape, and this answers "the next batch of *this page's*
-        # cue list, already formatted". Same prefix, same gate, same clamps —
-        # `CUE_PAGE_MAX` and the offset ceiling are the page's, not the URL's.
+        # The transcript pane's own source (2026-08-10). Same argument as the
+        # two above: `/api/*` answers questions about the corpus in the corpus's
+        # own shape, and this answers "the next batch of this video's cue list".
+        # Same prefix, same gate, same clamps — `CUE_PAGE_MAX` and the offset
+        # ceiling are the server's, not the URL's.
         Route(
             f"{ROOT}/api/videos/{{video_id}}/cues",
-            guarded(views.cues_json, json=True),
+            guarded(api.cues_json),
             methods=["GET"],
         ),
-        Route(ROOT, guarded(views.overview), methods=["GET"]),
-        # The ledger (§17, 2026-08-13): the same reads the overview and the jobs
-        # view already make, gathered as one page of counts. A read page like
-        # the four beside it — same gate, no new clamp, and in the projection
-        # with the two figures that measure the operator's disk dropped.
-        Route(f"{ROOT}/ledger", guarded(views.ledger), methods=["GET"]),
-        Route(f"{ROOT}/search", guarded(views.search), methods=["GET"]),
-        Route(f"{ROOT}/videos", guarded(views.videos), methods=["GET"]),
-        Route(f"{ROOT}/videos/{{video_id}}", guarded(views.video_detail), methods=["GET"]),
-        Route(f"{ROOT}/jobs", guarded(views.jobs), methods=["GET"]),
-        Route(f"{ROOT}/jobs/{{job_id}}", guarded(views.job_detail), methods=["GET"]),
     ]

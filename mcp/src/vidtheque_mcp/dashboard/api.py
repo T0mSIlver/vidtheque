@@ -1,5 +1,11 @@
-"""`/dashboard/api/{overview,ledger,library,following,session}` — the JSON the
-React dashboard reads (`docs/design/frontend-migration.md`).
+"""`/dashboard/api/*` — the JSON the React dashboard reads
+(`docs/design/frontend-migration.md`).
+
+Since 2026-09-06 this module is the whole of what `/dashboard` answers with,
+apart from the writes: the Jinja pages are gone, `views.py` with them, and the
+three handlers that were the scripts' poll targets — the jobs list, one job's
+war story and the cue pager — moved here rather than being deleted, because
+the React pages read all three.
 
 Additive reads, and they add no query and no policy: `overview`, `ledger`,
 `library`, `library/{video_id}`, `following` and `following/{slug}` are
@@ -50,6 +56,7 @@ cookie's mere presence is the separate `has_session_cookie`.
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 import time
 from typing import Any
 
@@ -59,9 +66,10 @@ from starlette.responses import JSONResponse, Response
 from .. import __version__
 from ..auth.credential import credential, is_owner
 from ..auth.login import SESSION_COOKIE
+from ..db import queries
 from ..errors import HTTP_STATUS
 from ..public.api import OWNER_CLAMPS, PUBLIC_CLAMPS
-from ..text import clamp
+from ..text import clamp, clock
 from .access import peer_trusted, sign_in_hint, write_side_enabled
 from .read_models import (
     BUDGET_WINDOW_S,
@@ -75,6 +83,7 @@ from .read_models import (
     INDEX_JOB_CAP,
     NEAR_MISS_S,
     OCR_LINE_CAP,
+    POLL_MS,
     SHOT_CAP,
     VIDEO_HISTORY_CAP,
     LedgerReads,
@@ -87,6 +96,8 @@ from .read_models import (
     follow_row_json,
     follow_row_json_with_error,
     following_reads,
+    job_detail_reads,
+    jobs_reads,
     ledger_reads,
     near_miss,
     overview_reads,
@@ -685,13 +696,12 @@ async def session(request: Request) -> Response:
     every subsequent request refuses.
 
     `has_session_cookie` is the other fact, and both are needed (Tom,
-    2026-09-05). It is `SESSION_COOKIE in request.cookies` — the same lookup
-    `views._chrome` makes, from the same constant, so the two cannot drift —
-    and it authorizes nothing. It answers "is there a cookie to clear", which
-    is why the HTML rail's own `signed_in` has always been cookie presence: a
-    stale cookie must still get a **Sign out** button. The React shell renders
-    that button when either field is true, and renders the dashboard on
-    `signed_in` alone.
+    2026-09-05). It is `SESSION_COOKIE in request.cookies`, from the same
+    constant `auth/login.py` sets, and it authorizes nothing. It answers "is
+    there a cookie to clear", which is why the old HTML rail's `signed_in` was
+    cookie presence: a stale cookie must still get a **Sign out** button. The
+    React shell renders that button when either field is true, and renders the
+    dashboard on `signed_in` alone.
     """
     assembled = request.app.state.assembled
     settings = assembled.settings
@@ -978,4 +988,264 @@ async def follow(request: Request) -> Response:
             },
             "notes": notes,
         }
+    )
+
+
+# ------------------------------------------------- §5.4 the two jobs payloads
+#
+# These two and the cue pager below predate the rest of this module: they were
+# the Jinja pages' own poll targets and lived beside those pages in `views.py`
+# until 2026-09-06, when the pages went and JSON was the only thing left in
+# this route group. Nothing about them moved but the file.
+
+
+def _cue_rows(
+    cues: list[sqlite3.Row], chunks: list[sqlite3.Row]
+) -> list[dict[str, Any]]:
+    """Cues with the chunk boundaries overlaid.
+
+    "What exactly is the embedding unit" is one of the questions this page
+    exists to answer, and `chunks.first_cue_id` / `last_cue_id` is the answer:
+    a cue that opens a chunk carries the chunk's label, one that closes it
+    carries the rule that ends it.
+    """
+    opens: dict[int, sqlite3.Row] = {int(c["first_cue_id"]): c for c in chunks}
+    closes = {int(c["last_cue_id"]) for c in chunks}
+    rows = []
+    for cue in cues:
+        cue_id = int(cue["id"])
+        chunk = opens.get(cue_id)
+        rows.append(
+            {
+                "id": cue_id,
+                "seq": int(cue["seq"]),
+                "start_s": float(cue["start_s"]),
+                "end_s": float(cue["end_s"]),
+                "text": str(cue["text"]),
+                "origin": str(cue["origin"]),
+                "avg_logprob": cue["avg_logprob"],
+                "has_words": bool(cue["has_words"]),
+                "speaker": cue["speaker"],
+                "chunk_opens": None
+                if chunk is None
+                else {
+                    "seq": int(chunk["seq"]),
+                    "start_s": float(chunk["start_s"]),
+                    "end_s": float(chunk["end_s"]),
+                    "n_chars": int(chunk["n_chars"]),
+                    # Characters are what the chunker clamps on; words are what
+                    # a human has an intuition for. Counted here, from the
+                    # chunk's own text, and the text itself never reaches the
+                    # template — `words_json` is not the only thing this page
+                    # declines to dump.
+                    "n_words": len(str(chunk["text"]).split()),
+                },
+                "chunk_closes": cue_id in closes,
+            }
+        )
+    return rows
+
+
+async def cues_json(request: Request) -> Response:
+    """`GET /dashboard/api/videos/{video_id}/cues` — the next batch, for the
+    transcript scrollbox.
+
+    The transcript pane pages through the whole cue list without leaving the
+    page, so the batch arrives as data: `queries.cue_page` plus `chunk_spans`
+    over the same cue-id window, under the same server-side clamps
+    `/dashboard/api/library/{video_id}` names in `transcript`.
+
+    `has_more` and not a total: the reader's own "of N" comes from
+    `per_video_counts`, which the detail read already made for its counts band,
+    so nothing here duplicates a count query.
+
+    **Typed fields beside the strings** (Tom, 2026-09-05). This endpoint
+    predates DECISIONS.md's typed-values rule and was the one place where the
+    typed half was *missing* rather than merely duplicated: `at`, `conf` and
+    `chunk` are renderings of numbers the read already had. `start_s`, `end_s`,
+    `avg_logprob`, `chunk_opens` and `chunk_closes` are those numbers, under
+    `_cue_rows`' own names (frontend-migration.md §3).
+    """
+    db = request.app.state.assembled.db
+    video_id = str(request.path_params["video_id"])
+    row = await db.read(lambda c: queries.lookup_video(c, video_id))
+    if row is None:
+        return JSONResponse(
+            {
+                "error": "E_UNKNOWN_VIDEO",
+                "message": f'"{video_id}" is not in the corpus.',
+                "next": "browse the videos table for what is indexed.",
+            },
+            status_code=404,
+            headers=NO_STORE,
+        )
+    vid = int(row["id"])
+    params = request.query_params
+    limit = clamp(params.get("limit"), 1, CUE_PAGE_MAX, CUE_PAGE)  # type: ignore[arg-type]
+    offset = clamp(params.get("offset"), 0, 500_000, 0)  # type: ignore[arg-type]
+
+    cue_rows = await db.read(lambda c: queries.cue_page(c, vid, offset, limit))
+    has_more = len(cue_rows) > limit
+    cue_rows = cue_rows[:limit]
+    chunks: list[sqlite3.Row] = []
+    if cue_rows:
+        chunks = await db.read(
+            lambda c: queries.chunk_spans(
+                c, vid, int(cue_rows[0]["id"]), int(cue_rows[-1]["id"])
+            )
+        )
+    return JSONResponse(
+        {
+            "cues": [
+                {
+                    # The typed half. Seconds as floats, because a cue boundary
+                    # is not a whole second and `t` has always rounded it down;
+                    # the log-probability as the number it is; and the chunk as
+                    # the five fields the sentence below is composed from, so a
+                    # client can say "chunk 3" without parsing " · ".
+                    "start_s": float(cue["start_s"]),
+                    "end_s": float(cue["end_s"]),
+                    "avg_logprob": None
+                    if cue["avg_logprob"] is None
+                    else float(cue["avg_logprob"]),
+                    "chunk_opens": cue["chunk_opens"],
+                    # `in_chunk` is these two facts collapsed into one bool, and
+                    # a marker at the end of a chunk is not a marker at the
+                    # start of one — the page draws them differently.
+                    "chunk_closes": cue["chunk_closes"],
+                    # The rendered half, unchanged.
+                    "at": clock(cue["start_s"]),
+                    "t": int(cue["start_s"]),
+                    "text": cue["text"],
+                    "speaker": cue["speaker"],
+                    "conf": None
+                    if cue["avg_logprob"] is None
+                    else f"{cue['avg_logprob']:.2f}",
+                    "in_chunk": bool(cue["chunk_opens"] or cue["chunk_closes"]),
+                    "chunk": None
+                    if cue["chunk_opens"] is None
+                    else (
+                        f"chunk {cue['chunk_opens']['seq']} · "
+                        f"{clock(cue['chunk_opens']['start_s'])}–"
+                        f"{clock(cue['chunk_opens']['end_s'])} · "
+                        f"{cue['chunk_opens']['n_words']} words · "
+                        f"{cue['chunk_opens']['n_chars']} chars"
+                    ),
+                }
+                for cue in _cue_rows(cue_rows, chunks)
+            ],
+            "offset": offset,
+            "limit": limit,
+            "has_more": has_more,
+        },
+        headers=NO_STORE,
+    )
+
+
+async def jobs_json(request: Request) -> Response:
+    """`GET /dashboard/api/jobs` — the table, and what the 2 s tick reads.
+
+    `read_models.jobs_reads` is the assembly, so the poll and any other reader
+    of this route answer out of one pass over the queue, and the demo's
+    redaction is that assembly's rather than a second rule that can drift.
+
+    `live` is the poll's stop condition: when nothing is `queued|running` there
+    is nothing to poll for, and the tab stops being a load generator against
+    the process that also holds the only SQLite writer.
+
+    **The row headline is here as of 2026-09-05, and it costs the tick
+    nothing.** `contents` used to be the Jinja page's alone, a third read taken
+    after the cards were built — so a React table had no title for any row,
+    only a count. It rides in the grouped row-facts read now, which leaves the
+    tick on the two reads §5.4 budgets it. `filters` and `notes` are the other
+    half: a `state=nonsense` fell back to `all` and said nothing, which is the
+    `all` invariant's exact failure case on a payload with no form to echo
+    into.
+    """
+    data = await jobs_reads(request)
+    return JSONResponse(
+        {
+            "now": data.now,
+            "poll_ms": POLL_MS,
+            "live": data.live,
+            "jobs": data.cards,
+            "pagination": {
+                "limit": data.limit,
+                "offset": data.offset,
+                "has_more": data.has_more,
+            },
+            # Copied out field by field rather than forwarded: the assembly's
+            # dict was a template's context and still carries its shape, so a
+            # key added there must not join this contract by default (§19).
+            # `error_code` is `None` rather than the form's empty string, like
+            # every other absent filter here.
+            "filters": {
+                "state": data.filters["state"],
+                "kind": data.filters["kind"],
+                "error_code": data.filters["error_code"] or None,
+                "degraded": data.filters["degraded"],
+                "order": data.filters["order"],
+            },
+            "notes": data.notes,
+        },
+        headers=NO_STORE,
+    )
+
+
+async def job_json(request: Request) -> Response:
+    """`GET /dashboard/api/jobs/{job_id}` — one job's war story, typed.
+
+    Six of these fields arrived on 2026-09-05. `degraded`, `focus`, `stages`,
+    `error_counts`, `counts` and `items_capped` were assembled for the Jinja
+    template and dropped on the way to the payload, so a React page could
+    render the item table and nothing under it — including the degraded list,
+    which is the silent loss this view was built for. `job_detail_reads` has
+    always made all six for every caller, so this adds no read, no bound and no
+    branch.
+
+    Field by field rather than `**detail`: `now` and `live` are this payload's
+    and the rest is the assembly's dict, so a value added there must not join
+    this contract by default (§19).
+    """
+    db = request.app.state.assembled.db
+    detail = await job_detail_reads(db, request.path_params["job_id"], redacted(request))
+    if detail is None:
+        return JSONResponse(
+            {
+                "error": "E_UNKNOWN_JOB",
+                "message": "no such job.",
+                "next": "the jobs table lists every job this index has run.",
+            },
+            status_code=404,
+            headers=NO_STORE,
+        )
+    return JSONResponse(
+        {
+            "now": detail["now"],
+            "poll_ms": POLL_MS,
+            "live": detail["live"],
+            "job": detail["job"],
+            "items": detail["items"],
+            # The item list's own bound, said out loud: 200 is what
+            # `index-video` can create, and a list that stopped there without
+            # saying so is a list pretending to be complete.
+            "items_capped": detail["items_capped"],
+            # Items by state, and typed error codes counted. The job's own
+            # five counts are one summary of it; these are the tally under
+            # them, which is what an unattended driver can act on.
+            "counts": detail["counts"],
+            "error_counts": detail["error_counts"],
+            # `done` + `n_failed=0` + a failed stage underneath — the loss that
+            # takes no video down and shows up as a missing search channel.
+            # `error` is `None` in the projection by `_job_detail`'s own rule,
+            # not a second one here.
+            "degraded": detail["degraded"],
+            "focus": detail["focus"],
+            # The seven `video_stages` rows of the item in focus, in pipeline
+            # order. No `model_key` and no stage `error`: never read, which is
+            # the projection §20's stage table states as two nulls.
+            "stages": detail["stages"],
+            "events": detail["events"],
+        },
+        headers=NO_STORE,
     )

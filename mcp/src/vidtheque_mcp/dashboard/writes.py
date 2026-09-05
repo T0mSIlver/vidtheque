@@ -68,11 +68,11 @@ from ..text import clamp
 from ..tools import follows as follows_tool
 from ..tools import indexing, library
 from ..tools.base import Deps
-from .access import auth_required, bad_origin, credential, origin_ok, require_write
+from .access import auth_required, bad_origin, origin_ok, require_write
 from .api import NO_STORE
 from .read_models import follow_row_json_with_error
+from .read_models import tool_error as _tool_error
 from .settings import ROOT
-from .views import _chrome, _render, _tool_error
 
 # §10.7, resolved: `index-video`'s ten-URL cap protects the *model* surface and
 # does not move. A human pasting a straggler list is not that surface, so the
@@ -85,13 +85,6 @@ URLS_PER_JOB = 10
 # `tools/indexing.py`, so the form and the tool refuse at the same number
 # rather than at two numbers a reader has to reconcile.
 MAX_FORM_URLS = 200
-
-# A GET prefill is still an input that becomes a response body. Bound both
-# free-text fields before rendering so a deep link cannot turn the index form
-# into an unbounded HTML payload. These are render bounds only: POST keeps the
-# service layer's validation and the form's URL-count cap below.
-MAX_PREFILL_URLS_CHARS = 16_384
-MAX_PREFILL_TAGS_CHARS = 800
 
 # What a paste is split on: newlines, spaces, commas. Anything else is part of
 # a URL, and `normalize_url` is the one that decides whether it is a good one.
@@ -204,7 +197,7 @@ def _refusal_json(error: dict[str, Any]) -> JSONResponse:
 def _outcome(
     request: Request, payload: dict[str, Any], *, back: str, status: int = 200
 ) -> Response:
-    """The typed outcome, or the 303 the Jinja page expects. Never both."""
+    """The typed outcome, or the 303 a form navigation expects. Never both."""
     if _accepts_json(request):
         return _json(payload, status)
     return _see(back)
@@ -237,27 +230,11 @@ def _see(path: str) -> RedirectResponse:
 # --------------------------------------------------------------------- login
 
 
-def _login_context(
-    request: Request, *, error: str | None, next_url: str
-) -> dict[str, Any]:
-    settings = request.app.state.assembled.settings
-    return {
-        **_chrome(request, "login"),
-        "title": "Sign in",
-        "error": error,
-        "next_url": next_url,
-        # Which secret this deployment will accept, so the field's label is the
-        # truth rather than a generic "password". In `token` mode with no
-        # password set there is exactly one answer and the page says it.
-        "accepts_password": bool(settings.password),
-        "accepts_token": settings.auth_mode == "token" and bool(settings.static_token),
-    }
-
-
-# One sentence for both secrets and both failure shapes — the re-rendered form
-# and the envelope. "Wrong password" against a deployment that accepts the token
-# instead would be a hint about which secret exists, and a JSON caller reading a
-# different sentence from the page's would be that hint with extra steps.
+# One sentence for both secrets. "Wrong password" against a deployment that
+# accepts the token instead would be a hint about which secret exists. It was
+# the rendered form's sentence first and it is the envelope's now, unchanged:
+# which secret a deployment holds is `/dashboard/api/session`'s answer, and a
+# refusal must not be a second one.
 BAD_SECRET = "That secret does not match this instance."
 
 
@@ -282,30 +259,26 @@ def _bad_credential() -> JSONResponse:
 
 
 async def login(request: Request) -> Response:
-    """`GET|POST /dashboard/login` — the secret, once, for the existing cookie.
+    """`POST /dashboard/login` — the secret, once, for the existing cookie.
 
     Registered only where the write side is (`write_side_enabled`): a sign-in
     that grants nothing is a probe magnet with a password field on it.
 
-    The POST is the thirteenth write to answer two ways (§21): the 303 a form
-    navigation expects, or `{"signed_in": true, "next": …}` carrying the same
-    `Set-Cookie` — on the response either way, because a React shell cannot
-    mint an `HttpOnly` cookie itself. Both refusals are the envelope now, in
-    either medium: a page that could carry the sentence back into the form no
-    longer exists. The GET is untouched: "am I signed in" is
-    `/dashboard/api/session`'s question, not this route's.
+    The thirteenth write to answer two ways (§21): the 303 a form navigation
+    expects, or `{"signed_in": true, "next": …}` carrying the same `Set-Cookie`
+    — on the response either way, because a React shell cannot mint an
+    `HttpOnly` cookie itself, which is why this write stays Python's for good.
+    Both refusals are the envelope now, in either medium: there is no form left
+    to carry a sentence back into.
+
+    **The `GET` went with the Jinja page on 2026-09-06.** The sign-in page is
+    Next's, "am I signed in" is `/dashboard/api/session`'s question, and which
+    secret this deployment accepts is that endpoint's answer too — so nothing
+    was left for a `GET` here to do but be probed.
     """
     assembled = request.app.state.assembled
     settings = assembled.settings
     store = assembled.auth.store
-
-    if request.method == "GET":
-        next_url = _safe_next(request.query_params.get("next"))
-        # Already holding a credential: the page has nothing to offer, so it
-        # sends them where they were going instead of asking again.
-        if await credential(request) is not None:
-            return _see(next_url)
-        return _render("login.html", _login_context(request, error=None, next_url=next_url))
 
     form = await request.form()
     next_url = _safe_next(str(form.get("next") or ""))
@@ -387,62 +360,6 @@ async def logout(request: Request) -> Response:
 # ---------------------------------------------------------------- §5.5 index
 
 
-def _index_form_values() -> dict[str, Any]:
-    return {
-        "urls": "",
-        "expand": "playlist",
-        "max_items": 25,
-        "tags": "",
-        "channels": [name for name, _label, _note in CHANNEL_BOXES],
-        "priority": "normal",
-        "force_reindex": False,
-    }
-
-
-def _index_context(request: Request, **extra: Any) -> dict[str, Any]:
-    assembled = request.app.state.assembled
-    return {
-        **_chrome(request, "index"),
-        "title": "Add to the index",
-        "expansions": indexing.EXPANSIONS,
-        "channel_boxes": CHANNEL_BOXES,
-        "urls_per_job": URLS_PER_JOB,
-        "max_form_urls": MAX_FORM_URLS,
-        # §5.5: when the corpus config and the vector tables disagree, the form
-        # renders disabled with the reason, rather than accepting a submission
-        # that will come back `E_FEATURE_DISABLED`.
-        "vectors": assembled.db.vectors,
-        "form": _index_form_values(),
-        "result": None,
-        "error": None,
-        **extra,
-    }
-
-
-def _prefilled_index_form(request: Request) -> dict[str, Any]:
-    """Bounded GET parameters, copied into controls and nowhere else.
-
-    This deliberately does not normalise URLs, validate tags, call a tool or
-    touch the database. A prefill is a draft the operator may still edit; the
-    existing POST remains the only path that interprets or persists it.
-    """
-    form = _index_form_values()
-    params = request.query_params
-    expand = str(params.get("expand") or "")
-    form["urls"] = str(params.get("urls") or "")[:MAX_PREFILL_URLS_CHARS]
-    form["tags"] = str(params.get("tags") or "")[:MAX_PREFILL_TAGS_CHARS]
-    if expand in indexing.EXPANSIONS:
-        form["expand"] = expand
-    return form
-
-
-async def index_form(request: Request) -> Response:
-    """`GET /dashboard/index` — a bounded prefill, and no state change."""
-    return _render(
-        "index.html", _index_context(request, form=_prefilled_index_form(request))
-    )
-
-
 async def index_submit(request: Request) -> Response:
     """`POST /dashboard/index` → `index_video` → the jobs view.
 
@@ -451,10 +368,10 @@ async def index_submit(request: Request) -> Response:
     side, and says so on the page — a split the operator cannot see is a job
     count they cannot explain.
 
-    JSON outcome: the accepted queue entries, the ids already in the corpus and
-    a refusal per batch that failed — the receipt the page renders, typed. The
-    one-job shortcut is a *redirect*, so the JSON branch does not take it: a
-    client that always reads `jobs` is a client with no special case.
+    The outcome is the accepted queue entries, the ids already in the corpus
+    and a refusal per batch that failed. The one-job shortcut is a *redirect*,
+    so it belongs to the form navigation alone: a client that always reads
+    `jobs` is a client with no special case.
     """
     refusal = await require_write(request)
     if refusal is not None:
@@ -518,38 +435,22 @@ async def index_submit(request: Request) -> Response:
                 }
             )
 
-    if _accepts_json(request):
-        return _json(
-            {
-                "jobs": jobs,
-                "already_indexed": already,
-                "errors": [_envelope(e) for e in errors],
-                "batches": len(batches),
-                "urls": len(tokens),
-            },
-            200 if jobs or already else 409,
-        )
-    # One job and nothing to explain: go straight to the thing that is now
-    # happening (§5.5). Anything else has a receipt worth reading, and a
-    # receipt is not something a reload should re-submit — so it renders in
-    # place of the form, with the form still under it for the next batch.
-    if len(jobs) == 1 and not errors and not already:
+    # One job and nothing to explain: a form navigation goes straight to the
+    # thing that is now happening (§5.5). Anything else used to render a
+    # receipt page with the form still under it for the next batch, and there
+    # is no form — so the receipt is the answer in either medium, which is also
+    # the only shape that can carry a refusal *per batch*.
+    if not _accepts_json(request) and len(jobs) == 1 and not errors and not already:
         return _see(f"{ROOT}/jobs/{jobs[0]['job_id']}")
-    return _render(
-        "index.html",
-        _index_context(
-            request,
-            form=submitted,
-            result={
-                "jobs": jobs,
-                "already": already,
-                "errors": errors,
-                "batches": len(batches),
-                "urls": len(tokens),
-                "split": len(batches) > 1,
-            },
-        ),
-        status=200 if jobs or already else 409,
+    return _json(
+        {
+            "jobs": jobs,
+            "already_indexed": already,
+            "errors": [_envelope(e) for e in errors],
+            "batches": len(batches),
+            "urls": len(tokens),
+        },
+        200 if jobs or already else 409,
     )
 
 
@@ -637,9 +538,9 @@ async def retry_job(request: Request) -> Response:
     the original channels, tags, expansion bound and priority while leaving
     successful items out of the call entirely.
 
-    JSON outcome: the jobs this made, what it selected them from, and what it
-    preserved — the retry receipt page, typed. Like the index form it does not
-    take the one-job redirect shortcut.
+    The outcome is the jobs this made, what it selected them from, and what it
+    preserved. Like the index form it takes the one-job redirect shortcut only
+    on the branch a browser navigated in on.
     """
     refusal = await require_write(request)
     if refusal is not None:
@@ -737,40 +638,22 @@ async def retry_job(request: Request) -> Response:
         "tags": [t for t in tags_csv.split(",") if t],
         "priority": priority,
     }
-    if _accepts_json(request):
-        return _json(
-            {
-                "from_job_id": old_job_id,
-                "selected": len(candidates),
-                "jobs": jobs,
-                "errors": [_envelope(e) for e in errors],
-                "preserved": preserved,
-            },
-            200 if jobs else 409,
-        )
     # `index_submit`'s rule, for the same reason: one job and nothing to
-    # explain goes straight to the thing that is now happening, and the POST
-    # is never left as the page a reload would repeat — a reloaded retry is
-    # a duplicate repair job, the one write on this surface where that is
-    # not merely noise.
-    if len(jobs) == 1 and not errors:
+    # explain sends a form navigation straight to the thing that is now
+    # happening, and the POST is never left as the page a reload would repeat
+    # — a reloaded retry is a duplicate repair job, the one write on this
+    # surface where that is not merely noise.
+    if not _accepts_json(request) and len(jobs) == 1 and not errors:
         return _see(f"{ROOT}/jobs/{jobs[0]['job_id']}")
-    return _render(
-        "retry.html",
+    return _json(
         {
-            **_chrome(request, "jobs"),
-            "title": f"Retry from {old_job_id}",
-            "old_job_id": old_job_id,
+            "from_job_id": old_job_id,
             "selected": len(candidates),
             "jobs": jobs,
-            "errors": errors,
-            "preserved": {
-                "channels": channels,
-                "tags": tags_csv or "—",
-                "priority": priority,
-            },  # the page's own shape; the JSON above sends `tags` as a list
+            "errors": [_envelope(e) for e in errors],
+            "preserved": preserved,
         },
-        status=200 if jobs else 409,
+        200 if jobs else 409,
     )
 
 

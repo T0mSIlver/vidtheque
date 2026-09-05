@@ -1,34 +1,33 @@
-"""The reads behind the dashboard's read pages — once, for two surfaces.
+"""The reads behind the dashboard — assembled once, for whoever asks.
 
-`views.py` renders them into Jinja and `api.py` returns them as JSON, and both
-must be answering out of the *same* reads. Two copies of "what does this box
-hold" is how the page and the API start disagreeing about the corpus, and the
-projection rules (`redacted`) are the half where drift is a disclosure bug
-rather than a cosmetic one: the demo drops the operator's disk, the declared
-model ids and the drift reason by **not reading them**, and that decision has
-to live in one place or it lives in neither.
+They were written for two surfaces: the Jinja pages rendered them and `api.py`
+returned them as JSON, and both had to be answering out of the *same* reads.
+The pages are Next's since 2026-09-06 and `api.py` is the only caller left, so
+what this file is now is the **reads themselves**, kept apart from the handlers
+that shape them — with the projection rules (`redacted`) the half where drift
+would be a disclosure bug rather than a cosmetic one: the demo drops the
+operator's disk, the declared model ids and the drift reason by **not reading
+them**, and that decision has to live in one place or it lives in neither.
 
-What is here is exactly the shared half: the width set every frame URL on this
-surface comes from, the projection predicate, the bounded worker probe, and the
-assemblers — the overview, the ledger, the videos table and the video detail.
-Nothing here formats a value for a human: display strings are `render.py`'s
-(for the pages) and the browser's (for the JSON), which is the rule the
-front-end migration settled — **typed values on the wire, formatting at the
-edge**, and policy text (refusals, the clamp notes, the redaction itself) still
-Python's.
+What is here: the width set every frame URL on this surface comes from, the
+projection predicate, the bounded worker probe, and the assemblers — the
+overview, the ledger, the videos table, the video detail, the jobs table, one
+job's war story and the two following reads. Nothing here formats a value for a
+human; that is the browser's, which is the rule the front-end migration settled
+— **typed values on the wire, formatting at the edge**, and policy text
+(refusals, the clamp notes, the redaction itself) still Python's.
 
-Moved out of `views.py` unchanged: the overview and the ledger on 2026-09-05,
-the videos table and the detail page the same day (dashboard.md §20), the two
-following pages the same day again (§22), and the jobs table and one job's war
-story the same day (§5.4). `views.py` imports these back under their old
-private names, so the Jinja pages call the same code, in the same order, under
-the same bounds they always did.
+Moved out of `views.py` unchanged over 2026-09-05: the overview and the ledger,
+the videos table and the detail page (dashboard.md §20), the two following
+reads (§22), and the jobs table with one job's war story (§5.4). `views.py`
+imported them back under their old private names until it was deleted with the
+pages; the reads have not changed since.
 
 The jobs half carries the one exception to "nothing here formats a value": the
-`text` block beside every typed job field, which `static/jobs.js` reads because
-it has no formatter of its own. It is transitional and the contract says so —
-it is deleted in the commit that deletes that script (§5.4, 2026-09-05) — and
-every string in it is a rendering of a number sent beside it.
+`text` block beside every typed job field, which `static/jobs.js` read because
+it had no formatter of its own. It is transitional and the contract says so —
+it goes in the commit that cuts the rendered strings (§5.4) — and every string
+in it is a rendering of a number sent beside it.
 
 The follow half carries one thing the others do not: `follow_row_json`, the
 typed shape a follow travels in, which `writes.py` answers a write outcome with
@@ -469,7 +468,7 @@ async def ledger_reads(
 
 # --------------------------------------------------------------------- videos
 
-# The table's own vocabularies (§5.2), here rather than in `views.py` because
+# The table's own vocabularies (§5.2), here rather than in a handler because
 # the JSON has to advertise the same words the form offers: a client that
 # renders a picker from one list while the server accepts another is exactly
 # the drift this module exists to make impossible.
