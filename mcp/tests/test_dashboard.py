@@ -1399,9 +1399,9 @@ def test_the_jobs_pages_do_not_fan_out_per_row(client: TestClient) -> None:
     """
     one = _count_reads(client, f"{ROOT}/jobs?limit=1")
     many = _count_reads(client, f"{ROOT}/jobs?limit=100")
-    # Four, not three, since round 4: what each job *contains* is one more
-    # grouped read for the page — and still one for a hundred rows, which is
-    # the only thing this test is about.
+    # Two: the page of rows, then one grouped read answering both per-row
+    # questions over the ids it returned — the degraded badge and what each job
+    # contains. Still two for a hundred rows, which is what this test is about.
     assert one == many <= 4, f"{one} reads for 1 job, {many} for 100"
     detail = _count_reads(client, f"{ROOT}/jobs/job_finished01")
     assert detail <= 8, f"{detail} reads for one job page"
@@ -4314,15 +4314,22 @@ def test_a_job_row_costs_the_page_one_more_read_and_not_one_per_row(
 ) -> None:
     """§6.3 again: what a job contains is one grouped query for the page.
 
-    And it is deliberately not on the poll target — what a job holds does not
-    change between two ticks, so the JSON the 2 s tick reads does not carry it.
+    **Amended 2026-09-05.** The headline used to be the page's alone — a third
+    read, taken after the cards were built — and the poll target went without
+    it, because two ticks cannot change what a job holds. A React table has no
+    Jinja render to start from, so it had no title for any row at all. The
+    grouped read answers both of the page's per-row questions now, which puts
+    the headline on the payload and leaves the tick on the two reads §5.4
+    budgets it.
     """
     one = _count_reads(client, f"{ROOT}/jobs?limit=1")
     many = _count_reads(client, f"{ROOT}/jobs?limit=100")
-    assert one == many <= 4, f"{one} reads for 1 job, {many} for 100"
+    assert one == many == 2, f"{one} reads for 1 job, {many} for 100"
+    tick = _count_reads(client, f"{ROOT}/api/jobs?limit=100")
+    assert tick == 2, f"{tick} reads per tick"
 
     payload = client.get(f"{ROOT}/api/jobs").json()
-    assert payload["jobs"] and "contents" not in payload["jobs"][0]
+    assert payload["jobs"] and payload["jobs"][0]["contents"]
 
 
 def test_the_progress_figure_carries_its_own_breakdown(client: TestClient) -> None:

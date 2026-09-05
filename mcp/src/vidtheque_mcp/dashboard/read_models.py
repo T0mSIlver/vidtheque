@@ -667,6 +667,24 @@ def clamp_note(raw: str | None, value: int, name: str) -> str | None:
     return None if asked == value else f"{name}={asked} → {value}"
 
 
+def choice_note(
+    name: str, raw: str | None, allowed: tuple[str, ...], chosen: str
+) -> str | None:
+    """`state=nonsense` fell back to `all`, and the payload says which.
+
+    The `all` invariant's other half: a filter that could not be applied prints
+    a `note:` rather than narrowing — or, here, rather than widening — in
+    silence. One wording for every listing on this surface, because a reader
+    parsing two spellings of the same sentence is a reader parsing prose.
+    """
+    if not raw or raw in allowed:
+        return None
+    return (
+        f"note: {name}={raw!r} is not one of {', '.join(allowed)}; "
+        f"this listing used {name}={chosen}."
+    )
+
+
 @dataclass(frozen=True)
 class VideosReads:
     """The videos table's whole read, before either surface shapes it.
@@ -752,11 +770,9 @@ async def videos_reads(request: Request) -> VideosReads:
         ("index_state", params.get("index_state"), states, index_state),
         ("order", params.get("order"), VIDEO_ORDERS, order),
     ):
-        if raw and raw not in allowed:
-            notes.append(
-                f"note: {name}={raw!r} is not one of {', '.join(allowed)}; "
-                f"this listing used {name}={chosen}."
-            )
+        note = choice_note(name, raw, allowed, chosen)
+        if note:
+            notes.append(note)
 
     filters: dict[str, Any] = {
         "q": q or "",
@@ -1203,6 +1219,10 @@ JOB_PAGE_MAX = 100
 ITEM_CAP = 200  # `index-video` cannot create more: max_items clamps to 200
 EVENT_CAP = 60
 DEGRADED_CAP = 40
+# The longest `error_code` this filter will carry. A code is a short token; a
+# longer string is a caller pasting a sentence, and the listing says so rather
+# than quietly filtering on the first 64 characters of it.
+ERROR_CODE_CHARS = 64
 
 JOB_STATES = ("all", "active", "failed", "done")
 # `follow_check` is a `jobs.kind` since migration 0006, so it is a filter here
@@ -1437,6 +1457,120 @@ def job_contents(card: dict[str, Any], row: sqlite3.Row | None) -> dict[str, Any
     }
 
 
+@dataclass(frozen=True)
+class JobsReads:
+    """The jobs table's whole read, before either surface shapes it.
+
+    ``filters`` is the resolved set — what the query actually ran on, which is
+    what the page's own band re-prints and what the payload echoes. ``notes``
+    is the other half of the same fact, and the one the page has no need of: a
+    value the server did not honour has to say so in words to a caller with no
+    form to read it back out of.
+    """
+
+    filters: dict[str, Any]
+    limit: int
+    offset: int
+    notes: list[str] = field(default_factory=list)
+    cards: list[dict[str, Any]] = field(default_factory=list)
+    has_more: bool = False
+    now: int = 0
+    live: bool = False
+
+
+async def jobs_reads(request: Request) -> JobsReads:
+    """`GET /dashboard/jobs`' reads — two, whatever the row count (§6.3).
+
+    One probe row past the limit rather than a count, exactly as the videos
+    table pages, and **one** grouped read for the whole page's row facts: the
+    degraded badge and what each job contains are two statements over the same
+    set of ids, so they travel in one connection rather than two.
+
+    That is what lets the row headline ride on the poll target as well as the
+    page. §5.4 budgets the 2 s tick at two reads; before this it spent them on
+    `list_jobs` and `degraded_counts` and the page spent a third on
+    `job_contents`, which is why the tick did without the headline. Folded into
+    the grouped read, the headline costs the tick nothing and the page one read
+    less than it did.
+    """
+    db = request.app.state.assembled.db
+    params = request.query_params
+
+    state = _choice(params.get("state"), JOB_STATES, "all")
+    kind = _choice(params.get("kind"), JOB_KINDS, "all")
+    order = _choice(params.get("order"), JOB_ORDERS, "newest")
+    raw_code = str(params.get("error_code") or "").strip()
+    error_code = raw_code[:ERROR_CODE_CHARS]
+    degraded_only = params.get("degraded") == "1"
+    limit = clamp(params.get("limit"), 1, JOB_PAGE_MAX, JOB_PAGE)  # type: ignore[arg-type]
+    offset = clamp(params.get("offset"), 0, OWNER_CLAMPS.offset_max, 0)  # type: ignore[arg-type]
+
+    # Policy text, and Python's by the same rule as the videos table's: a
+    # filter this listing did not honour has to say so on the payload that
+    # answered with something else, or the result set is the wrong one reported
+    # with total confidence. The page echoes its own values back into its band;
+    # a JSON caller has no band to read them out of.
+    notes: list[str] = []
+    moved = [
+        note
+        for note in (
+            clamp_note(params.get("limit"), limit, "limit"),
+            clamp_note(params.get("offset"), offset, "offset"),
+        )
+        if note
+    ]
+    if moved:
+        notes.append(
+            f"note: clamped server-side: {', '.join(moved)}. The bounds are this "
+            "deployment's, not the URL's; page with offset instead of raising limit."
+        )
+    for name, raw, allowed, chosen in (
+        ("state", params.get("state"), JOB_STATES, state),
+        ("kind", params.get("kind"), JOB_KINDS, kind),
+        ("order", params.get("order"), JOB_ORDERS, order),
+        ("degraded", params.get("degraded"), ("1",), "0"),
+    ):
+        note = choice_note(name, raw, allowed, chosen)
+        if note:
+            notes.append(note)
+    if len(raw_code) > len(error_code):
+        notes.append(
+            f"note: error_code was cut to {ERROR_CODE_CHARS} chars; this listing "
+            f"filtered on {error_code!r}. A code is a token, not a sentence."
+        )
+
+    cards, has_more, now = await job_page(
+        db,
+        state,
+        limit,
+        offset,
+        redacted(request),
+        error_code,
+        kind,
+        degraded_only,
+        order,
+    )
+    return JobsReads(
+        # Exactly the keys the page's band and its link macros read, and the
+        # values the query ran on rather than the ones the URL asked for.
+        filters={
+            "state": state,
+            "kind": kind,
+            "error_code": error_code,
+            "degraded": degraded_only,
+            "order": order,
+            "limit": limit,
+        },
+        limit=limit,
+        offset=offset,
+        notes=notes,
+        cards=cards,
+        has_more=has_more,
+        now=now,
+        live=any(card["live"] for card in cards),
+    )
+
+
 async def job_page(
     db: Any,
     state: str,
@@ -1450,9 +1584,9 @@ async def job_page(
 ) -> tuple[list[dict[str, Any]], bool, int]:
     """Two reads for the whole page, whatever the row count (§6.3).
 
-    One probe row past the limit rather than a count, exactly as the videos
-    table pages, and one grouped `degraded_counts` for every row on the page
-    rather than a probe per row.
+    The second is grouped over the ids the first returned — never a probe per
+    row, which is the shape `test_the_jobs_pages_do_not_fan_out_per_row`
+    measures.
     """
     rows = await db.read(
         lambda c: jobs_store.list_jobs(
@@ -1468,14 +1602,24 @@ async def job_page(
     )
     has_more = len(rows) > limit
     rows = rows[:limit]
-    degraded = await db.read(
-        lambda c: jobs_store.degraded_counts(c, [int(r["id"]) for r in rows])
-    )
+    internal = [int(row["id"]) for row in rows]
+    public = [str(row["public_id"]) for row in rows]
+
+    def row_facts(c: sqlite3.Connection) -> tuple[dict[int, int], dict[str, sqlite3.Row]]:
+        # Two grouped statements about one set of ids, in one connection. The
+        # alternative — a read each — costs the tick a checkout for a fact that
+        # is answered off the same rows.
+        return jobs_store.degraded_counts(c, internal), queries.job_contents(c, public)
+
+    degraded, contents = await db.read(row_facts)
     now = int(time.time())
-    cards = [
-        job_card(row, now, degraded=degraded.get(int(row["id"]), 0), redact=redact)
-        for row in rows
-    ]
+    cards = []
+    for row in rows:
+        card = job_card(
+            row, now, degraded=degraded.get(int(row["id"]), 0), redact=redact
+        )
+        card["contents"] = job_contents(card, contents.get(card["job_id"]))
+        cards.append(card)
     return cards, has_more, now
 
 
