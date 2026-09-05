@@ -1,0 +1,69 @@
+name: build-web
+
+on:
+  pull_request:
+    paths:
+      - "web/**"
+      - ".github/workflows/build-web.yml"
+  # No `paths` filter on tags — see the note in build-worker.yml.
+  push:
+    tags:
+      - "v*"
+      - "web-v*"
+  workflow_dispatch:
+
+concurrency:
+  group: build-web-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/t0msilver/vidtheque-web
+
+jobs:
+  build:
+    # amd64 only, unlike the mcp image beside it. An arm64 leg here is not a
+    # second copy of a wheel set: it is a full Next/SWC compile under QEMU on a
+    # hosted runner, on the critical path of every `v*` tag. The front end can
+    # gain it the day a box needs it — one `platforms:` value and the
+    # setup-qemu step build-mcp.yml carries.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=ref,event=branch
+            type=sha,format=short
+
+      # The context is `web`, not `.`: the app builds from its own directory
+      # (web/Dockerfile's header), and `file:` stays repo-relative.
+      - name: Build (and push on tag)
+        uses: docker/build-push-action@v6
+        with:
+          context: web
+          file: web/Dockerfile
+          platforms: linux/amd64
+          push: ${{ startsWith(github.ref, 'refs/tags/') }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
