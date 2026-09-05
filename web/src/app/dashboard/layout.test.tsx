@@ -3,11 +3,11 @@ import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockNavigation } from "@/test/next";
 
-// The chassis is where the transition is visible: two pages are this app's and
-// the rest of the surface is still Jinja's, so the rail has to reach both
-// without the reader knowing which is which. And it is the only place a
-// deployment's own facts are rendered — what it will accept, and whether there
-// is a session to end.
+// The chassis is where the transition was visible: the rail had to reach the
+// pages this app served and the ones Python still rendered without the reader
+// knowing which was which, and it is written so that the answer lives in
+// `ported.ts` alone. And it is the only place a deployment's own facts are
+// rendered — what it will accept, and whether there is a session to end.
 
 const SESSION = {
   version: "0.0.6",
@@ -74,9 +74,10 @@ describe("the dashboard chassis", () => {
     expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
   });
 
-  // A page Python still renders is reached with a document load; a client-side
-  // navigation would ask this app's router for a route it does not have.
-  it("links the unported pages at the paths Python serves", async () => {
+  // Every section keeps the path it had under Python: a bookmark, a `?t=`
+  // deeplink and the rail itself all point at the same URLs the surface has
+  // always had, and only the process answering them changed.
+  it("links every section at the path that section has always had", async () => {
     stubSession();
     await mount();
 

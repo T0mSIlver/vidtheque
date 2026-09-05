@@ -22,10 +22,12 @@ import { useRead } from "./useRead";
 
 type Item = { href: string; label: string };
 
-// Which of these five this app serves and which are still Jinja is `ported.ts`'s
-// answer, not a flag repeated here: `DashLink` asks it, and so does every other
-// link into this surface. Porting a page adds its path to that list, names it in
-// `proxy.ts`'s matcher, and nothing in the rail changes at all.
+// Whether a path is a page this app serves is `ported.ts`'s answer, not a flag
+// repeated here: `DashLink` asks it, and so does every other link into this
+// surface. All five sections are pages here now, and the question survives the
+// port because `/dashboard` still holds paths that are Python's and are not
+// pages — a client-side navigation to one of those would ask this app's router
+// for a route it does not have.
 const SECTIONS: Item[] = [
   { href: ROOT, label: "Overview" },
   { href: `${ROOT}/ledger`, label: "Ledger" },
