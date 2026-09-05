@@ -356,10 +356,10 @@ _CONTENT_WORDS = {
 
 # Three sources are three kinds of evidence, and the page says which one it is
 # holding rather than letting the snippet imply it. The words are the demo's own
-# (`public/static/demo/app.js`), so a badge means the same thing on both
-# surfaces: `spoken` was said out loud, `on-screen` was read off the screen by
-# OCR, `frame` matched on the picture with no text involved at all. `kind` is
-# what the stylesheet colours from — and only `screen` is allowed lime, because
+# (`web/src/lib/group.ts`), so a badge means the same thing on both surfaces:
+# `spoken` was said out loud, `on-screen` was read off the screen by OCR,
+# `frame` matched on the picture with no text involved at all. `kind` is what
+# the stylesheet colours from — and only `screen` is allowed lime, because
 # only `screen` is evidence the machine read off a slide (The Lime Rule).
 _SOURCE_WORDS: dict[str, tuple[tuple[str, str], ...]] = {
     "transcript": (("spoken", "spoken"),),
