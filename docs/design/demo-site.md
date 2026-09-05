@@ -149,6 +149,12 @@ Facade rules:
   is a *URL*, not bytes: the enlarged frame is fetched only if a visitor opens
   one (§6.4), and it is built here because the width has to be clamped (and,
   under `token`/`oauth`, signed) server-side.
+- **Nothing it answers is cacheable** (added 2026-09-05). Every response the
+  facade returns — the four reads and every typed refusal — carries
+  `Cache-Control: no-store`, because it describes a corpus that changes under
+  the reader and the same handlers serve `/dashboard/api/*` behind the owner
+  gate, where a management read must never be held by a shared cache; the
+  header is unconditional since a handler cannot see which prefix reached it.
 - **Agent text is humanised here, and only here.** The tool's text is written
   for a model and stays that way; the facade translates it for a reader on the
   way out, through one small module (§2.4). The facade still does **not**
