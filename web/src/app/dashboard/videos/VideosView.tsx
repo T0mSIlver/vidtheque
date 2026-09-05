@@ -26,7 +26,10 @@ import styles from "./videos.module.css";
 // 100`), `order` is echoed because it was never inferrable from `q`, and
 // `total` is the exact count of the filtered set rather than the tool's `~`
 // probe — a tilde over a table with a Next button is the one thing on the line
-// a reader cannot act on.
+// a reader cannot act on. The four date controls are the one place the URL is
+// not what the page shows: the server resolves each of them to a UTC day
+// before it filters, so the picker and the strip read that day back off the
+// payload and print the filter that ran.
 
 /** Every parameter the contract lists, in the order the band asks them. */
 const FILTERS = [
@@ -50,6 +53,18 @@ const PAGE_KEYS = [...FILTERS, "offset"];
 const INDEX_STATES = ["pending", "indexing", "ready", "failed", "stale"];
 const HAS_VALUES = ["any", "transcript", "ocr", "frames", "all"];
 const ORDERS = ["recency", "title", "duration", "indexed_at", "relevance"];
+
+/** The four date controls, which are the ones the server resolves before it
+ *  filters — so they are read back off the payload rather than out of the URL. */
+const DATE_KEYS = [
+  "published_after",
+  "published_before",
+  "indexed_after",
+  "indexed_before",
+] as const;
+type DateKey = (typeof DATE_KEYS)[number];
+
+const DAY_S = 86_400;
 
 // A picker sitting on the value the API would have used anyway. Sending it is
 // not wrong, but it puts `&index_state=all&has=any` on every link a reader
@@ -85,6 +100,7 @@ export function VideosView() {
     [search],
   );
   const state = useRead(read);
+  const dates = dateValues(search, state.status === "ready" ? state.data.filters : undefined);
 
   const refusal = state.status === "failed" ? state.error : null;
   // `order=relevance` without a `q`, and a date that will not parse. Both are
@@ -96,7 +112,7 @@ export function VideosView() {
   return (
     <>
       <PageHead title="Videos">
-        <Narrowing search={search} />
+        <Narrowing search={search} dates={dates} />
       </PageHead>
 
       {state.status !== "failed" || badFilter ? (
@@ -105,6 +121,7 @@ export function VideosView() {
         // page of fifty says nothing about how big a page is.
         <Filters
           search={search}
+          dates={dates}
           limit={state.status === "ready" ? state.data.pagination.limit : undefined}
         />
       ) : null}
@@ -134,20 +151,20 @@ export function VideosView() {
 
 /** What is actually narrowing the table, on the title's own baseline.
  *
- *  The URL's values, not the payload's echo: `filters.published_before` is the
- *  start of the day *after* the one asked for, because that is the bound the
- *  query used, and a reader who typed the ninth must read the ninth back. An
- *  open end is `…` rather than a made-up boundary — "published 2025-01-01 …"
- *  says one end is set, where a filled-in second date would be the page
- *  inventing a filter nobody applied.
+ *  The dates are the days the query ran on (`dateValues`), not the strings the
+ *  URL happened to carry: a bound the server clamped or snapped and this line
+ *  re-printed unchanged would be the page vouching for a filter that never
+ *  ran. An open end is `…` rather than a made-up boundary — "published
+ *  2025-01-01 …" says one end is set, where a filled-in second date would be
+ *  the page inventing a filter nobody applied.
  *
  *  The order is deliberately not here: every other entry is a *narrowing*, and
  *  an order takes no rows out. The sorted column's own underline says it. */
-function Narrowing({ search }: { search: string }) {
+function Narrowing({ search, dates }: { search: string; dates: Record<DateKey, string> }) {
   const params = new URLSearchParams(search);
   const value = (key: string) => params.get(key)?.trim() || "";
-  const range = (after: string, before: string) =>
-    value(after) || value(before) ? `${value(after) || "…"} – ${value(before) || "…"}` : "";
+  const range = (after: DateKey, before: DateKey) =>
+    dates[after] || dates[before] ? `${dates[after] || "…"} – ${dates[before] || "…"}` : "";
 
   const facts: [string, string][] = [];
   const state = value("index_state");
@@ -187,8 +204,21 @@ function Narrowing({ search }: { search: string }) {
  * owns what is being typed and a navigation reseeds every control from the URL
  * that arrived. Controlled inputs here would mean a state to keep in step with
  * a URL that is already the state.
+ *
+ * The four date boxes carry their own key as well, because their value is the
+ * payload's and arrives one read later than the rest of the band: re-keying is
+ * how an uncontrolled input is re-seeded when the answer lands, and what it
+ * lands on is the day the query ran.
  */
-function Filters({ search, limit }: { search: string; limit?: number }) {
+function Filters({
+  search,
+  dates,
+  limit,
+}: {
+  search: string;
+  dates: Record<DateKey, string>;
+  limit?: number;
+}) {
   const router = useRouter();
   const params = new URLSearchParams(search);
   const value = (key: string, fallback = "") => params.get(key) ?? fallback;
@@ -286,10 +316,11 @@ function Filters({ search, limit }: { search: string; limit?: number }) {
             Published on or after
           </label>
           <input
+            key={dates.published_after}
             id="f-pub-after"
             name="published_after"
             type="date"
-            defaultValue={value("published_after")}
+            defaultValue={dates.published_after}
           />
           <span className={styles.rangeSep} aria-hidden="true">
             –
@@ -298,10 +329,11 @@ function Filters({ search, limit }: { search: string; limit?: number }) {
             Published on or before
           </label>
           <input
+            key={dates.published_before}
             id="f-pub-before"
             name="published_before"
             type="date"
-            defaultValue={value("published_before")}
+            defaultValue={dates.published_before}
           />
         </div>
       </fieldset>
@@ -312,10 +344,11 @@ function Filters({ search, limit }: { search: string; limit?: number }) {
             Indexed on or after
           </label>
           <input
+            key={dates.indexed_after}
             id="f-idx-after"
             name="indexed_after"
             type="date"
-            defaultValue={value("indexed_after")}
+            defaultValue={dates.indexed_after}
           />
           <span className={styles.rangeSep} aria-hidden="true">
             –
@@ -324,10 +357,11 @@ function Filters({ search, limit }: { search: string; limit?: number }) {
             Indexed on or before
           </label>
           <input
+            key={dates.indexed_before}
             id="f-idx-before"
             name="indexed_before"
             type="date"
-            defaultValue={value("indexed_before")}
+            defaultValue={dates.indexed_before}
           />
         </div>
       </fieldset>
@@ -658,6 +692,38 @@ function Empty({ data, search }: { data: Library; search: string }) {
       </p>
     </section>
   );
+}
+
+/** The four date controls' values: the day the query was actually filtered on.
+ *
+ *  The payload's echo rather than the URL, because the server resolves a date
+ *  before it filters (§20): `30d` and a bare unix stamp are good things to be
+ *  able to type into a URL and are not days, a bound outside [1970, a year
+ *  out] is pulled back to the edge, and every accepted value is snapped to its
+ *  UTC day. A picker seeded from the raw string would show a filter that did
+ *  not run, next to a `note:` saying which one did.
+ *
+ *  `_before` is *exclusive* — the start of the day after the one asked for,
+ *  which is what makes `published_before=2026-08-09` include the ninth — so it
+ *  is read back a day earlier and the reader sees the date they asked for. The
+ *  floor is a second rather than midnight, because `day` prints the dash for a
+ *  falsy stamp and a date box cannot be seeded from a dash.
+ *
+ *  Until the read lands there is no resolved day to show, so the boxes hold
+ *  what the reader typed — the URL is what this page was opened with. */
+function dateValues(search: string, filters?: Library["filters"]): Record<DateKey, string> {
+  const params = new URLSearchParams(search);
+  const values = {} as Record<DateKey, string>;
+  for (const key of DATE_KEYS) {
+    if (!filters) {
+      values[key] = params.get(key)?.trim() ?? "";
+      continue;
+    }
+    const echoed = filters[key];
+    const asked = echoed === null ? null : key.endsWith("_before") ? echoed - DAY_S : echoed;
+    values[key] = asked === null ? "" : day(Math.max(asked, 1));
+  }
+  return values;
 }
 
 /** The page's URL, filtered down to the parameters the contract takes.
