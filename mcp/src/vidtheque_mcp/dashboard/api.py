@@ -526,9 +526,6 @@ async def video(request: Request) -> Response:
         video_id,
         frame_page=frame_page,
         frame_offset=frame_offset,
-        # The one read this surface does not take. `cue_page=None` is not a
-        # filter on the answer, it is the absence of a query.
-        cue_page=None,
         redact=redact,
     )
     if data is None:
