@@ -124,6 +124,11 @@ const DASHBOARD_TO_PYTHON = ["/dashboard", "/dashboard/:path*"];
 // pages render per request instead, and the reads that were `"use cache"` are
 // `unstable_cache` in `src/lib/library.ts`.
 const nextConfig: NextConfig = {
+  // `web/Dockerfile`'s runtime stage copies the traced server bundle instead of
+  // a node_modules tree. It is an output format and nothing else: the routes,
+  // the rewrites below and the per-request headers `proxy.ts` sends are the
+  // same either way, and `next start` on a full build still works.
+  output: "standalone",
   async rewrites() {
     const base = process.env.VIDTHEQUE_API_URL?.replace(/\/+$/, "");
     if (process.env.NODE_ENV === "production" || !base) return [];
