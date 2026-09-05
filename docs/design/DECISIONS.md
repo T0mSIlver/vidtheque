@@ -19,6 +19,12 @@ retains authorization, sessions, and resource limits. Next renders pages and
 may read Python over HTTP for server rendering. Cross-origin browser access
 requires an explicit CORS policy; same-origin deployment avoids that need.
 
+Dashboard HTTP responses use typed values and explicit state fields. React
+owns display formatting, such as seconds to `4m 12s`, dates, counts, and
+badges. Python retains policy text, including refusal messages and truncation
+notes. Tom chose this split over carrying the current preformatted strings
+into the new frontend.
+
 This supersedes the Jinja2 and no-build-step frontend choice in
 `dashboard.md` and `PRODUCT.md`. Existing authorization, public read-only
 behavior, payload bounds, and the HTTP-only `mcp/` to `worker/` boundary
