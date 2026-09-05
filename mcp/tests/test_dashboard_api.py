@@ -32,7 +32,7 @@ from vidtheque_mcp.dashboard.read_models import (
     TAG_CAP,
 )
 from vidtheque_mcp.dashboard.settings import DashboardSettings
-from vidtheque_mcp.text import clock
+from vidtheque_mcp.text import clock, iso_day
 
 from .test_dashboard import (
     BEARER,
@@ -683,6 +683,11 @@ def test_the_table_clamps_every_bound_and_says_when_one_moved(
     accepted number in the box they typed into. A JSON caller has no form, so
     the sentence is the disclosure — and it is Python's, like every other piece
     of policy text on this surface.
+
+    The four date bounds are the same rule and move for one more reason: each
+    is filtered as a whole UTC day, so an instant becomes the day around it.
+    Clamped or snapped, the query ran on something other than what the URL
+    said, which is the narrowing CLAUDE.md forbids doing quietly.
     """
     with make_client(tmp_path) as client:
         clamped = read(client, f"{LIBRARY}?limit=100000&offset=999999")
@@ -701,8 +706,35 @@ def test_the_table_clamps_every_bound_and_says_when_one_moved(
         text = " ".join(coerced["notes"])
         assert "has=" in text and "index_state=" in text
 
-        # A number that was inside the bounds says nothing at all.
+        # A year out is the ceiling, and the note names the day that ran
+        # rather than the year that did not.
+        ceiling = iso_day(int(time.time()) + 365 * 86_400)
+        future = read(client, f"{LIBRARY}?published_before=2999-01-01")
+        assert f"published_before=2999-01-01 → {ceiling}" in " ".join(future["notes"])
+        # `_before` is exclusive: the epoch echoed is the start of the day
+        # *after* the one the note names, which is what includes that day.
+        assert future["filters"]["published_before"] % 86_400 == 0
+
+        # Below the floor: the column is unix seconds and 1970 is where they
+        # start, so the filter that ran is the first day and it says so.
+        ancient = read(client, f"{LIBRARY}?indexed_after=1960-01-01")
+        assert ancient["filters"]["indexed_after"] == 0
+        assert "indexed_after=1960-01-01 → 1970-01-01" in " ".join(ancient["notes"])
+
+        # Inside the bounds and still moved: a bare unix stamp is an instant,
+        # and the query filtered the whole day around it.
+        midday = read(client, f"{LIBRARY}?published_after=1673957000")
+        assert midday["filters"]["published_after"] == 1673913600
+        assert "published_after=1673957000 → 2023-01-17" in " ".join(midday["notes"])
+
+        instant = read(client, f"{LIBRARY}?indexed_before=2023-01-17T12:00:00Z")
+        assert instant["filters"]["indexed_before"] == 1673913600 + 86_400
+        assert "indexed_before=2023-01-17T12:00:00Z → 2023-01-17" in " ".join(instant["notes"])
+
+        # A number that was inside the bounds says nothing at all, and neither
+        # does a date that already names the day it was going to be filtered on.
         assert read(client, f"{LIBRARY}?limit=2")["notes"] == []
+        assert read(client, f"{LIBRARY}?published_after=2023-01-17")["notes"] == []
 
 
 def test_the_table_orders_and_filters_the_way_the_page_does(tmp_path: Path) -> None:

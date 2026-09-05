@@ -2424,7 +2424,13 @@ same code (`read_models.videos_reads`), and every bound is server-side:
 | `order` | `recency\|title\|duration\|indexed_at\|relevance` | `relevance` with `q`, else `recency` | unknown → the default, with a `note:` |
 | `limit` | 1..100 | 50 | clamped, with a `note:` naming both numbers |
 | `offset` | 0..10 000 | 0 | clamped, with a `note:` |
-| `published_after/before`, `indexed_after/before` | anything `parse_corpus_time` takes | — | floor 1 s, ceiling now + 365 d, snapped to the UTC day |
+| `published_after/before`, `indexed_after/before` | anything `parse_corpus_time` takes | — | floor 1 s, ceiling now + 365 d, snapped to the UTC day, with a `note:` |
+
+A date's `note:` is written on the same rule as `limit`'s and fires for one
+more reason than a clamp: every bound is filtered as a whole UTC day, so an
+instant is snapped to the day around it, and a bound that moved either way
+names both the value asked for and the day that ran (`published_after=30d →
+2026-08-06`). A value that already named its day says nothing.
 
 The detail takes the strip's two, and no cue parameters at all:
 
