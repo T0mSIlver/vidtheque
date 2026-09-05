@@ -354,6 +354,29 @@ def test_the_ledger_json_is_the_tally_the_page_prints(tmp_path: Path) -> None:
     assert set(body["embed_backlog"]) == {"text", "frame"}
 
 
+def test_the_ledger_carries_the_published_span_the_band_prints(
+    tmp_path: Path,
+) -> None:
+    """The band under the video count reads "published <oldest> – <newest>",
+    and the payload had no field for it (2026-09-05).
+
+    Same name and same shape as the overview's, off the same `corpus_rollup`
+    the counts above come from — one more read is not what this cost, and a
+    client reading both payloads must not have to learn two spellings of one
+    fact.
+    """
+    with make_client(tmp_path) as client:
+        ledger = read(client, LEDGER)
+        overview = read(client, OVERVIEW)
+
+    span = ledger["corpus"]["published"]
+    assert set(span) == {"oldest", "newest"}
+    assert isinstance(span["oldest"], int) and isinstance(span["newest"], int)
+    assert span["oldest"] <= span["newest"]
+    # Epoch seconds, never the `day` filter's string the template renders.
+    assert span == overview["corpus"]["published"]
+
+
 def test_neither_payload_carries_a_rendered_clock(tmp_path: Path) -> None:
     """The rule with the one field that nearly broke it.
 
