@@ -136,6 +136,8 @@ describe("proxy", () => {
       "/dashboard/ledger",
       "/dashboard/videos",
       "/dashboard/videos/kCc8FmEb1nY",
+      "/dashboard/jobs",
+      "/dashboard/jobs/job_finished01",
     ]) {
       expect(matches(path), path).toBe(true);
     }
@@ -147,15 +149,20 @@ describe("proxy", () => {
       "/dashboard/api/videos/kCc8FmEb1nY/cues",
       "/dashboard/static/dashboard.css",
       "/dashboard/static/fonts/archivo-latin-wght-normal.woff2",
+      "/dashboard/api/jobs",
+      "/dashboard/api/jobs/job_finished01",
       "/dashboard/login",
       "/dashboard/logout",
       "/dashboard/index",
-      "/dashboard/jobs",
       "/dashboard/following",
       // The row actions are Python's `POST`s and have a segment the detail
-      // page does not: three under `/videos`, not two.
+      // page does not: three under their section, not two. The two jobs writes
+      // are the ones the ported page itself calls, so this is the assertion
+      // that keeps them Python's.
       "/dashboard/videos/kCc8FmEb1nY/reindex",
       "/dashboard/videos/kCc8FmEb1nY/tags",
+      "/dashboard/jobs/job_running001/cancel",
+      "/dashboard/jobs/job_finished01/retry",
       // Not a page here either: a sub-path of one that is.
       "/dashboard/ledger/anything",
     ]) {

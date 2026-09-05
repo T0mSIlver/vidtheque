@@ -3,10 +3,11 @@ import type { NextConfig } from "next";
 // Python owns every path that is not a page. In production both processes sit
 // behind one reverse proxy on one origin: exact page GETs (`/`, `/demo`,
 // `/videos`, `/videos/{id}`, and under the dashboard `/dashboard`,
-// `/dashboard/ledger`, `/dashboard/videos` and `/dashboard/videos/{video_id}`)
-// reach Next, and `/api/*`, `/frames/*`, `/mcp`, `/auth/*`, `/.well-known/*`,
-// `/healthz`, `/videos/{id}/export.md` and the rest of `/dashboard/*` reach
-// Python. Routing that split is the reverse proxy's job, not this file's.
+// `/dashboard/ledger`, `/dashboard/videos`, `/dashboard/videos/{video_id}`,
+// `/dashboard/jobs` and `/dashboard/jobs/{job_id}`) reach Next, and `/api/*`,
+// `/frames/*`, `/mcp`, `/auth/*`, `/.well-known/*`, `/healthz`,
+// `/videos/{id}/export.md` and the rest of `/dashboard/*` reach Python.
+// Routing that split is the reverse proxy's job, not this file's.
 //
 // Development runs the two on separate ports, and the browser still has to see
 // one origin: Python reads a request from `localhost:3000` against its own
@@ -43,11 +44,12 @@ const PYTHON_PATHS = [
 
 // The rest of `/dashboard`, which is being ported one page at a time
 // (docs/ROADMAP.md). `afterFiles` is the whole point: it is consulted *after*
-// the router has looked for a page, so the four pages in `src/app/dashboard/`
+// the router has looked for a page, so the six pages in `src/app/dashboard/`
 // win their own paths, and everything with no page yet — `/dashboard/search`,
-// `/dashboard/jobs/{id}`, every POST behind them, `/dashboard/videos/{id}/tags`
-// included — falls through to the Jinja pages exactly as before. Each port
-// deletes nothing here; it just adds a page the router finds first.
+// `/dashboard/following`, every POST behind them, `/dashboard/jobs/{id}/cancel`
+// and `/dashboard/videos/{id}/tags` included — falls through to the Jinja
+// pages exactly as before. Each port deletes nothing here; it just adds a page
+// the router finds first.
 const DASHBOARD_UNPORTED = ["/dashboard", "/dashboard/:path*"];
 
 // Cache Components is deliberately absent. It was on, and it is what made

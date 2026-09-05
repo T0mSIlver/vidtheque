@@ -144,13 +144,33 @@ export const config = {
       ],
     },
     {
-      // The one ported page with an id in it. Written as a group rather than
+      // The first ported page with an id in it. Written as a group rather than
       // `/dashboard/videos/:id` for the same reason the exclusion above is a
       // lookahead: every source here is already the regular expression Next
       // compiles it into, which is what lets `proxy.test.ts` run the matcher
       // rather than reimplement it. One segment, so `/videos/{id}/reindex` —
       // a POST that stays Python's — is not matched.
       source: "/dashboard/videos/([^/]+)",
+      missing: [
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ],
+    },
+    {
+      source: "/dashboard/jobs",
+      missing: [
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ],
+    },
+    {
+      // The job's own page, on the same one-segment rule and for a sharper
+      // reason: `/dashboard/jobs/{id}/cancel` and `/dashboard/jobs/{id}/retry`
+      // are the two POSTs these pages call, and they must stay Python's — the
+      // page fetches them same-origin with the session cookie. Three segments
+      // do not match this, so the table's last row in §1d — "every other
+      // `POST /dashboard/*`" — holds with no exception written for it.
+      source: "/dashboard/jobs/([^/]+)",
       missing: [
         { type: "header", key: "next-router-prefetch" },
         { type: "header", key: "purpose", value: "prefetch" },
