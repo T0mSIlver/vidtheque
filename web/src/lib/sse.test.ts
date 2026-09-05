@@ -33,6 +33,34 @@ describe("sseParser", () => {
     const parser = sseParser();
     expect(parser.push("data: 1\r\n\r\ndata: 2\r\n\r\n")).toEqual(["1", "2"]);
   });
+
+  // The bug this pins: each chunk used to be CRLF-normalised on its own, so a
+  // "\r\n" the network split in half became two lone newlines and the blank
+  // line between frames stopped being blank. Splitting the recorded stream at
+  // every single position is the cheapest way to say "any split".
+  it("frames a CRLF stream at every possible chunk boundary", () => {
+    const wire = FIXTURE.replace(/\n/g, "\r\n");
+    for (let cut = 0; cut <= wire.length; cut++) {
+      const parser = sseParser();
+      const frames = [...parser.push(wire.slice(0, cut)), ...parser.push(wire.slice(cut))];
+      frames.push(...parser.flush());
+      expect(frames, `split at ${cut}`).toHaveLength(11);
+    }
+  });
+
+  it("frames a CRLF stream one character at a time", () => {
+    const wire = ': ok\r\n\r\ndata: {"a":1}\r\n\r\ndata: two\r\n\r\n';
+    const parser = sseParser();
+    const frames = [...wire].flatMap((c) => parser.push(c));
+    frames.push(...parser.flush());
+    expect(frames).toEqual(['{"a":1}', "two"]);
+  });
+
+  it("keeps a trailing CR buffered until it knows what follows", () => {
+    const parser = sseParser();
+    expect(parser.push("data: 1\r\n\r")).toEqual([]);
+    expect(parser.push("\ndata: 2\r\n\r\n")).toEqual(["1", "2"]);
+  });
 });
 
 describe("readJsonEvents", () => {
@@ -48,5 +76,43 @@ describe("readJsonEvents", () => {
       expect(last.payload.citations.length).toBeGreaterThan(0);
       expect(last.payload.answer).toMatch(/KV cache/);
     }
+  });
+
+  it("decodes a character the chunk boundary cut in half", async () => {
+    const payload = { event: "note", text: "café — déjà vu" };
+    const bytes = new TextEncoder().encode(`data: ${JSON.stringify(payload)}\n\n`);
+    // Between the two bytes of "é": a decoder without streaming state would
+    // put a replacement character here.
+    const cut = bytes.indexOf(0xc3) + 1;
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(bytes.slice(0, cut));
+        c.enqueue(bytes.slice(cut));
+        c.close();
+      },
+    });
+    const events: unknown[] = [];
+    for await (const raw of readJsonEvents(body)) events.push(raw);
+    expect(events).toEqual([payload]);
+  });
+
+  it("cancels the body when the consumer stops early", async () => {
+    let cancelled = false;
+    // Never closed: only the cancel releases it, which is what a component
+    // unmounting mid-answer depends on.
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(new TextEncoder().encode("data: 1\n\ndata: 2\n\n"));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    for await (const raw of readJsonEvents(body)) {
+      expect(raw).toBe(1);
+      break;
+    }
+    expect(cancelled).toBe(true);
+    expect(body.locked).toBe(false);
   });
 });

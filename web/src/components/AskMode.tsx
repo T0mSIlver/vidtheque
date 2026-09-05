@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { AskDegraded, AskEvent, type AskAnswer, type Citation } from "@/lib/api/schemas";
+import { AskEvent, AskFailure, type AskAnswer, type Citation } from "@/lib/api/schemas";
 import { receipt } from "@/lib/format";
 import { readJsonEvents } from "@/lib/sse";
 import { Frame } from "./Frame";
@@ -18,7 +18,32 @@ type Phase =
   | { kind: "idle" }
   | { kind: "working"; lines: Line[] }
   | { kind: "answered"; lines: Line[]; answer: AskAnswer }
-  | { kind: "degraded"; lines: Line[]; body: AskDegraded };
+  | { kind: "degraded"; lines: Line[]; body: AskFailure };
+
+// The event kinds this build knows. A kind it does not is a server that has
+// grown a new one: skipped, because ignoring an addition is what forward
+// compatibility means. One of these arriving malformed is a different thing —
+// the answer is not coming — and it says so.
+const KNOWN_EVENTS = new Set(["activity", "answer", "error"]);
+
+// The stream ended before the answer did: the connection dropped, the model
+// timed out, the proxy cut it. There is nothing to show and nothing to blame,
+// so it offers the one thing that helps.
+const INTERRUPTED: AskFailure = {
+  error: "interrupted",
+  reason: "no_terminal_event",
+  message: "The answer stopped before it finished.",
+  retry_after_s: null,
+};
+
+// A known event kind that did not match its shape. Not swallowed: the events
+// after it describe an answer we can no longer trust.
+const MALFORMED: AskFailure = {
+  error: "malformed_stream",
+  reason: "bad_event",
+  message: "The answer arrived in a shape this page does not understand.",
+  retry_after_s: null,
+};
 
 export function AskMode({ initialQ }: { initialQ: string }) {
   const [q, setQ] = useState(initialQ);
@@ -28,16 +53,19 @@ export function AskMode({ initialQ }: { initialQ: string }) {
 
   useEffect(() => () => abort.current?.abort(), []);
 
-  async function ask(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const question = q.trim();
+  async function ask(question: string) {
     if (!question) return;
     abort.current?.abort();
     const controller = new AbortController();
     abort.current = controller;
+    // A reply that lost the race — a second ask, or an unmount — must not
+    // land on top of the state the newer one is building.
+    const show = (next: Phase) => {
+      if (abort.current === controller && !controller.signal.aborted) setPhase(next);
+    };
 
     let lines: Line[] = [];
-    setPhase({ kind: "working", lines });
+    show({ kind: "working", lines });
     try {
       const res = await fetch("/api/ask", {
         method: "POST",
@@ -47,38 +75,53 @@ export function AskMode({ initialQ }: { initialQ: string }) {
       });
       if (!res.body || !res.headers.get("content-type")?.startsWith("text/event-stream")) {
         // A 429, a 503 before the stream opened, or a proxy error: one body.
-        const body = AskDegraded.safeParse(await res.json().catch(() => null));
-        setPhase({
-          kind: "degraded",
-          lines,
-          body: body.success ? body.data : unreachable(res.status),
-        });
+        // Whatever the sender, it said something — that sentence is the one
+        // the visitor gets, not a stand-in about being unreachable.
+        show({ kind: "degraded", lines, body: await failureBody(res) });
         return;
       }
+      // The stream is only finished when it says so. Bytes running out first
+      // is a truncated answer, and silence would leave the box looking ready.
+      let settled = false;
       for await (const raw of readJsonEvents(res.body)) {
-        const ev = AskEvent.parse(raw);
+        const parsed = AskEvent.safeParse(raw);
+        if (!parsed.success) {
+          if (isFutureEvent(raw)) continue;
+          show({ kind: "degraded", lines, body: MALFORMED });
+          settled = true;
+          break;
+        }
+        const ev = parsed.data;
         if (ev.event === "activity") {
           lines =
             ev.phase === "start"
               ? [...lines, { id: ev.id, text: ev.text ?? "" }]
               : lines.map((l) => (l.id === ev.id ? { ...l, result: ev.result ?? "" } : l));
-          setPhase({ kind: "working", lines });
+          show({ kind: "working", lines });
         } else if (ev.event === "answer") {
-          setPhase({ kind: "answered", lines, answer: ev.payload });
+          show({ kind: "answered", lines, answer: ev.payload });
+          settled = true;
         } else {
-          setPhase({ kind: "degraded", lines, body: ev.payload });
+          show({ kind: "degraded", lines, body: ev.payload });
+          settled = true;
         }
       }
+      if (!settled) show({ kind: "degraded", lines, body: INTERRUPTED });
     } catch (err) {
       if (controller.signal.aborted) return;
-      setPhase({ kind: "degraded", lines, body: unreachable(0, err) });
+      show({ kind: "degraded", lines, body: unreachable(0, err) });
     }
+  }
+
+  function onSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void ask(q.trim());
   }
 
   const busy = phase.kind === "working";
   return (
     <div className={styles.ask}>
-      <form onSubmit={ask} className={styles.form} aria-busy={busy}>
+      <form onSubmit={onSubmit} className={styles.form} aria-busy={busy}>
         <input
           type="text"
           value={q}
@@ -98,18 +141,39 @@ export function AskMode({ initialQ }: { initialQ: string }) {
 
       {phase.kind !== "idle" ? <WorkLog lines={phase.lines} live={busy} /> : null}
       {phase.kind === "answered" ? <Answer answer={phase.answer} /> : null}
-      {phase.kind === "degraded" ? <Degraded body={phase.body} q={q} /> : null}
+      {phase.kind === "degraded" ? (
+        <Degraded body={phase.body} q={q} onRetry={() => void ask(q.trim())} />
+      ) : null}
     </div>
   );
 }
 
-function unreachable(status: number, err?: unknown): AskDegraded {
+function unreachable(status: number, err?: unknown): AskFailure {
   return {
     error: "unreachable",
     reason: status ? `http_${status}` : err instanceof Error ? err.name : "network",
     message: "The corpus could not be reached — use search.",
     retry_after_s: null,
   };
+}
+
+// The body of a reply that never became a stream. The limiter's envelope has
+// no `reason`; §3.4's degraded body does. Both carry the sentence to show and,
+// between the body and the header, when to come back.
+async function failureBody(res: Response): Promise<AskFailure> {
+  const header = Number(res.headers.get("retry-after")) || null;
+  const parsed = AskFailure.safeParse(await res.json().catch(() => null));
+  if (!parsed.success) return { ...unreachable(res.status), retry_after_s: header };
+  return { ...parsed.data, retry_after_s: parsed.data.retry_after_s ?? header };
+}
+
+// An event kind this build has never heard of, which is the one case worth
+// skipping past. Anything else — no `event` field, a kind we know arriving
+// wrong — is a stream that has stopped making sense.
+function isFutureEvent(raw: unknown): boolean {
+  if (typeof raw !== "object" || raw === null) return false;
+  const kind = (raw as { event?: unknown }).event;
+  return typeof kind === "string" && !KNOWN_EVENTS.has(kind);
 }
 
 // "Show its work" (§6.6): one line per tool call, the one still running
@@ -177,13 +241,21 @@ function Source({ c }: { c: Citation }) {
   );
 }
 
-function Degraded({ body, q }: { body: AskDegraded; q: string }) {
+// What stopped the ask, in the sender's own words, and the two ways out: ask
+// again, or search. The retry wears the submit button's style because it is
+// the same act, and a second look for it would be a second thing to learn.
+function Degraded({ body, q, onRetry }: { body: AskFailure; q: string; onRetry: () => void }) {
   return (
     <div className={styles.degraded} role="status">
       <p>{body.message}</p>
       {body.retry_after_s ? (
         <p className={styles.mono}>try again in {body.retry_after_s}s</p>
       ) : null}
+      <p>
+        <button type="button" onClick={onRetry} disabled={!q.trim()} className={styles.go}>
+          Try again
+        </button>
+      </p>
       <p>
         <Link href={q.trim() ? `/?q=${encodeURIComponent(q.trim())}` : "/"}>Search instead</Link>
       </p>
