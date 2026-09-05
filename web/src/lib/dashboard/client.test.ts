@@ -442,6 +442,60 @@ describe("the dashboard client", () => {
       expect(outcome.errors[0].error).toBe("E_RATE_LIMIT");
       expect(outcome.selected).toBe(2);
     });
+
+    // The thirteenth write, and the only one whose `401` is not the signal to
+    // go and sign in: it *is* the sign-in, and obeying the rule would send the
+    // reader back to the page they typed the secret into (§21).
+    describe("the sign-in", () => {
+      const LOGIN = "/dashboard/login";
+
+      it("sends the secret and where the reader was going", async () => {
+        const { calls, fetchImpl } = fake({
+          [LOGIN]: { body: { signed_in: true, next: "/dashboard/jobs" } },
+        });
+
+        const outcome = await createDashboardClient({ fetch: fetchImpl }).signIn({
+          password: "hunter2",
+          next: "/dashboard/jobs",
+        });
+
+        expect(outcome.signed_in).toBe(true);
+        expect(outcome.next).toBe("/dashboard/jobs");
+        const init = calls[0].init;
+        expect(init.method).toBe("POST");
+        expect(init.body).toBe("password=hunter2&next=%2Fdashboard%2Fjobs");
+        expect((init.headers as Record<string, string>).accept).toBe("application/json");
+      });
+
+      it("does not send a refused secret to the sign-in page", async () => {
+        const navigate = vi.fn();
+        const { calls, fetchImpl } = fake({
+          [LOGIN]: {
+            status: 401,
+            body: {
+              error: "E_BAD_CREDENTIAL",
+              message: "That secret does not match this instance.",
+            },
+          },
+          [SESSION_PATH]: { body: SESSION },
+        });
+
+        const error = await createDashboardClient({
+          fetch: fetchImpl,
+          navigate,
+          currentPath: () => "/dashboard/login",
+        })
+          .signIn({ password: "wrong" })
+          .catch((e: unknown) => e);
+
+        expect((error as DashboardError).status).toBe(401);
+        expect((error as DashboardError).code).toBe("E_BAD_CREDENTIAL");
+        expect(navigate).not.toHaveBeenCalled();
+        // And it does not go and ask the session endpoint either: the whole
+        // 401 path is off, not just its last step.
+        expect(calls.map((call) => call.path)).toEqual([LOGIN]);
+      });
+    });
   });
 
   // -------------------------------------------------------- the follows
