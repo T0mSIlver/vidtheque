@@ -150,11 +150,6 @@ def _accepts_json(request: Request) -> bool:
     return html_q is None or json_q > html_q
 
 
-def _epoch(value: Any) -> int | None:
-    """A stored unix stamp as an int, or `None` when the row has none."""
-    return None if value is None else int(value)
-
-
 def _json(payload: dict[str, Any], status: int = 200) -> JSONResponse:
     """A write's outcome, under the read side's own cache rule."""
     return JSONResponse(payload, status_code=status, headers=NO_STORE)
