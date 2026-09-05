@@ -66,6 +66,28 @@ SESSION = f"{ROOT}/api/session"
 # `/dashboard/api/videos` is the facade's listing at this prefix and stays it.
 LIBRARY = f"{ROOT}/api/library"
 FACADE = f"{ROOT}/api/videos"
+FACADE_SEARCH = f"{ROOT}/api/search"
+
+# The hit fields `dashboard/templates/search.html` renders, listed here rather
+# than scraped, because the point is to notice when one of them stops arriving.
+# Six the template names directly — `hit.thumb`, `hit.thumb_large`,
+# `hit.frame_id`, `hit.match_start`, `hit.title`, `hit.channel` — and four it
+# reaches through `views.search`'s four derivations: `link` becomes `receipt`,
+# `video_id` (with `frame_id`) becomes `inside`, `source` becomes `evidence`,
+# `text` becomes `parts`. The React search page reads the same payload, so a
+# trim of the facade that would empty that page fails here first.
+SEARCH_HIT_KEYS = {
+    "channel",
+    "frame_id",
+    "link",
+    "match_start",
+    "source",
+    "text",
+    "thumb",
+    "thumb_large",
+    "title",
+    "video_id",
+}
 # The half-indexed video: two stage rows, one of them failed with yt-dlp's
 # prose in it, which is what the detail projection has to lose.
 HALF = "aaaaaaaaaaa"
@@ -596,6 +618,29 @@ def test_the_two_video_reads_sit_behind_the_same_gate_and_are_get_only(
             assert methods <= {"GET", "HEAD"}, path
 
 
+def test_the_facade_search_hit_still_carries_every_field_the_page_reads(
+    tmp_path: Path,
+) -> None:
+    """`/dashboard/api/search` is a superset of what the search page renders.
+
+    The Jinja page and the React one read one payload — `search_payload`'s —
+    and the Jinja one derives its receipt, its in-index link, its evidence
+    badges and its marked snippet from fields the facade returns rather than
+    from a second query. Pinning the set means a future trim of the facade
+    fails a test instead of quietly emptying a page.
+
+    `read()` also asserts the `no-store` this surface answers with, which the
+    facade's handlers now carry on both of their prefixes.
+    """
+    with make_client(tmp_path) as client:
+        payload = read(client, f"{FACADE_SEARCH}?q=cache")
+
+    assert payload["results"], "the seeded corpus should match 'cache'"
+    for hit in payload["results"]:
+        missing = SEARCH_HIT_KEYS - set(hit)
+        assert not missing, f"the search page reads these and the facade dropped them: {missing}"
+
+
 def test_the_table_and_the_facade_are_two_contracts_and_two_paths(
     tmp_path: Path,
 ) -> None:
@@ -608,9 +653,9 @@ def test_the_table_and_the_facade_are_two_contracts_and_two_paths(
     of rows and a different set of columns.
     """
     with make_client(tmp_path) as client:
-        # Not `read()`: the facade's handlers answer without `no-store`, which
-        # is their own contract and not this slice's to change.
-        facade = client.get(FACADE).json()
+        # `read()` like every other route on this surface: the facade answers
+        # `no-store` too now, on both of its prefixes.
+        facade = read(client, FACADE)
         table = read(client, LIBRARY)
 
     assert set(facade) == {"videos", "pagination"}
