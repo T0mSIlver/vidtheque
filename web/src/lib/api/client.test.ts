@@ -75,6 +75,17 @@ describe("createClient", () => {
     await expect(client.search({ q: "hello" })).rejects.toBeInstanceOf(ZodError);
   });
 
+  it("accepts imagery-only hits without transcript or OCR text", async () => {
+    const { fetchImpl } = fake(200, {
+      ...SEARCH,
+      results: [{ ...HIT, source: "frame", text: null }],
+    });
+    const client = createClient({ baseUrl: "https://api.test", fetch: fetchImpl });
+    const page = await client.search({ q: "diagram" });
+    expect(page.results[0].source).toBe("frame");
+    expect(page.results[0].text).toBeNull();
+  });
+
   it("turns the facade's error envelope into an ApiError", async () => {
     const { fetchImpl } = fake(400, {
       error: "E_EMPTY_QUERY",
