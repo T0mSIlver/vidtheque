@@ -2767,7 +2767,7 @@ and lists. No rendered clock, no spoken duration, no sentence a page composed.
 | `POST /jobs/{job_id}/cancel` | `{"job_id", "state", "cancel_requested": true}` |
 | `POST /jobs/{job_id}/retry` | `{"from_job_id", "selected", "jobs": [{"job_id", "items"}], "errors": [envelope], "preserved": {"channels", "tags": [], "priority"}}` |
 | `POST /index` | `{"jobs": [{"job_id", "items", "urls": []}], "already_indexed": [], "errors": [envelope + "urls"], "batches", "urls"}` |
-| `POST /videos/{video_id}/reindex` | `{"video_id", "job_id"}` |
+| `POST /videos/{video_id}/reindex` | `{"video_id", "job_id" \| null}` |
 | `POST /videos/{video_id}/tags` | `{"video_id", "tags": []}` |
 | `POST /login` | `{"signed_in": true, "next"}`, with the cookie set |
 | `POST /logout` | `{"signed_out": true}`, with the cookie cleared |
@@ -2792,6 +2792,13 @@ refusal — is not the obvious one:
 - **`tags` answers the row's tags *after* the write**, read back. `tag_video`
   reports what it added and removed across a batch, which is not the question
   the panel that made the call is showing.
+- **`reindex`'s `job_id` is `null` only when `force_reindex` somehow queued
+  nothing** — `writes.reindex` calls `index_video` with `force_reindex=True`,
+  which is defined to always create a job, so the `null` branch is defensive
+  rather than a case a client should expect to see (`pragma: no cover` marks it
+  in the handler). The row and the manage panel still read the field rather
+  than assume it, because the outcome's shape is the contract and not the
+  handler's confidence in its own call.
 - **The follow block is the row, typed** — identity, state, every rule column
   and the last failure (`last_error_code`, `last_error_message`), with epochs
   where `tools/follows._follow_fields` sends `iso_minute` strings, and built
@@ -2805,10 +2812,12 @@ refusal — is not the obvious one:
   2026-09-05)*. `set_state` sets both error columns to `NULL` when it resumes,
   and an outcome that carried neither left the page rendering an error the
   write had just cleared — so the React page re-read the follow after **every**
-  write to find that out. With the two columns on the block the outcome is a
-  complete row and the re-read is a choice rather than a correction. The list
-  read is the one payload that still stops at the code (§22): sixty rows are a
-  column to compare.
+  write to find that out. That re-read is history, not the current shape: with
+  the two columns on the block the outcome is a complete row, and commit
+  `2fed72c` deleted the read the detail page fired after each write — the page
+  now paints the outcome's own row and nothing asks again. The list read is
+  the one payload that still stops at the code (§22): sixty rows are a column
+  to compare.
 - **`POST /following` can answer `{"follow": null}`.** The tool answers with
   the follow it made *or* the one it found, and this handler then re-reads that
   row by slug for the block above; `null` is that read coming back empty — the

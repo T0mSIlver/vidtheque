@@ -44,14 +44,18 @@ initial reader, API client, search, Ask, and component tests.
   Through the edge: `GET /` returns the landing, `GET /demo` the reader, and
   each carries the four document headers (demo-site.md §7 item 0). Python has
   no page at `/` any more, so a misrouted edge shows the MCP mount's 404.
-  And **a `POST` to `/dashboard/following` through the edge reaches Python**:
-  it is the one path both processes own, split by method — `GET` to Next, the
-  add form's `POST` to Python (frontend-migration.md §1d). A proxy that routes
-  it on path alone answers the write with a document and nothing says so.
-  Development has a shim for that one path, not the rule: `web/next.config.ts`
-  forwards it in `beforeFiles` on the `application/x-www-form-urlencoded`
+  And **a `POST` to `/dashboard/following` through the edge reaches Python**,
+  **and so does a `POST` to `/dashboard/index` beside it**: each is a path both
+  processes own, split by method — `GET` to Next, the form's `POST` to Python
+  (frontend-migration.md §1d). A proxy that routes either on path alone answers
+  the write with a document and nothing says so. Development has a shim for
+  those two paths, not the rule: `web/next.config.ts`'s `PYTHON_FORM_POSTS`
+  forwards them in `beforeFiles` on the `application/x-www-form-urlencoded`
   content type, and that entry is deleted the day development runs both
   processes behind one proxy.
+  `/dashboard/login` is the last Jinja `GET` left under `/dashboard` and a
+  sibling is porting it now — the same split will apply to it a third time
+  once it lands, and it is *in progress*, not a cutover check yet.
   In the deletion round, `templates/following.html` has one line to fix or drop
   rather than move: it prints `Indexing is disabled on this instance ({{
   vectors.reason }})` and its context has carried a bool since the read
@@ -85,8 +89,10 @@ mode this list exists to prevent.
   and in the document-policy matcher — the detail as one segment, so the POSTs
   under it stay Python's (frontend-migration.md §1d). What the React pages do
   differently from the Jinja ones is recorded with the pages themselves
-  (dashboard.md §5.2, §5.3). The write side and two enhancement layers are
-  still open, on the lines below.
+  (dashboard.md §5.2, §5.3). *The write side landed 2026-09-05* too, with the
+  Indexing and Tags bullets below: the row's re-index, the detail's manage
+  panel and its tags write. The two enhancement layers are still open, on the
+  lines below.
 - **Videos, the frames lightbox** — the Jinja page opens a keyframe full size
   with its OCR boxes and its caption over it (`static/dashboard.js`); the React
   card links to the 1280px frame instead. A layer over facts already on the
@@ -132,17 +138,21 @@ mode this list exists to prevent.
   frontend-migration.md §9). `cancel` answers the state the job is actually in,
   which is the thing the 2 s poll cannot say. The pages themselves are still
   pending, and so is the poll target above.
-- **Indexing** — the index form and its submission, with the same server-side
-  bounds the form has now. Plus the two re-index writes the ported videos pages
-  left behind: the table's per-row **Re-index** button and the detail's
-  **Manage this video** panel, both `POST /dashboard/videos/{id}/reindex`, and
-  the header link that seeds this form from a video's channel ("Queue more from
-  this channel"). The submission and both re-index writes answer JSON as of
-  2026-09-05 — dashboard.md §21 has the payloads.
-- **Tags** — the per-video tag write: the add and remove fields of the
-  detail's **Manage this video** panel, `POST /dashboard/videos/{id}/tags`,
-  which the React detail does not render at all. The write answers the row's
-  tags after the write (dashboard.md §21).
+- **Indexing** — *landed 2026-09-05.* `GET /dashboard/index` is Next's, named
+  in the ownership table, the document-policy matcher and `ported.ts`
+  (frontend-migration.md §1d), with the same server-side bounds the Jinja form
+  had and no read of its own — it waits on the session read and prefills from
+  `writes._prefilled_index_form`'s `urls`/`expand`/`tags` (frontend-migration.md
+  §1d). The two re-index writes the ported videos pages had left behind landed
+  with it: the table's per-row **Re-index** button and the detail's **Manage
+  this video** panel, both `POST /dashboard/videos/{id}/reindex`; and the
+  header link that seeds the form from a video's channel ("Queue more from this
+  channel") now points at a page this app serves. The submission and both
+  re-index writes answer JSON — dashboard.md §21 has the payloads.
+- **Tags** — *landed 2026-09-05,* with Indexing above: the detail's **Manage
+  this video** panel now renders the add and remove fields and posts `POST
+  /dashboard/videos/{id}/tags`. The write answers the row's tags read back
+  after the write (dashboard.md §21).
 - **Following** — *landed 2026-09-05*, list, detail and all six writes.
   `GET /dashboard/following` and `GET /dashboard/following/{slug}` are Next's,
   in the ownership table, in the document-policy matcher and in `ported.ts`
