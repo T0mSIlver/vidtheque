@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { VideoCard } from "@/components/VideoCard";
-import { listVideos, PAGE } from "@/lib/library";
+import { listVideos } from "@/lib/library";
 import { LibrarySkeleton } from "./loading";
 import styles from "./page.module.css";
 
@@ -29,11 +29,12 @@ async function Library({ searchParams }: Pick<PageProps<"/videos">, "searchParam
   const { offset: raw } = await searchParams;
   const offset = Math.max(0, Number.parseInt(String(raw ?? "0"), 10) || 0);
   const { videos, pagination } = await listVideos(offset);
+  const pageOffset = pagination.offset;
 
   if (videos.length === 0) {
     return (
       <p className={styles.empty}>
-        {offset === 0 ? "Nothing is indexed yet." : "No more videos past this point."}
+        {pageOffset === 0 ? "Nothing is indexed yet." : "No more videos past this point."}
       </p>
     );
   }
@@ -41,7 +42,7 @@ async function Library({ searchParams }: Pick<PageProps<"/videos">, "searchParam
   return (
     <>
       <p className={styles.count}>
-        {offset + 1}–{offset + videos.length}
+        {pageOffset + 1}–{pageOffset + videos.length}
         {pagination.approx_total != null ? ` of about ${pagination.approx_total}` : ""}
       </p>
       <ul className={styles.grid}>
@@ -50,12 +51,14 @@ async function Library({ searchParams }: Pick<PageProps<"/videos">, "searchParam
         ))}
       </ul>
       <nav className={styles.pager} aria-label="Pages">
-        {offset > 0 ? (
-          <Link href={`/videos?offset=${Math.max(0, offset - PAGE)}`}>← newer</Link>
+        {pageOffset > 0 ? (
+          <Link href={`/videos?offset=${Math.max(0, pageOffset - pagination.limit)}`}>← newer</Link>
         ) : (
           <span />
         )}
-        {pagination.has_more ? <Link href={`/videos?offset=${offset + PAGE}`}>older →</Link> : null}
+        {pagination.has_more && offset === pageOffset ? (
+          <Link href={`/videos?offset=${pageOffset + pagination.limit}`}>older →</Link>
+        ) : null}
       </nav>
     </>
   );
