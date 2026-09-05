@@ -133,6 +133,110 @@
   font-size: 0.5625rem;
 }
 
+/* -------------------------------------------------------------- the writes
+
+   The row's own action, and the panel at the foot of a video's page. Both are
+   here rather than in either page's module because the re-index is on both, and
+   one control styled twice is how two pages start looking like two surfaces. */
+
+/* Deliberately narrow: an action column is a lane, not a purpose. A table of
+   sixty rows with a wide action column reads as a control panel, and the row is
+   still the thing you came for. */
+.colActions {
+  white-space: nowrap;
+}
+
+.colActions > * {
+  vertical-align: middle;
+}
+
+.colActions .ghostlink {
+  margin-left: var(--s1);
+}
+
+/* One step down from the 34px chassis height: a control at full height inside
+   a 34px row touches the rules above and below it. */
+.rowbutton {
+  composes: t-label-sm from global;
+  height: var(--s6);
+  padding: 0 var(--s2);
+  color: var(--fg2);
+  background: transparent;
+  border: 1px solid var(--seam2);
+  letter-spacing: 0.17em;
+  cursor: pointer;
+}
+
+.rowbutton:hover:enabled {
+  color: var(--gold);
+  border-color: var(--gold-44);
+}
+
+.rowbutton:disabled {
+  color: var(--fg3);
+  border-color: var(--seam);
+  cursor: not-allowed;
+}
+
+/* What the route answered, in the control's place. None of these actions is
+   repeatable in the same breath, and a button that comes back invites a second
+   POST of a rebuild that is already queued. */
+.outcome {
+  composes: t-machine-sm from global;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+  align-items: center;
+  color: var(--fg2);
+  white-space: normal;
+}
+
+.outcomeBad {
+  color: var(--tone-bad);
+}
+
+/* Two actions and no third, side by side on the video's own page. The `split`
+   grid above them puts a top margin on a second `.panel`; neither of these is
+   one, so both start on the panel title's own baseline. */
+.manageAction {
+  min-width: 0;
+}
+
+/* `composes` takes a simple class selector only, so the heading carries its own
+   class rather than being reached through the action that owns it. */
+.label {
+  composes: t-label from global;
+  display: block;
+  margin: 0 0 var(--s2);
+  color: var(--muted);
+}
+
+.manageAction > .rowbutton,
+.manageAction > .outcome {
+  display: block;
+  margin-top: var(--s3);
+}
+
+.manageNote {
+  composes: t-cell from global;
+  margin-top: var(--s3);
+  max-width: var(--note);
+  color: var(--muted);
+}
+
+.manageNote code {
+  font-family: var(--mono);
+  font-variant-ligatures: none;
+}
+
+.tagform {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s3) var(--s4);
+  margin-top: var(--s3);
+}
+
 /* At a phone's width the grid stops being a grid: each row becomes its own
    block and every cell wears the column's name, which is what `data-label`
    is on the cells for. */

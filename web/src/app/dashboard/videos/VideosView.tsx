@@ -7,8 +7,18 @@ import { dashboard, DashboardError, ROOT } from "@/lib/dashboard/client";
 import type { Library, LibraryRow } from "@/lib/dashboard/schemas";
 import { count, day, duration } from "@/lib/format";
 import dash from "../dashboard.module.css";
-import { DashLink, Fact, PageHead, ReadFailure, Reading, Sep, Unbroken } from "../parts";
+import {
+  DashLink,
+  Fact,
+  PageHead,
+  ReadFailure,
+  Reading,
+  Sep,
+  Unbroken,
+  useWriteSide,
+} from "../parts";
 import { useRead } from "../useRead";
+import { ReindexControl } from "./Manage";
 import styles from "./videos.module.css";
 
 // The videos table — `templates/videos.html`, reading `GET /dashboard/api/library`
@@ -413,6 +423,11 @@ function Filters({
 function Table({ data, search }: { data: Library; search: string }) {
   const [sortedCol, sortedDir] = SORTED[data.order] ?? [null, null];
   const rows = data.videos;
+  // Present in a private deployment, absent in the demo projection — §2.4's
+  // table, decided by the same list of routes that decides everything else on
+  // the write side. Not a disabled column: a control that cannot work is worse
+  // UI than no column.
+  const { rendered } = useWriteSide();
 
   return (
     <>
@@ -476,11 +491,16 @@ function Table({ data, search }: { data: Library; search: string }) {
                     search={search}
                     sort={sortedCol === "indexed" ? sortedDir : null}
                   />
+                  {rendered ? (
+                    <th scope="col" className={styles.colActions}>
+                      Actions
+                    </th>
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => (
-                  <Row key={row.video_id} row={row} />
+                  <Row key={row.video_id} row={row} actions={rendered} />
                 ))}
               </tbody>
             </table>
@@ -525,7 +545,7 @@ function SortHead({
   );
 }
 
-function Row({ row }: { row: LibraryRow }) {
+function Row({ row, actions }: { row: LibraryRow; actions: boolean }) {
   const href = `${ROOT}/videos/${encodeURIComponent(row.video_id)}`;
   return (
     <tr>
@@ -606,6 +626,17 @@ function Row({ row }: { row: LibraryRow }) {
       <td data-label="Indexed">
         <time className={dash.nowrap}>{day(row.indexed_at)}</time>
       </td>
+      {/* One control and one link. Re-index is a single decision and fits a
+          34px row; tagging needs two text fields and lives on the detail page,
+          where there is room for the namespace rules beside them. */}
+      {actions ? (
+        <td className={styles.colActions} data-label="Actions">
+          <ReindexControl videoId={row.video_id} label="Re-index" />
+          <DashLink className={dash.ghostlink} href={`${href}#manage`}>
+            Tag
+          </DashLink>
+        </td>
+      ) : null}
     </tr>
   );
 }

@@ -10,6 +10,7 @@ import {
   OWNER_HALF,
   OWNER_VIDEO,
 } from "@/test/library-fixtures";
+import { REINDEX_REFUSED, REINDEXED, TAG_REFUSED, TAGGED } from "@/test/index-fixtures";
 import { countingDownFrom } from "@/test/retry";
 
 // The page the dashboard exists for: what the pipeline did to one video, what
@@ -24,20 +25,26 @@ async function mount(
   detail: Route,
   {
     cues = { body: OWNER_CUES } as Route,
+    post = { body: REINDEXED } as Route,
     search = "",
     session = OWNER_SESSION as unknown,
     videoId = "kCc8FmEb1nY",
   } = {},
 ) {
-  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+  const posts: { path: string; init: RequestInit }[] = [];
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    const route: Route = url.includes("/cues")
-      ? cues
-      : url.startsWith("/dashboard/api/library/")
-        ? detail
-        : url === "/dashboard/api/session"
-          ? { body: session }
-          : { status: 404, body: {} };
+    if (init?.method === "POST") posts.push({ path: url, init });
+    const route: Route =
+      init?.method === "POST"
+        ? post
+        : url.includes("/cues")
+          ? cues
+          : url.startsWith("/dashboard/api/library/")
+            ? detail
+            : url === "/dashboard/api/session"
+              ? { body: session }
+              : { status: 404, body: {} };
     const text = typeof route.body === "string" ? route.body : JSON.stringify(route.body ?? {});
     return new Response(text, {
       status: route.status ?? 200,
@@ -54,7 +61,7 @@ async function mount(
       <VideoDetailView videoId={videoId} />
     </Chrome>,
   );
-  return { ...nav, fetcher };
+  return { ...nav, fetcher, posts };
 }
 
 describe("the video detail", () => {
@@ -341,6 +348,111 @@ describe("the video detail", () => {
       await mount({ body: { ...OWNER_VIDEO, stages: null } });
 
       expect(await screen.findByText(/shape this page cannot read/)).toBeInTheDocument();
+    });
+  });
+
+  // The write side, last on the page and only where it is registered. Two
+  // actions and no third: `jobs.kind='delete'` is in the schema with no
+  // pipeline behind it, so a delete button here would queue a job that fails.
+  describe("the manage panel", () => {
+    it("queues a forced rebuild and names the job it made", async () => {
+      const { posts } = await mount({ body: OWNER_VIDEO });
+      await screen.findByRole("heading", { name: "Manage this video" });
+
+      await userEvent.click(screen.getByRole("button", { name: "Re-index this video" }));
+
+      expect(posts[0].path).toBe("/dashboard/videos/kCc8FmEb1nY/reindex");
+      expect(posts[0].init.method).toBe("POST");
+      // No fields: the Jinja form posts none either, and the video is named by
+      // the path.
+      expect(String(posts[0].init.body)).toBe("");
+      expect((posts[0].init.headers as Record<string, string>).accept).toBe("application/json");
+
+      // The control does not come back: a second POST would queue a second
+      // rebuild of the same video.
+      expect(await screen.findByRole("link", { name: "job_02e028870c97" })).toHaveAttribute(
+        "href",
+        "/dashboard/jobs/job_02e028870c97",
+      );
+      expect(screen.queryByRole("button", { name: "Re-index this video" })).not.toBeInTheDocument();
+    });
+
+    it("prints the tool's refusal rather than claiming it queued something", async () => {
+      await mount({ body: OWNER_VIDEO }, { post: { status: 409, body: REINDEX_REFUSED } });
+      await screen.findByRole("heading", { name: "Manage this video" });
+
+      await userEvent.click(screen.getByRole("button", { name: "Re-index this video" }));
+
+      expect(await screen.findByText("E_INDEXING")).toBeInTheDocument();
+      expect(screen.getByText("kCc8FmEb1nY is already being indexed.")).toBeInTheDocument();
+    });
+
+    // The row's tags *after* the write, read back — never a diff applied on
+    // this side, because `tag_video` reports what it changed across a batch and
+    // this panel is showing the row.
+    it("replaces the tag list with the tags the row carries after the write", async () => {
+      const { posts } = await mount({ body: OWNER_VIDEO }, { post: { body: TAGGED } });
+      await screen.findByRole("heading", { name: "Manage this video" });
+
+      await userEvent.type(screen.getByLabelText("Add"), "topic:json, series:writes");
+      await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+      expect(posts[0].path).toBe("/dashboard/videos/kCc8FmEb1nY/tags");
+      const body = new URLSearchParams(String(posts[0].init.body));
+      expect(body.get("add")).toBe("topic:json, series:writes");
+      expect(body.get("remove")).toBe("");
+
+      // Both places this page prints tags follow the row: the chips under the
+      // title as well as the list under the form.
+      expect(await screen.findAllByText("series:writes")).toHaveLength(2);
+      expect(screen.getAllByText("topic:json")).toHaveLength(2);
+    });
+
+    it("prints tag_video's own refusal, in its own words", async () => {
+      await mount({ body: OWNER_VIDEO }, { post: { status: 400, body: TAG_REFUSED } });
+      await screen.findByRole("heading", { name: "Manage this video" });
+
+      await userEvent.type(screen.getByLabelText("Add"), "NotATag");
+      await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+      expect(
+        await screen.findByText("Tags must be namespace:value, lowercase."),
+      ).toBeInTheDocument();
+      expect(screen.getByText("E_BAD_PARAM")).toBeInTheDocument();
+    });
+
+    // §5.5: the database's own flag disables the one control that feeds
+    // `index_video`. Tagging writes the row, not the index, and stays live.
+    it("disables only the rebuild when the database refuses writes", async () => {
+      await mount({ body: OWNER_VIDEO }, { session: { ...OWNER_SESSION, writes_allowed: false } });
+      await screen.findByRole("heading", { name: "Manage this video" });
+
+      expect(screen.getByRole("button", { name: "Re-index this video" })).toBeDisabled();
+      expect(screen.getByText(/Indexing is refused on this instance/)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Apply" })).toBeEnabled();
+    });
+
+    it("is not on the page at all in the projection", async () => {
+      await mount({ body: DEMO_VIDEO }, { session: DEMO_SESSION });
+      await screen.findByRole("heading", { name: "Let's build GPT: from scratch" });
+
+      expect(screen.queryByText("Manage this video")).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("link", { name: "Queue more from this channel" }),
+      ).not.toBeInTheDocument();
+    });
+
+    // A `GET` prefill and not a write: the index form remains the place the
+    // operator reviews it, and the POST remains the only state change.
+    it("links the channel into the index form, seeded", async () => {
+      await mount({ body: OWNER_VIDEO });
+
+      expect(
+        await screen.findByRole("link", { name: "Queue more from this channel" }),
+      ).toHaveAttribute(
+        "href",
+        "/dashboard/index?urls=https%3A%2F%2Fyoutu.be%2FkCc8FmEb1nY&expand=channel_recent",
+      );
     });
   });
 });

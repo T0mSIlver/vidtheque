@@ -18,8 +18,11 @@ import {
   Sep,
   StatePair,
   Unbroken,
+  useWriteSide,
 } from "../../parts";
 import { useRead } from "../../useRead";
+import { ReindexControl, TagsForm } from "../Manage";
+import videos from "../videos.module.css";
 import styles from "./detail.module.css";
 
 // The video detail — `templates/video.html`, reading
@@ -102,6 +105,12 @@ function Loaded({
   const { video, counts, frames, shots } = data;
   const runtime = video.duration_s ?? 0;
   const failed = data.stages.filter((stage) => stage.state === "failed");
+  // The tags the row carries *after* a write, when there has been one. Read
+  // back by Python rather than derived from what was asked for: `tag_video`
+  // reports what it added and removed across a batch, and both places this page
+  // prints tags are showing the row instead.
+  const [written, setWritten] = useState<string[] | null>(null);
+  const tags = written ?? video.tags;
 
   // The document is named after data the browser is holding and the server
   // never saw: this shell is served without the session cookie, so `metadata`
@@ -163,11 +172,11 @@ function Loaded({
         <a href={video.url} rel="noopener noreferrer" target="_blank">
           Open on YouTube
         </a>
-        {video.tags.length ? (
+        {tags.length ? (
           <>
             <Sep />{" "}
             <span className={styles.taglist}>
-              {video.tags.map((tag) => (
+              {tags.map((tag) => (
                 <DashLink
                   key={tag}
                   className={dash.chip}
@@ -179,6 +188,7 @@ function Loaded({
             </span>
           </>
         ) : null}
+        <QueueChannel url={video.url} />
       </p>
 
       <Notes notes={data.notes} />
@@ -301,7 +311,99 @@ function Loaded({
       ) : null}
 
       <JobHistory history={data.job_history} />
+
+      <Manage video={video} tags={tags} onWritten={setWritten} />
     </>
+  );
+}
+
+/**
+ * A `GET` prefill, not a write: the video's own URL encoded into one internal
+ * link, with the expansion that means "the rest of this channel".
+ *
+ * The index form remains the place the operator reviews it and the `POST`
+ * remains the only state change — which is why this is a link and not a button,
+ * and why it is the same two parameters `_prefilled_index_form` reads.
+ *
+ * Only where the write side is registered: it points at a page that is not
+ * there otherwise.
+ */
+function QueueChannel({ url }: { url: string }) {
+  const { rendered } = useWriteSide();
+  if (!rendered) return null;
+  const query = new URLSearchParams({ urls: url, expand: "channel_recent" });
+  return (
+    <>
+      <Sep /> <DashLink href={`${ROOT}/index?${query}`}>Queue more from this channel</DashLink>
+    </>
+  );
+}
+
+/**
+ * The write side, last on the page and only where it is registered (§2.4).
+ *
+ * Two actions and no third: `jobs.kind='delete'` is in the schema with no
+ * pipeline behind it, so a delete button here would queue a job that fails
+ * (§5.2).
+ *
+ * The section carries the `manage` id itself rather than through `Panel`,
+ * because the videos table's Tag link is a fragment pointing at it: a row with
+ * no room for two text fields sends the reader to the one place that has them.
+ */
+function Manage({
+  video,
+  tags,
+  onWritten,
+}: {
+  video: VideoDetail["video"];
+  tags: string[];
+  onWritten: (tags: string[]) => void;
+}) {
+  const { rendered, indexable } = useWriteSide();
+  if (!rendered) return null;
+  return (
+    <section className={dash.panel} id="manage" aria-labelledby="manage-title">
+      <h2 className={dash.panelTitle} id="manage-title">
+        Manage this video
+      </h2>
+
+      <div className={dash.split}>
+        <div className={videos.manageAction}>
+          <h3 className={videos.label}>Re-index</h3>
+          <p className={dash.emptyNote}>
+            Runs <code>index-video</code> with <code>force_reindex</code> on this one URL: every
+            stage runs again, and the old rows are invalidated first.
+          </p>
+          <ReindexControl videoId={video.video_id} label="Re-index this video" />
+          {indexable ? null : (
+            <p className={videos.manageNote}>
+              Indexing is refused on this instance: the corpus config and the vector tables
+              disagree.
+            </p>
+          )}
+        </div>
+
+        <div className={videos.manageAction}>
+          <h3 className={videos.label}>Tags</h3>
+          <p className={dash.emptyNote}>
+            <code>namespace:value</code>, lowercase, comma separated. Ten per field.
+          </p>
+          <TagsForm videoId={video.video_id} tags={tags} onWritten={onWritten} />
+          {tags.length ? (
+            <p className={videos.manageNote}>
+              On this video now:{" "}
+              {tags.map((tag, index) => (
+                <span key={tag}>
+                  <code>{tag}</code>
+                  {index < tags.length - 1 ? ", " : ""}
+                </span>
+              ))}
+              .
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </section>
   );
 }
 
