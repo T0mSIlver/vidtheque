@@ -68,6 +68,25 @@ describe("the corpus overview", () => {
       expect(screen.getByText("2023-01-17")).toBeInTheDocument();
     });
 
+    // An empty corpus has no oldest video and no newest one. `published —–—`
+    // is a line whose whole content is the absence of one, so there is no
+    // line — the same absent state the ledger renders, because it is the same
+    // note printed from the same place.
+    it("leaves the published span out on a corpus that has none", async () => {
+      const { mockNavigation } = await import("@/test/next");
+      mockNavigation("", "/dashboard");
+      await mount({
+        body: {
+          ...OWNER_OVERVIEW,
+          corpus: { ...OWNER_OVERVIEW.corpus, published: { oldest: null, newest: null } },
+        },
+      });
+
+      expect(await screen.findByRole("heading", { name: "Corpus overview" })).toBeInTheDocument();
+      expect(screen.getByText("videos").closest("div")).not.toHaveTextContent("published");
+      expect(document.body.textContent).not.toMatch(/null|NaN|undefined/);
+    });
+
     it("prints corpus-summary's own state word and the last index clock", async () => {
       const { mockNavigation } = await import("@/test/next");
       mockNavigation("", "/dashboard");

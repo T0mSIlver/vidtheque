@@ -6,7 +6,7 @@ import { Pill, type Tone } from "@/components/Pill";
 import { RetryIn } from "@/components/RetryIn";
 import { DashboardError } from "@/lib/dashboard/client";
 import type { Readiness as ReadinessPayload } from "@/lib/dashboard/schemas";
-import { at, count, iso } from "@/lib/format";
+import { at, count, day, iso } from "@/lib/format";
 import styles from "./dashboard.module.css";
 import { isPorted } from "./ported";
 import { useSession } from "./session";
@@ -54,6 +54,32 @@ export const Sep = ({ children = "·" }: { children?: string }) => (
 export const Unbroken = ({ children }: { children: ReactNode }) => (
   <span className={styles.fact}>{children}</span>
 );
+
+/** The video count's own note: when *these videos* were published.
+ *
+ *  A `Figure` note rather than a component, because both pages that print this
+ *  fact print it in the same place under the same figure and a reader moving
+ *  between them must not meet one fact in two spellings. It is a list so the
+ *  empty corpus can return nothing: `published —–—` is a line whose entire
+ *  content is the absence of one, and a corpus with no videos has no oldest
+ *  and no newest — the number above it already says none.
+ *
+ *  Half a span is still a span (a video the store has no date for), and it
+ *  keeps the dash on the end that is missing.
+ */
+export function publishedNote(span: { oldest: number | null; newest: number | null }): ReactNode[] {
+  if (span.oldest === null && span.newest === null) return [];
+  return [
+    <>
+      published{" "}
+      <Unbroken>
+        <span className={styles.mono}>{day(span.oldest)}</span>
+        <Sep>–</Sep>
+        <span className={styles.mono}>{day(span.newest)}</span>
+      </Unbroken>
+    </>,
+  ];
+}
 
 export function Panel({
   id,

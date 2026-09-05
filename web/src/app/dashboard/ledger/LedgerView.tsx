@@ -2,7 +2,7 @@
 
 import { dashboard, ROOT } from "@/lib/dashboard/client";
 import type { Ledger } from "@/lib/dashboard/schemas";
-import { at, bytes, count, day, hours } from "@/lib/format";
+import { at, bytes, count, hours } from "@/lib/format";
 import styles from "../dashboard.module.css";
 import {
   CountLink,
@@ -12,6 +12,7 @@ import {
   GapLine,
   PageHead,
   Panel,
+  publishedNote,
   Readiness,
   ReadFailure,
   Reading,
@@ -85,24 +86,11 @@ function Loaded({ data }: { data: Ledger }) {
         <dl className={styles.ledger}>
           {/* When *these videos* were published, off the payload's own
               `corpus.published` (frontend-migration.md §5) — the overview's
-              field, printed the overview's way, because a reader moving
-              between the two pages must not be shown one fact in two
-              spellings. The two dates are one unbreakable unit, so the note
-              wraps in front of the range and never inside it, and an empty
-              corpus has no oldest video: `day` prints the dash for both. */}
-          <Figure
-            label="videos"
-            notes={[
-              <>
-                published{" "}
-                <Unbroken>
-                  <span className={styles.mono}>{day(corpus.published.oldest)}</span>
-                  <Sep>–</Sep>
-                  <span className={styles.mono}>{day(corpus.published.newest)}</span>
-                </Unbroken>
-              </>,
-            ]}
-          >
+              field, printed by the overview's own note, because a reader
+              moving between the two pages must not be shown one fact in two
+              spellings. An empty corpus has no span at all and gets no line:
+              the count above it already says none. */}
+          <Figure label="videos" notes={publishedNote(corpus.published)}>
             <DashLink href={`${ROOT}/videos?index_state=all`}>{count(corpus.videos)}</DashLink>
           </Figure>
           <Figure label="runtime" notes={[<>{count(corpus.duration_s)} seconds indexed</>]}>
