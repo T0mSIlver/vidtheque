@@ -387,7 +387,7 @@ async def video_endpoint(request: Request) -> JSONResponse:
 
     payload = dict(result.structured_content or {})
     covers = await deps.db.read(lambda c: _cover_frames(c, [video_id]))
-    payload["thumb"] = thumb_url(deps, covers.get(video_id))
+    payload["thumb"] = thumb_url(deps, covers.get(video_id), LIGHTBOX_WIDTH)
     # The humanising layer (§2.4): the tool's truncation marker tells an agent
     # to pass `max_text_chars=0`, which a page cannot; a reader gets an ellipsis.
     payload["key_texts"] = [

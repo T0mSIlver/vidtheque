@@ -288,7 +288,8 @@ def test_video_facade_returns_one_summary_with_frame_urls(public_client: TestCli
     assert payload["title"] == "Let's build GPT: from scratch"
     assert payload["published"] == "2023-01-17"
     assert payload["link"] == "https://youtu.be/kCc8FmEb1nY"
-    assert payload["thumb"].endswith("kCc8FmEb1nY-00000.jpg?w=320&q=70")
+    assert payload["thumb"].endswith("kCc8FmEb1nY-00000.jpg?w=960&q=70")
+    assert public_client.get(payload["thumb"]).status_code == 200
     assert [c["title"] for c in payload["chapters"]] == ["intro"]
     assert payload["key_texts"][0]["start"] == 0.0
     # Every on-screen-text highlight carries the two frame URLs the page needs,
