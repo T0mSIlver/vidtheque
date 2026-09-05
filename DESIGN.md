@@ -560,14 +560,16 @@ This file does **not** override `docs/design/demo-site.md` or
 override `docs/design/positioning.md` on voice. It owns how the surfaces look,
 and nothing else.
 
-**Reference implementation:** `mcp/src/vidtheque_mcp/public/static/landing/`
-("projection room"). Tom picked it on 2026-08-10 as the product's visual
-identity, and it graduated out of `lab/versions/v5.html` to the served landing
-on 2026-08-11 (demo-site.md §6.1) — same page, no longer a lab piece. Every
-token below was read out of v5 as shipped; where a value is an extension rather
-than a readout it says so in the prose. When this file and the landing disagree,
-**this file wins**; but say why in the amending commit, because that page is the
-thing Tom actually approved.
+**Reference implementation:** `web/src/app/page.tsx`, its components under
+`web/src/components/landing/`, its data under `web/src/landing/` and its
+stills under `web/public/landing/` ("projection room"). Tom picked it on
+2026-08-10 as the product's visual identity; it graduated out of
+`lab/versions/v5.html` to the served landing on 2026-08-11 (demo-site.md §6.1)
+and left the Python package for the Next.js front end on 2026-09-05 — the same
+page each time. Every token below was read out of v5 as shipped; where a value
+is an extension rather than a readout it says so in the prose. When this file
+and the landing disagree, **this file wins**; but say why in the amending
+commit, because that page is the thing Tom actually approved.
 
 **The amendment rule.** The frontmatter tokens above are normative. Any agent
 may **use** any token and may **add** a `components:` entry for a component it
@@ -982,10 +984,9 @@ spends.
 
 ### The landing page — the maximal expression
 
-**`static/landing/` is the reference** (v5 as it graduated). Full-bleed
-imagery, the display ladder at its top
-rungs, the drifting wall, the lift, the light table, the evidence wall, the
-booth log. This is the only surface where a beat may exist purely to make an
+**The Next front end's landing is the reference** (`web/src/app/page.tsx`, v5
+as it graduated). Full-bleed imagery, the display ladder at its top rungs, the
+drifting wall, the lift, the light table, the evidence wall, the booth log. This is the only surface where a beat may exist purely to make an
 argument, and the only one that may spend a whole viewport on one idea. Motion
 inventory as v5 ships it; nothing is added to it without Tom.
 
@@ -1068,34 +1069,39 @@ Archivo arrived with lab v4 (commit `1251269`).
    `mcp/tests/test_web_assets.py` fails the suite the day the two differ.
 2. The dashboard serves the **same files through an alias** (amended
    2026-08-11: the byte-identical copy at `dashboard/static/fonts/` is gone).
-   `public/static/*` is only routed under `VIDTHEQUE_PUBLIC_READONLY=1`
-   (`public/__init__.py`) while the dashboard's own asset route is always
-   registered — so that route maps its `fonts/` prefix onto the document of
-   record (`dashboard/__init__.py`, `_FONTS_DIR`) instead of keeping a copy
-   that can drift. `/dashboard/static/fonts/…` still serves in a private
-   deployment; there is no second copy to keep identical.
+   Nothing routes `public/static/*` any more (amended 2026-09-05: the pages
+   and the `/static/` asset route left for `web/`, `public/__init__.py`), while
+   the dashboard's own asset route is always registered — so that route maps
+   its `fonts/` prefix onto the document of record (`dashboard/__init__.py`,
+   `_FONTS_DIR`) instead of keeping a copy that can drift.
+   `/dashboard/static/fonts/…` still serves in a private deployment; there is
+   no second copy to keep identical.
 3. **`@font-face src` is relative** (`fonts/…woff2`), never built from
    `PUBLIC_URL`. These surfaces are served through an SSH tunnel on a port
    nobody predicted.
 4. `font-display: block` for both, matching v5: these faces carry the display
    voice and a FOUT on a 5.6rem headline is worse than 100ms of nothing. Only
    the text face is preloaded.
-5. **`public/__init__.py`'s asset route types responses by suffix** (`_MEDIA`;
-   `.woff2` landed there the commit the fonts shipped, amended 2026-08-12 to
-   say so). Whoever ships an asset with a new suffix adds its media type in
-   the same commit, the way the fonts did.
+5. **The dashboard's asset route types responses by suffix** (`_MEDIA` in
+   `dashboard/__init__.py`; `.woff2` landed there the commit the fonts shipped,
+   amended 2026-08-12 to say so, and it is the last such map in Python since
+   `public/__init__.py`'s route left on 2026-09-05). Whoever ships an asset
+   with a new suffix adds its media type in the same commit, the way the fonts
+   did.
 
 ## Migration notes for the rebuild
 
 The old system is pinned by tests. Whoever gets there first updates them, in
 the same commit as their CSS, and says so:
 
-- `test_dashboard.py::test_the_dashboard_palette_matches_the_demos` asserts
-  twelve `--bg/--fg/--muted/--line/--accent/--raised` declarations (six per
-  scheme, two schemes) and that the two files agree. The system is now
-  single-scheme, so the expected count is **six**. Keep the assertion that the
-  two files agree — that is what stops the surfaces becoming two visual worlds,
-  and it is the reason the six role aliases exist in the frontmatter above.
+- `test_dashboard.py::test_the_dashboard_palette_matches_the_front_ends`
+  asserts twelve `--bg/--fg/--muted/--line/--accent/--raised` declarations (six
+  per scheme, two schemes) and that the two files agree; since 2026-09-05 the
+  second file is `web/src/styles/tokens.css`, generated from this one. The
+  system is now single-scheme, so the expected count is **six**. Keep the
+  assertion that the two files agree — that is what stops the surfaces becoming
+  two visual worlds, and it is the reason the six role aliases exist in the
+  frontmatter above.
 - `test_dashboard.py::test_both_schemes_and_a_mobile_viewport_are_declared`
   expects two `theme-color` metas and `content="light dark"`. Dark only now:
   one `theme-color` (`#040405`) and `content="dark"`.
