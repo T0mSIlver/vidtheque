@@ -2293,3 +2293,182 @@ second query layer, or a page. The Jinja pages keep serving until all three
 surfaces are at parity (`DECISIONS.md`), and the remaining ports —
 jobs and its controls, indexing, follows, the login flow, the cutover — are
 `docs/ROADMAP.md`'s.
+
+## 20. The videos table and the video detail, as JSON (2026-09-05)
+
+§19's slice for the two pages §5.2 and §5.3 describe. Same rules as §19 — one
+shared assembly, typed values, `no-store`, the read gate, redaction by omission
+— and this section is the contract for the two routes it adds.
+
+**Two additive `GET` routes.**
+
+| Route | Gate | Answers |
+| --- | --- | --- |
+| `/dashboard/api/library` | `guarded`, `json=True` | §5.2's table: its rows, its filters, its exact count |
+| `/dashboard/api/library/{video_id}` | `guarded`, `json=True` | §5.3's panels, minus the transcript |
+
+**Why `library` and not `videos`.** `/dashboard/api/videos` is taken, by this
+route group's own decision: §2.5.1 registers the `/api/*` facade under this
+prefix too, so `/dashboard/api/videos` and `/dashboard/api/videos/{video_id}`
+are already `public/api.py`'s handlers, and `/dashboard/api/videos/{id}/cues`
+hangs off them. One path cannot carry two contracts, and shadowing the facade
+would silently change an answer somebody already reads. The two are not
+duplicates: the facade answers *what is in the corpus*, in the corpus's own
+shape and only for the videos that can answer a query; these answer *what the
+management pages show*. Where the facade is short, per page:
+
+| The table needs | `/api/videos` gives |
+| --- | --- |
+| `index_state` per row, and the failed and half-indexed rows at all | only `QUERYABLE_INDEX_STATES` (`ready`/`stale`), and no state field |
+| epochs for published and indexed, seconds for duration | `iso_day` and `duration_clock` strings — the tool's `tsv` block, rendered |
+| the `has`, `tags`, `index_state` and four date filters | `q`, `channel`, `limit`, `offset` |
+| an explicit `order`, echoed | an order chosen internally (`relevance` with `q`, else `recency`), never echoed |
+| the exact count of the filtered set | `pagination.approx_total`, the tool's probe through `COUNT_PROBE_FLOOR` |
+| a `note:` when a bound moved | nothing — the facade clamps silently |
+
+| The detail needs | `/api/videos/{id}` gives |
+| --- | --- |
+| the seven `video_stages` rows: state, `model_key`, `stage_version`, clocks, `error` | nothing — no MCP surface has them (§5.3) |
+| the per-video counts, and where the cues came from | `keyframes` and `data_status` |
+| the shot timeline, and the keyframe strip with its OCR boxes | `ocr_highlights`, twelve of them, as a reading list |
+| the jobs that touched this video | nothing |
+| `index_state`, `added_at`, `language`, `description`, the source URL | `published`/`duration`/`indexed_at`, rendered |
+
+The facade keeps what it has and this adds nothing to it: `key_texts` and
+`ocr_highlights` are the corpus's answer for the demo page, and neither route
+here re-serves them.
+
+**Parameters and clamps.** The table takes exactly the page's, resolved by the
+same code (`read_models.videos_reads`), and every bound is server-side:
+
+| Param | Values | Default | Clamp |
+| --- | --- | --- | --- |
+| `q` | ≤ 256 chars (the tool's) | — | tool-side |
+| `channel`, `tags` | passthrough; `tags` is ≤ 10, comma-separated | — | tool-side |
+| `has` | `any\|transcript\|ocr\|frames\|all` | `any` | unknown → `any`, with a `note:` |
+| `index_state` | the five states, or `all` | `all` | unknown → `all`, with a `note:` |
+| `order` | `recency\|title\|duration\|indexed_at\|relevance` | `relevance` with `q`, else `recency` | unknown → the default, with a `note:` |
+| `limit` | 1..100 | 50 | clamped, with a `note:` naming both numbers |
+| `offset` | 0..10 000 | 0 | clamped, with a `note:` |
+| `published_after/before`, `indexed_after/before` | anything `parse_corpus_time` takes | — | floor 1 s, ceiling now + 365 d, snapped to the UTC day |
+
+The detail takes the strip's two, and no cue parameters at all:
+
+| Param | Values | Default | Clamp |
+| --- | --- | --- | --- |
+| `frames` | 1..96 | 24 | clamped, with a `note:` |
+| `frame_offset` | 0..100 000 | 0 | clamped, with a `note:` |
+
+`order=relevance` without a `q` is `E_ORDER_SCOPE` and a date that will not
+parse is `E_BAD_TIME_FORMAT`, both at the status `errors.HTTP_STATUS` maps —
+the tool's own refusals, passed through rather than swallowed, because a
+silently ignored filter is a payload reporting the wrong result set with total
+confidence.
+
+**The table.**
+
+```jsonc
+{
+  "counted_at": 1757030400,
+  "redacted": false,
+  "order": "recency",                  // explicit, never inferred from `q`
+  "filters": {"q": null, "channel": null, "tags": [],
+              "has": "any", "index_state": "all",
+              // the epochs the query filtered on; `_before` is exclusive (the
+              // start of the day after the one asked for), which is what makes
+              // `published_before=2026-08-09` include the ninth
+              "published_after": null, "published_before": null,
+              "indexed_after": null, "indexed_before": null},
+  "videos": [
+    {"video_id": "kCc8FmEb1nY", "title": "Let's build GPT: from scratch",
+     "channel": "Andrej Karpathy",
+     "published_at": 1673913600, "duration_s": 7000.0, "indexed_at": 1750000000,
+     "index_state": "ready",
+     "coverage": {"transcript": true, "ocr": true, "frames": true},
+     "tags": ["topic:attention"],
+     "thumb": "/frames/kCc8FmEb1nY-00000.jpg?w=192&q=70",   // null without one
+     "link": "https://youtu.be/kCc8FmEb1nY"}
+  ],
+  "pagination": {"limit": 50, "offset": 0, "has_more": false},  // + last_offset past the end
+  "total": 4,                          // exact, the page's own count (§5.2)
+  "notes": []                          // policy text: what a clamp moved
+}
+```
+
+**The detail.** `video` is the `videos` row a human wants and none of the paths
+(§5.3: presence, not location).
+
+```jsonc
+{
+  "fetched_at": 1757030400,
+  "redacted": false,
+  "video": {"video_id": "…", "title": "…", "channel": "…",
+            "published_at": 1673913600, "duration_s": 7000.0, "language": "",
+            "index_state": "ready", "indexed_at": 1750000000,
+            "added_at": 1757030000, "url": "https://youtu.be/…",
+            "description": "…",           // 400 chars
+            "tags": ["topic:attention"]},
+  "data_status": "ok",                    // verbatim from video-summary (§4.5)
+  "summary_error": null,                  // its refusal, when it has one
+  "chapters": [{"start_s": 0.0, "title": "intro", "link": "https://youtu.be/…?t=0"}],
+  "stages": [{"stage": "stt", "state": "done", "model_key": "large-v3",
+              "stage_version": 1, "started_at": 142, "finished_at": 447,
+              "error": null}],            // all seven, `absent` when never run
+  "counts": {"cues": 6, "cues_with_words": 0, "chunks": 1, "chapters": 1,
+             "keyframes": 3, "keyframes_kept": 2, "ocr_frames": 2,
+             "ocr_lines": 2, "jpeg_bytes": 4236},
+  "cue_origins": {"whisperx": 6},
+  "transcript": {"cues": 6, "words": 54, "chars": 292,
+                 "endpoint": "/dashboard/api/videos/{video_id}/cues",
+                 "default_limit": 50, "max_limit": 200},
+  "shots": {"shots": [{"shot_id": 0, "start_s": 5.0, "end_s": 10.0,
+                       "frames": 1, "kept": 1, "ocr_done": 1, "first_ord": 0,
+                       "preview": "/frames/…-00000.jpg?w=192&q=70"}],
+            "capped": false, "cap": 2000},
+  "frames": {"frames": [{"frame_id": "…-00000", "ord": 0, "t_s": 5.0,
+                         "shot_id": 0, "sharpness": 10.0,
+                         "width": 1280, "height": 720, "jpeg_bytes": 70,
+                         "ocr_state": "done", "dup_of_ord": null,
+                         "thumb": "…w=192", "detail": "…w=512", "large": "…w=1280",
+                         "lines": [{"line_no": 0, "text": "…", "conf": 0.9,
+                                    "box": [0.0, 0.0, 1.0, 1.0]}]}],
+             "limit": 24, "offset": 0, "has_more": true,
+             "ocr_line_cap": 600, "ocr_lines_capped": false},
+  "job_history": {"jobs": [{"job_id": "job_running001", "state": "running",
+                            "kind": "index", "created_at": 1757020000,
+                            "finished_at": null, "error_code": null,
+                            "degraded_stages": []}], "cap": 10},
+  "notes": []
+}
+```
+
+**The transcript is a pointer, not a copy.** `/dashboard/api/videos/{id}/cues`
+has paged cues since 2026-08-10, under `CUE_PAGE_MAX` and its own offset
+ceiling; a detail payload that also carried a page of them would be two
+contracts for one list. What this sends is the totals the panel's header prints
+and the endpoint's name and bounds. The keyframe strip is here, because nothing
+else serves it and §5.3 calls it the most convincing thing on the page — never
+inline base64, and the three widths are §6.4's set.
+
+**Percentages are not sent.** The shot band's `left` and `width` are a
+rendering of `start_s`/`end_s` against `video.duration_s`, and all three of
+those are on the payload. The page still computes them, in `views._shot_bars`.
+
+**The projection, per field.** The table is **not** redacted: §2.4 gives it to
+the demo whole, and every column on it is corpus. The detail loses exactly the
+two fields §2.4's phase-4 amendment names, by not sending them:
+
+| Field | Public projection |
+| --- | --- |
+| `stages[].model_key` | `null` — a declared model id is a setting (§2.4) |
+| `stages[].error` | `null` — the pipeline quoting yt-dlp: cookiefile paths, player clients, the operator's politeness settings |
+| `stages[].state`, `stage_version`, both clocks | unchanged — what a reader can act on, and dropping them would leave an empty shell |
+| `job_history[].error_code` | unchanged; the *message* was never on this list, on either surface |
+| everything else — header, counts, origins, shots, frames, OCR lines and boxes, chapters, `data_status`, `summary_error` | unchanged: corpus, not deployment |
+| the whole table payload | unchanged |
+
+**Does not add.** A write, an env var, a CORS policy, a second query layer, a
+tool parameter, or a page. It does not change the facade's routes at this
+prefix, the cues endpoint, or any clamp number: the table's bounds are §5.2's
+owner policy and the detail's are §5.3's, which is what the pages already
+enforced. The React pages themselves are `docs/ROADMAP.md`'s.
