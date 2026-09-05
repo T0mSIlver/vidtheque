@@ -14,6 +14,10 @@ this slice:
 1. **All three surfaces move to Next.js and React** — `/`, `/demo`,
    `/dashboard`. **Cutover happens only when all three are at parity**,
    dashboard reads and writes included; the Jinja pages keep serving until it.
+
+   *Amended 2026-09-05:* `/` and `/demo` reached parity and their Python
+   registrations are gone (§1a). "The Jinja pages keep serving until it" now
+   means the dashboard's, which are the only pages Python still renders.
 2. **Browser API requests go directly to Python.** No relay through Next, no
    generic proxy. Next may also read Python server-side for rendering.
 3. **Python owns state, authorization, sessions and resource limits. Next owns
@@ -28,6 +32,46 @@ this slice:
 6. **The public read-only projection is unchanged**, and it redacts by
    *omission*: the reads behind the operator's box are not taken, so there is
    no field for a client to un-hide.
+
+## 1a. Route ownership
+
+Decision 4 says one origin; this is how it splits. A reverse proxy sends the
+**exact page GETs** to Next and **everything else** to Python. Exact, not by
+prefix: `/demo` is Next's and `/demo`-anything is not a rule anyone has asked
+for, whereas `/api/*` under a prefix rule is the whole facade in one line.
+
+| Path | Served by |
+| --- | --- |
+| `GET /` | **Next** |
+| `GET /demo` | **Next** |
+| `GET /videos`, `GET /videos/{id}` | **Next** (the pages; `/videos/{id}/export.md` is Python's) |
+| Next's own build output (`/_next/*`, `/landing/*`) | **Next** |
+| `/api/*` — including `POST /api/ask` | Python |
+| `/frames/*` | Python |
+| `/mcp` | Python |
+| `/auth/*`, `/.well-known/*` | Python |
+| `/healthz` | Python |
+| `/videos/{id}/export.md` | Python |
+| `/dashboard/*` — pages, `/dashboard/api/*`, `/dashboard/static/*` | Python, until its own port lands |
+| anything else | Python (`Mount("/", mcp_app)`, which 404s) |
+
+**`POST /api/ask` is Python's**, and the Next route handler that shadowed it is
+being removed in a sibling change: browsers call Python directly (decision 2),
+and an ask relayed through Next would put a second process on the path of the
+one request that spends money and is charged to a per-IP and a per-day bucket
+keyed on the caller's address.
+
+*Landed 2026-09-05:* `public_routes()` no longer registers `GET /`, `GET /demo`
+or `GET /static/{asset:path}` — it returns the facade and nothing else, and the
+two page bundles are out of the Python package. Two things went with them and
+are worth naming here rather than being found later: the `_DOCUMENT_HEADERS`
+policy (CSP, `X-Frame-Options`, `nosniff`, `Referrer-Policy`), which is now
+whatever serves the pages sends and which no test in `mcp/` can see —
+demo-site.md §7 item 0 is the handover and the check on it — and the
+`static/lab/` denylist, which was a property of the asset route.
+`public/static/fonts/` stays: DESIGN.md makes it the document of record for the
+two faces, `dashboard/__init__.py` aliases `/dashboard/static/fonts/` onto it,
+and `test_web_assets.py` diffs `web/src/fonts/` against it.
 
 ## 2. What landed
 
