@@ -13,17 +13,18 @@ import { ROOT } from "@/lib/dashboard/client";
 // ledger's figures and by the videos table's own tags — so it is answered
 // once, here. Porting a page adds its path to this list, names it in
 // `proxy.ts`'s matcher, and changes nothing else.
-const PAGES: string[] = [ROOT, `${ROOT}/ledger`, `${ROOT}/videos`];
+const PAGES: string[] = [ROOT, `${ROOT}/ledger`, `${ROOT}/videos`, `${ROOT}/jobs`];
 
-// `/dashboard/videos/{video_id}`, the one ported page with an id in it. Not a
-// prefix: `/dashboard/videos/{id}/reindex` is a POST Python owns, and it has
-// three segments under `/videos` rather than two.
-const VIDEO_DETAIL = new RegExp(`^${ROOT}/videos/[^/]+$`);
+// The two ported pages with an id in them. Neither is a prefix, and one
+// segment is the whole reason: `/dashboard/videos/{id}/reindex` and
+// `/dashboard/jobs/{id}/cancel` are POSTs Python owns, and they have three
+// segments under their section rather than two.
+const DETAIL = [new RegExp(`^${ROOT}/videos/[^/]+$`), new RegExp(`^${ROOT}/jobs/[^/]+$`)];
 
 /** Does this app serve the page `href` points at? Query and fragment are not
  *  part of the question — `/dashboard/videos?index_state=failed` is the videos
  *  page with a filter on it. */
 export function isPorted(href: string): boolean {
   const path = href.split("?")[0].split("#")[0];
-  return PAGES.includes(path) || VIDEO_DETAIL.test(path);
+  return PAGES.includes(path) || DETAIL.some((pattern) => pattern.test(path));
 }
