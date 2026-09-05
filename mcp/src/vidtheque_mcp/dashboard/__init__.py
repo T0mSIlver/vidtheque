@@ -209,6 +209,25 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
             # `AUTH=none`, exactly like the rail item that points at it.
             Route(f"{ROOT}/following", guarded(views.following), methods=["GET"]),
             Route(f"{ROOT}/following", writes.follow_create, methods=["POST"]),
+            # The two pages' JSON twin (§22), and it is in *this* list for the
+            # reason the pages are: §18.6 puts the reads of a write-only surface
+            # under the write-side predicate, so a deployment that registers no
+            # writes has no following endpoint either. A JSON route that
+            # answered where its page 404s would be a way back into a surface
+            # the deployment decided not to serve, which is the probe §2.3
+            # exists to refuse. Ahead of the detail page's own route for the
+            # same reason the writes are ahead of the reads: segment counts
+            # differ today, and ordering means they cannot start not to.
+            Route(
+                f"{ROOT}/api/following",
+                guarded(api.following, json=True),
+                methods=["GET"],
+            ),
+            Route(
+                f"{ROOT}/api/following/{{slug}}",
+                guarded(api.follow, json=True),
+                methods=["GET"],
+            ),
             Route(
                 f"{ROOT}/following/{{slug}}",
                 guarded(views.follow_detail),
