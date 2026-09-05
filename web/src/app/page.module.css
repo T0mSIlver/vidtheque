@@ -1,23 +1,102 @@
 .main {
   max-width: var(--maxw);
   margin: 0 auto;
-  padding: var(--beat) var(--gut);
+  padding: var(--gap-head) var(--gut) var(--beat);
+  display: grid;
+  gap: var(--gap-head);
 }
 
-/* The Font-Logo Rule: the logo is the word in the text face, with the full
-   stop in gold. */
-.mark {
-  composes: t-brand-lg from global;
+.headline {
+  composes: t-headline from global;
 }
 
-.dot {
+.examples {
+  display: grid;
+  gap: var(--s3);
+}
+
+.label {
+  composes: t-label from global;
+  color: var(--fg2);
+}
+
+.chips {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+.chip {
+  composes: t-label-sm from global;
+  display: inline-flex;
+  align-items: center;
+  height: 2.75rem;
+  padding: 0 12px;
+  color: var(--fg3);
+  border: 1px solid var(--seam);
+}
+
+.chip:hover,
+.chip:focus-visible {
+  color: var(--fg);
+}
+
+.results {
+  display: grid;
+  gap: var(--s4);
+}
+
+.count {
+  composes: t-machine-sm from global;
+  color: var(--fg3);
+}
+
+/* "all means all" is a promise to a human too: a skipped leg says so. */
+.note {
+  composes: t-machine-sm from global;
   color: var(--gold);
-  font-style: normal;
 }
 
-.lede {
+.cards {
+  display: grid;
+  gap: var(--s5);
+}
+
+.pager {
+  composes: t-label from global;
+  display: flex;
+  justify-content: space-between;
+  color: var(--gold);
+}
+
+.empty {
   composes: t-lede from global;
-  max-width: var(--lede);
-  margin-top: var(--s6);
   color: var(--muted);
+  display: grid;
+  gap: var(--s2);
+}
+
+.empty a {
+  color: var(--gold);
+}
+
+.ghost {
+  display: grid;
+  gap: 1px;
+  background: var(--plate);
+  border: 1px solid var(--seam2);
+}
+
+.ghostHead {
+  display: block;
+  height: 6.5rem;
+  background: var(--plate2);
+}
+
+.ghostLine {
+  display: block;
+  height: 2.125rem;
+  background: var(--plate);
+  border-top: 1px solid var(--seam);
 }
