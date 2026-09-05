@@ -558,12 +558,10 @@ const basisOf = () => z.object({ basis: z.string().optional() }).nullable().opti
 // rest counted after it, and the channel a batch was expanded from when every
 // resolved item came from one.
 //
-// **Optional, because the poll target does not send it today.** The Jinja page
-// reads it in a separate grouped query and deliberately keeps it off the tick —
-// what a job contains does not change between two ticks — so
-// `/dashboard/api/jobs` carries no title at all and a React row falls back to
-// the item count it does have. The day the payload grows the field, the
-// fallback stops being reached and nothing else moves.
+// It rides on the poll target now, folded into the page's grouped row-facts
+// read so the tick still costs two reads (dashboard.md §5.4). **Optional all
+// the same**: an instance that predates that landing sends no title at all,
+// and a React row falls back to the item count it does have.
 export const JobContents = z.object({
   title: z.string().nullable(),
   more: count(),
@@ -663,6 +661,24 @@ export const Jobs = z.object({
   live: z.boolean(),
   jobs: z.array(JobCard),
   pagination: z.object({ limit: count(), offset: count(), has_more: z.boolean() }),
+  // The predicates the listing actually ran with, resolved — not the ones the
+  // URL asked for. `state=nonsense` has always fallen back to `all`, and a
+  // strip printing the URL's word over a table of every job is the page
+  // vouching for a filter that never ran. `error_code` is `null` rather than
+  // the form's empty string, like every other absent filter on this surface;
+  // `degraded` is the boolean the query ran on, not the `1` that asked for it.
+  // `limit` and `offset` stay in `pagination`, where the pager reads them.
+  filters: z.object({
+    state: z.string(),
+    kind: z.string(),
+    error_code: z.string().nullable(),
+    degraded: z.boolean(),
+    order: z.string(),
+  }),
+  // Policy text — a bound that moved, a value that fell back. Rendered, never
+  // composed here: it is the `all` invariant reaching this payload, which has
+  // no form to echo an accepted value back into (dashboard.md §5.4).
+  notes: z.array(z.string()),
 });
 export type Jobs = z.infer<typeof Jobs>;
 
