@@ -70,7 +70,7 @@ async function mount({
 }
 
 /** The ledger row a candidate's title is in. */
-function rowOf(title: string) {
+function rowOf(title: string | RegExp) {
   return screen.getByText(title).closest("tr") as HTMLElement;
 }
 
