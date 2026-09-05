@@ -4053,7 +4053,9 @@ def test_the_transcript_batches_arrive_preformatted(client: TestClient) -> None:
     cue = payload["cues"][0]
     # The script assigns these verbatim; it owns no clock and no chunk label.
     assert re.fullmatch(r"\d+:\d\d(:\d\d)?", cue["at"])
-    assert set(cue) == {"at", "t", "text", "speaker", "conf", "in_chunk", "chunk"}
+    # The rendered half is still all here — the typed fields beside it
+    # (test_dashboard_api.py) are additive until this page is ported.
+    assert {"at", "t", "text", "speaker", "conf", "in_chunk", "chunk"} <= set(cue)
     assert client.get(f"{ROOT}/api/videos/nosuchvideo1/cues").status_code == 404
 
 
