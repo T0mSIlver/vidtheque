@@ -42,6 +42,23 @@ export function duration(seconds: number | null | undefined): string {
   return `${Math.floor(minutes / 60)}h ${pad(minutes % 60)}m`;
 }
 
+/**
+ * Seconds as a length always spelled `h:mm:ss` — `0:08:00`, `1:30:00`.
+ *
+ * `text.duration_clock`'s shape, and deliberately not `clock`'s: a rule's floor
+ * is a *bound the operator typed*, and printing it as `8:00` beside a ceiling
+ * of `1:30:00` makes two numbers in one line read on two scales. `clock` is the
+ * receipt's timecode and drops the hour when there is none; this one never
+ * does, because the leading `0:` is what says which scale you are on.
+ */
+export function hms(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return DASH;
+  const total = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  return `${h}:${pad(m)}:${pad(total % 60)}`;
+}
+
 /** Seconds as the ledger's hours figure: one decimal, the unit set beside it. */
 export function hours(seconds: number | null | undefined): string {
   if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return DASH;

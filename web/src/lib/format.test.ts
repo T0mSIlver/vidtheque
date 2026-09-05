@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { at, bytes, clock, count, DASH, day, duration, hours, iso, receipt } from "./format";
+import { at, bytes, clock, count, DASH, day, duration, hms, hours, iso, receipt } from "./format";
 
 // These are the Jinja filters the dashboard read out of Python until the JSON
 // slice landed, so the cases are the ones `render.py` and `text.py` document:
@@ -24,6 +24,23 @@ describe("duration", () => {
     expect(duration(undefined)).toBe(DASH);
     expect(duration(-1)).toBe(DASH);
     expect(duration(Number.NaN)).toBe(DASH);
+  });
+});
+
+describe("hms", () => {
+  // `text.duration_clock`: the hour is always spelled, so a floor of eight
+  // minutes and a ceiling of an hour and a half read on one scale.
+  it("always spells the hour", () => {
+    expect(hms(480)).toBe("0:08:00");
+    expect(hms(5400)).toBe("1:30:00");
+    expect(hms(0)).toBe("0:00:00");
+    expect(hms(59)).toBe("0:00:59");
+  });
+
+  it("prints the dash for a bound that is not set", () => {
+    expect(hms(null)).toBe(DASH);
+    expect(hms(undefined)).toBe(DASH);
+    expect(hms(Number.NaN)).toBe(DASH);
   });
 });
 
