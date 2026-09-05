@@ -17,6 +17,15 @@ describe("the receipt", () => {
     expect(receiptOf("https://youtu.be/kCc8FmEb1nY?t=0")?.label).toBe("youtu.be/kCc8FmEb1nY?t=0");
   });
 
+  // The twin asks `str.isdigit()`, which is every Unicode decimal digit and not
+  // the ASCII ten. A second the Jinja page admits and this one drops is the two
+  // surfaces disagreeing about whether a hit has a receipt at all.
+  it("admits a second written in digits that are not ASCII, as the twin does", () => {
+    expect(receiptOf("https://youtu.be/kCc8FmEb1nY?t=٧٠٥")?.label).toBe(
+      "youtu.be/kCc8FmEb1nY?t=٧٠٥",
+    );
+  });
+
   // Everything else is not printed at all rather than printed unchecked: the
   // page never invents a link for a source that has none.
   it("refuses anything that is not that", () => {
@@ -60,6 +69,15 @@ describe("the link into the index", () => {
     // to know which page holds it.
     expect(insideLink({ video_id: "vid", frame_id: "other-00003" })).toBe("/dashboard/videos/vid");
     expect(insideLink({ video_id: "vid", frame_id: "vid-abc" })).toBe("/dashboard/videos/vid");
+  });
+
+  // The same `isdigit()` parity, and the ordinal has to come out of it too:
+  // `int("٠٠٠٢٥")` is twenty-five, where `Number` would answer `NaN` and put it
+  // in the link.
+  it("reads a tail written in digits that are not ASCII, as the twin does", () => {
+    expect(insideLink({ video_id: "vid", frame_id: "vid-٠٠٠٢٥" })).toBe(
+      "/dashboard/videos/vid?frame_offset=24&select=25#frame-25",
+    );
   });
 
   it("encodes the id, because a reader can have typed it", () => {

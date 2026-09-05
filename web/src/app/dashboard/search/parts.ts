@@ -29,12 +29,41 @@ import { badges, type Badge } from "@/lib/group";
  *  finds the frame. */
 export const FRAME_PAGE = 24;
 
+/** What `str.isdigit()` admits on the other side of this parity: every Unicode
+ *  decimal digit, not the ASCII ten `\d` stops at. `Nd` is also what Python's
+ *  `int()` reads, so a tail this admits is one the twin turns into an ordinal. */
+const DIGITS = /^\p{Nd}+$/u;
+
+/** One `Nd` digit's value. Python's `int()` reads `١٢` as twelve; `Number`
+ *  answers `NaN`, and an ordinal of `NaN` is a link into the strip pointing
+ *  nowhere. Every decimal digit sits in a contiguous run of ten that opens with
+ *  its script's zero, so a digit's value is how far into its run it is — runs
+ *  that abut, as the mathematical alphabets do, stay aligned to ten. */
+function digitValue(digit: string): number {
+  const point = digit.codePointAt(0) as number;
+  let zero = point;
+  while (zero > 0 && /\p{Nd}/u.test(String.fromCodePoint(zero - 1))) zero -= 1;
+  return (point - zero) % 10;
+}
+
+/** A run of decimal digits as the integer `int()` reads out of it. */
+function intOf(digits: string): number {
+  if (/^[0-9]+$/.test(digits)) return Number(digits);
+  let value = 0;
+  for (const digit of digits) value = value * 10 + digitValue(digit);
+  return value;
+}
+
 /** The receipt: the tool's YouTube link, admitted as one exact-second proof.
  *
  *  `views._search_receipt`. HTTPS, `youtu.be`, a video id, and a `t=` that is
  *  digits — a link that is anything else is not printed at all, rather than
  *  printed unchecked. The page never reconstructs a timestamp from display text
- *  or invents a link for a source that has none (dashboard.md §14). */
+ *  or invents a link for a source that has none (dashboard.md §14).
+ *
+ *  The digits are `DIGITS` and not `\d`: the twin tests `str.isdigit()`, and a
+ *  receipt the Jinja page prints while this one drops it is the exact
+ *  disagreement these functions exist not to have. */
 export function receiptOf(link: string): { href: string; label: string } | null {
   let url: URL;
   try {
@@ -45,7 +74,7 @@ export function receiptOf(link: string): { href: string; label: string } | null 
   const seconds = url.searchParams.get("t");
   const id = url.pathname.replace(/^\/+|\/+$/g, "");
   if (url.protocol !== "https:" || url.hostname !== "youtu.be" || !id) return null;
-  if (seconds === null || !/^\d+$/.test(seconds)) return null;
+  if (seconds === null || !DIGITS.test(seconds)) return null;
   return { href: link, label: `youtu.be/${id}?t=${seconds}` };
 }
 
@@ -71,8 +100,8 @@ export function insideLink(hit: Pick<Hit, "video_id" | "frame_id">): string | nu
   const frameId = hit.frame_id;
   if (!frameId || !frameId.startsWith(prefix)) return page;
   const tail = frameId.slice(prefix.length);
-  if (!/^\d+$/.test(tail)) return page;
-  const ordinal = Number(tail);
+  if (!DIGITS.test(tail)) return page;
+  const ordinal = intOf(tail);
   const offset = Math.floor(ordinal / FRAME_PAGE) * FRAME_PAGE;
   return `${page}?frame_offset=${offset}&select=${ordinal}#frame-${ordinal}`;
 }
