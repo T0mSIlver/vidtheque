@@ -15,6 +15,7 @@ import {
   ReadFailure,
   Reading,
   Sep,
+  Unbroken,
   Unit,
 } from "../parts";
 import { useRead } from "../useRead";
@@ -66,8 +67,10 @@ function Loaded({ data }: { data: Ledger }) {
   return (
     <>
       <PageHead title="The ledger">
-        <Fact label="counted" value={at(data.counted_at)} />
-        <Sep />
+        <Unbroken>
+          <Fact label="counted" value={at(data.counted_at)} />
+          <Sep />
+        </Unbroken>
         <Fact label="indexed" value={at(corpus.last_indexed)} />
       </PageHead>
 

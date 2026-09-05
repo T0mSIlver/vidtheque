@@ -38,7 +38,20 @@ export function Fact({ label, value }: { label: string; value: string }) {
   );
 }
 
-export const Sep = () => <span className={styles.sep}>·</span>;
+/**
+ * The middot between two facts, and the en dash between the two ends of a
+ * range. Both are glued to the thing *before* them by whoever renders them, so
+ * a strip that runs out of room leaves the mark at the end of the line it
+ * belongs to rather than dangling at the start of the next one.
+ */
+export const Sep = ({ children = "·" }: { children?: string }) => (
+  <span className={styles.sep}>{children}</span>
+);
+
+/** One unbreakable unit: whatever is inside it wraps as a whole or not at all. */
+export const Unbroken = ({ children }: { children: ReactNode }) => (
+  <span className={styles.fact}>{children}</span>
+);
 
 export function Panel({
   id,
