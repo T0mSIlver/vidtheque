@@ -68,11 +68,6 @@ from .read_models import video_header as _video_header
 # each one renders — which is what let the row headline reach the payload.
 from .read_models import job_detail_reads as _job_detail
 from .read_models import jobs_reads
-from .read_models import job_contents as _job_contents
-from .read_models import job_card as _job_card
-from .read_models import job_item as _job_item
-from .read_models import job_event as _job_event
-from .read_models import focus_stages as _focus_stages
 from .read_models import JOB_STATES as _JOB_STATES
 from .read_models import JOB_KINDS as _JOB_KINDS
 from .read_models import JOB_ORDERS as _JOB_ORDERS
@@ -1053,9 +1048,9 @@ async def jobs_json(request: Request) -> Response:
     against the process that also holds the only SQLite writer.
 
     **The row headline is here as of 2026-09-05, and it costs the tick
-    nothing.** `contents` used to be the page's alone, read after
-    `_job_page` — so a React table that has no Jinja render to start from had
-    no title for any row, only a count. It is folded into the page's grouped
+    nothing.** `contents` used to be the page's alone, a third read taken after
+    the cards were built — so a React table with no Jinja render to start from
+    had no title for any row, only a count. It rides in the page's grouped
     row-facts read now, which leaves the tick on the two reads §5.4 budgets it.
     `filters` and `notes` are the other half of the port: a `state=nonsense`
     fell back to `all` and said nothing, which is the `all` invariant's exact
