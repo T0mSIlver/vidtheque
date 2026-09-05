@@ -1,0 +1,178 @@
+/* The index form — `templates/index.html`, read out of
+   `dashboard/static/dashboard.css`.
+
+   The plate, the fields, the pickers and the checkbox row are
+   `dashboard.module.css`'s. What is here is the vocabulary only this page has:
+   the paste box, the form's own column measure, and the receipt a submission
+   leaves behind it. */
+
+/* One column, measured. A form is prose with controls in it — the reader goes
+   down it once, top to bottom — so it takes `--prose` like every other sentence
+   on this surface, and not the full-bleed width the scanning grids take.
+
+   It is the first block on its page (2026-08-13): the panel it used to sit in
+   drew a second hairline under the page head's own and an empty band between
+   them, so it carries the gap a panel used to and lands where every other
+   page's controls land — straight under the head, no rule in between. */
+.form {
+  margin-top: var(--s6);
+  max-width: var(--prose);
+}
+
+/* One wrapping row of controls, the filter band's metrics without the filter
+   band's ground: this is the page's subject, not a strip above a table. */
+.formrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s3) var(--s4);
+  margin-top: var(--s5);
+}
+
+.actions {
+  margin-top: var(--s5);
+}
+
+/* The paste box is a field whose label sits above it like every other, but it
+   is the page's subject and it stacks rather than sharing a row. */
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+/* Machine text, set as machine text: JetBrains Mono was picked for one
+   measurable property — it draws 0/O and 1/l/I apart — and a column of ids like
+   `kCc8FmEb1nY` is exactly the string that property was bought for. */
+.block > textarea {
+  /* Four table rows tall: the box should look like it holds a list, not like an
+     input that grew. */
+  min-height: calc(var(--row) * 4);
+  padding: var(--s3);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.55;
+  font-variant-numeric: tabular-nums;
+  font-variant-ligatures: none;
+  color: var(--fg);
+  background: var(--console);
+  border: 1px solid var(--seam2);
+  border-radius: 0;
+  resize: vertical;
+}
+
+.block > textarea::placeholder {
+  color: var(--fg3);
+  opacity: 1;
+}
+
+.block > textarea:hover:enabled {
+  border-color: var(--gold-44);
+}
+
+.block > textarea:disabled {
+  color: var(--fg3);
+  cursor: default;
+}
+
+/* The sentence under a control, in body voice. Never a `title` and never a
+   placeholder — both are text you have to go and find, and this is the half of
+   the contract the label has no room for. */
+.fieldHelp {
+  composes: t-cell from global;
+  margin-top: var(--s2);
+  max-width: var(--prose);
+  color: var(--muted);
+}
+
+.fieldHelp code {
+  font-family: var(--mono);
+  font-variant-ligatures: none;
+}
+
+/* Not a box: the group is a legend and its rows, and the browser's own border
+   goes like every other one here. */
+.checks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--s4);
+  margin: var(--s5) 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.legend {
+  composes: t-label from global;
+  float: left;
+  width: 100%;
+  padding: 0;
+  color: var(--muted);
+}
+
+.checkNote {
+  composes: t-machine-sm from global;
+  color: var(--fg3);
+}
+
+/* ------------------------------------------------------------- the receipt
+
+   Above the form and not instead of it: the next thing an operator does after
+   queueing a batch is queue another one. */
+.jobs {
+  margin: var(--s3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.jobs > li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--s3);
+  align-items: baseline;
+  padding: var(--s2) 0;
+  border-top: 1px solid var(--seam);
+}
+
+.lead {
+  composes: t-cell-strong from global;
+  margin-top: var(--s4);
+  max-width: var(--note);
+  color: var(--fg);
+}
+
+.note {
+  composes: t-cell from global;
+  margin-top: var(--s1);
+  max-width: var(--note);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.note code {
+  font-family: var(--mono);
+  font-variant-ligatures: none;
+}
+
+/* One refused batch: the code in its tone, the message beside it, and the URLs
+   it was refused for underneath. */
+.refusal {
+  composes: t-cell from global;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s2);
+  align-items: baseline;
+  margin-top: var(--s4);
+}
+
+.panelNote {
+  composes: t-cell from global;
+  margin-top: var(--s3);
+  max-width: var(--note);
+  color: var(--muted);
+}
+
+.panelNote code {
+  font-family: var(--mono);
+  font-variant-ligatures: none;
+}
