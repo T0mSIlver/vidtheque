@@ -49,6 +49,14 @@ async function mount(
   return { ...nav, fetcher };
 }
 
+// The table with a date bound echoed back on it. The dates on the wire are the
+// epochs the query ran on, and the page reads its own pickers out of them —
+// so a test about a date filter has to put one on the payload, not just in the
+// URL, which is the whole point of the echo.
+function dated(filters: Record<string, number>) {
+  return { ...OWNER_LIBRARY, filters: { ...OWNER_LIBRARY.filters, ...filters } };
+}
+
 describe("the videos table", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -128,15 +136,43 @@ describe("the videos table", () => {
 
   it("puts what is narrowing the table on the title's own baseline", async () => {
     await mount(
-      { body: OWNER_LIBRARY },
+      { body: dated({ published_after: 1767225600 }) },
       { search: "index_state=failed&published_after=2026-01-01" },
     );
 
     const head = within((await screen.findByRole("heading", { name: "Videos" })).closest("div")!);
     expect(head.getByText("failed")).toBeInTheDocument();
-    // An open end is `…`, not an invented boundary, and the day is the one the
-    // reader typed — the payload's echo is exclusive at the top.
+    // An open end is `…`, not an invented boundary.
     expect(head.getByText("2026-01-01 – …")).toBeInTheDocument();
+  });
+
+  // The server clamps every date bound and snaps it to a UTC day before it
+  // filters, and says so. The page must show the filter that ran: a picker
+  // still holding `2999-01-01` beside a note naming a different day is the
+  // page vouching for a query nobody made.
+  it("shows the day a clamped date became, in the box and on the baseline", async () => {
+    await mount(
+      {
+        body: {
+          ...dated({ published_before: 1788652800 }), // 2026-09-06, exclusive
+          notes: [
+            "note: resolved server-side: published_before=2999-01-01 → 2026-09-05. " +
+              "Each bound is filtered as a whole UTC day, inside a floor of " +
+              "1970-01-01 and a ceiling a year from now; the day named here is " +
+              "the one that ran.",
+          ],
+        },
+      },
+      { search: "published_before=2999-01-01" },
+    );
+
+    expect(await screen.findByText(/published_before=2999-01-01 → 2026-09-05/)).toBeInTheDocument();
+    // `_before` is exclusive, so the day the reader asked for is the echo's
+    // own day less one — and that is what the picker holds.
+    expect(screen.getByLabelText("Published on or before")).toHaveValue("2026-09-05");
+    expect(screen.getByLabelText("Published on or after")).toHaveValue("");
+    const head = within(screen.getByRole("heading", { name: "Videos" }).closest("div")!);
+    expect(head.getByText("… – 2026-09-05")).toBeInTheDocument();
   });
 
   it("turns the band into a URL on submit, and drops what is empty", async () => {
