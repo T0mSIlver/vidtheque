@@ -1,0 +1,357 @@
+/* The owner's search page.
+
+   Read out of `dashboard/static/dashboard.css`, which is still serving the
+   pages this port has not reached. The page head, the band, the panel, the
+   notes box and the pager are `dashboard.module.css`'s; what is here is the
+   vocabulary only this page has — the leg lines, a result grouped under its
+   talk, the still beside a moment, the three snippet treatments and the
+   receipt.
+
+   Nothing here is a card. */
+
+/* ------------------------------------------------------------- the legs
+
+   A column of sentences rather than a row of identifiers: the label is the
+   human channel, the count is the figure, and the machine's own key follows the
+   label in mono at label size. A sub-leg — the candidate count behind a fused
+   one — is inset by its own left hairline, which says "this explains the line
+   above" without a second heading. */
+.legline {
+  display: grid;
+  gap: 0;
+  margin: var(--s3) 0 0;
+}
+
+.leg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--s3);
+  align-items: baseline;
+  padding: var(--s1) 0;
+  border-top: 1px solid var(--seam);
+}
+
+.leg:first-child {
+  border-top: 0;
+}
+
+.legSub {
+  padding-left: var(--s3);
+  border-left: 1px solid var(--seam);
+}
+
+/* Classes rather than `.legline dt`: `composes` only works on a simple
+   selector, and the type role is what these two carry. */
+.legLabel {
+  composes: t-cell from global;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.legCount {
+  composes: t-machine from global;
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.legSub .legLabel,
+.legSub .legCount {
+  color: var(--muted);
+}
+
+/* The machine string, kept and not hidden: this page is an instrument, and
+   `transcript_vec_knn` is what an operator quotes when a count looks wrong. */
+.legKey,
+.legUnit {
+  composes: t-label from global;
+  color: var(--fg3);
+}
+
+/* ------------------------------------------------------------ the notes */
+
+.notes {
+  composes: t-log from global;
+  margin: var(--s3) 0 0;
+  padding: var(--s3) var(--s4);
+  list-style: none;
+  color: var(--muted);
+  background: var(--console);
+  border: 1px solid var(--seam);
+}
+
+.notes li + li {
+  margin-top: var(--s2);
+}
+
+/* ----------------------------------------------------------- the results
+
+   Ten flat hits are usually three talks, so a result is a talk with its moments
+   under it. The group's own line is the title and the machine strings; the
+   moments below it carry the evidence. */
+.groups {
+  margin: var(--s4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.group {
+  padding: var(--s4) 0;
+  border-top: 1px solid var(--seam);
+}
+
+.group:first-child {
+  border-top-color: var(--seam2);
+}
+
+.groupHead {
+  min-width: 0;
+}
+
+.groupTitle {
+  composes: t-cell-strong from global;
+  margin: 0;
+  /* A corpus title. `anywhere`, not `break-word`: only `anywhere` also reports
+     a zero min-content width, which is what stops one long token widening the
+     row. */
+  overflow-wrap: anywhere;
+}
+
+.groupTitle a {
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.groupTitle a:hover {
+  text-decoration: underline;
+}
+
+.groupMeta {
+  composes: t-machine-sm from global;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--s1);
+  margin: var(--s1) 0 0;
+  color: var(--muted);
+}
+
+.where {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.hits {
+  margin: var(--s3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Three columns: the frame, the moment, the receipt. The frame is first because
+   for two of the three sources it *is* the evidence — a slide the machine read
+   and a picture that matched have nothing else to show — and a column of stills
+   down the left is also how you scan ten results without reading ten titles. */
+.hit {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--s2) var(--s4);
+  padding: var(--s3) 0;
+  border-top: 1px solid var(--seam);
+}
+
+.hit:first-child {
+  border-top: 0;
+}
+
+/* Fixed box, mirrored in the img attributes, so a row keeps its height whether
+   the frame has decoded, failed or never existed. 128px of a 192px file: the
+   strip's own width from the fixed set, at 1.5x, so a search costs the derived
+   cache no variant the videos table has not already paid for. */
+.shot {
+  display: block;
+  flex: 0 0 auto;
+  width: 128px;
+  height: 72px;
+  align-self: start;
+  background: var(--black);
+  box-shadow: inset 0 0 0 1px var(--edge-in);
+}
+
+.shot img {
+  display: block;
+  width: 128px;
+  height: 72px;
+  object-fit: cover;
+}
+
+.shotEmpty {
+  composes: t-label from global;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: var(--plate);
+}
+
+.body {
+  min-width: 0;
+}
+
+.meta {
+  composes: t-machine-sm from global;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--s2);
+  margin: 0;
+  color: var(--muted);
+}
+
+.badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+}
+
+/* Three sources, three kinds of evidence, said in a word — the demo's own
+   vocabulary, so a badge means the same thing on both surfaces. The word
+   carries the meaning and the colour only reinforces it, which is what keeps a
+   result row readable on a monochrome screen and for a colour-blind reader. */
+.badge {
+  composes: t-label from global;
+  display: inline-block;
+  padding: 0 var(--s1);
+  color: var(--muted);
+  border: 1px solid var(--seam);
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
+/* Someone said it. Not lime: a caption track is not something the machine read
+   off the screen. */
+.badgeSpoken {
+  border-color: var(--seam2);
+}
+
+/* The machine read it off the screen — the one thing lime is for, and the same
+   green as the detection box on the video page the row links into. */
+.badgeScreen {
+  color: var(--seen);
+  border-color: var(--seen-24);
+  background: color-mix(in srgb, var(--seen) 10%, transparent);
+}
+
+/* A visual match: no text was read, so there is no lime on it. It takes the
+   plate instead — the picture beside it is the whole of the evidence. */
+.badgeFrame {
+  color: var(--fg2);
+  background: var(--plate3);
+  border-color: var(--seam2);
+}
+
+/* A leg this page has never heard of, arriving under its own name. */
+.badgeOther {
+  border-color: var(--seam2);
+}
+
+.at {
+  composes: t-machine-sm from global;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.at:hover {
+  text-decoration: underline;
+}
+
+/* The snippet is set as what it is evidence of — the demo's own three
+   treatments, because a moment must not read as a different kind of thing on
+   the two surfaces. Spoken: quoted, in the human face, because a person said
+   it. On-screen: mono and lime, the same green as the detection box it was read
+   out of (The Lime Rule — this is on-screen-text evidence, and the only place
+   on this page lime is allowed). Frame: mono and muted, never quoted and never
+   lime, because whatever text rode along is not what matched. */
+.snippet {
+  composes: t-cell from global;
+  margin: var(--s2) 0 0;
+  max-width: var(--prose);
+  overflow-wrap: anywhere;
+}
+
+.isSpoken::before {
+  content: "\201C";
+  color: var(--fg3);
+}
+
+.isSpoken::after {
+  content: "\201D";
+  color: var(--fg3);
+}
+
+.isScreen {
+  composes: t-machine from global;
+  color: var(--seen);
+}
+
+.isFrame {
+  composes: t-machine from global;
+  color: var(--muted);
+}
+
+/* The reader's own words, found in the text. Gold is *this is the moment you
+   are pointing at*, which is exactly what a mark is; on the two mono channels
+   it goes to full white instead, because gold on lime is two signals on one
+   object (The One Signal Rule). */
+.snippet mark {
+  background: transparent;
+  color: var(--accent);
+}
+
+.isScreen mark,
+.isFrame mark {
+  color: var(--fg);
+}
+
+.receipt {
+  composes: t-machine-sm from global;
+  align-self: start;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.receipt:hover {
+  text-decoration: underline;
+}
+
+/* ---------------------------------------------------------- the empties */
+
+.empty {
+  padding: var(--s6) 0;
+}
+
+/* The page nobody has asked anything of yet. It sits below the band rather than
+   inside a panel, because there is no result set for a panel to be about. */
+.emptyFirst {
+  margin-top: var(--s6);
+}
+
+.emptyLead {
+  composes: t-cell from global;
+  margin: 0;
+  color: var(--fg);
+}
+
+@media (max-width: 780px) {
+  /* The still stays beside the moment on a hand — it is the evidence, and a
+     stack of full-width frames is a wall of pictures. The receipt drops to its
+     own line under the body rather than under the frame. */
+  .hit {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--s2) var(--s3);
+  }
+
+  .hit > .receipt {
+    grid-column: 2;
+  }
+}
