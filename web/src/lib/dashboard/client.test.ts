@@ -1,4 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
+import {
+  ALREADY_FOLLOWING,
+  BAD_DURATION,
+  CHECKED_OUTCOME,
+  CLAMPED_FOLLOWING,
+  CREATED_OUTCOME,
+  DELETED_OUTCOME,
+  FOLLOW_DETAIL,
+  FOLLOWING,
+  NOT_A_CHANNEL,
+  PAUSED_OUTCOME,
+  QUEUED_OUTCOME,
+  QUIET_DETAIL,
+  RULES_OUTCOME,
+  UNKNOWN_FOLLOW,
+} from "@/test/following-fixtures";
 import { createDashboardClient, DashboardError, DashboardShapeError } from "./client";
 
 // A fetch that records the request and answers per path, so one stub can serve
@@ -425,6 +441,298 @@ describe("the dashboard client", () => {
       expect(outcome.jobs).toHaveLength(0);
       expect(outcome.errors[0].error).toBe("E_RATE_LIMIT");
       expect(outcome.selected).toBe(2);
+    });
+  });
+
+  // -------------------------------------------------------- the follows
+
+  // The two reads that can be *absent*, and the six writes under them
+  // (dashboard.md §21, §22). What is asserted here is the wire: the shapes are
+  // the pages' business, and the pages' own suites read them.
+  describe("the following pair", () => {
+    const LIST = "/dashboard/api/following";
+    const DETAIL = "/dashboard/api/following/andrej-karpathy";
+
+    it("reads the list, typed, and sends the bounds as the reader asked them", async () => {
+      const { calls, fetchImpl } = fake({ [`${LIST}?limit=100000`]: { body: FOLLOWING } });
+
+      const data = await createDashboardClient({ fetch: fetchImpl }).following(
+        new URLSearchParams({ limit: "100000" }),
+      );
+
+      // Values, all of them: the seconds spent, the hours configured, the
+      // window they are counted over, and the two deployment booleans.
+      expect(data.budget).toEqual({ spent_s: 3600, ceiling_h: 16, window_s: 86400 });
+      expect(data.checks_enabled).toBe(true);
+      expect(data.follows[0].min_duration_s).toBe(480);
+      expect(data.order).toBe("failing_first");
+      // Uncorrected on the way out: the clamp is Python's, and one applied
+      // here would be a bound the reader is never told about.
+      expect(calls[0].path).toBe(`${LIST}?limit=100000`);
+    });
+
+    it("reads back what a clamp moved", async () => {
+      const { fetchImpl } = fake({ [LIST]: { body: CLAMPED_FOLLOWING } });
+      const data = await createDashboardClient({ fetch: fetchImpl }).following(
+        new URLSearchParams(),
+      );
+
+      expect(data.pagination.limit).toBe(100);
+      expect(data.notes).toEqual(["limit=100000 → 100", "offset=-3 → 0"]);
+    });
+
+    // §18.6: both `GET`s sit inside the write-route list, so a deployment with
+    // no write side answers `404` on the JSON exactly as it does on the page.
+    // The refusal has to arrive typed, because "there is no such surface here"
+    // is what the page renders from.
+    it("throws a typed 404 where the deployment registers no write side", async () => {
+      const { fetchImpl } = fake({ [LIST]: { status: 404, body: {} } });
+
+      const error = await createDashboardClient({ fetch: fetchImpl })
+        .following(new URLSearchParams())
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(DashboardError);
+      expect((error as DashboardError).status).toBe(404);
+    });
+
+    it("carries the limiter's delay off a refused list", async () => {
+      const { fetchImpl } = fake({
+        [LIST]: {
+          status: 429,
+          body: { error: "E_RATE_LIMIT", message: "Too many dashboard requests for now." },
+          headers: { "retry-after": "12" },
+        },
+      });
+
+      const error = (await createDashboardClient({ fetch: fetchImpl })
+        .following(new URLSearchParams())
+        .catch((e: unknown) => e)) as DashboardError;
+      expect(error.status).toBe(429);
+      expect(error.retryAfter).toBe(12);
+    });
+
+    it("sends the browser to sign in when the list is refused", async () => {
+      const navigate = vi.fn();
+      const { fetchImpl } = fake({
+        [LIST]: { status: 401, body: { error: "E_AUTH_REQUIRED" } },
+        [SESSION_PATH]: { body: SESSION },
+      });
+
+      const error = await createDashboardClient({
+        fetch: fetchImpl,
+        navigate,
+        currentPath: () => "/dashboard/following",
+      })
+        .following(new URLSearchParams())
+        .catch((e: unknown) => e);
+
+      expect((error as DashboardError).status).toBe(401);
+      await vi.waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
+      expect(navigate).toHaveBeenCalledWith("/dashboard/login?next=%2Fdashboard%2Ffollowing");
+    });
+
+    it("reads one follow, its ledger and its near miss", async () => {
+      const { calls, fetchImpl } = fake({ [`${DETAIL}?offset=25`]: { body: FOLLOW_DETAIL } });
+
+      const data = await createDashboardClient({ fetch: fetchImpl }).follow(
+        "andrej-karpathy",
+        new URLSearchParams({ offset: "25" }),
+      );
+
+      expect(calls[0].path).toBe(`${DETAIL}?offset=25`);
+      expect(data.follow.last_error_message).toBe("the source rate-limited this box");
+      expect(data.near_miss).toEqual({ count: 2, of: 6, within_s: 60, edge: "floor" });
+      // Verbatim, with the number that made the decision inside it.
+      expect(data.seen[5].reason).toBe("7:48, shorter than your 8:00 floor");
+      expect(data.caps).toEqual({ checks: 10, index_jobs: 10 });
+    });
+
+    // `null` is the contract, not an empty object: a follow with no length
+    // rule, or a page of rows with nothing near the edge, has no finding.
+    it("reads a null near miss as a null", async () => {
+      const { fetchImpl } = fake({ [DETAIL]: { body: QUIET_DETAIL } });
+      const data = await createDashboardClient({ fetch: fetchImpl }).follow(
+        "andrej-karpathy",
+        new URLSearchParams(),
+      );
+
+      expect(data.near_miss).toBeNull();
+      expect(data.counts).toEqual({});
+    });
+
+    it("throws the unknown slug typed, from the read", async () => {
+      const { fetchImpl } = fake({
+        "/dashboard/api/following/nope": { status: 404, body: UNKNOWN_FOLLOW },
+      });
+
+      const error = (await createDashboardClient({ fetch: fetchImpl })
+        .follow("nope", new URLSearchParams())
+        .catch((e: unknown) => e)) as DashboardError;
+
+      expect(error.status).toBe(404);
+      expect(error.code).toBe("E_UNKNOWN_FOLLOW");
+      expect(error.next).toContain("lists every channel");
+    });
+
+    it("encodes the slug it was given, on the read and on every write", async () => {
+      const { calls, fetchImpl } = fake({});
+      const client = createDashboardClient({ fetch: fetchImpl });
+      await client.follow("../../logout", new URLSearchParams()).catch(() => undefined);
+      await client.deleteFollow("../../logout").catch(() => undefined);
+
+      expect(calls[0].path).toBe("/dashboard/api/following/..%2F..%2Flogout");
+      expect(calls[1].path).toBe("/dashboard/following/..%2F..%2Flogout/delete");
+    });
+
+    // The add form's route *is* the list page's path, with a different method.
+    // Nothing about that changes the request: same cookie, same form encoding,
+    // same `Accept` that switches the answer away from the 303.
+    it("posts the add form to the list's own path", async () => {
+      const { calls, fetchImpl } = fake({ "/dashboard/following": { body: CREATED_OUTCOME } });
+
+      const outcome = await createDashboardClient({ fetch: fetchImpl }).followChannel({
+        url: "https://www.youtube.com/@newone",
+        title: "New One",
+        tab_videos: "1",
+      });
+
+      expect(outcome.already_following).toBe(false);
+      expect(outcome.follow?.slug).toBe("new-one");
+      const { path, init } = calls[0];
+      expect(path).toBe("/dashboard/following");
+      expect(init.method).toBe("POST");
+      expect(init.credentials).toBe("same-origin");
+      expect((init.headers as Record<string, string>).accept).toBe("application/json");
+      expect(init.body).toBe(
+        "url=https%3A%2F%2Fwww.youtube.com%2F%40newone&title=New+One&tab_videos=1",
+      );
+    });
+
+    it("reads the tool's own already-following back", async () => {
+      const { fetchImpl } = fake({ "/dashboard/following": { body: ALREADY_FOLLOWING } });
+      const outcome = await createDashboardClient({ fetch: fetchImpl }).followChannel({
+        url: "https://www.youtube.com/@karpathy",
+      });
+
+      expect(outcome.already_following).toBe(true);
+      expect(outcome.follow?.slug).toBe("andrej-karpathy");
+    });
+
+    it("throws the add form's refusal with its next step", async () => {
+      const { fetchImpl } = fake({
+        "/dashboard/following": { status: 400, body: NOT_A_CHANNEL },
+      });
+
+      const error = (await createDashboardClient({ fetch: fetchImpl })
+        .followChannel({ url: "https://youtu.be/kCc8FmEb1nY" })
+        .catch((e: unknown) => e)) as DashboardError;
+
+      expect(error.code).toBe("E_BAD_PARAM");
+      expect(error.message).toContain("is a single video");
+      expect(error.next).toContain("index-video");
+    });
+
+    it("puts the verb in the body of the one state route", async () => {
+      const { calls, fetchImpl } = fake({
+        "/dashboard/following/andrej-karpathy/state": { body: PAUSED_OUTCOME },
+      });
+
+      const outcome = await createDashboardClient({ fetch: fetchImpl }).setFollowState(
+        "andrej-karpathy",
+        "pause",
+      );
+
+      expect(outcome.follow.state).toBe("paused");
+      expect(calls[0].init.body).toBe("action=pause");
+    });
+
+    // `check_now` moves the clock rather than running anything, and the row is
+    // the receipt: `next_check_at: 0` is due immediately.
+    it("reads the clock a check-now moved", async () => {
+      const { calls, fetchImpl } = fake({
+        "/dashboard/following/andrej-karpathy/check": { body: CHECKED_OUTCOME },
+      });
+
+      const outcome = await createDashboardClient({ fetch: fetchImpl }).checkFollowNow(
+        "andrej-karpathy",
+      );
+
+      expect(outcome.follow.next_check_at).toBe(0);
+      expect(calls[0].init.body).toBe("");
+    });
+
+    // The row comes back from the store, so what a client reads is the rule
+    // that was *kept* — the parser's own seconds, not the string that was sent.
+    it("reads the rule the store kept, not the one it sent", async () => {
+      const { calls, fetchImpl } = fake({
+        "/dashboard/following/andrej-karpathy/rules": { body: RULES_OUTCOME },
+      });
+
+      const outcome = await createDashboardClient({ fetch: fetchImpl }).setFollowRules(
+        "andrej-karpathy",
+        { min_duration: "9:00", max_per_check: "4", tab_videos: "1" },
+      );
+
+      expect(outcome.follow.min_duration_s).toBe(540);
+      expect(outcome.follow.max_per_check).toBe(4);
+      expect(calls[0].init.body).toBe("min_duration=9%3A00&max_per_check=4&tab_videos=1");
+    });
+
+    it("throws the shared validator's refusal", async () => {
+      const { fetchImpl } = fake({
+        "/dashboard/following/andrej-karpathy/rules": { status: 400, body: BAD_DURATION },
+      });
+
+      const error = (await createDashboardClient({ fetch: fetchImpl })
+        .setFollowRules("andrej-karpathy", { min_duration: "banana" })
+        .catch((e: unknown) => e)) as DashboardError;
+
+      expect(error.code).toBe("E_BAD_TIME_FORMAT");
+      expect(error.message).toContain("min_duration='banana'");
+    });
+
+    it("reads what an unfollow left behind", async () => {
+      const { fetchImpl } = fake({
+        "/dashboard/following/andrej-karpathy/delete": { body: DELETED_OUTCOME },
+      });
+
+      const outcome = await createDashboardClient({ fetch: fetchImpl }).deleteFollow(
+        "andrej-karpathy",
+      );
+
+      expect(outcome.deleted).toBe(true);
+      expect(outcome.videos_kept).toBe(1);
+    });
+
+    it("queues one rescued row and reads the job it made", async () => {
+      const { calls, fetchImpl } = fake({
+        "/dashboard/following/andrej-karpathy/queue": { body: QUEUED_OUTCOME },
+      });
+
+      const outcome = await createDashboardClient({ fetch: fetchImpl }).queueFollowUrl(
+        "andrej-karpathy",
+        "https://youtu.be/nearmiss001",
+      );
+
+      expect(outcome.job_id).toBe("job_02e028870c97");
+      expect(calls[0].init.body).toBe("url=https%3A%2F%2Fyoutu.be%2Fnearmiss001");
+    });
+
+    // Nothing asked for is nothing done, on both branches: an empty `url`
+    // answers `200` with a null job rather than a refusal.
+    it("reads a null job id as an outcome rather than an error", async () => {
+      const { fetchImpl } = fake({
+        "/dashboard/following/andrej-karpathy/queue": {
+          body: { slug: "andrej-karpathy", url: null, job_id: null },
+        },
+      });
+
+      const outcome = await createDashboardClient({ fetch: fetchImpl }).queueFollowUrl(
+        "andrej-karpathy",
+        "",
+      );
+      expect(outcome.job_id).toBeNull();
     });
   });
 });
