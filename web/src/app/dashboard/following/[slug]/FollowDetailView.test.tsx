@@ -17,7 +17,7 @@ import {
   RULES_OUTCOME,
   UNKNOWN_FOLLOW,
 } from "@/test/following-fixtures";
-import { countingDownFrom } from "@/test/retry";
+import { firstPaint } from "@/test/retry";
 
 // A follow's own page is the one place on this instance that says what a
 // standing rule *did not* do. So the assertions are the third band and its
@@ -446,17 +446,21 @@ describe("one follow's page", () => {
       expect(await screen.findByText(/not open to this browser/)).toBeInTheDocument();
     });
 
+    // Under a stopped clock: the label has to be the delay the limiter named,
+    // and a page that halved it would count down just as convincingly.
     it("waits out the limiter's own delay", async () => {
-      await mount({
-        detail: {
-          status: 429,
-          body: { error: "E_RATE_LIMIT", message: "Too many dashboard requests for now." },
-          headers: { "retry-after": "9" },
-        },
-      });
+      await firstPaint(() =>
+        mount({
+          detail: {
+            status: 429,
+            body: { error: "E_RATE_LIMIT", message: "Too many dashboard requests for now." },
+            headers: { "retry-after": "9" },
+          },
+        }),
+      );
 
-      expect(await screen.findByText("Too many dashboard requests for now.")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: countingDownFrom(9) })).toBeDisabled();
+      expect(screen.getByText("Too many dashboard requests for now.")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "retry in 9s" })).toBeDisabled();
     });
   });
 });

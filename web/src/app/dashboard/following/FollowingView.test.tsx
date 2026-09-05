@@ -12,7 +12,7 @@ import {
   NO_FOLLOWS,
   NOT_A_CHANNEL,
 } from "@/test/following-fixtures";
-import { countingDownFrom } from "@/test/retry";
+import { firstPaint } from "@/test/retry";
 
 // The follows table exists to answer one question in one glance: what is this
 // box watching while nobody is looking, and what is it holding back. So the
@@ -243,17 +243,21 @@ describe("the follows table", () => {
     expect(screen.getByText(/needs the owner's token or session/)).toBeInTheDocument();
   });
 
+  // Under a stopped clock: the label has to be the delay the limiter named,
+  // and a page that halved it would count down just as convincingly.
   it("waits out the limiter's own delay", async () => {
-    await mount({
-      list: {
-        status: 429,
-        body: { error: "E_RATE_LIMIT", message: "Too many dashboard requests for now." },
-        headers: { "retry-after": "9" },
-      },
-    });
+    await firstPaint(() =>
+      mount({
+        list: {
+          status: 429,
+          body: { error: "E_RATE_LIMIT", message: "Too many dashboard requests for now." },
+          headers: { "retry-after": "9" },
+        },
+      }),
+    );
 
-    expect(await screen.findByText("Too many dashboard requests for now.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: countingDownFrom(9) })).toBeDisabled();
+    expect(screen.getByText("Too many dashboard requests for now.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "retry in 9s" })).toBeDisabled();
   });
 
   describe("the add form", () => {

@@ -3,6 +3,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
+import { firstPaint } from "@/test/retry";
 import {
   CANCEL_QUEUED,
   CLAMPED_JOBS,
@@ -198,6 +199,23 @@ describe("the jobs table", () => {
     expect(reads()).toBe(2);
     await vi.advanceTimersByTimeAsync(2000);
     expect(reads()).toBe(3);
+  });
+
+  // The other 429: the first read, with no earlier payload to keep on the page.
+  // There is nothing to hold, so the page is the refusal — and the countdown on
+  // it has to say the delay the limiter named. Under a stopped clock, because
+  // `retryAfter ?? 60` is a fallback that counts down just as convincingly.
+  it("counts down the limiter's own delay when the first read is refused", async () => {
+    await firstPaint(() =>
+      mount({
+        status: 429,
+        body: { error: "E_RATE_LIMIT", message: "Too many dashboard requests for now." },
+        headers: { "retry-after": "5" },
+      }),
+    );
+
+    expect(screen.getByText("Too many dashboard requests for now.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "retry in 5s" })).toBeDisabled();
   });
 
   // The refusal is the signal, and the page renders its signed-out state
