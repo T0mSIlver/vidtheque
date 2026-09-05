@@ -149,10 +149,10 @@ are two different questions and §3 answers the second one.
 
 ### 2.4 Demo mode = welcome page + read-only projection
 
-Today `/demo` serves `public/static/demo/index.html` (amended 2026-08-11:
-the landing owns `/` since commit `4ddd45d`'s topology swap, and the demo's
-files moved under `static/demo/` in the repo cleanup — the welcome page's
-route is `/demo`, its role is unchanged): search, ask, and a six-video "in
+`/demo` serves the welcome page (amended 2026-08-11: the landing owns `/`
+since commit `4ddd45d`'s topology swap; amended 2026-09-05: the page left the
+Python package for the Next.js front end at `web/src/app/demo/` — the route is
+still `/demo` and its role is unchanged): search, ask, and a six-video "in
 this corpus" list. **That page is the welcome page.**
 It stays, it keeps its aesthetic (demo-site.md §6: a search engine, not a
 dashboard), and it gains one link — into the browsable corpus, which is the
@@ -259,7 +259,10 @@ Nothing is deleted and nothing is forked.
 2. **The static bundle grows a sibling.** `public/static/` keeps
    `index.html` + `app.js` + `style.css` for the welcome page; the dashboard
    ships its own files in the same tree with the same no-build discipline (or
-   does not — §10.2 is the honest fork).
+   does not — §10.2 is the honest fork). *Amended 2026-09-05:* there is no
+   sibling to grow beside any more. The welcome page's three files went to
+   `web/`, `public/static/` is down to `fonts/`, and the dashboard's own
+   bundle under `dashboard/static/` is the only one Python serves.
 3. **The rate limiter moves to always-on.** It is mounted only in public mode
    today (`app.py:187`). A management surface a bot can hammer with
    `/dashboard/api/videos` is the same denial of service as a public one, and
