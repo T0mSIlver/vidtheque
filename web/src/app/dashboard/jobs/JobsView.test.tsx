@@ -5,8 +5,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
 import {
   CANCEL_QUEUED,
+  CLAMPED_JOBS,
   DEMO_JOBS,
   EMPTY_JOBS,
+  FELL_BACK_JOBS,
+  NARROWED_EMPTY_JOBS,
   OWNER_JOBS,
   REFUSAL,
   SETTLED_JOBS,
@@ -227,13 +230,65 @@ describe("the jobs table", () => {
 
     vi.resetModules();
     vi.unstubAllGlobals();
-    await mount({ body: EMPTY_JOBS }, { search: "state=failed" });
+    await mount({ body: NARROWED_EMPTY_JOBS }, { search: "state=failed" });
     expect(await screen.findByRole("heading", { name: "No jobs to show." })).toBeInTheDocument();
     expect(screen.getByText(/filters are narrowing it/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Show every job" })).toHaveAttribute(
       "href",
       "/dashboard/jobs",
     );
+  });
+
+  // The `all` invariant, arriving on a payload with no form to echo into: the
+  // strip names the filters that *ran*, and the sentence saying the asked-for
+  // ones did not is Python's, rendered whole.
+  it("narrows from the echo and prints the fallback the server took", async () => {
+    await mount({ body: FELL_BACK_JOBS }, { search: "state=nonsense&degraded=maybe" });
+    await screen.findByRole("status");
+
+    expect(
+      screen.getByText(/state='nonsense' is not one of all, active, failed, done/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/degraded='maybe' is not one of 1/)).toBeInTheDocument();
+    // Neither value narrowed anything, so neither is on the strip: the words
+    // in the URL were not the words the listing ran with.
+    expect(screen.queryByText("nonsense")).not.toBeInTheDocument();
+    expect(screen.queryByText("only")).not.toBeInTheDocument();
+    // …and the empty state does not blame a filter that never ran.
+    expect(screen.queryByText(/filters are narrowing it/)).not.toBeInTheDocument();
+  });
+
+  it("prints the clamp that moved both bounds, and pages on the number that answered", async () => {
+    await mount({ body: CLAMPED_JOBS }, { search: "limit=100000&offset=99999999" });
+    await screen.findByRole("heading", { name: "No jobs to show." });
+
+    expect(screen.getByText(/clamped server-side: limit=100000 → 100/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Rows")).toHaveAttribute("placeholder", "100");
+  });
+
+  // The narrowing strip, drawn from the values the listing ran with.
+  it("names every filter that took rows out, and not the order", async () => {
+    await mount({
+      body: {
+        ...OWNER_JOBS,
+        filters: {
+          state: "failed",
+          kind: "index",
+          error_code: "E_SOURCE",
+          degraded: true,
+          order: "priority",
+        },
+      },
+    });
+    await screen.findByRole("status");
+
+    const head = screen.getByRole("heading", { name: "Jobs" }).closest("div") as HTMLElement;
+    expect(head).toHaveTextContent("state failed");
+    expect(head).toHaveTextContent("kind index");
+    expect(head).toHaveTextContent("error code E_SOURCE");
+    expect(head).toHaveTextContent("degraded only");
+    // An order takes no rows out, so it is not a narrowing.
+    expect(head).not.toHaveTextContent("priority");
   });
 
   // Every bound is Python's: what the reader typed goes on the wire as typed,
