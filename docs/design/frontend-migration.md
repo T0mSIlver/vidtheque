@@ -201,7 +201,7 @@ What each side owns, once a page is ported:
 | `POST /dashboard/following` | Python | **the first path split by method** |
 | `GET /dashboard/index` | **Next** | *landed 2026-09-05* |
 | `POST /dashboard/index` | Python | **the second path split by method** |
-| `GET /dashboard/login` | **Next** | *in progress — 2026-09-05* |
+| `GET /dashboard/login` | **Next** | *landed 2026-09-05* |
 | `POST /dashboard/login`, `/dashboard/logout` | Python | for good |
 | `/dashboard/api/*` | Python | for good |
 | `/dashboard/static/*` | Python | for good |
@@ -212,9 +212,9 @@ it is one of the paths above. **Until a page is ported, Python keeps serving
 its HTML** — the list is the destination, and a row becomes true the day that
 React page lands, page by page as `docs/ROADMAP.md` tracks it.
 
-*Tally, 2026-09-05:* ten of the eleven `GET /dashboard/*` pages this table
-names are Next's now — the index form's landing leaves `/dashboard/login` as
-the one a sibling is porting, so it is *in progress* above, not landed.
+*Tally, 2026-09-05:* all eleven `GET /dashboard/*` pages this table names are
+Next's now — the sign-in page's landing was the last of them, and every row
+above reads *landed*.
 
 The `web/` side expresses this split in its development rewrites and in the
 matcher of the middleware that sends the document policy (§1b). That is
@@ -262,19 +262,38 @@ each shares its path with a page this app now serves** — every other write on
 this surface has a segment its page does not (`…/{slug}/state`,
 `…/{video_id}/tags`), so these are the only two collisions under `/dashboard`,
 and the table's "every other `POST /dashboard/*`" cannot resolve either on path
-alone. A sibling is porting `GET /dashboard/login` now, which will be the
-third — *in progress* above, not landed.
+alone.
 
-**Production routes both paths by method**: `GET` → Next, `POST` → Python, on
-`/dashboard/following` and on `/dashboard/index` alike. That is the reverse
-proxy's rule and it is written here because nothing in this repo can express it
-— a Next rewrite and a middleware matcher both match paths, not methods. It is
-a cutover check (`docs/ROADMAP.md`): a `POST` to `/dashboard/following` or to
-`/dashboard/index` through the edge must reach Python, or the form answers with
-a document from a page that never saw the write.
+**The sign-in page is the third, and the sharpest of the three** *(landed
+2026-09-05)*. `GET /dashboard/login` is Next's now, named in the matcher and
+in `ported.ts` beside the rest. `POST /dashboard/login` stays Python's **for
+good** rather than until some later cutover — the other two collisions are
+Python's only because nobody has ported their write yet, but this one cannot
+move: the response's `Set-Cookie` is the whole write, and an `HttpOnly` cookie
+is not a thing a React shell could mint or clear. `/dashboard/logout` stays
+Python's too, and for a plainer reason — it has no page of its own to collide
+with, only the rail's Sign out button, so it was never a candidate for this
+list.
+
+New behaviour worth naming: a deployment with no write side
+(`VIDTHEQUE_PUBLIC_READONLY=1`, or `VIDTHEQUE_AUTH=none`) never registers
+`/dashboard/login` on the Python side, `GET` and `POST` alike, so Python 404s
+both (dashboard.md §21). But the edge routes a `GET` to this path by method,
+not by asking the deployment first, so that `GET` reaches Next regardless —
+and Next's page reads `login_url: null` off the session and renders the
+absent state it was built for (§6, §9), rather than the reader ever seeing
+Python's 404. Only a `POST` still means that 404.
+
+**Production routes all three paths by method**: `GET` → Next, `POST` →
+Python, on `/dashboard/following`, `/dashboard/index` and `/dashboard/login`
+alike. That is the reverse proxy's rule and it is written here because nothing
+in this repo can express it — a Next rewrite and a middleware matcher both
+match paths, not methods. It is a cutover check (`docs/ROADMAP.md`): a `POST`
+to any of the three through the edge must reach Python, or the form answers
+with a document from a page that never saw the write.
 
 **Development uses a shim, and it is not the rule.** `web/next.config.ts`'s
-`PYTHON_FORM_POSTS` keys a `beforeFiles` rewrite for each of the two paths on
+`PYTHON_FORM_POSTS` keys a `beforeFiles` rewrite for each of the three paths on
 `content-type: application/x-www-form-urlencoded` — the header every write on
 this surface sends (§9) and no document navigation ever does — because
 `beforeFiles` is the only stage that runs before the router finds the page, and
@@ -591,6 +610,29 @@ both are readings of this payload rather than of a page's own state.
   `auth=` names an environment variable and "indexing refused" is a sentence
   about a worker nobody visiting the demo can reach (§2.4).
 
+**The sign-in page's own reading of this payload** *(landed 2026-09-05)*. It
+waits on this read like the index form and unlike every other page, because
+which secret this deployment accepts is the difference between a field
+labelled with the right environment variable and one labelled with a guess.
+
+- **The already-signed-in bounce keys on `signed_in`**, the validated session
+  row — not on `credential()` returning non-null the way the Jinja `GET`
+  bounced. `credential()` also answers a bearer, so a caller who only ever
+  proves ownership with `Authorization: Bearer` used to be sent straight on by
+  the old page; this one still shows them the form, because `signed_in` is
+  narrower on purpose — it is the one question this page needs answered.
+- **`sign_in_hint` is not rendered here.** Every other refusal on this surface
+  names it as the way to a page it is not; this page *is* that page, and a
+  sentence pointing a reader at where they already are is not a hint. What the
+  page reads instead is `login_url` being `null` — the deployment's other
+  fact, that there is no sign-in page at all — and it says so rather than
+  drawing a form around a route that is not registered.
+- **The note under the secret field is not a fourth field.** It is derived
+  from `accepts_password` and `accepts_token`, the same two booleans the
+  label above it switches on: both true names either secret, `accepts_token`
+  alone names `VIDTHEQUE_TOKEN`, and `accepts_password` alone (the ordinary
+  case) names `VIDTHEQUE_PASSWORD`.
+
 ## 6a. `GET /dashboard/api/library` and `/dashboard/api/library/{video_id}`
 
 *Landed 2026-09-05.* The videos table (`dashboard.md` §5.2) and the video
@@ -893,12 +935,32 @@ sent (there is none yet) but `Accept: application/json`, the form-encoded body
 — `password`, and `next` if the reader was going somewhere — and the
 same-origin requirement are as above. On success it answers `200 {"signed_in":
 true, "next": "<a path under /dashboard>"}` and sets the session cookie on that
-response; the shell navigates to `next`, which Python has already fenced to
-this surface, so the client does not have to check it. A refused secret is
-`401 E_BAD_CREDENTIAL` — deliberately not `E_AUTH_REQUIRED`, because the rule
-above sends a `401` reader to the sign-in page and this *is* the sign-in page.
-Its `message` is the same sentence for both secrets, so a client must render it
-rather than infer which field was wrong. Cross-origin is the same `403
-E_BAD_ORIGIN`, and `429` (the sign-in's own tight bucket) is JSON on both
-branches with `retry_after_s` and a `Retry-After` header. The React sign-in
-page itself is `docs/ROADMAP.md`'s.
+response. A refused secret is `401 E_BAD_CREDENTIAL` — deliberately not
+`E_AUTH_REQUIRED`, because the rule above sends a `401` reader to the sign-in
+page and this *is* the sign-in page: `dashboard.signIn` is the one call that
+passes `gated: false`, so its own `401` does not run the navigation every
+other write's does. Its `message` is the same sentence for both secrets, so a
+client must render it rather than infer which field was wrong. Cross-origin is
+the same `403 E_BAD_ORIGIN`, and `429` (the sign-in's own tight bucket) is
+JSON on both branches with `retry_after_s` and a `Retry-After` header.
+
+**`next` is fenced twice, and the second fence does not trust the first**
+*(landed 2026-09-05)*. Python's `_safe_next` fences the outcome's `next`
+before it ever reaches the client, and that is not a reason for the client to
+skip its own check: a redirect target that arrived over the wire is an input
+like any other, and the page that mints the session cookie is the worst place
+on this surface to have an open redirect. `LoginView.safeNext` mirrors
+`writes._safe_next` exactly — a path starting `/dashboard`, never `//host` or
+`/\host` (an absolute URL wearing a path's clothes), or `/dashboard`
+otherwise — and the page applies it twice: to its own `?next=` before that
+value ever enters the hidden field the form posts, and to the outcome's `next`
+before the shell navigates anywhere.
+
+**The write rides under a real `<form>`** *(landed 2026-09-05)*. `submit`
+prevents the default and does the write as a `fetch`, but the element
+underneath is `<form method="post" action="/dashboard/login">`, the same
+shape the rail's Sign out button has — not only an `onSubmit` handler with
+nothing under it. That is what keeps `form-action 'self'` a policy that holds
+rather than one that only holds while the JavaScript has loaded: a click that
+lands before this tree has hydrated still reaches Python and still gets the
+`303` the Jinja page always sent.

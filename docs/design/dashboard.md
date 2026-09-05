@@ -2841,7 +2841,11 @@ refusal — is not the obvious one:
   sentence, which is visible copy rather than a code a client matches on. The
   `429` is the login bucket's, charged ahead of the handler, so it is JSON
   whatever was asked for. `GET /dashboard/login` is untouched: "am I signed
-  in" is `/dashboard/api/session`'s question.
+  in" is `/dashboard/api/session`'s question. Where there is no write side
+  this whole route is unregistered, `GET` included — the top of this section's
+  404-on-both-branches rule covers it too, because `write_side_enabled` gates
+  the route and not the method — and it is the edge, not Python, that keeps a
+  reader from ever seeing that 404 on the `GET` (frontend-migration.md §1d).
 - **Nothing asked for is nothing done, on both branches.** `tags` with neither
   field and `queue` with no `url` answer `200` with the unchanged row rather
   than a refusal — the form's policy, not a second one written for the JSON
