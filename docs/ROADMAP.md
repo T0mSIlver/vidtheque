@@ -88,17 +88,28 @@ mode this list exists to prevent.
   `static/jobs.js` without moving the 2 s tick or its server-side clamp.
 - **Jobs controls** — cancel and retry-failed: the first writes to cross, so
   the first to need §3.3's cookie and Origin rules expressed over `fetch`.
+  *The write contract landed 2026-09-05* for all twelve writes at once, because
+  the rule that carries them is one helper and splitting it would have been two
+  rules: each route keeps its URL and answers the typed outcome when `Accept`
+  prefers JSON, the 303 otherwise (dashboard.md §21; what the client sends is
+  frontend-migration.md §9). `cancel` answers the state the job is actually in,
+  which is the thing the 2 s poll cannot say. The pages themselves are still
+  pending, and so is the poll target above.
 - **Indexing** — the index form and its submission, with the same server-side
   bounds the form has now. Plus the two re-index writes the ported videos pages
   left behind: the table's per-row **Re-index** button and the detail's
   **Manage this video** panel, both `POST /dashboard/videos/{id}/reindex`, and
   the header link that seeds this form from a video's channel ("Queue more from
-  this channel").
+  this channel"). The submission and both re-index writes answer JSON as of
+  2026-09-05 — dashboard.md §21 has the payloads.
 - **Tags** — the per-video tag write: the add and remove fields of the
   detail's **Manage this video** panel, `POST /dashboard/videos/{id}/tags`,
-  which the React detail does not render at all.
+  which the React detail does not render at all. The write answers the row's
+  tags after the write (dashboard.md §21).
 - **Following** — the list, the detail bands and the six writes; absent
-  entirely when the deployment registers no write side (dashboard.md §18).
+  entirely when the deployment registers no write side (dashboard.md §18). All
+  six answer the follow row typed as of 2026-09-05, and are 404 on both
+  branches where the surface is absent (dashboard.md §21).
 - **Session and login** — the sign-in page, the cookie flow and sign-out.
   `/dashboard/api/session` describes the deployment; the login POST itself has
   no JSON twin yet.
