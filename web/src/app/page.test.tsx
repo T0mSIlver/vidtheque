@@ -82,4 +82,22 @@ describe("the landing at /", () => {
     ).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "copy" })).toHaveLength(2);
   });
+
+  // The footer is where a public commitment is made, not decoration.
+  // `research/positioning-2026-08-10.md` §9.1 counts "an unfollow/remove path
+  // exists and is documented" as the obligation the attribution line creates,
+  // and `mcp/tests/test_public.py` asserted it until the pages left Python.
+  // The named path — `docs/takedown.md`, linked as "Removal on request" — was
+  // the Python demo's footer, and `/demo` has no footer here; what the landing
+  // promises in its own words is what this asserts.
+  it("keeps the footer's promise: the videos are theirs, and no needs no appeal", () => {
+    render(<LandingPage />);
+
+    expect(screen.getByText(/^The videos belong to the people who made them\./)).toHaveTextContent(
+      "sends you back to the source",
+    );
+    expect(
+      screen.getByText(/A creator who would rather not be followed is a complete reason/),
+    ).toHaveTextContent("there is no appeal to make");
+  });
 });
