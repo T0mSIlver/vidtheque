@@ -1,8 +1,8 @@
 /* The owner's search page.
 
-   Read out of `dashboard/static/dashboard.css`, which is still serving the
-   pages this port has not reached. The page head, the band, the panel, the
-   notes box and the pager are `dashboard.module.css`'s; what is here is the
+   The values came out of `dashboard/static/dashboard.css`, retired on
+   2026-09-06; DESIGN.md is the source now. The page head, the band, the panel,
+   the notes box and the pager are `dashboard.module.css`'s; what is here is the
    vocabulary only this page has — the leg lines, a result grouped under its
    talk, the still beside a moment, the three snippet treatments and the
    receipt.

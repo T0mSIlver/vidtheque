@@ -1,8 +1,8 @@
 /* The two following pages: the table of standing rules, and one rule's ledger.
 
-   Read out of `dashboard/static/dashboard.css`, which is still serving the
-   pages this port has not reached. The band, the count line, the pager, the
-   grid and every control in a form are `dashboard.module.css`'s; what is here
+   The values came out of `dashboard/static/dashboard.css`, retired on
+   2026-09-06; DESIGN.md is the source now. The band, the count line, the pager,
+   the grid and every control in a form are `dashboard.module.css`'s; what is here
    is the vocabulary only these two pages have — the rule as a row of facts,
    the multi-row form the rule is written in, and the controls that write.
 
