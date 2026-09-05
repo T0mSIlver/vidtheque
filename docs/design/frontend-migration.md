@@ -1,7 +1,8 @@
 # The dashboard's HTTP contract for the Next.js front end
 
-**Status: the first read slice is implemented (2026-09-05).** This file records
-the decisions Tom has settled and the three endpoints that exist because of
+**Status: the read slice is implemented (2026-09-05) — the overview, the
+ledger, the session, and the videos table with its detail page.** This file
+records the decisions Tom has settled and the endpoints that exist because of
 them. It is not a plan — everything still open is in `docs/ROADMAP.md`, and
 nothing is described here that is not in the tree. (The earlier speculative
 draft of this file is gone; endpoints it sketched were never contracts.)
@@ -214,32 +215,39 @@ configuration catching up with the rule; the rule is the table.
 
 ## 2. What landed
 
-Three additive `GET` endpoints and the shared read assembly behind them. No
+Five additive `GET` endpoints and the shared read assembly behind them. No
 writes, no CORS, no new env var, no dependency or lockfile change, no auth
 policy change, and no import from `worker/`.
 
-In `mcp/src/vidtheque_mcp/dashboard/`: `api.py` (new) is the three handlers,
+In `mcp/src/vidtheque_mcp/dashboard/`: `api.py` (new) is the handlers,
 `read_models.py` (new) is the shared assembly, `__init__.py` registers the
 routes, and `views.py` now calls the assemblers instead of holding them.
 `mcp/tests/test_dashboard_api.py` (new) covers the slice.
 
 `read_models.py` holds what the pages and the JSON must not answer twice:
-`overview_reads`, `ledger_reads`, `pipeline_readiness`, `redacted`,
-`declared_models`, `file_size`, `tool_error`, `thumb`, and the caps below.
-`views.py` imports them back under the names it always used, so the Jinja pages
-run the same code and the same number of database reads as before.
+`overview_reads`, `ledger_reads`, `videos_reads`, `video_detail_reads`,
+`pipeline_readiness`, `redacted`, `declared_models`, `video_header`,
+`stage_rows`, `shot_rows`, `frame_cards`, `coverage_pills`/`coverage_flags`,
+`video_facts`, `date_filters`, `file_size`, `tool_error`, `thumb`, and the caps
+below. `views.py` imports them back under the names it always used, so the
+Jinja pages run the same code and the same number of database reads as before —
+the videos table's cover-frame query grew three columns rather than gaining a
+second read.
 
 ## 3. Common behaviour
 
-- **Auth.** `/api/overview` and `/api/ledger` sit behind the route group's
-  existing read gate (`dashboard/__init__.py:guarded`): a bearer token, a valid
+- **Auth.** `/api/overview`, `/api/ledger`, `/api/library` and
+  `/api/library/{video_id}` sit behind the route group's existing read gate
+  (`dashboard/__init__.py:guarded`): a bearer token, a valid
   `vidtheque_session` cookie, a socket peer in
   `VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS`, or `VIDTHEQUE_AUTH=none` (open by
   design). Refusal is `401` with `{"error": "E_AUTH_REQUIRED", "message",
   "next"}`. `/api/session` is outside the gate — see §6.
 - **Caching.** Every response carries `Cache-Control: no-store`.
 - **Parameters.** `overview` and `ledger` read no query string at all, so there
-  is nothing to clamp; their bounds are the constants in §4.
+  is nothing to clamp; their bounds are the constants in §4. The two `library`
+  routes take the pages' parameters under the pages' clamps, and say in `notes`
+  when a bound moved — §6a.
 - **Rate limit.** The existing per-IP `/dashboard/*` bucket
   (`VIDTHEQUE_RATE_DASHBOARD_PER_MIN`, default 120) covers all three.
 - **Errors.** A tool refusal passes through as `{"error", "message", "next"}`
@@ -388,6 +396,51 @@ existing behaviour rather than a new rule:
 `PUBLIC_URL`, the worker URL, the database path, the trusted CIDRs, the
 declared model ids, the drift reason.
 
+## 6a. `GET /dashboard/api/library` and `/dashboard/api/library/{video_id}`
+
+*Landed 2026-09-05.* The videos table (`dashboard.md` §5.2) and the video
+detail page (§5.3), typed. **The full schema, both payload examples and the
+redaction table are `dashboard.md` §20** — it is the route group's contract and
+this is the front end's index of it.
+
+**The name is `library`, not `videos`, and that is not cosmetic.**
+`/dashboard/api/videos` and `/dashboard/api/videos/{video_id}` already exist at
+this prefix: they are the `/api/*` facade's handlers, registered under
+`/dashboard` since phase 1, and `/dashboard/api/videos/{id}/cues` hangs off
+them. One path cannot be two contracts. A React videos page therefore reads
+`/dashboard/api/library`, and the facade's listing keeps answering exactly what
+it answered before.
+
+| Route | Parameters | Bounds |
+| --- | --- | --- |
+| `/api/library` | `q`, `channel`, `tags`, `has`, `index_state`, `order`, `limit`, `offset`, `published_after/before`, `indexed_after/before` | `limit` 1..100 (default 50), `offset` 0..10 000, dates snapped to the UTC day |
+| `/api/library/{video_id}` | `frames`, `frame_offset` | `frames` 1..96 (default 24), `frame_offset` 0..100 000 |
+
+What a page gets, in one sentence each: the table sends `order` explicitly,
+`total` as the exact count of the filtered set, `pagination.has_more`, and per
+row `published_at`/`indexed_at` as epoch seconds, `duration_s` as seconds,
+`index_state` as the schema's word, `coverage` as three booleans, `tags` as a
+list and `thumb` as a root-relative frame URL. The detail sends the video
+header, `data_status`, `summary_error`, chapters, the seven `video_stages`
+rows, the per-video counts, the cue origins, the shot timeline, the keyframe
+strip with its OCR lines and normalised boxes, the job history — and the
+transcript as **totals plus the name of the cues endpoint**, never as cues.
+
+Three things worth knowing before writing the page:
+
+- **`notes` is where a clamp is disclosed.** The Jinja page echoes an accepted
+  `limit` back into the form field the reader typed it into; a JSON caller has
+  no form, so `notes` carries the sentence (`limit=100000 → 100`). Unknown
+  `has`/`index_state`/`order` values fall back and say which value answered.
+  It is policy text and it stays Python's; render it, do not compose it.
+- **The date echo is exclusive at the top.** `filters.published_before` is the
+  start of the day *after* the one asked for, because that is the bound the
+  query used (`>= after`, `< before`). A date input wants the day itself back:
+  subtract 86 400, or keep the string the reader typed.
+- **`order=relevance` without `q` is a `400`** (`E_ORDER_SCOPE`), and an
+  unparseable date is a `400` (`E_BAD_TIME_FORMAT`). Both are the tool's typed
+  refusals in the §3 envelope.
+
 ## 7. The projection, per field
 
 In `VIDTHEQUE_PUBLIC_READONLY=1` (`read_models.redacted`), on both corpus
@@ -401,6 +454,12 @@ endpoints:
 | `readiness.vectors.reason` | `null`; `enabled` stays, because search answers differently without the vector legs |
 | everything else | unchanged — counts, channels, tags, gaps, queue, arrivals are corpus, not deployment |
 
+On the two `library` routes: the table is **not** redacted at all (§2.4 gives
+the demo the browsable corpus whole), and the detail drops exactly two fields
+by not sending them — `stages[].model_key`, a declared model id, and
+`stages[].error`, the pipeline quoting yt-dlp. `dashboard.md` §20 has the
+per-field table.
+
 ## 8. Tests and what is not here
 
 `mcp/tests/test_dashboard_api.py`, over `test_dashboard.py`'s fixture corpus and
@@ -413,6 +472,16 @@ parameters, the worker probe dropping `/status`'s operator-only fields, and the
 projection both ways — the demo losing the box and never probing the worker,
 against the owner's instance still seeing both. The Jinja pages are unchanged
 and `test_dashboard.py` plus `test_dashboard_following.py` still cover them.
+
+For §6a's two routes, the same file: the gate and GET-only registration, the
+table's shape and the fixture's exact tallies, every clamp with the `note:` it
+produces, ordering and each filter, the two contracts staying two paths (the
+facade still answering its own shape at `/dashboard/api/videos`), the detail's
+stage table and strip pagination, a `404` for an unknown id, the projection
+losing the model ids and the yt-dlp prose while keeping the states and the
+clocks, and a scan of both payloads for a rendered clock — including a bare
+`1:56:40`, which is the shape `list-videos` would have travelled with had the
+records been forwarded.
 
 Writes, CORS and cross-origin sessions, the remaining read endpoints, the React
 pages and the cutover are `docs/ROADMAP.md`'s. No schema for them is stated here

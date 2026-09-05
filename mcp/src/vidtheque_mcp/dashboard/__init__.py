@@ -277,6 +277,21 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
         # take no parameter, so the pages' caps are the only bounds there are.
         Route(f"{ROOT}/api/overview", guarded(api.overview, json=True), methods=["GET"]),
         Route(f"{ROOT}/api/ledger", guarded(api.ledger, json=True), methods=["GET"]),
+        # The videos table and the video detail page, same argument and same
+        # gate (§20). **Not** `/api/videos`: that path at this prefix is the
+        # facade's listing, two routes up, and its records are the corpus's own
+        # shape with `published` and `duration` already rendered for a reader of
+        # the tool's text block. These answer what the *pages* show — index
+        # state, coverage, the exact filtered count, the stage table, the
+        # keyframe strip — so they are a second question, not a second copy, and
+        # they get a name of their own rather than shadowing an answer somebody
+        # already depends on.
+        Route(f"{ROOT}/api/library", guarded(api.videos, json=True), methods=["GET"]),
+        Route(
+            f"{ROOT}/api/library/{{video_id}}",
+            guarded(api.video, json=True),
+            methods=["GET"],
+        ),
         # **Outside the gate, deliberately.** It carries no corpus and no
         # secret, and a signed-out browser has to be able to ask whether this
         # deployment has a sign-in page at all — `guarded` would make the answer

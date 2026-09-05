@@ -623,7 +623,7 @@ def _choice(raw: str | None, allowed: tuple[str, ...], default: str) -> str:
     return raw if raw in allowed else default
 
 
-def _clamp_note(raw: str | None, value: int, name: str) -> str | None:
+def clamp_note(raw: str | None, value: int, name: str) -> str | None:
     """`limit=100000 → 100`, but only when a number in the URL actually moved.
 
     Only when it moved, and only when it was a number: the page has always
@@ -699,8 +699,8 @@ async def videos_reads(request: Request) -> VideosReads:
     moved = [
         note
         for note in (
-            _clamp_note(params.get("limit"), limit, "limit"),
-            _clamp_note(params.get("offset"), offset, "offset"),
+            clamp_note(params.get("limit"), limit, "limit"),
+            clamp_note(params.get("offset"), offset, "offset"),
         )
         if note
     ]
