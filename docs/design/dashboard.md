@@ -263,6 +263,8 @@ Nothing is deleted and nothing is forked.
    sibling to grow beside any more. The welcome page's three files went to
    `web/`, `public/static/` is down to `fonts/`, and the dashboard's own
    bundle under `dashboard/static/` is the only one Python serves.
+   *Amended 2026-09-06:* nor is that. `dashboard/static/` and its route are
+   gone with the pages (§23); Python serves no asset of any kind.
 3. **The rate limiter moves to always-on.** It is mounted only in public mode
    today (`app.py:187`). A management surface a bot can hammer with
    `/dashboard/api/videos` is the same denial of service as a public one, and
@@ -582,6 +584,13 @@ question the dashboard raises rather than answers — §10.6.
 
 Five routes. For each: what it reads, and what it deliberately does not show.
 
+**Read this section as the contract for what the surface *shows*, not for who
+renders it** *(2026-09-06)*. Every page below is a React page in `web/` now and
+Python answers the reads underneath them as JSON — §19, §20, §22 and the two
+jobs routes in §5.4. What each page reads, what it deliberately does not show,
+and every bound named here is unchanged and still Python's; the markup is not.
+§23 is the removal.
+
 ### 5.1 `GET /dashboard` — corpus overview
 
 **Reads.** `tools/library.corpus_summary` (`tools/library.py:200`), which is
@@ -726,6 +735,15 @@ commit, exactly as the rule says. What a cue carries is `start_s`, `end_s`,
 `avg_logprob`, `chunk_opens`, `chunk_closes`, `in_chunk`, `t`, `text` and
 `speaker` — `t` stays because it is the whole-second start a `?t=` deeplink
 takes, not a rendering of one.
+
+*Amended 2026-09-06: the page is React's, the reads are not.* The five panels
+below are `read_models.video_detail_reads`' and reach a client through
+`GET /dashboard/api/library/{video_id}` (§20) with the cue pager beside it. The
+descriptions of the *markup* — the scrollbox, the lightbox, the shot band's
+percentages, the `#frame-N` fragment and the `?select=` ordinal it lands on —
+describe a page Python no longer renders; `web/src/app/dashboard/videos/[id]/`
+owns them, and what stays here is what the panels are for and what they must
+not show.
 
 **OCR browser.** `ocr_frames` (the searchable unit, `0003_ocr_frame_fts.sql:40`)
 per keyframe, with the `ocr_lines` behind it: `line_no`, `text`, `conf`, and the
@@ -1879,6 +1897,16 @@ This ships the search half of phase 5 as a dashboard document. It does not
 change §1 non-goal 3: an agent searches with `search` at `/mcp`; there is no new
 agent endpoint, MCP proxy or dashboard-only query shape to scrape.
 
+*Amended 2026-09-06: "server-rendered" below is history.* The page is React's
+(§14.3) and Python's half is `GET /dashboard/api/search` — `search_payload`,
+the same handler, under the same credential-keyed clamps. The four derivations
+the Jinja page made from that payload — the receipt, the in-index link, the
+evidence badges, the marked snippet — went with it and are `web/`'s;
+`test_dashboard_api.py::test_the_facade_search_hit_still_carries_every_field
+_the_page_reads` is what stops a trim of the facade emptying that page. The
+receipt rule two bullets down is the one thing here that is not a rendering: it
+is what the *tool* is allowed to return, and it is unchanged.
+
 - ~~A compact GET form in the shared rail opens `GET /dashboard/search`~~ **The
   rail carries a `Search` link to `GET /dashboard/search`, and the query box
   lives on that page.** *(Amended 2026-08-13 — §14.1.)* Every dashboard page
@@ -2277,6 +2305,14 @@ it is *show me what it did, and what it decided not to do*, which is the same jo
 the jobs page does for the queue and the video page does for a stage.
 
 ### 18.1 The rail
+
+*Amended 2026-09-06: the rail is React's chassis, and the predicate outlived
+it.* What is contractual here is that the affordance is absent — not disabled —
+wherever the routes are, and that is now enforced where it always mattered: the
+two following reads and all six writes are registered only under
+`write_side_enabled`, so `/dashboard/api/following` 404s beside them and a shell
+that asks `/dashboard/api/session` first knows not to draw the item. The
+paragraphs below describe the Jinja rail that expressed it.
 
 `Following` joins `Add videos` in the `Manage` group, second. It is under the
 **same write-side predicate** — the group renders only when the write routes are
@@ -2776,7 +2812,7 @@ sent to `{ROOT}/login?next=…`, a JSON caller is told `E_AUTH_REQUIRED` and
 decides for itself, which is the arrangement `DECISIONS.md` names — the refusal
 is the signal that sends the browser to the login page.
 
-*Amended 2026-09-05: one refusal, one shape, and the asymmetry is gone.* The
+*Amended 2026-09-06: one refusal, one shape, and the asymmetry is gone.* The
 error page was the other medium and there is no error page, so `_error_page` is
 deleted and **`_refusal_json` serves both branches** — the same envelope, the
 same status, the same `Retry-After`, whatever `Accept` said. Three refusals
@@ -3082,3 +3118,67 @@ because the payload is what makes them possible:
 an env var, a CORS policy, a write, a second query layer, or a page. The React
 following pages are `docs/ROADMAP.md`'s. `POST /dashboard/login` still has no
 JSON twin (§21).
+
+## 23. The Python HTML surface is gone (2026-09-06)
+
+Every `GET /dashboard*` page had a React replacement (frontend-migration.md
+§1d), so the Jinja half of this route group came out in one round. This is what
+was removed and what the sections above should now be read as.
+
+**What Python serves under `/dashboard`.** Three things, and nothing else:
+
+- `/dashboard/api/*` — the reads in §19, §20, §22, the two jobs routes and the
+  cue pager in §5.4/§5.3, plus the `/api/*` facade registered at this prefix
+  (§2.5.1) and the ungated `/dashboard/api/session` (§19);
+- the **fourteen POSTs** — §21's thirteen plus `POST /dashboard/following`,
+  each keeping its URL, its guard, its Origin rule and its rate bucket;
+- `GET /dashboard/` → `308` → `/dashboard`, which only declines to 404 a
+  trailing slash. Where it lands is the front end's.
+
+**What was deleted.** `views.py` and its eleven page handlers (the overview,
+the ledger, the videos table, the video detail, search, the jobs table, one
+job's war story, the following list, a follow's detail, the index form and the
+sign-in page); `templates/` — twelve files including `base.html` and
+`error.html`; `static/` — `dashboard.css`, `dashboard.js`, `jobs.js`; the
+`/dashboard/static/{asset:path}` route with its `fonts/` alias and its `_MEDIA`
+suffix map; `render.py`, which was the Jinja environment, its nine filters and
+the `_TONES` table; `writes.login`'s `GET`, `writes.index_form` and
+`_prefilled_index_form` with the two prefill character bounds; and `jinja2` from
+`mcp/pyproject.toml`, because this package renders no HTML at all now.
+
+**One refusal, both branches.** `_error_page` is gone and `_refusal_json`
+serves every refusal on the write side, at the same status, with the same
+`Retry-After` (§21's 2026-09-06 amendment). `guarded`'s HTML branch is gone the
+same way: a browser never navigates to `/dashboard/api/*`, so the 401 is the
+envelope for everyone, and `_wants_html` and `_to_login` went with it. **The
+303 stays where it is a success** — the sign-in page and the sign-out button
+are real `<form method="post">`s, a submit before React has hydrated is a
+navigation, and every redirect target is a path Next serves. The index and
+retry receipts, which used to render a page when they had more than one job to
+report, answer the receipt in either medium instead.
+
+**The rendered strings.** Cut with their readers, per the rule §5.3 and §5.4
+already carried: the jobs `text` blocks and each event's `at_text` went with
+`static/jobs.js`, keeping `basis` as a field on the card because it is policy
+text and not a formatting; the cues' `at`, `conf` and `chunk` went with
+`static/dashboard.js`; and the readiness observation's ISO-8601 `checked_at`
+went with the `<time datetime=…>` attribute it existed for, leaving the epoch
+under the same name.
+
+**The fonts stay.** `public/static/fonts/` is DESIGN.md's document of record and
+`test_web_assets.py` diffs `web/src/fonts/` against it byte for byte. Only the
+`/dashboard/static/fonts/` alias onto it went; the web app self-hosts its faces
+through `next/font/local`, so nothing routes that directory any more and there
+is still exactly one copy.
+
+**What no test in `mcp/` can see any more**, said out loud rather than found
+later: the palette agreement between the dashboard and the front end (it was
+`dashboard.css` against `web/src/styles/tokens.css`), the two-scheme and
+viewport declarations, the landmark and keyboard-reachability sweep, the
+self-narration and prose-ceiling fences from the 2026-08-10 copy cull, the
+"no corpus string ever becomes markup" sweep and the `| safe` grep, and the
+`innerHTML` scan over the two scripts. Every one of those is a property of a
+rendering, and the rendering is `web/`'s. `test_dashboard.py` keeps one
+assertion in their place — that this package contains no HTML, no CSS, no
+JavaScript and no `jinja2` import — and DESIGN.md's migration notes name the
+two tests that went.

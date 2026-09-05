@@ -8,13 +8,12 @@ request, and a font that is not served at all leaves the dashboard on whatever
 the operating system happens to have.
 
 **This directory is the document of record** (DESIGN.md, *Fonts — one
-canonical location*) — and since 2026-08-11 it is the *only* copy. The
-dashboard used to carry a byte-identical duplicate because `public/static/*`
-is only routed under `VIDTHEQUE_PUBLIC_READONLY=1` (`public/__init__.py`)
-while the dashboard's own asset route is always registered; now the dashboard
-route aliases its `fonts/` prefix onto this directory
-(`dashboard/__init__.py`, `_FONTS_DIR`), so a private deployment still serves
-`/dashboard/static/fonts/…` and there is no second copy to drift.
+canonical location*). The dashboard carried a byte-identical duplicate until
+2026-08-11 and then served these files through an alias instead; that alias
+went with the dashboard's pages on 2026-09-06. Nothing in `mcp/` routes this
+directory now — it is the copy the Next.js front end in `web/` is diffed
+against (`mcp/tests/test_web_assets.py`), which is what keeps `web/src/fonts/`
+from drifting.
 
 Both are SIL Open Font License 1.1. The OFL requires the licence to travel with
 the files, so it does — see `Archivo-OFL.txt` and `JetBrainsMono-OFL.txt`,
@@ -45,7 +44,8 @@ somebody re-imports.
 1. **JetBrains Mono ships `calt`,** which is what draws its code ligatures
    (`->`, `!=`, `==`). Machine strings on this surface are ids, error codes and
    timecodes, where the literal characters are the information, so
-   `dashboard.css` sets `font-variant-ligatures: none` on every mono context.
+   the stylesheet sets `font-variant-ligatures: none` on every mono context
+   (it was `dashboard.css`'s rule; `web/`'s tokens carry it now).
 2. **`tnum` is present in both**, which is the feature that actually matters for
    a table of numbers and is what `font-variant-numeric: tabular-nums` reaches
    for. Nothing else is set: DESIGN.md's **Dead-Feature Rule** forbids naming a
@@ -65,12 +65,17 @@ the machine strings on this surface include YouTube video ids like
 
 ## Serving
 
-Served twice from this one directory: the public asset route
-(`GET /static/fonts/<file>`, public mode only) and the dashboard route's
-`fonts/` alias (`GET /dashboard/static/fonts/<file>`, always registered).
-`@font-face` `src:` values in `dashboard.css` are **relative**
-(`fonts/…woff2`), never built from `PUBLIC_URL` — the SSH-tunnel rule
+Not served from here at all any more. The public asset route
+(`GET /static/fonts/<file>`) went with the welcome page on 2026-09-05 and the
+dashboard's `fonts/` alias (`GET /dashboard/static/fonts/<file>`) went with the
+dashboard's pages on 2026-09-06. The faces reach a browser from `web/`, through
+`next/font/local` over `web/src/fonts/`, which is a copy of these bytes rather
+than a second decision.
+
+The two rules that travel with them are `web/`'s to keep, and they are the
+reason they are recorded here: the `src:` a stylesheet resolves must be
+**relative**, never built from `PUBLIC_URL` — the SSH-tunnel rule
 (`docs/design/dashboard.md` §8) applies to fonts exactly as it applies to
-keyframes. `font-display: block` for both, matching the reference
-implementation: these faces carry the display voice and a FOUT is worse than
-100 ms of nothing. Only the text face is preloaded.
+keyframes — and `font-display: block` for both, because these faces carry the
+display voice and a FOUT is worse than 100 ms of nothing. Only the text face is
+preloaded.

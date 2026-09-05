@@ -83,6 +83,38 @@ poll cannot say what a cancel decided.
 The contract is `docs/design/dashboard.md` §21; what the React client sends and
 receives is `docs/design/frontend-migration.md` §9.
 
+## The Python dashboard HTML is gone, decided by Tom, 2026-09-06
+
+Every `GET /dashboard*` page is served by the Next.js app, so the Python HTML
+surface under that prefix is deleted rather than kept as a fallback: the eleven
+page handlers and `views.py`, the twelve Jinja templates, `dashboard.css` and
+the two ES modules, the `/dashboard/static/*` asset route, the Jinja
+environment, and `jinja2` as a dependency of `mcp/`. Python keeps
+`/dashboard/api/*`, the fourteen `POST`s and the `/dashboard/` redirect. This
+completes the cutover the first entry above made conditional on parity.
+
+Two consequences Tom settled with it. **A refusal answers the same envelope in
+both media** — there is no page left to render one into, so `_error_page` goes
+and `_refusal_json` serves both branches, the `401` included; a signed-out form
+`POST` is told `E_AUTH_REQUIRED` rather than redirected, and the shell decides
+where to go. **The `303` stays on the success branches**, because the sign-in
+page and the sign-out button are real `<form method="post">`s and a submit
+before React has hydrated is a navigation that needs somewhere to land; the
+targets are paths Next serves, so they stay as paths.
+
+The rendered strings the two jobs routes and the cue pager carried are cut in
+the same round, which is the rule the 2026-09-05 typed-values decision set:
+delete a rendering in the commit that deletes its reader. `basis` — the
+sentence saying what a job's progress percentage is computed over — survives as
+policy text, which is the same split that keeps refusal messages Python's.
+
+`public/static/fonts/` is not part of this: DESIGN.md makes it the document of
+record for the two faces and the web app is diffed against it. Only the
+`/dashboard/static/fonts/` alias onto it went.
+
+The removal is `docs/design/dashboard.md` §23; the route ownership it settles
+is `docs/design/frontend-migration.md` §1d.
+
 ## Decided by Tom (2026-08-08)
 
 1. **MCP stack: official `mcp` SDK 2.0** (2026-07-28 spec). No fastmcp
