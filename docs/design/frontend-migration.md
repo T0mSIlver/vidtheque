@@ -628,6 +628,46 @@ Three things worth knowing before writing the pages:
   check wrote and it already carries the number that made the decision; print
   it, do not re-derive it.
 
+## 6c. `GET /dashboard/api/jobs` and `/dashboard/api/jobs/{job_id}`
+
+*Landed 2026-08-10; nine fields added 2026-09-05.* The two oldest JSON routes
+on this surface — `static/jobs.js` has polled them since phase 2 — and the two
+the React port found short. **The full schema and the redaction rule are
+`dashboard.md` §5.4.**
+
+| Route | Parameters | Bounds |
+| --- | --- | --- |
+| `/api/jobs` | `state`, `kind`, `error_code`, `degraded`, `order`, `limit`, `offset` | `limit` 1..100 (default 25), `offset` 0..10 000, `error_code` ≤ 64 chars |
+| `/api/jobs/{job_id}` | none | 200 items, 60 events, 40 degraded rows |
+
+What the port added, because the templates rendered it and the payloads did
+not: per card `contents` — `{title, more, channel, note}`, the first video's
+title with the rest counted after it and the channel a batch was expanded from
+— plus `filters` and `notes` on the list, and `counts`, `error_counts`,
+`items_capped`, `degraded`, `focus` and `stages` on one job. Nothing was
+removed and no bound moved.
+
+Four things worth knowing before writing the pages:
+
+- **Read the numbers, not the `text` block.** Every job, item and event carries
+  a server-rendered `text` object for a script with no formatter, and every
+  string in it renders a number sent beside it. It is deleted with
+  `static/jobs.js` (§3). `basis` is the exception — the sentence saying what
+  the percentage is computed over is policy text and survives, in `notes` or
+  beside it.
+- **`live` is the stop condition.** When nothing is `queued|running` there is
+  nothing to poll for. `poll_ms` is the server's cadence; clamp it again in the
+  browser, because a page that took its interval from a payload alone would
+  poll as fast as a payload said.
+- **`notes` is where a filter that fell back says so**, on the same rule as
+  §6a's: an unrecognised `state`, `kind`, `order` or `degraded` names the value
+  that answered, and a clamped `limit`/`offset` names both numbers. It is
+  policy text; render it, do not compose it.
+- **`focus` is nullable and it is the key to the stage panel.** A job whose
+  items never resolved to a video has nothing in focus, and `stages` is then
+  the seven pipeline rows with every state `absent` — the pipeline's shape, not
+  a claim about the job. Render the panel on `focus`, not on `stages.length`.
+
 ## 7. The projection, per field
 
 In `VIDTHEQUE_PUBLIC_READONLY=1` (`read_models.redacted`), on both corpus
