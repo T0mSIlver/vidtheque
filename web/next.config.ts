@@ -39,18 +39,19 @@ const PYTHON_PATHS = [
   "/.well-known/:path*",
   "/healthz",
   // The dashboard's non-pages, by name. `/dashboard/api/*` is the JSON the
-  // React pages read with the session cookie, `/dashboard/static/*` is the
-  // stylesheet and the fonts the pages Python still renders load, and
-  // `/dashboard/logout` is the write that ends a session — every one of them a
-  // thing Python owns for good. A Next page must never shadow one of these.
+  // React pages read with the session cookie and `/dashboard/logout` is the
+  // write that ends a session — both things Python owns for good. A Next page
+  // must never shadow one of these.
   //
   // `/dashboard/index` and `/dashboard/login` were here until their pages
   // landed. Their `GET`s are Next's now and their `POST`s are still Python's,
   // which is a split by method and not by path — so they are in
   // `PYTHON_FORM_POSTS` below rather than here. `logout` never had a page of
-  // its own and stays.
+  // its own and stays. `/dashboard/static/*` was here until 2026-09-06: it
+  // served the deleted stylesheet, the two scripts and a `fonts/` alias, the
+  // route is gone with them, and this app self-hosts its faces out of
+  // `src/fonts` (dashboard.md §23).
   "/dashboard/api/:path*",
-  "/dashboard/static/:path*",
   "/dashboard/logout",
   // Three segments, so the `/videos/[id]` page never matched it anyway; it is
   // listed for the same reason the proxy lists it — the export is Python's.
@@ -94,21 +95,26 @@ const PYTHON_FORM_POSTS = [
   { source: "/dashboard/login", has: FORM_ENCODED },
 ];
 
-// The rest of `/dashboard`, which is being ported one page at a time
-// (docs/ROADMAP.md). `afterFiles` is the whole point: it is consulted *after*
-// the router has looked for a page, so the nine pages in `src/app/dashboard/`
-// win their own paths, and everything with no page yet falls through to Python
-// exactly as before — every POST behind these pages included:
-// `/dashboard/jobs/{id}/cancel`, `/dashboard/videos/{id}/tags` and the five
-// `/dashboard/following/{slug}/…` writes. Each port deletes nothing here; it
-// just adds a page the router finds first.
+// The rest of `/dashboard`. `afterFiles` is the whole point: it is consulted
+// *after* the router has looked for a page, so the pages in `src/app/dashboard/`
+// win their own paths and what is left falls through to Python — every POST
+// behind those pages included: `/dashboard/jobs/{id}/cancel`,
+// `/dashboard/videos/{id}/tags` and the five `/dashboard/following/{slug}/…`
+// writes.
+//
+// A `GET` that reaches Python through here now gets a `404`, not a page: the
+// Jinja surface was deleted on 2026-09-06 and what Python still answers under
+// this prefix is `/dashboard/api/*`, the fourteen POSTs and the `/dashboard/`
+// redirect (dashboard.md §23). So this catch-all is what makes a path with no
+// React page 404 rather than render one, which is the same answer either
+// process would give.
 //
 // **Three exceptions, and they are `PYTHON_FORM_POSTS` above.** `POST
 // /dashboard/following`, `POST /dashboard/index` and `POST /dashboard/login`
 // share their paths with ported pages, so this catch-all never sees them: the
 // router finds the page first and Next answers the write with a document. Those
 // three are forwarded in `beforeFiles` under a header condition instead.
-const DASHBOARD_UNPORTED = ["/dashboard", "/dashboard/:path*"];
+const DASHBOARD_TO_PYTHON = ["/dashboard", "/dashboard/:path*"];
 
 // Cache Components is deliberately absent. It was on, and it is what made
 // `/demo`, `/videos` and `/videos/[id]` partial prerenders — a static shell
@@ -126,7 +132,7 @@ const nextConfig: NextConfig = {
         ...PYTHON_PATHS.map((source) => ({ source, destination: base + source })),
         ...PYTHON_FORM_POSTS.map((entry) => ({ ...entry, destination: base + entry.source })),
       ],
-      afterFiles: DASHBOARD_UNPORTED.map((source) => ({ source, destination: base + source })),
+      afterFiles: DASHBOARD_TO_PYTHON.map((source) => ({ source, destination: base + source })),
       fallback: [],
     };
   },

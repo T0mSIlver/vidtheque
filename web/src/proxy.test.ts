@@ -126,11 +126,11 @@ describe("proxy", () => {
   });
 
   // `/dashboard` stopped being wholly Python's when the first two pages were
-  // ported. The split is per path and not per prefix, and it is the same split
-  // `next.config.ts` routes: the pages this app serves are documents and get
-  // the policy, and everything else under the prefix reaches Python untouched —
-  // the JSON the pages read, the stylesheet and fonts the unported pages load,
-  // the session flow, and every page still rendered by Jinja.
+  // ported, and Python stopped rendering any of it on 2026-09-06. The split is
+  // per path and not per prefix, and it is the same split `next.config.ts`
+  // routes: the pages this app serves are documents and get the policy, and
+  // everything else under the prefix reaches Python untouched — the JSON the
+  // pages read, the session flow and the writes.
   it("covers the dashboard pages this app serves, and no other dashboard path", () => {
     for (const path of [
       "/dashboard",
@@ -164,8 +164,6 @@ describe("proxy", () => {
       "/dashboard/api/library",
       "/dashboard/api/library/kCc8FmEb1nY",
       "/dashboard/api/videos/kCc8FmEb1nY/cues",
-      "/dashboard/static/dashboard.css",
-      "/dashboard/static/fonts/archivo-latin-wght-normal.woff2",
       "/dashboard/api/jobs",
       "/dashboard/api/jobs/job_finished01",
       "/dashboard/logout",
