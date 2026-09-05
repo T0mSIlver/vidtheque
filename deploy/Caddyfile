@@ -91,8 +91,8 @@
 	# write with a document and nothing would say so.
 	#
 	# Written as the whole prefix rather than as those three, because the
-	# table's last row is "every other `POST /dashboard/*`" and the rest of the
-	# fourteen live a segment deeper — `…/{video_id}/tags`,
+	# table's last row is "every other `POST /dashboard/*`" and the rest of them
+	# live a segment deeper — `…/{video_id}/tags`,
 	# `…/{video_id}/reindex`, `…/{job_id}/cancel`, the five follow writes. Next
 	# serves no POST at any of them: naming only the collisions would send
 	# those to an app with no route there, and the reader would see a 404 from

@@ -8,10 +8,13 @@
 #
 # Pull-based and REPO-FREE. This box never builds — the worker image is a
 # ~28 GB CUDA build and a serving box has no business making it — and it does
-# not need the git checkout either. The two compose files it runs are fetched
-# from raw.githubusercontent.com PINNED TO THE RELEASE TAG, so the compose file
-# and the image it names always come from the same commit; there is no "the
-# checkout drifted from the running images" state to reason about.
+# not need the git checkout either. The two compose files it runs and the
+# edge's Caddyfile are fetched from raw.githubusercontent.com PINNED TO THE
+# RELEASE TAG, so the compose file, the routing rule and the images they name
+# always come from the same commit; there is no "the checkout drifted from the
+# running images" state to reason about. THE CADDYFILE IS PART OF THAT: it
+# decides which of two processes answers a path, so a release that moves a
+# route moves the rule with it.
 #
 # What lives on the box, and what this script NEVER touches:
 #   $DEPLOY_DIR/.env               your configuration (only IMAGE_TAG is edited)
@@ -20,7 +23,9 @@
 # template). Everything else in $DEPLOY_DIR is disposable and overwritten here.
 #
 # The earliest tag this can deploy is the first release that carries
-# deploy/compose.release.example.yml — before that the fetch 404s, correctly.
+# deploy/compose.release.example.yml AND deploy/Caddyfile — before either, the
+# fetch 404s, correctly. Deploying a pre-edge release is therefore a manual
+# job: that stack published mcp's own port and had no front end.
 # ===========================================================================
 set -euo pipefail
 
@@ -47,15 +52,20 @@ DEPLOY_DIR=$(cd "$DEPLOY_DIR" && pwd)
 PREV=$(sed -n 's/^IMAGE_TAG=//p' "$DEPLOY_DIR/.env" | tail -1)
 echo "update: $DEPLOY_DIR — ${PREV:-<unset>} -> $TAG"
 
-# Fetch BOTH before installing EITHER: a half-fetched pair leaves a compose
-# file from one release beside one from another, which merges into nonsense.
+# Fetch ALL THREE before installing ANY: a half-fetched set leaves a compose
+# file from one release beside one from another, which merges into nonsense —
+# and since the edge exists, beside a Caddyfile that may route a path the
+# release it names does not serve.
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-for f in docker-compose.yml compose.release.example.yml; do
+for f in docker-compose.yml compose.release.example.yml Caddyfile; do
   curl -fsS -m 30 "$RAW/v$TAG/deploy/$f" -o "$TMP/$f" || fail "fetch $RAW/v$TAG/deploy/$f"
 done
 install -m 644 "$TMP/docker-compose.yml"           "$DEPLOY_DIR/docker-compose.yml"
 install -m 644 "$TMP/compose.release.example.yml"  "$DEPLOY_DIR/compose.release.yml"
+# The edge's rule, pinned to the same tag as the images it routes to. The
+# compose file mounts it read-only from beside itself.
+install -m 644 "$TMP/Caddyfile"                    "$DEPLOY_DIR/Caddyfile"
 
 # .env.prev is the rollback, so it is written before the edit and restored on
 # any failure below — a half-run leaves the box exactly as re-runnable as it
@@ -83,13 +93,16 @@ DC=(docker compose --project-name vidtheque "${FILES[@]}")
 trap 'rm -rf "$TMP"' EXIT
 
 # Ports from the box's own .env, defaulting exactly as the compose file does.
+# The first URL goes THROUGH THE EDGE, because that is the only listener the
+# stack publishes now: mcp has no host port, so this checks caddy's routing and
+# Python's health in one request — which is also the path a visitor takes.
 # If your compose.local.yml unpublishes the worker (`ports: !reset null`, the
 # public overlay's stance), drop the second URL — mcp reaches it as
 # http://worker:8081 and there is nothing on the host to curl.
-MCP_PORT=$(sed -n 's/^MCP_PORT=//p' .env | tail -1)
+EDGE_PORT=$(sed -n 's/^EDGE_PORT=//p' .env | tail -1)
 WORKER_PORT=$(sed -n 's/^WORKER_PORT=//p' .env | tail -1)
 sleep 8
-for url in "http://127.0.0.1:${MCP_PORT:-8080}/healthz" "http://127.0.0.1:${WORKER_PORT:-8081}/healthz"; do
+for url in "http://127.0.0.1:${EDGE_PORT:-8080}/healthz" "http://127.0.0.1:${WORKER_PORT:-8081}/healthz"; do
   curl -fsS -m 10 "$url" >/dev/null || {
     echo "update: healthz FAILED at $url — $TAG is up but not answering" >&2
     echo "update: roll back with:  vidtheque-update ${PREV:-<the previous tag>}" >&2
@@ -99,7 +112,9 @@ for url in "http://127.0.0.1:${MCP_PORT:-8080}/healthz" "http://127.0.0.1:${WORK
 done
 
 echo "update: OK — $TAG is live"
-echo "        mcp     ghcr.io/t0msilver/vidtheque-mcp:$TAG    127.0.0.1:${MCP_PORT:-8080}"
+echo "        edge    caddy (deploy/Caddyfile)                127.0.0.1:${EDGE_PORT:-8080}"
+echo "        web     ghcr.io/t0msilver/vidtheque-web:$TAG    (behind the edge)"
+echo "        mcp     ghcr.io/t0msilver/vidtheque-mcp:$TAG    (behind the edge)"
 echo "        worker  ghcr.io/t0msilver/vidtheque-worker:$TAG 127.0.0.1:${WORKER_PORT:-8081}"
 echo "        rollback: vidtheque-update ${PREV:-<previous tag>}"
 echo
