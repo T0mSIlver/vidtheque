@@ -7,7 +7,21 @@ import styles from "./RetryIn.module.css";
 // The limiter's Retry-After as a ticking countdown, with the retry disabled
 // until it reaches zero. It says only when to try again; it does not explain
 // the limiter (demo-site.md §6.1). A countdown is machine work, so it moves.
-export function RetryIn({ seconds }: { seconds: number }) {
+//
+// Two props for the surfaces that are not the demo's search. The dashboard
+// reads its payloads in the browser, so refreshing the route would re-render a
+// shell and re-run nothing — it hands its own reload in `onRetry` — and it is
+// refused for reading a dashboard, not for searching, so it names its own
+// limit. Both default to the demo's behaviour, which is what they were.
+export function RetryIn({
+  seconds,
+  message = "Too many searches for now.",
+  onRetry,
+}: {
+  seconds: number;
+  message?: string;
+  onRetry?: () => void;
+}) {
   const router = useRouter();
   const [left, setLeft] = useState(seconds);
 
@@ -22,12 +36,12 @@ export function RetryIn({ seconds }: { seconds: number }) {
 
   return (
     <p className={styles.box}>
-      <span>Too many searches for now.</span>
+      <span>{message}</span>
       <button
         type="button"
         className={styles.retry}
         disabled={left > 0}
-        onClick={() => router.refresh()}
+        onClick={() => (onRetry ? onRetry() : router.refresh())}
       >
         {left > 0 ? `retry in ${left}s` : "retry"}
       </button>
