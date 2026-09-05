@@ -75,6 +75,17 @@ describe("createClient", () => {
     await expect(client.search({ q: "hello" })).rejects.toBeInstanceOf(ZodError);
   });
 
+  it("accepts imagery-only hits without transcript or OCR text", async () => {
+    const { fetchImpl } = fake(200, {
+      ...SEARCH,
+      results: [{ ...HIT, source: "frame", text: null }],
+    });
+    const client = createClient({ baseUrl: "https://api.test", fetch: fetchImpl });
+    const page = await client.search({ q: "diagram" });
+    expect(page.results[0].source).toBe("frame");
+    expect(page.results[0].text).toBeNull();
+  });
+
   it("turns the facade's error envelope into an ApiError", async () => {
     const { fetchImpl } = fake(400, {
       error: "E_EMPTY_QUERY",
@@ -88,6 +99,31 @@ describe("createClient", () => {
     expect(apiErr.status).toBe(400);
     expect(apiErr.code).toBe("E_EMPTY_QUERY");
     expect(apiErr.next).toMatch(/list-videos/);
+  });
+
+  it("keeps the code and the sentence when the API sends `next: null`", async () => {
+    // What Python actually serialises for "no next step": the key, set to
+    // null. A schema that only allowed a string threw the envelope away and
+    // the visitor got `HTTP 400`.
+    const { fetchImpl } = fake(400, {
+      error: "E_EMPTY_QUERY",
+      message: "search needs either a query or at least one filter.",
+      next: null,
+    });
+    const client = createClient({ baseUrl: "https://api.test", fetch: fetchImpl });
+    const err = (await client.search({ q: "" }).catch((e: unknown) => e)) as ApiError;
+    expect(err.code).toBe("E_EMPTY_QUERY");
+    expect(err.message).toBe("search needs either a query or at least one filter.");
+    expect(err.next).toBeUndefined();
+  });
+
+  it("keeps the fields it recognises when one of them is wrong", async () => {
+    const { fetchImpl } = fake(400, { error: "E_BAD", message: "no.", next: 7 });
+    const client = createClient({ baseUrl: "https://api.test", fetch: fetchImpl });
+    const err = (await client.meta().catch((e: unknown) => e)) as ApiError;
+    expect(err.code).toBe("E_BAD");
+    expect(err.message).toBe("no.");
+    expect(err.next).toBeUndefined();
   });
 
   it("keeps Retry-After on a 429", async () => {
@@ -108,5 +144,49 @@ describe("createClient", () => {
     const err = (await client.meta().catch((e: unknown) => e)) as ApiError;
     expect(err.status).toBe(502);
     expect(err.code).toBe("E_HTTP");
+  });
+
+  // Every URL in a payload ends up in an href or an img src. The schema is
+  // where a scheme that runs code stops, because after it there is only the
+  // DOM.
+  describe("rendered URLs", () => {
+    it("keeps the URLs the facade really mints", async () => {
+      const { fetchImpl } = fake(200, {
+        ...SEARCH,
+        results: [
+          {
+            ...HIT,
+            link: "https://www.youtube.com/watch?v=abc&t=91s",
+            thumb: "https://demo.vidtheque.dev/api/frames/abc/000123.jpg?sig=deadbeef",
+            thumb_large: "http://localhost:8000/api/frames/abc/000123.jpg",
+          },
+        ],
+      });
+      const client = createClient({ baseUrl: "https://api.test", fetch: fetchImpl });
+      const page = await client.search({ q: "hello" });
+      expect(page.results[0].thumb).toMatch(/^https:\/\/demo\.vidtheque\.dev\//);
+      expect(page.results[0].thumb_large).toMatch(/^http:\/\/localhost:8000\//);
+    });
+
+    const rejected = [
+      "javascript:alert(1)",
+      "data:text/html,<script>alert(1)</script>",
+      "/api/frames/abc.jpg",
+    ];
+
+    it.each(rejected)("rejects a link that is %s", async (link) => {
+      const { fetchImpl } = fake(200, { ...SEARCH, results: [{ ...HIT, link }] });
+      const client = createClient({ baseUrl: "https://api.test", fetch: fetchImpl });
+      await expect(client.search({ q: "hello" })).rejects.toBeInstanceOf(ZodError);
+    });
+
+    it("rejects a thumbnail that is a data: URL", async () => {
+      const { fetchImpl } = fake(200, {
+        ...SEARCH,
+        results: [{ ...HIT, thumb: "data:image/png;base64,iVBORw0KGgo=" }],
+      });
+      const client = createClient({ baseUrl: "https://api.test", fetch: fetchImpl });
+      await expect(client.search({ q: "hello" })).rejects.toBeInstanceOf(ZodError);
+    });
   });
 });

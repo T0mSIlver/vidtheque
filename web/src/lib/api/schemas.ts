@@ -8,6 +8,32 @@
 // the contract: an unknown field is ignored (DECISIONS.md, frame embeddings).
 import { z } from "zod";
 
+// Zod compiles a validator with `new Function` when it can, and finds out
+// whether it can by calling `Function("")` the first time something parses.
+// In the browser that call is refused — the page's `script-src` carries no
+// `'unsafe-eval'` (see `proxy.ts`) — and the browser reports the refusal,
+// which puts a CSP violation in the console for a feature probe that was
+// always going to fall back. `jitless` makes the fallback the decision, on
+// both sides of the boundary: these schemas parse a few small objects per
+// request and one small event per stream frame, and never needed a compiler.
+z.config({ jitless: true });
+
+// Every URL in a payload is rendered: as an anchor's href, or as an image's
+// src. `javascript:` and `data:` are URLs by the parser's reckoning and
+// scripts by the browser's, and the facade has no reason to mint either, so
+// the contract says http(s) and a payload that says otherwise is rejected
+// here rather than handed to the DOM.
+const httpUrl = () => z.url().refine(isHttpUrl, "must be an http(s) URL");
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const scheme = new URL(value).protocol;
+    return scheme === "http:" || scheme === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export const Pagination = z.object({
   limit: z.number().int(),
   offset: z.number().int(),
@@ -29,15 +55,15 @@ export const Hit = z.object({
   end: z.number().nullable(),
   match_start: z.number().nullable(),
   match_cue_id: z.number().int().nullable(),
-  text: z.string(),
-  link: z.url(),
+  text: z.string().nullable(),
+  link: httpUrl(),
   cue_ids: z.array(z.number().int()),
   frame_id: z.string().nullable(),
   score: z.number(),
   timestamp: z.string(),
   // Both null when the hit has no frame: the page falls back to a text card.
-  thumb: z.url().nullable(),
-  thumb_large: z.url().nullable(),
+  thumb: httpUrl().nullable(),
+  thumb_large: httpUrl().nullable(),
 });
 export type Hit = z.infer<typeof Hit>;
 
@@ -69,8 +95,8 @@ export const Video = z.object({
   tags: z.string(),
   indexed_at: z.string(),
   index_state: z.string(),
-  link: z.url(),
-  thumb: z.url().nullable(),
+  link: httpUrl(),
+  thumb: httpUrl().nullable(),
 });
 export type Video = z.infer<typeof Video>;
 
@@ -85,14 +111,14 @@ export type VideosResponse = z.infer<typeof VideosResponse>;
 export const Chapter = z.object({
   start: z.number(),
   title: z.string(),
-  link: z.url(),
+  link: httpUrl(),
 });
 export type Chapter = z.infer<typeof Chapter>;
 
 export const KeyText = z.object({
   start: z.number(),
   text: z.string().nullable(),
-  link: z.url(),
+  link: httpUrl(),
 });
 export type KeyText = z.infer<typeof KeyText>;
 
@@ -100,9 +126,9 @@ export const OcrHighlight = z.object({
   t: z.number(),
   frame_id: z.string(),
   screen_text: z.string().nullable(),
-  link: z.url(),
-  thumb: z.url().nullable(),
-  thumb_large: z.url().nullable(),
+  link: httpUrl(),
+  thumb: httpUrl().nullable(),
+  thumb_large: httpUrl().nullable(),
 });
 export type OcrHighlight = z.infer<typeof OcrHighlight>;
 
@@ -113,14 +139,14 @@ export const VideoDetail = z.object({
   published: z.string(),
   duration: z.string(),
   indexed_at: z.string(),
-  link: z.url(),
+  link: httpUrl(),
   keyframes: z.number().int(),
   data_status: z.string(),
   tags: z.array(z.string()).optional(),
   chapters: z.array(Chapter).optional(),
   key_texts: z.array(KeyText).optional(),
   ocr_highlights: z.array(OcrHighlight).optional(),
-  thumb: z.url().nullable(),
+  thumb: httpUrl().nullable(),
 });
 export type VideoDetail = z.infer<typeof VideoDetail>;
 
@@ -156,9 +182,9 @@ export const Citation = z.object({
   channel: z.string(),
   t: z.number(),
   timestamp: z.string(),
-  link: z.url().nullable(),
-  thumb: z.url().nullable(),
-  thumb_large: z.url().nullable(),
+  link: httpUrl().nullable(),
+  thumb: httpUrl().nullable(),
+  thumb_large: httpUrl().nullable(),
   source: z.string().nullable(),
   text: z.string().nullable(),
 });
@@ -181,6 +207,19 @@ export const AskDegraded = z.object({
 });
 export type AskDegraded = z.infer<typeof AskDegraded>;
 
+// What stopped an ask, whichever layer stopped it. §3.4's degraded body is
+// one of them; the rate limiter's general envelope (§2.4) is another, and it
+// has no `reason` to give, so requiring one there threw away the limiter's
+// real sentence and its delay. A code and a sentence are what they all share.
+export const AskFailure = z.object({
+  error: z.string(),
+  message: z.string(),
+  // Present only on the typed degraded body — never invented for the rest.
+  reason: z.string().nullish(),
+  retry_after_s: z.number().nullish(),
+});
+export type AskFailure = z.infer<typeof AskFailure>;
+
 export const AskEvent = z.discriminatedUnion("event", [
   z.object({
     event: z.literal("activity"),
@@ -194,10 +233,22 @@ export const AskEvent = z.discriminatedUnion("event", [
 ]);
 export type AskEvent = z.infer<typeof AskEvent>;
 
-// Every non-2xx answer from the facade: a code, a sentence, and what to do next.
+// Every non-2xx answer from the facade: a code, a sentence, and what to do
+// next. The API serialises "no next step" as `next: null`, not by omitting the
+// key, so a schema that only allowed a string rejected the whole envelope and
+// lost the code and the sentence with it.
 export const ErrorEnvelope = z.object({
   error: z.string(),
   message: z.string(),
-  next: z.string().optional(),
+  next: z.string().nullish(),
 });
 export type ErrorEnvelope = z.infer<typeof ErrorEnvelope>;
+
+// The same envelope read field by field, so one field the API grew out from
+// under us costs only that field. Used where an error body is the last thing
+// we have to explain a failure with, and dropping it leaves nothing.
+export const PartialErrorEnvelope = z.object({
+  error: z.string().optional().catch(undefined),
+  message: z.string().optional().catch(undefined),
+  next: z.string().nullish().catch(undefined),
+});

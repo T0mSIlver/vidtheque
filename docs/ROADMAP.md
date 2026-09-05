@@ -7,11 +7,149 @@ things that turned out to be *already done* are recorded at the bottom so
 nobody rediscovers them a third time.
 
 Ordered by how self-contained the work is, not by value. Value is Tom's call
-and the two marked **[Tom]** are decisions before they are tickets.
+and anything marked **[Tom]** is a decision before it is a ticket.
 
 ---
 
 ## Open
+
+### Frontend replacement: landing, demo, and management dashboard
+
+Tom chose a complete Next.js and React replacement before traffic switches
+on 2026-09-05. See `docs/design/DECISIONS.md`. PRs #23 through #30 supply the
+initial reader, API client, search, Ask, and component tests.
+
+- Review and merge the initial stack with frontend checks in hosted CI.
+- Implement direct browser-to-Python API calls, chosen by Tom. Verify routing,
+  session handling, trusted client addresses, and any cross-origin access.
+- Port the landing and demo while preserving their URLs and locked positioning.
+  *Landed 2026-09-05:* both render from `web/`, and Python's `GET /`,
+  `GET /demo` and `GET /static/{path}` registrations are gone along with the
+  two static bundles and the tests that read their markup
+  (`docs/design/frontend-migration.md` §1a, demo-site.md §1). One thing the
+  removal handed over rather than kept, and it is a check before cutover rather
+  than a ticket: `_DOCUMENT_HEADERS` — the CSP and its three companions — left
+  with the pages, so it is the front end's to send on both of them and no test
+  in `mcp/` can see whether it does. demo-site.md §7 item 0.
+- Define the Python HTTP contracts needed by these pages. Keep state and
+  operation policy in `mcp/`; remove presentation dependencies as pages move.
+  *Landed 2026-09-05:* the first read slice — `GET /dashboard/api/overview`,
+  `/ledger` and `/session`, over the assemblers the Jinja pages now share
+  (`docs/design/frontend-migration.md`, dashboard.md §19). Every port below
+  still needs its own contract written before its page.
+- Verify deployment, rollback, browser workflows, and CPU-only checks before
+  switching traffic. Remove replaced templates, scripts, styles, and obsolete
+  instructions only after their callers have replacements. Research stays
+  append-only.
+  Through the edge: `GET /` returns the landing, `GET /demo` the reader, and
+  each carries the four document headers (demo-site.md §7 item 0). Python has
+  no page at `/` any more, so a misrouted edge shows the MCP mount's 404.
+
+The dashboard port, page by page. Each needs its JSON contract first, then its
+React page, verified against **both** the owner and the public read-only
+projection — a page that renders a field the projection drops is the failure
+mode this list exists to prevent.
+
+- **Overview and ledger pages** — *landed 2026-09-05.* `GET /dashboard` and
+  `GET /dashboard/ledger` are Next's, fetching `/dashboard/api/overview` and
+  `/dashboard/api/ledger` in the browser under the session cookie, with the
+  management chassis — the rail, the session read and the sign-out form — under
+  them. Both are named in the ownership table and in the document-policy
+  matcher, which is the record of what is ported
+  (`docs/design/frontend-migration.md` §1d, §6). The ledger payload gained
+  `corpus.published` on the way, because the band prints a span the JSON had no
+  field for (dashboard.md §19). Python still renders every other
+  `/dashboard` page.
+- **Videos** — the table, its filters and ordering, and the video detail page,
+  including the frames strip and the cue pagination. *Contract landed
+  2026-09-05:* `/dashboard/api/library` and `/dashboard/api/library/{video_id}`
+  (dashboard.md §20 — the name is not `videos` because the facade already holds
+  that path at this prefix). The detail points at the existing cues endpoint
+  rather than serving cues, and that endpoint now carries the typed fields a
+  transcript pane needs beside its strings — see the note below.
+  *The read half landed 2026-09-05:* `GET /dashboard/videos` and
+  `GET /dashboard/videos/{video_id}` are Next's, named in the ownership table
+  and in the document-policy matcher — the detail as one segment, so the POSTs
+  under it stay Python's (frontend-migration.md §1d). What the React pages do
+  differently from the Jinja ones is recorded with the pages themselves
+  (dashboard.md §5.2, §5.3). The write side and two enhancement layers are
+  still open, on the lines below.
+- **Videos, the frames lightbox** — the Jinja page opens a keyframe full size
+  with its OCR boxes and its caption over it (`static/dashboard.js`); the React
+  card links to the 1280px frame instead. A layer over facts already on the
+  page, so it follows the port rather than blocking it.
+- **Videos, the timeline scrub preview** — pointing along the shot band shows
+  the shot under the pointer: its still, its span and its kept ratio. The React
+  timeline has the bars and their links and not the hover. Same shape of
+  follow-up as the lightbox.
+- **Search** — the owner inspection page, over the handler `/api/search`
+  already shares.
+- **Jobs** — the list, the job detail page, and a poll target that replaces
+  `static/jobs.js` without moving the 2 s tick or its server-side clamp.
+- **Jobs controls** — cancel and retry-failed: the first writes to cross, so
+  the first to need §3.3's cookie and Origin rules expressed over `fetch`.
+  *The write contract landed 2026-09-05* for all twelve writes at once, because
+  the rule that carries them is one helper and splitting it would have been two
+  rules: each route keeps its URL and answers the typed outcome when `Accept`
+  prefers JSON, the 303 otherwise (dashboard.md §21; what the client sends is
+  frontend-migration.md §9). `cancel` answers the state the job is actually in,
+  which is the thing the 2 s poll cannot say. The pages themselves are still
+  pending, and so is the poll target above.
+- **Indexing** — the index form and its submission, with the same server-side
+  bounds the form has now. Plus the two re-index writes the ported videos pages
+  left behind: the table's per-row **Re-index** button and the detail's
+  **Manage this video** panel, both `POST /dashboard/videos/{id}/reindex`, and
+  the header link that seeds this form from a video's channel ("Queue more from
+  this channel"). The submission and both re-index writes answer JSON as of
+  2026-09-05 — dashboard.md §21 has the payloads.
+- **Tags** — the per-video tag write: the add and remove fields of the
+  detail's **Manage this video** panel, `POST /dashboard/videos/{id}/tags`,
+  which the React detail does not render at all. The write answers the row's
+  tags after the write (dashboard.md §21).
+- **Following** — the list, the detail bands and the six writes; absent
+  entirely when the deployment registers no write side (dashboard.md §18). All
+  six answer the follow row typed as of 2026-09-05, and are 404 on both
+  branches where the surface is absent (dashboard.md §21).
+- **Session and login** — the sign-in page, the cookie flow and sign-out.
+  `/dashboard/api/session` describes the deployment; the login POST itself has
+  no JSON twin yet.
+
+**Three existing JSON endpoints answer in rendered strings**, which is
+what the typed-values decision (DECISIONS.md, 2026-09-05) says they must not.
+They predate it and they are the Jinja scripts' own poll targets, so nothing is
+broken today — but a React page cannot read them as they are. Found while
+landing the videos contract, 2026-09-05, and left alone at first because
+changing them changes what `static/jobs.js` and `static/dashboard.js` receive:
+
+- `/dashboard/api/jobs` — each job carries a `text` object built server-side:
+  `progress` (`"73%"`), `counts`, `tally`, `basis`, and `wall`/`ran`/`waited`/
+  `defer` as `render.span`'s spoken durations (`"4m 12s"`), plus `finished` as
+  an `iso_minute` stamp. The typed halves (`progress`, `wall_s`, `ran_s`,
+  `waited_s`, `defer_s`, `created_at`, `started_at`, `finished_at`) are all
+  there beside them, so a React jobs page needs the `text` block dropped and
+  `basis` — the one genuine sentence in it — kept or moved into `notes`.
+- `/dashboard/api/jobs/{job_id}` — the same `text` on the job, plus per item
+  `text.attempts` (`"2/3"`), `text.took` and `text.stage` (`"stt 42%"`), and
+  per event an `at_text` `iso_minute` stamp beside the epoch `at`.
+- `/dashboard/api/videos/{id}/cues` — the one where the typed half was missing
+  rather than merely duplicated. It sends `t` (start, whole seconds) and then
+  `at` as a `clock()` string, `conf` as `f"{logprob:.2f}"`, and `chunk` as a
+  composed sentence (`"chunk 3 · 1:02–1:48 · 210 words · 1180 chars"`).
+  *Landed 2026-09-05:* `start_s` and `end_s` as floats, `avg_logprob` as a
+  float or `null`, `chunk_opens` (`seq`, `start_s`, `end_s`, `n_words`,
+  `n_chars`) and `chunk_closes`, all beside the unchanged strings and all under
+  `views._cue_rows`' own names — it already produced exactly those values and
+  the endpoint rendered them on the way out (dashboard.md §5.3,
+  frontend-migration.md §3).
+
+**Settled 2026-09-05 (Tom): typed fields beside the strings, strings cut at the
+port.** Add the typed half now, additively, and delete a rendered string in the
+same commit that deletes the Jinja page or script that reads it. The cues
+endpoint was the only one that needed code — the two jobs routes already carry
+their typed half — so what is left on this line is a deletion each porting
+commit performs: the jobs `text` blocks (keeping `basis`, the one sentence in
+them that is policy text) with `static/jobs.js`, and the cues strings with the
+video detail page.
 
 ### 1. Turn following on — no code, and it is why the corpus stopped growing
 
@@ -59,17 +197,23 @@ including the vec0 trigger and FK-pragma dance. F12's read-only posture shipped
 (`public/readonly.py` derives `WRITE_TOOLS` from the annotations); the inverses
 did not. Takes the surface to twelve, so it is a contract change, not a patch.
 
-### 6. A DOM-level test harness for the public page
+### 6. **Closed 2026-09-05** — a DOM-level test harness for the public page
 
-`mcp/tests/test_public.py:2451` says it in its own docstring: *"What the page
-does with that — a notice under the rows it already has, rather than a wipe —
-needs a DOM-level harness and is not asserted here."* Cross-cutting: a tooling
-choice and CI wiring, and the repo's rule against self-hosted runners bounds it.
+The page said it in its own docstring: *"What the page does with that — a
+notice under the rows it already has, rather than a wipe — needs a DOM-level
+harness and is not asserted here."* Cross-cutting: a tooling choice and CI
+wiring, bounded by the repo's rule against self-hosted runners.
 
-*2026-09-01:* the Next.js front end in `web/` has one — Vitest, jsdom and
+*2026-09-01:* the Next.js front end in `web/` got one — Vitest, jsdom and
 Testing Library, `pnpm test`, with the ask stream exercised against a recorded
-real response. The Python-served demo page still does not, and this line stays
+real response. The Python-served demo page still had none, and this line stayed
 open for it.
+
+*2026-09-05:* there is no Python-served demo page. It is `web/`'s, which is the
+surface with the harness, and the docstring above went with the test file it
+was in. Closed by replacement rather than by instrumentation — worth the
+distinction, because the assertion it wanted still has to exist on the React
+page, and that is `web/`'s to carry, not this file's.
 
 ### 7. F1 — structured OCR, the big one
 

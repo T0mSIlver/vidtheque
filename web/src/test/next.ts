@@ -3,7 +3,7 @@
 // submit pushed without a real router.
 import { vi } from "vitest";
 
-export function mockNavigation(search = "") {
+export function mockNavigation(search = "", pathname = "/demo") {
   const push = vi.fn();
   const replace = vi.fn();
   const refresh = vi.fn();
@@ -17,7 +17,7 @@ export function mockNavigation(search = "") {
       prefetch: vi.fn(),
     }),
     useSearchParams: () => new URLSearchParams(search),
-    usePathname: () => "/",
+    usePathname: () => pathname,
     notFound: () => {
       throw new Error("NEXT_NOT_FOUND");
     },

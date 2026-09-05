@@ -1,0 +1,412 @@
+/* The videos table: a control band over a grid, and a pager under it.
+
+   Read out of `dashboard/static/dashboard.css`, which is still serving the
+   pages this port has not reached — the two halves of the surface have to stay
+   one surface while it happens. Everything shared with the other ported pages
+   (the panel, the figure, the pill, the grid) is in `dashboard.module.css`;
+   what is here is what only this page draws. */
+
+/* Every control in the band is exactly this tall — the same height as a table
+   row and a nav item — so the band reads as one object instead of as four
+   widgets the platform drew at four heights. */
+.filters {
+  --row: 2.125rem;
+  --pick-w: 9.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s3) var(--s4);
+  margin-top: var(--s5);
+  padding: var(--s3) var(--s4);
+  background: var(--plate);
+  border: 1px solid var(--seam2);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* `t-label`'s own values rather than `composes: t-label from global`: composes
+   takes a simple class selector only, and a control's label is reached through
+   the field that owns it. */
+.field label,
+.field legend {
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: var(--w-mono-label);
+  line-height: 1.4;
+  letter-spacing: 0.19em;
+  text-transform: uppercase;
+  font-variant-ligatures: none;
+  color: var(--muted);
+}
+
+/* One flexible field per band and everything else fixed. A text input takes
+   its width from the platform's `size` and a select takes its from its own
+   longest option, so a band of intrinsic widths re-flows the moment the reader
+   changes what any of them holds. With one flexible field the band's geometry
+   is a function of the viewport and of nothing else. */
+.wide {
+  flex: 1 1 16rem;
+}
+
+.text {
+  flex: 0 0 13rem;
+}
+
+.text > input {
+  width: 100%;
+}
+
+.narrow {
+  flex: 0 0 5rem;
+}
+
+.narrow > input {
+  width: 100%;
+}
+
+/* Every picker in the band is the same width, whatever it is currently
+   showing: a select sized by its own value changes width when the reader
+   changes it, and one control resizing re-flows every control beside it. */
+.pickField {
+  flex: 0 0 var(--pick-w);
+}
+
+.field input,
+.field select {
+  height: var(--row);
+  min-width: 0;
+  padding: 0 var(--s2);
+  /* A field is a surface the machine writes into, so it sits one step *under*
+     the plate around it rather than one above. Every value in this band is the
+     machine's own vocabulary — `ready`, `2026-08-09`, a video id — so the
+     controls are mono. */
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--fg);
+  background: var(--console);
+  border: 1px solid var(--seam2);
+  border-radius: 0;
+}
+
+.field input::placeholder {
+  color: var(--fg3);
+  opacity: 1;
+}
+
+.field input:hover,
+.field select:hover {
+  border-color: var(--gold-44);
+}
+
+/* Only the select loses its platform drawing — never a date field, whose
+   calendar button is the platform's own answer to a question this band does
+   not ask. */
+.pick {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+
+.pick > select {
+  width: 100%;
+  padding-right: var(--s6);
+  appearance: none;
+}
+
+.pick::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: var(--s3);
+  width: 6px;
+  height: 6px;
+  border-right: 1px solid var(--fg2);
+  border-bottom: 1px solid var(--fg2);
+  transform: translateY(-70%) rotate(45deg);
+  transition: border-color var(--t-fast);
+  /* A mark that follows a control must never be the thing the pointer is on. */
+  pointer-events: none;
+}
+
+.pick:hover::after {
+  border-color: var(--accent);
+}
+
+/* A range is one question asked with two inputs, so it is a fieldset — and the
+   browser's own box around it goes, like every other box here. */
+.rangeField {
+  flex: 0 0 auto;
+}
+
+.range {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
+.rangeSep {
+  color: var(--mark);
+}
+
+/* Fixed width rather than `auto`: the two ends of a range must be the same
+   width whether or not either has a value, or an empty second date collapses
+   and the dash stops reading as a range. */
+.rangeField input {
+  width: 8.5rem;
+  padding-right: var(--s1);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The buttons pack at the end of the controls, not at the far end of the band:
+   a filter bar on a 1900px screen must not put Apply 1400px from the select it
+   applies to. */
+.actions {
+  flex-direction: row;
+  gap: var(--s2);
+  align-items: center;
+}
+
+/* Apply and Reset are one control drawn twice — a submit button and a link —
+   so they wear one class rather than a rule that reaches for the element.
+   Nothing on this surface is a gold fill: gold means the active nav item, the
+   focus ring, the sorted column, a timecode worth clicking and the hovered
+   row's edge, and a filled Apply button would make it mean "a button" too. */
+.ghostlink {
+  composes: t-label from global;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.125rem;
+  padding: 0 var(--s3);
+  color: var(--fg2);
+  background: transparent;
+  border: 1px solid var(--seam2);
+  cursor: pointer;
+}
+
+.ghostlink:hover {
+  color: var(--gold);
+  border-color: var(--gold-44);
+}
+
+/* ------------------------------------------------------------------ notes */
+
+/* What a clamp moved, in Python's own words. It sits above the count line
+   because it is a fact about the set that line is counting. */
+.notes {
+  composes: t-machine-sm from global;
+  margin: var(--s4) 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--tone-warn);
+}
+
+.notes li {
+  max-width: var(--note);
+  margin-top: var(--s1);
+}
+
+/* ------------------------------------------------------------- the table */
+
+/* How many rows arrived, and whether there are more. */
+.tablecount {
+  composes: t-machine-sm from global;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 var(--s4);
+  margin: var(--s5) 0 var(--s1);
+  color: var(--muted);
+}
+
+/* The sentence is one flex item, not five: a flex container makes an item of
+   every text run between elements, and `of <span>4</span>.` came out as
+   `of 4 .` with a gap either side of the number. */
+.tablecount > * {
+  min-width: 0;
+}
+
+.shown {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8125rem;
+  color: var(--fg);
+}
+
+.videos thead a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.videos thead a:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}
+
+/* The column the table is ordered by. No caret glyph: this surface has no icon
+   language, and inventing one for a sort arrow is a much bigger new primitive
+   than a colour. The head's own inset underline is redrawn in the signal and
+   the label goes to the foreground; `aria-sort` carries it to a screen
+   reader. */
+.videos thead th[aria-sort] {
+  color: var(--fg);
+  box-shadow: inset 0 -1px 0 var(--accent);
+}
+
+.videos thead th[aria-sort] a {
+  color: var(--fg);
+}
+
+/* The row you are pointing at: one plate up, and a 1px gold edge in the
+   gutter. The edge, not the fill, is what makes it readable at a glance. */
+.videos tbody tr:hover {
+  background: var(--plate);
+  box-shadow: inset 1px 0 0 var(--accent);
+}
+
+/* Scoped through `.videos` so it outweighs the shared grid's own padding
+   without reaching for `!important`. */
+.videos .colShot {
+  width: 96px;
+  padding-right: 0;
+}
+
+.colTitle {
+  min-width: 16rem;
+}
+
+/* A state is one word and reads as one: `indexing` broke over two lines in a
+   narrow column and came out as "index ing". */
+.colState {
+  white-space: nowrap;
+}
+
+.rowTitle {
+  composes: t-cell-strong from global;
+  display: block;
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.rowTitle:hover {
+  color: var(--gold);
+}
+
+.rowMeta {
+  composes: t-machine-sm from global;
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* --------------------------------------------------------------- coverage */
+
+/* Three legs, three letters, and the word behind each in the title and for a
+   screen reader. This is what the table shows instead of per-row counts (§4.2)
+   — one query already computes the booleans, where a count per row is the
+   fan-out the rule exists to prevent. */
+.coverage {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.cov {
+  composes: t-label from global;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  letter-spacing: 0;
+  /* The letters are the tool's own `t/o/f`, and they are lowercase there. The
+     label face uppercases by default; this is the one place that would be the
+     page respelling a value. */
+  text-transform: none;
+  border: 1px solid var(--seam);
+}
+
+.covOn {
+  color: var(--tone-ok);
+  background: var(--tone-ok-bg);
+  border-color: var(--tone-ok-line);
+}
+
+.covOff {
+  color: var(--muted);
+  border-style: dashed;
+  text-decoration: line-through;
+}
+
+.taglist {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+}
+
+.chipSmall {
+  padding: 1px var(--s1);
+  font-size: 0.5625rem;
+}
+
+.pager {
+  display: flex;
+  gap: var(--s2);
+  margin-top: var(--s4);
+}
+
+/* At a phone's width the grid stops being a grid: each row becomes its own
+   block and every cell wears the column's name, which is what `data-label`
+   is on the cells for. */
+@media (max-width: 780px) {
+  .videos thead {
+    display: none;
+  }
+
+  .videos tbody tr {
+    display: block;
+    padding: var(--s2) 0;
+    border-bottom: 1px solid var(--seam);
+  }
+
+  .videos tbody th,
+  .videos tbody td {
+    display: flex;
+    gap: var(--s3);
+    height: auto;
+    padding: 2px var(--s2);
+    border: 0;
+  }
+
+  .videos tbody td::before {
+    content: attr(data-label);
+    flex: 0 0 6rem;
+    font-family: var(--mono);
+    font-size: 0.625rem;
+    font-weight: var(--w-mono-label);
+    letter-spacing: 0.19em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .videos tbody td.colShot::before {
+    content: none;
+  }
+}

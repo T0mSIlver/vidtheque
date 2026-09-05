@@ -48,8 +48,9 @@ demo is the first shelf, not the library.
 Agents plug in over MCP and consume the corpus mid-task: ask for the SOTA,
 get what was said on stage three weeks ago — search across transcript,
 on-screen text and frames, then drill into any moment. A web demo and a
-management dashboard ride in the same process: `/` is the landing, `/demo`
-searches and answers for visitors, `/dashboard` is the operator's instrument.
+management dashboard sit over the same corpus on one origin: `/` is the
+landing, `/demo` searches and answers for visitors, `/dashboard` is the
+operator's instrument.
 
 ## Receipts, always
 
@@ -59,14 +60,20 @@ lands on the second.
 
 ## Architecture
 
-Two services, one repo, HTTP between them — never a shared Python import.
+Two services, one repo, HTTP between them — never a shared Python import. The
+front end in `web/` is a third deployable, over the same HTTP.
 
 ```mermaid
 flowchart LR
     client["MCP client<br/>(Claude, …)"] -->|MCP| MCP
-    browser["Browser"] -->|"landing · demo · dashboard"| MCP
+    browser["Browser"] -->|"/ · /demo · /videos"| Web
+    browser -->|"/dashboard · /frames"| MCP
+    subgraph Web ["web/ — Next.js front end"]
+        pages["landing · demo · library"]
+    end
+    Web -->|"/api/*"| MCP
     subgraph MCP ["mcp/ — CPU, multi-arch (runs on a Pi)"]
-        surface["MCP tools · OAuth (CIMD)<br/>landing · demo · dashboard"] ---
+        surface["MCP tools · OAuth (CIMD)<br/>/api facade · dashboard"] ---
         pipeline["yt-dlp fetch · scene detection<br/>job queue"] ---
         store[("SQLite + sqlite-vec + FTS5<br/>keyframe JPEGs")]
     end

@@ -1,0 +1,311 @@
+/* The management chassis: a persistent rail, a content column, a signature at
+   the foot. Read out of `dashboard/static/dashboard.css` and
+   `templates/base.html`, which are still serving the pages this port has not
+   reached, so the two halves of the surface stay one surface while it happens.
+
+   The three lengths below are the dashboard's own and are declared here rather
+   than in `styles/tokens.css`, which is generated from DESIGN.md's frontmatter:
+   they are this surface's component values (its section of DESIGN.md fixes the
+   34px row), not system tokens, and inventing three globals for one surface is
+   what the amendment rule exists to prevent. */
+
+.shell {
+  --rail: 15rem; /* 240px — the nav rail; 34px items, same as a table row */
+  --wide: 110rem; /* 1760px — where the content column stops growing */
+  --row: 2.125rem; /* 34px — the nav item, the row, every control */
+
+  display: grid;
+  grid-template-columns: var(--rail) minmax(0, 1fr);
+  min-height: 100dvh;
+}
+
+.skip {
+  composes: t-cell from global;
+  position: absolute;
+  left: var(--s2);
+  top: -3rem;
+  z-index: 5;
+  padding: var(--s2) var(--s3);
+  background: var(--plate);
+  border: 1px solid var(--seam2);
+}
+
+.skip:focus {
+  top: var(--s2);
+}
+
+/* -------------------------------------------------------------- the rail */
+
+/* Exactly one viewport tall, so it sticks and its hairline runs the full
+   height of the window however long the page under it gets. */
+.rail {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow-y: auto;
+  padding-bottom: calc(var(--s4) + env(safe-area-inset-bottom));
+  background: var(--void);
+  border-right: 1px solid var(--seam);
+}
+
+.brand {
+  padding: var(--s5) var(--s4) var(--s4);
+  border-bottom: 1px solid var(--seam);
+}
+
+/* The Font-Logo Rule: the word, in the text face, the full stop in gold. */
+.mark {
+  composes: t-brand from global;
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  color: var(--fg);
+}
+
+.dot {
+  color: var(--gold);
+  font-style: normal;
+}
+
+/* The one place hover does not go gold: a wordmark that changes colour under
+   the pointer reads as a control. It underlines instead. */
+.mark:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.nav {
+  padding: var(--s2) 0;
+}
+
+.group {
+  composes: t-label from global;
+  margin: var(--s3) 0 var(--s1);
+  padding: 0 var(--s4);
+  color: var(--fg3);
+}
+
+.navlist {
+  list-style: none;
+}
+
+/* Full-bleed to the rail's edges, so the active item's gold edge lands on the
+   boundary and the item reads as a notch into the content ground rather than
+   as a pill floating on the rail. The class is on the anchor rather than being
+   a descendant rule, because `composes` only works on a simple selector. */
+.navlink {
+  composes: t-cell from global;
+  display: block;
+  padding: var(--s2) var(--s4);
+  color: var(--muted);
+  transition:
+    color var(--t-fast),
+    background-color var(--t-fast);
+}
+
+.navlink:hover {
+  color: var(--fg);
+  background: var(--plate);
+}
+
+/* You-are-here: the item takes the *page* ground, so the rail opens onto the
+   content at exactly that row, with the one signal as its edge. */
+.navlink[aria-current="page"] {
+  color: var(--accent);
+  background: var(--pitch);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.foot {
+  margin-top: auto;
+  padding: var(--s4) var(--s4) 0;
+  border-top: 1px solid var(--seam);
+}
+
+/* One fact per line in the rail, a row when the rail is a strip. */
+.deployment {
+  composes: t-machine-sm from global;
+  display: flex;
+  flex-direction: column;
+  color: var(--muted);
+}
+
+.refused {
+  color: var(--tone-bad);
+}
+
+.why {
+  composes: t-cell from global;
+  margin-top: var(--s2);
+  color: var(--muted);
+}
+
+.why code {
+  font-family: var(--mono);
+  font-variant-ligatures: none;
+}
+
+.signout {
+  margin-top: var(--s3);
+}
+
+/* Full-bleed in the rail, like a nav item: it is the one control in the
+   chassis and it should read as part of the column, not as a widget dropped
+   into it. */
+.ghost {
+  composes: t-label from global;
+  width: 100%;
+  height: var(--row);
+  padding: 0 var(--s3);
+  background: transparent;
+  color: var(--fg2);
+  border: 1px solid var(--seam2);
+  cursor: pointer;
+}
+
+.ghost:hover {
+  color: var(--gold);
+  border-color: var(--gold-44);
+}
+
+.signin {
+  composes: t-label from global;
+  display: block;
+  margin-top: var(--s3);
+  color: var(--gold);
+}
+
+.signin:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ---------------------------------------------------------- the content */
+
+.col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0 var(--s6) calc(var(--s10) + env(safe-area-inset-bottom));
+}
+
+.col > main {
+  flex: 1 1 auto;
+}
+
+.col > main,
+.col > footer {
+  width: 100%;
+  max-width: var(--wide);
+}
+
+/* Signed, not merely credited: the same lockup as the rail, once more at the
+   foot of the page and at the same scale — the system's large footer signature
+   is a landing-page gesture and this surface does not make gestures. The
+   version is mono because a version is a machine string and a name is not. */
+.footline {
+  composes: t-brand from global;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--s3);
+  margin-top: var(--s10);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--seam);
+  color: var(--fg);
+}
+
+.version {
+  composes: t-machine from global;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------- widths */
+
+/* 1120px — `--bp-stack`. There is no room for 240px of navigation beside the
+   content, so the rail stops being a column and becomes a strip across the
+   top: the word, a wrapping row of links with the current one underlined, and
+   the deployment state on its own line. No drawer, no scrim, no checkbox — a
+   nav that fits on one line has nothing to gain from being hidden behind a
+   control, and the control is the part of that pattern that costs the keyboard
+   and the screen reader. */
+@media (max-width: 70rem) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+  }
+
+  .rail {
+    position: static;
+    height: auto;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0 var(--s5);
+    padding: 0 var(--s4) var(--s3);
+    border-right: 0;
+    border-bottom: 1px solid var(--seam);
+  }
+
+  .brand {
+    padding: var(--s4) 0;
+    border-bottom: 0;
+  }
+
+  .nav {
+    padding: 0;
+  }
+
+  .navlist {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 var(--s2);
+  }
+
+  .navlink {
+    padding: var(--s1) var(--s2);
+  }
+
+  .navlink[aria-current="page"] {
+    background: transparent;
+    box-shadow: none;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+
+  .group {
+    margin: 0;
+    padding: 0 var(--s2);
+  }
+
+  .foot {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--s2) var(--s5);
+    margin-top: 0;
+    padding: var(--s2) 0 0;
+  }
+
+  .deployment {
+    flex-direction: row;
+    gap: 0 var(--s3);
+  }
+
+  .signout,
+  .signin {
+    margin-top: 0;
+  }
+
+  .ghost {
+    width: auto;
+  }
+
+  .col {
+    padding-inline: var(--s4);
+  }
+}

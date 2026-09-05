@@ -71,3 +71,8 @@ bench/*.json
 # skill's own directory — so a design agent links the npx-cached copy in beside
 # it. Never a real install, never committed.
 node_modules/
+
+# Local agent prompts, logs, and isolated worktrees.
+.agent-runs/
+.fastcontext/
+.opencode/

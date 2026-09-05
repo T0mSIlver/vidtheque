@@ -1,0 +1,53 @@
+/* The root boundary's own ground. A beat, a hairline, nothing else: this is
+   what renders when the landing could not, so it spends no imagery, no wall
+   and no motion — there is no machine working behind it. */
+
+.main {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--gap-head);
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: var(--beat) var(--gut);
+}
+
+/* The Font-Logo Rule: the word, in the text face, the full stop in gold. */
+.mark {
+  composes: t-brand from global;
+  color: var(--fg);
+}
+
+.dot {
+  color: var(--gold);
+  font-style: normal;
+}
+
+.sentence {
+  composes: t-question from global;
+  max-width: var(--lede);
+  color: var(--fg);
+  text-wrap: balance;
+}
+
+.next {
+  composes: t-label from global;
+  color: var(--muted);
+}
+
+.next a {
+  color: var(--gold);
+}
+
+.next a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* A digest is a machine string, so it is mono and it is the only thing on this
+   page that is. */
+.ref {
+  composes: t-machine-sm from global;
+  color: var(--mark);
+}

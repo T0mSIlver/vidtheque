@@ -7,8 +7,9 @@
 import type { ZodType } from "zod";
 import {
   type ContentType,
-  ErrorEnvelope,
+  type ErrorEnvelope,
   Meta,
+  PartialErrorEnvelope,
   SearchResponse,
   VideoDetail,
   VideosResponse,
@@ -28,7 +29,9 @@ export class ApiError extends Error {
     this.name = "ApiError";
     this.status = status;
     this.code = envelope.error ?? "E_HTTP";
-    this.next = envelope.next;
+    // The wire says `null` for "no next step"; callers ask `err.next ? …`, so
+    // the two absences become one.
+    this.next = envelope.next ?? undefined;
     this.retryAfter = retryAfter;
   }
 }
@@ -115,7 +118,7 @@ async function toError(res: Response): Promise<ApiError> {
   const retryAfter = Number(res.headers.get("retry-after")) || undefined;
   let envelope: Partial<ErrorEnvelope> = {};
   try {
-    const parsed = ErrorEnvelope.safeParse(await res.json());
+    const parsed = PartialErrorEnvelope.safeParse(await res.json());
     if (parsed.success) envelope = parsed.data;
   } catch {
     // A non-JSON body (a proxy's HTML 502, say) is still an ApiError, just a

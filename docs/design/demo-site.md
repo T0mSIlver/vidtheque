@@ -25,30 +25,45 @@ VIDTHEQUE_PUBLIC_READONLY=1
 
 It is a *mode*, resolved once at app-construction time, exactly like
 `VIDTHEQUE_AUTH` (`auth/modes.py`): one branch in `app.py`, never a per-route
-conditional. Set it and four things change together:
+conditional. Set it and three things change together:
 
 | | off (default) | on |
 |---|---|---|
 | write tools (`index-video`, `tag-video`) | registered | **never registered** |
 | `/api/*` | absent (404) | served |
-| `/` | the MCP mount | **the landing page** |
-| `/demo` | the MCP mount | the demo page |
-| rate limiting on `/api/*` and `/frames/*` | none | token bucket per IP |
+| rate limiting on `/api/*`, `/frames/*` and `/mcp` | none | token bucket per IP |
 
-**Amended 2026-08-11 (Tom, post-launch topology): the landing owns `/` and the
-demo moved to `/demo`.** The demo had the root because it was the only page
-there was. It is not any more: the landing graduated out of `static/lab/` the
-same day (§6.1), and a visitor arriving cold at a search box has to be sold the
-corpus before being asked to query it — which is the landing's whole job and
-none of the demo's. So the front door is the argument and the working corpus is
-one click in, behind the landing's single CTA.
+**Amended 2026-09-05 (Tom): Python serves no pages. Next.js does.** The landing
+at `/` and the demo at `/demo` are the front end's in `web/`, and the flag's
+fourth effect — the two page registrations and the `/static/{asset:path}` route
+that fed them — is gone from `public_routes`, which now returns the facade and
+nothing else. `frontend-migration.md` §1a is the route ownership table.
 
-Nothing redirects, deliberately. An old bookmark of `/` lands on the landing,
-which is the same site saying the same thing, with `/demo` in its one gold
-button; a 302 would buy that visitor one click at the cost of a rule that
-outlives everyone's memory of why it exists. `/api/*`, `/frames/*`, `/mcp` and
-`/dashboard` did not move — the facade is addressed by agents and by the demo's
-own script, and a public JSON path is a promise in a way a page is not.
+Production is **one origin split by path**: a reverse proxy sends the exact page
+GETs to Next and everything else to this app — `/api/*`, `/frames/*`, `/mcp`,
+`/auth/*`, `/.well-known/*`, `/healthz`, `/videos/{id}/export.md` and every
+`/dashboard/*` route. Python keeps every promise it made to an agent or to a
+script; what it stopped serving is HTML.
+
+Two consequences, both of which used to live in this document. **The document
+policy is the front end's** — `_DOCUMENT_HEADERS` was written for `/`, `/demo`
+and any `.html` under `/static/`, and this flag registers none of those now, so
+§7 item 0 is the handover and the check on it. The one document Python still
+serves of its own is the OAuth consent screen, which carries its own pair in
+`auth/login.py`. And **the lab denylist is gone with the route it guarded**
+(§6): there is no asset handler to deny a subtree to. `mcp/pyproject.toml`
+still excludes `static/lab` from the wheel.
+
+*The 2026-08-11 topology it replaces, kept because the reasoning still binds the
+front end:* the landing took `/` from the demo because a visitor arriving cold at
+a search box has to be sold the corpus before being asked to query it, and the
+working corpus is one click in behind the landing's single CTA. Nothing
+redirects — an old bookmark of `/` lands on the landing, which is the same site
+saying the same thing, with `/demo` in its one gold button; a 302 would buy that
+visitor one click at the cost of a rule that outlives everyone's memory of why it
+exists. `/api/*`, `/frames/*`, `/mcp` and `/dashboard` did not move then and have
+not moved since: the facade is addressed by agents and by the page's own script,
+and a public JSON path is a promise in a way a page is not.
 
 The read surface is untouched: seven read tools, three resources,
 `/frames/<id>.jpg`, `/healthz`, and `/mcp` all behave exactly as they do in a
@@ -229,7 +244,7 @@ Returns the tool's structured payload verbatim — `video_id`, `title`,
 `data_status`, `tags`, `chapters[]` (`start`, `title`, `link`),
 `key_texts[]` (`start`, `text`, `link`), `ocr_highlights[]` (`t`,
 `frame_id`, `screen_text`, `link`) — plus what only the facade can mint: a
-cover `thumb` (the listing's rule, `null` without a keyframe), and `thumb` /
+cover `thumb` (the first keyframe at 960 px, `null` without a keyframe), and `thumb` /
 `thumb_large` on every `ocr_highlights` entry, since a page cannot build a
 frame URL of its own (§5). The tool's `next:` guidance is left out: it names
 MCP tools a browser cannot call.
@@ -943,36 +958,45 @@ every kind alike.
 
 ## 6. The page
 
-Served at **`/demo`** (§1) from `vidtheque_mcp/public/static/`, three files, no
-build step, no framework, no external requests. `index.html` + `app.js` +
-`style.css`, shipped inside the wheel (hatchling includes package data under the
-package directory). Everything below describes this page; the landing that took
-`/` is §6.1.
+**Amended 2026-09-05: this section is a design contract, not a description of
+Python code.** Everything below — the states, the floor, the provenance rules,
+the enlarge dialog, the grouping, the activity log — is what the page must do,
+and `web/` is what does it. What is *not* here any more is how it reached a
+browser: `/demo`, `/`, the `/static/{asset:path}` handler, the document policy
+they shared and the `lab/` denylist that bounded them all left `public/` with
+the pages (§1). The paragraphs they occupied are below, marked, because the
+arguments outlived the code.
 
-Both documents are served by the same small helper and carry the same headers —
-the CSP and its three companions are a property of *being a document on this
-app*, not of a route, so the two pages cannot drift apart on the policy the
-2026-08-10 audit wrote.
+*Until 2026-09-05:* the page was three files under `vidtheque_mcp/public/static/`
+— `index.html` + `app.js` + `style.css` — no build step, no framework, no
+external requests, shipped inside the wheel as package data. Both documents went
+through one small helper and carried the same headers, because the CSP and its
+three companions were a property of *being a document on this app* rather than
+of a route, so the two pages could not drift apart on the policy the 2026-08-10
+audit wrote. That property is now the front end's to hold, over both of its
+pages, and no test in `mcp/` can see whether it does — §7 item 0.
 
-**The asset route serves that directory, minus a denylist (2026-08-11).**
-`/static/{asset:path}` resolves under the packaged `static/` root, refuses
-anything that escapes it, and types the response by suffix — so *every* file
-under `static/` is public the moment the demo is. That is one directory too
-generous: `static/lab/` is the landing workshop, competing prototypes of a page
+*Also until 2026-09-05, the asset route and its denylist (added 2026-08-11).*
+`/static/{asset:path}` resolved under the packaged `static/` root, refused
+anything that escaped it, and typed the response by suffix — so *every* file
+under `static/` was public the moment the demo was. That was one directory too
+generous: `static/lab/` was the landing workshop, competing prototypes of a page
 that had not shipped, and it answered at `/static/lab/versions/v5.html`
-(`research/release-staging-2026-08-11.md` §9, finding 1). The route now refuses
-the `lab/` subtree by prefix, checked on the *resolved* path so `../lab/…` is
-covered by the same line. Denied rather than moved on purpose, and the reason
-held while the directory was worked in (through a local preview server, never
-through this app): v5 graduated out of `lab/` (§6.1) while the ~11 MB of
-prototypes behind it stayed. Amended 2026-08-12: those prototypes have since
-retired to the `archive/landing-lab` branch and `static/lab/` is gone from
-`main` — the denial stays, by *name*, because a prefix covers the next
-prototype directory that nobody remembers to think about where a `git mv`
-covers only what was moved. Adding a top-level name to `_DENIED_SUBTREES` is
-the amendment; adding a *file* to `static/` is publishing it.
+(`research/release-staging-2026-08-11.md` §9, finding 1). The route refused the
+`lab/` subtree by prefix, checked on the *resolved* path so `../lab/…` was
+covered by the same line — by *name* rather than by absence, because a prefix
+covers the next prototype directory that nobody remembers to think about where a
+`git mv` covers only what was moved. The prototypes retired to the
+`archive/landing-lab` branch on 2026-08-12 and `static/lab/` has been gone from
+`main` since. The rule it stood for now belongs to whatever serves `web/public/`:
+adding a file there is publishing it.
 
 ### 6.1 The landing at `/` (added 2026-08-11)
+
+*Where it lives, as of 2026-09-05: `web/src/landing` and `web/src/app/page.tsx`,
+with the stills in `web/public/landing/`. The paths named below are the Python
+bundle it was ported from and are gone from `main`; the design they describe is
+unchanged, which is why this section is.*
 
 `static/landing/` — `index.html` + `landing.css` + `landing.js`, its stills in
 `grid/`, `moments/`, `pgm/` and `wall/`, and `data.js`, the read-only corpus
@@ -1655,6 +1679,27 @@ shown.
 
 ## 7. Open, for Tom
 
+0. **[2026-09-05] The document policy changed hands, and the handover is
+   yours to check.** `_DOCUMENT_HEADERS` — the CSP with no `unsafe-` word in
+   it, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer` —
+   left `public/` with the two pages that carried it. It is the front end's to
+   send now, and one file sends it: `web/src/proxy.ts`, a middleware over every
+   document `web/` serves — not the reverse proxy and not
+   `next.config.ts:headers()`, the other two candidates this entry named when
+   it was written. No test in `mcp/` can see whether it does. This is the one
+   thing the removal handed over rather than kept, so it is the one thing to
+   confirm before traffic switches: **`GET /` and `GET /demo` each answer with
+   all four headers, and with the same `Content-Security-Policy` value** —
+   which is what the old single helper guaranteed by construction and two
+   independent surfaces do not. `frontend-migration.md` §1b writes out the
+   policy that file sends in production, `style-src 'unsafe-inline'` and the
+   dropped `data:` included, so the comparison has an exact string to make.
+   `frame-ancestors 'none'` matters most — `/api/ask` spends money, and framing
+   it is how a stranger spends it with someone else's clicks. Whatever sends
+   it needs a test on the surface that sends it; the 2026-08-10 audit's verdict
+   rested on the script never building HTML from data *with the policy as the
+   second line for the day someone adds a sink*, and a second line nobody
+   asserts is a second line nobody has.
 1. **The model default.** `deepseek/deepseek-v4-flash-0731` stands in for the DeepSeek
    free tier that no longer exists (§3.1). If you want a specific one, it is
    `OPENROUTER_MODEL=` and a restart.

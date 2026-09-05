@@ -149,10 +149,10 @@ are two different questions and §3 answers the second one.
 
 ### 2.4 Demo mode = welcome page + read-only projection
 
-Today `/demo` serves `public/static/demo/index.html` (amended 2026-08-11:
-the landing owns `/` since commit `4ddd45d`'s topology swap, and the demo's
-files moved under `static/demo/` in the repo cleanup — the welcome page's
-route is `/demo`, its role is unchanged): search, ask, and a six-video "in
+`/demo` serves the welcome page (amended 2026-08-11: the landing owns `/`
+since commit `4ddd45d`'s topology swap; amended 2026-09-05: the page left the
+Python package for the Next.js front end at `web/src/app/demo/` — the route is
+still `/demo` and its role is unchanged): search, ask, and a six-video "in
 this corpus" list. **That page is the welcome page.**
 It stays, it keeps its aesthetic (demo-site.md §6: a search engine, not a
 dashboard), and it gains one link — into the browsable corpus, which is the
@@ -259,7 +259,10 @@ Nothing is deleted and nothing is forked.
 2. **The static bundle grows a sibling.** `public/static/` keeps
    `index.html` + `app.js` + `style.css` for the welcome page; the dashboard
    ships its own files in the same tree with the same no-build discipline (or
-   does not — §10.2 is the honest fork).
+   does not — §10.2 is the honest fork). *Amended 2026-09-05:* there is no
+   sibling to grow beside any more. The welcome page's three files went to
+   `web/`, `public/static/` is down to `fonts/`, and the dashboard's own
+   bundle under `dashboard/static/` is the only one Python serves.
 3. **The rate limiter moves to always-on.** It is mounted only in public mode
    today (`app.py:187`). A management surface a bot can hammer with
    `/dashboard/api/videos` is the same denial of service as a public one, and
@@ -653,6 +656,17 @@ a job that fails.** Delete arrives in the phase that implements the job (§8).
 **Does not show.** Per-row counts (§4.2). Per-row job history — that is one
 click away and one query per row is the fan-out the rule exists to prevent.
 
+*Ported 2026-09-05 — one deliberate divergence from this form.* The React
+band **drops `index_state=all` and `has=any` on submit**. Both are the API's
+own defaults, so a picker resting on one put `&index_state=all&has=any` on
+every URL a reader copies out of the address bar to say nothing at all, and
+made two URLs for the one query that is "no filters"; the Jinja form submitted
+every control it had. Nothing else moved: the filters are still the URL, every
+bound is still Python's, and a clamp still comes back as the `note:` the page
+renders rather than as a number the page composes. The row's **Re-index**
+button is not ported — it is in `docs/ROADMAP.md` with the rest of the write
+side.
+
 ### 5.3 `GET /dashboard/videos/{video_id}` — the detail page
 
 The reason the dashboard exists. Five panels.
@@ -690,6 +704,22 @@ came in via captions (measured on the first batch, 2026-08-09). Chunk boundaries
 `chunks` (`first_cue_id` / `last_cue_id`), because "what exactly is the
 embedding unit" is one of the questions this page exists to answer.
 
+*Amended 2026-09-05 (Tom): typed fields beside the strings, strings cut at the
+port.* The batch endpoint the scrollbox appends from,
+`GET /dashboard/api/videos/{video_id}/cues`, answered in rendered strings only
+— `at` a `clock()`, `conf` a formatted float, `chunk` a composed sentence —
+which is what DECISIONS.md's typed-values rule (2026-09-05) says a payload must
+not do, and it was the one of the three offenders where the typed half was
+missing rather than merely duplicated. It carries `start_s`, `end_s`,
+`avg_logprob`, `chunk_opens` (the chunk's `seq`, `start_s`, `end_s`, `n_words`,
+`n_chars`) and `chunk_closes` **beside** the strings now, under
+`views._cue_rows`' own names, because those are the values the endpoint was
+rendering away. `in_chunk` collapses the two markers into one bool and stays;
+both markers are sent, because a chunk's last cue is not its first. The strings
+are unchanged and stay while `static/dashboard.js` is their only reader — the
+rule is: **add the typed half now, additively; delete a rendered string in the
+same commit that deletes the Jinja page or script that reads it.**
+
 **OCR browser.** `ocr_frames` (the searchable unit, `0003_ocr_frame_fts.sql:40`)
 per keyframe, with the `ocr_lines` behind it: `line_no`, `text`, `conf`, and the
 box `x0,y0,x1,y1`. Those coordinates are **already normalised 0–1 at write time**
@@ -706,6 +736,30 @@ is the single most convincing thing on the page — it is the difference between
 - `chapters_json` / `heatmap_json` raw — chapters render from the `chapters`
   table, which is what everything else reads.
 - `media_path`, `audio_path`, `jpeg_path` — presence, not location.
+
+*Ported 2026-09-05 — what the React page does differently, on purpose.*
+
+- **The transcript's place is not in the URL.** The Jinja page carried `cues`
+  and `cue_offset` on every link it built, so paging the transcript reloaded
+  the page and threw the strip, the frames and the reader's own place away with
+  it. The panel appends in place now, at the server's own offset
+  (`page.offset + page.cues.length`), and neither parameter is on the URL:
+  where a reader is in a transcript is not a fact about the page and has no
+  business in a link somebody sends. `frames`, `frame_offset` and `select`
+  **stay**, exactly as they were — which page of the strip you are on, and
+  which frame a shot bar jumped you to, are facts a link should carry.
+- **The title arrives after the read.** Next serves this page as a data-free
+  shell and never sees the session cookie (frontend-migration.md §1d), so the
+  server cannot know the video's name. The document title is the generic
+  "Video" and the view sets `document.title` when the payload lands, which is
+  the first moment anything on this side knows it.
+- **The lightbox is a link, for now.** A frame card opens the 1280px `large`
+  URL rather than the overlay `static/dashboard.js` draws, and the shot band
+  has its bars and their links but not the scrub preview. Both are enhancement
+  layers over facts already on the page, and both are in `docs/ROADMAP.md`.
+- **The write side is not here.** "Manage this video" — the Re-index form and
+  the tag form — and the header's "Queue more from this channel" link are
+  absent, with the rest of the writes in `docs/ROADMAP.md`.
 
 ### 5.4 `GET /dashboard/jobs` and `/dashboard/jobs/{job_id}` — the war-story page
 
@@ -750,6 +804,19 @@ long-lived connection per open tab, against a single-process server that also
 holds the only SQLite writer, for a page watched for minutes a week, is a
 lifecycle problem bought with nothing. The tick rate is also clamped
 server-side by the rate limiter, so a stuck tab cannot become a load generator.
+
+*Amended 2026-09-05 (Tom): the same rule as §5.3's, and here it asks for no
+code today.* `/dashboard/api/jobs` and `/dashboard/api/jobs/{job_id}` — the
+poll targets — carry a server-built `text` block (`progress`, `counts`,
+`tally`, `basis`, `wall`/`ran`/`waited`/`defer`, `finished`; per item
+`attempts`, `took`, `stage`; per event `at_text`), and the typed half is
+already there beside every one of those: `progress`, `wall_s`, `ran_s`,
+`waited_s`, `defer_s`, the three clocks, `attempts`/`max_attempts`, `at`. So
+nothing is added; the `text` blocks are deleted in the commit that deletes
+`static/jobs.js` and the pages it drives. `basis` is the one entry that is
+policy text rather than a rendering — the sentence that says what the
+percentage is computed over — and it survives that deletion, in `notes` or
+beside it, as the jobs contract will say when it is written.
 
 **Does not show.** `args_json` verbatim — it can carry cookiefile paths,
 politeness overrides and raw URLs; render the parsed fields. Stack traces (there
@@ -2226,3 +2293,375 @@ worth stating.
   names an operator's standing choices. `corpus-summary include_follows` is
   withheld on the same grounds (tool-surface §4.3).
 - **The vocabulary is `follow`, never `subscribe`** (`positioning.md`, LOCKED).
+
+## 19. The JSON read slice for the React front end (2026-09-05)
+
+The schema is `docs/design/frontend-migration.md`; this section is what the
+addition does to *this* contract, which is where the route group's rules live.
+`DECISIONS.md` (2026-09-05) moves all three surfaces to Next.js and React, so
+the pages below acquire a JSON twin ahead of the cutover. Nothing here changes
+an auth mode, a clamp, a projection rule or a page.
+
+**Three additive `GET` routes**, registered in `dashboard/__init__.py` beside
+the `/dashboard/api/*` group §2.5.1 already defines:
+
+| Route | Gate | Answers |
+| --- | --- | --- |
+| `/dashboard/api/overview` | `guarded`, `json=True` | §5.1's reads, typed |
+| `/dashboard/api/ledger` | `guarded`, `json=True` | §17's reads, typed |
+| `/dashboard/api/session` | **none** | what this deployment expects of this caller |
+
+**One shared assembly, not two.** `dashboard/read_models.py` now holds the
+reads, the width set (§6.4), the projection predicate and the §15 readiness
+observation; `views.py` imports them back under the private names it always
+used. The page and the JSON therefore make the *same* reads in the same order
+under the same bounds — two copies of "what does this box hold" is how a page
+and an API start disagreeing about the corpus, and §2.4's redaction is the half
+where that drift is a disclosure bug rather than a cosmetic one.
+
+**Typed values, and the one field that nearly broke the rule.** Counts are
+integers, clocks are epoch seconds, states are the store's own words, and
+formatting is React's. The readiness observation is stamped once and carried in
+both shapes — ISO-8601 for the page's `<time datetime=…>`, epoch for the JSON —
+and `api.py` copies the block out field by field rather than forwarding the
+page's dict, so a value added for a template does not join the JSON contract by
+default. `corpus_rollup`'s `hours` is not sent at all: §4.8's own comment calls
+it a display rounding.
+
+**`/dashboard/api/session` is outside the read gate, deliberately.** A React
+shell that cannot ask "is there a dashboard for me here" has two options left:
+guess, or probe a data endpoint and read the 401 on every cold load. It is no
+new disclosure — the fields are exactly what `base.html`'s chrome and the
+sign-in page (§3.2) already render to an anonymous browser, and never a secret,
+a path, a model id, a worker URL or which of two secrets matched. It carries no
+corpus, so it is nothing to redact; it sits in the loose `/dashboard` rate
+bucket and not the tight `dashboard_login` one, because it is not a guess at a
+secret. `signed_in` is the **validated** session row rather than the cookie's
+presence, which is the opposite of the chrome's field and for the opposite
+reason: the chrome's question is "is there a cookie to clear", this one's is
+"will the next request be served".
+
+**Both questions, both answered (Tom, 2026-09-05).** The payload carries
+`has_session_cookie` beside `signed_in`: whether the browser sent a
+`vidtheque_session` cookie at all, valid or not. `api.py` reads it with
+`SESSION_COOKIE in request.cookies`, the same lookup from the same constant as
+`views._chrome`, so the rail and the JSON cannot drift apart. It authorizes
+nothing — a stale cookie reads `true` here and `false` in `signed_in`, and that
+pair is the case the rail was built for: §3.2's cookie is `HttpOnly`, so a
+React shell cannot see it, and without this field a browser holding a dead
+cookie would be offered no way to clear it. The shell shows **Sign out** when
+either field is true and renders the dashboard on `signed_in` alone.
+
+**The ledger's published span (Tom, 2026-09-05).** §17's band prints
+"published *oldest* – *newest*" under the video count, and `/api/ledger` had no
+field for it — only `/api/overview` did — so a React ledger could render every
+figure on the page except that one. It carries `corpus.published` now, with the
+overview's name and the overview's shape: `{"oldest", "newest"}`, epoch seconds,
+`null` on both halves when the corpus is empty. One fact must not have two
+spellings across two payloads assembled from the same read, and it *is* the same
+read — `corpus_rollup` was already carrying both stamps for the counts beside
+them, so this adds a field and not a query.
+
+**Does not add.** A write, a parameter, a clamp, a CORS policy, an env var, a
+second query layer, or a page. The Jinja pages keep serving until all three
+surfaces are at parity (`DECISIONS.md`), and the remaining ports —
+jobs and its controls, indexing, follows, the login flow, the cutover — are
+`docs/ROADMAP.md`'s.
+
+## 20. The videos table and the video detail, as JSON (2026-09-05)
+
+§19's slice for the two pages §5.2 and §5.3 describe. Same rules as §19 — one
+shared assembly, typed values, `no-store`, the read gate, redaction by omission
+— and this section is the contract for the two routes it adds.
+
+**Two additive `GET` routes.**
+
+| Route | Gate | Answers |
+| --- | --- | --- |
+| `/dashboard/api/library` | `guarded`, `json=True` | §5.2's table: its rows, its filters, its exact count |
+| `/dashboard/api/library/{video_id}` | `guarded`, `json=True` | §5.3's panels, minus the transcript |
+
+**Why `library` and not `videos`.** `/dashboard/api/videos` is taken, by this
+route group's own decision: §2.5.1 registers the `/api/*` facade under this
+prefix too, so `/dashboard/api/videos` and `/dashboard/api/videos/{video_id}`
+are already `public/api.py`'s handlers, and `/dashboard/api/videos/{id}/cues`
+hangs off them. One path cannot carry two contracts, and shadowing the facade
+would silently change an answer somebody already reads. The two are not
+duplicates: the facade answers *what is in the corpus*, in the corpus's own
+shape and only for the videos that can answer a query; these answer *what the
+management pages show*. Where the facade is short, per page:
+
+| The table needs | `/api/videos` gives |
+| --- | --- |
+| `index_state` per row, and the failed and half-indexed rows at all | only `QUERYABLE_INDEX_STATES` (`ready`/`stale`), and no state field |
+| epochs for published and indexed, seconds for duration | `iso_day` and `duration_clock` strings — the tool's `tsv` block, rendered |
+| the `has`, `tags`, `index_state` and four date filters | `q`, `channel`, `limit`, `offset` |
+| an explicit `order`, echoed | an order chosen internally (`relevance` with `q`, else `recency`), never echoed |
+| the exact count of the filtered set | `pagination.approx_total`, the tool's probe through `COUNT_PROBE_FLOOR` |
+| a `note:` when a bound moved | nothing — the facade clamps silently |
+
+| The detail needs | `/api/videos/{id}` gives |
+| --- | --- |
+| the seven `video_stages` rows: state, `model_key`, `stage_version`, clocks, `error` | nothing — no MCP surface has them (§5.3) |
+| the per-video counts, and where the cues came from | `keyframes` and `data_status` |
+| the shot timeline, and the keyframe strip with its OCR boxes | `ocr_highlights`, twelve of them, as a reading list |
+| the jobs that touched this video | nothing |
+| `index_state`, `added_at`, `language`, `description`, the source URL | `published`/`duration`/`indexed_at`, rendered |
+
+The facade keeps what it has and this adds nothing to it: `key_texts` and
+`ocr_highlights` are the corpus's answer for the demo page, and neither route
+here re-serves them.
+
+**Parameters and clamps.** The table takes exactly the page's, resolved by the
+same code (`read_models.videos_reads`), and every bound is server-side:
+
+| Param | Values | Default | Clamp |
+| --- | --- | --- | --- |
+| `q` | ≤ 256 chars (the tool's) | — | tool-side |
+| `channel`, `tags` | passthrough; `tags` is ≤ 10, comma-separated | — | tool-side |
+| `has` | `any\|transcript\|ocr\|frames\|all` | `any` | unknown → `any`, with a `note:` |
+| `index_state` | the five states, or `all` | `all` | unknown → `all`, with a `note:` |
+| `order` | `recency\|title\|duration\|indexed_at\|relevance` | `relevance` with `q`, else `recency` | unknown → the default, with a `note:` |
+| `limit` | 1..100 | 50 | clamped, with a `note:` naming both numbers |
+| `offset` | 0..10 000 | 0 | clamped, with a `note:` |
+| `published_after/before`, `indexed_after/before` | anything `parse_corpus_time` takes | — | floor 1 s, ceiling now + 365 d, snapped to the UTC day, with a `note:` |
+
+A date's `note:` is written on the same rule as `limit`'s and fires for one
+more reason than a clamp: every bound is filtered as a whole UTC day, so an
+instant is snapped to the day around it, and a bound that moved either way
+names both the value asked for and the day that ran (`published_after=30d →
+2026-08-06`). A value that already named its day says nothing.
+
+The detail takes the strip's two, and no cue parameters at all:
+
+| Param | Values | Default | Clamp |
+| --- | --- | --- | --- |
+| `frames` | 1..96 | 24 | clamped, with a `note:` |
+| `frame_offset` | 0..100 000 | 0 | clamped, with a `note:` |
+
+`order=relevance` without a `q` is `E_ORDER_SCOPE` and a date that will not
+parse is `E_BAD_TIME_FORMAT`, both at the status `errors.HTTP_STATUS` maps —
+the tool's own refusals, passed through rather than swallowed, because a
+silently ignored filter is a payload reporting the wrong result set with total
+confidence.
+
+**The table.**
+
+```jsonc
+{
+  "counted_at": 1757030400,
+  "redacted": false,
+  "order": "recency",                  // explicit, never inferred from `q`
+  "filters": {"q": null, "channel": null, "tags": [],
+              "has": "any", "index_state": "all",
+              // the epochs the query filtered on; `_before` is exclusive (the
+              // start of the day after the one asked for), which is what makes
+              // `published_before=2026-08-09` include the ninth
+              "published_after": null, "published_before": null,
+              "indexed_after": null, "indexed_before": null},
+  "videos": [
+    {"video_id": "kCc8FmEb1nY", "title": "Let's build GPT: from scratch",
+     "channel": "Andrej Karpathy",
+     "published_at": 1673913600, "duration_s": 7000.0, "indexed_at": 1750000000,
+     "index_state": "ready",
+     "coverage": {"transcript": true, "ocr": true, "frames": true},
+     "tags": ["topic:attention"],
+     "thumb": "/frames/kCc8FmEb1nY-00000.jpg?w=192&q=70",   // null without one
+     "link": "https://youtu.be/kCc8FmEb1nY"}
+  ],
+  "pagination": {"limit": 50, "offset": 0, "has_more": false},  // + last_offset past the end
+  "total": 4,                          // exact, the page's own count (§5.2)
+  "notes": []                          // policy text: what a clamp moved
+}
+```
+
+**The detail.** `video` is the `videos` row a human wants and none of the paths
+(§5.3: presence, not location).
+
+```jsonc
+{
+  "fetched_at": 1757030400,
+  "redacted": false,
+  "video": {"video_id": "…", "title": "…", "channel": "…",
+            "published_at": 1673913600, "duration_s": 7000.0, "language": "",
+            "index_state": "ready", "indexed_at": 1750000000,
+            "added_at": 1757030000, "url": "https://youtu.be/…",
+            "description": "…",           // 400 chars
+            "tags": ["topic:attention"]},
+  "data_status": "ok",                    // verbatim from video-summary (§4.5);
+                                          // null when it refused instead
+  "summary_error": null,                  // its refusal, when it has one:
+                                          // code, message, next, retry_after_s
+  "chapters": [{"start_s": 0.0, "title": "intro", "link": "https://youtu.be/…?t=0"}],
+  "stages": [{"stage": "stt", "state": "done", "model_key": "large-v3",
+              "stage_version": 1, "started_at": 142, "finished_at": 447,
+              "error": null}],            // all seven, `absent` when never run
+  "counts": {"cues": 6, "cues_with_words": 0, "chunks": 1, "chapters": 1,
+             "keyframes": 3, "keyframes_kept": 2, "ocr_frames": 2,
+             "ocr_lines": 2, "jpeg_bytes": 4236},
+  "cue_origins": {"whisperx": 6},
+  "transcript": {"cues": 6, "words": 54, "chars": 292,
+                 "endpoint": "/dashboard/api/videos/{video_id}/cues",
+                 "default_limit": 50, "max_limit": 200},
+  "shots": {"shots": [{"shot_id": 0, "start_s": 5.0, "end_s": 10.0,
+                       "frames": 1, "kept": 1, "ocr_done": 1, "first_ord": 0,
+                       "preview": "/frames/…-00000.jpg?w=192&q=70"}],
+            "capped": false, "cap": 2000},
+  "frames": {"frames": [{"frame_id": "…-00000", "ord": 0, "t_s": 5.0,
+                         "shot_id": 0, "sharpness": 10.0,
+                         "width": 1280, "height": 720, "jpeg_bytes": 70,
+                         "ocr_state": "done", "dup_of_ord": null,
+                         "thumb": "…w=192", "detail": "…w=512", "large": "…w=1280",
+                         "lines": [{"line_no": 0, "text": "…", "conf": 0.9,
+                                    "box": [0.0, 0.0, 1.0, 1.0]}]}],
+             "limit": 24, "offset": 0, "has_more": true,
+             "ocr_line_cap": 600, "ocr_lines_capped": false},
+  "job_history": {"jobs": [{"job_id": "job_running001", "state": "running",
+                            "kind": "index", "created_at": 1757020000,
+                            "finished_at": null, "error_code": null,
+                            "degraded_stages": []}], "cap": 10},
+  "notes": []
+}
+```
+
+**The half-indexed video is the one this page exists for, and the example
+above is the finished case.** `data_status` is read off `video-summary`'s
+payload rather than re-derived (§4.5), and that tool *refuses* a video that
+never finished the pipeline — so on exactly the video an operator opened this
+page to understand, `data_status` is **`null`** and the word is in
+`summary_error` instead. A client must render an absent status, not assume the
+string. `summary_error` is the refusal verbatim, through `tool_error`:
+`errors.ToolError.structured()` always writes `code`, `message`, `next` **and
+`retry_after_s`** (the last `null` unless the refusal named a delay), and then
+merges the error's own `extra`, so the four names are the promise and anything
+beside them is a bonus a reader ignores. `web/src/lib/dashboard/schemas.ts`
+reads it that way.
+
+**The transcript is a pointer, not a copy.** `/dashboard/api/videos/{id}/cues`
+has paged cues since 2026-08-10, under `CUE_PAGE_MAX` and its own offset
+ceiling; a detail payload that also carried a page of them would be two
+contracts for one list. What this sends is the totals the panel's header prints
+and the endpoint's name and bounds. The keyframe strip is here, because nothing
+else serves it and §5.3 calls it the most convincing thing on the page — never
+inline base64, and the three widths are §6.4's set.
+
+**Percentages are not sent.** The shot band's `left` and `width` are a
+rendering of `start_s`/`end_s` against `video.duration_s`, and all three of
+those are on the payload. The page still computes them, in `views._shot_bars`.
+
+**The projection, per field.** The table is **not** redacted: §2.4 gives it to
+the demo whole, and every column on it is corpus. The detail loses exactly the
+two fields §2.4's phase-4 amendment names, by not sending them:
+
+| Field | Public projection |
+| --- | --- |
+| `stages[].model_key` | `null` — a declared model id is a setting (§2.4) |
+| `stages[].error` | `null` — the pipeline quoting yt-dlp: cookiefile paths, player clients, the operator's politeness settings |
+| `stages[].state`, `stage_version`, both clocks | unchanged — what a reader can act on, and dropping them would leave an empty shell |
+| `job_history[].error_code` | unchanged; the *message* was never on this list, on either surface |
+| everything else — header, counts, origins, shots, frames, OCR lines and boxes, chapters, `data_status`, `summary_error` | unchanged: corpus, not deployment |
+| the whole table payload | unchanged |
+
+**Does not add.** A write, an env var, a CORS policy, a second query layer, a
+tool parameter, or a page. It does not change the facade's routes at this
+prefix, the cues endpoint, or any clamp number: the table's bounds are §5.2's
+owner policy and the detail's are §5.3's, which is what the pages already
+enforced. The React pages themselves are `docs/ROADMAP.md`'s.
+
+
+## 21. The write side, negotiated (2026-09-05)
+
+`DECISIONS.md` (2026-09-05, "Dashboard writes answer by content negotiation"):
+every write route here keeps **one URL** and answers in the medium the caller
+asked for. §19 and §20 gave the read pages a JSON twin; this is the other half,
+and it adds no route, no parameter, no clamp and no env var.
+
+**The rule.** A handler answers JSON when the request's `Accept` **prefers** it
+— `application/json` named, with a `q` above `text/html`'s or with no
+`text/html` present at all. Everything else gets the `303` it has always got.
+The strictness is the whole safety of the change: a browser's `*/*`, and
+`fetch`'s own default, is a request for anything and not a request for a typed
+outcome, and Chrome's `text/html,…,*/*;q=0.8` is a page. A tie goes to the
+page, because the redirect is the older contract. `writes._accepts_json` is the
+only place that decides, and every handler calls it, so the thirteen writes
+cannot drift apart.
+
+**What does not change.** The route, the guard (`_guard` → `require_write`),
+§3.3's Origin rule, the rate bucket, and the deployments that register no write
+side at all. The Origin rule is about the *credential*, not the medium: the
+session cookie is ambient whether a form or a `fetch` sends it, so a JSON write
+carrying it needs the same positive same-origin evidence and is refused with
+the same `E_BAD_ORIGIN` at the same 403. A bearer is still not ambient, so
+`curl` still needs no ceremony. In `VIDTHEQUE_PUBLIC_READONLY=1` and in
+`VIDTHEQUE_AUTH=none` every path below is **404 on both branches** — §2.3's
+rule, and negotiation must not be a way to reach a route that is not
+registered. Bodies stay form-encoded on both branches; nothing here parses a
+JSON body.
+
+**Two refusals, one policy.** A refusal leaves through `_error_page` as it
+already did, and that function now picks the medium: the error page, or the
+envelope `/dashboard/api/*` already answers with —
+`{"error", "message", "next"}` at `errors.HTTP_STATUS`'s status for the code,
+with `retry_after_s` and a `Retry-After` header **when the refusal named a
+delay** and neither otherwise. The code, the message and the `next:` line are
+policy text and stay Python's, in both media (`DECISIONS.md`, decision 5).
+`401` is the one asymmetry, and it predates this: a *navigating* browser is
+sent to `{ROOT}/login?next=…`, a JSON caller is told `E_AUTH_REQUIRED` and
+decides for itself, which is the arrangement `DECISIONS.md` names — the refusal
+is the signal that sends the browser to the login page.
+
+**The outcomes, per route.** Typed values only: ints, epoch seconds, booleans
+and lists. No rendered clock, no spoken duration, no sentence a page composed.
+
+| Route | Success payload |
+| --- | --- |
+| `POST /jobs/{job_id}/cancel` | `{"job_id", "state", "cancel_requested": true}` |
+| `POST /jobs/{job_id}/retry` | `{"from_job_id", "selected", "jobs": [{"job_id", "items"}], "errors": [envelope], "preserved": {"channels", "tags": [], "priority"}}` |
+| `POST /index` | `{"jobs": [{"job_id", "items", "urls": []}], "already_indexed": [], "errors": [envelope + "urls"], "batches", "urls"}` |
+| `POST /videos/{video_id}/reindex` | `{"video_id", "job_id"}` |
+| `POST /videos/{video_id}/tags` | `{"video_id", "tags": []}` |
+| `POST /logout` | `{"signed_out": true}`, with the cookie cleared |
+| `POST /following` | `{"follow": {…}, "already_following"}` |
+| `POST /following/{slug}/state` | `{"follow": {…}}` |
+| `POST /following/{slug}/check` | `{"follow": {…}}` |
+| `POST /following/{slug}/rules` | `{"follow": {…}}` |
+| `POST /following/{slug}/delete` | `{"slug", "deleted": true, "videos_kept"}` |
+| `POST /following/{slug}/queue` | `{"slug", "url", "job_id"}` |
+
+`POST /login` is not on this list: it has no JSON twin yet
+(`docs/ROADMAP.md`), and its refusal is a re-rendered form rather than an
+envelope.
+
+Five of those are worth a sentence each, because the payload is not the
+obvious one:
+
+- **`cancel` sends the state the job is actually in.** Queued work settles now
+  (`cancelled`) and running work does not (`running`, with the request
+  recorded, §16.1). Which of the two just happened is the reason this route
+  answers inline at all — a 2 s poll cannot tell the operator that.
+- **`retry` and `index` do not take the one-job redirect shortcut.** The pages
+  go straight to the new job when there is exactly one; a client that always
+  reads `jobs` is a client with no special case. Their status is the pages'
+  own: `200` when anything was accepted, `409` when nothing was.
+- **`tags` answers the row's tags *after* the write**, read back. `tag_video`
+  reports what it added and removed across a batch, which is not the question
+  the panel that made the call is showing.
+- **The follow block is the row, typed** — identity, state and every rule
+  column, with epochs where `tools/follows._follow_fields` sends `iso_minute`
+  strings, and built from `Rules.from_row` so the payload and the check cannot
+  disagree about what a CSV column meant. It is re-read after the write:
+  `set_state` re-arms the clock when it resumes, so a payload built from the
+  row the handler read first would name the new state and the old
+  `next_check_at` in one breath.
+- **Nothing asked for is nothing done, on both branches.** `tags` with neither
+  field and `queue` with no `url` answer `200` with the unchanged row rather
+  than a refusal — the form's policy, not a second one written for the JSON
+  caller.
+
+**The end of it.** The redirect branch is deleted with the last Jinja page, and
+`_wants_html`, `_to_login` and `_see` go with it. Until then both are live and
+`mcp/tests/test_dashboard_writes_json.py` asserts both.
+
+**Does not add.** A route, a parameter, a clamp number, an env var, a CORS
+policy, a JSON request body, or a second guard. The React pages that will call
+these are `docs/ROADMAP.md`'s.

@@ -6,6 +6,83 @@ and `research/pipeline-tooling-research.md`. Where a design doc disagrees with
 this file, this file wins; fold changes back into the docs as implementation
 touches them.
 
+## Frontend replacement, decided by Tom, 2026-09-05
+
+All three web surfaces move to Next.js and React: the landing at `/`, the
+demo at `/demo`, and the management dashboard at `/dashboard`. Cutover waits
+until all three replacements are ready, including the dashboard's existing
+read and write workflows. Tested migration PRs may land before cutover.
+
+Browser API requests go directly to Python. Tom chose this over relaying
+browser requests through Next to keep the implementation simple. Python
+retains authorization, sessions, and resource limits. Next renders pages and
+may read Python over HTTP for server rendering. Cross-origin browser access
+requires an explicit CORS policy; same-origin deployment avoids that need.
+
+Dashboard HTTP responses use typed values and explicit state fields. React
+owns display formatting, such as seconds to `4m 12s`, dates, counts, and
+badges. Python retains policy text, including refusal messages and truncation
+notes. Tom chose this split over carrying the current preformatted strings
+into the new frontend.
+
+This supersedes the Jinja2 and no-build-step frontend choice in
+`dashboard.md` and `PRODUCT.md`. Existing authorization, public read-only
+behavior, payload bounds, and the HTTP-only `mcp/` to `worker/` boundary
+still apply. Migration work and remaining design choices live in
+`docs/ROADMAP.md`.
+
+## Dashboard pages fetch client-side, decided by Tom, 2026-09-05
+
+Next serves a data-free shell for every `/dashboard*` page. The browser then
+calls `/dashboard/api/*` same-origin, carrying its own `vidtheque_session`
+cookie, and React renders from that response. Every write is a browser call to
+Python's existing `POST` routes under `/dashboard/*`, under the cookie and
+Origin rules of `dashboard.md` §3.3. Next never sees the cookie, forwards
+nothing on a visitor's behalf, and caches nothing per user.
+
+Two consequences that fall out rather than needing rules of their own. The
+public read-only projection works unchanged, because the API already answers
+anonymous reads there. And a `401` from the API is what sends the browser to
+the login page — the refusal is the signal, so there is no second place where
+authorization is decided.
+
+Tom rejected server rendering with cookie forwarding: it makes Next a
+credential relay that has to forward the session cookie and the visitor's
+address on every read and must never cache a response across users, which is
+three ways to leak one reader's dashboard to another. A hybrid — some pages
+rendered on the server, some fetched — was rejected for the same reason, since
+one forwarded cookie is the whole cost.
+
+Route ownership under `/dashboard` follows in
+`docs/design/frontend-migration.md`; this record is the choice, not its
+expression in configuration.
+
+## Dashboard writes answer by content negotiation, decided by Tom, 2026-09-05
+
+Every write route under `/dashboard` keeps one URL and answers in the medium
+the caller asked for. With `Accept: application/json` the handler answers JSON:
+on success a typed outcome — the job id and its new state for cancel and
+retry, the accepted queue entries for the index form, the resulting tag list
+for tags, the follow row's new state for each follow action — and on refusal
+the existing `{error, message, next}` envelope at the status the code maps to,
+plus `retry_after_s` and a `Retry-After` header when the refusal names a delay.
+Otherwise the handler answers the `303` redirect the Jinja pages expect,
+unchanged. The redirect branch is deleted with the last Jinja page.
+
+Same handler, same guard, same Origin evidence rule, same rate-limit bucket.
+The fetch caller sends the session cookie same-origin, so `dashboard.md` §3.3
+holds unchanged: `Sec-Fetch-Site: same-origin` or a matching `Origin` header is
+required of it exactly as of the form. Form-encoded bodies stay the input for
+both branches.
+
+Tom rejected separate `/dashboard/api/*` POST routes: two routes per write to
+guard, to bucket and to keep in step, for one contract. He also rejected plain
+form navigation from React, which shows no inline outcome — the jobs view's 2 s
+poll cannot say what a cancel decided.
+
+The contract is `docs/design/dashboard.md` §21; what the React client sends and
+receives is `docs/design/frontend-migration.md` §9.
+
 ## Decided by Tom (2026-08-08)
 
 1. **MCP stack: official `mcp` SDK 2.0** (2026-07-28 spec). No fastmcp

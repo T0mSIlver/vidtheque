@@ -35,7 +35,7 @@ from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Re
 from starlette.routing import Route
 
 from ..public.api import api_routes
-from . import views, writes
+from . import api, views, writes
 from .access import (
     WRITE_ROUTES,
     credential,
@@ -268,6 +268,36 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
             Route(route.path, guarded(route.endpoint, json=True), methods=["GET"])
             for route in api_routes(ROOT, ask=False)
         ],
+        # The first JSON slice for the React dashboard
+        # (`docs/design/frontend-migration.md`, 2026-09-05). Same argument as
+        # the poll targets below: `/api/*` answers questions about the *corpus*
+        # in the corpus's own shape, and these two answer "what does this box
+        # hold" and "what is it behind on" — the overview's and the ledger's own
+        # reads (`read_models`), typed. Same gate, and no clamp to state: they
+        # take no parameter, so the pages' caps are the only bounds there are.
+        Route(f"{ROOT}/api/overview", guarded(api.overview, json=True), methods=["GET"]),
+        Route(f"{ROOT}/api/ledger", guarded(api.ledger, json=True), methods=["GET"]),
+        # The videos table and the video detail page, same argument and same
+        # gate (§20). **Not** `/api/videos`: that path at this prefix is the
+        # facade's listing, two routes up, and its records are the corpus's own
+        # shape with `published` and `duration` already rendered for a reader of
+        # the tool's text block. These answer what the *pages* show — index
+        # state, coverage, the exact filtered count, the stage table, the
+        # keyframe strip — so they are a second question, not a second copy, and
+        # they get a name of their own rather than shadowing an answer somebody
+        # already depends on.
+        Route(f"{ROOT}/api/library", guarded(api.videos, json=True), methods=["GET"]),
+        Route(
+            f"{ROOT}/api/library/{{video_id}}",
+            guarded(api.video, json=True),
+            methods=["GET"],
+        ),
+        # **Outside the gate, deliberately.** It carries no corpus and no
+        # secret, and a signed-out browser has to be able to ask whether this
+        # deployment has a sign-in page at all — `guarded` would make the answer
+        # to "am I signed in?" require being signed in. The 401 page has told an
+        # anonymous caller the auth mode and this hint since phase 1.
+        Route(f"{ROOT}/api/session", api.session, methods=["GET"]),
         # The jobs view's own poll target. Not one of `api_routes`' handlers
         # because `/api/*` answers questions about the *corpus* and this one
         # answers a question about the machine — but the same prefix, the same
