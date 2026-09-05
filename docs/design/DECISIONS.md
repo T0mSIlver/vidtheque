@@ -13,6 +13,12 @@ demo at `/demo`, and the management dashboard at `/dashboard`. Cutover waits
 until all three replacements are ready, including the dashboard's existing
 read and write workflows. Tested migration PRs may land before cutover.
 
+Browser API requests go directly to Python. Tom chose this over relaying
+browser requests through Next to keep the implementation simple. Python
+retains authorization, sessions, and resource limits. Next renders pages and
+may read Python over HTTP for server rendering. Cross-origin browser access
+requires an explicit CORS policy; same-origin deployment avoids that need.
+
 This supersedes the Jinja2 and no-build-step frontend choice in
 `dashboard.md` and `PRODUCT.md`. Existing authorization, public read-only
 behavior, payload bounds, and the HTTP-only `mcp/` to `worker/` boundary
