@@ -154,6 +154,16 @@
   margin-left: var(--s1);
 }
 
+/* The receipt replaces a 90px button with a 16-character job id, and the lane
+   was sized for the button. Block rather than inline, so the id takes the
+   cell's width and the Tag link drops under it: the row grows by a line instead
+   of the table growing out from under the seven columns the reader came for. */
+.colActions .outcome {
+  display: flex;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 /* One step down from the 34px chassis height: a control at full height inside
    a 34px row touches the rules above and below it. */
 .rowbutton {
@@ -235,6 +245,16 @@
   align-items: flex-end;
   gap: var(--s3) var(--s4);
   margin-top: var(--s3);
+}
+
+/* Where the split becomes one column, the second action needs the gap the grid
+   was giving it sideways — the same width `dashboard.module.css` stacks a
+   `.panel` at, and the same step it gives one. Above it they are two columns
+   and a margin here would push one of them down a band for nothing. */
+@media (max-width: 70rem) {
+  .manageAction + .manageAction {
+    margin-top: var(--s8);
+  }
 }
 
 /* At a phone's width the grid stops being a grid: each row becomes its own

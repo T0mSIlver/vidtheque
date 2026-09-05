@@ -317,7 +317,7 @@ function Form({ indexable }: { indexable: boolean }) {
         <fieldset className={styles.checks}>
           <legend className={styles.legend}>Channels to build</legend>
           {CHANNEL_BOXES.map(([name, label, note]) => (
-            <label className={dash.check} key={name}>
+            <label className={styles.check} key={name}>
               <input
                 type="checkbox"
                 name={`channel_${name}`}
@@ -325,7 +325,7 @@ function Form({ indexable }: { indexable: boolean }) {
                 defaultChecked
                 disabled={!indexable}
               />
-              <span className={dash.checkWord}>{label}</span>
+              <span className={styles.checkWord}>{label}</span>
               <span className={styles.checkNote}>{note}</span>
             </label>
           ))}
@@ -336,9 +336,9 @@ function Form({ indexable }: { indexable: boolean }) {
             well as to a reader. */}
         <fieldset className={styles.checks}>
           <legend className={styles.legend}>If it is already indexed</legend>
-          <label className={dash.check}>
+          <label className={styles.check}>
             <input type="checkbox" name="force_reindex" value="1" disabled={!indexable} />
-            <span className={dash.checkWord}>Force re-index</span>
+            <span className={styles.checkWord}>Force re-index</span>
             <span className={styles.checkNote}>
               rebuild every stage. Without this, an incomplete video resumes at its outstanding
               stages and a finished one is left alone.
