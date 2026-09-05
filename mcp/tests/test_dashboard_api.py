@@ -73,14 +73,15 @@ LIBRARY = f"{ROOT}/api/library"
 FACADE = f"{ROOT}/api/videos"
 FACADE_SEARCH = f"{ROOT}/api/search"
 
-# The hit fields `dashboard/templates/search.html` renders, listed here rather
-# than scraped, because the point is to notice when one of them stops arriving.
-# Six the template names directly — `hit.thumb`, `hit.thumb_large`,
-# `hit.frame_id`, `hit.match_start`, `hit.title`, `hit.channel` — and four it
-# reaches through `views.search`'s four derivations: `link` becomes `receipt`,
-# `video_id` (with `frame_id`) becomes `inside`, `source` becomes `evidence`,
-# `text` becomes `parts`. The React search page reads the same payload, so a
-# trim of the facade that would empty that page fails here first.
+# The hit fields the search page reads, listed here rather than scraped,
+# because the point is to notice when one of them stops arriving. Six it names
+# directly — `thumb`, `thumb_large`, `frame_id`, `match_start`, `title`,
+# `channel` — and four it derives: `link` becomes the receipt, `video_id`
+# (with `frame_id`) becomes the link into the index, `source` becomes the
+# evidence badges, `text` becomes the marked snippet. The list was the Jinja
+# page's until 2026-09-06 and is `web/src/app/dashboard/search/`'s now; the
+# payload is the same one, so a trim of the facade that would empty that page
+# fails here first.
 SEARCH_HIT_KEYS = {
     "channel",
     "frame_id",
