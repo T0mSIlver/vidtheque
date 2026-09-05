@@ -1,10 +1,10 @@
 /* The two jobs pages: the triage table and one job's war story.
 
-   Read out of `dashboard/static/dashboard.css`, which is still serving the
-   pages this port has not reached. The band, the count line, the pager and the
-   grid are `dashboard.module.css`'s; what is here is the vocabulary only these
-   two pages have — the progress meter, the countdown, the event log, and the
-   row action that writes.
+   The values came out of `dashboard/static/dashboard.css`, retired on
+   2026-09-06; DESIGN.md is the source now. The band, the count line, the pager
+   and the grid are `dashboard.module.css`'s; what is here is the vocabulary
+   only these two pages have — the progress meter, the countdown, the event
+   log, and the row action that writes.
 
    Both pages import this one file rather than a module each: they are the same
    object at two zoom levels, and every piece below is drawn on both. */

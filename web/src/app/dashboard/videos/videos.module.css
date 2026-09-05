@@ -1,9 +1,8 @@
 /* The videos table: a control band over a grid, and a pager under it.
 
-   Read out of `dashboard/static/dashboard.css`, which is still serving the
-   pages this port has not reached — the two halves of the surface have to stay
-   one surface while it happens. Everything shared with the other ported pages
-   is in `dashboard.module.css` — the panel, the figure, the pill, the grid, and
+   The values came out of `dashboard/static/dashboard.css`, retired on
+   2026-09-06; DESIGN.md is the source now. Everything shared with the other
+   pages is in `dashboard.module.css` — the panel, the figure, the pill, the grid, and
    since the jobs table the control band, the count line and the pager as well;
    what is here is what only this page draws. */
 

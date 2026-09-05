@@ -1,8 +1,10 @@
 /* The management pages' own vocabulary: a page head, the ledger band, panels
    that are a label and a hairline, figures, sentences with a number in them,
-   and the pill. Read out of `dashboard/static/dashboard.css`, which is still
-   serving the pages this port has not reached — the two halves of the surface
-   have to stay one surface while it happens.
+   and the pill. The values were read out of `dashboard/static/dashboard.css`
+   while it was still serving the unported pages, so the two halves of the
+   surface stayed one surface; that stylesheet was deleted on 2026-09-06 and
+   DESIGN.md is the source now — `styles/tokens.css` is generated from its
+   frontmatter, and what is here is this surface's component vocabulary.
 
    Nothing here is a card. A panel is a plate and an edge, a figure is a label
    and a number, and the only shadow on this surface is the one that does not

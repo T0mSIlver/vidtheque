@@ -1,10 +1,10 @@
 /* The video detail: a timeline, a provenance table, a grid of keyframes with
    the machine's reading drawn over them, and a transcript that scrolls.
 
-   Read out of `dashboard/static/dashboard.css`, which is still serving the
-   pages this port has not reached. The shared vocabulary — panel, figure,
-   grid, pill, notice — is `dashboard.module.css`; this is what only this page
-   draws. */
+   The values came out of `dashboard/static/dashboard.css`, retired on
+   2026-09-06; DESIGN.md is the source now. The shared vocabulary — panel,
+   figure, grid, pill, notice — is `dashboard.module.css`; this is what only
+   this page draws. */
 
 .crumbs {
   composes: t-machine-sm from global;

@@ -1,5 +1,6 @@
-/* The sign-in page — `templates/login.html`, read out of
-   `dashboard/static/dashboard.css`.
+/* The sign-in page. Its values came out of `templates/login.html` and
+   `dashboard/static/dashboard.css`, both retired on 2026-09-06; DESIGN.md is
+   the source now.
 
    The panel, the field, the button and the refusal pill are
    `dashboard.module.css`'s. What is here is the one thing only this page has:
