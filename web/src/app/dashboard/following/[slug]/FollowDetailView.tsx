@@ -58,7 +58,6 @@ const PAGE_KEYS = ["limit", "offset"];
 export function FollowDetailView({ slug }: { slug: string }) {
   const params = useSearchParams();
   const search = params.toString();
-  const query = apiQuery(search);
   const read = useCallback(
     (signal: AbortSignal) => dashboard.follow(slug, apiQuery(search), signal),
     [slug, search],
@@ -112,19 +111,17 @@ export function FollowDetailView({ slug }: { slug: string }) {
     );
   }
 
-  return <Loaded initial={state.data} slug={slug} search={search} query={query} />;
+  return <Loaded initial={state.data} slug={slug} search={search} />;
 }
 
 function Loaded({
   initial,
   slug,
   search,
-  query,
 }: {
   initial: FollowDetail;
   slug: string;
   search: string;
-  query: URLSearchParams;
 }) {
   // A write answers with the row, and the page re-reads on top of it. Both,
   // deliberately: the row is the receipt the reader is owed *now*, and the
@@ -139,7 +136,7 @@ function Loaded({
     (row: FollowRow) => {
       setWritten(row);
       dashboard
-        .follow(slug, query)
+        .follow(slug, apiQuery(search))
         .then((next) => {
           setFresh(next);
           setWritten(null);
@@ -148,7 +145,7 @@ function Loaded({
         // which is the truest thing this page holds either way.
         .catch(() => undefined);
     },
-    [slug, query],
+    [slug, search],
   );
 
   useEffect(() => {
