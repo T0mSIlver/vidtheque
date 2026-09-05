@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { dashboard, ROOT } from "@/lib/dashboard/client";
 import type { Session } from "@/lib/dashboard/schemas";
 import styles from "./chrome.module.css";
+import { DashLink } from "./parts";
 import { SessionScope } from "./session";
 import { useRead } from "./useRead";
 
@@ -19,19 +20,18 @@ import { useRead } from "./useRead";
 // seeing the session cookie. Everything that does not depend on it — the
 // wordmark, the five sections — renders immediately and does not wait.
 
-type Item = { href: string; label: string; ported: boolean };
+type Item = { href: string; label: string };
 
-// `ported` is the whole transition, in one boolean. A page this app serves is
-// reached with `Link`, which swaps the React tree; a page Python still renders
-// is a plain anchor, because a client-side navigation to it would ask this
-// app's router for a route that does not exist. Porting a page flips its flag
-// here, adds it to `proxy.ts`'s matcher, and nothing else in the rail changes.
+// Which of these five this app serves and which are still Jinja is `ported.ts`'s
+// answer, not a flag repeated here: `DashLink` asks it, and so does every other
+// link into this surface. Porting a page adds its path to that list, names it in
+// `proxy.ts`'s matcher, and nothing in the rail changes at all.
 const SECTIONS: Item[] = [
-  { href: ROOT, label: "Overview", ported: true },
-  { href: `${ROOT}/ledger`, label: "Ledger", ported: true },
-  { href: `${ROOT}/search`, label: "Search", ported: false },
-  { href: `${ROOT}/videos`, label: "Videos", ported: false },
-  { href: `${ROOT}/jobs`, label: "Jobs", ported: false },
+  { href: ROOT, label: "Overview" },
+  { href: `${ROOT}/ledger`, label: "Ledger" },
+  { href: `${ROOT}/search`, label: "Search" },
+  { href: `${ROOT}/videos`, label: "Videos" },
+  { href: `${ROOT}/jobs`, label: "Jobs" },
 ];
 
 // The write side, as its own group. It appears exactly when the routes behind
@@ -39,8 +39,8 @@ const SECTIONS: Item[] = [
 // group at all, rather than a link to a page that 404s (dashboard.md §2.3,
 // §3.2 rule 3). A dead link is not room.
 const MANAGE: Item[] = [
-  { href: `${ROOT}/index`, label: "Add videos", ported: false },
-  { href: `${ROOT}/following`, label: "Following", ported: false },
+  { href: `${ROOT}/index`, label: "Add videos" },
+  { href: `${ROOT}/following`, label: "Following" },
 ];
 
 const readSession = (signal: AbortSignal) => dashboard.session(signal);
@@ -143,18 +143,16 @@ function NavList({ items, path }: { items: Item[]; path: string | null }) {
   return (
     <ul className={styles.navlist}>
       {items.map((item) => {
-        const current = path === item.href ? "page" : undefined;
+        // A section owns what is under it — a reader on a video's detail page
+        // is still in Videos — except the root, which is under everything and
+        // owns only itself.
+        const inSection = item.href !== ROOT && path?.startsWith(`${item.href}/`);
+        const current = path === item.href || inSection ? "page" : undefined;
         return (
           <li key={item.href}>
-            {item.ported ? (
-              <Link className={styles.navlink} href={item.href} aria-current={current}>
-                {item.label}
-              </Link>
-            ) : (
-              <a className={styles.navlink} href={item.href} aria-current={current}>
-                {item.label}
-              </a>
-            )}
+            <DashLink className={styles.navlink} href={item.href} aria-current={current}>
+              {item.label}
+            </DashLink>
           </li>
         );
       })}

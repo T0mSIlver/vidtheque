@@ -5,6 +5,7 @@ import type { Overview } from "@/lib/dashboard/schemas";
 import { at, bytes, count, day, duration, hours, iso } from "@/lib/format";
 import styles from "./dashboard.module.css";
 import {
+  DashLink,
   Fact,
   Figure,
   GapLine,
@@ -123,9 +124,9 @@ function Loaded({ data }: { data: Overview }) {
                 {corpus.videos - corpus.queryable_videos > 0 ? (
                   <>
                     {" · "}
-                    <a href={`${ROOT}/videos?index_state=all&order=indexed_at`}>
+                    <DashLink href={`${ROOT}/videos?index_state=all&order=indexed_at`}>
                       {count(corpus.videos - corpus.queryable_videos)} not ready
-                    </a>
+                    </DashLink>
                   </>
                 ) : null}
               </>,
@@ -235,7 +236,7 @@ function Loaded({ data }: { data: Overview }) {
             <ul className={styles.rowlist}>
               {data.recent.map((video) => (
                 <li className={styles.row} key={video.video_id}>
-                  <a
+                  <DashLink
                     className={styles.shot}
                     href={`${ROOT}/videos/${video.video_id}`}
                     tabIndex={-1}
@@ -259,11 +260,11 @@ function Loaded({ data }: { data: Overview }) {
                     ) : (
                       <span className={`${styles.thumb} ${styles.thumbEmpty}`}>no frame</span>
                     )}
-                  </a>
+                  </DashLink>
                   <div className={styles.rowBody}>
-                    <a className={styles.rowTitle} href={`${ROOT}/videos/${video.video_id}`}>
+                    <DashLink className={styles.rowTitle} href={`${ROOT}/videos/${video.video_id}`}>
                       {video.title}
-                    </a>
+                    </DashLink>
                     {/* The break opportunity sits after the separator: a
                         conference channel name is long enough to wrap, and when
                         it does the runtime should start the next line. */}
@@ -361,11 +362,11 @@ function Loaded({ data }: { data: Overview }) {
             <ul className={`${styles.rowlist} ${styles.tight}`}>
               {data.channels.map((entry) => (
                 <li className={styles.minirow} key={entry.channel}>
-                  <a
+                  <DashLink
                     href={`${ROOT}/videos?channel=${encodeURIComponent(entry.channel)}&index_state=all`}
                   >
                     {entry.channel}
-                  </a>
+                  </DashLink>
                   <span className={styles.minirowFigure}>
                     {count(entry.videos)}
                     <Unit> vid</Unit>
@@ -387,12 +388,12 @@ function Loaded({ data }: { data: Overview }) {
             <ul className={styles.chiplist}>
               {data.tags.map((entry) => (
                 <li key={entry.tag}>
-                  <a
+                  <DashLink
                     className={styles.chip}
                     href={`${ROOT}/videos?tags=${encodeURIComponent(entry.tag)}&index_state=all`}
                   >
                     {entry.tag} <span className={styles.chipN}>{entry.videos}</span>
-                  </a>
+                  </DashLink>
                 </li>
               ))}
             </ul>
