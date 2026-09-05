@@ -182,10 +182,11 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
      * this client should follow.
      */
     cues(endpoint: string, query: URLSearchParams, signal?: AbortSignal) {
-      if (!endpoint.startsWith(`${ROOT}/api/`)) {
+      const path = insideTheApi(endpoint);
+      if (path === null) {
         return Promise.reject(new DashboardShapeError(endpoint, "not a /dashboard/api path"));
       }
-      return get(`${endpoint}${suffix(query)}`, CuePage, { signal });
+      return get(`${path}${suffix(query)}`, CuePage, { signal });
     },
     /** Outside the read gate: a signed-out browser may ask what this deployment is. */
     session(signal?: AbortSignal) {
@@ -211,6 +212,30 @@ async function toError(res: Response): Promise<DashboardError> {
 
 /** The instance the pages use. Same origin, real cookie, real navigation. */
 export const dashboard = createDashboardClient();
+
+/** A path the payload named, resolved, or `null` when it lands outside the
+ *  read slice this client is allowed to fetch.
+ *
+ *  Resolved first, because the string and the request are not the same thing:
+ *  `/dashboard/api/../../frames/x` starts with the prefix and *arrives*
+ *  somewhere else, and it is the arrival the browser makes with the session
+ *  cookie attached. So the check is on what came out — the origin this page is
+ *  already on, and the normalised path under the prefix — rather than on the
+ *  characters that went in. The query is this client's to build, so an
+ *  endpoint carrying one of its own is a contract change like any other.
+ */
+function insideTheApi(endpoint: string): string | null {
+  const origin =
+    typeof window === "undefined" ? "http://dashboard.invalid" : window.location.origin;
+  let url: URL;
+  try {
+    url = new URL(endpoint, origin);
+  } catch {
+    return null;
+  }
+  if (url.origin !== origin || url.search || url.hash) return null;
+  return url.pathname.startsWith(`${ROOT}/api/`) ? url.pathname : null;
+}
 
 /** A query string, or nothing at all — never a bare `?` on a request with no
  *  parameters, which would make two spellings of one URL. */

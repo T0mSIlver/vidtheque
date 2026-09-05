@@ -232,6 +232,46 @@ describe("the dashboard client", () => {
     expect(error.message).toBe("HTTP 502");
   });
 
+  // The cues endpoint is named by the detail payload, so this client fetches a
+  // path Python chose. It fences that path to the read slice — and the fence
+  // is on the *resolved* URL, because a `..` segment starts inside the prefix
+  // and arrives somewhere else, with the session cookie attached.
+  describe("the endpoint the detail payload names", () => {
+    const CUES = "/dashboard/api/videos/kCc8FmEb1nY/cues";
+    const PAGE = { cues: [], offset: 0, limit: 50, has_more: false };
+
+    it("fetches one under the read slice", async () => {
+      const { calls, fetchImpl } = fake({ [`${CUES}?limit=50`]: { body: PAGE } });
+
+      const page = await createDashboardClient({ fetch: fetchImpl }).cues(
+        CUES,
+        new URLSearchParams({ limit: "50" }),
+      );
+      expect(page.has_more).toBe(false);
+      expect(calls.map((call) => call.path)).toEqual([`${CUES}?limit=50`]);
+    });
+
+    it("refuses one that climbs out of it, and asks for nothing", async () => {
+      const { calls, fetchImpl } = fake({});
+
+      const error = await createDashboardClient({ fetch: fetchImpl })
+        .cues("/dashboard/api/../../frames/kCc8FmEb1nY-00000.jpg", new URLSearchParams())
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(DashboardShapeError);
+      expect(calls).toHaveLength(0);
+    });
+
+    it("refuses one on another origin", async () => {
+      const { calls, fetchImpl } = fake({});
+
+      const error = await createDashboardClient({ fetch: fetchImpl })
+        .cues("https://example.invalid/dashboard/api/videos/x/cues", new URLSearchParams())
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(DashboardShapeError);
+      expect(calls).toHaveLength(0);
+    });
+  });
+
   // A payload that does not match the contract is a change on the other side,
   // and it must fail here rather than three components deep as `undefined`.
   it("refuses a malformed body loudly", async () => {
