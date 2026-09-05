@@ -1001,6 +1001,12 @@ export type SeenRow = z.infer<typeof SeenRow>;
 export const FollowDetail = z.object({
   fetched_at: epoch(),
   follow: FollowDetailRow,
+  // The same deployment fact the list sends, off the same `follow_settings`
+  // and read through the same function, so the two endpoints cannot answer it
+  // differently. The argument is stronger here than on the list (§22): this
+  // page is *about* one follow's clock, and with checks off both `next_check_at`
+  // and the in-flight line are a schedule nothing will run.
+  checks_enabled: z.boolean(),
   brought_in: count(),
   // `{decision: n}` over every candidate this follow has ever judged, from one
   // grouped query, and only the decisions that are present.

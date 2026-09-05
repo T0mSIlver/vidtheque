@@ -136,6 +136,7 @@ export const CLAMPED_FOLLOWING = {
 export const FOLLOW_DETAIL = {
   fetched_at: NOW,
   follow: { ...KARPATHY, last_error_message: "the source rate-limited this box" },
+  checks_enabled: true,
   brought_in: 1,
   counts: {
     already_indexed: 1,
@@ -252,6 +253,14 @@ export const QUIET_DETAIL = {
 /** A check already on the queue, so `Check now` cannot look like it did
  *  nothing. */
 export const IN_FLIGHT_DETAIL = { ...FOLLOW_DETAIL, in_flight: "job_followchk2" };
+
+/** Follow checks are off on this deployment, and this follow has a check on the
+ *  queue: the two lines the page reads off `checks_enabled` are both a schedule
+ *  nothing will run. */
+export const CHECKS_OFF_DETAIL = {
+  ...IN_FLIGHT_DETAIL,
+  checks_enabled: false,
+};
 
 // ---------------------------------------------------------- write outcomes
 

@@ -7,6 +7,7 @@ import {
   BAD_DURATION,
   CHECKED_OUTCOME,
   DELETED_OUTCOME,
+  CHECKS_OFF_DETAIL,
   FOLLOW_DETAIL,
   IN_FLIGHT_DETAIL,
   PAUSED_OUTCOME,
@@ -130,6 +131,28 @@ describe("one follow's page", () => {
 
     expect(screen.getByText(/A check is already on the queue/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "job_followchk2" })).toBeInTheDocument();
+  });
+
+  // Tom, 2026-09-05, and the argument is stronger here than on the list: this
+  // page is about one follow's clock, so both lines that read as a schedule —
+  // the next check and the job on the queue — say what checks off means.
+  it("replaces the clock and re-captions the queued check when checks are off", async () => {
+    await mount({ detail: { body: CHECKS_OFF_DETAIL } });
+    await screen.findByRole("heading", { name: "Andrej Karpathy" });
+
+    const rule = screen.getByRole("region", { name: "The rule" });
+    expect(within(rule).getByText("checks off")).toBeInTheDocument();
+    // The time it would otherwise have promised is nowhere on the page; the
+    // two clocks that stay are readings of things that happened.
+    expect(screen.queryByText("2026-09-05 20:34")).not.toBeInTheDocument();
+    expect(within(rule).getByText("2026-09-05 14:34")).toBeInTheDocument();
+
+    // The job is real and still linked — it is waiting, not lost.
+    expect(
+      within(rule).getByText(/nothing will claim it while checks are off/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "job_followchk2" })).toBeInTheDocument();
+    noNulls();
   });
 
   describe("what it passed over", () => {

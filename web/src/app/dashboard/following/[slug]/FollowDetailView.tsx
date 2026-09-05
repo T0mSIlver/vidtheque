@@ -200,7 +200,7 @@ function Rule({
         </li>
         <li className={dash.minirow}>
           <span>next check</span>
-          <span className={dash.minirowFigure}>{nextCheckWords(follow)}</span>
+          <span className={dash.minirowFigure}>{nextCheckWords(follow, data.checks_enabled)}</span>
         </li>
         <li className={dash.minirow}>
           <span>last arrival</span>
@@ -229,13 +229,17 @@ function Rule({
         </p>
       ) : null}
 
+      {/* The check already queued, so `Check now` cannot look like it did
+          nothing. With follow checks off the sentence has to finish itself:
+          nothing claims a `follow_check` on this box, so a queued one waits
+          (§22). The job is real and stays linked — it is waiting, not lost. */}
       {data.in_flight ? (
         <p className={styles.panelNote}>
           A check is already on the queue as{" "}
           <DashLink href={`${ROOT}/jobs/${encodeURIComponent(data.in_flight)}`}>
             <code>{data.in_flight}</code>
           </DashLink>
-          .
+          {data.checks_enabled ? "." : ", and nothing will claim it while checks are off."}
         </p>
       ) : null}
 
