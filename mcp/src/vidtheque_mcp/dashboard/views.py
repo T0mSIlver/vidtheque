@@ -62,12 +62,12 @@ from .read_models import HAS_VALUES, VIDEO_ORDERS, video_detail_reads, videos_re
 from .read_models import video_header as _video_header
 
 # The jobs table's and the war-story page's half, moved the same way on
-# 2026-09-05: the bounds, the three filter vocabularies, the poll interval, the
-# card/item/event shapes and the two assemblers. The `text` block travels with
-# them — it is a rendering of numbers the same shape already carries, and it
-# dies with `static/jobs.js` (§5.4).
+# 2026-09-05 (§5.4's amendment): the bounds, the three filter vocabularies, the
+# poll interval, the card/item/event shapes and both assemblers. The page and
+# the poll target now differ in one thing only — which of the assembled fields
+# each one renders — which is what let the row headline reach the payload.
 from .read_models import job_detail_reads as _job_detail
-from .read_models import job_page as _job_page
+from .read_models import jobs_reads
 from .read_models import job_contents as _job_contents
 from .read_models import job_card as _job_card
 from .read_models import job_item as _job_item
@@ -971,51 +971,33 @@ async def cues_json(request: Request) -> Response:
 
 
 async def jobs(request: Request) -> Response:
-    """`GET /dashboard/jobs` — bounded triage with explicit ordering."""
-    db = request.app.state.assembled.db
-    params = request.query_params
-    state = params.get("state") if params.get("state") in _JOB_STATES else "all"
-    kind = params.get("kind") if params.get("kind") in _JOB_KINDS else "all"
-    order = params.get("order") if params.get("order") in _JOB_ORDERS else "newest"
-    error_code = str(params.get("error_code") or "").strip()[:64]
-    degraded_only = params.get("degraded") == "1"
-    limit = clamp(params.get("limit"), 1, JOB_PAGE_MAX, JOB_PAGE)  # type: ignore[arg-type]
-    offset = clamp(params.get("offset"), 0, OWNER_CLAMPS.offset_max, 0)  # type: ignore[arg-type]
-    redact = _redacted(request)
+    """`GET /dashboard/jobs` — bounded triage with explicit ordering.
 
-    cards, has_more, now = await _job_page(
-        db, state, limit, offset, redact, error_code, kind, degraded_only, order
-    )
-    # One extra grouped read for the page, not one per row (§6.3). Deliberately
-    # here and not in `_job_page`: what a job contains does not change between
-    # two ticks of the poller, so the JSON the tick reads does not carry it.
-    contents = await db.read(
-        lambda c: queries.job_contents(c, [card["job_id"] for card in cards])
-    )
-    for card in cards:
-        card["contents"] = _job_contents(card, contents.get(card["job_id"]))
+    Every read, clamp and fallback is `read_models.jobs_reads`', so this and
+    `/dashboard/api/jobs` answer out of one assembly (§5.4, 2026-09-05). The
+    `notes` it also builds are the JSON's half: this page re-prints its resolved
+    values into its own band, which is where a reader sees what actually ran.
+    """
+    data = await jobs_reads(request)
     return _render(
         "jobs.html",
         {
             **_chrome(request, "jobs"),
             "title": "Jobs",
-            "jobs": cards,
+            "jobs": data.cards,
             "states": _JOB_STATES,
-            "filters": {
-                "state": state,
-                "kind": kind,
-                "error_code": error_code,
-                "degraded": degraded_only,
-                "order": order,
-                "limit": limit,
-            },
+            "filters": data.filters,
             "kinds": _JOB_KINDS,
             "orders": _JOB_ORDERS,
-            "pagination": {"limit": limit, "offset": offset, "has_more": has_more},
-            "live": any(card["live"] for card in cards),
-            "now": now,
+            "pagination": {
+                "limit": data.limit,
+                "offset": data.offset,
+                "has_more": data.has_more,
+            },
+            "live": data.live,
+            "now": data.now,
             "poll_ms": POLL_MS,
-            "redacted": redact,
+            "redacted": _redacted(request),
         },
     )
 
@@ -1060,7 +1042,7 @@ async def job_detail(request: Request) -> Response:
 
 
 async def jobs_json(request: Request) -> Response:
-    """`GET /dashboard/api/jobs` — what the 2 s tick reads.
+    """`GET /dashboard/api/jobs` — the table, and what the 2 s tick reads.
 
     The same projection the page rendered, so the script patches values it
     could not have computed differently, and the demo's redaction is the one
@@ -1069,34 +1051,40 @@ async def jobs_json(request: Request) -> Response:
     `live` is the script's stop condition: when nothing is `queued|running`
     there is nothing to poll for, and the tab stops being a load generator
     against the process that also holds the only SQLite writer.
+
+    **The row headline is here as of 2026-09-05, and it costs the tick
+    nothing.** `contents` used to be the page's alone, read after
+    `_job_page` — so a React table that has no Jinja render to start from had
+    no title for any row, only a count. It is folded into the page's grouped
+    row-facts read now, which leaves the tick on the two reads §5.4 budgets it.
+    `filters` and `notes` are the other half of the port: a `state=nonsense`
+    fell back to `all` and said nothing, which is the `all` invariant's exact
+    failure case on a payload with no form to echo into.
     """
-    db = request.app.state.assembled.db
-    params = request.query_params
-    state = params.get("state") if params.get("state") in _JOB_STATES else "all"
-    kind = params.get("kind") if params.get("kind") in _JOB_KINDS else "all"
-    order = params.get("order") if params.get("order") in _JOB_ORDERS else "newest"
-    error_code = str(params.get("error_code") or "").strip()[:64]
-    degraded_only = params.get("degraded") == "1"
-    limit = clamp(params.get("limit"), 1, JOB_PAGE_MAX, JOB_PAGE)  # type: ignore[arg-type]
-    offset = clamp(params.get("offset"), 0, OWNER_CLAMPS.offset_max, 0)  # type: ignore[arg-type]
-    cards, has_more, now = await _job_page(
-        db,
-        state,
-        limit,
-        offset,
-        _redacted(request),
-        error_code,
-        kind,
-        degraded_only,
-        order,
-    )
+    data = await jobs_reads(request)
     return JSONResponse(
         {
-            "now": now,
+            "now": data.now,
             "poll_ms": POLL_MS,
-            "live": any(card["live"] for card in cards),
-            "jobs": cards,
-            "pagination": {"limit": limit, "offset": offset, "has_more": has_more},
+            "live": data.live,
+            "jobs": data.cards,
+            "pagination": {
+                "limit": data.limit,
+                "offset": data.offset,
+                "has_more": data.has_more,
+            },
+            # Copied out field by field rather than forwarded: the page's dict
+            # is a template's context, and a key added for a band must not join
+            # this contract by default (§19). `error_code` is `None` rather than
+            # the form's empty string, like every other absent filter here.
+            "filters": {
+                "state": data.filters["state"],
+                "kind": data.filters["kind"],
+                "error_code": data.filters["error_code"] or None,
+                "degraded": data.filters["degraded"],
+                "order": data.filters["order"],
+            },
+            "notes": data.notes,
         },
         headers={"Cache-Control": "no-store"},
     )
