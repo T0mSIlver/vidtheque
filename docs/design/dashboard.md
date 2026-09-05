@@ -656,6 +656,17 @@ a job that fails.** Delete arrives in the phase that implements the job (§8).
 **Does not show.** Per-row counts (§4.2). Per-row job history — that is one
 click away and one query per row is the fan-out the rule exists to prevent.
 
+*Ported 2026-09-05 — one deliberate divergence from this form.* The React
+band **drops `index_state=all` and `has=any` on submit**. Both are the API's
+own defaults, so a picker resting on one put `&index_state=all&has=any` on
+every URL a reader copies out of the address bar to say nothing at all, and
+made two URLs for the one query that is "no filters"; the Jinja form submitted
+every control it had. Nothing else moved: the filters are still the URL, every
+bound is still Python's, and a clamp still comes back as the `note:` the page
+renders rather than as a number the page composes. The row's **Re-index**
+button is not ported — it is in `docs/ROADMAP.md` with the rest of the write
+side.
+
 ### 5.3 `GET /dashboard/videos/{video_id}` — the detail page
 
 The reason the dashboard exists. Five panels.
@@ -725,6 +736,30 @@ is the single most convincing thing on the page — it is the difference between
 - `chapters_json` / `heatmap_json` raw — chapters render from the `chapters`
   table, which is what everything else reads.
 - `media_path`, `audio_path`, `jpeg_path` — presence, not location.
+
+*Ported 2026-09-05 — what the React page does differently, on purpose.*
+
+- **The transcript's place is not in the URL.** The Jinja page carried `cues`
+  and `cue_offset` on every link it built, so paging the transcript reloaded
+  the page and threw the strip, the frames and the reader's own place away with
+  it. The panel appends in place now, at the server's own offset
+  (`page.offset + page.cues.length`), and neither parameter is on the URL:
+  where a reader is in a transcript is not a fact about the page and has no
+  business in a link somebody sends. `frames`, `frame_offset` and `select`
+  **stay**, exactly as they were — which page of the strip you are on, and
+  which frame a shot bar jumped you to, are facts a link should carry.
+- **The title arrives after the read.** Next serves this page as a data-free
+  shell and never sees the session cookie (frontend-migration.md §1d), so the
+  server cannot know the video's name. The document title is the generic
+  "Video" and the view sets `document.title` when the payload lands, which is
+  the first moment anything on this side knows it.
+- **The lightbox is a link, for now.** A frame card opens the 1280px `large`
+  URL rather than the overlay `static/dashboard.js` draws, and the shot band
+  has its bars and their links but not the scrub preview. Both are enhancement
+  layers over facts already on the page, and both are in `docs/ROADMAP.md`.
+- **The write side is not here.** "Manage this video" — the Re-index form and
+  the tag form — and the header's "Queue more from this channel" link are
+  absent, with the rest of the writes in `docs/ROADMAP.md`.
 
 ### 5.4 `GET /dashboard/jobs` and `/dashboard/jobs/{job_id}` — the war-story page
 
@@ -2447,8 +2482,10 @@ confidence.
             "added_at": 1757030000, "url": "https://youtu.be/…",
             "description": "…",           // 400 chars
             "tags": ["topic:attention"]},
-  "data_status": "ok",                    // verbatim from video-summary (§4.5)
-  "summary_error": null,                  // its refusal, when it has one
+  "data_status": "ok",                    // verbatim from video-summary (§4.5);
+                                          // null when it refused instead
+  "summary_error": null,                  // its refusal, when it has one:
+                                          // code, message, next, retry_after_s
   "chapters": [{"start_s": 0.0, "title": "intro", "link": "https://youtu.be/…?t=0"}],
   "stages": [{"stage": "stt", "state": "done", "model_key": "large-v3",
               "stage_version": 1, "started_at": 142, "finished_at": 447,
@@ -2480,6 +2517,19 @@ confidence.
   "notes": []
 }
 ```
+
+**The half-indexed video is the one this page exists for, and the example
+above is the finished case.** `data_status` is read off `video-summary`'s
+payload rather than re-derived (§4.5), and that tool *refuses* a video that
+never finished the pipeline — so on exactly the video an operator opened this
+page to understand, `data_status` is **`null`** and the word is in
+`summary_error` instead. A client must render an absent status, not assume the
+string. `summary_error` is the refusal verbatim, through `tool_error`:
+`errors.ToolError.structured()` always writes `code`, `message`, `next` **and
+`retry_after_s`** (the last `null` unless the refusal named a delay), and then
+merges the error's own `extra`, so the four names are the promise and anything
+beside them is a bonus a reader ignores. `web/src/lib/dashboard/schemas.ts`
+reads it that way.
 
 **The transcript is a pointer, not a copy.** `/dashboard/api/videos/{id}/cues`
 has paged cues since 2026-08-10, under `CUE_PAGE_MAX` and its own offset
