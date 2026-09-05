@@ -1091,7 +1091,19 @@ async def jobs_json(request: Request) -> Response:
 
 
 async def job_json(request: Request) -> Response:
-    """`GET /dashboard/api/jobs/{job_id}` — one job, for the detail page's tick."""
+    """`GET /dashboard/api/jobs/{job_id}` — one job's war story, typed.
+
+    Six of these fields arrived on 2026-09-05. `degraded`, `focus`, `stages`,
+    `error_counts`, `counts` and `items_capped` were assembled for the template
+    and dropped on the way to the payload, so a React page could render the
+    item table and nothing under it — including the degraded list, which is the
+    silent loss this page was built for. `_job_detail` has always made all six
+    for every caller, so this adds no read, no bound and no branch.
+
+    Field by field rather than `**detail`: `now` and `live` are this payload's,
+    the rest is the page's context, and a value added for a template must not
+    join this contract by default (§19).
+    """
     db = request.app.state.assembled.db
     detail = await _job_detail(db, request.path_params["job_id"], _redacted(request))
     if detail is None:
@@ -1111,6 +1123,25 @@ async def job_json(request: Request) -> Response:
             "live": detail["live"],
             "job": detail["job"],
             "items": detail["items"],
+            # The item list's own bound, said out loud: 200 is what
+            # `index-video` can create, and a list that stopped there without
+            # saying so is a list pretending to be complete.
+            "items_capped": detail["items_capped"],
+            # Items by state, and typed error codes counted. The job's own
+            # five counts are one summary of it; these are the tally under
+            # them, which is what an unattended driver can act on.
+            "counts": detail["counts"],
+            "error_counts": detail["error_counts"],
+            # `done` + `n_failed=0` + a failed stage underneath — the loss that
+            # takes no video down and shows up as a missing search channel.
+            # `error` is `None` in the projection by `_job_detail`'s own rule,
+            # not a second one here.
+            "degraded": detail["degraded"],
+            "focus": detail["focus"],
+            # The seven `video_stages` rows of the item in focus, in pipeline
+            # order. No `model_key` and no stage `error`: never read, which is
+            # the projection §20's stage table states as two nulls.
+            "stages": detail["stages"],
             "events": detail["events"],
         },
         headers={"Cache-Control": "no-store"},

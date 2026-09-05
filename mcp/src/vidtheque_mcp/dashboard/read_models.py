@@ -1631,6 +1631,10 @@ async def job_detail_reads(db: Any, job_id: str, redact: bool) -> dict[str, Any]
     finish — because seven stage rows per item is precisely the fan-out §6.3
     forbids, and every other item's stages are one click away on its own video
     page.
+
+    Every field here reaches both surfaces as of 2026-09-05: the war story is
+    assembled once, and the payload is a copy of these fields rather than a
+    second assembly of them.
     """
     row = await db.read(lambda c: jobs_store.get_job(c, job_id))
     if row is None:
@@ -1696,6 +1700,11 @@ def focus_stages(stages: dict[str, sqlite3.Row]) -> list[dict[str, Any]]:
     cost" — which is why they survive the demo projection whole (§10.4). A
     stage with no row yet is `absent`, the same word the provenance panel uses,
     rather than a blank the reader has to interpret.
+
+    `model_key` and the stage's `error` are not read at all, which is the
+    projection §20's stage table states as two `null`s: a declared model id is
+    a setting, and a stage error is the pipeline quoting yt-dlp about the
+    operator's own box.
     """
     rows = []
     for stage in queries.STAGE_ORDER:
