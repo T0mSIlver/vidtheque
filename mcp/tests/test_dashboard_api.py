@@ -104,7 +104,7 @@ FIRST = "kCc8FmEb1nY"
 PRIVATE_REASON = "the worker is serving 'other' but the corpus used 'qwen'."
 
 # What a formatted clock looks like on the way out: `iso_z`/`iso_minute`'s
-# stamps, and `render.py`'s spoken durations and relative ages.
+# stamps, and `render.span`'s spoken durations and relative ages.
 ISO_STAMP = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}")
 SPOKEN_DURATION = re.compile(r"\d+\s*(?:m \d+s|h \d+m|hours? ago|minutes? ago|days? ago)")
 
@@ -432,12 +432,12 @@ def test_the_ledger_carries_the_published_span_the_band_prints(
 def test_neither_payload_carries_a_rendered_clock(tmp_path: Path) -> None:
     """The rule with the one field that nearly broke it.
 
-    Tom, 2026-09-05: typed on the wire, React formats. The pages format the
-    readiness stamp with `iso_z` for a `<time datetime=…>` attribute, and the
-    JSON reads the same observation — so a payload that forwarded the page's
-    dict would ship a rendered day under a rule that says it must not. Nothing
-    on either surface prints "4m 12s" or "3 hours ago" either; those are the
-    strings `render.py` builds for Jinja and nothing else.
+    Tom, 2026-09-05: typed on the wire, React formats. The assemblers still
+    stamp the readiness observation with `iso_z` beside its epoch, because the
+    Jinja pages wanted a `<time datetime=…>` attribute — so a payload that
+    forwarded an assembler's dict wholesale would ship a rendered day under a
+    rule that says it must not. Nothing here prints "4m 12s" or "3 hours ago"
+    either.
     """
     with owner_client(tmp_path) as client:
         for path in (OVERVIEW, LEDGER):
@@ -1050,7 +1050,7 @@ def test_the_cues_endpoint_carries_the_typed_half_beside_the_strings(
 ) -> None:
     """Tom, 2026-09-05: add the typed fields, cut the strings at the port.
 
-    `at`, `conf` and `chunk` are renderings of numbers `views._cue_rows` already
+    `at`, `conf` and `chunk` are renderings of numbers `api._cue_rows` already
     had, and this endpoint sent only the renderings. The numbers are on the wire
     now, under `_cue_rows`' own names, and every one of them has to agree with
     the string beside it — two ways of saying when a cue starts that can
@@ -1124,28 +1124,31 @@ SLUG = "andrej-karpathy"
 FOLLOW = f"{FOLLOWING}/{SLUG}"
 
 
-def test_the_following_json_is_absent_wherever_its_pages_are(tmp_path: Path) -> None:
-    """dashboard.md §18.6, applied to the JSON twin — and it is the whole
-    decision this pair of routes had to make.
+def test_the_following_json_is_absent_where_its_whole_surface_is(
+    tmp_path: Path,
+) -> None:
+    """dashboard.md §18.6, applied to the JSON — and it is the whole decision
+    this pair of routes had to make.
 
-    The two following *pages* are declared with the write routes rather than
-    beside the other reads: a page whose every affordance POSTs has nothing to
-    show a deployment that registers no write side, and a route that exists and
-    refuses is a route somebody probes. Their JSON answers the same refusal at
-    the same status, because a payload reachable where its page 404s would be
-    the way back in that §2.3 exists to close.
+    The two following reads are declared with the write routes rather than
+    beside the other reads: a surface whose every affordance POSTs has nothing
+    to show a deployment that registers no write side, and a route that exists
+    and refuses is a route somebody probes. The rule outlived the pages it was
+    written for — a shell that can read a follow is a shell that can offer to
+    change one — so a payload reachable where its writes 404 would still be the
+    way back in that §2.3 exists to close.
     """
     with follow_owner(tmp_path, readonly=True) as demo:
-        # The read pages this deployment *does* serve still answer, or the
-        # 404s below would be proving the dashboard is off rather than that
-        # this surface is absent.
+        # The reads this deployment *does* serve still answer, or the 404s
+        # below would be proving the dashboard is off rather than that this
+        # surface is absent.
         assert demo.get(LIBRARY, headers=BEARER).status_code == 200
-        for path in (f"{ROOT}/following", FOLLOWING, FOLLOW):
+        for path in (FOLLOWING, FOLLOW):
             assert demo.get(path, headers=BEARER).status_code == 404, path
 
     with follow_client(tmp_path) as anonymous:  # auth=none
-        assert anonymous.get(ROOT).status_code == 200
-        for path in (f"{ROOT}/following", FOLLOWING, FOLLOW):
+        assert anonymous.get(OVERVIEW).status_code == 200
+        for path in (FOLLOWING, FOLLOW):
             assert anonymous.get(path).status_code == 404, path
 
 

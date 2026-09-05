@@ -407,13 +407,14 @@ def test_no_public_route_sends_a_document_policy(public_client: TestClient) -> N
 def test_the_packaged_fonts_outlived_the_route_that_served_them(
     public_client: TestClient,
 ) -> None:
-    """`static/fonts/` is not dead, and is deliberately no longer served here.
+    """`static/fonts/` is not dead, and is deliberately served by nobody.
 
     DESIGN.md (Fonts, rule 1) makes this directory the one copy of the two
-    faces: `dashboard/__init__.py` aliases `/dashboard/static/fonts/` onto it
-    rather than vendoring a second, and `test_web_assets.py` diffs
-    `web/src/fonts/` against it. Deleting it with the pages would have taken
-    the document of record with them.
+    faces, and `test_web_assets.py` diffs `web/src/fonts/` against it — the web
+    app self-hosts them. The public route went with the demo page on
+    2026-09-05 and the dashboard's `fonts/` alias went with its own pages on
+    2026-09-06; deleting the directory with either would have taken the
+    document of record with them.
     """
     fonts = Path(vidtheque_mcp.public.__file__).parent / "static" / "fonts"
     assert (fonts / "archivo-latin-wght-normal.woff2").is_file()
