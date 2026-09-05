@@ -23,6 +23,14 @@ initial reader, API client, search, Ask, and component tests.
 - Implement direct browser-to-Python API calls, chosen by Tom. Verify routing,
   session handling, trusted client addresses, and any cross-origin access.
 - Port the landing and demo while preserving their URLs and locked positioning.
+  *Landed 2026-09-05:* both render from `web/`, and Python's `GET /`,
+  `GET /demo` and `GET /static/{path}` registrations are gone along with the
+  two static bundles and the tests that read their markup
+  (`docs/design/frontend-migration.md` §1a, demo-site.md §1). One thing the
+  removal handed over rather than kept, and it is a check before cutover rather
+  than a ticket: `_DOCUMENT_HEADERS` — the CSP and its three companions — left
+  with the pages, so it is the front end's to send on both of them and no test
+  in `mcp/` can see whether it does. demo-site.md §7 item 0.
 - Define the Python HTTP contracts needed by these pages. Keep state and
   operation policy in `mcp/`; remove presentation dependencies as pages move.
   *Landed 2026-09-05:* the first read slice — `GET /dashboard/api/overview`,
@@ -103,17 +111,23 @@ including the vec0 trigger and FK-pragma dance. F12's read-only posture shipped
 (`public/readonly.py` derives `WRITE_TOOLS` from the annotations); the inverses
 did not. Takes the surface to twelve, so it is a contract change, not a patch.
 
-### 6. A DOM-level test harness for the public page
+### 6. **Closed 2026-09-05** — a DOM-level test harness for the public page
 
-`mcp/tests/test_public.py:2451` says it in its own docstring: *"What the page
-does with that — a notice under the rows it already has, rather than a wipe —
-needs a DOM-level harness and is not asserted here."* Cross-cutting: a tooling
-choice and CI wiring, and the repo's rule against self-hosted runners bounds it.
+The page said it in its own docstring: *"What the page does with that — a
+notice under the rows it already has, rather than a wipe — needs a DOM-level
+harness and is not asserted here."* Cross-cutting: a tooling choice and CI
+wiring, bounded by the repo's rule against self-hosted runners.
 
-*2026-09-01:* the Next.js front end in `web/` has one — Vitest, jsdom and
+*2026-09-01:* the Next.js front end in `web/` got one — Vitest, jsdom and
 Testing Library, `pnpm test`, with the ask stream exercised against a recorded
-real response. The Python-served demo page still does not, and this line stays
+real response. The Python-served demo page still had none, and this line stayed
 open for it.
+
+*2026-09-05:* there is no Python-served demo page. It is `web/`'s, which is the
+surface with the harness, and the docstring above went with the test file it
+was in. Closed by replacement rather than by instrumentation — worth the
+distinction, because the assertion it wanted still has to exist on the React
+page, and that is `web/`'s to carry, not this file's.
 
 ### 7. F1 — structured OCR, the big one
 

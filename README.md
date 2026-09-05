@@ -48,8 +48,9 @@ demo is the first shelf, not the library.
 Agents plug in over MCP and consume the corpus mid-task: ask for the SOTA,
 get what was said on stage three weeks ago — search across transcript,
 on-screen text and frames, then drill into any moment. A web demo and a
-management dashboard ride in the same process: `/` is the landing, `/demo`
-searches and answers for visitors, `/dashboard` is the operator's instrument.
+management dashboard sit over the same corpus on one origin: `/` is the
+landing, `/demo` searches and answers for visitors, `/dashboard` is the
+operator's instrument.
 
 ## Receipts, always
 
