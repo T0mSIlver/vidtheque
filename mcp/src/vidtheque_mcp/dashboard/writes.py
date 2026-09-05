@@ -25,10 +25,18 @@ Three things this module deliberately does **not** have:
   other kind of write (§3.3).
 
 Since 2026-09-05 every handler here answers **two** ways from one URL (§21):
-the 303 the Jinja pages expect, or — when the caller's `Accept` prefers it —
+the 303 a form navigation expects, or — when the caller's `Accept` prefers it —
 the typed outcome the React pages read. Same route, same guard, same Origin
 rule, same rate bucket; :func:`_accepts_json` is the only thing that differs,
 and it is one function so the thirteen writes cannot drift apart.
+
+**A refusal is the same envelope in both media** (2026-09-05). It used to be a
+rendered error page when the caller asked for HTML; there is no error page any
+more, so `_refusal_json` serves both branches and the code, the message and the
+`next:` line — the policy text this side keeps — leave in one shape. The 303 is
+now a *success* branch only: the sign-in page and the sign-out button are real
+`<form method="post">`s, a submit before React has hydrated is a navigation,
+and a navigation needs somewhere to land. Those targets are paths Next serves.
 """
 
 from __future__ import annotations
@@ -98,13 +106,6 @@ CHANNEL_BOXES = (
     ("ocr", "On-screen text", "what the frames read, per keyframe"),
     ("frames", "Frame embeddings", "visual search over the keyframes"),
 )
-
-
-# ------------------------------------------------------------------ plumbing
-
-
-def _wants_html(request: Request) -> bool:
-    return "text/html" in request.headers.get("accept", "")
 
 
 # ---------------------------------------------- one URL, two answers (§21)
@@ -221,51 +222,16 @@ def _safe_next(raw: str | None) -> str:
     return raw
 
 
-async def _guard(request: Request) -> Response | None:
-    """`require_write`, with the browser's half of the refusal.
-
-    A script gets the typed JSON, and so does the React page: a `fetch` that
-    asked for JSON is told `E_AUTH_REQUIRED` and decides for itself — the 401
-    is what sends that browser to the sign-in page (DECISIONS.md, 2026-09-05).
-    A *navigating* browser whose session expired between the page load and the
-    button gets sent to the login page with somewhere to come back to: the
-    refusal is the same one, rendered in the medium that asked.
-    """
-    refusal = await require_write(request)
-    if refusal is None:
-        return None
-    if refusal.status_code == 401 and _wants_html(request) and not _accepts_json(request):
-        return _to_login(request)
-    return refusal
-
-
-def _to_login(request: Request) -> RedirectResponse:
-    target = f"{ROOT}/login?next={request.url.path}"
-    return RedirectResponse(target, status_code=303)
-
-
 def _see(path: str) -> RedirectResponse:
-    """POST → 303 → GET. A write is never the thing a reload repeats."""
-    return RedirectResponse(path, status_code=303)
+    """POST → 303 → GET. A write is never the thing a reload repeats.
 
-
-def _error_page(
-    request: Request, page: str, error: dict[str, Any], back: dict[str, str] | None = None
-) -> Response:
-    """Every refusal below, in the medium that asked for it.
-
-    One funnel rather than a branch per handler: the code, the message and the
-    `next:` line are the policy and stay Python's whichever way they leave, and
-    the status is the code's own either way — this reads it from the same
-    `HTTP_STATUS` map `_refusal_json` does.
+    The 303 is the *success* branch's, and only its: a form navigation that
+    landed here before React hydrated needs a page to arrive at, and every
+    target below is a path Next serves. A refusal takes `_refusal_json`
+    whichever medium asked (§21, 2026-09-05) — the 401 included, which is what
+    sends a signed-out shell to the sign-in page.
     """
-    if _accepts_json(request):
-        return _refusal_json(error)
-    return _render(
-        "error.html",
-        {**_chrome(request, page), "title": error["message"], "error": error, "back": back},
-        status=HTTP_STATUS.get(error["code"], 500),
-    )
+    return RedirectResponse(path, status_code=303)
 
 
 # --------------------------------------------------------------------- login
@@ -321,10 +287,12 @@ async def login(request: Request) -> Response:
     Registered only where the write side is (`write_side_enabled`): a sign-in
     that grants nothing is a probe magnet with a password field on it.
 
-    The POST is the thirteenth write to answer two ways (§21): the 303 the
-    Jinja form expects, or `{"signed_in": true, "next": …}` carrying the same
+    The POST is the thirteenth write to answer two ways (§21): the 303 a form
+    navigation expects, or `{"signed_in": true, "next": …}` carrying the same
     `Set-Cookie` — on the response either way, because a React shell cannot
-    mint an `HttpOnly` cookie itself. The GET is untouched: "am I signed in" is
+    mint an `HttpOnly` cookie itself. Both refusals are the envelope now, in
+    either medium: a page that could carry the sentence back into the form no
+    longer exists. The GET is untouched: "am I signed in" is
     `/dashboard/api/session`'s question, not this route's.
     """
     assembled = request.app.state.assembled
@@ -345,33 +313,19 @@ async def login(request: Request) -> Response:
     # Origin rule as every other write. It cannot carry the credential half —
     # not having one is the point of the page.
     if not origin_ok(request):
-        if _accepts_json(request):
-            # `access.bad_origin()` verbatim, so there is one origin refusal on
-            # this surface and not two. The form branch keeps its own sentence:
-            # it is visible copy on a rendered page, and the shared one is
-            # written for a client reading a code.
-            refusal = bad_origin()
-            refusal.headers.update(NO_STORE)
-            return refusal
-        return _render(
-            "login.html",
-            _login_context(
-                request, error="That sign-in came from another origin.", next_url=next_url
-            ),
-            status=403,
-        )
+        # `access.bad_origin()` verbatim, so there is one origin refusal on this
+        # surface and not two. It used to be one wording for a client reading a
+        # code and a second, softer sentence on the rendered form; the form is
+        # gone and so is the second sentence.
+        refusal = bad_origin()
+        refusal.headers.update(NO_STORE)
+        return refusal
     if store is None:  # pragma: no cover - every write-side mode builds one
         return auth_required(settings.auth_mode)
 
     supplied = str(form.get("password") or "")
     if not _accepted(settings, supplied):
-        if _accepts_json(request):
-            return _bad_credential()
-        return _render(
-            "login.html",
-            _login_context(request, error=BAD_SECRET, next_url=next_url),
-            status=401,
-        )
+        return _bad_credential()
 
     sid = secrets.token_urlsafe(32)
     ttl = settings.login_session_ttl_s
@@ -419,7 +373,7 @@ async def logout(request: Request) -> Response:
     shell cannot clear an `HttpOnly` cookie itself (§19's `has_session_cookie`
     exists for the other half of that).
     """
-    refusal = await _guard(request)
+    refusal = await require_write(request)
     if refusal is not None:
         return refusal
     store = request.app.state.assembled.auth.store
@@ -502,7 +456,7 @@ async def index_submit(request: Request) -> Response:
     one-job shortcut is a *redirect*, so the JSON branch does not take it: a
     client that always reads `jobs` is a client with no special case.
     """
-    refusal = await _guard(request)
+    refusal = await require_write(request)
     if refusal is not None:
         return refusal
 
@@ -512,27 +466,21 @@ async def index_submit(request: Request) -> Response:
     tokens = [t for t in _SEPARATORS.split(str(form.get("urls") or "")) if t]
 
     if not tokens:
-        return _index_refusal(
-            request,
-            submitted,
+        return _refusal_json(
             {
                 "code": "E_BAD_PARAM",
                 "message": "Paste at least one video, playlist or channel URL.",
                 "next": "a bare 11-character YouTube id works too.",
-            },
-            400,
+            }
         )
     if len(tokens) > MAX_FORM_URLS:
-        return _index_refusal(
-            request,
-            submitted,
+        return _refusal_json(
             {
                 "code": "E_TOO_LARGE",
                 "message": f"{len(tokens)} URLs is past this form's cap of "
                 f"{MAX_FORM_URLS}.",
                 "next": "submit it in parts, or point one job at the playlist.",
-            },
-            413,
+            }
         )
 
     # Batch at ten, or at `max_items` when the operator set it lower —
@@ -605,24 +553,6 @@ async def index_submit(request: Request) -> Response:
     )
 
 
-def _index_refusal(
-    request: Request, submitted: dict[str, Any], error: dict[str, Any], status: int
-) -> Response:
-    """The form's own two refusals, in either medium.
-
-    Not `_error_page`: this surface answers them by re-rendering the form with
-    what was typed still in it, which is the whole reason they are inline. The
-    JSON half is the same envelope every other refusal here sends.
-    """
-    if _accepts_json(request):
-        return _refusal_json(error)
-    return _render(
-        "index.html",
-        _index_context(request, form=submitted, error=error),
-        status=status,
-    )
-
-
 def _submitted(form: Any) -> dict[str, Any]:
     """The form, back as the form — so a refusal re-renders what was typed."""
     expand = str(form.get("expand") or "playlist")
@@ -667,7 +597,7 @@ async def cancel_job(request: Request) -> Response:
     with the request recorded. That distinction is the reason this route
     answers inline at all.
     """
-    refusal = await _guard(request)
+    refusal = await require_write(request)
     if refusal is not None:
         return refusal
 
@@ -676,26 +606,21 @@ async def cancel_job(request: Request) -> Response:
         lambda c: jobs_store.request_cancel(c, job_id)
     )
     if outcome is None:
-        return _error_page(
-            request,
-            "jobs",
+        return _refusal_json(
             {
                 "code": "E_UNKNOWN_JOB",
                 "message": f'"{job_id}" is not a job on this instance.',
                 "next": "the jobs table lists every job this index has run.",
-            },
+            }
         )
     accepted, state = outcome
     if not accepted:
-        return _error_page(
-            request,
-            "jobs",
+        return _refusal_json(
             {
                 "code": "E_BAD_PARAM",
                 "message": f'Job "{job_id}" is already {state}.',
                 "next": "only queued or running jobs can be cancelled.",
-            },
-            back={"href": f"{ROOT}/jobs/{job_id}", "label": "Back to this job"},
+            }
         )
     return _outcome(
         request,
@@ -716,7 +641,7 @@ async def retry_job(request: Request) -> Response:
     preserved — the retry receipt page, typed. Like the index form it does not
     take the one-job redirect shortcut.
     """
-    refusal = await _guard(request)
+    refusal = await require_write(request)
     if refusal is not None:
         return refusal
 
@@ -726,59 +651,46 @@ async def retry_job(request: Request) -> Response:
         lambda c: jobs_store.retry_candidates(c, old_job_id, MAX_FORM_URLS + 1)
     )
     if selected is None:
-        return _error_page(
-            request,
-            "jobs",
+        return _refusal_json(
             {
                 "code": "E_UNKNOWN_JOB",
                 "message": f'"{old_job_id}" is not a job on this instance.',
                 "next": "the jobs table lists every job this index has run.",
-            },
+            }
         )
     job, candidates = selected
     state = str(job["state"])
     if state in ("queued", "running"):
-        return _error_page(
-            request,
-            "jobs",
+        return _refusal_json(
             {
                 "code": "E_BAD_PARAM",
                 "message": f'Job "{old_job_id}" is still {state}.',
                 "next": "retry is available after the original job finishes.",
-            },
-            back={"href": f"{ROOT}/jobs/{old_job_id}", "label": "Back to this job"},
+            }
         )
     if str(job["kind"]) not in ("index", "reindex"):
-        return _error_page(
-            request,
-            "jobs",
+        return _refusal_json(
             {
                 "code": "E_BAD_PARAM",
                 "message": f'Job "{old_job_id}" is a {job["kind"]} job.',
                 "next": "only indexing jobs can be repaired through index-video.",
-            },
-            back={"href": f"{ROOT}/jobs/{old_job_id}", "label": "Back to this job"},
+            }
         )
     if len(candidates) > MAX_FORM_URLS:
-        return _error_page(
-            request,
-            "jobs",
+        return _refusal_json(
             {
                 "code": "E_TOO_LARGE",
                 "message": f"More than {MAX_FORM_URLS} items need repair.",
                 "next": "retry the affected videos in smaller batches from the index form.",
-            },
+            }
         )
     if not candidates:
-        return _error_page(
-            request,
-            "jobs",
+        return _refusal_json(
             {
                 "code": "E_BAD_PARAM",
                 "message": f'Job "{old_job_id}" has no failed or degraded items.',
                 "next": "successful items are deliberately not re-queued.",
-            },
-            back={"href": f"{ROOT}/jobs/{old_job_id}", "label": "Back to this job"},
+            }
         )
 
     try:
@@ -871,7 +783,7 @@ async def reindex(request: Request) -> Response:
 
     JSON outcome: ``{"video_id", "job_id"}``.
     """
-    refusal = await _guard(request)
+    refusal = await require_write(request)
     if refusal is not None:
         return refusal
 
@@ -879,14 +791,12 @@ async def reindex(request: Request) -> Response:
     video_id = request.path_params["video_id"]
     row = await assembled.db.read(lambda c: queries.lookup_video(c, video_id))
     if row is None:
-        return _error_page(
-            request,
-            "videos",
+        return _refusal_json(
             {
                 "code": "E_UNKNOWN_VIDEO",
                 "message": f'"{video_id}" is not in the corpus.',
                 "next": "browse the videos table for what is indexed.",
-            },
+            }
         )
 
     result = await indexing.index_video(
@@ -894,12 +804,7 @@ async def reindex(request: Request) -> Response:
     )
     error = _tool_error(result)
     if error is not None:
-        return _error_page(
-            request,
-            "videos",
-            error,
-            back={"href": f"{ROOT}/videos/{video_id}", "label": "Back to this video"},
-        )
+        return _refusal_json(error)
     job_id = (result.structured_content or {}).get("job_id")
     if not job_id:  # pragma: no cover - force_reindex always creates a job
         return _outcome(
@@ -927,7 +832,7 @@ async def set_tags(request: Request) -> Response:
     question as "what does this row carry now", and the panel that made the
     call is showing exactly the second one.
     """
-    refusal = await _guard(request)
+    refusal = await require_write(request)
     if refusal is not None:
         return refusal
 
@@ -945,12 +850,7 @@ async def set_tags(request: Request) -> Response:
     result = await library.tag_video(deps, video_id=video_id, add=add, remove=remove)
     error = _tool_error(result)
     if error is not None:
-        return _error_page(
-            request,
-            "videos",
-            error,
-            back={"href": back, "label": "Back to this video"},
-        )
+        return _refusal_json(error)
     return await _tags_outcome(request, video_id, back)
 
 
@@ -990,17 +890,6 @@ def _tags(raw: str) -> list[str]:
 # `index_video` on one URL with `expand=none`, carrying the follow's own
 # channels and tags so a video rescued from the ledger is built the way the
 # follow would have built it.
-
-
-def _follow_error(
-    request: Request, error: dict[str, Any], slug: str | None = None
-) -> Response:
-    back = (
-        {"href": f"{ROOT}/following/{slug}", "label": "Back to this follow"}
-        if slug
-        else {"href": f"{ROOT}/following", "label": "Following"}
-    )
-    return _error_page(request, "following", error, back=back)
 
 
 def _typed(exc: ToolError) -> dict[str, Any]:
@@ -1052,7 +941,7 @@ async def follow_create(request: Request) -> Response:
     tool's own, and it is the difference between "made" and "you had this
     already" that a redirect cannot express.
     """
-    refusal = await _guard(request)
+    refusal = await require_write(request)
     if refusal is not None:
         return refusal
 
@@ -1067,7 +956,7 @@ async def follow_create(request: Request) -> Response:
     )
     error = _tool_error(result)
     if error is not None:
-        return _follow_error(request, error)
+        return _refusal_json(error)
     payload = result.structured_content or {}
     slug = str((payload.get("follow") or {}).get("slug") or "")
     if _accepts_json(request):
@@ -1105,13 +994,13 @@ async def _follow_action(request: Request, action: str, back: str) -> Response:
     slug = str(request.path_params["slug"])
     row = await assembled.db.read(lambda c: follows_store.by_slug(c, slug))
     if row is None:
-        return _follow_error(request, _no_such_follow(slug))
+        return _refusal_json(_no_such_follow(slug))
     result = await follows_tool.follow_channel(
         assembled.deps, url=str(row["source_url"]), action=action
     )
     error = _tool_error(result)
     if error is not None:
-        return _follow_error(request, error, slug)
+        return _refusal_json(error)
     if _accepts_json(request):
         if action == "unfollow":
             payload = result.structured_content or {}
@@ -1172,20 +1061,18 @@ async def follow_state(request: Request) -> Response:
     resume are the two directions of one control, and a surface with two URLs
     for them is a surface where a page can offer the wrong one.
     """
-    refusal = await _guard(request)
+    refusal = await require_write(request)
     if refusal is not None:
         return refusal
     form = await request.form()
     wanted = str(form.get("action") or "")
     if wanted not in ("pause", "resume"):
-        return _follow_error(
-            request,
+        return _refusal_json(
             {
                 "code": "E_BAD_PARAM",
                 "message": f'"{wanted}" is not pause or resume.',
                 "next": "the two buttons on the follow's page are the whole vocabulary.",
-            },
-            str(request.path_params["slug"]),
+            }
         )
     return await _follow_action(request, wanted, ROOT + "/following/{slug}")
 
@@ -1197,7 +1084,7 @@ async def follow_check_now(request: Request) -> Response:
     `follow_check` job on its next tick. A paused follow stays paused, which is
     the store's rule and not this handler's.
     """
-    refusal = await _guard(request)
+    refusal = await require_write(request)
     if refusal is not None:
         return refusal
     return await _follow_action(request, "check_now", ROOT + "/following/{slug}")
@@ -1210,7 +1097,7 @@ async def follow_delete(request: Request) -> Response:
     (`follows/store.delete`). So this lands on the list rather than on a page
     that no longer exists.
     """
-    refusal = await _guard(request)
+    refusal = await require_write(request)
     if refusal is not None:
         return refusal
     return await _follow_action(request, "unfollow", ROOT + "/following")
@@ -1231,7 +1118,7 @@ async def follow_rules(request: Request) -> Response:
     that just wrote a rule reads back the rule the store kept, not the one it
     sent.
     """
-    refusal = await _guard(request)
+    refusal = await require_write(request)
     if refusal is not None:
         return refusal
 
@@ -1239,12 +1126,12 @@ async def follow_rules(request: Request) -> Response:
     slug = str(request.path_params["slug"])
     row = await assembled.db.read(lambda c: follows_store.by_slug(c, slug))
     if row is None:
-        return _follow_error(request, _no_such_follow(slug))
+        return _refusal_json(_no_such_follow(slug))
     form = await request.form()
     try:
         rules = follow_params.build_rules(**_follow_rule_form(form))
     except ToolError as exc:
-        return _follow_error(request, _typed(exc), slug)
+        return _refusal_json(_typed(exc))
     collection_id = int(row["collection_id"])
     columns = follow_params.rule_columns(rules)
     await assembled.db.write(
@@ -1269,7 +1156,7 @@ async def follow_queue(request: Request) -> Response:
     do on both branches — the form's policy, not a second one written for the
     JSON caller — and answers with a null `job_id`.
     """
-    refusal = await _guard(request)
+    refusal = await require_write(request)
     if refusal is not None:
         return refusal
 
@@ -1277,7 +1164,7 @@ async def follow_queue(request: Request) -> Response:
     slug = str(request.path_params["slug"])
     row = await assembled.db.read(lambda c: follows_store.by_slug(c, slug))
     if row is None:
-        return _follow_error(request, _no_such_follow(slug))
+        return _refusal_json(_no_such_follow(slug))
     form = await request.form()
     url = str(form.get("url") or "").strip()
     back = f"{ROOT}/following/{slug}#passed"
@@ -1296,7 +1183,7 @@ async def follow_queue(request: Request) -> Response:
     )
     error = _tool_error(result)
     if error is not None:
-        return _follow_error(request, error, slug)
+        return _refusal_json(error)
     job_id = (result.structured_content or {}).get("job_id")
     return _outcome(
         request,

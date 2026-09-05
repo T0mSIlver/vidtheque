@@ -2759,6 +2759,23 @@ sent to `{ROOT}/login?next=…`, a JSON caller is told `E_AUTH_REQUIRED` and
 decides for itself, which is the arrangement `DECISIONS.md` names — the refusal
 is the signal that sends the browser to the login page.
 
+*Amended 2026-09-05: one refusal, one shape, and the asymmetry is gone.* The
+error page was the other medium and there is no error page, so `_error_page` is
+deleted and **`_refusal_json` serves both branches** — the same envelope, the
+same status, the same `Retry-After`, whatever `Accept` said. Three refusals
+that had a rendered form to fall back into lose it with the rest: the sign-in
+page's wrong secret (`E_BAD_CREDENTIAL`, the identical sentence for both
+secrets) and its cross-origin POST (`access.bad_origin()`, so the softer
+sentence the form used to print is gone and there is one wording), and the
+index form's two input refusals, which used to re-render the paste box. `401`
+is now the same envelope on both branches too: `_wants_html` and `_to_login`
+are deleted, a signed-out form POST is told `E_AUTH_REQUIRED` rather than
+redirected, and it is the shell that decides to navigate — which is what
+`DECISIONS.md` said the 401 was for. The **303 stays on the success branches**:
+the sign-in page and the sign-out button are real `<form method="post">`s, a
+submit before React has hydrated is a navigation, and every target is a path
+Next serves.
+
 **The outcomes, per route.** Typed values only: ints, epoch seconds, booleans
 and lists. No rendered clock, no spoken duration, no sentence a page composed.
 
