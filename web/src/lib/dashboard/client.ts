@@ -35,6 +35,12 @@ import type { ZodType } from "zod";
 import {
   CancelOutcome,
   CuePage,
+  FollowCreated,
+  FollowDeleted,
+  FollowDetail,
+  Following,
+  FollowQueued,
+  FollowWritten,
   JobDetail,
   Jobs,
   Ledger,
@@ -268,6 +274,23 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
     job(jobId: string, signal?: AbortSignal) {
       return get(`${ROOT}/api/jobs/${encodeURIComponent(jobId)}`, JobDetail, { signal });
     },
+    /**
+     * The follows table, its band and its budget.
+     *
+     * The one read on this surface that can be **absent**: both following
+     * routes are registered with the write routes, so a deployment with no
+     * write side answers `404` here exactly as it does on the page (§18.6,
+     * §22). The pages read `write_side` off `/api/session` before rendering
+     * the surface at all and treat that `404` as the same answer.
+     */
+    following(query: URLSearchParams, signal?: AbortSignal) {
+      return get(`${ROOT}/api/following${suffix(query)}`, Following, { signal });
+    },
+    /** One follow: its rule, its checks, and what it passed over. */
+    follow(slug: string, query: URLSearchParams, signal?: AbortSignal) {
+      const path = `${ROOT}/api/following/${encodeURIComponent(slug)}`;
+      return get(`${path}${suffix(query)}`, FollowDetail, { signal });
+    },
     /** Outside the read gate: a signed-out browser may ask what this deployment is. */
     session(signal?: AbortSignal) {
       return get(`${ROOT}/api/session`, Session, { signal, gated: false });
@@ -287,6 +310,57 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
     retryJob(jobId: string) {
       const path = `${ROOT}/jobs/${encodeURIComponent(jobId)}/retry`;
       return postForm(path, {}, RetryOutcome, [409]);
+    },
+
+    // The six following writes (dashboard.md §18.5, §21). Not one of them
+    // decides anything: five go through `tools/follows.follow_channel` — the
+    // same call the model makes — and the sixth through the validator that
+    // tool shares. Every clamp, the URL normalisation, the duration parser and
+    // the tag rules are *there*, so this side sends the form as typed and
+    // renders whatever came back.
+
+    /** `POST /dashboard/following` — the add form's own route, which is also
+     *  the list page's path. The fields are the Jinja form's, exactly. */
+    followChannel(fields: Record<string, string>) {
+      return postForm(`${ROOT}/following`, fields, FollowCreated);
+    },
+    /** `POST /dashboard/following/{slug}/state` — pause or resume.
+     *
+     *  One route with the verb in the body, not two URLs: they are the two
+     *  directions of one control, and a surface with a URL for each is a
+     *  surface where a page can offer the wrong one. */
+    setFollowState(slug: string, action: "pause" | "resume") {
+      return postForm(`${followPath(slug)}/state`, { action }, FollowWritten);
+    },
+    /** `POST /dashboard/following/{slug}/check` — make the clock due now.
+     *
+     *  It does not run a check; it moves `next_check_at`, and the queue claims
+     *  a `follow_check` on its next tick. The row that comes back is the
+     *  receipt for that, which is why it is read rather than assumed. */
+    checkFollowNow(slug: string) {
+      return postForm(`${followPath(slug)}/check`, {}, FollowWritten);
+    },
+    /** `POST /dashboard/following/{slug}/rules` — the edit disclosure.
+     *
+     *  The row it answers with carries every rule column, so the form reads
+     *  back the rule the store *kept* rather than the one it sent. */
+    setFollowRules(slug: string, fields: Record<string, string>) {
+      return postForm(`${followPath(slug)}/rules`, fields, FollowWritten);
+    },
+    /** `POST /dashboard/following/{slug}/delete` — unfollow.
+     *
+     *  The one irreversible control on this surface, and `videos_kept` is what
+     *  makes the asymmetry sayable: the rule and the ledger go, the videos
+     *  stay. */
+    deleteFollow(slug: string) {
+      return postForm(`${followPath(slug)}/delete`, {}, FollowDeleted);
+    },
+    /** `POST /dashboard/following/{slug}/queue` — "Index anyway", one row.
+     *
+     *  `expand=none` and the follow's own channels and tags are Python's, so
+     *  the only field this sends is the URL off the ledger row. */
+    queueFollowUrl(slug: string, url: string) {
+      return postForm(`${followPath(slug)}/queue`, { url }, FollowQueued);
     },
     postForm,
   };
@@ -332,6 +406,12 @@ function insideTheApi(endpoint: string): string | null {
   }
   if (url.origin !== origin || url.search || url.hash) return null;
   return url.pathname.startsWith(`${ROOT}/api/`) ? url.pathname : null;
+}
+
+/** One follow's write prefix. The slug is a path segment the reader can have
+ *  typed, so it is encoded exactly as a video id and a job id are. */
+function followPath(slug: string): string {
+  return `${ROOT}/following/${encodeURIComponent(slug)}`;
 }
 
 /** A query string, or nothing at all — never a bare `?` on a request with no

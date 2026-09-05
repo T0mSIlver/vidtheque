@@ -748,3 +748,248 @@ export const RetryOutcome = z.object({
   }),
 });
 export type RetryOutcome = z.infer<typeof RetryOutcome>;
+
+// -------------------------------------------------------------- following
+
+// `GET /dashboard/api/following` and `/dashboard/api/following/{slug}`
+// (dashboard.md §22, frontend-migration.md §6b) — §18's two pages, typed.
+//
+// **These two can be absent, and no other read on this surface can.** They are
+// declared with the *write* routes because their pages are, so in
+// `VIDTHEQUE_PUBLIC_READONLY=1` and in `VIDTHEQUE_AUTH=none` both answer `404`,
+// page and JSON together. A `404` on the list therefore means "this deployment
+// registers no write side", not "something went wrong" — the views ask
+// `/api/session` for `write_side` before rendering the surface at all, and
+// treat that `404` as the same answer arriving late.
+//
+// Three things the pages render that are deliberately **not** on these
+// payloads, because each is a value composable from the columns beside it: the
+// rule as compressed facts, the rule as an English sentence, and the near-miss
+// line. `reason` is the one string that travels verbatim — it is the receipt
+// the check wrote, carrying the number that made the decision, and re-deriving
+// it on this side is how a receipt stops being one.
+
+/** One follow, as every payload on this surface describes it.
+ *
+ *  The same block a write outcome answers with (§21) and a read lists (§22),
+ *  built in Python from `Rules.from_row` — the parser the check itself uses —
+ *  so pausing a follow and re-listing it cannot produce two shapes, and the
+ *  payload and the check cannot disagree about what a CSV column meant.
+ *
+ *  Every rule column is on it, which is what lets the edit form be prefilled
+ *  from the row a write just answered with rather than from a second read. */
+export const FollowRow = z.object({
+  slug: z.string(),
+  title: z.string(),
+  kind: z.string(),
+  source_url: z.string(),
+  // `active | paused | failing` — the store's own words, as strings, so a
+  // state the schema grows renders neutral instead of failing the parse.
+  state: z.string(),
+  mode: z.string(),
+  tabs: z.array(z.string()),
+  // `all`, or a comma-joined subset: `index-video`'s own vocabulary rather
+  // than a second one, so it is the string the tool wrote and not a list.
+  channels: z.string(),
+  tags: z.array(z.string()),
+  min_duration_s: count().nullable(),
+  max_duration_s: count().nullable(),
+  title_include: z.array(z.string()),
+  title_exclude: z.array(z.string()),
+  backfill: count(),
+  max_per_check: count(),
+  check_interval_s: count(),
+  // `0` is the state `Check now` leaves behind — due immediately, which is a
+  // fact and not a missing clock. The other two are absent until a check has
+  // run and until something has arrived.
+  next_check_at: clockOf(),
+  last_check_at: clockOf(),
+  last_new_at: clockOf(),
+});
+export type FollowRow = z.infer<typeof FollowRow>;
+
+/** The table's row: the shared block, plus the one column the table prints. */
+export const FollowListRow = FollowRow.extend({
+  last_error_code: z.string().nullable(),
+});
+export type FollowListRow = z.infer<typeof FollowListRow>;
+
+/** The detail's row, which adds the prose beside the code.
+ *
+ *  `last_error_message` is `follows/check.py`'s `str(exc)[:400]` — the
+ *  extractor quoted verbatim, the same category as a stage's error — and §22
+ *  names it the first field that would have to go if these routes ever
+ *  answered a projection. They answer none at all today. */
+export const FollowDetailRow = FollowListRow.extend({
+  last_error_message: z.string().nullable(),
+});
+export type FollowDetailRow = z.infer<typeof FollowDetailRow>;
+
+export const Following = z.object({
+  counted_at: epoch(),
+  // `failing_first` — `list_follows`' one order, named rather than implied,
+  // because a table read at 03:00 is read to find the follow that broke.
+  order: z.string(),
+  totals: z.object({
+    follows: count(),
+    active: count(),
+    paused: count(),
+    failing: count(),
+    due_soon: count(),
+    brought_in: count(),
+    held: count(),
+  }),
+  budget: z.object({
+    // Hours of *video*, each in the unit it is kept in: seconds spent, hours
+    // configured. `ceiling_h: 0` means the operator turned the ceiling off,
+    // which is a state and not "no budget left" — the band says so in words.
+    spent_s: seconds(),
+    ceiling_h: z.number(),
+    // Rolling, not calendar, and on the wire so the band's sentence and the
+    // query behind it cannot name two different windows.
+    window_s: count(),
+  }),
+  // Two facts about the *deployment*, the shape `/api/session`'s `write_side`
+  // already has, and neither names an environment variable.
+  //
+  // `checks_enabled` is the field the Jinja page has no line for, and it is
+  // here because the clocks beside it are otherwise a lie: with follow checks
+  // off, every `next_check_at` below is a time at which nothing will happen.
+  checks_enabled: z.boolean(),
+  // §5.5's honest refusal for the follow form: `follow_channel` refuses on the
+  // same condition `index_video` does.
+  vectors: z.boolean(),
+  follows: z.array(FollowListRow),
+  // Capped independently of the pager, because it is not what the pager pages:
+  // at most `held_cap` candidates waiting on a *person*, across every follow.
+  held: z.array(
+    z.object({
+      title: z.string(),
+      url: z.string(),
+      slug: z.string(),
+      follow: z.string(),
+      published_at: clockOf(),
+      first_seen_at: clockOf(),
+    }),
+  ),
+  held_more: z.boolean(),
+  held_cap: count(),
+  pagination: z.object({ limit: count(), offset: count(), has_more: z.boolean() }),
+  notes: z.array(z.string()),
+});
+export type Following = z.infer<typeof Following>;
+
+/** One `follow_check` or `index` job this follow owns, as an id and a state.
+ *
+ *  Never a copy of the job: the war story is already written at
+ *  `/dashboard/jobs/{job_id}` and this band does not fork it. The two lists
+ *  carry different halves of this shape, so what only one of them sends is
+ *  optional here rather than duplicated into two near-identical schemas. */
+export const FollowJob = z.object({
+  job_id: z.string(),
+  state: z.string(),
+  error_code: z.string().nullable().optional(),
+  n_items: count().optional(),
+  n_done: count().optional(),
+  n_failed: count().optional(),
+  created_at: clockOf(),
+  started_at: clockOf().optional(),
+  finished_at: clockOf().optional(),
+});
+export type FollowJob = z.infer<typeof FollowJob>;
+
+/** One candidate this follow decided not to index, and why. */
+export const SeenRow = z.object({
+  title: z.string(),
+  url: z.string(),
+  // One of the eight non-`queued` decisions, as the store's own word.
+  decision: z.string(),
+  // **Verbatim.** The receipt the check wrote, carrying the number that made
+  // the call — "4:12, shorter than your 8:00 floor". Policy text, Python's.
+  reason: z.string().nullable(),
+  // `listing` or `probe`: whether measuring this candidate cost a request.
+  judged_from: z.string(),
+  duration_s: seconds().nullable(),
+  published_at: clockOf(),
+  decided_at: clockOf(),
+});
+export type SeenRow = z.infer<typeof SeenRow>;
+
+export const FollowDetail = z.object({
+  fetched_at: epoch(),
+  follow: FollowDetailRow,
+  brought_in: count(),
+  // `{decision: n}` over every candidate this follow has ever judged, from one
+  // grouped query, and only the decisions that are present.
+  counts: z.record(z.string(), count()),
+  // **`null` means print nothing.** The arithmetic is the contract and the
+  // omission is part of it: a zero, or a follow with no length rule, sends
+  // `null`, because "0 of the last 25" is a fact about nothing dressed as a
+  // finding and this is the one band that has to stay believable. `within_s`
+  // rides along so the count and the number in the sentence cannot disagree.
+  near_miss: z
+    .object({ count: count(), of: count(), within_s: count(), edge: z.string() })
+    .nullable(),
+  checks: z.array(FollowJob),
+  index_jobs: z.array(FollowJob),
+  // The check already queued or running, so `Check now` cannot look like it
+  // did nothing.
+  in_flight: z.string().nullable(),
+  order: z.string(),
+  seen: z.array(SeenRow),
+  // Both job lists are bounded independently of `limit`, and the caps ride
+  // along so this side can say "the 10 most recent" without hard-coding ten.
+  caps: z.object({ checks: count(), index_jobs: count() }),
+  pagination: z.object({ limit: count(), offset: count(), has_more: z.boolean() }),
+  notes: z.array(z.string()),
+});
+export type FollowDetail = z.infer<typeof FollowDetail>;
+
+// The six write outcomes (dashboard.md §21). Typed values only — the follow
+// row, ints, booleans — because the formatting is this side's and the only
+// policy text on a write is the refusal's, which travels in `PartialRefusal`.
+
+/** `POST /dashboard/following` — the add form.
+ *
+ *  `already_following` is the tool's own field, and the difference a redirect
+ *  cannot express: `action="follow"` on a URL already followed returns the
+ *  existing follow and makes nothing, which is what makes a retried request
+ *  safe. `follow` is nullable because the handler answers `null` when the tool
+ *  gave it no slug to re-read. */
+export const FollowCreated = z.object({
+  follow: FollowRow.nullable(),
+  already_following: z.boolean(),
+});
+export type FollowCreated = z.infer<typeof FollowCreated>;
+
+/** What `state`, `check` and `rules` answer: the row, **re-read after the
+ *  write**. `set_state` re-arms the clock when it resumes, so a payload built
+ *  from the row the handler read first would name the new state and the old
+ *  `next_check_at` in one breath. */
+export const FollowWritten = z.object({ follow: FollowRow });
+export type FollowWritten = z.infer<typeof FollowWritten>;
+
+/** `POST /dashboard/following/{slug}/delete`.
+ *
+ *  `videos_kept` is the receipt for the asymmetry §18.5 asks this control to
+ *  state: the rule and the ledger go, and the videos the follow brought in
+ *  stay, because they are corpus and not membership. */
+export const FollowDeleted = z.object({
+  slug: z.string(),
+  deleted: z.boolean(),
+  videos_kept: count(),
+});
+export type FollowDeleted = z.infer<typeof FollowDeleted>;
+
+/** `POST /dashboard/following/{slug}/queue` — "Index anyway", one row.
+ *
+ *  Both fields are nullable because nothing asked for is nothing done on both
+ *  branches: a `queue` with no `url` answers `200` with the unchanged row
+ *  rather than a refusal — the form's policy, not a second one written for a
+ *  JSON caller. */
+export const FollowQueued = z.object({
+  slug: z.string(),
+  url: z.string().nullable(),
+  job_id: z.string().nullable(),
+});
+export type FollowQueued = z.infer<typeof FollowQueued>;
