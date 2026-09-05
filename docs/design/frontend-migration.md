@@ -194,7 +194,7 @@ What each side owns, once a page is ported:
 | --- | --- | --- |
 | `GET /dashboard` | **Next** | *landed 2026-09-05* |
 | `GET /dashboard/ledger` | **Next** | *landed 2026-09-05* |
-| `GET /dashboard/videos`, `GET /dashboard/videos/{id}` | **Next** | pending — Python's HTML |
+| `GET /dashboard/videos`, `GET /dashboard/videos/{id}` | **Next** | *landed 2026-09-05* |
 | `GET /dashboard/search` | **Next** | pending — Python's HTML |
 | `GET /dashboard/jobs`, `GET /dashboard/jobs/{id}` | **Next** | pending — Python's HTML |
 | `GET /dashboard/following`, `GET /dashboard/following/{slug}` | **Next** | pending — Python's HTML |
@@ -232,6 +232,26 @@ both are lists a port has to add itself to:
   page is named back in, one entry per path. That list is therefore *the record
   of what is ported*, and a port that forgets to add its path ships a document
   with no CSP on it. Deliberately not a prefix, for exactly that reason.
+
+**The two videos pages, and the one segment that keeps the writes Python's**
+*(landed 2026-09-05)*. `GET /dashboard/videos` and
+`GET /dashboard/videos/{video_id}` are Next's now, both named in the matcher.
+The detail's entry is `/dashboard/videos/([^/]+)` — one segment, written as a
+group rather than as `:id` so `proxy.test.ts` can run the matcher instead of
+reimplementing it. Three segments therefore do not match, which is what leaves
+`POST /dashboard/videos/{id}/reindex` and `POST /dashboard/videos/{id}/tags`
+with Python: the table's last row, "every other `POST /dashboard/*`", holds
+without an exception written for it. The development rewrites needed no change
+at all — the `/dashboard` catch-all is in `afterFiles`, so the router finds
+these two pages first.
+
+A third list joined those two with these pages, and it is the one a component
+asks: `web/src/app/dashboard/ported.ts` holds the ported page paths — `ROOT`,
+`ROOT/ledger`, `ROOT/videos`, plus the same one-segment pattern for the detail
+— behind `isPorted(href)`, which every link into this surface asks so a page
+this app serves is reached with `Link` and a page Python still renders stays a
+plain anchor. Porting a page adds its path here, names it in the matcher, and
+changes nothing else.
 
 ## 2. What landed
 
@@ -309,6 +329,26 @@ Changing them any earlier changes what `static/jobs.js` and
   `chunk` were renderings of. `in_chunk` is the two markers collapsed and
   stays; both are sent, because a chunk's last cue is not its first. The
   strings are untouched, and dashboard.md §5.3 is the contract entry.
+
+**What the reader of both halves looks like, and what the cut will take**
+*(recorded 2026-09-05, with the video detail page)*. The transcript panel
+renders from the typed fields and falls back to the strings, so it works
+against an instance that predates the addition: the timecode is
+`clock(cue.start_s)` falling back to `cue.at`, the confidence is
+`cue.avg_logprob.toFixed(2)` falling back to `cue.conf`, and the chunk mark is
+composed here from `chunk_opens`' own five fields —
+`chunk {seq} · {start_s}–{end_s} · {n_words} words · {n_chars} chars` — falling
+back to `cue.chunk`. That composition is this side's by decision 5: it is a
+value, not policy text. `in_chunk` is what styles a cue as inside its chunk;
+`chunk_closes` and the cue's `end_s` are declared in `schemas.ts` and read by
+nothing yet.
+
+The three typed fields are **optional** in that schema and the three strings are
+required, which is the shape of "the strings are the fallback". When the
+strings are cut from the endpoint — in the commit that deletes
+`static/dashboard.js`'s scrollbox, per the rule above — `at`, `conf` and `chunk`
+leave `schemas.ts`, the three fallbacks go with them, and the typed fields stop
+being optional. Nothing else on either page moves.
 
 ## 4. `GET /dashboard/api/overview`
 
