@@ -1,0 +1,68 @@
+name: ci-web
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "DESIGN.md"
+      - "Makefile"
+      - ".github/workflows/ci-web.yml"
+  pull_request:
+    paths:
+      - "web/**"
+      - "DESIGN.md"
+      - "Makefile"
+      - ".github/workflows/ci-web.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-web-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: web
+
+jobs:
+  check:
+    name: checks (node 24)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # No version pin here: the action reads `packageManager` from
+      # web/package.json, so the lockfile and the CLI can never drift apart.
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.0
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # Same order as `make web-check`. Cheap checks first, build last.
+      - name: Tokens match DESIGN.md
+        run: pnpm tokens:check
+
+      - name: Formatting
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Tests
+        run: pnpm test
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # No backend and no env: every page reads its data at request time
+      # inside a <Suspense> boundary, so nothing calls the API at build time.
+      - name: Production build
+        run: pnpm build
