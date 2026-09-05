@@ -1,0 +1,366 @@
+// @vitest-environment jsdom
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
+import {
+  NO_URLS,
+  NOTHING_ACCEPTED,
+  ONE_JOB,
+  SPLIT_RECEIPT,
+  TOO_MANY_URLS,
+} from "@/test/index-fixtures";
+import { countingDownFrom } from "@/test/retry";
+
+// The index form is the one page on this surface that reads nothing and only
+// writes. So the assertions are: what it draws before it knows what the
+// deployment is, what it draws when the deployment has no write side or a
+// database that refuses one, the fields it posts, and the receipt it renders
+// from what came back — including the `409`, which is a receipt and not an
+// error.
+
+type Route = { status?: number; body?: unknown; headers?: Record<string, string> };
+
+async function mount({
+  post = { body: ONE_JOB },
+  search = "",
+  session = OWNER_SESSION as unknown,
+}: { post?: Route; search?: string; session?: unknown } = {}) {
+  const posts: { path: string; init: RequestInit }[] = [];
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (init?.method === "POST") posts.push({ path: url, init });
+    const route: Route =
+      init?.method === "POST"
+        ? post
+        : url === "/dashboard/api/session"
+          ? { body: session }
+          : { status: 404, body: {} };
+    const text = typeof route.body === "string" ? route.body : JSON.stringify(route.body ?? {});
+    return new Response(text, {
+      status: route.status ?? 200,
+      headers: { "content-type": "application/json", ...route.headers },
+    });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const { mockNavigation } = await import("@/test/next");
+  const nav = mockNavigation(search, "/dashboard/index");
+  const { Chrome } = await import("../Chrome");
+  const { IndexView } = await import("./IndexView");
+  render(
+    <Chrome>
+      <IndexView />
+    </Chrome>,
+  );
+  return { ...nav, fetcher, posts };
+}
+
+/** Fill the paste box and submit. */
+async function queue(urls: string) {
+  await userEvent.type(screen.getByLabelText("URLs"), urls);
+  await userEvent.click(screen.getByRole("button", { name: "Queue the job" }));
+}
+
+describe("the index form", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it("draws the Jinja form's fields, and what a submission is split into", async () => {
+    await mount();
+
+    expect(await screen.findByRole("heading", { name: "Add to the index" })).toBeInTheDocument();
+    expect(screen.getByText("A video, a playlist or a channel.")).toBeInTheDocument();
+    // The two numbers the Jinja page prints, which are `URLS_PER_JOB` and
+    // `MAX_FORM_URLS` — printed on a control, never enforced here.
+    expect(screen.getByText("queued in jobs of")).toBeInTheDocument();
+    expect(screen.getAllByText("10").length).toBeGreaterThan(0);
+    expect(screen.getByText("200")).toBeInTheDocument();
+
+    expect(screen.getByLabelText("URLs")).toBeEnabled();
+    expect(screen.getByLabelText("Expand")).toHaveValue("playlist");
+    expect(screen.getByLabelText("Max items")).toHaveValue(25);
+    expect(screen.getByLabelText("Priority")).toHaveValue("normal");
+    expect(screen.getByLabelText("Tags")).toHaveValue("");
+    // All three channels ticked, and force off — `_index_form_values`.
+    expect(screen.getByLabelText(/Transcript/)).toBeChecked();
+    expect(screen.getByLabelText(/On-screen text/)).toBeChecked();
+    expect(screen.getByLabelText(/Frame embeddings/)).toBeChecked();
+    expect(screen.getByLabelText(/Force re-index/)).not.toBeChecked();
+  });
+
+  // The three things a write on this surface carries, and all three together
+  // (frontend-migration.md §9).
+  it("posts the fields the Jinja form posts, to the route it posts to", async () => {
+    const { posts } = await mount();
+    await screen.findByLabelText("URLs");
+
+    await userEvent.type(screen.getByLabelText("Tags"), "topic:attention");
+    await userEvent.click(screen.getByLabelText(/Force re-index/));
+    await queue("kCc8FmEb1nY");
+
+    expect(posts[0].path).toBe("/dashboard/index");
+    expect(posts[0].init.method).toBe("POST");
+    const headers = posts[0].init.headers as Record<string, string>;
+    expect(headers.accept).toBe("application/json");
+    expect(headers["content-type"]).toBe("application/x-www-form-urlencoded");
+    expect(posts[0].init.credentials).toBe("same-origin");
+
+    const body = new URLSearchParams(String(posts[0].init.body));
+    expect(body.get("urls")).toBe("kCc8FmEb1nY");
+    expect(body.get("expand")).toBe("playlist");
+    expect(body.get("max_items")).toBe("25");
+    expect(body.get("priority")).toBe("normal");
+    expect(body.get("tags")).toBe("topic:attention");
+    expect(body.get("force_reindex")).toBe("1");
+    // Three ticked boxes, sent as three fields: collapsing them to the tool's
+    // word `all` is `_submitted`'s reading of the form, not this side's.
+    expect(body.get("channel_transcript")).toBe("1");
+    expect(body.get("channel_ocr")).toBe("1");
+    expect(body.get("channel_frames")).toBe("1");
+  });
+
+  it("leaves an unticked box out of the submission, as a browser would", async () => {
+    const { posts } = await mount();
+    await screen.findByLabelText("URLs");
+
+    await userEvent.click(screen.getByLabelText(/Frame embeddings/));
+    await queue("kCc8FmEb1nY");
+
+    const body = new URLSearchParams(String(posts[0].init.body));
+    expect(body.get("channel_frames")).toBeNull();
+    expect(body.get("channel_ocr")).toBe("1");
+  });
+
+  describe("the receipt", () => {
+    it("names the job it queued and the queue to watch it in", async () => {
+      await mount();
+      await screen.findByLabelText("URLs");
+
+      await queue("https://youtu.be/solo0000002");
+
+      const receipt = await screen.findByRole("status");
+      expect(receipt).toHaveTextContent("1 URL(s) in one job.");
+      expect(within(receipt).getByRole("listitem")).toHaveTextContent(/1 video\(s\) queued$/);
+      expect(within(receipt).getByRole("link", { name: "job_02e028870c97" })).toHaveAttribute(
+        "href",
+        "/dashboard/jobs/job_02e028870c97",
+      );
+      expect(within(receipt).getByRole("link", { name: "Watch the queue" })).toHaveAttribute(
+        "href",
+        "/dashboard/jobs?state=active",
+      );
+      // Above the form and not instead of it: the next thing an operator does
+      // after queueing a batch is queue another one.
+      expect(screen.getByLabelText("URLs")).toBeInTheDocument();
+    });
+
+    it("says what the split was, what was left alone, and what was refused", async () => {
+      await mount({ post: { body: SPLIT_RECEIPT } });
+      await screen.findByLabelText("URLs");
+
+      await queue("vid00000000");
+
+      const receipt = within(await screen.findByRole("status"));
+      // The split the operator cannot see is a job count they cannot explain.
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "23 URL(s) split into 3 jobs of at most 10.",
+      );
+      expect(receipt.getByRole("link", { name: "job_aaaaaaaaaaaa" })).toBeInTheDocument();
+      expect(receipt.getByRole("link", { name: "job_bbbbbbbbbbbb" })).toBeInTheDocument();
+
+      // Already in the corpus is a fact about the corpus, not a failure, and
+      // each id is a door to the video it names.
+      expect(receipt.getByText(/already indexed and left alone/)).toBeInTheDocument();
+      expect(receipt.getByRole("link", { name: "kCc8FmEb1nY" })).toHaveAttribute(
+        "href",
+        "/dashboard/videos/kCc8FmEb1nY",
+      );
+
+      // The refusal in the API's own words, with the batch it was refused for:
+      // which URLs went with which refusal is what makes a partial failure
+      // actionable.
+      expect(receipt.getByText("E_BAD_PARAM")).toBeInTheDocument();
+      expect(receipt.getByText("Tags must be namespace:value, lowercase.")).toBeInTheDocument();
+      expect(receipt.getByText("vid00000022")).toBeInTheDocument();
+      expect(receipt.getByText(/fix the tag and submit that batch again/)).toBeInTheDocument();
+    });
+
+    // `409` means nothing was accepted, and the body is still the receipt — so
+    // it is read rather than thrown, exactly as the retry's is.
+    it("reads a 409 as a receipt rather than as a refusal", async () => {
+      await mount({ post: { status: 409, body: NOTHING_ACCEPTED } });
+      await screen.findByLabelText("URLs");
+
+      await queue("vid00000042");
+
+      const receipt = within(await screen.findByRole("status"));
+      expect(receipt.getByText("E_BAD_PARAM")).toBeInTheDocument();
+      expect(receipt.getByText("vid00000042")).toBeInTheDocument();
+      // Nothing was queued, so there is nowhere to go and watch.
+      expect(receipt.queryByRole("link", { name: "Watch the queue" })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("the refusals", () => {
+    it("prints the form's own bounds in the instance's words", async () => {
+      await mount({ post: { status: 413, body: TOO_MANY_URLS } });
+      await screen.findByLabelText("URLs");
+
+      await queue("vid00000000");
+
+      expect(
+        await screen.findByText("201 URLs is past this form's cap of 200."),
+      ).toBeInTheDocument();
+      expect(screen.getByText("E_TOO_LARGE")).toBeInTheDocument();
+      expect(
+        screen.getByText("submit it in parts, or point one job at the playlist."),
+      ).toBeInTheDocument();
+      // The form stays, with what was typed still in it.
+      expect(screen.getByLabelText("URLs")).toHaveValue("vid00000000");
+    });
+
+    it("keeps the paste box when the submission had no URL in it", async () => {
+      await mount({ post: { status: 400, body: NO_URLS } });
+      await screen.findByLabelText("URLs");
+
+      await queue(" ");
+
+      expect(
+        await screen.findByText("Paste at least one video, playlist or channel URL."),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Queue the job" })).toBeEnabled();
+    });
+
+    it("prints the instance's own refusal when the session went away", async () => {
+      await mount({
+        post: {
+          status: 401,
+          body: {
+            error: "E_AUTH_REQUIRED",
+            message: "This dashboard needs the owner's password, token or session.",
+            next: "Sign in at /dashboard/login.",
+          },
+        },
+      });
+      await screen.findByLabelText("URLs");
+
+      await queue("kCc8FmEb1nY");
+
+      expect(
+        await screen.findByText("This dashboard needs the owner's password, token or session."),
+      ).toBeInTheDocument();
+      expect(screen.getByText("E_AUTH_REQUIRED")).toBeInTheDocument();
+    });
+
+    it("prints the limiter's refusal without inventing a delay of its own", async () => {
+      await mount({
+        post: {
+          status: 429,
+          body: { error: "E_RATE_LIMIT", message: "Too many dashboard writes.", next: null },
+          headers: { "retry-after": "9" },
+        },
+      });
+      await screen.findByLabelText("URLs");
+
+      await queue("kCc8FmEb1nY");
+
+      expect(await screen.findByText("Too many dashboard writes.")).toBeInTheDocument();
+      expect(screen.getByText("E_RATE_LIMIT")).toBeInTheDocument();
+      // A write is not a read: the countdown belongs to a page that can re-run
+      // its own read, and this one re-runs when the operator submits again.
+      expect(screen.queryByRole("button", { name: countingDownFrom(9) })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("what the deployment allows", () => {
+    // `GET /dashboard/index` is registered with the write routes, so on a
+    // deployment that registers none it is not a disabled form — it is not
+    // there at all.
+    it("is not a page at all where there is no write side", async () => {
+      await mount({ session: DEMO_SESSION });
+
+      expect(
+        await screen.findByText("This deployment does not index anything."),
+      ).toBeInTheDocument();
+      expect(screen.queryByLabelText("URLs")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Queue the job" })).not.toBeInTheDocument();
+      // Not an error state: nothing here failed.
+      expect(screen.queryByText(/could not read/)).not.toBeInTheDocument();
+    });
+
+    // §5.5: refuse honestly. Disabled with the reason above it, rather than
+    // accepting a submission that comes back `E_FEATURE_DISABLED` after the
+    // operator has typed sixty URLs into it.
+    it("disables every control when the database refuses writes", async () => {
+      await mount({ session: { ...OWNER_SESSION, writes_allowed: false } });
+
+      expect(await screen.findByText("Indexing is disabled on this instance.")).toBeInTheDocument();
+      // The head's own pill, not the rail's foot line, which says the same
+      // thing about the deployment one level up.
+      expect(within(screen.getByRole("banner")).getByText("indexing refused")).toBeInTheDocument();
+      expect(screen.getAllByText("indexing refused")).toHaveLength(2);
+      expect(screen.getByLabelText("URLs")).toBeDisabled();
+      expect(screen.getByLabelText("Expand")).toBeDisabled();
+      expect(screen.getByLabelText(/Force re-index/)).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Queue the job" })).toBeDisabled();
+    });
+
+    // Drawn before the session lands, this page would tell the reader indexing
+    // is refused on the strength of not yet having asked.
+    it("says nothing about the deployment before it has been told", async () => {
+      const never = new Promise<Response>(() => {});
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(() => never),
+      );
+      const { mockNavigation } = await import("@/test/next");
+      mockNavigation("", "/dashboard/index");
+      const { Chrome } = await import("../Chrome");
+      const { IndexView } = await import("./IndexView");
+      render(
+        <Chrome>
+          <IndexView />
+        </Chrome>,
+      );
+
+      expect(screen.getByText("reading…")).toBeInTheDocument();
+      expect(screen.queryByText("Indexing is disabled on this instance.")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("URLs")).not.toBeInTheDocument();
+    });
+  });
+
+  // The seeding link a video's detail page carries: `urls` and `expand`, which
+  // are `_prefilled_index_form`'s parameters. A prefill is a draft — nothing
+  // here normalises a URL or decides anything, and the POST stays the only
+  // thing that interprets it.
+  describe("the prefill", () => {
+    it("seeds the controls from the link that queued more from a channel", async () => {
+      await mount({
+        search: "urls=https%3A%2F%2Fyoutu.be%2FkCc8FmEb1nY&expand=channel_recent",
+      });
+
+      expect(await screen.findByLabelText("URLs")).toHaveValue("https://youtu.be/kCc8FmEb1nY");
+      expect(screen.getByLabelText("Expand")).toHaveValue("channel_recent");
+    });
+
+    it("takes tags too, and leaves an expansion the tool does not know", async () => {
+      await mount({ search: "tags=topic%3Aattention&expand=everything" });
+
+      expect(await screen.findByLabelText("Tags")).toHaveValue("topic:attention");
+      expect(screen.getByLabelText("Expand")).toHaveValue("playlist");
+    });
+
+    it("posts the seeded draft as typed", async () => {
+      const { posts } = await mount({ search: "urls=kCc8FmEb1nY&expand=channel_recent" });
+      await screen.findByLabelText("URLs");
+
+      await userEvent.click(screen.getByRole("button", { name: "Queue the job" }));
+
+      const body = new URLSearchParams(String(posts[0].init.body));
+      expect(body.get("urls")).toBe("kCc8FmEb1nY");
+      expect(body.get("expand")).toBe("channel_recent");
+    });
+  });
+});

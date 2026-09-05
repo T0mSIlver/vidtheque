@@ -212,5 +212,24 @@ export const config = {
         { type: "header", key: "purpose", value: "prefetch" },
       ],
     },
+    {
+      // The index form, and the **second** path under `/dashboard` whose two
+      // owners are split by method: `GET /dashboard/index` is this page and
+      // `POST /dashboard/index` is the form's route, which stays Python's like
+      // every other write. This matcher cannot say that either — it matches
+      // paths, and it is only about which documents carry the policy.
+      //
+      // The difference from `/dashboard/following` is what development needs.
+      // That path's `POST` had to be pulled back in front of the router with a
+      // header condition; this one does not, because the router answers a
+      // `POST` to a page it found with a document either way and the
+      // `/dashboard` catch-all in `afterFiles` never sees it — so the shim
+      // there covers both, on the one header every write on this surface sends.
+      source: "/dashboard/index",
+      missing: [
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ],
+    },
   ],
 };
