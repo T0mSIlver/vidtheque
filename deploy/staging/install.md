@@ -14,8 +14,8 @@ NOTE:     this file describes CT 9001, the PUBLIC box (git clone + systemd,
 
 # deploy/staging — install order
 
-Seven files, two boxes, one purpose: **when Tom's container exists, cutover is
-copy-paste rather than authorship.** Every decision from Phase 1 is already
+Ten staged files and the repo's own `deploy/Caddyfile`, two boxes, one purpose:
+**when Tom's container exists, cutover is copy-paste rather than authorship.** Every decision from Phase 1 is already
 baked in; every value that could not be known before the container exists is a
 `<PLACEHOLDER>` and every one of those is in §0's table.
 
@@ -67,12 +67,28 @@ launch morning is not when to introduce a second true path.
 | file | box | destination | cutover step |
 |---|---|---|---|
 | `stack.env.public` | public | `/var/lib/vidtheque/stack.env` | 4.1 |
+| `stack.env.web` | public | `/var/lib/vidtheque/web.env` | 4.3 |
 | `stack.env.sandbox` | sandbox | `/home/dev/vidtheque-data/stack.env` (**replaces** the live file) | 4.1 + 4.2 |
 | `vidtheque-worker.service` | sandbox | `/etc/systemd/system/vidtheque-worker.service` | 4.2 (and Phase 8's worker-liveness item) |
 | `vidtheque-mcp.service` | public | `/etc/systemd/system/vidtheque-mcp.service` | 2.4 |
+| `vidtheque-web.service` | public | `/etc/systemd/system/vidtheque-web.service` | 5a |
+| `vidtheque-caddy.service` | public | `/etc/systemd/system/vidtheque-caddy.service` | 5b |
+| `../Caddyfile` — the repo's, not a staged copy | public | `/etc/caddy/Caddyfile` | 5b, and again on every deployment |
 | `cloudflared.service` | public | `/etc/systemd/system/cloudflared.service` | 2.4 + 5 |
 | `cloudflared-config.yml` | public | `/etc/cloudflared/config.yml` | 5 |
 | `cloudflare-dashboard-checklist.md` | neither — a browser | — | 5, the "before Phase 6" block |
+
+**FOUR PROCESSES ON THE PUBLIC BOX SINCE THE FRONT-END CUTOVER, NOT TWO.**
+Python renders no page any more (`docs/design/frontend-migration.md` §1a, §1d;
+`dashboard.md` §23), so the box runs `vidtheque-mcp` on 127.0.0.1:8100,
+`vidtheque-web` on 127.0.0.1:3000, `vidtheque-caddy` on 127.0.0.1:8080 in front
+of both, and the worker on 127.0.0.1:8081. **The tunnel points at the edge**,
+which is the only listener it can reach — the same exposure argument as before,
+one hop further out and with one process fewer able to answer a forged
+`CF-Connecting-IP`. Which of the two servers answers a path is
+`deploy/Caddyfile`, and it is the repo's file rather than a staged copy on
+purpose: two route tables drift, and a drifted one serves a path from the wrong
+process and says nothing.
 
 ---
 
@@ -92,8 +108,10 @@ Phase 3.1  copy keyframes/ while the old stack is UP
 Phase 3.2  stop the old stack
    -> §3   SANDBOX: stack.env + worker unit + firewall      (this file)
 Phase 3.3-3.9  snapshot, copy, verify
-   -> §4   PUBLIC: stack.env
+   -> §4   PUBLIC: stack.env, and §4.3 web.env
    -> §5   PUBLIC: vidtheque-mcp.service
+   -> §5a  PUBLIC: node + pnpm + vidtheque-web.service
+   -> §5b  PUBLIC: caddy + the Caddyfile + vidtheque-caddy.service
    -> §6   PUBLIC: Phase 4.3 mode verification
    -> §7   PUBLIC: cloudflared config + unit
    -> §8   BROWSER: cloudflare-dashboard-checklist.md
@@ -169,6 +187,32 @@ git -C /home/vidtheque/vidtheque grep -n 'sk-or-' -- . || echo "no key in the tr
 
 ---
 
+## 4.3 Public — `web.env`, the front end's two variables
+
+```bash
+sudo install -m 644 -o vidtheque -g vidtheque \
+  /home/vidtheque/vidtheque/deploy/staging/stack.env.web \
+  /var/lib/vidtheque/web.env
+```
+
+A second, two-line env file rather than more lines in `stack.env`, so the
+front-end process does not hold `OPENROUTER_API_KEY` — the file's own header
+carries the reasoning. Both keys are in `deploy/.env.example`'s `web/` section,
+so §4's key-set diff on `stack.env` is unaffected by them.
+
+**Verify — the one that is silent in both directions:**
+
+```bash
+# The forwarded-address header must be the same string in both files. If they
+# disagree, every visitor this server reads for shares one 30/min bucket, and
+# the symptom is "the demo got popular" right up until it stops answering.
+diff <(sed -n 's/^VIDTHEQUE_TRUSTED_IP_HEADER=//p' /var/lib/vidtheque/stack.env) \
+     <(sed -n 's/^VIDTHEQUE_CLIENT_IP_HEADER=//p'  /var/lib/vidtheque/web.env)
+# expect no output. vidtheque-web.service guards its side at every start too.
+```
+
+---
+
 ## 5. Public — `vidtheque-mcp.service`
 
 ```bash
@@ -206,6 +250,123 @@ systemd-analyze security vidtheque-mcp.service
 
 ---
 
+## 5a. Public — Node, pnpm, and `vidtheque-web.service`
+
+The front end is the only thing that serves a page on this box. Node is pinned
+to the version `.github/workflows/ci-web.yml` installs, from the official
+tarball rather than a distribution package, for the reason the CUDA base is
+digest-pinned: the build that runs here should be the build that was checked.
+
+```bash
+# 5a.1 Node 24.18.0 into /usr/local, and pnpm from corepack beside it.
+NODE=node-v24.18.0-linux-x64
+curl -fsSLO "https://nodejs.org/dist/v24.18.0/$NODE.tar.xz"
+curl -fsSL https://nodejs.org/dist/v24.18.0/SHASUMS256.txt | grep "$NODE.tar.xz" | sha256sum -c -
+sudo tar -xJf "$NODE.tar.xz" -C /usr/local --strip-components=1 \
+  --exclude CHANGELOG.md --exclude LICENSE --exclude README.md
+node --version && sudo corepack enable   # writes /usr/local/bin/pnpm
+# The pnpm VERSION is web/package.json's `packageManager`; corepack fetches it
+# on first use, exactly as pnpm/action-setup does in CI.
+
+# 5a.2 the first build, as the service user (the deploy script does this on
+#      every deployment afterwards).
+sudo -u vidtheque /usr/local/bin/pnpm --dir /home/vidtheque/vidtheque/web install --frozen-lockfile
+sudo -u vidtheque /usr/local/bin/pnpm --dir /home/vidtheque/vidtheque/web build
+
+# 5a.3 the unit
+sudo cp /home/vidtheque/vidtheque/deploy/staging/vidtheque-web.service \
+        /etc/systemd/system/vidtheque-web.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now vidtheque-web
+```
+
+**Verify:**
+
+```bash
+systemctl status vidtheque-web --no-pager
+ss -tlnp | grep 3000        # expect 127.0.0.1:3000 and NOTHING on 0.0.0.0
+
+# A page, and its four document headers — the CSP with a nonce, and the three
+# beside it. They left Python with the pages (demo-site.md §7 item 0) and no
+# test in mcp/ can see them, so this is where they are checked on the box.
+curl -sSD- -o /dev/null http://127.0.0.1:3000/ | grep -iE \
+  'content-security-policy|x-frame-options|x-content-type-options|referrer-policy'
+# expect all four, and a fresh `nonce-…` in the CSP on every request:
+curl -s -D- -o /dev/null http://127.0.0.1:3000/ | grep -o "nonce-[^']*"
+curl -s -D- -o /dev/null http://127.0.0.1:3000/ | grep -o "nonce-[^']*"
+# the two must DIFFER. A repeated nonce means a page was prerendered, which is
+# a CSP that protects nothing (frontend-migration.md §1b).
+```
+
+---
+
+## 5b. Public — caddy and the edge
+
+```bash
+# 5b.1 install caddy (caddyserver.com/docs/install, verified 2026-09-06)
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+  | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+  | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+sudo chmod o+r /etc/apt/sources.list.d/caddy-stable.list
+sudo apt update && sudo apt install caddy
+
+# 5b.2 THE PACKAGE STARTS ITS OWN CADDY ON :80. Stop it before anything else:
+#      it serves the package's welcome page, and two caddies on one box makes
+#      "which one answered" a question you do not want on launch morning.
+sudo systemctl disable --now caddy
+sudo systemctl mask caddy
+
+# 5b.3 the routing rule, from the checkout. vidtheque-deploy.sh re-installs it
+#      on every deployment so it can never lag the code it routes to.
+sudo install -m 644 /home/vidtheque/vidtheque/deploy/Caddyfile /etc/caddy/Caddyfile
+
+# 5b.4 the unit
+sudo cp /home/vidtheque/vidtheque/deploy/staging/vidtheque-caddy.service \
+        /etc/systemd/system/vidtheque-caddy.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now vidtheque-caddy
+```
+
+**Verify — and this is the step the whole cutover turns on:**
+
+```bash
+# The bind. This is the box's exposure argument, the same one stack.env's
+# VIDTHEQUE_HOST=127.0.0.1 makes for mcp — and now the only one that matters,
+# because mcp and web are behind it.
+ss -tlnp | grep 8080        # expect 127.0.0.1:8080 and NOTHING on 0.0.0.0
+
+# THE ROUTE TABLE, through the edge. Each line is a row of
+# frontend-migration.md §1a/§1d, and the METHOD SPLIT is the half no other
+# check covers: a proxy that routes the three collision paths on path alone
+# answers a form POST with a document and nothing says so.
+E=http://127.0.0.1:8080
+curl -s -o /dev/null -w '%{http_code} %{content_type}  GET /\n'      $E/
+curl -s -o /dev/null -w '%{http_code} %{content_type}  GET /demo\n'  $E/demo
+curl -s -o /dev/null -w '%{http_code} %{content_type}  GET /healthz\n' $E/healthz
+curl -s -o /dev/null -w '%{http_code} %{content_type}  GET /dashboard\n' $E/dashboard
+curl -s -o /dev/null -w '%{http_code} %{content_type}  GET /dashboard/login\n' $E/dashboard/login
+curl -s -o /dev/null -w '%{http_code} %{content_type}  GET /dashboard/api/session\n' $E/dashboard/api/session
+# The first five must be text/html (Next); /healthz and the api one must be
+# application/json (Python).
+
+for p in login index following; do
+  curl -s -o /dev/null -w "%{http_code} %{content_type}  POST /dashboard/$p\n" \
+    -X POST -H 'Content-Type: application/x-www-form-urlencoded' \
+    -H 'Accept: application/json' --data '' $E/dashboard/$p
+done
+# NONE OF THE THREE MAY BE text/html. On this box all three are 404s, because
+# a read-only deployment registers no write side at all (dashboard.md §21), and
+# an unrouted path under the MCP mount answers `text/plain` — so `404
+# text/plain` is the pass here. `200 text/html` is the failure that matters:
+# that is the front end answering a write with the page beside it, and on a box
+# WITH a write side it would be a form that silently never posted.
+```
+
+---
+
 ## 6. Public — mode verification, before the tunnel exists
 
 **Mode verification, in full.** Run all of it against
@@ -230,10 +391,16 @@ for p in login logout index; do
   curl -s -o /dev/null -w "%{http_code} /$p\n" -X POST 127.0.0.1:8100/dashboard/$p
 done
 
-# redactions (deploy-public.md §2.5)
-curl -s 127.0.0.1:8100/dashboard/jobs | grep -ciE 'youtube\.com|youtu\.be/|cookiefile|player_client|/home/'   # 0
-curl -s 127.0.0.1:8100/dashboard | grep -ciE 'Qwen/|Declared models|keyframe JPEGs|auth='                     # 0
-curl -s 127.0.0.1:8100/dashboard | grep -c 'read-only demo'                                                   # 1
+# redactions (deploy-public.md §2.5) — AGAINST THE JSON, not against HTML.
+# Python renders no page since 2026-09-06, so the greps that read
+# /dashboard and /dashboard/jobs now read the payloads the React pages read.
+# The projection is the same one, and it redacts by OMISSION: the operator's
+# reads are not taken, so there is no field to un-hide (frontend-migration §7).
+curl -s 127.0.0.1:8100/dashboard/api/jobs | grep -ciE 'youtube\.com|youtu\.be/|cookiefile|player_client|/home/'  # 0
+curl -s 127.0.0.1:8100/dashboard/api/overview | grep -ciE 'Qwen/|declared_models|auth_mode'                      # 0
+curl -s 127.0.0.1:8100/dashboard/api/session | jq '{readonly, write_side, policy}'
+# expect readonly true, write_side false, policy "public" — the three facts the
+# rail's "read-only demo" sentence used to be the only witness to.
 
 # THE LEG CHECK — the one thing topology B adds, and the one /api/search
 # cannot answer, because the facade does not carry leg_counts.
@@ -285,8 +452,10 @@ cloudflared tunnel --config /etc/cloudflared/config.yml ingress validate
 cloudflared tunnel ingress rule --config /etc/cloudflared/config.yml https://vidtheque.dev/mcp
 cloudflared tunnel ingress rule --config /etc/cloudflared/config.yml https://vidtheque.dev/dashboard
 cloudflared tunnel ingress rule --config /etc/cloudflared/config.yml https://vidtheque.dev/frames/x-00000.jpg
-# all three must resolve to http://127.0.0.1:8100 — the dashboard one included,
-# because the dashboard is public (Phase 1 decision 4)
+# all three must resolve to http://127.0.0.1:8080 — THE EDGE, one rule for
+# every path, the dashboard one included because the dashboard is public
+# (Phase 1 decision 4). Which of the two servers behind it answers each of
+# these is the Caddyfile's business and §5b's checks, not the tunnel's.
 
 # 7d. DNS. Do NOT hand-create the record.
 cloudflared tunnel route dns vidtheque vidtheque.dev
@@ -343,7 +512,10 @@ Phase 1 decision 6 is **both**:
 ```bash
 systemctl is-enabled cloudflared          # on the public box  -> enabled
 systemctl is-enabled vidtheque-mcp        # on the public box  -> enabled
+systemctl is-enabled vidtheque-web        # on the public box  -> enabled
+systemctl is-enabled vidtheque-caddy      # on the public box  -> enabled
 systemctl is-enabled vidtheque-worker     # on the SANDBOX     -> enabled
+systemctl is-enabled caddy                # on the public box  -> MASKED (§5b.2)
 pct config <CTID> | grep onboot           # on the HOST        -> onboot: 1
 ```
 
@@ -406,7 +578,13 @@ The escalation, each step more permanent. Reasoning:
    older release and request a deployment.
 3. **Roll the code back.** Request a deployment of an earlier ref — this box is
    a git clone, so there is no image tag to pin. (The *private* box, CT 9002,
-   rolls back differently: `vidtheque-update <previous tag>`.)
+   rolls back differently: `vidtheque-update <previous tag>`.) Since the
+   front-end cutover that ref carries three things rather than one: the Python
+   source, the `web/` build the deploy script re-runs from it, and
+   `deploy/Caddyfile`, which the script re-installs and the edge re-validates.
+   A ref from before the cutover has no front end and no Caddyfile, so rolling
+   back past it is `systemctl stop vidtheque-caddy vidtheque-web` plus pointing
+   the tunnel at 127.0.0.1:8100 again — a hand-run rollback, not a deployment.
 4. **`pct rollback <id> pre-launch`.** Undoes the container.
 5. **Delete the DNS record**, then `cloudflared tunnel delete vidtheque` —
    this invalidates the credentials, so recreating means redoing §9.
@@ -447,6 +625,9 @@ deployment: the outgoing generation waits in `$DATA_DIR/corpus-previous/`
 (exactly one is kept), and the script stages a requested generation from
 there without re-downloading.
 
-The stats on the landing page (`static/landing/data.js`) are harvested from
-the same snapshot — regenerate them in the commit that bumps the manifest,
-or the wall and the corpus disagree in public.
+The stats on the landing page are harvested from the same snapshot —
+regenerate them in the commit that bumps the manifest, or the wall and the
+corpus disagree in public. **They live in `web/src/landing/corpus.ts` now**,
+not in the deleted `static/landing/data.js`, which means the refresh needs the
+front end rebuilt: the deploy that ships the manifest ships the new numbers,
+because `vidtheque-deploy.sh` runs `pnpm build` before it restarts anything.
