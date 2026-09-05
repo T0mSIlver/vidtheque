@@ -13,7 +13,7 @@ import { ROOT } from "@/lib/dashboard/client";
 // ledger's figures and by the videos table's own tags — so it is answered
 // once, here. Porting a page adds its path to this list, names it in
 // `proxy.ts`'s matcher, and changes nothing else.
-const PAGES: string[] = [ROOT, `${ROOT}/ledger`];
+const PAGES: string[] = [ROOT, `${ROOT}/ledger`, `${ROOT}/videos`];
 
 /** Does this app serve the page `href` points at? Query and fragment are not
  *  part of the question — `/dashboard/videos?index_state=failed` is the videos

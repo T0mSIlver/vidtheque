@@ -131,19 +131,20 @@ describe("proxy", () => {
   // the JSON the pages read, the stylesheet and fonts the unported pages load,
   // the session flow, and every page still rendered by Jinja.
   it("covers the dashboard pages this app serves, and no other dashboard path", () => {
-    for (const path of ["/dashboard", "/dashboard/ledger"]) {
+    for (const path of ["/dashboard", "/dashboard/ledger", "/dashboard/videos"]) {
       expect(matches(path), path).toBe(true);
     }
     for (const path of [
       "/dashboard/api/session",
       "/dashboard/api/overview",
+      "/dashboard/api/library",
+      "/dashboard/api/library/kCc8FmEb1nY",
+      "/dashboard/videos/kCc8FmEb1nY",
       "/dashboard/static/dashboard.css",
       "/dashboard/static/fonts/archivo-latin-wght-normal.woff2",
       "/dashboard/login",
       "/dashboard/logout",
       "/dashboard/index",
-      "/dashboard/videos",
-      "/dashboard/videos/kCc8FmEb1nY",
       "/dashboard/jobs",
       "/dashboard/following",
       // Not a page here either: a sub-path of one that is.
