@@ -52,7 +52,7 @@ for, whereas `/api/*` under a prefix rule is the whole facade in one line.
 | `/auth/*`, `/.well-known/*` | Python |
 | `/healthz` | Python |
 | `/videos/{id}/export.md` | Python |
-| `/dashboard/*` — pages, `/dashboard/api/*`, `/dashboard/static/*` | Python, until its own port lands |
+| `/dashboard/*` — pages, `/dashboard/api/*`, `/dashboard/static/*` | Python, until its own port lands — §1d |
 | anything else | Python (`Mount("/", mcp_app)`, which 404s) |
 
 **`POST /api/ask` is Python's**, and the Next route handler that shadowed it is
@@ -160,6 +160,57 @@ Python. Browser traffic reaches Python directly and carries the visitor's
 address without help. The header must still equal the instance's
 `VIDTHEQUE_TRUSTED_IP_HEADER`, or every visitor this server reads for shares
 one rate-limit bucket.
+
+## 1d. Route ownership under `/dashboard`
+
+*Recorded 2026-09-05, from `DECISIONS.md` ("Dashboard pages fetch
+client-side").* §1a splits the public surface; this is the same split inside
+the dashboard, and it is decided by how the pages get their data.
+
+**The pages fetch client-side.** Next serves a **data-free shell** for every
+`/dashboard*` page. The browser calls `/dashboard/api/*` same-origin with its
+own `vidtheque_session` cookie, and React renders from that response. Every
+write is a browser call to Python's existing `POST` routes under `/dashboard/*`
+under the cookie and Origin rules of dashboard.md §3.3. **Next never sees the
+cookie**, forwards nothing on a visitor's behalf, and caches nothing per user.
+
+Two things this arrangement gets for free rather than legislating. The public
+read-only projection keeps working, because the API already answers anonymous
+reads there (§7) — the shell is the same shell either way. And a **`401` from
+the API is what sends the browser to the login page**: the refusal is the
+signal, so authorization is decided in one place and the shell has no rule of
+its own to keep in step.
+
+Rejected, and why, so nobody re-derives it: **server rendering with cookie
+forwarding**, which makes Next a credential relay — it must forward the session
+cookie and the visitor's address on every read, and must never cache a response
+across users. A **hybrid** was rejected on the same grounds, because one
+forwarded cookie costs the whole property.
+
+What each side owns, once a page is ported:
+
+| Path | Served by |
+| --- | --- |
+| `GET /dashboard` | **Next** |
+| `GET /dashboard/ledger` | **Next** |
+| `GET /dashboard/videos`, `GET /dashboard/videos/{id}` | **Next** |
+| `GET /dashboard/search` | **Next** |
+| `GET /dashboard/jobs`, `GET /dashboard/jobs/{id}` | **Next** |
+| `GET /dashboard/following`, `GET /dashboard/following/{slug}` | **Next** |
+| `/dashboard/api/*` | Python |
+| `/dashboard/static/*` | Python |
+| `/dashboard/login`, `/dashboard/logout` | Python |
+| `/dashboard/index` (the form and its POST) | Python |
+| every other `POST /dashboard/*` | Python |
+
+Exact page GETs again, not a prefix: `/dashboard`-anything is Python's unless
+it is one of the paths above. **Until a page is ported, Python keeps serving
+its HTML** — the list is the destination, and a row becomes true the day that
+React page lands, page by page as `docs/ROADMAP.md` tracks it.
+
+The `web/` side expresses this split in its development rewrites and in the
+matcher of the middleware that sends the document policy (§1b). That is
+configuration catching up with the rule; the rule is the table.
 
 ## 2. What landed
 
