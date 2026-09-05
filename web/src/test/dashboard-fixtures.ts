@@ -135,6 +135,7 @@ export const OWNER_LEDGER = {
     chunks: 3,
     tags: 2,
     channels: 4,
+    published: { oldest: 1673913600, newest: 1740000000 },
     last_indexed: 1750000000,
   },
   videos_by_state: { ready: 3, pending: 0, indexing: 1, failed: 0, stale: 0 },
