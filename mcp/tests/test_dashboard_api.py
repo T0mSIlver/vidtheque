@@ -1045,56 +1045,56 @@ def test_neither_video_payload_carries_a_rendered_clock(tmp_path: Path) -> None:
 CUES = f"{ROOT}/api/videos/{FIRST}/cues"
 
 
-def test_the_cues_endpoint_carries_the_typed_half_beside_the_strings(
+def test_the_cues_endpoint_is_typed_and_the_strings_are_gone(
     tmp_path: Path,
 ) -> None:
     """Tom, 2026-09-05: add the typed fields, cut the strings at the port.
 
-    `at`, `conf` and `chunk` are renderings of numbers `api._cue_rows` already
-    had, and this endpoint sent only the renderings. The numbers are on the wire
-    now, under `_cue_rows`' own names, and every one of them has to agree with
-    the string beside it — two ways of saying when a cue starts that can
-    disagree is worse than one that is only a string.
+    This endpoint sent `at` (a `clock()`), `conf` (a two-decimal
+    log-probability) and `chunk` (a composed sentence) and none of the numbers
+    behind them. The numbers landed beside the strings on 2026-09-05; the
+    strings went on 2026-09-06 with `static/dashboard.js`, which was the only
+    thing reading them.
     """
     with make_client(tmp_path) as client:
         body = read(client, CUES)
 
     assert body["cues"], "the fixture's six cues"
     for cue in body["cues"]:
+        assert set(cue) == {
+            "start_s",
+            "end_s",
+            "avg_logprob",
+            "chunk_opens",
+            "chunk_closes",
+            "t",
+            "text",
+            "speaker",
+            "in_chunk",
+        }
         assert isinstance(cue["start_s"], float)
         assert isinstance(cue["end_s"], float)
         assert cue["end_s"] >= cue["start_s"]
-        # `at` is `clock(start_s)` and `t` is its floor: the same instant.
-        assert cue["at"] == clock(cue["start_s"])
+        # `t` is the floor of `start_s`, which is what a `?t=` deeplink takes.
         assert cue["t"] == int(cue["start_s"])
+        assert cue["avg_logprob"] is None or isinstance(cue["avg_logprob"], float)
 
-        if cue["avg_logprob"] is None:
-            assert cue["conf"] is None
-        else:
-            assert isinstance(cue["avg_logprob"], float)
-            assert cue["conf"] == f"{cue['avg_logprob']:.2f}"
-
-        # The composed sentence, and the five fields it is composed from.
+        # The five fields a chunk label is composed *from*, and no label.
         opens = cue["chunk_opens"]
-        if opens is None:
-            assert cue["chunk"] is None
-        else:
+        if opens is not None:
             assert set(opens) == {"seq", "start_s", "end_s", "n_chars", "n_words"}
             assert isinstance(opens["seq"], int)
             assert isinstance(opens["n_words"], int)
             assert isinstance(opens["n_chars"], int)
-            assert cue["chunk"] == (
-                f"chunk {opens['seq']} · "
-                f"{clock(opens['start_s'])}–{clock(opens['end_s'])} · "
-                f"{opens['n_words']} words · {opens['n_chars']} chars"
-            )
         # `in_chunk` is the two markers collapsed into one bool, which is why
         # both of them are sent: a chunk's last cue is not its first.
         assert isinstance(cue["chunk_closes"], bool)
         assert cue["in_chunk"] is (opens is not None or cue["chunk_closes"])
 
-    # Without this the branch above never ran and the sentence is unasserted.
+    # Without this the branch above never ran.
     assert any(cue["chunk_opens"] is not None for cue in body["cues"])
+    # And no rendered clock survived anywhere in the payload.
+    assert not re.search(r'"\d+:\d{2}(?::\d{2})?"', json.dumps(body))
 
 
 def test_the_cues_endpoint_drops_nothing_new_in_the_projection(
@@ -1428,22 +1428,6 @@ JOB = f"{ROOT}/api/jobs/job_finished01"
 RUNNING = f"{ROOT}/api/jobs/job_running001"
 
 
-def _typed(value):  # type: ignore[no-untyped-def]
-    """The payload with every `text` block dropped.
-
-    The jobs pair is the one place on this surface that still carries rendered
-    strings beside its numbers — a script with no formatter of its own reads
-    them, and §5.4 deletes them with that script. The scans below are about the
-    *typed* half, which is the half a React page reads and the half that has to
-    be complete on its own.
-    """
-    if isinstance(value, dict):
-        return {k: _typed(v) for k, v in value.items() if k != "text"}
-    if isinstance(value, list):
-        return [_typed(v) for v in value]
-    return value
-
-
 def test_the_jobs_list_says_what_each_row_holds(tmp_path: Path) -> None:
     """The row headline, on the payload as well as the page (§5.4, 2026-09-05).
 
@@ -1590,18 +1574,16 @@ def test_the_jobs_list_keeps_the_projection_on_the_fields_it_grew(
 
 
 def test_the_jobs_lists_new_fields_carry_no_rendered_clock(tmp_path: Path) -> None:
-    """The typed rule, on the half of this payload that is not the `text` block.
+    """The typed rule, on the three fields the React port added (2026-09-05).
 
-    The jobs pair is the one place here that still ships rendered strings, and
-    they are fenced: every one is under `text`, every one renders a number sent
-    beside it, and §5.4 deletes the block with `static/jobs.js`. Nothing added
-    on 2026-09-05 may join them.
+    It used to have to exclude the `text` block to say this; that block went on
+    2026-09-06 and the sweep over the whole payload is the test below.
     """
     with make_client(tmp_path) as client:
         payload = read(client, f"{JOBS}?limit=100000")
     grown = json.dumps(
         {
-            "contents": [_typed(row["contents"]) for row in payload["jobs"]],
+            "contents": [row["contents"] for row in payload["jobs"]],
             "filters": payload["filters"],
             "notes": payload["notes"],
         }
@@ -1711,27 +1693,25 @@ def test_the_job_detail_projection_drops_the_operators_prose(tmp_path: Path) -> 
 def test_the_job_details_new_fields_carry_no_rendered_clock(tmp_path: Path) -> None:
     """The typed rule again, on the six fields added on 2026-09-05.
 
-    `focus` is a job item and job items carry the transitional `text` block, so
-    the scan is over the typed half — the half a React page reads. What it must
-    not find is a stamp or a spoken duration that only Python could have built.
+    What it must not find is a stamp or a spoken duration that only Python
+    could have built. It used to have to strip a `text` block off `focus`
+    first; that block is gone (2026-09-06), so the scan is the payload.
     """
     with make_client(tmp_path) as client:
         for path in (JOB, RUNNING):
             payload = read(client, path)
             grown = json.dumps(
-                _typed(
-                    {
-                        key: payload[key]
-                        for key in (
-                            "items_capped",
-                            "counts",
-                            "error_counts",
-                            "degraded",
-                            "focus",
-                            "stages",
-                        )
-                    }
-                )
+                {
+                    key: payload[key]
+                    for key in (
+                        "items_capped",
+                        "counts",
+                        "error_counts",
+                        "degraded",
+                        "focus",
+                        "stages",
+                    )
+                }
             )
             assert not ISO_STAMP.search(grown), f"a rendered date reached {path}"
             assert not SPOKEN_DURATION.search(grown), f"a rendered duration reached {path}"
@@ -2058,3 +2038,53 @@ def test_a_dashboard_frame_url_is_relative_and_still_signed(tmp_path: Path) -> N
         facade = read(client, FACADE, headers=BEARER)
         absolute = [row["thumb"] for row in facade["videos"] if row["thumb"]]
         assert absolute and all(url.startswith(f"{base}/frames/") for url in absolute)
+
+
+def test_the_jobs_payloads_carry_no_rendered_string_but_the_one_sentence(
+    tmp_path: Path,
+) -> None:
+    """The `text` blocks are gone, and `basis` is what was left standing.
+
+    Nine strings rode beside the typed fields on every job and every item —
+    `"73%"`, `"4m 12s"`, `"2/3"`, an `iso_minute` stamp per event — because
+    `static/jobs.js` had no formatter of its own. The script went with the
+    Jinja pages and React formats, so the renderings went too
+    (frontend-migration.md §3).
+
+    `basis` is the exception and it is not a rendering: it is the sentence
+    saying what the progress percentage is computed over, which is policy text
+    and stays Python's under DECISIONS.md's split. It is a field on the card
+    rather than a nested block, so there is nothing left called `text`.
+    """
+    from vidtheque_mcp.jobs import store as jobs_store
+
+    with make_client(tmp_path) as client:
+        listing = read(client, JOBS)
+        detail = read(client, JOB)
+
+    for card in listing["jobs"]:
+        assert "text" not in card
+        assert card["basis"] == (
+            f"of {card['n_items']} item(s). An item still in the pipeline counts "
+            f"the stages it has finished, out of {len(jobs_store.STAGES)}."
+        )
+        # The numbers the strings were renderings of are all still here.
+        assert isinstance(card["progress"], int)
+        for key in ("wall_s", "ran_s", "waited_s", "defer_s", "finished_at"):
+            assert key in card, key
+
+    assert "text" not in detail["job"]
+    for item in detail["items"]:
+        assert "text" not in item
+        assert isinstance(item["attempts"], int)
+        assert isinstance(item["max_attempts"], int)
+    for event in detail["events"]:
+        assert "at_text" not in event
+        assert isinstance(event["at"], int)
+
+    # And the sweep the two "no rendered clock" tests make, over the whole of
+    # both payloads rather than over the fields that were typed to begin with.
+    for payload in (listing, detail):
+        raw = json.dumps(payload)
+        assert not ISO_STAMP.search(raw)
+        assert not SPOKEN_DURATION.search(raw)

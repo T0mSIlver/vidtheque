@@ -23,11 +23,12 @@ reads (§22), and the jobs table with one job's war story (§5.4). `views.py`
 imported them back under their old private names until it was deleted with the
 pages; the reads have not changed since.
 
-The jobs half carries the one exception to "nothing here formats a value": the
-`text` block beside every typed job field, which `static/jobs.js` read because
-it had no formatter of its own. It is transitional and the contract says so —
-it goes in the commit that cuts the rendered strings (§5.4) — and every string
-in it is a rendering of a number sent beside it.
+Nothing here renders a value any more. The jobs half carried a `text` block
+beside every typed field until 2026-09-06 — nine strings `static/jobs.js`
+assigned verbatim because it had no formatter of its own — and it went with
+that script. `basis` is what survived it: the sentence saying what the progress
+percentage is computed over, which is policy rather than a formatting of a
+number (§5.4, DECISIONS.md 2026-09-05).
 
 The follow half carries one thing the others do not: `follow_row_json`, the
 typed shape a follow travels in, which `writes.py` answers a write outcome with
@@ -54,11 +55,10 @@ from ..follows import rules as follow_rules
 from ..follows import store as follows_store
 from ..jobs import store as jobs_store
 from ..public.api import OWNER_CLAMPS, _cover_frames, thumb_url
-from ..text import clamp, iso_day, iso_minute, iso_z, split_csv
+from ..text import clamp, iso_day, split_csv
 from ..timeparse import parse_corpus_time
 from ..tools import library
 from ..tools.base import Deps
-from .render import span
 
 # The fixed width set (dashboard.md §6.4). Three variants per frame in the
 # `derived/` cache, not one per browser window — and never inline base64, which
@@ -193,18 +193,14 @@ def declared_models(config: dict[str, str]) -> list[dict[str, str]]:
 
 
 def _stamped(readiness: dict[str, Any]) -> dict[str, Any]:
-    """One reading of the clock, in the two shapes this observation is read in.
+    """When this observation was made, in epoch seconds.
 
-    The page prints `checked_at` into a `<time datetime=…>` attribute, which
-    wants ISO-8601 UTC. The JSON sends `checked_at_s`, because React owns date
-    formatting (DECISIONS.md, 2026-09-05) and an API that ships an already
-    rendered day is the one field where that split silently stops holding. Both
-    come off the same `time.time()` call here rather than from two, so the page
-    and the payload can never name different seconds.
+    It carried a second, ISO-8601 shape until 2026-09-06, because the page
+    printed it into a `<time datetime=…>` attribute. The page is React's and
+    React owns date formatting (DECISIONS.md, 2026-09-05), so the rendered half
+    went with it and the field a client reads is unchanged.
     """
-    now = time.time()
-    readiness["checked_at"] = iso_z(now)
-    readiness["checked_at_s"] = int(now)
+    readiness["checked_at"] = int(time.time())
     return readiness
 
 
@@ -228,7 +224,6 @@ async def pipeline_readiness(request: Request, *, redact: bool) -> dict[str, Any
         },
         "worker": None,
         "checked_at": None,
-        "checked_at_s": None,
     }
     if redact:
         return _stamped(readiness)
@@ -1242,15 +1237,6 @@ POLL_MS = 2_000
 LIVE_STATES = ("queued", "running")
 
 
-def counts_line(card: dict[str, Any]) -> str:
-    parts = [f"{card['n_done']}/{card['n_items']} done"]
-    for key, word in (("n_failed", "failed"), ("n_skipped", "skipped"),
-                      ("n_cancelled", "cancelled")):
-        if card[key]:
-            parts.append(f"{card[key]} {word}")
-    return " · ".join(parts)
-
-
 def job_card(
     row: sqlite3.Row, now: int, *, degraded: int = 0, redact: bool = False
 ) -> dict[str, Any]:
@@ -1300,57 +1286,19 @@ def job_card(
         "error_message": None if redact else row["error_message"],
         "degraded": int(degraded),
     }
-    # Every changing value, formatted once, server-side. The page renders these
-    # strings and the 2 s tick assigns the same strings to the same nodes, so
-    # the poller needs no formatter of its own and cannot drift into a second
-    # way of saying "4m 12s" (the one exception is the countdown between ticks,
-    # which is arithmetic on a number this already sent).
-    # What the percentage is made of, and what it is computed over (Tom,
-    # 2026-08-10, round 4: "the progress % is unexplained"). All five buckets,
-    # always, including the zeroes — the point of the line is that they add up
-    # to `n_items`, and a tally with terms missing does not visibly add up.
-    pending = max(
-        0,
-        card["n_items"]
-        - card["n_done"]
-        - card["n_failed"]
-        - card["n_skipped"]
-        - card["n_cancelled"],
+    # What the percentage is computed over (Tom, 2026-08-10, round 4: "the
+    # progress % is unexplained"). This is the one survivor of the `text` block
+    # that rode beside every field on this card until 2026-09-06 — nine
+    # rendered strings a script assigned verbatim because it had no formatter
+    # of its own. The script is gone and React formats; a *sentence* is not a
+    # formatting of anything, it is the policy behind the number, so it stays
+    # Python's by DECISIONS.md's own split and is a field rather than a nested
+    # block. `jobs_store.STAGES` rather than a literal 7, because the fraction
+    # in `_ITEM_FRACTION` is divided by that same tuple's length.
+    card["basis"] = (
+        f"of {card['n_items']} item(s). An item still in the pipeline counts "
+        f"the stages it has finished, out of {len(jobs_store.STAGES)}."
     )
-    card["text"] = {
-        "progress": f"{card['progress']}%",
-        "counts": counts_line(card),
-        "tally": " · ".join(
-            (
-                f"{card['n_done']} done",
-                f"{card['n_failed']} failed",
-                f"{card['n_skipped']} skipped",
-                f"{card['n_cancelled']} cancelled",
-                f"{pending} still to run",
-            )
-        ),
-        # The rule, in the one place a reader can ask for it. `jobs_store.STAGES`
-        # rather than a literal 7, because the fraction in `_ITEM_FRACTION` is
-        # divided by that same tuple's length.
-        "basis": (
-            f"of {card['n_items']} item(s). An item still in the pipeline counts "
-            f"the stages it has finished, out of {len(jobs_store.STAGES)}."
-        ),
-        "wall": span(card["wall_s"]),
-        "ran": span(card["ran_s"]),
-        "waited": span(card["waited_s"]),
-        "defer": span(card["defer_s"]),
-        # When it stopped, not only when it was asked for (Tom, 2026-08-13:
-        # "created is not enough"). `created_at` answers "when did I queue
-        # this"; the operator arriving at 03:00 is asking "when did the batch
-        # actually end", and until now the only page that said so was the job's
-        # own. A job that has not finished says so with the em dash this
-        # surface already uses for "not recorded" (`render.dash`) rather than
-        # with an empty cell — and because a running job *acquires* the value
-        # under the reader, it is formatted here and patched by the tick, like
-        # every other changing string on this row.
-        "finished": iso_minute(finished) if finished else "—",
-    }
     return card
 
 
@@ -1389,13 +1337,6 @@ def job_item(row: sqlite3.Row, now: int, *, redact: bool = False) -> dict[str, A
         "finished_at": finished,
         "took_s": None if started is None or end is None else max(0, end - started),
     }
-    item["text"] = {
-        "attempts": f"{attempts}/{max_attempts}",
-        "took": span(item["took_s"]),
-        "stage": (
-            f"{item['stage']} {item['stage_pct']}%" if item["stage"] else "—"
-        ),
-    }
     return item
 
 
@@ -1412,9 +1353,6 @@ def job_event(row: sqlite3.Row, *, redact: bool = False) -> dict[str, Any]:
     return {
         "id": int(row["id"]),
         "at": int(row["at"]),
-        # Formatted here so an event that arrives on a tick is stamped the same
-        # way as one that arrived with the page, by the same function.
-        "at_text": iso_minute(int(row["at"])),
         "level": str(row["level"]),
         "stage": row["stage"],
         "item_id": row["item_id"],
