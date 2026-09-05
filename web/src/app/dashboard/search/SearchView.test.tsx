@@ -323,6 +323,17 @@ describe("the owner's search page", () => {
       "href",
       "/dashboard/search?q=cache&offset=10",
     );
+
+    // …and nothing on a hit is dropped for it: §2.4 gives the demo the
+    // browsable corpus whole, and a search result is corpus. The frames are
+    // still this page's own relative URLs, which in `AUTH=none` are simply
+    // unsigned against a route that is open.
+    expect(screen.getByText("Let's build GPT: from scratch")).toBeInTheDocument();
+    expect(momentAt("0:05")).toHaveTextContent("kv cache size = 2 * n_layers * n_heads");
+    expect(within(momentAt("0:05")).getByRole("img")).toHaveAttribute(
+      "src",
+      "/frames/kCc8FmEb1nY-00000.jpg?w=192&q=70",
+    );
   });
 
   // ---------------------------------------------------------- the refusals
