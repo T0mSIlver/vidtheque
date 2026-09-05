@@ -241,8 +241,8 @@ function Filters({
   }
 
   return (
-    <form className={styles.filters} key={search} onSubmit={submit}>
-      <div className={`${styles.field} ${styles.wide}`}>
+    <form className={dash.filters} key={search} onSubmit={submit}>
+      <div className={`${dash.field} ${dash.wide}`}>
         <label htmlFor="f-q">Title, channel or description</label>
         <input
           id="f-q"
@@ -258,7 +258,7 @@ function Filters({
           select sized by its own longest option both change width when the
           reader changes what is in them, and one control resizing re-flows the
           row. The band's geometry is the viewport's. */}
-      <div className={`${styles.field} ${styles.text}`}>
+      <div className={`${dash.field} ${dash.text}`}>
         <label htmlFor="f-channel">Channel</label>
         <input
           id="f-channel"
@@ -268,7 +268,7 @@ function Filters({
           autoComplete="off"
         />
       </div>
-      <div className={`${styles.field} ${styles.text}`}>
+      <div className={`${dash.field} ${dash.text}`}>
         <label htmlFor="f-tags">Tags</label>
         <input
           id="f-tags"
@@ -279,9 +279,9 @@ function Filters({
           autoComplete="off"
         />
       </div>
-      <div className={`${styles.field} ${styles.pickField}`}>
+      <div className={`${dash.field} ${dash.pickField}`}>
         <label htmlFor="f-state">State</label>
-        <span className={styles.pick}>
+        <span className={dash.pick}>
           <select id="f-state" name="index_state" defaultValue={value("index_state", "all")}>
             <option value="all">all states</option>
             {INDEX_STATES.map((state) => (
@@ -292,9 +292,9 @@ function Filters({
           </select>
         </span>
       </div>
-      <div className={`${styles.field} ${styles.pickField}`}>
+      <div className={`${dash.field} ${dash.pickField}`}>
         <label htmlFor="f-has">Coverage</label>
-        <span className={styles.pick}>
+        <span className={dash.pick}>
           <select id="f-has" name="has" defaultValue={value("has", "any")}>
             {HAS_VALUES.map((entry) => (
               <option key={entry} value={entry}>
@@ -309,7 +309,7 @@ function Filters({
           box did the work. A fieldset because a range is one question asked
           with two inputs, and a screen reader needs the legend to know the
           second date belongs to the first. */}
-      <fieldset className={`${styles.field} ${styles.rangeField}`}>
+      <fieldset className={`${dash.field} ${styles.rangeField}`}>
         <legend>Published</legend>
         <div className={styles.range}>
           <label className={dash.srOnly} htmlFor="f-pub-after">
@@ -337,7 +337,7 @@ function Filters({
           />
         </div>
       </fieldset>
-      <fieldset className={`${styles.field} ${styles.rangeField}`}>
+      <fieldset className={`${dash.field} ${styles.rangeField}`}>
         <legend>Indexed</legend>
         <div className={styles.range}>
           <label className={dash.srOnly} htmlFor="f-idx-after">
@@ -365,9 +365,9 @@ function Filters({
           />
         </div>
       </fieldset>
-      <div className={`${styles.field} ${styles.pickField}`}>
+      <div className={`${dash.field} ${dash.pickField}`}>
         <label htmlFor="f-order">Order</label>
-        <span className={styles.pick}>
+        <span className={dash.pick}>
           <select id="f-order" name="order" defaultValue={value("order")}>
             {/* Empty rather than a guess: the default is `relevance` with a
                 query and `recency` without one, and that is Python's rule to
@@ -381,7 +381,7 @@ function Filters({
           </select>
         </span>
       </div>
-      <div className={`${styles.field} ${styles.narrow}`}>
+      <div className={`${dash.field} ${dash.narrow}`}>
         <label htmlFor="f-limit">Rows</label>
         {/* No `max`: the ceiling is `OWNER_CLAMPS.videos_max_limit` and this
             page has no copy of it. A hundred hardcoded here would be a second
@@ -398,11 +398,11 @@ function Filters({
           inputMode="numeric"
         />
       </div>
-      <div className={`${styles.field} ${styles.actions}`}>
-        <button className={styles.ghostlink} type="submit">
+      <div className={`${dash.field} ${dash.actions}`}>
+        <button className={dash.ghostlink} type="submit">
           Apply
         </button>
-        <DashLink className={styles.ghostlink} href={`${ROOT}/videos`}>
+        <DashLink className={dash.ghostlink} href={`${ROOT}/videos`}>
           Reset
         </DashLink>
       </div>
@@ -421,7 +421,7 @@ function Table({ data, search }: { data: Library; search: string }) {
           so the sentence rides on `notes` — policy text, rendered here and
           composed in Python. */}
       {data.notes.length ? (
-        <ul className={styles.notes}>
+        <ul className={dash.notes}>
           {data.notes.map((note) => (
             <li key={note}>{note}</li>
           ))}
@@ -430,10 +430,10 @@ function Table({ data, search }: { data: Library; search: string }) {
 
       {rows.length ? (
         <>
-          <p className={styles.tablecount} role="status">
+          <p className={dash.tablecount} role="status">
             <span>
-              <span className={styles.shown}>{rows.length}</span> shown of{" "}
-              <span className={styles.shown}>{count(data.total)}</span>
+              <span className={dash.shown}>{rows.length}</span> shown of{" "}
+              <span className={dash.shown}>{count(data.total)}</span>
               {data.pagination.has_more ? ", more available" : null}.
             </span>
           </p>
@@ -550,16 +550,16 @@ function Row({ row }: { row: LibraryRow }) {
         )}
       </td>
       <th scope="row" className={styles.colTitle} data-label="Title">
-        <DashLink className={styles.rowTitle} href={href}>
+        <DashLink className={dash.rowTitle} href={href}>
           {row.title}
         </DashLink>
-        <span className={styles.rowMeta}>
+        <span className={dash.rowMeta}>
           {row.channel}
           <Sep /> <code>{row.video_id}</code>
         </span>
       </th>
       <td data-label="Published">
-        <time className={styles.nowrap}>{day(row.published_at)}</time>
+        <time className={dash.nowrap}>{day(row.published_at)}</time>
       </td>
       <td className={dash.num} data-label="Duration">
         {duration(row.duration_s)}
@@ -600,11 +600,11 @@ function Row({ row }: { row: LibraryRow }) {
             ))}
           </span>
         ) : (
-          <span className={styles.muted}>—</span>
+          <span className={dash.muted}>—</span>
         )}
       </td>
       <td data-label="Indexed">
-        <time className={styles.nowrap}>{day(row.indexed_at)}</time>
+        <time className={dash.nowrap}>{day(row.indexed_at)}</time>
       </td>
     </tr>
   );
@@ -614,10 +614,10 @@ function Pager({ pagination, search }: { pagination: Library["pagination"]; sear
   const { limit, offset, has_more } = pagination;
   if (!offset && !has_more) return null;
   return (
-    <nav className={styles.pager} aria-label="Pagination">
+    <nav className={dash.pager} aria-label="Pagination">
       {offset ? (
         <DashLink
-          className={styles.ghostlink}
+          className={dash.ghostlink}
           href={linkTo(search, { offset: String(Math.max(offset - limit, 0)) })}
         >
           ← Previous
@@ -625,7 +625,7 @@ function Pager({ pagination, search }: { pagination: Library["pagination"]; sear
       ) : null}
       {has_more ? (
         <DashLink
-          className={styles.ghostlink}
+          className={dash.ghostlink}
           href={linkTo(search, { offset: String(offset + limit) })}
         >
           Next {limit} →
