@@ -56,21 +56,28 @@ from .read_models import pipeline_readiness as _pipeline_readiness
 from .read_models import redacted as _redacted
 from .read_models import thumb as _thumb
 from .read_models import tool_error as _tool_error
+# The videos table's and the detail page's half, moved out the same way on
+# 2026-09-05 (§20): the query assembly, the row facts, the stage table, the
+# shot facts and the frame cards. Same reads, same order, same bounds — the
+# page renders what the assembler read, and so does `/dashboard/api/videos`.
+from .read_models import HAS_VALUES, VIDEO_ORDERS, video_detail_reads, videos_reads
+from .read_models import video_header as _video_header
 
 # Re-exported deliberately (the redundant alias is the marker): the bound is
 # `read_models`' now, and a test reads it off this module.
 from .read_models import WORKER_STATUS_TIMEOUT_S as WORKER_STATUS_TIMEOUT_S
+from .read_models import (
+    CUE_PAGE,
+    CUE_PAGE_MAX,
+    FRAME_PAGE,
+    FRAME_PAGE_MAX,
+    OCR_LINE_CAP,
+    SHOT_CAP,
+    VIDEO_HISTORY_CAP,
+)
 from .render import build_environment, elapsed, span
 from .settings import ROOT
 
-# Page sizes. Owner clamps, still server-side: `?frames=100000` is clamped.
-FRAME_PAGE = 24
-FRAME_PAGE_MAX = 96
-CUE_PAGE = 50
-CUE_PAGE_MAX = 200
-SHOT_CAP = 2_000
-VIDEO_HISTORY_CAP = 10
-OCR_LINE_CAP = 600
 # `OCR_PREVIEW_LINES` is gone (Tom, 2026-08-10). It bounded a per-frame digest
 # whose expander split the list in two, which in turn capped the box↔line
 # linkage at the eight lines a stylesheet could enumerate. The panel is a
@@ -575,277 +582,73 @@ async def search(request: Request) -> Response:
 
 # ---------------------------------------------------------------- §5.2 videos
 
-_ORDERS = ("recency", "title", "duration", "indexed_at", "relevance")
-_HAS = ("any", "transcript", "ocr", "frames", "all")
-
-# The two ranges §5.2 lists and phase 1 did not wire, in the order they appear
-# in the band: when the talk was published, and when this box indexed it. They
-# are the corpus axis and the operations axis, and CLAUDE.md's invariant is
-# that they are never overloaded — which is exactly why they are two controls
-# and not one "date" filter with a mode.
-_DATE_FILTERS = (
-    ("published_after", "published_before"),
-    ("indexed_after", "indexed_before"),
-)
-_DATE_PARAMS = tuple(name for pair in _DATE_FILTERS for name in pair)
-
-# A date is a position on a real timeline, so it gets real bounds. Both are
-# *clamps*, not refusals, and the clamped value is echoed back into the form and
-# into every link on the page — a filter the server quietly changed and did not
-# show is the silent narrowing CLAUDE.md forbids.
-#
-# The floor is one second rather than zero: the column is unix seconds, and
-# `iso_day` renders a falsy stamp as `—`, so a floor of 0 would not survive the
-# round trip back into a date input. The ceiling is a year out, because nothing
-# in a corpus was indexed after now and "next year" is already a generous
-# reading of a clock skew.
-_DATE_FLOOR = 1
-_DATE_CEILING_S = 365 * 86_400
-_DAY_S = 86_400
-# Long enough for every accepted spelling (`2026-08-09T12:00:00+00:00` is 25),
-# short enough that the parser is never handed a kilobyte to think about.
-_DATE_MAX_CHARS = 32
-
-
-def _date_filters(
-    params: Any, now: int
-) -> tuple[dict[str, int | None], dict[str, str], dict[str, Any] | None]:
-    """Resolve the four date inputs to clamped epochs, plus what to echo back.
-
-    Resolved **here** rather than passed through as strings, for one reason
-    worth the extra call: `parse_corpus_time` accepts `30d`, `today` and a bare
-    unix stamp as well as `2026-08-09`, and those are good things to be able to
-    type into a URL and bad things to leave in a form field a browser renders
-    as a date picker. So the entry point stays generous and the canonical form
-    is the resolved UTC **day** — which is then what the picker shows, what the
-    pager links carry, and what the query actually filtered on. The URL a
-    visitor sends and the sentence the page prints are the same fact.
-
-    Both ends are snapped to that day on purpose, and the two ends are snapped
-    differently because the clause they feed is asymmetric
-    (`db/queries.py:416-419`): `>= after` and `< before`. So `after` becomes the
-    start of its day and `before` becomes the start of the *next* one, which is
-    what makes `published_before=2026-08-09` include the ninth. The alternative
-    — passing the instant through unrounded — is a control whose label says a
-    day and whose filter means a moment, and a range that quietly drops
-    everything published on its own end date reads as a bug because it is one.
-
-    The third element is the tool's own typed refusal when a value will not
-    parse, rendered rather than dropped: `timeparse` treats an unparseable
-    filter as a hard error precisely because a silently ignored filter is a
-    page reporting the wrong result set with total confidence.
-    """
-    resolved: dict[str, int | None] = {}
-    echo: dict[str, str] = {}
-    for name in _DATE_PARAMS:
-        raw = (params.get(name) or "").strip()[:_DATE_MAX_CHARS]
-        if not raw:
-            resolved[name], echo[name] = None, ""
-            continue
-        try:
-            value = int(parse_corpus_time(raw, name) or 0)
-        except ToolError as error:
-            return (
-                resolved,
-                echo,
-                {"code": error.code, "message": error.message, "next": error.next_hint},
-            )
-        value = max(_DATE_FLOOR, min(now + _DATE_CEILING_S, value))
-        day = value - value % _DAY_S
-        resolved[name] = day + (_DAY_S if name.endswith("_before") else 0)
-        echo[name] = iso_day(max(day, _DATE_FLOOR))
-    return resolved, echo, None
-
 
 async def videos(request: Request) -> Response:
-    assembled = request.app.state.assembled
-    deps: Deps = assembled.deps
-    params = request.query_params
+    """`GET /dashboard/videos` — the table, its filters and its exact count.
 
-    q = (params.get("q") or "").strip() or None
-    channel = (params.get("channel") or "").strip() or None
-    tags = (params.get("tags") or "").strip() or None
-    has = params.get("has") if params.get("has") in _HAS else "any"
-    # `all` is this page's default and it means all: a management table that
-    # cannot see the failed and the half-indexed is the one view nobody needs.
-    index_state = params.get("index_state") or "all"
-    if index_state not in (*queries.INDEX_STATES, "all"):
-        index_state = "all"
-    order = params.get("order") if params.get("order") in _ORDERS else None
-    if order is None:
-        order = "relevance" if q else "recency"
-    limit = clamp(params.get("limit"), 1, OWNER_CLAMPS.videos_max_limit,  # type: ignore[arg-type]
-                  OWNER_CLAMPS.videos_default_limit)
-    offset = clamp(params.get("offset"), 0, OWNER_CLAMPS.offset_max, 0)  # type: ignore[arg-type]
-    dates, date_echo, date_error = _date_filters(params, int(time.time()))
+    Every read, clamp and refusal is `read_models.videos_reads`', so this and
+    `/dashboard/api/videos` answer out of one query assembly (§20). What is
+    left here is the page: the template's context, and the strings the tool
+    already rendered for it.
+    """
+    data = await videos_reads(request)
 
-    filters = {
-        "q": q or "",
-        "channel": channel or "",
-        "tags": tags or "",
-        "has": has,
-        "index_state": index_state,
-        "order": order,
-        "limit": limit,
-        **date_echo,
-    }
-    # Every key the form and the link macros read, whatever went wrong: a
-    # refused date must still render a band with the other seven controls in
-    # it, so the reader can fix the one that broke instead of losing the query.
-    for name in _DATE_PARAMS:
-        filters.setdefault(name, "")
-
-    def refusal(error: dict[str, Any]) -> Response:
-        return _render(
-            "videos.html",
-            {
-                **_chrome(request, "videos"),
-                "title": "Videos",
-                "error": error,
-                "rows": [],
-                "pagination": {"limit": limit, "offset": offset, "has_more": False},
-                # No count, rather than a zero: a refused date filtered nothing,
-                # so there is no set to have counted.
-                "total": None,
-                "filters": filters,
-                "orders": _ORDERS,
-                "has_values": _HAS,
-                "index_states": queries.INDEX_STATES,
-            },
-            status=HTTP_STATUS.get(error["code"], 500),
-        )
-
-    if date_error is not None:
-        return refusal(date_error)
-
-    result = await library.list_videos(
-        deps,
-        q=q,
-        channel=channel,
-        tags=tags,
-        has=has,
-        index_state=index_state,
-        # Already resolved and clamped above, so the tool re-parses an integer
-        # rather than a string — same parameters, same clauses, one parse.
-        published_after=dates["published_after"],  # type: ignore[arg-type]
-        published_before=dates["published_before"],  # type: ignore[arg-type]
-        indexed_after=dates["indexed_after"],  # type: ignore[arg-type]
-        indexed_before=dates["indexed_before"],  # type: ignore[arg-type]
-        order=order,
-        limit=limit,
-        offset=offset,
-        fields="video_id,title,channel,published,duration,coverage,tags,indexed_at,index_state",
-        max_text_chars=200,
-    )
-    error = _tool_error(result)
-    if error is not None:
-        return refusal(error)
-
-    payload = result.structured_content or {}
-    rows = [dict(v) for v in payload.get("videos", [])]
-
-    # "50 shown of 473", with no tilde (Tom, 2026-08-13). The `~` was the tool's
-    # and it was honest there: `list-videos` counts through a ceiling
-    # (`COUNT_PROBE_FLOOR`) because an exact total is tokens an agent spends on
-    # a number it will not page through. A reader with a pager under the table
-    # is the other caller — the tilde is the one thing on the line they cannot
-    # act on — so this page counts the set itself, with the same filters, and
-    # the tool's probe is untouched.
-    #
-    # Two reads for it, and they are the two the tool already made privately:
-    # the corpus-axis filters collapse to a video-id pool, then one `COUNT(*)`
-    # over the same CTE the rows came out of. Rebuilt here rather than returned
-    # by the tool, because a tool that grows a parameter to please a page is how
-    # the two surfaces stop sharing one query layer.
-    filter_states = queries.INDEX_STATES if index_state == "all" else (index_state,)
-    pool = await assembled.db.read(
-        lambda c: queries.resolve_videos(
-            c,
-            queries.CorpusFilter(
-                channel=channel,
-                published_after=dates["published_after"],
-                published_before=dates["published_before"],
-                indexed_after=dates["indexed_after"],
-                indexed_before=dates["indexed_before"],
-                tags=split_csv(tags, 10, "tags"),
-                index_states=filter_states,
-            ),
-        )
-    )
-    total = await assembled.db.read(
-        lambda c: queries.count_videos(c, pool, q, has, deps.settings.candidate_cap)
-    )
-
-    covers = await assembled.db.read(
-        lambda c: _cover_frames(c, [r["video_id"] for r in rows])
-    )
-    for row in rows:
-        row["thumb"] = _thumb(deps, covers.get(row["video_id"]), STRIP_WIDTH)
-        row["coverage_pills"] = _coverage_pills(str(row.get("coverage") or "---"))
-        row["tag_list"] = [t for t in str(row.get("tags") or "").split(",") if t]
-
-    return _render(
-        "videos.html",
-        {
+    def context(**rest: Any) -> dict[str, Any]:
+        return {
             **_chrome(request, "videos"),
             "title": "Videos",
-            "error": None,
-            "rows": rows,
-            "pagination": payload.get("pagination", {}),
-            "total": total,
-            "filters": filters,
-            "orders": _ORDERS,
-            "has_values": _HAS,
+            **rest,
+            # Every key the form and the link macros read, whatever went wrong:
+            # a refused date must still render a band with the other seven
+            # controls in it, so the reader can fix the one that broke instead
+            # of losing the query.
+            "filters": data.filters,
+            "orders": VIDEO_ORDERS,
+            "has_values": HAS_VALUES,
             "index_states": queries.INDEX_STATES,
-        },
+        }
+
+    if data.error is not None:
+        return _render(
+            "videos.html",
+            context(
+                error=data.error,
+                rows=[],
+                pagination={
+                    "limit": data.limit,
+                    "offset": data.offset,
+                    "has_more": False,
+                },
+                # No count, rather than a zero: a refused date filtered nothing,
+                # so there is no set to have counted.
+                total=None,
+            ),
+            status=HTTP_STATUS.get(data.error["code"], 500),
+        )
+    return _render(
+        "videos.html",
+        context(
+            error=None,
+            rows=data.rows,
+            pagination=data.pagination,
+            total=data.total,
+        ),
     )
-
-
-_COVERAGE_LABELS = (
-    ("t", "transcript"),
-    ("o", "on-screen text"),
-    ("f", "frame embeddings"),
-)
-
-
-def _coverage_pills(coverage: str) -> list[dict[str, Any]]:
-    """The tool's own `t/o/f/-` string, rendered as three labelled pills.
-
-    §4.2: this is what the videos table shows instead of per-row counts, and it
-    costs nothing extra — `_LIST_SQL` already computes the three booleans.
-    """
-    return [
-        {"letter": letter, "label": label, "present": letter in coverage}
-        for letter, label in _COVERAGE_LABELS
-    ]
 
 
 # ---------------------------------------------------------------- §5.3 detail
 
 
 async def video_detail(request: Request) -> Response:
-    assembled = request.app.state.assembled
-    deps: Deps = assembled.deps
-    db = assembled.db
-    video_id = request.path_params["video_id"]
-    params = request.query_params
+    """`GET /dashboard/videos/{video_id}` — the five panels, one read each.
 
-    row = await db.read(lambda c: queries.lookup_video(c, video_id))
-    if row is None:
-        return _render(
-            "error.html",
-            {
-                **_chrome(request, "videos"),
-                "title": "Unknown video",
-                "error": {
-                    "code": "E_UNKNOWN_VIDEO",
-                    "message": f'"{video_id}" is not in the corpus.',
-                    "next": "browse the videos table for what is indexed.",
-                },
-            },
-            status=404,
-        )
-    vid = int(row["id"])
+    The reads are `read_models.video_detail_reads`', in the order they have
+    always run; what stays here is the page's own arithmetic — the shot band's
+    percentages, the `?select=` ordinal it lands on, and the prefill link into
+    the index form.
+    """
+    params = request.query_params
+    video_id = request.path_params["video_id"]
 
     frame_page = clamp(params.get("frames"), 1, FRAME_PAGE_MAX, FRAME_PAGE)  # type: ignore[arg-type]
     frame_offset = clamp(params.get("frame_offset"), 0, 100_000, 0)  # type: ignore[arg-type]
@@ -862,111 +665,70 @@ async def video_detail(request: Request) -> Response:
     cue_page_size = clamp(params.get("cues"), 1, CUE_PAGE_MAX, CUE_PAGE)  # type: ignore[arg-type]
     cue_offset = clamp(params.get("cue_offset"), 0, 500_000, 0)  # type: ignore[arg-type]
 
-    # `video-summary` refuses a video that never finished the pipeline — which
-    # is exactly the video this page exists for. So the refusal is *rendered*,
-    # verbatim, next to the panels that still have something to say (the stage
-    # table always does), instead of becoming this page's own error.
-    summary = await library.video_summary(
-        deps,
-        video_id=video_id,
-        include_key_texts=False,
-        include_ocr_highlights=False,
-        include_speakers=False,
-        include_guidance=False,
-        max_chapters=50,
+    data = await video_detail_reads(
+        request,
+        video_id,
+        frame_page=frame_page,
+        frame_offset=frame_offset,
+        cue_page=cue_page_size,
+        cue_offset=cue_offset,
+        redact=_redacted(request),
     )
-    summary_payload = summary.structured_content or {}
-    summary_error = _tool_error(summary)
-
-    stages = await db.read(lambda c: queries.video_stages(c, vid))
-    counts = await db.read(lambda c: queries.per_video_counts(c, vid))
-    origins = await db.read(lambda c: queries.cue_origins(c, vid))
-    shots = await db.read(lambda c: queries.shot_timeline(c, vid, SHOT_CAP))
-    frame_rows = await db.read(
-        lambda c: queries.keyframe_page(c, vid, frame_offset, frame_page)
-    )
-    cue_rows = await db.read(lambda c: queries.cue_page(c, vid, cue_offset, cue_page_size))
-    # The transcript header is totals, not a position (Tom, 2026-08-10, round
-    # 4). Read beside the counts because it answers the same question — how
-    # much of this video is there — and never on a listing page.
-    cue_totals = await db.read(lambda c: queries.cue_text_totals(c, vid))
-    tag_map = await db.read(lambda c: queries.video_tags(c, [vid]))
-    history_rows = await db.read(
-        lambda c: jobs_store.recent_jobs_for_video(c, vid, VIDEO_HISTORY_CAP)
-    )
-
-    frames_more = len(frame_rows) > frame_page
-    frame_rows = frame_rows[:frame_page]
-    cues_more = len(cue_rows) > cue_page_size
-    cue_rows = cue_rows[:cue_page_size]
-
-    ocr_lines = await db.read(
-        lambda c: queries.ocr_for_frames(
-            c, [int(f["id"]) for f in frame_rows], OCR_LINE_CAP
-        )
-    )
-    chunks: list[sqlite3.Row] = []
-    if cue_rows:
-        chunks = await db.read(
-            lambda c: queries.chunk_spans(
-                c, vid, int(cue_rows[0]["id"]), int(cue_rows[-1]["id"])
-            )
+    if data is None:
+        return _render(
+            "error.html",
+            {
+                **_chrome(request, "videos"),
+                "title": "Unknown video",
+                "error": {
+                    "code": "E_UNKNOWN_VIDEO",
+                    "message": f'"{video_id}" is not in the corpus.',
+                    "next": "browse the videos table for what is indexed.",
+                },
+            },
+            status=404,
         )
 
+    row = data.row
     duration = float(row["duration_s"] or 0.0)
     return _render(
         "video.html",
         {
             **_chrome(request, "videos"),
             "title": str(row["title"]),
-            "video": _video_header(row, tag_map.get(vid, [])),
+            "video": _video_header(row, data.tags),
             "duration_s": duration,
-            "data_status": summary_payload.get("data_status"),
-            "summary_error": summary_error,
-            "chapters": summary_payload.get("chapters", []),
-            "stages": _stage_rows(stages, _redacted(request)),
-            "counts": counts,
-            "origins": origins,
-            "shots": _shot_bars(deps, video_id, shots, duration, frame_page),
-            "shots_capped": len(shots) >= SHOT_CAP,
-            "frames": _frame_cards(deps, video_id, frame_rows, ocr_lines),
+            "data_status": data.summary.get("data_status"),
+            "summary_error": data.summary_error,
+            "chapters": data.summary.get("chapters", []),
+            "stages": data.stages,
+            "counts": data.counts,
+            "origins": data.origins,
+            "shots": _shot_bars(data.shots, duration, frame_page),
+            "shots_capped": data.shots_capped,
+            "frames": data.frames,
             # The honest half of the double cap: when the *page's* line budget
             # is spent the per-frame counts under-report by definition, so the
             # panel says so rather than printing a short list as if it were the
             # whole one. This is the only OCR bound left — the per-frame one
             # went with the digest.
             "ocr_line_cap": OCR_LINE_CAP,
-            "ocr_lines_capped": sum(len(v) for v in ocr_lines.values()) >= OCR_LINE_CAP,
+            "ocr_lines_capped": data.ocr_lines_capped,
             "frame_page": frame_page,
             "frame_offset": frame_offset,
-            "frames_more": frames_more,
+            "frames_more": data.frames_more,
             "selected_ord": selected_ord,
-            "cues": _cue_rows(cue_rows, chunks),
-            "cue_totals": cue_totals,
+            "cues": _cue_rows(data.cues or [], data.chunks),
+            "cue_totals": data.cue_totals,
             "cue_page": cue_page_size,
             "cue_offset": cue_offset,
-            "cues_more": cues_more,
+            "cues_more": data.cues_more,
             # A GET prefill, not a write. The source URL is encoded into one
             # internal dashboard link; the index form remains the place where
             # the operator reviews it and POST remains the only state change.
             "queue_channel_url": f"{ROOT}/index?"
             + urlencode({"urls": str(row["url"]), "expand": "channel_recent"}),
-            "job_history": [
-                {
-                    "job_id": str(job["public_id"]),
-                    "state": str(job["state"]),
-                    "kind": str(job["kind"]),
-                    "created_at": job["created_at"],
-                    "finished_at": job["finished_at"],
-                    "error_code": job["error_code"],
-                    "degraded_stages": (
-                        str(job["degraded_stages"]).split(",")
-                        if job["degraded_stages"]
-                        else []
-                    ),
-                }
-                for job in history_rows
-            ],
+            "job_history": data.history,
             "job_history_cap": VIDEO_HISTORY_CAP,
         },
     )
@@ -986,167 +748,34 @@ def _selected_ord(raw: str | None) -> int | None:
     return min(int(raw.strip()), 100_000)
 
 
-def _video_header(row: sqlite3.Row, tags: list[str]) -> dict[str, Any]:
-    """The `videos` row a human wants — and none of the paths.
-
-    `media_path`, `audio_path` and `jpeg_path` are operator detail that must not
-    leak into a page that might be screenshotted (§5.1). Presence, not location:
-    the stage table already says whether a fetch succeeded.
-    """
-    return {
-        "video_id": str(row["public_id"]),
-        "title": str(row["title"]),
-        "channel": row["channel_name"] or "",
-        "published_at": row["published_at"],
-        "duration_s": row["duration_s"],
-        "language": row["language"] or "",
-        "index_state": str(row["index_state"]),
-        "indexed_at": row["indexed_at"],
-        "added_at": row["added_at"],
-        "url": str(row["url"]),
-        "description": (row["description"] or "")[:400],
-        "tags": tags,
-    }
-
-
-def _stage_rows(stages: list[sqlite3.Row], redacted: bool = False) -> list[dict[str, Any]]:
-    """All seven stages, with the ones that never ran said out loud.
-
-    `job-status` collapses these into five *wire* stages for a model's benefit
-    (`jobs/store.WIRE_STAGES`). A human wants the seven, and wants the absent
-    ones present as `absent` rather than silently missing from the list.
-
-    ``redacted`` drops the two fields that are the operator's console rather
-    than the corpus: `model_key`, which is a declared model id and therefore a
-    setting by §2.4's own argument, and `error`, which is the pipeline's raw
-    prose. The states, the versions and the clocks stay — they are what a
-    reader can act on, and dropping them would leave an empty shell.
-    The jobs view has redacted since phase 4; this page had not.
-    (2026-08-10 audit, F-4.)
-    """
-    by_stage = {str(s["stage"]): s for s in stages}
-    rows = []
-    for stage in queries.STAGE_ORDER:
-        row = by_stage.get(stage)
-        if row is None:
-            rows.append({"stage": stage, "state": "absent", "model_key": None,
-                         "started_at": None, "finished_at": None, "error": None,
-                         "stage_version": None})
-            continue
-        rows.append(
-            {
-                "stage": stage,
-                "state": str(row["state"]),
-                "model_key": None if redacted else row["model_key"],
-                "stage_version": row["stage_version"],
-                "started_at": row["started_at"],
-                "finished_at": row["finished_at"],
-                "error": None if redacted else row["error"],
-            }
-        )
-    return rows
-
-
 def _shot_bars(
-    deps: Deps,
-    video_id: str,
-    shots: list[sqlite3.Row],
-    duration: float,
-    frame_page: int,
+    shots: list[dict[str, Any]], duration: float, frame_page: int
 ) -> list[dict[str, Any]]:
-    """Shots as percentages of the runtime, each pointing at its first frame.
+    """The shot facts as percentages of the runtime, each pointing at a page.
 
-    The link is a real `<a href>` carrying the `frame_offset` that page holds
-    the shot's first keyframe — `ord` is dense per video, so the offset is
-    arithmetic rather than another query. Clicking a shot works with JavaScript
-    off, which is the difference between a timeline and a decoration.
-
-    Each bar also carries the URL of its own first keyframe, which is what the
-    scrub preview shows on hover. Three things about that URL are decisions:
-
-    * it is **`STRIP_WIDTH`**, not a fourth entry in the width set (§6.4). A
-      new width is a new JPEG per keyframe in a cache that is capped in bytes,
-      and 192x108 is the scale a scrub preview is read at anyway — YouTube's
-      own storyboard tiles are 158x90. For a shot whose first frame is on the
-      strip below, the preview is the *same* file the page already fetched.
-    * it is emitted for every shot rather than fetched on demand, because the
-      alternative is a request per hover against the process that also holds
-      the only SQLite writer. Nothing is fetched until a pointer asks: the
-      markup carries a URL, the browser carries the bytes.
-    * it is derived from `first_ord` with no extra query — the frame id is
-      `<public_id>-<ord:05d>` (`http/frames.py`), the same string
-      `_frame_cards` builds.
+    The link is a real `<a href>` carrying the `frame_offset` of the strip page
+    that holds the shot's first keyframe — `ord` is dense per video, so the
+    offset is arithmetic rather than another query. Clicking a shot works with
+    JavaScript off, which is the difference between a timeline and a
+    decoration. Both numbers are the page's own: a percentage is a rendering,
+    and `read_models.shot_rows` is what the JSON answers with.
     """
-    span = duration if duration > 0 else max(
-        (float(s["end_s"] or 0.0) for s in shots), default=1.0
+    runtime = duration if duration > 0 else max(
+        (float(shot["end_s"]) for shot in shots), default=1.0
     )
-    span = span or 1.0
+    runtime = runtime or 1.0
     bars = []
     for shot in shots:
-        start = max(0.0, float(shot["start_s"] or 0.0))
-        end = max(start, float(shot["end_s"] or start))
-        first_ord = int(shot["first_ord"])
+        start, end = float(shot["start_s"]), float(shot["end_s"])
         bars.append(
             {
-                "shot_id": int(shot["shot_id"]),
-                "start_s": start,
-                "end_s": end,
-                "left": round(100.0 * min(start, span) / span, 4),
-                "width": round(100.0 * max(end - start, 0.0) / span, 4) or 0.05,
-                "frames": int(shot["frames"]),
-                "kept": int(shot["kept"]),
-                "ocr_done": int(shot["ocr_done"]),
-                "first_ord": first_ord,
-                "frame_offset": (first_ord // frame_page) * frame_page,
-                "preview": _thumb(deps, f"{video_id}-{first_ord:05d}", STRIP_WIDTH),
+                **shot,
+                "left": round(100.0 * min(start, runtime) / runtime, 4),
+                "width": round(100.0 * max(end - start, 0.0) / runtime, 4) or 0.05,
+                "frame_offset": (int(shot["first_ord"]) // frame_page) * frame_page,
             }
         )
     return bars
-
-
-def _frame_cards(
-    deps: Deps,
-    video_id: str,
-    rows: list[sqlite3.Row],
-    ocr_lines: dict[int, list[sqlite3.Row]],
-) -> list[dict[str, Any]]:
-    cards = []
-    for row in rows:
-        ordinal = int(row["ord"])
-        frame_id = f"{video_id}-{ordinal:05d}"
-        lines = ocr_lines.get(int(row["id"]), [])
-        cards.append(
-            {
-                "frame_id": frame_id,
-                "ord": ordinal,
-                "t_s": float(row["t_s"]),
-                "shot_id": int(row["shot_id"]),
-                "sharpness": float(row["sharpness"]),
-                "width": int(row["width"]),
-                "height": int(row["height"]),
-                "jpeg_bytes": int(row["jpeg_bytes"]),
-                "ocr_state": str(row["ocr_state"]),
-                "dup_of_ord": None if row["dup_of"] is None else int(row["dup_of_ord"]),
-                "thumb": _thumb(deps, frame_id, STRIP_WIDTH),
-                "detail": _thumb(deps, frame_id, DETAIL_WIDTH),
-                "large": _thumb(deps, frame_id, LIGHTBOX_WIDTH),
-                "lines": [
-                    {
-                        "line_no": int(line["line_no"]),
-                        "text": str(line["text"]),
-                        "conf": line["conf"],
-                        "box": (
-                            float(line["x0"]),
-                            float(line["y0"]),
-                            float(line["x1"]),
-                            float(line["y1"]),
-                        ),
-                    }
-                    for line in lines
-                ],
-            }
-        )
-    return cards
 
 
 def _cue_rows(
