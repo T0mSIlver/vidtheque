@@ -260,6 +260,92 @@ def test_retry_answers_the_jobs_it_made_and_what_it_preserved(
         assert "still running" in still_running.json()["message"]
 
 
+def test_retry_refuses_in_the_envelope_at_the_codes_own_status(
+    tmp_path: Path,
+) -> None:
+    """The five ways `retry_job` declines, each through `_refusal_json`.
+
+    The seed carries one of the five shapes — a job that has not finished — so
+    the other three that need a row build one here: a job of a kind
+    `index_video` cannot repair, a job with more items needing repair than the
+    index form would accept, and a finished job that lost nothing.
+    """
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        conn = open_write_connection(client.app.state.assembled.db.path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.executemany(
+                "INSERT INTO jobs (owner_id, public_id, kind, args_json, n_items, "
+                "priority, state, created_at, finished_at) VALUES "
+                "(1, ?, ?, '{}', ?, 100, 'failed', unixepoch() - 900, "
+                "unixepoch() - 60)",
+                [
+                    ("job_followchk1", "follow_check", 1),
+                    ("job_toobig0001", "index", MAX_FORM_URLS + 1),
+                    ("job_allclean01", "index", 1),
+                ],
+            )
+            ids = {
+                str(row["public_id"]): int(row["id"])
+                for row in conn.execute(
+                    "SELECT id, public_id FROM jobs WHERE public_id IN "
+                    "('job_followchk1', 'job_toobig0001', 'job_allclean01')"
+                ).fetchall()
+            }
+            # The follow check has a repairable item, so its kind is the only
+            # thing left to refuse it on.
+            conn.executemany(
+                "INSERT INTO job_items (job_id, seq, source_url, state, attempts) "
+                "VALUES (?, ?, ?, ?, 1)",
+                [
+                    (ids["job_followchk1"], 0, "https://youtu.be/followcheck", "failed"),
+                    # `done` and on no video at all, so no stage can be failed
+                    # underneath it: nothing here needs repair.
+                    (ids["job_allclean01"], 0, "https://youtu.be/allclean01", "done"),
+                    *(
+                        (ids["job_toobig0001"], n, f"https://youtu.be/big{n:08d}", "failed")
+                        for n in range(MAX_FORM_URLS + 1)
+                    ),
+                ],
+            )
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+
+        before = len(client.get(f"{ROOT}/api/jobs").json()["jobs"])
+
+        unknown = post(client, f"{ROOT}/jobs/job_nosuchjob/retry")
+        assert unknown.status_code == 404
+        assert unknown.json()["error"] == "E_UNKNOWN_JOB"
+        assert "not a job on this instance" in unknown.json()["message"]
+        assert unknown.json()["next"]
+
+        # The other live state: `job_running001` is in the receipt test above.
+        queued = post(client, f"{ROOT}/jobs/job_deferred01/retry")
+        assert queued.status_code == 400
+        assert queued.json()["error"] == "E_BAD_PARAM"
+        assert "still queued" in queued.json()["message"]
+
+        wrong_kind = post(client, f"{ROOT}/jobs/job_followchk1/retry")
+        assert wrong_kind.status_code == 400
+        assert wrong_kind.json()["error"] == "E_BAD_PARAM"
+        assert "follow_check job" in wrong_kind.json()["message"]
+
+        too_many = post(client, f"{ROOT}/jobs/job_toobig0001/retry")
+        assert too_many.status_code == 413
+        assert too_many.json()["error"] == "E_TOO_LARGE"
+        assert str(MAX_FORM_URLS) in too_many.json()["message"]
+
+        nothing = post(client, f"{ROOT}/jobs/job_allclean01/retry")
+        assert nothing.status_code == 400
+        assert nothing.json()["error"] == "E_BAD_PARAM"
+        assert "no failed or degraded items" in nothing.json()["message"]
+
+        # Five refusals and no job: a retry that declines queues nothing.
+        assert len(client.get(f"{ROOT}/api/jobs").json()["jobs"]) == before
+
+
 # ------------------------------------- 3. the index form, re-index, tags, logout
 
 
