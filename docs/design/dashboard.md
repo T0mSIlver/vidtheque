@@ -1950,6 +1950,83 @@ contract moves; everything below is the dashboard layer rendering what
   seen channel's label — both are exactly what the rule reserves lime for. A
   spoken hit and a frame hit carry none.
 
+### 14.2 The React port needs nothing this payload does not already carry (2026-09-05)
+
+The contract check the port asked for, before the page is written: **the
+owner-only set is empty.** The React search page reads
+`GET /dashboard/api/search` — the facade's own handler under the dashboard
+prefix, behind `guarded(…, json=True)` and under `policy_for`'s caller-keyed
+clamps — and every fact §14.1's page renders is either a field that payload
+already carries or a rendering the client performs from one. No new route, no
+new field, no parameter, no second query layer.
+
+The two prefixes are the same handler and differ in exactly two ways today, both
+of them pre-existing: `/dashboard/api/search` is gated and `/api/search` is not,
+and the dashboard group registers it with `demo=False`, so it keeps the
+agent-only `note:` line the demo drops (demo-site.md §6.1). The clamp is the
+*caller's* on both, so the owner's 50-item page and the `max_text_chars` opt-out
+are already there for a bearer, a session or a trusted peer — the prefix never
+granted them.
+
+What the page draws, and where it comes from:
+
+| On the page | In the payload |
+| --- | --- |
+| the slice line, the `~`, the pager | `pagination.offset/limit/has_more/approx_total/pool_exhausted` |
+| the leg lines | `leg_counts`; the labels, units and sub-leg inset are `_LEG_LABELS`, presentation |
+| the note lines | `notes` |
+| title, channel, timecode, snippet | `title`, `channel`, `match_start`, `text` |
+| the evidence badges | `source`; the three words and `title="source=…"` are presentation |
+| the marked words in a snippet | `text` and the query, computed client-side — never the tool's own matching |
+| the receipt | `link`, admitted under §14's `youtu.be`/numeric-`t` rule, which is a check on a field already sent |
+| the link *into* this deployment | `video_id` and `frame_id`, with the strip-page arithmetic §14.1 describes |
+| the frame and the lightbox | `frame_id`, `thumb`, `thumb_large` |
+
+It carries more than the page draws, not less: `score`, `cue_ids`,
+`match_cue_id`, `start`, `end` and `data_status` are all on the wire and none of
+them is on the page. `data_status` is the one worth picking up — it is the
+difference between "nothing matched" and "nothing is indexed", which this page
+has never said and the demo has (§6.1).
+
+Three things the port has to get right, because the payload's shape allows a
+wrong answer that looks plausible:
+
+- **The timecode is `clock(match_start)`, not `timestamp`.** `timestamp` is
+  `clock(start)`, the segment's own opening, and for a fused transcript hit that
+  is a different second from the cue that actually matched. The float is there;
+  format that one.
+- **`text` is `null` on a frame hit that matched on imagery alone**, because the
+  humanising layer drops the tool's stand-in sentence (demo-site.md §2.4). The
+  page prints *visual match, no text hit* itself rather than rendering a
+  sentence styled as a quotation.
+- **The `note:` prefix does not survive the facade.** §14 says this page keeps
+  every note verbatim, and that was true of a rendering that called
+  `search_payload(verbatim_notes=True)`; a JSON reader gets `humanize.notes` —
+  prefix stripped, sentence untouched. The marker is machinery for a model and
+  the sentence is the operator's, so only the marker is lost. `verbatim_notes`
+  retires with the Jinja page rather than becoming a query parameter.
+
+**The frame widths are the one real divergence, and they are not a gap.** The
+page replaces the facade's URLs with relative ones at the dashboard's 192 and
+1280 (§6.4); the payload sends absolute ones at the demo's 320 and 960. Both
+pairs are members of `variants.py`'s finite vocabulary, so neither mints a cache
+key the product does not already ask for — the audit that bounded that key space
+(F-5) is what makes this a cost note rather than a breach of §6.4. A private box
+that never served the demo will hold up to five variants per keyframe a search
+touched instead of three, LRU and byte-capped as always. A page that wants the
+dashboard's exact two can build `/frames/<id>.jpg?w=192&q=70` itself: the route
+takes the session cookie and the bearer beside the signature, and a signed-in
+same-origin page carries one. That is the port's rendering choice, not a field
+the server has to add.
+
+**One thing found and left alone.** The facade's handlers under
+`/dashboard/api/*` answer without `Cache-Control: no-store`, unlike every route
+§19–§22 added; `test_dashboard_api.py` already says so at the videos listing.
+The owner search read should carry it — a management read describes state that
+changes under the reader, and a shared cache must not hold it — but the fix
+belongs in `public/api.py`, for all four handlers at once and on both prefixes,
+not as a side effect of this page.
+
 ## 15. Current pipeline readiness (2026-08-12)
 
 The overview gains one display-only readiness panel. It is a measurement made
