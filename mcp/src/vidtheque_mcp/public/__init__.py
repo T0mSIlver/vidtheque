@@ -1,18 +1,27 @@
-"""The public surface: read-only masking, `/api`, the two pages, rate limits.
+"""The public surface: read-only masking, the `/api` facade, rate limits.
 
-The landing is at `/` and the demo at `/demo` (Tom, 2026-08-11).
+``VIDTHEQUE_PUBLIC_READONLY=1`` turns them on together — one mode resolved at
+app-construction time, like ``VIDTHEQUE_AUTH``, never a per-route conditional.
+`docs/design/demo-site.md` is the contract.
 
-``VIDTHEQUE_PUBLIC_READONLY=1`` turns all four on together — one mode resolved
-at app-construction time, like ``VIDTHEQUE_AUTH``, never a per-route
-conditional. `docs/design/demo-site.md` is the contract.
+**The pages left this package on 2026-09-05.** `/` and `/demo` are the Next.js
+front end's in `web/`, and `GET /static/{path}` went with them — nothing this
+app serves under this flag is a document any more. Production is one origin
+split by path: the exact page GETs go to Next, everything else — `/api/*`,
+`/frames/*`, `/mcp`, `/auth/*`, `/.well-known/*`, `/healthz`,
+`/videos/{id}/export.md` and `/dashboard/*` — comes here. So the document
+policy that used to live here (CSP, `X-Frame-Options`, `Referrer-Policy`) is
+the front end's to send; the one document Python still serves of its own, the
+OAuth consent screen, carries its own pair in `auth/login.py`.
+
+`static/fonts/` stays and is not dead: DESIGN.md makes it the document of
+record for the two faces, and `dashboard/__init__.py` aliases its own asset
+route onto it rather than keeping a second copy.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from starlette.middleware import Middleware
-from starlette.responses import FileResponse, Response
 from starlette.routing import Route
 
 from .api import api_routes
@@ -29,100 +38,6 @@ __all__ = [
     "public_routes",
 ]
 
-STATIC_DIR = Path(__file__).parent / "static"
-
-# Long enough that a reload is cheap, short enough that a redeploy is visible.
-_STATIC_CACHE = "public, max-age=300"
-
-# The kinds of file in `static/`. This route used to type everything that was
-# not a stylesheet as `text/javascript`, which loads a font in today's browsers
-# — they sniff woff2 — and stops loading it the moment anything in front of this
-# app sets `X-Content-Type-Options: nosniff`. That is not a bet worth taking on
-# the two faces the whole type system rests on (DESIGN.md, Fonts rule 5), so the
-# suffix decides, the way `dashboard/__init__.py` already does it. A suffix that
-# is not here — the OFL licence texts beside the fonts — is not an asset and
-# 404s rather than being served as something it is not.
-_MEDIA = {
-    ".css": "text/css",
-    ".js": "text/javascript",
-    ".html": "text/html",
-    ".svg": "image/svg+xml",
-    ".woff2": "font/woff2",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".png": "image/png",
-}
-_TEXTUAL = frozenset({".css", ".js", ".html", ".svg"})
-
-# Fonts and stills are content-stable binaries: they outlive a deploy in a way a
-# stylesheet does not, so they get the cache the page cannot have.
-_ASSET_CACHE = "public, max-age=31536000, immutable"
-
-# Sent with every HTML document this app serves. The 2026-08-10 audit found no
-# executable rendering sink on the demo — `app.js` builds every string as a DOM
-# text node and every href goes through `safeUrl` — and said in as many words
-# that *those mechanisms are what the safety consists of*. This is the second
-# line, for the day someone adds a sink without reading the file's header.
-#
-# The demo can afford the strict version because it was built self-contained:
-# no inline `<style>`, no `style=` attribute, no `.style` assignment in the
-# script, one same-origin stylesheet, one same-origin module, fonts from
-# `static/`. So no `unsafe-inline` and no `unsafe-eval` anywhere, which is what
-# makes a CSP worth having rather than worth quoting.
-#
-# **The landing at `/` was made to fit this policy rather than the policy
-# widened to fit it (2026-08-11).** It arrived from `lab/` as one file with an
-# inline `<style>`, an inline `<script>` and ten `style=` attributes — every
-# one of which this policy refuses. The two blocks are now `landing.css` and
-# `landing.js` and the attributes are classes; the alternative was an
-# `unsafe-inline` (or a hash list to recompute on every edit) on the one page
-# every visitor loads first, to save moving two blocks once. `.style` and
-# `cssText` assignments from the script are untouched: CSSOM is not something
-# CSP governs, and the lift and the OCR boxes are built out of it.
-#
-# `img-src` carries `data:` for exactly one thing — the wordmark favicon is an
-# inline SVG data URL, the same one on both documents. Thumbnails are
-# `PUBLIC_URL/frames/…` and the landing's stills are `/static/landing/…`, which
-# are this origin. `form-action` is `'self'` and not `'none'`: the demo's search
-# box is a real `<form>` that the script intercepts, and a policy that only
-# holds while the JavaScript works is the wrong shape.
-#
-# `frame-ancestors 'none'` is the clickjacking half. The demo has one control
-# that spends money (`/api/ask`), and framing it is how a stranger gets someone
-# else's clicks to spend it. `auth/login.py` already carries the same pair for
-# the consent screen; this covers the surface that is actually public.
-_DOCUMENT_HEADERS = {
-    "Content-Security-Policy": "; ".join(
-        (
-            "default-src 'self'",
-            "script-src 'self'",
-            "style-src 'self'",
-            "img-src 'self' data:",
-            "font-src 'self'",
-            "connect-src 'self'",
-            "frame-ancestors 'none'",
-            "form-action 'self'",
-            "base-uri 'none'",
-            "object-src 'none'",
-        )
-    ),
-    "X-Frame-Options": "DENY",
-    "X-Content-Type-Options": "nosniff",
-    "Referrer-Policy": "no-referrer",
-}
-
-# Top-level names under `static/` that this route refuses, whatever they hold.
-#
-# `static/lab/` was the landing workshop — ~11 MB of competing prototypes that
-# would have answered at `https://<host>/static/lab/versions/v1.html` the
-# moment a tunnel opened (`research/release-staging-2026-08-11.md` §9,
-# finding 1). The prototypes now live on the `archive/landing-lab` branch, but
-# the denial is by *name*, not by absence: the next workshop directory someone
-# grows here is covered before anyone remembers to think about it. Matched on
-# the resolved path, so `../lab/…` cannot walk back in. Adding a top-level
-# name here is the amendment; adding a *file* to `static/` is publishing it.
-_DENIED_SUBTREES = frozenset({"lab"})
-
 # `/dashboard/login`, per IP, per minute. A constant rather than a knob, for the
 # same reason the jobs view's poll interval is one: a number somebody can raise
 # is a number somebody raises, and this one is the difference between a password
@@ -130,74 +45,20 @@ _DENIED_SUBTREES = frozenset({"lab"})
 LOGIN_PER_MIN = 10
 
 
-def _document(path: Path) -> Response:
-    """One HTML document, with the headers every document on this app gets.
-
-    Both pages go through here rather than through the asset route: `/` and
-    `/demo` are the two *documents*, they are named rather than resolved from a
-    path parameter, and they must not be able to drift apart on the policy the
-    2026-08-10 audit wrote (`_DOCUMENT_HEADERS`).
-    """
-    return FileResponse(
-        path,
-        media_type="text/html; charset=utf-8",
-        headers={"Cache-Control": _STATIC_CACHE, **_DOCUMENT_HEADERS},
-    )
-
-
 def public_routes() -> list[Route]:
-    """`/api/*`, the landing at `/`, the demo at `/demo`, and their assets.
+    """`/api/*`, and nothing else.
 
     Order matters only against ``Mount("/", mcp_app)`` in ``app.py``, which
     matches everything and must stay last.
 
-    **The landing owns `/` and the demo moved to `/demo`** — Tom, 2026-08-11,
-    post-launch topology (demo-site.md §1). The demo had `/` because it was the
-    only page there was; a visitor arriving cold now meets the argument first
-    and the working corpus one click in. Nothing redirects: an old bookmark of
-    `/` lands on the landing, whose one CTA is `/demo`, which is the same two
-    clicks a redirect would have cost and is honest about where it went.
+    Until 2026-09-05 this also registered the landing at `/`, the demo at
+    `/demo`, and the asset route under `/static/`. All three moved to the
+    Next.js app, so they are gone rather than kept as redirects: a redirect on
+    `/` here would be a second answer to a question the edge has already
+    routed elsewhere. A private deployment is unaffected — this whole list is
+    registered only under `VIDTHEQUE_PUBLIC_READONLY=1`.
     """
-
-    async def landing(_request) -> Response:
-        return _document(STATIC_DIR / "landing" / "index.html")
-
-    async def demo(_request) -> Response:
-        return _document(STATIC_DIR / "demo" / "index.html")
-
-    async def asset(request) -> Response:
-        name = request.path_params["asset"]
-        path = (STATIC_DIR / name).resolve()
-        try:  # never serve anything outside the packaged static directory
-            inside = path.relative_to(STATIC_DIR.resolve())
-        except ValueError:
-            return Response(status_code=404)
-        if inside.parts and inside.parts[0] in _DENIED_SUBTREES:
-            return Response(status_code=404)
-        if not path.is_file():
-            return Response(status_code=404)
-        media = _MEDIA.get(path.suffix)
-        if media is None:
-            return Response(status_code=404)
-        textual = path.suffix in _TEXTUAL
-        headers = {"Cache-Control": _STATIC_CACHE if textual else _ASSET_CACHE}
-        # A document served from `static/` is still a document, and gets the
-        # same policy the page at `/` does — the headers follow the media type
-        # rather than the route, so a future `.html` asset cannot arrive bare.
-        if path.suffix == ".html":
-            headers.update(_DOCUMENT_HEADERS)
-        return FileResponse(
-            path,
-            media_type=f"{media}; charset=utf-8" if textual else media,
-            headers=headers,
-        )
-
-    return [
-        *api_routes(demo=True),
-        Route("/", landing, methods=["GET"]),
-        Route("/demo", demo, methods=["GET"]),
-        Route("/static/{asset:path}", asset, methods=["GET"]),
-    ]
+    return api_routes(demo=True)
 
 
 def public_middleware(

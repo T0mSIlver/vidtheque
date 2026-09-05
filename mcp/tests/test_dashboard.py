@@ -44,7 +44,10 @@ from .conftest import FakeEmbeddings, rpc, rpc_headers, seed
 
 STATIC = Path(__file__).resolve().parents[1] / "src/vidtheque_mcp/dashboard/static"
 TEMPLATES = Path(__file__).resolve().parents[1] / "src/vidtheque_mcp/dashboard/templates"
-DEMO_STATIC = Path(__file__).resolve().parents[1] / "src/vidtheque_mcp/public/static/demo"
+# The six role properties' other declaration. It was `public/static/demo/` until
+# 2026-09-05, when the demo page moved to the Next.js app and took its
+# stylesheet with it; `web/src/styles/tokens.css` is where they live now.
+WEB_TOKENS = Path(__file__).resolve().parents[2] / "web/src/styles/tokens.css"
 
 # What was on someone's screen, and what yt-dlp said about it. Both are corpus
 # strings and both are attacker-controlled in exactly the same way.
@@ -1822,10 +1825,15 @@ def test_the_pages_carry_no_inline_script(client: TestClient) -> None:
 # -------------------------------------------------------------- 5. the world
 
 
-def test_the_dashboard_palette_matches_the_demos() -> None:
-    """The demo page is not registered in private mode, so the dashboard ships
-    its own copy of the six role properties. This is the thing that stops the
-    copy drifting into a second visual world.
+def test_the_dashboard_palette_matches_the_front_ends() -> None:
+    """The Jinja dashboard ships its own copy of the six role properties, and
+    this is the thing that stops the copy drifting into a second visual world.
+
+    Retargeted again 2026-09-05: the other copy was the demo page's
+    `style.css`, which left with the page. `web/src/styles/tokens.css` declares
+    the same six for the Next.js app, so that is what this compares against —
+    the test outlives the file it was pointed at because the property is that
+    two surfaces agree, not which two.
 
     Retargeted 2026-08-10 with the projection-room system (DESIGN.md, migration
     notes). Two things changed. The system is **single-scheme** — dark only, no
@@ -1857,10 +1865,10 @@ def test_the_dashboard_palette_matches_the_demos() -> None:
 
         return {name: resolve(declared[name]) for name in ROLES if name in declared}
 
-    demo = palette((DEMO_STATIC / "style.css").read_text())
+    web = palette(WEB_TOKENS.read_text())
     dash = palette((STATIC / "dashboard.css").read_text())
-    assert len(demo) == 6, "six roles, one scheme"  # not twelve: dark only now
-    assert dash == demo
+    assert len(web) == 6, "six roles, one scheme"  # not twelve: dark only now
+    assert dash == web
 
 
 def test_both_schemes_and_a_mobile_viewport_are_declared(client: TestClient) -> None:
@@ -3424,21 +3432,19 @@ def test_a_date_that_will_not_parse_is_a_typed_refusal_not_a_dropped_filter(
 def test_the_welcome_page_gains_its_link_into_the_browsable_corpus(
     tmp_path: Path,
 ) -> None:
-    """§2.4: the demo page keeps its aesthetic and gains one link.
+    """§2.4: the demo page gains one link, and `/api/meta` is what decides.
 
-    It is hidden in the markup and unhidden by `/api/meta`, so a deployment
-    that turned the route group off — or the edge rule in
+    The link is not in the page's own gift. It is `browse` in `/api/meta`, so a
+    deployment that turned the route group off — or the edge rule in
     `deploy/cloudflared.example.yml` that 404s `^/dashboard` — does not leave
     an invitation to a dead page in the masthead.
+
+    Until 2026-09-05 this also read the hidden markup out of the served demo
+    page. The page is the Next.js app's now and its half of this moved with it;
+    the field it renders from is still Python's and is still asserted both ways.
     """
     with make_client(tmp_path, public=DEMO) as demo:
-        # `/demo` since 2026-08-11: the landing took `/` (demo-site.md §1).
-        body = demo.get("/demo").text
-        assert 'id="browse"' in body and 'href="/dashboard"' in body
-        assert "Browse the corpus" in body
         assert demo.get("/api/meta").json()["browse"] == ROOT
-        # One link, not a nav: the welcome page is a search engine (§6).
-        assert body.count('class="browse"') == 1
 
     with make_client(
         tmp_path, public=DEMO, dashboard=DashboardSettings(enabled=False)

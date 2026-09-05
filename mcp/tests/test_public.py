@@ -1,9 +1,13 @@
-"""The public demo surface: masking, the `/api` facade, limits, the page.
+"""The public demo surface: masking, the `/api` facade, limits, ask mode.
 
 Nothing here reaches the network. OpenRouter is faked at the same seam the
 worker is — an injected client, here over ``httpx2.MockTransport`` — so the ask
 loop is exercised end to end (tool calls, evidence, citations, degradation)
 without a key, a model, or a request leaving the process.
+
+The page is no longer part of it. `/`, `/demo` and `/static/*` moved to the
+Next.js app on 2026-09-05, and the tests that read their markup, stylesheet and
+script moved with them; what is left here is what Python still answers.
 """
 
 from __future__ import annotations
@@ -327,229 +331,75 @@ def test_meta_reports_the_endpoint_and_the_ask_state(tmp_path: Path) -> None:
     assert payload["limits"]["ask_per_day"] == 50
 
 
-# ---------------------------------------------------------------- 3. the page
+# ------------------------------------------------ 3. the pages are not here
 
 
-def test_the_demo_page_is_served_at_demo(public_client: TestClient) -> None:
-    response = public_client.get("/demo")
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/html")
-    body = response.text
-    assert "vidtheque" in body
-    assert "/static/demo/app.js" in body
-    assert "Add this corpus to your own agent" in body
-    assert "Source on GitHub" in body
-    assert "Results link to the original talks" not in body
+def test_python_serves_no_pages_in_public_mode(public_client: TestClient) -> None:
+    """`/`, `/demo` and `/static/*` left this app on 2026-09-05.
 
-
-def test_the_landing_is_served_at_the_root(public_client: TestClient) -> None:
-    """`/` is the landing since 2026-08-11 (demo-site.md §1, Tom's topology)."""
-    response = public_client.get("/")
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/html")
-    body = response.text
-    assert "Builders talk." in body
-    assert "/static/landing/landing.css" in body
-    assert "/static/landing/landing.js" in body
-    assert "/static/landing/data.js" in body
-    # The demo's own document is a different page and did not come along.
-    assert "/static/demo/app.js" not in body
-
-
-def test_the_landing_cta_is_the_way_into_the_demo(public_client: TestClient) -> None:
-    """The one control that leaves the canned show, and it is a real link.
-
-    A `<button>` running the hero cycle was right in the lab, where there was
-    nowhere to go. Now there is: the CTA is the exit into the live corpus, so
-    middle-click has to work and it has to be an affordance whether or not the
-    script ran (demo-site.md §6.1).
+    They are the Next.js front end's now, and production splits one origin by
+    path: the edge sends the exact page GETs to Next and everything else here.
+    A Python route that still answered `/` would be a second answer to a
+    question already routed, and the two would drift apart the first time one
+    of them changed. They fall through to `Mount("/", mcp_app)`, which has
+    nothing at those paths.
     """
-    body = _landing(public_client)
-    assert '<a class="cta" id="askbtn" href="/demo">' in body
-    # "Open the demo", not "Ask the corpus" (Tom, 2026-08-11 post-launch): the
-    # hero already performs the ask; the CTA's job is to name the next room.
-    assert "Open the demo" in body
-    assert "Ask the corpus" not in body
-    # The cycle itself stays: the chips still drive it, the button no longer does.
-    script = (STATIC / "landing" / "landing.js").read_text()
-    assert "$('#chips').addEventListener('click'" in script
-    assert "$('#askbtn').addEventListener" not in script
+    for path in ("/", "/demo", "/static/demo/style.css", "/static/landing/landing.css"):
+        assert public_client.get(path).status_code == 404, path
 
 
-def test_the_landing_carries_no_lab_stamp(public_client: TestClient) -> None:
-    """The version stamp was flagged lab-only at cull time and left with it.
-
-    Comments are stripped first: the document's own graduation note *names* the
-    stamp to say it is gone, and that sentence should stay legal — the same
-    courtesy `app.js` gets for talking about `innerHTML`.
-    """
-    body = re.sub(r"<!--.*?-->", "", _landing(public_client), flags=re.S)
-    assert "landing v5 · projection room" not in body
-    assert 'data-version="v5"' not in body
-    assert "<title>vidtheque — Builders talk. Your agent listens.</title>" in body
-
-
-def test_the_landing_holds_nothing_the_policy_refuses(public_client: TestClient) -> None:
-    """`style-src 'self'`/`script-src 'self'` mean this, spelled out.
-
-    The lab piece was one self-contained file: an inline `<style>`, an inline
-    `<script>` and ten `style=` attributes, every one of which the document
-    policy refuses. Checked against the served bytes rather than trusted,
-    because the whole page would come up unstyled and inert if this regressed —
-    and it would come up that way only in a browser, never in these tests.
-    """
-    # Comments stripped, as above: the head's graduation note is prose about
-    # the very things this asserts are absent from the markup.
-    body = re.sub(r"<!--.*?-->", "", _landing(public_client), flags=re.S)
-    assert "<style" not in body
-    assert 'style="' not in body
-    for tag in (
-        '<script src="/static/landing/data.js"></script>',
-        '<script src="/static/landing/landing.js"></script>',
-    ):
-        assert tag in body
-        body = body.replace(tag, "")
-    assert "<script" not in body, "no inline script survives on the landing"
-    # …and none of the script's generated markup smuggles one back in.
-    assert 'style="' not in (STATIC / "landing" / "landing.js").read_text()
-
-
-def test_the_landing_assets_are_served_from_their_graduated_paths(
+def test_the_public_surface_is_json_frames_and_the_mount(
     public_client: TestClient,
 ) -> None:
-    """Every path the document and the script name, answered.
+    """What survived the removal, asserted positively.
 
-    The lab piece addressed `v5-assets/…` relative to itself. Served at `/`, a
-    relative `src` resolves against the site root, so the graduation made them
-    root-absolute — and that is exactly the class of bug a browser shows and a
-    unit test does not, unless it asks.
+    The test above passes just as well against an app that registers nothing
+    at all, which is not the change that was made.
     """
-    for path, media in (
-        ("/static/landing/landing.css", "text/css"),
-        ("/static/landing/landing.js", "text/javascript"),
-        ("/static/landing/data.js", "text/javascript"),
-        ("/static/landing/pgm/r1.jpg", "image/jpeg"),
-        ("/static/landing/wall/t00.jpg", "image/jpeg"),
-        ("/static/landing/moments/m41.jpg", "image/jpeg"),
-        ("/static/landing/grid/xIt_mTQp6mY.jpg", "image/jpeg"),
-        # The two faces, deduped against the packaged pair rather than
-        # re-vendored beside the page.
-        ("/static/fonts/archivo-latin-wght-normal.woff2", "font/woff2"),
-        ("/static/fonts/jetbrains-mono-latin-wght-normal.woff2", "font/woff2"),
-    ):
-        response = public_client.get(path)
-        assert response.status_code == 200, path
-        assert response.headers["content-type"].startswith(media), path
-    # The stylesheet reaches the faces by `../fonts/`, which is that same pair.
-    css = (STATIC / "landing" / "landing.css").read_text()
-    assert 'url("../fonts/archivo-latin-wght-normal.woff2")' in css
-    assert not (STATIC / "landing" / "fonts").exists(), "the vendored copy is gone"
+    assert public_client.get("/api/meta").status_code == 200
+    assert public_client.get("/api/search?q=cache").status_code == 200
+    assert public_client.get("/frames/kCc8FmEb1nY-00000.jpg").status_code == 200
+    assert public_client.get("/healthz").status_code == 200
 
 
-def test_the_attribution_line_points_at_the_removal_path(
+def test_no_public_route_sends_a_document_policy(public_client: TestClient) -> None:
+    """The CSP left with the documents it was written for.
+
+    `_DOCUMENT_HEADERS` covered `/`, `/demo` and any `.html` under `/static/`.
+    With all three gone this flag registers no document at all, so the policy
+    is the front end's to send — pinned here so that a page re-added to this
+    package cannot quietly ship bare. (The one document Python still serves of
+    its own is the OAuth consent screen, which carries its own headers in
+    `auth/login.py`.)
+    """
+    for path in ("/api/meta", "/api/search?q=cache"):
+        headers = public_client.get(path).headers
+        assert "content-security-policy" not in headers, path
+        assert headers["content-type"].startswith("application/json"), path
+
+
+def test_the_packaged_fonts_outlived_the_route_that_served_them(
     public_client: TestClient,
 ) -> None:
-    """The ethic line promises removal; the page has to say where to ask.
+    """`static/fonts/` is not dead, and is deliberately no longer served here.
 
-    `research/positioning-2026-08-10.md` §9.1 commits publicly to taking a
-    channel out on request, and lists "an unfollow/remove path exists and is
-    documented" as the obligation that creates. `docs/takedown.md` is that
-    path, and the footer is where the promise is made (demo-site.md §6 item 7).
+    DESIGN.md (Fonts, rule 1) makes this directory the one copy of the two
+    faces: `dashboard/__init__.py` aliases `/dashboard/static/fonts/` onto it
+    rather than vendoring a second, and `test_web_assets.py` diffs
+    `web/src/fonts/` against it. Deleting it with the pages would have taken
+    the document of record with them.
     """
-    body = public_client.get("/demo").text
-    assert "The videos belong to the people who made them." in body
-    assert "docs/takedown.md" in body
-    assert "Removal on request" in body
-    # The landing makes the same promise in its own footer.
-    assert "The videos belong to the people who made them." in _landing(public_client)
-
-
-def test_the_enlarge_dialog_is_a_real_dialog(public_client: TestClient) -> None:
-    """Esc, the backdrop, the focus trap and the modal role are the platform's."""
-    body = public_client.get("/demo").text
-    assert "<dialog id=\"shot\"" in body
-    assert 'aria-labelledby="shot-caption"' in body
-    # Opening it must not put Enter on "leave the page": Close takes focus.
-    assert 'id="shot-close"' in body and "autofocus" in body
-
-
-def test_the_page_assets_are_served_and_confined(public_client: TestClient) -> None:
-    assert public_client.get("/static/demo/style.css").status_code == 200
-    assert public_client.get("/static/demo/app.js").status_code == 200
-    assert public_client.get("/static/../../config.py").status_code in (404, 400)
-    assert public_client.get("/static/nope.css").status_code == 404
-
-
-def test_the_lab_gate_denies_by_name_not_by_absence(
-    public_client: TestClient,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A `static/lab/` that grows back is refused before anyone thinks about it.
-
-    The prototypes that motivated the gate live on `archive/landing-lab` now,
-    so a 404 on `/static/lab/…` against the real tree would only prove the
-    files are gone. The property worth keeping is the *denial*: the asset
-    route refuses the `lab` name on the resolved path, whatever it holds. So
-    this test grows a lab back — a real file, servable suffix — under a
-    substitute `STATIC_DIR`, and expects the gate, not the filesystem, to say
-    404. `asset()` reads the module global per request, so the patch takes
-    effect without rebuilding the app.
-    """
-    (tmp_path / "lab").mkdir()
-    (tmp_path / "lab" / "probe.css").write_text("denied", encoding="utf-8")
-    (tmp_path / "fonts").mkdir()
-    (tmp_path / "fonts" / "probe.css").write_text("served", encoding="utf-8")
-    monkeypatch.setattr(vidtheque_mcp.public, "STATIC_DIR", tmp_path)
-    assert public_client.get("/static/lab/probe.css").status_code == 404
-    # …and by prefix, so a nested path is covered too.
-    assert public_client.get("/static/lab/anything/at/all.css").status_code == 404
-    # The traversal-normalised spelling resolves into `lab/` and is refused by
-    # the same check, not by the containment one above it.
-    assert public_client.get("/static/fonts/../lab/probe.css").status_code == 404
-    # A sibling directory that is not on the denied list serves normally — the
-    # gate is the name, not the route.
-    assert public_client.get("/static/fonts/probe.css").status_code == 200
-
-
-def test_the_released_surface_survived_the_lab_cull(public_client: TestClient) -> None:
-    # The demo still works, and so does the page that graduated out of `lab/`.
-    assert public_client.get("/static/demo/style.css").status_code == 200
-    assert public_client.get("/static/demo/app.js").status_code == 200
-    assert public_client.get("/static/landing/landing.css").status_code == 200
-    assert (
-        public_client.get("/static/fonts/archivo-latin-wght-normal.woff2").status_code
-        == 200
-    )
-
-
-def test_the_two_faces_are_served_as_fonts(public_client: TestClient) -> None:
-    """A face typed as `text/javascript` loads only until something says nosniff.
-
-    The asset route used to type everything that was not a stylesheet as a
-    script, which browsers forgive because they sniff woff2 — right up until
-    anything in front of this app sets `X-Content-Type-Options: nosniff`. The
-    demo's whole type system rests on these two files (DESIGN.md, Fonts rule 5).
-    """
-    for name in ("archivo-latin-wght-normal", "jetbrains-mono-latin-wght-normal"):
-        response = public_client.get(f"/static/fonts/{name}.woff2")
-        assert response.status_code == 200, name
-        assert response.headers["content-type"] == "font/woff2"
-        assert "immutable" in response.headers.get("cache-control", "")
-    # The licence texts beside them are not assets and are not served as one.
-    assert public_client.get("/static/fonts/Archivo-OFL.txt").status_code == 404
+    fonts = Path(vidtheque_mcp.public.__file__).parent / "static" / "fonts"
+    assert (fonts / "archivo-latin-wght-normal.woff2").is_file()
+    served = public_client.get("/static/fonts/archivo-latin-wght-normal.woff2")
+    assert served.status_code == 404, "the /static route went with the pages"
 
 
 def test_neither_page_exists_outside_public_mode(private_client: TestClient) -> None:
-    """`/` and `/demo` fall through to the MCP mount, which has nothing there.
-
-    The new route is registered in the same place and by the same branch as the
-    old one, so a private deployment gained no surface from the topology change.
-    """
+    """Unchanged by the move: a private deployment never registered them."""
     assert private_client.get("/").status_code == 404
     assert private_client.get("/demo").status_code == 404
     assert private_client.get("/static/demo/style.css").status_code == 404
-    assert private_client.get("/static/landing/landing.css").status_code == 404
 
 
 # --------------------------------------------------------- 4. rate limiting
@@ -1131,552 +981,14 @@ def test_the_per_ip_ask_bucket_is_charged_before_the_global_one(tmp_path: Path) 
     assert refused.json()["bucket"] == "ask", "one visitor cannot spend the day's budget"
 
 
-# ----------------------------------------------- 6. the page as a page, and XSS
-
-STATIC = Path(vidtheque_mcp.public.__file__).parent / "static"
-DEMO = STATIC / "demo"
-
-
-def _page(client: TestClient) -> str:
-    """The demo page — `/demo` since 2026-08-11, when the landing took `/`."""
-    response = client.get("/demo")
-    assert response.status_code == 200
-    return response.text
-
-
-def _landing(client: TestClient) -> str:
-    response = client.get("/")
-    assert response.status_code == 200
-    return response.text
-
-
-def _assert_the_v_favicon(head: str) -> str:
-    """Tom picked the mark on 2026-08-10: the wordmark's `v`, and the dot.
-
-    The film frame is gone — it drew the medium rather than the product's
-    argument. Two properties of the replacement are load-bearing rather than
-    stylistic, so both are pinned: there is no background rectangle, which is
-    what lets one drawing sit on a light *and* a dark tab strip without the
-    `prefers-color-scheme` variant this single-scheme surface has no business
-    carrying; and the gold is cored inside a keyline in `--gold-ink`, which is
-    what keeps the shape readable when the strip under it is light.
-
-    The same assertions the dashboard makes about the same drawing
-    (`test_dashboard.py::test_the_favicon_is_the_v_and_carries_no_ground`) —
-    one mark, two surfaces, and this returns the URI so the caller can compare
-    them byte for byte.
-    """
-    icon = re.search(r'<link rel="icon" href="(data:image/svg\+xml,[^"]+)"', head)
-    assert icon, "an inline data: icon"
-    svg = icon.group(1)
-    assert "%23e7b455" in svg, "the gold core"
-    assert "%23120c02" in svg and "stroke-width='2'" in svg, "the gold-ink keyline"
-    assert "%23040405" not in svg, "no pitch ground — the glyph floats"
-    assert "<rect width='32' height='32'" not in svg, "…and no ground rect at all"
-    path = re.search(r"d='([^']+)'", svg).group(1)
-    assert " " not in path, "comma-separated path data: a URI carries no raw space"
-    return svg
-
-
-def test_the_demo_and_the_dashboard_wear_the_same_mark(public_client: TestClient) -> None:
-    """One favicon, drawn once. A tab strip with both open shows one product."""
-    from vidtheque_mcp import dashboard
-
-    templates = Path(dashboard.__file__).parent / "templates"
-    demo = _assert_the_v_favicon(_page(public_client))
-    assert demo == _assert_the_v_favicon((templates / "base.html").read_text())
-
-
-def test_the_page_declares_an_identity_worth_unfurling(public_client: TestClient) -> None:
-    """Title, description, the OG pair, viewport, favicon, the one scheme."""
-    body = _page(public_client)
-    assert "<title>vidtheque — AI Engineer 2026, on tap</title>" in body
-    assert body.count("The knowledge of AI Engineer 2026, on tap.") == 3
-    assert body.count("Your agent watched it") == 3
-    assert "talks you have watched" not in body
-    assert '<meta name="description"' in body
-    assert 'property="og:title"' in body
-    assert 'property="og:description"' in body
-    assert 'name="viewport"' in body and "width=device-width" in body
-    assert 'rel="icon"' in body and "image/svg+xml" in body
-    _assert_the_v_favicon(body)
-    # Dark only since the projection-room rebuild (DESIGN.md, 2026-08-10): one
-    # scheme, one `theme-color`, and no `prefers-color-scheme` anywhere — a
-    # projection room does not have a day mode, and a second palette left in
-    # the page is a palette somebody uses.
-    assert body.count('name="theme-color"') == 1
-    assert 'name="theme-color" content="#040405"' in body
-    assert 'name="color-scheme" content="dark"' in body
-    assert "prefers-color-scheme" not in body
-
-
-def test_the_cold_page_teaches_instead_of_showing_a_blank(public_client: TestClient) -> None:
-    """Before the first search there is something to click, and it is copy.
-
-    Four examples, drawn from a verified harvest rather than written from
-    memory (demo-site.md §6.1) — `research/demo-queries-2026-08-10.md` since the
-    rebuild, where every pair was checked at click level. The count is not the
-    contract and this does not pin it; what is asserted is the *shape* the
-    wiring depends on — see the next test for the half that can silently rot.
-
-    What *is* pinned is that no chip is a refusal (amended 2026-08-11): every
-    example returns evidence, because a demo does not spend one of its four
-    buttons proving it can say nothing.
-
-    Amended again 2026-08-11 (ask as default): there are now two sets, one per
-    mode, and *both* teach — each carries the one line under its heading that an
-    ask-first cold page needs, because a question box does not explain itself
-    the way a search box does.
-    """
-    body = _page(public_client)
-    assert body.count('class="example"') >= 3
-    assert "context window costs money tokens" in body, "the flagship on-screen example"
-    examples = re.findall(r'class="example"[^>]*>([^<]+)<', body)
-    assert examples and "FlashAttention-4" not in examples, examples
-    for landmark in ("<header", "<main>", "<footer>", "<h1"):
-        assert landmark in body
-    assert 'class="sr-only" for="q"' in body, "the search box has a real label"
-    # Teaching copy, one line per set — the cold page never ships a bare list.
-    assert body.count('class="exnote"') == 2, "each example set says what it is for"
-    assert ".exnote" in (DEMO / "style.css").read_text()
-
-
-def test_an_example_that_needs_a_channel_pins_it(public_client: TestClient) -> None:
-    """demo-site.md §6.1: `data-type` on an example, honoured by `app.js`.
-
-    The prices in "context window costs money tokens" are in this corpus only as
-    text on a slide — the speaker's whole treatment of it names no figure at all
-    (`research/demo-queries-2026-08-10.md` §2.1) — so unpinned it is buried by
-    the other legs and the flagship demonstration of "we read the screen"
-    demonstrates nothing. The pin is copy, in the HTML beside the query it
-    belongs to; the *reset* is the half that lives in `app.js`, and without it
-    clicking an on-screen example and then a spoken one runs the second query
-    against OCR and reports an empty corpus.
-    """
-    body = _page(public_client)
-    for pin in ('data-type="ocr">context window costs money tokens', 'data-type="frame"'):
-        assert pin in body
-
-    script = (DEMO / "app.js").read_text()
-    assert 'selectContentType(example.dataset.type || "all", false)' in script
-
-
-def test_ask_is_the_mode_the_page_boots_in(public_client: TestClient) -> None:
-    """demo-site.md §6.1, amended 2026-08-11 (Tom): the switch starts on ask.
-
-    The headline says "Ask it something", so the box under it is the one that
-    answers a question; search is one click away. What this pins is that the
-    default is stated in the **markup** — the pressed mode, the button's word,
-    the placeholder, the hidden channel row — and not applied by `app.js` after
-    `/api/meta` lands, which would swap the whole control strip a round trip
-    into the load. `state.askMode` starts `true` to match; the two are one
-    state and drifting them apart is exactly the stutter this avoids.
-
-    The budget rule is untouched: nothing here fires an ask, on load or
-    otherwise. Only a click spends the day.
-    """
-    body = _page(public_client)
-    assert 'class="is-on" data-mode="ask" aria-pressed="true"' in body
-    assert 'data-mode="search" aria-pressed="false"' in body
-    assert 'id="go" class="cta">Ask ✨<' in body
-    assert 'placeholder="ask a question about AI engineering…"' in body
-    # In ask mode the model picks the channel, so the content-type row starts
-    # hidden rather than offering a filter with nothing to act on.
-    assert 'id="chips" class="chips" role="group" aria-label="Search which channel" hidden' in body
-
-    script = (DEMO / "app.js").read_text()
-    assert "askMode: true," in script, "the script agrees with the markup"
-    # Nothing on this page may spend model budget without a click — a default of
-    # ask is not a licence to answer a question nobody asked.
-    boot = script[script.index("async function boot()") :]
-    assert "runAsk(" not in boot, boot
-    # A link can still say search, both ways: explicitly, and the way every
-    # link written before ask was the default already says it.
-    assert 'url.searchParams.set("ask", on ? "1" : "0")' in script
-    assert 'if (askParam === "0" || (q && askParam === null)) setAskMode(false)' in script
-    # A deployment with no key configured cannot serve the default mode.
-    assert "if (!meta.ask_enabled) setAskMode(false)" in script
-
-
-def test_the_example_chips_swap_with_the_mode(public_client: TestClient) -> None:
-    """demo-site.md §6.1, amended 2026-08-11: two sets, one per mode.
-
-    A keyword chip under an ask box spends a model call on a phrase nobody
-    would ever say out loud, and a question chip in search mode runs a sentence
-    through a keyword index. So the set on screen is the one the mode on screen
-    can run, and `setAskMode` is the only thing that swaps them.
-
-    The ask questions are receipt-checked in
-    `research/demo-queries-2026-08-10.md` — the flagship first — and none of
-    them shares its vocabulary with the answer, which is the property that
-    makes them worth a model call rather than a search. The search set stays
-    keywords.
-    """
-    body = _page(public_client)
-    ask_set = body[body.index('id="ex-ask"') : body.index('id="ex-search"')]
-    search_set = body[body.index('id="ex-search"') : body.index('id="corpus"')]
-
-    # Ask mode is the default, so its set is the visible one as authored.
-    assert 'id="ex-ask" class="exset">' in body
-    assert 'id="ex-search" class="exset" hidden' in body
-
-    # The flagship leads: 7 citations across 6 talks, and no single talk holds
-    # the answer (research "Tom's ask-mode flagship").
-    questions = re.findall(r'class="example"[^>]*>([^<]+)<', ask_set)
-    assert questions[0] == (
-        "Why does loop engineering look so much like building RLVR environments?"
-    ), questions
-    assert questions[1:] == [
-        "How to do reinforcement learning when the task can't be verified?",
-        "Does training on model-generated data compound quality or collapse it?",
-        "Is the harness or the model more important?",
-        "Why do agents write bad AGENTS.md?",
-    ], questions
-    # They are questions, not keywords — the whole point of the set.
-    assert all(q.endswith("?") for q in questions), questions
-
-    # Keywords stay keywords, and no question strayed into the search set.
-    keywords = re.findall(r'class="example"[^>]*>([^<]+)<', search_set)
-    assert "context window costs money tokens" in keywords
-    assert "human annotation calibrate LLM judge" in keywords
-    assert not any(k.endswith("?") for k in keywords), keywords
-
-    # The swap itself, and the click that runs a chip in the *current* mode.
-    script = (DEMO / "app.js").read_text()
-    assert '$("ex-ask").hidden = !on;' in script
-    assert '$("ex-search").hidden = on;' in script
-    assert "state.askMode ? runAsk() : runSearch();" in script
-
-
-def test_the_empty_state_is_one_sentence_and_the_way_back(public_client: TestClient) -> None:
-    """demo-site.md §6.1, amended 2026-08-11.
-
-    The dead end says what is true about the corpus and points at the chips.
-    It does not quote the query back — it is still in the box two centimetres
-    above — and it does not tell the visitor they used too many words.
-    """
-    script = (DEMO / "app.js").read_text()
-    assert '"Nothing in the corpus matches this."' in script
-    assert "Try fewer words" not in script
-    assert "Nothing matched “" not in script
-    # The nudge is a control, not a sentence about one: it clears the query,
-    # unpins the channel and puts the cold page back.
-    assert 'el("button", "linky", "one of the examples")' in script
-    assert "showExamples" in script
-    # And the widening is still there for the visitor who pinned a channel.
-    assert 'el("button", "linky", "Search all")' in script
-    # "Nothing is indexed yet" is a different screen and stays (§2.1).
-    assert '"Nothing is indexed yet."' in script
-
-
-def _rule(css: str, selector: str) -> str:
-    """One rule's body, by its exact selector line."""
-    match = re.search(
-        rf"(?m)^{re.escape(selector)} \{{(.*?)^\}}", css, re.S
-    ) or re.search(rf"(?m)^{re.escape(selector)} \{{(.*?)\}}", css, re.S)
-    assert match, f"{selector} is not a rule in style.css"
-    return match.group(1)
-
-
-def test_the_answer_pane_carries_the_measure_and_the_prose_fills_it() -> None:
-    """DESIGN.md caps running text at `--prose`; the cap belongs to a box.
-
-    On the paragraph, inside a plate at the full chassis, it read as a wrap
-    bug: 620px of text in a 947px bordered box, every line breaking two thirds
-    of the way across (Tom, 2026-08-11). The measure is a container's, written
-    in the prose's own font size so `ch` resolves against the face the
-    paragraph is set in — the pane while there is nothing to put beside it, and
-    the prose *column* once there is (see the next test).
-    """
-    css = (DEMO / "style.css").read_text()
-    pane = _rule(css, ".answer")
-    assert "max-width: calc(var(--prose) + 2 * var(--answer-pad))" in pane
-    assert "font-size: 15.5px" in pane, "`ch` has to resolve at the prose's size"
-    assert "max-width: var(--prose)" in _rule(css, ".answer-prose")
-    paragraph = _rule(css, ".answer p")
-    assert "font-size: 15.5px" in paragraph
-    assert "max-width" not in paragraph, "a second measure inside the first"
-
-    # The column exists in the DOM, or the measure has nothing to sit on.
-    script = (DEMO / "app.js").read_text()
-    assert 'el("div", "answer-prose")' in script
-    assert "prose.append(p)" in script and "pane.append(prose)" in script
-
-
-def test_the_chassis_is_the_system_column_not_a_narrower_one() -> None:
-    """demo-site.md §6, amended 2026-08-11: `--maxw`, like every other surface.
-
-    It was `--bp-stack` (1120px), on the argument that this page is read rather
-    than toured. What that bought at 1440 was a third of the screen for the
-    evidence and the rest for margin.
-    """
-    css = (DEMO / "style.css").read_text()
-    assert "max-width: var(--maxw)" in _rule(css, ".wrap")
-    assert "--maxw: 1460px;" in css, "the system's number, not a new one"
-    # The measures inside it are what keep text readable, and are untouched.
-    for measure in ("--prose: 70ch;", "--lede: 60ch;", "--query-w: 44rem;"):
-        assert measure in css, measure
-
-
-def test_the_ask_pane_is_the_page_not_a_strip_down_the_side() -> None:
-    """demo-site.md §6 item 5, amended 2026-08-11 (Tom's second round).
-
-    Capping the *pane* at the measure fixed the paragraph and made the answer,
-    its sources and its log a 670px column down the left of a 1440 screen. So
-    above the demo's one own breakpoint the pane takes the width and spends it
-    on layout: sources beside the answer, the log spanning, the prose still
-    breaking at 70ch because that is what its column is.
-    """
-    css = (DEMO / "style.css").read_text()
-    assert "--bp-wide: 1380px;" in css
-    assert "@media (min-width: 1380px)" in css
-    # Wide when there is something to spend the width on — a live log or an
-    # answer with sources. `> .worklist` is the live one only: the log folded
-    # into the disclosure under a finished answer is not a state.
-    assert ".answer:has(> .worklist)," in css
-    assert ".answer:has(.answer-sources) { max-width: none; }" in css
-    assert "grid-template-columns: minmax(0, var(--prose)) minmax(0, 1fr);" in css
-    # Every child spans unless it is placed by name, so a pane rendered without
-    # its log or its model line cannot shift the two columns.
-    assert ".answer > * { grid-column: 1 / -1; min-width: 0; }" in css
-    # …except a control. A grid item stretches by default and an inline-flex
-    # button with an auto width goes with it: the degraded pane's "Search
-    # instead" would be a 670px slab of border. Measured: 137px, at every width.
-    assert ".answer > .ghost { justify-self: start; }" in css
-    for placed in (
-        ".answer:has(.answer-sources) > .answer-prose { grid-column: 1; grid-row: 1; }",
-        ".answer:has(.answer-sources) > .worklog { grid-column: 1; grid-row: 2; }",
-    ):
-        assert placed in css, placed
-    # The evidence spans the rows, which is what puts the model line at the
-    # bottom of the answer's column instead of under two paragraphs.
-    sources = re.search(
-        r"\.answer:has\(\.answer-sources\) > \.answer-sources \{(.*?)\}", css, re.S
-    )
-    assert sources, "the sources column is not placed"
-    body = sources.group(1)
-    assert "grid-column: 2" in body and "grid-row: 1 / 4" in body
-    assert "border-left: 1px solid var(--seam)" in body
-    assert "border-top: 0" in body, "the rule that separated them is now vertical"
-
-
-def test_the_work_log_reserves_its_room_instead_of_growing_into_it() -> None:
-    """The rest of the stutter Tom saw (2026-08-11), after the idle line.
-
-    A list that grows one line per tool call pushes everything under it — the
-    connect band, the footer — down 46px, four to eight times an ask. Measured
-    on the stub at 1440: 4 growth shifts, CLS 0.078, before the answer even
-    arrived; with the box reserved the pane holds 261px from the first event to
-    the last and the page does not move at all while the model works.
-    """
-    css = (DEMO / "style.css").read_text()
-    log = _rule(css, ".answer > .worklist")
-    assert "--log-lines: 6;" in log
-    assert "height: calc(var(--log-lines) * 1.85em + 30px);" in log
-    assert "overflow-y: auto" in log
-    assert "scrollbar-gutter: stable" in log, "a seventh line must not reflow the text"
-    assert "overscroll-behavior: contain" in log, "the log's bottom is not the page's"
-    # Only the live log. The one folded into the disclosure keeps its own
-    # height, because by then nothing is arriving.
-    assert ".worklog .worklist {" not in log
-    script = (DEMO / "app.js").read_text()
-    assert "list.scrollTop = list.scrollHeight;" in script
-
-
-def test_the_page_holds_its_columns_still_while_the_machine_works() -> None:
-    """Three smaller sources of the same stutter, all measured on the stub.
-
-    The scrollbar leaving and returning as an ask empties the results and then
-    fills the pane moved every column 15px sideways and back; the state cell
-    resizing between `ready` and `scanning` shoved the input's right edge; and
-    the mono face, discovered by the stylesheet a round trip after the page had
-    laid itself out, moved the whole machine channel when it landed.
-    """
-    css = (DEMO / "style.css").read_text()
-    assert "scrollbar-gutter: stable" in _rule(css, "html")
-    state = _rule(css, ".st")
-    assert "min-width: 88px" in state and "justify-content: center" in state
-
-    body = (DEMO / "index.html").read_text()
-    preloads = re.findall(r'<link rel="preload" href="([^"]+)"', body)
-    assert sorted(Path(p).name for p in preloads) == [
-        "archivo-latin-wght-normal.woff2",
-        "jetbrains-mono-latin-wght-normal.woff2",
-    ], preloads
-
-
-def test_a_source_row_is_a_grid_so_a_long_title_cannot_drop_under_the_frame() -> None:
-    """demo-site.md §6.5: the row's shape is fixed, not a function of the title.
-
-    As a wrapping flex row it was the latter — a short title sat beside its
-    frame and a long one pushed the whole text column onto a second line under
-    it, which on a corpus whose titles run 20 to 120 characters is a different
-    layout per talk.
-    """
-    css = (DEMO / "style.css").read_text()
-    row = _rule(css, ".hit")
-    assert "display: grid" in row
-    assert "grid-template-columns: auto auto minmax(0, 1fr)" in row
-    assert "flex-wrap" not in row, "the wrap is what dropped the title under the frame"
-    # Every child is placed by name, so a row without its `[n]` collapses the
-    # first column instead of shifting the other two.
-    for placed in (
-        ".hit > .cite-n { grid-column: 1; grid-row: 1; }",
-        ".hit > .hit-link { grid-column: 3; grid-row: 1; }",
-    ):
-        assert placed in css, placed
-    assert "grid-column: 2; grid-row: 1;" in css, "the frame keeps its own column"
-    # And the title is a label, clamped, because the receipt is the evidence.
-    title = _rule(css, ".hit-title")
-    assert "-webkit-line-clamp: 2" in title and "line-clamp: 2" in title
-
-
-def test_one_thumbnail_geometry_across_every_kind_of_result() -> None:
-    """§5, amended 2026-08-11: one `.hit-thumb` box, whatever found the hit.
-
-    The stylesheet's half of the same rule the facade keeps: three sizes —
-    96×54 for a text hit, 128×72 for a card cover, 160×90 for a frame — became
-    one, so a Sources list is a column of identical rectangles and the
-    skeleton's reserved box matches every row it might stand in for.
-    """
-    css = (DEMO / "style.css").read_text()
-    thumb = _rule(css, ".hit-thumb")
-    assert "width: 160px" in thumb and "height: 90px" in thumb
-    # No per-kind override anywhere: a second geometry is the whole bug.
-    for gone in (
-        ".hit.is-frame .hit-thumb",
-        ".moment.is-frame .hit-thumb",
-        ".vcard-head .hit-thumb",
-    ):
-        assert gone not in css, gone
-    # And below `--bp-hand` it steps down once, still for every kind at once.
-    assert ".hit-thumb { width: 112px; height: 63px; }" in css
-
-    script = (DEMO / "app.js").read_text()
-    assert "img.width = 320;" in script and "img.height = 180;" in script
-    assert "wide ?" not in script, "the branch that made a frame hit its own size"
-
-
-def test_the_idle_line_is_parked_in_the_flow_never_taken_out_of_it() -> None:
-    """The stutter Tom saw while an answer generated (2026-08-11).
-
-    `hidden` on the idle line took it out of the flow at the start of every tool
-    call and put it back at the end: the document lost and regained a line six
-    or more times an ask, and a reader parked near the bottom had their scroll
-    position clamped and anchored back on each one. Measured on the stub at
-    1440: hiding moved the page 39px per tool call, parking moves it 0.
-    """
-    css = (DEMO / "style.css").read_text()
-    assert ".thinking.is-parked { visibility: hidden; }" in css
-    script = (DEMO / "app.js").read_text()
-    assert 'idle.classList.add("is-parked")' in script
-    assert 'idle.classList.remove("is-parked")' in script
-    assert "idle.hidden" not in script, "back to a display toggle is back to the stutter"
-
-
-def test_the_page_and_its_assets_are_cacheable(public_client: TestClient) -> None:
-    for path in (
-        "/",
-        "/demo",
-        "/static/demo/style.css",
-        "/static/demo/app.js",
-        "/static/landing/landing.css",
-        "/static/landing/landing.js",
-    ):
-        cache = public_client.get(path).headers.get("cache-control", "")
-        assert "max-age=" in cache, f"{path} is served without a cache lifetime"
-
-
-def test_the_page_builds_no_html_from_data(public_client: TestClient) -> None:
-    """The XSS floor, asserted against the source rather than assumed.
-
-    Everything the page renders is either its own copy or corpus text — and
-    corpus text includes OCR, which is *whatever happened to be on someone's
-    screen*. One rule covers it and is checkable: no HTML sink, anywhere.
-    """
-    # Comment lines are stripped: the file *talks* about innerHTML to say it
-    # never uses one, and that sentence should stay legal.
-    script = "\n".join(
-        line
-        for line in (DEMO / "app.js").read_text().splitlines()
-        if not line.strip().startswith(("//", "*", "/*"))
-    )
-    for sink in (
-        "innerHTML",
-        "outerHTML",
-        "insertAdjacentHTML",
-        "document.write",
-        "eval(",
-        "new Function",
-        "srcdoc",
-    ):
-        assert sink not in script, f"app.js reaches for {sink}"
-    stripped = _page(public_client).replace(
-        '<script type="module" src="/static/demo/app.js"></script>', ""
-    )
-    assert "<script" not in stripped, "no inline script: the page stays CSP-ready"
-
-
-def test_the_document_carries_a_policy_that_needs_no_unsafe_word(
-    public_client: TestClient,
-) -> None:
-    """The second line behind the no-HTML-sink rule above.
-
-    The audit's XSS verdict rests entirely on `app.js` never building HTML from
-    data. That is true today and checked by the test above, but it is a property
-    of a file someone will edit. The policy is what holds if that edit lands.
-
-    `unsafe-inline`/`unsafe-eval` are asserted *absent* because the page was
-    built self-contained precisely so it could refuse them, and a CSP carrying
-    either is the version that gets quoted rather than the version that works.
-
-    **Both documents**, since 2026-08-11: the landing at `/` arrived from the
-    lab as one file with an inline `<style>`, an inline `<script>` and ten
-    `style=` attributes, and was rebuilt to fit this policy rather than the
-    policy widened to admit it. Asserting it on `/demo` alone would have let the
-    front door — the page every visitor loads first — carry a weaker one.
-    """
-    for path in ("/", "/demo"):
-        headers = public_client.get(path).headers
-        policy = headers.get("content-security-policy", "")
-        for directive in (
-            "default-src 'self'",
-            "script-src 'self'",
-            "style-src 'self'",  # no `style=` attribute survives on either page
-            "img-src 'self' data:",  # the inline-SVG favicon, and nothing else
-            "frame-ancestors 'none'",  # /api/ask spends money; framing steals clicks
-            "base-uri 'none'",
-            "object-src 'none'",
-        ):
-            assert directive in policy, f"{path} dropped {directive!r}"
-        for unsafe in ("unsafe-inline", "unsafe-eval"):
-            assert unsafe not in policy, f"{path} admits {unsafe!r}"
-        assert headers.get("x-frame-options") == "DENY", path
-        assert headers.get("x-content-type-options") == "nosniff", path
-        assert headers.get("referrer-policy") == "no-referrer", path
-
-
-def test_the_policy_follows_the_document_and_not_the_route(
-    public_client: TestClient,
-) -> None:
-    """A stylesheet needs no policy; an HTML asset needs the same one as `/`.
-
-    Assets and the page are served by two different handlers, so the rule is
-    written against the media type rather than the path — otherwise the next
-    `.html` under `static/` arrives with no policy and nothing notices.
-    """
-    assert "content-security-policy" not in public_client.get("/static/demo/style.css").headers
-    assert (
-        "content-security-policy"
-        not in public_client.get("/static/landing/landing.js").headers
-    )
-    page = public_client.get("/demo").headers["content-security-policy"]
-    assert page == public_client.get("/static/demo/index.html").headers.get(
-        "content-security-policy"
-    ), "an HTML asset is a document and must carry the document's policy"
-    assert page == public_client.get("/").headers.get(
-        "content-security-policy"
-    ), "the landing is a document on this app and gets the app's document policy"
+# ---------------------------------- 6. corpus text as data, and never as markup
+#
+# What was section 6 — the demo page's markup and copy, its stylesheet, its
+# script, the favicon it shared with the dashboard, and the document CSP — went
+# with the page on 2026-09-05; `web/` asserts those now. What stays is the half
+# that was always Python's: the facade hands a reader corpus text verbatim, and
+# corpus text includes OCR, which is whatever happened to be on someone's
+# screen.
 
 
 # A line of OCR is untrusted input by construction. This is the shape of it.
