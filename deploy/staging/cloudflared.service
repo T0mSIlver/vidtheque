@@ -27,11 +27,15 @@
 [Unit]
 Description=Cloudflare Tunnel (vidtheque.dev)
 Documentation=https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/
-After=network-online.target vidtheque-mcp.service
+After=network-online.target vidtheque-caddy.service
 Wants=network-online.target
-# Ordering only, not a hard dependency: if mcp is down the tunnel should stay
-# up and return 502 rather than disappear, because a 502 is diagnosable from
-# outside and a dead connector is not. Stopping the connector stays the
+# The EDGE, not mcp: the tunnel's one ingress rule points at caddy on
+# 127.0.0.1:8080 now, and caddy is what knows which of the two servers answers
+# a path (deploy/Caddyfile).
+#
+# Ordering only, not a hard dependency: if the origin is down the tunnel should
+# stay up and return 502 rather than disappear, because a 502 is diagnosable
+# from outside and a dead connector is not. Stopping the connector stays the
 # rollback, and a rollback is something you do on purpose.
 
 [Service]

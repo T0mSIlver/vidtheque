@@ -1,0 +1,116 @@
+# ===========================================================================
+# BOX:      the PUBLIC container (CT 9001)
+# INSTALLS: the Next.js front end, which serves every page on this deployment
+#           since the 2026-09-06 cutover (docs/design/frontend-migration.md).
+# GOES TO:  /etc/systemd/system/vidtheque-web.service
+#           then `systemctl daemon-reload && systemctl enable --now vidtheque-web`
+#
+# This box is a git clone and systemd, not compose, so the front end is a unit
+# beside the other two rather than a container. It runs the SAME build the
+# image runs — `pnpm install --frozen-lockfile && pnpm build`, done by
+# vidtheque-deploy.sh on every deployment — from `next start` rather than from
+# the traced standalone bundle, because on a box that has the checkout there is
+# nothing to trace it out of.
+#
+# It introduces no environment variable that deploy/.env.example does not
+# document: both of its own are in that file's `web/` section, and they live in
+# /var/lib/vidtheque/web.env rather than in stack.env so this process does not
+# hold the OpenRouter key (deploy/staging/stack.env.web says why).
+#
+# NOTHING HERE HOLDS A CREDENTIAL. The reader's session cookie never reaches
+# this server — the browser calls Python directly for everything under
+# /dashboard/api and every write (§1d) — so a compromise here is a compromise
+# of rendering, not of the corpus. It is still bound to loopback: the edge is
+# the only thing that should reach it.
+# ===========================================================================
+
+[Unit]
+Description=vidtheque web (Next.js front end — every page on this deployment)
+Documentation=file:///home/vidtheque/vidtheque/docs/design/frontend-migration.md
+# The API it reads for a render is on this box. Ordering only: a page renders
+# its shell and reports the API's absence rather than failing to boot, so this
+# is `After=` without a `Requires=`.
+After=network-online.target vidtheque-mcp.service
+Wants=network-online.target vidtheque-mcp.service
+
+[Service]
+Type=exec
+User=vidtheque
+Group=vidtheque
+WorkingDirectory=/home/vidtheque/vidtheque/web
+
+# --- configuration --------------------------------------------------------
+EnvironmentFile=/var/lib/vidtheque/web.env
+
+# The bind and the mode. These are NOT in web.env: they are this unit's own
+# decision about where the process listens, and EnvironmentFile= would override
+# them anyway (measured on systemd 257 — see vidtheque-mcp.service's note).
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOSTNAME=127.0.0.1
+Environment=NEXT_TELEMETRY_DISABLED=1
+
+# --- guards, in the shape the mcp unit's are ------------------------------
+#
+# Both failure modes here are silent. A wrong API URL renders every page as
+# "the API is unreachable" on a box whose /healthz is green; a
+# VIDTHEQUE_CLIENT_IP_HEADER that does not match stack.env's
+# VIDTHEQUE_TRUSTED_IP_HEADER puts every visitor this server reads for into one
+# rate-limit bucket, which looks like the demo being popular until it stops
+# answering. They test the EFFECTIVE value, so a missing line fails too.
+ExecStartPre=/bin/sh -c 'test x${VIDTHEQUE_API_URL} = xhttp://127.0.0.1:8100'
+ExecStartPre=/bin/sh -c 'test x${VIDTHEQUE_CLIENT_IP_HEADER} = xCF-Connecting-IP'
+
+# --- run ------------------------------------------------------------------
+#
+# The pinned binary from the checkout's own node_modules, not `pnpm start`: a
+# service that resolves anything at start time is a service that can change
+# behaviour on a restart nobody asked for. Same reasoning as the mcp unit's
+# venv interpreter. `pnpm install` and `pnpm build` are install steps, and
+# vidtheque-deploy.sh runs them.
+ExecStart=/home/vidtheque/vidtheque/web/node_modules/.bin/next start
+
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vidtheque-web
+
+# --- hardening ------------------------------------------------------------
+#
+# The mcp unit's set, minus what a Node process needs back. It was not
+# re-verified line by line in an LXC the way that one was, so anything that
+# could plausibly break V8 is left out and named here rather than silently
+# omitted: MemoryDenyWriteExecute is OUT (a JIT is exactly the case that line
+# breaks), and so is a SystemCallFilter.
+NoNewPrivileges=yes
+ProtectSystem=strict
+# Next writes its incremental cache under .next/cache — `src/lib/library.ts`
+# keeps the two library reads in `unstable_cache` — and nothing else. The
+# build's output lives under the same directory, which is why the whole of
+# .next is writable rather than just its cache.
+ReadWritePaths=/home/vidtheque/vidtheque/web/.next
+# `no` for the same reason as the mcp unit: the checkout, node_modules and the
+# build all live under /home on this box, and ProtectSystem=strict already
+# makes /home read-only apart from the line above.
+ProtectHome=no
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RemoveIPC=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
