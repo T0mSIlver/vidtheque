@@ -6,7 +6,7 @@
 #           as the `cloudflared` system user, which has no home)
 #
 # This is deploy/cloudflared.example.yml with the launch decisions baked in:
-# hostname vidtheque.dev, service http://127.0.0.1:8100, dashboard PUBLIC
+# hostname vidtheque.dev, service http://127.0.0.1:8080 (the edge), dashboard PUBLIC
 # (so no 404 rule), catch-all 404. The example file stays the generic
 # template for other people; this one is the launch artifact.
 #
@@ -41,18 +41,25 @@ credentials-file: <CREDENTIALS_PATH>
 # Rules are evaluated top to bottom, first match wins, and the file MUST end
 # with a catch-all.
 ingress:
-  # One origin serves everything: the demo page at `/`, the `/api/*` facade,
-  # `/frames/*`, `/dashboard/*`, the MCP transport at `/mcp`, and `/healthz`.
-  # One rule, no path splitting.
+  # One origin serves everything: the landing at `/`, the reader at `/demo`,
+  # the `/api/*` facade, `/frames/*`, `/dashboard/*`, the MCP transport at
+  # `/mcp`, and `/healthz`. One rule here, no path splitting.
   #
-  # http://127.0.0.1:8100 is not a downgrade — this hop is inside the
+  # **THE ORIGIN IS THE EDGE, NOT mcp.** Since the front end moved to Next.js
+  # two processes serve that list — the web app serves every page, Python
+  # serves everything else, and three paths are split by METHOD — and the rule
+  # that decides is deploy/Caddyfile, running as vidtheque-caddy.service on
+  # 127.0.0.1:8080. Keep ONE rule here: an ingress `path:` regex could only be
+  # a second, staler copy of a table that already exists in the repo.
+  #
+  # http://127.0.0.1:8080 is not a downgrade — this hop is inside the
   # container, TLS is terminated at Cloudflare's edge, and that is exactly why
-  # PUBLIC_URL is an https:// URL. The port matches VIDTHEQUE_PORT=8100 in
-  # stack.env and the address matches VIDTHEQUE_HOST=127.0.0.1; those two lines
-  # and this one are the same decision written three times, which is why the
-  # unit guards them.
+  # PUBLIC_URL is an https:// URL. The port and the address match
+  # EDGE_LISTEN=:8080 and EDGE_BIND=127.0.0.1 in vidtheque-caddy.service; those
+  # two lines and this one are the same decision written three times, exactly
+  # as VIDTHEQUE_HOST/VIDTHEQUE_PORT and mcp's ingress rule used to be.
   - hostname: vidtheque.dev
-    service: http://127.0.0.1:8100
+    service: http://127.0.0.1:8080
 
   # NOT ENABLED — Phase 1 decision 4: the dashboard is PUBLIC with redactions.
   #
@@ -96,7 +103,10 @@ originRequest:
   #   content type prefixed by `text/event-stream`, `application/grpc` or
   #   `application/x-ndjson`. The MCP transport sends `text/event-stream` and
   #   `/api/ask` was moved onto SSE framing on 2026-08-09, so both are on the
-  #   flushable list and nothing tunnel-side needs configuring.
+  #   flushable list and nothing tunnel-side needs configuring. THE ORIGIN IS
+  #   CADDY NOW, and it changes none of that: measured on 2.11.4, it forwards
+  #   both framings as they are produced and adds no Content-Length of its own,
+  #   so what cloudflared sees is what uvicorn sent (deploy/Caddyfile's header).
   # * Do NOT set `httpHostHeader`. cloudflared forwards the public hostname as
   #   `Host` by default, which is exactly what the MCP transport's
   #   DNS-rebinding guard checks. The fix for a 421 is

@@ -1,0 +1,122 @@
+# ===========================================================================
+# BOX:      the PUBLIC container (CT 9001)
+# INSTALLS: the edge — the one origin, in front of both servers.
+# GOES TO:  /etc/systemd/system/vidtheque-caddy.service
+#           then `systemctl daemon-reload && systemctl enable --now vidtheque-caddy`
+#
+# WRITE THIS UNIT AND MASK THE PACKAGED ONE. `apt install caddy` installs AND
+# STARTS a `caddy.service` of its own, on :80, serving the package's welcome
+# page — so the first thing the install does is put a second web server on the
+# box, and the second thing it does is make "which caddy answered" a question.
+# install.md §7a disables and masks it. This is the same instinct as writing
+# the cloudflared unit by hand instead of running `service install`: the unit
+# that runs is the unit that is in the repo.
+#
+# WHAT IT SERVES: /home/vidtheque/vidtheque/deploy/Caddyfile, installed to
+# /etc/caddy/Caddyfile by vidtheque-deploy.sh on every deployment so the
+# routing rule and the code it routes to always come from the same commit. The
+# rule itself is docs/design/frontend-migration.md §1a and §1d; this unit only
+# says where it listens and where the two servers are.
+#
+# It introduces no new environment variable: the four EDGE_* names below are
+# deploy/Caddyfile's own, documented in deploy/.env.example, and they exist
+# precisely so this box and the compose stack can share one route table.
+# ===========================================================================
+
+[Unit]
+Description=vidtheque edge (caddy — one origin over web and mcp)
+Documentation=file:///home/vidtheque/vidtheque/deploy/Caddyfile
+After=network-online.target vidtheque-mcp.service vidtheque-web.service
+Wants=network-online.target vidtheque-mcp.service vidtheque-web.service
+# Ordering, not requirement, and for the reason the cloudflared unit gives
+# about mcp: an edge that stays up and answers 502 is diagnosable from outside;
+# an edge that disappeared because a backend did is not.
+
+[Service]
+# Type=exec rather than the packaged unit's Type=notify. Nothing here waits on
+# the edge's readiness — cloudflared tolerates a 502 by design — so the
+# readiness protocol buys nothing, and `simple`/`exec` cannot hang in
+# `activating` if a build ever stops sending it (cloudflared.service's note).
+Type=exec
+User=caddy
+Group=caddy
+
+# --- where it listens, and where the two servers are ----------------------
+#
+# THE PORT AND THE INTERFACE ARE TWO SETTINGS BECAUSE CADDY MAKES THEM TWO. A
+# site address of `127.0.0.1:8080` means "port 8080, and match the Host header
+# `127.0.0.1`" — behind a tunnel that matches nothing, while binding every
+# interface. The interface is `bind`, which takes no port. deploy/Caddyfile
+# reads both.
+#
+# 127.0.0.1 is the whole of this box's exposure argument, the same one
+# stack.env's VIDTHEQUE_HOST=127.0.0.1 makes for mcp: cloudflared is the only
+# thing that can reach the edge, which is what earns the right to trust
+# CF-Connecting-IP for rate limiting (docs/deploy-public.md §4). It is stronger
+# here than it was — mcp and web are on loopback behind this, so there is one
+# listener the tunnel can reach and it is this one.
+Environment=EDGE_LISTEN=:8080
+Environment=EDGE_BIND=127.0.0.1
+Environment=EDGE_MCP_UPSTREAM=127.0.0.1:8100
+Environment=EDGE_WEB_UPSTREAM=127.0.0.1:3000
+# caddy's own state (its autosaved config; no certificate is ever issued here,
+# because TLS terminates at Cloudflare). The package creates this directory.
+Environment=XDG_CONFIG_HOME=/var/lib/caddy
+Environment=XDG_DATA_HOME=/var/lib/caddy
+
+# --- the guard ------------------------------------------------------------
+#
+# A Caddyfile that does not adapt is a box with no origin at all, so it is
+# checked before the listener opens rather than discovered by a visitor. It
+# reads the same environment the run does, so a mistyped upstream above is
+# caught here too — as a syntax error, not as a 502 an hour later.
+ExecStartPre=/usr/bin/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
+ExecStart=/usr/bin/caddy run --environ --config /etc/caddy/Caddyfile
+# The admin API is at its default, 127.0.0.1:2019, which is what makes this
+# work — a route change can be applied without dropping a connection.
+ExecReload=/usr/bin/caddy reload --config /etc/caddy/Caddyfile --force
+
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+LimitNOFILE=1048576
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vidtheque-caddy
+
+# --- hardening ------------------------------------------------------------
+#
+# NO AmbientCapabilities, unlike the packaged unit, which grants
+# CAP_NET_BIND_SERVICE for :80. This edge listens on 8080 and needs no
+# capability at all — the low port would have bought nothing but a capability.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+# `full` rather than `strict`: /var/lib/caddy must stay writable and the
+# package owns it. /usr, /boot, /efi and /etc are read-only, which includes the
+# Caddyfile this reads.
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RemoveIPC=yes
+# AF_NETLINK is in the list for the reason the cloudflared unit gives: Go's net
+# package enumerates interfaces over it, and dropping it breaks a proxy for a
+# reason nobody guesses from the error.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

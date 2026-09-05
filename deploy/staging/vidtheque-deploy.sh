@@ -28,6 +28,10 @@ RUN="runuser -u vidtheque --"
 # runuser does not load the user's login PATH; uv lives in ~/.local/bin
 # (field failure, inaugural deploy 2026-08-11: "uv sync" = command not found).
 UV=/home/vidtheque/.local/bin/uv
+# Node and pnpm for the front end, same reason and same shape. Node is
+# installed from the official tarball into /usr/local at the version
+# ci-web.yml pins, and pnpm is corepack's shim beside it (install.md §5a).
+PNPM=/usr/local/bin/pnpm
 
 [ -f /etc/vidtheque-deploy.env ] && . /etc/vidtheque-deploy.env
 AUTH=()
@@ -80,6 +84,34 @@ if ! cmp -s "$REPO_DIR/deploy/staging/vidtheque-deploy.sh" /usr/local/sbin/vidth
   fi
 fi
 $RUN "$UV" sync --frozen --group gpu --quiet      || fail "uv sync"
+
+# ---------------------------------------------------------------------------
+# The front end. Every page on this deployment is served by web/ since the
+# 2026-09-06 cutover, so a deploy that syncs Python and skips this ships new
+# routes with the old pages behind them. Both steps are the ones CI runs:
+# --frozen-lockfile, then a production build. `pnpm build` needs no API and no
+# environment — every page reads its data at request time (ci-web.yml says so
+# where it runs the same command).
+#
+# It is BEFORE the restart on purpose: a build failure leaves the running
+# process serving the previous build, which is the same discipline `uv sync`
+# has above.
+# ---------------------------------------------------------------------------
+if [ -f "$REPO_DIR/web/package.json" ]; then
+  status in_progress "web: install and build"
+  $RUN "$PNPM" --dir "$REPO_DIR/web" install --frozen-lockfile --silent \
+    || fail "pnpm install"
+  $RUN "$PNPM" --dir "$REPO_DIR/web" build || fail "pnpm build"
+fi
+
+# The edge's rule, from this same commit. It is the file that decides WHICH of
+# the two servers answers a path, so it moves with the code it routes to and
+# never lags it (deploy/Caddyfile; the route table is frontend-migration.md
+# §1a and §1d). The unit validates it before it opens a listener.
+if [ -f "$REPO_DIR/deploy/Caddyfile" ] && ! cmp -s "$REPO_DIR/deploy/Caddyfile" /etc/caddy/Caddyfile; then
+  install -m 644 "$REPO_DIR/deploy/Caddyfile" /etc/caddy/Caddyfile || fail "install Caddyfile"
+  echo "deploy: edge rule updated"
+fi
 
 # ---------------------------------------------------------------------------
 # Corpus refresh — the corpus deploys the way the code does: pulled, never
@@ -136,7 +168,12 @@ for p in json.load(open(sys.argv[1]))["parts"]:
       [ -f "$STAGE/vidtheque.db" ] && [ -d "$STAGE/keyframes" ] \
         || fail "corpus tarball missing vidtheque.db or keyframes/"
     fi
-    systemctl stop vidtheque-mcp vidtheque-worker    || fail "corpus stop"
+    # The front end goes down with them, deliberately: with mcp stopped it
+    # would render every page as "the API is unreachable", and a clean 502 from
+    # the edge is a better answer than a page that looks broken. The restart at
+    # the end starts all four again.
+    systemctl stop vidtheque-mcp vidtheque-worker vidtheque-web \
+      || fail "corpus stop"
     rm -rf "$PREV" && mkdir -p "$PREV/$CUR"
     [ -f "$DATA_DIR/vidtheque.db" ] && mv "$DATA_DIR/vidtheque.db" "$PREV/$CUR/"
     rm -f "$DATA_DIR"/vidtheque.db-wal "$DATA_DIR"/vidtheque.db-shm
@@ -144,17 +181,34 @@ for p in json.load(open(sys.argv[1]))["parts"]:
     mv "$STAGE/vidtheque.db" "$DATA_DIR/vidtheque.db" || fail "corpus swap db"
     mv "$STAGE/keyframes"    "$DATA_DIR/keyframes"    || fail "corpus swap keyframes"
     rm -rf "$DATA_DIR/derived" "$STAGE"   # resize cache of frames that just changed
+    # The front end's data cache, for the same reason and it is easy to miss:
+    # `web/src/lib/library.ts` keeps the two library reads in `unstable_cache`
+    # with a 60 s and a 3600 s lifetime, and that store is ON DISK under
+    # .next/cache, so it survives the restart below. A corpus swap with it
+    # intact serves the OLD corpus's videos from a page for up to an hour while
+    # /healthz says everything is fine. The whole directory goes rather than the
+    # one file inside it: the cost is a slower next build, and the cost of
+    # naming an internal path that later changes is stale data nobody sees.
+    rm -rf "$REPO_DIR/web/.next/cache"
     chown -R vidtheque:vidtheque "$DATA_DIR/vidtheque.db" "$DATA_DIR/keyframes"
     echo "$GEN" > "$DATA_DIR/.corpus-generation"
     echo "deploy: corpus $GEN in place ($CUR kept in corpus-previous)"
   fi
 fi
 
-systemctl restart vidtheque-worker vidtheque-mcp  || fail "restart"
+systemctl restart vidtheque-worker vidtheque-mcp vidtheque-web vidtheque-caddy \
+  || fail "restart"
 sleep 5
-for url in http://127.0.0.1:8081/healthz http://127.0.0.1:8100/healthz; do
+# The worker and mcp on their own ports, then the same health check THROUGH THE
+# EDGE, which is the path a visitor's request takes and the only listener the
+# tunnel can reach.
+for url in http://127.0.0.1:8081/healthz http://127.0.0.1:8100/healthz \
+           http://127.0.0.1:8080/healthz; do
   curl -fsS -m 10 "$url" >/dev/null || fail "healthz $url"
 done
+# And one page, because /healthz is Python's and would answer exactly the same
+# with the front end dead and the edge routing every page into a 502.
+curl -fsS -m 15 -o /dev/null http://127.0.0.1:8080/ || fail "the landing page did not render"
 
 echo "$DEP_ID" > "$STATE"
 status success "live at $SHA"
