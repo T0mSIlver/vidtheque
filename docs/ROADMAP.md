@@ -23,15 +23,39 @@ initial reader, API client, search, Ask, and component tests.
 - Implement direct browser-to-Python API calls, chosen by Tom. Verify routing,
   session handling, trusted client addresses, and any cross-origin access.
 - Port the landing and demo while preserving their URLs and locked positioning.
-- Replace dashboard overview, video browsing and inspection, search, jobs and
-  job details, ledger, indexing, tags, job cancellation and retry, following,
-  login, and logout. Verify owner access and the public read-only projection.
 - Define the Python HTTP contracts needed by these pages. Keep state and
   operation policy in `mcp/`; remove presentation dependencies as pages move.
+  *Landed 2026-09-05:* the first read slice — `GET /dashboard/api/overview`,
+  `/ledger` and `/session`, over the assemblers the Jinja pages now share
+  (`docs/design/frontend-migration.md`, dashboard.md §19). Every port below
+  still needs its own contract written before its page.
 - Verify deployment, rollback, browser workflows, and CPU-only checks before
   switching traffic. Remove replaced templates, scripts, styles, and obsolete
   instructions only after their callers have replacements. Research stays
   append-only.
+
+The dashboard port, page by page. Each needs its JSON contract first, then its
+React page, verified against **both** the owner and the public read-only
+projection — a page that renders a field the projection drops is the failure
+mode this list exists to prevent.
+
+- **Overview and ledger pages** — the JSON exists; the React pages do not.
+- **Videos** — the table, its filters and ordering, and the video detail page,
+  including the frames strip and the cue pagination.
+- **Search** — the owner inspection page, over the handler `/api/search`
+  already shares.
+- **Jobs** — the list, the job detail page, and a poll target that replaces
+  `static/jobs.js` without moving the 2 s tick or its server-side clamp.
+- **Jobs controls** — cancel and retry-failed: the first writes to cross, so
+  the first to need §3.3's cookie and Origin rules expressed over `fetch`.
+- **Indexing** — the index form and its submission, with the same server-side
+  bounds the form has now.
+- **Tags** — the per-video tag write.
+- **Following** — the list, the detail bands and the six writes; absent
+  entirely when the deployment registers no write side (dashboard.md §18).
+- **Session and login** — the sign-in page, the cookie flow and sign-out.
+  `/dashboard/api/session` describes the deployment; the login POST itself has
+  no JSON twin yet.
 
 ### 1. Turn following on — no code, and it is why the corpus stopped growing
 
