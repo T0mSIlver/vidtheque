@@ -2737,12 +2737,12 @@ and lists. No rendered clock, no spoken duration, no sentence a page composed.
 | `POST /videos/{video_id}/tags` | `{"video_id", "tags": []}` |
 | `POST /login` | `{"signed_in": true, "next"}`, with the cookie set |
 | `POST /logout` | `{"signed_out": true}`, with the cookie cleared |
-| `POST /following` | `{"follow": {…}, "already_following"}` |
+| `POST /following` | `{"follow": {…} \| null, "already_following"}` |
 | `POST /following/{slug}/state` | `{"follow": {…}}` |
 | `POST /following/{slug}/check` | `{"follow": {…}}` |
 | `POST /following/{slug}/rules` | `{"follow": {…}}` |
 | `POST /following/{slug}/delete` | `{"slug", "deleted": true, "videos_kept"}` |
-| `POST /following/{slug}/queue` | `{"slug", "url", "job_id"}` |
+| `POST /following/{slug}/queue` | `{"slug", "url" \| null, "job_id" \| null}` |
 
 Six of those are worth a sentence each, because the payload — or the
 refusal — is not the obvious one:
@@ -2758,13 +2758,31 @@ refusal — is not the obvious one:
 - **`tags` answers the row's tags *after* the write**, read back. `tag_video`
   reports what it added and removed across a batch, which is not the question
   the panel that made the call is showing.
-- **The follow block is the row, typed** — identity, state and every rule
-  column, with epochs where `tools/follows._follow_fields` sends `iso_minute`
-  strings, and built from `Rules.from_row` so the payload and the check cannot
-  disagree about what a CSV column meant. It is re-read after the write:
-  `set_state` re-arms the clock when it resumes, so a payload built from the
-  row the handler read first would name the new state and the old
-  `next_check_at` in one breath.
+- **The follow block is the row, typed** — identity, state, every rule column
+  and the last failure (`last_error_code`, `last_error_message`), with epochs
+  where `tools/follows._follow_fields` sends `iso_minute` strings, and built
+  from `Rules.from_row` so the payload and the check cannot disagree about what
+  a CSV column meant. It is `read_models.follow_row_json_with_error`, which is
+  §22's detail block: **one function, so an outcome and a read cannot describe
+  a follow two ways.** It is re-read after the write: `set_state` re-arms the
+  clock when it resumes, so a payload built from the row the handler read first
+  would name the new state and the old `next_check_at` in one breath.
+- **The failure is on the outcome because a `resume` clears it** *(added
+  2026-09-05)*. `set_state` sets both error columns to `NULL` when it resumes,
+  and an outcome that carried neither left the page rendering an error the
+  write had just cleared — so the React page re-read the follow after **every**
+  write to find that out. With the two columns on the block the outcome is a
+  complete row and the re-read is a choice rather than a correction. The list
+  read is the one payload that still stops at the code (§22): sixty rows are a
+  column to compare.
+- **`POST /following` can answer `{"follow": null}`.** The tool answers with
+  the follow it made *or* the one it found, and this handler then re-reads that
+  row by slug for the block above; `null` is that read coming back empty — the
+  row gone between the write and the read-back — and it is the same condition
+  that sends the `303` branch to the list rather than to the new follow's page.
+  `already_following` is still true or false, so the outcome says what happened
+  even when there is no row to draw: a client re-lists rather than treating it
+  as a refusal, because nothing failed.
 - **`login` refuses with `E_BAD_CREDENTIAL` at 401, not `E_AUTH_REQUIRED`**
   *(landed 2026-09-05)*. Every other 401 on this surface means "go and sign
   in", and the client acts on it by navigating to the sign-in page
@@ -2784,7 +2802,11 @@ refusal — is not the obvious one:
 - **Nothing asked for is nothing done, on both branches.** `tags` with neither
   field and `queue` with no `url` answer `200` with the unchanged row rather
   than a refusal — the form's policy, not a second one written for the JSON
-  caller.
+  caller. `queue` says so in the shape: an empty field is
+  `{"url": null, "job_id": null}`. A `job_id` of `null` beside a `url` is the
+  other one — `index_video` creates no job for a video already in the corpus,
+  which is precisely what half the ledger's rows are, so "Index anyway" on one
+  of those is accepted and enqueues nothing.
 
 **The end of it.** The redirect branch is deleted with the last Jinja page, and
 `_wants_html`, `_to_login` and `_see` go with it. Until then both are live and
@@ -2828,12 +2850,15 @@ a `note:` when one moved, `has_more` over an exact total, and `order` explicit.
 pages.
 
 **One row, one shape.** The follow block is `read_models.follow_row_json` —
-the same function §21's write outcomes answer with, moved out of `writes.py`
-for this second caller. A client that pauses a follow and then re-lists it gets
-the same keys with the same types, built from `Rules.from_row`, so the payload
-and the check cannot disagree about what a CSV column meant. The list adds
-`last_error_code`, which is the column its table prints; the detail adds
-`last_error_message` beside it.
+the base §21's write outcomes answer with, moved out of `writes.py` for this
+second caller. A client that pauses a follow and then re-lists it gets the same
+keys with the same types, built from `Rules.from_row`, so the payload and the
+check cannot disagree about what a CSV column meant. The **detail** block is
+that plus the last failure — `follow_row_json_with_error`, `last_error_code`
+and `last_error_message` — and it is byte for byte what a write outcome sends,
+because it is the same function (§21, amended 2026-09-05). The **list** is the
+one payload that stops at the code: its table has a column for the code and
+none for the prose, and sixty rows are a column to compare.
 
 **Three renderings the pages have and these payloads do not**, all three
 because they are values a client can compute from the columns beside them, and
@@ -2904,6 +2929,7 @@ which is the same shape `/api/session`'s `write_side` already has.
   "follow": { /* the block above */
               "last_error_code": "E_RATE_LIMIT",
               "last_error_message": "the source rate-limited this box"},
+  "checks_enabled": true,            // VIDTHEQUE_FOLLOW_CHECKS, never named
   "brought_in": 1,
   "counts": {"queued": 1, "skipped_duration": 3, "held_budget": 1,
              "held_review": 1, "already_indexed": 1},   // one grouped query
@@ -2925,6 +2951,14 @@ which is the same shape `/api/session`'s `write_side` already has.
 }
 ```
 
+`checks_enabled` is on this payload too *(added 2026-09-05)*, the same boolean
+off the same `follow_settings`, read through `follow_detail_reads` so the two
+endpoints cannot answer it differently. The argument is the list's and it is
+stronger here, because this page is *about* one follow's clock: with follow
+checks off, `next_check_at` and the in-flight line are a schedule nothing will
+run, and no arithmetic over the columns beside them produces "the scheduler is
+off". It is a fact about the deployment, and it names no environment variable.
+
 `seen` is §18.4's third band and carries every decision except `queued`: a
 candidate the rule *accepted* is not one it passed over. The two job lists
 carry a `job_id` rather than a copy of the job, because the war story is
@@ -2939,6 +2973,29 @@ payload because the page shows it to the same reader and this endpoint answers
 nowhere else; **it is the first field that would have to go** if these routes
 ever answered in a projection, and no projection may be added without that
 decision being made explicitly.
+
+**Two page decisions, settled by Tom with the React pages (2026-09-05).** Both
+are about what a page does with these fields, and both are recorded here
+because the payload is what makes them possible:
+
+- **The follow's page shows the facts line and no English sentence.** The Jinja
+  detail page opens with `follows.rules.describe` — the rule as one sentence —
+  and the React page does not: it shows the same compressed facts the table
+  shows (`/videos · 8:00 floor · 5/check · every 6h`), at one density, from one
+  formatter. A reader who scans sixty rules in a column and then opens one
+  should meet the rule spelled the way they just compared it. `describe` is not
+  orphaned by that and is not to be deleted with the template: it is the MCP
+  tools' renderer — `follow-channel` prints it on every action — and it stays
+  Python's, which is also where a policy rendered as English belongs.
+- **Unfollow asks twice, and the confirmation carries the sentence the button
+  used to sit under.** The Jinja page could afford a bare POST: it navigated
+  away, and the line under the button said what survives. A `fetch` neither
+  navigates nor warns, so the React control asks first — naming the checks and
+  the ledger as the things that go — and its outcome names what stayed, with
+  §21's `videos_kept` as the receipt. That the videos are corpus and not
+  membership is the whole of what an operator has to know before the one
+  irreversible control on this surface, and it must be on the page rather than
+  in a redirect they never see.
 
 **Does not add.** A route the pages do not have, a parameter, a clamp number,
 an env var, a CORS policy, a write, a second query layer, or a page. The React
