@@ -477,6 +477,15 @@
     border: 0;
   }
 
+  /* The row's headline and its machine line are two lines, not two columns:
+     the cells around them are label-and-value pairs, and the one cell that is
+     the row's *name* should not be squeezed into that shape as well. */
+  .jobs tbody th,
+  .items tbody th {
+    flex-direction: column;
+    gap: 0;
+  }
+
   .jobs tbody td::before,
   .items tbody td::before {
     content: attr(data-label);
