@@ -6,6 +6,19 @@ and `research/pipeline-tooling-research.md`. Where a design doc disagrees with
 this file, this file wins; fold changes back into the docs as implementation
 touches them.
 
+## Frontend replacement, decided by Tom, 2026-09-05
+
+All three web surfaces move to Next.js and React: the landing at `/`, the
+demo at `/demo`, and the management dashboard at `/dashboard`. Cutover waits
+until all three replacements are ready, including the dashboard's existing
+read and write workflows. Tested migration PRs may land before cutover.
+
+This supersedes the Jinja2 and no-build-step frontend choice in
+`dashboard.md` and `PRODUCT.md`. Existing authorization, public read-only
+behavior, payload bounds, and the HTTP-only `mcp/` to `worker/` boundary
+still apply. Migration work and remaining design choices live in
+`docs/ROADMAP.md`.
+
 ## Decided by Tom (2026-08-08)
 
 1. **MCP stack: official `mcp` SDK 2.0** (2026-07-28 spec). No fastmcp
