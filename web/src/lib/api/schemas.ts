@@ -29,7 +29,7 @@ export const Hit = z.object({
   end: z.number().nullable(),
   match_start: z.number().nullable(),
   match_cue_id: z.number().int().nullable(),
-  text: z.string(),
+  text: z.string().nullable(),
   link: z.url(),
   cue_ids: z.array(z.number().int()),
   frame_id: z.string().nullable(),
