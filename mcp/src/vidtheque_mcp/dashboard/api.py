@@ -316,6 +316,16 @@ async def ledger(request: Request) -> Response:
             "chunks": int(row["chunks"] or 0),
             "tags": int(row["tags"] or 0),
             "channels": int(row["channels"] or 0),
+            # The band under the video count prints "published <oldest> –
+            # <newest>", and this payload had no field for it — the same
+            # `corpus_rollup` the counts above come from was already carrying
+            # both stamps. Same name and same shape as the overview's, because
+            # a client reading both must not have to learn two spellings of one
+            # fact; `null` on both halves when the corpus is empty.
+            "published": {
+                "oldest": _epoch(rollup["oldest_published"]),
+                "newest": _epoch(rollup["newest_published"]),
+            },
             "last_indexed": _epoch(rollup["last_indexed"]),
         },
         "videos_by_state": {

@@ -345,7 +345,9 @@ per-video work.
   "counted_at": 1757030400, "redacted": false,
   "corpus": {"videos": 4, "duration_s": 13500.0,
              "cues": 0, "keyframes": 0, "ocr_lines": 0,
-             "chunks": 0, "tags": 0, "channels": 2, "last_indexed": 1740000000},
+             "chunks": 0, "tags": 0, "channels": 2,
+             "published": {"oldest": 1740000000, "newest": 1740000000},  // int|null
+             "last_indexed": 1740000000},
   "videos_by_state": {"ready": 3, "pending": 0, "indexing": 1,
                       "failed": 0, "stale": 0},   // sums to corpus.videos
   "jobs_by_state": {"queued": 1, "running": 1, "done": 0,
@@ -358,6 +360,15 @@ per-video work.
   "storage": {"keyframe_bytes": 0, "database_bytes": 0}
 }
 ```
+
+*Added 2026-09-05 (Tom): `corpus.published`.* The ledger band prints
+"published *oldest* – *newest*" under the video count and this payload had no
+field for it, so a React ledger could only drop the line. It is the **same
+name and the same shape** as the overview's (§4) — epoch seconds, `null` on
+both halves when the corpus is empty — because one fact with two spellings is
+how two pages start disagreeing about the corpus. It costs no read: the
+assembler's `corpus_rollup` was already carrying `oldest_published` and
+`newest_published` for the counts beside it.
 
 ## 6. `GET /dashboard/api/session`
 
