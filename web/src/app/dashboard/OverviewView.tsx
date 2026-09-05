@@ -2,7 +2,7 @@
 
 import { dashboard, ROOT } from "@/lib/dashboard/client";
 import type { Overview } from "@/lib/dashboard/schemas";
-import { at, bytes, count, day, duration, hours, iso } from "@/lib/format";
+import { at, bytes, count, duration, hours, iso } from "@/lib/format";
 import styles from "./dashboard.module.css";
 import {
   DashLink,
@@ -11,6 +11,7 @@ import {
   GapLine,
   PageHead,
   Panel,
+  publishedNote,
   Readiness,
   ReadFailure,
   Reading,
@@ -131,17 +132,10 @@ function Loaded({ data }: { data: Overview }) {
                 ) : null}
               </>,
               // When *these videos* were published, which is a fact about the
-              // corpus's contents and not about its state. The two dates are
-              // one unbreakable unit, so the note wraps in front of the range
-              // and never inside it.
-              <>
-                published{" "}
-                <Unbroken>
-                  <span className={styles.mono}>{day(corpus.published.oldest)}</span>
-                  <Sep>–</Sep>
-                  <span className={styles.mono}>{day(corpus.published.newest)}</span>
-                </Unbroken>
-              </>,
+              // corpus's contents and not about its state — and the ledger's
+              // own second line, printed from the same place so the two pages
+              // cannot spell one fact two ways.
+              ...publishedNote(corpus.published),
             ]}
           >
             {count(corpus.videos)}

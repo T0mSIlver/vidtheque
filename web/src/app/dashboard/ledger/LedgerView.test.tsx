@@ -67,9 +67,10 @@ describe("the ledger", () => {
   });
 
   // An empty corpus has no oldest video and no newest one, which is exactly
-  // the corpus an operator is staring at while they wonder why. Both halves
-  // arrive `null` and print the dash — never a made-up date, never the word.
-  it("dashes the published span on a corpus that has none", async () => {
+  // the corpus an operator is staring at while they wonder why. `published
+  // —–—` is a line whose whole content is the absence of one, so there is no
+  // line: the count above it already says none.
+  it("leaves the published span out on a corpus that has none", async () => {
     await mount({
       body: {
         ...OWNER_LEDGER,
@@ -78,7 +79,7 @@ describe("the ledger", () => {
     });
 
     expect(await screen.findByRole("heading", { name: "The ledger" })).toBeInTheDocument();
-    expect(screen.getByText("videos").closest("div")).toHaveTextContent("published —–—");
+    expect(screen.getByText("videos").closest("div")).not.toHaveTextContent("published");
     expect(document.body.textContent).not.toMatch(/null|NaN|undefined/);
   });
 
