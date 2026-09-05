@@ -3,7 +3,8 @@
 # This file is the implementation of `docs/design/frontend-migration.md` §1a and
 # §1d: the route ownership those sections settle is a proxy rule, and this is
 # the proxy. Nothing in `web/` or `mcp/` can express it — a Next rewrite and a
-# middleware matcher both match paths, and two of the rules below are by method.
+# middleware matcher both match paths, and three of the paths below are routed
+# by method.
 #
 # Topology, both ways round:
 #
@@ -43,12 +44,38 @@
 	auto_https off
 }
 
-# The edge listens on :80 inside the container. WHERE THAT PORT IS PUBLISHED is
-# the security decision and it lives in the compose files, not here:
-# `127.0.0.1:${EDGE_PORT}:80` under deploy/compose.public.example.yml, so
-# cloudflared is the only way in, and `${EDGE_PORT}:80` in the base file for a
-# private box on a LAN.
-:80 {
+# ONE FILE, BOTH TOPOLOGIES. The route table below is the contract and is the
+# same everywhere; the four things that are a machine's shape rather than a
+# contract are read from the environment, with the COMPOSE values as defaults
+# so that path sets nothing at all:
+#
+#   EDGE_LISTEN        the port, `:port` form   default :80
+#   EDGE_BIND          the interface            default 0.0.0.0
+#   EDGE_MCP_UPSTREAM  where Python answers     default mcp:8080
+#   EDGE_WEB_UPSTREAM  where Next answers       default web:3000
+#
+# Inside a container `0.0.0.0:80` is right, and WHERE THAT PORT IS PUBLISHED is
+# the security decision the compose files make: `127.0.0.1:${EDGE_PORT}:80` in
+# the public overlay, so cloudflared is the only way in, and `${EDGE_PORT}:80`
+# in the base file for a LAN box. On a box with no docker, the same decision is
+# EDGE_BIND — `deploy/staging/vidtheque-caddy.service` sets it to 127.0.0.1 and
+# the two servers to their loopback ports.
+#
+# Deliberately parameters rather than a second copy of this file: two route
+# tables drift, and the failure when they do is a path quietly served by the
+# wrong process. A wrong upstream here fails loudly instead, with a dial error
+# in the log and a 502 in front of it.
+#
+# THE PORT AND THE INTERFACE ARE TWO KNOBS BECAUSE CADDY MAKES THEM TWO.
+# A site address of `127.0.0.1:8080` does not mean "listen on loopback": it
+# means "listen on :8080 and match the Host header `127.0.0.1`", which behind a
+# tunnel matches nothing while binding every interface — the exact inversion of
+# what it looks like. The interface belongs in `bind`, which in turn takes no
+# port. (`{$EDGE_LISTEN::80}` is caddy's env-placeholder syntax with a default
+# that itself starts with a colon — `{$NAME:default}`, split at the first one.)
+{$EDGE_LISTEN::80} {
+	bind {$EDGE_BIND:0.0.0.0}
+
 	# Access logs to stderr, which is `docker compose logs caddy` and the
 	# journal. Worth having on a cutover day: this is the one place that can
 	# say which upstream answered a request. The client address in them is
@@ -122,13 +149,13 @@
 	# none of them — the trusted header is the only address it takes and every
 	# absolute URL comes from `PUBLIC_URL` — so they are inert here rather than
 	# a second source of truth.
-	reverse_proxy @python mcp:8080
-	reverse_proxy @dashboard_writes mcp:8080
+	reverse_proxy @python {$EDGE_MCP_UPSTREAM:mcp:8080}
+	reverse_proxy @dashboard_writes {$EDGE_MCP_UPSTREAM:mcp:8080}
 
 	# Everything else is a page GET, Next's build output, or something that
 	# belongs to neither and gets Next's 404: `/`, `/demo`, `/videos`,
 	# `/videos/{id}`, the eleven `/dashboard` pages, `/_next/*`, `/landing/*`.
 	# An unmatched path 404s from the app that serves the pages, which is the
 	# same answer either process would give (§1d, closed 2026-09-06).
-	reverse_proxy web:3000
+	reverse_proxy {$EDGE_WEB_UPSTREAM:web:3000}
 }
