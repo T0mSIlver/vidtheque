@@ -62,12 +62,26 @@ mode this list exists to prevent.
   `/dashboard` page.
 - **Videos** — the table, its filters and ordering, and the video detail page,
   including the frames strip and the cue pagination. *Contract landed
-  2026-09-05, the React pages in progress the same day:* `/dashboard/api/library`
-  and `/dashboard/api/library/{video_id}` (dashboard.md §20 — the name is not
-  `videos` because the facade already holds that path at this prefix). The
-  detail points at the existing cues endpoint rather than serving cues, and
-  that endpoint now carries the typed fields a transcript pane needs beside its
-  strings — see the note below.
+  2026-09-05:* `/dashboard/api/library` and `/dashboard/api/library/{video_id}`
+  (dashboard.md §20 — the name is not `videos` because the facade already holds
+  that path at this prefix). The detail points at the existing cues endpoint
+  rather than serving cues, and that endpoint now carries the typed fields a
+  transcript pane needs beside its strings — see the note below.
+  *The read half landed 2026-09-05:* `GET /dashboard/videos` and
+  `GET /dashboard/videos/{video_id}` are Next's, named in the ownership table
+  and in the document-policy matcher — the detail as one segment, so the POSTs
+  under it stay Python's (frontend-migration.md §1d). What the React pages do
+  differently from the Jinja ones is recorded with the pages themselves
+  (dashboard.md §5.2, §5.3). The write side and two enhancement layers are
+  still open, on the lines below.
+- **Videos, the frames lightbox** — the Jinja page opens a keyframe full size
+  with its OCR boxes and its caption over it (`static/dashboard.js`); the React
+  card links to the 1280px frame instead. A layer over facts already on the
+  page, so it follows the port rather than blocking it.
+- **Videos, the timeline scrub preview** — pointing along the shot band shows
+  the shot under the pointer: its still, its span and its kept ratio. The React
+  timeline has the bars and their links and not the hover. Same shape of
+  follow-up as the lightbox.
 - **Search** — the owner inspection page, over the handler `/api/search`
   already shares.
 - **Jobs** — the list, the job detail page, and a poll target that replaces
@@ -75,8 +89,14 @@ mode this list exists to prevent.
 - **Jobs controls** — cancel and retry-failed: the first writes to cross, so
   the first to need §3.3's cookie and Origin rules expressed over `fetch`.
 - **Indexing** — the index form and its submission, with the same server-side
-  bounds the form has now.
-- **Tags** — the per-video tag write.
+  bounds the form has now. Plus the two re-index writes the ported videos pages
+  left behind: the table's per-row **Re-index** button and the detail's
+  **Manage this video** panel, both `POST /dashboard/videos/{id}/reindex`, and
+  the header link that seeds this form from a video's channel ("Queue more from
+  this channel").
+- **Tags** — the per-video tag write: the add and remove fields of the
+  detail's **Manage this video** panel, `POST /dashboard/videos/{id}/tags`,
+  which the React detail does not render at all.
 - **Following** — the list, the detail bands and the six writes; absent
   entirely when the deployment registers no write side (dashboard.md §18).
 - **Session and login** — the sign-in page, the cookie flow and sign-out.
