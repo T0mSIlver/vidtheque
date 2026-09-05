@@ -1,12 +1,18 @@
-"""`/dashboard/api/{overview,ledger,library,session}` — the JSON the React
-dashboard reads (`docs/design/frontend-migration.md`).
+"""`/dashboard/api/{overview,ledger,library,following,session}` — the JSON the
+React dashboard reads (`docs/design/frontend-migration.md`).
 
 Additive reads, and they add no query and no policy: `overview`, `ledger`,
-`library` and `library/{video_id}` are `read_models`' assemblers — the same
-reads the Jinja pages make, in the same order, under the same projection and
-the same server-side clamps — shaped into typed JSON, and `session` is what a
-browser needs before it can decide whether to render a dashboard or a sign-in
-link.
+`library`, `library/{video_id}`, `following` and `following/{slug}` are
+`read_models`' assemblers — the same reads the Jinja pages make, in the same
+order, under the same projection and the same server-side clamps — shaped into
+typed JSON, and `session` is what a browser needs before it can decide whether
+to render a dashboard or a sign-in link.
+
+The two following routes are the one pair here that is **not always
+registered**: they are declared with the write routes, because their pages are
+(dashboard.md §18.6), so a deployment with no write side 404s them exactly as
+it 404s the pages. Negotiating a medium must never be a way to reach a surface
+the deployment decided not to serve.
 
 `library` rather than `videos` because `/dashboard/api/videos` is taken: the
 `/api/*` facade is registered under this prefix too (§2.5.1), and its listing
@@ -58,11 +64,16 @@ from ..public.api import OWNER_CLAMPS, PUBLIC_CLAMPS
 from ..text import clamp
 from .access import peer_trusted, sign_in_hint, write_side_enabled
 from .read_models import (
+    BUDGET_WINDOW_S,
+    CHECK_CAP,
     CUE_PAGE,
     CUE_PAGE_MAX,
     FAILED_WINDOW_S,
     FRAME_PAGE,
     FRAME_PAGE_MAX,
+    HELD_BAND_CAP,
+    INDEX_JOB_CAP,
+    NEAR_MISS_S,
     OCR_LINE_CAP,
     SHOT_CAP,
     VIDEO_HISTORY_CAP,
@@ -72,7 +83,11 @@ from .read_models import (
     clamp_note,
     coverage_flags,
     declared_models,
+    follow_detail_reads,
+    follow_row_json,
+    following_reads,
     ledger_reads,
+    near_miss,
     overview_reads,
     pipeline_readiness,
     redacted,
@@ -725,5 +740,240 @@ async def session(request: Request) -> Response:
             "accepts_token": bool(
                 write_side and mode == "token" and settings.static_token
             ),
+        }
+    )
+
+
+# ------------------------------------------------------------ following (§22)
+
+
+def _follow_list_row(row: Any) -> dict[str, Any]:
+    """A table line: the shared row block, plus the code the column prints.
+
+    The block is `read_models.follow_row_json` and nothing else — the same
+    function a write outcome answers with (§21), so pausing a follow and
+    listing it cannot describe it two ways. What the list adds is the one field
+    the write outcomes have no use for: the last error's *code*, which is what
+    the table's own column shows. The message stays off this payload for the
+    same reason it stays off the page's table — a list of sixty rows is a
+    column to compare, and a fetch failure's prose is read on the follow's own
+    page.
+    """
+    return {**follow_row_json(row), "last_error_code": row["last_error_code"]}
+
+
+async def following(request: Request) -> Response:
+    """`GET /dashboard/api/following` — every follow, and what they are costing.
+
+    Registered **with the write routes**, not beside the other reads, and that
+    is dashboard.md §18.6's rule rather than a new one: the Following pages sit
+    inside the write-route list, so in `VIDTHEQUE_PUBLIC_READONLY=1` and in
+    `VIDTHEQUE_AUTH=none` this endpoint is absent exactly as they are. A route
+    that exists and refuses is a route somebody probes, and a JSON twin that
+    answered where its page 404s would be a way back into a surface the
+    deployment decided not to register. There is therefore no projection to
+    apply here and no `redacted` flag to send: the only deployment that answers
+    is the one whose reader is the owner.
+
+    Four reads, whatever the row count — `read_models.following_reads`, the
+    page's own — and the same server-side clamps, with `notes` carrying what a
+    clamp moved because a JSON caller has no form to read the accepted value
+    back out of.
+    """
+    data = await following_reads(request)
+    params = request.query_params
+    notes = [
+        note
+        for note in (
+            clamp_note(params.get("limit"), data.limit, "limit"),
+            clamp_note(params.get("offset"), data.offset, "offset"),
+        )
+        if note
+    ]
+    return _json(
+        {
+            "counted_at": int(time.time()),
+            # Explicit, and not a parameter: `store.list_follows` has one order
+            # — whatever is failing, then whatever was checked most recently —
+            # because a table read at 03:00 is read to find the follow that
+            # broke. Named rather than implied, like every other list here.
+            "order": "failing_first",
+            "totals": {key: int(value) for key, value in data.totals.items()},
+            "budget": {
+                # Hours of *video*, not GPU-minutes: the check knows a
+                # candidate's length before it knows what indexing will cost.
+                # Seconds on the wire and hours for the ceiling, because those
+                # are the units each is stored and configured in; `0.0` on the
+                # ceiling means the operator turned it off, which is a state
+                # and not "no budget left".
+                "spent_s": float(data.spent_s),
+                "ceiling_h": float(data.settings["daily_hours"]),
+                "window_s": BUDGET_WINDOW_S,
+            },
+            # Two facts about the deployment that decide what the clocks below
+            # mean. `checks` is `VIDTHEQUE_FOLLOW_CHECKS`: with it off, every
+            # `next_check_at` on this payload is a time nothing will happen at,
+            # and a page that could not say so would be confidently wrong.
+            # `vectors` is §5.5's honest refusal — `follow_channel` raises
+            # `E_FEATURE_DISABLED` on the same condition `index_video` does, so
+            # the surface says so above the controls rather than after a
+            # submission. Neither names an environment variable.
+            "checks_enabled": bool(data.settings["checks"]),
+            "vectors": data.vectors,
+            "follows": [_follow_list_row(row) for row in data.rows],
+            # The band that is addressed to a person rather than describing the
+            # instance: something matched a rule and is waiting on a human. It
+            # is capped independently of `limit`, because it is not what the
+            # pager pages, and it says so with `held_more` rather than a total.
+            "held": [
+                {
+                    "title": str(row["title"] or row["url"]),
+                    "url": str(row["url"]),
+                    "slug": str(row["follow_slug"]),
+                    "follow": str(row["follow_title"] or row["follow_slug"]),
+                    "published_at": _epoch(row["published_at"]),
+                    "first_seen_at": _epoch(row["first_seen_at"]),
+                }
+                for row in data.held
+            ],
+            "held_more": data.held_more,
+            "held_cap": HELD_BAND_CAP,
+            "pagination": {
+                "limit": data.limit,
+                "offset": data.offset,
+                "has_more": data.has_more,
+            },
+            "notes": notes,
+        }
+    )
+
+
+async def follow(request: Request) -> Response:
+    """`GET /dashboard/api/following/{slug}` — the rule, the checks, the cost.
+
+    §18.4's three bands, typed. Two things it deliberately does not send, both
+    because they are sentences a page composed and §21's outcomes already ruled
+    those out of this surface:
+
+    * **the rule as English.** `follows.rules.describe` is still the only
+      renderer of a policy as a sentence and the MCP tools still call it; what
+      travels here is the rule as columns, out of the same
+      `read_models.follow_row_json` a write outcome answers with, so a client
+      composing that sentence is reading the row the check obeys.
+    * **the near-miss line.** The arithmetic is the contract — how many of
+      *these* rows the length rule turned away by a whisker, `null` rather than
+      zero when there is nothing to report — and the words around it are the
+      client's. The threshold rides along, so the count and the number in the
+      sentence cannot disagree.
+    """
+    slug = str(request.path_params["slug"])
+    data = await follow_detail_reads(request, slug)
+    if data is None:
+        return _refusal(
+            {
+                "code": "E_UNKNOWN_FOLLOW",
+                "message": f'"{slug}" is not a follow on this instance.',
+                "next": "the Following page lists every channel this index watches.",
+            }
+        )
+
+    row = data.row
+    params = request.query_params
+    notes = [
+        note
+        for note in (
+            clamp_note(params.get("limit"), data.limit, "limit"),
+            clamp_note(params.get("offset"), data.offset, "offset"),
+        )
+        if note
+    ]
+    found = near_miss(data.seen, data.rules)
+    return _json(
+        {
+            "fetched_at": int(time.time()),
+            "follow": {
+                **follow_row_json(row),
+                "last_error_code": row["last_error_code"],
+                # The one string on this payload that is not the operator's own
+                # words: `follows/check.py` records `str(exc)[:400]` when a
+                # source cannot be read at all. It is here because the page
+                # shows it to the same reader — this endpoint answers nowhere
+                # else — and it is the field that would have to go first if
+                # this surface ever answered a projection, beside §20's
+                # `stages[].error` and for the same reason.
+                "last_error_message": row["last_error_message"],
+            },
+            # What the follow has brought in, and every decision it has made.
+            # One grouped query, already read for the page's own figure.
+            "brought_in": int(data.counts.get("queued", 0)),
+            "counts": {key: int(value) for key, value in data.counts.items()},
+            "near_miss": None
+            if found is None
+            else {
+                "count": found[0],
+                "of": len(data.seen),
+                "within_s": NEAR_MISS_S,
+                "edge": found[1],
+            },
+            # This follow's own checks and the index jobs they enqueued. Both
+            # carry the job id rather than a copy of the job: the war story is
+            # already written at `/dashboard/jobs/{job_id}` and this band does
+            # not fork it.
+            "checks": [
+                {
+                    "job_id": str(check["public_id"]),
+                    "state": str(check["state"]),
+                    "error_code": check["error_code"],
+                    "created_at": _epoch(check["created_at"]),
+                    "started_at": _epoch(check["started_at"]),
+                    "finished_at": _epoch(check["finished_at"]),
+                }
+                for check in data.checks
+            ],
+            "index_jobs": [
+                {
+                    "job_id": str(job["public_id"]),
+                    "state": str(job["state"]),
+                    "n_items": int(job["n_items"] or 0),
+                    "n_done": int(job["n_done"] or 0),
+                    "n_failed": int(job["n_failed"] or 0),
+                    "created_at": _epoch(job["created_at"]),
+                }
+                for job in data.index_jobs
+            ],
+            # A check already queued or running is named, so `Check now` cannot
+            # look like it did nothing.
+            "in_flight": (
+                None if data.in_flight is None else str(data.in_flight["public_id"])
+            ),
+            # The point of the page: every candidate that did *not* become a
+            # video, newest decision first. `reason` travels **verbatim** — it
+            # already carries the number that made the call, and re-deriving it
+            # on the client is how a receipt stops being one. It is policy
+            # text, which is Python's half of the split.
+            "order": "newest",
+            "seen": [
+                {
+                    "title": str(item["title"] or item["source_id"]),
+                    "url": str(item["url"]),
+                    "decision": str(item["decision"]),
+                    "reason": item["reason"],
+                    "judged_from": str(item["judged_from"]),
+                    "duration_s": _seconds(item["duration_s"]),
+                    "published_at": _epoch(item["published_at"]),
+                    "decided_at": _epoch(item["decided_at"]),
+                }
+                for item in data.seen
+            ],
+            # The two job lists are bounded independently of `limit`, because
+            # neither of them is what the pager pages — the caps ride along so
+            # a client can say "ten most recent" without hard-coding ten.
+            "caps": {"checks": CHECK_CAP, "index_jobs": INDEX_JOB_CAP},
+            "pagination": {
+                "limit": data.limit,
+                "offset": data.offset,
+                "has_more": data.has_more,
+            },
+            "notes": notes,
         }
     )

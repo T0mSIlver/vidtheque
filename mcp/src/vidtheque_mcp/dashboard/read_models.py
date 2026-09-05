@@ -1204,6 +1204,11 @@ INDEX_JOB_CAP = 10
 # — the follow's own page is where the rows are read.
 HELD_BAND_CAP = 5
 
+# The window the daily budget rolls over. `follows/store.budget_spent_s`'s own
+# default, named here because both surfaces print the figure against it and a
+# "spent today" that is really "spent in the last 24 hours" is worth saying.
+BUDGET_WINDOW_S = 86_400
+
 # What counts as "nearly" for the one derived observation above the ledger.
 # Sixty seconds because a length rule is typed in minutes, and a minute is the
 # smallest gap an operator would call a near miss. Both surfaces carry the
@@ -1357,7 +1362,9 @@ async def following_reads(request: Request) -> FollowingReads:
     offset = clamp(params.get("offset"), 0, OWNER_CLAMPS.offset_max, 0)  # type: ignore[arg-type]
 
     totals = await db.read(follows_store.totals)
-    spent_s = await db.read(follows_store.budget_spent_s)
+    spent_s = await db.read(
+        lambda c: follows_store.budget_spent_s(c, BUDGET_WINDOW_S)
+    )
     rows = await db.read(
         lambda c: follows_store.list_follows(c, limit=limit, offset=offset)
     )
