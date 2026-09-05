@@ -5,6 +5,26 @@ runs it: a welcome page, a read-only dashboard, and a demo over the AI Engineer
 corpus, with the MCP server itself reachable so anyone can point their own
 agent at it. This document turns that day into a checklist.
 
+**What is on the box, since the front-end cutover.** Four processes and one way
+in:
+
+```
+Cloudflare edge ──tunnel──▶ cloudflared ──▶ caddy ──▶ web   the pages
+                                              │       (Next.js)
+   TLS ends here                              └──▶ mcp   /api, /frames, /mcp,
+                                                          /dashboard/api, the
+                                                          writes, /healthz
+                                                     └──▶ worker (GPU, loopback)
+```
+
+`caddy` is the origin: it is the only listener the tunnel can reach, and which
+of the two servers answers a given path is `deploy/Caddyfile`, which implements
+`docs/design/frontend-migration.md` §1a and §1d — including three paths that
+are split by **method**, `GET` to the front end and the form's `POST` to
+Python. Python renders no page at all since 2026-09-06 (`dashboard.md` §23).
+Everything this runbook said about binding the origin to loopback is now said
+about the edge, and is stronger for it: `mcp` and `web` publish no port at all.
+
 **Who runs this.** The operator, with an agent alongside. The tunnel, the
 domain, the DNS records and the security audit were reserved for "together"
 from the start, and that reservation is the point of §1: everything below §1 is
@@ -44,15 +64,29 @@ means the URL is not shared.
 `none` — see §2.2 — which means *there is no 401 anywhere in the app*. So the
 audit's question is not "is auth configured", it is **"is everything reachable
 without a credential something we are content to publish?"** Enumerate the
-surface and answer per route: `/` and `/static/*`, `/api/search|videos|meta`,
-`/api/ask`, `/frames/*.jpg`, `/dashboard` and `/dashboard/api/*`, `/mcp`,
-`/healthz`. Under `none`, `auth.routes` is empty and `/auth/*` and
-`/.well-known/*` do not exist — confirm that, do not assume it.
+surface and answer per route: `/api/search|videos|meta`, `/api/ask`,
+`/frames/*.jpg`, `/dashboard/api/*`, `/videos/{id}/export.md`, `/mcp`,
+`/healthz`. Under `none`, `auth.routes` is empty and `/auth/*`, `/.well-known/*`
+and the SDK's root-level `/authorize`, `/token`, `/register` and `/revoke` do
+not exist — confirm that, do not assume it.
+
+**Two processes answer that hostname now, and only one of them is in this
+list.** Python serves no page since 2026-09-06 — `/`, `/demo`, `/videos*` and
+every `/dashboard` page are the Next.js app's, and the edge decides which
+process gets a request (`deploy/Caddyfile`, `docs/design/frontend-migration.md`
+§1a and §1d). The enumeration above is the *credential* surface and it is
+unchanged by that, because the front end holds no credential and reads only
+what an anonymous visitor could read anyway. What the audit gains is one
+question: **does the edge route what the contract says it routes**, since a
+misroute is a page where an API should be. `deploy/staging/install.md` §5b is
+that check.
 
 **That list was incomplete, corrected 2026-08-11.** It omitted
 `/dashboard/videos*`, `/dashboard/jobs*`, `/dashboard/api/jobs*`,
 `/dashboard/static/*` and the `/dashboard/` redirect — all mounted anonymously
 — and, on `/mcp`, the **three public resource URIs** and the session lifecycle.
+(Of those, the pages and `/dashboard/static/*` are gone from Python entirely;
+the JSON and the redirect are what is left, and they are in the list above.)
 Two of the audit's findings lived in exactly the gap: `/dashboard/videos/{id}`
 published every stage's model id and raw error while the jobs view beside it
 redacted both, and sessions accumulated without limit because nobody had
@@ -76,9 +110,10 @@ on, and they are on for different reasons:
   — expect `404` three times.
 
 Then check the redactions actually applied to data: `_redacted()` is
-`assembled.public.enabled` (`dashboard/views.py:649-660`), and it drops
-`error_message` from job cards (`:718`), `source_url` and `error_message` from
-job items (`:765-767`), and `message` from job events (`:801`). Everything else
+`assembled.public.enabled` (`dashboard/read_models.py`, which is where the
+assemblers moved when `views.py` was deleted with the Jinja pages), and it
+drops `error_message` from job cards, `source_url` and `error_message` from job
+items, and `message` from job events. Everything else
 on that view — states, codes, counts, clocks — is deliberately kept
 (`dashboard.md` §10.4). **Resolved in dashboard phase 4 (2026-08-09): fixed,
 not accepted.** This runbook found the *corpus overview* unredacted — declared
@@ -86,7 +121,7 @@ embedding model ids, the vector-leg state including `vectors.reason`, database
 and keyframe byte totals, and `auth={{ auth_mode }}` in the page chrome — against
 §2.4's promise of "no settings, no paths". There were no filesystem paths in it,
 but the model ids *are* settings. The projection now drops all four
-(`dashboard/views.py:_redacted`, and the amendment under §2.4's table), keeping
+(`read_models.redacted`, and the amendment under §2.4's table), keeping
 the one thing a visitor can act on: that vector search is off, without the
 mismatch that caused it. So the audit's job here is now **verification, not a
 decision** — §2.5 has the grep.
@@ -439,36 +474,49 @@ diff <(grep -oE '^[A-Z_]+=' .env.example | sort -u) \
 you are shipping the dev stack rather than compose. Do both diffs if both exist;
 two configuration files that disagree is how a mode flag gets lost.
 
-### 2.5 Demo-mode redactions, confirmed on the jobs view
+### 2.5 Demo-mode redactions, confirmed on the jobs payload
 
-Not "the flag is set" — look at the bytes:
+Not "the flag is set" — look at the bytes. **The bytes are JSON now.** These
+greps read HTML until 2026-09-06; Python renders no page, so they read the
+payloads the React pages read, which is where the redaction has always
+actually lived — it redacts by *omission*, so the operator's reads are simply
+not taken and there is no field for a client to un-hide
+(`frontend-migration.md` §7).
 
 ```bash
-curl -s http://127.0.0.1:8100/dashboard/jobs | grep -ciE 'youtube\.com|youtu\.be/|cookiefile|player_client|/home/'
+curl -s http://127.0.0.1:8100/dashboard/api/jobs | grep -ciE 'youtube\.com|youtu\.be/|cookiefile|player_client|/home/'
 # expect 0 for the operator-config strings; deep links to youtu.be are fine elsewhere
-curl -s http://127.0.0.1:8100/dashboard/jobs/<a-failed-job-id> | grep -c 'Sign in to confirm'
+curl -s http://127.0.0.1:8100/dashboard/api/jobs/<a-failed-job-id> | grep -c 'Sign in to confirm'
 # expect 0 — yt-dlp's error text is exactly what redaction drops
 ```
 
-Pick a job you know failed. The view must still show its state, its error **code**, its
-counts and all of its clocks; it must not show the submitted URL, the error
-message, or any job-event message. If a failed job renders identically with the
-flag on and off, the flag is not reaching the process — go to §6.1.
+Pick a job you know failed. The payload must still carry its state, its error
+**code**, its counts and all of its clocks; it must not carry the submitted
+URL, the error message, or any job-event message. If a failed job answers
+identically with the flag on and off, the flag is not reaching the process —
+go to §6.1.
 
 Then the *overview*, which phase 4 redacted after this runbook found it open:
 
 ```bash
-curl -s http://127.0.0.1:8100/dashboard | grep -ciE 'Qwen/|Declared models|keyframe JPEGs|auth='
+curl -s http://127.0.0.1:8100/dashboard/api/overview | grep -ciE 'Qwen/|declared_models|keyframe_bytes|auth_mode'
 # expect 0 — model ids, byte totals and the auth line are the operator's console
-curl -s http://127.0.0.1:8100/dashboard | grep -c 'read-only demo'
-# expect 1 — the rail says what the reader may do, and nothing about the box
+curl -s http://127.0.0.1:8100/dashboard/api/session | jq '{readonly, write_side, policy}'
+# expect true, false, "public" — the three facts the rail's "read-only demo"
+# sentence used to be the only witness to. The sentence is React's now; these
+# are what it renders from.
 ```
 
-The corpus must still be all there on the same page: the five ledger counts, the
-channel and tag rollups, the arrivals, the queue line and the gaps. A demo
-overview that renders as an empty shell means the redaction grew past its four
+The corpus must still be all there in the same payload: the five ledger counts,
+the channel and tag rollups, the arrivals, the queue line and the gaps. An
+overview that comes back an empty shell means the redaction grew past its four
 fields, which the suite asserts both ways
 (`test_the_overview_projection_keeps_the_corpus_and_drops_the_box`).
+
+**And run them through the edge as well**, once it is up
+(`http://127.0.0.1:8080/dashboard/api/...`): a redacted payload proves the
+projection, and the same request through the edge proves the reader is being
+handed that payload rather than a page.
 
 ### 2.6 Frames byte-cap sanity
 
@@ -584,13 +632,21 @@ What reads it, and what breaks if it still says `http://127.0.0.1:8100`:
   in an ask answer (`public/ask.py:697-702`). Wrong → **every image on the demo
   page is broken**, because the browser dutifully fetches
   `http://127.0.0.1:8100/frames/...` and gets nothing. Note the asymmetry that
-  makes this easy to miss: the **dashboard** passes `absolute=False`
-  (`dashboard/views.py:73`) and therefore renders fine on any hostname, so a
-  dashboard that looks perfect proves nothing about the demo page. That split
-  exists because of the SSH-tunnel incident on 2026-08-09 — a preview on a
-  tunnelled port rendered every thumbnail against a `PUBLIC_URL` that resolved
-  to nothing — and absolute stays the default because it is the MCP contract: an
-  agent gets a URL with no page around it to resolve against.
+  makes this easy to miss: the **dashboard's** payloads carry relative frame
+  URLs (`absolute=False`, in `dashboard/read_models.py` — it was `views.py`
+  until that module was deleted with the Jinja pages), so the dashboard renders
+  fine on any hostname and a dashboard that looks perfect proves nothing about
+  the demo page. That split exists because of the SSH-tunnel incident on
+  2026-08-09 — a preview on a tunnelled port rendered every thumbnail against a
+  `PUBLIC_URL` that resolved to nothing — and absolute stays the default because
+  it is the MCP contract: an agent gets a URL with no page around it to resolve
+  against.
+
+  **`img-src 'self'` now depends on this too.** The front end's CSP allows
+  images from its own origin and nothing else (`frontend-migration.md` §1b), so
+  a `PUBLIC_URL` that names a different origin does not merely 404 the
+  thumbnails — the browser refuses to request them at all, and the console says
+  CSP rather than "not found".
 - **`tools/frames.py:193,196`** — the URLs `get-frames` hands to an agent.
   Wrong → an agent that finds the right frame cannot fetch it.
 - **`Settings.issuer_url`** — OAuth metadata and the PRM `resource`
@@ -676,12 +732,32 @@ unconditionally; nothing checks that the request came from cloudflared. So:
 Otherwise one client sends a different `CF-Connecting-IP` per request and every
 per-IP bucket is fresh — `search`, `ask` and `frames` are all void. Only
 `ask_global` survives, because it is keyed `"@global"`, which makes the day's
-OpenRouter budget the sole remaining backstop. Concretely:
+OpenRouter budget the sole remaining backstop.
 
-- Bind the origin to loopback. `scripts/dev_stack.sh` already starts both
-  services with `VIDTHEQUE_HOST=127.0.0.1`. The compose file does **not** — it
-  publishes `"${MCP_PORT:-8080}:8080"` on `0.0.0.0`; `deploy/compose.public.example.yml`
-  is the overlay that fixes it.
+**The chain is one link longer than it was, and the claim is stronger for it.**
+Since the front end moved to Next.js the request path is
+
+```
+cloudflared  ->  caddy, on loopback  ->  { web, mcp }, on nothing
+```
+
+— the edge is the only listener, and Python is behind it rather than beside it.
+Before, "bind the origin to loopback" meant mcp's own published port; now mcp
+has no published port at all, under compose or under systemd, so there is no
+second listener to reach it by even from the box's own LAN interface.
+Concretely:
+
+- **Bind the edge to loopback, and publish nothing else.** Under compose that
+  is `deploy/compose.public.example.yml`, which overrides caddy's publication to
+  `127.0.0.1:${EDGE_PORT:-8080}:80`; the base file publishes no port for `mcp`
+  or `web` at all. Under systemd it is
+  `deploy/staging/vidtheque-caddy.service`'s `EDGE_BIND=127.0.0.1`, beside
+  `stack.env`'s `VIDTHEQUE_HOST=127.0.0.1` for mcp and the web unit's
+  `HOSTNAME=127.0.0.1`.
+- **Nothing in caddy validates the header, and nothing could.** It is forwarded
+  unchanged because only cloudflared can put a true value on it — the edge has
+  no way to tell a forged one from a real one, so the bind is the whole
+  argument (`deploy/Caddyfile` says this where it forwards).
 - Keep the worker off-box entirely. It answers an unauthenticated
   OpenAI-compatible API that will happily spend the GPU.
 - Check the host firewall and the Proxmox/LXC forwarding rules by hand. "The
@@ -773,8 +849,8 @@ rate-limit number, `OPENROUTER_API_KEY` and every pipeline knob sat in `.env`
 being read by nobody, and a public deployment came up **in full read-write
 mode, with `index-video` registered, on a public hostname.**
 
-The overlay is still not optional for going public — it binds both published
-ports to loopback (§4):
+The overlay is still not optional for going public — it binds the one published
+port, the edge's, to loopback (§4):
 
 ```bash
 docker compose -f deploy/docker-compose.yml \
@@ -876,8 +952,10 @@ it is called out in Cloudflare's own docs
 
 Zero Trust dashboard → **Networking → Tunnels → Create a tunnel**, name it, pick
 the OS, then add a **published application** route: hostname
-`vidtheque.example.com`, service `http://mcp:8080` (compose network) or
-`http://127.0.0.1:8100` (dev stack). No `cloudflared tunnel login`, no
+`vidtheque.example.com`, service `http://caddy:80` (compose network) or
+`http://127.0.0.1:8080` (the systemd box) — THE EDGE either way, never mcp
+directly, or the front end is unreachable and the three method-split paths are
+unrouted. No `cloudflared tunnel login`, no
 `cert.pem`, no credentials JSON, no ingress YAML — the token is everything, and
 **anyone holding the token can run the tunnel**, so treat it exactly like a
 private key. Put it in `.env` as `TUNNEL_TOKEN` (the entry already exists) and
@@ -916,15 +994,21 @@ it shares no DNS cache, no `/etc/hosts` entry and no local route.
 
 ### 7.1 Relative paths — already right, confirm anyway
 
-The demo page's JS fetches `/api/meta`, `/api/videos`, `/api/search` and
-`/api/ask` as root-relative paths (`public/static/demo/app.js`), and the dashboard's
-templates and stylesheet are explicit that assets are relative and never built
-from `PUBLIC_URL` (`dashboard/templates/base.html:15`,
-`dashboard/static/dashboard.css:28`). So the *chrome* survives any hostname. What
-does **not** come from the page's own origin is every URL that arrives inside a
-JSON payload — thumbnails and `mcp_url` — because those are absolute by design
-(§3.1). That is the whole of the risk, and it is why the two checks below are the
-ones that matter.
+**This argument belongs to `web/` now.** The pages are the Next.js app's, and
+every request they make is root-relative to the origin they were served from —
+`/api/meta`, `/api/videos`, `/api/search`, `/api/ask` and `/dashboard/api/*`
+from the browser, its own `/_next/*` and `/landing/*` for assets — which is
+what one origin buys and why there is no CORS anywhere
+(`docs/design/frontend-migration.md`, decision 4). Nothing in that app builds a
+URL from `PUBLIC_URL`. So the *chrome* survives any hostname, exactly as it did
+when Python served it from templates that said so.
+
+What does **not** come from the page's own origin is every URL that arrives
+inside a JSON payload — thumbnails and `mcp_url` — because those are absolute
+by design (§3.1). That is the whole of the risk, and it is why the two checks
+below are the ones that matter. Under `img-src 'self'` a wrong one is now a CSP
+refusal rather than a 404, which is louder in the console and identical to the
+reader.
 
 ```bash
 # thumbnails must be absolute AND on the public hostname
@@ -1027,6 +1111,31 @@ curl -sS https://vidtheque.example.com/healthz
 curl -sS -o /dev/null -w '%{http_code}\n' https://vidtheque.example.com/dashboard
 curl -sS -o /dev/null -w '%{http_code}\n' https://vidtheque.example.com/dashboard/jobs
 
+# The split, through the real edge and the real tunnel. Content type is the
+# assertion: a page is text/html from the front end, an API is JSON from
+# Python, and the three method-split paths must answer a POST as Python
+# (frontend-migration.md §1d — a POST answered text/html is the front end
+# swallowing a write).
+for u in / /demo /videos /dashboard /dashboard/login; do
+  curl -sS -o /dev/null -w "%{http_code} %{content_type}  GET $u\n" "https://vidtheque.example.com$u"
+done
+for u in /healthz /api/meta /dashboard/api/session; do
+  curl -sS -o /dev/null -w "%{http_code} %{content_type}  GET $u\n" "https://vidtheque.example.com$u"
+done
+for u in /dashboard/login /dashboard/index /dashboard/following; do
+  curl -sS -o /dev/null -w "%{http_code} %{content_type}  POST $u\n" -X POST \
+    -H 'Content-Type: application/x-www-form-urlencoded' -H 'Accept: application/json' \
+    --data '' "https://vidtheque.example.com$u"
+done   # none of these three may be text/html
+
+# The four document headers, on both front doors, from outside. They left
+# Python with the pages and no test in mcp/ can see them (demo-site.md §7
+# item 0), so this is the check that they are being sent.
+for u in / /demo; do
+  curl -sSD- -o /dev/null "https://vidtheque.example.com$u" | grep -icE \
+    'content-security-policy|x-frame-options|x-content-type-options|referrer-policy'
+done   # expect 4 for each
+
 # rate limiting is live and keyed per visitor, not per tunnel
 for i in $(seq 1 35); do
   curl -s -o /dev/null -w '%{http_code} ' "https://vidtheque.example.com/api/search?q=test&limit=1"
@@ -1051,7 +1160,11 @@ is pointed at.
 - [ ] every thumbnail on the demo page loads in a real browser
 - [ ] `mcp_url` is the public hostname, and adding it to a client works
 - [ ] `/mcp` does not 421
-- [ ] jobs view shows no source URLs, no error text, no event messages
+- [ ] the edge routes what the contract says: pages `text/html`, APIs JSON, and
+      a `POST` to `/dashboard/{login,index,following}` reaching Python (§7.4)
+- [ ] `/` and `/demo` carry all four document headers, with a **different**
+      CSP nonce on two consecutive requests
+- [ ] jobs payload shows no source URLs, no error text, no event messages
 - [ ] rate limits fire, and two devices get two buckets
 - [ ] the ask-stream result (§7.3) recorded, and the ask budget decision applied
 - [ ] `cloudflared` running as a service, surviving a reboot
@@ -1063,8 +1176,12 @@ no test in this repository can check any of it:
 
 - [ ] the merged compose model publishes **loopback only**, checked with
       `docker compose … config --format json | jq '[.services[].ports[]?] | all(.host_ip == "127.0.0.1")'`
-- [ ] `sudo ss -ltnpH | awk '$4 ~ /:(8080|8081|8100)$/'` shows no wildcard
-      listener — the merged model is a claim, this is the fact (B-1)
+      — and the only entry it finds is the edge's, because `mcp`, `web` and the
+      worker publish nothing
+- [ ] `sudo ss -ltnpH | awk '$4 ~ /:(8080|8081|8100|3000)$/'` shows no wildcard
+      listener — the merged model is a claim, this is the fact (B-1). On the
+      systemd box that is four processes and every one of them on 127.0.0.1;
+      under compose only the edge's port appears at all
 - [ ] the **worker** is unreachable from a second machine on the LAN *and* from
       off-network. It has no authentication and no request-size limits; the
       compose overlay no longer publishes it at all, and that is worth
@@ -1109,9 +1226,13 @@ Escalating, in order — each step is more permanent and less reversible:
 
 1. **Stop the connector** (above). Seconds. Reversible with `start`.
 2. **Turn off the demo, keep the box up.** `VIDTHEQUE_PUBLIC_READONLY=0` and
-   restart. `/` stops being the page, `/api/*` disappears, the rate limiter
-   drops to the `dashboard` bucket only — and the write tools come **back**, so
-   only do this behind a stopped tunnel.
+   restart. `/api/*` disappears, the rate limiter drops to the `dashboard`
+   bucket only — and the write tools come **back**, so only do this behind a
+   stopped tunnel. Note what this no longer does: **`/` keeps rendering**,
+   because the front end serves it and the flag never reached that process. It
+   renders a landing whose demo is gone, which is a worse answer than a 404 —
+   so if the point is "take the demo down", stop the tunnel (step 1) or stop
+   `vidtheque-web`, and use this flag for what it is, a *mode* change.
 3. **Delete the DNS record** in the Cloudflare dashboard. Now the hostname does
    not resolve at all.
 4. **Delete the tunnel**: `cloudflared tunnel delete vidtheque`. This
@@ -1217,7 +1338,13 @@ record:
 | `VIDTHEQUE_DERIVED_CACHE_MB`, `VIDTHEQUE_FRAME_*`, `VIDTHEQUE_INLINE_FRAME_*` | 2.6 | frame byte caps |
 | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `VIDTHEQUE_ASK_*` | 1.1, 2.3 | the spend surface |
 | `TUNNEL_TOKEN` | 6.4 | remotely-managed tunnels only |
-| `VIDTHEQUE_HOST`, `MCP_PORT`, `WORKER_PORT` | 4 | bind loopback |
+| `VIDTHEQUE_HOST`, `WORKER_PORT` | 4 | bind loopback |
+| `EDGE_PORT`, `CADDY_VERSION` | 4, 6.1 | the edge's host publication and its pinned image (compose) |
+| `EDGE_LISTEN`, `EDGE_BIND`, `EDGE_MCP_UPSTREAM`, `EDGE_WEB_UPSTREAM` | 4 | `deploy/Caddyfile`'s own four, set only on the systemd box |
+| `VIDTHEQUE_API_URL`, `VIDTHEQUE_CLIENT_IP_HEADER` | 4 | the front end's two; the second must equal `VIDTHEQUE_TRUSTED_IP_HEADER` |
+
+`MCP_PORT` was in this table and is gone from `.env.example` with it: nothing
+publishes the MCP server any more, so there is no host port for it to name.
 
 If a future change to this runbook needs a variable that is not in that list,
 add the `.env.example` entry in the same commit. CLAUDE.md: an env var without
