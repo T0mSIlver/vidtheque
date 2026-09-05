@@ -2,7 +2,8 @@ import type { NextConfig } from "next";
 
 // Python owns every path that is not a page. In production both processes sit
 // behind one reverse proxy on one origin: exact page GETs (`/`, `/demo`,
-// `/videos`, `/videos/{id}`, and now `/dashboard` and `/dashboard/ledger`)
+// `/videos`, `/videos/{id}`, and under the dashboard `/dashboard`,
+// `/dashboard/ledger`, `/dashboard/videos` and `/dashboard/videos/{video_id}`)
 // reach Next, and `/api/*`, `/frames/*`, `/mcp`, `/auth/*`, `/.well-known/*`,
 // `/healthz`, `/videos/{id}/export.md` and the rest of `/dashboard/*` reach
 // Python. Routing that split is the reverse proxy's job, not this file's.
@@ -42,11 +43,11 @@ const PYTHON_PATHS = [
 
 // The rest of `/dashboard`, which is being ported one page at a time
 // (docs/ROADMAP.md). `afterFiles` is the whole point: it is consulted *after*
-// the router has looked for a page, so `/dashboard` and `/dashboard/ledger`
-// are served by the React pages in `src/app/dashboard/`, and everything with
-// no page yet — `/dashboard/videos`, `/dashboard/jobs/{id}`, every POST behind
-// them — falls through to the Jinja pages exactly as before. Each port deletes
-// nothing here; it just adds a page the router finds first.
+// the router has looked for a page, so the four pages in `src/app/dashboard/`
+// win their own paths, and everything with no page yet — `/dashboard/search`,
+// `/dashboard/jobs/{id}`, every POST behind them, `/dashboard/videos/{id}/tags`
+// included — falls through to the Jinja pages exactly as before. Each port
+// deletes nothing here; it just adds a page the router finds first.
 const DASHBOARD_UNPORTED = ["/dashboard", "/dashboard/:path*"];
 
 // Cache Components is deliberately absent. It was on, and it is what made
