@@ -314,10 +314,10 @@ function Form({ indexable }: { indexable: boolean }) {
           job.
         </p>
 
-        <fieldset className={styles.checks}>
-          <legend className={styles.legend}>Channels to build</legend>
+        <fieldset className={dash.checkList}>
+          <legend className={dash.checkLegend}>Channels to build</legend>
           {CHANNEL_BOXES.map(([name, label, note]) => (
-            <label className={styles.check} key={name}>
+            <label className={dash.checkNoted} key={name}>
               <input
                 type="checkbox"
                 name={`channel_${name}`}
@@ -325,8 +325,8 @@ function Form({ indexable }: { indexable: boolean }) {
                 defaultChecked
                 disabled={!indexable}
               />
-              <span className={styles.checkWord}>{label}</span>
-              <span className={styles.checkNote}>{note}</span>
+              <span className={dash.checkNotedWord}>{label}</span>
+              <span className={dash.checkNote}>{note}</span>
             </label>
           ))}
         </fieldset>
@@ -334,12 +334,12 @@ function Form({ indexable }: { indexable: boolean }) {
         {/* Its own group: forcing a rebuild is not a channel, and a checkbox
             filed under the wrong legend is a wrong answer to a screen reader as
             well as to a reader. */}
-        <fieldset className={styles.checks}>
-          <legend className={styles.legend}>If it is already indexed</legend>
-          <label className={styles.check}>
+        <fieldset className={dash.checkList}>
+          <legend className={dash.checkLegend}>If it is already indexed</legend>
+          <label className={dash.checkNoted}>
             <input type="checkbox" name="force_reindex" value="1" disabled={!indexable} />
-            <span className={styles.checkWord}>Force re-index</span>
-            <span className={styles.checkNote}>
+            <span className={dash.checkNotedWord}>Force re-index</span>
+            <span className={dash.checkNote}>
               rebuild every stage. Without this, an incomplete video resumes at its outstanding
               stages and a finished one is left alone.
             </span>

@@ -106,11 +106,6 @@
   color: var(--muted);
 }
 
-.checkNote {
-  composes: t-machine-sm from global;
-  color: var(--fg3);
-}
-
 /* What a control means, under the row it belongs to. Never a tooltip: the
    ceilings in it are the numbers the validator clamps to, and a number a
    reader has to hover to find is a number they will guess instead. */

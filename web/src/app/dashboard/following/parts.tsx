@@ -345,10 +345,14 @@ export function RuleFields({
         namespace rules <code>tag-video</code> uses.
       </p>
 
-      <fieldset className={styles.checks}>
-        <legend className={styles.legend}>Channels to build</legend>
+      {/* The band's chip above holds a word — `/videos` — and these three hold
+          a word and the sentence under it, so they take the other shape the
+          index form takes: at 390 a sentence in a 34px chip wraps its word and
+          runs its note out of the band. */}
+      <fieldset className={dash.checkList}>
+        <legend className={dash.checkLegend}>Channels to build</legend>
         {CHANNEL_BOXES.map(([name, label, note]) => (
-          <label className={dash.check} key={name}>
+          <label className={dash.checkNoted} key={name}>
             <input
               type="checkbox"
               name={`channel_${name}`}
@@ -356,8 +360,8 @@ export function RuleFields({
               defaultChecked={values.channels.includes(name)}
               disabled={disabled}
             />
-            <span className={dash.checkWord}>{label}</span>
-            <span className={styles.checkNote}>{note}</span>
+            <span className={dash.checkNotedWord}>{label}</span>
+            <span className={dash.checkNote}>{note}</span>
           </label>
         ))}
       </fieldset>
