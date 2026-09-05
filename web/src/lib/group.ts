@@ -1,7 +1,9 @@
 // Ten flat hits are usually three talks. The server ranks and paginates; the
 // page groups what it was handed and nothing else (demo-site.md §6.5), so a
 // card's position is the position of its best hit and never a re-ranking.
-import type { Hit } from "@/lib/api";
+// `schemas` and not the package index: the index is `server-only`, and the
+// dashboard's search page groups the same hits in the browser.
+import type { Hit } from "@/lib/api/schemas";
 
 export interface VideoGroup {
   video_id: string;

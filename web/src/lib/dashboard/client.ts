@@ -32,6 +32,10 @@
 // same-origin `fetch` sends `Sec-Fetch-Site: same-origin` itself — a header
 // script cannot forge, so there is nothing for this file to attach.
 import type { ZodType } from "zod";
+// The search read's contract is the `/api` facade's, because the handler is
+// (dashboard.md §14.2). `schemas` and not the package index: that index is
+// `server-only`, and this module runs in the browser.
+import { SearchResponse } from "../api/schemas";
 import {
   CancelOutcome,
   CuePage,
@@ -269,6 +273,25 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
      */
     jobs(query: URLSearchParams, signal?: AbortSignal) {
       return get(`${ROOT}/api/jobs${suffix(query)}`, Jobs, { signal });
+    },
+    /**
+     * The corpus, queried — the facade's own handler under this prefix, behind
+     * the read gate (dashboard.md §14.2).
+     *
+     * The one read on this surface whose schema is `lib/api`'s rather than this
+     * folder's, because it is literally the same payload the public `/api`
+     * facade answers with: one handler, two prefixes, differing only in the
+     * gate in front of them and the one `note:` line the demo drops.
+     *
+     * `query` is the page's own URL filtered to the parameters the handler
+     * takes, passed through untouched like every other list here. The clamp is
+     * the *caller's* — `policy_for` gives a bearer, a session or a trusted peer
+     * a page of up to 50 and everyone else up to 20, on this prefix as well —
+     * so a `limit` corrected on this side would be a bound the reader is never
+     * told about, and the accepted one comes back in `pagination`.
+     */
+    search(query: URLSearchParams, signal?: AbortSignal) {
+      return get(`${ROOT}/api/search${suffix(query)}`, SearchResponse, { signal });
     },
     /** One job — its card, its items and the tail of its event log. */
     job(jobId: string, signal?: AbortSignal) {
