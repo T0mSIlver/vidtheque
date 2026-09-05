@@ -282,6 +282,39 @@ def test_videos_facade_lists_the_library_with_covers(public_client: TestClient) 
     assert by_id["kCc8FmEb1nY"]["link"] == "https://youtu.be/kCc8FmEb1nY"
 
 
+def test_video_facade_returns_one_summary_with_frame_urls(public_client: TestClient) -> None:
+    payload = public_client.get("/api/videos/kCc8FmEb1nY").json()
+    assert payload["video_id"] == "kCc8FmEb1nY"
+    assert payload["title"] == "Let's build GPT: from scratch"
+    assert payload["published"] == "2023-01-17"
+    assert payload["link"] == "https://youtu.be/kCc8FmEb1nY"
+    assert payload["thumb"].endswith("kCc8FmEb1nY-00000.jpg?w=320&q=70")
+    assert [c["title"] for c in payload["chapters"]] == ["intro"]
+    assert payload["key_texts"][0]["start"] == 0.0
+    # Every on-screen-text highlight carries the two frame URLs the page needs,
+    # because a page cannot mint one (demo-site.md §5).
+    frame = payload["ocr_highlights"][0]
+    assert frame["frame_id"].startswith("kCc8FmEb1nY-")
+    assert frame["thumb"].endswith(f"{frame['frame_id']}.jpg?w=320&q=70")
+    assert frame["thumb_large"].endswith(f"{frame['frame_id']}.jpg?w=960&q=70")
+    # MCP-only guidance stays out of a browser payload.
+    assert "next" not in payload
+
+
+def test_video_facade_answers_an_unknown_id_with_the_envelope(public_client: TestClient) -> None:
+    response = public_client.get("/api/videos/nope00000ab")
+    assert response.status_code == 404
+    body = response.json()
+    assert body["error"] == "E_UNKNOWN_VIDEO"
+    assert body["message"]
+
+
+def test_video_facade_has_no_cover_for_a_video_without_frames(public_client: TestClient) -> None:
+    payload = public_client.get("/api/videos/eMlx5fFNoYc").json()
+    assert payload["thumb"] is None
+    assert payload["ocr_highlights"] == []
+
+
 def test_meta_reports_the_endpoint_and_the_ask_state(tmp_path: Path) -> None:
     with make_client(tmp_path, PUBLIC) as client:
         payload = client.get("/api/meta").json()
