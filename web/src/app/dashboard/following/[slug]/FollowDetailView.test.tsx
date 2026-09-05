@@ -227,9 +227,41 @@ describe("one follow's page", () => {
       expect(posts[0].path).toBe("/dashboard/following/andrej-karpathy/state");
       expect(String(posts[0].init.body)).toBe("action=pause");
       expect((posts[0].init.headers as Record<string, string>).accept).toBe("application/json");
-      // The row is re-read after the write, so the head follows the outcome.
+      // The outcome *is* the row, so the page follows it with no second read.
       const head = await screen.findAllByText("paused");
       expect(head.length).toBeGreaterThan(0);
+    });
+
+    // §21's follow block is `read_models.follow_row_json_with_error`, the same
+    // function §22's detail read calls, so it carries the two failure columns —
+    // and a `resume` nulls both. The page used to re-read after every write to
+    // learn that; a complete row means it does not have to.
+    it("clears the last failure on a resume, with no second read", async () => {
+      const { posts, fetcher } = await mount({
+        detail: {
+          body: { ...FOLLOW_DETAIL, follow: { ...FOLLOW_DETAIL.follow, state: "failing" } },
+        },
+        post: { body: RESUMED_OUTCOME },
+      });
+      await screen.findByRole("heading", { name: "Andrej Karpathy" });
+      expect(screen.getByText("E_RATE_LIMIT")).toBeInTheDocument();
+
+      const reads = fetcher.mock.calls.filter(
+        ([, init]) => (init as RequestInit | undefined)?.method !== "POST",
+      ).length;
+
+      await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+      expect(posts[0].path).toBe("/dashboard/following/andrej-karpathy/state");
+      await screen.findAllByText("active");
+      expect(screen.queryByText("E_RATE_LIMIT")).not.toBeInTheDocument();
+      expect(screen.queryByText("the source rate-limited this box")).not.toBeInTheDocument();
+      // Nothing was read again: the receipt was the whole answer.
+      expect(
+        fetcher.mock.calls.filter(
+          ([, init]) => (init as RequestInit | undefined)?.method !== "POST",
+        ),
+      ).toHaveLength(reads);
     });
 
     // `failing` resumes for the same reason `paused` does: it is a follow the
@@ -256,7 +288,9 @@ describe("one follow's page", () => {
       await userEvent.click(screen.getByRole("button", { name: "Check now" }));
 
       expect(posts[0].path).toBe("/dashboard/following/andrej-karpathy/check");
-      expect(await screen.findByText("due now")).toBeInTheDocument();
+      // Twice, and deliberately: the control says what the route answered, and
+      // the clock above it is the same row, so both read `due now` at once.
+      expect(await screen.findAllByText("due now")).toHaveLength(2);
     });
 
     // A paused follow has no clock to make due, and a control that exists to be
