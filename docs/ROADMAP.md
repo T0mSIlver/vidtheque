@@ -117,8 +117,13 @@ mode this list exists to prevent.
   compressed to facts, the rule as an English sentence, and the near-miss line
   around a typed `near_miss` that is `null` when there is nothing to say.
 - **Session and login** — the sign-in page, the cookie flow and sign-out.
-  `/dashboard/api/session` describes the deployment; the login POST itself has
-  no JSON twin yet.
+  `/dashboard/api/session` describes the deployment. *The login POST's JSON
+  twin landed 2026-09-05*: `POST /dashboard/login` answers `{"signed_in",
+  "next"}` with the cookie on the response, and refuses a wrong secret with
+  `E_BAD_CREDENTIAL` rather than the `E_AUTH_REQUIRED` a client answers by
+  navigating here (dashboard.md §21; frontend-migration.md §9). The React
+  sign-in page is pending, and it owns the navigation to `next` and the one
+  sentence the server sends for either secret.
 
 **Three existing JSON endpoints answer in rendered strings**, which is
 what the typed-values decision (DECISIONS.md, 2026-09-05) says they must not.

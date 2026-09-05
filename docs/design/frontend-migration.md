@@ -748,6 +748,18 @@ booleans and lists — a job's state as the store's own word, a follow's
 The refusal text is the exception and is deliberate: `message` and `next` are
 policy and stay Python's (decision 5).
 
-`POST /dashboard/login` is **not** part of this: it has no JSON twin yet and
-answers a refused sign-in with a re-rendered form. The sign-in flow is
-`docs/ROADMAP.md`'s.
+**Signing in is the same shape** *(landed 2026-09-05)*. `POST
+/dashboard/login` negotiates like the other twelve: the session cookie is not
+sent (there is none yet) but `Accept: application/json`, the form-encoded body
+— `password`, and `next` if the reader was going somewhere — and the
+same-origin requirement are as above. On success it answers `200 {"signed_in":
+true, "next": "<a path under /dashboard>"}` and sets the session cookie on that
+response; the shell navigates to `next`, which Python has already fenced to
+this surface, so the client does not have to check it. A refused secret is
+`401 E_BAD_CREDENTIAL` — deliberately not `E_AUTH_REQUIRED`, because the rule
+above sends a `401` reader to the sign-in page and this *is* the sign-in page.
+Its `message` is the same sentence for both secrets, so a client must render it
+rather than infer which field was wrong. Cross-origin is the same `403
+E_BAD_ORIGIN`, and `429` (the sign-in's own tight bucket) is JSON on both
+branches with `retry_after_s` and a `Retry-After` header. The React sign-in
+page itself is `docs/ROADMAP.md`'s.

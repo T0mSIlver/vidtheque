@@ -2620,6 +2620,7 @@ and lists. No rendered clock, no spoken duration, no sentence a page composed.
 | `POST /index` | `{"jobs": [{"job_id", "items", "urls": []}], "already_indexed": [], "errors": [envelope + "urls"], "batches", "urls"}` |
 | `POST /videos/{video_id}/reindex` | `{"video_id", "job_id"}` |
 | `POST /videos/{video_id}/tags` | `{"video_id", "tags": []}` |
+| `POST /login` | `{"signed_in": true, "next"}`, with the cookie set |
 | `POST /logout` | `{"signed_out": true}`, with the cookie cleared |
 | `POST /following` | `{"follow": {…}, "already_following"}` |
 | `POST /following/{slug}/state` | `{"follow": {…}}` |
@@ -2628,12 +2629,8 @@ and lists. No rendered clock, no spoken duration, no sentence a page composed.
 | `POST /following/{slug}/delete` | `{"slug", "deleted": true, "videos_kept"}` |
 | `POST /following/{slug}/queue` | `{"slug", "url", "job_id"}` |
 
-`POST /login` is not on this list: it has no JSON twin yet
-(`docs/ROADMAP.md`), and its refusal is a re-rendered form rather than an
-envelope.
-
-Five of those are worth a sentence each, because the payload is not the
-obvious one:
+Six of those are worth a sentence each, because the payload — or the
+refusal — is not the obvious one:
 
 - **`cancel` sends the state the job is actually in.** Queued work settles now
   (`cancelled`) and running work does not (`running`, with the request
@@ -2653,6 +2650,22 @@ obvious one:
   `set_state` re-arms the clock when it resumes, so a payload built from the
   row the handler read first would name the new state and the old
   `next_check_at` in one breath.
+- **`login` refuses with `E_BAD_CREDENTIAL` at 401, not `E_AUTH_REQUIRED`**
+  *(landed 2026-09-05)*. Every other 401 on this surface means "go and sign
+  in", and the client acts on it by navigating to the sign-in page
+  (frontend-migration.md §1d) — which on the sign-in page's own POST is a
+  loop, so a refused secret carries a code of its own. Its `message` is the
+  one sentence the form has always rendered, kept identical for both secrets
+  and both branches: naming which secret was wrong would say which one this
+  deployment has. Its `next` is the fenced `_safe_next` path the 303 branch
+  redirects to, and the `Set-Cookie` is on both branches, because a React
+  shell can no more mint an `HttpOnly` cookie than clear one. Cross-origin is
+  `access.bad_origin()`, the refusal `require_write` already raises, so there
+  is one origin wording and not two — the *rendered* form keeps its own
+  sentence, which is visible copy rather than a code a client matches on. The
+  `429` is the login bucket's, charged ahead of the handler, so it is JSON
+  whatever was asked for. `GET /dashboard/login` is untouched: "am I signed
+  in" is `/dashboard/api/session`'s question.
 - **Nothing asked for is nothing done, on both branches.** `tags` with neither
   field and `queue` with no `url` answer `200` with the unchanged row rather
   than a refusal — the form's policy, not a second one written for the JSON
