@@ -296,7 +296,7 @@ export default function LandingPage() {
               <p>
                 <a
                   className={styles.lnk}
-                  href="https://github.com/tomvaucourt/vidtheque"
+                  href="https://github.com/T0mSIlver/vidtheque"
                   rel="noopener"
                 >
                   the repo
