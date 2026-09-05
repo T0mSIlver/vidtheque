@@ -19,13 +19,11 @@ cannot check:
 
 from __future__ import annotations
 
-import re
 import sqlite3
 from pathlib import Path
 from typing import Callable
 
 import httpx2 as httpx
-import pytest
 from starlette.testclient import TestClient
 
 from vidtheque_mcp.app import build_app
@@ -231,12 +229,6 @@ def sign_in(client: TestClient) -> None:
     assert response.status_code == 303, response.text
 
 
-def page(client: TestClient, path: str, status: int = 200) -> str:
-    response = client.get(path, headers=BEARER)
-    assert response.status_code == status, f"{path} -> {response.status_code}"
-    return response.text
-
-
 def _empty_corpus(tmp_path: Path) -> TestClient:
     """The same deployment with nothing followed — the empty state's own case."""
     data = tmp_path / "bare"
@@ -273,20 +265,18 @@ def test_the_following_surface_is_absent_in_readonly_mode(tmp_path: Path) -> Non
     """§2.3, with a credential configured — so the *flag* is doing the work.
 
     This is the deployment Tom ships publicly. Every route of this surface must
-    be missing rather than refusing, **including its two read pages**: a page
+    be missing rather than refusing, **including its two reads**: a surface
     whose every affordance POSTs has nothing to show a deployment that
     registers no write side, and a route that exists and refuses is a route
     somebody probes.
     """
     with owner_client(tmp_path, readonly=True) as demo:
-        assert demo.get(f"{ROOT}/videos", headers=BEARER).status_code == 200
-        assert demo.get(f"{ROOT}/following", headers=BEARER).status_code == 404
-        assert demo.get(f"{ROOT}/following/karpathy", headers=BEARER).status_code == 404
+        assert demo.get(f"{ROOT}/api/library", headers=BEARER).status_code == 200
+        for path in (f"{ROOT}/api/following", f"{ROOT}/api/following/karpathy"):
+            assert demo.get(path, headers=BEARER).status_code == 404, path
         for path in FOLLOW_POSTS:
             refused = demo.post(path, headers={**BEARER, **SAME_ORIGIN})
             assert refused.status_code == 404, path
-        # And no affordance survives the projection either (§2.4's table).
-        assert "Following" not in demo.get(f"{ROOT}/videos", headers=BEARER).text
 
 
 def test_the_following_surface_is_absent_in_auth_none(tmp_path: Path) -> None:
@@ -299,31 +289,14 @@ def test_the_following_surface_is_absent_in_auth_none(tmp_path: Path) -> None:
     back and press it again.
     """
     with make_client(tmp_path) as client:  # auth=none
-        assert client.get(f"{ROOT}/following").status_code == 404
-        assert client.get(f"{ROOT}/following/karpathy").status_code == 404
+        for path in (f"{ROOT}/api/following", f"{ROOT}/api/following/karpathy"):
+            assert client.get(path).status_code == 404, path
         for path in FOLLOW_POSTS:
             assert client.post(path, headers=SAME_ORIGIN).status_code == 404, path
-        # Every read page is still open, which is the other half of the rule.
-        assert client.get(ROOT).status_code == 200
-        assert "Following" not in client.get(ROOT).text
+        # Every other read is still open, which is the other half of the rule.
+        assert client.get(f"{ROOT}/api/overview").status_code == 200
         registered = {str(getattr(r, "path", "")) for r in client.app.routes}
         assert not (registered & set(WRITE_ROUTES))
-
-
-def test_the_rail_item_appears_exactly_where_the_routes_do(tmp_path: Path) -> None:
-    """§13's rule for `Add videos`, applied to the word beside it.
-
-    The link exists precisely when its target does — absent, not disabled — so
-    a rail can never point at a page this deployment 404s.
-    """
-    with owner_client(tmp_path) as private:
-        rail = page(private, ROOT)
-        assert f'href="{ROOT}/following"' in rail
-        assert ">Following<" in rail
-    with owner_client(tmp_path, readonly=True) as demo:
-        assert f'href="{ROOT}/following"' not in page(demo, ROOT)
-    with make_client(tmp_path) as anonymous:
-        assert f'href="{ROOT}/following"' not in anonymous.get(ROOT).text
 
 
 def test_the_follow_write_routes_are_declared(tmp_path: Path) -> None:
@@ -336,162 +309,12 @@ def test_the_follow_write_routes_are_declared(tmp_path: Path) -> None:
         assert writing == set(WRITE_ROUTES)
         assert f"{ROOT}/following" in writing
         assert f"{ROOT}/following/{{slug}}/queue" in writing
-        # And the detail page is a read: no state-changing GET, ever (§3.3).
-        detail = [r for r in routes if str(r.path) == f"{ROOT}/following/{{slug}}"]
+        # And the detail *read* is a read: no state-changing GET, ever (§3.3).
+        detail = [r for r in routes if str(r.path) == f"{ROOT}/api/following/{{slug}}"]
         assert detail and set(detail[0].methods or ()) - {"HEAD"} == {"GET"}
 
 
 # ------------------------------------------------------------ 2. the two pages
-
-
-def test_the_list_is_the_add_form_when_nothing_is_followed(tmp_path: Path) -> None:
-    """The empty state is the control, not a sentence about the control.
-
-    An empty state you have to leave in order to act on it is a screen that
-    exists to say "no". The form is the page here, under one sentence naming
-    what a follow does.
-    """
-    with _empty_corpus(tmp_path) as client:
-        body = page(client, f"{ROOT}/following")
-        assert "Nothing is followed yet" in body
-        assert f'action="{ROOT}/following"' in body
-        assert 'name="url"' in body
-        # No table, because there is nothing to put in one.
-        assert "grid follows" not in body
-        # The band is still there and still counts to zero: a figure that
-        # disappears when it is zero is a number you cannot trust when it is not.
-        assert "brought in" in body
-
-
-def test_the_list_renders_the_band_the_rules_and_the_clocks(tmp_path: Path) -> None:
-    with owner_client(tmp_path) as client:
-        body = page(client, f"{ROOT}/following")
-        assert "Andrej Karpathy" in body
-        assert "Paused Channel" in body
-        assert f'href="{ROOT}/following/andrej-karpathy"' in body
-        # Every state is a word as well as a colour (DESIGN.md).
-        assert 'class="pill tone-ok">active<' in body
-        assert 'class="pill tone-wait">paused<' in body
-        # The rule, compressed: the tabs, the floor and the per-check cap.
-        assert "/videos" in body
-        assert "0:08:00 floor" in body
-        assert "5/check" in body
-        # The budget line names both halves — what is spent, and the ceiling.
-        # The ceiling itself is a deployment's own number and is asserted where
-        # it is set (`test_the_budget_line_reads_the_pipeline_ceiling`); pinning
-        # today's default here made this page's test fail when Tom changed it,
-        # which told nobody anything about the page.
-        assert "used today" in body
-        assert re.search(r"of \d+h", body)
-        # The last error rides on the row that has one.
-        assert "E_RATE_LIMIT" in body
-
-
-def test_the_held_band_names_the_rows_and_gives_them_a_door(tmp_path: Path) -> None:
-    """"N are waiting" with nowhere to go is a notification, not a control."""
-    with owner_client(tmp_path) as client:
-        body = page(client, f"{ROOT}/following")
-        assert "waiting for you" in body
-        assert f'href="{ROOT}/following/andrej-karpathy#passed"' in body
-
-
-def test_the_detail_page_is_the_sentence_the_ledger_and_the_cost(
-    tmp_path: Path,
-) -> None:
-    """The three bands, in order — and the third is the point of the page."""
-    with owner_client(tmp_path) as client:
-        body = page(client, f"{ROOT}/following/andrej-karpathy")
-
-        # Band 1: the rule as one sentence, from `follows.rules.describe` and
-        # from nothing else, plus the clocks and the last error.
-        assert "Every 6 hours, take up to 5 new uploads from Andrej Karpathy" in body
-        assert "longer than 0:08:00" in body
-        assert "last check" in body and "next check" in body and "last arrival" in body
-        assert "the source rate-limited this box" in body
-        # The form is a disclosure, and it is a `<details>` — no script.
-        assert "<details" in body and "Edit the rule" in body
-
-        # Band 2: the checks and the jobs they queued, each linking into the
-        # job detail page that already exists.
-        assert f'href="{ROOT}/jobs/job_followchk1"' in body
-        assert f'href="{ROOT}/jobs/job_followidx1"' in body
-
-        # Band 3: what it passed over, with the reason verbatim and where the
-        # number came from.
-        assert "7:48, shorter than your 8:00 floor" in body
-        # A check that spent a request says so; one that read the flat listing
-        # has nothing to report and prints nothing.
-        assert "judged from a probe" in body
-        assert "judged from a listing" not in body
-        # A provisional decision does not look terminal.
-        assert "re-decided on the next check" in body
-        assert "waiting on you" in body
-        assert "Index anyway" in body
-        # A candidate that was *accepted* is not a candidate it passed over.
-        assert "Accepted and queued" not in body
-
-
-def test_the_derived_line_is_read_out_of_the_rows_and_only_when_true(
-    tmp_path: Path,
-) -> None:
-    """One sentence, computed from the page's own rows, or nothing at all.
-
-    Two of the seeded near misses are inside a minute of the floor and one is
-    half an hour outside it, so the number is 2 and not 3 — which is the whole
-    difference between reading the ledger and counting the band.
-    """
-    from vidtheque_mcp.dashboard.views import NEAR_MISS_S
-
-    with owner_client(tmp_path) as client:
-        body = page(client, f"{ROOT}/following/andrej-karpathy")
-        assert f"within {NEAR_MISS_S} seconds of your floor" in body
-        assert re.search(r"2 of the last \d+ passed over were within", body), body
-
-    # The follow with no length rule has no near miss to report, and prints
-    # nothing rather than a zero-ish sentence.
-    with owner_client(tmp_path) as client:
-        other = page(client, f"{ROOT}/following/paused-channel")
-        assert "seconds of your" not in other
-
-
-def test_an_unknown_follow_is_a_typed_refusal(tmp_path: Path) -> None:
-    with owner_client(tmp_path) as client:
-        response = client.get(f"{ROOT}/following/no-such-thing", headers=BEARER)
-        assert response.status_code == 404
-        assert "E_UNKNOWN_FOLLOW" in response.text
-
-
-def test_both_lists_are_clamped_server_side(tmp_path: Path) -> None:
-    """`?limit=100000` is clamped, not honoured — never a prompt-only limit."""
-    from vidtheque_mcp.dashboard.views import FOLLOW_PAGE_MAX, SEEN_PAGE_MAX
-
-    with owner_client(tmp_path) as client:
-        listing = page(client, f"{ROOT}/following?limit=100000&offset=0")
-        assert f"limit={FOLLOW_PAGE_MAX}" in listing or "more available" not in listing
-        detail = page(
-            client, f"{ROOT}/following/andrej-karpathy?limit=100000&offset=0"
-        )
-        assert f"limit={SEEN_PAGE_MAX}" in detail or "more available" not in detail
-        # And the pager never prints an exact total.
-        assert "of 6 rows" not in detail
-
-
-def test_a_hostile_title_and_a_hostile_reason_never_become_markup(
-    tmp_path: Path,
-) -> None:
-    """A `reason` is a sentence the check wrote about a title somebody chose.
-
-    Both are corpus strings, both reach the ledger verbatim by design, and
-    neither may ever reach the browser as markup.
-    """
-    with owner_client(tmp_path) as client:
-        body = page(client, f"{ROOT}/following/andrej-karpathy")
-        assert "<script>alert(document.cookie)</script>" not in body
-        assert "<img src=x" not in body
-        # Escaped, and still *there*: the ledger prints the reason verbatim, so
-        # the string has to survive as text rather than be stripped.
-        assert "&lt;script&gt;" in body
-        assert "&lt;img src=x onerror=alert(1)&gt;" in body
 
 
 # -------------------------------------------------------------- 3. the writes
@@ -518,9 +341,12 @@ def test_a_write_without_a_credential_is_refused(tmp_path: Path) -> None:
 
 
 def test_create_pause_resume_and_unfollow_round_trip(tmp_path: Path) -> None:
-    """The four state writes, each through `follow_channel` and back to a page.
+    """The four state writes, each through `follow_channel`, and the row after.
 
-    POST → 303 → GET throughout: a write is never the thing a reload repeats.
+    POST → 303 throughout on this branch: a write is never the thing a reload
+    repeats, and the target is a path the front end serves. What each write
+    *answered* is `test_dashboard_writes_json.py`'s; what this pins is that the
+    store moved, read back through the surface's own read.
     """
     with _empty_corpus(tmp_path) as client:
         sign_in(client)
@@ -546,9 +372,13 @@ def test_create_pause_resume_and_unfollow_round_trip(tmp_path: Path) -> None:
         assert target.startswith(f"{ROOT}/following/")
         slug = target.rsplit("/", 1)[-1]
 
-        detail = page(client, target)
-        assert "longer than 0:08:00" in detail
-        assert 'class="pill tone-ok">active<' in detail
+        def follow() -> dict:
+            response = client.get(f"{ROOT}/api/following/{slug}", headers=BEARER)
+            assert response.status_code == 200, response.text
+            return response.json()["follow"]
+
+        assert follow()["min_duration_s"] == 480
+        assert follow()["state"] == "active"
 
         paused = client.post(
             f"{ROOT}/following/{slug}/state",
@@ -557,7 +387,7 @@ def test_create_pause_resume_and_unfollow_round_trip(tmp_path: Path) -> None:
             follow_redirects=False,
         )
         assert paused.status_code == 303
-        assert 'class="pill tone-wait">paused<' in page(client, target)
+        assert follow()["state"] == "paused"
 
         resumed = client.post(
             f"{ROOT}/following/{slug}/state",
@@ -566,7 +396,7 @@ def test_create_pause_resume_and_unfollow_round_trip(tmp_path: Path) -> None:
             follow_redirects=False,
         )
         assert resumed.status_code == 303
-        assert 'class="pill tone-ok">active<' in page(client, target)
+        assert follow()["state"] == "active"
 
         # Check now moves the clock and nothing else; a check is a job the
         # queue claims on its next tick, and this suite never runs one.
@@ -582,7 +412,7 @@ def test_create_pause_resume_and_unfollow_round_trip(tmp_path: Path) -> None:
         )
         assert gone.status_code == 303
         assert gone.headers["location"] == f"{ROOT}/following"
-        assert client.get(target, headers=BEARER).status_code == 404
+        assert client.get(f"{ROOT}/api/following/{slug}", headers=BEARER).status_code == 404
 
 
 def test_the_rules_form_edits_through_the_shared_validator(tmp_path: Path) -> None:
@@ -607,11 +437,13 @@ def test_the_rules_form_edits_through_the_shared_validator(tmp_path: Path) -> No
             follow_redirects=False,
         )
         assert edited.status_code == 303
-        body = page(client, f"{ROOT}/following/andrej-karpathy")
-        assert "longer than 0:20:00" in body
-        assert "take up to 3 new uploads" in body
-        assert "index transcript only" in body
-        assert "hold them for you rather than queueing them" in body
+        follow = client.get(
+            f"{ROOT}/api/following/andrej-karpathy", headers=BEARER
+        ).json()["follow"]
+        assert follow["min_duration_s"] == 1200
+        assert follow["max_per_check"] == 3
+        assert follow["channels"] == "transcript"
+        assert follow["mode"] == "review"
 
         # The floor the validator owns, refused in the validator's own words —
         # not clamped silently by the form.
@@ -621,8 +453,8 @@ def test_the_rules_form_edits_through_the_shared_validator(tmp_path: Path) -> No
             headers=SAME_ORIGIN,
         )
         assert refused.status_code == 400
-        assert "E_BAD_PARAM" in refused.text
-        assert "at least 900 seconds" in refused.text
+        assert refused.json()["error"] == "E_BAD_PARAM"
+        assert "at least 900 seconds" in refused.json()["message"]
 
 
 def test_following_a_single_video_is_refused_by_the_tool(tmp_path: Path) -> None:
@@ -664,36 +496,37 @@ def test_index_anyway_queues_exactly_one_video(tmp_path: Path) -> None:
         assert len(after) == before + 1
 
         # The rule is unchanged: overruling it once is not editing it.
-        assert "0:08:00 floor" in page(client, f"{ROOT}/following")
+        rows = client.get(f"{ROOT}/api/following", headers=BEARER).json()["follows"]
+        assert next(r for r in rows if r["slug"] == "andrej-karpathy")[
+            "min_duration_s"
+        ] == 480
 
 
 def test_no_follow_write_is_reachable_by_a_get(tmp_path: Path) -> None:
     """§3.3: `SameSite=Lax` sends the cookie on a top-level GET navigation."""
     with owner_client(tmp_path) as client:
         sign_in(client)
-        for path in FOLLOW_POSTS[1:]:
+        for path in FOLLOW_POSTS:
             # 404 rather than 405: `Mount("/")` is a full match for the path, so
             # the router never falls back to the method-mismatch answer the
-            # POST-only route would have given. Either way nothing fires.
+            # POST-only route would have given. Either way nothing fires — and
+            # `/following` is one of them now, because its page is Next's and
+            # only the form's POST is still Python's (frontend-migration.md §1d).
             assert client.get(path, follow_redirects=False).status_code in (404, 405), path
-        # `/following` has a GET and it is the list, which reads and never writes.
-        assert client.get(f"{ROOT}/following", headers=BEARER).status_code == 200
+        # The list read is a read, and it lives under `/api`.
+        assert client.get(f"{ROOT}/api/following", headers=BEARER).status_code == 200
 
 
 def test_the_kind_filter_offers_the_follow_check_job(tmp_path: Path) -> None:
     """`follow_check` is a `jobs.kind` since 0006, so it is a filter (§5.4)."""
+    from vidtheque_mcp.dashboard.read_models import JOB_KINDS
+
     with owner_client(tmp_path) as client:
-        body = page(client, f"{ROOT}/jobs")
-        assert '<option value="follow_check"' in body
-        assert page(client, f"{ROOT}/jobs?kind=follow_check").count("job_followchk1") >= 1
+        assert "follow_check" in JOB_KINDS
+        filtered = client.get(
+            f"{ROOT}/api/jobs?kind=follow_check", headers=BEARER
+        ).json()
+        assert filtered["filters"]["kind"] == "follow_check"
+        assert [job["job_id"] for job in filtered["jobs"]] == ["job_followchk1"]
 
 
-@pytest.mark.parametrize("template", ["following.html", "follow.html", "_follow_rules.html"])
-def test_the_following_templates_never_reach_for_safe(template: str) -> None:
-    """Autoescape is the whole reason Jinja is a dependency here (§10.2)."""
-    root = Path(__file__).resolve().parents[1] / "src/vidtheque_mcp/dashboard/templates"
-    text = (root / template).read_text()
-    assert "| safe" not in text
-    assert "|safe" not in text
-    # And no inline script: the pages stay CSP-ready.
-    assert "<script" not in text
