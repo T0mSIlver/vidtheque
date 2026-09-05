@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 // Python owns every path that is not a page. In production both processes sit
 // behind one reverse proxy on one origin: exact page GETs (`/`, `/demo`,
 // `/videos`, `/videos/{id}`, and under the dashboard `/dashboard`,
-// `/dashboard/ledger`, `/dashboard/videos`, `/dashboard/videos/{video_id}`,
+// `/dashboard/ledger`, `/dashboard/search`, `/dashboard/videos`, `/dashboard/videos/{video_id}`,
 // `/dashboard/jobs`, `/dashboard/jobs/{job_id}`, `/dashboard/following` and
 // `/dashboard/following/{slug}`) reach Next, and `/api/*`, `/frames/*`,
 // `/mcp`, `/auth/*`, `/.well-known/*`, `/healthz`, `/videos/{id}/export.md`
@@ -83,13 +83,12 @@ const PYTHON_FORM_POSTS = [
 
 // The rest of `/dashboard`, which is being ported one page at a time
 // (docs/ROADMAP.md). `afterFiles` is the whole point: it is consulted *after*
-// the router has looked for a page, so the eight pages in `src/app/dashboard/`
-// win their own paths, and everything with no page yet — `/dashboard/search`,
-// every POST behind these pages, `/dashboard/jobs/{id}/cancel`,
-// `/dashboard/videos/{id}/tags` and the five
-// `/dashboard/following/{slug}/…` writes included — falls through to the Jinja
-// pages exactly as before. Each port deletes nothing here; it just adds a page
-// the router finds first.
+// the router has looked for a page, so the nine pages in `src/app/dashboard/`
+// win their own paths, and everything with no page yet falls through to Python
+// exactly as before — every POST behind these pages included:
+// `/dashboard/jobs/{id}/cancel`, `/dashboard/videos/{id}/tags` and the five
+// `/dashboard/following/{slug}/…` writes. Each port deletes nothing here; it
+// just adds a page the router finds first.
 //
 // **One exception, and it is `PYTHON_FORM_POSTS` above.** `POST
 // /dashboard/following` shares its path with a ported page, so this catch-all

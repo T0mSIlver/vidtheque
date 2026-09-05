@@ -137,6 +137,17 @@ export const config = {
       ],
     },
     {
+      // The query page. `/dashboard/api/search` is the JSON under it and is
+      // excluded by the lookahead above with the rest of `/dashboard/api/*`,
+      // so naming this one path adds the policy to the document and nothing
+      // else.
+      source: "/dashboard/search",
+      missing: [
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ],
+    },
+    {
       source: "/dashboard/videos",
       missing: [
         { type: "header", key: "next-router-prefetch" },

@@ -135,6 +135,7 @@ describe("proxy", () => {
     for (const path of [
       "/dashboard",
       "/dashboard/ledger",
+      "/dashboard/search",
       "/dashboard/videos",
       "/dashboard/videos/kCc8FmEb1nY",
       "/dashboard/jobs",
@@ -161,7 +162,9 @@ describe("proxy", () => {
       "/dashboard/login",
       "/dashboard/logout",
       "/dashboard/index",
-      "/dashboard/search",
+      // The search page's own JSON, which is the facade's handler under this
+      // prefix — a read, not a document, and Python's like the other four.
+      "/dashboard/api/search",
       // The row actions are Python's `POST`s and have a segment the detail
       // page does not: three under their section, not two. The two jobs writes
       // and the five following writes are the ones the ported pages themselves
@@ -198,6 +201,7 @@ describe("proxy", () => {
       "/dashboard/following",
       "/dashboard/following/andrej-karpathy",
       "/dashboard/search",
+      "/dashboard/search/anything",
       "/dashboard/index",
       "/dashboard/login",
       "/dashboard/following/andrej-karpathy/delete",
