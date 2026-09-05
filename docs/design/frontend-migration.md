@@ -255,9 +255,19 @@ changes nothing else.
 
 ## 2. What landed
 
-Five additive `GET` endpoints and the shared read assembly behind them. No
+Seven additive `GET` endpoints and the shared read assembly behind them. No
 writes, no CORS, no new env var, no dependency or lockfile change, no auth
 policy change, and no import from `worker/`.
+
+| Route | Gate | Contract |
+| --- | --- | --- |
+| `/dashboard/api/overview` | read gate | §4 |
+| `/dashboard/api/ledger` | read gate | §5 |
+| `/dashboard/api/session` | **none** | §6 |
+| `/dashboard/api/library` | read gate | §6a, dashboard.md §20 |
+| `/dashboard/api/library/{video_id}` | read gate | §6a, dashboard.md §20 |
+| `/dashboard/api/following` | read gate, **write side only** | §6b, dashboard.md §22 |
+| `/dashboard/api/following/{slug}` | read gate, **write side only** | §6b, dashboard.md §22 |
 
 In `mcp/src/vidtheque_mcp/dashboard/`: `api.py` (new) is the handlers,
 `read_models.py` (new) is the shared assembly, `__init__.py` registers the
@@ -268,28 +278,39 @@ routes, and `views.py` now calls the assemblers instead of holding them.
 `overview_reads`, `ledger_reads`, `videos_reads`, `video_detail_reads`,
 `pipeline_readiness`, `redacted`, `declared_models`, `video_header`,
 `stage_rows`, `shot_rows`, `frame_cards`, `coverage_pills`/`coverage_flags`,
-`video_facts`, `date_filters`, `file_size`, `tool_error`, `thumb`, and the caps
-below. `views.py` imports them back under the names it always used, so the
-Jinja pages run the same code and the same number of database reads as before —
-the videos table's cover-frame query grew three columns rather than gaining a
-second read.
+`video_facts`, `date_filters`, `file_size`, `tool_error`, `thumb`,
+`following_reads`, `follow_detail_reads`, `follow_row_json`, `follow_settings`,
+`near_miss`, and the caps below. `views.py` imports them back under the names
+it always used, so the Jinja pages run the same code and the same number of
+database reads as before — the videos table's cover-frame query grew three
+columns rather than gaining a second read, and the two following pages gained
+nothing at all.
+
+`follow_row_json` is the one entry there that a *write* also answers with:
+`writes.py` imports it back as `_follow_payload`, so §21's outcome and §6b's
+read describe a follow identically rather than by two functions agreeing.
 
 ## 3. Common behaviour
 
-- **Auth.** `/api/overview`, `/api/ledger`, `/api/library` and
-  `/api/library/{video_id}` sit behind the route group's existing read gate
-  (`dashboard/__init__.py:guarded`): a bearer token, a valid
-  `vidtheque_session` cookie, a socket peer in
+- **Auth.** Every route in §2's table but `/api/session` sits behind the route
+  group's existing read gate (`dashboard/__init__.py:guarded`): a bearer token,
+  a valid `vidtheque_session` cookie, a socket peer in
   `VIDTHEQUE_DASHBOARD_TRUSTED_CIDRS`, or `VIDTHEQUE_AUTH=none` (open by
   design). Refusal is `401` with `{"error": "E_AUTH_REQUIRED", "message",
   "next"}`. `/api/session` is outside the gate — see §6.
+- **Registration.** The two `following` routes are the exception to "additive":
+  they are declared with the write routes, because their pages are, so a
+  deployment with no write side (`VIDTHEQUE_PUBLIC_READONLY=1`, or
+  `VIDTHEQUE_AUTH=none`) answers `404` on both exactly as it does on the pages
+  — dashboard.md §18.6 and §22. A client asks `/api/session` first and renders
+  the Following surface only when `write_side` is true.
 - **Caching.** Every response carries `Cache-Control: no-store`.
 - **Parameters.** `overview` and `ledger` read no query string at all, so there
   is nothing to clamp; their bounds are the constants in §4. The two `library`
   routes take the pages' parameters under the pages' clamps, and say in `notes`
   when a bound moved — §6a.
 - **Rate limit.** The existing per-IP `/dashboard/*` bucket
-  (`VIDTHEQUE_RATE_DASHBOARD_PER_MIN`, default 120) covers all three.
+  (`VIDTHEQUE_RATE_DASHBOARD_PER_MIN`, default 120) covers all of them.
 - **Errors.** A tool refusal passes through as `{"error", "message", "next"}`
   at the status `errors.HTTP_STATUS` maps the code to.
 - **Timestamps.** Epoch seconds, every one of them, `readiness.checked_at`
@@ -564,6 +585,49 @@ Three things worth knowing before writing the page:
   unparseable date is a `400` (`E_BAD_TIME_FORMAT`). Both are the tool's typed
   refusals in the §3 envelope.
 
+## 6b. `GET /dashboard/api/following` and `/dashboard/api/following/{slug}`
+
+*Landed 2026-09-05.* §18's two pages, typed. **The full schema, both payload
+examples and the registration rule are `dashboard.md` §22** — it is the route
+group's contract and this is the front end's index of it.
+
+**These two can be absent, and no other read endpoint can.** They are declared
+with the write routes because their pages are: in
+`VIDTHEQUE_PUBLIC_READONLY=1` and in `VIDTHEQUE_AUTH=none` both are `404`, page
+and JSON together. A client therefore reads `write_side` off `/api/session`
+(§6) before it renders a Following link at all — the same field the rail's
+**Manage** group already keys off — and treats a `404` here the way §9 says to
+treat one on a write path: the affordance should not have been rendered.
+
+| Route | Parameters | Bounds |
+| --- | --- | --- |
+| `/api/following` | `limit`, `offset` | `limit` 1..100 (default 25), `offset` 0..10 000 |
+| `/api/following/{slug}` | `limit`, `offset` | the same, over the passed-over ledger |
+
+What a page gets, in one sentence each: the list sends `order` explicitly
+(`failing_first`, the store's one order), the band's seven totals, the rolling
+budget as `spent_s`/`ceiling_h`/`window_s`, the two deployment booleans
+`checks_enabled` and `vectors`, one row per follow, and the held band capped
+independently of the pager. The detail sends the same follow row plus its error
+code and message, the decision counts, the two job lists as job ids, the
+in-flight check, and the passed-over ledger with `reason` verbatim.
+
+Three things worth knowing before writing the pages:
+
+- **The follow row is the same object a write answers with** (§9,
+  `dashboard.md` §21). One schema in `schemas.ts` reads both; pausing a follow
+  and re-listing it must not produce two shapes.
+- **Nothing here is rendered.** The rule's compressed facts
+  (`8:00 floor · every 6h`), the rule as an English sentence
+  (`follows.rules.describe`) and the near-miss line are all the client's to
+  compose from the columns beside them. `near_miss` is
+  `{"count", "of", "within_s", "edge"}` or **`null`**, and `null` means *print
+  nothing* — a zero rendered as "0 of the last 25" is the one thing that band
+  may not say.
+- **`reason` is the exception and is not a rendering.** It is the receipt the
+  check wrote and it already carries the number that made the decision; print
+  it, do not re-derive it.
+
 ## 7. The projection, per field
 
 In `VIDTHEQUE_PUBLIC_READONLY=1` (`read_models.redacted`), on both corpus
@@ -582,6 +646,12 @@ the demo the browsable corpus whole), and the detail drops exactly two fields
 by not sending them — `stages[].model_key`, a declared model id, and
 `stages[].error`, the pipeline quoting yt-dlp. `dashboard.md` §20 has the
 per-field table.
+
+The two `following` routes have no projection to state: the projection is the
+deployment they are absent from (§6b). If that ever changes, `dashboard.md` §22
+names the field that goes first — `follow.last_error_message`, which is
+`str(exc)` from a source that could not be read, the same category as
+`stages[].error`.
 
 ## 8. Tests and what is not here
 
@@ -605,6 +675,15 @@ losing the model ids and the yt-dlp prose while keeping the states and the
 clocks, and a scan of both payloads for a rendered clock — including a bare
 `1:56:40`, which is the shape `list-videos` would have travelled with had the
 records been forwarded.
+
+For §6b's two, the same file over `test_dashboard_following.py`'s follow
+fixture: the disappearance with the write side — the decision this pair had to
+make — asserted against a deployment whose other read pages still answer, the
+gate and GET-only registration, both payloads' shapes against the fixture's
+exact tallies, the explicit orders, the clamps with their `note:`, a `404` for
+an unknown slug, the write outcome and the read agreeing key for key on one
+follow, and a scan of both payloads for a rendered clock, a spoken duration and
+the two sentence renderers the pages have.
 
 CORS and cross-origin sessions, the remaining read endpoints, the React pages
 and the cutover are `docs/ROADMAP.md`'s. No schema for them is stated here until

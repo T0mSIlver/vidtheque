@@ -2665,3 +2665,154 @@ obvious one:
 **Does not add.** A route, a parameter, a clamp number, an env var, a CORS
 policy, a JSON request body, or a second guard. The React pages that will call
 these are `docs/ROADMAP.md`'s.
+
+## 22. Following, as JSON (2026-09-05)
+
+§19 and §20 gave the corpus read pages a JSON twin and §21 gave the writes
+theirs. This is the last read pair — §18's two pages — and the only one whose
+first decision was *whether it may exist at all*.
+
+**Registered with the write routes, not beside the other reads.** §18.6 puts
+both following `GET`s inside `WRITE_ROUTES`' own predicate, so they are absent
+in `VIDTHEQUE_PUBLIC_READONLY=1` and in `VIDTHEQUE_AUTH=none`. The JSON goes
+where the page goes: **404 on both, the same status and the same nothing**, and
+`test_the_following_json_is_absent_wherever_its_pages_are` pins it against a
+deployment whose other read pages still answer, so the assertion is about this
+surface and not about the dashboard being off. A JSON twin that answered where
+its page 404s would be the way back into a surface the deployment declined to
+register, which is §2.3's probe argument reaching the medium as well as the
+route. This is also why there is no projection here and no `redacted` flag on
+either payload: the only deployment that answers is the one whose reader is the
+owner, and a flag whose value is always `false` is a field nobody can read.
+
+**Two additive `GET` routes.**
+
+| Route | Gate | Answers |
+| --- | --- | --- |
+| `/dashboard/api/following` | `guarded`, `json=True`, **write side only** | §18.3's table, its band and its budget |
+| `/dashboard/api/following/{slug}` | `guarded`, `json=True`, **write side only** | §18.4's three bands |
+
+Everything else is §19's: `Cache-Control: no-store`, epochs, the store's own
+words, the shared assembly (`read_models.following_reads` and
+`follow_detail_reads` — the pages call exactly these), clamps server-side with
+a `note:` when one moved, `has_more` over an exact total, and `order` explicit.
+`limit` is 1..100 default 25 on both, `offset` 0..10 000, unchanged from the
+pages.
+
+**One row, one shape.** The follow block is `read_models.follow_row_json` —
+the same function §21's write outcomes answer with, moved out of `writes.py`
+for this second caller. A client that pauses a follow and then re-lists it gets
+the same keys with the same types, built from `Rules.from_row`, so the payload
+and the check cannot disagree about what a CSV column meant. The list adds
+`last_error_code`, which is the column its table prints; the detail adds
+`last_error_message` beside it.
+
+**Three renderings the pages have and these payloads do not**, all three
+because they are values a client can compute from the columns beside them, and
+§21 already ruled a composed sentence off this surface:
+
+- **the rule as facts** (`/videos · 8:00 floor · 5/check · every 6h`). The
+  columns are all there — `tabs`, `min_duration_s`, `max_per_check`,
+  `check_interval_s` — and the compression is a table cell's problem.
+- **the rule as a sentence.** `follows.rules.describe` is still the only
+  renderer of a policy as English and the MCP tools still call it (it is not
+  orphaned by the Jinja cut); what travels here is the rule the check obeys.
+- **the near-miss line.** What is contractual is the arithmetic and the
+  omission — `near_miss` is `{"count", "of", "within_s", "edge"}` or **`null`**
+  when the count is zero or the follow has no length rule, because a "0 of the
+  last 25" finding is a fact about nothing dressed as a finding, and this is
+  the one band on the surface that has to stay believable. `within_s` rides
+  along so the count and the number in the client's sentence cannot disagree.
+
+**`reason` is the deliberate exception, and it is not a rendering.** It is the
+receipt the check wrote — *"4:12, shorter than your 8:00 floor"* — policy text
+under `DECISIONS.md`'s split, carrying the number that made the decision inside
+a sentence rather than as a field a client re-derives. It travels verbatim, as
+it does on the page.
+
+**The list.**
+
+```jsonc
+{
+  "counted_at": 1757030400,
+  "order": "failing_first",        // `list_follows`' one order, not a parameter
+  "totals": {"follows": 2, "active": 1, "paused": 1, "failing": 0,
+             "due_soon": 1, "brought_in": 1, "held": 2},
+  "budget": {"spent_s": 3600.0,    // hours of *video*, in the units each is kept in
+             "ceiling_h": 16.0,    // 0.0 means the operator turned the ceiling off
+             "window_s": 86400},   // rolling, not calendar
+  "checks_enabled": true,          // VIDTHEQUE_FOLLOW_CHECKS, never named
+  "vectors": true,                 // §5.5's honest refusal for the follow form
+  "follows": [{"slug": "andrej-karpathy", "title": "…", "kind": "channel",
+               "source_url": "…", "state": "active", "mode": "auto",
+               "tabs": ["videos"], "channels": "all", "tags": ["topic:llm"],
+               "min_duration_s": 480, "max_duration_s": null,
+               "title_include": [], "title_exclude": [],
+               "backfill": 0, "max_per_check": 5, "check_interval_s": 21600,
+               "next_check_at": 1757030400, "last_check_at": 1757023200,
+               "last_new_at": 1757026800,
+               "last_error_code": "E_RATE_LIMIT"}],
+  "held": [{"title": "…", "url": "…", "slug": "andrej-karpathy",
+            "follow": "Andrej Karpathy",
+            "published_at": 1740000000, "first_seen_at": 1757030400}],
+  "held_more": false, "held_cap": 5,
+  "pagination": {"limit": 25, "offset": 0, "has_more": false},
+  "notes": []
+}
+```
+
+`checks_enabled` is the one field on this payload the Jinja page has no line
+for, and it is here because the clocks beside it are otherwise a lie: with
+follow checks off, every `next_check_at` in `follows` is a time at which
+nothing will happen, and a page that could not say so would be confidently
+wrong. It is a boolean about this deployment and names no environment variable,
+which is the same shape `/api/session`'s `write_side` already has.
+
+**The detail.**
+
+```jsonc
+{
+  "fetched_at": 1757030400,
+  "follow": { /* the block above */
+              "last_error_code": "E_RATE_LIMIT",
+              "last_error_message": "the source rate-limited this box"},
+  "brought_in": 1,
+  "counts": {"queued": 1, "skipped_duration": 3, "held_budget": 1,
+             "held_review": 1, "already_indexed": 1},   // one grouped query
+  "near_miss": {"count": 2, "of": 6, "within_s": 60, "edge": "floor"},  // or null
+  "checks": [{"job_id": "job_followchk1", "state": "done", "error_code": null,
+              "created_at": 1757023200, "started_at": 1757023200,
+              "finished_at": 1757023220}],
+  "index_jobs": [{"job_id": "job_followidx1", "state": "done", "n_items": 1,
+                  "n_done": 1, "n_failed": 0, "created_at": 1757023300}],
+  "in_flight": null,                 // the check already queued or running
+  "order": "newest",                 // newest decision first
+  "seen": [{"title": "…", "url": "…", "decision": "skipped_duration",
+            "reason": "7:48, shorter than your 8:00 floor",
+            "judged_from": "listing", "duration_s": 468.0,
+            "published_at": 1740000000, "decided_at": 1757030400}],
+  "caps": {"checks": 10, "index_jobs": 10},   // bounded independently of `limit`
+  "pagination": {"limit": 25, "offset": 0, "has_more": true},
+  "notes": []
+}
+```
+
+`seen` is §18.4's third band and carries every decision except `queued`: a
+candidate the rule *accepted* is not one it passed over. The two job lists
+carry a `job_id` rather than a copy of the job, because the war story is
+already written at `/dashboard/jobs/{job_id}` and this band does not fork it.
+An unknown slug is `404 E_UNKNOWN_FOLLOW` in the §3 envelope, with the page's
+own message and `next:`.
+
+**`last_error_message` is the field to watch.** `follows/check.py` records
+`str(exc)[:400]` when a source cannot be read at all, so it is the extractor
+quoted verbatim — the same category as §20's `stages[].error`. It is on this
+payload because the page shows it to the same reader and this endpoint answers
+nowhere else; **it is the first field that would have to go** if these routes
+ever answered in a projection, and no projection may be added without that
+decision being made explicitly.
+
+**Does not add.** A route the pages do not have, a parameter, a clamp number,
+an env var, a CORS policy, a write, a second query layer, or a page. The React
+following pages are `docs/ROADMAP.md`'s. `POST /dashboard/login` still has no
+JSON twin (§21).

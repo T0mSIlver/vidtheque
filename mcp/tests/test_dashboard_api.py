@@ -26,9 +26,17 @@ from starlette.testclient import TestClient
 from vidtheque_mcp.auth.login import SESSION_COOKIE
 from vidtheque_mcp.dashboard import ROOT
 from vidtheque_mcp.dashboard.read_models import (
+    BUDGET_WINDOW_S,
     CHANNEL_CAP,
+    CHECK_CAP,
     FAILED_WINDOW_S,
+    FOLLOW_PAGE,
+    FOLLOW_PAGE_MAX,
+    HELD_BAND_CAP,
+    INDEX_JOB_CAP,
+    NEAR_MISS_S,
     RECENT_CAP,
+    SEEN_PAGE_MAX,
     TAG_CAP,
 )
 from vidtheque_mcp.dashboard.settings import DashboardSettings
@@ -38,10 +46,18 @@ from .test_dashboard import (
     BEARER,
     DEMO,
     PASSWORD,
+    SAME_ORIGIN,
     TOKEN,
     make_client,
     owner_client,
 )
+
+# The follow fixture and its two deployments (§22). Aliased rather than
+# imported over the names above: this file asks `test_dashboard.py`'s corpus
+# most of its questions and the following corpus only the following ones.
+from .test_dashboard_following import make_client as follow_client
+from .test_dashboard_following import owner_client as follow_owner
+from .test_dashboard_following import sign_in
 
 OVERVIEW = f"{ROOT}/api/overview"
 LEDGER = f"{ROOT}/api/ledger"
@@ -1036,3 +1052,278 @@ def test_the_cues_endpoint_drops_nothing_new_in_the_projection(
         theirs = read(demo, CUES)
 
     assert theirs["cues"] == mine["cues"]
+
+
+# ------------------------------------------------------------ following (§22)
+
+# The follow fixture is `test_dashboard_following.py`'s, because a follow, a
+# ledger and the two job kinds a check writes are what these routes read and
+# that file already seeds all three. Its clients build the same deployments
+# under the same token, so the two suites ask one corpus different questions.
+FOLLOWING = f"{ROOT}/api/following"
+SLUG = "andrej-karpathy"
+FOLLOW = f"{FOLLOWING}/{SLUG}"
+
+
+def test_the_following_json_is_absent_wherever_its_pages_are(tmp_path: Path) -> None:
+    """dashboard.md §18.6, applied to the JSON twin — and it is the whole
+    decision this pair of routes had to make.
+
+    The two following *pages* are declared with the write routes rather than
+    beside the other reads: a page whose every affordance POSTs has nothing to
+    show a deployment that registers no write side, and a route that exists and
+    refuses is a route somebody probes. Their JSON answers the same refusal at
+    the same status, because a payload reachable where its page 404s would be
+    the way back in that §2.3 exists to close.
+    """
+    with follow_owner(tmp_path, readonly=True) as demo:
+        # The read pages this deployment *does* serve still answer, or the
+        # 404s below would be proving the dashboard is off rather than that
+        # this surface is absent.
+        assert demo.get(LIBRARY, headers=BEARER).status_code == 200
+        for path in (f"{ROOT}/following", FOLLOWING, FOLLOW):
+            assert demo.get(path, headers=BEARER).status_code == 404, path
+
+    with follow_client(tmp_path) as anonymous:  # auth=none
+        assert anonymous.get(ROOT).status_code == 200
+        for path in (f"{ROOT}/following", FOLLOWING, FOLLOW):
+            assert anonymous.get(path).status_code == 404, path
+
+
+def test_the_following_json_takes_the_pages_gate_and_is_get_only(
+    tmp_path: Path,
+) -> None:
+    with follow_owner(tmp_path) as client:
+        for path in (FOLLOWING, FOLLOW):
+            refused = client.get(path)
+            assert refused.status_code == 401, path
+            assert refused.json()["error"] == "E_AUTH_REQUIRED"
+            # Nothing about what this box watches rides out on a refusal.
+            assert "follows" not in refused.json()
+            assert client.get(path, headers=BEARER).status_code == 200
+
+        registered = {
+            str(route.path): set(route.methods or ())
+            for route in client.app.routes
+            if str(getattr(route, "path", "")).startswith(f"{ROOT}/api/following")
+        }
+        assert set(registered) == {FOLLOWING, f"{FOLLOWING}/{{slug}}"}
+        for path, methods in registered.items():
+            assert methods <= {"GET", "HEAD"}, path
+
+
+def test_the_following_list_is_the_bands_and_the_rows_typed(tmp_path: Path) -> None:
+    """The page's four reads, as figures: the band, the budget, the rows.
+
+    The fixture follows two channels — one active with a length rule, an error
+    code and a ledger, one paused — so every figure below has a number that
+    could only have come from those rows.
+    """
+    with follow_owner(tmp_path) as client:
+        body = read(client, FOLLOWING, headers=BEARER)
+
+    # Explicit, never inferred, and it is `list_follows`' own single order:
+    # whatever is failing, then whatever was checked most recently.
+    assert body["order"] == "failing_first"
+    assert body["totals"]["follows"] == 2
+    assert body["totals"]["active"] == 1
+    assert body["totals"]["paused"] == 1
+    assert body["totals"]["brought_in"] == 1
+    assert body["totals"]["held"] == 2
+    assert [follow["slug"] for follow in body["follows"]] == [SLUG, "paused-channel"]
+    assert body["pagination"] == {"limit": FOLLOW_PAGE, "offset": 0, "has_more": False}
+    assert body["notes"] == []
+
+    # The budget is seconds of video against an hours ceiling, and the window
+    # it rolls over is named rather than assumed to be a day.
+    assert body["budget"]["spent_s"] == 3600.0
+    assert isinstance(body["budget"]["ceiling_h"], float)
+    assert body["budget"]["window_s"] == BUDGET_WINDOW_S
+    # The two deployment facts that say what the clocks mean.
+    assert body["checks_enabled"] is True
+    assert body["vectors"] is True
+
+    active = body["follows"][0]
+    assert active["state"] == "active"
+    assert active["min_duration_s"] == 480
+    assert active["max_per_check"] == 5
+    assert active["tags"] == ["topic:llm"]
+    assert active["tabs"] == ["videos"]
+    assert isinstance(active["last_check_at"], int)
+    # The table's column is the code. The fetch failure's own prose is read on
+    # the follow's page, not in a list of sixty rows.
+    assert active["last_error_code"] == "E_RATE_LIMIT"
+    assert "last_error_message" not in active
+    # No rendered rule anywhere: the page compresses one to `0:08:00 floor`
+    # and `every 6h` for a column an operator scans, and both are renderings.
+    assert "facts" not in active
+
+    # The held band names what is waiting on a person, with the follow that
+    # holds it, and is capped independently of the pager.
+    assert body["held_cap"] == HELD_BAND_CAP
+    assert body["held_more"] is False
+    assert [item["slug"] for item in body["held"]] == [SLUG]
+    assert body["held"][0]["url"].endswith("heldreview1")
+
+
+def test_a_read_and_a_write_describe_a_follow_identically(tmp_path: Path) -> None:
+    """§21's outcome block and §22's row are one function, and this is why.
+
+    A client that pauses a follow and then re-lists it must not be handed two
+    shapes for the same row. The write re-reads after the write; the read reads
+    the same columns through the same `Rules.from_row`, so the two payloads are
+    the same dictionary with the list's own error column added.
+    """
+    with follow_owner(tmp_path) as client:
+        sign_in(client)
+        paused = client.post(
+            f"{ROOT}/following/{SLUG}/state",
+            data={"action": "pause"},
+            headers={"Accept": "application/json", **SAME_ORIGIN},
+        )
+        assert paused.status_code == 200, paused.text
+        outcome = paused.json()["follow"]
+
+        listed = read(client, FOLLOWING, headers=BEARER)["follows"]
+        row = next(item for item in listed if item["slug"] == SLUG)
+        detail = read(client, FOLLOW, headers=BEARER)["follow"]
+
+    assert row["state"] == "paused"
+    # Same keys, same values — the read adds the error column and the detail
+    # adds the message, and neither renames or re-types anything.
+    assert {key: row[key] for key in outcome} == outcome
+    assert set(row) - set(outcome) == {"last_error_code"}
+    assert {key: detail[key] for key in outcome} == outcome
+    assert set(detail) - set(outcome) == {"last_error_code", "last_error_message"}
+
+
+def test_the_follow_detail_is_the_three_bands_typed(tmp_path: Path) -> None:
+    """§18.4, as figures — and the third band is the point of the endpoint."""
+    with follow_owner(tmp_path) as client:
+        body = read(client, FOLLOW, headers=BEARER)
+
+    # Band 1: the rule as columns, the clocks as epochs, the error as its code
+    # and the operator's own message beside it.
+    assert body["follow"]["slug"] == SLUG
+    assert body["follow"]["check_interval_s"] == 21_600
+    assert body["follow"]["last_error_code"] == "E_RATE_LIMIT"
+    assert body["follow"]["last_error_message"] == "the source rate-limited this box"
+    # The sentence is not sent: `describe` renders a policy as English and the
+    # columns above are what it renders. One renderer, and it is not this one.
+    assert "sentence" not in body["follow"] and "sentence" not in body
+
+    # Band 2: this follow's checks and the jobs they queued, each by job id
+    # rather than as a second copy of the job.
+    assert [check["job_id"] for check in body["checks"]] == ["job_followchk1"]
+    assert body["checks"][0]["state"] == "done"
+    assert isinstance(body["checks"][0]["finished_at"], int)
+    assert [job["job_id"] for job in body["index_jobs"]] == ["job_followidx1"]
+    assert body["index_jobs"][0]["n_done"] == 1
+    assert body["in_flight"] is None
+    assert body["caps"] == {"checks": CHECK_CAP, "index_jobs": INDEX_JOB_CAP}
+
+    # Band 3: everything the rule turned away, newest decision first, with the
+    # reason verbatim — it carries the number that made the call, which is the
+    # whole argument for the band.
+    assert body["order"] == "newest"
+    decisions = [row["decision"] for row in body["seen"]]
+    assert "queued" not in decisions  # a candidate it accepted is not one it passed over
+    assert set(decisions) == {
+        "already_indexed",
+        "held_review",
+        "held_budget",
+        "skipped_duration",
+    }
+    reasons = [row["reason"] for row in body["seen"]]
+    assert "7:48, shorter than your 8:00 floor" in reasons
+    assert {row["judged_from"] for row in body["seen"]} == {"listing", "probe"}
+    near = next(row for row in body["seen"] if row["duration_s"] == 468.0)
+    assert isinstance(near["decided_at"], int) and near["published_at"] == 1740000000
+
+    # The per-follow tally, off the grouped query the page already made.
+    assert body["brought_in"] == 1
+    assert body["counts"]["skipped_duration"] == 3
+    assert body["counts"]["queued"] == 1
+
+    # The one derived observation, typed rather than spoken: two of the six on
+    # this page are inside a minute of the floor and one is half an hour
+    # outside it, so the number is 2 — which is the difference between reading
+    # the ledger and counting the band.
+    assert body["near_miss"] == {
+        "count": 2,
+        "of": len(body["seen"]),
+        "within_s": NEAR_MISS_S,
+        "edge": "floor",
+    }
+
+
+def test_the_near_miss_is_absent_rather_than_zero(tmp_path: Path) -> None:
+    """A "0 of the last 25" finding is a fact about nothing dressed as one.
+
+    The paused follow has no length rule at all, so there is no edge to be near
+    and the field is `null` rather than a zero a client would have to know to
+    hide.
+    """
+    with follow_owner(tmp_path) as client:
+        assert read(client, f"{FOLLOWING}/paused-channel", headers=BEARER)[
+            "near_miss"
+        ] is None
+
+
+def test_both_following_reads_clamp_and_say_when_a_bound_moved(
+    tmp_path: Path,
+) -> None:
+    """Never a prompt-only limit, and never a silent one either.
+
+    The pages echo an accepted `limit` back into the pager they render; a JSON
+    caller has no pager to read it out of, so the clamp is disclosed in `notes`
+    exactly as the videos table discloses its own.
+    """
+    with follow_owner(tmp_path) as client:
+        listing = read(client, f"{FOLLOWING}?limit=100000", headers=BEARER)
+        detail = read(client, f"{FOLLOW}?limit=100000&offset=-4", headers=BEARER)
+
+    assert listing["pagination"]["limit"] == FOLLOW_PAGE_MAX
+    assert listing["notes"] == [f"limit=100000 → {FOLLOW_PAGE_MAX}"]
+    assert detail["pagination"]["limit"] == SEEN_PAGE_MAX
+    assert detail["pagination"]["offset"] == 0
+    assert detail["notes"] == [f"limit=100000 → {SEEN_PAGE_MAX}", "offset=-4 → 0"]
+
+
+def test_an_unknown_slug_is_a_typed_404_with_a_way_back(tmp_path: Path) -> None:
+    with follow_owner(tmp_path) as client:
+        response = client.get(f"{FOLLOWING}/no-such-thing", headers=BEARER)
+        assert response.status_code == 404
+        assert response.headers["cache-control"] == "no-store"
+        body = response.json()
+        assert body["error"] == "E_UNKNOWN_FOLLOW"
+        assert "no-such-thing" in body["message"]
+        assert body["next"]
+
+
+def test_neither_following_payload_carries_a_rendered_clock(tmp_path: Path) -> None:
+    """The same rule as the four payloads above, on the surface that had the
+    most rendered strings to leave behind.
+
+    The two pages print `0:08:00 floor`, `every 6h`, a spoken elapsed time per
+    check and the rule as a whole English sentence. None of them is a value a
+    client cannot compute from the columns beside it, so none of them is here —
+    and the scan is what keeps it that way.
+
+    `reason` is the deliberate exception and is not a rendering: it is the
+    receipt the check wrote, policy text under `DECISIONS.md`'s split, and it
+    carries the number that made the decision inside a sentence rather than as
+    a formatted field.
+    """
+    with follow_owner(tmp_path) as client:
+        for path in (FOLLOWING, FOLLOW):
+            payload = read(client, path, headers=BEARER)
+            for row in payload.get("seen", []):
+                row["reason"] = ""
+            raw = json.dumps(payload)
+            assert not ISO_STAMP.search(raw), f"a rendered date reached {path}"
+            assert not SPOKEN_DURATION.search(raw), f"a rendered duration reached {path}"
+            assert not re.search(r'"\d+:\d{2}(?::\d{2})?"', raw), path
+            # The sentence renderers, by the words only they produce.
+            assert "Every 6 hours" not in raw
+            assert "passed over" not in raw
