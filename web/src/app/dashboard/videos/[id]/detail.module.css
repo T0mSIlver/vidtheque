@@ -1,0 +1,539 @@
+/* The video detail: a timeline, a provenance table, a grid of keyframes with
+   the machine's reading drawn over them, and a transcript that scrolls.
+
+   Read out of `dashboard/static/dashboard.css`, which is still serving the
+   pages this port has not reached. The shared vocabulary — panel, figure,
+   grid, pill, notice — is `dashboard.module.css`; this is what only this page
+   draws. */
+
+.crumbs {
+  composes: t-machine-sm from global;
+  margin: var(--s5) 0 0;
+  color: var(--muted);
+}
+
+.crumbs a {
+  text-decoration: none;
+}
+
+/* The header's fact strips. Each separator is glued to the fact *before* it,
+   so a strip that runs out of room ends a line with its separator instead of
+   starting the next one with a dangling middot. */
+.facts {
+  composes: t-machine-sm from global;
+  margin-top: var(--s2);
+  color: var(--muted);
+}
+
+.taglist {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+}
+
+/* What a clamp moved, in Python's own words. */
+.notes {
+  composes: t-machine-sm from global;
+  margin: var(--s4) 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--tone-warn);
+}
+
+.notes li {
+  max-width: var(--note);
+  margin-top: var(--s1);
+}
+
+/* One line under the header naming the stage that failed. Not a `.notice`: a
+   notice's 2px rule is the alarm on this surface, and the failed stage already
+   has one in the table below. */
+.alarm {
+  composes: t-cell from global;
+  margin: var(--s4) 0 0;
+  max-width: var(--note);
+}
+
+.alarm a {
+  color: var(--accent);
+}
+
+.panelNote {
+  composes: t-machine-sm from global;
+  margin-top: var(--s2);
+  max-width: var(--note);
+  color: var(--muted);
+}
+
+.empty {
+  padding: var(--s1) 0 var(--s2);
+}
+
+.emptyLead {
+  composes: t-cell from global;
+  color: var(--fg);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* --------------------------------------------------------------- timeline */
+
+/* The spine, and the first thing after the header: one bar per shot across the
+   video's duration, positioned as a percentage of the runtime. Real data, so
+   it earns the pixels — this is the video's cut structure, not a sparkline
+   standing in for content. It is not a panel: its label sits under it with the
+   scale, where a film strip's footage counter goes. */
+.timeband {
+  position: relative;
+  margin-top: var(--s8);
+}
+
+.timeline {
+  position: relative;
+  height: 3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--console);
+  border: 1px solid var(--seam2);
+  overflow: hidden;
+}
+
+/* A shot can be two seconds of a two-hour talk. The minimum keeps it visible
+   rather than sub-pixel: the bar's *position* is the fact, and a mark you
+   cannot see is a mark that lies about the cut structure. */
+.shotbar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 3px;
+}
+
+/* The bars are neutral and the one you are pointing at is gold. A band of
+   sixty gold bars would be sixty moments you are pointing at, which is none. */
+.shotbar a {
+  display: block;
+  height: 100%;
+  background: var(--fg2);
+  border-right: 1px solid var(--console);
+  transition: background-color var(--t-fast);
+}
+
+.shotbar a:hover,
+.shotbar a:focus-visible {
+  background: var(--accent);
+}
+
+.shotbar:focus-within {
+  z-index: 1;
+}
+
+/* A shot whose every frame was deduplicated: hatched, so it reads as
+   "captured, then dropped" and not as an empty stretch of video. The bar
+   paints its own ground and hatches at full strength on top of it. */
+.dedup a {
+  background:
+    repeating-linear-gradient(135deg, var(--mark) 0 2px, transparent 2px 6px), var(--console);
+}
+
+.dedup a:hover,
+.dedup a:focus-visible {
+  background:
+    repeating-linear-gradient(135deg, var(--accent) 0 2px, transparent 2px 6px), var(--console);
+}
+
+.scale {
+  composes: t-machine-sm from global;
+  position: relative;
+  height: 1.25rem;
+  margin: var(--s1) 0 0;
+  color: var(--muted);
+}
+
+.tick {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  padding-top: var(--s2);
+  white-space: nowrap;
+}
+
+.tick::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 1px;
+  height: var(--s1);
+  background: var(--mark);
+}
+
+/* The ends label the ends: a centred `0:00` would hang half of itself off the
+   left of the band, and its tick belongs on the band's own edge. */
+.tick:first-child {
+  transform: none;
+}
+
+.tick:first-child::before {
+  left: 0;
+}
+
+.tick:last-child {
+  transform: translateX(-100%);
+}
+
+.tick:last-child::before {
+  left: 100%;
+}
+
+/* No rule under it: the next panel brings its own hairline a beat later, and
+   two rules that close together read as one thick rule that means nothing. */
+.timebandFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s2) var(--s4);
+  margin-top: var(--s3);
+}
+
+.timebandFoot .panelNote {
+  margin: 0;
+}
+
+.legend {
+  composes: t-machine-sm from global;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s4);
+  color: var(--muted);
+}
+
+.swatch {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  margin-right: var(--s1);
+  vertical-align: -1px;
+}
+
+.swatchKept {
+  background: var(--fg2);
+}
+
+.swatchDedup {
+  background:
+    repeating-linear-gradient(135deg, var(--mark) 0 2px, transparent 2px 6px), var(--console);
+}
+
+/* ------------------------------------------------------------- provenance */
+
+.stages .colModel {
+  max-width: 22rem;
+}
+
+.bad th[scope="row"] code {
+  color: var(--tone-bad);
+}
+
+/* An `absent` stage is a dimmed rule, not a missing row: a stage with no
+   `video_stages` row never ran, which is a different fact from a stage that
+   ran and produced nothing. The pill inside it still carries the word. */
+.absent th[scope="row"] code,
+.absent td {
+  color: var(--muted);
+}
+
+.stageError td {
+  padding-top: 0;
+}
+
+.errLabel {
+  composes: t-label from global;
+  color: var(--tone-bad);
+}
+
+.errText {
+  composes: t-log from global;
+  overflow-wrap: anywhere;
+}
+
+/* ----------------------------------------------------------------- frames */
+
+/* One grid for every keyframe on the page. The cell is the size a detection
+   box needs to be read at rather than the size a thumbnail wants to be
+   scanned at — this grid is read, not swept — and the cards start-align so one
+   holding thirty OCR lines grows without stretching the empty ones beside it. */
+.frames {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: var(--s6) var(--s4);
+  align-items: start;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.framecard {
+  min-width: 0;
+  scroll-margin-top: var(--s8);
+}
+
+/* The frame a shot bar sent you to keeps a mark on it. On the *box*, never on
+   the image inside it: the box clips its overflow and the image fills it
+   exactly, so an offset outline on the image would be drawn entirely inside
+   the clip and paint nothing at all. */
+.framecard:target .framebtn,
+.isSelected .framebtn {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.framecard:target .at,
+.isSelected .at {
+  color: var(--gold-hi);
+}
+
+/* The box, not the image, owns the geometry: a keyframe file that has gone
+   missing leaves black where it was, and nothing below it moves. */
+.framebtn {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--black);
+  color: var(--fg2);
+  box-shadow: inset 0 0 0 1px var(--edge-in);
+  line-height: 0;
+  cursor: zoom-in;
+}
+
+.framebtn img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: filter var(--t-fast);
+}
+
+/* A deduplicated frame is dimmed, not hidden. Pointing at it brings it back:
+   a filter change is the one thing hover is allowed to move. */
+.isDup .framebtn img {
+  filter: brightness(0.42) saturate(0.7);
+}
+
+.isDup:hover .framebtn img {
+  filter: none;
+}
+
+.framemeta {
+  composes: t-machine-sm from global;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s1);
+  margin: var(--s1) 0 0;
+}
+
+/* The timecode worth clicking — one of the five things gold means here. */
+.at {
+  composes: t-machine from global;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a.at:hover {
+  text-decoration: underline;
+}
+
+.dupnote {
+  color: var(--muted);
+  border-bottom: 1px dashed var(--seam2);
+}
+
+/* -------------------------------------------------------------------- ocr */
+
+/* The Lime Rule, and this grid is the whole of it on this surface: `--seen`
+   marks what the machine read off the screen — the detection box, the line it
+   points at, and nothing else. It is not a second accent and it appears on no
+   other dashboard page. */
+.ocrbox {
+  position: absolute;
+  border: 1px solid var(--seen-24);
+  transition:
+    border-color var(--t-fast),
+    background-color var(--t-fast);
+  /* At this size a detection box is a few millimetres of screen, and a pointer
+     aimed at one would only be stealing the click that opens the frame. */
+  pointer-events: none;
+}
+
+.ocrlines {
+  composes: t-cell from global;
+  margin: var(--s2) 0 0;
+  padding: 0;
+  list-style: none;
+  /* Ten lines: past that a slide is a document and the reader wants to scroll
+     it; under it the box shrinks to fit and the grid keeps its rhythm. */
+  max-height: 11rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.ocrline {
+  display: flex;
+  gap: var(--s2);
+  align-items: baseline;
+  padding: 2px 0 2px var(--s2);
+  scroll-margin: var(--s2);
+  /* One step louder than the box at rest: a 1px rule down the left of a text
+     line has a fraction of a detection box's perimeter to be seen in, and this
+     rule is what says "the machine read this off the screen" to a reader who
+     never points at anything. */
+  border-left: 1px solid var(--seen-48);
+  transition:
+    border-color var(--t-fast),
+    background-color var(--t-fast);
+}
+
+/* Point at a line, light its box; point at a box, light its line. The pairing
+   is by index, which is what makes it hold for *every* line rather than for
+   the handful a stylesheet could enumerate as pairs. */
+.ocrbox.isLit {
+  border-color: var(--seen);
+  border-width: 1.5px;
+  background: color-mix(in srgb, var(--seen) 12%, transparent);
+}
+
+.ocrline.isLit,
+.ocrline:hover {
+  border-left-color: var(--seen);
+  background: color-mix(in srgb, var(--seen) 6%, transparent);
+}
+
+.ocrtext {
+  composes: t-machine from global;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* De-emphasised but never dropped: it is part of the receipt, and it is the
+   one number a reader needs when a word looks wrong. A fixed basis so thirty
+   of them read as a column. */
+.conf {
+  composes: t-machine-sm from global;
+  flex: 0 0 2.25rem;
+  align-self: start;
+  padding-top: 3px;
+  text-align: right;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------- transcript */
+
+/* How big this transcript is, printed above the box. It used to be where you
+   *are* in it — which the scrollbar was already saying, and which moved under
+   the reader on every appended batch. */
+.cuepos {
+  composes: t-machine-sm from global;
+  margin: 0 0 var(--s2);
+  color: var(--muted);
+}
+
+/* Bounded, because a four-hour talk is three thousand cues and the panels
+   under this one are not worth burying; scrolled rather than paged, because
+   the next batch arrives without throwing the frames grid and the reader's
+   place away. */
+.cuebox {
+  max-height: 26rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--s2) var(--s3);
+  background: var(--console);
+  border: 1px solid var(--seam2);
+}
+
+.cues {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cue {
+  display: flex;
+  gap: var(--s3);
+  align-items: baseline;
+  padding: 2px 0;
+}
+
+/* A cue inside an embedding chunk. The chunk is the unit a vector hit points
+   at, and "what exactly is the embedding unit" is one of the questions this
+   page exists to answer. */
+.inChunk {
+  box-shadow: inset 2px 0 0 var(--seam2);
+  padding-left: var(--s2);
+}
+
+.chunkmark {
+  composes: t-label from global;
+  margin: var(--s3) 0 var(--s1);
+  padding-top: var(--s1);
+  color: var(--mark);
+  border-top: 1px solid var(--seam);
+}
+
+.cuetext {
+  composes: t-cell from global;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cue .at {
+  flex: 0 0 auto;
+}
+
+.speaker {
+  composes: t-machine-sm from global;
+  color: var(--muted);
+}
+
+.cueload {
+  composes: t-label from global;
+  padding: var(--s2) 0;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------ pager */
+
+.pager {
+  display: flex;
+  gap: var(--s2);
+  margin-top: var(--s4);
+}
+
+.ghostlink {
+  composes: t-label from global;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.125rem;
+  padding: 0 var(--s3);
+  color: var(--fg2);
+  background: transparent;
+  border: 1px solid var(--seam2);
+  cursor: pointer;
+}
+
+.ghostlink:hover {
+  color: var(--gold);
+  border-color: var(--gold-44);
+}
+
+.ghostlink:disabled {
+  color: var(--mark);
+  cursor: default;
+}
