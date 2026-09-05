@@ -32,6 +32,7 @@ from vidtheque_mcp.dashboard.read_models import (
     TAG_CAP,
 )
 from vidtheque_mcp.dashboard.settings import DashboardSettings
+from vidtheque_mcp.text import clock
 
 from .test_dashboard import (
     BEARER,
@@ -905,3 +906,78 @@ def test_neither_video_payload_carries_a_rendered_clock(tmp_path: Path) -> None:
             # `duration_clock`'s shape, which no regex above would catch on its
             # own: a bare `1:56:40` in a payload of seconds.
             assert not re.search(r'"\d+:\d{2}(?::\d{2})?"', raw), path
+
+
+# -------------------------------------------------------- the cues endpoint (§3)
+
+# The transcript pane's source, and the one endpoint of the three §3 names where
+# the typed half had to be *added* rather than a string dropped.
+CUES = f"{ROOT}/api/videos/{FIRST}/cues"
+
+
+def test_the_cues_endpoint_carries_the_typed_half_beside_the_strings(
+    tmp_path: Path,
+) -> None:
+    """Tom, 2026-09-05: add the typed fields, cut the strings at the port.
+
+    `at`, `conf` and `chunk` are renderings of numbers `views._cue_rows` already
+    had, and this endpoint sent only the renderings. The numbers are on the wire
+    now, under `_cue_rows`' own names, and every one of them has to agree with
+    the string beside it — two ways of saying when a cue starts that can
+    disagree is worse than one that is only a string.
+    """
+    with make_client(tmp_path) as client:
+        body = read(client, CUES)
+
+    assert body["cues"], "the fixture's six cues"
+    for cue in body["cues"]:
+        assert isinstance(cue["start_s"], float)
+        assert isinstance(cue["end_s"], float)
+        assert cue["end_s"] >= cue["start_s"]
+        # `at` is `clock(start_s)` and `t` is its floor: the same instant.
+        assert cue["at"] == clock(cue["start_s"])
+        assert cue["t"] == int(cue["start_s"])
+
+        if cue["avg_logprob"] is None:
+            assert cue["conf"] is None
+        else:
+            assert isinstance(cue["avg_logprob"], float)
+            assert cue["conf"] == f"{cue['avg_logprob']:.2f}"
+
+        # The composed sentence, and the five fields it is composed from.
+        opens = cue["chunk_opens"]
+        if opens is None:
+            assert cue["chunk"] is None
+        else:
+            assert set(opens) == {"seq", "start_s", "end_s", "n_chars", "n_words"}
+            assert isinstance(opens["seq"], int)
+            assert isinstance(opens["n_words"], int)
+            assert isinstance(opens["n_chars"], int)
+            assert cue["chunk"] == (
+                f"chunk {opens['seq']} · "
+                f"{clock(opens['start_s'])}–{clock(opens['end_s'])} · "
+                f"{opens['n_words']} words · {opens['n_chars']} chars"
+            )
+        # `in_chunk` is the two markers collapsed into one bool, which is why
+        # both of them are sent: a chunk's last cue is not its first.
+        assert isinstance(cue["chunk_closes"], bool)
+        assert cue["in_chunk"] is (opens is not None or cue["chunk_closes"])
+
+    # Without this the branch above never ran and the sentence is unasserted.
+    assert any(cue["chunk_opens"] is not None for cue in body["cues"])
+
+
+def test_the_cues_endpoint_drops_nothing_new_in_the_projection(
+    tmp_path: Path,
+) -> None:
+    """The typed fields are corpus, not deployment.
+
+    A transcript is what §2.4 gives the demo whole, so this endpoint has never
+    redacted a field and the addition must not have introduced the first one.
+    """
+    with make_client(tmp_path) as owner:
+        mine = read(owner, CUES)
+    with make_client(tmp_path, public=DEMO) as demo:
+        theirs = read(demo, CUES)
+
+    assert theirs["cues"] == mine["cues"]
