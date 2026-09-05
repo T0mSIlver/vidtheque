@@ -822,7 +822,7 @@ function Card({
  * A pointer, not a copy (§20): the detail payload carries the totals and the
  * name and bounds of this endpoint, and the cues themselves arrive a page at a
  * time. Nearing the end of the box asks for the next batch and appends it,
- * which is what the Jinja scrollbox has done since 2026-08-10 — a click that
+ * which is what this scrollbox has done since 2026-08-10 — a click that
  * reloaded the page to move fifty rows threw the strip, the frames and the
  * reader's place away with it.
  *
@@ -830,11 +830,10 @@ function Card({
  * second way to page: it is the keyboard's way, and the one control left when
  * a fetch fails.
  *
- * **The typed fields are preferred and the strings are the fallback.** The
- * endpoint answers with both halves — `start_s`/`avg_logprob`/`chunk_opens`
- * beside `at`/`conf`/`chunk` — so this renders from the numbers and falls back
- * to the rendered strings on an instance that predates them. When the strings
- * are cut, the three `??` below go and `schemas.ts` loses three fields.
+ * The endpoint answers in numbers — `start_s`, `avg_logprob`, `chunk_opens` —
+ * and every string it used to pre-render beside them went with the script that
+ * read them (dashboard.md §23). The timecode, the confidence and the chunk
+ * label are composed here.
  */
 function Transcript({ transcript }: { transcript: VideoDetail["transcript"] }) {
   const [cues, setCues] = useState<Cue[]>([]);
@@ -946,17 +945,12 @@ function Transcript({ transcript }: { transcript: VideoDetail["transcript"] }) {
 
 function CueRow({ cue }: { cue: Cue }) {
   // The chunk label, composed from the chunk's own five fields — a value, not
-  // policy text, so decision 5 puts it here. `cue.chunk` is the endpoint's
-  // pre-rendered copy of this sentence and is the fallback until the strings
-  // are cut.
+  // policy text, so decision 5 puts it here.
   const opens = cue.chunk_opens;
   const mark = opens
     ? `chunk ${opens.seq} · ${clock(opens.start_s)}–${clock(opens.end_s)} · ${opens.n_words} words · ${opens.n_chars} chars`
-    : cue.chunk;
-  const confidence =
-    cue.avg_logprob !== undefined && cue.avg_logprob !== null
-      ? cue.avg_logprob.toFixed(2)
-      : cue.conf;
+    : null;
+  const confidence = cue.avg_logprob !== null ? cue.avg_logprob.toFixed(2) : null;
 
   return (
     <>
@@ -969,7 +963,7 @@ function CueRow({ cue }: { cue: Cue }) {
           on every one of a thousand rows to say what "What was stored" says
           once, per origin, with a count. */}
       <li className={`${styles.cue} ${cue.in_chunk ? styles.inChunk : ""}`}>
-        <span className={styles.at}>{cue.start_s !== undefined ? clock(cue.start_s) : cue.at}</span>
+        <span className={styles.at}>{clock(cue.start_s)}</span>
         <span className={styles.cuetext}>{cue.text}</span>
         {cue.speaker ? <span className={styles.speaker}>{cue.speaker}</span> : null}
         {confidence ? (

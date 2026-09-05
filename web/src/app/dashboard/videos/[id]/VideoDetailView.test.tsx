@@ -198,30 +198,19 @@ describe("the video detail", () => {
     expect(totals).toHaveTextContent("292 chars");
   });
 
-  // The endpoint answers with both halves. This renders the typed one — the
-  // timecode from `start_s`, the chunk label composed from the chunk's own five
-  // fields — and falls back to the strings on an instance that predates them.
-  it("renders the typed cue fields, and falls back to the strings without them", async () => {
+  // The endpoint answers in numbers and every rendering is this page's: the
+  // timecode from `start_s`, the confidence from `avg_logprob`, the chunk label
+  // composed from the chunk's own five fields.
+  it("composes the timecode, the confidence and the chunk label from the numbers", async () => {
     await mount({ body: OWNER_VIDEO });
     expect(
       await screen.findByText(/chunk 0 · 0:00–7:03 · 54 words · 297 chars/),
     ).toBeInTheDocument();
-
-    vi.unstubAllGlobals();
-    vi.resetModules();
-
-    const TYPED = ["start_s", "end_s", "avg_logprob", "chunk_opens", "chunk_closes"];
-    const stringsOnly = {
-      ...OWNER_CUES,
-      cues: OWNER_CUES.cues.map((cue) =>
-        Object.fromEntries(Object.entries(cue).filter(([key]) => !TYPED.includes(key))),
-      ),
-    };
-    await mount({ body: OWNER_VIDEO }, { cues: { body: stringsOnly } });
-    expect(
-      await screen.findByText(/chunk 0 · 0:00–7:03 · 54 words · 297 chars/),
-    ).toBeInTheDocument();
     expect(screen.getAllByText("0:00").length).toBeGreaterThan(0);
+    expect(screen.getByText("-0.42")).toBeInTheDocument();
+    // A cue whose log-probability is `null` prints no confidence at all, rather
+    // than a word standing in for one.
+    expect(screen.getAllByTitle("avg_logprob")).toHaveLength(1);
   });
 
   it("appends the next batch rather than reloading the page", async () => {
