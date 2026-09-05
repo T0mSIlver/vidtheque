@@ -383,12 +383,16 @@ function Filters({
       </div>
       <div className={`${styles.field} ${styles.narrow}`}>
         <label htmlFor="f-limit">Rows</label>
+        {/* No `max`: the ceiling is `OWNER_CLAMPS.videos_max_limit` and this
+            page has no copy of it. A hundred hardcoded here would be a second
+            bound, wrong on the deployment that moved its own — and the real
+            one already answers, with the rows it clamped to and the `note:`
+            that names both numbers. */}
         <input
           id="f-limit"
           name="limit"
           type="number"
           min={1}
-          max={100}
           defaultValue={value("limit")}
           placeholder={limit === undefined ? undefined : String(limit)}
           inputMode="numeric"

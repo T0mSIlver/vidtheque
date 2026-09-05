@@ -97,6 +97,25 @@ describe("the corpus overview", () => {
       expect(screen.getByText("no frame")).toBeInTheDocument();
     });
 
+    // A video id is a key in the store, not a piece of URL: one carrying a `?`
+    // or a `#` unencoded would open the detail page for a different video, or
+    // for none — with the rest of the id read as a query string.
+    it("encodes the id of the video each arrival links to", async () => {
+      const { mockNavigation } = await import("@/test/next");
+      mockNavigation("", "/dashboard");
+      await mount({
+        body: {
+          ...OWNER_OVERVIEW,
+          recent: [{ ...OWNER_OVERVIEW.recent[0], video_id: "a?b#c", title: "An odd id" }],
+        },
+      });
+
+      expect(await screen.findByRole("link", { name: "An odd id" })).toHaveAttribute(
+        "href",
+        "/dashboard/videos/a%3Fb%23c",
+      );
+    });
+
     it("shows the box: the models it was built with, the worker, and the bytes", async () => {
       const { mockNavigation } = await import("@/test/next");
       mockNavigation("", "/dashboard");
