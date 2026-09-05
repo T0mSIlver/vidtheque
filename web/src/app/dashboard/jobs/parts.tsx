@@ -6,12 +6,11 @@ import type { JobCard } from "@/lib/dashboard/schemas";
 import { count, duration } from "@/lib/format";
 import styles from "./jobs.module.css";
 
-// What the two jobs pages are built from. Every piece is on the Jinja pages
-// that still serve the rest of this surface, and every value below is computed
-// from the payload's *typed* half: `text.progress`, `text.counts`,
-// `text.tally`, `text.wall` and the rest are the same numbers already
-// rendered, for a script that carries no formatter, and this side has one
-// (frontend-migration.md §1 decision 5).
+// What the two jobs pages are built from. Every value below is composed here,
+// from the payload's typed fields: the `text` block that once carried
+// `progress`, `counts`, `tally`, `wall` and the rest was rendered for a script
+// with no formatter of its own, and it went with that script on 2026-09-06
+// (frontend-migration.md §1 decision 5, dashboard.md §23).
 //
 // `basis` is the single exception and is read, not composed: it is the
 // sentence saying what the percentage is *computed over*, which is policy and
@@ -46,17 +45,6 @@ export function countsOf(job: JobCard): string {
   return parts.join(" · ");
 }
 
-/** The sentence that says what the percentage is computed over.
- *
- *  Read from beside the typed fields first and from inside the `text` block
- *  second, because it moves: §5.4 keeps `basis` when the rest of `text` is
- *  deleted with `static/jobs.js`, "in `notes` or beside it". Both readings are
- *  optional, so this shell renders against the instance that has already made
- *  that move and against the one that has not. */
-export function basisOf(job: JobCard): string | null {
-  return job.basis ?? job.text?.basis ?? null;
-}
-
 /**
  * The bar, and the figure with its breakdown behind it.
  *
@@ -68,7 +56,6 @@ export function basisOf(job: JobCard): string | null {
  */
 export function Progress({ job, tickMs, wide }: { job: JobCard; tickMs: number; wide?: boolean }) {
   const working = job.state === "running";
-  const basis = basisOf(job);
   const hintId = `pct-${job.job_id}`;
   return (
     <>
@@ -89,7 +76,7 @@ export function Progress({ job, tickMs, wide }: { job: JobCard; tickMs: number; 
         </span>
         <span className={styles.hint} role="tooltip" id={hintId}>
           <span className={styles.hintLine}>{tallyOf(job)}</span>
-          {basis ? <span className={styles.hintLine}>{basis}</span> : null}
+          {job.basis ? <span className={styles.hintLine}>{job.basis}</span> : null}
         </span>
       </span>
     </>
