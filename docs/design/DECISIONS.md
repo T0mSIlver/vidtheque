@@ -57,6 +57,32 @@ Route ownership under `/dashboard` follows in
 `docs/design/frontend-migration.md`; this record is the choice, not its
 expression in configuration.
 
+## Dashboard writes answer by content negotiation, decided by Tom, 2026-09-05
+
+Every write route under `/dashboard` keeps one URL and answers in the medium
+the caller asked for. With `Accept: application/json` the handler answers JSON:
+on success a typed outcome — the job id and its new state for cancel and
+retry, the accepted queue entries for the index form, the resulting tag list
+for tags, the follow row's new state for each follow action — and on refusal
+the existing `{error, message, next}` envelope at the status the code maps to,
+plus `retry_after_s` and a `Retry-After` header when the refusal names a delay.
+Otherwise the handler answers the `303` redirect the Jinja pages expect,
+unchanged. The redirect branch is deleted with the last Jinja page.
+
+Same handler, same guard, same Origin evidence rule, same rate-limit bucket.
+The fetch caller sends the session cookie same-origin, so `dashboard.md` §3.3
+holds unchanged: `Sec-Fetch-Site: same-origin` or a matching `Origin` header is
+required of it exactly as of the form. Form-encoded bodies stay the input for
+both branches.
+
+Tom rejected separate `/dashboard/api/*` POST routes: two routes per write to
+guard, to bucket and to keep in step, for one contract. He also rejected plain
+form navigation from React, which shows no inline outcome — the jobs view's 2 s
+poll cannot say what a cancel decided.
+
+The contract is `docs/design/dashboard.md` §21; what the React client sends and
+receives is `docs/design/frontend-migration.md` §9.
+
 ## Decided by Tom (2026-08-08)
 
 1. **MCP stack: official `mcp` SDK 2.0** (2026-07-28 spec). No fastmcp
