@@ -53,7 +53,12 @@ mode this list exists to prevent.
 - **Overview and ledger pages** — the JSON exists; the React pages are in
   progress today (2026-09-05).
 - **Videos** — the table, its filters and ordering, and the video detail page,
-  including the frames strip and the cue pagination.
+  including the frames strip and the cue pagination. *Contract landed
+  2026-09-05, page pending:* `/dashboard/api/library` and
+  `/dashboard/api/library/{video_id}` (dashboard.md §20 — the name is not
+  `videos` because the facade already holds that path at this prefix). The
+  detail points at the existing cues endpoint rather than serving cues, and
+  that endpoint still answers in rendered strings — see the note below.
 - **Search** — the owner inspection page, over the handler `/api/search`
   already shares.
 - **Jobs** — the list, the job detail page, and a poll target that replaces
@@ -68,6 +73,37 @@ mode this list exists to prevent.
 - **Session and login** — the sign-in page, the cookie flow and sign-out.
   `/dashboard/api/session` describes the deployment; the login POST itself has
   no JSON twin yet.
+
+**[Tom] Three existing JSON endpoints answer in rendered strings**, which is
+what the typed-values decision (DECISIONS.md, 2026-09-05) says they must not.
+They predate it and they are the Jinja scripts' own poll targets, so nothing is
+broken today — but a React page cannot read them as they are. Found while
+landing the videos contract, 2026-09-05, and left alone because changing them
+changes what `static/jobs.js` and `static/dashboard.js` receive:
+
+- `/dashboard/api/jobs` — each job carries a `text` object built server-side:
+  `progress` (`"73%"`), `counts`, `tally`, `basis`, and `wall`/`ran`/`waited`/
+  `defer` as `render.span`'s spoken durations (`"4m 12s"`), plus `finished` as
+  an `iso_minute` stamp. The typed halves (`progress`, `wall_s`, `ran_s`,
+  `waited_s`, `defer_s`, `created_at`, `started_at`, `finished_at`) are all
+  there beside them, so a React jobs page needs the `text` block dropped and
+  `basis` — the one genuine sentence in it — kept or moved into `notes`.
+- `/dashboard/api/jobs/{job_id}` — the same `text` on the job, plus per item
+  `text.attempts` (`"2/3"`), `text.took` and `text.stage` (`"stt 42%"`), and
+  per event an `at_text` `iso_minute` stamp beside the epoch `at`.
+- `/dashboard/api/videos/{id}/cues` — the one where the typed half is missing
+  rather than merely duplicated. It sends `t` (start, whole seconds) and then
+  `at` as a `clock()` string, `conf` as `f"{logprob:.2f}"`, and `chunk` as a
+  composed sentence (`"chunk 3 · 1:02–1:48 · 210 words · 1180 chars"`). A React
+  transcript pane needs `start_s`/`end_s` as floats, `avg_logprob` as a number
+  and the chunk's `seq`/`start_s`/`end_s`/`n_words`/`n_chars` as fields, which
+  is a shape change rather than a subtraction. `read_models` has no assembler
+  for it yet: `views._cue_rows` already produces exactly those typed fields and
+  the endpoint renders them on the way out.
+
+The choice is Tom's, and it is the same one in three places: add the typed
+fields beside the strings and let the old scripts keep reading their half until
+the pages are ported, or cut the strings when each page lands.
 
 ### 1. Turn following on — no code, and it is why the corpus stopped growing
 
