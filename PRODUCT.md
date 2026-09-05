@@ -114,9 +114,9 @@ an event log; a management dashboard; a public demo projection.
 - **`mcp/` ↔ `worker/` is HTTP only.** No Python imports across the boundary,
   not even in tests. All state (SQLite, keyframes, jobs) lives in `mcp/`.
 - **One SQLite file, one writer.**
-- **Server-rendered Jinja2 with autoescape on, plus plain ES modules.**
-  **No build step. No external requests at runtime.** No `| safe`, no HTML
-  sinks, `safeUrl()` on every URL.
+- **Every surface is Next.js (App Router) — React, CSS Modules, a build step,
+  and the design tokens generated from `DESIGN.md`.** **No external requests at
+  runtime**, and no HTML sink on any page: React escapes by construction.
 - **Every asset path is relative or root-relative**, never built from
   `PUBLIC_URL` — see the SSH tunnel above.
 - **Light and dark schemes are both first-class**, driven by
