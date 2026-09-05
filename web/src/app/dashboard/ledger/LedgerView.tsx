@@ -6,6 +6,7 @@ import { at, bytes, count, hours } from "@/lib/format";
 import styles from "../dashboard.module.css";
 import {
   CountLink,
+  DashLink,
   Fact,
   Figure,
   GapLine,
@@ -89,7 +90,7 @@ function Loaded({ data }: { data: Ledger }) {
               rather than rendered as two dashes, and the gap is a line in the
               report rather than a second request for two dates. */}
           <Figure label="videos">
-            <a href={`${ROOT}/videos?index_state=all`}>{count(corpus.videos)}</a>
+            <DashLink href={`${ROOT}/videos?index_state=all`}>{count(corpus.videos)}</DashLink>
           </Figure>
           <Figure label="runtime" notes={[<>{count(corpus.duration_s)} seconds indexed</>]}>
             {hours(corpus.duration_s)}

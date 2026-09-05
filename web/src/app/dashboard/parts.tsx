@@ -1,12 +1,14 @@
 "use client";
 
-import type { ReactNode } from "react";
+import Link from "next/link";
+import type { AnchorHTMLAttributes, ReactNode } from "react";
 import { Pill, type Tone } from "@/components/Pill";
 import { RetryIn } from "@/components/RetryIn";
 import { DashboardError } from "@/lib/dashboard/client";
 import type { Readiness as ReadinessPayload } from "@/lib/dashboard/schemas";
 import { at, count, iso } from "@/lib/format";
 import styles from "./dashboard.module.css";
+import { isPorted } from "./ported";
 import { useSession } from "./session";
 
 // The vocabulary both ported pages are built from. Every piece of it exists on
@@ -109,13 +111,41 @@ export function Figure({
 }
 
 /**
+ * A link into this surface, whichever half of it currently serves the target.
+ *
+ * A ported page is reached with `Link` and swaps the React tree; a page Python
+ * still renders is a plain anchor, because a client-side navigation to it
+ * would ask this app's router for a route it does not have. `ported.ts` is
+ * where that is decided, so no caller has to keep the list.
+ */
+export function DashLink({
+  href,
+  className,
+  children,
+  ...rest
+}: {
+  href: string;
+  className?: string;
+  children: ReactNode;
+} & Pick<AnchorHTMLAttributes<HTMLAnchorElement>, "aria-current" | "tabIndex" | "id">) {
+  if (isPorted(href)) {
+    return (
+      <Link className={className} href={href} {...rest}>
+        {children}
+      </Link>
+    );
+  }
+  return (
+    <a className={className} href={href} {...rest}>
+      {children}
+    </a>
+  );
+}
+
+/**
  * A count that is a door into a filtered page — the same idiom the gap
  * sentences use, because the number is the thing you want to go and look at.
  * A zero is not a door and does not wear the accent.
- *
- * The targets are Python's pages and its query strings, so these are plain
- * anchors: a client-side navigation would ask this app's router for a route it
- * does not have. They become `Link`s as those pages are ported.
  */
 export function CountLink({
   href,
@@ -127,9 +157,9 @@ export function CountLink({
   children?: ReactNode;
 }) {
   return (
-    <a className={n ? undefined : styles.none} href={href}>
+    <DashLink className={n ? undefined : styles.none} href={href}>
       {children ?? count(n)}
-    </a>
+    </DashLink>
   );
 }
 
