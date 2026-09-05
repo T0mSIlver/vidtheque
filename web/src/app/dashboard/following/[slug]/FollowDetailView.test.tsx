@@ -16,6 +16,7 @@ import {
   RULES_OUTCOME,
   UNKNOWN_FOLLOW,
 } from "@/test/following-fixtures";
+import { countingDownFrom } from "@/test/retry";
 
 // A follow's own page is the one place on this instance that says what a
 // standing rule *did not* do. So the assertions are the third band and its
@@ -432,7 +433,7 @@ describe("one follow's page", () => {
       });
 
       expect(await screen.findByText("Too many dashboard requests for now.")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "retry in 9s" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: countingDownFrom(9) })).toBeDisabled();
     });
   });
 });

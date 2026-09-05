@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
 import { DEMO_LIBRARY, OWNER_LIBRARY, OWNER_LIBRARY_CLAMPED } from "@/test/library-fixtures";
+import { countingDownFrom } from "@/test/retry";
 
 // The table's job is to say what set it is showing and to be honest about how
 // it was narrowed: the filters are the URL, the count is exact, the clamps are
@@ -317,7 +318,7 @@ describe("the videos table", () => {
         headers: { "retry-after": "9" },
       });
 
-      expect(await screen.findByRole("button", { name: "retry in 9s" })).toBeDisabled();
+      expect(await screen.findByRole("button", { name: countingDownFrom(9) })).toBeDisabled();
     });
 
     it("says so when the instance answers in a shape it cannot read", async () => {

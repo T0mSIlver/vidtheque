@@ -10,6 +10,7 @@ import {
   OWNER_HALF,
   OWNER_VIDEO,
 } from "@/test/library-fixtures";
+import { countingDownFrom } from "@/test/retry";
 
 // The page the dashboard exists for: what the pipeline did to one video, what
 // it produced, and what it read off the screen. So the assertions are the
@@ -321,7 +322,7 @@ describe("the video detail", () => {
         headers: { "retry-after": "7" },
       });
 
-      expect(await screen.findByRole("button", { name: "retry in 7s" })).toBeDisabled();
+      expect(await screen.findByRole("button", { name: countingDownFrom(7) })).toBeDisabled();
     });
 
     it("keeps the page when only the transcript's next batch fails", async () => {
