@@ -198,12 +198,13 @@ What each side owns, once a page is ported:
 | `GET /dashboard/search` | **Next** | *landed 2026-09-05* |
 | `GET /dashboard/jobs`, `GET /dashboard/jobs/{id}` | **Next** | *landed 2026-09-05* |
 | `GET /dashboard/following`, `GET /dashboard/following/{slug}` | **Next** | *landed 2026-09-05* |
-| `POST /dashboard/following` | Python | **the one path split by method** |
-| `GET /dashboard/index` | **Next** | *in progress — 2026-09-05* |
-| `POST /dashboard/index` | Python | shares its path with the form, following's collision again |
+| `POST /dashboard/following` | Python | **the first path split by method** |
+| `GET /dashboard/index` | **Next** | *landed 2026-09-05* |
+| `POST /dashboard/index` | Python | **the second path split by method** |
+| `GET /dashboard/login` | **Next** | *in progress — 2026-09-05* |
+| `POST /dashboard/login`, `/dashboard/logout` | Python | for good |
 | `/dashboard/api/*` | Python | for good |
 | `/dashboard/static/*` | Python | for good |
-| `/dashboard/login`, `/dashboard/logout` | Python | for good |
 | every other `POST /dashboard/*` | Python | for good |
 
 Exact page GETs again, not a prefix: `/dashboard`-anything is Python's unless
@@ -211,9 +212,9 @@ it is one of the paths above. **Until a page is ported, Python keeps serving
 its HTML** — the list is the destination, and a row becomes true the day that
 React page lands, page by page as `docs/ROADMAP.md` tracks it.
 
-*Tally, 2026-09-05:* nine of the ten `GET /dashboard/*` pages this table names
-are Next's now — search's landing (dashboard.md §14.2) leaves `/dashboard/index`
-as the one a sibling is porting, so it is *in progress* above, not landed.
+*Tally, 2026-09-05:* ten of the eleven `GET /dashboard/*` pages this table
+names are Next's now — the index form's landing leaves `/dashboard/login` as
+the one a sibling is porting, so it is *in progress* above, not landed.
 
 The `web/` side expresses this split in its development rewrites and in the
 matcher of the middleware that sends the document policy (§1b). That is
@@ -251,31 +252,35 @@ without an exception written for it. The development rewrites needed no change
 at all — the `/dashboard` catch-all is in `afterFiles`, so the router finds
 these two pages first.
 
-**The two following pages, and the one path that is routed by method**
-*(landed 2026-09-05)*. `GET /dashboard/following` and
-`GET /dashboard/following/{slug}` are Next's, in the matcher and in
-`ported.ts` like the rest. What is different about this pair is the row above:
-**`POST /dashboard/following` is the add form's route and shares its path with
-the list page** — every other write on this surface has a segment its page does
-not (`…/{slug}/state`, `…/{video_id}/tags`), so this is the only collision
-under `/dashboard`, and the table's "every other `POST /dashboard/*`" cannot
-resolve it on path alone.
+**The following and index pages, and the two paths routed by method**
+*(landed 2026-09-05, following first, index second)*. `GET /dashboard/following`,
+`GET /dashboard/following/{slug}` and `GET /dashboard/index` are Next's, in the
+matcher and in `ported.ts` like the rest. What is different about this trio is
+the two rows above, and it is not an exception of one: **`POST
+/dashboard/following` and `POST /dashboard/index` are each a form's route and
+each shares its path with a page this app now serves** — every other write on
+this surface has a segment its page does not (`…/{slug}/state`,
+`…/{video_id}/tags`), so these are the only two collisions under `/dashboard`,
+and the table's "every other `POST /dashboard/*`" cannot resolve either on path
+alone. A sibling is porting `GET /dashboard/login` now, which will be the
+third — *in progress* above, not landed.
 
-**Production routes that path by method**: `GET` → Next, `POST` → Python. That
-is the reverse proxy's rule and it is written here because nothing in this repo
-can express it — a Next rewrite and a middleware matcher both match paths, not
-methods. It is a cutover check (`docs/ROADMAP.md`): a `POST` to
-`/dashboard/following` through the edge must reach Python, or the add form
-answers with a document from a page that never saw the write.
+**Production routes both paths by method**: `GET` → Next, `POST` → Python, on
+`/dashboard/following` and on `/dashboard/index` alike. That is the reverse
+proxy's rule and it is written here because nothing in this repo can express it
+— a Next rewrite and a middleware matcher both match paths, not methods. It is
+a cutover check (`docs/ROADMAP.md`): a `POST` to `/dashboard/following` or to
+`/dashboard/index` through the edge must reach Python, or the form answers with
+a document from a page that never saw the write.
 
-**Development uses a shim, and it is not the rule.** `web/next.config.ts` keys
-a `beforeFiles` rewrite on `content-type: application/x-www-form-urlencoded` —
-the header every write on this surface sends (§9) and no document navigation
-ever does — because `beforeFiles` is the only stage that runs before the router
-finds the page, and `has` reads headers, cookies, the query and the host, and
-nothing else. It is a development-only entry, deleted the day development runs
-both processes behind one proxy, and it must not be read as the production
-arrangement.
+**Development uses a shim, and it is not the rule.** `web/next.config.ts`'s
+`PYTHON_FORM_POSTS` keys a `beforeFiles` rewrite for each of the two paths on
+`content-type: application/x-www-form-urlencoded` — the header every write on
+this surface sends (§9) and no document navigation ever does — because
+`beforeFiles` is the only stage that runs before the router finds the page, and
+`has` reads headers, cookies, the query and the host, and nothing else. It is a
+development-only entry, deleted the day development runs both processes behind
+one proxy, and it must not be read as the production arrangement.
 
 A third list joined those two with these pages, and it is the one a component
 asks: `web/src/app/dashboard/ported.ts` holds the ported page paths — `ROOT`,
@@ -284,6 +289,18 @@ asks: `web/src/app/dashboard/ported.ts` holds the ported page paths — `ROOT`,
 this app serves is reached with `Link` and a page Python still renders stays a
 plain anchor. Porting a page adds its path here, names it in the matcher, and
 changes nothing else.
+
+**The index page reads no `/dashboard/api/*` route.** A form needs only what
+this deployment is, and the chassis has already asked that — so the page waits
+on the session read before drawing rather than rendering early and finding out
+afterward that indexing is refused. The seeding parameters it accepts —
+`urls`, `expand` and `tags` — are `writes._prefilled_index_form`'s, bounded by
+`MAX_PREFILL_URLS_CHARS` and `MAX_PREFILL_TAGS_CHARS`, with `expand` taken only
+when it is one of `indexing.EXPANSIONS`; nothing here validates a URL, a tag or
+an expansion, because a prefill is a draft the operator may still edit and the
+POST remains the only thing that interprets it. The video detail's "Queue more
+from this channel" link is the one caller: it sends `urls` and
+`expand=channel_recent`.
 
 ## 2. What landed
 
@@ -856,6 +873,19 @@ booleans and lists — a job's state as the store's own word, a follow's
 `next_check_at` as an epoch where the MCP tool sends an `iso_minute` string.
 The refusal text is the exception and is deliberate: `message` and `next` are
 policy and stay Python's (decision 5).
+
+**The client's write calls, as of the index and videos ports (2026-09-05).**
+`web/src/lib/dashboard/client.ts` now makes all of them through the one
+`postForm` helper above: the corpus three — `indexUrls`, `reindexVideo`,
+`setVideoTags` — beside the jobs pair and the six follow writes. The page-side
+rule that goes with every one of them is that **a write's outcome replaces the
+row it acted on, and the page does not read again to find out what changed.**
+The follow detail page is where that rule tightened: it used to re-read the
+follow after every write to learn whether a failure line had cleared, and
+dropped that read once the outcome itself carried `last_error_code` and
+`last_error_message` (`dashboard.md` §21, commit `2fed72c`). The videos row's
+re-index and the manage panel's tags write never had the read to drop — they
+paint the job id and the tags the outcome sent from the day they landed.
 
 **Signing in is the same shape** *(landed 2026-09-05)*. `POST
 /dashboard/login` negotiates like the other twelve: the session cookie is not
