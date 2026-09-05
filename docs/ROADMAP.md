@@ -38,9 +38,9 @@ initial reader, API client, search, Ask, and component tests.
   (`docs/design/frontend-migration.md`, dashboard.md §19). Every port below
   still needs its own contract written before its page.
 - Verify deployment, rollback, browser workflows, and CPU-only checks before
-  switching traffic. Remove replaced templates, scripts, styles, and obsolete
-  instructions only after their callers have replacements. Research stays
-  append-only.
+  switching traffic. *The removal half is done (2026-09-06): every replaced
+  template, script and style is deleted, and the callers all had replacements
+  first — dashboard.md §23 is the record. Research stays append-only.*
   Through the edge: `GET /` returns the landing, `GET /demo` the reader, and
   each carries the four document headers (demo-site.md §7 item 0). Python has
   no page at `/` any more, so a misrouted edge shows the MCP mount's 404.
@@ -54,171 +54,80 @@ initial reader, API client, search, Ask, and component tests.
   `PYTHON_FORM_POSTS` forwards them in `beforeFiles` on the
   `application/x-www-form-urlencoded` content type, and that entry is deleted
   the day development runs both processes behind one proxy.
-  In the deletion round, `templates/following.html` has one line to fix or drop
-  rather than move: it prints `Indexing is disabled on this instance ({{
-  vectors.reason }})` and its context has carried a bool since the read
-  assembly moved, so the parenthesis renders empty. No test reads that sentence
-  on this page, and the React page states the same refusal without the reason.
 
-The dashboard port, page by page. Each needs its JSON contract first, then its
-React page, verified against **both** the owner and the public read-only
-projection — a page that renders a field the projection drops is the failure
-mode this list exists to prevent.
+The dashboard port, page by page — **all of it landed 2026-09-05, and the
+Python HTML it replaced was deleted 2026-09-06** (dashboard.md §23,
+DECISIONS.md "The Python dashboard HTML is gone"). Each page needed its JSON
+contract first, then its React page, verified against **both** the owner and
+the public read-only projection.
 
-- **Overview and ledger pages** — *landed 2026-09-05.* `GET /dashboard` and
-  `GET /dashboard/ledger` are Next's, fetching `/dashboard/api/overview` and
-  `/dashboard/api/ledger` in the browser under the session cookie, with the
-  management chassis — the rail, the session read and the sign-out form — under
-  them. Both are named in the ownership table and in the document-policy
-  matcher, which is the record of what is ported
-  (`docs/design/frontend-migration.md` §1d, §6). The ledger payload gained
-  `corpus.published` on the way, because the band prints a span the JSON had no
-  field for (dashboard.md §19). Python still renders every other
-  `/dashboard` page.
-- **Videos** — the table, its filters and ordering, and the video detail page,
-  including the frames strip and the cue pagination. *Contract landed
-  2026-09-05:* `/dashboard/api/library` and `/dashboard/api/library/{video_id}`
-  (dashboard.md §20 — the name is not `videos` because the facade already holds
-  that path at this prefix). The detail points at the existing cues endpoint
-  rather than serving cues, and that endpoint now carries the typed fields a
-  transcript pane needs beside its strings — see the note below.
-  *The read half landed 2026-09-05:* `GET /dashboard/videos` and
-  `GET /dashboard/videos/{video_id}` are Next's, named in the ownership table
-  and in the document-policy matcher — the detail as one segment, so the POSTs
-  under it stay Python's (frontend-migration.md §1d). What the React pages do
-  differently from the Jinja ones is recorded with the pages themselves
-  (dashboard.md §5.2, §5.3). *The write side landed 2026-09-05* too, with the
-  Indexing and Tags bullets below: the row's re-index, the detail's manage
-  panel and its tags write. The two enhancement layers are still open, on the
-  lines below.
-- **Videos, the frames lightbox** — the Jinja page opens a keyframe full size
+- **Overview and ledger** — *landed 2026-09-05*, over `/dashboard/api/overview`
+  and `/dashboard/api/ledger`, with the management chassis under them
+  (dashboard.md §19).
+- **Videos, the table and the detail** — *landed 2026-09-05*, over
+  `/dashboard/api/library` and `/dashboard/api/library/{video_id}`, with the
+  cue pager for the transcript pane (dashboard.md §20, §5.2, §5.3).
+- **Search** — *landed 2026-09-05*, over `/dashboard/api/search` under the
+  handler's own parameter names, so a bookmarked query still resolves
+  (dashboard.md §14.2, §14.3).
+- **Jobs, the list and one job** — *landed 2026-09-05*, over the two poll
+  targets, which gained the nine fields the templates rendered and the payloads
+  dropped (dashboard.md §5.4, frontend-migration.md §6c).
+- **Following, list and detail** — *landed 2026-09-05*, over
+  `/dashboard/api/following` and `/dashboard/api/following/{slug}`, registered
+  with the writes so the whole surface is 404 together where a deployment
+  declines it (dashboard.md §18.6, §22).
+- **Indexing and tags** — *landed 2026-09-05*: the index form, the table's
+  per-row re-index, and the detail's manage panel with its tags write
+  (dashboard.md §21).
+- **Jobs controls** — *landed 2026-09-05*: cancel and retry-failed, the first
+  writes to cross, over §3.3's cookie and Origin rules expressed with `fetch`.
+- **Session and login** — *landed 2026-09-05*: the sign-in page, the cookie
+  flow and sign-out. `POST /dashboard/login` stays Python's for good — the
+  `Set-Cookie` is the write and a React shell cannot mint an `HttpOnly` cookie.
+- **Remove the replaced templates, scripts and styles** — *done 2026-09-06.*
+  `views.py`, `templates/`, `static/`, the `/dashboard/static/*` route, the
+  Jinja environment and the `jinja2` dependency are deleted; the rendered
+  strings on the two jobs routes and the cue pager went with the scripts that
+  read them, keeping `basis` (dashboard.md §23). Two enhancement layers were
+  **not** ported and are the open work below.
+
+Still open, and both are a layer over facts the React pages already show:
+
+- **Videos, the frames lightbox** — the Jinja page opened a keyframe full size
   with its OCR boxes and its caption over it (`static/dashboard.js`); the React
-  card links to the 1280px frame instead. A layer over facts already on the
-  page, so it follows the port rather than blocking it.
-- **Videos, the timeline scrub preview** — pointing along the shot band shows
+  card links to the 1280px frame instead. The payload carries every line, its
+  box and the three widths already (`/dashboard/api/library/{video_id}`), so
+  this is `web/`'s alone.
+- **Videos, the timeline scrub preview** — pointing along the shot band showed
   the shot under the pointer: its still, its span and its kept ratio. The React
-  timeline has the bars and their links and not the hover. Same shape of
-  follow-up as the lightbox.
-- **Search** — the owner inspection page, over the handler `/api/search`
-  already shares. *Landed 2026-09-05:* `GET /dashboard/search` is Next's, named
-  in the ownership table and the document-policy matcher
-  (frontend-migration.md §1d — all eleven `/dashboard` GET pages are React
-  now). It reads
-  `GET /dashboard/api/search`
-  under the handler's own parameter names, so a bookmarked query still resolves,
-  and paginates off the payload's own `pagination.limit` rather than a size it
-  picks — the owner-only set stayed empty, exactly as the 2026-09-05 field check
-  found before the page was written. The four derivations were checked
-  differentially against the Jinja page's own cases; the traps, the
-  frame-width divergence and the one surviving discrepancy are dashboard.md
-  §14.2 and §14.3.
-- **Jobs** — the list, the job detail page, and a poll target that replaces
-  `static/jobs.js` without moving the 2 s tick or its server-side clamp.
-  *The read half landed 2026-09-05:* `GET /dashboard/jobs` and
-  `GET /dashboard/jobs/{job_id}` are Next's, named in the ownership table and
-  in the document-policy matcher (frontend-migration.md §1d). *The payload gaps
-  closed the same day:* the two poll targets carried nine fewer fields than the
-  templates rendered — no row headline, no echoed filters, no `notes`, and none
-  of `counts`, `error_counts`, `items_capped`, `degraded`, `focus` or `stages`
-  on one job. All nine are on the wire now, and the tick still costs two reads
-  (dashboard.md §5.4, frontend-migration.md §6c). `static/jobs.js` and the
-  `text` blocks it reads go with the Jinja pages, not before them. *The echo is
-  consumed, 2026-09-05:* the list had been reading `filters` off its own URL
-  rather than the payload's; the narrowing strip and the empty state now decide
-  from `filters` and `notes` as sent, so a value that fell back reads as what
-  actually ran (frontend-migration.md §6c).
-- **Jobs controls** — cancel and retry-failed: the first writes to cross, so
-  the first to need §3.3's cookie and Origin rules expressed over `fetch`.
-  *The write contract landed 2026-09-05* for all twelve writes at once, because
-  the rule that carries them is one helper and splitting it would have been two
-  rules: each route keeps its URL and answers the typed outcome when `Accept`
-  prefers JSON, the 303 otherwise (dashboard.md §21; what the client sends is
-  frontend-migration.md §9). `cancel` answers the state the job is actually in,
-  which is the thing the 2 s poll cannot say. The pages themselves are still
-  pending, and so is the poll target above.
-- **Indexing** — *landed 2026-09-05.* `GET /dashboard/index` is Next's, named
-  in the ownership table, the document-policy matcher and `ported.ts`
-  (frontend-migration.md §1d), with the same server-side bounds the Jinja form
-  had and no read of its own — it waits on the session read and prefills from
-  `writes._prefilled_index_form`'s `urls`/`expand`/`tags` (frontend-migration.md
-  §1d). The two re-index writes the ported videos pages had left behind landed
-  with it: the table's per-row **Re-index** button and the detail's **Manage
-  this video** panel, both `POST /dashboard/videos/{id}/reindex`; and the
-  header link that seeds the form from a video's channel ("Queue more from this
-  channel") now points at a page this app serves. The submission and both
-  re-index writes answer JSON — dashboard.md §21 has the payloads.
-- **Tags** — *landed 2026-09-05,* with Indexing above: the detail's **Manage
-  this video** panel now renders the add and remove fields and posts `POST
-  /dashboard/videos/{id}/tags`. The write answers the row's tags read back
-  after the write (dashboard.md §21).
-- **Following** — *landed 2026-09-05*, list, detail and all six writes.
-  `GET /dashboard/following` and `GET /dashboard/following/{slug}` are Next's,
-  in the ownership table, in the document-policy matcher and in `ported.ts`
-  (frontend-migration.md §1d); they read `/dashboard/api/following` and
-  `/dashboard/api/following/{slug}`, which are registered with the write routes
-  so the whole surface — pages, JSON and writes — is 404 together where the
-  deployment declines it (dashboard.md §18.6, §21, §22). Two payload gaps the
-  pages found closed the same day: the detail read says `checks_enabled`,
-  because with follow checks off its clocks are a schedule nothing will run;
-  and every write outcome now carries `last_error_code` and
-  `last_error_message`, because `resume` clears an error the outcome did not
-  show and the page was re-reading after every write to find out. What the
-  React pages own that Python does not send: the rule as facts and **no**
-  English sentence (Tom, 2026-09-05 — `follows.rules.describe` stays the MCP
-  tools' renderer), the near-miss line around a typed `near_miss` that is
-  `null` when there is nothing to say, and the unfollow confirmation, which
-  carries what a redirect used to say. One route needs the edge to know it:
-  `POST /dashboard/following` shares the list page's path — see the cutover
-  bullet above.
-- **Session and login** — the sign-in page, the cookie flow and sign-out.
-  `/dashboard/api/session` describes the deployment, and the login POST's JSON
-  twin landed 2026-09-05: `POST /dashboard/login` answers `{"signed_in",
-  "next"}` with the cookie on the response, and refuses a wrong secret with
-  `E_BAD_CREDENTIAL` rather than the `E_AUTH_REQUIRED` a client answers by
-  navigating here (dashboard.md §21). *The React sign-in page landed
-  2026-09-05 too*: `GET /dashboard/login` is Next's, the third path split by
-  method beside `/dashboard/following` and `/dashboard/index`, and the
-  sharpest of the three — the `Set-Cookie` is the write and an `HttpOnly`
-  cookie is not a thing this shell could mint, so the `POST` stays Python's
-  for good (frontend-migration.md §1d, §6, §9). Sign-out has no page of its
-  own; `/dashboard/logout` stays Python's like every other write.
+  timeline has the bars and their links and not the hover. `shots[]` carries
+  `start_s`, `end_s`, `frames`, `kept` and a `preview` URL per shot.
 
-**Three existing JSON endpoints answer in rendered strings**, which is
-what the typed-values decision (DECISIONS.md, 2026-09-05) says they must not.
-They predate it and they are the Jinja scripts' own poll targets, so nothing is
-broken today — but a React page cannot read them as they are. Found while
-landing the videos contract, 2026-09-05, and left alone at first because
-changing them changes what `static/jobs.js` and `static/dashboard.js` receive:
+One thing the deletion hands to `web/` rather than finishes, and it is a
+one-file change: the cue payload's `at`, `conf` and `chunk` are gone, so
+`web/src/lib/dashboard/schemas.ts` still requires three fields the endpoint no
+longer sends, and `CueRow`'s three fallbacks are dead branches. See
+frontend-migration.md §3.
 
-- `/dashboard/api/jobs` — each job carries a `text` object built server-side:
-  `progress` (`"73%"`), `counts`, `tally`, `basis`, and `wall`/`ran`/`waited`/
-  `defer` as `render.span`'s spoken durations (`"4m 12s"`), plus `finished` as
-  an `iso_minute` stamp. The typed halves (`progress`, `wall_s`, `ran_s`,
-  `waited_s`, `defer_s`, `created_at`, `started_at`, `finished_at`) are all
-  there beside them, so a React jobs page needs the `text` block dropped and
-  `basis` — the one genuine sentence in it — kept or moved into `notes`.
-- `/dashboard/api/jobs/{job_id}` — the same `text` on the job, plus per item
-  `text.attempts` (`"2/3"`), `text.took` and `text.stage` (`"stt 42%"`), and
-  per event an `at_text` `iso_minute` stamp beside the epoch `at`.
-- `/dashboard/api/videos/{id}/cues` — the one where the typed half was missing
-  rather than merely duplicated. It sends `t` (start, whole seconds) and then
-  `at` as a `clock()` string, `conf` as `f"{logprob:.2f}"`, and `chunk` as a
-  composed sentence (`"chunk 3 · 1:02–1:48 · 210 words · 1180 chars"`).
-  *Landed 2026-09-05:* `start_s` and `end_s` as floats, `avg_logprob` as a
-  float or `null`, `chunk_opens` (`seq`, `start_s`, `end_s`, `n_words`,
-  `n_chars`) and `chunk_closes`, all beside the unchanged strings and all under
-  `views._cue_rows`' own names — it already produced exactly those values and
-  the endpoint rendered them on the way out (dashboard.md §5.3,
-  frontend-migration.md §3).
+**The three JSON endpoints that answered in rendered strings** — settled and
+done. `/dashboard/api/jobs`, `/dashboard/api/jobs/{job_id}` and
+`/dashboard/api/videos/{id}/cues` predated the typed-values decision
+(DECISIONS.md, 2026-09-05) and were the Jinja scripts' own poll targets. Tom's
+rule was **typed fields beside the strings, strings cut at the port**: add the
+typed half additively, and delete a rendered string in the commit that deletes
+the page or script reading it.
 
-**Settled 2026-09-05 (Tom): typed fields beside the strings, strings cut at the
-port.** Add the typed half now, additively, and delete a rendered string in the
-same commit that deletes the Jinja page or script that reads it. The cues
-endpoint was the only one that needed code — the two jobs routes already carry
-their typed half — so what is left on this line is a deletion each porting
-commit performs: the jobs `text` blocks (keeping `basis`, the one sentence in
-them that is policy text) with `static/jobs.js`, and the cues strings with the
-video detail page.
+*Landed 2026-09-05:* the cues endpoint was the only one that needed code — it
+gained `start_s`, `end_s`, `avg_logprob`, `chunk_opens` and `chunk_closes`,
+because the two jobs routes already carried their typed half.
+
+*Landed 2026-09-06:* the strings are cut. Off the jobs pair went both `text`
+blocks and each event's `at_text` — nine renderings of numbers sent beside them
+— keeping `basis`, the sentence saying what the progress percentage is computed
+over, as a field on the card because it is policy text. Off the cues endpoint
+went `at`, `conf` and `chunk`. The readiness observation's ISO-8601
+`checked_at` went the same way, leaving the epoch under the same name.
 
 ### 1. Turn following on — no code, and it is why the corpus stopped growing
 
