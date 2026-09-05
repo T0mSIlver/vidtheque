@@ -83,7 +83,13 @@ mode this list exists to prevent.
   timeline has the bars and their links and not the hover. Same shape of
   follow-up as the lightbox.
 - **Search** — the owner inspection page, over the handler `/api/search`
-  already shares.
+  already shares. *Checked field by field 2026-09-05: no new contract is
+  needed.* The page reads `GET /dashboard/api/search` — that same handler under
+  the dashboard prefix, gated, under the caller's clamps — and the owner-only
+  set is empty: everything §14.1 renders is a field already on the wire or a
+  rendering over one, and the payload carries six fields the page does not draw.
+  Three traps and the frame-width divergence are written down in dashboard.md
+  §14.2. The page itself is pending.
 - **Jobs** — the list, the job detail page, and a poll target that replaces
   `static/jobs.js` without moving the 2 s tick or its server-side clamp.
   *The read half landed 2026-09-05:* `GET /dashboard/jobs` and
