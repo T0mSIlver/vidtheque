@@ -37,4 +37,52 @@ describe("RetryIn", () => {
     unmount();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  // `retry_after_s` is a float on the wire. Rendered raw, a 0.4 paints "retry"
+  // on a bucket that is still empty, and the click that follows is one more
+  // refused request rather than a retry.
+  it("floors the wait at a second and rounds a fraction up", async () => {
+    mockNavigation();
+    const { RetryIn } = await import("./RetryIn");
+
+    const { unmount } = render(<RetryIn seconds={0} />);
+    expect(screen.getByRole("button")).toHaveTextContent("retry in 1s");
+    unmount();
+
+    render(<RetryIn seconds={2.4} />);
+    expect(screen.getByRole("button")).toHaveTextContent("retry in 3s");
+  });
+
+  // The demo's own shape (`app.js`'s `renderRateLimited`): the wait counts in a
+  // detail line under the title, and the button keeps one word throughout.
+  describe("the demo's notice", () => {
+    it("counts in its detail line and gates a Try again beside it", async () => {
+      mockNavigation();
+      const { RetryIn } = await import("./RetryIn");
+      render(<RetryIn seconds={2} variant="notice" />);
+
+      expect(screen.getByText("Too many requests.")).toBeInTheDocument();
+      const button = screen.getByRole("button", { name: "Try again" });
+      expect(screen.getByText("Try again in 2s.")).toBeInTheDocument();
+      expect(button).toBeDisabled();
+
+      act(() => vi.advanceTimersByTime(1000));
+      expect(screen.getByText("Try again in 1s.")).toBeInTheDocument();
+
+      act(() => vi.advanceTimersByTime(1000));
+      expect(screen.getByText("Try again.")).toBeInTheDocument();
+      expect(button).toBeEnabled();
+    });
+
+    it("hands the retry to the caller when it owns the reload", async () => {
+      mockNavigation();
+      const { RetryIn } = await import("./RetryIn");
+      const onRetry = vi.fn();
+      render(<RetryIn seconds={1} variant="notice" onRetry={onRetry} />);
+
+      act(() => vi.advanceTimersByTime(1000));
+      act(() => screen.getByRole("button", { name: "Try again" }).click());
+      expect(onRetry).toHaveBeenCalledOnce();
+    });
+  });
 });
