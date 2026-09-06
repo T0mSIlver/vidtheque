@@ -301,10 +301,25 @@ function Table({ data, stopped, polling }: { data: Jobs; stopped: unknown; polli
     </ul>
   ) : null;
 
+  // The tick patches the rows that were here; a job queued since cannot be
+  // patched into existence, and the count line would stop being true if it
+  // were. `jobs.js` revealed a note instead, and so does this — including on a
+  // listing that loaded with nothing in it, which is the reading most likely
+  // to grow a job under the reader and the one that has no count line to hang
+  // the note on.
+  const arrival = queuedSince ? (
+    <span className={styles.staleNote}>a job was queued since this page loaded, so reload</span>
+  ) : null;
+
   if (!rows.length) {
     return (
       <>
         {notes}
+        {arrival ? (
+          <p className={dash.tablecount} role="status">
+            <span>{arrival}</span>
+          </p>
+        ) : null}
         <Empty filters={data.filters} />
       </>
     );
@@ -321,15 +336,7 @@ function Table({ data, stopped, polling }: { data: Jobs; stopped: unknown; polli
               longer running the page says so rather than freezing quietly.
               Nothing is wrong when everything is terminal — there is simply
               nothing left to poll for. */}
-          {/* The tick patches the rows that were here; a job queued since
-              cannot be patched into existence, and the count line above would
-              stop being true if it were. `jobs.js` revealed this note instead,
-              and so does this. */}
-          {queuedSince ? (
-            <span className={styles.staleNote}>
-              a job was queued since this page loaded, so reload
-            </span>
-          ) : null}
+          {arrival}
           {stopped ? (
             <span className={styles.staleNote}>
               the live view stopped: {refusalOf(stopped).message}
