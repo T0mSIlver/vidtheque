@@ -230,11 +230,11 @@ function Held({ data }: { data: Following }) {
     // has failed, and nothing is neutral either — a held video stays held until
     // somebody decides. It is the tone the `held_review` pill wears in the
     // ledger below, so the band and the rows it points at are one colour.
-    <section className={`${dash.notice} ${styles.noticeWarn}`} aria-labelledby="waiting">
+    <section className={dash.noticeWarn} aria-labelledby="waiting">
       {/* The count is this band's own rows and not the band figure above it:
           `held` up there is everything held, and the budget holds a candidate
           without asking anybody. These are the ones waiting on a *person*. */}
-      <h2 className={`${dash.noticeTitle} ${styles.noticeWarnTitle}`} id="waiting">
+      <h2 className={dash.noticeWarnTitle} id="waiting">
         {data.held_more
           ? `More than ${shown} videos are waiting for you.`
           : `${shown} ${shown === 1 ? "video is" : "videos are"} waiting for you.`}

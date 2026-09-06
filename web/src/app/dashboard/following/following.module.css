@@ -71,23 +71,6 @@
   white-space: nowrap;
 }
 
-/* --------------------------------------------------------- the held band
-
-   `dashboard.module.css`'s `.notice` is hard-wired to `--tone-bad`, and this
-   one band is not an error: something matched a rule and is waiting for a
-   person, which is the tone the `held_review` pill wears in the ledger below
-   it — so the band and the rows it points at are one colour. Two local
-   overrides rather than a shared modifier, because `.notice` is another
-   module's and this is the only page that needs the other tone; a `warn`
-   variant belongs beside `.notice` the day a second page asks for it. */
-.noticeWarn {
-  border-top-color: var(--tone-warn);
-}
-
-.noticeWarnTitle {
-  color: var(--tone-warn);
-}
-
 /* ------------------------------------------------------------- the form
 
    The add form and the edit disclosure, which are the same eleven controls.
@@ -401,6 +384,14 @@
    `display: block` has taken the table apart there is no table left for a
    screen reader to associate a `<th scope="col">` with, and every cell in the
    stack prints its own column name. */
+.follows {
+  composes: stacked from "../dashboard.module.css";
+}
+
+.seen {
+  composes: stacked from "../dashboard.module.css";
+}
+
 @media (max-width: 52rem) {
   .follows thead {
     display: none;
@@ -440,13 +431,6 @@
 
   .follows tbody td[data-label]::before {
     content: attr(data-label);
-    flex: 0 0 6rem;
-    font-family: var(--mono);
-    font-size: 0.625rem;
-    font-weight: var(--w-mono-label);
-    letter-spacing: 0.19em;
-    text-transform: uppercase;
-    color: var(--muted);
   }
 
   /* The row's name is a name, not a label-and-value pair. */
@@ -492,13 +476,6 @@
 
   .seen tbody td[data-label]::before {
     content: attr(data-label);
-    flex: 0 0 6rem;
-    font-family: var(--mono);
-    font-size: 0.625rem;
-    font-weight: var(--w-mono-label);
-    letter-spacing: 0.19em;
-    text-transform: uppercase;
-    color: var(--muted);
   }
 
   .seen tbody th {

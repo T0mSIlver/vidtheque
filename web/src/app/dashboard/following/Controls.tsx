@@ -345,6 +345,11 @@ function Refusal({ error, block }: { error: unknown; block?: boolean }) {
   return (
     <span className={`${styles.outcome} ${styles.outcomeBad}`} role="status">
       <code>{refusal.code}</code> <span>{refusal.message}</span>
+      {/* The third sentence, which says what to do instead. Inline it is the
+          line after the message rather than a heading on a page of its own,
+          and it is Python's either way — the jobs table's cancel refusal has
+          printed it since the port, and this one had been dropping it. */}
+      {refusal.next ? <span className={dash.outcomeNext}>{refusal.next}</span> : null}
     </span>
   );
 }
