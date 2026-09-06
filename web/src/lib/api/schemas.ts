@@ -241,6 +241,11 @@ export const ErrorEnvelope = z.object({
   error: z.string(),
   message: z.string(),
   next: z.string().nullish(),
+  // The limiter states its own delay in the body as well as in `Retry-After`.
+  // The body is the one to believe: a proxy may drop or rewrite a header, and
+  // the demo used to fall back to a header-only reading and paint 60s over a
+  // limiter that had said 17 (`app.js`'s `renderRateLimited`).
+  retry_after_s: z.number().nullish(),
 });
 export type ErrorEnvelope = z.infer<typeof ErrorEnvelope>;
 
@@ -251,4 +256,5 @@ export const PartialErrorEnvelope = z.object({
   error: z.string().optional().catch(undefined),
   message: z.string().optional().catch(undefined),
   next: z.string().nullish().catch(undefined),
+  retry_after_s: z.number().nullish().catch(undefined),
 });
