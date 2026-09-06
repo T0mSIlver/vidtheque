@@ -199,6 +199,28 @@ describe("the jobs table", () => {
     expect(screen.getByRole("status")).toHaveTextContent("a job was queued since this page loaded");
   });
 
+  // The baseline is the first reading, and on an idle box the first reading is
+  // an empty one — which is the listing most likely to grow a job under the
+  // reader, and the only one with no count line to hang the note on. So the
+  // note is owed to the empty state too, or a page that loaded with nothing
+  // never says anything arrived.
+  it("says a job arrived on a listing that loaded with none", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await mount([
+      { body: { ...EMPTY_JOBS, live: true } },
+      { body: { ...OWNER_JOBS, jobs: [RUNNING_JOB] } },
+    ]);
+    expect(await screen.findByRole("heading", { name: "No jobs to show." })).toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(screen.getByRole("status")).toHaveTextContent("a job was queued since this page loaded");
+    // Still the empty state: the row has no baseline to be patched into, and
+    // inventing one would be the count line's lie in another place.
+    expect(screen.getByRole("heading", { name: "No jobs to show." })).toBeInTheDocument();
+  });
+
   // The per-second arithmetic is a reading of the last payload, so it stops
   // with the reading: a clock still counting against a payload nothing is
   // refreshing is a page inventing a measurement.
