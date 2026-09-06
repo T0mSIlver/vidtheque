@@ -307,6 +307,9 @@ function Results({ page, query, search }: { page: SearchResponse; query: string;
   // because the caption, the footer link and the picture all render from it —
   // and because setting it back to nothing is what releases the bytes.
   const [shot, setShot] = useState<Shot | null>(null);
+  // Stable, because the overlay listens for the element's own `close` event and
+  // a new closure every render would be a listener torn down and rebuilt.
+  const close = useCallback(() => setShot(null), []);
   // Where in the ranking each moment sits. Grouping rearranges one page of
   // results and never re-ranks them, so a hit keeps the position the server
   // gave it: `<ol start="{{ offset + 1 }}">` in Jinja, and the same number on
@@ -367,7 +370,7 @@ function Results({ page, query, search }: { page: SearchResponse; query: string;
             ))}
           </ol>
           <Pager pagination={page.pagination} search={search} />
-          <FrameDialog onClose={() => setShot(null)} shot={shot} />
+          <FrameDialog onClose={close} shot={shot} />
         </>
       ) : (
         <Empty status={page.data_status} type={page.content_type} search={search} />
