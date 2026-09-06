@@ -52,6 +52,11 @@ export function CancelControl({ job, label = "Cancel" }: { job: JobCard; label?:
     return (
       <span className={`${styles.outcome} ${styles.outcomeBad}`} role="status">
         <code>{refusal.code}</code> <span>{refusal.message}</span>
+        {/* The refusal's third sentence, which says what to do instead —
+            "only queued or running jobs can be cancelled". The Jinja refusal
+            was a whole page and printed it under a heading; inline it is the
+            line after the message, and it is Python's either way. */}
+        {refusal.next ? <span className={styles.refusalNext}>{refusal.next}</span> : null}
       </span>
     );
   }
