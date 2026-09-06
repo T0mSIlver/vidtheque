@@ -5,7 +5,7 @@ import { useCallback, useRef, useState } from "react";
 import { Pill } from "@/components/Pill";
 import { dashboard, DashboardError, ROOT } from "@/lib/dashboard/client";
 import type { FollowCreated, FollowListRow, Following } from "@/lib/dashboard/schemas";
-import { at, count, duration } from "@/lib/format";
+import { at, count, DASH, duration, iso } from "@/lib/format";
 import dash from "../dashboard.module.css";
 import {
   DashLink,
@@ -56,6 +56,14 @@ export function FollowingView() {
   const state = useRead(read);
   const session = useSessionRead();
 
+  // The last reading, kept across the next one. A write on this page re-reads
+  // the whole listing — that is how the store's `failing_first` order survives
+  // a follow being made — and a page that blanked to `reading…` in between
+  // would take the receipt of that write off the screen with it.
+  const [held, setHeld] = useState<Following | null>(null);
+  if (state.status === "ready" && held !== state.data) setHeld(state.data);
+  const data = state.status === "ready" ? state.data : held;
+
   // Two ways to learn one fact, and either is enough: the deployment says it
   // registers no write side, or the endpoint that is registered *with* the
   // writes answered `404`. The session is the faster of the two and the only
@@ -71,30 +79,28 @@ export function FollowingView() {
       <PageHead title="Following">
         {/* One fact, not two. The budget is a figure in the band directly
             under this line, and a copy of it up here would be the same number
-            twice on the one row of the page that cannot wrap. */}
-        {state.status === "ready" ? (
-          <Unbroken>
-            <Fact label="follows" value={count(state.data.totals.follows)} />
-          </Unbroken>
-        ) : null}
+            twice on the one row of the page that cannot wrap.
+
+            Present whatever the read is doing, which is what a server-rendered
+            head could not help but be: a strip that appears a beat after the
+            title is a strip that moves the page under the reader, and the em
+            dash is the honest value for a number nobody has yet. */}
+        <Unbroken>
+          <Fact label="follows" value={data ? count(data.totals.follows) : DASH} />
+        </Unbroken>
       </PageHead>
 
-      {state.status === "loading" ? <Reading /> : null}
+      {state.status === "loading" && !data ? <Reading /> : null}
       {state.status === "failed" ? (
         <ReadFailure error={state.error} onRetry={state.reload} />
       ) : null}
-      {state.status === "ready" ? <Loaded data={state.data} search={search} /> : null}
+      {data ? <Loaded data={data} onMade={state.reload} /> : null}
     </>
   );
 }
 
-function Loaded({ data, search }: { data: Following; search: string }) {
-  // Rows the add form made, in front of the page the server sent. A created
-  // follow is not on the payload this page has already read, and re-reading
-  // here would blank the receipt the reader was just handed.
-  const [made, setMade] = useState<FollowListRow[]>([]);
-  const known = new Set(data.follows.map((row) => row.slug));
-  const rows = [...made.filter((row) => !known.has(row.slug)), ...data.follows];
+function Loaded({ data, onMade }: { data: Following; onMade: () => void }) {
+  const rows = data.follows;
 
   return (
     <>
@@ -113,13 +119,14 @@ function Loaded({ data, search }: { data: Following; search: string }) {
         </ul>
       ) : null}
 
-      {rows.length ? <Table rows={rows} data={data} search={search} /> : null}
+      {rows.length ? <Table rows={rows} data={data} /> : null}
 
-      <AddForm
-        follows={rows.length}
-        vectors={data.vectors}
-        onMade={(row) => setMade((rows) => [row, ...rows])}
-      />
+      {/* A created follow is not on the payload this page has already read, and
+          putting the returned row at the top of the table would put it *above*
+          the store's own order — `failing_first`, which is the order this table
+          is read in at 03:00. So the listing is re-read and the receipt says
+          what was made. */}
+      <AddForm follows={rows.length} vectorsReason={data.vectors_reason ?? null} onMade={onMade} />
     </>
   );
 }
@@ -219,11 +226,15 @@ function Held({ data }: { data: Following }) {
   const shown = data.held.length;
   if (!shown) return null;
   return (
-    <section className={dash.notice} aria-labelledby="waiting">
+    // The `warn` tone, which is what `dashboard.css` gave this band: nothing
+    // has failed, and nothing is neutral either — a held video stays held until
+    // somebody decides. It is the tone the `held_review` pill wears in the
+    // ledger below, so the band and the rows it points at are one colour.
+    <section className={`${dash.notice} ${styles.noticeWarn}`} aria-labelledby="waiting">
       {/* The count is this band's own rows and not the band figure above it:
           `held` up there is everything held, and the budget holds a candidate
           without asking anybody. These are the ones waiting on a *person*. */}
-      <h2 className={dash.noticeTitle} id="waiting">
+      <h2 className={`${dash.noticeTitle} ${styles.noticeWarnTitle}`} id="waiting">
         {data.held_more
           ? `More than ${shown} videos are waiting for you.`
           : `${shown} ${shown === 1 ? "video is" : "videos are"} waiting for you.`}
@@ -248,7 +259,7 @@ function Held({ data }: { data: Following }) {
   );
 }
 
-function Table({ rows, data, search }: { rows: FollowListRow[]; data: Following; search: string }) {
+function Table({ rows, data }: { rows: FollowListRow[]; data: Following }) {
   return (
     <>
       <p className={dash.tablecount} role="status">
@@ -259,7 +270,7 @@ function Table({ rows, data, search }: { rows: FollowListRow[]; data: Following;
       </p>
 
       <div className={dash.tablewrap}>
-        <table className={dash.grid}>
+        <table className={`${dash.grid} ${styles.follows}`}>
           <caption className={dash.srOnly}>
             Every followed channel, its rule, its state and its clocks
           </caption>
@@ -281,7 +292,7 @@ function Table({ rows, data, search }: { rows: FollowListRow[]; data: Following;
         </table>
       </div>
 
-      <Pager pagination={data.pagination} search={search} />
+      <Pager pagination={data.pagination} />
     </>
   );
 }
@@ -290,11 +301,14 @@ function Row({ follow, checksEnabled }: { follow: FollowListRow; checksEnabled: 
   return (
     <tr>
       <th scope="row" data-label="Channel">
+        {/* The slug when there is no name, which is `views._follow_row`'s own
+            fallback: a follow made from a URL with nothing readable in it
+            would otherwise be a link with no text in it at all. */}
         <DashLink
           className={dash.rowTitle}
           href={`${ROOT}/following/${encodeURIComponent(follow.slug)}`}
         >
-          {follow.title}
+          {follow.title || follow.slug}
         </DashLink>
         <span className={dash.rowMeta}>{follow.kind}</span>
       </th>
@@ -316,31 +330,39 @@ function Row({ follow, checksEnabled }: { follow: FollowListRow; checksEnabled: 
       <td data-label="Last arrival">
         <time className={dash.nowrap}>{at(follow.last_new_at)}</time>
       </td>
+      {/* A `<time>` like the two clocks beside it — with a machine-readable
+          stamp when there is one, and without when the cell is printing why
+          there is not. */}
       <td data-label="Next check">
-        <span className={dash.nowrap}>{nextCheckWords(follow, checksEnabled)}</span>
+        <time
+          className={dash.nowrap}
+          dateTime={checksEnabled && follow.next_check_at ? iso(follow.next_check_at) : undefined}
+        >
+          {nextCheckWords(follow, checksEnabled)}
+        </time>
       </td>
     </tr>
   );
 }
 
-function Pager({ pagination, search }: { pagination: Following["pagination"]; search: string }) {
+function Pager({ pagination }: { pagination: Following["pagination"] }) {
   const { limit, offset, has_more } = pagination;
   if (!offset && !has_more) return null;
+  // `following.html`'s `page_link`, spelled out: the page size the server
+  // accepted rides on every link whether or not the reader typed it, in that
+  // order. A pager carrying only the offset pages a listing of twenty-five
+  // through a listing of a hundred the moment somebody sends the link on.
+  const link = (next: number) =>
+    `${ROOT}/following?${new URLSearchParams({ limit: String(limit), offset: String(next) })}`;
   return (
     <nav className={dash.pager} aria-label="Pagination">
       {offset ? (
-        <DashLink
-          className={dash.ghostlink}
-          href={linkTo(search, { offset: String(Math.max(offset - limit, 0)) })}
-        >
+        <DashLink className={dash.ghostlink} href={link(Math.max(offset - limit, 0))}>
           ← Previous
         </DashLink>
       ) : null}
       {has_more ? (
-        <DashLink
-          className={dash.ghostlink}
-          href={linkTo(search, { offset: String(offset + limit) })}
-        >
+        <DashLink className={dash.ghostlink} href={link(offset + limit)}>
           Next {limit} →
         </DashLink>
       ) : null}
@@ -363,12 +385,12 @@ function Pager({ pagination, search }: { pagination: Following["pagination"]; se
  */
 function AddForm({
   follows,
-  vectors,
+  vectorsReason,
   onMade,
 }: {
   follows: number;
-  vectors: boolean;
-  onMade: (row: FollowListRow) => void;
+  vectorsReason: string | null;
+  onMade: () => void;
 }) {
   const { indexable } = useWriteSide();
   // A ref rather than state: the fields are read by the request this submit
@@ -377,12 +399,12 @@ function AddForm({
   const fields = useRef<Record<string, string>>({});
   const send = useCallback(() => dashboard.followChannel(fields.current), []);
   const [write, run] = useWrite(send, (outcome) => {
-    // `already_following` made nothing, so there is no row to insert — and the
-    // one it names is already in the table this page read. What comes back is
-    // §21's block, which is the detail row, so it is already the shape this
-    // table draws — including the error column, which on a new follow is null
-    // because nothing has checked it yet.
-    if (outcome.follow && !outcome.already_following) onMade(outcome.follow);
+    // `already_following` made nothing, and the follow it names is already in
+    // the table this page read. A follow that *was* made is not, and it goes in
+    // where the store puts it rather than on top: `failing_first` is the order
+    // this table is read in, and a row parked above it is a row in no order at
+    // all.
+    if (outcome.follow && !outcome.already_following) onMade();
   });
 
   return (
@@ -399,9 +421,13 @@ function AddForm({
           submission. */}
       {indexable ? null : (
         <p className={styles.panelNote}>
-          Indexing is disabled on this instance, so a follow would queue videos it cannot build.
-          {vectors ? "" : " Vector search is off as well."} Fix the config or dimension mismatch and
-          restart.
+          {/* The instance's own reason, verbatim — one `VectorState.reason`
+              through one `drift_reason`, so the follow form and the index form
+              cannot be refused with two explanations. Policy text, Python's,
+              and printed in the parenthesis `following.html` put it in. */}
+          Indexing is disabled on this instance
+          {vectorsReason ? ` (${vectorsReason})` : ""}, so a follow would queue videos it cannot
+          build. Fix the config or dimension mismatch and restart.
         </p>
       )}
 
@@ -422,7 +448,6 @@ function AddForm({
               autoComplete="off"
               spellCheck={false}
               placeholder="https://www.youtube.com/@handle"
-              disabled={!indexable}
             />
           </div>
           <div className={`${dash.field} ${dash.wide}`}>
@@ -433,7 +458,6 @@ function AddForm({
               type="text"
               autoComplete="off"
               placeholder="read off the URL if you leave it empty"
-              disabled={!indexable}
             />
           </div>
         </div>
@@ -443,13 +467,19 @@ function AddForm({
           of those.
         </p>
 
-        <RuleFields ns="f" values={ruleValues()} disabled={!indexable} />
+        {/* The fields stay live where the database refuses writes, exactly as
+            `following.html` left them. The refusal is stated above the form in
+            the instance's own words, and a rule is worth writing down while a
+            dimension mismatch is being fixed — a form that greys out is a form
+            that has to be retyped. The submission is honestly refused by
+            `follow_channel` and the refusal is printed under it. */}
+        <RuleFields ns="f" values={ruleValues()} />
 
         <div className={`${dash.field} ${dash.actions}`}>
           <button
             className={dash.ghostlink}
             type="submit"
-            disabled={!indexable || write.status === "sending"}
+            disabled={write.status === "sending"}
             // The database's own flag, said where a reader meets it: the rail's
             // foot already prints `indexing refused` for the deployment.
             title={indexable ? undefined : "This instance's database refuses writes."}
@@ -522,12 +552,4 @@ export function apiQuery(search: string): URLSearchParams {
     if (value !== null && value.trim()) query.set(key, value.trim());
   }
   return query;
-}
-
-/** This page's URL with a parameter changed. */
-function linkTo(search: string, changes: Record<string, string>): string {
-  const next = apiQuery(search);
-  for (const [key, value] of Object.entries(changes)) next.set(key, value);
-  const query = next.toString();
-  return query ? `${ROOT}/following?${query}` : `${ROOT}/following`;
 }
