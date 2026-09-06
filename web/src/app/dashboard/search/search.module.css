@@ -219,13 +219,16 @@ button.shot:focus-visible {
    the flat list this page grew out of printed the title on every hit for the
    same reason. */
 .title {
-  composes: t-cell-strong from global;
+  composes: t-cell from global;
   margin: 0 0 var(--s1);
   overflow-wrap: anywhere;
 }
 
+/* One step under the group's head, which is the same words in the same face:
+   the head is the talk and this is a moment inside it, and two headlines a line
+   apart would read as two results. */
 .title a {
-  color: var(--fg);
+  color: var(--fg2);
   text-decoration: none;
 }
 
@@ -405,6 +408,9 @@ button.shot:focus-visible {
 .frameDialog {
   width: min(96vw, 72rem);
   max-width: min(96vw, 72rem);
+  /* Spelled out rather than left to the user-agent sheet: this surface's reset
+     zeroes margins, and a modal with none lands in the top-left corner. */
+  margin: auto;
   padding: 0;
   color: var(--fg);
   background: var(--plate);
