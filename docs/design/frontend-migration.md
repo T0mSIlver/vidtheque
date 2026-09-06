@@ -89,8 +89,9 @@ routes it — the dashboard aliased `/dashboard/static/fonts/` onto it until
 
 *Recorded 2026-09-05.* `_DOCUMENT_HEADERS` left Python with the pages it was
 written for (§1a), and `web/src/proxy.ts` is what sends it now — on every
-document this front end serves, which is `/`, `/demo`, `/videos` and
-`/videos/{id}`. In production the policy is, verbatim:
+document this front end serves, which is `/`, `/demo` and the `/dashboard`
+pages named back into `proxy.ts`'s matcher. In production the policy is,
+verbatim:
 
 ```
 default-src 'self'; script-src 'self' 'nonce-<per request>' 'strict-dynamic';
@@ -1109,8 +1110,9 @@ from Next, an API is JSON from Python:
 1. `GET /` and `GET /demo` render, and each carries the four document headers
    (§1b), with a **different** CSP nonce on two consecutive requests — a
    repeated nonce means a prerendered shell and a policy that protects nothing.
-2. `GET /videos`, `GET /videos/{id}` render; `GET /videos/{id}/export.md` is
-   Python's.
+2. `GET /videos/{id}/export.md` is Python's, and `GET /videos` is a `404`
+   from Next — the library pages that stood at those two paths were removed on
+   2026-09-07 (§1a) and nothing may answer there but the export.
 3. `POST /dashboard/following`, `POST /dashboard/index` and
    `POST /dashboard/login` reach **Python**, form-encoded, and answer JSON or a
    `303` — never `text/html`. This is the one the whole method split exists for
