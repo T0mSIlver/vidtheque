@@ -186,6 +186,32 @@ describe("the videos table", () => {
     expect(head.getByText("… – 2026-09-05")).toBeInTheDocument();
   });
 
+  // The band a reader lands on has no date on it, which is the case the four
+  // re-keyed boxes have to survive: two ends of one range are siblings, and a
+  // key that is only the value is one key for both of them when both are
+  // empty. React answered that with "Encountered two children with the same
+  // key, ``" on every render of the page against the real corpus, and its own
+  // remedy for a duplicate is to drop a child.
+  it("keys the two ends of a range apart when neither is set", async () => {
+    const complaints = vi.spyOn(console, "error").mockImplementation(() => {});
+    await mount({ body: OWNER_LIBRARY }, { search: "index_state=all" });
+    await screen.findByRole("status");
+    const said = complaints.mock.calls.map((call) => String(call[0]));
+    complaints.mockRestore();
+
+    expect(said.filter((line) => line.includes("same key"))).toEqual([]);
+    // And all four boxes are still on the band: `getByLabelText` is the count,
+    // because it refuses both a missing box and a second one.
+    for (const label of [
+      "Published on or after",
+      "Published on or before",
+      "Indexed on or after",
+      "Indexed on or before",
+    ]) {
+      expect(screen.getByLabelText(label)).toHaveValue("");
+    }
+  });
+
   // The rows box has no ceiling of its own: that number is
   // `OWNER_CLAMPS.videos_max_limit`, which this page has no copy of and which
   // a deployment may have moved. The clamp and its note are the control.
