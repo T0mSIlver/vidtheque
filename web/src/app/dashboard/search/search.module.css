@@ -165,15 +165,31 @@
 /* Fixed box, mirrored in the img attributes, so a row keeps its height whether
    the frame has decoded, failed or never existed. 128px of a 192px file: the
    strip's own width from the fixed set, at 1.5x, so a search costs the derived
-   cache no variant the videos table has not already paid for. */
+   cache no variant the videos table has not already paid for.
+
+   A `<button>` where the frame exists, because it opens the overlay rather
+   than navigating; the reset is here so the control looks like the still it
+   holds and nothing else. */
 .shot {
   display: block;
   flex: 0 0 auto;
   width: 128px;
   height: 72px;
+  padding: 0;
   align-self: start;
+  color: inherit;
   background: var(--black);
+  border: 0;
   box-shadow: inset 0 0 0 1px var(--edge-in);
+}
+
+button.shot {
+  cursor: zoom-in;
+}
+
+button.shot:hover,
+button.shot:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--gold-44);
 }
 
 .shot img {
@@ -194,6 +210,27 @@
 
 .body {
   min-width: 0;
+}
+
+/* The moment's own title, linking to that *frame* inside this deployment — the
+   receipt at the end of the row goes out to YouTube, and this goes to what the
+   index actually stored about the second. The group head above carries the same
+   words linking to the video plainly; they are two different destinations, and
+   the flat list this page grew out of printed the title on every hit for the
+   same reason. */
+.title {
+  composes: t-cell-strong from global;
+  margin: 0 0 var(--s1);
+  overflow-wrap: anywhere;
+}
+
+.title a {
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.title a:hover {
+  text-decoration: underline;
 }
 
 .meta {
@@ -354,4 +391,90 @@
   .hit > .receipt {
     grid-column: 2;
   }
+
+  .frameDialog {
+    width: 96vw;
+    max-width: 96vw;
+  }
+}
+
+/* ------------------------------------------------------- the frame overlay
+
+   `search.html`'s `<dialog id="shot">`. The one thing on this surface that has
+   been lifted off the wall, so it is the one thing that casts a shadow. */
+.frameDialog {
+  width: min(96vw, 72rem);
+  max-width: min(96vw, 72rem);
+  padding: 0;
+  color: var(--fg);
+  background: var(--plate);
+  border: 1px solid var(--seam2);
+  box-shadow: 0 40px 90px -24px rgb(0 0 0 / 94%);
+}
+
+.frameDialog::backdrop {
+  background: var(--scrim);
+}
+
+.frameInner {
+  padding: var(--s3);
+}
+
+/* The caption and the close control belong above the picture, not on top of it:
+   the top-right corner of a frame is where a slide puts its title. */
+.frameHead {
+  display: flex;
+  gap: var(--s3);
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--s2);
+}
+
+.frameCaption {
+  composes: t-machine from global;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.frameClose {
+  flex: 0 0 auto;
+}
+
+/* The stage owns the geometry, so the dialog does not resize under the pointer
+   while the bytes arrive. */
+.frameStage {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  line-height: 0;
+  background: var(--black);
+  box-shadow: inset 0 0 0 1px var(--edge-in);
+}
+
+.frameImg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.frameFoot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s4);
+  align-items: baseline;
+  justify-content: space-between;
+  min-height: var(--s4);
+  margin-top: var(--s2);
+}
+
+.frameLink {
+  composes: t-machine from global;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.frameLink:hover {
+  text-decoration: underline;
 }
