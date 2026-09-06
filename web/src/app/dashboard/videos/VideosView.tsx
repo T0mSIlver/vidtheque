@@ -314,7 +314,11 @@ function Filters({ band, search, settled }: { band: Band; search: string; settle
   // Everything the controls are seeded from, in one string. The dates keep
   // their own keys as well: the two ends of a range are siblings, and a key
   // that is only the value is one key for both of them when both are empty.
-  const seed = `${search}|${FILTERS.map((key) => band[key]).join(" ")}`;
+  //
+  // The separator is a NUL, written as an escape: a literal one in the source
+  // makes every tool that sniffs for binary — `grep` first — stop reading this
+  // file. It is the one character no filter value can contain.
+  const seed = `${search}|${FILTERS.map((key) => band[key]).join("\u0000")}`;
 
   return (
     <form className={dash.filters} key={seed} onSubmit={onSubmit} ref={attach}>
