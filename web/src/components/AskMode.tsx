@@ -176,8 +176,11 @@ export function AskMode({
   return (
     <div className={styles.ask}>
       <form onSubmit={onSubmit} className={styles.form} aria-busy={busy}>
+        {/* A real `<label>` and not an `aria-label` (demo-site.md §6.2): the
+            field's name is a thing in the document, and clicking the label
+            focuses the field. */}
         <label className={styles.srOnly} htmlFor="q">
-          Ask this video corpus a question
+          Your question
         </label>
         <div className={styles.bar}>
           <input
@@ -187,7 +190,6 @@ export function AskMode({
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="ask a question about AI engineering…"
-            aria-label="Your question"
             enterKeyHint="search"
             spellCheck={false}
             autoComplete="off"
