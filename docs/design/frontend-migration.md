@@ -45,7 +45,6 @@ for, whereas `/api/*` under a prefix rule is the whole facade in one line.
 | --- | --- |
 | `GET /` | **Next** |
 | `GET /demo` | **Next** |
-| `GET /videos`, `GET /videos/{id}` | **Next** (the pages; `/videos/{id}/export.md` is Python's) |
 | Next's own build output (`/_next/*`, `/landing/*`) | **Next** |
 | `/api/*` — including `POST /api/ask` | Python |
 | `/frames/*` | Python |
@@ -57,6 +56,14 @@ for, whereas `/api/*` under a prefix rule is the whole facade in one line.
 | `/dashboard` page GETs | **Next** (*landed 2026-09-06* — §1d) |
 | `/dashboard/api/*`, the thirteen `POST`s, `/dashboard/` | Python — §1d |
 | anything else | Python (`Mount("/", mcp_app)`, which 404s) |
+
+*Dropped 2026-09-07 by Tom:* `GET /videos` and `GET /videos/{id}` — the reader's
+library — were Next's from 2026-09-01 until that day. They duplicated
+`/dashboard/videos` and `/dashboard/videos/{id}`, which read the same corpus
+with the owner's fields on top, so the public pair went entirely rather than
+being maintained as a second reader. Both paths now fall through to Next's 404,
+which is the "anything else" row. `/videos/{id}/export.md` is unaffected and
+stays Python's; it is the only thing left under the prefix.
 
 **`POST /api/ask` is Python's**, and the Next route handler that shadowed it is
 being removed in a sibling change: browsers call Python directly (decision 2),

@@ -116,6 +116,32 @@ record for the two faces and the web app is diffed against it. Only the
 The removal is `docs/design/dashboard.md` §23; the route ownership it settles
 is `docs/design/frontend-migration.md` §1d.
 
+## The public library is gone, decided by Tom, 2026-09-07
+
+`GET /videos` and `GET /videos/{id}` — the reader's library, live since
+2026-09-01 — duplicated `/dashboard/videos` and `/dashboard/videos/{id}`, which
+read the same corpus and carry the owner's fields on top of it. Two readers of
+one table is one reader too many, so the public pair goes entirely rather than
+being kept as a lesser copy of the management surface. The owner's pages and
+`/dashboard/api/library*` are untouched.
+
+What went with them: the pages and their boundaries, the `unstable_cache` reads
+and the `library` cache tags in `web/src/lib/library.ts`, the `VideoCard` the
+grid was made of, and the facade's `GET /api/videos/{video_id}` — added on
+2026-09-01 for that detail page and called by nothing else, so it went with its
+only caller (demo-site.md §2.2.1). `GET /api/videos`, the listing, stays: the
+demo's cold page lists the corpus from it. So does
+`GET /videos/{id}/export.md`, which was always Python's and is now the only
+thing under that prefix.
+
+The links that pointed into the library go back to where the Python demo sent
+them before it existed: a result card's title to the talk itself — the moment's
+own link with the `?t=` taken off — and an ask citation's title to the moment it
+cites. That is `app.js`'s own rule, and it keeps demo-site.md §6 item 4's
+promise that the page returns people to the original talks.
+
+The route table is `docs/design/frontend-migration.md` §1a.
+
 ## Decided by Tom (2026-08-08)
 
 1. **MCP stack: official `mcp` SDK 2.0** (2026-07-28 spec). No fastmcp
