@@ -2,8 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent, type RefCallback } from "react";
 
-// The filter band's script, for the two pages that carry one — `dashboard.js`'s
-// `data-autosubmit` appender (`static/dashboard.js:595-658`), as a hook.
+// The filter band's script — `dashboard.js`'s `data-autosubmit` appender
+// (`static/dashboard.js:595-658`), as a hook.
+//
+// One band asked for it and one still does: `data-autosubmit` was on
+// `videos.html`'s form and on nothing else. The search page's band submits on
+// Enter and on its button, as it always has, and answers the same need with
+// `autofocus` on the query box — a search that costs three vector legs is not
+// one to run 450 ms after every pause in the typing.
 //
 // **This file belongs at `web/src/app/dashboard/band.ts`.** It is under
 // `search/` only because the port split the dashboard between two agents and
@@ -12,7 +18,8 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type RefCallb
 //
 // What it buys is a band you *use* rather than a form you fill in and then have
 // to remember to submit: a picker submits the moment it changes, a text field
-// submits when the typing pauses. The `Apply` button is real, is what a browser
+// submits when the typing pauses. More requests, and they are cheap against a
+// local SQLite index. The `Apply` button is real, is what a browser
 // that never ran this uses, and comes off the page only once this has taken the
 // job over. Nothing about the URL, the clamps or the server changes — this
 // submits exactly the form the button submits.
@@ -40,8 +47,8 @@ const CARETED = new Set(["text", "search", "tel", "url", "password"]);
 
 export interface FilterBand {
   /** The band's own `ref`. A callback and not an object: the form is re-keyed
-   *  on the query string, so a navigation hands over a *new* node — which is
-   *  exactly the moment the listeners and the caret are owed. */
+   *  on what it is seeded from, so a navigation hands over a *new* node — which
+   *  is exactly the moment the listeners and the caret are owed. */
   attach: RefCallback<HTMLFormElement>;
   /** `true` once the listeners are on: what hides `Apply`. */
   scripted: boolean;
