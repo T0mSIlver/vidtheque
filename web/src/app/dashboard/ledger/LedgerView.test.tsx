@@ -63,8 +63,17 @@ describe("the ledger", () => {
       "published 2023-01-17–2025-02-19",
     );
     // One reading, taken inside one request: the head's `counted` stamp and
-    // the readiness panel's health check are the same second, by construction.
-    expect(screen.getAllByText("2026-09-05 16:34")).toHaveLength(2);
+    // the readiness panel's health check are the same second, by construction
+    // — and both keep the second, because both are the instant of a reading
+    // and not a date in the corpus. Both wear the `<time>` the template gave
+    // them, so the machine-readable stamp is on the page as well as the
+    // printed one.
+    const stamps = screen.getAllByText("2026-09-05T16:34:40Z");
+    expect(stamps).toHaveLength(2);
+    for (const stamp of stamps) {
+      expect(stamp.tagName).toBe("TIME");
+      expect(stamp).toHaveAttribute("datetime", "2026-09-05T16:34:40Z");
+    }
   });
 
   // An empty corpus has no oldest video and no newest one, which is exactly

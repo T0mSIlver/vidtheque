@@ -69,6 +69,65 @@ describe("the corpus overview", () => {
       expect(screen.getByText("2023-01-17")).toBeInTheDocument();
     });
 
+    // `videos_ready` is ready *only*; `queryable_videos` is ready plus stale.
+    // A page reading the second calls a stale video ready and undercounts "not
+    // ready" by the same one, which is the reading an operator came here to
+    // get: a stale video is precisely one that needs looking at.
+    it("counts a stale video as not ready, the way the rollup does", async () => {
+      const { mockNavigation } = await import("@/test/next");
+      mockNavigation("", "/dashboard");
+      await mount({
+        body: {
+          ...OWNER_OVERVIEW,
+          corpus: {
+            ...OWNER_OVERVIEW.corpus,
+            videos: 5,
+            videos_ready: 3,
+            // Ready plus stale — the number the band must not print.
+            queryable_videos: 4,
+            videos_by_index_state: { indexing: 1, ready: 3, stale: 1 },
+          },
+        },
+      });
+
+      expect(await screen.findByRole("heading", { name: "Corpus overview" })).toBeInTheDocument();
+      expect(screen.getByText("videos").closest("div")).toHaveTextContent("3 ready · 2 not ready");
+    });
+
+    // `queries.gaps` probes with a `LIMIT`, so at the ceiling the count means
+    // "this many or more". The payload carries the cap and the reading of it,
+    // and a `5` written into the page is how a cap gets reported as an exact
+    // count the day the `LIMIT` changes.
+    it("says a capped gap is a ceiling and not a count", async () => {
+      const { mockNavigation } = await import("@/test/next");
+      mockNavigation("", "/dashboard");
+      await mount({
+        body: {
+          ...OWNER_OVERVIEW,
+          gaps: { ...OWNER_OVERVIEW.gaps, failed: 5, failed_cap: 5, failed_capped: true },
+        },
+      });
+
+      expect(await screen.findByRole("link", { name: "5+" })).toHaveAttribute(
+        "href",
+        "/dashboard/videos?index_state=failed",
+      );
+    });
+
+    it("prints an uncapped gap as the number it is", async () => {
+      const { mockNavigation } = await import("@/test/next");
+      mockNavigation("", "/dashboard");
+      await mount({
+        body: {
+          ...OWNER_OVERVIEW,
+          gaps: { ...OWNER_OVERVIEW.gaps, failed: 3, failed_cap: 5, failed_capped: false },
+        },
+      });
+
+      expect(await screen.findByRole("link", { name: "3" })).toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "3+" })).not.toBeInTheDocument();
+    });
+
     // An empty corpus has no oldest video and no newest one. `published —–—`
     // is a line whose whole content is the absence of one, so there is no
     // line — the same absent state the ledger renders, because it is the same
@@ -96,6 +155,13 @@ describe("the corpus overview", () => {
       expect(await screen.findByText("indexing")).toBeInTheDocument();
       // The head's clock, and the two arrivals' — one formatter, one reading.
       expect(screen.getAllByText("2025-06-15 15:06").length).toBeGreaterThan(0);
+      // The health check is the exception, and it is not a date in the corpus:
+      // it is the UTC *second* at which this observation completed (§15), so
+      // it prints whole rather than to the minute.
+      expect(screen.getByText("2026-09-05T16:34:40Z")).toHaveAttribute(
+        "datetime",
+        "2026-09-05T16:34:40Z",
+      );
     });
 
     it("shows the queue, the gaps and the arrivals as sentences with numbers in them", async () => {
