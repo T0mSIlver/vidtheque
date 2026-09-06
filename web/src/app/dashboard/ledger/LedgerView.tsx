@@ -52,13 +52,9 @@ export function LedgerView() {
   const state = useRead(read);
 
   if (state.status === "loading") return <Reading />;
-  if (state.status === "failed")
-    return (
-      <>
-        <PageHead title="The ledger" />
-        <ReadFailure error={state.error} onRetry={state.reload} />
-      </>
-    );
+  // The refusal replaces the page, head and all, exactly as `views.ledger`
+  // rendered `error.html` instead of `ledger.html`.
+  if (state.status === "failed") return <ReadFailure error={state.error} onRetry={state.reload} />;
   return <Loaded data={state.data} />;
 }
 

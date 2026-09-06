@@ -622,10 +622,24 @@
   max-width: var(--note);
 }
 
+/* The lead line of a panel that has one sentence in it — the refusal's `next:`
+   line, standing on its own under "Where to go from here". `dashboard.css`'s
+   `.empty-lead`: the emphatic half of the pair `.emptyNote` is the quiet half
+   of. */
+.emptyLead {
+  composes: t-cell-strong from global;
+  max-width: var(--note);
+  color: var(--fg);
+}
+
 .emptyNote {
   composes: t-cell from global;
   max-width: var(--note);
   color: var(--muted);
+}
+
+.emptyLead + .emptyNote {
+  margin-top: var(--s1);
 }
 
 .emptyNote code {

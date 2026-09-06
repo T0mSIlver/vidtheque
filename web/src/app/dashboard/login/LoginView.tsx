@@ -56,12 +56,7 @@ export function LoginView() {
   // page. A document reload rather than a re-render: the read that failed was
   // made once on mount, and there is no route to refresh.
   if (session.status === "failed") {
-    return (
-      <>
-        <PageHead title="Sign in" />
-        <ReadFailure error={session.error} onRetry={reload} />
-      </>
-    );
+    return <ReadFailure error={session.error} onRetry={reload} />;
   }
 
   const deployment = session.data;

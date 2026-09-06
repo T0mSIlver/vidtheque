@@ -74,6 +74,39 @@ describe("the dashboard chassis", () => {
     expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
   });
 
+  // A section owns the pages it declares, and only those. Every Jinja view
+  // named its own section — the video's detail page said `"videos"` and the
+  // sign-in page said `"login"`, which is in the rail's list not at all — so
+  // the rail asks the page rather than measuring the URL against a prefix.
+  it("marks the section a detail page declares, and nothing a prefix would catch", async () => {
+    stubSession();
+    await mount("/dashboard/videos/kCc8FmEb1nY");
+
+    expect(screen.getByRole("link", { name: "Videos" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
+  });
+
+  it("marks nothing on a page that is in no section", async () => {
+    stubSession();
+    await mount("/dashboard/login");
+
+    for (const label of ["Overview", "Ledger", "Search", "Videos", "Jobs"]) {
+      expect(screen.getByRole("link", { name: label }), label).not.toHaveAttribute("aria-current");
+    }
+  });
+
+  // The one hook `base.html` carried, and the reason it is a hook and not a
+  // label: a check that finds the write side's first link by the words on it
+  // passes the day somebody renames the link.
+  it("keeps base.html's data-add-videos hook on the write side's first link", async () => {
+    stubSession();
+    await mount();
+
+    expect(await screen.findByRole("link", { name: "Add videos" })).toHaveAttribute(
+      "data-add-videos",
+    );
+  });
+
   // Every section keeps the path it had under Python: a bookmark, a `?t=`
   // deeplink and the rail itself all point at the same URLs the surface has
   // always had, and only the process answering them changed.
@@ -197,6 +230,45 @@ describe("the dashboard chassis", () => {
       await mount();
 
       expect(await screen.findByRole("button", { name: "Sign out" })).toBeInTheDocument();
+    });
+  });
+
+  // `error.tsx` under this segment, which is the whole point of it being under
+  // this segment: Next renders a boundary inside the layout that owns it, so a
+  // throw loses the column and keeps the rail. Without one it fell through to
+  // the root boundary — the landing's page, in the landing's voice, with one
+  // door out and that door was the demo.
+  describe("when a page throws while rendering", () => {
+    it("keeps the rail and refuses in this surface's own shape", async () => {
+      stubSession();
+      mockNavigation("", "/dashboard/videos");
+      const { Chrome } = await import("./Chrome");
+      const { default: DashboardError } = await import("./error");
+      render(
+        <Chrome>
+          <DashboardError
+            error={Object.assign(new Error("Cannot read properties of null"), {
+              digest: "3391458122",
+            })}
+            retry={() => {}}
+          />
+        </Chrome>,
+      );
+
+      // The chassis is still there.
+      expect(screen.getByRole("link", { name: "Overview" })).toBeInTheDocument();
+      expect(await screen.findByText("auth=token")).toBeInTheDocument();
+      // And the column is `error.html`: the message as the title, the
+      // instance's own word for a 500 as the state beside it, and the panel.
+      expect(
+        screen.getByRole("heading", { name: "Cannot read properties of null" }),
+      ).toBeInTheDocument();
+      expect(screen.getByText("E_INTERNAL")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Where to go from here" })).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Corpus overview" })).toBeInTheDocument();
+      // In production the message is stripped and the digest is the only
+      // string worth quoting into a report.
+      expect(screen.getByText("ref 3391458122")).toBeInTheDocument();
     });
   });
 });
