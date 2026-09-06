@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
@@ -201,6 +201,95 @@ describe("the index form", () => {
       // Nothing was queued, so there is nowhere to go and watch.
       expect(receipt.queryByRole("link", { name: "Watch the queue" })).not.toBeInTheDocument();
     });
+
+    // `POST → 303 → GET` left the operator looking at a document they could
+    // reload. A receipt held in component state is gone the moment anything
+    // reloads the page — which here is a reader pressing Ctrl-R to see whether
+    // the queue moved, and finding no evidence they ever submitted.
+    it("survives a reload, where the 303 used to put it", async () => {
+      window.sessionStorage.clear();
+      await mount();
+      await screen.findByLabelText("URLs");
+      await queue("https://youtu.be/solo0000002");
+      await screen.findByRole("status");
+
+      // The reload: this tree goes, and a new one mounts against the same tab.
+      cleanup();
+      await mount();
+
+      const receipt = await screen.findByRole("status");
+      expect(receipt).toHaveTextContent("1 URL(s) in one job.");
+      expect(within(receipt).getByRole("link", { name: "job_02e028870c97" })).toBeInTheDocument();
+      window.sessionStorage.clear();
+    });
+
+    // …and it is the receipt of the batch on screen, never the one before it:
+    // a refusal read over an old receipt is a page saying two things about one
+    // click.
+    it("drops the kept receipt when the next submission is refused", async () => {
+      window.sessionStorage.clear();
+      await mount();
+      await screen.findByLabelText("URLs");
+      await queue("https://youtu.be/solo0000002");
+      await screen.findByRole("status");
+
+      cleanup();
+      await mount({ post: { status: 400, body: NO_URLS } });
+      await screen.findByLabelText("URLs");
+      await userEvent.click(screen.getByRole("button", { name: "Queue the job" }));
+
+      expect(await screen.findByText(NO_URLS.message)).toBeInTheDocument();
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+      window.sessionStorage.clear();
+    });
+
+    // `_submitted` clamps `max_items` to the tool's own 1..200 and falls both
+    // vocabularies back to their defaults, and the Jinja page re-rendered the
+    // form from it — so what a reader was left looking at was the number the
+    // batch actually used. A clamp nobody is shown is a clamp that looks like
+    // a bug in the thing that clamped.
+    //
+    // The controls' own `min`/`max` stop a browser posting 9000 at all, so
+    // what this is about is the resolution the *server* made: the clamp
+    // against a value that arrived some other way, and the two vocabularies
+    // falling back rather than being refused.
+    it("echoes what the server ran on back into the three controls", async () => {
+      window.sessionStorage.clear();
+      await mount({
+        post: {
+          body: { ...ONE_JOB, accepted: { expand: "playlist", max_items: 200, priority: "high" } },
+        },
+      });
+      await screen.findByLabelText("URLs");
+
+      await userEvent.clear(screen.getByLabelText("Max items"));
+      await userEvent.type(screen.getByLabelText("Max items"), "5");
+      await queue("https://youtu.be/solo0000002");
+      await screen.findByRole("status");
+
+      expect(screen.getByLabelText("Max items")).toHaveValue(200);
+      expect(screen.getByLabelText("Expand")).toHaveValue("playlist");
+      expect(screen.getByLabelText("Priority")).toHaveValue("high");
+      // What was typed is still there: the Jinja re-render kept it too, and a
+      // form that reseeds three pickers by remounting throws it away.
+      expect(screen.getByLabelText("URLs")).toHaveValue("https://youtu.be/solo0000002");
+      window.sessionStorage.clear();
+    });
+
+    // An instance that predates `accepted` sends none, and the controls keep
+    // what was typed rather than snapping back to a default nobody chose.
+    it("leaves the controls alone when the outcome carries no echo", async () => {
+      window.sessionStorage.clear();
+      await mount();
+      await screen.findByLabelText("URLs");
+
+      await userEvent.selectOptions(screen.getByLabelText("Priority"), "high");
+      await queue("https://youtu.be/solo0000002");
+      await screen.findByRole("status");
+
+      expect(screen.getByLabelText("Priority")).toHaveValue("high");
+      window.sessionStorage.clear();
+    });
   });
 
   describe("the refusals", () => {
@@ -305,6 +394,37 @@ describe("the index form", () => {
       expect(screen.getByLabelText("Expand")).toBeDisabled();
       expect(screen.getByLabelText(/Force re-index/)).toBeDisabled();
       expect(screen.getByRole("button", { name: "Queue the job" })).toBeDisabled();
+    });
+
+    // `_assert_dimensions` turns `writes_allowed` off and writes the sentence
+    // in the same breath, and the Jinja page printed that sentence under the
+    // disabled controls. A form refused with no reason is a form an operator
+    // retypes.
+    it("prints the mismatch in the instance's own words", async () => {
+      await mount({
+        session: {
+          ...OWNER_SESSION,
+          writes_allowed: false,
+          writes_refused_reason:
+            "text_embed dim 2048 in config, 1024 in the vector table (12 rows).",
+        },
+      });
+
+      expect(
+        await screen.findByText(/text_embed dim 2048 in config, 1024 in the vector table/),
+      ).toBeInTheDocument();
+    });
+
+    // …and never a sentence about nothing: the field is `null` in the
+    // projection and on an instance that predates it, and the notice reads as
+    // a complete line without it.
+    it("says nothing more where the instance sent no reason", async () => {
+      await mount({ session: { ...OWNER_SESSION, writes_allowed: false } });
+
+      expect(
+        await screen.findByText("The corpus config and the vector tables disagree."),
+      ).toBeInTheDocument();
+      expect(document.body.textContent).not.toMatch(/\bnull\b|undefined/);
     });
 
     // Drawn before the session lands, this page would tell the reader indexing
