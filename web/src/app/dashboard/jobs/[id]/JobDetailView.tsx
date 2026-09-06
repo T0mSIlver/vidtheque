@@ -100,6 +100,12 @@ function Loaded({
   const { job } = data;
   const { rendered } = useWriteSide();
   useDocumentTitle(`Job ${job.job_id}`);
+  // The projection this reading ran under, off the reading itself: every
+  // `error_message` below is `null` under it, and "not published on this
+  // instance" is only honest when the payload says which of the two absences
+  // it is. The session is the fallback for an instance predating the field.
+  const readonly = Boolean(useSession()?.readonly);
+  const redacted = data.redacted ?? readonly;
 
   return (
     <>
@@ -158,13 +164,13 @@ function Loaded({
       ) : null}
 
       {job.defer_s ? <Deferred job={data.job} moving={polling} /> : null}
-      {job.error_code && !job.defer_s ? <JobError job={data.job} /> : null}
+      {job.error_code && !job.defer_s ? <JobError job={data.job} redacted={redacted} /> : null}
 
       <Cost data={data} polling={polling} />
-      <Items data={data} />
+      <Items data={data} redacted={redacted} />
       <Stages data={data} />
       <Degraded data={data} />
-      <Events events={data.events} />
+      <Events events={data.events} redacted={redacted} />
     </>
   );
 }
@@ -208,8 +214,7 @@ function Deferred({ job, moving }: { job: JobDetail["job"]; moving: boolean }) {
   );
 }
 
-function JobError({ job }: { job: JobDetail["job"] }) {
-  const redacted = Boolean(useSession()?.readonly);
+function JobError({ job, redacted }: { job: JobDetail["job"]; redacted: boolean }) {
   return (
     <section className={dash.notice} aria-labelledby="joberr">
       <h2 className={dash.noticeTitle} id="joberr">
@@ -287,7 +292,7 @@ function Cost({ data, polling }: { data: JobDetail; polling: boolean }) {
   );
 }
 
-function Items({ data }: { data: JobDetail }) {
+function Items({ data, redacted }: { data: JobDetail; redacted: boolean }) {
   if (!data.items.length) {
     return (
       <Panel id="items" title="Items">
@@ -320,7 +325,7 @@ function Items({ data }: { data: JobDetail }) {
           </thead>
           <tbody>
             {data.items.map((item) => (
-              <ItemRows key={item.item_id} item={item} />
+              <ItemRows key={item.item_id} item={item} redacted={redacted} />
             ))}
           </tbody>
         </table>
@@ -341,8 +346,7 @@ function itemNote(data: JobDetail): string {
   return entries.map(([state, n]) => `${n} ${state}`).join(" · ");
 }
 
-function ItemRows({ item }: { item: JobItem }) {
-  const redacted = Boolean(useSession()?.readonly);
+function ItemRows({ item, redacted }: { item: JobItem; redacted: boolean }) {
   return (
     <>
       <tr className={item.state === "failed" ? styles.bad : undefined}>
@@ -538,8 +542,7 @@ function Degraded({ data }: { data: JobDetail }) {
  * a real count. This is the only record a non-rate-limit deferral has, which
  * is why watching one arrive is the point of the page being live at all.
  */
-function Events({ events }: { events: JobEvent[] }) {
-  const redacted = Boolean(useSession()?.readonly);
+function Events({ events, redacted }: { events: JobEvent[]; redacted: boolean }) {
   const arrived = useArrivals(events);
   const preview = events.slice(0, EVENT_PREVIEW);
   const older = events.slice(EVENT_PREVIEW);
