@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Pill } from "@/components/Pill";
-import type { JobCard } from "@/lib/dashboard/schemas";
+import type { JobCard, Jobs } from "@/lib/dashboard/schemas";
 import { count, duration } from "@/lib/format";
 import styles from "./jobs.module.css";
 
@@ -96,7 +96,7 @@ export function Progress({ job, tickMs, wide }: { job: JobCard; tickMs: number; 
  * own answer to "reset when a prop changes": an effect that sets state on
  * arrival paints the stale number first.
  */
-function useTicking(seconds: number | null, moving: boolean, step: 1 | -1): number | null {
+export function useTicking(seconds: number | null, moving: boolean, step: 1 | -1): number | null {
   const [sent, setSent] = useState(seconds);
   const [now, setNow] = useState(seconds);
   if (sent !== seconds) {
@@ -117,8 +117,8 @@ function useTicking(seconds: number | null, moving: boolean, step: 1 | -1): numb
  *
  *  Absent rather than zeroed when the wait is over: a countdown showing `0s`
  *  is a wait that is not happening. */
-export function Held({ seconds }: { seconds: number }) {
-  const left = useTicking(seconds > 0 ? seconds : null, true, -1);
+export function Held({ seconds, moving = true }: { seconds: number; moving?: boolean }) {
+  const left = useTicking(seconds > 0 ? seconds : null, moving, -1);
   if (left === null || left <= 0) return null;
   return (
     <span className={styles.countdown}>
@@ -138,23 +138,89 @@ export function WallClock({ seconds, live }: { seconds: number | null; live: boo
  *  `cancel requested` shows only while the job is still live — on a settled job
  *  the state word is already `cancelled` and the second badge would be the row
  *  saying the same thing twice. */
-export function JobStates({ job }: { job: JobCard }) {
+export function JobStates({
+  job,
+  codeFirst,
+  moving = true,
+}: {
+  job: JobCard;
+  /** `job.html`'s order — the code that set the wait, then the request that has
+   *  not landed yet. §5.4 asks for the countdown "with `error_code` beside it",
+   *  and on a deferred job the code is the half that explains the clock. The
+   *  table draws the other order, because there the request is the column's
+   *  news and the code is a badge it already carries. */
+  codeFirst?: boolean;
+  /** Does the second-hand still move? It stops with the poll: a countdown that
+   *  keeps running against a reading nothing is refreshing is a wait the page
+   *  is inventing. */
+  moving?: boolean;
+}) {
+  const requested =
+    job.cancel_requested && job.live ? <Pill state="cancel requested" tone="warn" /> : null;
+  const code = job.error_code ? <Pill state={job.error_code} tone="bad" /> : null;
   return (
     <>
       <Pill state={job.state} />
-      {job.cancel_requested && job.live ? <Pill state="cancel requested" tone="warn" /> : null}
-      {job.error_code ? <Pill state={job.error_code} tone="bad" /> : null}
-      <Held seconds={job.defer_s} />
+      {codeFirst ? code : requested}
+      {codeFirst ? requested : code}
+      <Held seconds={job.defer_s} moving={moving} />
     </>
   );
 }
 
-/** `2` when the job holds two items and nothing has resolved yet — what the row
- *  can say about its contents when the payload does not carry a title. */
-export function jobHeadline(job: JobCard): string {
+/** What the row calls the job: the first item's video title, or — while the
+ *  items have not been fetched — the sentence `job_contents` writes instead.
+ *
+ *  `muted` is half the reading. A job whose items have not resolved yet has no
+ *  title to print, and "2 item(s), none fetched yet" set at the weight of a
+ *  name would read as one: the tone is what says this is a count standing in
+ *  for a title. The sentence is the payload's, not this side's — the fallback
+ *  is only for an instance whose `contents` block predates it. */
+export function jobHeadline(job: JobCard): { text: string; muted: boolean } {
   const title = job.contents?.title;
-  if (title) return title;
-  return `${count(job.n_items)} item(s)`;
+  if (title) return { text: title, muted: false };
+  const note = job.contents?.note;
+  return { text: note ?? `${count(job.n_items)} item(s), none fetched yet`, muted: true };
+}
+
+/**
+ * The rows the tick patches — the ones that were on the page when it loaded.
+ *
+ * `jobs.js` patched the rows it could find and revealed a note for the ones it
+ * could not: a job queued *since* this page rendered has no row to patch, and a
+ * table that silently grows a row under the reader's cursor is a table whose
+ * count line has stopped being true. React would happily re-render the whole
+ * body every two seconds instead; this keeps the original's contract, which is
+ * also the one that keeps a row's identity — the focus inside a cell, a
+ * selection, an open hint — across a reading.
+ *
+ * A job that drops out of the listing keeps its last reading rather than
+ * vanishing mid-triage, which is what patching in place meant.
+ */
+export function usePatchedRows(data: Jobs): { rows: JobCard[]; queuedSince: boolean } {
+  // The baseline is fixed at the first reading; the rows are patched by every
+  // one after it. Adjusted during render rather than in an effect, which is
+  // React's own answer to "recompute when a prop changes": an effect would
+  // paint the previous payload's rows first.
+  const [order] = useState(() => data.jobs.map((job) => job.job_id));
+  const [seen, setSeen] = useState<Jobs | null>(null);
+  const [rows, setRows] = useState<JobCard[]>(data.jobs);
+  const [queuedSince, setQueuedSince] = useState(false);
+
+  if (seen !== data) {
+    setSeen(data);
+    const arrived = new Map(data.jobs.map((job) => [job.job_id, job]));
+    const held = new Map(rows.map((row) => [row.job_id, row]));
+    setRows(
+      order
+        .map((id) => arrived.get(id) ?? held.get(id))
+        .filter((job): job is JobCard => job !== undefined),
+    );
+    const known = new Set(order);
+    if (data.jobs.some((job) => !known.has(job.job_id))) setQueuedSince(true);
+  }
+
+  return { rows, queuedSince };
 }
 
 // The three things a write control needs — `useWrite`, `refusalOf` and

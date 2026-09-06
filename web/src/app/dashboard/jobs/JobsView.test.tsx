@@ -13,6 +13,7 @@ import {
   NARROWED_EMPTY_JOBS,
   OWNER_JOBS,
   REFUSAL,
+  RUNNING_JOB,
   SETTLED_JOBS,
 } from "@/test/jobs-fixtures";
 
@@ -115,6 +116,22 @@ describe("the jobs table", () => {
     expect(within(row).getByText("queued")).toBeInTheDocument();
   });
 
+  // A job whose items have not been fetched has no title to print, and the row
+  // says so with the count it does have — in the muted tone, because a count
+  // set at the weight of a name reads as one.
+  it("names an unfetched job with the sentence the payload wrote for it", async () => {
+    await mount({ body: OWNER_JOBS });
+    await screen.findByRole("status");
+
+    const row = rowOf("job_deferred01");
+    const headline = within(row).getByText("1 item(s), none fetched yet");
+    expect(headline).toBeInTheDocument();
+    expect(headline.className).toMatch(/muted/);
+    // A job that did resolve prints the title, unmuted.
+    const running = within(rowOf("job_running001")).getByText("Let's build GPT: from scratch");
+    expect(running.className).not.toMatch(/muted/);
+  });
+
   // A finished job's clock is a measurement; a running one's is still being
   // taken. Both come off the payload, and only one of them moves.
   it("ticks a live job's wall clock and leaves a finished one alone", async () => {
@@ -154,6 +171,55 @@ describe("the jobs table", () => {
 
     expect(within(rowOf("job_running001")).getByText("55%")).toBeInTheDocument();
     expect(within(rowOf("job_running001")).getByText("1/2 done")).toBeInTheDocument();
+  });
+
+  // `jobs.js` patched the rows it could find; a job queued *since* the page
+  // rendered has no row to patch, and a table that grows one under the reader
+  // has a count line that has stopped being true. The note is what says so.
+  it("patches the rows it has and says a job was queued since it loaded", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const arrived = {
+      ...OWNER_JOBS,
+      jobs: [
+        { ...RUNNING_JOB, job_id: "job_brandnew01", progress: 0 },
+        ...OWNER_JOBS.jobs.map((job) =>
+          job.job_id === "job_running001" ? { ...job, progress: 55 } : job,
+        ),
+      ],
+    };
+    await mount([{ body: OWNER_JOBS }, { body: arrived }]);
+    await screen.findByRole("status");
+    expect(screen.getAllByRole("row")).toHaveLength(4);
+
+    await vi.advanceTimersByTimeAsync(2000);
+
+    // The three rows that were here are patched; the fourth is not invented.
+    expect(within(rowOf("job_running001")).getByText("55%")).toBeInTheDocument();
+    expect(screen.getAllByRole("row")).toHaveLength(4);
+    expect(screen.getByRole("status")).toHaveTextContent("a job was queued since this page loaded");
+  });
+
+  // The per-second arithmetic is a reading of the last payload, so it stops
+  // with the reading: a clock still counting against a payload nothing is
+  // refreshing is a page inventing a measurement.
+  it("stops the second-by-second clocks when the poll stops", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await mount([
+      { body: OWNER_JOBS },
+      { status: 500, body: { error: "E_INTERNAL", message: "the instance fell over." } },
+    ]);
+    await screen.findByRole("status");
+    expect(within(rowOf("job_running001")).getByText("20m 00s")).toBeInTheDocument();
+
+    await vi.advanceTimersByTimeAsync(2000); // the refused tick, which stops it
+    expect(screen.getByRole("status")).toHaveTextContent("the live view stopped");
+    const wall = rowOf("job_running001").querySelector("td:last-child")?.textContent;
+    const held = within(rowOf("job_deferred01")).getByText(/held/).textContent;
+
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(rowOf("job_running001").querySelector("td:last-child")?.textContent).toBe(wall);
+    expect(within(rowOf("job_deferred01")).getByText(/held/)).toHaveTextContent(held ?? "");
   });
 
   // `live` is the stop condition: when nothing is `queued|running` there is
@@ -236,8 +302,7 @@ describe("the jobs table", () => {
       },
     });
 
-    expect(await screen.findByText(/not open to this browser/)).toBeInTheDocument();
-    expect(screen.getByText(/needs the owner's token or session/)).toBeInTheDocument();
+    expect(await screen.findByText(/needs the owner's token or session/)).toBeInTheDocument();
 
     await vi.advanceTimersByTimeAsync(10_000);
     const reads = fetcher.mock.calls.filter((call) =>
@@ -246,6 +311,9 @@ describe("the jobs table", () => {
     expect(reads).toHaveLength(1);
   });
 
+  // `state` is the filter that empties this table, so it is the one the empty
+  // state names — and the way out is the link that empties *it*, not the one
+  // that quietly discards everything else the reader typed.
   it("says which of the two empties it is looking at", async () => {
     await mount({ body: EMPTY_JOBS });
     expect(await screen.findByRole("heading", { name: "No jobs to show." })).toBeInTheDocument();
@@ -255,11 +323,24 @@ describe("the jobs table", () => {
     vi.unstubAllGlobals();
     await mount({ body: NARROWED_EMPTY_JOBS }, { search: "state=failed" });
     expect(await screen.findByRole("heading", { name: "No jobs to show." })).toBeInTheDocument();
-    expect(screen.getByText(/filters are narrowing it/)).toBeInTheDocument();
+    expect(screen.getByText(/The filter is on/)).toHaveTextContent("The filter is on failed.");
     expect(screen.getByRole("link", { name: "Show every job" })).toHaveAttribute(
       "href",
-      "/dashboard/jobs",
+      "/dashboard/jobs?state=all",
     );
+  });
+
+  // A listing narrowed by something other than `state` is not the screen that
+  // sentence describes: it would send the reader looking for a filter they
+  // would then have to find.
+  it("does not blame the state filter for an empty a kind filter made", async () => {
+    await mount(
+      { body: { ...EMPTY_JOBS, filters: { ...EMPTY_JOBS.filters, kind: "delete" } } },
+      { search: "kind=delete" },
+    );
+    await screen.findByRole("heading", { name: "No jobs to show." });
+    expect(screen.getByText(/Nothing has ever been queued/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Show every job" })).not.toBeInTheDocument();
   });
 
   // The `all` invariant, arriving on a payload with no form to echo into: the
@@ -286,11 +367,14 @@ describe("the jobs table", () => {
     await screen.findByRole("heading", { name: "No jobs to show." });
 
     expect(screen.getByText(/clamped server-side: limit=100000 → 100/)).toBeInTheDocument();
-    expect(screen.getByLabelText("Rows")).toHaveAttribute("placeholder", "100");
+    // The box echoes the page size that answered, not the one that was asked
+    // for: a form still showing 100000 over a page of 100 is a form claiming a
+    // bound that never ran.
+    expect(screen.getByLabelText("Rows")).toHaveValue(100);
   });
 
-  // The narrowing strip, drawn from the values the listing ran with.
-  it("names every filter that took rows out, and not the order", async () => {
+  // The strip, drawn from the values the listing ran with.
+  it("names what the listing ran with, filters and order alike", async () => {
     await mount({
       body: {
         ...OWNER_JOBS,
@@ -310,8 +394,42 @@ describe("the jobs table", () => {
     expect(head).toHaveTextContent("kind index");
     expect(head).toHaveTextContent("error code E_SOURCE");
     expect(head).toHaveTextContent("degraded only");
-    // An order takes no rows out, so it is not a narrowing.
-    expect(head).not.toHaveTextContent("priority");
+    expect(head).toHaveTextContent("order priority");
+  });
+
+  // The table is read *in an order*, and a listing narrowing nothing is still a
+  // listing in an order: both facts are on `jobs.html`'s strip whatever they
+  // say, because an order nobody prints is an order nobody can tell has moved.
+  it("prints state and order even when neither narrows anything", async () => {
+    await mount({ body: OWNER_JOBS });
+    await screen.findByRole("status");
+
+    const head = screen.getByRole("heading", { name: "Jobs" }).closest("div") as HTMLElement;
+    expect(head).toHaveTextContent("state all");
+    expect(head).toHaveTextContent("order newest");
+    expect(head).not.toHaveTextContent("kind all");
+  });
+
+  // Every control is seeded from the answer rather than the question. A
+  // `state=nonsense` that fell back to `all` server-side leaves a picker on
+  // `all`: a band echoing the URL is a band vouching for a filter that never
+  // ran.
+  it("seeds the band from the filters the listing resolved", async () => {
+    await mount(
+      {
+        body: {
+          ...FELL_BACK_JOBS,
+          filters: { ...FELL_BACK_JOBS.filters, error_code: "E_SOURCE" },
+          pagination: { limit: 50, offset: 0, has_more: false },
+        },
+      },
+      { search: "state=nonsense&error_code=E_SOURCE_and_a_very_long_tail&limit=50000" },
+    );
+    await screen.findByRole("status");
+
+    expect(screen.getByLabelText("State")).toHaveValue("all");
+    expect(screen.getByLabelText("Error code")).toHaveValue("E_SOURCE");
+    expect(screen.getByLabelText("Rows")).toHaveValue(50);
   });
 
   // Every bound is Python's: what the reader typed goes on the wire as typed,
@@ -327,7 +445,7 @@ describe("the jobs table", () => {
       String(call[0]).startsWith("/dashboard/api/jobs"),
     );
     expect(String(read?.[0])).toBe("/dashboard/api/jobs?state=failed&degraded=1&limit=100000");
-    expect(screen.getByLabelText("Rows")).toHaveAttribute("placeholder", "100");
+    expect(screen.getByLabelText("Rows")).toHaveValue(100);
   });
 
   it("submits the band as a navigation, dropping what says nothing", async () => {
@@ -339,8 +457,10 @@ describe("the jobs table", () => {
     await userEvent.click(screen.getByRole("button", { name: "Apply" }));
 
     // `kind=all` and `order=newest` are the values the API would have used
-    // anyway, and a link carrying them says nothing twice.
-    expect(push).toHaveBeenCalledWith("/dashboard/jobs?state=failed&error_code=E_SOURCE");
+    // anyway, and a link carrying them says nothing twice. `limit` is not one
+    // of those: it is the page size the server accepted, echoed back out of the
+    // box it was echoed into.
+    expect(push).toHaveBeenCalledWith("/dashboard/jobs?state=failed&error_code=E_SOURCE&limit=25");
   });
 
   it("pages with the pagination it was given", async () => {
@@ -350,13 +470,16 @@ describe("the jobs table", () => {
     );
     await screen.findByRole("status");
 
+    // All six parameters plus the offset, from the payload rather than the URL:
+    // page four of a listing is only page four of *that* listing, so a pager
+    // link that left the predicates to a default would point at another table.
     expect(screen.getByRole("link", { name: /Newer/ })).toHaveAttribute(
       "href",
-      "/dashboard/jobs?offset=0",
+      "/dashboard/jobs?state=all&kind=all&error_code=&degraded=0&order=newest&limit=25&offset=0",
     );
     expect(screen.getByRole("link", { name: /Older 25/ })).toHaveAttribute(
       "href",
-      "/dashboard/jobs?offset=50",
+      "/dashboard/jobs?state=all&kind=all&error_code=&degraded=0&order=newest&limit=25&offset=50",
     );
   });
 
@@ -411,6 +534,11 @@ describe("the jobs table", () => {
 
       expect(await within(row).findByText("E_BAD_PARAM")).toBeInTheDocument();
       expect(within(row).getByText(/already failed/)).toBeInTheDocument();
+      // The third sentence, which says what to do instead. It is Python's, and
+      // the Jinja refusal printed it under a heading of its own.
+      expect(
+        within(row).getByText("only queued or running jobs can be cancelled."),
+      ).toBeInTheDocument();
     });
 
     // A route that exists and refuses is a route somebody probes, and a button
@@ -443,5 +571,17 @@ describe("the jobs table", () => {
     expect(screen.queryByText(/cookiefile/)).not.toBeInTheDocument();
     expect(within(rowOf("job_deferred01")).getByText("E_RATE_LIMIT")).toBeInTheDocument();
     expect(within(rowOf("job_finished01")).getByText("26m 40s")).toBeInTheDocument();
+    // The one line a reader of the demo cannot get anywhere else: what this
+    // deployment does not publish. The listing carries no flag of its own, so
+    // the fact comes off the session — the same deployment, answering.
+    expect(
+      screen.getByText("Source URLs and error text are not published on this instance."),
+    ).toBeInTheDocument();
+  });
+
+  it("does not footnote a redaction an owner's instance is not making", async () => {
+    await mount({ body: OWNER_JOBS });
+    await screen.findByRole("status");
+    expect(screen.queryByText(/are not published on this instance/)).not.toBeInTheDocument();
   });
 });

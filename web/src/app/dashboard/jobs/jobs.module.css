@@ -234,6 +234,15 @@
   color: var(--tone-bad);
 }
 
+/* The refusal's `next:` line, inside the cell the button was in. Its own flex
+   line rather than a fourth word after the message: it is the sentence saying
+   what to do instead, and it reads as a footnote or it does not read. */
+.refusalNext {
+  composes: t-cell from global;
+  flex: 0 0 100%;
+  color: var(--muted);
+}
+
 /* The detail page's version of the same line, under the two buttons rather
    than inside a cell, so it has room for the message and the `next:` line. */
 .receipt {

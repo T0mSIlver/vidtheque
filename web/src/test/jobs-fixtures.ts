@@ -56,6 +56,9 @@ export const DEFERRED_JOB = {
   error_message: "the source rate-limited this box; cookiefile /home/dev/.cookies.txt",
   degraded: 0,
   basis: BASIS(1),
+  // Nothing has been fetched, so there is no title to print and the row says so
+  // with the count it does have. The sentence is `read_models.job_contents`'.
+  contents: { title: null, more: 0, channel: null, note: "1 item(s), none fetched yet" },
 };
 
 export const RUNNING_JOB = {
@@ -82,6 +85,14 @@ export const RUNNING_JOB = {
   error_message: null,
   degraded: 0,
   basis: BASIS(2),
+  // Both items resolved and both came from one channel, which is the shape
+  // `job_contents` names a channel on.
+  contents: {
+    title: "Let's build GPT: from scratch",
+    more: 1,
+    channel: "Andrej Karpathy",
+    note: null,
+  },
 };
 
 export const FINISHED_JOB = {
@@ -110,6 +121,9 @@ export const FINISHED_JOB = {
   // see it, and this is the count that does.
   degraded: 1,
   basis: BASIS(2),
+  // Two channels among the resolved items, so none is named: "two of these came
+  // from somewhere else" is not a fact a row can print in three words.
+  contents: { title: "Visualizing transformers", more: 1, channel: null, note: null },
 };
 
 /** Nothing was asked for, so nothing fell back and nothing moved. */
@@ -355,6 +369,23 @@ export const RETRY_RECEIPT = {
   jobs: [{ job_id: "job_4cee026cb790", items: 2 }],
   errors: [],
   preserved: { channels: "all", tags: [], priority: "normal" },
+};
+
+/** Two batches, one of which the tool refused: a `200` receipt that is also a
+ *  refusal, which is the shape `writes.retry_job` answers with when some of the
+ *  repair was queued and some was not. */
+export const PART_REFUSED_RETRY = {
+  from_job_id: "job_finished01",
+  selected: 12,
+  jobs: [{ job_id: "job_4cee026cb790", items: 10 }],
+  errors: [
+    {
+      error: "E_FEATURE_DISABLED",
+      message: "Indexing is disabled on this instance.",
+      next: "fix the config or dimension mismatch and restart.",
+    },
+  ],
+  preserved: { channels: "transcript", tags: ["topic:llm"], priority: "high" },
 };
 
 /** Every refusal on this surface, in one shape. */
