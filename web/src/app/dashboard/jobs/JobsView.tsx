@@ -17,11 +17,12 @@ import {
   Unbroken,
   useWriteSide,
 } from "../parts";
+import { usePatchedRows } from "../polling";
 import { useSession } from "../session";
 import { useJobsPoll } from "../useJobsPoll";
 import { CancelControl } from "./CancelControl";
 import styles from "./jobs.module.css";
-import { countsOf, jobHeadline, JobStates, Progress, usePatchedRows, WallClock } from "./parts";
+import { countsOf, jobHeadline, JobStates, Progress, WallClock } from "./parts";
 
 // The jobs table — `templates/jobs.html`, reading `GET /dashboard/api/jobs` in
 // the browser (dashboard.md §5.4, §16.3).
@@ -278,7 +279,7 @@ function Filters({
 
 function Table({ data, stopped, polling }: { data: Jobs; stopped: unknown; polling: boolean }) {
   const { rendered } = useWriteSide();
-  const { rows, queuedSince } = usePatchedRows(data);
+  const { rows, arrived: queuedSince } = usePatchedRows(data.jobs, (job) => job.job_id);
   // The projection this listing ran under, off the listing itself. The session
   // is the fallback and only that: it is the same deployment answering, but it
   // is not the read that was taken, and an instance predating the field is the

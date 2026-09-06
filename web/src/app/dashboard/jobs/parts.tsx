@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Pill } from "@/components/Pill";
-import type { JobCard, Jobs } from "@/lib/dashboard/schemas";
+import type { JobCard } from "@/lib/dashboard/schemas";
 import { count, duration } from "@/lib/format";
 import styles from "./jobs.module.css";
 
@@ -183,46 +183,11 @@ export function jobHeadline(job: JobCard): { text: string; muted: boolean } {
   return { text: note ?? `${count(job.n_items)} item(s), none fetched yet`, muted: true };
 }
 
-/**
- * The rows the tick patches — the ones that were on the page when it loaded.
- *
- * `jobs.js` patched the rows it could find and revealed a note for the ones it
- * could not: a job queued *since* this page rendered has no row to patch, and a
- * table that silently grows a row under the reader's cursor is a table whose
- * count line has stopped being true. React would happily re-render the whole
- * body every two seconds instead; this keeps the original's contract, which is
- * also the one that keeps a row's identity — the focus inside a cell, a
- * selection, an open hint — across a reading.
- *
- * A job that drops out of the listing keeps its last reading rather than
- * vanishing mid-triage, which is what patching in place meant.
- */
-export function usePatchedRows(data: Jobs): { rows: JobCard[]; queuedSince: boolean } {
-  // The baseline is fixed at the first reading; the rows are patched by every
-  // one after it. Adjusted during render rather than in an effect, which is
-  // React's own answer to "recompute when a prop changes": an effect would
-  // paint the previous payload's rows first.
-  const [order] = useState(() => data.jobs.map((job) => job.job_id));
-  const [seen, setSeen] = useState<Jobs | null>(null);
-  const [rows, setRows] = useState<JobCard[]>(data.jobs);
-  const [queuedSince, setQueuedSince] = useState(false);
-
-  if (seen !== data) {
-    setSeen(data);
-    const arrived = new Map(data.jobs.map((job) => [job.job_id, job]));
-    const held = new Map(rows.map((row) => [row.job_id, row]));
-    setRows(
-      order
-        .map((id) => arrived.get(id) ?? held.get(id))
-        .filter((job): job is JobCard => job !== undefined),
-    );
-    const known = new Set(order);
-    if (data.jobs.some((job) => !known.has(job.job_id))) setQueuedSince(true);
-  }
-
-  return { rows, queuedSince };
-}
-
+// `usePatchedRows` was here too, for as long as the jobs table was the only
+// list a tick re-read. It is `../polling.ts`'s now, beside `useArrivals`: what
+// changed since the first reading is a question about a polled list and not
+// about a job.
+//
 // The three things a write control needs — `useWrite`, `refusalOf` and
 // `useWriteSide` — were here while the jobs pages were the only pages that
 // wrote. The following pages write too, and two transcriptions of one control
