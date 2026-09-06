@@ -4,18 +4,16 @@ import { describe, expect, it } from "vitest";
 import { Rail } from "./Rail";
 
 describe("Rail", () => {
-  it("sends the wordmark to the landing and search to the demo", () => {
+  it("sends the wordmark to the landing", () => {
     render(<Rail />);
     expect(screen.getByRole("link", { name: /vidtheque/ })).toHaveAttribute("href", "/");
-    expect(screen.getByRole("link", { name: "search" })).toHaveAttribute("href", "/demo");
   });
 
-  // `/videos` was a second reader surface until 2026-09-07 and the rail was
-  // where it was reachable from. It duplicated the dashboard's videos table,
-  // so it went, and the entry that invited a visitor into it went with it.
-  it("offers no library", () => {
+  // One link and not a nav (demo-site.md §6.1): this page is a search surface
+  // and the search box is its one primary action, so the rail carries no nav.
+  it("offers no nav", () => {
     render(<Rail />);
-    expect(screen.queryByRole("link", { name: "library" })).toBeNull();
+    expect(screen.queryByRole("navigation")).toBeNull();
   });
 
   it("prints the corpus size beside the wordmark when meta named one", () => {

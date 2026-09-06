@@ -22,18 +22,6 @@
   font-style: normal;
 }
 
-.nav {
-  composes: t-label from global;
-  display: flex;
-  gap: var(--s5);
-  color: var(--muted);
-}
-
-.nav a:hover,
-.nav a:focus-visible {
-  color: var(--gold);
-}
-
 .meta {
   display: flex;
   align-items: center;
