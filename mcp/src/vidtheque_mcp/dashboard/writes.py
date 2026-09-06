@@ -444,6 +444,18 @@ async def index_submit(request: Request) -> Response:
             "errors": [_envelope(e) for e in errors],
             "batches": len(batches),
             "urls": len(tokens),
+            # What the server actually ran on, which is not always what was
+            # typed: `max_items` is clamped to the tool's own 1..200 and the
+            # two vocabularies fall back to their defaults rather than being
+            # refused. The Jinja form re-rendered these three, so a reader who
+            # typed `max_items=9000` saw the 200 that was used; a form that
+            # keeps its own state has nothing to read them back out of, and a
+            # clamp nobody is shown is a clamp that looks like a bug.
+            "accepted": {
+                "expand": submitted["expand"],
+                "max_items": submitted["max_items"],
+                "priority": submitted["priority"],
+            },
         },
         200 if jobs or already else 409,
     )
