@@ -13,7 +13,6 @@ lives and which document owns it.
 | Auth (none / token / oauth) | `/{authorize,token,register,revoke}`, `/auth/*`, `/.well-known/*` | `mcp/src/vidtheque_mcp/auth/` | `docs/design/DECISIONS.md` #1 |
 | Landing | `/` | `web/src/landing/`, `web/src/app/page.tsx` | `DESIGN.md` |
 | Demo (read-only projection) | `/demo` | `web/src/app/demo/` | `docs/design/demo-site.md` |
-| Library | `/videos`, `/videos/{id}` | `web/src/app/videos/` | `docs/design/frontend-migration.md` |
 | Public read facade | `/api/*`, `/videos/{id}/export.md` | `mcp/src/vidtheque_mcp/public/` | `docs/design/demo-site.md` |
 | Dashboard | `/dashboard` | `web/src/app/dashboard/` (pages), `mcp/src/vidtheque_mcp/dashboard/` (JSON + writes) | `docs/design/dashboard.md` |
 | Worker HTTP API | `:8081/v1/*` | `worker/` | `worker/openapi.json`, `worker/README.md` |
@@ -22,7 +21,7 @@ lives and which document owns it.
 
 The system is **two processes** — the MCP server (state: SQLite, keyframes,
 jobs) and the worker (stateless GPU inference) — talking **HTTP only**. The
-landing, the demo, the library and the dashboard's pages are a third
+landing, the demo and the dashboard's pages are a third
 deployable, the Next.js app in
 `web/`, over one origin split by path: exact page GETs go to Next, everything
 else to the MCP server's own Starlette app — which renders no HTML at all since

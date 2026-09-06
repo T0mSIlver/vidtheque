@@ -67,10 +67,10 @@ front end in `web/` is a third deployable; a Caddy edge puts both on one origin.
 ```mermaid
 flowchart LR
     client["MCP client<br/>(Claude, …)"] -->|MCP| MCP
-    browser["Browser"] -->|"/ · /demo · /videos · /dashboard"| Web
+    browser["Browser"] -->|"/ · /demo · /dashboard"| Web
     browser -->|"/dashboard/api · /dashboard POSTs · /frames"| MCP
     subgraph Web ["web/ — Next.js front end"]
-        pages["landing · demo · library · dashboard"]
+        pages["landing · demo · dashboard"]
     end
     Web -->|"/api/*"| MCP
     subgraph MCP ["mcp/ — CPU, multi-arch (runs on a Pi)"]
