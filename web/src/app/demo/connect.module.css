@@ -1,0 +1,139 @@
+.connect {
+  background: var(--void);
+  border-top: 1px solid var(--seam);
+  padding: var(--beat) 0;
+}
+
+.inner {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 var(--gut);
+}
+
+/* The gold rule and the micro-label that open a beat. */
+.kick {
+  composes: t-label-sm from global;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--gold);
+}
+
+.kick s {
+  display: block;
+  flex: none;
+  width: 34px;
+  height: 1px;
+  background: var(--gold);
+}
+
+.head {
+  composes: t-headline from global;
+  margin-top: var(--s3);
+  color: var(--fg);
+}
+
+.lede {
+  composes: t-lede from global;
+  margin-top: var(--s3);
+  color: var(--fg2);
+}
+
+.box {
+  margin-top: var(--gap-head);
+  background: var(--plate);
+  border: 1px solid var(--seam2);
+}
+
+.phead {
+  composes: t-label-sm from global;
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  min-height: 32px;
+  padding: 9px 14px;
+  color: var(--fg2);
+  background: var(--plate2);
+  border-bottom: 1px solid var(--seam);
+}
+
+.row {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  border-top: 1px solid var(--seam);
+}
+
+.row + .phead {
+  border-top: 1px solid var(--seam);
+}
+
+.code {
+  composes: t-machine from global;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  white-space: nowrap;
+  color: var(--fg);
+}
+
+.prompt {
+  font-style: normal;
+  color: var(--fg3);
+}
+
+.copy {
+  composes: t-tag from global;
+  flex: none;
+  padding: 0 15px;
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--seam2);
+  color: var(--gold);
+  cursor: pointer;
+  transition:
+    background var(--t-fast) linear,
+    color var(--t-fast) linear;
+}
+
+.copy:hover {
+  background: var(--gold);
+  color: var(--gold-ink);
+}
+
+.copy:disabled {
+  color: var(--fg3);
+  cursor: default;
+}
+
+.copy:disabled:hover {
+  background: transparent;
+  color: var(--fg3);
+}
+
+/* The confirmation a screen reader gets: the button's own word is the one a
+   sighted visitor reads, and this is the sentence. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The copy row stacks rather than squeezing the command onto nothing. */
+@media (max-width: 30rem) {
+  .row {
+    flex-wrap: wrap;
+  }
+
+  .copy {
+    width: 100%;
+    padding: 10px 15px;
+    border-left: 0;
+    border-top: 1px solid var(--seam2);
+  }
+}

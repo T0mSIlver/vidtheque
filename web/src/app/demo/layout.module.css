@@ -10,10 +10,20 @@
   max-width: var(--maxw);
   margin: 0 auto;
   padding: var(--gap-block) var(--gut) clamp(34px, 4vw, 56px);
+}
+
+.grid {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
   gap: clamp(24px, 3vw, 60px);
   align-items: end;
+}
+
+.label {
+  composes: t-label-sm from global;
+  display: block;
+  margin-bottom: var(--s3);
+  color: var(--gold);
 }
 
 .line {
@@ -48,9 +58,26 @@
   color: var(--gold);
 }
 
+/* The two base lines: what the corpus is for, and what it is not finished
+   being. Both are the surface's own state, printed rather than implied. */
+.base {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin-top: var(--gap-block);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--seam);
+}
+
+.dim {
+  composes: t-label-sm from global;
+  color: var(--fg3);
+}
+
 /* --bp-hand: multi-column grids go to one column. */
 @media (max-width: 780px) {
-  .inner {
+  .grid {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--s6);
   }

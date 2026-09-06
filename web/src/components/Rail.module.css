@@ -33,3 +33,41 @@
 .nav a:focus-visible {
   color: var(--gold);
 }
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+/* The size of the corpus, as a micro-label: a fact about the corpus, not about
+   this search. */
+.count {
+  composes: t-label-sm from global;
+  color: var(--fg3);
+}
+
+/* One link and not a nav: this page is a search surface and the box is its one
+   primary action, so the link is a quiet outline rather than a second filled
+   control beside it. */
+.browse {
+  composes: t-label-sm from global;
+  padding: 6px 10px;
+  color: var(--fg2);
+  border: 1px solid var(--seam2);
+  white-space: nowrap;
+}
+
+.browse:hover,
+.browse:focus-visible {
+  color: var(--gold);
+  border-color: var(--gold-44);
+}
+
+@media (max-width: 30rem) {
+  .wide {
+    display: none;
+  }
+}
