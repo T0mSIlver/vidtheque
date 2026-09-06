@@ -461,69 +461,21 @@ a.at:hover {
 
 /* -------------------------------------------------------------------- ocr */
 
-/* The Lime Rule, and this grid is the whole of it on this surface: `--seen`
-   marks what the machine read off the screen — the detection box, the line it
-   points at, and nothing else. It is not a second accent and it appears on no
-   other dashboard page. */
-.ocrbox {
-  position: absolute;
-  border: 1px solid var(--seen-24);
-  transition:
-    border-color var(--t-fast),
-    background-color var(--t-fast);
-  /* At this size a detection box is a few millimetres of screen, and a pointer
-     aimed at one would only be stealing the click that opens the frame. */
-  pointer-events: none;
-}
+/* The box a card's lines scroll in. The lines themselves, and the detection
+   boxes over the still, are `FrameOverlay`'s: the card and the enlarged frame
+   draw the same pairing off the same coordinates, so those classes live in
+   `frame.module.css` beside the component that draws both.
 
+   Ten lines: past that a slide is a document and the reader wants to scroll
+   it; under it the box shrinks to fit and the grid keeps its rhythm. */
 .ocrlines {
   composes: t-cell from global;
   margin: var(--s2) 0 0;
   padding: 0;
   list-style: none;
-  /* Ten lines: past that a slide is a document and the reader wants to scroll
-     it; under it the box shrinks to fit and the grid keeps its rhythm. */
   max-height: 11rem;
   overflow-y: auto;
   overscroll-behavior: contain;
-}
-
-.ocrline {
-  display: flex;
-  gap: var(--s2);
-  align-items: baseline;
-  padding: 2px 0 2px var(--s2);
-  scroll-margin: var(--s2);
-  /* One step louder than the box at rest: a 1px rule down the left of a text
-     line has a fraction of a detection box's perimeter to be seen in, and this
-     rule is what says "the machine read this off the screen" to a reader who
-     never points at anything. */
-  border-left: 1px solid var(--seen-48);
-  transition:
-    border-color var(--t-fast),
-    background-color var(--t-fast);
-}
-
-/* Point at a line, light its box; point at a box, light its line. The pairing
-   is by index, which is what makes it hold for *every* line rather than for
-   the handful a stylesheet could enumerate as pairs. */
-.ocrbox.isLit {
-  border-color: var(--seen);
-  border-width: 1.5px;
-  background: color-mix(in srgb, var(--seen) 12%, transparent);
-}
-
-.ocrline.isLit,
-.ocrline:hover {
-  border-left-color: var(--seen);
-  background: color-mix(in srgb, var(--seen) 6%, transparent);
-}
-
-.ocrtext {
-  composes: t-machine from global;
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
 
 /* De-emphasised but never dropped: it is part of the receipt, and it is the
@@ -662,147 +614,4 @@ a.at:hover {
 .ghostlink:disabled {
   color: var(--mark);
   cursor: default;
-}
-
-/* --------------------------------------------------------------- lightbox */
-
-/* The one thing on this surface that has been lifted off the wall, so it is
-   the one thing that casts a shadow. */
-.shot {
-  width: min(96vw, 72rem);
-  max-width: min(96vw, 72rem);
-  padding: 0;
-  color: var(--fg);
-  background: var(--plate);
-  border: 1px solid var(--seam2);
-  box-shadow: 0 40px 90px -24px rgba(0, 0, 0, 0.94);
-}
-
-.shot::backdrop {
-  background: var(--scrim);
-}
-
-.shotInner {
-  padding: var(--s3);
-}
-
-/* The caption and the close control belong above the picture, not on top of
-   it: the top-right corner of a frame is where a slide puts its title. */
-.shotHead {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--s3);
-  margin-bottom: var(--s2);
-}
-
-.shotCaption {
-  composes: t-machine from global;
-  margin: 0;
-}
-
-.shotFacts {
-  composes: t-machine-sm from global;
-  margin: var(--s1) 0 0;
-  color: var(--muted);
-}
-
-.shotClose {
-  flex: 0 0 auto;
-}
-
-/* The stage owns the geometry, so a box can never land outside the picture and
-   the dialog does not resize under the pointer while the bytes arrive. */
-.shotStage {
-  position: relative;
-  aspect-ratio: 16 / 9;
-  overflow: hidden;
-  line-height: 0;
-  background: var(--black);
-  box-shadow: inset 0 0 0 1px var(--edge-in);
-}
-
-.shotImg {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.shotBoxes {
-  position: absolute;
-  inset: 0;
-}
-
-/* Here the boxes *are* targets — at this size a detection box is something a
-   pointer can find, which is the whole reason the two-way interaction lives in
-   the overlay rather than over a 512px thumbnail in the grid. */
-.shotBoxes .ocrbox {
-  border-color: var(--seen);
-  border-width: 1.5px;
-  pointer-events: auto;
-  cursor: default;
-}
-
-/* The frame's lines, beside the frame, at a size you can read a slide off. Two
-   columns where there is room: a transcription of a dense slide is thirty
-   short strings and one long column of them would push the picture off screen.
-
-   A grid, not multicol (Tom, 2026-08-10): `columns: 2` on a box with a bounded
-   height paginates the overflow *sideways*, so pointing at a detection box
-   slid the whole list under the pointer. A grid overflows down, which is the
-   direction this box has always claimed to scroll. */
-.shotLines {
-  composes: t-cell from global;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
-  gap: 0 var(--s6);
-  align-content: start;
-  margin: var(--s3) 0 0;
-  padding: 0;
-  list-style: none;
-  max-height: 11rem;
-  overflow: hidden auto;
-  overscroll-behavior: contain;
-}
-
-.shotLines > .ocrline {
-  min-width: 0;
-}
-
-.shotFoot {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--s2) var(--s4);
-  margin-top: var(--s2);
-}
-
-.shotToggle {
-  composes: t-label from global;
-  display: flex;
-  gap: var(--s2);
-  align-items: center;
-  color: var(--muted);
-}
-
-.shotToggle input {
-  accent-color: var(--seen);
-}
-
-.shotLinks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s2) var(--s4);
-}
-
-.shotLink {
-  composes: t-machine from global;
-  color: var(--accent);
-  text-decoration: none;
-}
-
-.shotLink:hover {
-  text-decoration: underline;
 }
