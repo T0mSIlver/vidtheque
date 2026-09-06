@@ -218,7 +218,10 @@ function Narrowing({ search, dates }: { search: string; dates: Record<DateKey, s
  * The four date boxes carry their own key as well, because their value is the
  * payload's and arrives one read later than the rest of the band: re-keying is
  * how an uncontrolled input is re-seeded when the answer lands, and what it
- * lands on is the day the query ran.
+ * lands on is the day the query ran. The control's name is in that key and not
+ * only its value — the two boxes of a range are siblings, and on a page with no
+ * date filter on it both values are the empty string, which is one key for two
+ * children.
  */
 function Filters({
   search,
@@ -326,7 +329,7 @@ function Filters({
             Published on or after
           </label>
           <input
-            key={dates.published_after}
+            key={`published_after:${dates.published_after}`}
             id="f-pub-after"
             name="published_after"
             type="date"
@@ -339,7 +342,7 @@ function Filters({
             Published on or before
           </label>
           <input
-            key={dates.published_before}
+            key={`published_before:${dates.published_before}`}
             id="f-pub-before"
             name="published_before"
             type="date"
@@ -354,7 +357,7 @@ function Filters({
             Indexed on or after
           </label>
           <input
-            key={dates.indexed_after}
+            key={`indexed_after:${dates.indexed_after}`}
             id="f-idx-after"
             name="indexed_after"
             type="date"
@@ -367,7 +370,7 @@ function Filters({
             Indexed on or before
           </label>
           <input
-            key={dates.indexed_before}
+            key={`indexed_before:${dates.indexed_before}`}
             id="f-idx-before"
             name="indexed_before"
             type="date"
