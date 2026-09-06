@@ -66,6 +66,13 @@ function momentAt(timecode: string) {
   return screen.getByText(timecode).closest("li") as HTMLElement;
 }
 
+/** The control that opens a moment's frame. */
+function frameOf(timecode: string) {
+  return within(momentAt(timecode)).getByRole("button", {
+    name: `Enlarge the frame at ${timecode}`,
+  });
+}
+
 describe("the owner's search page", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -78,15 +85,37 @@ describe("the owner's search page", () => {
     expect(await screen.findByRole("heading", { name: "Results" })).toBeInTheDocument();
     // Five hits over two videos: the server ranked and paginated, and the page
     // grouped what it was handed.
-    expect(screen.getAllByRole("link", { name: "Making LLMs go brrr" })).toHaveLength(1);
     expect(screen.getByText("3 moment(s)")).toBeInTheDocument();
     expect(screen.getByText("2 moment(s)")).toBeInTheDocument();
+    // The group's head links to the video plainly; each moment under it links
+    // to the second — and, for a frame hit, to the frame — so a talk with three
+    // hits carries one head link and three moment links.
+    expect(screen.getAllByRole("link", { name: "Making LLMs go brrr" })).toHaveLength(4);
 
     const head = screen
       .getByRole("heading", { name: "Search the corpus" })
       .closest("div") as HTMLElement;
     expect(head).toHaveTextContent("1–5");
     expect(head).toHaveTextContent("of 5");
+  });
+
+  // `<ol start="{{ offset + 1 }}">` in Jinja. Grouping rearranges one page of
+  // results and never re-ranks them, so a moment keeps the position the server
+  // gave it — and a group's hits need not be adjacent in that ranking, which is
+  // why the number is on the item rather than on the list.
+  it("keeps each moment's place in the ranking, page two included", async () => {
+    await mount({ body: PAGED_SEARCH }, { search: "q=cache&limit=1&offset=1" });
+    await screen.findByRole("heading", { name: "Results" });
+
+    expect(momentAt("3:20")).toHaveAttribute("value", "2");
+  });
+
+  it("numbers a page of hits from where the ranking starts", async () => {
+    await mount({ body: OWNER_SEARCH }, { search: "q=cache" });
+    await screen.findByRole("heading", { name: "Results" });
+
+    expect(momentAt("0:05")).toHaveAttribute("value", "1");
+    expect(momentAt("3:20")).toHaveAttribute("value", "2");
   });
 
   // The `~` is `has_more` over exact totals reaching the one line on the page
@@ -188,6 +217,51 @@ describe("the owner's search page", () => {
     expect(within(row).getAllByText("caption_track")).toHaveLength(2);
   });
 
+  // The receipt at the end of the row goes out to YouTube, which is the
+  // product's argument; the title goes to what the index actually *stored*
+  // about that second, which is what this surface is for. A hit that names a
+  // keyframe lands **on the frame**, and the group's head keeps the plain video
+  // page — two questions, two destinations.
+  it("sends a moment's title to the frame, and the group's to the video", async () => {
+    await mount({ body: OWNER_SEARCH }, { search: "q=cache" });
+    await screen.findByRole("heading", { name: "Results" });
+
+    const moment = within(momentAt("0:05")).getByRole("link", {
+      name: "Let's build GPT: from scratch",
+    });
+    expect(moment).toHaveAttribute(
+      "href",
+      "/dashboard/videos/kCc8FmEb1nY?frame_offset=0&select=0#frame-0",
+    );
+    // A transcript hit names its cues by id while the transcript panel pages by
+    // offset, so it links to the video plainly rather than inventing a position.
+    expect(
+      within(momentAt("3:20")).getByRole("link", { name: "Making LLMs go brrr" }),
+    ).toHaveAttribute("href", "/dashboard/videos/zduSFxRajkE");
+  });
+
+  // The group's head prints the channel once. A moment prints its own only when
+  // it is not the one already on the head — two hits filed under one `video_id`
+  // that disagree about their channel is a corpus fact, and the row that has it
+  // is the row that says so.
+  it("prints a moment's channel only where the group head does not", async () => {
+    const odd = { ...OWNER_SEARCH.results[1], channel: "GPU MODE reruns", match_start: 250.0 };
+    await mount(
+      {
+        body: {
+          ...OWNER_SEARCH,
+          results: [...OWNER_SEARCH.results, odd],
+          pagination: { ...OWNER_SEARCH.pagination, approx_total: 6 },
+        },
+      },
+      { search: "q=cache" },
+    );
+    await screen.findByRole("heading", { name: "Results" });
+
+    expect(within(momentAt("4:10")).getByText("GPU MODE reruns")).toBeInTheDocument();
+    expect(within(momentAt("3:20")).queryByText("GPU MODE")).toBeNull();
+  });
+
   // ------------------------------------------------------------- the frame
 
   // The payload sends the demo's 320 and 960 against `PUBLIC_URL`; this page
@@ -197,10 +271,55 @@ describe("the owner's search page", () => {
     await mount({ body: OWNER_SEARCH }, { search: "q=cache" });
     await screen.findByRole("heading", { name: "Results" });
 
-    const shot = within(momentAt("0:05")).getByRole("img");
+    const control = frameOf("0:05");
+    const shot = control.querySelector("img") as HTMLImageElement;
     expect(shot).toHaveAttribute("src", "/frames/kCc8FmEb1nY-00000.jpg?w=192&q=70");
     expect(shot).toHaveAttribute("width", "128");
-    expect(shot.closest("a")).toHaveAttribute("href", "/frames/kCc8FmEb1nY-00000.jpg?w=1280&q=70");
+    // The picture is the control's whole content, so it is the control that
+    // carries the label and the `alt` is empty: a screen reader that read both
+    // would announce the frame twice.
+    expect(shot).toHaveAttribute("alt", "");
+  });
+
+  // For an OCR or a frame hit the picture *is* the evidence, so it opens where
+  // the reader is rather than in a tab that has lost the ranking.
+  it("opens the frame in the overlay, with its three facts on the caption", async () => {
+    await mount({ body: OWNER_SEARCH }, { search: "q=cache" });
+    await screen.findByRole("heading", { name: "Results" });
+
+    await userEvent.click(frameOf("0:05"));
+
+    const shot = screen.getByRole("dialog");
+    expect(shot).toHaveAttribute("open");
+    expect(
+      within(shot).getByText("kCc8FmEb1nY-00000 · 0:05 · Let's build GPT: from scratch"),
+    ).toBeInTheDocument();
+    expect(within(shot).getByRole("img")).toHaveAttribute(
+      "src",
+      "/frames/kCc8FmEb1nY-00000.jpg?w=1280&q=70",
+    );
+    // The other half of the row's evidence, in the overlay's footer: the same
+    // second, out on YouTube.
+    expect(within(shot).getByRole("link", { name: "Open at this second" })).toHaveAttribute(
+      "href",
+      "https://youtu.be/kCc8FmEb1nY?t=3",
+    );
+  });
+
+  // A 1280px JPEG per frame opened adds up over a browsing session, and nothing
+  // needs it once the dialog is shut.
+  it("releases the enlarged frame when the overlay closes", async () => {
+    await mount({ body: OWNER_SEARCH }, { search: "q=cache" });
+    await screen.findByRole("heading", { name: "Results" });
+
+    await userEvent.click(frameOf("0:05"));
+    await userEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }),
+    );
+
+    const shot = screen.getByRole("dialog", { hidden: true });
+    expect(shot).not.toHaveAttribute("open");
+    expect(shot.querySelector("img")).toBeNull();
   });
 
   it("keeps the column a column where a moment has no frame", async () => {
@@ -208,7 +327,7 @@ describe("the owner's search page", () => {
     await screen.findByRole("heading", { name: "Results" });
 
     const row = momentAt("3:20");
-    expect(within(row).queryByRole("img")).toBeNull();
+    expect(within(row).queryByRole("button")).toBeNull();
     // The channel it came from, in the box the frame would have taken.
     expect(within(row).getAllByText("spoken")).not.toHaveLength(0);
   });
@@ -224,6 +343,32 @@ describe("the owner's search page", () => {
     // Never a claim about *why* a hit ranked: the semantic legs match no words
     // at all, so a snippet with nothing marked is ordinary.
     expect(marks.every((text) => text?.toLowerCase() === "cache")).toBe(true);
+  });
+
+  // ------------------------------------------------------------- the band
+
+  // A search box you have to click into before you can change the query makes
+  // you re-aim after every result.
+  it("puts the caret in the query box", async () => {
+    await mount({ body: OWNER_SEARCH }, { search: "q=cache" });
+
+    expect(screen.getByLabelText("Query")).toHaveFocus();
+  });
+
+  // `search.run` takes `video_id`, `search_payload` reads it off the request's
+  // own query string, and a whitelist that quietly dropped it was a filter that
+  // silently did not apply — with no `note:` to say so.
+  it("passes a video_id filter through to the handler that takes it", async () => {
+    const { fetcher } = await mount(
+      { body: OWNER_SEARCH },
+      { search: "q=cache&video_id=kCc8FmEb1nY" },
+    );
+    await screen.findByRole("heading", { name: "Results" });
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "/dashboard/api/search?q=cache&video_id=kCc8FmEb1nY",
+      expect.objectContaining({ credentials: "same-origin" }),
+    );
   });
 
   // ---------------------------------------------------------- the empties
@@ -313,6 +458,21 @@ describe("the owner's search page", () => {
   // The clamp is the *caller's*, not the prefix's: an anonymous reader on this
   // same route gets the public page of ten, and the page reads its own page
   // size off the payload rather than knowing one.
+  // What `views._search_page_link` paged with. The handler bounds a query of
+  // its own accord; a Next link carrying the whole of a pasted log is a link
+  // that only works once.
+  it("cuts the query to what the box accepts before it pages on it", async () => {
+    const long = "cache".repeat(200);
+    await mount({ body: PAGED_SEARCH }, { search: `q=${long}&limit=1&offset=1` });
+    await screen.findByRole("heading", { name: "Results" });
+
+    const next = screen.getByRole("link", { name: /More results/ });
+    expect(next).toHaveAttribute(
+      "href",
+      `/dashboard/search?q=${long.slice(0, 512)}&limit=1&offset=2`,
+    );
+  });
+
   it("takes the page size the projection granted", async () => {
     await mount(
       { body: { ...DEMO_SEARCH, pagination: { ...DEMO_SEARCH.pagination, has_more: true } } },
@@ -329,9 +489,9 @@ describe("the owner's search page", () => {
     // browsable corpus whole, and a search result is corpus. The frames are
     // still this page's own relative URLs, which in `AUTH=none` are simply
     // unsigned against a route that is open.
-    expect(screen.getByText("Let's build GPT: from scratch")).toBeInTheDocument();
+    expect(screen.getAllByText("Let's build GPT: from scratch")).not.toHaveLength(0);
     expect(momentAt("0:05")).toHaveTextContent("kv cache size = 2 * n_layers * n_heads");
-    expect(within(momentAt("0:05")).getByRole("img")).toHaveAttribute(
+    expect(frameOf("0:05").querySelector("img")).toHaveAttribute(
       "src",
       "/frames/kCc8FmEb1nY-00000.jpg?w=192&q=70",
     );
@@ -339,13 +499,35 @@ describe("the owner's search page", () => {
 
   // ---------------------------------------------------------- the refusals
 
+  // The code is the heading and the sentence is under it, which is the way
+  // round `search.html` printed them: on an instrument the code is the half a
+  // bug report quotes.
   it("keeps the band on the page when the query itself is refused", async () => {
     await mount({ status: 400, body: EMPTY_QUERY_REFUSAL }, { search: "q=" });
 
-    expect(await screen.findByText(EMPTY_QUERY_REFUSAL.message)).toBeInTheDocument();
-    expect(screen.getByText("E_EMPTY_QUERY")).toBeInTheDocument();
-    expect(screen.getByText(EMPTY_QUERY_REFUSAL.next)).toBeInTheDocument();
+    const notice = (await screen.findByText("E_EMPTY_QUERY")).closest("section") as HTMLElement;
+    expect(notice.querySelector("h2")).toHaveTextContent("E_EMPTY_QUERY");
+    expect(within(notice).getByText(EMPTY_QUERY_REFUSAL.message)).toBeInTheDocument();
+    expect(within(notice).getByText(`next: ${EMPTY_QUERY_REFUSAL.next}`)).toBeInTheDocument();
     // The band is what the reader fixes it with, so it stays.
+    expect(screen.getByLabelText("Query")).toBeInTheDocument();
+  });
+
+  // Every refusal the search leg gives back takes the same notice, whatever its
+  // status: the Jinja page had one shape for all of them, and a 500 that turns
+  // into "this page could not read the instance" has thrown away the code.
+  it("prints a refusal that is not the query's fault in the same shape", async () => {
+    await mount(
+      {
+        status: 500,
+        body: { error: "E_INTERNAL", message: "search failed", next: null },
+      },
+      { search: "q=cache" },
+    );
+
+    const notice = (await screen.findByText("E_INTERNAL")).closest("section") as HTMLElement;
+    expect(notice.querySelector("h2")).toHaveTextContent("E_INTERNAL");
+    expect(within(notice).getByText("search failed")).toBeInTheDocument();
     expect(screen.getByLabelText("Query")).toBeInTheDocument();
   });
 
