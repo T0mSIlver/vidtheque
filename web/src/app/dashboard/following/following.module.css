@@ -71,6 +71,23 @@
   white-space: nowrap;
 }
 
+/* --------------------------------------------------------- the held band
+
+   `dashboard.module.css`'s `.notice` is hard-wired to `--tone-bad`, and this
+   one band is not an error: something matched a rule and is waiting for a
+   person, which is the tone the `held_review` pill wears in the ledger below
+   it — so the band and the rows it points at are one colour. Two local
+   overrides rather than a shared modifier, because `.notice` is another
+   module's and this is the only page that needs the other tone; a `warn`
+   variant belongs beside `.notice` the day a second page asks for it. */
+.noticeWarn {
+  border-top-color: var(--tone-warn);
+}
+
+.noticeWarnTitle {
+  color: var(--tone-warn);
+}
+
 /* ------------------------------------------------------------- the form
 
    The add form and the edit disclosure, which are the same eleven controls.
@@ -370,4 +387,129 @@
   composes: t-cell from global;
   margin: 0;
   color: var(--fg2);
+}
+
+/* ------------------------------------------------------- the narrow screen
+
+   At a phone's width both grids stop being grids: each row becomes its own
+   block and every cell wears the column's name, which is what the `data-label`
+   attributes on the cells have been for since the port — they were emitted and
+   nothing consumed them, so a six-column table of standing rules scrolled
+   sideways at 390 and the whole rule column went off the edge.
+
+   The head goes away entirely rather than into a visually-hidden box: once
+   `display: block` has taken the table apart there is no table left for a
+   screen reader to associate a `<th scope="col">` with, and every cell in the
+   stack prints its own column name. */
+@media (max-width: 52rem) {
+  .follows thead {
+    display: none;
+  }
+
+  .follows tbody tr,
+  .follows tbody th,
+  .follows tbody td {
+    display: block;
+  }
+
+  .follows tbody tr {
+    padding: var(--s3) 0;
+    border-bottom: 1px solid var(--seam);
+  }
+
+  .follows tbody th,
+  .follows tbody td {
+    height: auto;
+    padding: 1px 0;
+    border-bottom: 0;
+  }
+
+  /* The value group wraps. Without it a state cell put the word and its error
+     code on one unwrappable line beside a fixed label, and the code — the half
+     that says what the last check hit — was pushed off the right edge. */
+  .follows tbody td[data-label] {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s1) var(--s2);
+    align-items: baseline;
+  }
+
+  .follows tbody td[data-label]::before {
+    content: attr(data-label);
+    flex: 0 0 6rem;
+    font-family: var(--mono);
+    font-size: 0.625rem;
+    font-weight: var(--w-mono-label);
+    letter-spacing: 0.19em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /* The row's name is a name, not a label-and-value pair. */
+  .follows tbody th {
+    min-width: 0;
+    margin-bottom: var(--s1);
+  }
+}
+
+/* The ledger of passed-over candidates stacks lower down, at the breakpoint the
+   jobs and items tables use: it carries a whole sentence in its `why` column,
+   and a sentence has room to be a column for longer than six clocks do. */
+@media (max-width: 780px) {
+  .seen thead {
+    display: none;
+  }
+
+  .seen tbody tr,
+  .seen tbody th,
+  .seen tbody td {
+    display: block;
+  }
+
+  .seen tbody tr {
+    padding: var(--s3) 0;
+    border-bottom: 1px solid var(--seam);
+  }
+
+  .seen tbody th,
+  .seen tbody td {
+    height: auto;
+    padding: 1px 0;
+    border-bottom: 0;
+  }
+
+  .seen tbody td[data-label] {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s1) var(--s2);
+    align-items: baseline;
+  }
+
+  .seen tbody td[data-label]::before {
+    content: attr(data-label);
+    flex: 0 0 6rem;
+    font-family: var(--mono);
+    font-size: 0.625rem;
+    font-weight: var(--w-mono-label);
+    letter-spacing: 0.19em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .seen tbody th {
+    min-width: 0;
+    margin-bottom: var(--s1);
+  }
+
+  /* A right-aligned length under a left-aligned label is a value nobody can
+     find; and the `why` cell's own paragraph takes the rest of the line. */
+  .seen tbody td.num {
+    text-align: left;
+  }
+
+  .seen tbody .colWhy p,
+  .seen tbody .colDecision,
+  .seen tbody .colWhen {
+    white-space: normal;
+  }
 }
