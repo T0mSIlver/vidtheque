@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useRef, useState, useSyncExternalStore } from "react";
 import { receipt } from "@/lib/format";
 import styles from "./Frame.module.css";
 
@@ -88,6 +88,13 @@ function supportsModal(): boolean {
   );
 }
 
+// The server has no `HTMLDialogElement` to ask, so it renders the plain image
+// and the browser upgrades it on hydration. A store and not an effect, because
+// this is one read of the platform rather than a piece of state to synchronise:
+// nothing ever changes it, so nothing ever subscribes.
+const NEVER_CHANGES = () => () => {};
+const NO_MODAL_ON_THE_SERVER = () => false;
+
 /**
  * A thumbnail that opens the frame at `thumb_large` (demo-site.md §6.4).
  *
@@ -104,11 +111,9 @@ function supportsModal(): boolean {
 export function FrameShot({ shot, alt, label }: { shot: Shot; alt: string; label?: string }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
-  const [canModal, setCanModal] = useState(false);
+  const canModal = useSyncExternalStore(NEVER_CHANGES, supportsModal, NO_MODAL_ON_THE_SERVER);
   const [open, setOpen] = useState(false);
   const captionId = useId();
-
-  useEffect(() => setCanModal(supportsModal()), []);
 
   const large = shot.thumb_large ?? shot.thumb;
   const where = [shot.title || shot.video_id, shot.channel, shot.timestamp || "0:00"]
@@ -177,12 +182,7 @@ export function FrameShot({ shot, alt, label }: { shot: Shot; alt: string; label
             </p>
             {/* The receipt again, at full size: the picture is the evidence and
                 this is where it came from, on the second. */}
-            <a
-              className={styles.receipt}
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
+            <a className={styles.receipt} href={href} target="_blank" rel="noopener noreferrer">
               {receipt(href)}
             </a>
           </div>
