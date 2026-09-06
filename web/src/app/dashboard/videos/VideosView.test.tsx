@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
 import { REINDEX_REFUSED, REINDEXED } from "@/test/index-fixtures";
 import { DEMO_LIBRARY, OWNER_LIBRARY, OWNER_LIBRARY_CLAMPED } from "@/test/library-fixtures";
-import { firstPaint } from "@/test/retry";
+import { firstPaint, settled } from "@/test/retry";
+import { DEBOUNCE_MS, FOCUS_KEY } from "../search/band";
 
 // The table's job is to say what set it is showing and to be honest about how
 // it was narrowed: the filters are the URL, the count is exact, the clamps are
@@ -60,12 +61,48 @@ async function mount(
   return { ...nav, fetcher, posts };
 }
 
-// The table with a date bound echoed back on it. The dates on the wire are the
-// epochs the query ran on, and the page reads its own pickers out of them —
-// so a test about a date filter has to put one on the payload, not just in the
-// URL, which is the whole point of the echo.
-function dated(filters: Record<string, number>) {
-  return { ...OWNER_LIBRARY, filters: { ...OWNER_LIBRARY.filters, ...filters } };
+// The table as the server answered it. Every control, every fact on the
+// narrowing strip and every link reads the payload's `filters` echo — the
+// filters the query *ran* with, after the clamps, the choice fallbacks and the
+// UTC-day snap — so a test about a filter has to put it on the payload and not
+// only in the URL. That is the whole point of the echo: `?has=bogus` ran as
+// `any`, and a page that printed `bogus` would be vouching for a query nobody
+// made.
+function ran(filters: Record<string, unknown>, rest: Record<string, unknown> = {}) {
+  return { ...OWNER_LIBRARY, ...rest, filters: { ...OWNER_LIBRARY.filters, ...filters } };
+}
+
+// The nine keys `carried()` put on every link, as they come out on a table with
+// nothing set: the two pickers resting on the API's own default come off, and
+// the other seven ride along empty, because a key that disappears when its box
+// is empty makes two URLs for one query.
+const EMPTIES =
+  "q=&channel=&tags=&published_after=&published_before=&indexed_after=&indexed_before=";
+
+// The band's own listeners are the form's, delegated and native — the same
+// three events `dashboard.js` bound — so the events are dispatched rather than
+// typed. `userEvent` drives its own clock, and this one has to be stopped: what
+// is being asserted is that nothing goes on the wire *until* 450ms after the
+// last keystroke.
+
+/** A band under a stopped clock, with the read landed. */
+async function band(route: Route, options?: Parameters<typeof mount>[1]) {
+  vi.useFakeTimers();
+  const nav = await mount(route, options);
+  await settled();
+  return nav;
+}
+
+/** A keystroke in a text field: the event a half-typed box actually raises. */
+function typed(label: string, value: string) {
+  fireEvent.input(screen.getByLabelText(label), { target: { value } });
+}
+
+/** Let a debounce that is armed run out. */
+async function pause(ms = DEBOUNCE_MS) {
+  await act(async () => {
+    vi.advanceTimersByTime(ms);
+  });
 }
 
 describe("the videos table", () => {
@@ -128,11 +165,53 @@ describe("the videos table", () => {
     const published = await screen.findByRole("columnheader", { name: "Published" });
     expect(published).toHaveAttribute("aria-sort", "descending");
     expect(screen.getByRole("columnheader", { name: "Title" })).not.toHaveAttribute("aria-sort");
-    // A new order is a new set in a new arrangement, so the offset goes.
+    // A new order is a new set in a new arrangement, so the offset goes — and
+    // `carried()`'s nine keys ride along, so the range a reader set survives the
+    // sort head as well as the pager.
     expect(screen.getByRole("link", { name: "Title" })).toHaveAttribute(
       "href",
-      "/dashboard/videos?index_state=all&order=title",
+      `/dashboard/videos?${EMPTIES}&order=title&limit=50`,
     );
+  });
+
+  // The five orders the tool takes and no sixth. An "unset" option would be the
+  // one entry on this picker that does not name an order, on a page whose whole
+  // job is to say which query ran.
+  it("shows the order that ran, and offers no option that is not one", async () => {
+    await mount({ body: OWNER_LIBRARY }, { search: "" });
+    await screen.findByRole("status");
+
+    const order = screen.getByLabelText("Order") as HTMLSelectElement;
+    expect(order).toHaveValue("recency");
+    expect([...order.options].map((option) => option.value)).toEqual([
+      "recency",
+      "title",
+      "duration",
+      "indexed_at",
+      "relevance",
+    ]);
+  });
+
+  // The Jinja form echoed the *accepted* limit back into the field the reader
+  // typed it into: a hundred thousand asked for and a hundred granted is a
+  // number the box has to say out loud, beside the note that names both.
+  it("holds the page size the server accepted, not the one that was asked for", async () => {
+    await mount({ body: OWNER_LIBRARY_CLAMPED }, { search: "limit=100000" });
+    await screen.findByText(/limit=100000 → 100/);
+
+    expect(screen.getByLabelText("Rows")).toHaveValue(100);
+  });
+
+  // `?has=bogus` ran as `has=any`. A strip that re-printed the URL would be the
+  // page vouching for a filter that never applied, next to a `note:` saying
+  // which one did.
+  it("names the filter that ran, never the one in the URL bar", async () => {
+    await mount({ body: OWNER_LIBRARY_CLAMPED }, { search: "has=banana" });
+    await screen.findByText(/has='banana' is not one of/);
+
+    const head = within(screen.getByRole("heading", { name: "Videos" }).closest("div")!);
+    expect(head.queryByText("banana")).toBeNull();
+    expect(screen.getByLabelText("Coverage")).toHaveValue("any");
   });
 
   // The Jinja page echoed an accepted `limit` back into the field the reader
@@ -147,7 +226,7 @@ describe("the videos table", () => {
 
   it("puts what is narrowing the table on the title's own baseline", async () => {
     await mount(
-      { body: dated({ published_after: 1767225600 }) },
+      { body: ran({ published_after: 1767225600, index_state: "failed" }) },
       { search: "index_state=failed&published_after=2026-01-01" },
     );
 
@@ -165,7 +244,7 @@ describe("the videos table", () => {
     await mount(
       {
         body: {
-          ...dated({ published_before: 1788652800 }), // 2026-09-06, exclusive
+          ...ran({ published_before: 1788652800 }), // 2026-09-06, exclusive
           notes: [
             "note: resolved server-side: published_before=2999-01-01 → 2026-09-05. " +
               "Each bound is filtered as a whole UTC day, inside a floor of " +
@@ -223,18 +302,102 @@ describe("the videos table", () => {
     expect(rows).not.toHaveAttribute("max");
   });
 
-  it("turns the band into a URL on submit, and drops what is empty", async () => {
-    const nav = await mount({ body: OWNER_LIBRARY }, { search: "index_state=all" });
+  // A picker has no half-made state: the moment it changes, the reader has said
+  // what they want, and the change *is* the search.
+  it("searches the moment a picker changes", async () => {
+    const { push } = await band({ body: OWNER_LIBRARY }, { search: "" });
+
+    fireEvent.change(screen.getByLabelText("Coverage"), { target: { value: "ocr" } });
+
+    // Every key `carried()` carried, minus the picker still resting on the
+    // API's own default. This URL is one somebody sends.
+    expect(push).toHaveBeenCalledWith(
+      `/dashboard/videos?q=&channel=&tags=&has=ocr&published_after=&published_before=` +
+        `&indexed_after=&indexed_before=&order=recency&limit=50`,
+    );
+  });
+
+  // A text field is half-typed for most of its life, so it waits for a pause —
+  // and a page that searched per keystroke would put a request on the wire for
+  // every letter of a channel name.
+  it("searches a typed field when the typing stops, and not before", async () => {
+    const { push } = await band({ body: OWNER_LIBRARY }, { search: "" });
+
+    typed("Title, channel or description", "atten");
+    await pause(DEBOUNCE_MS - 1);
+    typed("Title, channel or description", "attention");
+    await pause(DEBOUNCE_MS - 1);
+    // Two keystrokes, no request: the pause is measured from the last one.
+    expect(push).not.toHaveBeenCalled();
+
+    await pause();
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(push).toHaveBeenCalledWith(
+      `/dashboard/videos?q=attention&channel=&tags=&published_after=&published_before=` +
+        `&indexed_after=&indexed_before=&order=recency&limit=50`,
+    );
+  });
+
+  // Enter still submits, and must not leave a debounce armed behind it: the
+  // second search would be the same search, one page-load late.
+  it("takes Enter as the search, and disarms what was pending", async () => {
+    const { push } = await band({ body: OWNER_LIBRARY }, { search: "" });
+
+    const channel = screen.getByLabelText("Channel");
+    fireEvent.input(channel, { target: { value: "Karpathy" } });
+    fireEvent.submit(channel.closest("form") as HTMLFormElement);
+    expect(push).toHaveBeenCalledTimes(1);
+
+    await pause(DEBOUNCE_MS * 2);
+    expect(push).toHaveBeenCalledTimes(1);
+  });
+
+  // `Apply` is real, and is what a browser that never ran the band's script
+  // submits with. It comes off the page only once the script has taken over.
+  it("takes Apply off the band once it is doing the applying", async () => {
+    await mount({ body: OWNER_LIBRARY }, { search: "" });
     await screen.findByRole("status");
 
-    await userEvent.type(screen.getByLabelText("Title, channel or description"), "attention");
-    await userEvent.selectOptions(screen.getByLabelText("Coverage"), "ocr");
-    await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+    const apply = document.querySelector(
+      "form:has(#f-q) button[type='submit']",
+    ) as HTMLButtonElement;
+    expect(apply).toHaveTextContent("Apply");
+    expect(apply.hidden).toBe(true);
+    expect(screen.queryByRole("button", { name: "Apply" })).toBeNull();
+    // Reset is a link and not a submit, so it keeps its job: it is the one
+    // control here that still has one when every change is already a search.
+    expect(screen.getByRole("link", { name: "Reset" })).toHaveAttribute(
+      "href",
+      "/dashboard/videos",
+    );
+  });
 
-    // No `&channel=&tags=&published_after=`, and no `index_state=all` either —
-    // an empty control is not a filter and neither is a picker resting on the
-    // value the API would have used anyway. This URL is one somebody sends.
-    expect(nav.push).toHaveBeenCalledWith("/dashboard/videos?q=attention&has=ocr");
+  // The one thing a reloading search box owes its reader is the caret back.
+  // `sessionStorage` and not the URL: which control had focus is not a fact
+  // about the result set and has no business in a link somebody sends.
+  it("remembers which control searched, and puts the caret back in it", async () => {
+    const { push } = await band({ body: OWNER_LIBRARY }, { search: "" });
+
+    typed("Channel", "Karpathy");
+    await pause();
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.getItem(FOCUS_KEY)).toBe("f-channel");
+
+    // The navigation that push stands for. The band comes up on a new form
+    // node, and the caret comes back with it, at the end of what was typed.
+    cleanup();
+    vi.useRealTimers();
+    vi.resetModules();
+    await mount({ body: ran({ channel: "Karpathy" }) }, { search: "channel=Karpathy" });
+    await screen.findByRole("status");
+
+    const landed = screen.getByLabelText("Channel") as HTMLInputElement;
+    expect(landed).toHaveValue("Karpathy");
+    expect(landed).toHaveFocus();
+    expect(landed.selectionStart).toBe("Karpathy".length);
+    // Released once the answer has landed, so the next page opened in this tab
+    // does not inherit somebody else's caret.
+    expect(sessionStorage.getItem(FOCUS_KEY)).toBeNull();
   });
 
   it("pages with the query carried and one number changed", async () => {
@@ -246,23 +409,21 @@ describe("the videos table", () => {
     const pager = await screen.findByRole("navigation", { name: "Pagination" });
     expect(within(pager).getByRole("link", { name: "← Previous" })).toHaveAttribute(
       "href",
-      "/dashboard/videos?index_state=all&limit=2&offset=0",
+      `/dashboard/videos?${EMPTIES}&order=recency&limit=2&offset=0`,
     );
     expect(within(pager).getByRole("link", { name: "Next 2 →" })).toHaveAttribute(
       "href",
-      "/dashboard/videos?index_state=all&limit=2&offset=4",
+      `/dashboard/videos?${EMPTIES}&order=recency&limit=2&offset=4`,
     );
   });
 
   it("says which filter emptied the table, and offers the way out", async () => {
     await mount(
       {
-        body: {
-          ...OWNER_LIBRARY,
-          videos: [],
-          total: 0,
-          pagination: { limit: 50, offset: 0, has_more: false },
-        },
+        body: ran(
+          { index_state: "failed" },
+          { videos: [], total: 0, pagination: { limit: 50, offset: 0, has_more: false } },
+        ),
       },
       { search: "index_state=failed" },
     );
@@ -292,7 +453,7 @@ describe("the videos table", () => {
     expect(await screen.findByText(/past the end of 4 matching video/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Go to the last page" })).toHaveAttribute(
       "href",
-      "/dashboard/videos?limit=2&offset=2",
+      `/dashboard/videos?${EMPTIES}&order=recency&limit=2&offset=2`,
     );
   });
 
@@ -393,7 +554,24 @@ describe("the videos table", () => {
       ).toBeInTheDocument();
       expect(screen.getByText("E_ORDER_SCOPE")).toBeInTheDocument();
       expect(screen.getByLabelText("Title, channel or description")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Apply" })).toBeInTheDocument();
+      expect(screen.getByLabelText("Order")).toBeInTheDocument();
+    });
+
+    // The Jinja view rendered the band with *every* refusal it owned, whatever
+    // the status: a 500 takes the same page a 400 does, and a reader who lost
+    // the whole band to one has lost the query they typed as well.
+    it("keeps the band under a refusal that is not the filter's fault", async () => {
+      await mount(
+        {
+          status: 500,
+          body: { error: "E_INTERNAL", message: "The index could not be read.", next: null },
+        },
+        { search: "channel=Karpathy" },
+      );
+
+      expect(await screen.findByText("The index could not be read.")).toBeInTheDocument();
+      expect(screen.getByText("E_INTERNAL")).toBeInTheDocument();
+      expect(screen.getByLabelText("Channel")).toHaveValue("Karpathy");
     });
 
     it("prints the instance's own refusal when it is signed out", async () => {

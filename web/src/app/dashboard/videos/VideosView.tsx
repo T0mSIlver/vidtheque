@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, type FormEvent } from "react";
+import { useCallback } from "react";
 import { Pill } from "@/components/Pill";
 import { dashboard, DashboardError, ROOT } from "@/lib/dashboard/client";
 import type { Library, LibraryRow } from "@/lib/dashboard/schemas";
@@ -17,6 +17,9 @@ import {
   Unbroken,
   useWriteSide,
 } from "../parts";
+// The band's script lives under `search/` only because the port split the
+// dashboard between two agents; it belongs at `../band`.
+import { useFilterBand } from "../search/band";
 import { useRead } from "../useRead";
 import { ReindexControl } from "./Manage";
 import styles from "./videos.module.css";
@@ -36,10 +39,15 @@ import styles from "./videos.module.css";
 // 100`), `order` is echoed because it was never inferrable from `q`, and
 // `total` is the exact count of the filtered set rather than the tool's `~`
 // probe — a tilde over a table with a Next button is the one thing on the line
-// a reader cannot act on. The four date controls are the one place the URL is
-// not what the page shows: the server resolves each of them to a UTC day
-// before it filters, so the picker and the strip read that day back off the
-// payload and print the filter that ran.
+// a reader cannot act on.
+//
+// **Every control and every link reads the server's resolved filters, not the
+// URL.** `?has=bogus` ran as `has=any`, `?limit=100000` ran as a hundred, and a
+// date bound is clamped and snapped to a whole UTC day before it filters — so a
+// band seeded from the raw query string would name filters that never ran, next
+// to a `note:` saying which ones did. The payload's `filters` echo is the
+// template's `filters` dict, and this page uses it in all four places Jinja did:
+// the narrowing strip, the band, the links, and the empty state's one line.
 
 /** Every parameter the contract lists, in the order the band asks them. */
 const FILTERS = [
@@ -60,6 +68,26 @@ const FILTERS = [
 // and page four of the old set is not page four of the new one.
 const PAGE_KEYS = [...FILTERS, "offset"];
 
+/** The nine keys `videos.html`'s `carried()` macro put on every link, in its
+ *  order.
+ *
+ *  All nine, empty or not. Every link on this page is the current query with
+ *  one thing changed — a page, or an order — and a date range that survives the
+ *  pager but not the sort head is a filter the reader has to re-apply. A key
+ *  that disappears when its box is empty also makes two URLs for one query,
+ *  which is the state of "no filters" spelled two ways. */
+const CARRIED = [
+  "q",
+  "channel",
+  "tags",
+  "has",
+  "index_state",
+  "published_after",
+  "published_before",
+  "indexed_after",
+  "indexed_before",
+] as const;
+
 const INDEX_STATES = ["pending", "indexing", "ready", "failed", "stale"];
 const HAS_VALUES = ["any", "transcript", "ocr", "frames", "all"];
 const ORDERS = ["recency", "title", "duration", "indexed_at", "relevance"];
@@ -79,7 +107,7 @@ const DAY_S = 86_400;
 // A picker sitting on the value the API would have used anyway. Sending it is
 // not wrong, but it puts `&index_state=all&has=any` on every link a reader
 // copies out of the address bar to say nothing at all — and it makes two URLs
-// for one query, which is the state of "no filters" spelled two ways.
+// for one query. It is the one thing `carried()` printed that this page drops.
 const DEFAULTS: Record<string, string> = { index_state: "all", has: "any" };
 
 // Which column head wears the accent underline, and which way that order runs
@@ -100,45 +128,64 @@ const COVERAGE: [keyof LibraryRow["coverage"], string, string][] = [
   ["frames", "f", "frame embeddings"],
 ];
 
+/** The template's `filters` dict: every control's value and every link's, after
+ *  the server has had its say. */
+type Band = Record<(typeof FILTERS)[number], string>;
+
 export function VideosView() {
   const params = useSearchParams();
   const search = params.toString();
   // Keyed on the query string, which is the whole of this page's input: a new
-  // URL is a new read, and nothing else re-runs it.
+  // URL is a new read, and nothing else re-runs it. The answer carries the URL
+  // it answered, because a read in flight leaves the *previous* page's payload
+  // in hand — and a band seeded from that would show the last query's page size
+  // beside this query's rows.
   const read = useCallback(
-    (signal: AbortSignal) => dashboard.library(apiQuery(search), signal),
+    async (signal: AbortSignal) => ({
+      search,
+      data: await dashboard.library(apiQuery(search), signal),
+    }),
     [search],
   );
   const state = useRead(read);
-  const dates = dateValues(search, state.status === "ready" ? state.data.filters : undefined);
+  const answered =
+    state.status === "ready" && state.data.search === search ? state.data.data : undefined;
+  const band = bandOf(search, answered);
 
   const refusal = state.status === "failed" ? state.error : null;
-  // `order=relevance` without a `q`, and a date that will not parse. Both are
-  // the tool's own typed refusals, and both are a filter the reader can fix —
-  // so the band stays on the page with the other seven controls in it, rather
-  // than the whole page becoming the refusal.
-  const badFilter = refusal instanceof DashboardError && refusal.status === 400;
+  // The gate's two refusals are the shell's, and they replaced the whole page in
+  // Jinja too — the 401 before any view ran (`views.py:166-185`) and the 429 in
+  // the limiter ahead of it. There is no filter to fix behind either, and a band
+  // over one is an invitation to a page this browser cannot read.
+  const gated =
+    refusal instanceof DashboardError && (refusal.status === 401 || refusal.status === 429);
+  // Everything else is the view's own refusal, and `views.py:617-665` rendered
+  // the band with it whatever the status: a refused date must still leave the
+  // reader the other seven controls to fix it with, and a 500 takes the same
+  // page a 400 does.
+  const told = refusal instanceof DashboardError && !gated;
 
   return (
     <>
       <PageHead title="Videos">
-        <Narrowing search={search} dates={dates} />
+        <Narrowing band={band} />
       </PageHead>
 
-      {state.status !== "failed" || badFilter ? (
-        // The resolved page size stands in the empty Rows box: the Jinja form
-        // echoed the accepted `limit` into the field, and a blank box over a
-        // page of fifty says nothing about how big a page is.
+      {gated ? null : (
+        // "Settled" is the payload having answered *this* URL, not the read
+        // having stopped: a filter change leaves the previous answer in hand,
+        // so the band is handed two nodes — the reader's URL, then the server's
+        // reply to it — and the caret is owed to both.
         <Filters
+          band={band}
           search={search}
-          dates={dates}
-          limit={state.status === "ready" ? state.data.pagination.limit : undefined}
+          settled={answered !== undefined || state.status === "failed"}
         />
-      ) : null}
+      )}
 
       {state.status === "loading" ? <Reading /> : null}
 
-      {badFilter && refusal instanceof DashboardError ? (
+      {told && refusal instanceof DashboardError ? (
         <section className={dash.notice} aria-labelledby="filter-refused">
           <h2 className={dash.noticeTitle} id="filter-refused">
             {refusal.message}
@@ -150,37 +197,36 @@ export function VideosView() {
         </section>
       ) : null}
 
-      {state.status === "failed" && !badFilter ? (
+      {state.status === "failed" && !told ? (
         <ReadFailure error={state.error} onRetry={state.reload} />
       ) : null}
 
-      {state.status === "ready" ? <Table data={state.data} search={search} /> : null}
+      {state.status === "ready" ? (
+        <Table band={band} data={state.data.data} offset={params.get("offset") ?? ""} />
+      ) : null}
     </>
   );
 }
 
 /** What is actually narrowing the table, on the title's own baseline.
  *
- *  The dates are the days the query ran on (`dateValues`), not the strings the
- *  URL happened to carry: a bound the server clamped or snapped and this line
- *  re-printed unchanged would be the page vouching for a filter that never
- *  ran. An open end is `…` rather than a made-up boundary — "published
- *  2025-01-01 …" says one end is set, where a filled-in second date would be
- *  the page inventing a filter nobody applied.
+ *  The values are the ones the query ran with, not the strings the URL happened
+ *  to carry: `?has=bogus` ran as `any` and prints nothing, and a date the server
+ *  clamped or snapped prints the day it snapped to. A line re-printing the raw
+ *  URL would be the page vouching for a filter that never ran. An open end is
+ *  `…` rather than a made-up boundary — "published 2025-01-01 …" says one end is
+ *  set, where a filled-in second date would be the page inventing a filter
+ *  nobody applied.
  *
  *  The order is deliberately not here: every other entry is a *narrowing*, and
  *  an order takes no rows out. The sorted column's own underline says it. */
-function Narrowing({ search, dates }: { search: string; dates: Record<DateKey, string> }) {
-  const params = new URLSearchParams(search);
-  const value = (key: string) => params.get(key)?.trim() || "";
+function Narrowing({ band }: { band: Band }) {
   const range = (after: DateKey, before: DateKey) =>
-    dates[after] || dates[before] ? `${dates[after] || "…"} – ${dates[before] || "…"}` : "";
+    band[after] || band[before] ? `${band[after] || "…"} – ${band[before] || "…"}` : "";
 
   const facts: [string, string][] = [];
-  const state = value("index_state");
-  if (state && state !== "all") facts.push(["state", state]);
-  const has = value("has");
-  if (has && has !== "any") facts.push(["has", has]);
+  if (band.index_state && band.index_state !== "all") facts.push(["state", band.index_state]);
+  if (band.has && band.has !== "any") facts.push(["has", band.has]);
   const published = range("published_after", "published_before");
   if (published) facts.push(["published", published]);
   const indexed = range("indexed_after", "indexed_before");
@@ -210,58 +256,67 @@ function Narrowing({ search, dates }: { search: string; dates: Record<DateKey, s
  * The control band. A real form over the URL: submitting navigates, and the
  * page re-reads because its query string changed.
  *
- * Seeded with `defaultValue` and re-keyed on the query string, so the browser
- * owns what is being typed and a navigation reseeds every control from the URL
- * that arrived. Controlled inputs here would mean a state to keep in step with
- * a URL that is already the state.
+ * **A change to any control *is* the search** (`dashboard.js`'s `data-autosubmit`
+ * appender, here as `useFilterBand`): a picker submits on the spot, a text field
+ * submits when the typing pauses, and the caret comes back into the box that
+ * caused the navigation. More requests, and they are cheap against a local
+ * SQLite index; what they buy is a band you use rather than a form you fill in
+ * and then have to remember to submit. `Apply` stays in the markup — it is what
+ * a browser that never ran the script uses — and is hidden only once the script
+ * has taken the job over. Reset is a link and not a submit, so it keeps its job.
  *
- * The four date boxes carry their own key as well, because their value is the
- * payload's and arrives one read later than the rest of the band: re-keying is
- * how an uncontrolled input is re-seeded when the answer lands, and what it
- * lands on is the day the query ran. The control's name is in that key and not
- * only its value — the two boxes of a range are siblings, and on a page with no
- * date filter on it both values are the empty string, which is one key for two
- * children.
+ * Seeded with `defaultValue`, so the browser owns what is being typed;
+ * controlled inputs here would mean a state to keep in step with a URL that is
+ * already the state. The band is re-keyed on everything it is seeded from —
+ * the query string, which is the reader's half, and the server's resolved
+ * filters, which arrive one read later — because re-keying is how an
+ * uncontrolled input is re-seeded when the answer lands.
  */
-function Filters({
-  search,
-  dates,
-  limit,
-}: {
-  search: string;
-  dates: Record<DateKey, string>;
-  limit?: number;
-}) {
+function Filters({ band, search, settled }: { band: Band; search: string; settled: boolean }) {
   const router = useRouter();
-  const params = new URLSearchParams(search);
-  const value = (key: string, fallback = "") => params.get(key) ?? fallback;
 
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const next = new URLSearchParams();
-    for (const key of FILTERS) {
-      const entry = form.get(key);
-      if (typeof entry !== "string") continue;
-      const chosen = entry.trim();
-      // An empty control is not a filter, and neither is a picker resting on
-      // the value the API would have used anyway. The Jinja form sent all nine
-      // keys whatever they held, which made every link on the page carry
-      // `&channel=&tags=&published_after=` for the reader to send on.
-      if (chosen && chosen !== DEFAULTS[key]) next.set(key, chosen);
-    }
-    router.push(next.toString() ? `${ROOT}/videos?${next}` : `${ROOT}/videos`);
-  }
+  const submit = useCallback(
+    (form: HTMLFormElement) => {
+      const entries = new FormData(form);
+      const next = new URLSearchParams();
+      const chosen = (key: string) => {
+        const entry = entries.get(key);
+        return typeof entry === "string" ? entry.trim() : "";
+      };
+      // The nine keys, whatever they hold — `carried()`'s own list — minus a
+      // picker resting on the value the API would have used anyway.
+      for (const key of CARRIED) {
+        const value = chosen(key);
+        if (value !== DEFAULTS[key]) next.set(key, value);
+      }
+      // The two that are not narrowings but are still the reader's: they are
+      // controls in this band, so a submit carries what they are set to.
+      for (const key of ["order", "limit"]) {
+        const value = chosen(key);
+        if (value) next.set(key, value);
+      }
+      // `offset` is not carried: a new filter is a new set, and page four of
+      // the old one is not page four of the new one.
+      router.push(next.toString() ? `${ROOT}/videos?${next}` : `${ROOT}/videos`);
+    },
+    [router],
+  );
+
+  const { attach, scripted, onSubmit } = useFilterBand(submit, settled);
+  // Everything the controls are seeded from, in one string. The dates keep
+  // their own keys as well: the two ends of a range are siblings, and a key
+  // that is only the value is one key for both of them when both are empty.
+  const seed = `${search}|${FILTERS.map((key) => band[key]).join(" ")}`;
 
   return (
-    <form className={dash.filters} key={search} onSubmit={submit}>
+    <form className={dash.filters} key={seed} onSubmit={onSubmit} ref={attach}>
       <div className={`${dash.field} ${dash.wide}`}>
         <label htmlFor="f-q">Title, channel or description</label>
         <input
           id="f-q"
           name="q"
           type="search"
-          defaultValue={value("q")}
+          defaultValue={band.q}
           placeholder="attention, tokenizer…"
           spellCheck={false}
           autoComplete="off"
@@ -277,7 +332,7 @@ function Filters({
           id="f-channel"
           name="channel"
           type="text"
-          defaultValue={value("channel")}
+          defaultValue={band.channel}
           autoComplete="off"
         />
       </div>
@@ -287,7 +342,7 @@ function Filters({
           id="f-tags"
           name="tags"
           type="text"
-          defaultValue={value("tags")}
+          defaultValue={band.tags}
           placeholder="topic:attention"
           autoComplete="off"
         />
@@ -295,7 +350,7 @@ function Filters({
       <div className={`${dash.field} ${dash.pickField}`}>
         <label htmlFor="f-state">State</label>
         <span className={dash.pick}>
-          <select id="f-state" name="index_state" defaultValue={value("index_state", "all")}>
+          <select id="f-state" name="index_state" defaultValue={band.index_state}>
             <option value="all">all states</option>
             {INDEX_STATES.map((state) => (
               <option key={state} value={state}>
@@ -308,7 +363,7 @@ function Filters({
       <div className={`${dash.field} ${dash.pickField}`}>
         <label htmlFor="f-has">Coverage</label>
         <span className={dash.pick}>
-          <select id="f-has" name="has" defaultValue={value("has", "any")}>
+          <select id="f-has" name="has" defaultValue={band.has}>
             {HAS_VALUES.map((entry) => (
               <option key={entry} value={entry}>
                 {entry}
@@ -329,11 +384,11 @@ function Filters({
             Published on or after
           </label>
           <input
-            key={`published_after:${dates.published_after}`}
+            key={`published_after:${band.published_after}`}
             id="f-pub-after"
             name="published_after"
             type="date"
-            defaultValue={dates.published_after}
+            defaultValue={band.published_after}
           />
           <span className={styles.rangeSep} aria-hidden="true">
             –
@@ -342,11 +397,11 @@ function Filters({
             Published on or before
           </label>
           <input
-            key={`published_before:${dates.published_before}`}
+            key={`published_before:${band.published_before}`}
             id="f-pub-before"
             name="published_before"
             type="date"
-            defaultValue={dates.published_before}
+            defaultValue={band.published_before}
           />
         </div>
       </fieldset>
@@ -357,11 +412,11 @@ function Filters({
             Indexed on or after
           </label>
           <input
-            key={`indexed_after:${dates.indexed_after}`}
+            key={`indexed_after:${band.indexed_after}`}
             id="f-idx-after"
             name="indexed_after"
             type="date"
-            defaultValue={dates.indexed_after}
+            defaultValue={band.indexed_after}
           />
           <span className={styles.rangeSep} aria-hidden="true">
             –
@@ -370,22 +425,23 @@ function Filters({
             Indexed on or before
           </label>
           <input
-            key={`indexed_before:${dates.indexed_before}`}
+            key={`indexed_before:${band.indexed_before}`}
             id="f-idx-before"
             name="indexed_before"
             type="date"
-            defaultValue={dates.indexed_before}
+            defaultValue={band.indexed_before}
           />
         </div>
       </fieldset>
       <div className={`${dash.field} ${dash.pickField}`}>
         <label htmlFor="f-order">Order</label>
         <span className={dash.pick}>
-          <select id="f-order" name="order" defaultValue={value("order")}>
-            {/* Empty rather than a guess: the default is `relevance` with a
-                query and `recency` without one, and that is Python's rule to
-                apply. The payload's `order` says which answered. */}
-            <option value="">default</option>
+          {/* The five the tool takes, and no sixth. An "unset" option would be
+              the one entry on this picker that does not name an order, on a
+              page whose whole job is to say which query ran — the default is
+              `relevance` with a query and `recency` without one, Python decides
+              which, and the payload's `order` is what this sits on. */}
+          <select id="f-order" name="order" defaultValue={band.order}>
             {ORDERS.map((entry) => (
               <option key={entry} value={entry}>
                 {entry}
@@ -400,19 +456,22 @@ function Filters({
             page has no copy of it. A hundred hardcoded here would be a second
             bound, wrong on the deployment that moved its own — and the real
             one already answers, with the rows it clamped to and the `note:`
-            that names both numbers. */}
+            that names both numbers. The box holds the limit that was
+            *accepted*, which is how a reader who asked for 100000 sees what
+            they got. */}
         <input
           id="f-limit"
           name="limit"
           type="number"
           min={1}
-          defaultValue={value("limit")}
-          placeholder={limit === undefined ? undefined : String(limit)}
+          defaultValue={band.limit}
           inputMode="numeric"
         />
       </div>
       <div className={`${dash.field} ${dash.actions}`}>
-        <button className={dash.ghostlink} type="submit">
+        {/* Hidden, not removed: it is the control a browser that never ran the
+            band's script submits with, and `hidden` is what the appender set. */}
+        <button className={dash.ghostlink} type="submit" hidden={scripted}>
           Apply
         </button>
         <DashLink className={dash.ghostlink} href={`${ROOT}/videos`}>
@@ -423,9 +482,10 @@ function Filters({
   );
 }
 
-function Table({ data, search }: { data: Library; search: string }) {
+function Table({ band, data, offset }: { band: Band; data: Library; offset: string }) {
   const [sortedCol, sortedDir] = SORTED[data.order] ?? [null, null];
   const rows = data.videos;
+  const carried = carriedOf(band, offset);
   // Present in a private deployment, absent in the demo projection — §2.4's
   // table, decided by the same list of routes that decides everything else on
   // the write side. Not a disabled column: a control that cannot work is worse
@@ -469,19 +529,19 @@ function Table({ data, search }: { data: Library; search: string }) {
                   <SortHead
                     label="Title"
                     order="title"
-                    search={search}
+                    carried={carried}
                     sort={sortedCol === "title" ? sortedDir : null}
                   />
                   <SortHead
                     label="Published"
                     order="recency"
-                    search={search}
+                    carried={carried}
                     sort={sortedCol === "published" ? sortedDir : null}
                   />
                   <SortHead
                     label="Duration"
                     order="duration"
-                    search={search}
+                    carried={carried}
                     num
                     sort={sortedCol === "duration" ? sortedDir : null}
                   />
@@ -491,7 +551,7 @@ function Table({ data, search }: { data: Library; search: string }) {
                   <SortHead
                     label="Indexed"
                     order="indexed_at"
-                    search={search}
+                    carried={carried}
                     sort={sortedCol === "indexed" ? sortedDir : null}
                   />
                   {rendered ? (
@@ -509,10 +569,10 @@ function Table({ data, search }: { data: Library; search: string }) {
             </table>
           </div>
 
-          <Pager pagination={data.pagination} search={search} />
+          <Pager pagination={data.pagination} carried={carried} />
         </>
       ) : (
-        <Empty data={data} search={search} />
+        <Empty band={band} carried={carried} data={data} />
       )}
     </>
   );
@@ -521,19 +581,20 @@ function Table({ data, search }: { data: Library; search: string }) {
 function SortHead({
   label,
   order,
-  search,
+  carried,
   sort,
   num,
 }: {
   label: string;
   order: string;
-  search: string;
+  carried: URLSearchParams;
   sort: "ascending" | "descending" | null;
   num?: boolean;
 }) {
   // A new order is a new set in a new arrangement, so the pager goes back to
-  // the top of it.
-  const href = linkTo(search, { order, offset: null });
+  // the top of it — `sort_link` carried the filters and the page size, never
+  // the offset.
+  const href = linkTo(carried, { order, offset: null });
   return (
     <th
       scope="col"
@@ -644,7 +705,13 @@ function Row({ row, actions }: { row: LibraryRow; actions: boolean }) {
   );
 }
 
-function Pager({ pagination, search }: { pagination: Library["pagination"]; search: string }) {
+function Pager({
+  pagination,
+  carried,
+}: {
+  pagination: Library["pagination"];
+  carried: URLSearchParams;
+}) {
   const { limit, offset, has_more } = pagination;
   if (!offset && !has_more) return null;
   return (
@@ -652,7 +719,7 @@ function Pager({ pagination, search }: { pagination: Library["pagination"]; sear
       {offset ? (
         <DashLink
           className={dash.ghostlink}
-          href={linkTo(search, { offset: String(Math.max(offset - limit, 0)) })}
+          href={linkTo(carried, { offset: String(Math.max(offset - limit, 0)) })}
         >
           ← Previous
         </DashLink>
@@ -660,7 +727,7 @@ function Pager({ pagination, search }: { pagination: Library["pagination"]; sear
       {has_more ? (
         <DashLink
           className={dash.ghostlink}
-          href={linkTo(search, { offset: String(offset + limit) })}
+          href={linkTo(carried, { offset: String(offset + limit) })}
         >
           Next {limit} →
         </DashLink>
@@ -670,16 +737,9 @@ function Pager({ pagination, search }: { pagination: Library["pagination"]; sear
 }
 
 /** No rows, in the two ways that happens. */
-function Empty({ data, search }: { data: Library; search: string }) {
-  const params = new URLSearchParams(search);
-  const set = (key: string) => Boolean(params.get(key)?.trim());
+function Empty({ band, carried, data }: { band: Band; carried: URLSearchParams; data: Library }) {
   const dated =
-    set("published_after") ||
-    set("published_before") ||
-    set("indexed_after") ||
-    set("indexed_before");
-  const state = params.get("index_state")?.trim();
-  const has = params.get("has")?.trim();
+    band.published_after || band.published_before || band.indexed_after || band.indexed_before;
 
   // Paged off the end rather than filtered to nothing. `last_offset` arrives
   // exactly then, and it is where the last page starts — so the way back is a
@@ -691,7 +751,7 @@ function Empty({ data, search }: { data: Library; search: string }) {
           That page is past the end of {count(data.total)} matching video(s).
         </h2>
         <p className={dash.noticeNext}>
-          <DashLink href={linkTo(search, { offset: String(data.pagination.last_offset) })}>
+          <DashLink href={linkTo(carried, { offset: String(data.pagination.last_offset) })}>
             Go to the last page
           </DashLink>
         </p>
@@ -710,16 +770,16 @@ function Empty({ data, search }: { data: Library; search: string }) {
       <p className={dash.noticeDetail}>
         {dated ? (
           <>
-            The {set("published_after") || set("published_before") ? "published" : "indexed"} date
-            range is narrowing it.
+            The {band.published_after || band.published_before ? "published" : "indexed"} date range
+            is narrowing it.
           </>
-        ) : state && state !== "all" ? (
+        ) : band.index_state !== "all" ? (
           <>
-            The state filter is on <code>{state}</code>.
+            The state filter is on <code>{band.index_state}</code>.
           </>
-        ) : has && has !== "any" ? (
+        ) : band.has !== "any" ? (
           <>
-            The coverage filter is <code>has={has}</code>.
+            The coverage filter is <code>has={band.has}</code>.
           </>
         ) : (
           <>The text, channel and tag boxes are what narrowed it.</>
@@ -732,36 +792,61 @@ function Empty({ data, search }: { data: Library; search: string }) {
   );
 }
 
-/** The four date controls' values: the day the query was actually filtered on.
+/** The template's `filters` dict: what the query actually ran with, with the
+ *  reader's own URL standing in until the answer says otherwise.
  *
- *  The payload's echo rather than the URL, because the server resolves a date
- *  before it filters (§20): `30d` and a bare unix stamp are good things to be
- *  able to type into a URL and are not days, a bound outside [1970, a year
- *  out] is pulled back to the edge, and every accepted value is snapped to its
- *  UTC day. A picker seeded from the raw string would show a filter that did
- *  not run, next to a `note:` saying which one did.
+ *  The dates are the four the server resolves before it filters (§20): `30d`
+ *  and a bare unix stamp are good things to be able to type into a URL and are
+ *  not days, a bound outside [1970, a year out] is pulled back to the edge, and
+ *  every accepted value is snapped to its UTC day. `_before` is *exclusive* —
+ *  the start of the day after the one asked for, which is what makes
+ *  `published_before=2026-08-09` include the ninth — so it is read back a day
+ *  earlier and the reader sees the date they asked for. The floor is a second
+ *  rather than midnight, because `day` prints the dash for a falsy stamp and a
+ *  date box cannot be seeded from a dash.
  *
- *  `_before` is *exclusive* — the start of the day after the one asked for,
- *  which is what makes `published_before=2026-08-09` include the ninth — so it
- *  is read back a day earlier and the reader sees the date they asked for. The
- *  floor is a second rather than midnight, because `day` prints the dash for a
- *  falsy stamp and a date box cannot be seeded from a dash.
- *
- *  Until the read lands there is no resolved day to show, so the boxes hold
- *  what the reader typed — the URL is what this page was opened with. */
-function dateValues(search: string, filters?: Library["filters"]): Record<DateKey, string> {
+ *  `tags` has no echo to read: the payload carries the parsed list and the box
+ *  holds the string it was parsed from, so that one stays the URL's. */
+function bandOf(search: string, data?: Library): Band {
   const params = new URLSearchParams(search);
-  const values = {} as Record<DateKey, string>;
+  const raw = (key: string, fallback = "") => params.get(key)?.trim() || fallback;
+  const filters = data?.filters;
+
+  const dates = {} as Record<DateKey, string>;
   for (const key of DATE_KEYS) {
     if (!filters) {
-      values[key] = params.get(key)?.trim() ?? "";
+      dates[key] = raw(key);
       continue;
     }
     const echoed = filters[key];
     const asked = echoed === null ? null : key.endsWith("_before") ? echoed - DAY_S : echoed;
-    values[key] = asked === null ? "" : day(Math.max(asked, 1));
+    dates[key] = asked === null ? "" : day(Math.max(asked, 1));
   }
-  return values;
+
+  return {
+    q: filters ? (filters.q ?? "") : raw("q"),
+    channel: filters ? (filters.channel ?? "") : raw("channel"),
+    tags: raw("tags"),
+    index_state: filters ? filters.index_state : raw("index_state", "all"),
+    has: filters ? filters.has : raw("has", "any"),
+    ...dates,
+    order: data ? data.order : raw("order"),
+    limit: data ? String(data.pagination.limit) : raw("limit"),
+  };
+}
+
+/** The parts of every link on this page that do not change — `carried()`, plus
+ *  the two the sort and page macros appended and the offset the pager moves. */
+function carriedOf(band: Band, offset: string): URLSearchParams {
+  const params = new URLSearchParams();
+  for (const key of CARRIED) {
+    if (band[key] === DEFAULTS[key]) continue;
+    params.set(key, band[key]);
+  }
+  if (band.order) params.set("order", band.order);
+  if (band.limit) params.set("limit", band.limit);
+  if (offset.trim()) params.set("offset", offset.trim());
+  return params;
 }
 
 /** The page's URL, filtered down to the parameters the contract takes.
@@ -770,7 +855,9 @@ function dateValues(search: string, filters?: Library["filters"]): Record<DateKe
  *  request, and an unknown key in the URL bar has no business reaching the API
  *  just because somebody pasted it. Values are sent exactly as typed — the
  *  clamps are Python's, and a value corrected here would be a clamp the reader
- *  is never told about. */
+ *  is never told about. An empty one is not sent at all: the links carry the
+ *  key so a reader can see the whole shape of the query, and the API is asked
+ *  only what is being asked of it. */
 export function apiQuery(search: string): URLSearchParams {
   const from = new URLSearchParams(search);
   const query = new URLSearchParams();
@@ -781,9 +868,10 @@ export function apiQuery(search: string): URLSearchParams {
   return query;
 }
 
-/** This page's URL with some of its parameters changed; `null` removes one. */
-function linkTo(search: string, changes: Record<string, string | null>): string {
-  const next = apiQuery(search);
+/** This page's carried query with some of its parameters changed; `null`
+ *  removes one. */
+function linkTo(carried: URLSearchParams, changes: Record<string, string | null>): string {
+  const next = new URLSearchParams(carried);
   for (const [key, value] of Object.entries(changes)) {
     if (value === null) next.delete(key);
     else next.set(key, value);
