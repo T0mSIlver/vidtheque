@@ -7,9 +7,9 @@ import { dashboard, DashboardError, ROOT } from "@/lib/dashboard/client";
 import { clock, DASH } from "@/lib/format";
 import { groupByVideo, type VideoGroup } from "@/lib/group";
 import dash from "../dashboard.module.css";
+import { FrameOverlay, type Shot } from "../FrameOverlay";
 import { DashLink, PageHead, ReadFailure, Reading, Sep, Unbroken } from "../parts";
 import { useRead } from "../useRead";
-import { FrameDialog, type Shot } from "./FrameDialog";
 import { evidenceOf, highlight, insideLink, legsOf, receiptOf } from "./parts";
 import styles from "./search.module.css";
 
@@ -370,7 +370,7 @@ function Results({ page, query, search }: { page: SearchResponse; query: string;
             ))}
           </ol>
           <Pager pagination={page.pagination} search={search} />
-          <FrameDialog onClose={close} shot={shot} />
+          <FrameOverlay onClose={close} shot={shot} />
         </>
       ) : (
         <Empty status={page.data_status} type={page.content_type} search={search} />
@@ -457,8 +457,10 @@ function Moment({
         // For an OCR or a frame hit the picture *is* the evidence, so it opens
         // where the reader is rather than in a tab that has lost the ranking.
         // The same overlay the frames view opens, at the same width: one
-        // lightbox contract, and the caption carries the three facts a frame
-        // has — its id, its second, and the talk it came out of.
+        // component on one contract, and the caption carries the three facts a
+        // frame has — its id, its second, and the talk it came out of. No
+        // `lines`: what the machine read off the still is the video page's
+        // layer, and a result row has no reading to show.
         <button
           aria-label={`Enlarge the frame at ${at}`}
           className={styles.shot}

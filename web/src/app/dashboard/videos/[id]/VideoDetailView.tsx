@@ -7,6 +7,7 @@ import { dashboard, DashboardError, ROOT } from "@/lib/dashboard/client";
 import type { Cue, FrameCard, Shot, Stage, VideoDetail } from "@/lib/dashboard/schemas";
 import { at, bytes, clock, count, DASH, day, duration, hms, iso } from "@/lib/format";
 import dash from "../../dashboard.module.css";
+import { FrameOverlay, OcrBoxes, OcrLines } from "../../FrameOverlay";
 import {
   DashLink,
   Fact,
@@ -25,7 +26,6 @@ import { useRead } from "../../useRead";
 import { ReindexControl, TagsForm } from "../Manage";
 import videos from "../videos.module.css";
 import styles from "./detail.module.css";
-import { Lightbox, OcrBoxes, OcrLines } from "./Lightbox";
 
 // The video detail — `templates/video.html`, reading
 // `GET /dashboard/api/library/{video_id}` (dashboard.md §5.3, §20).
@@ -191,6 +191,10 @@ function Loaded({
   // are two views of one thing, and the link between them is otherwise
   // invisible.
   const [linked, setLinked] = useState<number | null>(null);
+
+  // Stable, because the overlay listens for the element's own `close` event
+  // and a new closure every render would be a listener torn down and rebuilt.
+  const closeFrame = useCallback(() => setOpen(null), []);
 
   function openFrame(frame: FrameCard) {
     setOpen(frame);
@@ -471,9 +475,40 @@ function Loaded({
 
       <Manage video={video} tags={tags} onWritten={setWritten} />
 
-      <Lightbox frame={open} videoId={video.video_id} onClose={() => setOpen(null)} />
+      {/* The overlay the search results open too, with the machine's reading
+          of the frame as this page's own layer over it. */}
+      <FrameOverlay onClose={closeFrame} shot={open ? frameShot(open, video.video_id) : null} />
     </>
   );
+}
+
+/**
+ * One frame card, as the overlay describes a frame.
+ *
+ * The caption is the three facts a keyframe has — its id, its second and, when
+ * the store recorded them, its size on disk — and the quiet line under it is
+ * the pipeline's own reading of it. `lines` is present even when the machine
+ * read nothing off the still: it is what asks for the OCR layer, and a frame
+ * with no text is the same overlay with an empty list, not a different one.
+ */
+function frameShot(frame: FrameCard, videoId: string) {
+  const dims = frame.width && frame.height ? ` · ${frame.width}×${frame.height}` : "";
+  const size = frame.jpeg_bytes === null ? "" : ` · ${bytes(frame.jpeg_bytes)}`;
+  const state =
+    frame.dup_of_ord !== null
+      ? `duplicate of #${frame.dup_of_ord}`
+      : `sharpness ${frame.sharpness === null ? DASH : frame.sharpness.toFixed(1)}`;
+  const read = frame.lines.length ? ` · ${frame.lines.length} line(s)` : "";
+  return {
+    alt: `Keyframe ${frame.ord} at ${clock(frame.t_s)}`,
+    caption: `${frame.frame_id} · ${clock(frame.t_s)}${dims}${size}`,
+    facts: `shot ${frame.shot_id} · ${state} · ${frame.ocr_state}${read}`,
+    file: frame.large,
+    frameId: frame.frame_id,
+    large: frame.large,
+    lines: frame.lines,
+    link: `https://youtu.be/${videoId}?t=${Math.floor(frame.t_s)}`,
+  };
 }
 
 /**
