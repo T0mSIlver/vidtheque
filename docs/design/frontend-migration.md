@@ -255,6 +255,14 @@ both are lists a port has to add itself to:
   `/dashboard/static/:path*` forwards to a route that no longer exists, and the
   `afterFiles` catch-all now falls through to a 404 rather than to Python's
   HTML — which is correct, and is no longer the thing it was written for.
+
+  *Removed 2026-09-06:* both are out of `next.config.ts`, and the catch-all had
+  a second reason to go — `afterFiles` is consulted after the static routes but
+  *before* the dynamic ones, so `/dashboard/:path*` matched
+  `/dashboard/videos/{video_id}`, `/dashboard/jobs/{job_id}` and
+  `/dashboard/following/{slug}` ahead of the pages that own them, and every
+  detail page in development came back a 404 off Python
+  (`web/src/next.config.test.ts`).
 - **The document-policy matcher names each ported page literally.** The
   page-wide entry excludes the whole `/dashboard` prefix — the JSON under it is
   not a document and the unported pages carry Python's own policy — so a ported
