@@ -170,6 +170,8 @@ describe("ResultGroup", () => {
 
   it("names the channel where a moment has no frame at all", () => {
     render(<ResultGroup group={group({ hits: [hit({ source: "ocr", thumb: null })] })} />);
-    expect(screen.getByText("on-screen", { selector: "[class*='placeholder']" })).toBeInTheDocument();
+    expect(
+      screen.getByText("on-screen", { selector: "[class*='placeholder']" }),
+    ).toBeInTheDocument();
   });
 });
