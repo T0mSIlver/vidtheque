@@ -92,6 +92,14 @@ OCR_LINE_CAP = 600
 # in can never disagree.
 FAILED_WINDOW_S = 86_400
 
+# How deep `queries.gaps` probes for failed videos — its `LIMIT 5`, named here
+# because `corpus-summary` reports the *length* of that list and a reader of the
+# count alone cannot tell five from five hundred. The Jinja overview printed
+# `5+` off a literal 5 in the template; the payload carries the ceiling instead,
+# so the client's `+` and the SQL behind it cannot disagree. A change to that
+# `LIMIT` has to change this line with it.
+GAPS_FAILED_CAP = 5
+
 # A health panel must never become the slowest dependency of the page that
 # reports it. `/status` is deliberately lock-free on the worker; this is the
 # corresponding client-side wall-clock bound. The response cap is defensive —
@@ -143,6 +151,29 @@ def redacted(request: Request) -> bool:
     them to the demo whole, and everything on them is corpus, not deployment.
     """
     return bool(request.app.state.assembled.public.enabled)
+
+
+def drift_reason(db: Any, *, redact: bool) -> str | None:
+    """Why the vector legs are off, in the operator's own words, or ``None``.
+
+    `VectorState.reason` is written once, by `Database._assert_dimensions`, and
+    it is the same sentence that turns `writes_allowed` off — which is why the
+    index form and the follow form both refuse on it (§5.5). The Jinja pages
+    printed it verbatim above their disabled controls; the payloads that gate
+    those controls carry it here, and the two surfaces read it through one
+    function so a form cannot be disabled for a reason nobody is told.
+
+    Policy text under `DECISIONS.md`'s split — a sentence naming a config key
+    and a table's declared width, not a rendering of a number — and **dropped
+    by the same predicate that drops it from the readiness block** (§2.4): it
+    names what this box is serving, which is the operator's business and not
+    the demo's. ``None`` where the legs are enabled, so "there is no reason"
+    and "you may not have the reason" are one absence a client renders the same
+    way.
+    """
+    if redact or db.vectors.enabled:
+        return None
+    return db.vectors.reason
 
 
 def tool_error(result: Any) -> dict[str, Any] | None:
@@ -1380,11 +1411,17 @@ class JobsReads:
     is the other half of the same fact, and the one the page has no need of: a
     value the server did not honour has to say so in words to a caller with no
     form to read it back out of.
+
+    ``redacted`` is the projection this assembly ran under, carried out rather
+    than re-derived by the payload: the rule that emptied `error_message` and
+    the flag that says so are then one statement, and a reader has no way to
+    take a `null` there for a job that failed without saying why.
     """
 
     filters: dict[str, Any]
     limit: int
     offset: int
+    redacted: bool = False
     notes: list[str] = field(default_factory=list)
     cards: list[dict[str, Any]] = field(default_factory=list)
     has_more: bool = False
@@ -1453,12 +1490,13 @@ async def jobs_reads(request: Request) -> JobsReads:
             f"filtered on {error_code!r}. A code is a token, not a sentence."
         )
 
+    redact = redacted(request)
     cards, has_more, now = await job_page(
         db,
         state,
         limit,
         offset,
-        redacted(request),
+        redact,
         error_code,
         kind,
         degraded_only,
@@ -1477,6 +1515,7 @@ async def jobs_reads(request: Request) -> JobsReads:
         },
         limit=limit,
         offset=offset,
+        redacted=redact,
         notes=notes,
         cards=cards,
         has_more=has_more,
@@ -1602,6 +1641,12 @@ async def job_detail_reads(db: Any, job_id: str, redact: bool) -> dict[str, Any]
         "events": [job_event(event, redact=redact) for event in events],
         "focus": None if focus is None else job_item(focus, now, redact=redact),
         "stages": focus_stages(stages),
+        # The projection this war story was assembled under. The page gated
+        # "message not published" on it; a payload without it leaves a client
+        # unable to tell a job that failed silently from one whose message this
+        # deployment does not publish, and the honest sentence is the one that
+        # names which.
+        "redacted": redact,
         "now": now,
         "live": str(row["state"]) in LIVE_STATES,
     }
@@ -1833,6 +1878,7 @@ class FollowingReads:
     spent_s: float
     settings: dict[str, Any]
     vectors: bool
+    vectors_reason: str | None
     rows: list[sqlite3.Row]
     has_more: bool
     held: list[sqlite3.Row]
@@ -1868,8 +1914,15 @@ async def following_reads(request: Request) -> FollowingReads:
         settings=follow_settings(assembled),
         # §5.5's honest refusal: `follow_channel` raises `E_FEATURE_DISABLED`
         # on the same condition `index_video` does, so the surface says so
-        # above the controls rather than after a submission.
-        vectors=bool(db.vectors),
+        # above the controls rather than after a submission — with the reason,
+        # which is what the page printed under that heading and the only thing
+        # on it an operator can act on.
+        # `db.vectors` is a `VectorState`, and a dataclass instance is truthy
+        # whatever it holds — so this field answered `true` on a drifted box
+        # too, which is the one deployment it exists to describe. It is the
+        # state, not the object.
+        vectors=bool(db.vectors.enabled),
+        vectors_reason=drift_reason(db, redact=redacted(request)),
         rows=rows,
         has_more=has_more,
         held=held_rows,

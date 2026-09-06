@@ -34,6 +34,7 @@ from vidtheque_mcp.dashboard.read_models import (
     FAILED_WINDOW_S,
     FOLLOW_PAGE,
     FOLLOW_PAGE_MAX,
+    GAPS_FAILED_CAP,
     HELD_BAND_CAP,
     INDEX_JOB_CAP,
     NEAR_MISS_S,
@@ -306,6 +307,82 @@ def test_the_session_endpoint_describes_the_deployment_it_is_in(
         assert body["sign_in_hint"] is None
 
 
+def test_the_session_says_why_writes_are_refused_and_only_to_the_owner(
+    tmp_path: Path,
+) -> None:
+    """`writes_allowed: false` with no reason is a form disabled for a secret.
+
+    `Database._assert_dimensions` turns the flag off and writes the sentence in
+    one breath, and the index form printed that sentence under its disabled
+    controls — the one thing on that page an operator can act on. The demo gets
+    the state and not the sentence, which is the readiness block's own rule for
+    the same string: it names what this box is serving.
+    """
+    with owner_client(tmp_path) as client:
+        allowed = read(client, SESSION)
+        assert allowed["writes_allowed"] is True
+        # No refusal, so nothing to explain — the same `null` a redaction
+        # leaves, so a client renders one absence and not two.
+        assert allowed["writes_refused_reason"] is None
+
+        db = client.app.state.assembled.db
+        db.writes_allowed = False
+        db.vectors.disable(PRIVATE_REASON)
+        try:
+            refused = read(client, SESSION)
+        finally:
+            db.writes_allowed = True
+            db.vectors.enabled = True
+            db.vectors.reason = None
+
+    assert refused["writes_allowed"] is False
+    assert refused["writes_refused_reason"] == PRIVATE_REASON
+
+    with make_client(tmp_path, public=DEMO) as demo:
+        db = demo.app.state.assembled.db
+        db.writes_allowed = False
+        db.vectors.disable(PRIVATE_REASON)
+        try:
+            projected = read(demo, SESSION)
+        finally:
+            db.writes_allowed = True
+            db.vectors.enabled = True
+            db.vectors.reason = None
+
+    assert projected["readonly"] is True
+    assert projected["writes_allowed"] is False
+    assert projected["writes_refused_reason"] is None
+    assert PRIVATE_REASON not in json.dumps(projected)
+
+
+def test_the_session_reason_is_policy_text_and_not_a_rendering(
+    tmp_path: Path,
+) -> None:
+    """The one string this payload grew, under the rule the rest of them keep.
+
+    A sentence naming a config key and a declared width is policy and stays
+    Python's (`DECISIONS.md`, decision 5). A stamp or a spoken duration inside
+    it would be Python formatting for React, which is the half that moved.
+    """
+    with owner_client(tmp_path) as client:
+        db = client.app.state.assembled.db
+        db.writes_allowed = False
+        db.vectors.disable(
+            "config[text_embed.dim]=1024 but vec_chunks declares FLOAT[512]; "
+            "indexing is refused so embedding spaces cannot be mixed."
+        )
+        try:
+            raw = json.dumps(read(client, SESSION))
+        finally:
+            db.writes_allowed = True
+            db.vectors.enabled = True
+            db.vectors.reason = None
+
+    assert not ISO_STAMP.search(raw), "a rendered date reached the session payload"
+    assert not SPOKEN_DURATION.search(raw), "a rendered duration reached it"
+    assert not re.search(r'"\d+:\d{2}(?::\d{2})?"', raw)
+
+
 # --------------------------------------------------------------- typed values
 
 
@@ -378,6 +455,89 @@ def test_the_overview_json_is_typed_values_and_no_display_strings(
     assert isinstance(body["storage"]["keyframe_bytes"], int)
     assert isinstance(body["storage"]["database_bytes"], int)
     assert body["declared_models"], "the owner sees what the corpus was built with"
+
+
+def test_the_overview_counts_ready_apart_from_what_can_answer(
+    tmp_path: Path,
+) -> None:
+    """"N ready" and "N queryable" are two numbers, and `stale` is the gap.
+
+    The Jinja band read `corpus_rollup.videos_ready`; the payload carried only
+    `queryable_videos`, which is `ready` **plus** `stale`, so a React page
+    saying "N ready" off it counts a stale video as ready and the "not ready"
+    beside it goes short by the same one. Both are on the payload now, and this
+    seeds the one state that tells them apart.
+    """
+    with make_client(tmp_path) as client:
+        body = read(client, OVERVIEW)
+        assert body["corpus"]["videos_ready"] == 3
+        assert body["corpus"]["queryable_videos"] == 3
+
+        conn = open_write_connection(client.app.state.assembled.db.path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                f"UPDATE videos SET index_state='stale' WHERE source_id='{FIRST}'"
+            )
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+        stale = read(client, OVERVIEW)
+
+    # One video moved out of `ready` and stayed answerable, which is exactly
+    # the case the two fields disagree on.
+    assert stale["corpus"]["videos_ready"] == 2
+    assert stale["corpus"]["queryable_videos"] == 3
+    assert stale["corpus"]["videos"] == 4
+    assert isinstance(stale["corpus"]["videos_ready"], int)
+
+
+def test_the_overview_says_when_the_failed_count_is_a_ceiling(
+    tmp_path: Path,
+) -> None:
+    """`queries.gaps` probes the failed rows with `LIMIT 5` and reports the
+    length of that list, so five means "five or more".
+
+    The Jinja page printed `5+` off a literal 5 in the template. The payload
+    carries the ceiling and the reading of it, so the client's `+` comes from
+    the same number the SQL used and a change to that `LIMIT` cannot leave a
+    page quietly reporting a cap as an exact count.
+    """
+    with make_client(tmp_path) as client:
+        empty = read(client, OVERVIEW)
+        assert empty["gaps"]["failed"] == 0
+        assert empty["gaps"]["failed_cap"] == GAPS_FAILED_CAP
+        assert empty["gaps"]["failed_capped"] is False
+
+        conn = open_write_connection(client.app.state.assembled.db.path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            for n in range(GAPS_FAILED_CAP + 1):
+                conn.execute(
+                    "INSERT INTO videos (owner_id, source_id, url, title, "
+                    "channel_name, published_at, duration_s, index_state) VALUES "
+                    "(1, ?, ?, ?, 'Channel', 1740000000, 600, 'failed')",
+                    (f"failed{n:05d}", f"https://youtu.be/failed{n:05d}", f"Failed {n}"),
+                )
+                conn.execute(
+                    "INSERT INTO video_stages (video_id, stage, state, started_at, "
+                    "finished_at, error) VALUES "
+                    "(last_insert_rowid(), 'fetch', 'failed', 100, ?, ?)",
+                    (200 + n, "ERROR: [youtube] Sign in to confirm you are not a bot."),
+                )
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+        capped = read(client, OVERVIEW)
+
+    # Six failed videos, and the probe stops at five: the count is the cap and
+    # the payload says which.
+    assert capped["gaps"]["failed"] == GAPS_FAILED_CAP
+    assert capped["gaps"]["failed_capped"] is True
+    assert capped["gaps"]["failed_cap"] == GAPS_FAILED_CAP
+    # And still a count: the rows behind it carry `video_stages.error`, which
+    # reaches no surface from here on any deployment.
+    assert "Sign in to confirm" not in json.dumps(capped)
 
 
 def test_the_ledger_json_is_the_tally_the_page_prints(tmp_path: Path) -> None:
@@ -1347,6 +1507,37 @@ def test_both_payloads_say_when_follow_checks_are_off(
     assert isinstance(detail["follow"]["next_check_at"], int)
 
 
+def test_the_list_says_why_a_follow_cannot_be_added_and_not_only_that(
+    tmp_path: Path,
+) -> None:
+    """§5.5's honest refusal, with the sentence that makes it actionable.
+
+    `follow_channel` raises `E_FEATURE_DISABLED` on the same condition
+    `index_video` does, and the page printed the reason inside the note above
+    its disabled form. The payload carried the boolean alone, so a React form
+    could refuse and not say why — and the boolean itself was `bool(db.vectors)`
+    on a dataclass instance, which is `true` on the one deployment it describes.
+    """
+    with follow_owner(tmp_path) as client:
+        on = read(client, FOLLOWING, headers=BEARER)
+        assert on["vectors"] is True
+        assert on["vectors_reason"] is None
+
+        client.app.state.assembled.db.vectors.disable(PRIVATE_REASON)
+        try:
+            off = read(client, FOLLOWING, headers=BEARER)
+        finally:
+            client.app.state.assembled.db.vectors.enabled = True
+            client.app.state.assembled.db.vectors.reason = None
+
+    assert off["vectors"] is False
+    assert off["vectors_reason"] == PRIVATE_REASON
+    # Policy text, and still nothing Python rendered for React.
+    raw = json.dumps(off)
+    assert not ISO_STAMP.search(raw), "a rendered date reached the following list"
+    assert not SPOKEN_DURATION.search(raw), "a rendered duration reached it"
+
+
 def test_the_near_miss_is_absent_rather_than_zero(tmp_path: Path) -> None:
     """A "0 of the last 25" finding is a fact about nothing dressed as one.
 
@@ -1572,6 +1763,41 @@ def test_the_jobs_list_keeps_the_projection_on_the_fields_it_grew(
         str(tmp_path),
     ):
         assert leaked not in raw, f"{leaked} is in the demo payload"
+
+
+def test_both_jobs_payloads_say_whether_this_deployment_publishes_the_prose(
+    tmp_path: Path,
+) -> None:
+    """A `null` message is two different facts and only one of them is honest.
+
+    The Jinja list carried the footnote "Source URLs and error text are not
+    published on this instance." and the job page gated "message not published"
+    on the same flag; the payloads sent neither, so a client had to choose
+    between printing that sentence over a job that simply failed without a
+    message and printing nothing over a redaction. The flag is the assembly's
+    own — the value the projection actually ran under, not a second reading of
+    the deployment — so it cannot say one thing while the rows say another.
+    """
+    with make_client(tmp_path) as owner:
+        listing = read(owner, JOBS)
+        detail = read(owner, JOB)
+    with make_client(tmp_path, public=DEMO) as demo:
+        demo_listing = read(demo, JOBS)
+        demo_detail = read(demo, JOB)
+
+    assert listing["redacted"] is False
+    assert detail["redacted"] is False
+    rows = {row["job_id"]: row for row in listing["jobs"]}
+    assert rows["job_deferred01"]["error_message"], "the owner reads the prose"
+
+    assert demo_listing["redacted"] is True
+    assert demo_detail["redacted"] is True
+    demo_rows = {row["job_id"]: row for row in demo_listing["jobs"]}
+    # The flag and the emptied field are one statement: the same code, no
+    # message, and a payload that says which of the two reasons that is.
+    assert demo_rows["job_deferred01"]["error_code"] == "E_RATE_LIMIT"
+    assert demo_rows["job_deferred01"]["error_message"] is None
+    assert demo_detail["degraded"][0]["error"] is None
 
 
 def test_the_jobs_lists_new_fields_carry_no_rendered_clock(tmp_path: Path) -> None:
