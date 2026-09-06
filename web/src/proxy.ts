@@ -128,7 +128,9 @@ export const config = {
       // upstream, and a policy written for these pages has no business riding
       // along. That list is `PYTHON_PATHS` in `next.config.ts`, and the export
       // is the one entry of it that is not a prefix — three segments under
-      // `/videos`, so it needs the id spelled out to be excluded at all.
+      // `/videos`, so it needs the id spelled out to be excluded at all. It
+      // outlived the library pages that shared its prefix (removed
+      // 2026-09-07), which is why the exclusion is still shaped this way.
       source:
         "/((?!_next|api|frames|mcp|auth|\\.well-known|healthz|dashboard|landing|favicon\\.ico|icon\\.svg|videos/[^/]+/export\\.md).*)",
       missing: [

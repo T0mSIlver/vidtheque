@@ -63,7 +63,7 @@ describe("proxy", () => {
     }
     // The two public documents are the same page for every reader, and a
     // front-end cache in front of them is the point.
-    for (const path of ["/", "/demo", "/videos", "/videos/kCc8FmEb1nY"]) {
+    for (const path of ["/", "/demo"]) {
       expect(send(path).headers.get("Cache-Control"), path).toBeNull();
     }
   });
@@ -85,7 +85,7 @@ describe("proxy", () => {
   it("mints a fresh nonce per request", () => {
     vi.stubEnv("NODE_ENV", "production");
     const first = forwardedNonce(send());
-    const second = forwardedNonce(send("/videos"));
+    const second = forwardedNonce(send("/demo"));
     expect(first).toBeTruthy();
     expect(first).not.toBe(second);
   });
@@ -124,7 +124,7 @@ describe("proxy", () => {
     config.matcher.some((entry) => new RegExp(`^${entry.source}$`).test(path));
 
   it("runs on the documents and nothing else", () => {
-    for (const path of ["/", "/demo", "/videos", "/videos/kCc8FmEb1nY"]) {
+    for (const path of ["/", "/demo"]) {
       expect(matches(path), path).toBe(true);
     }
     // The build's own output, and the prefixes `next.config.ts` gives Python.
@@ -138,8 +138,9 @@ describe("proxy", () => {
       "/healthz",
       "/icon.svg",
       "/favicon.ico",
-      // Three segments, so it is not the `/videos/[id]` page and Python owns
-      // it — the one entry of that list the prefixes above do not cover.
+      // The one path left under `/videos` since the library pages went on
+      // 2026-09-07, and Python's throughout — the one entry of that list the
+      // prefixes above do not cover.
       "/videos/kCc8FmEb1nY/export.md",
     ]) {
       expect(matches(path), path).toBe(false);

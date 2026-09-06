@@ -8,7 +8,14 @@ describe("Rail", () => {
     render(<Rail />);
     expect(screen.getByRole("link", { name: /vidtheque/ })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "search" })).toHaveAttribute("href", "/demo");
-    expect(screen.getByRole("link", { name: "library" })).toHaveAttribute("href", "/videos");
+  });
+
+  // `/videos` was a second reader surface until 2026-09-07 and the rail was
+  // where it was reachable from. It duplicated the dashboard's videos table,
+  // so it went, and the entry that invited a visitor into it went with it.
+  it("offers no library", () => {
+    render(<Rail />);
+    expect(screen.queryByRole("link", { name: "library" })).toBeNull();
   });
 
   it("prints the corpus size beside the wordmark when meta named one", () => {
