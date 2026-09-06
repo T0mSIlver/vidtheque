@@ -30,6 +30,26 @@ describe("RetryIn", () => {
     expect(refresh).toHaveBeenCalledOnce();
   });
 
+  // The dashboard's refusals do not unmount this: the panel keeps its control
+  // and hands it the new delay. A wait seeded once would then count the second
+  // refusal down from the first one's remainder and re-arm the button early,
+  // which is one more refused request.
+  it("counts a second refusal from the delay the server just named", async () => {
+    mockNavigation();
+    const { RetryIn } = await import("./RetryIn");
+    const { rerender } = render(<RetryIn seconds={4} />);
+    const button = screen.getByRole("button");
+    expect(button).toHaveTextContent("retry in 4s");
+
+    act(() => vi.advanceTimersByTime(1000));
+    act(() => vi.advanceTimersByTime(1000));
+    expect(button).toHaveTextContent("retry in 2s");
+
+    rerender(<RetryIn seconds={58} />);
+    expect(screen.getByRole("button")).toHaveTextContent("retry in 58s");
+    expect(screen.getByRole("button")).toBeDisabled();
+  });
+
   it("stops the timer when unmounted", async () => {
     mockNavigation();
     const { RetryIn } = await import("./RetryIn");

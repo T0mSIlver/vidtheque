@@ -32,10 +32,18 @@ export function RetryIn({
   onRetry?: () => void;
 }) {
   const router = useRouter();
-  // A floor of one second and the ceiling of a fraction: `retry_after_s` is a
-  // float on the wire, and a 0.4 rendered raw paints "try again" on a bucket
-  // that is still empty — which is one more refused request, not a retry.
-  const [left, setLeft] = useState(() => Math.max(1, Math.ceil(Number(seconds) || 1)));
+  const [sent, setSent] = useState(seconds);
+  const [left, setLeft] = useState(() => wholeSeconds(seconds));
+  // A second refusal on a control that never unmounted is a new wait, not the
+  // remainder of the last one: an initialiser runs once, so a retry that came
+  // back refused with 58s left kept counting down from the 6s of the first
+  // one and re-armed the button early. Re-seeded during render, which is
+  // React's own answer to "reset when a prop changes" — and the same one
+  // `dashboard/jobs/parts.tsx` gives its two clocks.
+  if (sent !== seconds) {
+    setSent(seconds);
+    setLeft(wholeSeconds(seconds));
+  }
 
   // An effect is the escape hatch for things React does not own: here, a
   // timer. The cleanup runs when the component unmounts or `left` changes,
@@ -68,4 +76,11 @@ export function RetryIn({
       </button>
     </p>
   );
+}
+
+/** A floor of one second and the ceiling of a fraction: `retry_after_s` is a
+ *  float on the wire, and a 0.4 rendered raw paints "try again" on a bucket
+ *  that is still empty — which is one more refused request, not a retry. */
+function wholeSeconds(seconds: number): number {
+  return Math.max(1, Math.ceil(Number(seconds) || 1));
 }
