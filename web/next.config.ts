@@ -117,6 +117,24 @@ const PYTHON_FORM_POSTS = [
 // and Next's own default (`trailingSlash: false`) already redirects the one to
 // the other.
 
+/** What `next dev` accepts a cross-origin request from besides `localhost`.
+ *
+ *  `VIDTHEQUE_DEV_ORIGINS`, comma separated, `127.0.0.1` alone when unset —
+ *  which is right for everyone but the person running the dev server on a box
+ *  they reach over the LAN, and for them it is one variable rather than a
+ *  patch. The list a box's own address was hardcoded into lived here until
+ *  2026-09-06; a public repo is no place for one machine's address, and the
+ *  next person to run this on a different network had to edit the file.
+ *
+ *  `deploy/.env.example` is the document of record for the name. */
+function devOrigins(): string[] {
+  const named = (process.env.VIDTHEQUE_DEV_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  return named.length ? named : ["127.0.0.1"];
+}
+
 // Cache Components is deliberately absent. It was on, and it is what made
 // `/demo`, `/videos` and `/videos/[id]` partial prerenders — a static shell
 // with the request-time part streamed in. A shell built at build time carries
@@ -130,9 +148,11 @@ const nextConfig: NextConfig = {
   // the rewrites below and the per-request headers `proxy.ts` sends are the
   // same either way, and `next start` on a full build still works.
   output: "standalone",
-  // Dev only: the hosts this box is reached on besides `localhost`, without which
-  // the dev server refuses their requests and the pages never hydrate.
-  allowedDevOrigins: ["127.0.0.1", "192.168.1.98"],
+  // Dev only: the hosts this box is reached on besides `localhost`, without
+  // which the dev server refuses their requests and the pages never hydrate.
+  // Which hosts those are is a fact about one machine and not about this repo,
+  // so it is named in the environment rather than written down here.
+  allowedDevOrigins: devOrigins(),
   async rewrites() {
     const base = process.env.VIDTHEQUE_API_URL?.replace(/\/+$/, "");
     if (process.env.NODE_ENV === "production" || !base) return [];
