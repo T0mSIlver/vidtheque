@@ -74,6 +74,14 @@ export function useFilterBand(submit: (form: HTMLFormElement) => void, settled =
     latest.current = submit;
   }, [submit]);
 
+  // The remembered id is released when the read settles — and on the way out,
+  // because a read is not owed one. A refusal, a reader who left mid-flight, a
+  // page that never got its second form node: any of them leaves the id in
+  // `sessionStorage`, and the next band to mount anywhere on this surface
+  // restores a caret to a field nobody was typing in. Leaving is the other end
+  // of the navigation this key spans, so leaving ends it.
+  useEffect(() => forget, []);
+
   const fire = useCallback((form: HTMLFormElement, source: EventTarget | null) => {
     window.clearTimeout(pending.current);
     remember(source);
@@ -133,12 +141,21 @@ function remember(source: EventTarget | null) {
   }
 }
 
+/** The navigation is over: whoever had the caret has been offered it back. */
+function forget() {
+  try {
+    sessionStorage.removeItem(FOCUS_KEY);
+  } catch {
+    // A tab with storage refused never wrote one.
+  }
+}
+
 /** The caret, back in the field that sent the reader here. */
 function restore(form: HTMLFormElement, settled: boolean) {
   try {
     const wanted = sessionStorage.getItem(FOCUS_KEY);
     if (!wanted) return;
-    if (settled) sessionStorage.removeItem(FOCUS_KEY);
+    if (settled) forget();
     const field = form.querySelector(`#${CSS.escape(wanted)}`);
     if (!(field instanceof HTMLInputElement || field instanceof HTMLSelectElement)) return;
     field.focus({ preventScroll: true });

@@ -70,14 +70,19 @@ export function usePatchedRows<Row>(
  * does not.
  */
 export function useArrivals<Item, Id>(items: Item[], idOf: (item: Item) => Id): Set<Id> {
+  // The ids of the first reading, and nothing after it: "new" means new to
+  // this reader, the same baseline `usePatchedRows` fixes above.
   const [known] = useState(() => new Set(items.map(idOf)));
-  const [arrived] = useState(() => new Set<Id>());
+  // Derived, not accumulated. Two sets were mutated here during the render
+  // that read them, which is the one thing a render may not do — React is
+  // free to run this function and throw the result away, and the ids added on
+  // the way would have stayed in a set the next render believed. There is
+  // nothing to accumulate anyway: an entry is new when the first reading did
+  // not carry it, which is a question about the reading in hand.
+  const arrived = new Set<Id>();
   for (const item of items) {
     const id = idOf(item);
-    if (!known.has(id)) {
-      known.add(id);
-      arrived.add(id);
-    }
+    if (!known.has(id)) arrived.add(id);
   }
   return arrived;
 }

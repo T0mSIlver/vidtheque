@@ -385,7 +385,15 @@ describe("the videos table", () => {
 
     // The navigation that push stands for. The band comes up on a new form
     // node, and the caret comes back with it, at the end of what was typed.
+    //
+    // `cleanup()` is this file's stand-in for that navigation and a harsher
+    // one than the thing it stands for: neither real path takes the hook down.
+    // A client-side push re-renders this page and re-keys the form, and a
+    // document load runs no React cleanup on the way out — so neither releases
+    // the id, which is why the band releases it on an unmount that really is
+    // one (`band.test.tsx`). Put back here to model what the browser carried.
     cleanup();
+    sessionStorage.setItem(FOCUS_KEY, "f-channel");
     vi.useRealTimers();
     vi.resetModules();
     await mount({ body: ran({ channel: "Karpathy" }) }, { search: "channel=Karpathy" });
