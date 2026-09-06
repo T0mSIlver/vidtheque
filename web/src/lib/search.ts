@@ -5,7 +5,7 @@
 // address forwarded so the API's limiter keys on them and not on this server.
 import { cache } from "react";
 import { headers } from "next/headers";
-import { api, ApiError, type ContentType, type SearchResponse } from "@/lib/api";
+import { api, ApiError, type ContentType, type SearchResponse, type Video } from "@/lib/api";
 import type { MetaOutcome } from "@/lib/api/meta";
 
 export const SEARCH_PAGE = 10;
@@ -63,6 +63,22 @@ export const readMeta = cache(async (): Promise<MetaOutcome> => {
     return { kind: "unreachable" };
   }
 });
+
+/** How many talks the cold page lists. The fastest way to understand a corpus
+ *  is to see what it is made of. */
+export const CORPUS_PREVIEW = 6;
+
+// The cold page's listing. A failure is silence, not a state: the examples
+// above it are enough on their own, and a page that has nothing else to show
+// yet should not lead with an apology.
+export async function readCorpus(): Promise<Video[]> {
+  try {
+    const page = await api().videos({ limit: CORPUS_PREVIEW }, { clientIp: await visitorIp() });
+    return page.videos.slice(0, CORPUS_PREVIEW);
+  } catch {
+    return [];
+  }
+}
 
 // The visitor's address as the edge reports it: the configured header first
 // (Cloudflare's by default, the same name the API trusts), else the first hop

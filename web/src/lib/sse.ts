@@ -48,11 +48,54 @@ function frameData(frame: string): string | null {
   return data.length ? data.join("\n") : null;
 }
 
+// NDJSON is the other framing over the same POST (demo-site.md §3.5), and it
+// came first: `json.dumps` escapes every newline in a payload, so an event is
+// always exactly one line and a corpus title with a line break in it cannot
+// split a frame. SSE is asked for first because it is the one that survives a
+// CDN — Cloudflare buffers every proxied response except `text/event-stream` —
+// but a deployment behind a proxy that does not care answers this, and a page
+// that could not read it would show a stream that never started.
+export function ndjsonParser() {
+  let buffer = "";
+  return {
+    push(chunk: string): string[] {
+      buffer += chunk;
+      const out: string[] = [];
+      for (;;) {
+        const end = LINE_END.exec(buffer);
+        if (!end) break;
+        const line = buffer.slice(0, end.index).trim();
+        buffer = buffer.slice(end.index + end[0].length);
+        if (line) out.push(line);
+      }
+      return out;
+    },
+    flush(): string[] {
+      const rest = buffer.trim();
+      buffer = "";
+      return rest ? [rest] : [];
+    },
+  };
+}
+
+/** Which framing a body is in, from the `Content-Type` the server chose. */
+export type Framing = "sse" | "ndjson";
+
+export function framingOf(contentType: string | null): Framing | null {
+  const type = contentType ?? "";
+  if (type.includes("text/event-stream")) return "sse";
+  if (type.includes("application/x-ndjson")) return "ndjson";
+  return null;
+}
+
 /** Read a streaming Response body as parsed JSON events, one at a time. */
-export async function* readJsonEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<unknown> {
+export async function* readJsonEvents(
+  body: ReadableStream<Uint8Array>,
+  framing: Framing = "sse",
+): AsyncGenerator<unknown> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
-  const parser = sseParser();
+  const parser = framing === "ndjson" ? ndjsonParser() : sseParser();
   try {
     for (;;) {
       const { value, done } = await reader.read();
