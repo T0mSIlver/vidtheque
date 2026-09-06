@@ -373,6 +373,59 @@ def test_the_index_form_answers_its_receipt_rather_than_rendering_it(
         assert len(solo.json()["jobs"]) == 1
 
 
+def test_the_index_outcome_echoes_what_the_server_actually_ran_on(
+    tmp_path: Path,
+) -> None:
+    """The three values the re-rendered Jinja form put back in front of the
+    reader, on the receipt instead.
+
+    `max_items` is clamped to the tool's 1..200 and the two vocabularies fall
+    back to their defaults rather than being refused, so what was typed and
+    what ran are not always the same number or the same word. The form used to
+    show that by re-rendering itself; a React form keeps its own state and has
+    nothing to read the accepted values back out of, and a clamp nobody is
+    shown looks like a bug in the thing that clamped.
+    """
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        over = post(
+            client,
+            f"{ROOT}/index",
+            data={
+                "urls": "vid00000101",
+                "max_items": "9000",
+                "expand": "nonsense",
+                "priority": "urgent",
+            },
+        )
+        assert over.status_code == 200
+        accepted = over.json()["accepted"]
+        # The tool's own ceiling, not the 9000 that was typed…
+        assert accepted["max_items"] == 200
+        # …and the two vocabularies' defaults, which is what the batch ran with.
+        assert accepted["expand"] == "playlist"
+        assert accepted["priority"] == "normal"
+
+        typed = post(
+            client,
+            f"{ROOT}/index",
+            data={
+                "urls": "vid00000102",
+                "max_items": "3",
+                "expand": "none",
+                "priority": "high",
+            },
+        )
+        assert typed.status_code == 200
+        assert typed.json()["accepted"] == {
+            "expand": "none",
+            "max_items": 3,
+            "priority": "high",
+        }
+        # Values, not a rendering of them: the receipt keeps §21's rule.
+        assert scan(typed.json()) == [], typed.text
+
+
 def test_the_index_forms_own_bounds_refuse_in_the_envelope(tmp_path: Path) -> None:
     with owner_client(tmp_path) as client:
         sign_in(client)
