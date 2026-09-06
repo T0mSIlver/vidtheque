@@ -381,6 +381,24 @@ describe("the video detail", () => {
     );
   });
 
+  // `?cues=0` asks for a page of no cues: the pager reads "Next 0 cues", and
+  // Earlier steps back by nothing, so neither control moves. A size is at
+  // least one cue — `?cue_offset=0`, which is the top of the transcript, keeps
+  // its zero.
+  it("floors ?cues= at a cue, and leaves ?cue_offset= its zero", async () => {
+    const { fetcher } = await mount(
+      { body: OWNER_VIDEO },
+      { search: "cues=0&cue_offset=0", cues: (url) => ({ body: cuePage(url) }) },
+    );
+
+    await screen.findByText("cue 0");
+    expect(fetcher).toHaveBeenCalledWith(
+      "/dashboard/api/videos/kCc8FmEb1nY/cues?offset=0&limit=1",
+      expect.anything(),
+    );
+    expect(screen.getByRole("button", { name: "Next 1 cues →" })).toBeInTheDocument();
+  });
+
   it("pages back from a seeded offset and writes where it landed", async () => {
     const replaceState = vi.spyOn(window.history, "replaceState");
     const { fetcher } = await mount(
