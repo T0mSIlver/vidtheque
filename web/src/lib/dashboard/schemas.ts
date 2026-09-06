@@ -32,6 +32,53 @@ const epoch = () => z.number().int();
 const seconds = () => z.number();
 const count = () => z.number().int();
 
+// `static/dashboard.js`'s `safeUrl()`, as a schema: **only `http:` and
+// `https:` ever reach an `href` or a `src`.** `javascript:` and `data:` are
+// URLs by the parser's reckoning and scripts by the browser's, and nothing on
+// this surface mints either — a video's link, a follow's source, a job item's
+// submitted URL and every frame path are all written by Python from the store,
+// so a payload that says otherwise is a contract break and is refused here
+// rather than handed to the DOM.
+//
+// It is `lib/api/schemas.ts`'s `httpUrl()` with one difference, and the
+// difference is this surface's: half of these are **root-relative paths** on
+// the instance's own origin — `/frames/…`, `/dashboard/login` — so the value is
+// resolved against a base before its scheme is read, exactly as the deleted
+// `safeUrl()` resolved against `window.location.href`. That makes a bare path
+// http(s) and leaves `javascript:alert(1)` what it is.
+const BASE = "http://dashboard.invalid/";
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const { protocol } = new URL(value, BASE);
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/** An absolute `http(s)` URL, or a path on this instance's own origin. */
+const httpUrl = () => z.string().refine(isHttpUrl, "must be an http(s) URL or a same-origin path");
+
+/**
+ * A path on this instance and never an origin of somebody else's choosing.
+ *
+ * `login_url` is the one URL on these payloads a *refusal* sends a browser to,
+ * and it is written as a path (`/dashboard/login`). `//host` and `/\host` are
+ * absolute URLs wearing a path's clothes — they resolve to http(s) and would
+ * pass `httpUrl()` — so this is the tighter fence `writes._safe_next` and
+ * `LoginView.safeNext` apply to `next`, said here for the field that carries a
+ * destination. An absolute http(s) URL is still allowed: an instance behind a
+ * proxy may name its own front door.
+ */
+const localUrl = () =>
+  z
+    .string()
+    .refine(
+      (value) => isHttpUrl(value) && !value.startsWith("//") && !value.startsWith("/\\"),
+      "must be a same-origin path or an http(s) URL",
+    );
+
 // --------------------------------------------------------------- readiness
 
 // One observation of the pipeline, never a history (dashboard.md §15). Its
@@ -129,7 +176,7 @@ export const Overview = z.object({
       indexed_at: epoch().nullable(),
       // A same-origin `/frames/...` path, signed on the owner's instance and
       // bare in the projection. `null` when the video has no keyframe yet.
-      thumb: z.string().nullable(),
+      thumb: httpUrl().nullable(),
     }),
   ),
   readiness: Readiness,
@@ -220,7 +267,7 @@ export const Session = z.object({
   // `null` where this deployment registers no write side, which is also where
   // `/dashboard/login` is not routed — a read-only instance that still gates
   // its reads refuses without having anywhere to send the reader.
-  login_url: z.string().nullable(),
+  login_url: localUrl().nullable(),
   sign_in_hint: z.string().nullable(),
   accepts_password: z.boolean(),
   accepts_token: z.boolean(),
@@ -283,8 +330,8 @@ export const LibraryRow = z.object({
   tags: z.array(z.string()),
   // A root-relative `/frames/…` URL at the width it is displayed at, signed on
   // the owner's instance and bare in the projection. `null` without a keyframe.
-  thumb: z.string().nullable(),
-  link: z.string(),
+  thumb: httpUrl().nullable(),
+  link: httpUrl(),
 });
 export type LibraryRow = z.infer<typeof LibraryRow>;
 
@@ -379,9 +426,9 @@ export const FrameCard = z.object({
   // The three widths of §6.4's derived cache. Never inline base64: a page of
   // forty base64 JPEGs is the byte analogue of the token blowup that invariant
   // exists to prevent.
-  thumb: z.string(),
-  detail: z.string(),
-  large: z.string(),
+  thumb: httpUrl(),
+  detail: httpUrl(),
+  large: httpUrl(),
   lines: z.array(OcrLine),
 });
 export type FrameCard = z.infer<typeof FrameCard>;
@@ -397,7 +444,7 @@ export const Shot = z.object({
   kept: count(),
   ocr_done: count(),
   first_ord: count(),
-  preview: z.string().nullable(),
+  preview: httpUrl().nullable(),
 });
 export type Shot = z.infer<typeof Shot>;
 
@@ -414,7 +461,7 @@ export const VideoDetail = z.object({
     index_state: z.string(),
     indexed_at: clockOf(),
     added_at: clockOf(),
-    url: z.string(),
+    url: httpUrl(),
     description: z.string(),
     tags: z.array(z.string()),
   }),
@@ -633,7 +680,7 @@ export const JobItem = z.object({
   duration_s: seconds().nullable(),
   // `null` in the projection — the submitted URL is `args_json` by another
   // name. The video it resolved to is not, and stays.
-  source_url: z.string().nullable(),
+  source_url: httpUrl().nullable(),
   error_code: z.string().nullable(),
   error_message: z.string().nullable(),
   started_at: clockOf(),
@@ -855,7 +902,7 @@ export const FollowRow = z.object({
   slug: z.string(),
   title: z.string(),
   kind: z.string(),
-  source_url: z.string(),
+  source_url: httpUrl(),
   // `active | paused | failing` — the store's own words, as strings, so a
   // state the schema grows renders neutral instead of failing the parse.
   state: z.string(),
@@ -938,7 +985,7 @@ export const Following = z.object({
   held: z.array(
     z.object({
       title: z.string(),
-      url: z.string(),
+      url: httpUrl(),
       slug: z.string(),
       follow: z.string(),
       published_at: clockOf(),
@@ -974,7 +1021,7 @@ export type FollowJob = z.infer<typeof FollowJob>;
 /** One candidate this follow decided not to index, and why. */
 export const SeenRow = z.object({
   title: z.string(),
-  url: z.string(),
+  url: httpUrl(),
   // One of the eight non-`queued` decisions, as the store's own word.
   decision: z.string(),
   // **Verbatim.** The receipt the check wrote, carrying the number that made
@@ -1077,7 +1124,7 @@ export type FollowDeleted = z.infer<typeof FollowDeleted>;
  *  JSON caller. */
 export const FollowQueued = z.object({
   slug: z.string(),
-  url: z.string().nullable(),
+  url: httpUrl().nullable(),
   job_id: z.string().nullable(),
 });
 export type FollowQueued = z.infer<typeof FollowQueued>;
