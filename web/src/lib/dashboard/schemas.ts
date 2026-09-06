@@ -132,6 +132,12 @@ export const Overview = z.object({
   corpus: z.object({
     videos: count(),
     queryable_videos: count(),
+    // Ready **only**, and it is deliberately not `queryable_videos`: that is
+    // ready *plus* stale, and a stale video answers a query without being
+    // ready. The band's "N ready" is this number and its "not ready" is
+    // `videos` minus this number — `corpus_rollup`'s own two columns, which
+    // add up to the corpus by construction.
+    videos_ready: count(),
     // The store's own state words as keys, only the states that are present.
     videos_by_index_state: z.record(z.string(), count()),
     // `corpus-summary`'s word, printed verbatim: the four state vocabularies
@@ -156,6 +162,13 @@ export const Overview = z.object({
     // A count of failed videos. The rows behind it carry the pipeline's prose
     // about the operator's box and reach no surface from here.
     failed: count(),
+    // …and whether that count is a ceiling. `queries.gaps` probes with a
+    // `LIMIT` and reports the length, so at the cap it means "this many or
+    // more" and the page prints `5+`. The number and the reading of it both
+    // travel: a `5` written into the page is how a cap gets reported as an
+    // exact count the day the `LIMIT` changes.
+    failed_cap: count(),
+    failed_capped: z.boolean(),
   }),
   embed_backlog: z.object({ text: count(), frame: count() }),
   jobs: z.object({
@@ -263,6 +276,16 @@ export const Session = z.object({
   // Optional with a `false` default: it is the newest field in this payload
   // and this shell must render against an instance that predates it.
   has_session_cookie: z.boolean().optional().default(false),
+  /** Why this database refuses writes, in the instance's own words.
+   *
+   *  `Database._assert_dimensions` turns `writes_allowed` off and writes the
+   *  sentence in the same breath, and the index form printed that sentence
+   *  under its disabled controls — a form refused with no reason is a form an
+   *  operator retypes. Policy text, `null` where writes are allowed and `null`
+   *  in the projection, which is the readiness block's rule for the same
+   *  string. Optional, like `has_session_cookie`: this shell renders against
+   *  an instance that predates the field. */
+  writes_refused_reason: z.string().nullable().optional().default(null),
   policy: z.string(),
   // `null` where this deployment registers no write side, which is also where
   // `/dashboard/login` is not routed — a read-only instance that still gates
@@ -701,7 +724,15 @@ export const JobEvent = z.object({
 });
 export type JobEvent = z.infer<typeof JobEvent>;
 
+/** The projection this listing ran under, and the flag the Jinja pages gated
+ *  their two footnotes on: with it true, `error_message` is `null` on every row
+ *  because the deployment does not publish the prose, which is a different
+ *  statement from a job that failed without one. Optional, so the shell renders
+ *  against an instance that predates the field. */
+const redactedFlag = () => z.boolean().optional();
+
 export const Jobs = z.object({
+  redacted: redactedFlag(),
   now: epoch(),
   // The server's own cadence. Clamped again in the browser: a page that took
   // its interval from a payload alone would poll as fast as a payload said.
@@ -739,6 +770,7 @@ export type Jobs = z.infer<typeof Jobs>;
 // optional here and the panel that renders it is absent rather than empty
 // until the payload carries it.
 export const JobDetail = z.object({
+  redacted: redactedFlag(),
   now: epoch(),
   poll_ms: count(),
   live: z.boolean(),
@@ -841,6 +873,16 @@ export const IndexOutcome = z.object({
   errors: z.array(PartialRefusal.extend({ urls: z.array(z.string()) })),
   batches: count(),
   urls: count(),
+  /** What the server actually ran on, which is not always what was typed:
+   *  `max_items` is clamped to the tool's own 1..200 and the two vocabularies
+   *  fall back to their defaults rather than being refused. `_submitted` did
+   *  this and the Jinja page re-rendered the form from it, so a reader who
+   *  typed `max_items=9000` saw the 200 the batch used; a form that keeps its
+   *  own state has nothing to read them back out of.
+   *
+   *  Optional because it rides on the *outcome*, and the two refusals this
+   *  route has (`E_BAD_PARAM`, `E_TOO_LARGE`) are envelopes and carry none. */
+  accepted: z.object({ expand: z.string(), max_items: count(), priority: z.string() }).optional(),
 });
 export type IndexOutcome = z.infer<typeof IndexOutcome>;
 
@@ -979,6 +1021,12 @@ export const Following = z.object({
   // §5.5's honest refusal for the follow form: `follow_channel` refuses on the
   // same condition `index_video` does.
   vectors: z.boolean(),
+  // …and the reason under that refusal, as the list's note printed it. One
+  // `VectorState.reason` through one `drift_reason`, so the follow form and
+  // the index form cannot be refused with two explanations. `null` where the
+  // legs are on; optional, so this shell renders against an instance that
+  // predates the field.
+  vectors_reason: z.string().nullable().optional(),
   follows: z.array(FollowListRow),
   // Capped independently of the pager, because it is not what the pager pages:
   // at most `held_cap` candidates waiting on a *person*, across every follow.
