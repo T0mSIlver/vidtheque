@@ -20,7 +20,13 @@ pnpm build && pnpm start
 
 Copy `.env.example` to `.env.local` before `pnpm dev`: `VIDTHEQUE_API_URL` is
 required and the app throws without it. `deploy/.env.example` at the repo root
-is the document of record for both variables.
+is the document of record for all three variables.
+
+Reaching the dev server from another machine takes one more: `next dev`
+answers `localhost` and refuses a cross-origin request from anything else, so
+`VIDTHEQUE_DEV_ORIGINS` (comma separated, `127.0.0.1` when unset) names the
+addresses that box is reached on. Without it the pages load over the LAN and
+never hydrate.
 
 ## One origin, two servers
 
