@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, type FormEvent } from "react";
+import { useCallback, useState, type FormEvent } from "react";
 import { ContentType, type Hit, type SearchResponse } from "@/lib/api/schemas";
 import { dashboard, DashboardError, ROOT } from "@/lib/dashboard/client";
 import { clock, DASH } from "@/lib/format";
@@ -9,6 +9,7 @@ import { groupByVideo, type VideoGroup } from "@/lib/group";
 import dash from "../dashboard.module.css";
 import { DashLink, PageHead, ReadFailure, Reading, Sep, Unbroken } from "../parts";
 import { useRead } from "../useRead";
+import { FrameDialog, type Shot } from "./FrameDialog";
 import { evidenceOf, highlight, insideLink, legsOf, receiptOf } from "./parts";
 import styles from "./search.module.css";
 
@@ -35,12 +36,29 @@ import styles from "./search.module.css";
 // so a `/dashboard/search?q=…&content_type=ocr` bookmarked before this port
 // opens the page it always opened.
 
-/** Every parameter the handler takes, in the order the band asks them. */
-const FILTERS = ["q", "content_type", "channel", "limit", "max_text_chars"] as const;
+/** Every parameter the band has a control for, in the order it asks them. */
+const FILTERS = ["q", "content_type", "channel"] as const;
+
+// The parameters with no control in the band. They belong to whoever put them
+// in the URL, so every navigation carries them rather than silently widening a
+// reader's page back to the default.
+//
+// **`video_id` is one of them, and dropping it was a filter that silently did
+// not apply**: `search.run` takes it (`public/api.py:290`), the Jinja page
+// reached it because `search_payload` reads the request's own query string, and
+// a whitelist that quietly loses a filter is the one thing "all means all"
+// forbids. It goes on the wire and the handler answers for it, with a `note:`
+// if it has one.
+const CARRIED = ["limit", "max_text_chars", "video_id"] as const;
 
 // `offset` is the pager's, not the band's: changing a filter changes the set,
 // and page four of the old set is not page four of the new one.
-const PAGE_KEYS = [...FILTERS, "offset"];
+const PAGE_KEYS = [...FILTERS, ...CARRIED, "offset"];
+
+/** What the band's two text boxes accept, and what `views._search_page_link`
+ *  paged with: a query pasted out of a log is bounded by the handler, and a
+ *  pager link carrying the whole of it is a link nobody can use twice. */
+const CAPS: Record<string, number> = { q: 512, channel: 128 };
 
 // The picker's own vocabulary. `content_type` is a *parameter* — the value in
 // the URL stays `ocr`, and the handler never sees anything else — but the word
@@ -107,12 +125,26 @@ export function SearchView() {
   const state = useRead<SearchResponse | null>(read);
   const page = state.status === "ready" ? state.data : null;
 
+  // The query the marks are made against: the URL's, cut to the length the box
+  // accepts, which is the string `views._highlighted` was handed. Not the
+  // payload's `query` echo — the handler echoes what it was sent, uncut, and a
+  // page marking against four kilobytes of pasted log would be marking against
+  // something no leg ever saw.
+  const query = (params.get("q") ?? "").slice(0, CAPS.q);
+
   const refusal = state.status === "failed" ? state.error : null;
-  // An empty query and an unknown `content_type` are both the reader's to fix,
-  // so the band stays on the page with the other two controls in it rather than
-  // the whole page becoming the refusal — the videos table's rule, for the same
-  // reason.
-  const badQuery = refusal instanceof DashboardError && refusal.status === 400;
+  // The gate's two refusals are the shell's, and they replaced the whole page
+  // in Jinja too — the 401 before any view ran (`views.py:166-185`) and the 429
+  // in the limiter ahead of it. There is no filter to fix behind either, and a
+  // band over one is an invitation to a page this browser cannot read.
+  const gated =
+    refusal instanceof DashboardError && (refusal.status === 401 || refusal.status === 429);
+  // Everything else that comes back from the search leg is a typed refusal the
+  // reader can act on — an empty query, a content channel that does not exist,
+  // the tool failing — and it prints where the results would be, in the shape
+  // `search.html` printed it: the code is the heading, because on an instrument
+  // that is the half a bug report quotes, and the sentence is under it.
+  const told = refusal instanceof DashboardError && !gated;
 
   return (
     <>
@@ -122,23 +154,21 @@ export function SearchView() {
 
       {state.status === "loading" && searched ? <Reading /> : null}
 
-      {badQuery && refusal instanceof DashboardError ? (
+      {told && refusal instanceof DashboardError ? (
         <section className={dash.notice} aria-labelledby="search-refused">
           <h2 className={dash.noticeTitle} id="search-refused">
-            {refusal.message}
+            {refusal.code}
           </h2>
-          <p className={dash.noticeDetail}>
-            <code>{refusal.code}</code>
-          </p>
-          {refusal.next ? <p className={dash.noticeNext}>{refusal.next}</p> : null}
+          <p className={dash.noticeDetail}>{refusal.message}</p>
+          {refusal.next ? <p className={dash.noticeNext}>next: {refusal.next}</p> : null}
         </section>
       ) : null}
 
-      {state.status === "failed" && !badQuery ? (
+      {state.status === "failed" && !told ? (
         <ReadFailure error={state.error} onRetry={state.reload} />
       ) : null}
 
-      {page ? <Results page={page} search={search} /> : null}
+      {page ? <Results page={page} query={query} search={search} /> : null}
 
       {!searched && state.status !== "failed" ? (
         <div className={`${styles.empty} ${styles.emptyFirst}`}>
@@ -206,10 +236,8 @@ function Filters({ search }: { search: string }) {
       if (key === "q") next.set(key, chosen);
       else if (chosen && chosen !== DEFAULTS[key]) next.set(key, chosen);
     }
-    // The two bounds have no control in the band and belong to whoever put them
-    // in the URL, so a submit carries them rather than silently widening a
-    // reader's page back to the default.
-    for (const key of ["limit", "max_text_chars"]) {
+    // The parameters with no control of their own ride along untouched.
+    for (const key of CARRIED) {
       const carried = params.get(key)?.trim();
       if (carried && !next.has(key)) next.set(key, carried);
     }
@@ -221,10 +249,16 @@ function Filters({ search }: { search: string }) {
       <div className={`${dash.field} ${dash.wide}`}>
         <label htmlFor="search-q">Query</label>
         <input
+          // The caret starts in the query box, on the way in and on the way back
+          // from every search. It is this page's answer to the thing the videos
+          // band answers with `sessionStorage`: a search box you have to click
+          // into before you can change the query makes you re-aim after every
+          // result.
+          autoFocus
           autoComplete="off"
           defaultValue={value("q")}
           id="search-q"
-          maxLength={512}
+          maxLength={CAPS.q}
           name="q"
           placeholder="a phrase from a talk, a slide, or a scene"
           required
@@ -252,7 +286,7 @@ function Filters({ search }: { search: string }) {
           autoComplete="off"
           defaultValue={value("channel")}
           id="search-channel"
-          maxLength={128}
+          maxLength={CAPS.channel}
           name="channel"
           type="text"
         />
@@ -266,9 +300,19 @@ function Filters({ search }: { search: string }) {
   );
 }
 
-function Results({ page, search }: { page: SearchResponse; search: string }) {
+function Results({ page, query, search }: { page: SearchResponse; query: string; search: string }) {
   const legs = legsOf(page.leg_counts);
   const groups = groupByVideo(page.results);
+  // The frame the reader is looking at, or nothing. State and not a ref,
+  // because the caption, the footer link and the picture all render from it —
+  // and because setting it back to nothing is what releases the bytes.
+  const [shot, setShot] = useState<Shot | null>(null);
+  // Where in the ranking each moment sits. Grouping rearranges one page of
+  // results and never re-ranks them, so a hit keeps the position the server
+  // gave it: `<ol start="{{ offset + 1 }}">` in Jinja, and the same number on
+  // the item here, because a group's hits need not be adjacent in the ranking
+  // they were pulled out of.
+  const rank = new Map(page.results.map((hit, index) => [hit, page.pagination.offset + index + 1]));
 
   return (
     <section className={dash.panel} aria-labelledby="search-results">
@@ -313,10 +357,17 @@ function Results({ page, search }: { page: SearchResponse; search: string }) {
         <>
           <ol className={styles.groups}>
             {groups.map((group) => (
-              <Group group={group} key={group.video_id} query={page.query} />
+              <Group
+                group={group}
+                key={group.video_id}
+                onOpen={setShot}
+                query={query}
+                rank={rank}
+              />
             ))}
           </ol>
           <Pager pagination={page.pagination} search={search} />
+          <FrameDialog onClose={() => setShot(null)} shot={shot} />
         </>
       ) : (
         <Empty status={page.data_status} type={page.content_type} search={search} />
@@ -330,7 +381,17 @@ function Results({ page, search }: { page: SearchResponse; search: string }) {
  *  Ten flat hits are usually three talks (demo-site.md §6.5). The server ranks
  *  and paginates; this groups what it was handed and nothing else, so a
  *  group's position is the position of its best hit and never a re-ranking. */
-function Group({ group, query }: { group: VideoGroup; query: string }) {
+function Group({
+  group,
+  onOpen,
+  query,
+  rank,
+}: {
+  group: VideoGroup;
+  onOpen: (shot: Shot) => void;
+  query: string;
+  rank: Map<Hit, number>;
+}) {
   return (
     <li className={styles.group}>
       <div className={styles.groupHead}>
@@ -347,14 +408,33 @@ function Group({ group, query }: { group: VideoGroup; query: string }) {
       </div>
       <ol className={styles.hits}>
         {group.hits.map((hit) => (
-          <Moment hit={hit} key={momentKey(hit)} query={query} />
+          <Moment
+            channel={hit.channel === group.channel ? null : hit.channel || "unknown"}
+            hit={hit}
+            key={momentKey(hit)}
+            onOpen={onOpen}
+            query={query}
+            rank={rank.get(hit)}
+          />
         ))}
       </ol>
     </li>
   );
 }
 
-function Moment({ hit, query }: { hit: Hit; query: string }) {
+function Moment({
+  channel,
+  hit,
+  onOpen,
+  query,
+  rank,
+}: {
+  channel: string | null;
+  hit: Hit;
+  onOpen: (shot: Shot) => void;
+  query: string;
+  rank?: number;
+}) {
   const evidence = evidenceOf(hit.source);
   const inside = insideLink(hit);
   const receipt = receiptOf(hit.link);
@@ -366,29 +446,40 @@ function Moment({ hit, query }: { hit: Hit; query: string }) {
   const runs = highlight(hit.text, query);
 
   return (
-    <li className={styles.hit}>
+    // `value` and not a `start` on the list: a group's moments need not be
+    // adjacent in the ranking they were grouped out of, so each one carries its
+    // own position in it.
+    <li className={styles.hit} value={rank}>
       {hit.frame_id ? (
-        // For an OCR or a frame hit the picture *is* the evidence, so it opens:
-        // an anchor to the same frame at the lightbox width, on Python's origin
-        // and under the same cookie. 192px of JPEG in a 128px box, so a slide
-        // is legible before you enlarge it.
-        <a
+        // For an OCR or a frame hit the picture *is* the evidence, so it opens
+        // where the reader is rather than in a tab that has lost the ranking.
+        // The same overlay the frames view opens, at the same width: one
+        // lightbox contract, and the caption carries the three facts a frame
+        // has — its id, its second, and the talk it came out of.
+        <button
+          aria-label={`Enlarge the frame at ${at}`}
           className={styles.shot}
-          href={frameUrl(hit.frame_id, LIGHTBOX_WIDTH)}
-          rel="noopener noreferrer"
-          target="_blank"
-          title={`${hit.frame_id} · ${at}`}
+          onClick={() =>
+            onOpen({
+              alt: `Keyframe at ${at}`,
+              caption: `${hit.frame_id} · ${at} · ${hit.title}`,
+              frameId: hit.frame_id as string,
+              large: frameUrl(hit.frame_id as string, LIGHTBOX_WIDTH),
+              link: receipt?.href ?? null,
+            })
+          }
+          type="button"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            alt={`Keyframe at ${at}`}
+            alt=""
             decoding="async"
             height={72}
             loading="lazy"
             src={frameUrl(hit.frame_id, STRIP_WIDTH)}
             width={128}
           />
-        </a>
+        </button>
       ) : (
         // No keyframe for this moment: the channel it came from, in the box the
         // frame would have taken, so the column stays a column. A spoken hit has
@@ -399,6 +490,14 @@ function Moment({ hit, query }: { hit: Hit; query: string }) {
       )}
 
       <div className={styles.body}>
+        {/* Into the index, not out to YouTube: the title opens what this
+            deployment stored about that video, and a frame hit lands **on the
+            frame**. The group head above carries the same words pointing at the
+            video plainly — two questions, two destinations — and the receipt at
+            the end of the row is the third. */}
+        <p className={styles.title}>
+          {inside ? <DashLink href={inside}>{hit.title}</DashLink> : hit.title}
+        </p>
         <p className={styles.meta}>
           {/* What kind of evidence this is, in a word, with the tool's own
               `source` on the group — the word carries the meaning and the
@@ -411,6 +510,16 @@ function Moment({ hit, query }: { hit: Hit; query: string }) {
               </span>
             ))}
           </span>
+          {/* The channel this moment came from, when it is not the one the
+              group head already prints. Two hits filed under one `video_id`
+              that disagree about their channel is a corpus fact, and the row
+              that has it says so rather than inheriting the head's. */}
+          {channel ? (
+            <>
+              <span className={styles.where}>{channel}</span>
+              <Sep />
+            </>
+          ) : null}
           {/* Into the index, not out to YouTube: a hit with a keyframe lands on
               that frame, and a transcript hit on the video plainly, because it
               names its cues by id while the transcript panel pages by offset. */}
@@ -554,9 +663,18 @@ export function apiQuery(search: string): URLSearchParams {
   return query;
 }
 
-/** This page's URL with some of its parameters changed; `null` removes one. */
+/** This page's URL with some of its parameters changed; `null` removes one.
+ *
+ *  The two text parameters are cut to what their own boxes accept, which is
+ *  what `views._search_page_link` paged with: the handler bounds a query of its
+ *  own accord, and a Next link carrying four kilobytes of pasted log is a link
+ *  that only works once. */
 function linkTo(search: string, changes: Record<string, string | null>): string {
   const next = apiQuery(search);
+  for (const [key, cap] of Object.entries(CAPS)) {
+    const value = next.get(key);
+    if (value !== null) next.set(key, value.slice(0, cap));
+  }
   for (const [key, value] of Object.entries(changes)) {
     if (value === null) next.delete(key);
     else next.set(key, value);
