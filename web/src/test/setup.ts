@@ -2,8 +2,16 @@
 // `toBeInTheDocument()` and `toBeDisabled()`; cleanup unmounts what a test
 // rendered so the next one starts from an empty document.
 import "@testing-library/jest-dom/vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach, beforeAll, vi } from "vitest";
+
+// How long `findBy*` and `waitFor` keep asking. The default is one second,
+// which is a bound on how slow the *box* is allowed to be rather than on how
+// long a page may take to settle: under parallel load a worker can lose its
+// slice for longer than that, and the test then reports a page that never
+// arrived when what happened is that nobody rendered it. `testTimeout` in
+// `vitest.config.mts` is the real ceiling and stays well above this.
+configure({ asyncUtilTimeout: 5_000 });
 
 // jsdom 30 has `HTMLDialogElement` and its `open` attribute but none of its
 // three methods, so a component that opens a real `<dialog>` cannot be

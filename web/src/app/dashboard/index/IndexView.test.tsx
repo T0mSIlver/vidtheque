@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
@@ -73,10 +73,15 @@ describe("the index form", () => {
     expect(await screen.findByRole("heading", { name: "Add to the index" })).toBeInTheDocument();
     expect(screen.getByText("A video, a playlist or a channel.")).toBeInTheDocument();
     // The two numbers the Jinja page prints, which are `URLS_PER_JOB` and
-    // `MAX_FORM_URLS` — printed on a control, never enforced here.
-    expect(screen.getByText("queued in jobs of")).toBeInTheDocument();
-    expect(screen.getAllByText("10").length).toBeGreaterThan(0);
-    expect(screen.getByText("200")).toBeInTheDocument();
+    // `MAX_FORM_URLS` — printed on a control, never enforced here. Waited on
+    // rather than read once: a `getBy` asserts whatever paint happened to be
+    // current when the line above it resolved, and `waitFor` asserts the state
+    // the page settles in.
+    await waitFor(() => {
+      expect(screen.getByText("queued in jobs of")).toBeInTheDocument();
+      expect(screen.getAllByText("10").length).toBeGreaterThan(0);
+      expect(screen.getByText("200")).toBeInTheDocument();
+    });
 
     expect(screen.getByLabelText("URLs")).toBeEnabled();
     expect(screen.getByLabelText("Expand")).toHaveValue("playlist");
