@@ -427,11 +427,15 @@
   /* The value group wraps. Without it a state cell put the word and its error
      code on one unwrappable line beside a fixed label, and the code — the half
      that says what the last check hit — was pushed off the right edge. */
+  /* `text-align` is reset here rather than left to the cell: a `.num` column
+     carries a right alignment that, once the cell is a flex row with a fixed
+     label box, right-aligns the label inside it. */
   .follows tbody td[data-label] {
     display: flex;
     flex-wrap: wrap;
     gap: var(--s1) var(--s2);
     align-items: baseline;
+    text-align: left;
   }
 
   .follows tbody td[data-label]::before {
@@ -483,6 +487,7 @@
     flex-wrap: wrap;
     gap: var(--s1) var(--s2);
     align-items: baseline;
+    text-align: left;
   }
 
   .seen tbody td[data-label]::before {
@@ -501,12 +506,8 @@
     margin-bottom: var(--s1);
   }
 
-  /* A right-aligned length under a left-aligned label is a value nobody can
-     find; and the `why` cell's own paragraph takes the rest of the line. */
-  .seen tbody td.num {
-    text-align: left;
-  }
-
+  /* The `why` cell's own paragraph takes the rest of the line, and the two
+     nowrap columns stop being nowrap: there is no column left to keep. */
   .seen tbody .colWhy p,
   .seen tbody .colDecision,
   .seen tbody .colWhen {
