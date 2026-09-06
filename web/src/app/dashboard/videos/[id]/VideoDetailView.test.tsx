@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
@@ -62,6 +62,36 @@ async function mount(
     </Chrome>,
   );
   return { ...nav, fetcher, posts };
+}
+
+/** `OWNER_VIDEO` with a second OCR line on frame 1: the pairing is by index,
+ *  and one line cannot tell a working pairing from a lit-everything one. */
+const TWO_LINES = {
+  ...OWNER_VIDEO,
+  frames: {
+    ...OWNER_VIDEO.frames,
+    frames: OWNER_VIDEO.frames.frames.map((frame) =>
+      frame.ord === 1
+        ? {
+            ...frame,
+            lines: [
+              ...frame.lines,
+              { line_no: 1, text: "loss 3.14", conf: 0.71, box: [0.1, 0.6, 0.4, 0.68] },
+            ],
+          }
+        : frame,
+    ),
+  },
+};
+
+/** The shot band, with the geometry jsdom does not compute: 1000px wide, a
+ *  hundred pixels down the viewport. Every percentage the preview clamps
+ *  against is read off this. */
+async function bandOf(): Promise<HTMLElement> {
+  const band = await screen.findByRole("list", { name: "Shots across the runtime" });
+  band.getBoundingClientRect = () =>
+    ({ left: 0, top: 100, right: 1000, bottom: 148, width: 1000, height: 48 }) as DOMRect;
+  return band;
 }
 
 describe("the video detail", () => {
@@ -160,11 +190,34 @@ describe("the video detail", () => {
     expect(boxes.length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("nvidia-smi 18304MiB")).toBeInTheDocument();
     expect(screen.getByText("duplicate of #0")).toBeInTheDocument();
-    // The card links the full-width still, never an inline base64 copy of it.
-    expect(screen.getAllByRole("link", { name: /Keyframe 0 at 0:05/ })[0]).toHaveAttribute(
-      "href",
-      "/frames/kCc8FmEb1nY-00000.jpg?w=1280&q=70",
+    // The card is the way into the enlarged frame, not a link out to a JPEG:
+    // the still it shows is the 512px one, and the 1280px one is the dialog's.
+    const card = screen.getByRole("button", { name: "Keyframe 0 at 0:05" });
+    expect(within(card).getByRole("img")).toHaveAttribute(
+      "src",
+      "/frames/kCc8FmEb1nY-00000.jpg?w=512&q=70",
     );
+  });
+
+  // Point at a line and its box lights. Only that direction at this size: a
+  // detection box on a 512px still is a few millimetres of screen, and a
+  // pointer aimed at one would be stealing the click that opens the frame.
+  it("lights a card's box from its line", async () => {
+    await mount({ body: OWNER_VIDEO });
+    await screen.findByText("Frames, and what the machine read");
+
+    const line = screen.getByText("nvidia-smi 18304MiB").closest("li");
+    const card = line?.closest("li[id]");
+    const box = card?.querySelector("[aria-hidden='true'][style*='left']");
+    expect(box).toBeTruthy();
+    const before = box?.getAttribute("class");
+
+    await userEvent.hover(line as HTMLElement);
+    expect(box?.getAttribute("class")).not.toBe(before);
+    expect(line?.getAttribute("class")).toContain("isLit");
+
+    await userEvent.unhover(line as HTMLElement);
+    expect(box?.getAttribute("class")).toBe(before);
   });
 
   it("pages the strip through the URL, keeping the reader's page size", async () => {
@@ -271,6 +324,208 @@ describe("the video detail", () => {
     expect(await screen.findByText("What was stored")).toBeInTheDocument();
     expect(screen.getByText("nvidia-smi 18304MiB")).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/null|NaN|undefined/);
+  });
+
+  // The enlarged frame — the half of the interaction a 512px card cannot
+  // carry. At this size a detection box is a target a pointer can find, which
+  // is why the linkage runs both ways here and one way on the card.
+  describe("the enlarged frame", () => {
+    it("opens the frame in the page rather than navigating to a JPEG", async () => {
+      await mount({ body: TWO_LINES });
+      await screen.findByText("Frames, and what the machine read");
+
+      await userEvent.click(screen.getByRole("button", { name: "Keyframe 1 at 7:10" }));
+
+      const shot = screen.getByRole("dialog");
+      expect(within(shot).getByRole("img")).toHaveAttribute(
+        "src",
+        "/frames/kCc8FmEb1nY-00001.jpg?w=1280&q=70",
+      );
+      // The caption is the frame's own identity, and the facts under it are
+      // the two the card had no room for.
+      expect(within(shot).getByText(/kCc8FmEb1nY-00001 · 7:10 · 1280×720/)).toBeInTheDocument();
+      expect(within(shot).getByText(/shot 1 · sharpness 10.0 · done · 2 line/)).toBeInTheDocument();
+      // Both lines, and a box for each at the coordinates the store holds.
+      expect(within(shot).getByText("loss 3.14")).toBeInTheDocument();
+      expect(shot.querySelectorAll("[aria-hidden='true'][style*='left']")).toHaveLength(2);
+      // The file itself stays reachable, one click further in.
+      expect(within(shot).getByRole("link", { name: "Open the file" })).toHaveAttribute(
+        "href",
+        "/frames/kCc8FmEb1nY-00001.jpg?w=1280&q=70",
+      );
+      expect(within(shot).getByRole("link", { name: "Open at this second" })).toHaveAttribute(
+        "href",
+        "https://youtu.be/kCc8FmEb1nY?t=430",
+      );
+      expect(shot.textContent).not.toMatch(/null|NaN|undefined/);
+    });
+
+    // The frame going into evidence is written in the one place it belongs:
+    // `?select=`, the same address a shot bar would have produced.
+    it("marks the opened frame in the URL", async () => {
+      const replaceState = vi.spyOn(window.history, "replaceState");
+      await mount({ body: TWO_LINES });
+      await screen.findByText("Frames, and what the machine read");
+
+      await userEvent.click(screen.getByRole("button", { name: "Keyframe 1 at 7:10" }));
+
+      expect(replaceState).toHaveBeenCalledWith(
+        null,
+        "",
+        expect.stringContaining("select=1#frame-1"),
+      );
+      replaceState.mockRestore();
+    });
+
+    it("lights a line from its box and a box from its line", async () => {
+      await mount({ body: TWO_LINES });
+      await screen.findByText("Frames, and what the machine read");
+      await userEvent.click(screen.getByRole("button", { name: "Keyframe 1 at 7:10" }));
+
+      const shot = screen.getByRole("dialog");
+      const boxes = shot.querySelectorAll("[aria-hidden='true'][style*='left']");
+      const second = within(shot).getByText("loss 3.14").closest("li");
+
+      // Point at the second box: its line lights, and only its line.
+      await userEvent.hover(boxes[1] as HTMLElement);
+      expect(second?.getAttribute("class")).toContain("isLit");
+      expect(boxes[1].getAttribute("class")).toContain("isLit");
+      expect(boxes[0].getAttribute("class")).not.toContain("isLit");
+
+      await userEvent.unhover(boxes[1] as HTMLElement);
+      expect(second?.getAttribute("class")).not.toContain("isLit");
+
+      // And the other way: point at the line, the box lights.
+      await userEvent.hover(second as HTMLElement);
+      expect(boxes[1].getAttribute("class")).toContain("isLit");
+      expect(boxes[0].getAttribute("class")).not.toContain("isLit");
+    });
+
+    it("closes on Escape and hands the focus back to the card", async () => {
+      await mount({ body: TWO_LINES });
+      await screen.findByText("Frames, and what the machine read");
+      const card = screen.getByRole("button", { name: "Keyframe 1 at 7:10" });
+
+      await userEvent.click(card);
+      const shot = screen.getByRole("dialog");
+      expect(document.activeElement).toBe(within(shot).getByRole("button", { name: "Close" }));
+
+      await userEvent.keyboard("{Escape}");
+
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(document.activeElement).toBe(card);
+    });
+
+    it("closes on the Close control", async () => {
+      await mount({ body: TWO_LINES });
+      await screen.findByText("Frames, and what the machine read");
+
+      await userEvent.click(screen.getByRole("button", { name: "Keyframe 1 at 7:10" }));
+      await userEvent.click(screen.getByRole("button", { name: "Close" }));
+
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    // A frame with nothing on it is the same dialog without the list, and its
+    // pill says which kind of nothing it is.
+    it("says what a deduplicated frame is instead of listing lines", async () => {
+      await mount({ body: OWNER_VIDEO });
+      await screen.findByText("Frames, and what the machine read");
+
+      await userEvent.click(screen.getByRole("button", { name: "Keyframe 7 at 11:40" }));
+
+      const shot = screen.getByRole("dialog");
+      expect(within(shot).getByText(/shot 7 · duplicate of #0 · skipped/)).toBeInTheDocument();
+      expect(shot.textContent).not.toMatch(/null|NaN|undefined/);
+    });
+  });
+
+  // Point anywhere along the shot band and the shot under the pointer shows
+  // its own first keyframe, the way a video player previews a seek — except
+  // that the unit here is a shot, because that is the unit the band is made of
+  // and the only one the index has a frame for.
+  describe("the scrub preview", () => {
+    it("previews the shot the pointer is inside", async () => {
+      await mount({ body: OWNER_VIDEO });
+      const band = await bandOf();
+
+      fireEvent.pointerMove(band, { clientX: 62, pointerType: "mouse" });
+
+      // shot 1 runs 430–435s of a 7000s runtime: 6.143% to 6.214% of the band,
+      // and 62px of 1000 is 6.2%.
+      expect(screen.getByText("7:10–7:15")).toBeInTheDocument();
+      expect(screen.getByText("shot 1 · 1/1 kept")).toBeInTheDocument();
+      // The 192px still, after the pause that keeps a sweep from being one
+      // request per bar.
+      await waitFor(() =>
+        expect(
+          document.querySelector('img[src="/frames/kCc8FmEb1nY-00001.jpg?w=192&q=70"]'),
+        ).toBeInTheDocument(),
+      );
+    });
+
+    // `min-width: 3px` means a rendered bar can be wider than its share of the
+    // runtime, so a pointer in the gap between two bars is previewing the
+    // nearest one rather than nothing.
+    it("previews the nearest shot when the pointer is in a gap", async () => {
+      await mount({ body: OWNER_VIDEO });
+      const band = await bandOf();
+
+      fireEvent.pointerMove(band, { clientX: 500, pointerType: "mouse" });
+
+      expect(screen.getByText("shot 7 · 0/1 kept")).toBeInTheDocument();
+      expect(screen.getByText("11:40–12:25")).toBeInTheDocument();
+
+      fireEvent.pointerLeave(band);
+      expect(screen.queryByText("shot 7 · 0/1 kept")).not.toBeInTheDocument();
+    });
+
+    // A tap is a navigation, not a hover: on a touch screen the bar's own link
+    // is the whole interaction and a preview would only be in front of it.
+    it("stays out of the way of a tap", async () => {
+      await mount({ body: OWNER_VIDEO });
+      const band = await bandOf();
+
+      fireEvent.pointerMove(band, { clientX: 62, pointerType: "touch" });
+
+      expect(screen.queryByText("shot 1 · 1/1 kept")).not.toBeInTheDocument();
+    });
+
+    // Focus is the keyboard's pointer, and the arrows step between the bars'
+    // own links rather than inventing a selection model of their own.
+    it("previews what the keyboard is on, and steps with the arrows", async () => {
+      await mount({ body: OWNER_VIDEO });
+      const band = await bandOf();
+      const bars = within(band).getAllByRole("link");
+
+      bars[0].focus();
+      await waitFor(() => expect(screen.getByText("shot 0 · 1/1 kept")).toBeInTheDocument());
+
+      fireEvent.keyDown(bars[0], { key: "ArrowRight" });
+      expect(document.activeElement).toBe(bars[1]);
+
+      fireEvent.keyDown(bars[1], { key: "End" });
+      expect(document.activeElement).toBe(bars[2]);
+
+      fireEvent.keyDown(bars[2], { key: "Escape" });
+      expect(screen.queryByText(/^shot \d+ · \d+\/\d+ kept$/)).not.toBeInTheDocument();
+    });
+
+    // The band and the strip are two views of one thing, and the link between
+    // them is otherwise invisible.
+    it("lights a shot's frames from its bar", async () => {
+      await mount({ body: OWNER_VIDEO });
+      const band = await bandOf();
+      const bars = within(band).getAllByRole("listitem");
+      const card = screen.getByRole("button", { name: "Keyframe 1 at 7:10" }).closest("li");
+
+      fireEvent.pointerEnter(bars[1]);
+      expect(card?.getAttribute("class")).toContain("isLinked");
+      expect(bars[1].getAttribute("class")).toContain("isLinked");
+
+      fireEvent.pointerLeave(bars[1]);
+      expect(card?.getAttribute("class")).not.toContain("isLinked");
+    });
   });
 
   describe("when the read does not land", () => {
