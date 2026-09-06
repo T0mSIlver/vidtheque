@@ -70,8 +70,8 @@ const PYTHON_PATHS = [
 // and the host, and nothing else — and these have to be in `beforeFiles`,
 // because in `afterFiles` the router has already found the page and Next
 // answers the POST itself with a document. Measured rather than assumed: a form
-// POST to `/dashboard/index` with only the `afterFiles` catch-all in front of
-// it comes back `200 text/html` — the page — and the write never reaches Python
+// POST to `/dashboard/index` forwarded from `afterFiles` rather than from here
+// comes back `200 text/html` — the page — and the write never reaches Python
 // at all. So they key on the header every write on this surface sends and no
 // document navigation ever sends: the form encoding of its body
 // (frontend-migration.md §9 — a form-encoded body is one of the three things a
@@ -95,26 +95,27 @@ const PYTHON_FORM_POSTS = [
   { source: "/dashboard/login", has: FORM_ENCODED },
 ];
 
-// The rest of `/dashboard`. `afterFiles` is the whole point: it is consulted
-// *after* the router has looked for a page, so the pages in `src/app/dashboard/`
-// win their own paths and what is left falls through to Python — every POST
-// behind those pages included: `/dashboard/jobs/{id}/cancel`,
-// `/dashboard/videos/{id}/tags` and the five `/dashboard/following/{slug}/…`
-// writes.
+// The rest of `/dashboard` is this app's, and nothing else about the prefix is
+// forwarded. A path with no React page 404s here in development rather than
+// travelling to a process that would 404 it too: the Jinja surface was deleted
+// on 2026-09-06 and what Python still answers under this prefix is
+// `/dashboard/api/*`, the thirteen POSTs and the `/dashboard/` redirect
+// (dashboard.md §23) — every one of them named above.
 //
-// A `GET` that reaches Python through here now gets a `404`, not a page: the
-// Jinja surface was deleted on 2026-09-06 and what Python still answers under
-// this prefix is `/dashboard/api/*`, the thirteen POSTs and the `/dashboard/`
-// redirect (dashboard.md §23). So this catch-all is what makes a path with no
-// React page 404 rather than render one, which is the same answer either
-// process would give.
+// An `afterFiles` catch-all on `/dashboard` and `/dashboard/:path*` stood here
+// until 2026-09-06, so that a page not ported yet could still be served by
+// Python. `afterFiles` runs after static pages and public files but *before*
+// dynamic routes, so it matched `/dashboard/videos/{video_id}`,
+// `/dashboard/jobs/{job_id}` and `/dashboard/following/{slug}` before their own
+// segments were ever tried, and every detail page in development came back a
+// `404` off Python. With no unported page left there was nothing on the other
+// side of that to weigh, so it is gone; `src/next.config.test.ts` holds the
+// shape.
 //
-// **Three exceptions, and they are `PYTHON_FORM_POSTS` above.** `POST
-// /dashboard/following`, `POST /dashboard/index` and `POST /dashboard/login`
-// share their paths with ported pages, so this catch-all never sees them: the
-// router finds the page first and Next answers the write with a document. Those
-// three are forwarded in `beforeFiles` under a header condition instead.
-const DASHBOARD_TO_PYTHON = ["/dashboard", "/dashboard/:path*"];
+// `/dashboard/` with the trailing slash needs nothing here either. Python's
+// answer to it is a `308` to `/dashboard`, which is a page this app serves —
+// and Next's own default (`trailingSlash: false`) already redirects the one to
+// the other.
 
 // Cache Components is deliberately absent. It was on, and it is what made
 // `/demo`, `/videos` and `/videos/[id]` partial prerenders — a static shell
@@ -137,7 +138,7 @@ const nextConfig: NextConfig = {
         ...PYTHON_PATHS.map((source) => ({ source, destination: base + source })),
         ...PYTHON_FORM_POSTS.map((entry) => ({ ...entry, destination: base + entry.source })),
       ],
-      afterFiles: DASHBOARD_TO_PYTHON.map((source) => ({ source, destination: base + source })),
+      afterFiles: [],
       fallback: [],
     };
   },
