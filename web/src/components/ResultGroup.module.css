@@ -52,34 +52,57 @@
 }
 
 .moment {
-  display: grid;
-  grid-template-columns: 4rem auto minmax(0, 1fr) auto;
-  gap: var(--s3);
+  display: flex;
   align-items: baseline;
-  padding: var(--s2) var(--s4);
+  gap: var(--s3);
+  min-width: 0;
+  padding: 9px var(--s4);
   border-bottom: 1px solid var(--seam);
+  transition: background var(--t-fast) linear;
 }
 
 .moment:last-child {
   border-bottom: 0;
 }
 
-@media (max-width: 780px) {
-  .moment {
-    grid-template-columns: 4rem minmax(0, 1fr);
-  }
-  .text {
-    grid-column: 1 / -1;
-  }
+.moment:hover {
+  background: var(--plate2);
+}
+
+/* A frame moment carries its own picture: the image is what matched, and the
+   card's cover is a different second of the same talk. */
+.isFrame {
+  align-items: center;
+  padding: 12px var(--s4);
+}
+
+.momentShot {
+  flex: none;
+  width: 10rem;
+}
+
+.momentLink {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.isFrame .momentLink {
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .time {
   composes: t-machine from global;
+  flex: none;
   color: var(--gold);
 }
 
 .badges {
   display: flex;
+  flex: none;
   gap: var(--s1);
 }
 
@@ -97,26 +120,87 @@
   border-color: var(--seen);
 }
 
-.text {
+/* A frame badge is not lime: a visual match read no text. The neutral plate. */
+.frameBadge {
+  color: var(--fg2);
+  background: var(--plate3);
+  border-color: var(--seam2);
+}
+
+/* One line, and the line is the point: this is a list to skim, and the whole
+   sentence is one click away, in the talk, at the second it was said. */
+.snip {
   composes: t-cell from global;
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  color: var(--fg);
 }
 
-.text:hover,
-.text:focus-visible {
+.momentLink:hover .snip,
+.momentLink:focus-visible .snip {
   color: var(--gold);
 }
 
-.muted {
+/* Spoken: a human said this, so it is set in the human face and quoted. */
+.snipSpoken::before {
+  content: "\201C";
   color: var(--fg3);
+}
+
+.snipSpoken::after {
+  content: "\201D";
+  color: var(--fg3);
+}
+
+/* On screen: the machine read this, so it is mono and lime — the same green as
+   the detection box it was read from. Never a quotation of speech. */
+.snipScreen {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--seen);
+  font-variant-ligatures: none;
+}
+
+/* A frame matched on its picture. Whatever text rode along is what happened to
+   be visible, not the thing that matched: muted, mono, never quoted, never
+   lime. */
+.snipFrame {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--fg2);
+  font-variant-ligatures: none;
+}
+
+/* Both channels agreed and the longer text won, so it is presented as neither. */
+.snipMixed {
+  font-style: normal;
+}
+
+/* The visitor's own words inside the corpus's sentence. Gold on the two faces
+   the reader reads; on the machine's channels the mark is weight and ink,
+   because lime and gold never touch the same object (DESIGN.md). */
+.snip mark {
+  background: transparent;
+  color: var(--gold);
+  font-weight: 500;
+}
+
+.snipScreen mark,
+.snipFrame mark {
+  color: var(--fg-max);
+  font-weight: 600;
 }
 
 /* The small receipt slab: border and ink, no fill, so ten of them down a
    page do not spend the accent on the list. */
 .receipt {
   composes: t-machine-sm from global;
+  margin-left: auto;
+  align-self: center;
   padding: 3px 7px;
   color: var(--gold);
   border: 1px solid var(--gold-44);
@@ -126,4 +210,24 @@
 .receipt:hover,
 .receipt:focus-visible {
   background: var(--gold-12);
+}
+
+/* A phone has no one-line row that is still a sentence: the row goes to three
+   lines rather than dropping anything, and the snippet is clamped to two. */
+@media (max-width: 40rem) {
+  .momentLink {
+    flex-wrap: wrap;
+  }
+
+  .snip {
+    flex: 1 1 100%;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  .receipt {
+    margin-left: 0;
+  }
 }
