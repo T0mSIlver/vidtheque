@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { AskEvent } from "@/lib/api/schemas";
-import { readJsonEvents, sseParser } from "./sse";
+import { framingOf, ndjsonParser, readJsonEvents, sseParser } from "./sse";
 
 // The bytes a real `POST /api/ask` sent, recorded 2026-09-01 against the
 // sandbox corpus: an opening comment, five activity pairs, one answer.
@@ -114,5 +114,56 @@ describe("readJsonEvents", () => {
     }
     expect(cancelled).toBe(true);
     expect(body.locked).toBe(false);
+  });
+});
+
+// The other framing over the same POST (demo-site.md §3.5). It came first and
+// is the better parse: `json.dumps` escapes every newline in a payload, so an
+// event is always exactly one line and a corpus title with a line break in it
+// cannot split a frame.
+describe("ndjsonParser", () => {
+  it("gives one event per line, in any split", () => {
+    const wire = '{"event":"activity","id":1}\n{"event":"answer"}\n';
+    for (const size of [1, 5, 1000]) {
+      const parser = ndjsonParser();
+      const out: string[] = [];
+      for (const chunk of chunked(wire, size)) out.push(...parser.push(chunk));
+      out.push(...parser.flush());
+      expect(out).toEqual(['{"event":"activity","id":1}', '{"event":"answer"}']);
+    }
+  });
+
+  it("hands back a last line the sender never terminated", () => {
+    const parser = ndjsonParser();
+    expect(parser.push('{"a":1}')).toEqual([]);
+    expect(parser.flush()).toEqual(['{"a":1}']);
+  });
+
+  it("skips the blank lines a writer may pad with", () => {
+    const parser = ndjsonParser();
+    expect(parser.push('\n\n{"a":1}\n\n')).toEqual(['{"a":1}']);
+  });
+
+  it("reads a whole NDJSON body through the same reader", async () => {
+    const wire = '{"n":1}\n{"n":2}\n';
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(new TextEncoder().encode(wire));
+        c.close();
+      },
+    });
+    const events: unknown[] = [];
+    for await (const raw of readJsonEvents(body, "ndjson")) events.push(raw);
+    expect(events).toEqual([{ n: 1 }, { n: 2 }]);
+  });
+});
+
+describe("framingOf", () => {
+  it("names the framing the server chose, and nothing when it chose neither", () => {
+    expect(framingOf("text/event-stream; charset=utf-8")).toBe("sse");
+    expect(framingOf("application/x-ndjson")).toBe("ndjson");
+    // The §3 body, byte for byte: an answer in one piece, not a stream.
+    expect(framingOf("application/json")).toBeNull();
+    expect(framingOf(null)).toBeNull();
   });
 });
