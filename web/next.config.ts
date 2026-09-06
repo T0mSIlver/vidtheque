@@ -130,6 +130,9 @@ const nextConfig: NextConfig = {
   // the rewrites below and the per-request headers `proxy.ts` sends are the
   // same either way, and `next start` on a full build still works.
   output: "standalone",
+  // Dev only: the hosts this box is reached on besides `localhost`, without which
+  // the dev server refuses their requests and the pages never hydrate.
+  allowedDevOrigins: ["127.0.0.1", "192.168.1.98"],
   async rewrites() {
     const base = process.env.VIDTHEQUE_API_URL?.replace(/\/+$/, "");
     if (process.env.NODE_ENV === "production" || !base) return [];
