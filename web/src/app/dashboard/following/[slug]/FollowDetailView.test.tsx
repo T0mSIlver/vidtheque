@@ -443,7 +443,7 @@ describe("one follow's page", () => {
         },
       });
 
-      expect(await screen.findByText(/not open to this browser/)).toBeInTheDocument();
+      expect(await screen.findByText(/needs the owner.s token or session/)).toBeInTheDocument();
     });
 
     // Under a stopped clock: the label has to be the delay the limiter named,

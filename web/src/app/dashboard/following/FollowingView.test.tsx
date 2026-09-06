@@ -239,8 +239,10 @@ describe("the follows table", () => {
       },
     });
 
-    expect(await screen.findByText(/not open to this browser/)).toBeInTheDocument();
-    expect(screen.getByText(/needs the owner's token or session/)).toBeInTheDocument();
+    // `error.html`'s shape: the instance's own message is the title and the
+    // code is the state beside it. No line of this side's own over the top.
+    expect(await screen.findByText(/needs the owner.s token or session/)).toBeInTheDocument();
+    expect(screen.getByText("E_AUTH_REQUIRED")).toBeInTheDocument();
   });
 
   // Under a stopped clock: the label has to be the delay the limiter named,
