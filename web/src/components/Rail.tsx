@@ -23,7 +23,6 @@ export function Rail({ count, browse }: { count?: string | null; browse?: string
         </Link>
         <nav className={styles.nav} aria-label="Primary">
           <Link href="/demo">search</Link>
-          <Link href="/videos">library</Link>
         </nav>
         <div className={styles.meta}>
           {count ? <span className={styles.count}>{count}</span> : null}

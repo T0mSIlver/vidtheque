@@ -452,6 +452,11 @@ function Cited({ text, byNumber }: { text: string; byNumber: Map<number, Citatio
 
 // A citation is one moment, so this list keeps the flat row a search result
 // has — the same provenance badges, the same receipt (demo-site.md §6.3).
+//
+// The title goes back to the talk, which is where the flat row put it before
+// `/videos/{id}` existed and where it goes again since that page was removed
+// (2026-09-07). A citation with no deep link falls back to the video's own
+// `youtu.be` URL, as the demo's `app.js` did.
 function Source({ c }: { c: Citation }) {
   const kinds = badges(c.source ?? "");
   return (
@@ -461,9 +466,14 @@ function Source({ c }: { c: Citation }) {
         <FrameShot shot={c} alt="" label={channelWord(c.source ?? "")} />
       </div>
       <div className={styles.sourceText}>
-        <Link href={`/videos/${c.video_id}`} className={styles.sourceTitle}>
+        <a
+          href={c.link ?? `https://youtu.be/${encodeURIComponent(c.video_id)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={styles.sourceTitle}
+        >
           {c.title}
-        </Link>
+        </a>
         <span className={styles.sourceMeta}>
           {kinds.map((kind) => (
             <span

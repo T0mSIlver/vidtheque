@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 // Python owns every path that is not a page. In production both processes sit
 // behind one reverse proxy on one origin: exact page GETs (`/`, `/demo`,
-// `/videos`, `/videos/{id}`, and under the dashboard `/dashboard`,
+// and under the dashboard `/dashboard`,
 // `/dashboard/ledger`, `/dashboard/search`, `/dashboard/videos`, `/dashboard/videos/{video_id}`,
 // `/dashboard/jobs`, `/dashboard/jobs/{job_id}`, `/dashboard/following`,
 // `/dashboard/following/{slug}`, `/dashboard/index` and `/dashboard/login`)
@@ -53,8 +53,8 @@ const PYTHON_PATHS = [
   // `src/fonts` (dashboard.md §23).
   "/dashboard/api/:path*",
   "/dashboard/logout",
-  // Three segments, so the `/videos/[id]` page never matched it anyway; it is
-  // listed for the same reason the proxy lists it — the export is Python's.
+  // The one path left under `/videos` since the library pages went on
+  // 2026-09-07: the Markdown export, which was always Python's.
   "/videos/:id/export.md",
 ];
 
@@ -136,12 +136,13 @@ function devOrigins(): string[] {
 }
 
 // Cache Components is deliberately absent. It was on, and it is what made
-// `/demo`, `/videos` and `/videos/[id]` partial prerenders — a static shell
-// with the request-time part streamed in. A shell built at build time carries
-// scripts stamped with no nonce, and `proxy.ts` mints a new one per request,
-// so the two cannot both be true (Next's own CSP guide says as much). The
-// pages render per request instead, and the reads that were `"use cache"` are
-// `unstable_cache` in `src/lib/library.ts`.
+// `/demo` and the library pages partial prerenders — a static shell with the
+// request-time part streamed in. A shell built at build time carries scripts
+// stamped with no nonce, and `proxy.ts` mints a new one per request, so the
+// two cannot both be true (Next's own CSP guide says as much). The pages
+// render per request instead. The `unstable_cache` reads the library kept its
+// data in went with it on 2026-09-07; `/demo` was never cached and says why
+// in `src/lib/search.ts`.
 const nextConfig: NextConfig = {
   // `web/Dockerfile`'s runtime stage copies the traced server bundle instead of
   // a node_modules tree. It is an output format and nothing else: the routes,

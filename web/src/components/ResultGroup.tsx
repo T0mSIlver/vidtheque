@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { Fragment } from "react";
 import type { Hit } from "@/lib/api/schemas";
 import { receipt } from "@/lib/format";
@@ -14,6 +13,7 @@ export function ResultGroup({ group, query = "" }: { group: VideoGroup; query?: 
   // Source-agnostic: whichever moment of this video has a frame behind it. The
   // header says *which talk*, so it does not care which leg found it.
   const cover = group.hits.find((hit) => hit.thumb) ?? group.hits[0];
+  const talk = videoUrl(cover.link);
   return (
     <article className={styles.card}>
       <header className={styles.head}>
@@ -21,9 +21,13 @@ export function ResultGroup({ group, query = "" }: { group: VideoGroup; query?: 
           <FrameShot shot={cover} alt="" label={channelWord(cover.source)} />
         </div>
         <div className={styles.headText}>
-          <Link href={`/videos/${group.video_id}`} className={styles.title}>
-            {group.title}
-          </Link>
+          {talk ? (
+            <a href={talk} target="_blank" rel="noopener noreferrer" className={styles.title}>
+              {group.title}
+            </a>
+          ) : (
+            <span className={styles.title}>{group.title}</span>
+          )}
           <p className={styles.headMeta}>
             <span>{group.channel}</span>
             <span className={styles.id}>{group.video_id}</span>
@@ -44,6 +48,20 @@ export function ResultGroup({ group, query = "" }: { group: VideoGroup; query?: 
       </ol>
     </article>
   );
+}
+
+// The video itself, not the moment: the same link with the `?t=` taken off
+// (`app.js`'s `videoUrl`, restored 2026-09-07 when `/videos/{id}` went). A hit
+// with no honest deep link has no honest video URL either, and gets a title
+// that is text rather than a URL the page guessed.
+function videoUrl(link: string): string | null {
+  try {
+    const url = new URL(link);
+    url.search = "";
+    return url.href;
+  } catch {
+    return null;
+  }
 }
 
 // The snippet, presented as what it is evidence of (demo-site.md §6.3): speech

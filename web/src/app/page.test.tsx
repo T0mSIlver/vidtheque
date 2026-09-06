@@ -37,7 +37,7 @@ describe("the landing at /", () => {
   it("is the landing, not the reader: no search box lives here", () => {
     render(<LandingPage />);
     expect(screen.queryByLabelText("Search the corpus")).toBeNull();
-    expect(screen.queryByRole("link", { name: "library" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "search" })).toBeNull();
   });
 
   it("prints the corpus readout rather than fetching one", () => {
