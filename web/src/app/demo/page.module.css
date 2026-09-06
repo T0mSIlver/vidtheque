@@ -142,8 +142,15 @@
   border-bottom: 0;
 }
 
+/* The `t-cell` role, spelled out: `composes` only takes a simple class
+   selector, and the title is an element inside a row rather than a class of
+   its own. */
 .corpus li a {
-  composes: t-cell from global;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 340;
+  line-height: 1.4;
+  letter-spacing: -0.012em;
   overflow-wrap: anywhere;
 }
 

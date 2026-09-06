@@ -136,9 +136,17 @@
   border: 1px solid var(--seam2);
 }
 
+/* The `t-label-sm` role, spelled out: `composes` only takes a simple class
+   selector, and these are the buttons inside a group rather than a class each. */
 .chips button,
 .modes button {
-  composes: t-label-sm from global;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+  font-variant-ligatures: none;
   height: 2.75rem;
   padding: 0 12px;
   background: transparent;
