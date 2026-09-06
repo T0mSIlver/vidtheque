@@ -34,6 +34,17 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
+// `mcp_url` is the one URL in a payload that never becomes an href. It becomes
+// a line somebody pastes into a shell — `claude mcp add --transport http
+// vidtheque <mcp_url>` — so http(s) is necessary and not sufficient: a newline
+// ends that command and begins a second one, and `;` does the same without
+// needing the newline. An endpoint carries none of this punctuation, so a
+// value that does is not one, and the demo prints its unavailable line rather
+// than a paste it cannot vouch for.
+const SHELL_PUNCTUATION = /[\s;&|<>$`'"\\()]/;
+const pasteableUrl = () =>
+  httpUrl().refine((value) => !SHELL_PUNCTUATION.test(value), "must be a plain http(s) URL");
+
 export const Pagination = z.object({
   limit: z.number().int(),
   offset: z.number().int(),
@@ -154,7 +165,7 @@ export const Meta = z.object({
   name: z.string(),
   version: z.string(),
   browse: z.string().nullable(),
-  mcp_url: z.string(),
+  mcp_url: pasteableUrl(),
   auth: z.string(),
   ask_enabled: z.boolean(),
   ask_model: z.string().nullable(),
