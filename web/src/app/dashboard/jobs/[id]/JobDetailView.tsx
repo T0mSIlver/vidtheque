@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useState } from "react";
 import { Pill } from "@/components/Pill";
 import { dashboard, DashboardError, ROOT } from "@/lib/dashboard/client";
 import type { JobDetail, JobEvent, JobItem } from "@/lib/dashboard/schemas";
@@ -15,14 +15,17 @@ import {
   ReadFailure,
   Reading,
   refusalOf,
+  Refusal,
   Sep,
   Unbroken,
+  useDocumentTitle,
   useWriteSide,
 } from "../../parts";
+import { useSession } from "../../session";
 import { useJobsPoll } from "../../useJobsPoll";
 import { CancelControl } from "../CancelControl";
 import styles from "../jobs.module.css";
-import { countsOf, JobStates, Progress, tallyOf } from "../parts";
+import { countsOf, JobStates, Progress, tallyOf, useTicking, WallClock } from "../parts";
 import { retryable, RetryControl } from "../RetryControl";
 
 // One job's war story — `templates/job.html`, reading
@@ -61,22 +64,15 @@ export function JobDetailView({ jobId }: { jobId: string }) {
     // refusal's own words and a way back to the table, not a retry button that
     // would produce this answer again.
     if (refusal instanceof DashboardError && refusal.status === 404) {
+      // The crumb names the id, which is the half of `views.job_detail`'s own
+      // sentence this page can still say: `/dashboard/api/jobs/{id}` answers a
+      // bare "no such job." where the page route answered `"{id}" is not a job
+      // on this instance.` — the message is policy text and is not composed
+      // here.
       return (
         <>
           <Crumbs jobId={jobId} />
-          <PageHead title="Unknown job" />
-          <section className={dash.notice} aria-labelledby="unknown">
-            <h2 className={dash.noticeTitle} id="unknown">
-              {refusal.message}
-            </h2>
-            <p className={dash.noticeDetail}>
-              <code>{refusal.code}</code>
-            </p>
-            {refusal.next ? <p className={dash.noticeNext}>{refusal.next}</p> : null}
-            <p className={dash.noticeNext}>
-              <DashLink href={`${ROOT}/jobs`}>Back to the jobs table</DashLink>
-            </p>
-          </section>
+          <Refusal code={refusal.code} message={refusal.message} next={refusal.next} />
         </>
       );
     }
@@ -89,16 +85,21 @@ export function JobDetailView({ jobId }: { jobId: string }) {
     );
   }
 
-  return <Loaded data={state.data} stopped={state.error} />;
+  return <Loaded data={state.data} stopped={state.error} polling={state.polling} />;
 }
 
-function Loaded({ data, stopped }: { data: JobDetail; stopped: unknown }) {
+function Loaded({
+  data,
+  stopped,
+  polling,
+}: {
+  data: JobDetail;
+  stopped: unknown;
+  polling: boolean;
+}) {
   const { job } = data;
   const { rendered } = useWriteSide();
-
-  useEffect(() => {
-    document.title = `Job ${job.job_id} — vidtheque`;
-  }, [job.job_id]);
+  useDocumentTitle(`Job ${job.job_id}`);
 
   return (
     <>
@@ -109,8 +110,11 @@ function Loaded({ data, stopped }: { data: JobDetail; stopped: unknown }) {
             header, and the countdown goes with them: on a deferred job it is
             the highest-value string on the surface and it used to sit fourth
             in a sentence. */}
+        {/* §5.4 asks for the countdown "with `error_code` beside it": on a
+            deferred job the code is the half that explains the clock, so it
+            comes before the request that has not landed yet. */}
         <span className={styles.headstates}>
-          <JobStates job={job} />
+          <JobStates job={job} codeFirst moving={polling} />
         </span>
       </PageHead>
 
@@ -153,10 +157,10 @@ function Loaded({ data, stopped }: { data: JobDetail; stopped: unknown }) {
         </div>
       ) : null}
 
-      {job.defer_s ? <Deferred job={data.job} /> : null}
+      {job.defer_s ? <Deferred job={data.job} moving={polling} /> : null}
       {job.error_code && !job.defer_s ? <JobError job={data.job} /> : null}
 
-      <Cost data={data} />
+      <Cost data={data} polling={polling} />
       <Items data={data} />
       <Stages data={data} />
       <Degraded data={data} />
@@ -175,8 +179,16 @@ function Crumbs({ jobId }: { jobId: string }) {
 }
 
 /** Waiting, not stuck. `not_before` read back at last — the line the incident
- *  was about, and the one fact no other surface carries. */
-function Deferred({ job }: { job: JobDetail["job"] }) {
+ *  was about, and the one fact no other surface carries.
+ *
+ *  The number inside the sentence counts down with the pill on the title's own
+ *  baseline, and the whole notice goes when the wait does. `job.html` made this
+ *  section part of the countdown for exactly that reason: a claimed job still
+ *  being told it is being held is the failure mode the notice exists to
+ *  prevent, arriving from the other side. */
+function Deferred({ job, moving }: { job: JobDetail["job"]; moving: boolean }) {
+  const left = useTicking(job.defer_s, moving, -1);
+  if (left === null || left <= 0) return null;
   return (
     <section className={dash.notice} aria-labelledby="deferred">
       <h2 className={dash.noticeTitle} id="deferred">
@@ -184,8 +196,7 @@ function Deferred({ job }: { job: JobDetail["job"] }) {
       </h2>
       <p className={dash.noticeDetail}>
         The job is <code>queued</code> with a <code>not_before</code> in the future, so{" "}
-        <code>claim_next</code> will not pick it up for another{" "}
-        <strong>{duration(job.defer_s)}</strong>.
+        <code>claim_next</code> will not pick it up for another <strong>{duration(left)}</strong>.
         {job.error_code ? (
           <>
             {" "}
@@ -198,6 +209,7 @@ function Deferred({ job }: { job: JobDetail["job"] }) {
 }
 
 function JobError({ job }: { job: JobDetail["job"] }) {
+  const redacted = Boolean(useSession()?.readonly);
   return (
     <section className={dash.notice} aria-labelledby="joberr">
       <h2 className={dash.noticeTitle} id="joberr">
@@ -207,12 +219,14 @@ function JobError({ job }: { job: JobDetail["job"] }) {
         <p className={dash.noticeDetail}>
           <span className={styles.errText}>{job.error_message}</span>
         </p>
-      ) : (
+      ) : redacted ? (
         // The projection drops the text and keeps the code (§2.4). Saying so is
-        // the designed absent state; a blank would read as a value that failed
-        // to arrive.
+        // the designed absent state — and only on the deployment that is
+        // actually withholding it: a failure that had no message of its own is
+        // not a redaction, and a page that says it is has told the reader to go
+        // looking somewhere there is nothing to find.
         <p className={dash.noticeDetail}>The message is not published on this instance.</p>
-      )}
+      ) : null}
     </section>
   );
 }
@@ -226,14 +240,19 @@ function JobError({ job }: { job: JobDetail["job"] }) {
  * the whole reason for printing both — a 92-minute overnight job reporting
  * "started 40s ago" is what the fix was for.
  */
-function Cost({ data }: { data: JobDetail }) {
+function Cost({ data, polling }: { data: JobDetail; polling: boolean }) {
   const { job } = data;
   const end = job.finished_at ? "finished" : "now";
   return (
     <Panel id="clocks" title="What it cost">
       <dl className={dash.figures}>
+        {/* The one figure on this page that is still being taken. It counts up
+            on a live job and stands still on a finished one, which is the same
+            clock the table's own column keeps — a measurement that keeps
+            counting is a lie, and so is one that stops while the work does
+            not. */}
         <Figure label="wall clock" notes={[`created → ${end}`]}>
-          {duration(job.wall_s)}
+          <WallClock seconds={job.wall_s} live={job.live && polling} />
         </Figure>
         <Figure label="on the runner" notes={[`first claim → ${end}`]}>
           {duration(job.ran_s)}
@@ -241,11 +260,15 @@ function Cost({ data }: { data: JobDetail }) {
         <Figure label="queued for" notes={["created → first claim"]}>
           {duration(job.waited_s)}
         </Figure>
-        {/* The five buckets, from the card's own counts rather than from the
-            item rows: the rows are capped and these are not, so a job with
-            more items than the cap would otherwise print a tally that
-            disagrees with the number above it. */}
-        <Figure label="items" notes={[tallyOf(job)]}>
+        {/* The states this job's items are actually in, from the grouped query
+            over all of them — `job.html`'s own note. It is not the card's five
+            buckets: those name every bucket including the empty ones, which is
+            what a *percentage* has to be explained by and not what a job with
+            ten items in one state should read as. `none` is the answer for a
+            job with no items at all, which is a fact rather than five zeroes.
+            An instance whose payload predates `counts` falls back to the
+            tally, because "none" over ten items would be worse than verbose. */}
+        <Figure label="items" notes={[itemNote(data)]}>
           {count(job.n_items)}
         </Figure>
       </dl>
@@ -309,7 +332,17 @@ function Items({ data }: { data: JobDetail }) {
   );
 }
 
+/** The per-state tally under the item count — `counts` when the payload sends
+ *  it, and `none` when it sends an empty one. */
+function itemNote(data: JobDetail): string {
+  if (!data.counts) return tallyOf(data.job);
+  const entries = Object.entries(data.counts);
+  if (!entries.length) return "none";
+  return entries.map(([state, n]) => `${n} ${state}`).join(" · ");
+}
+
 function ItemRows({ item }: { item: JobItem }) {
+  const redacted = Boolean(useSession()?.readonly);
   return (
     <>
       <tr className={item.state === "failed" ? styles.bad : undefined}>
@@ -380,9 +413,11 @@ function ItemRows({ item }: { item: JobItem }) {
             <span className={styles.label}>{item.error_code}</span>{" "}
             {item.error_message ? (
               <span className={styles.errText}>{item.error_message}</span>
-            ) : (
+            ) : redacted ? (
+              // Only where the deployment is withholding it. A stage that
+              // failed with no message of its own is not a redaction.
               <span className={styles.errText}>message not published on this instance</span>
-            )}
+            ) : null}
             {item.state === "queued" && item.retries_left ? (
               <span className={dash.muted}>
                 {" "}
@@ -404,9 +439,13 @@ function ItemRows({ item }: { item: JobItem }) {
  *  either half today, so this panel is absent rather than empty. */
 function Stages({ data }: { data: JobDetail }) {
   const stages = data.stages;
-  if (!stages?.length) return null;
   const focus = data.focus ?? null;
-  const subject = focus?.title || focus?.video_id || null;
+  // `job.html` drew this panel on `focus` and nothing else. The endpoint sends
+  // all seven stages whether or not there is an item to attribute them to, so
+  // a job with no focus would otherwise get seven `absent` rows under a
+  // heading that names nobody — a table about no video.
+  if (!focus || !stages?.length) return null;
+  const subject = focus.title || focus.video_id || null;
   return (
     <Panel id="focus" title={subject ? `Stage by stage — ${subject}` : "Stage by stage"}>
       <div className={dash.tablewrap}>
@@ -500,6 +539,8 @@ function Degraded({ data }: { data: JobDetail }) {
  * is why watching one arrive is the point of the page being live at all.
  */
 function Events({ events }: { events: JobEvent[] }) {
+  const redacted = Boolean(useSession()?.readonly);
+  const arrived = useArrivals(events);
   const preview = events.slice(0, EVENT_PREVIEW);
   const older = events.slice(EVENT_PREVIEW);
   return (
@@ -508,7 +549,7 @@ function Events({ events }: { events: JobEvent[] }) {
         <>
           <ol className={styles.events}>
             {preview.map((event) => (
-              <Event event={event} key={event.id} />
+              <Event event={event} key={event.id} isNew={arrived.has(event.id)} />
             ))}
           </ol>
           {older.length ? (
@@ -518,7 +559,7 @@ function Events({ events }: { events: JobEvent[] }) {
               </summary>
               <ol className={styles.events}>
                 {older.map((event) => (
-                  <Event event={event} key={event.id} />
+                  <Event event={event} key={event.id} isNew={arrived.has(event.id)} />
                 ))}
               </ol>
             </details>
@@ -527,14 +568,37 @@ function Events({ events }: { events: JobEvent[] }) {
       ) : (
         <p className={dash.emptyNote}>Nothing has been logged for this job.</p>
       )}
-      <p className={styles.panelNote}>Newest first, {events.length} shown.</p>
+      <p className={styles.panelNote}>
+        Newest first, {events.length} shown.
+        {redacted ? " Message text is not published on this instance." : null}
+      </p>
     </Panel>
   );
 }
 
-function Event({ event }: { event: JobEvent }) {
+/**
+ * Which of these events arrived while the page was open.
+ *
+ * Watching a deferral get logged is the point of the page being live at all —
+ * this log is the only record a non-rate-limit one has — so an event that
+ * lands under the reader is marked. A left rule rather than a flash, because
+ * it has to survive being scrolled past, which an animation does not.
+ */
+function useArrivals(events: JobEvent[]): Set<number> {
+  const [known] = useState(() => new Set(events.map((event) => event.id)));
+  const [arrived] = useState(() => new Set<number>());
+  for (const event of events) {
+    if (!known.has(event.id)) {
+      known.add(event.id);
+      arrived.add(event.id);
+    }
+  }
+  return arrived;
+}
+
+function Event({ event, isNew }: { event: JobEvent; isNew?: boolean }) {
   return (
-    <li className={styles.event}>
+    <li className={`${styles.event} ${isNew ? styles.isNew : ""}`}>
       <span className={styles.eventAt}>
         <time dateTime={iso(event.at)}>{at(event.at)}</time>
       </span>
