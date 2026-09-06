@@ -96,26 +96,70 @@ the public read-only projection.
   `views.py`, `templates/`, `static/`, the `/dashboard/static/*` route, the
   Jinja environment and the `jinja2` dependency are deleted; the rendered
   strings on the two jobs routes and the cue pager went with the scripts that
-  read them, keeping `basis` (dashboard.md §23). Two enhancement layers were
-  **not** ported and are the open work below.
+  read them, keeping `basis` (dashboard.md §23). Two enhancement layers went
+  unported that day; they landed the next, below.
 
-Still open, and both are a layer over facts the React pages already show:
+**The parity round** *(2026-09-06)*. Every ported page was read against the
+template and the script it replaced, and what the audit found was closed page by
+page — the payload fields first (dashboard.md §19–§21), then the pages:
 
-- **Videos, the frames lightbox** — the Jinja page opened a keyframe full size
-  with its OCR boxes and its caption over it (`static/dashboard.js`); the React
-  card links to the 1280px frame instead. The payload carries every line, its
-  box and the three widths already (`/dashboard/api/library/{video_id}`), so
-  this is `web/`'s alone.
-- **Videos, the timeline scrub preview** — pointing along the shot band showed
-  the shot under the pointer: its still, its span and its kept ratio. The React
-  timeline has the bars and their links and not the hover. `shots[]` carries
-  `start_s`, `end_s`, `frames`, `kept` and a `preview` URL per shot.
+- **Overview and ledger** — the four readings the port rounded off, the write
+  state and the drift banner drawn from the payload rather than from a second
+  request, and the failed-gap ceiling printed as a ceiling.
+- **Videos, the table** — the band applies itself again and every control shows
+  the filter that *ran*; a refused read redraws it from the filters the refusal
+  echoes; the two ends of a date range stopped sharing one key; the table
+  stacks on a phone.
+- **Videos, the detail** — the frame opens in the page, the shot band previews
+  the shot under the pointer, the transcript is addressable, and a dead
+  thumbnail says which channel it came from.
+- **Search** — the marks, the four snippet classes, a moment's title, place and
+  dropped filter, and the frame overlay on the same contract as the frames
+  view's.
+- **Jobs, list and detail** — the band echoes the listing that answered, the
+  tick patches the rows it has, the clocks move, the retry receipt carries what
+  the redirect used to show, and the two redaction lines read the listing's own
+  flag.
+- **Following, list and detail** — the held band is a warning and not an error,
+  a write refreshes the page it changed, and a refusal prints the `next:` line
+  it was already given.
+- **Indexing and tags** — the receipt outlives a reload, the form says what ran,
+  and a refusal echoes the values the server resolved.
+- **Session and login** — a refused submit empties the field and takes the caret
+  back; a refusal is a page again, with somewhere to click.
 
-One thing the deletion hands to `web/` rather than finishes, and it is a
-one-file change: the cue payload's `at`, `conf` and `chunk` are gone, so
-`web/src/lib/dashboard/schemas.ts` still requires three fields the endpoint no
-longer sends, and `CueRow`'s three fallbacks are dead branches. See
-frontend-migration.md §3.
+**What stays different, on purpose.** The pages fetch in the browser, so they
+need JavaScript where Jinja needed none — the trade §1a took deliberately.
+Every write answers inline where the Jinja form answered with a redirect. React
+formats the typed values the payloads now carry, and the rendered strings went
+with the scripts that read them. The search band does **not** auto-submit,
+because the Jinja band did not either — `data-autosubmit` was on the videos
+form and on nothing else. And the search page's stills stay page-built at the
+dashboard's 192 and 1280 rather than the payload's 320 and 960 (dashboard.md
+§14.2).
+
+Both enhancement layers — *landed 2026-09-06*, in `66f9cb1`:
+
+- **Videos, the frames lightbox** — a frame card is a button again and the
+  still opens in a native `<dialog>` at 1280px, its detection boxes over it at
+  the payload's own 0–1 coordinates, its lines beside it, and the file still
+  one click further in. The search page opens the same overlay on the same
+  contract, and since the consolidation it is the same component
+  (`web/src/app/dashboard/FrameOverlay.tsx`), with the OCR layer the video
+  page's own (dashboard.md §5.3, §14).
+- **Videos, the timeline scrub preview** — pointing along the shot band shows
+  the shot under the pointer again: its still, its span and its kept ratio,
+  and the nearest shot when the pointer is in a gap between two.
+
+`5bba419` finished the page around them — the transcript's place is a URL again
+and eight readings the port had rounded off came back — and amended
+dashboard.md §5.3 for both commits.
+
+The one thing the deletion had handed to `web/` rather than finished is done
+too *(2026-09-06, `d7c1cd9`)*: the cue schema stopped asking for `at`, `conf`
+and `chunk`, the three strings the endpoint no longer sends, and the timecode,
+the log-probability and the chunk label are composed from the typed fields
+beside them. See frontend-migration.md §3.
 
 **The three JSON endpoints that answered in rendered strings** — settled and
 done. `/dashboard/api/jobs`, `/dashboard/api/jobs/{job_id}` and
