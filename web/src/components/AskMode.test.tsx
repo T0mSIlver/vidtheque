@@ -271,6 +271,40 @@ describe("AskMode", () => {
       expect(screen.getByText("on-screen")).toBeInTheDocument();
       expect(screen.getByRole("link", { name: "youtu.be/zduSFxRajkE?t=11" })).toBeInTheDocument();
     });
+
+    // The title went to `/videos/{id}` while that page existed; it goes back to
+    // the moment it cites now that it does not (2026-09-07).
+    it("sends a source's title out to the talk", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => streamResponse(answerFrame("Paged [1].", { citations: [CITATION] }))),
+      );
+      const user = userEvent.setup();
+      render(<AskMode initialQ="anything" />);
+      await user.click(screen.getByRole("button", ASK));
+
+      const title = await screen.findByRole("link", { name: "Making LLMs go brrr" });
+      expect(title).toHaveAttribute("href", "https://youtu.be/zduSFxRajkE?t=11");
+      expect(title).toHaveAttribute("target", "_blank");
+      expect(title).toHaveAttribute("rel", "noopener noreferrer");
+    });
+
+    // A citation with no honest deep link still names a video, and the video's
+    // own URL is the one thing the page can build without guessing.
+    it("falls back to the video's own URL when a citation carries no link", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          streamResponse(answerFrame("Paged [1].", { citations: [{ ...CITATION, link: null }] })),
+        ),
+      );
+      const user = userEvent.setup();
+      render(<AskMode initialQ="anything" />);
+      await user.click(screen.getByRole("button", ASK));
+
+      const title = await screen.findByRole("link", { name: "Making LLMs go brrr" });
+      expect(title).toHaveAttribute("href", "https://youtu.be/zduSFxRajkE");
+    });
   });
 
   it("renders the degraded pane from a 503 that arrived before any stream", async () => {
