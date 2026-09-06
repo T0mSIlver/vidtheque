@@ -3,8 +3,13 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback } from "react";
 import { Pill } from "@/components/Pill";
-import { dashboard, DashboardError, ROOT } from "@/lib/dashboard/client";
-import type { Library, LibraryRow } from "@/lib/dashboard/schemas";
+import { dashboard, DashboardError, echoOf, ROOT } from "@/lib/dashboard/client";
+import {
+  type Library,
+  type LibraryFilters,
+  type LibraryRow,
+  RefusedLibrary,
+} from "@/lib/dashboard/schemas";
 import { count, day, duration } from "@/lib/format";
 import { useFilterBand } from "../band";
 import dash from "../dashboard.module.css";
@@ -148,9 +153,14 @@ export function VideosView() {
   const state = useRead(read);
   const answered =
     state.status === "ready" && state.data.search === search ? state.data.data : undefined;
-  const band = bandOf(search, answered);
 
   const refusal = state.status === "failed" ? state.error : null;
+  // A refused read still says what it resolved (§20): the same `filters` block,
+  // from the same function, beside the envelope. Without it the date pickers
+  // and the line under the title can only redraw what was typed — which is the
+  // one reading the server has just said is not what it ran.
+  const resolved = echoOf(refusal, RefusedLibrary)?.filters;
+  const band = bandOf(search, answered, resolved);
   // The gate's two refusals are the shell's, and they replaced the whole page in
   // Jinja too — the 401 before any view ran (`views.py:166-185`) and the 429 in
   // the limiter ahead of it. There is no filter to fix behind either, and a band
@@ -805,10 +815,13 @@ function Empty({ band, carried, data }: { band: Band; carried: URLSearchParams; 
  *
  *  `tags` has no echo to read: the payload carries the parsed list and the box
  *  holds the string it was parsed from, so that one stays the URL's. */
-function bandOf(search: string, data?: Library): Band {
+function bandOf(search: string, data?: Library, resolved?: LibraryFilters): Band {
   const params = new URLSearchParams(search);
   const raw = (key: string, fallback = "") => params.get(key)?.trim() || fallback;
-  const filters = data?.filters;
+  // The answer's block, or — on a refusal — the one the refusal echoed. `order`
+  // and `limit` stay the URL's there: they are not in that block, and a refused
+  // read resolved no page size.
+  const filters = data?.filters ?? resolved;
 
   const dates = {} as Record<DateKey, string>;
   for (const key of DATE_KEYS) {

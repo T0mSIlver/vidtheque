@@ -216,8 +216,27 @@ describe("the corpus overview", () => {
       expect(screen.getByText("Storage")).toBeInTheDocument();
       expect(screen.getByText("4.3 kB")).toBeInTheDocument();
       expect(screen.getByText("4.7 MB")).toBeInTheDocument();
-      // The fifth state is the deployment's, and it comes from the session.
+      // The fifth state is the deployment's, and it comes from this payload.
       expect(screen.getByText("allowed")).toBeInTheDocument();
+    });
+
+    // The flag is on the overview because the two things drawn from it are on
+    // this page (§19). A session saying otherwise does not get a vote: it is
+    // read for other reasons and lands whenever it lands, and a banner that
+    // appears a moment after the page is a banner the reader watches arrive.
+    it("draws the write state and the drift banner from the payload, not the session", async () => {
+      const { mockNavigation } = await import("@/test/next");
+      mockNavigation("", "/dashboard");
+      await mount({ body: { ...OWNER_OVERVIEW, writes_allowed: false } }, OWNER_SESSION);
+
+      expect(
+        await screen.findByRole("heading", { name: "The corpus and the worker disagree" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(/Indexing is refused, so no video can mix embedding spaces/),
+      ).toBeInTheDocument();
+      expect(screen.getByText("refused")).toBeInTheDocument();
+      expect(screen.queryByText("allowed")).not.toBeInTheDocument();
     });
   });
 

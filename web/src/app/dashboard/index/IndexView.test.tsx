@@ -310,6 +310,25 @@ describe("the index form", () => {
       expect(screen.getByLabelText("URLs")).toHaveValue("vid00000000");
     });
 
+    // The refusal is raised after `_submitted` resolved the three, so it says
+    // what the server would have run on (§21). A form told "that list is too
+    // long" while still showing the 9000 it typed is a form reporting two
+    // different problems, only one of which is the one it was refused for.
+    it("echoes the resolved values back into the controls on a refusal too", async () => {
+      await mount({ post: { status: 413, body: TOO_MANY_URLS } });
+      await screen.findByLabelText("URLs");
+
+      await userEvent.clear(screen.getByLabelText("Max items"));
+      await userEvent.type(screen.getByLabelText("Max items"), "5");
+      await queue("vid00000000");
+
+      expect(await screen.findByText("E_TOO_LARGE")).toBeInTheDocument();
+      expect(screen.getByLabelText("Max items")).toHaveValue(200);
+      expect(screen.getByLabelText("Expand")).toHaveValue("playlist");
+      expect(screen.getByLabelText("Priority")).toHaveValue("normal");
+      expect(screen.getByLabelText("URLs")).toHaveValue("vid00000000");
+    });
+
     it("keeps the paste box when the submission had no URL in it", async () => {
       await mount({ post: { status: 400, body: NO_URLS } });
       await screen.findByLabelText("URLs");

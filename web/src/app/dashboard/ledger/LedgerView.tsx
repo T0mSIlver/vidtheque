@@ -195,7 +195,11 @@ function Loaded({ data }: { data: Ledger }) {
           with the counts above so a silent worker costs this page a second at
           most (§15). The overview's model diff is not here; this page's panel
           is the strip. */}
-      <Readiness readiness={readiness} redacted={data.redacted} />
+      <Readiness
+        readiness={readiness}
+        redacted={data.redacted}
+        writesAllowed={data.writes_allowed}
+      />
     </>
   );
 }
