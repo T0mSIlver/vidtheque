@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import { Pill } from "@/components/Pill";
 import { dashboard } from "@/lib/dashboard/client";
 import type { JobCard } from "@/lib/dashboard/schemas";
+import dash from "../dashboard.module.css";
 import { refusalOf, useWrite } from "../parts";
 import styles from "./jobs.module.css";
 
@@ -56,7 +57,7 @@ export function CancelControl({ job, label = "Cancel" }: { job: JobCard; label?:
             "only queued or running jobs can be cancelled". The Jinja refusal
             was a whole page and printed it under a heading; inline it is the
             line after the message, and it is Python's either way. */}
-        {refusal.next ? <span className={styles.refusalNext}>{refusal.next}</span> : null}
+        {refusal.next ? <span className={dash.outcomeNext}>{refusal.next}</span> : null}
       </span>
     );
   }
