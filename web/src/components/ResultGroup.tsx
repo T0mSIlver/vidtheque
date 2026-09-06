@@ -70,12 +70,7 @@ function Moment({ hit, query }: { hit: Hit; query: string }) {
           <FrameShot shot={hit} alt="" label={channelWord(hit.source)} />
         </div>
       ) : null}
-      <a
-        href={hit.link}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={styles.momentLink}
-      >
+      <a href={hit.link} target="_blank" rel="noopener noreferrer" className={styles.momentLink}>
         <span className={styles.time}>{hit.timestamp}</span>
         {kinds.length > 0 ? (
           <span className={styles.badges}>
@@ -97,12 +92,7 @@ function Moment({ hit, query }: { hit: Hit; query: string }) {
           </span>
         ) : null}
       </a>
-      <a
-        href={hit.link}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={styles.receipt}
-      >
+      <a href={hit.link} target="_blank" rel="noopener noreferrer" className={styles.receipt}>
         {receipt(hit.link)}
       </a>
     </li>
