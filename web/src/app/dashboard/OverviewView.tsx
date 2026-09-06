@@ -117,13 +117,18 @@ function Loaded({ data }: { data: Overview }) {
           <Figure
             label="videos"
             notes={[
+              // `videos_ready` and not `queryable_videos`: the second is ready
+              // *plus* stale, so reading it here calls a stale video ready and
+              // undercounts "not ready" by the same one. The two numbers the
+              // rollup keeps are ready and not-ready, and they add up to the
+              // corpus by construction.
               <>
-                {count(corpus.queryable_videos)} ready
-                {corpus.videos - corpus.queryable_videos > 0 ? (
+                {count(corpus.videos_ready)} ready
+                {corpus.videos - corpus.videos_ready > 0 ? (
                   <>
                     {" · "}
                     <DashLink href={`${ROOT}/videos?index_state=all&order=indexed_at`}>
-                      {count(corpus.videos - corpus.queryable_videos)} not ready
+                      {count(corpus.videos - corpus.videos_ready)} not ready
                     </DashLink>
                   </>
                 ) : null}
@@ -326,10 +331,16 @@ function Loaded({ data }: { data: Overview }) {
                 <GapLine href={`${ROOT}/videos?index_state=indexing`} n={gaps.indexing}>
                   video(s) are mid-pipeline
                 </GapLine>
-                {/* The rollup probes this one with LIMIT 5, so five means "five
-                    or more" and the page says so rather than reporting a cap as
-                    a count. */}
-                <GapLine href={`${ROOT}/videos?index_state=failed`} n={gaps.failed}>
+                {/* The rollup probes this one with a `LIMIT`, so at the cap the
+                    count means "this many or more" and the page says so rather
+                    than reporting a ceiling as an exact number. The payload
+                    carries both halves, so nothing here knows what the limit
+                    is. */}
+                <GapLine
+                  href={`${ROOT}/videos?index_state=failed`}
+                  n={gaps.failed}
+                  figure={gaps.failed_capped ? `${count(gaps.failed)}+` : undefined}
+                >
                   video(s) are marked failed with a failed stage behind it
                 </GapLine>
               </ul>

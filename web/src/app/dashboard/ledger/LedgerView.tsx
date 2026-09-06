@@ -2,7 +2,7 @@
 
 import { dashboard, ROOT } from "@/lib/dashboard/client";
 import type { Ledger } from "@/lib/dashboard/schemas";
-import { at, bytes, count, hours } from "@/lib/format";
+import { at, bytes, count, DASH, hours, iso } from "@/lib/format";
 import styles from "../dashboard.module.css";
 import {
   CountLink,
@@ -61,12 +61,17 @@ export function LedgerView() {
 function Loaded({ data }: { data: Ledger }) {
   const { corpus, queue, readiness } = data;
   const failedWindowHours = Math.round(queue.failed_window_s / 3600);
+  // Every figure on this page was counted inside one request, so the page
+  // carries one stamp and not a per-panel one — and it is the instant of that
+  // reading rather than a date in the corpus, which is why it keeps its
+  // seconds and wears the `<time>` the template gave it.
+  const counted = iso(data.counted_at);
 
   return (
     <>
       <PageHead title="The ledger">
         <Unbroken>
-          <Fact label="counted" value={at(data.counted_at)} />
+          <Fact label="counted" value={<time dateTime={counted}>{counted ?? DASH}</time>} />
           <Sep />
         </Unbroken>
         <Fact label="indexed" value={at(corpus.last_indexed)} />
