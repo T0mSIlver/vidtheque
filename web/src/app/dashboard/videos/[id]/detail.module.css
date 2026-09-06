@@ -87,12 +87,15 @@
    scale, where a film strip's footage counter goes. */
 .timeband {
   position: relative;
+  /* The band's own height, named once: the scrub preview drops below the bars
+     when there is no room above them, and the two must not drift apart. */
+  --timeline-h: 3rem;
   margin-top: var(--s8);
 }
 
 .timeline {
   position: relative;
-  height: 3rem;
+  height: var(--timeline-h);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -142,6 +145,103 @@
 .dedup a:focus-visible {
   background:
     repeating-linear-gradient(135deg, var(--accent) 0 2px, transparent 2px 6px), var(--console);
+}
+
+/* The timeline and the strip are two views of one thing; pointing at either
+   end lights the other, which is the only way that link is visible at all.
+
+   The mark goes on the frame *box*, never on the `<img>` inside it: `.framebtn`
+   clips its overflow and the image fills it exactly, so an offset outline on
+   the image would be drawn entirely inside the clip and paint nothing. */
+.isLinked a {
+  background: var(--accent);
+}
+
+.framecard.isLinked .framebtn {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------ scrub preview
+
+   Point anywhere along the band and the shot under the pointer shows its own
+   first keyframe. It reports the *shot*, not the pointer: the span and the
+   kept ratio are index facts and read the same whether a mouse or the arrow
+   keys got here, where a cursor-derived clock would be a number the index
+   never wrote.
+
+   `top: 0` is the band's own top edge and the transform lifts the box above
+   it, so the preview never covers the bars it is describing.
+   `pointer-events: none` because a box that follows the pointer must never be
+   the thing the pointer is over. */
+.scrubpreview {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  /* 12rem — the served frame is 192px, so the picture lands very slightly
+     downscaled, which is the right direction to be wrong in. Fixed, because a
+     preview that resizes with its content jumps as you sweep. */
+  width: 12rem;
+  padding: var(--s1);
+  background: var(--plate);
+  border: 1px solid var(--seam2);
+  transform: translate(-50%, calc(-100% - var(--s2)));
+  pointer-events: none;
+}
+
+/* Not `hidden`: the box is measured to clamp itself inside the band, and
+   `display: none` has no width to measure. Out of the a11y tree either way —
+   every string it holds is already in the bar's own description. */
+.isOff {
+  visibility: hidden;
+}
+
+/* Scrolled until the band is near the top of the viewport there is no room
+   above it, and a preview clipped by the window edge is worse than one under
+   the scale. */
+.isBelow {
+  top: var(--timeline-h);
+  transform: translate(-50%, var(--s2));
+}
+
+/* The box owns the geometry, so a keyframe still loading or gone missing
+   leaves the ground behind and nothing moves. */
+.scrubshot {
+  display: block;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--black);
+  box-shadow: inset 0 0 0 1px var(--edge-in);
+  line-height: 0;
+}
+
+.scrubshot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Both lines are machine strings — a span the index wrote and a count — so
+   both are tabular by construction. A span whose digits shift width as you
+   sweep the band is the one thing a scrub preview must not do. */
+.scrubspan,
+.scrubmeta {
+  display: block;
+  margin-top: var(--s1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scrubspan {
+  composes: t-machine from global;
+  color: var(--fg);
+}
+
+.scrubmeta {
+  composes: t-machine-sm from global;
+  color: var(--muted);
 }
 
 .scale {
@@ -302,6 +402,12 @@
   position: relative;
   display: block;
   width: 100%;
+  /* A button, because clicking a frame opens the enlarged one in this page
+     rather than navigating to a JPEG. So: no chrome of its own, and the
+     geometry below is the same it had as a link. */
+  padding: 0;
+  appearance: none;
+  border: 0;
   aspect-ratio: 16 / 9;
   overflow: hidden;
   background: var(--black);
@@ -556,4 +662,147 @@ a.at:hover {
 .ghostlink:disabled {
   color: var(--mark);
   cursor: default;
+}
+
+/* --------------------------------------------------------------- lightbox */
+
+/* The one thing on this surface that has been lifted off the wall, so it is
+   the one thing that casts a shadow. */
+.shot {
+  width: min(96vw, 72rem);
+  max-width: min(96vw, 72rem);
+  padding: 0;
+  color: var(--fg);
+  background: var(--plate);
+  border: 1px solid var(--seam2);
+  box-shadow: 0 40px 90px -24px rgba(0, 0, 0, 0.94);
+}
+
+.shot::backdrop {
+  background: var(--scrim);
+}
+
+.shotInner {
+  padding: var(--s3);
+}
+
+/* The caption and the close control belong above the picture, not on top of
+   it: the top-right corner of a frame is where a slide puts its title. */
+.shotHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin-bottom: var(--s2);
+}
+
+.shotCaption {
+  composes: t-machine from global;
+  margin: 0;
+}
+
+.shotFacts {
+  composes: t-machine-sm from global;
+  margin: var(--s1) 0 0;
+  color: var(--muted);
+}
+
+.shotClose {
+  flex: 0 0 auto;
+}
+
+/* The stage owns the geometry, so a box can never land outside the picture and
+   the dialog does not resize under the pointer while the bytes arrive. */
+.shotStage {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  line-height: 0;
+  background: var(--black);
+  box-shadow: inset 0 0 0 1px var(--edge-in);
+}
+
+.shotImg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.shotBoxes {
+  position: absolute;
+  inset: 0;
+}
+
+/* Here the boxes *are* targets — at this size a detection box is something a
+   pointer can find, which is the whole reason the two-way interaction lives in
+   the overlay rather than over a 512px thumbnail in the grid. */
+.shotBoxes .ocrbox {
+  border-color: var(--seen);
+  border-width: 1.5px;
+  pointer-events: auto;
+  cursor: default;
+}
+
+/* The frame's lines, beside the frame, at a size you can read a slide off. Two
+   columns where there is room: a transcription of a dense slide is thirty
+   short strings and one long column of them would push the picture off screen.
+
+   A grid, not multicol (Tom, 2026-08-10): `columns: 2` on a box with a bounded
+   height paginates the overflow *sideways*, so pointing at a detection box
+   slid the whole list under the pointer. A grid overflows down, which is the
+   direction this box has always claimed to scroll. */
+.shotLines {
+  composes: t-cell from global;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  gap: 0 var(--s6);
+  align-content: start;
+  margin: var(--s3) 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 11rem;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+}
+
+.shotLines > .ocrline {
+  min-width: 0;
+}
+
+.shotFoot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--s2) var(--s4);
+  margin-top: var(--s2);
+}
+
+.shotToggle {
+  composes: t-label from global;
+  display: flex;
+  gap: var(--s2);
+  align-items: center;
+  color: var(--muted);
+}
+
+.shotToggle input {
+  accent-color: var(--seen);
+}
+
+.shotLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s4);
+}
+
+.shotLink {
+  composes: t-machine from global;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.shotLink:hover {
+  text-decoration: underline;
 }

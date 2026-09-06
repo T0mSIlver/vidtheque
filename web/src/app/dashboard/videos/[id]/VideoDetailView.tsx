@@ -24,6 +24,7 @@ import { useRead } from "../../useRead";
 import { ReindexControl, TagsForm } from "../Manage";
 import videos from "../videos.module.css";
 import styles from "./detail.module.css";
+import { Lightbox, OcrBoxes, OcrLines } from "./Lightbox";
 
 // The video detail — `templates/video.html`, reading
 // `GET /dashboard/api/library/{video_id}` (dashboard.md §5.3, §20).
@@ -43,12 +44,36 @@ import styles from "./detail.module.css";
 
 const FRAME_KEYS = ["frames", "frame_offset"];
 
+// A new shot's frame waits out a short pause before it is asked for, so a
+// sweep across two hundred shots is not two hundred requests.
+const SETTLE_MS = 70;
+
+// Arrow keys step shots. The anchors were already focusable and already the
+// navigation, so this moves focus between them rather than inventing a
+// selection model of its own.
+const STEPS: Record<string, number | undefined> = {
+  ArrowRight: 1,
+  ArrowLeft: -1,
+  ArrowDown: 1,
+  ArrowUp: -1,
+};
+
+/** The shot bar an event landed in, or `null` for the band's own background. */
+function barElement(target: EventTarget | null): Element | null {
+  return target instanceof Element ? target.closest("[data-shot]") : null;
+}
+
 export function VideoDetailView({ videoId }: { videoId: string }) {
   const params = useSearchParams();
   const search = params.toString();
+  // The read is bounded by the strip's two parameters and by nothing else on
+  // this URL. `select` is on it too, and putting a frame into evidence — a
+  // shot bar's click, or opening one in the lightbox — must not re-read the
+  // whole video to mark a card that is already on the page.
+  const bounds = frameQuery(search).toString();
   const read = useCallback(
-    (signal: AbortSignal) => dashboard.video(videoId, frameQuery(search), signal),
-    [videoId, search],
+    (signal: AbortSignal) => dashboard.video(videoId, new URLSearchParams(bounds), signal),
+    [videoId, bounds],
   );
   const state = useRead(read);
   const selected = selectedOrd(params.get("select"));
@@ -111,6 +136,37 @@ function Loaded({
   // prints tags are showing the row instead.
   const [written, setWritten] = useState<string[] | null>(null);
   const tags = written ?? video.tags;
+
+  // The frame the lightbox is showing, and the frame that is in evidence.
+  //
+  // They are two facts, not one: a shot bar puts a keyframe into evidence
+  // without opening it — the strip scrolls to that moment and the card is
+  // marked — and the second click, on the frame the reader can now see, is the
+  // one that opens it. Opening also marks, because a frame you are reading is
+  // the frame you are on.
+  const [open, setOpen] = useState<FrameCard | null>(null);
+
+  // The shot under the pointer, from either end. The timeline and the strip
+  // are two views of one thing, and the link between them is otherwise
+  // invisible.
+  const [linked, setLinked] = useState<number | null>(null);
+
+  function openFrame(frame: FrameCard) {
+    setOpen(frame);
+    // The same address a shot bar would have produced, minus the navigation:
+    // `replaceState` is read back by `useSearchParams`, so `?select=` stays
+    // the one place the marked frame is written down and the card's mark falls
+    // out of it. A browser that refuses the rewrite still has the frame on
+    // screen; the URL is the bookmark, not the state.
+    try {
+      const here = new URL(window.location.href);
+      here.searchParams.set("select", String(frame.ord));
+      here.hash = `frame-${frame.ord}`;
+      window.history.replaceState(null, "", here.href);
+    } catch {
+      // Nothing to do and nothing lost.
+    }
+  }
 
   // The document is named after data the browser is holding and the server
   // never saw: this shell is served without the session cookie, so `metadata`
@@ -234,6 +290,8 @@ function Loaded({
         framePage={frames.limit}
         search={search}
         videoId={video.video_id}
+        linked={linked}
+        onLink={setLinked}
       />
 
       <Panel id="counts" title="What was stored">
@@ -286,7 +344,15 @@ function Loaded({
 
       <Provenance stages={data.stages} redacted={data.redacted} />
 
-      <Frames frames={frames} search={search} selected={selected} videoId={video.video_id} />
+      <Frames
+        frames={frames}
+        search={search}
+        selected={selected}
+        videoId={video.video_id}
+        linked={linked}
+        onLink={setLinked}
+        onOpen={openFrame}
+      />
 
       <Transcript key={video.video_id} transcript={data.transcript} />
 
@@ -313,6 +379,8 @@ function Loaded({
       <JobHistory history={data.job_history} />
 
       <Manage video={video} tags={tags} onWritten={setWritten} />
+
+      <Lightbox frame={open} videoId={video.video_id} onClose={() => setOpen(null)} />
     </>
   );
 }
@@ -450,6 +518,8 @@ function Timeline({
   framePage,
   search,
   videoId,
+  linked,
+  onLink,
 }: {
   shots: Shot[];
   capped: boolean;
@@ -457,10 +527,102 @@ function Timeline({
   framePage: number;
   search: string;
   videoId: string;
+  linked: number | null;
+  onLink: (shotId: number | null) => void;
 }) {
+  const band = useRef<HTMLOListElement>(null);
+  const scrub = useRef<HTMLDivElement>(null);
+  // The shot the preview is on, and its picture. Both are refs rather than
+  // state because they are read by the handler that decides whether anything
+  // changed, and re-reading them must not be what re-runs it.
+  const showing = useRef<number | null>(null);
+  const settle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const fetched = useRef(new Set<string>());
+  const [preview, setPreview] = useState<{ shot: Shot; left: number; below: boolean } | null>(null);
+  const [still, setStill] = useState<string | null>(null);
+
   // A video with no recorded duration still has shots with ends: the band is
   // drawn against the furthest one rather than against zero.
   const span = runtime > 0 ? runtime : Math.max(...shots.map((s) => s.end_s), 1);
+
+  // The bars' true geometry, from the percentages this page computed. Used
+  // only when a hit test lands in a gap between bars: `min-width: 3px` means a
+  // rendered bar can be wider than its share of the runtime, so where the two
+  // disagree the pointer wins — you are pointing at a bar you can see.
+  const geometry = shots.map((shot) => {
+    const left = (100 * Math.min(shot.start_s, span)) / span;
+    const width = (100 * Math.max(shot.end_s - shot.start_s, 0)) / span || 0.05;
+    return { shot, left, width, right: left + width };
+  });
+
+  /** The bar under a pointer at `fraction` of the band, hit test first. */
+  function barAt(target: EventTarget | null, fraction: number): Shot | null {
+    const hit = target instanceof Element ? target.closest("[data-shot]") : null;
+    const id = hit ? Number(hit.getAttribute("data-shot")) : NaN;
+    const named = geometry.find((entry) => entry.shot.shot_id === id);
+    if (named) return named.shot;
+
+    const at = fraction * 100;
+    let nearest: Shot | null = null;
+    let distance = Infinity;
+    for (const entry of geometry) {
+      if (at >= entry.left && at <= entry.right) return entry.shot;
+      const gap = at < entry.left ? entry.left - at : at - entry.right;
+      if (gap < distance) {
+        distance = gap;
+        nearest = entry.shot;
+      }
+    }
+    return nearest;
+  }
+
+  /**
+   * Show the preview for one shot, with the pointer at `x` across the band.
+   *
+   * Horizontal: clamp the box inside the band, so a shot at either end is
+   * previewed without the box hanging off the page. Vertical: above the band,
+   * never over the bars it is describing — unless the band has been scrolled
+   * near the top of the viewport and there is no room up there, in which case
+   * it goes under. Measured, not guessed, which is why the box keeps its
+   * layout while it is off rather than being taken out of the document.
+   */
+  function show(shot: Shot | null, x: number) {
+    const bandBox = band.current?.getBoundingClientRect();
+    const box = scrub.current;
+    if (!shot || !bandBox || !box) return hide();
+
+    const width = box.offsetWidth;
+    const half = width / 2;
+    const left =
+      bandBox.width <= width
+        ? bandBox.width / 2
+        : Math.min(Math.max(x, half), bandBox.width - half);
+    setPreview({ shot, left: Math.round(left), below: bandBox.top < box.offsetHeight + 16 });
+
+    if (showing.current === shot.shot_id) return;
+    showing.current = shot.shot_id;
+    clearTimeout(settle.current);
+    // A sweep across two hundred shots must not be two hundred requests, so a
+    // frame not seen before waits out a short pause; one already asked for is
+    // set immediately, because the cost of the second time is a cache lookup.
+    // Either way the previous shot's frame is dropped rather than left under
+    // the new shot's caption: an empty box is honest, a stale one is not.
+    if (!shot.preview) return setStill(null);
+    if (fetched.current.has(shot.preview)) return setStill(shot.preview);
+    setStill(null);
+    const url = shot.preview;
+    settle.current = setTimeout(() => {
+      fetched.current.add(url);
+      setStill(url);
+    }, SETTLE_MS);
+  }
+
+  function hide() {
+    clearTimeout(settle.current);
+    showing.current = null;
+    setPreview(null);
+    setStill(null);
+  }
 
   if (!shots.length) {
     return (
@@ -482,18 +644,70 @@ function Timeline({
       <h2 className={dash.srOnly} id="timeline">
         Scene timeline
       </h2>
-      <ol className={styles.timeline} aria-label="Shots across the runtime">
-        {shots.map((shot) => {
-          const left = (100 * Math.min(shot.start_s, span)) / span;
-          const width = (100 * Math.max(shot.end_s - shot.start_s, 0)) / span || 0.05;
+      {/* Pointing along the band previews the shot under the pointer, and
+          focus is the keyboard's pointer: tabbing and scrubbing put the same
+          box in the same place. Arrow keys step shots by moving focus between
+          the bars' own links, so whatever they land on, Enter follows. */}
+      <ol
+        aria-label="Shots across the runtime"
+        className={styles.timeline}
+        onBlur={(event) => {
+          if (!band.current?.contains(event.relatedTarget)) hide();
+        }}
+        onFocus={(event) => {
+          const bar = barElement(event.target);
+          const bandBox = band.current?.getBoundingClientRect();
+          if (!bar || !bandBox) return;
+          const box = bar.getBoundingClientRect();
+          show(barAt(bar, 0), box.left - bandBox.left + box.width / 2);
+        }}
+        onKeyDown={(event) => {
+          if (event.altKey || event.ctrlKey || event.metaKey) return;
+          if (event.key === "Escape") return hide();
+          const bar = barElement(event.target);
+          const bars = Array.from(band.current?.children ?? []);
+          const index = bar ? bars.indexOf(bar) : -1;
+          if (index < 0) return;
+          const step = STEPS[event.key];
+          const next =
+            event.key === "Home"
+              ? bars[0]
+              : event.key === "End"
+                ? bars[bars.length - 1]
+                : step
+                  ? bars[Math.min(Math.max(index + step, 0), bars.length - 1)]
+                  : undefined;
+          if (!next) return;
+          event.preventDefault();
+          next.querySelector("a")?.focus();
+        }}
+        onPointerLeave={hide}
+        onPointerMove={(event) => {
+          // A tap is a navigation, not a hover: on a touch screen the bar's own
+          // link is the whole interaction and a preview would only be in front
+          // of it.
+          if (event.pointerType === "touch") return;
+          const bandBox = band.current?.getBoundingClientRect();
+          if (!bandBox?.width) return;
+          const x = event.clientX - bandBox.left;
+          show(barAt(event.target, x / bandBox.width), x);
+        }}
+        ref={band}
+      >
+        {geometry.map(({ shot, left, width }) => {
           const offset =
             Math.floor(shot.first_ord / Math.max(framePage, 1)) * Math.max(framePage, 1);
           const href = frameLink(search, videoId, offset, shot.first_ord);
           const label = `Shot ${shot.shot_id}, ${clock(shot.start_s)} to ${clock(shot.end_s)}, ${shot.kept} of ${shot.frames} keyframes kept`;
           return (
             <li
-              className={`${styles.shotbar} ${shot.kept === 0 ? styles.dedup : ""}`}
+              className={`${styles.shotbar} ${shot.kept === 0 ? styles.dedup : ""} ${linked === shot.shot_id ? styles.isLinked : ""}`}
+              data-shot={shot.shot_id}
               key={shot.shot_id}
+              onBlur={() => onLink(null)}
+              onFocus={() => onLink(shot.shot_id)}
+              onPointerEnter={() => onLink(shot.shot_id)}
+              onPointerLeave={() => onLink(null)}
               style={{ left: `${left}%`, width: `${width}%` }}
             >
               <DashLink href={href}>
@@ -503,6 +717,28 @@ function Timeline({
           );
         })}
       </ol>
+      {/* Empty of facts of its own and out of the a11y tree: every string it
+          holds is already in the bar's own description, and a live region that
+          repeats the thing you just focused is noise. */}
+      <div
+        aria-hidden="true"
+        className={`${styles.scrubpreview} ${preview ? "" : styles.isOff} ${preview?.below ? styles.isBelow : ""}`}
+        ref={scrub}
+        style={{ left: `${preview?.left ?? 0}px` }}
+      >
+        <span className={styles.scrubshot}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {still ? <img alt="" decoding="async" height={108} src={still} width={192} /> : null}
+        </span>
+        <span className={styles.scrubspan}>
+          {preview ? `${clock(preview.shot.start_s)}–${clock(preview.shot.end_s)}` : ""}
+        </span>
+        <span className={styles.scrubmeta}>
+          {preview
+            ? `shot ${preview.shot.shot_id} · ${preview.shot.kept}/${preview.shot.frames} kept`
+            : ""}
+        </span>
+      </div>
       {/* Quarter marks at their true percentage, not spaced by flexbox: the
           band above is an argument that a bar's position is a fact, and a scale
           whose labels are only approximately where they claim would undercut
@@ -644,11 +880,17 @@ function Frames({
   search,
   selected,
   videoId,
+  linked,
+  onLink,
+  onOpen,
 }: {
   frames: VideoDetail["frames"];
   search: string;
   selected: number | null;
   videoId: string;
+  linked: number | null;
+  onLink: (shotId: number | null) => void;
+  onOpen: (frame: FrameCard) => void;
 }) {
   return (
     <Panel id="frames" title="Frames, and what the machine read">
@@ -659,8 +901,11 @@ function Frames({
               <Card
                 key={frame.frame_id}
                 frame={frame}
-                videoId={videoId}
+                linked={linked === frame.shot_id}
+                onLink={onLink}
+                onOpen={onOpen}
                 selected={frame.ord === selected}
+                videoId={videoId}
               />
             ))}
           </ul>
@@ -720,28 +965,41 @@ function Card({
   frame,
   videoId,
   selected,
+  linked,
+  onLink,
+  onOpen,
 }: {
   frame: FrameCard;
   videoId: string;
   selected: boolean;
+  linked: boolean;
+  onLink: (shotId: number | null) => void;
+  onOpen: (frame: FrameCard) => void;
 }) {
-  // Point at a line, light its box; point at a box, light its line. The
-  // pairing is by index, which is what makes it hold for every line rather
-  // than for the handful a stylesheet could enumerate as `:has()` pairs.
+  // Point at a line and its box lights. The pairing is by index, which is what
+  // makes it hold for every line rather than for the handful a stylesheet
+  // could enumerate as `:has()` pairs.
+  //
+  // Only that direction at this size: a detection box on a 512px still is a
+  // few millimetres of screen, and a pointer aimed at one would be stealing
+  // the click that opens the frame. The other half of the linkage — point at a
+  // box, light its line — is the enlarged frame's, which is where a box is
+  // something a pointer can find.
   const [lit, setLit] = useState<number | null>(null);
 
   return (
     <li
-      className={`${styles.framecard} ${frame.dup_of_ord !== null ? styles.isDup : ""} ${selected ? styles.isSelected : ""}`}
+      className={`${styles.framecard} ${frame.dup_of_ord !== null ? styles.isDup : ""} ${selected ? styles.isSelected : ""} ${linked ? styles.isLinked : ""}`}
       id={`frame-${frame.ord}`}
+      onBlur={() => onLink(null)}
+      onFocus={() => onLink(frame.shot_id)}
+      onPointerEnter={() => onLink(frame.shot_id)}
+      onPointerLeave={() => onLink(null)}
     >
-      <a
-        className={styles.framebtn}
-        href={frame.large}
-        rel="noopener noreferrer"
-        target="_blank"
-        title={`${frame.frame_id} · ${clock(frame.t_s)} · ${frame.width}×${frame.height} · ${bytes(frame.jpeg_bytes)}`}
-      >
+      {/* A button, not a link to the JPEG: clicking a frame opens it here, big
+          enough to read the slide off, with its boxes and its lines beside it.
+          The file itself stays one click further in, in the dialog's foot. */}
+      <button className={styles.framebtn} onClick={() => onOpen(frame)} type="button">
         {/* A signed, expiring `/frames/…` URL on Python's origin, already sized
             by the API at the width it is displayed at. The optimizer would
             fetch and cache it past its own signature. */}
@@ -754,20 +1012,8 @@ function Card({
           loading="lazy"
           decoding="async"
         />
-        {frame.lines.map((line, index) => (
-          <span
-            className={`${styles.ocrbox} ${lit === index ? styles.isLit : ""}`}
-            aria-hidden="true"
-            key={line.line_no}
-            style={{
-              left: `${line.box[0] * 100}%`,
-              top: `${line.box[1] * 100}%`,
-              width: `${(line.box[2] - line.box[0]) * 100}%`,
-              height: `${(line.box[3] - line.box[1]) * 100}%`,
-            }}
-          />
-        ))}
-      </a>
+        <OcrBoxes lines={frame.lines} lit={lit} />
+      </button>
       <p className={styles.framemeta}>
         <a
           className={styles.at}
@@ -793,24 +1039,7 @@ function Card({
         )}
       </p>
       {frame.lines.length ? (
-        <ol className={styles.ocrlines}>
-          {frame.lines.map((line, index) => (
-            <li
-              className={`${styles.ocrline} ${lit === index ? styles.isLit : ""}`}
-              key={line.line_no}
-              onMouseEnter={() => setLit(index)}
-              onMouseLeave={() => setLit(null)}
-              onFocus={() => setLit(index)}
-              onBlur={() => setLit(null)}
-              tabIndex={0}
-            >
-              <span className={styles.ocrtext}>{line.text}</span>
-              {line.conf !== null ? (
-                <span className={styles.conf}>{line.conf.toFixed(2)}</span>
-              ) : null}
-            </li>
-          ))}
-        </ol>
+        <OcrLines className={styles.ocrlines} lines={frame.lines} lit={lit} onLit={setLit} />
       ) : null}
     </li>
   );
