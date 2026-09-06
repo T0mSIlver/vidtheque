@@ -988,6 +988,11 @@
    the active nav item, the focus ring, the sorted column and a timecode worth
    clicking, and a filled button would make it mean "a button" as well. */
 .button {
+  /* Both, and `t-label` said again rather than inherited through
+     `.ghostlink`: `composes` copies the class it names, not the chain that
+     class itself composes, so a button that only said `composes: ghostlink`
+     came out in the text face at body size. */
+  composes: t-label from global;
   composes: ghostlink;
   color: var(--fg);
   background: var(--plate3);
