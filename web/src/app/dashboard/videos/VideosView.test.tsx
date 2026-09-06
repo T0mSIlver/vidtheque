@@ -6,7 +6,7 @@ import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
 import { REINDEX_REFUSED, REINDEXED } from "@/test/index-fixtures";
 import { DEMO_LIBRARY, OWNER_LIBRARY, OWNER_LIBRARY_CLAMPED } from "@/test/library-fixtures";
 import { firstPaint, settled } from "@/test/retry";
-import { DEBOUNCE_MS, FOCUS_KEY } from "../search/band";
+import { DEBOUNCE_MS, FOCUS_KEY } from "../band";
 
 // The table's job is to say what set it is showing and to be honest about how
 // it was narrowed: the filters are the URL, the count is exact, the clamps are
