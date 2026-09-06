@@ -192,6 +192,7 @@ function Form({
   // makes, not by anything that renders, and a `setState` here would put the
   // POST a render behind the form it came from.
   const fields = useRef<Record<string, string>>({});
+  const secret = useRef<HTMLInputElement>(null);
   const send = useCallback(() => dashboard.signIn(fields.current), []);
   // The outcome carries where to go, and Python has already fenced it; this
   // fences it again before the browser is sent anywhere.
@@ -214,6 +215,29 @@ function Form({
   // to do, and the tight sign-in bucket is precisely the one that will say no.
   const limited = refusal?.status === 429 ? refusal : null;
 
+  // A refused submit leaves an empty field with the caret in it, which is what
+  // the re-rendered Jinja page was: `login.html`'s input carries no value and
+  // an `autofocus`, so what the reader met was the box, empty, ready. React's
+  // `autoFocus` fires on mount and this tree never unmounts, so the focus
+  // stayed on the button and the wrong secret stayed on screen — visible to
+  // whoever is behind them, and one Enter away from being sent again.
+  useEffect(() => {
+    if (!error || !secret.current) return;
+    secret.current.value = "";
+    secret.current.focus();
+  }, [error]);
+
+  // The sentence this page has always printed for a request from somewhere
+  // else. `access.bad_origin()`'s copy is written for a client reading a code;
+  // the form branch kept its own, because this is visible copy on a rendered
+  // page and it names the act the reader performed.
+  const message =
+    refusal?.code === "E_BAD_ORIGIN"
+      ? "That sign-in came from another origin."
+      : refusal
+        ? refusal.message
+        : "The sign-in did not reach this instance.";
+
   return (
     <section className={dash.panel} aria-labelledby="signin">
       <h2 className={dash.panelTitle} id="signin">
@@ -233,8 +257,7 @@ function Form({
       {error && !limited ? (
         <p className={styles.error}>
           <Pill state="refused" tone="bad" />
-          <span>{refusal ? refusal.message : "The sign-in did not reach this instance."}</span>
-          {refusal ? <code className={styles.code}>{refusal.code}</code> : null}
+          <span>{message}</span>
         </p>
       ) : null}
 
@@ -268,6 +291,7 @@ function Form({
             id="secret"
             name="password"
             type="password"
+            ref={secret}
             autoComplete="current-password"
             autoFocus
             required

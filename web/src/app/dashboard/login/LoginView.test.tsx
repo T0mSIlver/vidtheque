@@ -304,17 +304,44 @@ describe("the sign-in page", () => {
         await screen.findByText("That secret does not match this instance."),
       ).toBeInTheDocument();
       expect(screen.getByText("refused")).toBeInTheDocument();
-      expect(screen.getByText("E_BAD_CREDENTIAL")).toBeInTheDocument();
+      // The word and the sentence, which is what `login.html` printed. The
+      // `E_*` code is for a client reading a code; the person who just mistyped
+      // a password has nothing to do with it.
+      expect(screen.queryByText("E_BAD_CREDENTIAL")).not.toBeInTheDocument();
       // The `401` that would send a reader to the sign-in page must not send
       // this one anywhere: they are on it.
       expect(replace).not.toHaveBeenCalled();
       expect(screen.getByRole("button", { name: "Sign in" })).toBeEnabled();
     });
 
+    // The re-rendered Jinja page was an empty field with the caret in it:
+    // `login.html`'s input carries no value and an `autofocus`. React's
+    // `autoFocus` fires on mount and this tree never unmounts, so the wrong
+    // secret stayed on screen — readable by whoever is behind the reader, and
+    // one Enter away from being sent again.
+    it("clears the field and puts the caret back in it", async () => {
+      await mount({
+        session: SIGNED_OUT,
+        post: {
+          status: 401,
+          body: { error: "E_BAD_CREDENTIAL", message: "That secret does not match this instance." },
+        },
+      });
+      await screen.findByLabelText(/VIDTHEQUE_/);
+
+      await signIn("wrong");
+      await screen.findByText("That secret does not match this instance.");
+
+      const field = screen.getByLabelText(/VIDTHEQUE_/);
+      expect(field).toHaveValue("");
+      expect(field).toHaveFocus();
+    });
+
     // A write that left the origin is a bug on this side, not in the reader's
-    // session — and it is the one refusal wording `access.bad_origin()` owns
-    // for the whole surface.
-    it("prints the origin refusal in the words the whole surface uses", async () => {
+    // session. `access.bad_origin()`'s copy is written for a client reading a
+    // code; the form branch kept its own sentence, because this is visible copy
+    // on a rendered page and it names the act the reader performed.
+    it("prints the origin refusal in this page's own words", async () => {
       await mount({
         session: SIGNED_OUT,
         post: {
@@ -330,8 +357,9 @@ describe("the sign-in page", () => {
 
       await signIn("hunter2");
 
-      expect(await screen.findByText("That request came from another origin.")).toBeInTheDocument();
-      expect(screen.getByText("E_BAD_ORIGIN")).toBeInTheDocument();
+      expect(await screen.findByText("That sign-in came from another origin.")).toBeInTheDocument();
+      expect(screen.getByText("refused")).toBeInTheDocument();
+      expect(screen.queryByText("E_BAD_ORIGIN")).not.toBeInTheDocument();
     });
 
     // The sign-in's own tight bucket, charged ahead of the handler. It gets a
