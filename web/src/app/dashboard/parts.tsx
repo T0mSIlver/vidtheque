@@ -526,12 +526,21 @@ export function useDocumentTitle(title: string | null): void {
 export function Refusal({
   code,
   message,
+  title,
   next,
   back,
   onRetry,
 }: {
   code: string;
   message: string;
+  /** The document's name, when the page has a better one than the message.
+   *
+   *  `_error_page` titled a refusal with `error["message"]`, which is the
+   *  default here — but the three detail pages named their own on a 404:
+   *  "Unknown job", "Unknown video", "No such follow" (`views.py:1013`,
+   *  `:713`, `:1378`). Those are short enough to read in a tab, which a
+   *  sentence is not, so a page that has one passes it. */
+  title?: string;
   next?: string | null;
   back?: Back | null;
   /** Re-run the read that refused. The Jinja page had no such control because
@@ -541,7 +550,7 @@ export function Refusal({
   onRetry?: () => void;
 }) {
   const section = sectionOf(usePathname());
-  useDocumentTitle(message);
+  useDocumentTitle(title ?? message);
   return (
     <>
       <PageHead title={message}>
