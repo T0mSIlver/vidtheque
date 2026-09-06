@@ -108,6 +108,19 @@ describe("the reader's chrome at /demo", () => {
     expect(screen.getAllByText("unavailable — reload the page")).toHaveLength(2);
   });
 
+  // An endpoint the schema will not vouch for is a boot that did not land: the
+  // whole payload is refused in `lib/api/schemas.ts` and `readMeta` answers
+  // `unreachable`, which is how a `mcp_url` carrying a newline or a `;` stops
+  // one step short of a panel offering it to be pasted into a shell.
+  it("offers no paste when the endpoint is not an endpoint", async () => {
+    await mountWith({ kind: "unreachable" });
+
+    expect(screen.queryByText(/claude mcp add/)).not.toBeInTheDocument();
+    for (const button of screen.getAllByRole("button", { name: "copy" })) {
+      expect(button).toBeDisabled();
+    }
+  });
+
   describe("the copy buttons", () => {
     // `userEvent.setup()` installs a clipboard of its own, so the one under
     // test goes on after it and comes off in `afterEach`.
