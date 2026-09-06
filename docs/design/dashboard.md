@@ -676,6 +676,24 @@ renders rather than as a number the page composes. The row's **Re-index**
 button is not ported — it is in `docs/ROADMAP.md` with the rest of the write
 side.
 
+*Amended 2026-09-06: the band applies itself again, and the row action landed.*
+`videos.html`'s form carried `data-autosubmit` and `dashboard.js` appended the
+behaviour to it; the React band is that behaviour as a hook
+(`web/src/app/dashboard/band.ts`), and the contract is unchanged — a picker
+submits the moment it changes, a text field 450 ms after the typing stops, and
+what is submitted is the form the **Apply** button submits. Apply is real and
+is what a browser that never ran the script uses; it comes off the band only
+once the hook has taken the job over. The one thing a reloading filter band owes
+its reader is the caret, so the control that caused a navigation is remembered
+in `sessionStorage` — never in the URL, because which box had focus is not a
+fact about the result set — and re-focused on the way in. **The search page's
+band deliberately does not do this** (§14): `data-autosubmit` was on this form
+and on nothing else, and a search that costs three vector legs is not one to run
+after every pause in the typing. The row's **Re-index** button is ported, with
+its outcome inline where the Jinja form had a redirect; and a refused read now
+redraws this band from the `filters` block the refusal itself carries (§20),
+rather than from the URL the server has just said is not what it ran.
+
 ### 5.3 `GET /dashboard/videos/{video_id}` — the detail page
 
 The reason the dashboard exists. Five panels.
@@ -2127,6 +2145,21 @@ order on one side and the query's own left-to-right order on the other. Neither
 order is a claim about ranking — a mark is "these are your words, here," never
 why a hit ranked — so the divergence is cosmetic and is recorded here rather
 than chased.
+
+*Amended 2026-09-06: the frame overlay is on the page, and it is the frames
+view's own.* `search.html`'s `<dialog id="shot">` opened an OCR or frame hit's
+still at 1280 where the row shows 192, and it opens again: a native `<dialog>`
+at `showModal()`, `frame_id · clock · title` in the caption, "Open at this
+second" under the picture, Close on the button, the backdrop and Escape, the
+focus back where it came from, and the JPEG released when the dialog shuts. It
+is not a second implementation of §5.3's — it is literally that component
+(`web/src/app/dashboard/FrameOverlay.tsx`), with the machine's reading of the
+frame as the layer the video page adds: one lightbox contract, one lightbox, as
+`dashboard.js` had one delegated opener for both pages. The two standing
+divergences on this page are unchanged and neither is a gap: the band does not
+auto-submit, because the Jinja band did not either (§5.2), and the stills stay
+page-built at the dashboard's 192 and 1280 rather than the payload's 320 and
+960 (§14.2).
 
 ## 15. Current pipeline readiness (2026-08-12)
 
