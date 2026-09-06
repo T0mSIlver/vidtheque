@@ -29,3 +29,49 @@
   color: var(--gold);
   border-color: var(--gold-44);
 }
+
+/* The demo's shape: the notice `app.js` drew where the results were, or in the
+   foot under the rows a failed second page did not cost the visitor. */
+.notice {
+  padding: var(--s4);
+  border: 1px solid var(--seam2);
+  background: var(--plate);
+}
+
+.bad {
+  background: var(--tone-bad-bg);
+  border-color: var(--tone-bad-line);
+}
+
+.title {
+  composes: t-cell-strong from global;
+  color: var(--fg);
+}
+
+.detail {
+  composes: t-body from global;
+  margin-top: 6px;
+  color: var(--fg2);
+  font-variant-numeric: tabular-nums;
+}
+
+.ghost {
+  composes: t-label from global;
+  margin-top: var(--s3);
+  height: 2.125rem;
+  padding: 0 var(--s3);
+  background: transparent;
+  color: var(--fg2);
+  border: 1px solid var(--seam2);
+  cursor: pointer;
+}
+
+.ghost:disabled {
+  color: var(--fg3);
+  cursor: default;
+}
+
+.ghost:not(:disabled):hover {
+  color: var(--gold);
+  border-color: var(--gold-44);
+}
