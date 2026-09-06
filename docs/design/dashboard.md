@@ -896,6 +896,18 @@ politeness overrides and raw URLs; render the parsed fields. Stack traces (there
 are none: `error` is truncated to 500 chars at `pipeline/store.py:183`). And in
 demo mode, source URLs and `error_message` — codes and counts only (§2.4).
 
+*Amended 2026-09-06: both payloads say **that** they are the projection.* Each
+carries a top-level `redacted` boolean, the same field §19's corpus reads have
+always sent and the same value the assembly ran under —
+`JobsReads.redacted` for the listing, `job_detail_reads`' own `redact` for the
+detail — rather than a second reading of the deployment beside the rows it
+emptied. The pages had it and used it: the listing footnoted "Source URLs and
+error text are not published on this instance." under the table, and the job
+page gated "message not published" on it. Without the flag a `null`
+`error_message` is two facts at once — a job that failed without a message, and
+a message this deployment does not publish — and a client has to pick one to
+print. It drops nothing and adds no read.
+
 ### 5.5 `GET|POST /dashboard/index` — the index form
 
 Write side. Fields: URL or list of URLs, `expand`
@@ -2564,6 +2576,37 @@ spellings across two payloads assembled from the same read, and it *is* the same
 read — `corpus_rollup` was already carrying both stamps for the counts beside
 them, so this adds a field and not a query.
 
+**Three facts the pages read and the payloads did not carry** *(added
+2026-09-06, from the parity audit of the deleted templates)*. All three are
+additive fields over reads already taken, and each one is a fact the Jinja page
+rendered rather than a value it computed:
+
+- **`corpus.videos_ready`**, beside `queryable_videos`. The overview's band
+  prints "N ready", and that was `corpus_rollup`'s `videos_ready` — `ready`
+  and nothing else. `queryable_videos` is `ready` **plus `stale`**, so a page
+  saying "N ready" off it counts a stale video as ready and the "not ready"
+  beside it goes short by the same one. Two questions, two fields, off the same
+  `corpus_rollup` the counts around them come from.
+- **`gaps.failed_cap` and `gaps.failed_capped`.** `queries.gaps` probes the
+  failed videos with `LIMIT 5` and `corpus-summary` reports the *length* of
+  that list, so `failed: 5` means "five or more". The page printed `5+` off a
+  literal `5` in the template; the payload sends the ceiling
+  (`read_models.GAPS_FAILED_CAP`) and the reading of it, so the client's `+`
+  and the SQL behind it cannot disagree, and a change to that `LIMIT` cannot
+  leave a page quietly reporting a cap as an exact count. The failed *rows* are
+  as absent as they have always been — they carry `video_stages.error`.
+- **`writes_refused_reason` on `/api/session`.** `writes_allowed: false` says a
+  form must be disabled and not why. `Database._assert_dimensions` turns that
+  flag off and writes `VectorState.reason` in the same breath, and the index
+  form printed that sentence under its disabled controls — the one thing on
+  that page an operator can act on. It is policy text (`DECISIONS.md`,
+  decision 5), `null` where writes are allowed, and **`null` in the
+  projection**: the demo is told indexing is refused, never what this box is
+  serving, which is the readiness block's own rule for the same string. One
+  function reads it for both payloads that gate a form on it —
+  `read_models.drift_reason` — so a control cannot be disabled here for a
+  reason §22's list states differently.
+
 **Does not add.** A write, a parameter, a clamp, a CORS policy, an env var, a
 second query layer, or a page. The Jinja pages keep serving until all three
 surfaces are at parity (`DECISIONS.md`), and the remaining ports —
@@ -2836,7 +2879,7 @@ and lists. No rendered clock, no spoken duration, no sentence a page composed.
 | --- | --- |
 | `POST /jobs/{job_id}/cancel` | `{"job_id", "state", "cancel_requested": true}` |
 | `POST /jobs/{job_id}/retry` | `{"from_job_id", "selected", "jobs": [{"job_id", "items"}], "errors": [envelope], "preserved": {"channels", "tags": [], "priority"}}` |
-| `POST /index` | `{"jobs": [{"job_id", "items", "urls": []}], "already_indexed": [], "errors": [envelope + "urls"], "batches", "urls"}` |
+| `POST /index` | `{"jobs": [{"job_id", "items", "urls": []}], "already_indexed": [], "errors": [envelope + "urls"], "batches", "urls", "accepted": {"expand", "max_items", "priority"}}` |
 | `POST /videos/{video_id}/reindex` | `{"video_id", "job_id" \| null}` |
 | `POST /videos/{video_id}/tags` | `{"video_id", "tags": []}` |
 | `POST /login` | `{"signed_in": true, "next"}`, with the cookie set |
@@ -2924,6 +2967,18 @@ refusal — is not the obvious one:
   other one — `index_video` creates no job for a video already in the corpus,
   which is precisely what half the ledger's rows are, so "Index anyway" on one
   of those is accepted and enqueues nothing.
+
+*`index`'s `accepted` block, added 2026-09-06.* The receipt says what the
+server actually ran on: `max_items` after the tool's own 1..200 clamp, and
+`expand` and `priority` after the two vocabularies fall back to their defaults
+rather than refusing an unknown word. The Jinja handler re-rendered the form
+with all three in it, so a reader who typed `max_items=9000` saw the 200 that
+was used; a React form keeps its own state and has nothing to read them back
+out of, and a clamp nobody is shown looks like a bug in the thing that clamped.
+It is the resolved half of `writes._submitted` and adds no parameter, no
+refusal and no branch — the whole of `_submitted` is deliberately *not* here:
+what was typed is the client's own state, and only the values the server
+changed are the server's to report.
 
 **The end of it.** The redirect branch is deleted with the last Jinja page, and
 `_wants_html`, `_to_login` and `_see` go with it. Until then both are live and
@@ -3013,6 +3068,7 @@ it does on the page.
              "window_s": 86400},   // rolling, not calendar
   "checks_enabled": true,          // VIDTHEQUE_FOLLOW_CHECKS, never named
   "vectors": true,                 // §5.5's honest refusal for the follow form
+  "vectors_reason": null,          // and why not, when it is false
   "follows": [{"slug": "andrej-karpathy", "title": "…", "kind": "channel",
                "source_url": "…", "state": "active", "mode": "auto",
                "tabs": ["videos"], "channels": "all", "tags": ["topic:llm"],
@@ -3030,6 +3086,20 @@ it does on the page.
   "notes": []
 }
 ```
+
+*`vectors_reason`, added 2026-09-06.* `vectors` says the follow form must be
+disabled and not why, and the page's note under that heading printed the reason
+inside it — "Indexing is disabled on this instance (*reason*), so a follow would
+queue videos it cannot build." It is `VectorState.reason`, the same sentence
+`/api/session` sends as `writes_refused_reason` and through the same
+`read_models.drift_reason`, `null` where the legs are on so the field is the
+sentence or nothing rather than a sentence about nothing. There is no
+projection on this surface to drop it (above), and the predicate is applied
+anyway, because the day this pair is registered somewhere else is not the day
+to discover which fields were owner-only by accident. `vectors` itself was
+`bool(db.vectors)` until the same date — a `VectorState` instance, and a
+dataclass is truthy whatever it holds, so the field answered `true` on the one
+deployment it exists to describe; it is `db.vectors.enabled` now.
 
 `checks_enabled` is the one field on this payload the Jinja page has no line
 for, and it is here because the clocks beside it are otherwise a lie: with

@@ -579,6 +579,7 @@ since phase 1, and the endpoint is on the same rate-limit bucket.
   "readonly": false,           // VIDTHEQUE_PUBLIC_READONLY
   "write_side": true,          // does this deployment register writes at all
   "writes_allowed": true,      // db.writes_allowed
+  "writes_refused_reason": null,  // string|null: why not, and null in the projection
   "authenticated": false,      // may this caller read the data endpoints
   "is_owner": false,           // did they *prove* it ("open" is not a credential)
   "signed_in": false,          // a validated session row, never cookie presence
@@ -623,9 +624,27 @@ existing behaviour rather than a new rule:
   database and no write side (`readonly`, or `AUTH=none`), and a client renders
   a control only when `write_side` is true.
 
+*Added 2026-09-06: `writes_refused_reason`.* The flag above says a form must be
+disabled; this is the sentence that says why, and without it the index page
+refuses a reader without telling them the one thing they can act on — the Jinja
+form printed it verbatim under its disabled controls.
+`Database._assert_dimensions` turns `writes_allowed` off and writes
+`VectorState.reason` in the same breath, so the two are one fact: a config key
+and a table's declared width disagree, and indexing is refused so embedding
+spaces cannot be mixed. It is `null` when writes are allowed and `null` in
+`VIDTHEQUE_PUBLIC_READONLY=1` — one absence, so a client renders "indexing is
+refused" with no explanation in both cases rather than learning to tell them
+apart. Policy text under `DECISIONS.md`'s split: it
+carries a number inside a sentence about this box, and Python composes it.
+`read_models.drift_reason` is the only reader of that string on this surface,
+shared with `/api/following`'s `vectors_reason` (§6b), so the index form and
+the follow form cannot be refused with two different explanations.
+
 **Never in this payload:** the token, the password, which of the two matched,
 `PUBLIC_URL`, the worker URL, the database path, the trusted CIDRs, the
-declared model ids, the drift reason.
+declared model ids. The drift reason was on this list until 2026-09-06 and is
+now the exception directly above — to the **owner** only, and only where writes
+are actually refused; the projection still never sees it.
 
 **What the shell does with it** *(landed 2026-09-05, with the first two
 pages)*. §1d says a `401` from the API is what sends the browser to the login
