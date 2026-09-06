@@ -79,6 +79,7 @@ from .read_models import (
     FAILED_WINDOW_S,
     FRAME_PAGE,
     FRAME_PAGE_MAX,
+    GAPS_FAILED_CAP,
     HELD_BAND_CAP,
     INDEX_JOB_CAP,
     NEAR_MISS_S,
@@ -92,6 +93,7 @@ from .read_models import (
     clamp_note,
     coverage_flags,
     declared_models,
+    drift_reason,
     follow_detail_reads,
     follow_row_json,
     follow_row_json_with_error,
@@ -214,6 +216,12 @@ async def overview(request: Request) -> Response:
         "corpus": {
             "videos": int(corpus.get("videos") or 0),
             "queryable_videos": int(corpus.get("queryable_videos") or 0),
+            # Ready **only**, and it is not `queryable_videos` minus something:
+            # `stale` answers a query and is not ready, so the two numbers are
+            # different questions and the band that says "N ready" means this
+            # one. It is `corpus_rollup`'s own column, the same field the
+            # ledger's `videos_by_state.ready` is read from.
+            "videos_ready": int(rollup["videos_ready"] or 0),
             # The store's own words as keys, so a state the schema grows later
             # arrives here the day it is added.
             "videos_by_index_state": {
@@ -260,6 +268,14 @@ async def overview(request: Request) -> Response:
             # `video_stages.error`, which is the pipeline's prose about the
             # operator's box, and they reach no surface from here.
             "failed": int(gaps.get("failed") or 0),
+            # …and the count is the length of a list `queries.gaps` probes
+            # with `LIMIT 5`, so at the ceiling it means "five or more". The
+            # cap travels as a number and the reading of it as a boolean: a
+            # client renders `5+` off the pair, and a `5` hard-coded in a
+            # template is how a cap gets reported as an exact count the day
+            # the `LIMIT` changes.
+            "failed_cap": GAPS_FAILED_CAP,
+            "failed_capped": int(gaps.get("failed") or 0) >= GAPS_FAILED_CAP,
         },
         "embed_backlog": {
             "text": int(backlog.get("text") or 0),
@@ -715,6 +731,19 @@ async def session(request: Request) -> Response:
             "readonly": readonly,
             "write_side": write_side,
             "writes_allowed": bool(assembled.db.writes_allowed),
+            # …and why not, when it is not. `Database._assert_dimensions` turns
+            # `writes_allowed` off and writes the sentence in the same breath,
+            # and the index form printed that sentence under its disabled
+            # controls: a form refused with no reason is a form an operator
+            # retypes. Policy text, `None` where writes are allowed and `None`
+            # in the projection, which is the readiness block's rule for the
+            # same string — the demo is told indexing is refused, never what
+            # this box is serving.
+            "writes_refused_reason": (
+                None
+                if assembled.db.writes_allowed
+                else drift_reason(assembled.db, redact=readonly)
+            ),
             # May this caller read the dashboard's data endpoints? The read
             # gate's own predicate: a credential, or a trusted socket peer.
             # In `AUTH=none` every request is `"open"` and this is true.
@@ -823,6 +852,10 @@ async def following(request: Request) -> Response:
             # submission. Neither names an environment variable.
             "checks_enabled": bool(data.settings["checks"]),
             "vectors": data.vectors,
+            # The reason under that refusal, as the list's note printed it.
+            # `None` where the legs are on, so the field is the sentence or
+            # nothing rather than a sentence about nothing.
+            "vectors_reason": data.vectors_reason,
             "follows": [_follow_list_row(row) for row in data.rows],
             # The band that is addressed to a person rather than describing the
             # instance: something matched a rule and is waiting on a human. It
@@ -1149,6 +1182,12 @@ async def jobs_json(request: Request) -> Response:
             "now": data.now,
             "poll_ms": POLL_MS,
             "live": data.live,
+            # The projection this listing ran under, and the flag the page's
+            # own footnote was gated on: with it true, `error_message` is
+            # `null` on every row because this deployment does not publish
+            # source URLs or error text, which is a different statement from a
+            # job that failed without one.
+            "redacted": data.redacted,
             "jobs": data.cards,
             "pagination": {
                 "limit": data.limit,
@@ -1205,6 +1244,11 @@ async def job_json(request: Request) -> Response:
             "now": detail["now"],
             "poll_ms": POLL_MS,
             "live": detail["live"],
+            # `_job_detail`'s own rule, said out loud. Every `error_message`
+            # and every stage `error` below is `null` under it, and "not
+            # published on this instance" is only an honest thing for a page to
+            # print when the payload says which of the two it is looking at.
+            "redacted": detail["redacted"],
             "job": detail["job"],
             "items": detail["items"],
             # The item list's own bound, said out loud: 200 is what
