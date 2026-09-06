@@ -117,8 +117,8 @@ export function VideoDetailView({ videoId }: { videoId: string }) {
       data={state.data}
       search={search}
       selected={selected}
-      seedSize={cueBound(params.get("cues"), state.data.transcript.max_limit)}
-      seedOffset={cueBound(params.get("cue_offset"), CUE_OFFSET_MAX) ?? 0}
+      seedSize={cueBound(params.get("cues"), state.data.transcript.max_limit, 1)}
+      seedOffset={cueBound(params.get("cue_offset"), CUE_OFFSET_MAX, 0) ?? 0}
     />
   );
 }
@@ -1578,10 +1578,15 @@ function frameLink(
  *  and the real clamp is still the server's — it answers with the `limit` it
  *  ran and the panel pages by that number rather than by the typed one. A
  *  prompt-only bound is not a bound (CLAUDE.md); this one only keeps a URL
- *  someone hand-edited from asking for a page nobody could serve. */
-function cueBound(raw: string | null, ceiling: number): number | null {
+ *  someone hand-edited from asking for a page nobody could serve.
+ *
+ *  The floor is where the two keys differ. `cue_offset=0` is the top of the
+ *  transcript and a real answer; `cues=0` is a page of no cues, which is a
+ *  pager reading "Next 0 cues" and an Earlier that never moves. So a size is
+ *  at least one cue, and a position is at least the first. */
+function cueBound(raw: string | null, ceiling: number, floor: number): number | null {
   if (raw === null || !/^\d+$/.test(raw.trim())) return null;
-  return Math.min(Number(raw.trim()), ceiling);
+  return Math.max(floor, Math.min(Number(raw.trim()), ceiling));
 }
 
 /** `?select=` as an ordinal, or `null`.
