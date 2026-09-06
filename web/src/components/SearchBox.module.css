@@ -1,20 +1,36 @@
 .form {
-  display: grid;
-  gap: var(--s3);
-  max-width: var(--query-w, 44rem);
+  display: flex;
+  flex-direction: column;
 }
 
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The query bar: the query in the machine's face, the machine's own state on
+   the right, and the action. It is lifted off the page because it is the thing
+   you use. */
 .bar {
   display: flex;
-  border: 1px solid var(--seam2);
+  align-items: stretch;
+  width: 100%;
+  max-width: var(--query-w, 44rem);
+  height: 52px;
   background: var(--console);
+  border: 1px solid var(--seam2);
+  box-shadow: var(--drop-sm);
 }
 
 .input {
   composes: t-query from global;
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
-  height: 2.75rem;
   padding: 0 13px;
   background: transparent;
   color: var(--fg);
@@ -23,15 +39,64 @@
 
 .input::placeholder {
   color: var(--fg3);
+  opacity: 1;
 }
 
-.go {
-  composes: t-action from global;
-  padding: 0 20px 0 22px;
+/* The ring goes on the bar, not on the field inside it: a second rectangle
+   drawn inside a bordered box reads as a box in a box. */
+.input:focus-visible {
+  outline: none;
+}
+
+.bar:has(.input:focus-visible) {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* The machine's own word for what it is doing. It prints the word; the colour
+   only reinforces it (DESIGN.md, the Word-and-Colour Rule). */
+.state {
+  composes: t-tag from global;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  /* Wide enough for the longest word it prints, so changing state does not
+     resize the cell and shove the input's right edge — a 13px jiggle on the
+     one control the visitor is looking at. */
+  min-width: 88px;
+  padding: 0 14px;
+  border-left: 1px solid var(--seam);
+  background: var(--console);
+  color: var(--fg3);
+  white-space: nowrap;
+  transition:
+    background var(--t-state) linear,
+    color var(--t-state) linear;
+}
+
+.state[data-s="working"] {
   background: var(--gold);
   color: var(--gold-ink);
-  border: 0;
+}
+
+.state[data-s="refused"] {
+  color: var(--tone-bad);
+}
+
+/* The one filled control on the page. */
+.go {
+  composes: t-action from global;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 0 20px;
+  background: var(--gold);
+  color: var(--gold-ink);
+  border: 1px solid var(--gold);
+  border-left: 0;
   cursor: pointer;
+  transition: background var(--t-fast) linear;
 }
 
 .go:hover,
@@ -39,32 +104,104 @@
   background: var(--gold-hi);
 }
 
+/* Disabled while a search is in flight: the accent steps back to its wash
+   rather than going muddy at half opacity, and the state cell beside it is
+   the thing carrying the word. */
 .go:disabled {
-  background: var(--gold-44);
+  background: var(--gold-12);
+  border-color: var(--gold-24);
+  color: var(--gold);
   cursor: default;
 }
 
-.chips {
+/* The filters and the mode switch belong to the input, so they share its
+   measure: a mode switch flung to the far edge of the column reads as chrome
+   that belongs to the page rather than to the box above it. */
+.controls {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--s2);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin-top: var(--s4);
+  max-width: var(--query-w, 44rem);
 }
 
-.chip {
+/* One bordered group: the chips butt against each other and the row reads as
+   one control, not four loose ones. */
+.chips,
+.modes {
+  display: flex;
+  flex-wrap: wrap;
+  border: 1px solid var(--seam2);
+}
+
+.chips button,
+.modes button {
   composes: t-label-sm from global;
-  height: 2.125rem;
+  height: 2.75rem;
   padding: 0 12px;
   background: transparent;
-  color: var(--fg3);
-  border: 1px solid var(--seam);
+  border: 0;
+  border-right: 1px solid var(--seam);
+  color: var(--fg2);
+  white-space: nowrap;
   cursor: pointer;
+  transition:
+    color var(--t-fast) linear,
+    background var(--t-fast) linear;
 }
 
-.chip:hover {
+.chips button:last-child,
+.modes button:last-child {
+  border-right: 0;
+}
+
+.chips button:hover,
+.modes button:hover {
   color: var(--fg);
 }
 
-.chip[aria-checked="true"] {
+.chips button[aria-pressed="true"],
+.modes button[aria-pressed="true"] {
   background: var(--gold-12);
   color: var(--gold);
+}
+
+.modes {
+  margin-left: auto;
+}
+
+/* At 375px the input takes its own line with the action full width under it. */
+@media (max-width: 30rem) {
+  .bar {
+    flex-wrap: wrap;
+    height: auto;
+  }
+
+  .input {
+    flex: 1 1 100%;
+    height: 52px;
+    order: 1;
+  }
+
+  .state {
+    order: 2;
+    border-left: 0;
+    border-top: 1px solid var(--seam);
+    height: 44px;
+  }
+
+  .go {
+    order: 3;
+    flex: 1 1 auto;
+    justify-content: center;
+    height: 44px;
+    border-left: 1px solid var(--gold);
+    border-top: 1px solid var(--gold);
+  }
+
+  .modes {
+    margin-left: 0;
+  }
 }
