@@ -17,10 +17,11 @@ import {
   Unbroken,
   useWriteSide,
 } from "../parts";
+import { useSession } from "../session";
 import { useJobsPoll } from "../useJobsPoll";
 import { CancelControl } from "./CancelControl";
 import styles from "./jobs.module.css";
-import { countsOf, jobHeadline, JobStates, Progress, WallClock } from "./parts";
+import { countsOf, jobHeadline, JobStates, Progress, usePatchedRows, WallClock } from "./parts";
 
 // The jobs table — `templates/jobs.html`, reading `GET /dashboard/api/jobs` in
 // the browser (dashboard.md §5.4, §16.3).
@@ -72,10 +73,10 @@ export function JobsView() {
   return (
     <>
       <PageHead title="Jobs">
-        {/* No separator in front of the cadence: `Narrowing` glues one to the
-            end of every fact it prints, so a strip with nothing narrowing it
-            would otherwise open on a middot. */}
-        <Narrowing filters={data?.filters} />
+        {/* No separator in front of the cadence: `Facts` glues one to the end
+            of every entry it prints, so a strip with nothing on it would
+            otherwise open on a middot. */}
+        <Facts filters={data?.filters} />
         {data ? (
           <Unbroken>
             <Fact label="refresh" value={`${Math.round(data.poll_ms / 1000)}s`} />
@@ -83,35 +84,42 @@ export function JobsView() {
         ) : null}
       </PageHead>
 
-      <Filters search={search} limit={data?.pagination.limit} />
+      <Filters search={search} filters={data?.filters} limit={data?.pagination.limit} />
 
       {state.status === "loading" ? <Reading /> : null}
       {state.status === "failed" ? (
         <ReadFailure error={state.error} onRetry={state.reload} />
       ) : null}
-      {data ? <Table data={data} search={search} stopped={state.error} /> : null}
+      {/* Keyed on the query string: a new listing is a new set of rows, and the
+          baseline the tick patches has to start again with it. */}
+      {data ? (
+        <Table key={search} data={data} stopped={state.error} polling={state.polling} />
+      ) : null}
     </>
   );
 }
 
-/** What is actually narrowing the table, on the title's own baseline.
+/** What this listing ran with, on the title's own baseline.
  *
  *  The payload's `filters`, not the URL's words: `state=nonsense` falls back to
  *  `all` server-side, and a strip printing `state nonsense` over a table of
  *  every job would be the page vouching for a filter that never ran. The
  *  sentence saying it fell back is `notes`, printed above the table. Nothing is
- *  narrowing until the first read lands, which is why this draws nothing at
- *  all while the page is still reading.
+ *  known until the first read lands, which is why this draws nothing at all
+ *  while the page is still reading.
  *
- *  The order is deliberately not here: every entry is a *narrowing*, and an
- *  order takes no rows out. */
-function Narrowing({ filters }: { filters?: Jobs["filters"] }) {
-  const facts: [string, string][] = [];
+ *  `state` and `order` are printed whether or not they narrow anything, which
+ *  is `jobs.html`'s own strip: the table is read *in an order*, and an order
+ *  nobody prints is an order nobody can tell has changed. The other three
+ *  appear only when they take rows out — `kind all` is the absence of a filter
+ *  said twice. */
+function Facts({ filters }: { filters?: Jobs["filters"] }) {
   if (!filters) return null;
-  if (filters.state !== DEFAULTS.state) facts.push(["state", filters.state]);
+  const facts: [string, string][] = [["state", filters.state]];
   if (filters.kind !== DEFAULTS.kind) facts.push(["kind", filters.kind]);
   if (filters.error_code) facts.push(["error code", filters.error_code]);
   if (filters.degraded) facts.push(["degraded", "only"]);
+  facts.push(["order", filters.order]);
 
   return (
     <>
@@ -134,14 +142,46 @@ function Narrowing({ filters }: { filters?: Jobs["filters"] }) {
  * The control band. A real form over the URL: submitting navigates, and the
  * page re-reads because its query string changed.
  *
- * Seeded with `defaultValue` and re-keyed on the query string, so the browser
- * owns what is being typed and a navigation reseeds every control from the URL
- * that arrived.
+ * **Seeded from the answer, not from the question.** `jobs.html` filled every
+ * control from `filters` — the values the listing actually ran with — so a
+ * `state=nonsense` that fell back showed `all`, an `error_code` truncated to 64
+ * characters showed the 64, and the Rows box showed the page size the server
+ * accepted rather than the 100000 somebody typed. A band echoing the URL is a
+ * band claiming a filter ran that did not. The URL is the seed only until the
+ * first read lands, because until then nothing has answered.
+ *
+ * Every control is uncontrolled and re-keyed on what it was seeded with, so the
+ * browser owns what is being typed and a new reading reseeds the band.
  */
-function Filters({ search, limit }: { search: string; limit?: number }) {
+function Filters({
+  search,
+  filters,
+  limit,
+}: {
+  search: string;
+  filters?: Jobs["filters"];
+  limit?: number;
+}) {
   const router = useRouter();
   const params = new URLSearchParams(search);
-  const value = (key: string, fallback = "") => params.get(key) ?? fallback;
+  const asked = (key: string, fallback = "") => params.get(key) ?? fallback;
+  const value = {
+    state: filters?.state ?? asked("state", "all"),
+    kind: filters?.kind ?? asked("kind", "all"),
+    order: filters?.order ?? asked("order", "newest"),
+    // `null` is the payload's word for "no error filter"; the form's is "".
+    error_code: filters ? (filters.error_code ?? "") : asked("error_code"),
+    degraded: filters ? filters.degraded : asked("degraded") === "1",
+    limit: limit === undefined ? asked("limit") : String(limit),
+  };
+  const seed = [
+    value.state,
+    value.kind,
+    value.order,
+    value.error_code,
+    value.degraded,
+    value.limit,
+  ].join("|");
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -157,11 +197,11 @@ function Filters({ search, limit }: { search: string; limit?: number }) {
   }
 
   return (
-    <form className={dash.filters} key={search} onSubmit={submit}>
+    <form className={dash.filters} key={seed} onSubmit={submit}>
       <div className={`${dash.field} ${dash.pickField}`}>
         <label htmlFor="f-jobstate">State</label>
         <span className={dash.pick}>
-          <select id="f-jobstate" name="state" defaultValue={value("state", "all")}>
+          <select id="f-jobstate" name="state" defaultValue={value.state}>
             {STATES.map((entry) => (
               <option key={entry} value={entry}>
                 {entry}
@@ -173,7 +213,7 @@ function Filters({ search, limit }: { search: string; limit?: number }) {
       <div className={`${dash.field} ${dash.pickField}`}>
         <label htmlFor="f-jobkind">Kind</label>
         <span className={dash.pick}>
-          <select id="f-jobkind" name="kind" defaultValue={value("kind", "all")}>
+          <select id="f-jobkind" name="kind" defaultValue={value.kind}>
             {KINDS.map((entry) => (
               <option key={entry} value={entry}>
                 {entry}
@@ -188,7 +228,7 @@ function Filters({ search, limit }: { search: string; limit?: number }) {
           id="f-joberror"
           name="error_code"
           type="text"
-          defaultValue={value("error_code")}
+          defaultValue={value.error_code}
           placeholder="E_RATE_LIMIT"
           autoComplete="off"
         />
@@ -196,7 +236,7 @@ function Filters({ search, limit }: { search: string; limit?: number }) {
       <div className={`${dash.field} ${dash.pickField}`}>
         <label htmlFor="f-joborder">Order</label>
         <span className={dash.pick}>
-          <select id="f-joborder" name="order" defaultValue={value("order", "newest")}>
+          <select id="f-joborder" name="order" defaultValue={value.order}>
             {ORDERS.map((entry) => (
               <option key={entry} value={entry}>
                 {entry.replace("_", " ")}
@@ -206,27 +246,21 @@ function Filters({ search, limit }: { search: string; limit?: number }) {
         </span>
       </div>
       <label className={dash.check}>
-        <input
-          type="checkbox"
-          name="degraded"
-          value="1"
-          defaultChecked={value("degraded") === "1"}
-        />
+        <input type="checkbox" name="degraded" value="1" defaultChecked={value.degraded} />
         <span className={dash.checkWord}>Degraded only</span>
       </label>
       <div className={`${dash.field} ${dash.narrow}`}>
         <label htmlFor="f-joblimit">Rows</label>
-        {/* No `max`: the ceiling is `views.JOB_PAGE_MAX` and this page has no
-            copy of it. The number the server accepted is the placeholder, so
-            an empty box over a page of twenty-five still says how big a page
-            is. */}
+        {/* No `max`: the ceiling is `views.JOB_PAGE_MAX` and this page keeps
+            no copy of it — a clamp that moved says so in `notes`, in the
+            server's own words. What the box holds is the page size the server
+            accepted, which is what `jobs.html` echoed here. */}
         <input
           id="f-joblimit"
           name="limit"
           type="number"
           min={1}
-          defaultValue={value("limit")}
-          placeholder={limit === undefined ? undefined : String(limit)}
+          defaultValue={value.limit}
           inputMode="numeric"
         />
       </div>
@@ -242,9 +276,10 @@ function Filters({ search, limit }: { search: string; limit?: number }) {
   );
 }
 
-function Table({ data, search, stopped }: { data: Jobs; search: string; stopped: unknown }) {
+function Table({ data, stopped, polling }: { data: Jobs; stopped: unknown; polling: boolean }) {
   const { rendered } = useWriteSide();
-  const rows = data.jobs;
+  const redacted = Boolean(useSession()?.readonly);
+  const { rows, queuedSince } = usePatchedRows(data);
 
   // Where a moved bound and a fallen-back filter are disclosed. The Jinja page
   // echoed an accepted `limit` back into the field the reader typed it into; a
@@ -280,6 +315,15 @@ function Table({ data, search, stopped }: { data: Jobs; search: string; stopped:
               longer running the page says so rather than freezing quietly.
               Nothing is wrong when everything is terminal — there is simply
               nothing left to poll for. */}
+          {/* The tick patches the rows that were here; a job queued since
+              cannot be patched into existence, and the count line above would
+              stop being true if it were. `jobs.js` revealed this note instead,
+              and so does this. */}
+          {queuedSince ? (
+            <span className={styles.staleNote}>
+              a job was queued since this page loaded, so reload
+            </span>
+          ) : null}
           {stopped ? (
             <span className={styles.staleNote}>
               the live view stopped: {refusalOf(stopped).message}
@@ -315,18 +359,45 @@ function Table({ data, search, stopped }: { data: Jobs; search: string; stopped:
           </thead>
           <tbody>
             {rows.map((job) => (
-              <Row key={job.job_id} job={job} tickMs={data.poll_ms} actions={rendered} />
+              <Row
+                key={job.job_id}
+                job={job}
+                tickMs={data.poll_ms}
+                actions={rendered}
+                polling={polling}
+              />
             ))}
           </tbody>
         </table>
       </div>
 
-      <Pager pagination={data.pagination} search={search} />
+      <Pager data={data} />
+
+      {/* What this deployment does not publish — the one line a reader of the
+          demo cannot get anywhere else (`jobs.html`, §2.4). The listing carries
+          no `redacted` flag of its own, so the fact comes off the session,
+          which is the same deployment answering. */}
+      {redacted ? (
+        <p className={styles.panelNote}>
+          Source URLs and error text are not published on this instance.
+        </p>
+      ) : null}
     </>
   );
 }
 
-function Row({ job, tickMs, actions }: { job: JobCard; tickMs: number; actions: boolean }) {
+function Row({
+  job,
+  tickMs,
+  actions,
+  polling,
+}: {
+  job: JobCard;
+  tickMs: number;
+  actions: boolean;
+  polling: boolean;
+}) {
+  const headline = jobHeadline(job);
   return (
     <tr>
       {/* What the job *contains*, not just what it is called: the row's
@@ -337,7 +408,7 @@ function Row({ job, tickMs, actions }: { job: JobCard; tickMs: number; actions: 
           the demo and the title it resolved to is corpus. */}
       <th scope="row" className={styles.colJob} data-label="Job">
         <DashLink className={dash.rowTitle} href={`${ROOT}/jobs/${encodeURIComponent(job.job_id)}`}>
-          {jobHeadline(job)}
+          {headline.muted ? <span className={dash.muted}>{headline.text}</span> : headline.text}
         </DashLink>
         {job.contents?.more ? (
           <span className={styles.rowMore}>+{job.contents.more} more</span>
@@ -360,7 +431,7 @@ function Row({ job, tickMs, actions }: { job: JobCard; tickMs: number; actions: 
       </th>
       <td data-label="State">
         <span className={styles.colState}>
-          <JobStates job={job} />
+          <JobStates job={job} moving={polling} />
         </span>
       </td>
       <td data-label="Progress">
@@ -379,7 +450,7 @@ function Row({ job, tickMs, actions }: { job: JobCard; tickMs: number; actions: 
         <time className={dash.nowrap}>{job.finished_at ? at(job.finished_at) : DASH}</time>
       </td>
       <td className={dash.num} data-label="Wall clock">
-        <WallClock seconds={job.wall_s} live={job.live} />
+        <WallClock seconds={job.wall_s} live={job.live && polling} />
       </td>
       {actions ? (
         <td className={styles.colActions} data-label="Action">
@@ -390,24 +461,18 @@ function Row({ job, tickMs, actions }: { job: JobCard; tickMs: number; actions: 
   );
 }
 
-function Pager({ pagination, search }: { pagination: Jobs["pagination"]; search: string }) {
-  const { limit, offset, has_more } = pagination;
+function Pager({ data }: { data: Jobs }) {
+  const { limit, offset, has_more } = data.pagination;
   if (!offset && !has_more) return null;
   return (
     <nav className={dash.pager} aria-label="Pagination">
       {offset ? (
-        <DashLink
-          className={dash.ghostlink}
-          href={linkTo(search, { offset: String(Math.max(offset - limit, 0)) })}
-        >
+        <DashLink className={dash.ghostlink} href={pageLink(data, Math.max(offset - limit, 0))}>
           ← Newer
         </DashLink>
       ) : null}
       {has_more ? (
-        <DashLink
-          className={dash.ghostlink}
-          href={linkTo(search, { offset: String(offset + limit) })}
-        >
+        <DashLink className={dash.ghostlink} href={pageLink(data, offset + limit)}>
           Older {limit} →
         </DashLink>
       ) : null}
@@ -423,10 +488,11 @@ function Pager({ pagination, search }: { pagination: Jobs["pagination"]; search:
  *  filter that never ran for an empty instance is the wrong screen. */
 function Empty({ filters }: { filters: Jobs["filters"] }) {
   const { rendered } = useWriteSide();
-  const state = filters.state === DEFAULTS.state ? "" : filters.state;
-  const narrowed = Boolean(
-    state || filters.kind !== DEFAULTS.kind || filters.error_code || filters.degraded,
-  );
+  // `jobs.html`'s own predicate, and the narrow one on purpose: `state` is the
+  // filter that empties this table, and "the filters are narrowing it" over a
+  // listing narrowed only by `kind=delete` sends the reader to look for a
+  // filter they would then have to find.
+  const narrowed = filters.state !== DEFAULTS.state;
 
   return (
     <section className={dash.notice} aria-labelledby="nojobs">
@@ -436,14 +502,7 @@ function Empty({ filters }: { filters: Jobs["filters"] }) {
       <p className={dash.noticeDetail}>
         {narrowed ? (
           <>
-            The filters are narrowing it
-            {state ? (
-              <>
-                {" "}
-                to <code>{state}</code>
-              </>
-            ) : null}
-            .
+            The filter is on <code>{filters.state}</code>.
           </>
         ) : (
           <>
@@ -452,7 +511,10 @@ function Empty({ filters }: { filters: Jobs["filters"] }) {
         )}
       </p>
       <p className={dash.noticeNext}>
-        {narrowed ? <DashLink href={`${ROOT}/jobs`}>Show every job</DashLink> : null}
+        {/* `state=all` rather than a bare `/jobs`: the link that empties the
+            one filter this screen is about, not the one that quietly discards
+            everything else the reader typed. */}
+        {narrowed ? <DashLink href={`${ROOT}/jobs?state=all`}>Show every job</DashLink> : null}
         {narrowed && rendered ? <Sep /> : null}
         {rendered ? <DashLink href={`${ROOT}/index`}>Add videos</DashLink> : null}
       </p>
@@ -476,13 +538,22 @@ export function apiQuery(search: string): URLSearchParams {
   return query;
 }
 
-/** This page's URL with some of its parameters changed; `null` removes one. */
-function linkTo(search: string, changes: Record<string, string | null>): string {
-  const next = apiQuery(search);
-  for (const [key, value] of Object.entries(changes)) {
-    if (value === null) next.delete(key);
-    else next.set(key, value);
-  }
-  const query = next.toString();
-  return query ? `${ROOT}/jobs?${query}` : `${ROOT}/jobs`;
+/** A page of this listing, as a link somebody can send.
+ *
+ *  All six parameters, from the payload rather than from the URL — `jobs.html`'s
+ *  `page_link` macro, which spelled the whole query out. Page four of a listing
+ *  is only page four of *that* listing, so a pager link that carried the offset
+ *  and left the predicates to a default would be a link to a different table.
+ */
+function pageLink(data: Jobs, offset: number): string {
+  const query = new URLSearchParams({
+    state: data.filters.state,
+    kind: data.filters.kind,
+    error_code: data.filters.error_code ?? "",
+    degraded: data.filters.degraded ? "1" : "0",
+    order: data.filters.order,
+    limit: String(data.pagination.limit),
+    offset: String(offset),
+  });
+  return `${ROOT}/jobs?${query}`;
 }
