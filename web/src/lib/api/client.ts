@@ -21,7 +21,11 @@ export class ApiError extends Error {
   readonly code: string;
   /** The facade's "what to do next" line, when it sent one. */
   readonly next?: string;
-  /** Seconds, from `Retry-After`, on a 429 or 503. */
+  /** Seconds to wait, on a 429 or 503: the body's own `retry_after_s` when it
+   *  sent one, else `Retry-After`. The body leads because it is the limiter
+   *  speaking, where the header can be dropped or rewritten by anything on the
+   *  way (demo-site.md §4; `app.js`'s `renderRateLimited` read them in this
+   *  order and this one had read only the header). */
   readonly retryAfter?: number;
 
   constructor(status: number, envelope: Partial<ErrorEnvelope>, retryAfter?: number) {
@@ -32,7 +36,7 @@ export class ApiError extends Error {
     // The wire says `null` for "no next step"; callers ask `err.next ? …`, so
     // the two absences become one.
     this.next = envelope.next ?? undefined;
-    this.retryAfter = retryAfter;
+    this.retryAfter = envelope.retry_after_s ?? retryAfter;
   }
 }
 
