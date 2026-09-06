@@ -104,11 +104,19 @@ export function useTicking(seconds: number | null, moving: boolean, step: 1 | -1
     setNow(seconds);
   }
 
+  // A countdown that reached zero has nothing left to count: the wait is over,
+  // the row is drawing no number, and a second-by-second wake-up per deferred
+  // job on a table full of them is a page keeping the box busy saying nothing.
+  // It flips once, so the effect is torn down once rather than rebuilt on
+  // every tick — and a fresh payload with a real wait re-seeds `now` and
+  // starts it again.
+  const spent = step === -1 && now !== null && now <= 0;
+
   useEffect(() => {
-    if (!moving || seconds === null) return;
+    if (!moving || seconds === null || spent) return;
     const id = setInterval(() => setNow((value) => Math.max(0, (value ?? 0) + step)), 1000);
     return () => clearInterval(id);
-  }, [moving, seconds, step]);
+  }, [moving, seconds, step, spent]);
 
   return now;
 }
