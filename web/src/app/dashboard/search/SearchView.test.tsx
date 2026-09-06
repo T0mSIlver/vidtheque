@@ -359,10 +359,10 @@ describe("the owner's search page", () => {
   it("renders the signed-out state, in the API's own words", async () => {
     await mount({ status: 401, body: AUTH_REFUSAL }, { search: "q=cache" });
 
-    expect(
-      await screen.findByText("This dashboard is not open to this browser."),
-    ).toBeInTheDocument();
-    expect(screen.getByText(AUTH_REFUSAL.message)).toBeInTheDocument();
+    // The instance's own message, and nothing this side wrote over the top of
+    // it: `sign_in_page` rendered `error.html` with the refusal in it.
+    expect(await screen.findByText(AUTH_REFUSAL.message)).toBeInTheDocument();
+    expect(screen.getByText("E_AUTH_REQUIRED")).toBeInTheDocument();
   });
 
   // Under a stopped clock: the label has to be the delay the limiter named,

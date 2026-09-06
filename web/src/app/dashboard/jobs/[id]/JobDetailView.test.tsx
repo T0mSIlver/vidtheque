@@ -231,7 +231,7 @@ describe("one job's page", () => {
       },
     });
 
-    expect(await screen.findByText(/not open to this browser/)).toBeInTheDocument();
+    expect(await screen.findByText(/needs the owner.s token or session/)).toBeInTheDocument();
     await vi.advanceTimersByTimeAsync(10_000);
     expect(
       fetcher.mock.calls.filter((call) => String(call[0]).startsWith("/dashboard/api/jobs/")),
