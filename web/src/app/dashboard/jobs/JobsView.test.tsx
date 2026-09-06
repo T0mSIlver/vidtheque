@@ -584,4 +584,17 @@ describe("the jobs table", () => {
     await screen.findByRole("status");
     expect(screen.queryByText(/are not published on this instance/)).not.toBeInTheDocument();
   });
+
+  // The flag is the listing's own. An instance that predates it says the same
+  // thing through the session, which is the same deployment answering.
+  it("falls back to the session on an instance whose payload has no flag", async () => {
+    await mount(
+      { body: { ...DEMO_JOBS, redacted: undefined } },
+      { session: { ...DEMO_SESSION, readonly: true } },
+    );
+    await screen.findByRole("status");
+    expect(
+      screen.getByText("Source URLs and error text are not published on this instance."),
+    ).toBeInTheDocument();
+  });
 });

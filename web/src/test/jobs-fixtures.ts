@@ -186,9 +186,11 @@ export const CLAMPED_JOBS = {
   ],
 };
 
-/** The projection drops the job's error message and keeps its code. */
+/** The projection drops the job's error message and keeps its code, and says
+ *  which of the two absences a `null` is. */
 export const DEMO_JOBS = {
   ...OWNER_JOBS,
+  redacted: true,
   jobs: [{ ...DEFERRED_JOB, error_message: null }, RUNNING_JOB, FINISHED_JOB],
 };
 
@@ -409,6 +411,7 @@ export const DEFERRED_JOB_DETAIL_TICKED = {
 
 export const DEMO_JOB_DETAIL = {
   ...DEFERRED_JOB_DETAIL,
+  redacted: true,
   job: { ...DEFERRED_JOB, error_message: null },
   items: DEFERRED_JOB_DETAIL.items.map((item) => ({ ...item, source_url: null })),
   events: DEFERRED_JOB_DETAIL.events.map((event) => ({ ...event, message: null })),
