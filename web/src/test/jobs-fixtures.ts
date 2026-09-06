@@ -244,7 +244,58 @@ export const OWNER_JOB_DETAIL = {
   live: false,
   job: FINISHED_JOB,
   items: [DONE_ITEM, FAILED_ITEM],
+  // The states this job's items are in, from the grouped query over all of
+  // them — not the card's five buckets, and not capped by the item list's
+  // ceiling either.
+  counts: { done: 1, failed: 1 },
+  error_counts: { E_SOURCE: 1 },
+  items_capped: false,
+  degraded: [],
+  focus: null,
+  stages: [],
   events: [],
+};
+
+/** The seven `video_stages` rows, for the one item the job is on. The endpoint
+ *  sends all seven whether or not there is an item to attribute them to, which
+ *  is why the panel is drawn on `focus` and not on these. */
+const STAGES = [
+  { stage: "fetch", state: "done", started_at: NOW - 7900, finished_at: NOW - 7800, took_s: 100 },
+  { stage: "stt", state: "done", started_at: NOW - 7800, finished_at: NOW - 7400, took_s: 400 },
+  { stage: "chunk", state: "done", started_at: NOW - 7400, finished_at: NOW - 7400, took_s: 0 },
+  {
+    stage: "text_embed",
+    state: "done",
+    started_at: NOW - 7400,
+    finished_at: NOW - 7390,
+    took_s: 10,
+  },
+  {
+    stage: "keyframe",
+    state: "done",
+    started_at: NOW - 7390,
+    finished_at: NOW - 7100,
+    took_s: 290,
+  },
+  { stage: "ocr", state: "failed", started_at: NOW - 7100, finished_at: NOW - 7000, took_s: 100 },
+  { stage: "frame_embed", state: "absent", started_at: null, finished_at: null, took_s: null },
+];
+
+/** A job the endpoint could name an item for: the stage table is about *that*
+ *  video, and its heading says so. */
+export const FOCUSED_JOB_DETAIL = { ...OWNER_JOB_DETAIL, focus: DONE_ITEM, stages: STAGES };
+
+/** The same seven rows with nothing to attribute them to — a table about no
+ *  video, which is the panel `job.html` did not draw. */
+export const UNFOCUSED_JOB_DETAIL = { ...OWNER_JOB_DETAIL, focus: null, stages: STAGES };
+
+/** A job with no items at all: the figure-note is the fact, not five zeroes. */
+export const EMPTY_JOB_DETAIL = {
+  ...OWNER_JOB_DETAIL,
+  job: { ...FINISHED_JOB, n_items: 0, n_done: 0, n_failed: 0, degraded: 0 },
+  items: [],
+  counts: {},
+  error_counts: {},
 };
 
 export const RUNNING_JOB_DETAIL = {
@@ -339,6 +390,23 @@ export const DEFERRED_JOB_DETAIL = {
 
 /** The projection: the job's message, the items' URLs and the events' text are
  *  all `null`, and the codes, the counts and every clock survive. */
+/** A second event, as the next reading brings it: an event that lands while
+ *  the page is open is the reason the page is live at all. */
+export const DEFERRED_JOB_DETAIL_TICKED = {
+  ...DEFERRED_JOB_DETAIL,
+  events: [
+    {
+      id: 2,
+      at: NOW - 60,
+      level: "warn",
+      stage: null,
+      item_id: null,
+      message: "retrying in 600s after E_RATE_LIMIT: HTTP 429",
+    },
+    ...DEFERRED_JOB_DETAIL.events,
+  ],
+};
+
 export const DEMO_JOB_DETAIL = {
   ...DEFERRED_JOB_DETAIL,
   job: { ...DEFERRED_JOB, error_message: null },

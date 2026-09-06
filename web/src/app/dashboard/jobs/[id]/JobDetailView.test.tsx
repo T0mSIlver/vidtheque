@@ -6,10 +6,15 @@ import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
 import {
   CANCEL_QUEUED,
   DEFERRED_JOB_DETAIL,
+  DEFERRED_JOB_DETAIL_TICKED,
   DEMO_JOB_DETAIL,
+  EMPTY_JOB_DETAIL,
+  FOCUSED_JOB_DETAIL,
   OWNER_JOB_DETAIL,
+  PART_REFUSED_RETRY,
   RETRY_RECEIPT,
   RUNNING_JOB_DETAIL,
+  UNFOCUSED_JOB_DETAIL,
 } from "@/test/jobs-fixtures";
 import { firstPaint } from "@/test/retry";
 
@@ -92,10 +97,39 @@ describe("one job's page", () => {
     expect(within(cost).getByText("25m 00s")).toBeInTheDocument();
     expect(within(cost).getByText("1m 40s")).toBeInTheDocument();
     expect(within(cost).getByText("created → finished")).toBeInTheDocument();
-    // The five buckets, and they add up to the number above them.
-    expect(
-      within(cost).getByText("1 done · 1 failed · 0 skipped · 0 cancelled · 0 still to run"),
-    ).toBeInTheDocument();
+    // The states the items are actually in, from the payload's own grouped
+    // count — not the card's five buckets, which name the empty ones too.
+    expect(within(cost).getByText("1 done · 1 failed")).toBeInTheDocument();
+  });
+
+  // A live job's wall clock is still being taken, and the figure that reports
+  // it counts with it. `job.html` gave this figure the same `data-wall` the
+  // table's column had, and the ticker patched both.
+  it("ticks the wall-clock figure on a live job", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await mount({ body: RUNNING_JOB_DETAIL }, { jobId: "job_running001" });
+    const cost = await screen.findByRole("region", { name: "What it cost" });
+    expect(within(cost).getByText("20m 00s")).toBeInTheDocument();
+
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(within(cost).getByText("20m 03s")).toBeInTheDocument();
+  });
+
+  it("leaves a finished job's wall-clock figure where the measurement ended", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await mount({ body: OWNER_JOB_DETAIL });
+    const cost = await screen.findByRole("region", { name: "What it cost" });
+
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(within(cost).getByText("26m 40s")).toBeInTheDocument();
+  });
+
+  // A job with no items has no states to list, and five zeroes would be a
+  // tally of nothing dressed as a reading.
+  it("says `none` when there are no item states to count", async () => {
+    await mount({ body: EMPTY_JOB_DETAIL });
+    const cost = await screen.findByRole("region", { name: "What it cost" });
+    expect(within(cost).getByText("none")).toBeInTheDocument();
   });
 
   it("draws each item as what it actually is", async () => {
@@ -128,6 +162,66 @@ describe("one job's page", () => {
     // And on the title's own baseline, where the countdown belongs on a job
     // whose only interesting fact is the wait.
     expect(held()).toHaveTextContent("held 4m 00s more");
+  });
+
+  // The number inside the sentence is part of the countdown, not a stamp of
+  // the moment the page loaded: `job.html` put `data-defer` on the whole
+  // section and the ticker patched both.
+  it("counts the deferral down inside the notice as well as on the pill", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await mount({ body: DEFERRED_JOB_DETAIL }, { jobId: "job_deferred01" });
+    const notice = await screen.findByRole("region", { name: "Waiting, not stuck" });
+    expect(within(notice).getByText("4m 00s")).toBeInTheDocument();
+
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(within(notice).getByText("3m 57s")).toBeInTheDocument();
+    expect(held()).toHaveTextContent("held 3m 57s more");
+  });
+
+  // …and it goes when the wait does. A claimed job still being told it is
+  // being held is the failure mode the notice exists to prevent, arriving from
+  // the other side.
+  it("takes the deferral notice away when the wait runs out", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const brief = {
+      ...DEFERRED_JOB_DETAIL,
+      job: { ...DEFERRED_JOB_DETAIL.job, defer_s: 2 },
+    };
+    await mount({ body: brief }, { jobId: "job_deferred01" });
+    expect(await screen.findByRole("region", { name: "Waiting, not stuck" })).toBeInTheDocument();
+
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(screen.queryByRole("region", { name: "Waiting, not stuck" })).not.toBeInTheDocument();
+  });
+
+  // §5.4 asks for the countdown "with `error_code` beside it": the code is the
+  // half that explains the clock, so on this page it comes first.
+  it("puts the code that set the wait ahead of the request that has not landed", async () => {
+    const requested = {
+      ...DEFERRED_JOB_DETAIL,
+      job: { ...DEFERRED_JOB_DETAIL.job, cancel_requested: true },
+    };
+    await mount({ body: requested }, { jobId: "job_deferred01" });
+    const head = (await screen.findByRole("heading", { name: /Job job_deferred01/ })).closest(
+      "div",
+    )?.textContent;
+    expect(head?.indexOf("E_RATE_LIMIT")).toBeLessThan(head?.indexOf("cancel requested") ?? -1);
+  });
+
+  // `job.html` drew the stage table on `focus` and nothing else: the endpoint
+  // sends all seven rows whether or not there is an item to attribute them to.
+  it("draws the stage table only for the item the job is on", async () => {
+    await mount({ body: FOCUSED_JOB_DETAIL });
+    expect(
+      await screen.findByRole("region", { name: /Stage by stage — Visualizing transformers/ }),
+    ).toBeInTheDocument();
+
+    cleanup();
+    vi.unstubAllGlobals();
+    vi.resetModules();
+    await mount({ body: UNFOCUSED_JOB_DETAIL });
+    await screen.findByRole("region", { name: "Items" });
+    expect(screen.queryByRole("region", { name: /Stage by stage/ })).not.toBeInTheDocument();
   });
 
   // The one record a non-rate-limit deferral has anywhere in the system.
@@ -254,12 +348,18 @@ describe("one job's page", () => {
       { jobId: "job_nope" },
     );
 
-    expect(await screen.findByRole("heading", { name: "Unknown job" })).toBeInTheDocument();
+    // The refusal is the page, as `error.html` drew it: the message is the
+    // title, the code is a state beside it, and the recovery is a panel with
+    // the two standing links in it.
+    expect(await screen.findByRole("heading", { name: "no such job." })).toBeInTheDocument();
     expect(screen.getByText("E_UNKNOWN_JOB")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Back to the jobs table" })).toHaveAttribute(
-      "href",
-      "/dashboard/jobs",
-    );
+    expect(screen.getByRole("link", { name: "Every job this index has run" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Corpus overview" })).toBeInTheDocument();
+    // Capitalised: Python writes the fragment to trail a colon, and standing
+    // on its own under a heading it wants a capital.
+    expect(screen.getByText(/^The jobs table lists/)).toBeInTheDocument();
+    // The crumb still names the id the API's own message no longer carries.
+    expect(screen.getByText("job_nope", { selector: "code" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "try again" })).not.toBeInTheDocument();
   });
 
@@ -303,7 +403,10 @@ describe("one job's page", () => {
       expect(screen.queryByRole("button", { name: /Retry/ })).not.toBeInTheDocument();
     });
 
-    it("shows the retry receipt, with a link to each job it queued", async () => {
+    // The receipt carries what `retry.html` carried, because the reader is no
+    // longer sent to a page that carried it: where the repair came from, what
+    // was selected, what the new work inherited, and what was left alone.
+    it("shows the retry receipt, with everything the redirect target showed", async () => {
       const { posts } = await mount({ body: OWNER_JOB_DETAIL }, { write: { body: RETRY_RECEIPT } });
       await userEvent.click(
         await screen.findByRole("button", { name: "Retry 2 failed or degraded item(s)" }),
@@ -313,15 +416,51 @@ describe("one job's page", () => {
       expect((posts[0].init.headers as Record<string, string>)["content-type"]).toBe(
         "application/x-www-form-urlencoded",
       );
-      expect(await screen.findByText(/2 item\(s\) selected/)).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: /job_4cee026cb790/ })).toHaveAttribute(
+      const receipt = await screen.findByRole("status");
+      expect(within(receipt).getByRole("heading", { name: "Repair queued" })).toBeInTheDocument();
+      expect(receipt).toHaveTextContent("2 failed or degraded item(s) selected");
+      // The crumb the receipt page had, naming the job the repair came from.
+      expect(receipt).toHaveTextContent("retry from");
+      expect(
+        within(receipt).getAllByRole("link", { name: "job_finished01" }).length,
+      ).toBeGreaterThan(0);
+      // What was *not* requeued — the sentence the receipt exists for.
+      expect(receipt).toHaveTextContent(
+        /Only items that failed, or finished with a failed optional/,
+      );
+      expect(receipt).toHaveTextContent(
+        /does not force a rebuild of stages that already succeeded/,
+      );
+      // The job it made, with its own count beside it.
+      expect(within(receipt).getByRole("link", { name: "job_4cee026cb790" })).toHaveAttribute(
         "href",
         "/dashboard/jobs/job_4cee026cb790",
       );
-      // What the new work inherited, typed: the tool's own words, not a
-      // sentence this page wrote.
-      expect(screen.getByText(/preserved:/)).toHaveTextContent("channels all");
-      expect(screen.getByText(/preserved:/)).toHaveTextContent("priority normal");
+      expect(receipt).toHaveTextContent("2 item(s) queued");
+      // What the new work inherited, typed: the tool's own words. No tags were
+      // carried over, and the em dash says so rather than the line vanishing.
+      expect(receipt).toHaveTextContent("channels all");
+      expect(receipt).toHaveTextContent("tags —");
+      expect(receipt).toHaveTextContent("priority normal");
+      // The document is renamed for as long as the receipt is on screen: the
+      // Jinja receipt was a document and had a name.
+      expect(document.title).toBe("Retry from job_finished01 — vidtheque");
+    });
+
+    // A receipt can also be a refusal: some batches were queued and some were
+    // not, and the sentence saying what to do about the ones that were not is
+    // Python's.
+    it("prints a partly refused retry with the tool's own next step", async () => {
+      await mount({ body: OWNER_JOB_DETAIL }, { write: { body: PART_REFUSED_RETRY } });
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Retry 2 failed or degraded item(s)" }),
+      );
+
+      const receipt = await screen.findByRole("status");
+      expect(receipt).toHaveTextContent("12 failed or degraded item(s) selected");
+      expect(within(receipt).getByText("E_FEATURE_DISABLED")).toBeInTheDocument();
+      expect(receipt).toHaveTextContent("fix the config or dimension mismatch and restart.");
+      expect(receipt).toHaveTextContent("tags topic:llm");
     });
 
     it("prints a refused retry in the API's own words, with its next step", async () => {
@@ -394,10 +533,49 @@ describe("one job's page", () => {
       screen.getByText(/never resolved to a video, and not published here/),
     ).toBeInTheDocument();
     expect(screen.getByText("message not published on this instance")).toBeInTheDocument();
+    // The log says the same thing once, under it, rather than leaving a reader
+    // to infer it from a column of muted rows.
+    expect(screen.getByText(/Message text is not published on this instance/)).toBeInTheDocument();
     // Twice: the code beside the state, and again in the deferral notice that
     // says what set the backoff.
     expect(screen.getAllByText("E_RATE_LIMIT")).toHaveLength(2);
     expect(held()).toHaveTextContent("held 4m 00s more");
+  });
+
+  // A null message on an owner's instance is a failure that had no message, not
+  // a redaction — and telling the reader it was withheld sends them looking
+  // somewhere there is nothing to find.
+  it("does not call a missing message a redaction on an instance that publishes them", async () => {
+    const quiet = {
+      ...OWNER_JOB_DETAIL,
+      job: { ...OWNER_JOB_DETAIL.job, error_code: "E_SOURCE", error_message: null },
+      items: [{ ...OWNER_JOB_DETAIL.items[1], error_message: null }],
+    };
+    await mount({ body: quiet });
+    await screen.findByRole("region", { name: "Items" });
+
+    expect(screen.queryByText(/not published on this instance/)).not.toBeInTheDocument();
+    // The code is still the heading of its own notice: that half is not prose.
+    expect(screen.getAllByText("E_SOURCE").length).toBeGreaterThan(0);
+  });
+
+  // Watching a deferral get logged is the point of the page being live at all:
+  // this log is the only record a non-rate-limit one has.
+  it("marks an event that arrived while the page was open", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await mount([{ body: DEFERRED_JOB_DETAIL }, { body: DEFERRED_JOB_DETAIL_TICKED }], {
+      jobId: "job_deferred01",
+    });
+    const log = await screen.findByRole("region", { name: "Event log" });
+    const marked = () =>
+      Array.from(log.querySelectorAll("li")).filter((li) => /isNew/.test(li.className));
+    expect(marked()).toHaveLength(0);
+
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(within(log).getByText(/retrying in 600s/)).toBeInTheDocument();
+    expect(marked()).toHaveLength(1);
+    expect(marked()[0]).toHaveTextContent("retrying in 600s");
   });
 
   // Six of the Jinja page's panels are assembled in `views._job_detail` and are

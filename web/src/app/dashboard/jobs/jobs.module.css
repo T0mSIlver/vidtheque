@@ -267,6 +267,36 @@
   color: var(--muted);
 }
 
+/* The retry receipt is what `retry.html` was, standing where the reader is
+   rather than on a page they were sent to — so it keeps that page's own
+   ladder: a name, the count under it, and what the new work inherited. */
+.receiptTitle {
+  composes: t-cell-strong from global;
+  margin: var(--s2) 0 0;
+}
+
+.receiptMeta {
+  composes: t-cell from global;
+  margin-top: var(--s1);
+  color: var(--muted);
+}
+
+/* The jobs the repair made, one per line: an id is a door and a count is what
+   is behind it, and two of them on one line is a row you have to parse. */
+.joblist {
+  margin: var(--s3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.joblist li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  align-items: baseline;
+  padding: var(--s1) 0;
+}
+
 .controls {
   display: flex;
   flex-wrap: wrap;
@@ -357,6 +387,14 @@
   align-items: baseline;
   padding: var(--s1) 0;
   border-bottom: 1px solid var(--seam);
+}
+
+/* An event that arrived while the page was open. A left rule rather than a
+   flash: it survives being scrolled past, which an animation does not. */
+.isNew {
+  margin-left: calc(var(--s2) * -1);
+  padding-left: var(--s2);
+  border-left: 1px solid var(--gold);
 }
 
 .event:last-child {
