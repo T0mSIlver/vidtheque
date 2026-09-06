@@ -1,6 +1,7 @@
 .box {
   display: block;
   width: 100%;
+  aspect-ratio: 16 / 9;
   background: var(--black);
   box-shadow: var(--edge);
   overflow: hidden;
@@ -18,4 +19,115 @@
 a:hover .img,
 a:focus-visible .img {
   filter: var(--film-full);
+}
+
+/* No keyframe for this moment, or the bytes never arrived. It says which
+   channel the moment came from rather than leaving a hole where a frame is. */
+.placeholder {
+  composes: t-tag from global;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--plate3);
+  color: var(--fg3);
+}
+
+/* ─────────────────────────────────────────────────── click to enlarge */
+
+.shotButton {
+  display: block;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: 0;
+  line-height: 0;
+  cursor: zoom-in;
+}
+
+.shotButton .box {
+  transition: box-shadow var(--t-state) linear;
+}
+
+.shotButton:hover .box {
+  box-shadow: inset 0 0 0 2px var(--gold);
+}
+
+/* The dialog element is the *backdrop*: it carries no padding, so `.inner`
+   covers every pixel of the box and a click that lands on the dialog itself
+   landed outside the picture. */
+.shot {
+  width: min(96vw, 64rem);
+  max-width: min(96vw, 64rem);
+  padding: 0;
+  background: var(--plate);
+  border: 1px solid var(--seam2);
+  box-shadow: var(--drop);
+  color: var(--fg);
+}
+
+.shot::backdrop {
+  background: var(--scrim);
+}
+
+.inner {
+  position: relative;
+}
+
+.shotImg {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+  background: var(--black);
+  box-shadow: var(--edge);
+}
+
+.shotFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: 12px 14px;
+  background: var(--plate2);
+  border-top: 1px solid var(--seam);
+}
+
+.shotCaption {
+  composes: t-body from global;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The filled slab, not the small one: there is one of it and it is the payoff.
+   Same rule as the answer's Sources rows (demo-site.md §6.5). */
+.receipt {
+  composes: t-machine-sm from global;
+  padding: 9px 11px;
+  color: var(--fg);
+  background: var(--gold-6);
+  border: 1px solid var(--gold);
+}
+
+.receipt:hover {
+  background: var(--gold-12);
+}
+
+.shotClose {
+  composes: t-label from global;
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  height: 2.125rem;
+  padding: 0 var(--s3);
+  color: var(--fg2);
+  background: var(--console);
+  border: 1px solid var(--seam2);
+  cursor: pointer;
+}
+
+.shotClose:hover {
+  color: var(--gold);
+  border-color: var(--gold-44);
 }
