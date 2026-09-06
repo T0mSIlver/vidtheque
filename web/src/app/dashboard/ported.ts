@@ -46,6 +46,45 @@ const DETAIL = [
  *  part of the question — `/dashboard/videos?index_state=failed` is the videos
  *  page with a filter on it. */
 export function isPorted(href: string): boolean {
-  const path = href.split("?")[0].split("#")[0];
-  return PAGES.includes(path) || DETAIL.some((pattern) => pattern.test(path));
+  return PAGES.includes(bare(href)) || DETAIL.some((pattern) => pattern.test(bare(href)));
 }
+
+/**
+ * Which section of the rail a page belongs to — `_chrome(request, page)`'s
+ * word, which every Jinja view declared for itself.
+ *
+ * It is a table and not a prefix test, because that is the difference the
+ * declaration made: the rail marked `Videos` current on a video's own page
+ * because `views.video` said `"videos"`, and marked *nothing* current on the
+ * sign-in page, which is under `/dashboard` like everything else. A
+ * `startsWith` reading gets both of those right by luck and gets the next
+ * `/dashboard/<section>/…` route wrong silently — it would inherit a section
+ * from a page it has nothing to do with.
+ *
+ * The refusal panel asks the same question: `error.html` offers "Every job this
+ * index has run" under the jobs section and "Everything that is indexed"
+ * everywhere else, and that is this word, not the URL it was read from.
+ */
+export type Section =
+  "corpus" | "ledger" | "search" | "videos" | "jobs" | "index" | "following" | "login";
+
+const SECTIONS: [RegExp, Section][] = [
+  [new RegExp(`^${ROOT}$`), "corpus"],
+  [new RegExp(`^${ROOT}/ledger$`), "ledger"],
+  [new RegExp(`^${ROOT}/search$`), "search"],
+  [new RegExp(`^${ROOT}/videos(?:/[^/]+)?$`), "videos"],
+  [new RegExp(`^${ROOT}/jobs(?:/[^/]+)?$`), "jobs"],
+  [new RegExp(`^${ROOT}/index$`), "index"],
+  [new RegExp(`^${ROOT}/following(?:/[^/]+)?$`), "following"],
+  [new RegExp(`^${ROOT}/login$`), "login"],
+];
+
+/** The section this path is in, or `null` for a path no page of this surface
+ *  claims. */
+export function sectionOf(href: string | null | undefined): Section | null {
+  if (!href) return null;
+  const path = bare(href);
+  return SECTIONS.find(([pattern]) => pattern.test(path))?.[1] ?? null;
+}
+
+const bare = (href: string) => href.split("?")[0].split("#")[0];

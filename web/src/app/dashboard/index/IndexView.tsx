@@ -100,12 +100,7 @@ export function IndexView() {
   // page. A document reload rather than a re-render: the read that failed is the
   // chassis's own, made once on mount, and there is no route to refresh.
   if (session.status === "failed") {
-    return (
-      <>
-        <PageHead title="Add to the index" note="A video, a playlist or a channel." />
-        <ReadFailure error={session.error} onRetry={reload} />
-      </>
-    );
+    return <ReadFailure error={session.error} onRetry={reload} />;
   }
 
   // `GET /dashboard/index` is registered with the write routes, so on a

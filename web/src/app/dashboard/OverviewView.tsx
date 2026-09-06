@@ -44,13 +44,10 @@ export function OverviewView() {
   const state = useRead(read);
 
   if (state.status === "loading") return <Reading />;
-  if (state.status === "failed")
-    return (
-      <>
-        <PageHead title="Corpus overview" />
-        <ReadFailure error={state.error} onRetry={state.reload} />
-      </>
-    );
+  // The refusal replaces the page, head and all — `views.overview` rendered
+  // `error.html` *instead of* `overview.html`, never underneath it, and a page
+  // head over a refusal is a title claiming a reading that did not happen.
+  if (state.status === "failed") return <ReadFailure error={state.error} onRetry={state.reload} />;
   return <Loaded data={state.data} />;
 }
 

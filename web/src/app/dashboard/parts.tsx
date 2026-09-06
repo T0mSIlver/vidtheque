@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useState, type AnchorHTMLAttributes, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
+import { useCallback, useEffect, useState, type AnchorHTMLAttributes, type ReactNode } from "react";
 import { Pill, type Tone } from "@/components/Pill";
 import { RetryIn } from "@/components/RetryIn";
-import { DashboardError } from "@/lib/dashboard/client";
+import { DashboardError, ROOT } from "@/lib/dashboard/client";
 import type { Readiness as ReadinessPayload } from "@/lib/dashboard/schemas";
 import { at, count, day, iso } from "@/lib/format";
 import styles from "./dashboard.module.css";
-import { isPorted } from "./ported";
+import { isPorted, sectionOf } from "./ported";
 import { useSession } from "./session";
 
 // The vocabulary the pages of this surface are built from — every piece of it
@@ -165,7 +166,11 @@ export function DashLink({
   href: string;
   className?: string;
   children: ReactNode;
-} & Pick<AnchorHTMLAttributes<HTMLAnchorElement>, "aria-current" | "tabIndex" | "id">) {
+} & Pick<AnchorHTMLAttributes<HTMLAnchorElement>, "aria-current" | "tabIndex" | "id"> & {
+    /** `base.html`'s one test hook, and it is only that: the smoke check finds
+     *  the write side's first link by it rather than by the words on it. */
+    "data-add-videos"?: string;
+  }) {
   if (isPorted(href)) {
     return (
       <Link className={className} href={href} {...rest}>
@@ -437,12 +442,129 @@ export function useWriteSide(): { rendered: boolean; indexable: boolean } {
 /** The request is out. A word, not a spinner: nothing is known yet to animate. */
 export const Reading = () => <p className={styles.reading}>reading…</p>;
 
+/** The refusal's own way back: the page whose form it was.
+ *
+ *  `_error_page`'s fourth argument, and only a write handler ever sets it — a
+ *  read page's 404 has no such page. "Back to this job" on the three retry
+ *  refusals, "Sign in" on the 401 that has somewhere to send the reader. */
+export type Back = { href: string; label: string };
+
+/** The `next:` line, capitalised.
+ *
+ *  Python writes these as sentence fragments that used to trail a colon.
+ *  Standing on their own under a heading they want a capital, and `error.html`
+ *  made that call in the template rather than in the view for the reason it
+ *  still holds: it is a presentation decision about a string that is policy
+ *  text and stays Python's, word for word. */
+export function capitalise(sentence: string): string {
+  return sentence ? sentence[0].toUpperCase() + sentence.slice(1) : sentence;
+}
+
 /**
- * What a failed read looks like, in the four shapes it comes in.
+ * Name the document, for as long as this component is on screen.
+ *
+ * The refusals of this surface had titles of their own — "Unknown job",
+ * "Unknown video", "No such follow" — because a 404 rendered by Python *was* a
+ * document and got one from the view. Here the shell is already named by the
+ * route's `metadata` before the read that refuses has even gone out, so the
+ * page renames itself when the answer comes back and hands the name back when
+ * the reader leaves.
+ */
+export function useDocumentTitle(title: string | null): void {
+  useEffect(() => {
+    if (!title || typeof document === "undefined") return;
+    const previous = document.title;
+    document.title = `${title} — vidtheque`;
+    return () => {
+      document.title = previous;
+    };
+  }, [title]);
+}
+
+/**
+ * A refusal, as `templates/error.html` drew it: **a page, not a stack trace
+ * pinned to the top of a blank column.**
+ *
+ * It gets the same header band every other page gets, so the surface still
+ * looks like itself when it is saying no — the message is the title, the code
+ * is a state beside it in its tone, and the recovery is a panel with somewhere
+ * to click. It also gives the refusal a real type ladder, which a 15px notice
+ * alone on the page did not have.
+ *
+ * Two standing links, not three. The rail is already on the page with all its
+ * destinations in it, so a full second nav here is the same choice offered
+ * twice; what a refusal owes the operator is the list the thing they asked for
+ * should have been in — and that is the section this request belonged to,
+ * which is `sectionOf`'s answer and not a guess made from the URL.
+ */
+export function Refusal({
+  code,
+  message,
+  next,
+  back,
+  onRetry,
+}: {
+  code: string;
+  message: string;
+  next?: string | null;
+  back?: Back | null;
+  /** Re-run the read that refused. The Jinja page had no such control because
+   *  a refusal there was a document and reloading it was the browser's job;
+   *  here the payload never came through the router, so there is nothing for a
+   *  reload to re-ask and the button is the only way to ask again. */
+  onRetry?: () => void;
+}) {
+  const section = sectionOf(usePathname());
+  useDocumentTitle(message);
+  return (
+    <>
+      <PageHead title={message}>
+        <Pill state={code} tone="bad" />
+      </PageHead>
+
+      <Panel id="recover" title="Where to go from here">
+        {next ? <p className={styles.emptyLead}>{capitalise(next)}</p> : null}
+        <p className={styles.pager}>
+          {/* A refusal that came from a form has one obvious destination — the
+              page whose form it was — and it goes first, because "back to the
+              thing I was editing" outranks the two standing links the rail
+              already carries. */}
+          {back ? (
+            <DashLink className={styles.ghostlink} href={back.href}>
+              {back.label}
+            </DashLink>
+          ) : null}
+          {section === "jobs" ? (
+            <DashLink className={styles.ghostlink} href={`${ROOT}/jobs`}>
+              Every job this index has run
+            </DashLink>
+          ) : (
+            <DashLink className={styles.ghostlink} href={`${ROOT}/videos`}>
+              Everything that is indexed
+            </DashLink>
+          )}
+          <DashLink className={styles.ghostlink} href={ROOT}>
+            Corpus overview
+          </DashLink>
+          {onRetry ? (
+            <button className={styles.ghostlink} type="button" onClick={onRetry}>
+              Try again
+            </button>
+          ) : null}
+        </p>
+      </Panel>
+    </>
+  );
+}
+
+/**
+ * What a failed read looks like, in the three shapes it comes in.
  *
  * The message is the API's own, never one written here: refusal codes,
  * messages and their `next:` line are policy text and stay Python's
- * (frontend-migration.md §1 decision 5).
+ * (frontend-migration.md §1 decision 5). The refusal **replaces the page**,
+ * head and all, because that is what a refusal was — `views.overview` rendered
+ * `error.html` instead of `overview.html`, not underneath it.
  */
 export function ReadFailure({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   const session = useSession();
@@ -462,42 +584,28 @@ export function ReadFailure({ error, onRetry }: { error: unknown; onRetry: () =>
   // Signed out. The client has already sent the browser to the sign-in page
   // where this deployment has one; this is what the page says meanwhile, and
   // what it keeps saying on an instance that gates its reads and registers no
-  // login page at all.
+  // login page at all. `sign_in_page` gave that refusal the sign-in page as
+  // its `back`, on the same condition: when there is one.
   if (error instanceof DashboardError && error.status === 401) {
     return (
-      <div className={styles.refusal}>
-        <p className={styles.refusalTitle}>This dashboard is not open to this browser.</p>
-        <p className={styles.refusalMessage}>{error.message}</p>
-        {error.next ? <p className={styles.refusalNext}>{error.next}</p> : null}
-        {session?.login_url ? (
-          <p className={styles.refusalAction}>
-            <DashLink className={styles.signin} href={session.login_url}>
-              Sign in
-            </DashLink>
-          </p>
-        ) : null}
-      </div>
+      <Refusal
+        code={error.code}
+        message={error.message}
+        next={error.next}
+        back={session?.login_url ? { href: session.login_url, label: "Sign in" } : null}
+      />
     );
   }
 
   const refusal = error instanceof DashboardError ? error : null;
   return (
-    <div className={styles.refusal}>
-      <p className={styles.refusalTitle}>This page could not read the instance.</p>
-      <p className={styles.refusalMessage}>
-        {refusal ? refusal.message : error instanceof Error ? error.message : "Unknown error."}
-      </p>
-      {refusal?.next ? <p className={styles.refusalNext}>{refusal.next}</p> : null}
-      {refusal ? (
-        <p className={styles.refusalCode}>
-          {refusal.code} · HTTP {refusal.status}
-        </p>
-      ) : null}
-      <p className={styles.refusalAction}>
-        <button className={styles.action} type="button" onClick={onRetry}>
-          try again
-        </button>
-      </p>
-    </div>
+    <Refusal
+      code={refusal ? refusal.code : "E_UNREACHABLE"}
+      message={
+        refusal ? refusal.message : error instanceof Error ? error.message : "Unknown error."
+      }
+      next={refusal?.next}
+      onRetry={onRetry}
+    />
   );
 }
