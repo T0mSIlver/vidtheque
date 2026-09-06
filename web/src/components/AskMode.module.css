@@ -1,20 +1,42 @@
 .ask {
-  display: grid;
-  gap: var(--s4);
+  display: flex;
+  flex-direction: column;
 }
 
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The query bar is the same object in both modes — the query in the machine's
+   face, the machine's state on the right, the action — so it is the same
+   geometry, and switching mode changes the word on the button and nothing
+   about the box. */
 .form {
   display: flex;
+  flex-direction: column;
+}
+
+.bar {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
   max-width: var(--query-w, 44rem);
-  border: 1px solid var(--seam2);
+  height: 52px;
   background: var(--console);
+  border: 1px solid var(--seam2);
+  box-shadow: var(--drop-sm);
 }
 
 .input {
   composes: t-query from global;
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
-  height: 2.75rem;
   padding: 0 13px;
   background: transparent;
   color: var(--fg);
@@ -23,189 +45,539 @@
 
 .input::placeholder {
   color: var(--fg3);
+  opacity: 1;
+}
+
+.input:focus-visible {
+  outline: none;
+}
+
+.bar:has(.input:focus-visible) {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
 }
 
 .go {
   composes: t-action from global;
-  padding: 0 20px 0 22px;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 0 20px;
   background: var(--gold);
   color: var(--gold-ink);
-  border: 0;
+  border: 1px solid var(--gold);
+  border-left: 0;
   cursor: pointer;
-  white-space: nowrap;
+  transition: background var(--t-fast) linear;
+}
+
+.go:hover,
+.go:focus-visible {
+  background: var(--gold-hi);
 }
 
 .go:disabled {
-  background: var(--gold-44);
+  background: var(--gold-12);
+  border-color: var(--gold-24);
+  color: var(--gold);
   cursor: default;
 }
 
-.switch {
-  composes: t-label from global;
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s3);
+  margin-top: var(--s4);
+  max-width: var(--query-w, 44rem);
 }
 
-.switch a {
-  color: var(--fg2);
+/* ─────────────────────────────────────────── the cold page, in ask mode */
+
+.empty {
+  max-width: var(--query-w, 44rem);
+  margin-top: var(--s6);
 }
 
-.switch a:hover {
+.kick {
+  composes: t-label-sm from global;
+  display: flex;
+  align-items: center;
+  gap: 12px;
   color: var(--gold);
 }
 
-/* The work log: the console, one line per tool call. */
-.log {
-  composes: t-log from global;
-  list-style: none;
-  padding: clamp(22px, 2.4vw, 36px) clamp(18px, 2.4vw, 36px);
-  background: var(--console);
-  color: var(--fg2);
-  border: 1px solid var(--seam2);
-  max-width: var(--prose);
-}
-
-.log li {
-  display: flex;
-  gap: var(--s3);
-  flex-wrap: wrap;
-}
-
-.logText {
-  color: var(--fg);
-}
-
-.logResult {
-  color: var(--fg2);
-}
-
-.logResult::before {
-  content: "→ ";
-  color: var(--fg3);
-}
-
-/* The one line still running carries the caret: the machine is inside the
-   corpus, and that is the only thing on this page that blinks. */
-.running .logText::after {
-  content: "";
-  display: inline-block;
-  width: 8px;
-  height: 17px;
-  margin-left: var(--s2);
-  vertical-align: text-bottom;
+.kick s {
+  display: block;
+  flex: none;
+  width: 34px;
+  height: 1px;
   background: var(--gold);
-  animation: var(--blink);
 }
 
-@keyframes blink {
-  50% {
-    opacity: 0;
-  }
+.exhead {
+  composes: t-cell-strong from global;
+  margin-top: var(--s4);
 }
 
-.running .logText::after {
-  animation-name: blink;
+.exnote {
+  composes: t-body from global;
+  margin-top: 8px;
+  max-width: var(--note);
+  color: var(--fg2);
 }
 
+.examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-top: var(--s3);
+  list-style: none;
+}
+
+/* An example's own text *is* the query, so it is set as one: mono, and never
+   uppercased — a case-sensitive string mangled is a broken promise. */
+.example {
+  composes: t-query from global;
+  padding: 9px 12px;
+  background: transparent;
+  border: 1px solid var(--seam);
+  color: var(--fg2);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    color var(--t-fast) linear,
+    border-color var(--t-fast) linear;
+}
+
+.example:hover,
+.example:focus-visible {
+  color: var(--gold);
+  border-color: var(--gold-44);
+}
+
+/* ───────────────────────────────────────────────────────────── the pane */
+
+/* The measure belongs to a *column* and the width to the pane: the answer, its
+   sources and its work log laid out as a strip down the left of a wide screen
+   is the thing this page exists for, drawn as a sidebar. Above the demo's own
+   breakpoint the sources move beside the answer and the prose still breaks at
+   70ch, because that is what the column is. */
 .answer {
+  --answer-pad: clamp(18px, 2.2vw, 26px);
+  --answer-gap: clamp(24px, 2.6vw, 40px);
   display: grid;
-  gap: var(--s4);
-  padding: var(--s6);
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  margin-top: var(--s6);
+  padding: var(--answer-pad);
+  max-width: calc(var(--prose) + 2 * var(--answer-pad));
   background: var(--plate);
   border: 1px solid var(--seam2);
 }
 
-.para {
-  composes: t-prose from global;
-  max-width: var(--prose);
-}
-
-.label {
-  composes: t-label from global;
-  color: var(--fg2);
-  padding-bottom: var(--s2);
-  border-bottom: 1px solid var(--line);
-  margin-top: var(--s2);
-}
-
-.sources {
-  list-style: none;
-  display: grid;
-  gap: var(--s4);
-}
-
-.source {
-  display: grid;
-  grid-template-columns: 2.5rem 10rem minmax(0, 1fr);
-  gap: var(--s3);
-  align-items: start;
-}
-
-@media (max-width: 780px) {
-  .source {
-    grid-template-columns: 2.5rem minmax(0, 1fr);
-  }
-}
-
-.n {
-  composes: t-machine from global;
-  color: var(--gold);
-}
-
-.sourceText {
-  display: grid;
-  gap: var(--s1);
+.answer > * {
+  grid-column: 1 / -1;
   min-width: 0;
 }
 
-.sourceTitle {
-  composes: t-cell-strong from global;
+.prose {
+  max-width: var(--prose);
 }
 
-.sourceTitle:hover {
+.para {
+  composes: t-prose from global;
+  color: var(--fg);
+}
+
+.para + .para {
+  margin-top: var(--s3);
+}
+
+/* The markers are the only gold in the prose. */
+.cite {
+  font-family: var(--mono);
+  font-size: 0.72em;
+  font-weight: 700;
+  color: var(--gold);
+  vertical-align: super;
+  letter-spacing: 0;
+}
+
+.cite:hover,
+.cite:focus-visible {
+  border-bottom: 1px solid var(--gold-44);
+}
+
+@media (min-width: 1380px) {
+  /* The pane takes the width the moment it has something to spend it on: a
+     live log, or an answer with sources. A degraded pane — one sentence and a
+     button — stays at the measure, because widening a refusal is the one place
+     the extra room says nothing. */
+  .answer:has(> .log),
+  .answer:has(.sources) {
+    max-width: none;
+  }
+
+  /* Three rows, named: the answer, then how it was found, then what found it.
+     The evidence spans all three — a source list is nearly always taller than
+     the paragraphs it supports. */
+  .answer:has(.sources) {
+    grid-template-columns: minmax(0, var(--prose)) minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
+    column-gap: var(--answer-gap);
+  }
+
+  .answer:has(.sources) > .prose {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .answer:has(.sources) > .disclosure {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .answer:has(.sources) > .foot {
+    grid-column: 1;
+    grid-row: 3;
+    align-self: start;
+  }
+
+  .answer:has(.sources) > .sources {
+    grid-column: 2;
+    grid-row: 1 / 4;
+    margin-top: 0;
+    padding-left: var(--answer-gap);
+    border-top: 0;
+    border-left: 1px solid var(--seam);
+  }
+}
+
+/* ─────────────────────────────────────────────────────── the work log */
+
+/* What the model did, while it does it: one line per tool call, the result
+   appended when it lands. The console's own ground, because this is a surface
+   the machine writes into. */
+.log {
+  list-style: none;
+  padding: 14px 16px;
+  background: var(--console);
+  border: 1px solid var(--seam2);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.85;
+  color: var(--fg2);
+  font-variant-ligatures: none;
+  overflow-wrap: anywhere;
+}
+
+/* **The live log is a fixed box.** It used to be a list that grew: one line
+   per tool call, and every line pushed the connect band and the footer down
+   46px, four to eight times an ask. The space it will need is reserved before
+   it needs it, exactly as the results skeleton reserves the shape of a page of
+   cards, and for the same reason. Six lines is the reservation; a longer run
+   scrolls inside the box and the newest line is scrolled to, which is the one
+   worth reading. Nothing outside the box changes height at all. */
+.answer > .log {
+  --log-lines: 6;
+  height: calc(var(--log-lines) * 1.85em + 30px);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
+.running {
+  color: var(--fg);
+}
+
+.logResult {
+  color: var(--fg);
+}
+
+.running .logResult {
+  display: none;
+}
+
+.thinking {
+  margin-top: var(--s3);
+  color: var(--fg2);
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+/* The idle line while a tool call owns the caret: gone from the screen and
+   from the accessibility tree, still holding its line. `visibility` and not
+   `display`, because a line that leaves the flow six times an ask is a
+   document that changes height six times an ask. */
+.parked {
+  visibility: hidden;
+}
+
+/* The one moving thing on this page, and it reports real work: a gold block
+   that blinks while the machine is actually inside the corpus. */
+.thinking::after,
+.running::after {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 13px;
+  margin-left: 6px;
+  background: var(--gold);
+  vertical-align: -2px;
+  animation: blink var(--blink);
+}
+
+@keyframes blink {
+  0%,
+  52% {
+    opacity: 1;
+  }
+  53%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Folded away once the answer owns the pane. */
+.disclosure {
+  margin-top: var(--s5);
+  border-top: 1px solid var(--seam);
+  padding-top: var(--s3);
+}
+
+.disclosure > summary {
+  composes: t-label-sm from global;
+  cursor: pointer;
+  color: var(--fg2);
+}
+
+.disclosure > summary:hover {
+  color: var(--gold);
+}
+
+.disclosure[open] > summary {
+  margin-bottom: var(--s3);
+}
+
+.logFolded {
+  margin-top: var(--s2);
+}
+
+/* ─────────────────────────────────────────────────────── the sources */
+
+.sources {
+  margin-top: var(--s6);
+  border-top: 1px solid var(--seam);
+}
+
+.sources ol {
+  list-style: none;
+}
+
+.label {
+  composes: t-label-sm from global;
+  margin-top: var(--s4);
+  color: var(--fg2);
+}
+
+/* A cited moment is a search row: same evidence, same badges, same receipt.
+   A grid and not a wrapping flex row, because as a flex row the shape was a
+   function of how long the talk's title happened to be — a short one sat
+   beside its frame, a long one pushed the text column under it and the receipt
+   under that. Every child is placed by name, so a row rendered without its
+   `[n]` collapses the first column rather than shifting the other two. */
+.source {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  column-gap: var(--s4);
+  row-gap: var(--s3);
+  align-items: start;
+  padding: var(--s4) 0;
+  border-bottom: 1px solid var(--seam);
+}
+
+.source:last-child {
+  border-bottom: 0;
+}
+
+.n {
+  composes: t-machine-sm from global;
+  grid-column: 1;
+  grid-row: 1;
+  width: 1.6rem;
+  color: var(--gold);
+  font-weight: 700;
+}
+
+.sourceShot {
+  grid-column: 2;
+  grid-row: 1;
+  width: 10rem;
+}
+
+.sourceText {
+  grid-column: 3;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Two lines, then an ellipsis. The title is the row's label, not its content:
+   the evidence is the snippet under it and the receipt beside it. */
+.sourceTitle {
+  composes: t-cell-strong from global;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.sourceTitle:hover,
+.sourceTitle:focus-visible {
   color: var(--gold);
 }
 
 .sourceMeta {
   composes: t-cell from global;
-  color: var(--muted);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: var(--fg2);
 }
 
-.mono {
-  composes: t-machine-sm from global;
+.badge {
+  composes: t-tag from global;
+  padding: 2.5px 6px;
+  color: var(--fg2);
+  border: 1px solid var(--seam2);
+}
+
+.seen {
+  color: var(--seen-ink);
+  background: var(--seen);
+  border-color: var(--seen);
 }
 
 .snippet {
   composes: t-cell from global;
-  color: var(--fg2);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  color: var(--fg);
+  overflow-wrap: anywhere;
 }
 
-/* The filled slab: the sources are the payoff, so they get the accent. */
+.mono {
+  font-family: var(--mono);
+  font-variant-ligatures: none;
+}
+
+/* The filled slab, where there are three of them and they are the payoff. */
 .receipt {
   composes: t-machine-sm from global;
-  justify-self: start;
+  align-self: flex-start;
   padding: 6px 9px;
-  color: var(--gold-ink);
-  background: var(--gold);
-  font-weight: 700;
+  color: var(--fg);
+  background: var(--gold-6);
+  border: 1px solid var(--gold);
+}
+
+.receipt:hover,
+.receipt:focus-visible {
+  background: var(--gold-12);
 }
 
 .foot {
   composes: t-machine-sm from global;
+  margin-top: var(--s5);
   color: var(--fg3);
 }
 
+/* ──────────────────────────────────────────────────────── the refusal */
+
 .degraded {
-  composes: t-cell from global;
-  display: grid;
-  gap: var(--s2);
-  padding: var(--s4);
-  color: var(--tone-warn);
-  background: var(--tone-warn-bg);
-  border: 1px solid var(--tone-warn-line);
+  color: var(--fg);
 }
 
-.degraded a {
+.degradedMessage {
+  composes: t-lede from global;
+}
+
+.wait {
+  composes: t-machine-sm from global;
+  margin-top: var(--s2);
+  color: var(--tone-warn);
+  font-variant-numeric: tabular-nums;
+}
+
+.degradedActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: var(--s3);
+}
+
+.ghost {
+  composes: t-label-sm from global;
+  display: inline-flex;
+  align-items: center;
+  height: 2.125rem;
+  padding: 0 12px;
+  background: transparent;
+  border: 1px solid var(--seam2);
+  color: var(--fg2);
+  cursor: pointer;
+  transition:
+    color var(--t-fast) linear,
+    border-color var(--t-fast) linear;
+}
+
+.ghost:not(:disabled):hover,
+.ghost:focus-visible {
   color: var(--gold);
+  border-color: var(--gold-44);
+}
+
+.ghost:disabled {
+  color: var(--fg3);
+  cursor: default;
+}
+
+@media (max-width: 30rem) {
+  .bar {
+    flex-wrap: wrap;
+    height: auto;
+  }
+
+  .input {
+    flex: 1 1 100%;
+    height: 52px;
+    order: 1;
+  }
+
+  .go {
+    order: 3;
+    flex: 1 1 auto;
+    justify-content: center;
+    height: 44px;
+    border-left: 1px solid var(--gold);
+    border-top: 1px solid var(--gold);
+  }
+
+  .source {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .sourceShot {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+  }
+
+  .sourceText {
+    grid-column: 2;
+  }
 }

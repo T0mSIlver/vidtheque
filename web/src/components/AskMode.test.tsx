@@ -1,15 +1,34 @@
 // @vitest-environment jsdom
 import { readFileSync } from "node:fs";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AskMode } from "./AskMode";
+
+// The mode switch is a router push, so the hooks it reads have to exist. One
+// hoisted mock for the file: no test here asserts a navigation except the one
+// that asserts the switch.
+const nav = vi.hoisted(() => ({ push: vi.fn() }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: nav.push,
+    replace: vi.fn(),
+    refresh: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+    prefetch: vi.fn(),
+  }),
+  useSearchParams: () => new URLSearchParams(""),
+  usePathname: () => "/demo",
+}));
 
 // Under jsdom `import.meta.url` is an http: URL, so the path is from the
 // project root, which is where vitest runs.
 const FIXTURE = readFileSync("src/lib/__fixtures__/ask.sse", "utf8");
 
-function streamResponse(text: string) {
+const ASK = { name: /^Ask/ };
+
+function streamResponse(text: string, contentType = "text/event-stream; charset=utf-8") {
   // jsdom's Blob has no stream(); build the body from the platform stream.
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -17,10 +36,7 @@ function streamResponse(text: string) {
       controller.close();
     },
   });
-  return new Response(body, {
-    status: 200,
-    headers: { "content-type": "text/event-stream; charset=utf-8" },
-  });
+  return new Response(body, { status: 200, headers: { "content-type": contentType } });
 }
 
 // A stream the test opens and feeds by hand, so "the bytes stopped" and "a
@@ -50,14 +66,34 @@ function frame(event: unknown) {
   return `data: ${JSON.stringify(event)}\n\n`;
 }
 
-function answerFrame(answer: string) {
-  return frame({ event: "answer", payload: { answer, citations: [], model: null } });
+function answerFrame(answer: string, over: Record<string, unknown> = {}) {
+  return frame({
+    event: "answer",
+    payload: { answer, citations: [], model: null, ...over },
+  });
 }
 
 const ACTIVITY = frame({ event: "activity", id: 1, phase: "start", text: "Searching…" });
 
+const CITATION = {
+  n: 1,
+  video_id: "zduSFxRajkE",
+  title: "Making LLMs go brrr",
+  channel: "GPU MODE",
+  t: 13,
+  timestamp: "0:13",
+  link: "https://youtu.be/zduSFxRajkE?t=11",
+  thumb: "https://api.test/frames/z-1.jpg?w=320",
+  thumb_large: "https://api.test/frames/z-1.jpg?w=960",
+  source: "ocr",
+  text: "the block table keeps",
+};
+
 describe("AskMode", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    nav.push.mockClear();
+  });
 
   it("loads a shared question without firing, and fires on click", async () => {
     const fetchSpy = vi.fn(async () => streamResponse(FIXTURE));
@@ -68,7 +104,7 @@ describe("AskMode", () => {
     expect(screen.getByLabelText("Your question")).toHaveValue("what is a kv cache");
     expect(fetchSpy).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole("button", { name: "ask" }));
+    await user.click(screen.getByRole("button", ASK));
     expect(fetchSpy).toHaveBeenCalledOnce();
     const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("/api/ask");
@@ -77,8 +113,164 @@ describe("AskMode", () => {
     // The work log fills as frames land, then the answer with its sources.
     await waitFor(() => expect(screen.getByLabelText("Answer")).toBeInTheDocument());
     expect(screen.getByLabelText("What the model is doing").querySelectorAll("li")).toHaveLength(5);
-    expect(screen.getByText("10 hits in 8 talks")).toBeInTheDocument();
+    expect(screen.getByText(/10 hits in 8 talks/)).toBeInTheDocument();
     expect(screen.getByText("Sources")).toBeInTheDocument();
+  });
+
+  // Both framings over one POST, and the fallback is not a worse answer — it
+  // is the same answer with nothing to watch on the way (demo-site.md §3.5).
+  describe("the framings", () => {
+    it("asks for the stream that survives a CDN, then the one that parses", async () => {
+      const fetchSpy = vi.fn(async () => streamResponse(FIXTURE));
+      vi.stubGlobal("fetch", fetchSpy);
+      const user = userEvent.setup();
+      render(<AskMode initialQ="anything" />);
+      await user.click(screen.getByRole("button", ASK));
+
+      const [, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
+      expect((init.headers as Record<string, string>).accept).toBe(
+        "text/event-stream, application/x-ndjson;q=0.9, application/json;q=0.8",
+      );
+    });
+
+    it("reads NDJSON, where one line is one event", async () => {
+      const wire =
+        `${JSON.stringify({ event: "activity", id: 1, phase: "start", text: "Searching…" })}\n` +
+        `${JSON.stringify({ event: "activity", id: 1, phase: "done", result: "6 hits in 2 talks" })}\n` +
+        `${JSON.stringify({ event: "answer", payload: { answer: "Paged.", citations: [], model: null } })}\n`;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => streamResponse(wire, "application/x-ndjson")),
+      );
+      const user = userEvent.setup();
+      render(<AskMode initialQ="anything" />);
+      await user.click(screen.getByRole("button", ASK));
+
+      await waitFor(() => expect(screen.getByLabelText("Answer")).toBeInTheDocument());
+      expect(screen.getByText("Paged.")).toBeInTheDocument();
+      expect(screen.getByText(/6 hits in 2 talks/)).toBeInTheDocument();
+    });
+
+    // A server that does not stream, or a client that did not ask: the §3
+    // body, whole. It is an answer, not a degraded pane.
+    it("takes the plain JSON body when nothing streamed", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          Response.json({ answer: "Answered in one piece.", citations: [], model: "m" }),
+        ),
+      );
+      const user = userEvent.setup();
+      render(<AskMode initialQ="anything" />);
+      await user.click(screen.getByRole("button", ASK));
+
+      await waitFor(() => expect(screen.getByLabelText("Answer")).toBeInTheDocument());
+      expect(screen.getByText("Answered in one piece.")).toBeInTheDocument();
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("the work log", () => {
+    it("parks the idle line while a tool call owns the caret, in the flow", async () => {
+      const open = openStream();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => open.response),
+      );
+      const user = userEvent.setup();
+      render(<AskMode initialQ="anything" />);
+      await user.click(screen.getByRole("button", ASK));
+
+      const idle = await screen.findByText("reading the corpus…");
+      // Nothing running yet: the idle line carries the caret.
+      expect(idle.className).not.toMatch(/parked/);
+
+      act(() => open.send(ACTIVITY));
+      await waitFor(() => expect(idle.className).toMatch(/parked/));
+      // Parked, not removed: it still holds its line, so the document below
+      // does not move six times an ask.
+      expect(idle).toBeInTheDocument();
+
+      act(() =>
+        open.send(frame({ event: "activity", id: 1, phase: "done", result: "2 hits in 1 talk" })),
+      );
+      await waitFor(() => expect(idle.className).not.toMatch(/parked/));
+    });
+
+    it("folds under the answer once the answer owns the pane", async () => {
+      const wire = ACTIVITY + answerFrame("Because the block table is paged.");
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => streamResponse(wire)),
+      );
+      const user = userEvent.setup();
+      render(<AskMode initialQ="anything" />);
+      await user.click(screen.getByRole("button", ASK));
+
+      await waitFor(() => expect(screen.getByLabelText("Answer")).toBeInTheDocument());
+      const disclosure = screen.getByText("Show its work").closest("details");
+      expect(disclosure).toBeInTheDocument();
+      expect(disclosure).not.toHaveAttribute("open");
+      expect(disclosure).toContainElement(screen.getByLabelText("What the model is doing"));
+      // The pane's own idle line is gone with the working state.
+      expect(screen.queryByText("reading the corpus…")).not.toBeInTheDocument();
+    });
+
+    it("holds the announcement to one while the work is running", async () => {
+      const open = openStream();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => open.response),
+      );
+      const user = userEvent.setup();
+      render(<AskMode initialQ="anything" />);
+      await user.click(screen.getByRole("button", ASK));
+
+      const pane = await screen.findByLabelText("Answer");
+      expect(pane).toHaveAttribute("aria-live", "polite");
+      expect(pane).toHaveAttribute("aria-busy", "true");
+
+      act(() => {
+        open.send(answerFrame("Done."));
+        open.close();
+      });
+      await waitFor(() => expect(pane).toHaveAttribute("aria-busy", "false"));
+    });
+  });
+
+  describe("the answer", () => {
+    it("renders [n] as a link into the moment it cites", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          streamResponse(answerFrame("The block table is paged [1].", { citations: [CITATION] })),
+        ),
+      );
+      const user = userEvent.setup();
+      render(<AskMode initialQ="anything" />);
+      await user.click(screen.getByRole("button", ASK));
+
+      const marker = await screen.findByRole("link", {
+        name: "Source 1: Making LLMs go brrr at 0:13",
+      });
+      expect(marker).toHaveTextContent("[1]");
+      expect(marker).toHaveAttribute("href", "https://youtu.be/zduSFxRajkE?t=11");
+      expect(marker).toHaveAttribute("target", "_blank");
+    });
+
+    it("badges a source with the channel it came from, and prints its receipt", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => streamResponse(answerFrame("Paged [1].", { citations: [CITATION] }))),
+      );
+      const user = userEvent.setup();
+      render(<AskMode initialQ="anything" />);
+      await user.click(screen.getByRole("button", ASK));
+
+      await waitFor(() => expect(screen.getByText("Sources")).toBeInTheDocument());
+      expect(screen.getByText("on-screen")).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "youtu.be/zduSFxRajkE?t=11" })).toBeInTheDocument();
+    });
   });
 
   it("renders the degraded pane from a 503 that arrived before any stream", async () => {
@@ -98,14 +290,14 @@ describe("AskMode", () => {
     );
     const user = userEvent.setup();
     render(<AskMode initialQ="anything" />);
-    await user.click(screen.getByRole("button", { name: "ask" }));
+    await user.click(screen.getByRole("button", ASK));
 
     const pane = await screen.findByRole("status");
     expect(pane).toHaveTextContent("LLM mode unavailable — use search.");
-    expect(pane).toHaveTextContent("try again in 60s");
+    expect(pane).toHaveTextContent("Try again in 60s.");
     expect(screen.getByRole("link", { name: "Search instead" })).toHaveAttribute(
       "href",
-      "/demo?q=anything",
+      "/demo?ask=0&q=anything",
     );
   });
 
@@ -117,23 +309,18 @@ describe("AskMode", () => {
       "fetch",
       vi.fn(async () =>
         Response.json(
-          {
-            error: "E_RATE_LIMIT",
-            message: "Too many requests",
-            retry_after_s: 17,
-            bucket: "ask",
-          },
+          { error: "E_RATE_LIMIT", message: "Too many requests", retry_after_s: 17, bucket: "ask" },
           { status: 429 },
         ),
       ),
     );
     const user = userEvent.setup();
     render(<AskMode initialQ="anything" />);
-    await user.click(screen.getByRole("button", { name: "ask" }));
+    await user.click(screen.getByRole("button", ASK));
 
     const pane = await screen.findByRole("status");
     expect(pane).toHaveTextContent("Too many requests");
-    expect(pane).toHaveTextContent("try again in 17s");
+    expect(pane).toHaveTextContent("Try again in 17s.");
   });
 
   it("falls back to Retry-After when the body carries no delay", async () => {
@@ -149,11 +336,41 @@ describe("AskMode", () => {
     );
     const user = userEvent.setup();
     render(<AskMode initialQ="anything" />);
-    await user.click(screen.getByRole("button", { name: "ask" }));
+    await user.click(screen.getByRole("button", ASK));
 
     const pane = await screen.findByRole("status");
-    expect(pane).toHaveTextContent("Too many requests");
-    expect(pane).toHaveTextContent("try again in 9s");
+    expect(pane).toHaveTextContent("Try again in 9s.");
+  });
+
+  // A retry that fires into a refusal is one more refusal, so the wait gates
+  // it and lets go at zero.
+  it("ticks the refusal down and re-enables the retry at zero", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchSpy = vi.fn(async () =>
+        Response.json(
+          { error: "E_RATE_LIMIT", message: "Too many questions for now.", retry_after_s: 2 },
+          { status: 429 },
+        ),
+      );
+      vi.stubGlobal("fetch", fetchSpy);
+      render(<AskMode initialQ="anything" />);
+      fireEvent.submit(document.querySelector("form") as HTMLFormElement);
+      await act(async () => {});
+
+      const retry = screen.getByRole("button", { name: "Try again" });
+      expect(screen.getByText("Try again in 2s.")).toBeInTheDocument();
+      expect(retry).toBeDisabled();
+
+      act(() => vi.advanceTimersByTime(1000));
+      expect(screen.getByText("Try again in 1s.")).toBeInTheDocument();
+
+      act(() => vi.advanceTimersByTime(1000));
+      expect(screen.getByText("Try again.")).toBeInTheDocument();
+      expect(retry).toBeEnabled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // Bytes running out is not an answer. Before this, the log kept its
@@ -168,14 +385,16 @@ describe("AskMode", () => {
     const user = userEvent.setup();
     render(<AskMode initialQ="what is a kv cache" />);
 
-    await user.click(screen.getByRole("button", { name: "ask" }));
+    await user.click(screen.getByRole("button", ASK));
     await waitFor(() => expect(fetchSpy).toHaveBeenCalledOnce());
     first.send(ACTIVITY);
     first.close();
 
     const pane = await screen.findByRole("status");
-    expect(pane).toHaveTextContent("The answer stopped before it finished.");
-    // The work log keeps what did arrive: the failure is the missing end.
+    expect(pane).toHaveTextContent("Answer interrupted.");
+    // The work log keeps what did arrive: the failure is the missing end, and
+    // it is folded where a finished answer folds it.
+    await user.click(screen.getByText("Show its work"));
     expect(screen.getByLabelText("What the model is doing").querySelectorAll("li")).toHaveLength(1);
 
     await user.click(screen.getByRole("button", { name: "Try again" }));
@@ -192,7 +411,7 @@ describe("AskMode", () => {
     );
     const user = userEvent.setup();
     render(<AskMode initialQ="anything" />);
-    await user.click(screen.getByRole("button", { name: "ask" }));
+    await user.click(screen.getByRole("button", ASK));
 
     await waitFor(() => expect(screen.getByLabelText("Answer")).toBeInTheDocument());
     expect(screen.getByText("Forty-two.")).toBeInTheDocument();
@@ -209,13 +428,13 @@ describe("AskMode", () => {
     );
     const user = userEvent.setup();
     render(<AskMode initialQ="what is a kv cache" />);
-    await user.click(screen.getByRole("button", { name: "ask" }));
+    await user.click(screen.getByRole("button", ASK));
 
     await waitFor(() => expect(screen.getByLabelText("Answer")).toBeInTheDocument());
     // Give the trailing frame every chance to land on the settled phase.
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.getByText("It is the reused attention state.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "ask" })).toBeEnabled();
+    expect(screen.getByRole("button", ASK)).toBeEnabled();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
@@ -229,7 +448,7 @@ describe("AskMode", () => {
     );
     const user = userEvent.setup();
     render(<AskMode initialQ="anything" />);
-    await user.click(screen.getByRole("button", { name: "ask" }));
+    await user.click(screen.getByRole("button", ASK));
 
     const pane = await screen.findByRole("status");
     expect(pane).toHaveTextContent("shape this page does not understand");
@@ -270,7 +489,7 @@ describe("AskMode", () => {
     const user = userEvent.setup();
     const view = render(<AskMode initialQ="what is a kv cache" />);
 
-    await user.click(screen.getByRole("button", { name: "ask" }));
+    await user.click(screen.getByRole("button", ASK));
     await waitFor(() => expect(fetchSpy).toHaveBeenCalledOnce());
     const [, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
     view.unmount();
@@ -281,5 +500,55 @@ describe("AskMode", () => {
     open.close();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.queryByLabelText("Answer")).not.toBeInTheDocument();
+  });
+
+  describe("the cold page", () => {
+    // A keyword chip under an ask box teaches the wrong thing twice: it tells a
+    // stranger this is a search box, and clicking it spends a model call on a
+    // phrase nobody would ever ask out loud.
+    it("offers the questions, says what an answer is made of, and lists the corpus", () => {
+      render(
+        <AskMode initialQ="" examples={["Why do agents write bad AGENTS.md?"]}>
+          <p>in this corpus</p>
+        </AskMode>,
+      );
+      expect(
+        screen.getByRole("button", { name: "Why do agents write bad AGENTS.md?" }),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/None of these is answered by one talk/)).toBeInTheDocument();
+      expect(screen.getByText("in this corpus")).toBeInTheDocument();
+    });
+
+    it("runs an example in the mode that is on screen, and only on a click", async () => {
+      const fetchSpy = vi.fn(async () => streamResponse(answerFrame("Because.")));
+      vi.stubGlobal("fetch", fetchSpy);
+      const user = userEvent.setup();
+      render(<AskMode initialQ="" examples={["Is the harness or the model more important?"]} />);
+      expect(fetchSpy).not.toHaveBeenCalled();
+
+      await user.click(
+        screen.getByRole("button", { name: "Is the harness or the model more important?" }),
+      );
+
+      const [, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
+      expect(init.body).toBe(JSON.stringify({ q: "Is the harness or the model more important?" }));
+      expect(screen.getByLabelText("Your question")).toHaveValue(
+        "Is the harness or the model more important?",
+      );
+    });
+  });
+
+  // The switch is the mode, pressed, and it takes the question with it so a
+  // visitor who asked and then thought better of it does not retype anything.
+  it("switches to search as a pressed pair, carrying the question", async () => {
+    const user = userEvent.setup();
+    render(<AskMode initialQ="paged attention" />);
+
+    expect(screen.getByRole("button", { name: "ask ✨" })).toHaveAttribute("aria-pressed", "true");
+    const search = screen.getByRole("button", { name: "search" });
+    expect(search).toHaveAttribute("aria-pressed", "false");
+
+    await user.click(search);
+    expect(nav.push).toHaveBeenCalledWith("/demo?ask=0&q=paged+attention");
   });
 });
