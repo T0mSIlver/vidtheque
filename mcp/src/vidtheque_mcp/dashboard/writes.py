@@ -174,13 +174,22 @@ def _envelope(error: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
-def _refusal_json(error: dict[str, Any]) -> JSONResponse:
+def _refusal_json(
+    error: dict[str, Any], *, echo: dict[str, Any] | None = None
+) -> JSONResponse:
     """The envelope, at the status `errors.HTTP_STATUS` maps the code to.
 
     The header goes out beside `retry_after_s` because a client that reads the
     status and not the body still obeys `Retry-After`.
+
+    `echo` is what the handler had already resolved when it refused, merged in
+    under the names its success payload uses — today only the index form's
+    `accepted` (§21). A refusal that drops it leaves the form echoing what was
+    typed, which is the one reading the server has just contradicted.
     """
     payload = _envelope(error)
+    if echo:
+        payload.update(echo)
     headers = dict(NO_STORE)
     if "retry_after_s" in payload:
         headers["Retry-After"] = str(payload["retry_after_s"])
@@ -378,21 +387,23 @@ async def index_submit(request: Request) -> Response:
     tokens = [t for t in _SEPARATORS.split(str(form.get("urls") or "")) if t]
 
     if not tokens:
-        return _refusal_json(
+        return _index_refusal(
             {
                 "code": "E_BAD_PARAM",
                 "message": "Paste at least one video, playlist or channel URL.",
                 "next": "a bare 11-character YouTube id works too.",
-            }
+            },
+            submitted,
         )
     if len(tokens) > MAX_FORM_URLS:
-        return _refusal_json(
+        return _index_refusal(
             {
                 "code": "E_TOO_LARGE",
                 "message": f"{len(tokens)} URLs is past this form's cap of "
                 f"{MAX_FORM_URLS}.",
                 "next": "submit it in parts, or point one job at the playlist.",
-            }
+            },
+            submitted,
         )
 
     # Batch at ten, or at `max_items` when the operator set it lower —
@@ -451,14 +462,37 @@ async def index_submit(request: Request) -> Response:
             # typed `max_items=9000` saw the 200 that was used; a form that
             # keeps its own state has nothing to read them back out of, and a
             # clamp nobody is shown is a clamp that looks like a bug.
-            "accepted": {
-                "expand": submitted["expand"],
-                "max_items": submitted["max_items"],
-                "priority": submitted["priority"],
-            },
+            "accepted": _accepted_block(submitted),
         },
         200 if jobs or already else 409,
     )
+
+
+def _accepted_block(submitted: dict[str, Any]) -> dict[str, Any]:
+    """The three values the server resolved, whatever the outcome was.
+
+    The resolved half of `_submitted` and nothing else: what was *typed* is the
+    client's own state, and only the values the server changed are the
+    server's to report.
+    """
+    return {
+        "expand": submitted["expand"],
+        "max_items": submitted["max_items"],
+        "priority": submitted["priority"],
+    }
+
+
+def _index_refusal(error: dict[str, Any], submitted: dict[str, Any]) -> JSONResponse:
+    """A refused submission, carrying the same `accepted` block as a receipt.
+
+    Both of this form's own refusals are raised *after* `_submitted` has
+    resolved the three, so the block is the same block — an over-limit
+    `max_items` still resolves to the tool's 200, and a form told "that URL
+    list is too long" must not also be left showing the 9000 it typed. The
+    guard's refusals above (`require_write`, the Origin rule, the bucket) carry
+    the bare envelope: nothing was parsed when they answered.
+    """
+    return _refusal_json(error, echo={"accepted": _accepted_block(submitted)})
 
 
 def _submitted(form: Any) -> dict[str, Any]:

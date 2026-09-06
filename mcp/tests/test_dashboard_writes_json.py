@@ -452,6 +452,47 @@ def test_the_index_forms_own_bounds_refuse_in_the_envelope(tmp_path: Path) -> No
         assert bad_tag.json()["errors"][0]["urls"] == ["vid00000042"]
 
 
+def test_a_refused_submission_still_echoes_what_the_server_resolved(
+    tmp_path: Path,
+) -> None:
+    """§21, 2026-09-06: `accepted` rides on the form's own two refusals too.
+
+    Both are raised after `_submitted` has resolved the three values, so the
+    receipt and the refusal carry the same block — an over-limit `max_items`
+    still resolves to the tool's 200, and a form told "that list is too long"
+    must not be left showing the 9000 it typed beside a refusal about
+    something else entirely.
+    """
+    resolved = {"expand": "playlist", "max_items": 200, "priority": "normal"}
+    typed = {"max_items": "9000", "expand": "nonsense", "priority": "urgent"}
+    with owner_client(tmp_path) as client:
+        sign_in(client)
+        empty = post(client, f"{ROOT}/index", data={"urls": "  \n ", **typed})
+        assert empty.status_code == 400
+        assert empty.json()["error"] == "E_BAD_PARAM"
+        assert empty.json()["accepted"] == resolved
+
+        flood = "\n".join(f"vid{n:08d}" for n in range(MAX_FORM_URLS + 1))
+        refused = post(client, f"{ROOT}/index", data={"urls": flood, **typed})
+        assert refused.status_code == 413
+        assert refused.json()["error"] == "E_TOO_LARGE"
+        assert refused.json()["accepted"] == resolved
+
+        # One block, one shape: the receipt's own keys, and the envelope's
+        # three still beside them.
+        accepted = post(client, f"{ROOT}/index", data={"urls": "vid00000044", **typed})
+        assert accepted.json()["accepted"] == resolved
+        assert set(refused.json()) == {"error", "message", "next", "accepted"}
+        # Values, not renderings — §21's rule, on the refusal branch as well.
+        assert scan(refused.json()) == [], refused.text
+
+        # The guard refuses before anything is parsed, so its envelope is bare.
+        client.cookies.clear()
+        signed_out = post(client, f"{ROOT}/index", data={"urls": "vid00000045", **typed})
+        assert signed_out.status_code == 401
+        assert "accepted" not in signed_out.json()
+
+
 def test_the_index_form_refuses_honestly_when_indexing_is_disabled(
     tmp_path: Path,
 ) -> None:
