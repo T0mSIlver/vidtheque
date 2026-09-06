@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { Pill } from "@/components/Pill";
 import { dashboard, DashboardError, ROOT } from "@/lib/dashboard/client";
 import type { JobDetail, JobEvent, JobItem } from "@/lib/dashboard/schemas";
@@ -21,6 +21,7 @@ import {
   useDocumentTitle,
   useWriteSide,
 } from "../../parts";
+import { useArrivals } from "../../polling";
 import { useSession } from "../../session";
 import { useJobsPoll } from "../../useJobsPoll";
 import { CancelControl } from "../CancelControl";
@@ -543,7 +544,7 @@ function Degraded({ data }: { data: JobDetail }) {
  * is why watching one arrive is the point of the page being live at all.
  */
 function Events({ events, redacted }: { events: JobEvent[]; redacted: boolean }) {
-  const arrived = useArrivals(events);
+  const arrived = useArrivals(events, (event) => event.id);
   const preview = events.slice(0, EVENT_PREVIEW);
   const older = events.slice(EVENT_PREVIEW);
   return (
@@ -577,26 +578,6 @@ function Events({ events, redacted }: { events: JobEvent[]; redacted: boolean })
       </p>
     </Panel>
   );
-}
-
-/**
- * Which of these events arrived while the page was open.
- *
- * Watching a deferral get logged is the point of the page being live at all —
- * this log is the only record a non-rate-limit one has — so an event that
- * lands under the reader is marked. A left rule rather than a flash, because
- * it has to survive being scrolled past, which an animation does not.
- */
-function useArrivals(events: JobEvent[]): Set<number> {
-  const [known] = useState(() => new Set(events.map((event) => event.id)));
-  const [arrived] = useState(() => new Set<number>());
-  for (const event of events) {
-    if (!known.has(event.id)) {
-      known.add(event.id);
-      arrived.add(event.id);
-    }
-  }
-  return arrived;
 }
 
 function Event({ event, isNew }: { event: JobEvent; isNew?: boolean }) {
