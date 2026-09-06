@@ -1,10 +1,10 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Pill } from "@/components/Pill";
 import { dashboard, DashboardError, ROOT } from "@/lib/dashboard/client";
-import type { FollowDetail, FollowDetailRow, FollowJob, SeenRow } from "@/lib/dashboard/schemas";
+import type { FollowDetail, FollowJob, SeenRow } from "@/lib/dashboard/schemas";
 import { at, count, DASH, day, duration, iso } from "@/lib/format";
 import dash from "../../dashboard.module.css";
 import {
@@ -14,9 +14,10 @@ import {
   Panel,
   ReadFailure,
   Reading,
+  Refusal,
   Sep,
   Unbroken,
-  useWriteSide,
+  useDocumentTitle,
 } from "../../parts";
 import { useSessionRead } from "../../session";
 import { useRead } from "../../useRead";
@@ -66,6 +67,21 @@ export function FollowDetailView({ slug }: { slug: string }) {
   const session = useSessionRead();
   const refusal = state.status === "failed" ? state.error : null;
 
+  // The last reading, kept across the next one. Every write on this page
+  // re-reads it — that is how the checks, the in-flight line, the jobs, the
+  // decision counts and the ledger catch up with what the button did — and a
+  // page that blanked to `reading…` in between would take the receipt off the
+  // screen with it.
+  const [held, setHeld] = useState<FollowDetail | null>(null);
+  if (state.status === "ready" && held !== state.data) setHeld(state.data);
+  const data = state.status === "ready" ? state.data : held;
+
+  // The name the URL already carries, until the read has a better one. The
+  // Jinja shell was named by the view before a byte of the page was written;
+  // this one is named by the route, so the slug stands in rather than the word
+  // "Following" over a page about one channel.
+  useDocumentTitle(data?.follow.title || slug);
+
   // The deployment registers no write side, so this page does not exist here —
   // the same fact §18.6 gives the list, arriving from `/api/session` or from
   // the endpoint's own `404`. An unknown *slug* is a different 404 and carries
@@ -74,31 +90,25 @@ export function FollowDetailView({ slug }: { slug: string }) {
   if ((session.status === "ready" && !session.data.write_side) || (gone && !isUnknownSlug(refusal)))
     return <Absent />;
 
-  if (state.status === "loading") return <Reading />;
+  if (state.status === "loading" && !data) return <Reading />;
 
   if (state.status === "failed") {
     // A slug that is not a follow on this instance is not a failure to read
     // it: the read succeeded and the answer is "there is no such follow". It
-    // gets the refusal's own words and a way back to the list, not a retry
-    // button that would produce this answer again.
+    // gets the refusal's own words, the `back` the write handlers gave it, and
+    // the two standing links — not a retry button that would produce this
+    // answer again.
     if (gone) {
       const unknown = refusal as DashboardError;
       return (
         <>
           <Crumbs slug={slug} />
-          <PageHead title="No such follow" />
-          <section className={dash.notice} aria-labelledby="unknown">
-            <h2 className={dash.noticeTitle} id="unknown">
-              {unknown.message}
-            </h2>
-            <p className={dash.noticeDetail}>
-              <code>{unknown.code}</code>
-            </p>
-            {unknown.next ? <p className={dash.noticeNext}>{unknown.next}</p> : null}
-            <p className={dash.noticeNext}>
-              <DashLink href={`${ROOT}/following`}>Back to Following</DashLink>
-            </p>
-          </section>
+          <Refusal
+            code={unknown.code}
+            message={unknown.message}
+            next={unknown.next}
+            back={{ href: `${ROOT}/following`, label: "Following" }}
+          />
         </>
       );
     }
@@ -111,37 +121,28 @@ export function FollowDetailView({ slug }: { slug: string }) {
     );
   }
 
-  return <Loaded initial={state.data} slug={slug} search={search} />;
+  if (!data) return <Reading />;
+  return <Loaded data={data} slug={slug} onWritten={state.reload} />;
 }
 
 function Loaded({
-  initial,
+  data,
   slug,
-  search,
+  onWritten,
 }: {
-  initial: FollowDetail;
+  data: FollowDetail;
   slug: string;
-  search: string;
+  onWritten: () => void;
 }) {
-  // A write answers with the row and that is the end of it. §21's follow block
-  // is `read_models.follow_row_json_with_error` — the same function §22's read
-  // builds the detail from — so it carries `last_error_code` and
-  // `last_error_message` as well, which are the two columns a `resume` clears.
-  // The page used to re-read after every write to find that out; a complete row
-  // makes the second request a choice, and this page does not make it.
-  const [written, setWritten] = useState<FollowDetailRow | null>(null);
-  const data = initial;
-  const follow = written ?? data.follow;
-
-  useEffect(() => {
-    document.title = `${data.follow.title} — vidtheque`;
-  }, [data.follow.title]);
+  const follow = data.follow;
 
   return (
     <>
       <Crumbs slug={slug} />
 
-      <PageHead title={follow.title}>
+      {/* The slug when the follow has no name — `views.follow_detail`'s own
+          fallback, and the same one the table uses. */}
+      <PageHead title={follow.title || slug}>
         <span className={styles.headstates}>
           <Pill state={follow.state} />
           <Unbroken>
@@ -153,9 +154,9 @@ function Loaded({
         </span>
       </PageHead>
 
-      <Rule data={data} follow={follow} onWritten={setWritten} />
+      <Rule data={data} onWritten={onWritten} />
       <Ledger data={data} />
-      <PassedOver data={data} slug={slug} search={search} />
+      <PassedOver data={data} slug={slug} onWritten={onWritten} />
     </>
   );
 }
@@ -177,16 +178,8 @@ function Crumbs({ slug }: { slug: string }) {
  * out-shout the rule above it, which is the thing this band exists to have
  * read.
  */
-function Rule({
-  data,
-  follow,
-  onWritten,
-}: {
-  data: FollowDetail;
-  follow: FollowDetail["follow"];
-  onWritten: (row: FollowDetailRow) => void;
-}) {
-  const { rendered } = useWriteSide();
+function Rule({ data, onWritten }: { data: FollowDetail; onWritten: () => void }) {
+  const follow = data.follow;
   return (
     <Panel id="rule" title="The rule">
       <RuleFacts follow={follow} wide />
@@ -243,26 +236,21 @@ function Rule({
         </p>
       ) : null}
 
-      {/* Every control here POSTs, and each one is drawn only where the write
-          routes are registered — which on this surface is everywhere the page
-          is, since the page is registered with them. */}
-      {rendered ? (
-        <>
-          <div className={styles.followactions}>
-            <StateControl follow={follow} onWritten={onWritten} />
-            {follow.state === "active" ? (
-              <CheckControl follow={follow} onWritten={onWritten} />
-            ) : null}
-            <DeleteControl slug={follow.slug} />
-          </div>
-          <p className={styles.fieldHelp}>
-            <em>Check now</em> makes the clock due; the queue claims the check on its next tick.{" "}
-            <em>Unfollow</em> stops the checks and leaves every video this follow brought in — they
-            are corpus, not membership.
-          </p>
-          <RulesDisclosure follow={follow} onWritten={onWritten} />
-        </>
-      ) : null}
+      {/* Every control here POSTs, and every one of them is drawn: this page is
+          registered *with* the write routes, so a deployment without them has
+          no page here at all (§18.6) and the shell has already said so. Gating
+          them on the session as well only made them appear a beat late. */}
+      <div className={styles.followactions}>
+        <StateControl follow={follow} onWritten={onWritten} />
+        {follow.state === "active" ? <CheckControl follow={follow} onWritten={onWritten} /> : null}
+        <DeleteControl slug={follow.slug} />
+      </div>
+      <p className={styles.fieldHelp}>
+        <em>Check now</em> makes the clock due; the queue claims the check on its next tick.{" "}
+        <em>Unfollow</em> stops the checks and leaves every video this follow brought in — they are
+        corpus, not membership.
+      </p>
+      <RulesDisclosure follow={follow} onWritten={onWritten} />
     </Panel>
   );
 }
@@ -342,8 +330,15 @@ function took(job: FollowJob): number | null {
  * was made and it carries the number that made it, and "4:12, shorter than your
  * 8:00 floor" is a receipt where "too short" is an opinion.
  */
-function PassedOver({ data, slug, search }: { data: FollowDetail; slug: string; search: string }) {
-  const { rendered } = useWriteSide();
+function PassedOver({
+  data,
+  slug,
+  onWritten,
+}: {
+  data: FollowDetail;
+  slug: string;
+  onWritten: () => void;
+}) {
   return (
     <section className={dash.panel} id="passed" aria-labelledby="passedover">
       <h2 className={dash.panelTitle} id="passedover">
@@ -376,7 +371,7 @@ function PassedOver({ data, slug, search }: { data: FollowDetail; slug: string; 
           </p>
 
           <div className={dash.tablewrap}>
-            <table className={dash.grid}>
+            <table className={`${dash.grid} ${styles.seen}`}>
               <caption className={dash.srOnly}>
                 Every candidate this follow decided not to index, and why
               </caption>
@@ -389,22 +384,24 @@ function PassedOver({ data, slug, search }: { data: FollowDetail; slug: string; 
                   </th>
                   <th scope="col">published</th>
                   <th scope="col">why</th>
-                  {rendered ? (
-                    <th scope="col" className={styles.colActions}>
-                      action
-                    </th>
-                  ) : null}
+                  {/* Always drawn, as `follow.html` drew it: this page exists
+                      only where the write routes do, so a column that comes and
+                      goes with a session read is a column that reflows the
+                      table a beat after it is painted. */}
+                  <th scope="col" className={styles.colActions}>
+                    action
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {data.seen.map((item) => (
-                  <SeenLine item={item} key={item.url} slug={slug} actions={rendered} />
+                  <SeenLine item={item} key={item.url} slug={slug} onWritten={onWritten} />
                 ))}
               </tbody>
             </table>
           </div>
 
-          <Pager pagination={data.pagination} slug={slug} search={search} />
+          <Pager pagination={data.pagination} slug={slug} />
 
           <p className={styles.fieldHelp}>
             <em>Index anyway</em> queues that one video with this follow&rsquo;s own channels and
@@ -439,7 +436,15 @@ function Decisions({ counts }: { counts: FollowDetail["counts"] }) {
   );
 }
 
-function SeenLine({ item, slug, actions }: { item: SeenRow; slug: string; actions: boolean }) {
+function SeenLine({
+  item,
+  slug,
+  onWritten,
+}: {
+  item: SeenRow;
+  slug: string;
+  onWritten: () => void;
+}) {
   return (
     <tr>
       <th scope="row" data-label="Candidate">
@@ -478,29 +483,21 @@ function SeenLine({ item, slug, actions }: { item: SeenRow; slug: string; action
           <time dateTime={iso(item.decided_at)}>{at(item.decided_at)}</time>
         </span>
       </td>
-      {actions ? (
-        <td className={styles.colActions} data-label="Action">
-          <QueueControl slug={slug} url={item.url} />
-        </td>
-      ) : null}
+      <td className={styles.colActions} data-label="Action">
+        <QueueControl slug={slug} url={item.url} onWritten={onWritten} />
+      </td>
     </tr>
   );
 }
 
-function Pager({
-  pagination,
-  slug,
-  search,
-}: {
-  pagination: FollowDetail["pagination"];
-  slug: string;
-  search: string;
-}) {
+function Pager({ pagination, slug }: { pagination: FollowDetail["pagination"]; slug: string }) {
   const { limit, offset, has_more } = pagination;
   if (!offset && !has_more) return null;
+  // `follow.html`'s `page_link`: the ledger page size the server accepted rides
+  // on both links whether or not the reader typed it, so a link sent on pages
+  // the listing it was made from.
   const link = (next: number) => {
-    const query = apiQuery(search);
-    query.set("offset", String(next));
+    const query = new URLSearchParams({ limit: String(limit), offset: String(next) });
     return `${ROOT}/following/${encodeURIComponent(slug)}?${query}#passed`;
   };
   return (

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
@@ -52,6 +52,9 @@ async function mount({
     else if (url.startsWith("/dashboard/api/following"))
       route = reads.length > 1 ? reads.shift()! : reads[0];
     else route = { status: 404, body: {} };
+    // A read that never answers, for the assertions about what the page says
+    // while it is still asking.
+    if (route.status === 0) return new Promise<Response>(() => {});
     const text = typeof route.body === "string" ? route.body : JSON.stringify(route.body ?? {});
     return new Response(text, {
       status: route.status ?? 200,
@@ -222,13 +225,16 @@ describe("one follow's page", () => {
       });
       await screen.findByRole("heading", { name: "What it passed over" });
 
+      // The ledger page size the server accepted rides on both links whether
+      // or not the reader typed it, so a link sent on pages the listing it was
+      // made from.
       expect(screen.getByRole("link", { name: /Newer/ })).toHaveAttribute(
         "href",
-        "/dashboard/following/andrej-karpathy?offset=0#passed",
+        "/dashboard/following/andrej-karpathy?limit=25&offset=0#passed",
       );
       expect(screen.getByRole("link", { name: /Older 25/ })).toHaveAttribute(
         "href",
-        "/dashboard/following/andrej-karpathy?offset=50#passed",
+        "/dashboard/following/andrej-karpathy?limit=25&offset=50#passed",
       );
     });
 
@@ -260,19 +266,37 @@ describe("one follow's page", () => {
     // function §22's detail read calls, so it carries the two failure columns —
     // and a `resume` nulls both. The page used to re-read after every write to
     // learn that; a complete row means it does not have to.
-    it("clears the last failure on a resume, with no second read", async () => {
-      const { posts, fetcher } = await mount({
-        detail: {
-          body: { ...FOLLOW_DETAIL, follow: { ...FOLLOW_DETAIL.follow, state: "failing" } },
+    // A resume clears both error columns *and* re-arms the clock, and the page
+    // re-reads so the bands the row cannot speak for — the checks, the
+    // in-flight line, the jobs, the counts and the ledger — catch up with it.
+    // That is what `writes.py` did by redirecting back to this page.
+    it("clears the last failure on a resume, and re-reads the page it changed", async () => {
+      const resumed = {
+        ...FOLLOW_DETAIL,
+        follow: {
+          ...FOLLOW_DETAIL.follow,
+          state: "active",
+          last_error_code: null,
+          last_error_message: null,
         },
+      };
+      const { posts, fetcher } = await mount({
+        detail: [
+          { body: { ...FOLLOW_DETAIL, follow: { ...FOLLOW_DETAIL.follow, state: "failing" } } },
+          { body: resumed },
+        ],
         post: { body: RESUMED_OUTCOME },
       });
       await screen.findByRole("heading", { name: "Andrej Karpathy" });
       expect(screen.getByText("E_RATE_LIMIT")).toBeInTheDocument();
 
-      const reads = fetcher.mock.calls.filter(
-        ([, init]) => (init as RequestInit | undefined)?.method !== "POST",
-      ).length;
+      const reads = () =>
+        fetcher.mock.calls.filter(
+          ([url, init]) =>
+            String(url).startsWith("/dashboard/api/following") &&
+            (init as RequestInit | undefined)?.method !== "POST",
+        ).length;
+      expect(reads()).toBe(1);
 
       await userEvent.click(screen.getByRole("button", { name: "Try again" }));
 
@@ -280,12 +304,10 @@ describe("one follow's page", () => {
       await screen.findAllByText("active");
       expect(screen.queryByText("E_RATE_LIMIT")).not.toBeInTheDocument();
       expect(screen.queryByText("the source rate-limited this box")).not.toBeInTheDocument();
-      // Nothing was read again: the receipt was the whole answer.
-      expect(
-        fetcher.mock.calls.filter(
-          ([, init]) => (init as RequestInit | undefined)?.method !== "POST",
-        ),
-      ).toHaveLength(reads);
+      expect(reads()).toBe(2);
+      // The control comes back: Pause follows Resume, and none of these
+      // actions is a one-shot.
+      expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
     });
 
     // `failing` resumes for the same reason `paused` does: it is a follow the
@@ -312,9 +334,11 @@ describe("one follow's page", () => {
       await userEvent.click(screen.getByRole("button", { name: "Check now" }));
 
       expect(posts[0].path).toBe("/dashboard/following/andrej-karpathy/check");
-      // Twice, and deliberately: the control says what the route answered, and
-      // the clock above it is the same row, so both read `due now` at once.
-      expect(await screen.findAllByText("due now")).toHaveLength(2);
+      // The control says what the route answered, beside the button that
+      // stays: asking twice is a thing an operator does when the first check
+      // found nothing.
+      expect(await screen.findByText("due now")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Check now" })).toBeInTheDocument();
     });
 
     // A paused follow has no clock to make due, and a control that exists to be
@@ -345,6 +369,57 @@ describe("one follow's page", () => {
       expect(body.get("tab_videos")).toBe("1");
       expect(body.get("tags")).toBe("topic:llm");
       expect(await screen.findByText(/the one the store kept/)).toBeInTheDocument();
+    });
+
+    // The store clamps, parses and normalises what it is sent, so what it kept
+    // is what the eleven controls have to show — all eleven, not the three the
+    // form used to re-key on.
+    it("reseeds every control from the row the store kept", async () => {
+      const saved = {
+        ...FOLLOW_DETAIL,
+        follow: {
+          ...FOLLOW_DETAIL.follow,
+          // Everything a save can move that the old key did not watch.
+          tabs: ["videos", "shorts"],
+          mode: "review",
+          channels: "transcript",
+          tags: ["topic:llm", "series:zero"],
+          max_duration_s: 5400,
+          title_include: ["lecture"],
+          title_exclude: ["trailer"],
+          backfill: 4,
+        },
+      };
+      await mount({
+        detail: [{ body: FOLLOW_DETAIL }, { body: saved }],
+        post: { body: { follow: saved.follow } },
+      });
+      await screen.findByRole("heading", { name: "Andrej Karpathy" });
+      expect(screen.getByLabelText("Shorter than")).toHaveValue("");
+      expect(screen.getByLabelText("Backfill")).toHaveValue(0);
+
+      await userEvent.click(screen.getByRole("button", { name: "Save the rule" }));
+      await screen.findByText(/the one the store kept/);
+
+      expect(screen.getByLabelText("Shorter than")).toHaveValue("1:30:00");
+      expect(screen.getByLabelText("Backfill")).toHaveValue(4);
+      expect(screen.getByLabelText("Title contains")).toHaveValue("lecture");
+      expect(screen.getByLabelText("Title never contains")).toHaveValue("trailer");
+      expect(screen.getByLabelText("Tags")).toHaveValue("topic:llm, series:zero");
+      expect(screen.getByLabelText("When something matches")).toHaveValue("review");
+      expect(screen.getByLabelText("/shorts")).toBeChecked();
+      expect(screen.getByLabelText(/On-screen text/)).not.toBeChecked();
+    });
+
+    // The way out of a disclosure that has been opened and thought better of.
+    // A navigation rather than a close, because it throws away what was typed.
+    it("offers the way out of the edit form that the Jinja page offered", async () => {
+      await mount();
+      await screen.findByRole("heading", { name: "Andrej Karpathy" });
+      expect(screen.getByRole("link", { name: "Cancel" })).toHaveAttribute(
+        "href",
+        "/dashboard/following/andrej-karpathy",
+      );
     });
 
     it("prints the validator's refusal rather than guessing at the field", async () => {
@@ -407,16 +482,52 @@ describe("one follow's page", () => {
     // An unknown slug is the store's answer, not a failed read: it gets the
     // refusal's own words and a way back, never a retry button that would
     // produce the same answer again.
+    // `views.follow_detail` named the page after the follow before a byte of it
+    // was written. This shell is named by the route, so the slug in the URL
+    // stands in until the read has a better name — never the section's word
+    // over a page about one channel.
+    it("names the tab from the URL until the read lands, then from the follow", async () => {
+      await mount({ detail: { status: 0 }, slug: "andrej-karpathy" });
+      expect(document.title).toBe("andrej-karpathy — vidtheque");
+
+      cleanup();
+      vi.unstubAllGlobals();
+      vi.resetModules();
+      await mount();
+      await screen.findByRole("heading", { name: "Andrej Karpathy" });
+      expect(document.title).toBe("Andrej Karpathy — vidtheque");
+    });
+
+    // `views.follow_detail`'s own fallback, and the same one the table uses.
+    it("falls back to the slug when the follow has no name", async () => {
+      await mount({
+        detail: { body: { ...FOLLOW_DETAIL, follow: { ...FOLLOW_DETAIL.follow, title: "" } } },
+      });
+      expect(
+        await screen.findByRole("heading", { name: "andrej-karpathy", level: 1 }),
+      ).toBeInTheDocument();
+    });
+
     it("says an unknown slug is unknown, in Python's words", async () => {
       await mount({ detail: { status: 404, body: UNKNOWN_FOLLOW }, slug: "nope" });
 
       expect(await screen.findByRole("heading", { name: /is not a follow/ })).toBeInTheDocument();
       expect(screen.getByText("E_UNKNOWN_FOLLOW")).toBeInTheDocument();
-      expect(screen.getByText(/lists every channel/)).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: "Back to Following" })).toHaveAttribute(
+      // Capitalised, standing on its own under a heading rather than trailing
+      // a colon.
+      expect(screen.getByText(/^The Following page lists every channel/)).toBeInTheDocument();
+      // The `back` a write handler supplies, and the two standing links the
+      // refusal page always carried. Scoped to the recovery panel, because the
+      // rail beside it carries a Following link of its own.
+      const recover = screen.getByRole("region", { name: "Where to go from here" });
+      expect(within(recover).getByRole("link", { name: "Following" })).toHaveAttribute(
         "href",
         "/dashboard/following",
       );
+      expect(
+        within(recover).getByRole("link", { name: "Everything that is indexed" }),
+      ).toBeInTheDocument();
+      expect(within(recover).getByRole("link", { name: "Corpus overview" })).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "try again" })).not.toBeInTheDocument();
     });
 
