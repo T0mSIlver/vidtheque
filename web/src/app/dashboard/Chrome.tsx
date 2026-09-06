@@ -7,6 +7,7 @@ import { dashboard, ROOT } from "@/lib/dashboard/client";
 import type { Session } from "@/lib/dashboard/schemas";
 import styles from "./chrome.module.css";
 import { DashLink } from "./parts";
+import { sectionOf, type Section } from "./ported";
 import { SessionScope } from "./session";
 import { useRead } from "./useRead";
 
@@ -20,7 +21,7 @@ import { useRead } from "./useRead";
 // seeing the session cookie. Everything that does not depend on it — the
 // wordmark, the five sections — renders immediately and does not wait.
 
-type Item = { href: string; label: string };
+type Item = { href: string; label: string; section: Section; hook?: string };
 
 // Whether a path is a page this app serves is `ported.ts`'s answer, not a flag
 // repeated here: `DashLink` asks it, and so does every other link into this
@@ -29,11 +30,11 @@ type Item = { href: string; label: string };
 // pages — a client-side navigation to one of those would ask this app's router
 // for a route it does not have.
 const SECTIONS: Item[] = [
-  { href: ROOT, label: "Overview" },
-  { href: `${ROOT}/ledger`, label: "Ledger" },
-  { href: `${ROOT}/search`, label: "Search" },
-  { href: `${ROOT}/videos`, label: "Videos" },
-  { href: `${ROOT}/jobs`, label: "Jobs" },
+  { href: ROOT, label: "Overview", section: "corpus" },
+  { href: `${ROOT}/ledger`, label: "Ledger", section: "ledger" },
+  { href: `${ROOT}/search`, label: "Search", section: "search" },
+  { href: `${ROOT}/videos`, label: "Videos", section: "videos" },
+  { href: `${ROOT}/jobs`, label: "Jobs", section: "jobs" },
 ];
 
 // The write side, as its own group. It appears exactly when the routes behind
@@ -41,8 +42,11 @@ const SECTIONS: Item[] = [
 // group at all, rather than a link to a page that 404s (dashboard.md §2.3,
 // §3.2 rule 3). A dead link is not room.
 const MANAGE: Item[] = [
-  { href: `${ROOT}/index`, label: "Add videos" },
-  { href: `${ROOT}/following`, label: "Following" },
+  // `data-add-videos` is `base.html`'s one test hook, and it is only that: a
+  // smoke check finds the write side's first link by it rather than by the
+  // words on it, so renaming the link cannot quietly pass.
+  { href: `${ROOT}/index`, label: "Add videos", section: "index", hook: "" },
+  { href: `${ROOT}/following`, label: "Following", section: "following" },
 ];
 
 const readSession = (signal: AbortSignal) => dashboard.session(signal);
@@ -147,17 +151,26 @@ export function Chrome({ children }: { children: ReactNode }) {
 }
 
 function NavList({ items, path }: { items: Item[]; path: string | null }) {
+  const here = sectionOf(path);
   return (
     <ul className={styles.navlist}>
       {items.map((item) => {
-        // A section owns what is under it — a reader on a video's detail page
-        // is still in Videos — except the root, which is under everything and
-        // owns only itself.
-        const inSection = item.href !== ROOT && path?.startsWith(`${item.href}/`);
-        const current = path === item.href || inSection ? "page" : undefined;
+        // The section this page declares it is in, exactly as every Jinja view
+        // declared its own word to `_chrome(request, page)`: a reader on a
+        // video's detail page is in Videos because that page says so, and the
+        // sign-in page is in no section at all although it sits under
+        // `/dashboard` like everything else. A `startsWith` reading gets both
+        // of those right by accident and hands the next `/dashboard/…/…` route
+        // a section it has nothing to do with.
+        const current = here === item.section ? "page" : undefined;
         return (
           <li key={item.href}>
-            <DashLink className={styles.navlink} href={item.href} aria-current={current}>
+            <DashLink
+              className={styles.navlink}
+              href={item.href}
+              aria-current={current}
+              data-add-videos={item.hook}
+            >
               {item.label}
             </DashLink>
           </li>

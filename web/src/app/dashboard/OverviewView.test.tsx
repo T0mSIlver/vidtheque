@@ -221,13 +221,80 @@ describe("the corpus overview", () => {
         },
       });
 
+      // `error.html`'s shape: the message is the `<h1>`, the code is a state
+      // beside it in its tone, and the page it refused is gone rather than
+      // standing over the refusal with a title claiming a reading.
       expect(
-        await screen.findByText("This dashboard needs the owner's password, token or session."),
+        await screen.findByRole("heading", {
+          name: "This dashboard needs the owner's password, token or session.",
+        }),
       ).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "Corpus overview" })).not.toBeInTheDocument();
+      expect(screen.getByText("E_AUTH_REQUIRED")).toBeInTheDocument();
       // The message and its next: line are the API's own — policy text stays
-      // Python's.
+      // Python's. Only the first letter is this side's call.
       expect(screen.getByText(/send Authorization: Bearer/)).toBeInTheDocument();
       expect(document.body.textContent).not.toContain("undefined");
+    });
+
+    // `templates/error.html`'s panel, and the two links it is made of: the
+    // rail already carries every destination, so what a refusal owes the
+    // operator is the list the thing they asked for should have been in.
+    it("offers somewhere to go, and the way in when there is one", async () => {
+      const { mockNavigation } = await import("@/test/next");
+      mockNavigation("", "/dashboard");
+      await mount({
+        status: 401,
+        body: {
+          error: "E_AUTH_REQUIRED",
+          message: "The dashboard needs the owner's token or session.",
+          next: "sign in at /dashboard/login.",
+        },
+      });
+
+      expect(
+        await screen.findByRole("heading", { name: "Where to go from here" }),
+      ).toBeInTheDocument();
+      expect(screen.getByText("Sign in at /dashboard/login.")).toBeInTheDocument();
+      // The 401's own way back is the page that can resolve it, and it goes
+      // first — `sign_in_page` set it as the refusal's `back`.
+      expect(await screen.findByRole("link", { name: "Sign in" })).toHaveAttribute(
+        "href",
+        "/dashboard/login",
+      );
+      expect(screen.getByRole("link", { name: "Everything that is indexed" })).toHaveAttribute(
+        "href",
+        "/dashboard/videos",
+      );
+      expect(screen.getByRole("link", { name: "Corpus overview" })).toHaveAttribute(
+        "href",
+        "/dashboard",
+      );
+      // Not the jobs list: that link is the jobs section's, and this is the
+      // corpus section.
+      expect(
+        screen.queryByRole("link", { name: "Every job this index has run" }),
+      ).not.toBeInTheDocument();
+      // A refusal is a document with a name, the way `_error_page` named one.
+      expect(document.title).toBe("The dashboard needs the owner's token or session. — vidtheque");
+    });
+
+    // The same panel from a page in the jobs section: the standing link is the
+    // list the thing they asked for should have been in.
+    it("points a jobs refusal at the jobs list", async () => {
+      const { mockNavigation } = await import("@/test/next");
+      mockNavigation("", "/dashboard/jobs/job_missing01");
+      await mount({
+        status: 404,
+        body: { error: "E_UNKNOWN_JOB", message: 'No job "job_missing01".', next: null },
+      });
+
+      expect(
+        await screen.findByRole("link", { name: "Every job this index has run" }),
+      ).toHaveAttribute("href", "/dashboard/jobs");
+      expect(
+        screen.queryByRole("link", { name: "Everything that is indexed" }),
+      ).not.toBeInTheDocument();
     });
 
     // Under a stopped clock, so the label is the limiter's own delay and not

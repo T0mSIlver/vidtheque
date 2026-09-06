@@ -169,10 +169,18 @@ describe("the ledger", () => {
         },
       });
 
-      expect(await screen.findByRole("heading", { name: "The ledger" })).toBeInTheDocument();
+      // The refusal replaces the page: the message is the title, the code is
+      // the state beside it, and the ledger's own head is not over the top of
+      // it claiming a reading that did not happen.
       expect(
-        screen.getByText("This dashboard needs the owner's password, token or session."),
+        await screen.findByRole("heading", {
+          name: "This dashboard needs the owner's password, token or session.",
+        }),
       ).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "The ledger" })).not.toBeInTheDocument();
+      expect(screen.getByText("E_AUTH_REQUIRED")).toBeInTheDocument();
+      // Python writes the `next:` line as a fragment that used to trail a
+      // colon; standing on its own under a heading it takes the capital.
       expect(screen.getByText("Sign in at /dashboard/login.")).toBeInTheDocument();
     });
 
@@ -195,8 +203,10 @@ describe("the ledger", () => {
     it("says so when the instance answers in a shape it cannot read", async () => {
       await mount({ body: { ...OWNER_LEDGER, videos_by_state: null } });
 
-      expect(await screen.findByText(/shape this page cannot read/)).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "try again" })).toBeEnabled();
+      expect(
+        await screen.findByRole("heading", { name: /shape this page cannot read/ }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Try again" })).toBeEnabled();
     });
   });
 });
