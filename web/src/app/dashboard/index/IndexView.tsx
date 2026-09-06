@@ -3,8 +3,8 @@
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useSyncExternalStore, type FormEvent } from "react";
 import { Pill } from "@/components/Pill";
-import { dashboard, ROOT } from "@/lib/dashboard/client";
-import { IndexOutcome } from "@/lib/dashboard/schemas";
+import { dashboard, echoOf, ROOT } from "@/lib/dashboard/client";
+import { IndexOutcome, RefusedIndex } from "@/lib/dashboard/schemas";
 import dash from "../dashboard.module.css";
 import {
   CHANNEL_BOXES,
@@ -295,7 +295,16 @@ function Form({ indexable, reason }: { indexable: boolean; reason: string | null
   // because the browser owns what is being typed, and re-keying it to reseed
   // three pickers would throw away the URLs in the textarea — which the Jinja
   // re-render kept.
-  const accepted = write.status === "done" ? write.outcome.accepted : undefined;
+  // On the receipt, and on the two refusals the form itself raises: both are
+  // raised after `_submitted` resolved the three, so a submission told "that
+  // list is too long" still gets its clamped `max_items` back rather than
+  // being left showing the 9000 beside a refusal about something else (§21).
+  const accepted =
+    write.status === "done"
+      ? write.outcome.accepted
+      : write.status === "failed"
+        ? (echoOf(write.error, RefusedIndex)?.accepted ?? undefined)
+        : undefined;
   useEffect(() => {
     if (!form.current || !accepted) return;
     setControl(form.current, "max_items", String(accepted.max_items));

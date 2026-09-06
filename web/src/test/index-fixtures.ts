@@ -71,17 +71,23 @@ export const NOTHING_ACCEPTED = {
 
 /** The form's own two bounds, in the envelope every other refusal uses. Both
  *  re-render the form with what was typed still in it, which is why they are
- *  inline rather than an error page. */
+ *  inline rather than an error page.
+ *
+ *  Both are raised after `_submitted` resolved the three values, so both carry
+ *  the receipt's `accepted` block beside the envelope (dashboard.md §21): the
+ *  9000 somebody typed comes back as the tool's 200, on the refusal too. */
 export const NO_URLS = {
   error: "E_BAD_PARAM",
   message: "Paste at least one video, playlist or channel URL.",
   next: "a bare 11-character YouTube id works too.",
+  accepted: { expand: "playlist", max_items: 200, priority: "normal" },
 };
 
 export const TOO_MANY_URLS = {
   error: "E_TOO_LARGE",
   message: "201 URLs is past this form's cap of 200.",
   next: "submit it in parts, or point one job at the playlist.",
+  accepted: { expand: "playlist", max_items: 200, priority: "normal" },
 };
 
 // ------------------------------------------------------------ the two rows

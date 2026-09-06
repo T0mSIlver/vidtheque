@@ -129,6 +129,14 @@ export type Storage = z.infer<typeof Storage>;
 export const Overview = z.object({
   counted_at: epoch(),
   redacted: z.boolean(),
+  // Whether this database will accept a write at all — `/api/session`'s own
+  // field, the same boolean off the same `Database`, on this payload because
+  // the Indexing statepair and the drift banner are drawn on this page
+  // (dashboard.md §19). A rendering that waits on a second request for a
+  // deployment fact is a rendering that flips under the reader. Not redacted:
+  // the session publishes it to an anonymous browser already, and the
+  // *reason* stays there, where it names the operator's box.
+  writes_allowed: z.boolean(),
   corpus: z.object({
     videos: count(),
     queryable_videos: count(),
@@ -207,6 +215,8 @@ export type Overview = z.infer<typeof Overview>;
 export const Ledger = z.object({
   counted_at: epoch(),
   redacted: z.boolean(),
+  // The overview's field, on the page that draws the same two things from it.
+  writes_allowed: z.boolean(),
   corpus: z.object({
     videos: count(),
     duration_s: seconds(),
@@ -358,6 +368,21 @@ export const LibraryRow = z.object({
 });
 export type LibraryRow = z.infer<typeof LibraryRow>;
 
+/** The filters the query ran with, resolved — a block of its own because both
+ *  answers carry it: the table's payload, and the table's *refusal* (§20). */
+export const LibraryFilters = z.object({
+  q: z.string().nullable(),
+  channel: z.string().nullable(),
+  tags: z.array(z.string()),
+  has: z.string(),
+  index_state: z.string(),
+  published_after: clockOf(),
+  published_before: clockOf(),
+  indexed_after: clockOf(),
+  indexed_before: clockOf(),
+});
+export type LibraryFilters = z.infer<typeof LibraryFilters>;
+
 export const Library = z.object({
   counted_at: epoch(),
   // `true` on a demo instance, and nothing on this payload is dropped for it:
@@ -371,17 +396,7 @@ export const Library = z.object({
   // URL would name a filter that never ran. `_before` is *exclusive*, the
   // start of the day after the one asked for, so it is read back a day earlier
   // to get the date the reader typed.
-  filters: z.object({
-    q: z.string().nullable(),
-    channel: z.string().nullable(),
-    tags: z.array(z.string()),
-    has: z.string(),
-    index_state: z.string(),
-    published_after: clockOf(),
-    published_before: clockOf(),
-    indexed_after: clockOf(),
-    indexed_before: clockOf(),
-  }),
+  filters: LibraryFilters,
   videos: z.array(LibraryRow),
   pagination: z.object({
     limit: count(),
@@ -609,6 +624,17 @@ export const PartialRefusal = z.object({
   next: z.string().nullable().optional(),
 });
 export type PartialRefusal = z.infer<typeof PartialRefusal>;
+
+/** A refused table read still says what it resolved (dashboard.md §20).
+ *
+ *  Both refusals this route has — a date `parse_corpus_time` will not take, and
+ *  `list-videos`' own — are raised after every filter has resolved, so the
+ *  block rides on the envelope under the name the 200 uses. The bound that
+ *  failed reads `null`, which is the honest answer to "which day did this
+ *  become". Optional: the gate's refusals answer before a filter is read, and
+ *  so does an instance that predates the field. */
+export const RefusedLibrary = PartialRefusal.extend({ filters: LibraryFilters.optional() });
+export type RefusedLibrary = z.infer<typeof RefusedLibrary>;
 
 // ------------------------------------------------------------------- jobs
 
@@ -848,6 +874,14 @@ export const RetryOutcome = z.object({
 });
 export type RetryOutcome = z.infer<typeof RetryOutcome>;
 
+/** The three values `_submitted` resolved: what the batch actually ran on. */
+export const IndexAccepted = z.object({
+  expand: z.string(),
+  max_items: count(),
+  priority: z.string(),
+});
+export type IndexAccepted = z.infer<typeof IndexAccepted>;
+
 /** `POST /dashboard/index` — the form that queues a batch.
  *
  *  The one thing the form does that the tool does not is a real batch: the MCP
@@ -882,9 +916,21 @@ export const IndexOutcome = z.object({
    *
    *  Optional because it rides on the *outcome*, and the two refusals this
    *  route has (`E_BAD_PARAM`, `E_TOO_LARGE`) are envelopes and carry none. */
-  accepted: z.object({ expand: z.string(), max_items: count(), priority: z.string() }).optional(),
+  accepted: IndexAccepted.optional(),
 });
 export type IndexOutcome = z.infer<typeof IndexOutcome>;
+
+/** A refused submission still says what it resolved (dashboard.md §21).
+ *
+ *  `E_BAD_PARAM` (nothing pasted) and `E_TOO_LARGE` (past `MAX_FORM_URLS`) are
+ *  both raised after `_submitted` has clamped `max_items` and fallen the two
+ *  vocabularies back, so the same block rides on the envelope: a form told
+ *  "that list is too long" must not be left showing the 9000 it typed beside a
+ *  refusal about something else. Optional, because the guard's refusals —
+ *  `require_write`, the Origin rule, the rate bucket — answer before a field is
+ *  read and have nothing to echo. */
+export const RefusedIndex = PartialRefusal.extend({ accepted: IndexAccepted.optional() });
+export type RefusedIndex = z.infer<typeof RefusedIndex>;
 
 /** `POST /dashboard/videos/{video_id}/reindex` — force, one video.
  *

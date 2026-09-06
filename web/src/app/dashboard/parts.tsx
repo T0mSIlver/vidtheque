@@ -277,8 +277,10 @@ export function StatePair({
  * The pipeline observation, identical on both pages because it is the same
  * reading (dashboard.md §15). One flat observation, never a history.
  *
- * Two of the five states are the deployment's rather than the corpus's, so
- * they come from the session: whether this box will accept work at all. The
+ * Two of the five states are the deployment's rather than the corpus's:
+ * whether this box will accept work at all. That one is the payload's own flag
+ * — both pages that draw this panel carry it (§19) — and the session refines
+ * nothing here, it only holds the *reason*, which the index form prints. The
  * projection carries neither the worker probe nor that state — "indexing
  * refused" is a sentence about a worker nobody visiting the demo can reach
  * (§2.4) — and the block is simply absent rather than redacted in place.
@@ -286,17 +288,21 @@ export function StatePair({
 export function Readiness({
   readiness,
   redacted,
+  writesAllowed,
   drift,
   children,
 }: {
   readiness: ReadinessPayload;
   redacted: boolean;
+  /** The payload's own `writes_allowed` (dashboard.md §19). Both pages that
+   *  draw this panel carry it, so the state is drawn on the first render
+   *  rather than flipping when `/api/session` lands a moment later. */
+  writesAllowed: boolean;
   drift?: boolean;
   /** The overview's declared-against-served diff. The ledger's panel is the
    *  strip alone, which is what its template shows. */
   children?: ReactNode;
 }) {
-  const session = useSession();
   const checked = iso(readiness.checked_at);
   return (
     <Panel
@@ -338,13 +344,13 @@ export function Readiness({
           tone={readiness.vectors.enabled ? "ok" : "bad"}
           detail={readiness.vectors.reason}
         />
-        {!redacted && session ? (
+        {redacted ? null : (
           <StatePair
             label="Indexing"
-            word={session.writes_allowed ? "allowed" : "refused"}
-            tone={session.writes_allowed ? "ok" : "bad"}
+            word={writesAllowed ? "allowed" : "refused"}
+            tone={writesAllowed ? "ok" : "bad"}
           />
-        ) : null}
+        )}
       </p>
       {children}
     </Panel>

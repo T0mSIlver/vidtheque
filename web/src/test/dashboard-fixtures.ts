@@ -56,6 +56,7 @@ const READINESS = {
 export const OWNER_OVERVIEW = {
   counted_at: 1788626080,
   redacted: false,
+  writes_allowed: true,
   corpus: {
     videos: 4,
     queryable_videos: 3,
@@ -127,6 +128,7 @@ export const DEMO_OVERVIEW = {
 export const OWNER_LEDGER = {
   counted_at: 1788626080,
   redacted: false,
+  writes_allowed: true,
   corpus: {
     videos: 4,
     duration_s: 17200.0,
