@@ -2,114 +2,335 @@
   max-width: var(--maxw);
   margin: 0 auto;
   padding: var(--gap-head) var(--gut) var(--beat);
-  display: grid;
-  gap: var(--gap-head);
 }
 
-.headline {
-  composes: t-headline from global;
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-copy);
+  margin-bottom: var(--gap-head);
 }
 
-.examples {
-  display: grid;
-  gap: var(--s3);
+/* The gold rule and the micro-label that open a beat. */
+.kick {
+  composes: t-label-sm from global;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--gold);
 }
 
-.label {
-  composes: t-label from global;
+.kick s {
+  display: block;
+  flex: none;
+  width: 34px;
+  height: 1px;
+  background: var(--gold);
+}
+
+/* The page's one big line, and its lede. Locked copy: positioning.md. */
+.big {
+  composes: t-display from global;
+  text-wrap: balance;
+}
+
+.big em {
+  font-style: normal;
+  color: var(--gold);
+}
+
+.lede {
+  composes: t-lede from global;
+  max-width: var(--lede);
   color: var(--fg2);
 }
 
-.chips {
-  list-style: none;
+.lede b {
+  color: var(--fg);
+  font-weight: 500;
+}
+
+/* The count line, and the notes under it. `all` means all: a leg that could
+   not run says so here rather than narrowing the answer in silence. */
+.status {
+  composes: t-machine-sm from global;
+  display: block;
+  min-height: 1.2em;
+  margin-top: var(--s4);
+  color: var(--fg2);
+  font-variant-numeric: tabular-nums;
+}
+
+.note {
+  display: block;
+  max-width: var(--note);
+  color: var(--gold);
+}
+
+/* ─────────────────────────────────── the cold page — teach it first */
+
+/* It belongs to the input and not to the results: under the query bar at the
+   query bar's measure, so the chips and the corpus list read as the box's own
+   suggestions rather than as a very wide empty table. */
+.empty {
+  max-width: var(--query-w, 44rem);
+  margin-top: var(--s6);
+}
+
+.exhead {
+  composes: t-cell-strong from global;
+  margin-top: var(--s4);
+}
+
+.exnote {
+  composes: t-body from global;
+  margin-top: 8px;
+  max-width: var(--note);
+  color: var(--fg2);
+}
+
+.examples {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s2);
+  margin-top: var(--s3);
+  list-style: none;
 }
 
-.chip {
-  composes: t-label-sm from global;
-  display: inline-flex;
-  align-items: center;
-  height: 2.75rem;
-  padding: 0 12px;
-  color: var(--fg3);
+/* An example's own text *is* the query, so it is set as one: mono, and never
+   uppercased — `owl:FunctionalProperty` is a case-sensitive string and a
+   mangled one is a broken promise. */
+.example {
+  composes: t-query from global;
+  display: inline-block;
+  padding: 9px 12px;
+  background: transparent;
   border: 1px solid var(--seam);
+  color: var(--fg2);
+  text-align: left;
+  transition:
+    color var(--t-fast) linear,
+    border-color var(--t-fast) linear;
 }
 
-.chip:hover,
-.chip:focus-visible {
-  color: var(--fg);
-}
-
-.results {
-  display: grid;
-  gap: var(--s4);
-}
-
-.count {
-  composes: t-machine-sm from global;
-  color: var(--fg3);
-}
-
-/* "all means all" is a promise to a human too: a skipped leg says so. */
-.note {
-  composes: t-machine-sm from global;
+.example:hover,
+.example:focus-visible {
   color: var(--gold);
+  border-color: var(--gold-44);
 }
 
-.cards {
-  display: grid;
-  gap: var(--s5);
-}
-
-.pager {
-  composes: t-label from global;
-  display: flex;
-  justify-content: space-between;
-  color: var(--gold);
-}
-
-.empty {
-  composes: t-lede from global;
-  color: var(--muted);
-  display: grid;
-  gap: var(--s2);
-}
-
-.empty a {
-  color: var(--gold);
-}
-
-.ghost {
-  display: grid;
-  gap: 1px;
+.corpus {
+  margin-top: clamp(26px, 3vw, 40px);
   background: var(--plate);
   border: 1px solid var(--seam2);
 }
 
-.ghostHead {
-  display: block;
-  height: 6.5rem;
+.corpus ul {
+  list-style: none;
+}
+
+.corpus li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  min-width: 0;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--seam);
+}
+
+.corpus li:last-child {
+  border-bottom: 0;
+}
+
+.corpus li a {
+  composes: t-cell from global;
+  overflow-wrap: anywhere;
+}
+
+.corpus li a:hover,
+.corpus li a:focus-visible {
+  color: var(--gold);
+}
+
+.phead {
+  composes: t-label-sm from global;
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  min-height: 32px;
+  padding: 9px 14px;
+  color: var(--gold);
   background: var(--plate2);
+  border-bottom: 1px solid var(--seam);
 }
 
-.ghostLine {
-  display: block;
-  height: 2.125rem;
+.who {
+  composes: t-machine-sm from global;
+  margin-left: auto;
+  flex: none;
+  color: var(--fg3);
+}
+
+/* ───────────────────────────────────── the results — a card per talk */
+
+.results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+  margin-top: var(--s6);
+}
+
+.foot {
+  margin-top: var(--s4);
+}
+
+/* ────────────────────────────────────── a dead end, an error, a wait */
+
+/* A sentence, so it is a sentence's width — not a 1300px plate holding six
+   words. */
+.notice {
+  margin-top: var(--s4);
+  padding: var(--s5);
+  max-width: var(--note);
   background: var(--plate);
-  border-top: 1px solid var(--seam);
+  border: 1px solid var(--seam2);
 }
 
-.switch {
-  composes: t-label from global;
+.noticeBad {
+  background: var(--tone-bad-bg);
+  border-color: var(--tone-bad-line);
 }
 
-.switch a {
+.noticeTitle {
+  composes: t-cell-strong from global;
+  color: var(--fg);
+}
+
+.noticeDetail {
+  composes: t-body from global;
+  margin-top: 6px;
   color: var(--fg2);
 }
 
-.switch a:hover,
-.switch a:focus-visible {
+.tips {
+  composes: t-body from global;
+  list-style: none;
+  margin-top: var(--s3);
+  color: var(--fg2);
+}
+
+.tips li + li {
+  margin-top: 6px;
+}
+
+/* A link that reads as one inside a sentence. */
+.linky {
   color: var(--gold);
+  border-bottom: 1px solid var(--gold-44);
+}
+
+.ghost {
+  composes: t-label-sm from global;
+  display: inline-flex;
+  align-items: center;
+  height: 2.125rem;
+  margin-top: var(--s3);
+  padding: 0 12px;
+  background: transparent;
+  border: 1px solid var(--seam2);
+  color: var(--fg2);
+  cursor: pointer;
+  transition:
+    color var(--t-fast) linear,
+    border-color var(--t-fast) linear;
+}
+
+.ghost:not(:disabled):hover,
+.ghost:focus-visible {
+  color: var(--gold);
+  border-color: var(--gold-44);
+}
+
+.ghost:disabled {
+  color: var(--fg3);
+  cursor: default;
+}
+
+/* ───────────────────────────────────────────────────── the reserves */
+
+/* The shape the results will take, reserved before they land. No pulse: a
+   breathing block is decoration, and the honest signal that something is
+   running is the word in the query bar's state cell. */
+.skelCard {
+  background: var(--plate);
+  border: 1px solid var(--seam2);
+  pointer-events: none;
+}
+
+.skelCard[data-depth="1"] {
+  opacity: 0.62;
+}
+
+.skelCard[data-depth="2"] {
+  opacity: 0.36;
+}
+
+.skelCard[data-depth="3"] {
+  opacity: 0.2;
+}
+
+.skelHead {
+  display: grid;
+  grid-template-columns: 10rem minmax(0, 1fr);
+  gap: var(--s4);
+  padding: var(--s4);
+  background: var(--plate2);
+  border-bottom: 1px solid var(--seam);
+}
+
+.skelThumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: var(--plate2);
+  box-shadow: var(--edge);
+}
+
+.skelLines {
+  display: block;
+}
+
+.skelLine {
+  display: block;
+  height: 0.75rem;
+  background: var(--plate2);
+}
+
+.skelLine + .skelLine {
+  margin-top: var(--s2);
+}
+
+.skelMoment {
+  display: block;
+  height: 0.9rem;
+  margin: 14px 16px;
+  background: var(--plate2);
+}
+
+.w40 {
+  width: 40%;
+}
+
+.w70 {
+  width: 70%;
+}
+
+.w90 {
+  width: 90%;
+}
+
+/* The first paint, before the boot call has landed: the box's own height, so
+   the page does not grow one when it arrives. */
+.booting {
+  min-height: 12rem;
 }
