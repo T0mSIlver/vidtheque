@@ -138,6 +138,32 @@ describe("createClient", () => {
     expect(err.retryAfter).toBe(17);
   });
 
+  // The limiter states its delay twice and the two can disagree — anything on
+  // the way may drop or rewrite a header, and nothing rewrites a body. The
+  // demo's own countdown read them in this order (`app.js`'s
+  // `renderRateLimited`) and this client had been reading only the header.
+  it("prefers the body's own retry_after_s over the header", async () => {
+    const { fetchImpl } = fake(
+      429,
+      { error: "E_RATE_LIMIT", message: "slow down", retry_after_s: 12 },
+      { "retry-after": "60" },
+    );
+    const client = createClient({ baseUrl: "https://api.test", fetch: fetchImpl });
+    const err = (await client.meta().catch((e: unknown) => e)) as ApiError;
+    expect(err.retryAfter).toBe(12);
+  });
+
+  it("falls back to the header when the body names no delay", async () => {
+    const { fetchImpl } = fake(
+      429,
+      { error: "E_RATE_LIMIT", message: "slow down", retry_after_s: null },
+      { "retry-after": "9" },
+    );
+    const client = createClient({ baseUrl: "https://api.test", fetch: fetchImpl });
+    const err = (await client.meta().catch((e: unknown) => e)) as ApiError;
+    expect(err.retryAfter).toBe(9);
+  });
+
   it("survives a non-JSON error body from a proxy", async () => {
     const { fetchImpl } = fake(502, "<html>bad gateway</html>");
     const client = createClient({ baseUrl: "https://api.test", fetch: fetchImpl });
