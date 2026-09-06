@@ -492,8 +492,10 @@ The corpus overview page's reads (`views.overview`), typed.
 {
   "counted_at": 1757030400,          // int, epoch seconds
   "redacted": false,                 // bool: is this the public projection
+  "writes_allowed": true,            // db.writes_allowed, the session's own flag
   "corpus": {
     "videos": 4, "queryable_videos": 3,
+    "videos_ready": 3,               // ready only; queryable is ready + stale
     "videos_by_index_state": {"ready": 3, "indexing": 1},  // present states only
     "data_status": "ok",             // verbatim from corpus-summary
     "cues": 0, "keyframes": 0, "ocr_lines": 0,
@@ -503,7 +505,8 @@ The corpus overview page's reads (`views.overview`), typed.
   },
   "channels": [{"channel": "…", "videos": 3, "seconds": 8100.0}],  // ≤ 12
   "tags":     [{"tag": "topic:attention", "videos": 2}],           // ≤ 24
-  "gaps":     {"transcript_no_ocr": 0, "indexing": 1, "failed": 0},
+  "gaps":     {"transcript_no_ocr": 0, "indexing": 1, "failed": 0,
+               "failed_cap": 5, "failed_capped": false},  // failed is a probe
   "embed_backlog": {"text": 0, "frame": 0},
   "jobs": {"active": 2, "running": 1, "deferred": 1,
            "failed_recent": 1, "failed_window_s": 86400},
@@ -522,6 +525,22 @@ The corpus overview page's reads (`views.overview`), typed.
 }
 ```
 
+*Amended 2026-09-06: four fields, all additive over reads already taken.*
+`corpus.videos_ready` is the band's "N ready" — `corpus_rollup`'s own column,
+`ready` and nothing else, where `queryable_videos` is ready **plus stale**, so a
+page saying "N ready" off that one counts a stale video as ready and its "not
+ready" goes short by the same one. `gaps.failed_cap` and `gaps.failed_capped`
+say that `gaps.failed` is a probe: `queries.gaps` looks for failed videos with
+`LIMIT 5`, so `failed: 5` means "five or more", and the ceiling
+(`read_models.GAPS_FAILED_CAP`) and the reading of it ride beside the count so
+the client's `+` and the SQL behind it cannot disagree. `writes_allowed` is
+`/dashboard/api/session`'s field (§6) on this payload as well, because the two
+things drawn from it — the Indexing state in the readiness strip and the drift
+banner's second half — are on this page: a rendering that waits on a second
+request for a deployment fact is one that flips under the reader. Not redacted,
+because the session publishes it to an anonymous browser already; the *reason*
+stays there. All four are `dashboard.md` §19's.
+
 Caps, from `read_models`: `CHANNEL_CAP=12`, `TAG_CAP=24`, `RECENT_CAP=8`,
 `FAILED_WINDOW_S=86_400`, `WORKER_BACKEND_CAP=12`; the worker probe is bounded
 by `WORKER_STATUS_TIMEOUT_S=1.0` wall-clock and `WORKER_STATUS_MAX_BYTES=64 kB`
@@ -537,6 +556,7 @@ per-video work.
 ```jsonc
 {
   "counted_at": 1757030400, "redacted": false,
+  "writes_allowed": true,                       // as §4, and for the same page furniture
   "corpus": {"videos": 4, "duration_s": 13500.0,
              "cues": 0, "keyframes": 0, "ocr_lines": 0,
              "chunks": 0, "tags": 0, "channels": 2,
@@ -958,6 +978,24 @@ they are specified once. On refusal, the envelope this document's §3 already
 describes: `{"error", "message", "next"}` at the code's own status, plus
 `retry_after_s` and a `Retry-After` header when the refusal named a delay. Both
 carry `Cache-Control: no-store`.
+
+**What a receipt echoes, and what a refusal echoes with it** *(2026-09-06)*.
+`POST /dashboard/index` answers with an `accepted` block —
+`{"expand", "max_items", "priority"}`, the three values `_submitted` resolved —
+because a form that keeps its own state has nothing else to read a clamp back
+out of: `max_items` is held to the tool's 1..200 and both vocabularies fall
+back to their defaults rather than being refused, and the Jinja page re-rendered
+the form from exactly this. The same block rides on the form's own two refusals
+(`E_BAD_PARAM`, `E_TOO_LARGE`), which are raised after those three resolve, so
+a submission told that its list is too long is not also left showing the 9000 it
+typed. The guard's refusals carry none: `require_write`, the Origin rule and the
+rate bucket answer before a field is read. `GET /dashboard/api/library` refuses
+the same way — its resolved `filters` block, under the name the `200` uses, so
+a date picker redraws from the day the server took rather than from the string
+the URL carried. The shapes are `dashboard.md` §20 and §21's; the rule for a
+client is that **a refusal may carry more than the envelope**, and the fields
+beside `error`, `message` and `next` are the route's own, read by the page that
+asked and by nothing generic.
 
 Three responses a client has to handle by shape rather than by route:
 
