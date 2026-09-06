@@ -234,32 +234,17 @@ block, and this path reads `structured_content`, which carries every field
 regardless. Passing them read as though the facade were choosing a projection
 it is not.
 
-### 2.2.1 `GET /api/videos/{video_id}` (added 2026-09-01)
+### 2.2.1 `GET /api/videos/{video_id}` — removed 2026-09-07
 
-One video, straight from `video-summary`, for a page about that video rather
-than about a query. Added for the Next.js front end (`web/`), whose server is
-the only thing that talks to this API: a page that cannot fall back to the MCP
-surface needs the facade to be complete.
+One video, straight from `video-summary`, added 2026-09-01 for the Next.js
+front end's `/videos/{id}` page and called by nothing else. Tom removed that
+page on 2026-09-07 — it duplicated the dashboard's video detail — and the
+endpoint went with its only caller rather than staying as a public surface
+with no reader. The dashboard's own detail read (`/dashboard/api/library/{id}`)
+was never this: it is behind the owner gate and carries the management fields
+this never had (frontend-migration.md §6a).
 
-```
-GET /api/videos/kCc8FmEb1nY
-```
-
-Returns the tool's structured payload verbatim — `video_id`, `title`,
-`channel`, `published`, `duration`, `indexed_at`, `link`, `keyframes`,
-`data_status`, `tags`, `chapters[]` (`start`, `title`, `link`),
-`key_texts[]` (`start`, `text`, `link`), `ocr_highlights[]` (`t`,
-`frame_id`, `screen_text`, `link`) — plus what only the facade can mint: a
-cover `thumb` (the first keyframe at 960 px, `null` without a keyframe), and `thumb` /
-`thumb_large` on every `ocr_highlights` entry, since a page cannot build a
-frame URL of its own (§5). The tool's `next:` guidance is left out: it names
-MCP tools a browser cannot call.
-
-Bounds are fixed, not parameters: 50 chapters, 12 key texts, 12 highlights,
-`max_chars` 400. The page shows what fits; the owner's agent has the tool for
-the wider cut. An unknown id is the §2 envelope with `E_UNKNOWN_VIDEO`, 404.
-Speakers and links are not included (diarization is off by default, and links
-are the video's description, not the corpus).
+The listing at §2.2 stays: the demo's cold page lists the corpus from it.
 
 ### 2.3 `GET /api/meta`
 
