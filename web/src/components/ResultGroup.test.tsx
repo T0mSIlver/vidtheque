@@ -135,12 +135,23 @@ describe("ResultGroup", () => {
     }
   });
 
-  it("keeps the title on the library page inside this deployment", () => {
+  // The card's header says *which talk*, so it goes to the talk — the moment's
+  // own link with the `?t=` taken off. It pointed at `/videos/{id}` until
+  // 2026-09-07, when that page went.
+  it("sends the title to the talk itself, not to a moment in it", () => {
     render(<ResultGroup group={group()} />);
-    expect(screen.getByRole("link", { name: "Let's build GPT" })).toHaveAttribute(
-      "href",
-      "/videos/kCc8FmEb1nY",
-    );
+    const title = screen.getByRole("link", { name: "Let's build GPT" });
+    expect(title).toHaveAttribute("href", "https://youtu.be/kCc8FmEb1nY");
+    expect(title).toHaveAttribute("target", "_blank");
+    expect(title).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  // A source that is not YouTube has no honest video URL, and a guessed one is
+  // worse than a title that is text.
+  it("prints the title as text when the hit carries no link it can trim", () => {
+    render(<ResultGroup group={group({ hits: [hit({ link: "not a url" })] })} />);
+    expect(screen.queryByRole("link", { name: "Let's build GPT" })).toBeNull();
+    expect(screen.getByText("Let's build GPT")).toBeInTheDocument();
   });
 
   // The header frame is *a* frame of the talk; a frame hit matched on a

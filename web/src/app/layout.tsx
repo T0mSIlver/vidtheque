@@ -20,7 +20,7 @@ export const viewport: Viewport = {
 
 // The ground and nothing else. The rail is not here: `/` is the landing and it
 // carries its own, floating over the hero, so the reader's header belongs to
-// the segments that read (`/demo`, `/videos`) rather than to every page.
+// the segment that reads (`/demo`) rather than to every page.
 //
 // `connection()` here is what makes every page in the app render per request.
 // The CSP that `proxy.ts` sets carries a nonce minted for that one request,

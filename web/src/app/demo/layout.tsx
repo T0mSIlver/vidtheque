@@ -45,9 +45,7 @@ export const metadata: Metadata = {
 // The connect panel and the footer are here rather than in `page.tsx` because
 // demo-site.md §6 items 6 and 7 ask for a line and a panel that never get
 // culled: the layout wraps every `/demo` state, so results, the examples, an
-// empty corpus and the error boundary all carry them. `/videos` keeps the rail
-// and not these — the contract writes them for the demo page, and the library
-// pages are not in §6.
+// empty corpus and the error boundary all carry them.
 export default async function DemoLayout({ children }: LayoutProps<"/demo">) {
   const outcome = await readMeta();
   const meta = outcome.kind === "ok" ? outcome.meta : null;

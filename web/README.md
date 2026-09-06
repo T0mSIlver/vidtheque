@@ -31,7 +31,7 @@ never hydrate.
 ## One origin, two servers
 
 In production a reverse proxy puts both behind one origin and routes by path:
-the exact page GETs — `/`, `/demo`, `/videos`, `/videos/{id}`, and under the
+the exact page GETs — `/`, `/demo`, and under the
 dashboard `/dashboard`, `/dashboard/ledger`, `/dashboard/search`,
 `/dashboard/videos`, `/dashboard/videos/{id}`, `/dashboard/jobs`,
 `/dashboard/jobs/{id}`, `/dashboard/following`, `/dashboard/following/{slug}`,
@@ -91,11 +91,10 @@ the other one) and `ws:` for the HMR socket.
 The nonce is what the price is paid for: it is new every request, so every
 document is rendered per request — `connection()` in the root layout says so —
 and Cache Components is off, since a partial prerender would serve a shell
-whose scripts were stamped with a nonce that was never issued. Data caching
-survives that: `src/lib/library.ts` holds the library's two reads in
-`unstable_cache` with the periods the named lifetimes had, 60s for the list and
-an hour for a video, both serving the stale copy while the fresh one is
-fetched. Search is deliberately uncached, and says why in its own file.
+whose scripts were stamped with a nonce that was never issued. Nothing on this
+surface caches data: `src/lib/library.ts` held the library's two reads in
+`unstable_cache` until the library pages were removed on 2026-09-07, and search
+is deliberately uncached and says why in its own file.
 
 ## Checks
 
