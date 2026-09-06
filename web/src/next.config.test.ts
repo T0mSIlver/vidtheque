@@ -74,3 +74,38 @@ describe("the development rewrites", () => {
     expect(await nextConfig.rewrites!()).toEqual([]);
   });
 });
+
+// The hosts `next dev` accepts a cross-origin request from. A box's own LAN
+// address was written into this file until 2026-09-06, which is one machine's
+// fact in a public repo and an edit for anyone running the dev server on a
+// different network.
+describe("the dev server's allowed origins", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  /** The list a fresh load computes: it is read when the module is evaluated,
+   *  so the environment has to be set before the import rather than before the
+   *  call. */
+  async function origins(): Promise<string[] | undefined> {
+    vi.resetModules();
+    return (await import("../next.config")).default.allowedDevOrigins;
+  }
+
+  it("allows the loopback address and nothing else when nothing is named", async () => {
+    expect(await origins()).toEqual(["127.0.0.1"]);
+  });
+
+  it("takes the hosts this box is reached on from the environment", async () => {
+    vi.stubEnv("VIDTHEQUE_DEV_ORIGINS", "127.0.0.1, 192.168.0.10 ,dev.example.test");
+    expect(await origins()).toEqual(["127.0.0.1", "192.168.0.10", "dev.example.test"]);
+  });
+
+  // An empty name allows nothing and reads as a mistake, so a variable that
+  // holds only separators is the same as no variable at all.
+  it("falls back rather than allowing an empty host", async () => {
+    vi.stubEnv("VIDTHEQUE_DEV_ORIGINS", " , ");
+    expect(await origins()).toEqual(["127.0.0.1"]);
+  });
+});
