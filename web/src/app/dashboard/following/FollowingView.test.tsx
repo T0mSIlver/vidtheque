@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
@@ -23,17 +23,21 @@ import { firstPaint } from "@/test/retry";
 
 type Route = { status?: number; body?: unknown; headers?: Record<string, string> };
 
+/** One canned listing, or a queue of them: the second entry is what the read a
+ *  write triggers comes back with. */
 async function mount({
   list = { body: FOLLOWING },
   post = { body: CREATED_OUTCOME },
   search = "",
   session = OWNER_SESSION,
-}: { list?: Route; post?: Route; search?: string; session?: unknown } = {}) {
+}: { list?: Route | Route[]; post?: Route; search?: string; session?: unknown } = {}) {
+  const listings = Array.isArray(list) ? [...list] : [list];
   const posts: { path: string; init: RequestInit }[] = [];
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (init?.method === "POST") posts.push({ path: url, init });
-    const route: Route = init?.method === "POST" ? post : answer(url, list, session);
+    const next = listings.length > 1 ? listings.shift()! : listings[0];
+    const route: Route = init?.method === "POST" ? post : answer(url, next, session);
     const text = typeof route.body === "string" ? route.body : JSON.stringify(route.body ?? {});
     return new Response(text, {
       status: route.status ?? 200,
@@ -175,6 +179,59 @@ describe("the follows table", () => {
     expect(String(read?.[0])).toBe("/dashboard/api/following?limit=100000&offset=25");
   });
 
+  // The band that is addressed to a person rather than describing the instance.
+  // Not `bad` — nothing has failed — and not neutral either, because a held
+  // video stays held until somebody decides.
+  it("draws the held band in the warn tone rather than as an error", async () => {
+    await mount();
+    const band = await screen.findByRole("region", { name: /waiting for you/ });
+    expect(band.className).toMatch(/noticeWarn/);
+    expect(within(band).getByRole("heading").className).toMatch(/noticeWarnTitle/);
+  });
+
+  // The head strip was a server-rendered line: it did not appear a beat after
+  // the title, and it did not vanish when something below it went wrong. The em
+  // dash is this surface's own word for a number nobody has.
+  it("keeps the follows fact on the head strip when the read does not land", async () => {
+    await mount({
+      list: { status: 500, body: { error: "E_INTERNAL", message: "the instance fell over." } },
+    });
+    await screen.findByText(/the instance fell over/);
+    const head = screen.getAllByRole("heading", { name: "Following" })[0].closest("div");
+    expect(head).toHaveTextContent("follows —");
+  });
+
+  // `views._follow_row`'s own fallback: a follow made from a URL with nothing
+  // readable in it would otherwise be a link with no text in it at all.
+  it("falls back to the slug when a follow has no name", async () => {
+    await mount({
+      list: { body: { ...FOLLOWING, follows: [{ ...FOLLOWING.follows[0], title: "" }] } },
+    });
+    await screen.findByRole("status");
+    expect(screen.getByRole("link", { name: "andrej-karpathy" })).toHaveAttribute(
+      "href",
+      "/dashboard/following/andrej-karpathy",
+    );
+  });
+
+  // A clock in a cell is a `<time>`, with the stamp a machine can read on it —
+  // and without one when the cell is printing why there is no clock.
+  it("marks the next check up as a time, and does not when it is not one", async () => {
+    await mount();
+    await screen.findByRole("status");
+    const cell = rowOf("Andrej Karpathy").querySelector('[data-label="Next check"] time');
+    expect(cell).toHaveAttribute("datetime");
+
+    cleanup();
+    vi.unstubAllGlobals();
+    vi.resetModules();
+    await mount({ list: { body: CHECKS_OFF } });
+    await screen.findByRole("status");
+    const off = rowOf("Andrej Karpathy").querySelector('[data-label="Next check"] time');
+    expect(off).toHaveTextContent("checks off");
+    expect(off).not.toHaveAttribute("datetime");
+  });
+
   it("pages with the pagination it was given", async () => {
     await mount({
       list: { body: { ...FOLLOWING, pagination: { limit: 25, offset: 25, has_more: true } } },
@@ -182,13 +239,16 @@ describe("the follows table", () => {
     });
     await screen.findByRole("status");
 
+    // The page size the server accepted rides on both links whether or not the
+    // reader typed it: a pager carrying only the offset pages a listing of
+    // twenty-five through a listing of a hundred the moment the link is sent on.
     expect(screen.getByRole("link", { name: /Previous/ })).toHaveAttribute(
       "href",
-      "/dashboard/following?offset=0",
+      "/dashboard/following?limit=25&offset=0",
     );
     expect(screen.getByRole("link", { name: /Next 25/ })).toHaveAttribute(
       "href",
-      "/dashboard/following?offset=50",
+      "/dashboard/following?limit=25&offset=50",
     );
   });
 
@@ -263,8 +323,17 @@ describe("the follows table", () => {
   });
 
   describe("the add form", () => {
-    it("posts the fields the Jinja form posts, and puts the row it made on top", async () => {
-      const { posts } = await mount();
+    it("posts the fields the Jinja form posts, and re-reads the listing it made", async () => {
+      const withNew = {
+        body: {
+          ...FOLLOWING,
+          totals: { ...FOLLOWING.totals, follows: 3 },
+          // Where `list_follows` puts it, which is not the top: `failing_first`
+          // is the order this table is read in at 03:00.
+          follows: [FOLLOWING.follows[0], CREATED_OUTCOME.follow, FOLLOWING.follows[1]],
+        },
+      };
+      const { posts, fetcher } = await mount({ list: [{ body: FOLLOWING }, withNew] });
       await screen.findByRole("status");
 
       await userEvent.type(
@@ -289,10 +358,18 @@ describe("the follows table", () => {
       expect(body.get("mode")).toBe("auto");
       expect(body.get("check_interval_s")).toBe("21600");
 
-      // The new row is in the table, in front of the page the server sent, and
-      // the page did not re-read to get it there.
-      expect(rowOf("New One")).toBeInTheDocument();
-      expect(screen.getAllByRole("row")).toHaveLength(4); // the head and three follows
+      // The listing is read again rather than the returned row being parked on
+      // top of it, so the new follow lands where the store puts it — second
+      // here, not first — and the receipt survives the re-read.
+      const reads = fetcher.mock.calls.filter(
+        (call) =>
+          String(call[0]).startsWith("/dashboard/api/following") && call[1]?.method !== "POST",
+      );
+      expect(reads).toHaveLength(2);
+      expect(await screen.findByText("Now following")).toBeInTheDocument();
+      const rows = screen.getAllByRole("row");
+      expect(rows).toHaveLength(4); // the head and three follows
+      expect(rows[2]).toHaveTextContent("New One");
     });
 
     // The tool returns the existing follow rather than making a second one, and
@@ -331,13 +408,44 @@ describe("the follows table", () => {
     // §5.5's honest refusal: the tool raises `E_FEATURE_DISABLED` for a follow
     // on the same condition it does for an index, so the page says so before
     // the typing rather than after it.
+    // The refusal is stated above the form, in the instance's own words — and
+    // the form stays live, exactly as `following.html` left it. A rule is worth
+    // writing down while a dimension mismatch is being fixed, and a form that
+    // greys out is a form that has to be retyped.
     it("refuses honestly where the database will not take a write", async () => {
-      await mount({ session: { ...OWNER_SESSION, writes_allowed: false } });
+      await mount({
+        list: {
+          body: {
+            ...FOLLOWING,
+            vectors: false,
+            vectors_reason: "text_embed dim 768 ≠ the store's 1024",
+          },
+        },
+        session: { ...OWNER_SESSION, writes_allowed: false },
+      });
       await screen.findByRole("status");
 
-      expect(screen.getByText(/Indexing is disabled on this instance/)).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Follow" })).toBeDisabled();
-      expect(screen.getByLabelText("Channel or playlist URL")).toBeDisabled();
+      expect(screen.getByText(/Indexing is disabled on this instance/)).toHaveTextContent(
+        "Indexing is disabled on this instance (text_embed dim 768 ≠ the store's 1024), so a " +
+          "follow would queue videos it cannot build. Fix the config or dimension mismatch and " +
+          "restart.",
+      );
+      expect(screen.getByRole("button", { name: "Follow" })).toBeEnabled();
+      expect(screen.getByLabelText("Channel or playlist URL")).toBeEnabled();
+      expect(screen.getByLabelText("Longer than")).toBeEnabled();
+    });
+
+    // An instance that predates `vectors_reason` says the sentence without the
+    // parenthesis rather than printing an empty one.
+    it("says indexing is disabled without a reason when none travelled", async () => {
+      await mount({
+        list: { body: { ...FOLLOWING, vectors: false } },
+        session: { ...OWNER_SESSION, writes_allowed: false },
+      });
+      await screen.findByRole("status");
+      expect(screen.getByText(/Indexing is disabled on this instance/)).toHaveTextContent(
+        /^Indexing is disabled on this instance, so a follow/,
+      );
     });
   });
 });
