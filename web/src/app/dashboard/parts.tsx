@@ -7,7 +7,7 @@ import { Pill, type Tone } from "@/components/Pill";
 import { RetryIn } from "@/components/RetryIn";
 import { DashboardError, ROOT } from "@/lib/dashboard/client";
 import type { Readiness as ReadinessPayload } from "@/lib/dashboard/schemas";
-import { at, count, day, iso } from "@/lib/format";
+import { count, DASH, day, iso } from "@/lib/format";
 import styles from "./dashboard.module.css";
 import { isPorted, sectionOf } from "./ported";
 import { useSession } from "./session";
@@ -44,8 +44,11 @@ export function PageHead({
 }
 
 /** A label and the machine string it names — one unbreakable unit, so a strip
- *  that runs out of room wraps between facts and never through a clock. */
-export function Fact({ label, value }: { label: string; value: string }) {
+ *  that runs out of room wraps between facts and never through a clock.
+ *
+ *  `value` is usually a formatted string; it takes a node so a stamp can be a
+ *  `<time datetime=…>`, which is what the ledger's "counted" fact is. */
+export function Fact({ label, value }: { label: string; value: ReactNode }) {
   return (
     <span className={styles.fact}>
       {label} <span className={styles.mono}>{value}</span>
@@ -211,13 +214,30 @@ export const Unit = ({ children }: { children: ReactNode }) => (
 );
 
 /** A sentence with a number in it; the number is the link. */
-export function GapLine({ href, n, children }: { href?: string; n: number; children: ReactNode }) {
+export function GapLine({
+  href,
+  n,
+  figure,
+  children,
+}: {
+  href?: string;
+  n: number;
+  /** How to print `n` when `count(n)` is not the whole reading of it — the
+   *  overview's failed-video probe answers with a ceiling, and `5+` is a
+   *  rendering of the pair rather than of the number. */
+  figure?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <li>
       {href ? (
-        <CountLink href={href} n={n} />
+        <CountLink href={href} n={n}>
+          {figure}
+        </CountLink>
       ) : (
-        <span className={`${styles.figureCount} ${n ? "" : styles.none}`}>{count(n)}</span>
+        <span className={`${styles.figureCount} ${n ? "" : styles.none}`}>
+          {figure ?? count(n)}
+        </span>
       )}
       <span>{children}</span>
     </li>
@@ -285,7 +305,13 @@ export function Readiness({
       drift={drift}
       aside={
         <p className={styles.clock}>
-          last health check <time dateTime={checked}>{at(readiness.checked_at)}</time>
+          {/* The whole stamp, seconds and all, which is what both templates
+              printed. dashboard.md §15 calls it "the UTC second at which this
+              observation completed", and it is the one clock on this surface
+              that is not a date in the corpus but the instant of a probe: a
+              minute-resolution rendering of it makes two readings a minute
+              apart look like the same one. */}
+          last health check <time dateTime={checked}>{checked ?? DASH}</time>
         </p>
       }
     >

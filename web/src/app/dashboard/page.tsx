@@ -8,7 +8,10 @@ import { OverviewView } from "./OverviewView";
 // browser, with the session cookie, against `/dashboard/api/overview`. So this
 // component exists to do the one thing a Client Component cannot — name the
 // document — and to render the view under it.
-export const metadata: Metadata = { title: "Corpus overview" };
+// `views.overview`'s own title, which is not the `<h1>`: the heading names the
+// page and the document names the tab, and in a row of eight tabs "Corpus" is
+// the word that tells them apart at 90px.
+export const metadata: Metadata = { title: "Corpus" };
 
 export default function DashboardOverviewPage() {
   return <OverviewView />;
