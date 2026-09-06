@@ -764,24 +764,34 @@ is the single most convincing thing on the page — it is the difference between
 
 *Ported 2026-09-05 — what the React page does differently, on purpose.*
 
-- **The transcript's place is not in the URL.** The Jinja page carried `cues`
-  and `cue_offset` on every link it built, so paging the transcript reloaded
-  the page and threw the strip, the frames and the reader's own place away with
-  it. The panel appends in place now, at the server's own offset
-  (`page.offset + page.cues.length`), and neither parameter is on the URL:
-  where a reader is in a transcript is not a fact about the page and has no
-  business in a link somebody sends. `frames`, `frame_offset` and `select`
-  **stay**, exactly as they were — which page of the strip you are on, and
-  which frame a shot bar jumped you to, are facts a link should carry.
+- **The transcript appends in place; its place is still in the URL.** The Jinja
+  page carried `cues` and `cue_offset` on every link it built, so *paging* the
+  transcript reloaded the page and threw the strip, the frames and the reader's
+  own place away with it. The panel appends in place now, at the server's own
+  offset (`page.offset + page.cues.length`), and that is what the reload bought
+  — not the loss of the address.
+
+  *Amended 2026-09-06.* Both parameters are back on the URL, spent differently:
+  `cue_offset` seeds the first read and names the first cue on screen, `cues` is
+  the page size (held under the payload's own `transcript.max_limit`, clamped
+  again by the endpoint), and the panel writes the offset back with
+  `history.replaceState` under `#transcript` as the reader pages. A seeded panel
+  starts partway into a transcript, so it also carries an **← Earlier** control,
+  which prepends the page above the first row and is drawn only while there is
+  one. Where a reader is in a four-hour talk is a fact worth sending somebody,
+  and it costs nothing now that reaching it is not a reload. `frames`,
+  `frame_offset` and `select` **stay** as they were, and every link this page
+  builds carries all four, exactly as Jinja's `nav_link` macro did.
 - **The title arrives after the read.** Next serves this page as a data-free
   shell and never sees the session cookie (frontend-migration.md §1d), so the
   server cannot know the video's name. The document title is the generic
   "Video" and the view sets `document.title` when the payload lands, which is
   the first moment anything on this side knows it.
-- **The lightbox is a link, for now.** A frame card opens the 1280px `large`
-  URL rather than the overlay `static/dashboard.js` draws, and the shot band
-  has its bars and their links but not the scrub preview. Both are enhancement
-  layers over facts already on the page, and both are in `docs/ROADMAP.md`.
+- ~~**The lightbox is a link, for now.**~~ *Landed 2026-09-06.* A frame card is
+  a button again and opens the still in a native `<dialog>` at 1280px, with its
+  detection boxes over it, its lines beside it and `frame_id · clock · W×H ·
+  bytes` in the caption; the shot band previews the shot under the pointer. The
+  file itself stays reachable in the dialog's foot.
 - **The write side is not here.** "Manage this video" — the Re-index form and
   the tag form — and the header's "Queue more from this channel" link are
   absent, with the rest of the writes in `docs/ROADMAP.md`.

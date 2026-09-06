@@ -1,11 +1,11 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Pill } from "@/components/Pill";
 import { dashboard, DashboardError, ROOT } from "@/lib/dashboard/client";
 import type { Cue, FrameCard, Shot, Stage, VideoDetail } from "@/lib/dashboard/schemas";
-import { at, bytes, clock, count, DASH, day, duration, iso } from "@/lib/format";
+import { at, bytes, clock, count, DASH, day, duration, hms, iso } from "@/lib/format";
 import dash from "../../dashboard.module.css";
 import {
   DashLink,
@@ -18,6 +18,7 @@ import {
   Sep,
   StatePair,
   Unbroken,
+  useDocumentTitle,
   useWriteSide,
 } from "../../parts";
 import { useRead } from "../../useRead";
@@ -35,14 +36,27 @@ import { Lightbox, OcrBoxes, OcrLines } from "./Lightbox";
 // five wire stages for a model's benefit, and a human wants the seven, with
 // the model that produced each.
 //
-// Two bounds are the URL's, `frames` and `frame_offset`, exactly as they were
-// in Jinja. The transcript's are not: the panel appends its next batch in
-// place rather than reloading the page, so where the reader is in the
-// transcript is not a fact about the page and has no business in a link
-// somebody sends. Both are still Python's numbers — `?frames=200` is clamped
-// to 96 server-side and the payload's `notes` says so.
+// Four bounds are the URL's, exactly as they were in Jinja: `frames` and
+// `frame_offset` for the strip, `cues` and `cue_offset` for the transcript.
+// All four are Python's numbers — `?frames=200` is clamped to 96 server-side
+// and the payload's `notes` says so; `?cues=` is held under the cue endpoint's
+// own `max_limit`, which the detail payload carries, and clamped again by the
+// endpoint itself.
+//
+// What changed at the port is *how* the transcript's two are spent, not
+// whether they exist. The panel appends its next batch in place rather than
+// reloading the page, so `cue_offset` seeds the first read and names the first
+// cue on screen — a reader who pages back to it writes it down again with
+// `history.replaceState`, which is what makes a transcript position something
+// you can send somebody without throwing the strip, the frames and the
+// reader's own place away to reach it (dashboard.md §5.3).
 
 const FRAME_KEYS = ["frames", "frame_offset"];
+const CUE_KEYS = ["cues", "cue_offset"];
+
+// A page of the transcript cannot start further in than the endpoint's own
+// offset ceiling (`views.video_detail`'s `clamp(…, 0, 500_000, 0)`).
+const CUE_OFFSET_MAX = 500_000;
 
 // A new shot's frame waits out a short pause before it is asked for, so a
 // sweep across two hundred shots is not two hundred requests.
@@ -87,24 +101,7 @@ export function VideoDetailView({ videoId }: { videoId: string }) {
     // button, because retrying will produce this answer again.
     const refusal = state.error;
     if (refusal instanceof DashboardError && refusal.status === 404) {
-      return (
-        <>
-          <Crumbs videoId={videoId} />
-          <PageHead title="Unknown video" />
-          <section className={dash.notice} aria-labelledby="unknown">
-            <h2 className={dash.noticeTitle} id="unknown">
-              {refusal.message}
-            </h2>
-            <p className={dash.noticeDetail}>
-              <code>{refusal.code}</code>
-            </p>
-            {refusal.next ? <p className={dash.noticeNext}>{refusal.next}</p> : null}
-            <p className={dash.noticeNext}>
-              <DashLink href={`${ROOT}/videos`}>Back to the videos table</DashLink>
-            </p>
-          </section>
-        </>
-      );
+      return <UnknownVideo refusal={refusal} videoId={videoId} />;
     }
     return (
       <>
@@ -115,17 +112,61 @@ export function VideoDetailView({ videoId }: { videoId: string }) {
     );
   }
 
-  return <Loaded data={state.data} search={search} selected={selected} />;
+  return (
+    <Loaded
+      data={state.data}
+      search={search}
+      selected={selected}
+      seedSize={cueBound(params.get("cues"), state.data.transcript.max_limit)}
+      seedOffset={cueBound(params.get("cue_offset"), CUE_OFFSET_MAX) ?? 0}
+    />
+  );
+}
+
+/**
+ * An id that is not in the corpus. Not a failure to read the instance: the read
+ * succeeded and the answer is "there is no such video", so it gets the
+ * refusal's own words and a way back to the table rather than a retry button —
+ * retrying will produce this answer again.
+ *
+ * A component of its own for the name: `views.video_detail` gave this document
+ * the title "Unknown video", and a hook cannot be called from the branch of a
+ * render that returns early.
+ */
+function UnknownVideo({ refusal, videoId }: { refusal: DashboardError; videoId: string }) {
+  useDocumentTitle("Unknown video");
+  return (
+    <>
+      <Crumbs videoId={videoId} />
+      <PageHead title="Unknown video" />
+      <section className={dash.notice} aria-labelledby="unknown">
+        <h2 className={dash.noticeTitle} id="unknown">
+          {refusal.message}
+        </h2>
+        <p className={dash.noticeDetail}>
+          <code>{refusal.code}</code>
+        </p>
+        {refusal.next ? <p className={dash.noticeNext}>{refusal.next}</p> : null}
+        <p className={dash.noticeNext}>
+          <DashLink href={`${ROOT}/videos`}>Back to the videos table</DashLink>
+        </p>
+      </section>
+    </>
+  );
 }
 
 function Loaded({
   data,
   search,
   selected,
+  seedSize,
+  seedOffset,
 }: {
   data: VideoDetail;
   search: string;
   selected: number | null;
+  seedSize: number | null;
+  seedOffset: number;
 }) {
   const { video, counts, frames, shots } = data;
   const runtime = video.duration_s ?? 0;
@@ -168,6 +209,30 @@ function Loaded({
     }
   }
 
+  // Where the reader is in the transcript, written down where a link can carry
+  // it. The same mechanism `openFrame` uses and for the same reason: the URL is
+  // the bookmark, not the state — nothing on this page reads these two back, so
+  // a browser that refuses the rewrite loses a link and not a panel.
+  //
+  // Neither key is *introduced* by paging. `cue_offset` appears once the reader
+  // has actually moved off the top, and `cues` only where they typed it, so the
+  // ordinary address stays the address they arrived at.
+  const onWhere = useCallback((offset: number, limit: number) => {
+    try {
+      const here = new URL(window.location.href);
+      const position = offset > 0 || here.searchParams.has("cue_offset");
+      const sized = here.searchParams.has("cues");
+      if (!position && !sized) return;
+      if (position) here.searchParams.set("cue_offset", String(offset));
+      if (sized) here.searchParams.set("cues", String(limit));
+      here.hash = "transcript";
+      if (here.href === window.location.href) return;
+      window.history.replaceState(null, "", here.href);
+    } catch {
+      // Nothing to do and nothing lost.
+    }
+  }, []);
+
   // The document is named after data the browser is holding and the server
   // never saw: this shell is served without the session cookie, so `metadata`
   // in `page.tsx` cannot know the title. It is set once the read lands, which
@@ -205,8 +270,14 @@ function Loaded({
         {video.channel}
         <Sep /> <Fact label="published" value={day(video.published_at)} />
         <Sep />{" "}
+        {/* `h:mm:ss`, not `8m 00s`: this is the length of the thing every
+            other clock on the page is an offset into — the shot band's ticks,
+            a cue's timecode, a chapter's start — and a runtime spelled in a
+            second form is a number the reader has to convert before it can be
+            compared to any of them. `text.duration_clock`'s shape, which is
+            what Jinja printed here. */}
         <Unbroken>
-          <span className={dash.mono}>{duration(video.duration_s)}</span>
+          <span className={dash.mono}>{hms(video.duration_s)}</span>
         </Unbroken>
         {video.language ? (
           <>
@@ -301,10 +372,15 @@ function Loaded({
             notes={[
               Object.keys(data.cue_origins).length ? (
                 <>
+                  {/* The tally as Jinja printed it: the bare integer, not the
+                      grouped one. The figure above it is the count `render.count`
+                      groups; these are the same total split by origin, and
+                      `whisperx 1,203` beside `1,203` reads as a second figure
+                      rather than as its breakdown. */}
                   {Object.entries(data.cue_origins).map(([origin, n], index) => (
                     <span key={origin}>
                       {index ? " · " : ""}
-                      {origin} {count(n)}
+                      {origin} {n}
                     </span>
                   ))}
                 </>
@@ -342,7 +418,7 @@ function Loaded({
         </dl>
       </Panel>
 
-      <Provenance stages={data.stages} redacted={data.redacted} />
+      <Provenance stages={data.stages} />
 
       <Frames
         frames={frames}
@@ -354,16 +430,31 @@ function Loaded({
         onOpen={openFrame}
       />
 
-      <Transcript key={video.video_id} transcript={data.transcript} />
+      <Transcript
+        key={video.video_id}
+        onWhere={onWhere}
+        seedOffset={seedOffset}
+        seedSize={seedSize}
+        transcript={data.transcript}
+        videoId={video.video_id}
+      />
 
       {data.chapters.length ? (
         <Panel id="chapters" title="Chapters">
           <ol className={styles.chapters}>
             {data.chapters.map((chapter) => (
               <li className={styles.chapter} key={`${chapter.start_s}-${chapter.title}`}>
+                {/* The chapter's own start, not the payload's `link`. That URL
+                    is `deeplink()`'s, which subtracts `DEEPLINK_LEAD` (§3.6) —
+                    a lead that exists so a *quoted moment* is not missed by a
+                    second, and a chapter start is not a moment, it is a
+                    boundary. Two seconds before it is the previous chapter,
+                    and the number under the pointer would not be the number
+                    the reader lands on. Jinja built this href from
+                    `chapter.start` for the same reason. */}
                 <a
                   className={styles.at}
-                  href={chapter.link ?? video.url}
+                  href={`https://youtu.be/${encodeURIComponent(video.video_id)}?t=${Math.floor(chapter.start_s)}`}
                   rel="noopener noreferrer"
                   target="_blank"
                 >
@@ -709,6 +800,14 @@ function Timeline({
               onPointerEnter={() => onLink(shot.shot_id)}
               onPointerLeave={() => onLink(null)}
               style={{ left: `${left}%`, width: `${width}%` }}
+              // The bar's facts as a native tooltip, as Jinja had them on the
+              // anchor. The scrub preview says the same things in a nicer box
+              // and the `.sr-only` label says them to a screen reader, but a
+              // pointer that rests on a bar and waits is asking the platform,
+              // and neither of the other two answers that. On the `li` rather
+              // than on the anchor because the anchor fills the bar and
+              // `DashLink` takes no `title`.
+              title={`shot ${shot.shot_id}, ${clock(shot.start_s)} to ${clock(shot.end_s)}, ${shot.kept}/${shot.frames} frames kept`}
             >
               <DashLink href={href}>
                 <span className={dash.srOnly}>{label}</span>
@@ -743,10 +842,15 @@ function Timeline({
           band above is an argument that a bar's position is a fact, and a scale
           whose labels are only approximately where they claim would undercut
           it. */}
+      {/* The scale is the *video's* runtime quartered, which is what Jinja
+          printed and what the header's `h:mm:ss` says. `span` is the band's
+          fallback for a video with no recorded duration, and reading the ticks
+          off it would put `1:44:12` under the last bar of a talk whose length
+          nobody knows. */}
       <p className={styles.scale} aria-hidden="true">
         {[0, 25, 50, 75, 100].map((q) => (
           <span className={styles.tick} key={q} style={{ left: `${q}%` }}>
-            {clock((span * q) / 100)}
+            {clock((runtime * q) / 100)}
           </span>
         ))}
       </p>
@@ -777,14 +881,16 @@ function Timeline({
  * which is a different fact from a stage that ran and produced nothing — so
  * the row stays, at the full seven, and recedes.
  *
- * The model column is the projection's designed absence. `stages[].model_key`
- * is `null` there for every row (a declared model id is a setting, §2.4), and
- * a column of seven dashes would be the page reporting "not recorded" about
- * seven stages that recorded it — so the column is not drawn at all, exactly
- * as the overview's declared-models table is simply absent. `error` goes the
- * same way and needs no column: its row only exists when there is one.
+ * The model column is drawn on both projections, as Jinja drew it. On the
+ * public one `stages[].model_key` is `null` for every row (a declared model id
+ * is a setting, §2.4) and every cell is a dash — which is the table keeping its
+ * shape, five columns wide, so a reader comparing the demo against an owner's
+ * screenshot is comparing two tables and not two layouts. Dropping the column
+ * moved the two clocks a column left and made the redaction invisible: the
+ * absence has to be somewhere you can see it. `error` is a different case and
+ * still needs no column of its own — its row exists only when there is one.
  */
-function Provenance({ stages, redacted }: { stages: Stage[]; redacted: boolean }) {
+function Provenance({ stages }: { stages: Stage[] }) {
   return (
     <Panel id="provenance" title="Provenance">
       <div className={dash.tablewrap}>
@@ -796,7 +902,7 @@ function Provenance({ stages, redacted }: { stages: Stage[]; redacted: boolean }
             <tr>
               <th scope="col">stage</th>
               <th scope="col">state</th>
-              {redacted ? null : <th scope="col">model</th>}
+              <th scope="col">model</th>
               <th scope="col">started</th>
               <th scope="col" className={dash.num}>
                 took
@@ -805,7 +911,7 @@ function Provenance({ stages, redacted }: { stages: Stage[]; redacted: boolean }
           </thead>
           <tbody>
             {stages.map((stage) => (
-              <StageRows key={stage.stage} stage={stage} columns={redacted ? 4 : 5} />
+              <StageRows key={stage.stage} stage={stage} />
             ))}
           </tbody>
         </table>
@@ -814,7 +920,7 @@ function Provenance({ stages, redacted }: { stages: Stage[]; redacted: boolean }
   );
 }
 
-function StageRows({ stage, columns }: { stage: Stage; columns: number }) {
+function StageRows({ stage }: { stage: Stage }) {
   const tone =
     stage.state === "failed" ? styles.bad : stage.state === "absent" ? styles.absent : "";
   return (
@@ -826,18 +932,17 @@ function StageRows({ stage, columns }: { stage: Stage; columns: number }) {
         <td>
           <Pill state={stage.state} />
         </td>
-        {columns === 5 ? (
-          <td className={styles.colModel}>
-            {/* `model_key` is NULL on every failed, skipped and invalidated
-                stage: provenance records what *succeeded*, and the page says
-                "not recorded" rather than guessing. */}
-            {stage.model_key ? (
-              <code>{stage.model_key}</code>
-            ) : (
-              <span className={styles.muted}>{DASH}</span>
-            )}
-          </td>
-        ) : null}
+        <td className={styles.colModel}>
+          {/* `model_key` is NULL on every failed, skipped and invalidated
+              stage — provenance records what *succeeded* — and on every row of
+              the public projection. The page says "not recorded" rather than
+              guessing, and rather than losing the column. */}
+          {stage.model_key ? (
+            <code>{stage.model_key}</code>
+          ) : (
+            <span className={styles.muted}>{DASH}</span>
+          )}
+        </td>
         <td>
           {stage.started_at ? (
             <time dateTime={iso(stage.started_at)}>{at(stage.started_at)}</time>
@@ -849,7 +954,7 @@ function StageRows({ stage, columns }: { stage: Stage; columns: number }) {
       </tr>
       {stage.error ? (
         <tr className={styles.stageError}>
-          <td colSpan={columns}>
+          <td colSpan={5}>
             <span className={styles.errLabel}>error</span>{" "}
             <span className={styles.errText}>{stage.error}</span>
           </td>
@@ -1055,16 +1160,40 @@ function Card({
  * reloaded the page to move fifty rows threw the strip, the frames and the
  * reader's place away with it.
  *
- * The button under the box is the same request the scroll makes. It is not a
- * second way to page: it is the keyboard's way, and the one control left when
- * a fetch fails.
+ * **The place is still in the URL.** Appending in place is how a batch arrives;
+ * it is not a reason for the position to stop being addressable. `?cue_offset=`
+ * seeds the first read and names the first cue on screen, `?cues=` is the page
+ * size the endpoint clamps, and the offset is written into the address bar with
+ * `history.replaceState` under `#transcript` as the reader pages — so a link to
+ * the fourth hour of a talk is a link somebody can send, exactly as it was in
+ * Jinja, without the reload Jinja needed to honour it.
+ *
+ * The two buttons under the box are the same requests the scroll makes.
+ * "Earlier" is the one the scroll cannot make: a seeded panel starts in the
+ * middle of a transcript, and without it the rows before the seed are
+ * unreachable without editing the URL by hand.
  *
  * The endpoint answers in numbers — `start_s`, `avg_logprob`, `chunk_opens` —
  * and every string it used to pre-render beside them went with the script that
  * read them (dashboard.md §23). The timecode, the confidence and the chunk
  * label are composed here.
  */
-function Transcript({ transcript }: { transcript: VideoDetail["transcript"] }) {
+function Transcript({
+  transcript,
+  videoId,
+  seedSize,
+  seedOffset,
+  onWhere,
+}: {
+  transcript: VideoDetail["transcript"];
+  videoId: string;
+  /** `?cues=`, or `null` for the endpoint's own default. */
+  seedSize: number | null;
+  /** `?cue_offset=` — the first cue this panel asks for. */
+  seedOffset: number;
+  /** Where the reader is now and what the server ran, for the address bar. */
+  onWhere: (offset: number, limit: number) => void;
+}) {
   const [cues, setCues] = useState<Cue[]>([]);
   const [more, setMore] = useState(transcript.cues > 0);
   // `true` from the start, and set by whoever *asks* for a batch rather than
@@ -1072,31 +1201,61 @@ function Transcript({ transcript }: { transcript: VideoDetail["transcript"] }) {
   // cascading render, and the first batch is already in flight on mount.
   const [busy, setBusy] = useState(transcript.cues > 0);
   const [error, setError] = useState<unknown>(null);
-  // How many batches have been asked for. Bumping it is the whole of "load
-  // more"; the offset itself is a ref, because it is written by the response
-  // and re-reading it must not be what re-runs the effect.
-  const [wanted, setWanted] = useState(1);
-  const nextOffset = useRef(0);
+  // Every batch asked for, in order; the effect fetches the last one. Pushing
+  // to it is the whole of "load more" and "load earlier" — which direction the
+  // batch goes is what the entry carries, because the response has to know
+  // whether to append or to prepend.
+  const [asks, setAsks] = useState<{ offset: number; back: boolean }[]>([
+    { offset: seedOffset, back: false },
+  ]);
+  // The offset of the first cue on screen, and the offset of the next batch
+  // forward. Both are refs, because they are written by the response and
+  // re-reading them must not be what re-runs the effect that wrote them;
+  // `first` is mirrored into state as well, because the Earlier control is
+  // drawn from it and a ref does not re-render.
+  const firstRef = useRef(seedOffset);
+  const [first, setFirst] = useState(seedOffset);
+  const nextOffset = useRef(seedOffset);
+  // Set by "Earlier" and read once the batch it asked for has landed.
+  const rewind = useRef(false);
   const box = useRef<HTMLDivElement>(null);
 
   const endpoint = transcript.endpoint;
-  const size = transcript.default_limit;
+  // The page size every request carries and every control counts in. `seedSize`
+  // is already under the payload's own `max_limit`, so this is the number the
+  // endpoint will run rather than one it would clamp under the reader.
+  const size = seedSize ?? transcript.default_limit;
+  const ask = asks[asks.length - 1];
 
   useEffect(() => {
     if (transcript.cues === 0) return;
     const controller = new AbortController();
     const query = new URLSearchParams({
-      offset: String(nextOffset.current),
+      offset: String(ask.offset),
       limit: String(size),
     });
     dashboard.cues(endpoint, query, controller.signal).then(
       (page) => {
         if (controller.signal.aborted) return;
-        // The server's own numbers, not this page's arithmetic: `limit` is
-        // clamped server-side and a short page is where the list actually ends.
-        nextOffset.current = page.offset + page.cues.length;
-        setCues((rows) => [...rows, ...page.cues]);
-        setMore(page.has_more);
+        // The server's own numbers, not this page's arithmetic: a short page is
+        // where the list actually ends, and `page.offset` is where it started.
+        if (ask.back) {
+          // Only the rows that are actually earlier than what is on screen: a
+          // backwards page that overlaps — the last one, against offset 0 —
+          // would otherwise print its tail twice.
+          const rows = page.cues.slice(0, Math.max(firstRef.current - page.offset, 0));
+          firstRef.current = page.offset;
+          setFirst(page.offset);
+          setCues((shown) => [...rows, ...shown]);
+        } else {
+          nextOffset.current = page.offset + page.cues.length;
+          setCues((shown) => [...shown, ...page.cues]);
+          setMore(page.has_more);
+        }
+        // The address bar, every time a batch lands: where this view starts and
+        // the page size it is being read at, so a `?cues=500` held under
+        // `max_limit` stops claiming 500.
+        onWhere(firstRef.current, size);
         setBusy(false);
       },
       (failure: unknown) => {
@@ -1108,13 +1267,30 @@ function Transcript({ transcript }: { transcript: VideoDetail["transcript"] }) {
       },
     );
     return () => controller.abort();
-  }, [endpoint, size, wanted, transcript.cues]);
+  }, [endpoint, size, ask, transcript.cues, onWhere]);
+
+  // "Earlier" was a click asking to *see* what came before, so the box goes to
+  // the top of the rows that just landed — which is what the Jinja pager's own
+  // "← Earlier" navigation put on screen. Layout rather than an effect: it has
+  // to happen before the paint that would otherwise show the old position.
+  useLayoutEffect(() => {
+    if (!rewind.current || !box.current) return;
+    rewind.current = false;
+    box.current.scrollTop = 0;
+  }, [cues]);
 
   const loadMore = useCallback(() => {
     setError(null);
     setBusy(true);
-    setWanted((n) => n + 1);
+    setAsks((held) => [...held, { offset: nextOffset.current, back: false }]);
   }, []);
+
+  const loadEarlier = useCallback(() => {
+    setError(null);
+    setBusy(true);
+    rewind.current = true;
+    setAsks((held) => [...held, { offset: Math.max(firstRef.current - size, 0), back: true }]);
+  }, [size]);
 
   // "Nearing the end" is one boxful short of it, which is the distance at
   // which the next batch has to already be arriving for the scroll not to stop.
@@ -1128,7 +1304,11 @@ function Transcript({ transcript }: { transcript: VideoDetail["transcript"] }) {
     return (
       <Panel id="transcript" title="Transcript">
         <div className={styles.empty}>
-          <p className={styles.emptyLead}>No transcript cues for this video.</p>
+          {/* Page-scoped, as Jinja said it: the panel is bounded and
+              `?cue_offset=` can land past the end of a transcript that does
+              exist, so "for this video" would be this page reporting an empty
+              corpus row off an offset the reader typed. */}
+          <p className={styles.emptyLead}>No transcript cues on this page.</p>
           <p className={dash.emptyNote}>
             The <code>stt</code> row in Provenance says whether one was produced.
           </p>
@@ -1151,7 +1331,7 @@ function Transcript({ transcript }: { transcript: VideoDetail["transcript"] }) {
       <div className={styles.cuebox} onScroll={onScroll} ref={box} tabIndex={0}>
         <ol className={styles.cues}>
           {cues.map((cue, index) => (
-            <CueRow key={`${cue.t}-${index}`} cue={cue} />
+            <CueRow key={`${cue.t}-${index}`} cue={cue} videoId={videoId} />
           ))}
         </ol>
         {busy ? <p className={styles.cueload}>loading</p> : null}
@@ -1161,18 +1341,33 @@ function Transcript({ transcript }: { transcript: VideoDetail["transcript"] }) {
           {error instanceof DashboardError ? error.message : "The next batch did not arrive."}
         </p>
       ) : null}
-      {more ? (
+      {first > 0 || more ? (
         <nav className={styles.pager} aria-label="Transcript pages">
-          <button className={styles.ghostlink} type="button" onClick={loadMore} disabled={busy}>
-            Next {size} cues →
-          </button>
+          {/* Only where there is something above the first row on screen —
+              which on a panel nobody deep-linked into is never, and the control
+              is not drawn at all. */}
+          {first > 0 ? (
+            <button
+              className={styles.ghostlink}
+              type="button"
+              onClick={loadEarlier}
+              disabled={busy}
+            >
+              ← Earlier
+            </button>
+          ) : null}
+          {more ? (
+            <button className={styles.ghostlink} type="button" onClick={loadMore} disabled={busy}>
+              Next {size} cues →
+            </button>
+          ) : null}
         </nav>
       ) : null}
     </Panel>
   );
 }
 
-function CueRow({ cue }: { cue: Cue }) {
+function CueRow({ cue, videoId }: { cue: Cue; videoId: string }) {
   // The chunk label, composed from the chunk's own five fields — a value, not
   // policy text, so decision 5 puts it here.
   const opens = cue.chunk_opens;
@@ -1192,7 +1387,19 @@ function CueRow({ cue }: { cue: Cue }) {
           on every one of a thousand rows to say what "What was stored" says
           once, per origin, with a count. */}
       <li className={`${styles.cue} ${cue.in_chunk ? styles.inChunk : ""}`}>
-        <span className={styles.at}>{clock(cue.start_s)}</span>
+        {/* The timecode is the deeplink, as it was in Jinja and in the script
+            that appended these rows: `t` is the whole second the payload
+            carries for exactly this, so a line you have just read is one click
+            from the moment it was said. Not `start_s` floored here — the
+            endpoint sends the number the URL takes (§5.3). */}
+        <a
+          className={styles.at}
+          href={`https://youtu.be/${encodeURIComponent(videoId)}?t=${cue.t}`}
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          {clock(cue.start_s)}
+        </a>
         <span className={styles.cuetext}>{cue.text}</span>
         {cue.speaker ? <span className={styles.speaker}>{cue.speaker}</span> : null}
         {confidence ? (
@@ -1291,18 +1498,30 @@ export function elapsed(start: number | null, finish: number | null): string {
   return duration(finish - start);
 }
 
-/** The strip's two parameters, and nothing else this page's URL may hold. */
-function frameQuery(search: string): URLSearchParams {
+/** The named bounds this page's URL may hold, kept from `search`. */
+function keptQuery(search: string, keys: string[]): URLSearchParams {
   const from = new URLSearchParams(search);
   const query = new URLSearchParams();
-  for (const key of FRAME_KEYS) {
+  for (const key of keys) {
     const value = from.get(key);
     if (value !== null && value.trim()) query.set(key, value.trim());
   }
   return query;
 }
 
-/** This page at another page of the strip, optionally marking one frame. */
+/** The strip's two parameters: what the *read* is bounded by, and no more. */
+function frameQuery(search: string): URLSearchParams {
+  return keptQuery(search, FRAME_KEYS);
+}
+
+/**
+ * This page at another page of the strip, optionally marking one frame.
+ *
+ * Carries the transcript's two bounds through as well, exactly as Jinja's
+ * `nav_link` macro did: paging the frames must not throw away where the reader
+ * had got to in the transcript, and a link built from a page that was itself
+ * reached by a `?cue_offset=` deep link has to stay that link.
+ */
 function frameLink(
   search: string,
   videoId: string,
@@ -1310,11 +1529,24 @@ function frameLink(
   select: number | null,
   anchor = "",
 ): string {
-  const query = frameQuery(search);
+  const query = keptQuery(search, [...FRAME_KEYS, ...CUE_KEYS]);
   query.set("frame_offset", String(offset));
   if (select !== null) query.set("select", String(select));
   const fragment = anchor ? `#${anchor}` : select !== null ? `#frame-${select}` : "";
   return `${ROOT}/videos/${encodeURIComponent(videoId)}?${query}${fragment}`;
+}
+
+/** `?cues=` and `?cue_offset=` as the panel's seed: a whole number, or nothing.
+ *
+ *  The ceiling is never invented here. `cues` is held under the payload's own
+ *  `transcript.max_limit` and `cue_offset` under the endpoint's offset ceiling,
+ *  and the real clamp is still the server's — it answers with the `limit` it
+ *  ran and the panel pages by that number rather than by the typed one. A
+ *  prompt-only bound is not a bound (CLAUDE.md); this one only keeps a URL
+ *  someone hand-edited from asking for a page nobody could serve. */
+function cueBound(raw: string | null, ceiling: number): number | null {
+  if (raw === null || !/^\d+$/.test(raw.trim())) return null;
+  return Math.min(Number(raw.trim()), ceiling);
 }
 
 /** `?select=` as an ordinal, or `null`.

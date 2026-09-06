@@ -24,7 +24,9 @@ type Route = { status?: number; body?: unknown; headers?: Record<string, string>
 async function mount(
   detail: Route,
   {
-    cues = { body: OWNER_CUES } as Route,
+    // A function where the answer depends on which page was asked for: the
+    // transcript is the one panel here that reads more than once.
+    cues = { body: OWNER_CUES } as Route | ((url: string) => Route),
     post = { body: REINDEXED } as Route,
     search = "",
     session = OWNER_SESSION as unknown,
@@ -39,7 +41,9 @@ async function mount(
       init?.method === "POST"
         ? post
         : url.includes("/cues")
-          ? cues
+          ? typeof cues === "function"
+            ? cues(url)
+            : cues
           : url.startsWith("/dashboard/api/library/")
             ? detail
             : url === "/dashboard/api/session"
@@ -84,6 +88,27 @@ const TWO_LINES = {
   },
 };
 
+/**
+ * A page of cues the endpoint would answer with, for whatever `offset` and
+ * `limit` were asked for — the one panel here that reads more than once, and
+ * the only way to tell an appended batch from a prepended one is for the two
+ * to hold different rows. Each cue's text is its own ordinal, and `limit` is
+ * echoed back as the endpoint echoes the number it ran.
+ */
+function cuePage(url: string): unknown {
+  const asked = new URL(url, "http://localhost").searchParams;
+  const offset = Number(asked.get("offset") ?? 0);
+  const limit = Number(asked.get("limit") ?? 50);
+  const rows = Array.from({ length: Math.min(limit, 25) }, (_, index) => ({
+    ...OWNER_CUES.cues[1],
+    start_s: offset + index,
+    end_s: offset + index + 1,
+    t: offset + index,
+    text: `cue ${offset + index}`,
+  }));
+  return { cues: rows, offset, limit, has_more: true };
+}
+
 /** The shot band, with the geometry jsdom does not compute: 1000px wide, a
  *  hundred pixels down the viewport. Every percentage the preview clamps
  *  against is read off this. */
@@ -110,7 +135,11 @@ describe("the video detail", () => {
     // `data_status` is shown only when it says something `index_state` did not,
     // and on a finished video it says `ok` where the state says `ready`.
     expect(screen.getByText("data_status")).toBeInTheDocument();
-    expect(screen.getByText("Andrej Karpathy")).toBeInTheDocument();
+    const facts = screen.getByText("Andrej Karpathy").closest("p");
+    // The runtime as `h:mm:ss`, because every other clock on this page — the
+    // band's ticks, a cue's timecode, a chapter's start — is an offset into it
+    // and is spelled that way.
+    expect(facts).toHaveTextContent("1:56:40");
     expect(screen.getByRole("link", { name: "Open on YouTube" })).toHaveAttribute(
       "href",
       "https://youtu.be/kCc8FmEb1nY",
@@ -126,6 +155,8 @@ describe("the video detail", () => {
     await mount({ body: OWNER_VIDEO });
 
     expect(await screen.findByText("What was stored")).toBeInTheDocument();
+    // The breakdown is the bare integer Jinja printed, not a second grouped
+    // figure beside the one above it.
     expect(screen.getByText("cues").closest("div")).toHaveTextContent("whisperx 6");
     expect(screen.getByText("keyframes").closest("div")).toHaveTextContent("kept of 3 captured");
     expect(screen.getByText("frames with text").closest("div")).toHaveTextContent("2 lines read");
@@ -152,6 +183,41 @@ describe("the video detail", () => {
     expect(within(band).getAllByRole("link")[2]).toHaveAttribute(
       "href",
       "/dashboard/videos/kCc8FmEb1nY?frame_offset=0&select=7#frame-7",
+    );
+    // The same facts as a native tooltip, for the pointer that rests on a bar
+    // and waits — which neither the sr-only label nor the scrub box answers.
+    expect(band.querySelector("[data-shot='0']")).toHaveAttribute(
+      "title",
+      "shot 0, 0:05 to 0:10, 1/1 frames kept",
+    );
+    // The scale is the video's runtime quartered, not the band's fallback span.
+    const ticks = band.parentElement?.querySelectorAll("p[aria-hidden='true'] span");
+    expect(Array.from(ticks ?? []).map((tick) => tick.textContent)).toEqual([
+      "0:00",
+      "29:10",
+      "58:20",
+      "1:27:30",
+      "1:56:40",
+    ]);
+  });
+
+  // Every link off this page carries all four bounds, as Jinja's `nav_link`
+  // did: paging the strip must not throw away where the reader had got to in
+  // the transcript, and a page reached by a `?cue_offset=` link stays that link.
+  it("carries the transcript's bounds across a strip navigation", async () => {
+    await mount(
+      { body: { ...OWNER_VIDEO, frames: { ...OWNER_VIDEO.frames, limit: 2, has_more: true } } },
+      { search: "frames=2&cues=25&cue_offset=100", cues: (url) => ({ body: cuePage(url) }) },
+    );
+
+    const pager = await screen.findByRole("navigation", { name: "Keyframe pages" });
+    expect(within(pager).getByRole("link", { name: "Next 2 frames →" })).toHaveAttribute(
+      "href",
+      "/dashboard/videos/kCc8FmEb1nY?frames=2&cues=25&cue_offset=100&frame_offset=2#frames",
+    );
+    const band = await screen.findByRole("list", { name: "Shots across the runtime" });
+    expect(within(band).getAllByRole("link")[0].getAttribute("href")).toContain(
+      "cues=25&cue_offset=100",
     );
   });
 
@@ -278,16 +344,135 @@ describe("the video detail", () => {
       "/dashboard/api/videos/kCc8FmEb1nY/cues?offset=3&limit=50",
       expect.anything(),
     );
+    // Nothing above the first row, so nothing to go back to: the Earlier
+    // control belongs to a panel that was deep-linked into.
+    expect(screen.queryByRole("button", { name: "← Earlier" })).toBeNull();
+  });
+
+  // The transcript's place is in the URL again. Appending in place is how a
+  // batch arrives; it was never a reason for the position to stop being
+  // addressable, and Jinja's two parameters are the ones a reader already has.
+  it("seeds the transcript from ?cue_offset= and ?cues=", async () => {
+    const { fetcher } = await mount(
+      { body: OWNER_VIDEO },
+      { search: "cue_offset=100&cues=25", cues: (url) => ({ body: cuePage(url) }) },
+    );
+
+    expect(await screen.findByText("cue 100")).toBeInTheDocument();
+    expect(fetcher).toHaveBeenCalledWith(
+      "/dashboard/api/videos/kCc8FmEb1nY/cues?offset=100&limit=25",
+      expect.objectContaining({ credentials: "same-origin" }),
+    );
+    expect(screen.getByRole("button", { name: "Next 25 cues →" })).toBeInTheDocument();
+  });
+
+  // A hand-typed page size above the endpoint's own ceiling is held at it,
+  // using the number the payload carries rather than one written here.
+  it("holds ?cues= under the endpoint's max_limit", async () => {
+    const { fetcher } = await mount(
+      { body: OWNER_VIDEO },
+      { search: "cues=5000", cues: (url) => ({ body: cuePage(url) }) },
+    );
+
+    await screen.findByText("cue 0");
+    expect(fetcher).toHaveBeenCalledWith(
+      "/dashboard/api/videos/kCc8FmEb1nY/cues?offset=0&limit=200",
+      expect.anything(),
+    );
+  });
+
+  it("pages back from a seeded offset and writes where it landed", async () => {
+    const replaceState = vi.spyOn(window.history, "replaceState");
+    const { fetcher } = await mount(
+      { body: OWNER_VIDEO },
+      { search: "cue_offset=100&cues=25", cues: (url) => ({ body: cuePage(url) }) },
+    );
+    await screen.findByText("cue 100");
+
+    await userEvent.click(screen.getByRole("button", { name: "← Earlier" }));
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "/dashboard/api/videos/kCc8FmEb1nY/cues?offset=75&limit=25",
+      expect.anything(),
+    );
+    // Prepended, not appended: the earlier batch goes above the rows the reader
+    // was already on.
+    await screen.findByText("cue 75");
+    const rows = screen.getAllByText(/^cue \d+$/).map((row) => row.textContent);
+    expect(rows[0]).toBe("cue 75");
+    expect(rows[rows.length - 1]).toBe("cue 124");
+    // …and the address bar names where this view now starts, under the panel's
+    // own fragment, so the link is one somebody can send.
+    expect(replaceState).toHaveBeenCalledWith(
+      null,
+      "",
+      expect.stringContaining("cue_offset=75#transcript"),
+    );
+    replaceState.mockRestore();
+  });
+
+  it("reaches the first cue and then stops offering Earlier", async () => {
+    await mount(
+      { body: OWNER_VIDEO },
+      { search: "cue_offset=10&cues=25", cues: (url) => ({ body: cuePage(url) }) },
+    );
+    await screen.findByText("cue 10");
+
+    await userEvent.click(screen.getByRole("button", { name: "← Earlier" }));
+
+    // The backwards page starts at 0 and runs past the rows already on screen,
+    // so only the ones that are actually earlier are kept — cue 12 is printed
+    // once, not twice.
+    await screen.findByText("cue 0");
+    expect(screen.getAllByText("cue 12")).toHaveLength(1);
+    // Nothing above the first row now, so the control goes.
+    await waitFor(() => expect(screen.queryByRole("button", { name: "← Earlier" })).toBeNull());
+  });
+
+  // `cue.t` is the whole second the endpoint sends for exactly this, and the
+  // timecode has been the link to it since Jinja.
+  it("makes each cue timecode the deeplink at that second", async () => {
+    await mount({ body: OWNER_VIDEO });
+    const row = (
+      await screen.findByText("otherwise you would recompute attention over the entire prefix")
+    ).closest("li");
+
+    expect(within(row!).getByRole("link", { name: "0:03" })).toHaveAttribute(
+      "href",
+      "https://youtu.be/kCc8FmEb1nY?t=3",
+    );
+    expect(within(row!).getByRole("link", { name: "0:03" })).toHaveAttribute("target", "_blank");
   });
 
   it("says a transcript is absent rather than showing an empty box", async () => {
     await mount({ body: OWNER_HALF }, { videoId: "aaaaaaaaaaa" });
 
-    expect(await screen.findByText("No transcript cues for this video.")).toBeInTheDocument();
+    expect(await screen.findByText("No transcript cues on this page.")).toBeInTheDocument();
     expect(
       screen.getByText("No keyframes were captured, so this video has no shots."),
     ).toBeInTheDocument();
     expect(screen.getByText("No indexing job is linked to this video.")).toBeInTheDocument();
+  });
+
+  // §3.6's `DEEPLINK_LEAD` exists so a *quoted moment* is not missed by a
+  // second. A chapter start is not a moment, it is a boundary — two seconds
+  // before it is the previous chapter — so this page builds the href from the
+  // chapter's own start, as Jinja did, and ignores the payload's led `link`.
+  it("links a chapter at its own start, not two seconds before it", async () => {
+    await mount({
+      body: {
+        ...OWNER_VIDEO,
+        chapters: [
+          { start_s: 305.0, title: "attention", link: "https://youtu.be/kCc8FmEb1nY?t=303" },
+        ],
+      },
+    });
+
+    const chapters = (await screen.findByText("Chapters")).closest("section");
+    expect(within(chapters!).getByRole("link", { name: "5:05" })).toHaveAttribute(
+      "href",
+      "https://youtu.be/kCc8FmEb1nY?t=305",
+    );
   });
 
   it("lists the jobs that touched this video", async () => {
@@ -302,14 +487,20 @@ describe("the video detail", () => {
   });
 
   // §2.4: the demo gets the detail whole minus the two fields that are the
-  // operator's console, and the column those fields filled is simply not drawn.
+  // operator's console. The column those fields filled keeps its place and
+  // prints the dash — the table is five columns wide on both projections, so
+  // the absence is something a reader can see rather than a layout that
+  // silently differs from the one in the screenshot they are comparing against.
   it("drops the model ids and the pipeline's prose in the projection", async () => {
     await mount({ body: DEMO_HALF }, { videoId: "aaaaaaaaaaa", session: DEMO_SESSION });
 
     const table = await screen.findByRole("table", {
       name: /Each pipeline stage, its state and the model/,
     });
-    expect(within(table).queryByRole("columnheader", { name: "model" })).not.toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: "model" })).toBeInTheDocument();
+    // Seven rows, and not one of them names a model.
+    expect(within(table).getAllByRole("row")).toHaveLength(8);
+    expect(within(table).queryByRole("cell", { name: /whisper|paddle|nvidia/i })).toBeNull();
     expect(screen.queryByText(/Sign in to confirm you are not a bot/)).not.toBeInTheDocument();
     expect(document.body.textContent).not.toContain("yt-dlp");
     // …and what a reader can act on survives: the states, the versions and the
@@ -341,9 +532,13 @@ describe("the video detail", () => {
         "src",
         "/frames/kCc8FmEb1nY-00001.jpg?w=1280&q=70",
       );
-      // The caption is the frame's own identity, and the facts under it are
-      // the two the card had no room for.
-      expect(within(shot).getByText(/kCc8FmEb1nY-00001 · 7:10 · 1280×720/)).toBeInTheDocument();
+      // The caption is `video.html`'s `data-caption`, all four facts of it:
+      // the frame's own id, the second it was cut at, its pixel size and its
+      // byte weight. §5.3 puts the last two here rather than on the card,
+      // because they are facts about the file you are now looking at.
+      expect(
+        within(shot).getByText("kCc8FmEb1nY-00001 · 7:10 · 1280×720 · 70 B"),
+      ).toBeInTheDocument();
       expect(within(shot).getByText(/shot 1 · sharpness 10.0 · done · 2 line/)).toBeInTheDocument();
       // Both lines, and a box for each at the coordinates the store holds.
       expect(within(shot).getByText("loss 3.14")).toBeInTheDocument();
@@ -552,6 +747,10 @@ describe("the video detail", () => {
       );
       // Not the error state: retrying will produce this answer again.
       expect(screen.queryByRole("button", { name: "try again" })).not.toBeInTheDocument();
+      // The name `views.video_detail` gave this document. The shell is served
+      // before the read that refuses has gone out, so the page renames itself
+      // when the answer comes back.
+      await waitFor(() => expect(document.title).toBe("Unknown video — vidtheque"));
     });
 
     it("prints the instance's own refusal when it is signed out", async () => {
