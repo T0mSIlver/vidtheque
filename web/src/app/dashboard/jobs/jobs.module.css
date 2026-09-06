@@ -234,15 +234,6 @@
   color: var(--tone-bad);
 }
 
-/* The refusal's `next:` line, inside the cell the button was in. Its own flex
-   line rather than a fourth word after the message: it is the sentence saying
-   what to do instead, and it reads as a footnote or it does not read. */
-.refusalNext {
-  composes: t-cell from global;
-  flex: 0 0 100%;
-  color: var(--muted);
-}
-
 /* The detail page's version of the same line, under the two buttons rather
    than inside a cell, so it has room for the message and the `next:` line. */
 .receipt {
@@ -499,7 +490,16 @@
 
 /* At a phone's width the grid stops being a grid: each row becomes its own
    block and every cell wears the column's name, which is what `data-label` is
-   on the cells for. */
+   on the cells for. The face that name is drawn in is `.stacked`'s, shared
+   with the tables the following pages stack. */
+.jobs {
+  composes: stacked from "../dashboard.module.css";
+}
+
+.items {
+  composes: stacked from "../dashboard.module.css";
+}
+
 @media (max-width: 780px) {
   .jobs thead,
   .items thead {
@@ -538,16 +538,11 @@
     gap: 0;
   }
 
+  /* The label's own face is `dashboard.module.css`'s `.stacked`; this is the
+     switch that turns it on at this table's breakpoint. */
   .jobs tbody td::before,
   .items tbody td::before {
     content: attr(data-label);
-    flex: 0 0 6rem;
-    font-family: var(--mono);
-    font-size: 0.625rem;
-    font-weight: var(--w-mono-label);
-    letter-spacing: 0.19em;
-    text-transform: uppercase;
-    color: var(--muted);
   }
 
   .eventAt {

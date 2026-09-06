@@ -595,6 +595,26 @@
   overflow-wrap: anywhere;
 }
 
+/* The same table on a phone, where there is no width left for columns: the
+   page takes the head away, turns each row into a block, and every cell wears
+   the column name it lost — the `data-label` the cells have carried since the
+   port. This is the face that label is drawn in, which is the column head's
+   own, because the label *is* the column head, moved into the cell.
+
+   The `content` stays in the page's media query, and a `::before` with none
+   draws nothing at all: that is the switch, and it leaves each table the
+   breakpoint it needs. A six-column table of standing rules runs out of width
+   sooner than one carrying a whole sentence in a column. */
+.stacked td::before {
+  flex: 0 0 6rem;
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  font-weight: var(--w-mono-label);
+  letter-spacing: 0.19em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 /* --------------------------------------------------------------- notices */
 
 .notice {
@@ -620,6 +640,23 @@
   composes: t-cell from global;
   margin-top: var(--s2);
   max-width: var(--note);
+}
+
+/* The same band in the tone that is not an error: something matched a rule and
+   is waiting for a person, which is what the `held_review` pill wears in the
+   ledger under it — so the band and the rows it points at are one colour. */
+.noticeWarn {
+  composes: notice;
+  border-top-color: var(--tone-warn);
+}
+
+.noticeWarnTitle {
+  /* `t-cell-strong` said again rather than inherited through `.noticeTitle`:
+     `composes` copies the class it names, not the chain that class itself
+     composes. */
+  composes: t-cell-strong from global;
+  composes: noticeTitle;
+  color: var(--tone-warn);
 }
 
 /* The lead line of a panel that has one sentence in it — the refusal's `next:`
@@ -710,6 +747,17 @@
 .action:hover {
   color: var(--gold);
   border-color: var(--gold-44);
+}
+
+/* The refusal's `next:` line where the refusal answered a control in a table
+   cell — the sentence saying what to do instead, on its own flex line rather
+   than a fourth word after the message: it reads as a footnote or it does not
+   read. `.refusalNext` above is the same sentence on a page that has room for
+   a panel. */
+.outcomeNext {
+  composes: t-cell from global;
+  flex: 0 0 100%;
+  color: var(--muted);
 }
 
 .signin {
