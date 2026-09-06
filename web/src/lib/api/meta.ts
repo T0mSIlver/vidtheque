@@ -18,9 +18,7 @@ import type { Meta } from "./schemas";
 // answers with a JSON *error* body, so a read that guards only against a parse
 // failure never notices it. Any non-2xx takes the honest path.
 export type MetaOutcome =
-  | { kind: "ok"; meta: Meta }
-  | { kind: "rate_limited" }
-  | { kind: "unreachable" };
+  { kind: "ok"; meta: Meta } | { kind: "rate_limited" } | { kind: "unreachable" };
 
 /** The masthead line. The size of the corpus is a fact about the corpus, not
  *  about this search, so it belongs beside the wordmark and not in the count

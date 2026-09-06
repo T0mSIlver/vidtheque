@@ -52,9 +52,7 @@ describe("the reader's chrome at /demo", () => {
     // The rest of that line, and the two base lines under it.
     expect(screen.getByText(/· MIT · self-hosted\./)).toBeInTheDocument();
     expect(screen.getByText("the knowledge of the builders, on tap")).toBeInTheDocument();
-    expect(
-      screen.getByText("early development · schemas can still change"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("early development · schemas can still change")).toBeInTheDocument();
   });
 
   it("wraps whatever state the page is in, so no state loses the line", async () => {
@@ -96,9 +94,9 @@ describe("the reader's chrome at /demo", () => {
   it("says a spent bucket is a spent bucket, and disables a copy with nothing to copy", async () => {
     await mountWith({ kind: "rate_limited" });
 
-    expect(
-      screen.getAllByText("unavailable while rate limited — reload in a minute"),
-    ).toHaveLength(2);
+    expect(screen.getAllByText("unavailable while rate limited — reload in a minute")).toHaveLength(
+      2,
+    );
     expect(document.body.textContent).not.toMatch(/undefined/);
     for (const button of screen.getAllByRole("button", { name: "copy" })) {
       expect(button).toBeDisabled();
