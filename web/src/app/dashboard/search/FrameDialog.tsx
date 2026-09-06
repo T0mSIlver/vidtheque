@@ -47,14 +47,25 @@ export function FrameDialog({ shot, onClose }: { shot: Shot | null; onClose: () 
     if (!shot && node.open) node.close();
   }, [shot]);
 
+  // Escape is the platform's, and the only way back from it is the element's
+  // own `close` event. A native listener rather than React's `onClose`: `close`
+  // does not bubble, so it is the one dialog event a delegating renderer has
+  // had to special-case, and a page whose overlay will not reopen because that
+  // special case moved is not a thing to find out in production. `close()`
+  // raises it too, and the effect above only calls that while the dialog is
+  // open, so the two cannot loop.
+  useEffect(() => {
+    const node = dialog.current;
+    if (!node) return;
+    const closed = () => onClose();
+    node.addEventListener("close", closed);
+    return () => node.removeEventListener("close", closed);
+  }, [onClose]);
+
   return (
     <dialog
       aria-labelledby="shot-caption"
       className={styles.frameDialog}
-      // Escape and the close button both raise `close`; so does `close()`
-      // itself, and the effect above only calls it while the dialog is open,
-      // so there is no loop between the two.
-      onClose={onClose}
       // The dialog element *is* the backdrop: `.frameInner` covers every pixel
       // of the box, so a click that landed on the dialog itself landed outside
       // the picture.
