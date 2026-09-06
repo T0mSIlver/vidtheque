@@ -70,6 +70,20 @@ function policy(nonce: string, isDev: boolean): string {
   ].join("; ");
 }
 
+// The management surface's root. Spelled here rather than imported from
+// `lib/dashboard/client`: that module is the browser's fetch client, and the
+// proxy runs on the edge runtime with nothing of it loaded.
+const DASHBOARD = "/dashboard";
+
+/** Is this document one of the management surface's pages?
+ *
+ *  Only the pages reach this function at all — the matcher below names them one
+ *  by one and lets nothing else under the prefix through — so a prefix test is
+ *  exact here and stays exact when the next page is added to that list. */
+function isDashboard(pathname: string): boolean {
+  return pathname === DASHBOARD || pathname.startsWith(`${DASHBOARD}/`);
+}
+
 export function proxy(request: NextRequest): NextResponse {
   const nonce = btoa(crypto.randomUUID());
   const csp = policy(nonce, process.env.NODE_ENV !== "production");
@@ -85,6 +99,13 @@ export function proxy(request: NextRequest): NextResponse {
   response.headers.set("X-Frame-Options", "DENY");
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("Referrer-Policy", "no-referrer");
+  // A management page describes state that changes under the reader, and a
+  // shared cache must never hold one — `dashboard/views.py` sent this with
+  // every document it rendered and the header is the page's, not the payload's
+  // (`lib/dashboard/client.ts` already says `no-store` on the reads). It is
+  // scoped to `/dashboard` because the landing and the demo are the same
+  // document for everyone and are meant to be cached.
+  if (isDashboard(request.nextUrl.pathname)) response.headers.set("Cache-Control", "no-store");
   return response;
 }
 

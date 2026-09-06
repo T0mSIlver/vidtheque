@@ -47,6 +47,27 @@ describe("proxy", () => {
     expect(headers.get("Referrer-Policy")).toBe("no-referrer");
   });
 
+  // `dashboard/views.py` sent `Cache-Control: no-store` with every document it
+  // rendered, for a reason the port does not change: a management page
+  // describes state that moves under the reader, some of it behind a session
+  // cookie, and a shared cache holding one is somebody else's dashboard.
+  it("says no-store on a dashboard document and nothing else", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    for (const path of [
+      "/dashboard",
+      "/dashboard/ledger",
+      "/dashboard/videos/kCc8FmEb1nY",
+      "/dashboard/login",
+    ]) {
+      expect(send(path).headers.get("Cache-Control"), path).toBe("no-store");
+    }
+    // The two public documents are the same page for every reader, and a
+    // front-end cache in front of them is the point.
+    for (const path of ["/", "/demo", "/videos", "/videos/kCc8FmEb1nY"]) {
+      expect(send(path).headers.get("Cache-Control"), path).toBeNull();
+    }
+  });
+
   it("sends §1b's policy verbatim in production, nonce and all", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("VIDTHEQUE_API_URL", API);
