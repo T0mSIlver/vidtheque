@@ -11,10 +11,9 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type RefCallb
 // `autofocus` on the query box — a search that costs three vector legs is not
 // one to run 450 ms after every pause in the typing.
 //
-// **This file belongs at `web/src/app/dashboard/band.ts`.** It is under
-// `search/` only because the port split the dashboard between two agents and
-// this one owns `search/**`; the videos table imports it across that boundary
-// until it can be lifted.
+// It sits beside the pages rather than inside one of them: the videos table is
+// the band that runs it and the search page is the band that does not, and a
+// hook two surfaces choose between belongs above both of them.
 //
 // What it buys is a band you *use* rather than a form you fill in and then have
 // to remember to submit: a picker submits the moment it changes, a text field

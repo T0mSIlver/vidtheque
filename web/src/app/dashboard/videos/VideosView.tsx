@@ -6,6 +6,7 @@ import { Pill } from "@/components/Pill";
 import { dashboard, DashboardError, ROOT } from "@/lib/dashboard/client";
 import type { Library, LibraryRow } from "@/lib/dashboard/schemas";
 import { count, day, duration } from "@/lib/format";
+import { useFilterBand } from "../band";
 import dash from "../dashboard.module.css";
 import {
   DashLink,
@@ -17,9 +18,6 @@ import {
   Unbroken,
   useWriteSide,
 } from "../parts";
-// The band's script lives under `search/` only because the port split the
-// dashboard between two agents; it belongs at `../band`.
-import { useFilterBand } from "../search/band";
 import { useRead } from "../useRead";
 import { ReindexControl } from "./Manage";
 import styles from "./videos.module.css";
