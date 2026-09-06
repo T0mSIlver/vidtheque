@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
@@ -301,10 +301,17 @@ describe("one follow's page", () => {
       await userEvent.click(screen.getByRole("button", { name: "Try again" }));
 
       expect(posts[0].path).toBe("/dashboard/following/andrej-karpathy/state");
-      await screen.findAllByText("active");
-      expect(screen.queryByText("E_RATE_LIMIT")).not.toBeInTheDocument();
+      // The wait is on the assertion rather than on a word that arrives ahead
+      // of it. `active` comes off the write's own outcome and the cleared pill
+      // off the read that follows, so a query run the moment the state word
+      // lands is a query run one reading early — which is what it was, twice
+      // in five passes on a loaded box.
+      await waitFor(() => {
+        expect(screen.queryByText("E_RATE_LIMIT")).not.toBeInTheDocument();
+        expect(reads()).toBe(2);
+      });
+      expect(screen.getAllByText("active").length).toBeGreaterThan(0);
       expect(screen.queryByText("the source rate-limited this box")).not.toBeInTheDocument();
-      expect(reads()).toBe(2);
       // The control comes back: Pause follows Resume, and none of these
       // actions is a one-shot.
       expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
