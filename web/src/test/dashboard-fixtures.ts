@@ -59,6 +59,7 @@ export const OWNER_OVERVIEW = {
   corpus: {
     videos: 4,
     queryable_videos: 3,
+    videos_ready: 3,
     videos_by_index_state: { indexing: 1, ready: 3 },
     data_status: "indexing",
     cues: 10,
@@ -77,7 +78,7 @@ export const OWNER_OVERVIEW = {
     { tag: "topic:attention", videos: 3 },
     { tag: "series:gpu-mode", videos: 1 },
   ],
-  gaps: { transcript_no_ocr: 1, indexing: 1, failed: 0 },
+  gaps: { transcript_no_ocr: 1, indexing: 1, failed: 0, failed_cap: 5, failed_capped: false },
   embed_backlog: { text: 0, frame: 0 },
   jobs: { active: 2, running: 1, deferred: 1, failed_recent: 1, failed_window_s: 86400 },
   recent: [

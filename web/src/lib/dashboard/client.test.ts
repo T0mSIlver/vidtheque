@@ -51,6 +51,7 @@ const OVERVIEW = {
   corpus: {
     videos: 4,
     queryable_videos: 3,
+    videos_ready: 3,
     videos_by_index_state: { ready: 3, indexing: 1 },
     data_status: "indexing",
     cues: 10,
@@ -62,7 +63,7 @@ const OVERVIEW = {
   },
   channels: [{ channel: "GPU MODE", videos: 1, seconds: 3600 }],
   tags: [{ tag: "topic:attention", videos: 3 }],
-  gaps: { transcript_no_ocr: 1, indexing: 1, failed: 0 },
+  gaps: { transcript_no_ocr: 1, indexing: 1, failed: 0, failed_cap: 5, failed_capped: false },
   embed_backlog: { text: 0, frame: 0 },
   jobs: { active: 2, running: 1, deferred: 1, failed_recent: 1, failed_window_s: 86400 },
   recent: [
