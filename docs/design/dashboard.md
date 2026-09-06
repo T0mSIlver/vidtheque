@@ -2617,6 +2617,29 @@ rendered rather than a value it computed:
   `read_models.drift_reason` — so a control cannot be disabled here for a
   reason §22's list states differently.
 
+**Two more from the same audit** *(2026-09-06)*, both additive over reads
+already taken:
+
+- **`writes_allowed` on `/api/overview` and `/api/ledger`.** The Indexing
+  statepair and the drift banner are drawn on those two pages and the Jinja
+  templates read the flag out of the page context; a React rendering that has
+  to wait on `/api/session` for it is a rendering that flips under the reader.
+  Same name, same boolean, same `Database` as the session's field, and **not
+  in the projection** — `/api/session` publishes it to an anonymous browser
+  already, so keeping it off a payload that answers for the same deployment
+  would hide nothing and disagree with the endpoint next door. The *reason*
+  stays where it was: `drift_reason` names a config key and a table's declared
+  width, and that is the operator's box.
+- **A refusal names what it could not find.** `/api/jobs/{job_id}`'s 404 said
+  `no such job.` and the page it replaced said `"{job_id}" is not a job on
+  this instance.` — which is also what `writes.cancel_job` and
+  `writes.retry_job` refuse a stale row with. Policy text is Python's
+  (`DECISIONS.md`, decision 5), so the id belongs in the sentence rather than
+  in the client that has to compose one; the unknown video
+  (`"{video_id}" is not in the corpus.`) and the unknown follow slug
+  (`"{slug}" is not a follow on this instance.`) already read that way and are
+  unchanged. Nothing is redacted by it: the id is the caller's own.
+
 **Does not add.** A write, a parameter, a clamp, a CORS policy, an env var, a
 second query layer, or a page. The Jinja pages keep serving until all three
 surfaces are at parity (`DECISIONS.md`), and the remaining ports —
@@ -2817,6 +2840,20 @@ two fields §2.4's phase-4 amendment names, by not sending them:
 | everything else — header, counts, origins, shots, frames, OCR lines and boxes, chapters, `data_status`, `summary_error` | unchanged: corpus, not deployment |
 | the whole table payload | unchanged |
 
+**A refused table read still says what it resolved** *(2026-09-06)*. The
+table's refusal envelope carries the `filters` block above beside `error`,
+`message` and `next` — the same block, from the same function, under the same
+name. Two things can refuse this route and neither is the clamp: a date
+`parse_corpus_time` will not take (`E_BAD_TIME_FORMAT`) and `list-videos`' own
+(`E_ORDER_SCOPE` for `order=relevance` without a `q`, and anything else the
+query layer raises). Both are raised *after* `read_models.videos_reads` has
+resolved every filter, so the block always exists at that point; the bound that
+failed, and any after it, read `null`, which is the honest answer to "which day
+did this become". Without it a client's date pickers can only redraw what was
+typed, which is the one reading the server has just said is not what it ran.
+`tags` is split before the refusal for the same reason — a list the tool itself
+would refuse echoes empty and the tool's own message, unchanged, says why.
+
 **Does not add.** A write, an env var, a CORS policy, a second query layer, a
 tool parameter, or a page. It does not change the facade's routes at this
 prefix, the cues endpoint, or any clamp number: the table's bounds are §5.2's
@@ -2989,6 +3026,15 @@ It is the resolved half of `writes._submitted` and adds no parameter, no
 refusal and no branch — the whole of `_submitted` is deliberately *not* here:
 what was typed is the client's own state, and only the values the server
 changed are the server's to report.
+
+*…and on the form's own two refusals* (2026-09-06). `E_BAD_PARAM` (nothing
+pasted) and `E_TOO_LARGE` (past `MAX_FORM_URLS`) are both raised after
+`_submitted` has resolved the three, so the refusal carries the same block
+beside `error`, `message` and `next`: an over-limit `max_items` still resolves
+to the tool's 200, and a form told "that list is too long" must not be left
+showing the 9000 it typed beside a refusal about something else. The guard's
+refusals keep the bare envelope — `require_write`, the Origin rule and the rate
+bucket answer before a field is read, and there is nothing resolved to echo.
 
 **The end of it.** The redirect branch is deleted with the last Jinja page, and
 `_wants_html`, `_to_login` and `_see` go with it. Until then both are live and
