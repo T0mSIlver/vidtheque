@@ -20,7 +20,6 @@ import {
   Unbroken,
   Unit,
 } from "./parts";
-import { useSession } from "./session";
 import { useRead } from "./useRead";
 
 // The corpus overview — `templates/overview.html`, reading
@@ -52,7 +51,6 @@ export function OverviewView() {
 }
 
 function Loaded({ data }: { data: Overview }) {
-  const session = useSession();
   const { corpus, gaps, jobs, readiness } = data;
   // The projection's own word for itself. `redacted` and the session's
   // `readonly` are the same flag read on two endpoints; this page has the
@@ -61,11 +59,13 @@ function Loaded({ data }: { data: Overview }) {
   const failedWindowHours = Math.round(jobs.failed_window_s / 3600);
 
   // The drift banner is the private half of §2.4's overview row, and the
-  // projection keeps the half a visitor can act on. The *reason* is written for
+  // projection keeps the half a visitor can act on. The flag is this payload's
+  // own (§19): a banner that appears a moment after the page, when
+  // `/api/session` lands, is a banner the reader watches arrive. The *reason* is written for
   // whoever set the env; the *effect* — that search is answering from full-text
   // alone — changes what a visitor should believe about the results, so it
   // survives with the operator's sentence cut out of it.
-  const writesRefused = Boolean(session && !session.writes_allowed && !projection);
+  const writesRefused = !data.writes_allowed && !projection;
   const drift = !readiness.vectors.enabled || writesRefused;
 
   return (
@@ -163,7 +163,12 @@ function Loaded({ data }: { data: Overview }) {
           says it is *serving* — those two tables only mean something read
           against each other. In the projection both are absent rather than
           redacted in place. */}
-      <Readiness readiness={readiness} redacted={projection} drift={drift}>
+      <Readiness
+        drift={drift}
+        readiness={readiness}
+        redacted={projection}
+        writesAllowed={data.writes_allowed}
+      >
         {data.declared_models?.length || readiness.worker?.models.length ? (
           <div className={`${styles.split} ${styles.models}`}>
             {data.declared_models?.length ? (

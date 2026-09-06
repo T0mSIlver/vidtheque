@@ -48,6 +48,7 @@ const READINESS = {
 const OVERVIEW = {
   counted_at: 1788626080,
   redacted: false,
+  writes_allowed: true,
   corpus: {
     videos: 4,
     queryable_videos: 3,

@@ -557,6 +557,41 @@ describe("the videos table", () => {
       expect(screen.getByLabelText("Order")).toBeInTheDocument();
     });
 
+    // Both refusals on this route are raised after every filter has resolved,
+    // so the refusal carries the same `filters` block the 200 does (§20). The
+    // pickers and the line under the title redraw from it: a box still holding
+    // `2999-01-01` beside a refusal is the page vouching for a bound the
+    // server has just said is not the one it took.
+    it("seeds the band from the filters a refusal echoed", async () => {
+      await mount(
+        {
+          status: 400,
+          body: {
+            error: "E_ORDER_SCOPE",
+            message: "order=relevance needs a query to be relevant to.",
+            next: "pass q=…, or use order=recency.",
+            filters: {
+              ...OWNER_LIBRARY.filters,
+              channel: "Andrej Karpathy",
+              index_state: "failed",
+              published_after: 1767225600,
+            },
+          },
+        },
+        {
+          search: "order=relevance&channel=Karpathy&index_state=failed&published_after=2999-01-01",
+        },
+      );
+
+      expect(
+        await screen.findByText("order=relevance needs a query to be relevant to."),
+      ).toBeInTheDocument();
+      expect(screen.getByLabelText("Channel")).toHaveValue("Andrej Karpathy");
+      expect(screen.getByLabelText("Published on or after")).toHaveValue("2026-01-01");
+      const head = within(screen.getByRole("heading", { name: "Videos" }).closest("div")!);
+      expect(head.getByText("2026-01-01 – …")).toBeInTheDocument();
+    });
+
     // The Jinja view rendered the band with *every* refusal it owned, whatever
     // the status: a 500 takes the same page a 400 does, and a reader who lost
     // the whole band to one has lost the query they typed as well.

@@ -72,8 +72,14 @@ export class DashboardError extends Error {
   readonly next?: string;
   /** Seconds, from `Retry-After`, on a 429 or a 503. */
   readonly retryAfter?: number;
+  /** The refused body, whole. Two routes answer a refusal with what the server
+   *  had already resolved beside the envelope's three fields — the videos
+   *  table's `filters` and the index form's `accepted` (dashboard.md §20, §21)
+   *  — and the page that asked is the one that knows which shape to expect, so
+   *  it is carried unparsed and read with `echoOf`. */
+  readonly body: unknown;
 
-  constructor(status: number, envelope: PartialRefusal, retryAfter?: number) {
+  constructor(status: number, envelope: PartialRefusal, retryAfter?: number, body?: unknown) {
     super(envelope.message ?? `HTTP ${status}`);
     this.name = "DashboardError";
     this.status = status;
@@ -82,7 +88,20 @@ export class DashboardError extends Error {
     // the two absences become one.
     this.next = envelope.next ?? undefined;
     this.retryAfter = retryAfter;
+    this.body = body;
   }
+}
+
+/** What a refusal echoed, against the shape the route promises — or `null`.
+ *
+ *  Never a throw and never a `DashboardShapeError`: the page has a refusal to
+ *  render either way, and an instance that predates the echo is a page that
+ *  seeds its controls the way it did before, not a page that breaks over a
+ *  field it only wanted for a redraw. */
+export function echoOf<T>(error: unknown, schema: ZodType<T>): T | null {
+  if (!(error instanceof DashboardError)) return null;
+  const parsed = schema.safeParse(error.body);
+  return parsed.success ? parsed.data : null;
 }
 
 /** A body that did not parse against its schema — a contract change, loudly. */
@@ -465,14 +484,16 @@ export type DashboardClient = ReturnType<typeof createDashboardClient>;
 async function toError(res: Response): Promise<DashboardError> {
   const retryAfter = Number(res.headers.get("retry-after")) || undefined;
   let envelope: PartialRefusal = {};
+  let body: unknown;
   try {
-    const parsed = PartialRefusal.safeParse(await res.json());
+    body = await res.json();
+    const parsed = PartialRefusal.safeParse(body);
     if (parsed.success) envelope = parsed.data;
   } catch {
     // A non-JSON body — a proxy's HTML 502, or the rate limiter's bare 429 —
     // is still a typed error here, just one with no message of its own.
   }
-  return new DashboardError(res.status, envelope, retryAfter);
+  return new DashboardError(res.status, envelope, retryAfter, body);
 }
 
 /** The instance the pages use. Same origin, real cookie, real navigation. */
