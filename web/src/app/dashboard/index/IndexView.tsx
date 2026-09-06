@@ -1,10 +1,10 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useCallback, useRef, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useSyncExternalStore, type FormEvent } from "react";
 import { Pill } from "@/components/Pill";
 import { dashboard, ROOT } from "@/lib/dashboard/client";
-import type { IndexOutcome } from "@/lib/dashboard/schemas";
+import { IndexOutcome } from "@/lib/dashboard/schemas";
 import dash from "../dashboard.module.css";
 import {
   CHANNEL_BOXES,
@@ -77,6 +77,91 @@ const MAX_PREFILL_TAGS_CHARS = 800;
 /** The two ids the "already indexed" line prints before it says "and more". */
 const ALREADY_SHOWN = 10;
 
+// ------------------------------------------------------- the durable receipt
+
+/**
+ * Where the receipt lives between page loads, now that no `303` puts it there.
+ *
+ * `writes.index_submit` answered a browser with `POST → 303 → GET`, so what an
+ * operator was left looking at was a document they could reload, bookmark and
+ * come back to. A receipt held in component state is gone the moment anything
+ * reloads the page — which on this page is a reader pressing Ctrl-R to see
+ * whether the queue moved, and finding no evidence they ever submitted.
+ *
+ * **`sessionStorage`, not the URL.** The URL is the form's prefill and belongs
+ * to whoever built the link; a receipt pushed into it would be a link that
+ * re-prints somebody else's job ids. `sessionStorage` is this tab's and dies
+ * with it, which is the same lifetime the `303`'s document had.
+ *
+ * It is read as an *external store* rather than seeded into state, because
+ * that is what it is: this shell renders on the server with no storage at all,
+ * so the server snapshot is "no receipt" and the browser's first commit brings
+ * in what is stored — with no state written from an effect.
+ */
+const RECEIPT_KEY = "vidtheque:index:receipt";
+
+const receiptListeners = new Set<() => void>();
+let receiptRaw: string | null = null;
+let receiptValue: IndexOutcome | null = null;
+
+function storedReceipt(): IndexOutcome | null {
+  let raw: string | null = null;
+  try {
+    raw = window.sessionStorage.getItem(RECEIPT_KEY);
+  } catch {
+    // A browser with site data blocked. The receipt is a convenience and its
+    // absence is the state this page had before it was durable at all.
+    raw = null;
+  }
+  // The snapshot has to be the same object when nothing changed, or the store
+  // re-renders forever.
+  if (raw === receiptRaw) return receiptValue;
+  receiptRaw = raw;
+  receiptValue = null;
+  if (raw) {
+    try {
+      const parsed = IndexOutcome.safeParse(JSON.parse(raw));
+      receiptValue = parsed.success ? parsed.data : null;
+    } catch {
+      receiptValue = null;
+    }
+  }
+  return receiptValue;
+}
+
+/** Keep this outcome, or drop what is kept. Dropping is what a *new* submit
+ *  does: a refusal must not be read over the receipt of the batch before it. */
+function keepReceipt(outcome: IndexOutcome | null): void {
+  try {
+    if (outcome) window.sessionStorage.setItem(RECEIPT_KEY, JSON.stringify(outcome));
+    else window.sessionStorage.removeItem(RECEIPT_KEY);
+  } catch {
+    // Nothing to do and nothing to say: the page still renders the outcome it
+    // has in hand for as long as it is on screen.
+  }
+  for (const listener of receiptListeners) listener();
+}
+
+function subscribeReceipt(listener: () => void): () => void {
+  receiptListeners.add(listener);
+  return () => {
+    receiptListeners.delete(listener);
+  };
+}
+
+function useReceipt(): [IndexOutcome | null, (outcome: IndexOutcome | null) => void] {
+  return [useSyncExternalStore(subscribeReceipt, storedReceipt, () => null), keepReceipt];
+}
+
+/** Write a value into one of the form's own controls. The three the server
+ *  resolves are written back this way rather than held in state — see `Form`. */
+function setControl(form: HTMLFormElement, name: string, value: string): void {
+  const control = form.elements.namedItem(name);
+  if (control instanceof HTMLInputElement || control instanceof HTMLSelectElement) {
+    control.value = value;
+  }
+}
+
 export function IndexView() {
   const session = useSessionRead();
   const { rendered, indexable } = useWriteSide();
@@ -119,7 +204,7 @@ export function IndexView() {
         )}
       </PageHead>
 
-      <Form indexable={indexable} />
+      <Form indexable={indexable} reason={session.data.writes_refused_reason} />
     </>
   );
 }
@@ -173,7 +258,7 @@ function Absent() {
  * was typed still in it, which is the whole reason the two refusals this route
  * has are inline rather than an error page.
  */
-function Form({ indexable }: { indexable: boolean }) {
+function Form({ indexable, reason }: { indexable: boolean; reason: string | null }) {
   const params = useSearchParams();
   const search = params.toString();
   const seed = prefill(params);
@@ -182,16 +267,41 @@ function Form({ indexable }: { indexable: boolean }) {
   // makes, not by anything that renders, and a `setState` here would put the
   // POST a render behind the form it came from.
   const fields = useRef<Record<string, string>>({});
+  const form = useRef<HTMLFormElement>(null);
   const send = useCallback(() => dashboard.indexUrls(fields.current), []);
-  const [write, run] = useWrite(send);
+  const [receipt, keep] = useReceipt();
+  const [write, run] = useWrite(send, keep);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     fields.current = formFields(event.currentTarget);
+    // The previous batch's receipt goes with the submission that replaces it:
+    // a refusal read over the receipt of the batch before it is a page saying
+    // two things about one click.
+    keep(null);
     run();
   }
 
   const refusal = write.status === "failed" ? refusalOf(write.error) : null;
+
+  // What the server actually ran on, written back into the three controls it
+  // resolved. `_submitted` clamped `max_items` to the tool's 1..200 and fell
+  // both vocabularies back to their defaults, and the Jinja page re-rendered
+  // the form from that — so a reader who typed `max_items=9000` saw the 200
+  // the batch used. A clamp nobody is shown is a clamp that looks like a bug
+  // in the thing that clamped.
+  //
+  // The DOM rather than state, and only these three: the form is uncontrolled
+  // because the browser owns what is being typed, and re-keying it to reseed
+  // three pickers would throw away the URLs in the textarea — which the Jinja
+  // re-render kept.
+  const accepted = write.status === "done" ? write.outcome.accepted : undefined;
+  useEffect(() => {
+    if (!form.current || !accepted) return;
+    setControl(form.current, "max_items", String(accepted.max_items));
+    setControl(form.current, "expand", accepted.expand);
+    setControl(form.current, "priority", accepted.priority);
+  }, [accepted]);
 
   return (
     <>
@@ -199,19 +309,20 @@ function Form({ indexable }: { indexable: boolean }) {
           rather than accepting a submission that comes back
           `E_FEATURE_DISABLED` after the operator has typed sixty URLs into it.
 
-          The Jinja page prints `vectors.reason` here, off a context this page
-          has no payload for — the session says *that* writes are refused, not
-          *why*. The reason is on the readiness strip, so the sentence points at
-          it rather than composing a second explanation of its own. */}
+          The mismatch is printed in the instance's own words, which is what
+          the Jinja page did with `vectors.reason`: `_assert_dimensions` turns
+          `writes_allowed` off and writes that sentence in the same breath, and
+          a form refused with no reason is a form an operator retypes. It is
+          `null` where writes are allowed and `null` in the projection, so the
+          line is the sentence or nothing — never a sentence about nothing. */}
       {indexable ? null : (
         <section className={dash.notice} aria-labelledby="refused">
           <h2 className={dash.noticeTitle} id="refused">
             Indexing is disabled on this instance.
           </h2>
           <p className={dash.noticeDetail}>
-            The corpus config and the vector tables disagree.{" "}
-            <DashLink href={ROOT}>The overview&rsquo;s readiness strip</DashLink> carries the
-            mismatch in the instance&rsquo;s own words.
+            The corpus config and the vector tables disagree
+            {reason ? <>: {reason}</> : <>.</>}
           </p>
           <p className={dash.noticeNext}>Fix the config or dimension mismatch and restart.</p>
         </section>
@@ -229,9 +340,9 @@ function Form({ indexable }: { indexable: boolean }) {
         </section>
       ) : null}
 
-      {write.status === "done" ? <Receipt outcome={write.outcome} /> : null}
+      {receipt ? <Receipt outcome={receipt} /> : null}
 
-      <form className={styles.form} key={search} onSubmit={submit}>
+      <form className={styles.form} key={search} ref={form} onSubmit={submit}>
         <div className={`${dash.field} ${styles.block}`}>
           <label htmlFor="i-urls">URLs</label>
           <textarea
@@ -347,7 +458,10 @@ function Form({ indexable }: { indexable: boolean }) {
 
         <div className={`${dash.field} ${dash.actions} ${styles.actions}`}>
           <button
-            className={dash.ghostlink}
+            // The page's one real action, at the weight `dashboard.css` gave
+            // every bare `<button>`: the ground under it is what makes "Queue
+            // the job" read louder than the link to the jobs list beside it.
+            className={dash.button}
             type="submit"
             disabled={!indexable || write.status === "sending"}
             // The database's own flag, said where a reader meets it: the rail's
