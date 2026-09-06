@@ -721,6 +721,10 @@ class VideosReads:
     epochs and the float the tool rendered to `2023-01-17` and `1:56:40` on its
     way out. ``error`` is a refusal (a date that will not parse, or the tool's
     own), in which case there are no rows and the caller answers with it.
+
+    ``filters``, ``resolved``, ``order``, ``limit``, ``offset`` and ``tags``
+    are set before either refusal can be raised, so a refused read still
+    describes the query the server resolved (§20).
     """
 
     filters: dict[str, Any]
@@ -816,12 +820,24 @@ async def videos_reads(request: Request) -> VideosReads:
     # it, so the reader can fix the one that broke instead of losing the query.
     for name in DATE_PARAMS:
         filters.setdefault(name, "")
+    # Split here rather than beside the count below, because the refusal
+    # carries the resolved filters too (§20) and an empty list beside a
+    # `tags=` in the URL would be the payload's own answer to "what did you
+    # filter on". A list the *tool* will refuse — more than ten, or a string
+    # past its ceiling — echoes empty and is refused by `list_videos` in the
+    # next breath, with its own message: this parse must never become a
+    # second refusal saying the same thing one layer earlier.
+    try:
+        tag_list = split_csv(tags, 10, "tags")
+    except ToolError:
+        tag_list = []
     base = VideosReads(
         filters=filters,
         resolved=dict(dates),
         order=order,
         limit=limit,
         offset=offset,
+        tags=tag_list,
         notes=notes,
     )
     if date_error is not None:
@@ -867,7 +883,6 @@ async def videos_reads(request: Request) -> VideosReads:
     # by the tool, because a tool that grows a parameter to please a page is how
     # the two surfaces stop sharing one query layer.
     filter_states = queries.INDEX_STATES if index_state == "all" else (index_state,)
-    tag_list = split_csv(tags, 10, "tags")
     pool = await assembled.db.read(
         lambda c: queries.resolve_videos(
             c,
@@ -907,7 +922,6 @@ async def videos_reads(request: Request) -> VideosReads:
         rows=rows,
         pagination=payload.get("pagination", {}),
         total=total,
-        tags=tag_list,
     )
 
 

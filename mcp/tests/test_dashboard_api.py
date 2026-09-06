@@ -766,6 +766,63 @@ def test_the_owner_sees_the_box_the_demo_does_not(tmp_path: Path) -> None:
     assert str(tmp_path) not in json.dumps(body)
 
 
+def test_both_corpus_reads_say_whether_this_instance_may_write(
+    tmp_path: Path,
+) -> None:
+    """§19, 2026-09-06: `writes_allowed` on the overview and the ledger.
+
+    The Indexing statepair and the drift banner are on these two pages, and
+    they were reading the flag out of the page context. A React rendering that
+    has to wait on `/api/session` to learn it is a rendering that flips under
+    the reader — so the fact travels on the payload that draws it, under the
+    session's own name and off the same `Database`.
+    """
+    with owner_client(tmp_path) as client:
+        allowed = (read(client, OVERVIEW, headers=BEARER),
+                   read(client, LEDGER, headers=BEARER))
+        client.app.state.assembled.db.writes_allowed = False
+        try:
+            refused = (read(client, OVERVIEW, headers=BEARER),
+                       read(client, LEDGER, headers=BEARER))
+        finally:
+            client.app.state.assembled.db.writes_allowed = True
+
+    for body in allowed:
+        assert body["writes_allowed"] is True
+    for body in refused:
+        assert body["writes_allowed"] is False
+
+
+def test_the_write_flag_is_a_deployment_fact_and_not_a_redacted_one(
+    tmp_path: Path,
+) -> None:
+    """It is kept out of nothing, because `/api/session` publishes it to an
+    anonymous browser already — and that is the field these two must match.
+
+    What stays behind the projection is the *reason*: `drift_reason` names a
+    config key and a table's declared width, which is the operator's box.
+    """
+    with make_client(tmp_path, public=DEMO) as demo:
+        demo.app.state.assembled.db.writes_allowed = False
+        demo.app.state.assembled.db.vectors.disable(PRIVATE_REASON)
+        try:
+            session = read(demo, SESSION)
+            overview = read(demo, OVERVIEW)
+            ledger = read(demo, LEDGER)
+        finally:
+            demo.app.state.assembled.db.writes_allowed = True
+            demo.app.state.assembled.db.vectors.enabled = True
+            demo.app.state.assembled.db.vectors.reason = None
+
+    # Anonymous, redacted, and told the same thing three times.
+    assert session["signed_in"] is False and overview["redacted"] is True
+    assert session["writes_allowed"] is False
+    assert overview["writes_allowed"] == ledger["writes_allowed"] is False
+    # The flag, never the sentence behind it.
+    assert session["writes_refused_reason"] is None
+    assert PRIVATE_REASON not in json.dumps([overview, ledger])
+
+
 # ----------------------------------------------------- the videos table (§20)
 
 
@@ -1014,6 +1071,66 @@ def test_the_table_orders_and_filters_the_way_the_page_does(tmp_path: Path) -> N
         assert bad.status_code == 400
         assert bad.json()["error"] == "E_BAD_TIME_FORMAT"
         assert bad.json()["next"]
+
+
+def test_a_refused_table_read_still_says_what_it_resolved(tmp_path: Path) -> None:
+    """§20, 2026-09-06: the refusal carries the same `filters` block.
+
+    Both refusals this route can answer with are raised after every filter has
+    been resolved — a date `parse_corpus_time` will not take, and the tool's
+    own `E_ORDER_SCOPE` — so the envelope can say which query the server was
+    holding when it refused. Without it a client's date pickers have only what
+    was typed to redraw from, which is the one reading the server has just
+    said is not the one that ran.
+    """
+    with owner_client(tmp_path) as client:
+        # The bad bound is the third of the four, so the two before it are
+        # resolved and it is `null` — which is the honest answer to "what day
+        # did this become".
+        refused = client.get(
+            f"{LIBRARY}?published_after=2024-02-20&indexed_after=nonsense"
+            "&index_state=failed&has=ocr&tags=topic:attention&q=gpt",
+            headers=BEARER,
+        )
+        assert refused.status_code == 400
+        body = refused.json()
+        assert body["error"] == "E_BAD_TIME_FORMAT" and body["next"]
+        filters = body["filters"]
+        assert iso_day(filters["published_after"]) == "2024-02-20"
+        assert filters["indexed_after"] is None and filters["indexed_before"] is None
+        # …and the seven non-date controls, so a band renders whole.
+        assert filters["q"] == "gpt" and filters["has"] == "ocr"
+        assert filters["index_state"] == "failed"
+        assert filters["tags"] == ["topic:attention"]
+        assert filters["channel"] is None
+
+        # The tool's own refusal, where every bound did resolve.
+        scoped = client.get(f"{LIBRARY}?order=relevance&published_before=2024-02-20",
+                            headers=BEARER)
+        assert scoped.status_code == 400
+        assert scoped.json()["error"] == "E_ORDER_SCOPE"
+        # `_before` is exclusive: the start of the day after the one asked for.
+        assert iso_day(scoped.json()["filters"]["published_before"]) == "2024-02-21"
+
+        # One block, one name: the refusal's keys are the table's own.
+        served = read(client, LIBRARY, headers=BEARER)
+        assert set(scoped.json()["filters"]) == set(served["filters"])
+
+
+def test_the_refused_tables_echo_is_the_same_under_the_projection(
+    tmp_path: Path,
+) -> None:
+    """The table is not redacted (§2.4) and neither is its refusal: the echo is
+    the demo's own query read back, and the envelope is the same envelope."""
+    query = f"{LIBRARY}?indexed_before=nonsense&published_after=2024-02-20&has=frames"
+    with make_client(tmp_path, public=DEMO) as demo:
+        refused = demo.get(query)
+    with owner_client(tmp_path) as client:
+        owner = client.get(query, headers=BEARER)
+
+    assert refused.status_code == owner.status_code == 400
+    assert refused.json() == owner.json()
+    assert iso_day(refused.json()["filters"]["published_after"]) == "2024-02-20"
 
 
 # ---------------------------------------------------- the video detail (§20)
@@ -1943,6 +2060,40 @@ def test_the_job_details_new_fields_carry_no_rendered_clock(tmp_path: Path) -> N
             assert not ISO_STAMP.search(grown), f"a rendered date reached {path}"
             assert not SPOKEN_DURATION.search(grown), f"a rendered duration reached {path}"
             assert not re.search(r'"\d+:\d{2}(?::\d{2})?"', grown), path
+
+
+def test_an_unknown_job_is_a_typed_404_that_names_the_id(tmp_path: Path) -> None:
+    """The message the page printed, restored (2026-09-06).
+
+    Policy text is Python's, and this one said `"{job_id}" is not a job on this
+    instance.` — the sentence `writes.cancel_job` and `writes.retry_job` still
+    refuse with, and the shape the unknown video and the unknown slug kept. A
+    bare "no such job." makes the client the one that has to say which job it
+    asked about, on the one page whose whole subject is an id.
+    """
+    with owner_client(tmp_path) as client:
+        response = client.get(f"{ROOT}/api/jobs/job_not_here", headers=BEARER)
+        assert response.status_code == 404
+        assert response.headers["cache-control"] == "no-store"
+        body = response.json()
+        assert body["error"] == "E_UNKNOWN_JOB"
+        assert body["message"] == '"job_not_here" is not a job on this instance.'
+        assert body["next"]
+
+        # And the write side refuses the same id in the same words, so a table
+        # showing a stale row reads one sentence whichever call found it gone.
+        cancelled = client.post(
+            f"{ROOT}/jobs/job_not_here/cancel",
+            headers={**BEARER, **SAME_ORIGIN},
+            follow_redirects=False,
+        )
+        assert cancelled.json()["message"] == body["message"]
+
+    # Policy text is not deployment detail: the demo is told the same thing.
+    with make_client(tmp_path, public=DEMO) as demo:
+        assert demo.get(f"{ROOT}/api/jobs/job_not_here").json()["message"] == (
+            '"job_not_here" is not a job on this instance.'
+        )
 
 
 # ------------------------------------ what only the Jinja pages used to pin

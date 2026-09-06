@@ -120,17 +120,25 @@ def _json(payload: dict[str, Any], status: int = 200) -> JSONResponse:
     return JSONResponse(payload, status_code=status, headers=NO_STORE)
 
 
-def _refusal(error: dict[str, Any]) -> JSONResponse:
-    """A tool's typed refusal, as the envelope `/api/*` already answers with."""
+def _refusal(error: dict[str, Any], *, echo: dict[str, Any] | None = None) -> JSONResponse:
+    """A tool's typed refusal, as the envelope `/api/*` already answers with.
+
+    `echo` is what the server had already resolved when it refused, merged in
+    beside the three envelope fields under the names the success payload uses
+    — today only the videos table's `filters` (§20). A refusal that drops the
+    resolved query leaves the controls that composed it with nothing to render
+    but what was typed, which is the one reading the server has just said is
+    not what it ran.
+    """
     code = str(error.get("code") or "E_INTERNAL")
-    return _json(
-        {
-            "error": code,
-            "message": error.get("message") or "the query layer refused this request.",
-            "next": error.get("next"),
-        },
-        status=HTTP_STATUS.get(code, 500),
-    )
+    payload: dict[str, Any] = {
+        "error": code,
+        "message": error.get("message") or "the query layer refused this request.",
+        "next": error.get("next"),
+    }
+    if echo:
+        payload.update(echo)
+    return _json(payload, status=HTTP_STATUS.get(code, 500))
 
 
 def _epoch(value: Any) -> int | None:
@@ -213,6 +221,15 @@ async def overview(request: Request) -> Response:
     payload: dict[str, Any] = {
         "counted_at": int(time.time()),
         "redacted": redact,
+        # Whether this instance may write at all — `/api/session`'s field, the
+        # same boolean off the same `Database`, and it rides here for the
+        # reason §19 gives below: the Indexing statepair and the drift banner
+        # are on this payload's own page, and a rendering that waits on a
+        # second request to learn a deployment fact is a rendering that flips
+        # under the reader. Not redacted, because `/api/session` publishes it
+        # to an anonymous browser already; the *reason* stays behind
+        # `drift_reason`, which is the sentence about the operator's box.
+        "writes_allowed": bool(request.app.state.assembled.db.writes_allowed),
         "corpus": {
             "videos": int(corpus.get("videos") or 0),
             "queryable_videos": int(corpus.get("queryable_videos") or 0),
@@ -343,6 +360,10 @@ async def ledger(request: Request) -> Response:
         # no sample behind any of them, so the payload carries one clock.
         "counted_at": int(time.time()),
         "redacted": redact,
+        # The overview's field, same name and same source (§19): the ledger
+        # draws the same drift banner, and one fact must not have two
+        # spellings across two payloads that answer for one deployment.
+        "writes_allowed": bool(request.app.state.assembled.db.writes_allowed),
         "corpus": {
             # ready + the four not-ready states, which add up to this by
             # construction (`_CORPUS_SQL`'s `<> 'ready'`).
@@ -436,6 +457,33 @@ def _video_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _filters_block(data: VideosReads) -> dict[str, Any]:
+    """The query as the server resolved it — on the table and on its refusal.
+
+    One function for both, so the payload that says "here are your rows" and
+    the payload that says "that filter will not parse" describe the query the
+    same way.
+    """
+    return {
+        "q": data.filters["q"] or None,
+        "channel": data.filters["channel"] or None,
+        "tags": data.tags,
+        "has": data.filters["has"],
+        "index_state": data.filters["index_state"],
+        # The two axes, never overloaded: `published_*` picks videos,
+        # `offset_*` picks positions inside one and appears nowhere here.
+        # These are the epochs the query actually filtered on, so each
+        # `_after` is the start of its UTC day and each `_before` is the
+        # start of the day *after* the one asked for — the bound is
+        # exclusive, which is what makes `published_before` include its own
+        # date.
+        "published_after": _epoch(data.resolved.get("published_after")),
+        "published_before": _epoch(data.resolved.get("published_before")),
+        "indexed_after": _epoch(data.resolved.get("indexed_after")),
+        "indexed_before": _epoch(data.resolved.get("indexed_before")),
+    }
+
+
 async def videos(request: Request) -> Response:
     """`GET /dashboard/api/library` — the videos table (§5.2), typed.
 
@@ -458,7 +506,15 @@ async def videos(request: Request) -> Response:
     """
     data: VideosReads = await videos_reads(request)
     if data.error is not None:
-        return _refusal(data.error)
+        # The resolved query rides on the refusal too (§20, 2026-09-06). Both
+        # refusals this route can answer with — a date `parse_corpus_time`
+        # will not take, and `list-videos`' own, `E_ORDER_SCOPE` among them —
+        # are raised after `videos_reads` has resolved every filter, so the
+        # block is the same block under the same name. A date picker showing
+        # the day the server ran on has nothing else to read it out of, and
+        # the bound that *failed* is the one that reads `null`, which is the
+        # honest answer to "which day did this filter become".
+        return _refusal(data.error, echo={"filters": _filters_block(data)})
     pagination = data.pagination
     payload: dict[str, Any] = {
         "counted_at": int(time.time()),
@@ -469,24 +525,7 @@ async def videos(request: Request) -> Response:
         # Explicit, always, and never inferred from the presence of `q`: the
         # default is `relevance` with a query and `recency` without one.
         "order": data.order,
-        "filters": {
-            "q": data.filters["q"] or None,
-            "channel": data.filters["channel"] or None,
-            "tags": data.tags,
-            "has": data.filters["has"],
-            "index_state": data.filters["index_state"],
-            # The two axes, never overloaded: `published_*` picks videos,
-            # `offset_*` picks positions inside one and appears nowhere here.
-            # These are the epochs the query actually filtered on, so each
-            # `_after` is the start of its UTC day and each `_before` is the
-            # start of the day *after* the one asked for — the bound is
-            # exclusive, which is what makes `published_before` include its own
-            # date.
-            "published_after": _epoch(data.resolved.get("published_after")),
-            "published_before": _epoch(data.resolved.get("published_before")),
-            "indexed_after": _epoch(data.resolved.get("indexed_after")),
-            "indexed_before": _epoch(data.resolved.get("indexed_before")),
-        },
+        "filters": _filters_block(data),
         "videos": [_video_row(row) for row in data.rows],
         "pagination": {
             "limit": data.limit,
@@ -1228,12 +1267,20 @@ async def job_json(request: Request) -> Response:
     this contract by default (§19).
     """
     db = request.app.state.assembled.db
-    detail = await job_detail_reads(db, request.path_params["job_id"], redacted(request))
+    job_id = str(request.path_params["job_id"])
+    detail = await job_detail_reads(db, job_id, redacted(request))
     if detail is None:
         return JSONResponse(
             {
                 "error": "E_UNKNOWN_JOB",
-                "message": "no such job.",
+                # The id, in the message. Policy text is Python's, and the
+                # sentence the page printed named the thing it looked for —
+                # which is the same sentence `writes.cancel_job` and
+                # `writes.retry_job` refuse with, and the shape the unknown
+                # video and the unknown slug already had. A client that shows
+                # a refusal beside a list of ids must not be the one that has
+                # to say which of them it asked about.
+                "message": f'"{job_id}" is not a job on this instance.',
                 "next": "the jobs table lists every job this index has run.",
             },
             status_code=404,
