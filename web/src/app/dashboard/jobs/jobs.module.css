@@ -513,6 +513,10 @@
     border-bottom: 1px solid var(--seam);
   }
 
+  /* `text-align` is reset here rather than left to the cell: a `.num` column
+     carries a right alignment that, once the cell is a flex row with a fixed
+     label box, right-aligns the label inside it — so `wall clock` sat against
+     its own value instead of down the left edge with the others. */
   .jobs tbody th,
   .jobs tbody td,
   .items tbody th,
@@ -522,6 +526,7 @@
     height: auto;
     padding: 2px var(--s2);
     border: 0;
+    text-align: left;
   }
 
   /* The row's headline and its machine line are two lines, not two columns:
