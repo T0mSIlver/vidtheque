@@ -65,11 +65,11 @@ export function JobDetailView({ jobId }: { jobId: string }) {
     // refusal's own words and a way back to the table, not a retry button that
     // would produce this answer again.
     if (refusal instanceof DashboardError && refusal.status === 404) {
-      // The crumb names the id, which is the half of `views.job_detail`'s own
-      // sentence this page can still say: `/dashboard/api/jobs/{id}` answers a
-      // bare "no such job." where the page route answered `"{id}" is not a job
-      // on this instance.` — the message is policy text and is not composed
-      // here.
+      // The message names the id itself — `"{id}" is not a job on this
+      // instance.`, the sentence the page route answered with and the one
+      // `writes.cancel_job` refuses a stale row with (§19). Policy text, so it
+      // is printed and never composed here; the crumb is the way back to the
+      // table, not a second telling of what went wrong.
       return (
         <>
           <Crumbs jobId={jobId} />

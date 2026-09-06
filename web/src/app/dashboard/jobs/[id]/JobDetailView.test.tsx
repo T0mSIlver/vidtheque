@@ -333,15 +333,16 @@ describe("one job's page", () => {
   });
 
   // An id that is not a job here is not a failed read: the read succeeded and
-  // the answer is "there is no such job". It gets the refusal's own words and a
-  // way back, not a retry button that would produce the same answer.
+  // the answer is that there is no such job. It gets the refusal's own words —
+  // which name the id, as the page route's did (§19) — and a way back, not a
+  // retry button that would produce the same answer.
   it("answers an unknown id with the designed not-found rather than a retry", async () => {
     await mount(
       {
         status: 404,
         body: {
           error: "E_UNKNOWN_JOB",
-          message: "no such job.",
+          message: '"job_nope" is not a job on this instance.',
           next: "the jobs table lists every job this index has run.",
         },
       },
@@ -351,7 +352,11 @@ describe("one job's page", () => {
     // The refusal is the page, as `error.html` drew it: the message is the
     // title, the code is a state beside it, and the recovery is a panel with
     // the two standing links in it.
-    expect(await screen.findByRole("heading", { name: "no such job." })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", {
+        name: '"job_nope" is not a job on this instance.',
+      }),
+    ).toBeInTheDocument();
     expect(screen.getByText("E_UNKNOWN_JOB")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Every job this index has run" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Corpus overview" })).toBeInTheDocument();
