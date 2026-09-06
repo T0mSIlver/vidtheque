@@ -278,8 +278,13 @@ function Filters({
 
 function Table({ data, stopped, polling }: { data: Jobs; stopped: unknown; polling: boolean }) {
   const { rendered } = useWriteSide();
-  const redacted = Boolean(useSession()?.readonly);
   const { rows, queuedSince } = usePatchedRows(data);
+  // The projection this listing ran under, off the listing itself. The session
+  // is the fallback and only that: it is the same deployment answering, but it
+  // is not the read that was taken, and an instance predating the field is the
+  // only reason to ask it.
+  const readonly = Boolean(useSession()?.readonly);
+  const redacted = data.redacted ?? readonly;
 
   // Where a moved bound and a fallen-back filter are disclosed. The Jinja page
   // echoed an accepted `limit` back into the field the reader typed it into; a
@@ -374,9 +379,7 @@ function Table({ data, stopped, polling }: { data: Jobs; stopped: unknown; polli
       <Pager data={data} />
 
       {/* What this deployment does not publish — the one line a reader of the
-          demo cannot get anywhere else (`jobs.html`, §2.4). The listing carries
-          no `redacted` flag of its own, so the fact comes off the session,
-          which is the same deployment answering. */}
+          demo cannot get anywhere else (`jobs.html`, §2.4). */}
       {redacted ? (
         <p className={styles.panelNote}>
           Source URLs and error text are not published on this instance.
