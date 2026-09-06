@@ -17,19 +17,22 @@ import { RuleFields, RuleForm, ruleValues } from "./parts";
 // interval floor and both clamps are all Python's already.
 //
 // They are `fetch` rather than the Jinja page's real forms because they need
-// the answer **inline**: this page does not poll, so the row that comes back is
-// the only evidence a write leaves. It is re-read by Python after the write for
+// the answer **inline**: this page does not poll, so what comes back is the
+// only evidence a write leaves. It is re-read by Python after the write for
 // exactly that reason — `set_state` re-arms the clock when it resumes, so a
 // payload built from the row the handler read first would name the new state
 // and the old `next_check_at` in one breath.
 //
-// `onWritten` is how the page catches up, and it is the *whole* catching up:
-// §21's follow block carries `last_error_code` and `last_error_message`, so the
-// row a write answers with is a complete one — including the failure a resume
-// just cleared — and there is nothing left for a second read to find.
+// **`onWritten` re-reads the page**, which is what `writes.py` did by
+// redirecting back to it. The follow row a write answers with is complete, but
+// the row is not the page: a resume re-arms a clock the *in-flight* line reads,
+// a check queues a `follow_check` that belongs in "Recent checks", and
+// "Index anyway" makes a job that belongs in the band below it and moves the
+// decision counts and the ledger with it. Swapping the row alone left five
+// bands describing the instance as it was before the button was pressed.
 
-/** What a control hands back: the follow as it stands after the write. */
-export type Written = (follow: FollowDetailRow) => void;
+/** What a control does when the write lands: catch the page up. */
+export type Written = () => void;
 
 /**
  * Pause, resume and try-again — one route with the verb in the body.
@@ -53,7 +56,7 @@ export function StateControl({
     () => dashboard.setFollowState(follow.slug, action),
     [follow.slug, action],
   );
-  const [write, run] = useWrite(send, (outcome) => onWritten(outcome.follow));
+  const [write, run] = useWrite(send, onWritten);
   const label = paused ? (follow.state === "failing" ? "Try again" : "Resume") : "Pause";
 
   return (
@@ -79,7 +82,7 @@ export function CheckControl({
   onWritten: Written;
 }) {
   const send = useCallback(() => dashboard.checkFollowNow(follow.slug), [follow.slug]);
-  const [write, run] = useWrite(send, (outcome) => onWritten(outcome.follow));
+  const [write, run] = useWrite(send, onWritten);
 
   return (
     <Control
@@ -174,7 +177,7 @@ export function RulesDisclosure({
     () => dashboard.setFollowRules(follow.slug, fields.current),
     [follow.slug],
   );
-  const [write, run] = useWrite(send, (outcome) => onWritten(outcome.follow));
+  const [write, run] = useWrite(send, onWritten);
 
   return (
     <details className={styles.disclose}>
@@ -185,15 +188,26 @@ export function RulesDisclosure({
           run();
         }}
       >
-        <RuleFields
-          ns="e"
-          key={`${follow.check_interval_s}-${follow.min_duration_s}-${follow.max_per_check}`}
-          values={ruleValues(follow)}
-        />
+        {/* Keyed on **every** rule column, not three of them. The store clamps,
+            parses and normalises what it is sent — a `min_duration` of `banana`
+            comes back unset, a `check_interval_s` under the floor comes back at
+            the floor, a tag list comes back deduplicated — and a form that
+            reseeded only where the interval or the floor moved left the other
+            eight controls showing what was typed rather than what was kept. */}
+        <RuleFields ns="e" key={ruleKey(follow)} values={ruleValues(follow)} />
         <div className={`${dash.field} ${dash.actions}`}>
           <button className={dash.ghostlink} type="submit" disabled={write.status === "sending"}>
             {write.status === "sending" ? "saving…" : "Save the rule"}
           </button>
+          {/* The way out of a disclosure that has been opened and thought
+              better of — `follow.html`'s own link, and a navigation rather than
+              a close, because it also throws away whatever was typed. */}
+          <DashLink
+            className={dash.ghostlink}
+            href={`${ROOT}/following/${encodeURIComponent(follow.slug)}`}
+          >
+            Cancel
+          </DashLink>
         </div>
       </RuleForm>
       {write.status === "done" ? (
@@ -222,9 +236,35 @@ export function RulesDisclosure({
  * The Jinja form redirects to the new job. This one names it instead, because
  * the reader is part-way down a ledger they are still reading.
  */
-export function QueueControl({ slug, url }: { slug: string; url: string }) {
+/** Every column a rule is made of, as one string — what the eleven controls
+ *  are seeded from, so a save that changed any of them reseeds all of them. */
+function ruleKey(follow: FollowDetailRow): string {
+  return [
+    follow.tabs.join(","),
+    follow.mode,
+    follow.channels,
+    follow.tags.join(","),
+    follow.min_duration_s,
+    follow.max_duration_s,
+    follow.title_include.join(","),
+    follow.title_exclude.join(","),
+    follow.backfill,
+    follow.max_per_check,
+    follow.check_interval_s,
+  ].join("|");
+}
+
+export function QueueControl({
+  slug,
+  url,
+  onWritten,
+}: {
+  slug: string;
+  url: string;
+  onWritten: Written;
+}) {
   const send = useCallback(() => dashboard.queueFollowUrl(slug, url), [slug, url]);
-  const [write, run] = useWrite(send);
+  const [write, run] = useWrite(send, onWritten);
 
   return (
     <Control
@@ -246,10 +286,14 @@ export function QueueControl({ slug, url }: { slug: string; url: string }) {
   );
 }
 
-/** A button, its busy word, and what the route answered in its place — the
- *  shape every control on this page shares. The outcome replaces the control
- *  rather than sitting beside it: none of these actions is repeatable in the
- *  same breath, and a button that comes back invites a second POST. */
+/** A button, its busy word, and what the route answered **beside** it — the
+ *  shape every control on this page shares.
+ *
+ *  The button stays, which is `follow.html`'s own shape: these controls
+ *  redirected back to a page that drew them again, and none of them is a
+ *  one-shot. Pause is followed by Resume, a rate limit is retried, a check is
+ *  asked for twice when the first one found nothing. The one control that does
+ *  not come back is Unfollow, because there is nothing left to press it on. */
 function Control<T>({
   write,
   run,
@@ -263,23 +307,23 @@ function Control<T>({
   busy: string;
   done: (outcome: T) => ReactNode;
 }) {
-  if (write.status === "done") {
-    return (
-      <span className={styles.outcome} role="status">
-        {done(write.outcome)}
-      </span>
-    );
-  }
-  if (write.status === "failed") return <Refusal error={write.error} />;
   return (
-    <button
-      className={styles.rowbutton}
-      type="button"
-      onClick={run}
-      disabled={write.status === "sending"}
-    >
-      {write.status === "sending" ? busy : label}
-    </button>
+    <>
+      <button
+        className={styles.rowbutton}
+        type="button"
+        onClick={run}
+        disabled={write.status === "sending"}
+      >
+        {write.status === "sending" ? busy : label}
+      </button>
+      {write.status === "done" ? (
+        <span className={styles.outcome} role="status">
+          {done(write.outcome)}
+        </span>
+      ) : null}
+      {write.status === "failed" ? <Refusal error={write.error} /> : null}
+    </>
   );
 }
 
