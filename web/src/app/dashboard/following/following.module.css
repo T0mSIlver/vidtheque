@@ -27,6 +27,18 @@
   white-space: nowrap;
 }
 
+/* The retry fact beside a `failing` pill: `warn` while the check is still
+   coming back on its own — nothing has failed that a day will not fix — and
+   the error tone once it has stopped and a human is the only thing that
+   re-arms it. Colour reinforces; the count is the message. */
+.factWarn {
+  color: var(--tone-warn);
+}
+
+.factBad {
+  color: var(--tone-bad);
+}
+
 /* The rule at the top of a follow's own page. Same formatter, one size up:
    this is the thing the reader came to check. */
 .rule {

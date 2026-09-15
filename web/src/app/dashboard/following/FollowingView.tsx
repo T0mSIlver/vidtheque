@@ -24,7 +24,16 @@ import { useSessionRead } from "../session";
 import { useRead } from "../useRead";
 import { Absent } from "./Absent";
 import styles from "./following.module.css";
-import { nextCheckWords, RuleFacts, RuleFields, RuleForm, ruleValues, windowWords } from "./parts";
+import {
+  nextCheckWords,
+  retryFact,
+  RuleFacts,
+  RuleFields,
+  RuleForm,
+  ruleValues,
+  schedulable,
+  windowWords,
+} from "./parts";
 
 // The follows table — `templates/following.html`, reading
 // `GET /dashboard/api/following` in the browser (dashboard.md §18.3, §22).
@@ -319,6 +328,15 @@ function Row({ follow, checksEnabled }: { follow: FollowListRow; checksEnabled: 
       </td>
       <td data-label="State">
         <Pill state={follow.state} />
+        {/* `failing` covers two situations since 0008 and the row has to say
+            which: a follow retrying daily needs nothing from anyone, one that
+            gave up is waiting on a human. The count is the receipt, not a
+            fourth state word. */}
+        {follow.state === "failing" ? (
+          <span className={`${styles.fact} ${follow.retrying ? styles.factWarn : styles.factBad}`}>
+            {retryFact(follow)}
+          </span>
+        ) : null}
         {/* Printed whether or not the state is `failing`: one rate limit does
             not fail a follow, and a reader looking at a green pill still wants
             to know what the last check hit. */}
@@ -336,7 +354,11 @@ function Row({ follow, checksEnabled }: { follow: FollowListRow; checksEnabled: 
       <td data-label="Next check">
         <time
           className={dash.nowrap}
-          dateTime={checksEnabled && follow.next_check_at ? iso(follow.next_check_at) : undefined}
+          dateTime={
+            checksEnabled && schedulable(follow) && follow.next_check_at
+              ? iso(follow.next_check_at)
+              : undefined
+          }
         >
           {nextCheckWords(follow, checksEnabled)}
         </time>

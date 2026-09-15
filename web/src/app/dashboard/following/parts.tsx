@@ -106,20 +106,71 @@ export function nearMissLine(near: NonNullable<FollowDetail["near_miss"]>): stri
 }
 
 /**
+ * Whether the scheduler would enqueue this follow's check — the store's own
+ * `_SCHEDULABLE`, arrived as a field: `active`, or `failing` with retries
+ * left (migration 0008). Everything that promises a clock, and the one
+ * control that moves one, asks this first, because `state` alone cannot say
+ * which kind of `failing` this is.
+ */
+export function schedulable(follow: FollowRow): boolean {
+  return follow.state === "active" || follow.retrying;
+}
+
+/**
+ * The table's spelling of the retry state: `retry 2 of 7` while the check is
+ * still coming back on its own, `gave up` once it has stopped. Not a fourth
+ * state word — the count is the receipt, and the sentence is composed here
+ * off the row's own numbers, the same split the near-miss line takes
+ * (following.md §11.4).
+ */
+export function retryFact(follow: FollowRow): string {
+  return follow.retrying ? `retry ${follow.fail_count} of ${follow.max_tries}` : "gave up";
+}
+
+/**
+ * The detail page's spelling, one size up: the cadence while it is still
+ * trying, the tally once it has stopped.
+ */
+export function retryWords(follow: FollowRow): string {
+  return follow.retrying
+    ? `retry ${follow.fail_count} of ${follow.max_tries}, once a day`
+    : `gave up after ${follow.fail_count} tries`;
+}
+
+/**
+ * The refusal a dead Check-now would be refused with, composed exactly as
+ * Python composes it (`tools/follows.not_scheduled_line`) so a disabled
+ * control's help is the sentence the write would answer with — not a second
+ * wording invented beside the first.
+ */
+export function notSchedulableTitle(follow: FollowRow): string {
+  return (
+    `Not scheduled: ${follow.title} is failing and has stopped retrying ` +
+    `after ${follow.fail_count} consecutive failures. Nothing was queued.`
+  );
+}
+
+/**
  * When this follow is next looked at — or why that is not a time.
  *
  * Three answers, and the third is Tom's (2026-09-05): with
- * `checks_enabled: false` every `next_check_at` on the payload is a moment at
- * which nothing will happen, so the clock is replaced by the fact rather than
+ * `checks_enabled: false` every `next_check_at` on the payload is a moment
+ * at which nothing will happen, so the clock is replaced by the fact rather than
  * printed beside it. A page that showed the time anyway would be confidently
  * wrong sixty rows at a time.
  *
+ * The fourth is migration 0008's: a follow nothing will enqueue keeps a
+ * `next_check_at` and it means nothing, so the cell prints the dash —
+ * `follow.html`'s minirow rule, which the table shares because both print
+ * through this one function.
+ *
  * `0` is what `Check now` leaves behind — due immediately, which is a value
- * and not a missing clock, and only ever on an active follow.
+ * and not a missing clock, and only ever on a follow that will be enqueued.
  */
 export function nextCheckWords(follow: FollowRow, checksEnabled?: boolean): string {
   if (checksEnabled === false) return "checks off";
-  if (!follow.next_check_at) return follow.state === "active" ? "due now" : DASH;
+  if (!schedulable(follow)) return DASH;
+  if (!follow.next_check_at) return "due now";
   return at(follow.next_check_at);
 }
 

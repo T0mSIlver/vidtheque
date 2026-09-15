@@ -30,7 +30,7 @@ import {
   StateControl,
 } from "../Controls";
 import styles from "../following.module.css";
-import { nearMissLine, nextCheckWords, RuleFacts } from "../parts";
+import { nearMissLine, nextCheckWords, retryWords, RuleFacts } from "../parts";
 
 // One follow — `templates/follow.html`, reading
 // `GET /dashboard/api/following/{slug}` in the browser (dashboard.md §18.4).
@@ -145,6 +145,19 @@ function Loaded({
       <PageHead title={follow.title || slug}>
         <span className={styles.headstates}>
           <Pill state={follow.state} />
+          {/* Where the old template put it, right beside the state word:
+              `warn` while the check is still coming back on its own, the
+              error tone once it has stopped and a human is the only way back.
+              The count is the receipt either way, not a fourth state word. */}
+          {follow.state === "failing" ? (
+            <Unbroken>
+              <span
+                className={`${styles.fact} ${follow.retrying ? styles.factWarn : styles.factBad}`}
+              >
+                {retryWords(follow)}
+              </span>
+            </Unbroken>
+          ) : null}
           <Unbroken>
             <span>{follow.kind}</span>
           </Unbroken>
@@ -242,7 +255,12 @@ function Rule({ data, onWritten }: { data: FollowDetail; onWritten: () => void }
           them on the session as well only made them appear a beat late. */}
       <div className={styles.followactions}>
         <StateControl follow={follow} onWritten={onWritten} />
-        {follow.state === "active" ? <CheckControl follow={follow} onWritten={onWritten} /> : null}
+        {/* Offered to a retrying follow too: since 0008 the scheduler
+            enqueues one, so the button does what it says — "check now" after
+            a channel comes back is exactly the gesture. A follow that gave up
+            keeps the control disabled (its refusal as the help), and a paused
+            one has none: that control existed only to be refused. */}
+        {follow.state !== "paused" ? <CheckControl follow={follow} onWritten={onWritten} /> : null}
         <DeleteControl slug={follow.slug} />
       </div>
       <p className={styles.fieldHelp}>
