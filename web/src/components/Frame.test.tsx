@@ -61,10 +61,9 @@ describe("FrameShot", () => {
     // The caption is the talk, the channel and the second; the receipt is where
     // it came from, printed rather than implied.
     expect(screen.getByText("Context engineering · AI Engineer · 2:18")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "youtu.be/BiG2ssibKGc?t=136" })).toHaveAttribute(
-      "target",
-      "_blank",
-    );
+    const slab = document.querySelector('a[href="https://youtu.be/BiG2ssibKGc?t=136"]');
+    expect(slab).toHaveTextContent("youtu.be/BiG2ssibKGc?t=136");
+    expect(slab).toHaveAttribute("target", "_blank");
   });
 
   it("releases the large frame on close and returns focus to its thumbnail", async () => {
@@ -94,6 +93,16 @@ describe("FrameShot", () => {
     expect(dialog.open).toBe(true);
   });
 
+  // The lift and the ring are `.shotButton`'s, so what a test can hold is the
+  // class the button carries and the image inside it: a rule keyed on `a`
+  // alone is what left every demo still dimmed for good.
+  it("carries the class the lift and the ring are keyed on", () => {
+    render(<FrameShot shot={shot()} alt="" />);
+    const button = screen.getByRole("button", { name: /^Enlarge the frame/ });
+    expect(button.className).toMatch(/shotButton/);
+    expect(button.querySelector("img")?.className).toMatch(/img/);
+  });
+
   it("offers no enlarge control for a moment with no frame behind it", () => {
     render(<FrameShot shot={shot({ thumb: null, thumb_large: null })} alt="" label="spoken" />);
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
@@ -104,6 +113,8 @@ describe("FrameShot", () => {
     const user = userEvent.setup();
     render(<FrameShot shot={shot({ link: null })} alt="" />);
     await user.click(screen.getByRole("button", { name: /^Enlarge the frame/ }));
-    expect(screen.getByRole("link", { name: "youtu.be/BiG2ssibKGc" })).toBeInTheDocument();
+    expect(document.querySelector('a[href="https://youtu.be/BiG2ssibKGc"]')).toHaveTextContent(
+      "youtu.be/BiG2ssibKGc",
+    );
   });
 });

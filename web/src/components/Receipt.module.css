@@ -1,0 +1,62 @@
+/* The slab, ported from `demo/style.css` ("the receipts"). The card head
+   prints the talk and a moment prints the second; that pair is the argument. */
+.rcpt {
+  composes: t-machine-sm from global;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--gold);
+  border: 1px solid var(--gold-24);
+  padding: 5px 8px;
+  white-space: nowrap;
+  transition:
+    background var(--t-fast) linear,
+    border-color var(--t-fast) linear;
+}
+
+.host {
+  color: var(--fg3);
+}
+
+.vid {
+  color: var(--fg);
+}
+
+.rcpt:hover,
+.rcpt:focus-visible {
+  background: var(--gold-6);
+  border-color: var(--gold);
+}
+
+/* The full slab, with the action block filled: three of these on a page of
+   sources, and one in the lightbox. Not ten. */
+.lg {
+  font-size: 13px;
+  padding: 0;
+  background: var(--gold-6);
+  border-color: var(--gold);
+}
+
+.lg .host,
+.lg .vid {
+  padding: 9px 0;
+}
+
+.lg .host {
+  padding-left: 11px;
+}
+
+.lg .t {
+  background: var(--gold);
+  color: var(--gold-ink);
+  font-weight: 700;
+  padding: 9px 11px;
+  margin-left: 11px;
+}
+
+.lg:hover,
+.lg:focus-visible {
+  background: var(--gold-12);
+}

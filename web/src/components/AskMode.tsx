@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { AskEvent, AskFailure, type AskAnswer, type Citation } from "@/lib/api/schemas";
-import { receipt } from "@/lib/format";
 import { badges, channelWord } from "@/lib/group";
 import { framingOf, readJsonEvents } from "@/lib/sse";
 import { FrameShot } from "./Frame";
+import { Receipt } from "./Receipt";
 import { ModeSwitch, StateCell } from "./SearchBox";
 import styles from "./AskMode.module.css";
 
@@ -486,11 +486,9 @@ function Source({ c }: { c: Citation }) {
           {c.channel} · <span className={styles.mono}>{c.timestamp}</span>
         </span>
         {c.text ? <span className={styles.snippet}>{c.text}</span> : null}
-        {c.link ? (
-          <a href={c.link} target="_blank" rel="noopener noreferrer" className={styles.receipt}>
-            {receipt(c.link)}
-          </a>
-        ) : null}
+        {/* The filled slab, where there are three of them and they are the
+            payoff (demo-site.md §6.5). */}
+        {c.link ? <Receipt href={c.link} size="lg" className={styles.receipt} /> : null}
       </div>
     </li>
   );

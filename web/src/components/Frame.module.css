@@ -15,9 +15,16 @@
   transition: filter var(--t-state);
 }
 
-/* Hover may change colour, not geometry: the frame lights, nothing moves. */
+/* Hover may change colour, not geometry: the frame lights, nothing moves.
+   **The button is named alongside the anchor.** Every frame on the demo sits
+   in a `<button class="shotButton">` — the enlarge control cannot live inside
+   the row's anchor — so a rule keyed on `a` alone left every still on that
+   surface at `--film-rest` for good, lighting for nobody (parity round,
+   2026-09-16). */
 a:hover .img,
-a:focus-visible .img {
+a:focus-visible .img,
+.shotButton:hover .img,
+.shotButton:focus-visible .img {
   filter: var(--film-full);
 }
 
@@ -48,7 +55,10 @@ a:focus-visible .img {
   transition: box-shadow var(--t-state) linear;
 }
 
-.shotButton:hover .box {
+/* …and the ring the old page drew on the same hover (`style.css`'s
+   `.hit-shot:hover .hit-thumb`), keyboard included. */
+.shotButton:hover .box,
+.shotButton:focus-visible .box {
   box-shadow: inset 0 0 0 2px var(--gold);
 }
 
@@ -100,18 +110,11 @@ a:focus-visible .img {
   overflow-wrap: anywhere;
 }
 
-/* The filled slab, not the small one: there is one of it and it is the payoff.
-   Same rule as the answer's Sources rows (demo-site.md §6.5). */
+/* The filled slab, not the small one: there is one of it and it is the payoff
+   (demo-site.md §6.5). Its face is `Receipt.module.css`'s; the foot only says
+   that it may shrink before the caption beside it does. */
 .receipt {
-  composes: t-machine-sm from global;
-  padding: 9px 11px;
-  color: var(--fg);
-  background: var(--gold-6);
-  border: 1px solid var(--gold);
-}
-
-.receipt:hover {
-  background: var(--gold-12);
+  flex: none;
 }
 
 .shotClose {

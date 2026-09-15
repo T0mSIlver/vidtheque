@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { at, bytes, clock, count, DASH, day, duration, hms, hours, iso, receipt } from "./format";
+import {
+  at,
+  bytes,
+  clock,
+  count,
+  DASH,
+  day,
+  duration,
+  hms,
+  hours,
+  iso,
+  receiptParts,
+} from "./format";
 
 // These are the Jinja filters the dashboard read out of Python until the JSON
 // slice landed, so the cases are the ones `render.py` and `text.py` document:
@@ -85,9 +97,26 @@ describe("clocks", () => {
 });
 
 describe("the receipt's own strings", () => {
-  it("keeps the timecode and drops the scheme", () => {
+  it("keeps the timecode", () => {
     expect(clock(705)).toBe("11:45");
     expect(clock(3725)).toBe("1:02:05");
-    expect(receipt("https://youtu.be/kCc8FmEb1nY?t=705")).toBe("youtu.be/kCc8FmEb1nY?t=705");
+  });
+
+  // Three parts, because the slab prints three: which surface, which talk,
+  // which second.
+  it("splits a link into the three parts the slab prints", () => {
+    expect(receiptParts("https://youtu.be/kCc8FmEb1nY?t=705")).toEqual({
+      host: "youtu.be/",
+      id: "kCc8FmEb1nY",
+      query: "?t=705",
+    });
+    expect(receiptParts("https://youtu.be/kCc8FmEb1nY")?.query).toBe("");
+  });
+
+  // A link the page cannot parse, or one the DOM would run, has no receipt.
+  it("refuses anything that is not an http(s) URL", () => {
+    expect(receiptParts("not a url")).toBeNull();
+    expect(receiptParts("javascript:alert(1)")).toBeNull();
+    expect(receiptParts("data:text/html,<b>")).toBeNull();
   });
 });

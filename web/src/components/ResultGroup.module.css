@@ -195,21 +195,11 @@
   font-weight: 600;
 }
 
-/* The small receipt slab: border and ink, no fill, so ten of them down a
-   page do not spend the accent on the list. */
+/* Where the slab sits in the row. Its face is `Receipt.module.css`'s — one
+   receipt, drawn one way, on every surface that prints one. */
 .receipt {
-  composes: t-machine-sm from global;
   margin-left: auto;
   align-self: center;
-  padding: 3px 7px;
-  color: var(--gold);
-  border: 1px solid var(--gold-44);
-  white-space: nowrap;
-}
-
-.receipt:hover,
-.receipt:focus-visible {
-  background: var(--gold-12);
 }
 
 /* A phone has no one-line row that is still a sentence: the row goes to three
