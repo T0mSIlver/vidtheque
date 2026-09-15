@@ -27,6 +27,12 @@
 }
 
 .pagehead h1 {
+  /* `headline` at its floor, fixed — not the ladder's `clamp(1.9rem, 3.5vw,
+     3.35rem)`, which puts "Corpus overview" at 53px on a 1440 screen. This is
+     the surface whose metric is information per screen, and a corpus string at
+     3.5vw is four lines of video title (DESIGN.md's dashboard section: no
+     display type, and `docs/design/dashboard.md` §5.6). */
+  font-size: 1.9rem;
   font-weight: var(--w-display);
   text-wrap: balance;
   /* A page title is a corpus string. `anywhere`, not `break-word`: only
