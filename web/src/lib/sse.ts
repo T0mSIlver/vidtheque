@@ -88,7 +88,18 @@ export function framingOf(contentType: string | null): Framing | null {
   return null;
 }
 
-/** Read a streaming Response body as parsed JSON events, one at a time. */
+/**
+ * Read a streaming Response body as parsed JSON events, one at a time.
+ *
+ * **A payload that does not parse is not an event, and not an exception.** It
+ * is the shape a truncated stream ends in — the connection dropped mid-frame,
+ * and what came out of the buffer is half of a `{`. Thrown, it left the reader
+ * with a network error and the pane saying "Could not reach the server.", which
+ * is a different claim from the true one: the stream stopped without ever
+ * saying it was finished. So it is skipped, no terminal event arrives, and the
+ * caller lands on the honest end for a stream that stopped (`app.js`'s
+ * `parseFrame`, which returned `null` for exactly this).
+ */
 export async function* readJsonEvents(
   body: ReadableStream<Uint8Array>,
   framing: Framing = "sse",
@@ -96,18 +107,25 @@ export async function* readJsonEvents(
   const reader = body.getReader();
   const decoder = new TextDecoder();
   const parser = framing === "ndjson" ? ndjsonParser() : sseParser();
+  function* parsed(frames: string[]): Generator<unknown> {
+    for (const data of frames) {
+      try {
+        yield JSON.parse(data);
+      } catch {
+        return;
+      }
+    }
+  }
   try {
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
-      for (const data of parser.push(decoder.decode(value, { stream: true }))) {
-        yield JSON.parse(data);
-      }
+      yield* parsed(parser.push(decoder.decode(value, { stream: true })));
     }
     // The decoder may be holding the first bytes of a character split across
     // the last two chunks; flushing it is what completes them.
-    for (const data of parser.push(decoder.decode())) yield JSON.parse(data);
-    for (const data of parser.flush()) yield JSON.parse(data);
+    yield* parsed(parser.push(decoder.decode()));
+    yield* parsed(parser.flush());
   } finally {
     // A consumer that stops early — because the answer arrived, or because
     // the events stopped making sense — leaves the body open otherwise, and
