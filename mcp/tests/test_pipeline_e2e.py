@@ -285,6 +285,25 @@ async def test_tags_from_the_job_are_applied(indexed: Harness) -> None:
     assert [row["full"] for row in rows] == ["topic:attention"]
 
 
+async def test_an_edition_tag_derives_context_bias_without_a_backend_name(
+    settings: Settings, clip: Path
+) -> None:
+    parts = await harness(settings, clip)
+    try:
+        await parts.index(
+            url=VIDEO_URL,
+            channels="transcript",
+            tags="series:aie-paris-2026",
+        )
+        assert await parts.run() is True
+        bias = parts.worker.transcribe_context_biases[0]
+        assert bias is not None and len(bias) == 100
+        assert bias[:2] == ["Clemens Rawert", "Lélio Renard Lavaud"]
+    finally:
+        await parts.db.close()
+        parts.parts.auth.close()
+
+
 async def test_the_source_video_is_deleted_and_the_audio_is_kept(indexed: Harness) -> None:
     """DECISIONS.md #3: the corpus is the index; the mp4 is scaffolding."""
     video = await indexed.one("SELECT audio_path, media_path FROM videos")

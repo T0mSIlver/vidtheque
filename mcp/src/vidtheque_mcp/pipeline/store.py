@@ -607,6 +607,17 @@ def apply_tags(conn: sqlite3.Connection, video_id: int, tags: Sequence[str]) -> 
         )
 
 
+def video_tags(conn: sqlite3.Connection, video_id: int) -> list[str]:
+    return [
+        str(row[0])
+        for row in conn.execute(
+            "SELECT t.full FROM video_tags vt JOIN tags t ON t.id = vt.tag_id "
+            "WHERE vt.video_id = ? ORDER BY t.full",
+            (video_id,),
+        )
+    ]
+
+
 def existing_video(conn: sqlite3.Connection, source: str, source_id: str) -> sqlite3.Row | None:
     return conn.execute(
         "SELECT id, index_state FROM videos WHERE source = ? AND source_id = ?",

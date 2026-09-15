@@ -58,6 +58,7 @@ from secrets import token_hex
 from typing import Any, Awaitable, Callable, Sequence
 
 from ..db import Database
+from ..editions import context_bias_for_tags
 from ..jobs.runner import ItemCancelled, ItemContext, ItemFailed, ItemSkipped
 from . import store
 from .captions import CueDraft, cues_from_json3, cues_from_verbose_json, cues_from_vtt
@@ -743,6 +744,9 @@ class IndexingPipeline:
             return None
         assert run.meta is not None
         model = self.db.config.get("stt.model")
+        stored_tags = await self.db.read(lambda c: store.video_tags(c, run.video_id))
+        requested_tags = [str(tag) for tag in (run.args.get("tags") or [])]
+        context_bias = context_bias_for_tags([*stored_tags, *requested_tags])
         payload = await self.worker.transcribe(
             run.audio,
             language=run.meta.language,
@@ -750,6 +754,7 @@ class IndexingPipeline:
             # The budget is sized from the recording: a flat 1,800 s covers
             # a conference talk and not a three-hour stream.
             duration_s=run.meta.duration_s or None,
+            context_bias=context_bias or None,
         )
         cues = cues_from_verbose_json(payload)
         served = str(payload.get("model") or model or "whisperx")
