@@ -24,6 +24,7 @@ contract (``worker/openapi.json``) and nothing else. No import ever crosses.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import random
 from dataclasses import dataclass
@@ -147,6 +148,7 @@ class WorkerAPI(Protocol):
         language: str | None = None,
         model: str | None = None,
         duration_s: float | None = None,
+        context_bias: list[str] | None = None,
     ) -> dict[str, Any]: ...
 
     async def ocr(
@@ -329,6 +331,7 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
         language: str | None = None,
         model: str | None = None,
         duration_s: float | None = None,
+        context_bias: list[str] | None = None,
     ) -> dict[str, Any]:
         """``POST /v1/audio/transcriptions``, verbose_json, word granularity.
 
@@ -352,6 +355,10 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
             data["language"] = language
         if model:
             data["model"] = model
+        if context_bias:
+            data["context_bias"] = json.dumps(
+                context_bias, ensure_ascii=False, separators=(",", ":")
+            )
         return await self._send(
             "/v1/audio/transcriptions",
             files=lambda: [("file", (audio.name, audio.open("rb"), "application/octet-stream"))],

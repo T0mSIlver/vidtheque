@@ -304,15 +304,23 @@ class FakeWorker:
         self.fail = fail or set()
         self.calls: list[str] = []
         self.transcribe_durations: list[float | None] = []
+        self.transcribe_context_biases: list[list[str] | None] = []
 
     async def healthy(self) -> bool:
         return self._healthy
 
     async def transcribe(
-        self, audio: Path, *, language=None, model=None, duration_s=None
+        self,
+        audio: Path,
+        *,
+        language=None,
+        model=None,
+        duration_s=None,
+        context_bias=None,
     ) -> dict[str, Any]:
         self.calls.append("transcribe")
         self.transcribe_durations.append(duration_s)
+        self.transcribe_context_biases.append(context_bias)
         self._maybe_fail("transcribe")
         if self.on_transcribe is not None:
             await self.on_transcribe()
