@@ -1002,6 +1002,12 @@ export const FollowRow = z.object({
   fail_count: count(),
   retrying: z.boolean(),
   max_tries: count(),
+  // **Policy text, Python's** — the one string on this row that is not a
+  // value. It is the refusal the check write would be refused with, the same
+  // sentence the 409 answers with, carried so the disabled control's help
+  // cannot re-compose it here; `null` on a row that will be scheduled, and
+  // `null` means there is no control to explain.
+  not_schedulable_reason: z.string().nullable(),
   mode: z.string(),
   tabs: z.array(z.string()),
   // `all`, or a comma-joined subset: `index-video`'s own vocabulary rather

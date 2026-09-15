@@ -9,7 +9,7 @@ import { hours } from "@/lib/format";
 import dash from "../dashboard.module.css";
 import { DashLink, refusalOf, useWrite, type Write } from "../parts";
 import styles from "./following.module.css";
-import { notSchedulableTitle, RuleFields, RuleForm, ruleValues } from "./parts";
+import { RuleFields, RuleForm, ruleValues } from "./parts";
 
 // The five writes on a follow's own page (dashboard.md §18.5, §21). Not one of
 // them decides anything: four go through `tools/follows.follow_channel` — the
@@ -77,7 +77,8 @@ export function StateControl({
  *  with the clock rather than with a sentence about what will happen.
  *
  *  A follow that gave up draws the control disabled rather than dropping it,
- *  with the refusal the write would be refused with as its help: the sentence
+ *  with the refusal the write would be refused with as its help: Python's own
+ *  sentence (`not_schedulable_reason`, the same string the 409 answers with)
  *  says why nothing will queue, and the control that clears the count is
  *  standing right beside it. A refusal that still arrives — a state that
  *  changed under the page — renders inline below, as the other refusals do. */
@@ -97,7 +98,7 @@ export function CheckControl({
         className={styles.rowbutton}
         type="button"
         disabled
-        title={notSchedulableTitle(follow)}
+        title={follow.not_schedulable_reason ?? undefined}
       >
         Check now
       </button>
