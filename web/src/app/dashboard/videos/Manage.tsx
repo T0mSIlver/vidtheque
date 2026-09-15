@@ -34,7 +34,18 @@ import styles from "./videos.module.css";
  *  surprise playlist off a URL that happens to be in one. The button does not
  *  come back after it has fired: the job it made is the answer, and a second
  *  POST would queue a second rebuild of the same video. */
-export function ReindexControl({ videoId, label }: { videoId: string; label: string }) {
+export function ReindexControl({
+  videoId,
+  label,
+  primary,
+}: {
+  videoId: string;
+  label: string;
+  /** The page's own action rather than a row's: the panel button on the video
+   *  detail is a bare `<button>` in `video.html` and wears the plate, while the
+   *  table's is `class="ghost"` at one step down from the chassis height. */
+  primary?: boolean;
+}) {
   const { indexable } = useWriteSide();
   const send = useCallback(() => dashboard.reindexVideo(videoId), [videoId]);
   const [write, run] = useWrite(send);
@@ -60,7 +71,7 @@ export function ReindexControl({ videoId, label }: { videoId: string; label: str
 
   return (
     <button
-      className={styles.rowbutton}
+      className={primary ? dash.button : styles.rowbutton}
       type="button"
       onClick={run}
       disabled={!indexable || write.status === "sending"}
@@ -136,7 +147,7 @@ export function TagsForm({
           />
         </div>
         <div className={`${dash.field} ${dash.actions}`}>
-          <button className={dash.ghostlink} type="submit" disabled={write.status === "sending"}>
+          <button className={dash.button} type="submit" disabled={write.status === "sending"}>
             {write.status === "sending" ? "applying…" : "Apply"}
           </button>
         </div>

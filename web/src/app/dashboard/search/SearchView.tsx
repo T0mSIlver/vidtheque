@@ -291,7 +291,7 @@ function Filters({ search }: { search: string }) {
         />
       </div>
       <div className={`${dash.field} ${dash.actions}`}>
-        <button className={dash.ghostlink} type="submit">
+        <button className={dash.button} type="submit">
           Search
         </button>
       </div>

@@ -609,7 +609,7 @@ function Manage({
             Runs <code>index-video</code> with <code>force_reindex</code> on this one URL: every
             stage runs again, and the old rows are invalidated first.
           </p>
-          <ReindexControl videoId={video.video_id} label="Re-index this video" />
+          <ReindexControl label="Re-index this video" primary videoId={video.video_id} />
           {indexable ? null : (
             <p className={videos.manageNote}>
               Indexing is refused on this instance: the corpus config and the vector tables
