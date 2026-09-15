@@ -3042,6 +3042,17 @@ refusal — is not the obvious one:
   `already_following` is still true or false, so the outcome says what happened
   even when there is no row to draw: a client re-lists rather than treating it
   as a refusal, because nothing failed.
+- **`check` on a follow nothing will schedule is a `409` refusal, not a quiet
+  `200`** *(added 2026-09-15)*. `store.check_now` arms exactly what `due()`
+  enqueues, so on a paused or a gave-up follow it moves nothing — and the
+  tool's own medium says so with `scheduled: false` beside its sentence. This
+  surface has no half-shape to say that in: an outcome whose row did not move
+  reads as "the button did nothing". So `writes._follow_action` reads the
+  tool's `scheduled` and answers `E_NOT_SCHEDULABLE`, with the tool's own
+  first line as the message (`tools/follows.not_scheduled_line` — one
+  renderer, so the tool and the page that drives the same call cannot describe
+  one refusal two ways) and resume as the `next:`. Same code and message on
+  both media, which is the 2026-09-06 rule arriving at this one outcome.
 - **`login` refuses with `E_BAD_CREDENTIAL` at 401, not `E_AUTH_REQUIRED`**
   *(landed 2026-09-05)*. Every other 401 on this surface means "go and sign
   in", and the client acts on it by navigating to the sign-in page

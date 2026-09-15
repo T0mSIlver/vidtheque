@@ -371,16 +371,8 @@ async def _check_now(
         # needs resume, and has to be told so rather than silently doing
         # nothing while printing a time.
         rules = Rules.from_row(row)
-        why = (
-            "paused, and a paused follow is never checked"
-            if paused
-            else (
-                f"failing and has stopped retrying after {int(row['fail_count'])} "
-                "consecutive failures"
-            )
-        )
         lines = [
-            f"Not scheduled: {name} is {why}. Nothing was queued.",
+            not_scheduled_line(row),
             f"Rule (kept): {describe(rules, name=name)}",
         ]
         if not paused:
@@ -410,6 +402,45 @@ async def _check_now(
     return await _state_result(
         deps, row, rules, settings, note, lines, "check_now", "check_now", scheduled=True
     )
+
+
+def not_scheduled_line(row: sqlite3.Row) -> str:
+    """The one line `check_now` refuses a follow the scheduler will not pick up.
+
+    One renderer, two media: this is the first line of `_check_now`'s own
+    payload and the whole `message` of the dashboard's refusal envelope
+    (`E_NOT_SCHEDULABLE`, `dashboard/writes.py`), so the tool and the page
+    that drives the same call cannot describe one refusal two ways.
+    """
+    if str(row["state"]) == "paused":
+        why = "paused, and a paused follow is never checked"
+    else:
+        why = (
+            f"failing and has stopped retrying after {int(row['fail_count'])} "
+            "consecutive failures"
+        )
+    return f"Not scheduled: {str(row['title'])} is {why}. Nothing was queued."
+
+
+def check_now_refusal(row: sqlite3.Row) -> dict[str, str]:
+    """The dashboard's typed refusal for the same dead `check_now`.
+
+    The tool's own medium answers with a payload that says `scheduled: false`
+    beside the row; the dashboard write has no such half-shape — a `200` whose
+    row says nothing moved reads as "the button did nothing" — so it refuses
+    in the shared envelope, with the tool's own line as the message and the
+    way out the tool's `next:` names: resume.
+    """
+    paused = str(row["state"]) == "paused"
+    return {
+        "code": "E_NOT_SCHEDULABLE",
+        "message": not_scheduled_line(row),
+        "next": (
+            "resume it; a paused follow is never checked."
+            if paused
+            else "Try again (resume) clears the failure count and re-arms the clock."
+        ),
+    }
 
 
 async def _state_result(

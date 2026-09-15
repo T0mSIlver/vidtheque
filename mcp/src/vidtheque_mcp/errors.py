@@ -47,6 +47,10 @@ HTTP_STATUS: dict[str, int] = {
     "E_NOT_INDEXED": 409,
     "E_INDEXING": 409,
     "E_FEATURE_DISABLED": 409,
+    # The row's state refuses the action rather than the request being
+    # malformed: `check_now` on a follow the scheduler will not pick up
+    # (dashboard.md §21, 2026-09-15).
+    "E_NOT_SCHEDULABLE": 409,
     "E_TIMEOUT": 408,
     "E_BUSY": 503,
     "E_RATE_LIMIT": 429,

@@ -925,6 +925,14 @@ async def _follow_action(request: Request, action: str, back: str) -> Response:
     error = _tool_error(result)
     if error is not None:
         return _refusal_json(error)
+    # A `check_now` the scheduler will not act on is refused rather than
+    # answered with an unchanged row. The tool's own medium says it with
+    # `scheduled: false` beside the row; a `200` here would print "clock
+    # moved" about a clock nothing will read. The line and the way out are
+    # the tool's own (`follows_tool.check_now_refusal`), so both media refuse
+    # with one code and one message (§21, 2026-09-15).
+    if action == "check_now" and (result.structured_content or {}).get("scheduled") is False:
+        return _refusal_json(follows_tool.check_now_refusal(row))
     if _accepts_json(request):
         if action == "unfollow":
             payload = result.structured_content or {}

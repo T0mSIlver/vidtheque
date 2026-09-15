@@ -34,6 +34,7 @@ from vidtheque_mcp.auth.login import SESSION_COOKIE
 from vidtheque_mcp.dashboard import ROOT
 from vidtheque_mcp.dashboard.writes import BAD_SECRET, MAX_FORM_URLS, _accepts_json
 from vidtheque_mcp.db.connection import open_write_connection
+from vidtheque_mcp.follows import store as follows_store
 
 from .test_dashboard import (
     BEARER,
@@ -44,6 +45,7 @@ from .test_dashboard import (
     owner_client,
     sign_in,
 )
+from .test_dashboard_api import _make_failing
 from .test_dashboard_following import _empty_corpus as empty_follows
 from .test_dashboard_following import make_client as follows_make_client
 from .test_dashboard_following import owner_client as follows_client
@@ -1027,6 +1029,53 @@ def test_pause_resume_and_check_answer_the_row_they_changed(tmp_path: Path) -> N
         wrong = post(client, f"{ROOT}/following/{slug}/state", data={"action": "stop"})
         assert wrong.status_code == 400
         assert wrong.json()["error"] == "E_BAD_PARAM"
+
+
+def test_check_now_on_a_follow_that_gave_up_is_a_refusal_on_both_media(
+    tmp_path: Path,
+) -> None:
+    """The tool refuses it by name, and so does this surface.
+
+    `store.check_now` and `due()` share one predicate, so arming a follow that
+    gave up would write a `next_check_at` nothing will act on. The tool's own
+    medium answers `scheduled: false`; a `200` here would hand the page a row
+    whose clock did not move and let it print "clock moved". The refusal is
+    one function beside the tool's own line, so the code and the message are
+    the same whichever medium asked (§21, 2026-09-15).
+    """
+    slug = "andrej-karpathy"
+    with follows_client(tmp_path) as client:
+        follows_sign_in(client)
+        _make_failing(client, follows_store.FAILING_MAX_TRIES)
+
+        refused = post(client, f"{ROOT}/following/{slug}/check")
+        assert refused.status_code == 409, refused.text
+        body = refused.json()
+        assert body["error"] == "E_NOT_SCHEDULABLE"
+        # The tool's own sentence, name and count in it — not a second wording
+        # written for the browser.
+        assert body["message"] == (
+            "Not scheduled: Andrej Karpathy is failing and has stopped retrying "
+            "after 7 consecutive failures. Nothing was queued."
+        )
+        assert "resume" in body["next"].lower()
+
+        # The form branch gets the same envelope, not a 303: there is no page
+        # to render one into, and a redirect would read as success.
+        navigated = client.post(
+            f"{ROOT}/following/{slug}/check",
+            headers={**SAME_ORIGIN, **FORM},
+            follow_redirects=False,
+        )
+        assert navigated.status_code == 409
+        assert navigated.json() == body
+
+        # The row behind the refusal still reads gave-up, and the control that
+        # clears the count is the one the `next:` names.
+        row = client.get(f"{ROOT}/api/following/{slug}", headers=BEARER).json()["follow"]
+        assert row["retrying"] is False
+        again = post(client, f"{ROOT}/following/{slug}/state", data={"action": "resume"})
+        assert again.json()["follow"]["state"] == "active"
 
 
 def test_editing_the_rules_answers_the_rule_the_store_kept(tmp_path: Path) -> None:
