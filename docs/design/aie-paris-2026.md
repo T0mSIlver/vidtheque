@@ -481,11 +481,14 @@ Every output starts with this limitation:
 > A missing term may not have been spoken, and a present term may occur outside
 > the intended mention.
 
-The command is a dry run until cost is known. Before submission it fetches the
-current price from Mistral's official pricing page or requires an explicit
-`--price-per-minute` value. It prints the source, retrieval time, audio minutes,
-request count, two Voxtral arms, and projected cost, then requires the explicit
-execute flag. No price is committed as fact.
+The command is a dry run until cost is known. Before submission it requires an
+explicit `--price-per-minute` read from Mistral's official pricing page. The
+repository does not scrape that page: a scraper is one more thing to break on a
+page the operator is already looking at, and a silently stale number is worse
+than no number. The command prints the price source, the time the operator's
+figure was entered, audio minutes, request count, two Voxtral arms, and
+projected cost, then requires the explicit execute flag. No price is committed
+as fact.
 
 The 2025 dress rehearsal, its audio, transcripts, and eval output remain
 private. Its per-talk and aggregate results are never published.
