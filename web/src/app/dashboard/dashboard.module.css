@@ -491,6 +491,14 @@
   border-right: 0;
 }
 
+/* Both halves hang from the same edge. The pill's own `vertical-align` is set
+   against the text it normally sits in, and here there is no text: the parent's
+   font-size is zero, so the offset resolves to zero and the two boxes would be
+   left to find a baseline that is not on the page. */
+.statepair > * {
+  vertical-align: top;
+}
+
 .detail {
   position: relative;
   cursor: help;
