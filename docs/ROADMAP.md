@@ -13,6 +13,28 @@ and anything marked **[Tom]** is a decision before it is a ticket.
 
 ## Open
 
+### 2026-09-15: AI Engineer Paris 2026 edition
+
+- Review and approve `docs/design/aie-paris-2026.md`, especially the
+  "Every main-stage talk" hero repair and the proposed follow title-term cap
+  increase from 10 to 50.
+- Implement the additive edition facade read, tag-scoped search and Ask, the
+  `/paris` page, its document-policy and Caddy routes, and their CPU and browser
+  tests only after the phase 1 contract review.
+- Implement the edition-only Voxtral worker backend, schedule-derived context
+  bias, 60-minute seam handling, and the three-arm private evaluation under
+  `bench/` without retranscribing the existing corpus.
+- Decide whether the organizer gate requires an affirmative reply or only a
+  sent request. An explicit refusal blocks publication under either rule.
+- Run a pre-publication delta audit for the Mistral credential and spend cap,
+  edition facade, and untrusted transcript and slide-OCR handoff to agents.
+- Add the 2026 stream ids, talk upload ids, and checked offsets after those
+  videos exist. Refresh the committed schedule if the source page changes.
+- Run the two 2025 source videos from an isolated private data directory,
+  record long-VOD table growth and queue recovery, and publish no source
+  material, transcript, per-talk result, or aggregate result from that
+  rehearsal.
+
 ### Frontend replacement: landing, demo, and management dashboard
 
 Tom chose a complete Next.js and React replacement before traffic switches

@@ -173,6 +173,7 @@ GET /api/search?q=kv+cache&content_type=all&limit=10&offset=0
 | `limit` | 1..20 | 10 |
 | `offset` | 0..1000 | 0 |
 | `channel`, `video_id` | passthrough filters | — |
+| `tags` | at most 10 comma-separated namespaced tags, AND semantics | omitted |
 
 ```json
 {
@@ -317,18 +318,46 @@ kept here would drift silently the day someone edits a leg. Some of them still
 name a parameter a browser has no way to pass; that is a query-layer wording
 question, flagged in §7, not something to paper over with a lookup table.
 
+### 2.5 `GET /api/editions/{slug}`
+
+This additive read serves a committed edition schedule, its talk alignment
+table, and the queryable videos carrying the edition tag. The edition-specific
+schema and derivation rules live in `aie-paris-2026.md` §2 and §3. This route
+uses the facade rules above: no writes, `Cache-Control: no-store` on success
+and refusal, typed errors, independent item and character caps, and no query
+layer beside the existing tools and SQLite reads.
+
+| param | values | default |
+|---|---|---|
+| `limit` | 1..100 | 50 |
+| `offset` | 0..1000 | 0 |
+| `video_limit` | 1..50 | 20 |
+| `video_offset` | 0..1000 | 0 |
+
+The response contains `edition`, `sessions`, `pagination`, `talks`, `videos`,
+`video_pagination`, and `notes`. Both pagination objects carry `has_more` and
+`next_offset`; neither requires an exact total. An unknown slug returns 404
+with `E_UNKNOWN_EDITION`. A malformed committed fixture returns `E_INTERNAL`
+instead of a partial schedule.
+
 ---
 
 ## 3. `/api/ask` — the LLM mode
 
 ```
-POST /api/ask   {"q": "how does paged attention reduce fragmentation?"}
+POST /api/ask   {"q": "how does paged attention reduce fragmentation?", "tags": "series:aie-paris-2026"}
 ```
 
 A server-side agent loop against OpenRouter's OpenAI-compatible
 `/api/v1/chat/completions`, with **two** internal tools and a hard round cap.
 It exists to show the thing the corpus is actually for — an agent that answers
 from timestamped evidence — to a visitor who has not wired up an MCP client.
+
+`tags` is optional and follows §2.1's ten-tag bound and AND semantics. When it
+is present, the server fixes that scope for the whole loop: every search uses
+it, and `get_segment_context` accepts only video ids returned by those scoped
+searches. The model cannot remove the filter or introduce an arbitrary video
+id. Omitting `tags` preserves the existing corpus-wide behavior.
 
 The same POST also speaks a stream, to a client that sends
 `Accept: text/event-stream` or `Accept: application/x-ndjson` (§3.5), narrating

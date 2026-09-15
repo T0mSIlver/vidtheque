@@ -45,6 +45,7 @@ for, whereas `/api/*` under a prefix rule is the whole facade in one line.
 | --- | --- |
 | `GET /` | **Next** |
 | `GET /demo` | **Next** |
+| `GET /paris` | **Next** (`aie-paris-2026.md` §4) |
 | Next's own build output (`/_next/*`, `/landing/*`) | **Next** |
 | `/api/*` — including `POST /api/ask` | Python |
 | `/frames/*` | Python |
@@ -87,11 +88,11 @@ routes it — the dashboard aliased `/dashboard/static/fonts/` onto it until
 
 ## 1b. The document policy the pages carry
 
-*Recorded 2026-09-05.* `_DOCUMENT_HEADERS` left Python with the pages it was
-written for (§1a), and `web/src/proxy.ts` is what sends it now — on every
-document this front end serves, which is `/`, `/demo` and the `/dashboard`
-pages named back into `proxy.ts`'s matcher. In production the policy is,
-verbatim:
+*Recorded 2026-09-05; extended 2026-09-15.* `_DOCUMENT_HEADERS` left Python
+with the pages it was written for (§1a), and `web/src/proxy.ts` is what sends
+it now on every document this front end serves: `/`, `/demo`, `/paris`, and
+the `/dashboard` pages named in `proxy.ts`'s matcher. In production the policy
+is, verbatim:
 
 ```
 default-src 'self'; script-src 'self' 'nonce-<per request>' 'strict-dynamic';
