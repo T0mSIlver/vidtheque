@@ -21,19 +21,27 @@ export function ResultGroup({ group, query = "" }: { group: VideoGroup; query?: 
           <FrameShot shot={cover} alt="" label={channelWord(cover.source)} />
         </div>
         <div className={styles.headText}>
-          {talk ? (
-            <a href={talk} target="_blank" rel="noopener noreferrer" className={styles.title}>
-              {group.title}
-            </a>
-          ) : (
-            <span className={styles.title}>{group.title}</span>
-          )}
+          {/* A heading, because it is one: a page of results is a list of
+              talks, and a document outline with no talks in it is a page a
+              screen-reader user has to read end to end to navigate. */}
+          <h3 className={styles.title}>
+            {talk ? (
+              <a href={talk} target="_blank" rel="noopener noreferrer">
+                {group.title}
+              </a>
+            ) : (
+              group.title
+            )}
+          </h3>
+          {/* Who said it, how much of it is here, and the talk's own id in the
+              machine's face — the count beside the channel, because that is
+              the pair a reader scans for. */}
           <p className={styles.headMeta}>
             <span>{group.channel}</span>
-            <span className={styles.id}>{group.video_id}</span>
             <span className={styles.id}>
               {group.hits.length} {group.hits.length === 1 ? "moment" : "moments"}
             </span>
+            <span className={styles.id}>{group.video_id}</span>
           </p>
         </div>
       </header>
