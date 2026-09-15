@@ -282,8 +282,30 @@ describe("one job's page", () => {
         String(call[0]).startsWith("/dashboard/api/jobs/"),
       ),
     ).toHaveLength(1);
-    expect(screen.getByText(/this is the final record/)).toBeInTheDocument();
+    // …and it says nothing about a final record: this page never watched the
+    // job run, so nothing under the reader went stale.
+    expect(screen.queryByText(/final record/)).toBeNull();
     void fetcher;
+  });
+
+  // The note is owed to the reader whose page *did* go stale under them, and
+  // only on the reading where it happened — `job.html` kept the sentence hidden
+  // in the markup and the ticker revealed it on the live→terminal transition.
+  it("says the record is final only where the page watched the job stop", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const finished = {
+      ...RUNNING_JOB_DETAIL,
+      live: false,
+      job: { ...RUNNING_JOB_DETAIL.job, state: "done", progress: 100 },
+    };
+    await mount([{ body: RUNNING_JOB_DETAIL }, { body: finished }], {
+      jobId: "job_running001",
+    });
+    await screen.findByRole("region", { name: "Items" });
+    expect(screen.queryByText(/final record/)).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(screen.getByText(/this is the final record/)).toBeInTheDocument();
   });
 
   // The other 429: refused on the first read, with no war story to keep on the
@@ -524,6 +546,26 @@ describe("one job's page", () => {
       await userEvent.click(await screen.findByRole("button", { name: "Cancel this job" }));
 
       expect(await screen.findByText("cancel requested")).toBeInTheDocument();
+      // The runner has not stopped, so the job is still live and the control is
+      // still the one the page exists to offer: `jobs.html` and `job.html` drew
+      // Cancel on `job.live`, and the POST landed back on a page where the job
+      // still was.
+      expect(screen.getByRole("button", { name: "Cancel this job" })).toBeInTheDocument();
+    });
+
+    // A cancel that settled the job leaves nothing to cancel, and the control
+    // does not come back: a second POST against a settled row is refused.
+    it("keeps the control away once the cancel settled the job", async () => {
+      await mount(
+        { body: RUNNING_JOB_DETAIL },
+        {
+          jobId: "job_running001",
+          write: { body: { job_id: "job_running001", state: "cancelled", cancel_requested: true } },
+        },
+      );
+      await userEvent.click(await screen.findByRole("button", { name: "Cancel this job" }));
+
+      expect(await screen.findByText("cancelled")).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Cancel this job" })).not.toBeInTheDocument();
     });
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
+import { Pill } from "@/components/Pill";
 import { dashboard, ROOT } from "@/lib/dashboard/client";
 import type { JobCard, RetryOutcome } from "@/lib/dashboard/schemas";
 import { DASH } from "@/lib/format";
@@ -114,7 +115,10 @@ function Receipt({ outcome }: { outcome: RetryOutcome }) {
 
       {/* What was *not* requeued, which is the sentence the receipt exists for:
           a repair that silently re-ran the successful half would cost an
-          overnight batch twice. */}
+          overnight batch twice. `retry.html` put it under a heading of its own,
+          because a receipt's longest paragraph with nothing naming it reads as
+          a disclaimer rather than as the record. */}
+      <h4 className={dash.panelTitle}>What the retry did</h4>
       <p className={styles.receiptNext}>
         Only items that failed, or finished with a failed optional stage, were sent back through the
         index service. Successful items from <DashLink href={from}>{outcome.from_job_id}</DashLink>{" "}
@@ -139,9 +143,11 @@ function Receipt({ outcome }: { outcome: RetryOutcome }) {
 
       {outcome.errors.map((error, index) => (
         <div key={index}>
-          <p className={`${styles.receiptLine} ${styles.outcomeBad}`}>
-            <code>{error.error}</code>
-            <span>{error.message}</span>
+          {/* The code as a state in its tone — the same pill every other
+              refusal on this surface wears, so a batch that was turned away
+              reads as one thing and not as a line of mono in a receipt. */}
+          <p className={styles.receiptLine}>
+            <Pill state={error.error ?? "E_UNKNOWN"} tone="bad" /> <span>{error.message}</span>
           </p>
           {/* The sentence saying what to do about the batch that was refused —
               policy text, Python's, and the one line a receipt with a refusal

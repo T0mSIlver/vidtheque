@@ -527,7 +527,14 @@ function Empty({ filters }: { filters: Jobs["filters"] }) {
             everything else the reader typed. */}
         {narrowed ? <DashLink href={`${ROOT}/jobs?state=all`}>Show every job</DashLink> : null}
         {narrowed && rendered ? <Sep /> : null}
-        {rendered ? <DashLink href={`${ROOT}/index`}>Add videos</DashLink> : null}
+        {/* `jobs.html`'s own test hook, and it is only that: the smoke check
+            finds the empty state's way out by it rather than by the words on
+            it, so renaming the link cannot quietly pass. */}
+        {rendered ? (
+          <DashLink data-empty-add="" href={`${ROOT}/index`}>
+            Add videos
+          </DashLink>
+        ) : null}
       </p>
     </section>
   );

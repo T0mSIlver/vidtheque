@@ -86,17 +86,30 @@ export function JobDetailView({ jobId }: { jobId: string }) {
     );
   }
 
-  return <Loaded data={state.data} stopped={state.error} polling={state.polling} />;
+  return (
+    <Loaded
+      data={state.data}
+      polling={state.polling}
+      stopped={state.error}
+      wasLive={state.wasLive}
+    />
+  );
 }
 
 function Loaded({
   data,
   stopped,
   polling,
+  wasLive,
 }: {
   data: JobDetail;
   stopped: unknown;
   polling: boolean;
+  /** Did this view watch the job run? The final-record note is owed to the
+   *  reader whose page went stale under them and to nobody else — `job.html`
+   *  kept the sentence hidden in the markup and the ticker revealed it on the
+   *  reading where the job stopped. */
+  wasLive: boolean;
 }) {
   const { job } = data;
   const { rendered } = useWriteSide();
@@ -112,7 +125,13 @@ function Loaded({
     <>
       <Crumbs jobId={job.job_id} />
 
-      <PageHead title={`Job ${job.job_id}`}>
+      <PageHead
+        title={
+          <>
+            Job <code>{job.job_id}</code>
+          </>
+        }
+      >
         {/* The states go on the title's baseline like every other page's
             header, and the countdown goes with them: on a deferred job it is
             the highest-value string on the surface and it used to sit fourth
@@ -145,7 +164,14 @@ function Loaded({
           <span className={styles.staleNote}>
             the live view stopped: {refusalOf(stopped).message}
           </span>
-        ) : !data.live ? (
+        ) : !data.live && wasLive ? (
+          // The wording is this page's and not `job.html`'s "reload for the
+          // final record": there the tick patched a handful of fields and the
+          // rest of the document stayed at the reading it was rendered from, so
+          // a reload was what the sentence was for. Here the poll replaces the
+          // whole payload, and the page the reader is looking at *is* the final
+          // record — telling them to reload would be sending them to re-fetch
+          // what they already have.
           <span className={styles.staleNote}>
             this job has finished, so this is the final record
           </span>
@@ -452,7 +478,7 @@ function Stages({ data }: { data: JobDetail }) {
   if (!focus || !stages?.length) return null;
   const subject = focus.title || focus.video_id || null;
   return (
-    <Panel id="focus" title={subject ? `Stage by stage — ${subject}` : "Stage by stage"}>
+    <Panel id="focus" subject={subject} title="Stage by stage">
       <div className={dash.tablewrap}>
         <table className={dash.grid}>
           <caption className={dash.srOnly}>

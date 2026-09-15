@@ -197,6 +197,18 @@
   flex: 1 1 auto;
 }
 
+/* Every machine string on this surface is in the machine's face, wherever it
+   is printed — an id in a heading, an error code in a sentence, a tool name in
+   a note — and it breaks anywhere, because a yt-dlp traceback is one token as
+   often as it is a sentence (`dashboard.css:302-331`). Without this a `<code>`
+   outside a table fell back to the browser's own monospace. */
+.col code {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  font-variant-ligatures: none;
+  overflow-wrap: anywhere;
+}
+
 /* A link inside a sentence keeps the underline the browser draws under it.
    `globals.css` takes it off for every surface — right for the two front doors,
    where a link is a plate, a receipt or a CTA and the shape says so — and wrong

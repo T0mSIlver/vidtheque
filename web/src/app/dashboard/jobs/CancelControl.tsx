@@ -25,10 +25,14 @@ import styles from "./jobs.module.css";
 // positive same-origin evidence §3.3 asks of an ambient credential — there is
 // no CSRF token on this surface and none is planned.
 //
-// The button does not come back after a successful cancel. The action is not
-// repeatable: a second POST against a settled job is refused `E_BAD_PARAM`,
-// and against a running one it re-records a request already recorded. What
-// replaces it is what the route answered.
+// What replaces the button is what the route answered. On a job the write
+// *settled* the button does not come back: a second POST against a settled job
+// is refused `E_BAD_PARAM`, and there is nothing left to cancel. On a running
+// job it does, beside the outcome, because that job is still live and the
+// runner has not stopped — `jobs.html` and `job.html` drew Cancel on
+// `job.live` and the POST landed back on a page where the job still was. A
+// reader who cannot re-cancel a running job without reloading has lost the one
+// control the page exists to offer them.
 
 export function CancelControl({ job, label = "Cancel" }: { job: JobCard; label?: string }) {
   const send = useCallback(() => dashboard.cancelJob(job.job_id), [job.job_id]);
@@ -43,7 +47,14 @@ export function CancelControl({ job, label = "Cancel" }: { job: JobCard; label?:
             runner has not stopped yet — the fact that it has been asked to.
             Both are values off the payload; neither is a sentence this page
             composed about what will happen next. */}
-        {settled ? null : <span>cancel requested</span>}
+        {settled ? null : (
+          <>
+            <span>cancel requested</span>
+            <button className={styles.rowbutton} type="button" onClick={run}>
+              {label}
+            </button>
+          </>
+        )}
       </span>
     );
   }

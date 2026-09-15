@@ -62,15 +62,28 @@ export type Poll<T> = Outcome<T> & {
   /** Is another tick coming? `false` once everything is terminal, and once a
    *  refusal stopped it. */
   polling: boolean;
+  /** Did *this view* watch it run? `false` on a page that opened on something
+   *  already terminal, and `true` from the first reading that was live onwards.
+   *
+   *  It is the difference between a page whose reading went stale under the
+   *  reader and a page that was a record when they opened it, which is what
+   *  `job.html` kept its final-record note hidden for: a week-old job told
+   *  nobody their view had gone out of date. Tracked here rather than in a ref
+   *  on the page, because a ref read during a render is a value React is free
+   *  to have not re-rendered for. */
+  wasLive: boolean;
   reload: () => void;
 };
 
 export function useJobsPoll<T extends Live>(read: (signal: AbortSignal) => Promise<T>): Poll<T> {
-  const [state, setState] = useState<Outcome<T> & { error: unknown; polling: boolean }>({
+  const [state, setState] = useState<
+    Outcome<T> & { error: unknown; polling: boolean; wasLive: boolean }
+  >({
     status: "loading",
     data: null,
     error: null,
     polling: true,
+    wasLive: false,
   });
   // Bumped by `reload`, which re-runs the effect from the top: the payload
   // never came through the router, so there is no route to refresh.
@@ -102,7 +115,13 @@ export function useJobsPoll<T extends Live>(read: (signal: AbortSignal) => Promi
         const data = await read(controller.signal);
         if (controller.signal.aborted) return;
         latest.current = data;
-        setState({ status: "ready", data, error: null, polling: data.live });
+        setState((was) => ({
+          status: "ready",
+          data,
+          error: null,
+          polling: data.live,
+          wasLive: was.wasLive || data.live,
+        }));
         if (data.live) later(Math.max(MIN_TICK_MS, data.poll_ms || FALLBACK_TICK_MS));
         else stop();
       } catch (error) {
@@ -111,10 +130,10 @@ export function useJobsPoll<T extends Live>(read: (signal: AbortSignal) => Promi
         const refusal = error instanceof DashboardError ? error : null;
         const held = latest.current;
         const backingOff = refusal?.status === 429;
-        setState(
+        setState((was) =>
           held
-            ? { status: "ready", data: held, error, polling: backingOff }
-            : { status: "failed", data: null, error, polling: backingOff },
+            ? { status: "ready", data: held, error, polling: backingOff, wasLive: was.wasLive }
+            : { status: "failed", data: null, error, polling: backingOff, wasLive: was.wasLive },
         );
         if (backingOff)
           later(Math.max(MIN_TICK_MS, (refusal.retryAfter ?? FALLBACK_BACKOFF_S) * 1000));
@@ -143,14 +162,14 @@ export function useJobsPoll<T extends Live>(read: (signal: AbortSignal) => Promi
 
   const reload = useCallback(() => {
     latest.current = null;
-    setState({ status: "loading", data: null, error: null, polling: true });
+    setState({ status: "loading", data: null, error: null, polling: true, wasLive: false });
     setAttempt((n) => n + 1);
   }, []);
 
   // Rebuilt per branch rather than spread: spreading the union at once
   // collapses `status` back into all three words, and the whole point of the
   // discriminant is that a page which has checked it is holding a payload.
-  const rest = { error: state.error, polling: state.polling, reload };
+  const rest = { error: state.error, polling: state.polling, wasLive: state.wasLive, reload };
   return state.status === "ready"
     ? { ...rest, status: "ready", data: state.data }
     : { ...rest, status: state.status, data: null };

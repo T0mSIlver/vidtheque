@@ -22,7 +22,11 @@ export function PageHead({
   note,
   children,
 }: {
-  title: string;
+  /** The page's name. A node rather than a string where part of it is a
+   *  machine string — `Job <code>job_20260909…</code>`, which `job.html` set in
+   *  the mono face because an id read in the text face is an id a reader has to
+   *  spell out. */
+  title: ReactNode;
   /** A second line, under the title's own band and above the hairline. Only
    *  the index form has one: it is the page whose title names a verb, and the
    *  line says what may be handed to it. */
@@ -100,12 +104,21 @@ export function publishedNote(span: { oldest: number | null; newest: number | nu
 export function Panel({
   id,
   title,
+  subject,
   drift,
   aside,
   children,
 }: {
   id: string;
   title: string;
+  /** A corpus string inside the heading — a talk's name, not a label.
+   *
+   *  A panel heading is 10px tracked uppercase mono, which is right for
+   *  "Stage by stage" and wrong for what follows it: run through that idiom a
+   *  conference title comes out as a sentence-length run of capitals, which is
+   *  what the all-caps rule catches. `.subject` keeps the name in its own case
+   *  and its own face inside the heading (`dashboard.css:584`). */
+  subject?: string | null;
   /** The one 2px rule on this surface: a panel whose halves disagree. */
   drift?: boolean;
   aside?: ReactNode;
@@ -116,19 +129,31 @@ export function Panel({
       {aside ? (
         <div className={styles.panelHeadline}>
           <h2 className={styles.panelTitle} id={id}>
-            {title}
+            <PanelHeading subject={subject} title={title} />
           </h2>
           {aside}
         </div>
       ) : (
         <h2 className={styles.panelTitle} id={id}>
-          {title}
+          <PanelHeading subject={subject} title={title} />
         </h2>
       )}
       {children}
     </section>
   );
 }
+
+const PanelHeading = ({ title, subject }: { title: string; subject?: string | null }) => (
+  <>
+    {title}
+    {subject ? (
+      <>
+        {" — "}
+        <span className={styles.subject}>{subject}</span>
+      </>
+    ) : null}
+  </>
+);
 
 export function Figure({
   label,
