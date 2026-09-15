@@ -2989,7 +2989,7 @@ and lists. No rendered clock, no spoken duration, no sentence a page composed.
 | `POST /following/{slug}/state` | `{"follow": {…}}` |
 | `POST /following/{slug}/check` | `{"follow": {…}}` |
 | `POST /following/{slug}/rules` | `{"follow": {…}}` |
-| `POST /following/{slug}/delete` | `{"slug", "deleted": true, "videos_kept"}` |
+| `POST /following/{slug}/delete` | `{"slug", "deleted": true, "videos_kept", "spent_s"}` |
 | `POST /following/{slug}/queue` | `{"slug", "url" \| null, "job_id" \| null}` |
 
 Six of those are worth a sentence each, because the payload — or the
@@ -3053,6 +3053,16 @@ refusal — is not the obvious one:
   renderer, so the tool and the page that drives the same call cannot describe
   one refusal two ways) and resume as the `next:`. Same code and message on
   both media, which is the 2026-09-06 rule arriving at this one outcome.
+- **An unfollow's `spent_s` is the day it did not hand back** *(added
+  2026-09-15)*. Since migration 0007 the delete stops refunding the rolling
+  day — `follow_spend` outlives its follow — so the budget the list re-reads
+  after this write looks unchanged, and the receipt has to say why before the
+  operator wonders whether the unfollow worked. The field is
+  `store.spend_of_s`, the same sum the tool renders into its "not a refund"
+  line, read **before** the tool runs because the delete is what nulls the
+  owner on the spend rows. Seconds, like every duration on this surface;
+  `0.0` is nothing spent, and printing nothing there is the client's call,
+  the same omission rule a null near miss's.
 - **`login` refuses with `E_BAD_CREDENTIAL` at 401, not `E_AUTH_REQUIRED`**
   *(landed 2026-09-05)*. Every other 401 on this surface means "go and sign
   in", and the client acts on it by navigating to the sign-in page
@@ -3320,7 +3330,11 @@ because the payload is what makes them possible:
   §21's `videos_kept` as the receipt. That the videos are corpus and not
   membership is the whole of what an operator has to know before the one
   irreversible control on this surface, and it must be on the page rather than
-  in a redirect they never see.
+  in a redirect they never see. *Amended 2026-09-15:* the receipt has a second
+  line — §21's `spent_s`, the day the unfollow did **not** hand back
+  (migration 0007) — and the page prints the tool's "not a refund" sentence
+  off it when there is a number to print, because the budget it is about to
+  re-read will not move.
 
 **Does not add.** A route the pages do not have, a parameter, a clamp number,
 an env var, a CORS policy, a write, a second query layer, or a page. The React
