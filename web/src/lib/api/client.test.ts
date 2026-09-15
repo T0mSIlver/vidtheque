@@ -83,8 +83,17 @@ describe("createClient", () => {
     expect(page.pagination.has_more).toBe(false);
   });
 
-  it("rejects a payload that no longer matches the contract", async () => {
+  // A hit that no longer matches the contract is one hit; a *page* that does
+  // not is a page. The line is where it is because a page with no `pagination`
+  // cannot be rendered at all, where a page with nine readable hits can.
+  it("drops a hit that no longer matches the contract", async () => {
     const { fetchImpl } = fake(200, { ...SEARCH, results: [{ ...HIT, start: "1.5" }] });
+    const client = createClient({ baseUrl: "https://api.test", fetch: fetchImpl });
+    expect((await client.search({ q: "hello" })).results).toHaveLength(0);
+  });
+
+  it("rejects a page whose own shape no longer matches the contract", async () => {
+    const { fetchImpl } = fake(200, { ...SEARCH, pagination: undefined });
     const client = createClient({ baseUrl: "https://api.test", fetch: fetchImpl });
     await expect(client.search({ q: "hello" })).rejects.toBeInstanceOf(ZodError);
   });
@@ -214,19 +223,37 @@ describe("createClient", () => {
       "/api/frames/abc.jpg",
     ];
 
-    it.each(rejected)("rejects a link that is %s", async (link) => {
+    it.each(rejected)("drops a hit whose link is %s", async (link) => {
       const { fetchImpl } = fake(200, { ...SEARCH, results: [{ ...HIT, link }] });
       const client = createClient({ baseUrl: "https://api.test", fetch: fetchImpl });
-      await expect(client.search({ q: "hello" })).rejects.toBeInstanceOf(ZodError);
+      const page = await client.search({ q: "hello" });
+      expect(page.results).toHaveLength(0);
     });
 
-    it("rejects a thumbnail that is a data: URL", async () => {
+    it("drops a hit whose thumbnail is a data: URL", async () => {
       const { fetchImpl } = fake(200, {
         ...SEARCH,
         results: [{ ...HIT, thumb: "data:image/png;base64,iVBORw0KGgo=" }],
       });
       const client = createClient({ baseUrl: "https://api.test", fetch: fetchImpl });
-      await expect(client.search({ q: "hello" })).rejects.toBeInstanceOf(ZodError);
+      expect((await client.search({ q: "hello" })).results).toHaveLength(0);
+    });
+
+    // …and one bad row costs one row. A page of nine good hits used to collapse
+    // into "Could not reach the server." because the tenth carried a relative
+    // `thumb`; what the page loses now is that hit, and it says so where it
+    // says everything else it could not do.
+    it("keeps the rest of the page, and says what it left out", async () => {
+      const { fetchImpl } = fake(200, {
+        ...SEARCH,
+        results: [HIT, { ...HIT, thumb: "/api/frames/abc.jpg" }],
+      });
+      const client = createClient({ baseUrl: "https://api.test", fetch: fetchImpl });
+      const page = await client.search({ q: "hello" });
+      expect(page.results).toHaveLength(1);
+      expect(page.notes).toEqual([
+        "note: 1 result(s) came back in a shape this page cannot read and were left out.",
+      ]);
     });
   });
 
