@@ -499,8 +499,19 @@ export function useWriteSide(): { rendered: boolean; indexable: boolean } {
 
 // ---------------------------------------------------------------- the read
 
-/** The request is out. A word, not a spinner: nothing is known yet to animate. */
-export const Reading = () => <p className={styles.reading}>reading…</p>;
+/** The request is out. A word, not a spinner: nothing is known yet to animate.
+ *
+ *  `role="status"` because this is the state a screen-reader user meets on
+ *  every load of every page here — the Jinja surface had no such moment, the
+ *  document arrived with its data in it — and a word that appears and is
+ *  replaced without being announced is a page that says nothing at all for as
+ *  long as the read takes. Polite, so it waits its turn, and the region is
+ *  already on the page before the word lands in it. */
+export const Reading = () => (
+  <p className={styles.reading} role="status">
+    reading…
+  </p>
+);
 
 /** The refusal's own way back: the page whose form it was.
  *

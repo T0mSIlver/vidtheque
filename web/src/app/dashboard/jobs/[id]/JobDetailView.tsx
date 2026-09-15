@@ -73,7 +73,15 @@ export function JobDetailView({ jobId }: { jobId: string }) {
       return (
         <>
           <Crumbs jobId={jobId} />
-          <Refusal code={refusal.code} message={refusal.message} next={refusal.next} />
+          {/* `views.job_detail` titled this document "Unknown job": short
+              enough to read in a tab, which the message — a sentence naming the
+              id — is not. */}
+          <Refusal
+            code={refusal.code}
+            message={refusal.message}
+            next={refusal.next}
+            title="Unknown job"
+          />
         </>
       );
     }
