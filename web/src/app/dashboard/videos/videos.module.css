@@ -264,10 +264,11 @@
   composes: stacked from "../dashboard.module.css";
 }
 
-/* At a phone's width the grid stops being a grid: each row becomes its own
-   block and every cell wears the column's name, which is what `data-label`
-   is on the cells for. */
-@media (max-width: 780px) {
+/* 52rem — the dashboard's own breakpoint, the one DESIGN.md registers for it:
+   the grid stops being a grid, each row becomes its own block and every cell
+   wears the column's name, which is what `data-label` is on the cells for.
+   Eight columns run out of width well before `--bp-hand` does. */
+@media (max-width: 52rem) {
   .videos thead {
     display: none;
   }
@@ -278,6 +279,10 @@
     border-bottom: 1px solid var(--seam);
   }
 
+  /* `text-align` is reset here rather than left to the cell: a `.num` column
+     carries a right alignment that, once the cell is a flex row with a fixed
+     label box, right-aligns the label inside it — so `DURATION` sat at a
+     different indent from `PUBLISHED`. */
   .videos tbody th,
   .videos tbody td {
     display: flex;
@@ -285,17 +290,13 @@
     height: auto;
     padding: 2px var(--s2);
     border: 0;
+    text-align: left;
   }
 
+  /* The label's own face and its indent are `dashboard.module.css`'s
+     `.stacked`; this is the switch that turns it on at this table's width. */
   .videos tbody td::before {
     content: attr(data-label);
-    flex: 0 0 6rem;
-    font-family: var(--mono);
-    font-size: 0.625rem;
-    font-weight: var(--w-mono-label);
-    letter-spacing: 0.19em;
-    text-transform: uppercase;
-    color: var(--muted);
   }
 
   .videos tbody td.colShot::before {

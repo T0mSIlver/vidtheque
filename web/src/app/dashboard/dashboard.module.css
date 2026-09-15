@@ -611,8 +611,15 @@
    draws nothing at all: that is the switch, and it leaves each table the
    breakpoint it needs. A six-column table of standing rules runs out of width
    sooner than one carrying a whole sentence in a column. */
+.stacked {
+  /* One indent for every stacked label on the surface, so `DURATION` and
+     `PUBLISHED` start at the same column and the values behind them stay a
+     column too (`dashboard.css`'s `--stacked-label`). */
+  --stacked-label: 5.5rem;
+}
+
 .stacked td::before {
-  flex: 0 0 6rem;
+  flex: 0 0 var(--stacked-label);
   font-family: var(--mono);
   font-size: 0.625rem;
   font-weight: var(--w-mono-label);
