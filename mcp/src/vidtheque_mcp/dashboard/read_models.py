@@ -1800,6 +1800,18 @@ def follow_row_json(row: Any) -> dict[str, Any]:
         "kind": str(row["kind"]),
         "source_url": str(row["source_url"]),
         "state": str(row["state"]),
+        # What `failing` alone cannot say: is the check coming back on its own?
+        # Since 0008 the word covers a follow retrying once a day and one that
+        # has stopped, and the difference is a count rather than a fourth state
+        # word (following.md §11.4). `fail_count` is the count the store keeps,
+        # `retrying` the derived half — `state` and the store's own predicate,
+        # never re-derived on the client — and `max_tries` the bound beside
+        # them, so a page printing `retry 2 of 7` reads every number in the
+        # phrase off the row (`FAILING_MAX_TRIES`, the same coupling that puts
+        # `within_s` beside a near-miss count).
+        "fail_count": int(row["fail_count"] or 0),
+        "retrying": str(row["state"]) == "failing" and follows_store.retries_left(row),
+        "max_tries": follows_store.FAILING_MAX_TRIES,
         "mode": rules.mode,
         "tabs": list(rules.tabs),
         "channels": rules.channels,
