@@ -79,10 +79,10 @@ function Loaded({ data }: { data: Overview }) {
       </PageHead>
 
       {drift ? (
-        <section className={styles.notice} aria-labelledby="drift">
+        <section className={styles.noticeBad} aria-labelledby="drift">
           {projection ? (
             <>
-              <h2 className={styles.noticeTitle} id="drift">
+              <h2 className={styles.noticeBadTitle} id="drift">
                 Vector search is off on this instance
               </h2>
               <p className={styles.noticeNext}>
@@ -91,7 +91,7 @@ function Loaded({ data }: { data: Overview }) {
             </>
           ) : (
             <>
-              <h2 className={styles.noticeTitle} id="drift">
+              <h2 className={styles.noticeBadTitle} id="drift">
                 The corpus and the worker disagree
               </h2>
               {readiness.vectors.reason ? (

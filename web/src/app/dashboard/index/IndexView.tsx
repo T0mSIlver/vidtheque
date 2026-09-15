@@ -325,8 +325,8 @@ function Form({ indexable, reason }: { indexable: boolean; reason: string | null
           `null` where writes are allowed and `null` in the projection, so the
           line is the sentence or nothing — never a sentence about nothing. */}
       {indexable ? null : (
-        <section className={dash.notice} aria-labelledby="refused">
-          <h2 className={dash.noticeTitle} id="refused">
+        <section className={dash.noticeBad} aria-labelledby="refused">
+          <h2 className={dash.noticeBadTitle} id="refused">
             Indexing is disabled on this instance.
           </h2>
           <p className={dash.noticeDetail}>
@@ -338,8 +338,8 @@ function Form({ indexable, reason }: { indexable: boolean; reason: string | null
       )}
 
       {refusal ? (
-        <section className={dash.notice} aria-labelledby="norun">
-          <h2 className={dash.noticeTitle} id="norun">
+        <section className={dash.noticeBad} aria-labelledby="norun">
+          <h2 className={dash.noticeBadTitle} id="norun">
             {refusal.message}
           </h2>
           <p className={dash.noticeDetail}>

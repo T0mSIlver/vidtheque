@@ -399,8 +399,12 @@ describe("the index form", () => {
       ).toBeInTheDocument();
       expect(screen.queryByLabelText("URLs")).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Queue the job" })).not.toBeInTheDocument();
-      // Not an error state: nothing here failed.
+      // Not an error state: nothing here failed — so the band wears the
+      // neutral tone rather than the one a refusal wears.
       expect(screen.queryByText(/could not read/)).not.toBeInTheDocument();
+      const band = screen.getByRole("region", { name: "This deployment does not index anything." });
+      expect(band.className).toMatch(/notice/);
+      expect(band.className).not.toMatch(/noticeBad/);
     });
 
     // §5.5: refuse honestly. Disabled with the reason above it, rather than

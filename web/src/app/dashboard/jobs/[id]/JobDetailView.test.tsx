@@ -154,6 +154,19 @@ describe("one job's page", () => {
     expect(within(items).getByText(/Sign in to confirm you are not a bot/)).toBeInTheDocument();
   });
 
+  // The one band on this page that *is* an alarm, and the only one that opts
+  // into the tone.
+  it("draws the job's own failure in the bad tone", async () => {
+    const broken = {
+      ...OWNER_JOB_DETAIL,
+      job: { ...OWNER_JOB_DETAIL.job, error_code: "E_PARTIAL", error_message: "one item failed." },
+    };
+    await mount({ body: broken });
+    const band = await screen.findByRole("region", { name: "E_PARTIAL" });
+    expect(band.className).toMatch(/noticeBad/);
+    expect(within(band).getByRole("heading").className).toMatch(/noticeBadTitle/);
+  });
+
   // The page's whole reason for existing: "waiting, and coming back" was the
   // honest state of the system and nothing rendered it.
   it("says a deferred job is waiting rather than stuck, and for how much longer", async () => {
@@ -165,6 +178,10 @@ describe("one job's page", () => {
     // And on the title's own baseline, where the countdown belongs on a job
     // whose only interesting fact is the wait.
     expect(held()).toHaveTextContent("held 4m 00s more");
+    // Waiting is not failing, and the band that says so does not wear the
+    // failure tone — `job.html` gave this one a bare `class="notice"` and kept
+    // `notice-bad` for the error panel below it.
+    expect(notice.className).not.toMatch(/noticeBad/);
   });
 
   // The number inside the sentence is part of the countdown, not a stamp of

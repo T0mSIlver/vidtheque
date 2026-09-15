@@ -155,8 +155,8 @@ export function SearchView() {
       {state.status === "loading" && searched ? <Reading /> : null}
 
       {told && refusal instanceof DashboardError ? (
-        <section className={dash.notice} aria-labelledby="search-refused">
-          <h2 className={dash.noticeTitle} id="search-refused">
+        <section className={dash.noticeBad} aria-labelledby="search-refused">
+          <h2 className={dash.noticeBadTitle} id="search-refused">
             {refusal.code}
           </h2>
           <p className={dash.noticeDetail}>{refusal.message}</p>

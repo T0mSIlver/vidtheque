@@ -139,8 +139,8 @@ function UnknownVideo({ refusal, videoId }: { refusal: DashboardError; videoId: 
     <>
       <Crumbs videoId={videoId} />
       <PageHead title="Unknown video" />
-      <section className={dash.notice} aria-labelledby="unknown">
-        <h2 className={dash.noticeTitle} id="unknown">
+      <section className={dash.noticeBad} aria-labelledby="unknown">
+        <h2 className={dash.noticeBadTitle} id="unknown">
           {refusal.message}
         </h2>
         <p className={dash.noticeDetail}>
