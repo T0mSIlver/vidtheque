@@ -1181,7 +1181,7 @@ under test is the thing that will be deployed. Until someone does that and the
 shim is removed in a commit of its own, it stays, because deleting it first
 would break every local write.
 
-## 11. The parity round: four differences that stand, and six calls (2026-09-16)
+## 11. The parity round: what stands, and what was decided (2026-09-16)
 
 *Recorded 2026-09-16 while closing the front-end parity audit against the Jinja
 surface at `6785195`. The audit's own artefacts are
@@ -1296,7 +1296,36 @@ refusal's `next:` line —
 `writes.py` sends beside the message and the page dropped, leaving the refusal
 here whose recovery sentence the reader never saw.
 
-### 11.3 Left for the branches that own them
+### 11.3 §1d's two lists stop being one list
+
+`app/dashboard/[...rest]` is new, and it is what makes the designed `404`
+reachable at all: Next renders a segment's `not-found.tsx` when `notFound()` is
+thrown *inside* that segment, and an unmatched URL is inside nothing — it gets
+the **root** `app/not-found.tsx`, which is the front door's page and knows
+nothing of this surface. The catch-all is the last thing the router tries, so it
+shadows no page, and what Python owns under the prefix never reaches the router
+(`next.config.ts` in development, `deploy/Caddyfile` in production).
+
+**`proxy.ts`'s matcher gains one entry and loses an invariant.** It was a
+whitelist of the ported pages, one entry each, on the argument that "every page
+not yet ported is Python's HTML, which carries its own policy" — an argument
+that retired on 2026-09-06 with the Jinja surface. What it left behind was a
+hole: a mistyped `/dashboard/…` is a document this app renders, and it was the
+one document on this surface shipped with **no CSP, no `X-Frame-Options` and no
+`Referrer-Policy`** on it. The new entry is
+`/dashboard/((?!api/|logout).*)` — everything under the prefix that is not one
+of Python's two, which are named rather than left to luck.
+
+So `proxy.test.ts`'s "agrees with the list every link asks" no longer reads
+`isPorted(path) === matches(path)`. The two answer different questions and now
+differ by exactly one thing: **`ported.ts` says whether a path is a page**,
+which is what a link has to know, and **the matcher says whether it is a
+document**, which since the catch-all includes the refusal every other path
+renders. A page is in both, Python's two are in neither, and a non-page under
+`/dashboard` is a document and not a link target. The per-entry list above the
+new one stays, because it is still the record of which paths are pages.
+
+### 11.4 Left for the branches that own them
 
 `lib/format.ts`'s em dash for a null clock (audit X8) is the demo branch's file.
 The follow pages' budget note, `next check` column, post-follow navigation and
