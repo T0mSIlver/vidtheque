@@ -257,6 +257,38 @@ async def test_check_now_on_a_follow_that_gave_up_does_not_promise_a_check(
     assert "resume" in text
 
 
+async def test_the_dashboard_refusal_for_a_paused_follow_is_the_tool_s_own(
+    assembled: Assembled,
+) -> None:
+    """`check_now_refusal`'s paused half: the same sentence, both ways out.
+
+    The paused branch has a sentence of its own — the tool's text prints it
+    (`test_follow_pause_resume_check_now_unfollow`) and the dashboard's 409
+    envelope carries it — so the dict the envelope is built from is asserted
+    directly, `next:` included: it is a sentence a reader acts on, not a
+    fragment.
+    """
+    deps = assembled.deps
+    await follow(deps, url=CHANNEL)
+    await follow(deps, url=CHANNEL, action="pause")
+    row = await deps.db.read(lambda c: follows_store.find(c, CHANNEL))
+
+    text = await follow(deps, url=CHANNEL, action="check_now")
+    refusal = follows_tool.check_now_refusal(row)
+
+    assert refusal["code"] == "E_NOT_SCHEDULABLE"
+    assert refusal["message"] == (
+        "Not scheduled: @karpathy is paused, and a paused follow is never "
+        "checked. Nothing was queued."
+    )
+    # The message is the tool's own first line, not a second wording.
+    assert refusal["message"] in body(text)
+    assert refusal["next"] == (
+        "Resume the follow; a paused follow is never checked, and resuming "
+        "re-arms its clock."
+    )
+
+
 async def test_check_now_on_a_follow_still_retrying_schedules_the_check(
     assembled: Assembled,
 ) -> None:

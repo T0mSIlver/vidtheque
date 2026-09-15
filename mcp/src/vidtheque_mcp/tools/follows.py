@@ -436,7 +436,8 @@ def check_now_refusal(row: sqlite3.Row) -> dict[str, str]:
         "code": "E_NOT_SCHEDULABLE",
         "message": not_scheduled_line(row),
         "next": (
-            "resume it; a paused follow is never checked."
+            "Resume the follow; a paused follow is never checked, and resuming "
+            "re-arms its clock."
             if paused
             else "Try again (resume) clears the failure count and re-arms the clock."
         ),
