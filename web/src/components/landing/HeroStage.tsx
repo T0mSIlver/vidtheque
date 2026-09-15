@@ -472,7 +472,12 @@ export function HeroStage() {
                 page's own show and runs on its own; this is the one control
                 that leaves it, so it is a real link — middle-click works, and
                 it is the same affordance whether or not the script ran. */}
-            <Link className={styles.cta} href="/demo" ref={cta}>
+            {/* `prefetch={false}`: this page's own comment is that it makes
+                zero network requests, and a viewport-triggered prefetch of
+                `/demo`'s payload spends the visitor's bandwidth — and a slice
+                of a shared per-IP budget — on a page they have not asked
+                for. */}
+            <Link className={styles.cta} href="/demo" prefetch={false} ref={cta}>
               Open the demo
               <svg
                 viewBox="0 0 12 12"
