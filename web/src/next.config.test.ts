@@ -141,13 +141,12 @@ describe("the document cache policy", () => {
     }
   });
 
-  // The stills are content-addressed by the video id they came out of and are
-  // replaced by adding a file, never by editing one, which is what makes the
-  // year honest.
+  // A still is named after where it came from and is added or removed, never
+  // edited under its own name, which is what makes the year honest.
   it("gives the landing's stills the year they had", async () => {
-    expect(await policyFor("/landing/wall/kCc8FmEb1nY.jpg")).toBe(
-      "public, max-age=31536000, immutable",
-    );
+    const year = "public, max-age=31536000, immutable";
+    expect(await policyFor("/landing/wall/t00.jpg")).toBe(year);
+    expect(await policyFor("/landing/grid/-561cZmir5Q.jpg")).toBe(year);
   });
 
   // The front doors are the same document for everyone and are not the

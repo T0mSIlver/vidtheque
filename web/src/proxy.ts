@@ -277,5 +277,29 @@ export const config = {
         { type: "header", key: "purpose", value: "prefetch" },
       ],
     },
+    {
+      // **Every other path under the prefix, because every one of them is now
+      // a document this app serves.** `app/dashboard/[...rest]` catches what
+      // the pages above do not and refuses it, and `dashboard/not-found.tsx`
+      // draws the refusal in this surface's own type — a page, with the rail
+      // on it, not Next's stock `404`. A refusal is a document like any other
+      // and carries the same policy; without this entry the one page on this
+      // surface that a mistyped URL reaches was the one shipped with no CSP,
+      // no `X-Frame-Options` and no `Referrer-Policy` on it.
+      //
+      // The two exclusions are the whole of what the list above was
+      // protecting. Its argument — "every page not yet ported is Python's
+      // HTML, which carries its own policy" — retired on 2026-09-06 when
+      // Python stopped rendering any of this prefix (dashboard.md §23); what
+      // is left under it that is not a document is `/dashboard/api/*`, the
+      // JSON the pages read, and `/dashboard/logout`, the write that ends a
+      // session. Both are named here rather than left to luck, and the entries
+      // above stay as the record of which paths are pages.
+      source: "/dashboard/((?!api/|logout).*)",
+      missing: [
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ],
+    },
   ],
 };
