@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
-import { beforeAll, describe, expect, it } from "vitest";
+import type { ReactNode } from "react";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import LandingPage from "./page";
 
 // jsdom below the version that ships matchMedia still has to answer the motion
@@ -32,6 +33,40 @@ describe("the landing at /", () => {
     expect(h1).toHaveTextContent("Your agent listens.");
 
     expect(screen.getByRole("link", { name: /Open the demo/ })).toHaveAttribute("href", "/demo");
+  });
+
+  // This page makes zero network requests, which is the whole of its budget
+  // argument. A viewport-triggered prefetch of `/demo`'s payload spends the
+  // visitor's bandwidth — and a slice of a shared per-IP limit — on a page
+  // nobody asked for. `prefetch` never reaches the DOM, so a stand-in `Link`
+  // is what records it.
+  it("does not fetch the demo before anyone asks for it", async () => {
+    vi.resetModules();
+    vi.doMock("next/link", () => ({
+      default: ({
+        prefetch,
+        children,
+        ...rest
+      }: {
+        prefetch?: boolean;
+        children: ReactNode;
+      } & Record<string, unknown>) => (
+        <a data-prefetch={String(prefetch)} {...rest}>
+          {children}
+        </a>
+      ),
+    }));
+    try {
+      const { default: Page } = await import("./page");
+      render(<Page />);
+      expect(screen.getByRole("link", { name: /Open the demo/ })).toHaveAttribute(
+        "data-prefetch",
+        "false",
+      );
+    } finally {
+      vi.doUnmock("next/link");
+      vi.resetModules();
+    }
   });
 
   it("is the landing, not the reader: no search box lives here", () => {

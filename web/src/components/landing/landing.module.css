@@ -623,7 +623,10 @@
   top: var(--y);
   width: var(--w);
   height: var(--h);
-  outline: 1px solid var(--seen-24);
+  /* The unlit box, at `landing.css`'s own alpha. `--seen-24` is two hundredths
+     brighter, which is two hundredths of the difference between a box that has
+     been read and one that has not — the whole point of the panel. */
+  outline: 1px solid rgb(201 249 56 / 22%);
   pointer-events: none;
 }
 
