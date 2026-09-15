@@ -59,6 +59,10 @@ from ..text import clamp, iso_day, split_csv
 from ..timeparse import parse_corpus_time
 from ..tools import library
 from ..tools.base import Deps
+# One sentence, one renderer: the row block carries the refusal the check
+# write would be refused with, and it must be the one `tools/follows` prints
+# (and the 409 answers with) rather than a second wording beside it.
+from ..tools.follows import not_scheduled_line
 
 # The fixed width set (dashboard.md §6.4). Three variants per frame in the
 # `derived/` cache, not one per browser window — and never inline base64, which
@@ -1778,6 +1782,16 @@ def _epoch(value: Any) -> int | None:
     return None if value is None else int(value)
 
 
+def _schedulable(row: Any) -> bool:
+    """The row half of the store's `_SCHEDULABLE`: would `due()` pick this up?
+
+    Spelled here as Python because the row's payload needs it as a boolean —
+    `retrying` covers only the `failing` half, and a paused row is neither.
+    """
+    state = str(row["state"])
+    return state == "active" or (state == "failing" and follows_store.retries_left(row))
+
+
 def follow_row_json(row: Any) -> dict[str, Any]:
     """One follow row, typed — identity, state, clocks and every rule column.
 
@@ -1812,6 +1826,13 @@ def follow_row_json(row: Any) -> dict[str, Any]:
         "fail_count": int(row["fail_count"] or 0),
         "retrying": str(row["state"]) == "failing" and follows_store.retries_left(row),
         "max_tries": follows_store.FAILING_MAX_TRIES,
+        # Policy text, and deliberately Python's: it is the refusal the check
+        # write on this row would be refused with — the same sentence out of
+        # the same renderer the 409 answers with (`not_scheduled_line`), sent
+        # so the disabled control's help cannot re-compose it client-side and
+        # go stale on a reword. `null` on a row that will be scheduled: the
+        # field is the sentence or nothing, never a sentence about nothing.
+        "not_schedulable_reason": None if _schedulable(row) else not_scheduled_line(row),
         "mode": rules.mode,
         "tabs": list(rules.tabs),
         "channels": rules.channels,
