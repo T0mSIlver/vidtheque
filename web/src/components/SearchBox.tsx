@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { Suspense, use, useEffect, useRef, useState, useTransition } from "react";
 import { ContentType } from "@/lib/api/schemas";
 import styles from "./SearchBox.module.css";
 
@@ -42,6 +42,92 @@ export function StateCell({ state }: { state: MachineState }) {
       {state}
     </span>
   );
+}
+
+/**
+ * The cell, when the word is still on its way.
+ *
+ * The bar is in the markup at first paint and the read that says how it ended
+ * is not, so the word is the one thing here that suspends — a leaf, inside the
+ * cell's own place, so the input beside it is never a thing React replaces.
+ */
+function PendingStateCell({
+  state,
+  whileWaiting,
+}: {
+  state: Promise<MachineState>;
+  whileWaiting: MachineState;
+}) {
+  return (
+    <Suspense fallback={<StateCell state={whileWaiting} />}>
+      <ResolvedStateCell state={state} />
+    </Suspense>
+  );
+}
+
+function ResolvedStateCell({ state }: { state: Promise<MachineState> }) {
+  return <StateCell state={use(state)} />;
+}
+
+/**
+ * The mode switch, once the boot call has said whether ask exists at all.
+ *
+ * `ask_enabled: false` is a deployment with no key, and it is **the one load
+ * that swaps the mode on screen** — which is why the swap happens here rather
+ * than before the box is drawn. Waiting on `/api/meta` to decide which box to
+ * draw costs every visitor a round trip with nothing to type into, to spare a
+ * misconfigured deployment one correction (demo-site.md §6.1).
+ *
+ * The correction is a `replace` and not a re-render, so the URL says `ask=0`
+ * afterwards — the same thing `setAskMode(false)` wrote with `replaceState`.
+ */
+export function AskSwitch({
+  ask,
+  q,
+  enabled,
+  onLeave,
+}: {
+  ask: boolean;
+  q: string;
+  enabled: boolean | Promise<boolean>;
+  onLeave?: () => void;
+}) {
+  if (typeof enabled === "boolean") {
+    return <ModeSwitch ask={ask} q={q} enabled={enabled} onLeave={onLeave} />;
+  }
+  return (
+    <Suspense fallback={null}>
+      <ResolvedAskSwitch ask={ask} q={q} enabled={enabled} onLeave={onLeave} />
+    </Suspense>
+  );
+}
+
+function ResolvedAskSwitch({
+  ask,
+  q,
+  enabled,
+  onLeave,
+}: {
+  ask: boolean;
+  q: string;
+  enabled: Promise<boolean>;
+  onLeave?: () => void;
+}) {
+  const available = use(enabled);
+  const router = useRouter();
+  // Once, and only in the deployment that has no ask to offer. `q` is in the
+  // deps because the correction carries the typed question with it, and the
+  // latch is what stops a keystroke from firing a second navigation.
+  const sent = useRef(false);
+  useEffect(() => {
+    if (available || !ask || sent.current) return;
+    sent.current = true;
+    const typed = q.trim();
+    router.replace(typed ? `/demo?ask=0&q=${encodeURIComponent(typed)}` : "/demo?ask=0");
+  }, [available, ask, q, router]);
+
+  if (!available) return null;
+  return <ModeSwitch ask={ask} q={q} enabled onLeave={onLeave} />;
 }
 
 /**
@@ -94,11 +180,15 @@ export function ModeSwitch({
 
 export function SearchBox({
   state = "ready",
+  whileWaiting = "ready",
   askEnabled = false,
   onPending,
 }: {
-  state?: MachineState;
-  askEnabled?: boolean;
+  /** The machine's word, or the read that will say it (`Query`). */
+  state?: MachineState | Promise<MachineState>;
+  /** What the cell prints while a promised word is still on its way. */
+  whileWaiting?: MachineState;
+  askEnabled?: boolean | Promise<boolean>;
   /** A navigation is out. The caller reserves the results' space while it is
    *  (see `app/demo/Query.tsx`); the state cell says the word here. */
   onPending?: (pending: boolean) => void;
@@ -186,7 +276,13 @@ export function SearchBox({
           autoFocus
           className={styles.input}
         />
-        <StateCell state={pending ? "scanning" : state} />
+        {pending ? (
+          <StateCell state="scanning" />
+        ) : typeof state === "string" ? (
+          <StateCell state={state} />
+        ) : (
+          <PendingStateCell state={state} whileWaiting={whileWaiting} />
+        )}
         <button type="submit" className={styles.go} disabled={pending}>
           Search
         </button>
@@ -206,7 +302,7 @@ export function SearchBox({
             </button>
           ))}
         </div>
-        <ModeSwitch ask={false} q={q} enabled={askEnabled} />
+        <AskSwitch ask={false} q={q} enabled={askEnabled} />
       </div>
     </form>
   );

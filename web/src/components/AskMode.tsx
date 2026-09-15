@@ -7,7 +7,7 @@ import { badgeWords, channelWord, presentationOf } from "@/lib/group";
 import { framingOf, readJsonEvents } from "@/lib/sse";
 import { FrameShot } from "./Frame";
 import { Receipt } from "./Receipt";
-import { ModeSwitch, StateCell } from "./SearchBox";
+import { AskSwitch, StateCell } from "./SearchBox";
 import styles from "./AskMode.module.css";
 
 // Ask mode is one Client Component that owns the question, the stream and
@@ -61,12 +61,17 @@ const STREAM_ACCEPT = "text/event-stream, application/x-ndjson;q=0.9, applicatio
 export function AskMode({
   initialQ,
   examples = [],
+  askEnabled = true,
   children,
 }: {
   initialQ: string;
   /** The cold page's questions. Copy, so they are the page's and not this
    *  component's; a chip click runs in the mode that is on screen. */
   examples?: readonly string[];
+  /** Whether this deployment has an ask at all — the boot call's answer, which
+   *  arrives after the box does. A deployment with no key is corrected into
+   *  search mode when it lands (`AskSwitch`); every other one never notices. */
+  askEnabled?: boolean | Promise<boolean>;
   /** What is in this corpus, listed under the examples. */
   children?: React.ReactNode;
 }) {
@@ -203,7 +208,7 @@ export function AskMode({
         {/* In ask mode the model picks the channel, so the content-type filter
             has nothing to act on and is not drawn at all. */}
         <div className={styles.controls}>
-          <ModeSwitch ask q={q} enabled onLeave={() => abort.current?.abort()} />
+          <AskSwitch ask q={q} enabled={askEnabled} onLeave={() => abort.current?.abort()} />
         </div>
       </form>
 

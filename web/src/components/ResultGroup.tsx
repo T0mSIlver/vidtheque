@@ -1,12 +1,6 @@
 import { Fragment } from "react";
 import type { Hit } from "@/lib/api/schemas";
-import {
-  badgeWords,
-  channelWord,
-  highlight,
-  presentationOf,
-  type VideoGroup,
-} from "@/lib/group";
+import { badgeWords, channelWord, highlight, presentationOf, type VideoGroup } from "@/lib/group";
 import { FrameShot } from "./Frame";
 import { Receipt } from "./Receipt";
 import styles from "./ResultGroup.module.css";

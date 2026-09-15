@@ -32,9 +32,7 @@ export function Receipt({
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className={[styles.rcpt, size === "lg" ? styles.lg : "", className]
-        .filter(Boolean)
-        .join(" ")}
+      className={[styles.rcpt, size === "lg" ? styles.lg : "", className].filter(Boolean).join(" ")}
     >
       <span className={styles.host}>{parts.host}</span>
       <span className={styles.vid}>{parts.id}</span>
