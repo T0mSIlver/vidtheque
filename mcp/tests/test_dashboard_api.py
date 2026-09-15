@@ -1548,6 +1548,9 @@ def test_a_failing_follow_says_whether_it_is_coming_back(tmp_path: Path) -> None
         assert row["fail_count"] == 2
         assert row["retrying"] is True
         assert row["max_tries"] == 7
+        # Schedulable, so there is no refusal to carry: the field is the
+        # sentence or nothing.
+        assert row["not_schedulable_reason"] is None
 
         # The detail answers with the same three fields off the same row —
         # one shape, §22's own rule — and still names the failure itself.
@@ -1586,11 +1589,24 @@ def test_a_follow_that_gave_up_says_so_on_both_payloads(tmp_path: Path) -> None:
         detail = read(client, FOLLOW, headers=BEARER)["follow"]
         assert detail["fail_count"] == 7
         assert detail["retrying"] is False
+        # The refusal the check write would be refused with, on the row the
+        # page draws the disabled control from — the 409's own message, off
+        # the one renderer both answer with. A page that composed its own
+        # tooltip sentence would go stale on a reword with both suites green.
+        assert detail["not_schedulable_reason"] == (
+            "Not scheduled: Andrej Karpathy is failing and has stopped retrying "
+            "after 7 consecutive failures. Nothing was queued."
+        )
         # A healthy follow's count is zero and its derived half is false: the
-        # fields are on every row, not only on a failing one's.
+        # fields are on every row, not only on a failing one's. The paused
+        # follow carries the other branch of the same sentence.
         quiet = read(client, f"{FOLLOWING}/paused-channel", headers=BEARER)["follow"]
         assert quiet["fail_count"] == 0
         assert quiet["retrying"] is False
+        assert quiet["not_schedulable_reason"] == (
+            "Not scheduled: Paused Channel is paused, and a paused follow is "
+            "never checked. Nothing was queued."
+        )
 
 
 def test_a_read_and_a_write_describe_a_follow_identically(tmp_path: Path) -> None:

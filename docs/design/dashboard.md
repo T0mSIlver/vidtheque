@@ -3022,11 +3022,17 @@ refusal — is not the obvious one:
   (`last_error_code`, `last_error_message`), with epochs
   where `tools/follows._follow_fields` sends `iso_minute` strings, and built
   from `Rules.from_row` so the payload and the check cannot disagree about what
-  a CSV column meant. It is `read_models.follow_row_json_with_error`, which is
-  §22's detail block: **one function, so an outcome and a read cannot describe
-  a follow two ways.** It is re-read after the write: `set_state` re-arms the
-  clock when it resumes, so a payload built from the row the handler read first
-  would name the new state and the old `next_check_at` in one breath.
+  a CSV column meant. One field on it is **policy text rather than a value**:
+  `not_schedulable_reason`, the refusal the check write on that row would be
+  refused with — the same sentence out of the same renderer the `409` below
+  answers with, `null` on a row that will be scheduled — because the disabled
+  control's help must not re-compose the sentence client-side
+  (`DECISIONS.md`, 2026-09-05). It is `read_models.follow_row_json_with_error`,
+  which is §22's detail block: **one function, so an outcome and a read cannot
+  describe a follow two ways.** It is re-read after the write: `set_state`
+  re-arms the clock when it resumes, so a payload built from the row the
+  handler read first would name the new state and the old `next_check_at` in
+  one breath.
 - **The failure is on the outcome because a `resume` clears it** *(added
   2026-09-05)*. `set_state` sets both error columns to `NULL` when it resumes,
   and an outcome that carried neither left the page rendering an error the
@@ -3055,7 +3061,9 @@ refusal — is not the obvious one:
   first line as the message (`tools/follows.not_scheduled_line` — one
   renderer, so the tool and the page that drives the same call cannot describe
   one refusal two ways) and resume as the `next:`. Same code and message on
-  both media, which is the 2026-09-06 rule arriving at this one outcome.
+  both media, which is the 2026-09-06 rule arriving at this one outcome. The
+  same sentence is on the row as `not_schedulable_reason` (above), which is
+  how the page knows to disable the control before the refusal has to arrive.
 - **An unfollow's `spent_s` is the day it did not hand back** *(added
   2026-09-15)*. Since migration 0007 the delete stops refunding the rolling
   day — `follow_spend` outlives its follow — so the budget the list re-reads
@@ -3180,7 +3188,10 @@ with the bound beside them because a page printing `retry 2 of 7` must read
 every number in the phrase off the payload — the same coupling that puts
 `within_s` beside a near-miss count. The words around the numbers — `retry 2
 of 7`, `gave up after 7 tries` — are the client's, the same split the near-miss
-line takes.
+line takes. One field on the row is the exception, and it is §21's rule rather
+than this one's: `not_schedulable_reason` is Python's own refusal sentence
+(`null` on a schedulable row), carried so a disabled control's help cannot
+re-compose it — the `reason`-verbatim argument, reached a second time.
 
 **Three renderings the pages have and these payloads do not**, all three
 because they are values a client can compute from the columns beside them, and
@@ -3222,6 +3233,7 @@ it does on the page.
   "follows": [{"slug": "andrej-karpathy", "title": "…", "kind": "channel",
                "source_url": "…", "state": "active", "mode": "auto",
                "fail_count": 0, "retrying": false, "max_tries": 7,
+               "not_schedulable_reason": null,   // the refusal sentence, or nothing
                "tabs": ["videos"], "channels": "all", "tags": ["topic:llm"],
                "min_duration_s": 480, "max_duration_s": null,
                "title_include": [], "title_exclude": [],
