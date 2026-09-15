@@ -69,6 +69,11 @@ class Settings(BaseSettings):
 
     # --- model identifiers (backend-interpreted) --------------------------
     stt_model: str = Field(default="large-v3", validation_alias=_either("STT_MODEL"))
+    mistral_api_key: str = Field(default="", validation_alias=_either("MISTRAL_API_KEY"))
+    mistral_base_url: str = Field(
+        default="https://api.mistral.ai/v1",
+        validation_alias=_either("MISTRAL_BASE_URL"),
+    )
     embed_model: str = Field(
         default="Qwen/Qwen3-VL-Embedding-2B", validation_alias=_either("EMBED_MODEL")
     )

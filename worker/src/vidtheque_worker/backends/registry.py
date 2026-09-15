@@ -18,6 +18,7 @@ from .qwen3_embed import Qwen3EmbedBackend
 from .qwen3_vl_embed import Qwen3VLEmbedBackend
 from .rapidocr_ocr import RapidOCRBackend
 from .siglip2_image_embed import SigLIP2Backend
+from .voxtral_stt import VoxtralBackend
 from .whisperx_stt import WhisperXBackend
 
 
@@ -41,6 +42,19 @@ def _whisperx(settings: Settings) -> STTBackend:
         align=settings.stt_align,
         # A CPU fallback holds no VRAM, so it should not gate on it either.
         vram_estimate_mb=None if device == "cuda" else 0,
+    )
+
+
+def _voxtral(settings: Settings) -> STTBackend:
+    if not settings.mistral_api_key:
+        raise ValueError(
+            "MISTRAL_API_KEY is required when STT_BACKEND=voxtral; "
+            "set it in the worker environment before boot"
+        )
+    return VoxtralBackend(
+        settings.stt_model,
+        api_key=settings.mistral_api_key,
+        base_url=settings.mistral_base_url,
     )
 
 
@@ -109,6 +123,7 @@ def _rapidocr(settings: Settings) -> OCRBackend:
 
 STT_BACKENDS: Mapping[str, Callable[[Settings], STTBackend]] = {
     "whisperx": _whisperx,
+    "voxtral": _voxtral,
 }
 
 EMBED_BACKENDS: Mapping[str, Callable[[Settings], EmbedBackend]] = {
