@@ -95,6 +95,21 @@ describe("AskMode", () => {
     nav.push.mockClear();
   });
 
+  // One form in both modes, and a search landmark in both: the mode changes
+  // what the answer looks like, not what the box is for. `name="q"` is what a
+  // browser's own form restore and a submission with no JavaScript need.
+  it("is a search landmark, with the field the URL names", () => {
+    render(<AskMode initialQ="" />);
+    const field = screen.getByLabelText("Your question");
+    expect(screen.getByRole("search")).toContainElement(field);
+    expect(field).toHaveAttribute("name", "q");
+  });
+
+  it("carries the bar's mark, and says nothing with it", () => {
+    const { container } = render(<AskMode initialQ="" />);
+    expect(container.querySelector("[class*='ic']")).toHaveAttribute("aria-hidden", "true");
+  });
+
   it("loads a shared question without firing, and fires on click", async () => {
     const fetchSpy = vi.fn(async () => streamResponse(FIXTURE));
     vi.stubGlobal("fetch", fetchSpy);

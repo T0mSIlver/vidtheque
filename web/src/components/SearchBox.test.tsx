@@ -54,6 +54,18 @@ describe("SearchBox", () => {
     expect(box).toHaveFocus();
   });
 
+  // The chevron is what makes the bar read as a console line rather than as a
+  // text field, and it is decoration: the field's name is the `<label>`.
+  it("carries the bar's mark, and says nothing with it", async () => {
+    mockNavigation();
+    const { SearchBox } = await import("./SearchBox");
+    const { container } = render(<SearchBox />);
+
+    const mark = container.querySelector("[class*='ic']");
+    expect(mark).toHaveAttribute("aria-hidden", "true");
+    expect(mark?.querySelector("svg")).not.toBeNull();
+  });
+
   // The blur is what dismisses a phone's keyboard over the results it just
   // asked for.
   it("lets go of the field when it submits", async () => {
@@ -137,6 +149,29 @@ describe("SearchBox", () => {
         "aria-pressed",
         "true",
       );
+      await user.click(screen.getByRole("button", { name: "ask ✨" }));
+      expect(push).toHaveBeenCalledWith("/demo?ask=1&q=paged+attention");
+    });
+
+    // "all means all", and a pin is the visitor's own narrowing: a switch that
+    // drops it sends someone who pinned on-screen text into an answer and back
+    // out into a search across all four channels, with the chip still lit.
+    it("carries the pinned channel through the switch", async () => {
+      const { push } = mockNavigation("q=paged+attention&type=ocr");
+      const { SearchBox } = await import("./SearchBox");
+      const user = userEvent.setup();
+      render(<SearchBox askEnabled />);
+
+      await user.click(screen.getByRole("button", { name: "ask ✨" }));
+      expect(push).toHaveBeenCalledWith("/demo?ask=1&q=paged+attention&type=ocr");
+    });
+
+    it("writes no channel where none was pinned", async () => {
+      const { push } = mockNavigation("q=paged+attention&type=all");
+      const { SearchBox } = await import("./SearchBox");
+      const user = userEvent.setup();
+      render(<SearchBox askEnabled />);
+
       await user.click(screen.getByRole("button", { name: "ask ✨" }));
       expect(push).toHaveBeenCalledWith("/demo?ask=1&q=paged+attention");
     });

@@ -27,6 +27,22 @@
   box-shadow: var(--drop-sm);
 }
 
+/* The bar's mark: a prompt's chevron in its own cell, so the box reads as a
+   console line. */
+.ic {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  flex: none;
+  color: var(--gold);
+  border-right: 1px solid var(--seam);
+}
+
+.ic svg {
+  width: 13px;
+  height: 13px;
+}
+
 .input {
   composes: t-query from global;
   flex: 1 1 auto;
@@ -180,33 +196,47 @@
   margin-left: auto;
 }
 
-/* At 375px the input takes its own line with the action full width under it. */
-@media (max-width: 30rem) {
+/* `--bp-hand`. The action goes full width *under* the input: a 390px screen
+   has no room for a pair that still fits a query. The state cell stays on the
+   input's own line, because it is the input's state — and the chips stretch to
+   fill the row rather than leaving a ragged gap beside it. The old page moved
+   at 780px, not at 480: between the two, the bar kept a button and a state cell
+   beside a box a query no longer fitted in. */
+@media (max-width: 780px) {
   .bar {
     flex-wrap: wrap;
     height: auto;
   }
 
+  .ic,
+  .input,
+  .state {
+    height: 46px;
+  }
+
   .input {
-    flex: 1 1 100%;
-    height: 52px;
-    order: 1;
+    width: 0;
   }
 
   .state {
-    order: 2;
-    border-left: 0;
-    border-top: 1px solid var(--seam);
-    height: 44px;
+    padding: 0 10px;
   }
 
   .go {
-    order: 3;
-    flex: 1 1 auto;
+    order: 4;
+    flex: 1 0 100%;
     justify-content: center;
-    height: 44px;
-    border-left: 1px solid var(--gold);
-    border-top: 1px solid var(--gold);
+    height: 46px;
+    border: 1px solid var(--gold);
+    border-top: 0;
+  }
+
+  .controls {
+    justify-content: flex-start;
+  }
+
+  .chips button {
+    flex: 1 1 auto;
   }
 
   .modes {
