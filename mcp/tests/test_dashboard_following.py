@@ -152,6 +152,13 @@ def _seed_follows(conn: sqlite3.Connection) -> None:
             judged_from=judged,
         )
 
+    # The spend the accepted candidate cost, written the way the check writes
+    # it: in the same transaction as its `queued` ledger row, into the table
+    # the delete does not cascade to (migration 0007). The band the list prints
+    # sums this table, so a corpus with only `follow_seen` rows reports a day
+    # nothing spent.
+    follows_store.record_spend(conn, karpathy, "acceptedvid", 3600.0)
+
     # The two job kinds a follow's page reads back: its own checks, and the
     # index job a check enqueued.
     conn.execute(
