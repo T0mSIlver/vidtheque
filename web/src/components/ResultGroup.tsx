@@ -1,6 +1,12 @@
 import { Fragment } from "react";
 import type { Hit } from "@/lib/api/schemas";
-import { badges, channelWord, highlight, presentationOf, type VideoGroup } from "@/lib/group";
+import {
+  badgeWords,
+  channelWord,
+  highlight,
+  presentationOf,
+  type VideoGroup,
+} from "@/lib/group";
 import { FrameShot } from "./Frame";
 import { Receipt } from "./Receipt";
 import styles from "./ResultGroup.module.css";
@@ -77,7 +83,7 @@ const SNIPPET: Record<string, string> = {
 };
 
 function Moment({ hit, query }: { hit: Hit; query: string }) {
-  const kinds = badges(hit.source);
+  const kinds = badgeWords(hit.source);
   const isFrame = hit.source === "frame";
   return (
     <li className={`${styles.moment} ${isFrame ? styles.isFrame : ""}`}>

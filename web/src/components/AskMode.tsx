@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { AskEvent, AskFailure, type AskAnswer, type Citation } from "@/lib/api/schemas";
-import { badges, channelWord } from "@/lib/group";
+import { badgeWords, channelWord } from "@/lib/group";
 import { framingOf, readJsonEvents } from "@/lib/sse";
 import { FrameShot } from "./Frame";
 import { Receipt } from "./Receipt";
@@ -458,7 +458,7 @@ function Cited({ text, byNumber }: { text: string; byNumber: Map<number, Citatio
 // (2026-09-07). A citation with no deep link falls back to the video's own
 // `youtu.be` URL, as the demo's `app.js` did.
 function Source({ c }: { c: Citation }) {
-  const kinds = badges(c.source ?? "");
+  const kinds = badgeWords(c.source ?? "");
   return (
     <li className={styles.source}>
       <span className={styles.n}>[{c.n}]</span>

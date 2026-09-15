@@ -38,6 +38,14 @@ export function groupByVideo(hits: readonly Hit[]): VideoGroup[] {
 // one leg or a fusion of legs ("ocr+frame"), so this reads it as a set.
 export type Badge = "spoken" | "on-screen" | "frame";
 
+const LEG_WORD: Record<string, Badge> = {
+  transcript: "spoken",
+  ocr: "on-screen",
+  frame: "frame",
+};
+
+/** The legs this build knows, in the words it prints them as. A `source` it
+ *  cannot read every leg of is handed back whole by `badgeWords`. */
 export function badges(source: string): Badge[] {
   const legs = new Set(source.split("+"));
   const out: Badge[] = [];
@@ -47,10 +55,33 @@ export function badges(source: string): Badge[] {
   return out;
 }
 
+/**
+ * The badges a result row actually prints.
+ *
+ * A leg this build has never heard of — a fourth one, one day — gets a badge
+ * carrying its own raw name rather than none at all: **dropping the provenance
+ * silently is the one thing that must not happen** (`app.js`'s `badgesFor`).
+ * One unknown leg takes the whole `source` string with it, because "spoken"
+ * printed beside a dropped half is a claim, where `transcript+audio` is only
+ * an unfamiliar word.
+ */
+export function badgeWords(source: string): string[] {
+  if (!source) return [];
+  const legs = source.split("+");
+  if (legs.some((leg) => LEG_WORD[leg] === undefined)) return [source];
+  return badges(source);
+}
+
 // The word a placeholder prints when a moment has no frame behind it: the
 // channel it came from, rather than a blank box (`app.js`'s `placeholder`).
+// Deliberately not `badges`: a badge names an unknown leg so the provenance is
+// never dropped, while a picture that is missing says "video" — the raw name of
+// a leg nobody has heard of is not what belongs in a grey rectangle.
 export function channelWord(source: string): string {
-  return badges(source)[0] ?? "video";
+  for (const leg of source.split("+")) {
+    if (LEG_WORD[leg]) return LEG_WORD[leg];
+  }
+  return "video";
 }
 
 // The four ways a snippet is set, one per provenance (demo-site.md §6.3).
@@ -59,6 +90,12 @@ export function channelWord(source: string): string {
 export type Presentation = "spoken" | "screen" | "frame" | "mixed";
 
 export function presentationOf(source: string): Presentation {
+  const legs = source.split("+");
+  // A leg this build does not know is set as neither a quote nor screen text:
+  // what its snippet *is* evidence of is precisely what we cannot say, and
+  // quotation marks around it would claim somebody said it (`app.js`'s
+  // `SNIPPET_CLASS[hit.source] || "snip"`).
+  if (legs.some((leg) => LEG_WORD[leg] === undefined)) return "mixed";
   const kinds = badges(source);
   if (kinds.length > 1) return "mixed";
   if (kinds[0] === "on-screen") return "screen";

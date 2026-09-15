@@ -112,6 +112,19 @@ describe("ResultGroup", () => {
     expect(container.querySelector("[class*='snip']")).toBeNull();
   });
 
+  // "Dropping the provenance silently is the one thing that must not happen"
+  // (`app.js`). A leg this build has never heard of reaches the screen under
+  // its own name, and its snippet is set as neither speech nor screen text.
+  it("badges a leg it has never heard of with its own name", () => {
+    const { container } = render(
+      <ResultGroup
+        group={group({ hits: [hit({ source: "audio", text: "someone humming" })] })}
+      />,
+    );
+    expect(screen.getByText("audio")).toBeInTheDocument();
+    expect(container.querySelector("[class*='snipSpoken']")).toBeNull();
+  });
+
   it("marks the query's own words inside the snippet", () => {
     const { container } = render(
       <ResultGroup
