@@ -478,6 +478,39 @@
   overflow-wrap: anywhere;
 }
 
+/* The four presentations of §6.3, on the Sources list for the same reason they
+   are on a result row: the evidence is set as what it is evidence of. Spoken
+   words are quoted in the human face; screen text is mono and lime, the same
+   green as the box it was read from; a visual match is muted, mono and never
+   quoted; and two channels that agreed are presented as neither. */
+.snipSpoken::before {
+  content: "\201C";
+  color: var(--fg3);
+}
+
+.snipSpoken::after {
+  content: "\201D";
+  color: var(--fg3);
+}
+
+.snipScreen {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--seen);
+  font-variant-ligatures: none;
+}
+
+.snipFrame {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--fg2);
+  font-variant-ligatures: none;
+}
+
+.snipMixed {
+  font-style: normal;
+}
+
 .mono {
   font-family: var(--mono);
   font-variant-ligatures: none;

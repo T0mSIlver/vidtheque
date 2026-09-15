@@ -96,6 +96,17 @@ describe("readJsonEvents", () => {
     expect(events).toEqual([payload]);
   });
 
+  // The stream stopped mid-frame: the events before the cut are real and are
+  // handed over, and the half-frame is not an event and not an error either.
+  // Thrown, it reached the caller as a network failure, and the pane blamed a
+  // server that had answered — "Answer interrupted." is the true sentence.
+  it("ends a truncated stream rather than throwing out of it", async () => {
+    const body = new Blob(['data: {"event":"activity","id":1}\n\ndata: {"event":"ans']).stream();
+    const events: unknown[] = [];
+    for await (const raw of readJsonEvents(body)) events.push(raw);
+    expect(events).toEqual([{ event: "activity", id: 1 }]);
+  });
+
   it("cancels the body when the consumer stops early", async () => {
     let cancelled = false;
     // Never closed: only the cancel releases it, which is what a component

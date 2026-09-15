@@ -274,6 +274,30 @@ describe("AskMode", () => {
       ).toHaveTextContent("youtu.be/zduSFxRajkE?t=11");
     });
 
+    // A citation is a result row, so its snippet is set as what it is evidence
+    // of (demo-site.md §6.3). One flat `.snippet` for all four is the page
+    // quietly claiming a slide's text was said out loud.
+    it("sets a cited snippet as what it is evidence of", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          streamResponse(
+            answerFrame("Paged [1] and said [2].", {
+              citations: [CITATION, { ...CITATION, n: 2, source: "transcript" }],
+            }),
+          ),
+        ),
+      );
+      const user = userEvent.setup();
+      render(<AskMode initialQ="anything" />);
+      await user.click(screen.getByRole("button", ASK));
+
+      await waitFor(() => expect(screen.getByText("Sources")).toBeInTheDocument());
+      const snippets = screen.getAllByText("the block table keeps");
+      expect(snippets[0].className).toMatch(/snipScreen/);
+      expect(snippets[1].className).toMatch(/snipSpoken/);
+    });
+
     // The title went to `/videos/{id}` while that page existed; it goes back to
     // the moment it cites now that it does not (2026-09-07).
     it("sends a source's title out to the talk", async () => {
@@ -437,6 +461,26 @@ describe("AskMode", () => {
     await waitFor(() => expect(screen.getByLabelText("Answer")).toBeInTheDocument());
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(screen.getByText("It is the reused attention state.")).toBeInTheDocument();
+  });
+
+  // …and the same sentence when the bytes stop *inside* a frame, which is what
+  // a dropped connection actually looks like. The half-frame used to throw out
+  // of the reader and reach the pane as a network failure, so a server that had
+  // answered for eighty seconds was reported as unreachable.
+  it("says the answer was interrupted when the bytes stop mid-frame", async () => {
+    const cut = openStream();
+    vi.stubGlobal("fetch", vi.fn(async () => cut.response));
+    const user = userEvent.setup();
+    render(<AskMode initialQ="what is a kv cache" />);
+
+    await user.click(screen.getByRole("button", ASK));
+    cut.send(ACTIVITY);
+    cut.send('data: {"event":"answer","payload":{"answer":"It is the re');
+    cut.close();
+
+    const pane = await screen.findByRole("status");
+    expect(pane).toHaveTextContent("Answer interrupted.");
+    expect(pane).not.toHaveTextContent("Could not reach the server.");
   });
 
   it("skips an event kind it has never heard of", async () => {

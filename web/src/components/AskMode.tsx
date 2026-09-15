@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { AskEvent, AskFailure, type AskAnswer, type Citation } from "@/lib/api/schemas";
-import { badgeWords, channelWord } from "@/lib/group";
+import { badgeWords, channelWord, presentationOf } from "@/lib/group";
 import { framingOf, readJsonEvents } from "@/lib/sse";
 import { FrameShot } from "./Frame";
 import { Receipt } from "./Receipt";
@@ -457,6 +457,15 @@ function Cited({ text, byNumber }: { text: string; byNumber: Map<number, Citatio
 // `/videos/{id}` existed and where it goes again since that page was removed
 // (2026-09-07). A citation with no deep link falls back to the video's own
 // `youtu.be` URL, as the demo's `app.js` did.
+// The four ways a snippet is set, one per provenance — the same four a result
+// row uses, because a citation *is* a result row (`ResultGroup`'s `SNIPPET`).
+const SNIPPET: Record<string, string> = {
+  spoken: styles.snipSpoken,
+  screen: styles.snipScreen,
+  frame: styles.snipFrame,
+  mixed: styles.snipMixed,
+};
+
 function Source({ c }: { c: Citation }) {
   const kinds = badgeWords(c.source ?? "");
   return (
@@ -485,7 +494,14 @@ function Source({ c }: { c: Citation }) {
           ))}
           {c.channel} · <span className={styles.mono}>{c.timestamp}</span>
         </span>
-        {c.text ? <span className={styles.snippet}>{c.text}</span> : null}
+        {/* Presented as what it is evidence of, exactly as a result row is
+            (demo-site.md §6.3): a Sources list that sets a slide's text as
+            speech is the one place the page can lie about provenance. */}
+        {c.text ? (
+          <span className={`${styles.snippet} ${SNIPPET[presentationOf(c.source ?? "")]}`}>
+            {c.text}
+          </span>
+        ) : null}
         {/* The filled slab, where there are three of them and they are the
             payoff (demo-site.md §6.5). */}
         {c.link ? <Receipt href={c.link} size="lg" className={styles.receipt} /> : null}
