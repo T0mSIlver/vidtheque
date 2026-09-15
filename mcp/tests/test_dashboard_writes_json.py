@@ -1119,6 +1119,37 @@ def test_editing_the_rules_answers_the_rule_the_store_kept(tmp_path: Path) -> No
         assert "at least 900 seconds" in refused.json()["message"]
 
 
+def test_check_now_on_a_paused_follow_refuses_with_its_own_sentence(
+    tmp_path: Path,
+) -> None:
+    """The other branch of the same refusal, pinned on this medium too.
+
+    A paused check-now used to answer `200` with an unmoved row — the
+    page-drawn control never offered it, so nothing noticed. Both branches of
+    the refusal are the tool's own sentence with their own way out.
+    """
+    slug = "andrej-karpathy"
+    with follows_client(tmp_path) as client:
+        follows_sign_in(client)
+        paused = post(client, f"{ROOT}/following/{slug}/state", data={"action": "pause"})
+        assert paused.status_code == 200
+
+        refused = post(client, f"{ROOT}/following/{slug}/check")
+        assert refused.status_code == 409, refused.text
+        assert refused.json()["error"] == "E_NOT_SCHEDULABLE"
+        assert refused.json()["message"] == (
+            "Not scheduled: Andrej Karpathy is paused, and a paused follow is "
+            "never checked. Nothing was queued."
+        )
+        assert refused.json()["next"] == (
+            "Resume the follow; a paused follow is never checked, and resuming "
+            "re-arms its clock."
+        )
+        # The row the outcome carried at the pause already says it: the field
+        # and the refusal are one renderer.
+        assert paused.json()["follow"]["not_schedulable_reason"] == refused.json()["message"]
+
+
 def test_index_anyway_and_unfollow_answer_what_they_did(tmp_path: Path) -> None:
     slug = "andrej-karpathy"
     with follows_client(tmp_path) as client:
