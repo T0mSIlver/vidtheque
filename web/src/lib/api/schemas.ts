@@ -81,19 +81,51 @@ export type Hit = z.infer<typeof Hit>;
 export const ContentType = z.enum(["all", "transcript", "ocr", "frame"]);
 export type ContentType = z.infer<typeof ContentType>;
 
-export const SearchResponse = z.object({
-  query: z.string(),
-  content_type: ContentType,
-  results: z.array(Hit),
-  pagination: Pagination,
-  leg_counts: z.record(z.string(), z.number()).optional(),
-  // The same `note:` lines the MCP payload prints. "all means all" is a
-  // promise to a human too, so the page renders them.
-  notes: z.array(z.string()),
-  // Set only on the empty path: "nothing matched" and "nothing is indexed" are
-  // different screens.
-  data_status: z.string().nullable(),
-});
+/**
+ * A page of results.
+ *
+ * **One unreadable hit costs one hit.** The results array is read row by row
+ * rather than all-or-nothing: a hit whose `thumb` came back relative, or whose
+ * `link` is not a URL, is dropped and *said to have been dropped*, where
+ * `z.array(Hit)` threw and collapsed a page of nine good rows into "Could not
+ * reach the server." The disclosure is a `note:` line, which is where this
+ * surface already prints what it could not do (demo-site.md §2; "all means
+ * all"). Everything outside `results` is still strict — a payload with no
+ * `pagination` is not a page.
+ */
+export const SearchResponse = z
+  .object({
+    query: z.string(),
+    content_type: ContentType,
+    results: z.array(z.unknown()),
+    pagination: Pagination,
+    leg_counts: z.record(z.string(), z.number()).optional(),
+    // The same `note:` lines the MCP payload prints. "all means all" is a
+    // promise to a human too, so the page renders them.
+    notes: z.array(z.string()),
+    // Set only on the empty path: "nothing matched" and "nothing is indexed" are
+    // different screens.
+    data_status: z.string().nullable(),
+  })
+  .transform((page) => {
+    const results: Hit[] = [];
+    let dropped = 0;
+    for (const row of page.results) {
+      const parsed = Hit.safeParse(row);
+      if (parsed.success) results.push(parsed.data);
+      else dropped += 1;
+    }
+    return {
+      ...page,
+      results,
+      notes: dropped
+        ? [
+            ...page.notes,
+            `note: ${dropped} result(s) came back in a shape this page cannot read and were left out.`,
+          ]
+        : page.notes,
+    };
+  });
 export type SearchResponse = z.infer<typeof SearchResponse>;
 
 export const Video = z.object({
