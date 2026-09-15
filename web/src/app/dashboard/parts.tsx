@@ -169,7 +169,10 @@ export function DashLink({
   href: string;
   className?: string;
   children: ReactNode;
-} & Pick<AnchorHTMLAttributes<HTMLAnchorElement>, "aria-current" | "tabIndex" | "id"> & {
+} & Pick<
+  AnchorHTMLAttributes<HTMLAnchorElement>,
+  "aria-current" | "tabIndex" | "id" | "onClick"
+> & {
     /** `base.html`'s one test hook, and it is only that: the smoke check finds
      *  the write side's first link by it rather than by the words on it. */
     "data-add-videos"?: string;

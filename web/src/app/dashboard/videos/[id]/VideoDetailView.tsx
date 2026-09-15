@@ -213,6 +213,45 @@ function Loaded({
     }
   }
 
+  /**
+   * Put a keyframe into evidence without leaving the page.
+   *
+   * `dashboard.js`'s `selectFrame`, and the reason it existed is the keyboard
+   * path: a shot bar is a real link to `#frame-N` on the strip page that holds
+   * it, and following it reloaded a whole page to move a mark and then left the
+   * reader's focus at the top of it. The card is already on screen most of the
+   * time — a video has one shot per keyframe and a strip page holds twenty-four
+   * of them — so the click is intercepted, the mark moves, the strip scrolls to
+   * that moment and focus lands on the frame's own button, which is the control
+   * the next Enter should open.
+   *
+   * The mark itself is `?select=`, written with `replaceState` exactly as
+   * `openFrame` writes it: one place says which frame is marked, so a reload, a
+   * copied link and the back button all agree, and clearing the previous mark
+   * is the same act as setting this one.
+   *
+   * `false` when the card is not on this page of the strip — a bar can point at
+   * a frame twenty pages along — and the caller then lets the link navigate,
+   * which is the path that was always there and is still the path with this
+   * file blocked.
+   */
+  const selectFrame = useCallback((ord: number): boolean => {
+    const card = document.getElementById(`frame-${ord}`);
+    if (!card) return false;
+    try {
+      const here = new URL(window.location.href);
+      here.searchParams.set("select", String(ord));
+      here.hash = `frame-${ord}`;
+      window.history.replaceState(null, "", here.href);
+    } catch {
+      // A browser that refuses the rewrite still has the selection on screen;
+      // the URL is the bookmark, not the state.
+    }
+    card.scrollIntoView({ block: "center", behavior: "smooth" });
+    card.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+    return true;
+  }, []);
+
   // Where the reader is in the transcript, written down where a link can carry
   // it. The same mechanism `openFrame` uses and for the same reason: the URL is
   // the bookmark, not the state — nothing on this page reads these two back, so
@@ -367,6 +406,7 @@ function Loaded({
         videoId={video.video_id}
         linked={linked}
         onLink={setLinked}
+        onSelect={selectFrame}
       />
 
       <Panel id="counts" title="What was stored">
@@ -646,6 +686,7 @@ function Timeline({
   videoId,
   linked,
   onLink,
+  onSelect,
 }: {
   shots: Shot[];
   capped: boolean;
@@ -655,6 +696,9 @@ function Timeline({
   videoId: string;
   linked: number | null;
   onLink: (shotId: number | null) => void;
+  /** Mark the frame in place; `false` when it is not on this page of the
+   *  strip, and the bar's own link is left to do the navigating. */
+  onSelect: (ord: number) => boolean;
 }) {
   const band = useRef<HTMLOListElement>(null);
   const scrub = useRef<HTMLDivElement>(null);
@@ -666,6 +710,13 @@ function Timeline({
   const fetched = useRef(new Set<string>());
   const [preview, setPreview] = useState<{ shot: Shot; left: number; below: boolean } | null>(null);
   const [still, setStill] = useState<string | null>(null);
+
+  // A native tooltip under a real preview is the same sentence told twice and
+  // a second late. The bars carry it until the handlers above are bound —
+  // `dashboard.js` took it off at exactly this moment, and for the same reason:
+  // this is the only place that knows the preview exists.
+  const [bound, setBound] = useState(false);
+  useEffect(() => setBound(true), []);
 
   // A video with no recorded duration still has shots with ends: the band is
   // drawn against the furthest one rather than against zero.
@@ -836,15 +887,26 @@ function Timeline({
               onPointerLeave={() => onLink(null)}
               style={{ left: `${left}%`, width: `${width}%` }}
               // The bar's facts as a native tooltip, as Jinja had them on the
-              // anchor. The scrub preview says the same things in a nicer box
-              // and the `.sr-only` label says them to a screen reader, but a
-              // pointer that rests on a bar and waits is asking the platform,
-              // and neither of the other two answers that. On the `li` rather
-              // than on the anchor because the anchor fills the bar and
-              // `DashLink` takes no `title`.
-              title={`shot ${shot.shot_id}, ${clock(shot.start_s)} to ${clock(shot.end_s)}, ${shot.kept}/${shot.frames} frames kept`}
+              // anchor — and only until the preview is bound, which is the
+              // moment the platform's version of this sentence stops being the
+              // best one on offer. On the `li` rather than on the anchor
+              // because the anchor fills the bar.
+              title={
+                bound
+                  ? undefined
+                  : `shot ${shot.shot_id}, ${clock(shot.start_s)} to ${clock(shot.end_s)}, ${shot.kept}/${shot.frames} frames kept`
+              }
             >
-              <DashLink href={href}>
+              <DashLink
+                href={href}
+                onClick={(event) => {
+                  // A modified click is the reader asking for a second tab,
+                  // and the whole point of the bar being a link is that they
+                  // can.
+                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                  if (onSelect(shot.first_ord)) event.preventDefault();
+                }}
+              >
                 <span className={dash.srOnly}>{label}</span>
               </DashLink>
             </li>
