@@ -125,6 +125,12 @@ describe("the videos table", () => {
     // A row with no keyframe yet says so rather than leaving a hole where a
     // still would be.
     expect(screen.getAllByText("no frame")).toHaveLength(2);
+    // A runtime is a clock with its seconds, the same string the detail page
+    // this row links to prints — 5400 s, 1200 s, 3600 s, 7000 s.
+    expect(screen.getByText("1:30:00")).toBeInTheDocument();
+    expect(screen.getByText("0:20:00")).toBeInTheDocument();
+    expect(screen.getByText("1:00:00")).toBeInTheDocument();
+    expect(screen.getByText("1:56:40")).toBeInTheDocument();
   });
 
   // Every bound is Python's: what the reader typed goes on the wire exactly as

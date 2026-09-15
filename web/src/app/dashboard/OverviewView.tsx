@@ -2,7 +2,7 @@
 
 import { dashboard, ROOT } from "@/lib/dashboard/client";
 import type { Overview } from "@/lib/dashboard/schemas";
-import { at, bytes, count, duration, hours, iso } from "@/lib/format";
+import { at, bytes, count, hms, hours, iso } from "@/lib/format";
 import styles from "./dashboard.module.css";
 import {
   DashLink,
@@ -275,7 +275,7 @@ function Loaded({ data }: { data: Overview }) {
                     <p className={styles.rowMeta}>
                       {video.channel}
                       <Sep />
-                      <span className={styles.mono}>{duration(video.duration_s)}</span>
+                      <span className={styles.mono}>{hms(video.duration_s)}</span>
                     </p>
                   </div>
                   <p className={styles.rowWhen}>

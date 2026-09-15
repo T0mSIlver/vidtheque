@@ -4,7 +4,7 @@ import { useCallback } from "react";
 import { Pill } from "@/components/Pill";
 import { dashboard, DashboardError, ROOT } from "@/lib/dashboard/client";
 import type { JobDetail, JobEvent, JobItem } from "@/lib/dashboard/schemas";
-import { at, count, DASH, duration, iso } from "@/lib/format";
+import { at, count, DASH, duration, hms, iso } from "@/lib/format";
 import dash from "../../dashboard.module.css";
 import {
   DashLink,
@@ -372,7 +372,7 @@ function ItemRows({ item, redacted }: { item: JobItem; redacted: boolean }) {
                 ) : null}
                 {item.duration_s ? (
                   <>
-                    {duration(item.duration_s)}
+                    {hms(item.duration_s)}
                     <Sep />{" "}
                   </>
                 ) : null}

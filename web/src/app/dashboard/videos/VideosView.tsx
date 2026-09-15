@@ -10,7 +10,7 @@ import {
   type LibraryRow,
   RefusedLibrary,
 } from "@/lib/dashboard/schemas";
-import { count, day, duration } from "@/lib/format";
+import { count, day, hms } from "@/lib/format";
 import { useFilterBand } from "../band";
 import dash from "../dashboard.module.css";
 import {
@@ -657,8 +657,11 @@ function Row({ row, actions }: { row: LibraryRow; actions: boolean }) {
       <td data-label="Published">
         <time className={dash.nowrap}>{day(row.published_at)}</time>
       </td>
+      {/* A runtime is a clock, never a span: `0:20:00`, with the seconds the
+          span formatter rounds away. The detail page this row links to prints
+          the same number, and two renderings of one fact disagree. */}
       <td className={dash.num} data-label="Duration">
-        {duration(row.duration_s)}
+        {hms(row.duration_s)}
       </td>
       <td className={styles.colState} data-label="State">
         <Pill state={row.index_state} />
