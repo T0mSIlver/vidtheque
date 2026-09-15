@@ -2414,13 +2414,16 @@ they read.* §22's block carries `fail_count`, the derived `retrying`, and the
 `max_tries` bound beside them — typed values, the sentence `retry 2 of 7`
 composed at the edge off numbers the payload owns, the same split the near-miss
 line takes, and `max_tries` on the row for the same reason `within_s` is on the
-finding: the count and the number in the sentence cannot disagree. The detail
-page's rules are unchanged in substance — **Check now** is offered while the
-scheduler would enqueue the follow (`active`, or `failing` with retries left),
-and the next check prints `—` when it would not — except on one point: a follow
-that gave up keeps the control, disabled, carrying the refusal the write would
-be refused with as its help (§21), because a control that says why it does
-nothing is worth more than its absence.
+finding: the count and the number in the sentence cannot disagree. The pages'
+rules are unchanged in substance — **Check now** is offered while the scheduler
+would enqueue the follow (`active`, or `failing` with retries left) — except on
+one point: a follow that gave up keeps the control, disabled, carrying the
+refusal the write would be refused with as its help (§21), because a control
+that says why it does nothing is worth more than its absence. And the `—` the
+detail page always printed for a next check nothing will act on is now the
+**table's** rule too: both pages render that cell through one formatter, and a
+paused or gave-up row keeps a `next_check_at` that is a promise nobody will
+keep — the table was printing it as a time.
 
 That compression is deliberate and it is not a second `describe`. The sentence
 renderer is the only thing that renders a policy as English, and it lives on the
