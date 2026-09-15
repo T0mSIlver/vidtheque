@@ -157,10 +157,10 @@ describe("proxy", () => {
   // `/dashboard` stopped being wholly Python's when the first two pages were
   // ported, and Python stopped rendering any of it on 2026-09-06. The split is
   // per path and not per prefix, and it is the same split `next.config.ts`
-  // routes: the pages this app serves are documents and get the policy, and
-  // everything else under the prefix reaches Python untouched — the JSON the
-  // pages read, the session flow and the writes.
-  it("covers the dashboard pages this app serves, and no other dashboard path", () => {
+  // routes: what this app serves is a document and gets the policy, and what
+  // Python still owns under the prefix — the JSON the pages read and the
+  // session flow — reaches it untouched.
+  it("covers every dashboard document, and neither of Python's two", () => {
     for (const path of [
       "/dashboard",
       "/dashboard/ledger",
@@ -187,6 +187,32 @@ describe("proxy", () => {
     ]) {
       expect(matches(path), path).toBe(true);
     }
+    // A path under the prefix that is not one of those pages is still a
+    // document this app serves: `app/dashboard/[...rest]` catches it and
+    // `dashboard/not-found.tsx` refuses it, with the rail on the page. A
+    // refusal carries the policy like any other document, which is what the
+    // last matcher entry is for — before it, a mistyped URL was the one page
+    // on this surface shipped with no CSP on it.
+    //
+    // The `POST` paths are in this list because the matcher matches paths and
+    // not methods: a `GET` to one of them is this refusal, and the `POST`
+    // never reaches Next at all — the reverse proxy sends every
+    // `POST /dashboard/*` to Python (§1d, `deploy/Caddyfile`).
+    for (const path of [
+      "/dashboard/no-such-page",
+      "/dashboard/ledger/anything",
+      "/dashboard/login/anything",
+      "/dashboard/videos/kCc8FmEb1nY/reindex",
+      "/dashboard/videos/kCc8FmEb1nY/tags",
+      "/dashboard/jobs/job_running001/cancel",
+      "/dashboard/jobs/job_finished01/retry",
+      "/dashboard/following/andrej-karpathy/state",
+      "/dashboard/following/andrej-karpathy/delete",
+    ]) {
+      expect(matches(path), path).toBe(true);
+    }
+    // Python's two, and they are the only two left under this prefix: the JSON
+    // every page reads, and the write that ends a session.
     for (const path of [
       "/dashboard/api/session",
       "/dashboard/api/overview",
@@ -199,22 +225,6 @@ describe("proxy", () => {
       // The search page's own JSON, which is the facade's handler under this
       // prefix — a read, not a document, and Python's like the other four.
       "/dashboard/api/search",
-      // The row actions are Python's `POST`s and have a segment the detail
-      // page does not: three under their section, not two. The two jobs writes
-      // and the five following writes are the ones the ported pages themselves
-      // call, so this is the assertion that keeps them Python's.
-      "/dashboard/videos/kCc8FmEb1nY/reindex",
-      "/dashboard/videos/kCc8FmEb1nY/tags",
-      "/dashboard/jobs/job_running001/cancel",
-      "/dashboard/jobs/job_finished01/retry",
-      "/dashboard/following/andrej-karpathy/state",
-      "/dashboard/following/andrej-karpathy/check",
-      "/dashboard/following/andrej-karpathy/rules",
-      "/dashboard/following/andrej-karpathy/delete",
-      "/dashboard/following/andrej-karpathy/queue",
-      // Not a page here either: a sub-path of one that is.
-      "/dashboard/ledger/anything",
-      "/dashboard/login/anything",
     ]) {
       expect(matches(path), path).toBe(false);
     }
@@ -222,9 +232,16 @@ describe("proxy", () => {
 
   // Porting a page adds it to three lists (frontend-migration.md §1d): this
   // matcher, `next.config.ts`'s comment, and `ported.ts`, which every link into
-  // the surface asks. A page in one and not the other ships either a document
+  // the surface asks. A page missing from one of them ships either a document
   // with no CSP on it or a `Link` into a route this app does not serve, so the
   // two lists that are code are asserted against each other here.
+  //
+  // They answer two questions, and since the catch-all landed the answers
+  // differ by exactly one thing: `ported.ts` says "is this path a **page**",
+  // which is what a link has to know, and the matcher says "is this path a
+  // **document**", which now includes the refusal every other path under the
+  // prefix renders. So a page is in both, Python's two are in neither, and a
+  // non-page under `/dashboard` is a document and not a link target.
   it("agrees with the list every link into this surface asks", () => {
     for (const path of [
       "/dashboard",
@@ -236,16 +253,28 @@ describe("proxy", () => {
       "/dashboard/following",
       "/dashboard/following/andrej-karpathy",
       "/dashboard/search",
-      "/dashboard/search/anything",
       "/dashboard/index",
       "/dashboard/login",
+    ]) {
+      expect(isPorted(path), path).toBe(true);
+      expect(matches(path), path).toBe(true);
+    }
+    for (const path of [
       // The other half of the session flow, and the one with no page: signing
       // out is a write and nothing else, so both lists leave it out.
       "/dashboard/logout",
+      "/dashboard/api/session",
+    ]) {
+      expect(isPorted(path), path).toBe(false);
+      expect(matches(path), path).toBe(false);
+    }
+    for (const path of [
+      "/dashboard/search/anything",
       "/dashboard/following/andrej-karpathy/delete",
       "/dashboard/jobs/job_finished01/retry",
     ]) {
-      expect(isPorted(path), path).toBe(matches(path));
+      expect(isPorted(path), path).toBe(false);
+      expect(matches(path), path).toBe(true);
     }
     // A query is not part of the question a link asks, and it is not part of
     // the one the matcher answers either.

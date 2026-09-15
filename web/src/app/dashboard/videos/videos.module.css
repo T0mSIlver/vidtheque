@@ -293,6 +293,15 @@
     text-align: left;
   }
 
+  /* The row's headline and its machine line are two lines, not two columns:
+     the cells around them are label-and-value pairs, and the one cell that is
+     the row's *name* should not be squeezed into that shape as well. The two
+     stacked tables in `jobs.module.css` say the same thing about their own. */
+  .videos tbody th {
+    flex-direction: column;
+    gap: 0;
+  }
+
   /* The label's own face and its indent are `dashboard.module.css`'s
      `.stacked`; this is the switch that turns it on at this table's width. */
   .videos tbody td::before {

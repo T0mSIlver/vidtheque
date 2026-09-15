@@ -179,12 +179,13 @@ const nextConfig: NextConfig = {
         headers: [{ key: "Cache-Control", value: "no-store" }],
       },
       {
-        // The landing's 155 stills, and only them. They are content-addressed
-        // by the video id they came out of and are replaced by adding a file,
-        // never by editing one, which is what makes the year honest — it is
-        // the value `public/__init__.py:59,183` served them at. `public/` is
-        // otherwise served `max-age=0`, so every one of them revalidated on
-        // every load of the front door.
+        // The landing's 155 stills, and only them. Every one of them is a
+        // frame lifted out of a talk and named after where it came from — a
+        // video id, a moment's second, a plate's number — so a still is added
+        // or removed and never edited under its own name, which is what makes
+        // the year honest. It is the value `public/__init__.py:59,183` served
+        // them at; `public/` is otherwise served `max-age=0`, so all 155
+        // revalidated on every load of the front door.
         source: "/landing/:path*",
         headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
       },
