@@ -197,6 +197,29 @@
   flex: 1 1 auto;
 }
 
+/* A link inside a sentence keeps the underline the browser draws under it.
+   `globals.css` takes it off for every surface — right for the two front doors,
+   where a link is a plate, a receipt or a CTA and the shape says so — and wrong
+   here, where the way out of an empty state is one word at the end of a line of
+   prose. `dashboard.css` kept the UA underline and turned it off per component;
+   the classed families on this surface (the ghost controls, a row's title, a
+   timecode, a thumbnail, a column head) already draw their own affordance, and
+   `a:not([class])` is exactly the set that does not.
+
+   Hover brightens rather than accenting. `dashboard.css` sent it to `--accent`,
+   and that predates the list `docs/design/dashboard.md` §12.2 item 3 settles:
+   gold on this surface means five things, and a hovered link is not one of
+   them — "if everything is gold, nothing is" (DESIGN.md, the One Signal Rule).
+   `--fg` is the step the old stylesheet's own named link rules took. */
+.col a:not([class]) {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.col a:not([class]):hover {
+  color: var(--fg);
+}
+
 .col > main,
 .col > footer {
   width: 100%;
@@ -277,9 +300,14 @@
     text-underline-offset: 4px;
   }
 
+  /* The group heading goes entirely. It names a *column* of items, and in a
+     wrapping row of links there is no column under it to name — it read as a
+     sixth destination sitting between the five and the two
+     (`dashboard.css`'s `.nav-group { display: none }`). Which groups the rail
+     has is still a fact about the deployment; in the strip the fact is the
+     items, which are there or are not. */
   .group {
-    margin: 0;
-    padding: 0 var(--s2);
+    display: none;
   }
 
   .foot {
