@@ -483,7 +483,7 @@ function Filters({ band, search, settled }: { band: Band; search: string; settle
       <div className={`${dash.field} ${dash.actions}`}>
         {/* Hidden, not removed: it is the control a browser that never ran the
             band's script submits with, and `hidden` is what the appender set. */}
-        <button className={dash.ghostlink} type="submit" hidden={scripted}>
+        <button className={dash.button} type="submit" hidden={scripted}>
           Apply
         </button>
         <DashLink className={dash.ghostlink} href={`${ROOT}/videos`}>

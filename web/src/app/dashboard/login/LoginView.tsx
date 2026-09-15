@@ -299,7 +299,7 @@ function Form({
           />
         </div>
         <div className={`${dash.field} ${dash.actions}`}>
-          <button className={dash.ghostlink} type="submit" disabled={write.status === "sending"}>
+          <button className={dash.button} type="submit" disabled={write.status === "sending"}>
             {write.status === "sending" ? "signing in…" : "Sign in"}
           </button>
         </div>
