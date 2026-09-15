@@ -5,7 +5,6 @@ import { useCallback, useState, type FormEvent } from "react";
 import { ContentType, type Hit, type SearchResponse } from "@/lib/api/schemas";
 import { dashboard, DashboardError, ROOT } from "@/lib/dashboard/client";
 import { clock, DASH } from "@/lib/format";
-import { groupByVideo, type VideoGroup } from "@/lib/group";
 import dash from "../dashboard.module.css";
 import { FrameOverlay, type Shot } from "../FrameOverlay";
 import { DashLink, PageHead, ReadFailure, Reading, Sep, Unbroken } from "../parts";
@@ -302,20 +301,16 @@ function Filters({ search }: { search: string }) {
 
 function Results({ page, query, search }: { page: SearchResponse; query: string; search: string }) {
   const legs = legsOf(page.leg_counts);
-  const groups = groupByVideo(page.results);
   // The frame the reader is looking at, or nothing. State and not a ref,
   // because the caption, the footer link and the picture all render from it —
   // and because setting it back to nothing is what releases the bytes.
   const [shot, setShot] = useState<Shot | null>(null);
   // Stable, because the overlay listens for the element's own `close` event and
-  // a new closure every render would be a listener torn down and rebuilt.
+  // a new closure every render would be a listener torn down and rebuilt. The
+  // opener is stable for the other half of the same reason: it is handed to
+  // every row on the page.
   const close = useCallback(() => setShot(null), []);
-  // Where in the ranking each moment sits. Grouping rearranges one page of
-  // results and never re-ranks them, so a hit keeps the position the server
-  // gave it: `<ol start="{{ offset + 1 }}">` in Jinja, and the same number on
-  // the item here, because a group's hits need not be adjacent in the ranking
-  // they were pulled out of.
-  const rank = new Map(page.results.map((hit, index) => [hit, page.pagination.offset + index + 1]));
+  const open = useCallback((next: Shot) => setShot(next), []);
 
   return (
     <section className={dash.panel} aria-labelledby="search-results">
@@ -356,17 +351,20 @@ function Results({ page, query, search }: { page: SearchResponse; query: string;
         </ul>
       ) : null}
 
-      {groups.length ? (
+      {page.results.length ? (
         <>
-          <ol className={styles.groups}>
-            {groups.map((group) => (
-              <Group
-                group={group}
-                key={group.video_id}
-                onOpen={setShot}
-                query={query}
-                rank={rank}
-              />
+          {/* One row per moment, in the ranking the server sent, numbered from
+              where this page starts in it — `<ol start="{{ offset + 1 }}">`, as
+              `search.html` drew it. The ranking is the answer on this surface:
+              an operator asking whether a query reaches a moment is reading
+              positions, and a page that files ten hits under three talks prints
+              the title twice for a single-hit video and hides whether the
+              second-ranked moment is in the same talk as the first. Nothing in
+              `docs/design/dashboard.md` §14.1, §14.2 or §20 asks for the
+              grouping; every line of §14.1 is written per hit. */}
+          <ol className={styles.hits} start={page.pagination.offset + 1}>
+            {page.results.map((hit) => (
+              <Moment hit={hit} key={momentKey(hit)} onOpen={open} query={query} />
             ))}
           </ol>
           <Pager pagination={page.pagination} search={search} />
@@ -379,65 +377,7 @@ function Results({ page, query, search }: { page: SearchResponse; query: string;
   );
 }
 
-/** One video, and every moment in it that matched.
- *
- *  Ten flat hits are usually three talks (demo-site.md §6.5). The server ranks
- *  and paginates; this groups what it was handed and nothing else, so a
- *  group's position is the position of its best hit and never a re-ranking. */
-function Group({
-  group,
-  onOpen,
-  query,
-  rank,
-}: {
-  group: VideoGroup;
-  onOpen: (shot: Shot) => void;
-  query: string;
-  rank: Map<Hit, number>;
-}) {
-  return (
-    <li className={styles.group}>
-      <div className={styles.groupHead}>
-        <p className={styles.groupTitle}>
-          <DashLink href={`${ROOT}/videos/${encodeURIComponent(group.video_id)}`}>
-            {group.title}
-          </DashLink>
-        </p>
-        <p className={styles.groupMeta}>
-          <span className={styles.where}>{group.channel || "unknown"}</span>
-          <Sep /> <code>{group.video_id}</code>
-          <Sep /> {group.hits.length} moment(s)
-        </p>
-      </div>
-      <ol className={styles.hits}>
-        {group.hits.map((hit) => (
-          <Moment
-            channel={hit.channel === group.channel ? null : hit.channel || "unknown"}
-            hit={hit}
-            key={momentKey(hit)}
-            onOpen={onOpen}
-            query={query}
-            rank={rank.get(hit)}
-          />
-        ))}
-      </ol>
-    </li>
-  );
-}
-
-function Moment({
-  channel,
-  hit,
-  onOpen,
-  query,
-  rank,
-}: {
-  channel: string | null;
-  hit: Hit;
-  onOpen: (shot: Shot) => void;
-  query: string;
-  rank?: number;
-}) {
+function Moment({ hit, onOpen, query }: { hit: Hit; onOpen: (shot: Shot) => void; query: string }) {
   const evidence = evidenceOf(hit.source);
   const inside = insideLink(hit);
   const receipt = receiptOf(hit.link);
@@ -449,10 +389,7 @@ function Moment({
   const runs = highlight(hit.text, query);
 
   return (
-    // `value` and not a `start` on the list: a group's moments need not be
-    // adjacent in the ranking they were grouped out of, so each one carries its
-    // own position in it.
-    <li className={styles.hit} value={rank}>
+    <li className={styles.hit}>
       {hit.frame_id ? (
         // For an OCR or a frame hit the picture *is* the evidence, so it opens
         // where the reader is rather than in a tab that has lost the ranking.
@@ -497,9 +434,7 @@ function Moment({
       <div className={styles.body}>
         {/* Into the index, not out to YouTube: the title opens what this
             deployment stored about that video, and a frame hit lands **on the
-            frame**. The group head above carries the same words pointing at the
-            video plainly — two questions, two destinations — and the receipt at
-            the end of the row is the third. */}
+            frame**. The receipt at the end of the row is the other half. */}
         <p className={styles.title}>
           {inside ? <DashLink href={inside}>{hit.title}</DashLink> : hit.title}
         </p>
@@ -515,16 +450,11 @@ function Moment({
               </span>
             ))}
           </span>
-          {/* The channel this moment came from, when it is not the one the
-              group head already prints. Two hits filed under one `video_id`
-              that disagree about their channel is a corpus fact, and the row
-              that has it says so rather than inheriting the head's. */}
-          {channel ? (
-            <>
-              <span className={styles.where}>{channel}</span>
-              <Sep />
-            </>
-          ) : null}
+          {/* Every row says which channel it came from. Two hits filed under
+              one `video_id` that disagree about their channel is a corpus fact,
+              and a row that inherits a heading's answer cannot report it. */}
+          <span className={styles.where}>{hit.channel || "unknown"}</span>
+          <Sep />
           {/* Into the index, not out to YouTube: a hit with a keyframe lands on
               that frame, and a transcript hit on the video plainly, because it
               names its cues by id while the transcript panel pages by offset. */}

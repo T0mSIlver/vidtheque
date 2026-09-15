@@ -60,10 +60,17 @@
 }
 
 /* The machine string, kept and not hidden: this page is an instrument, and
-   `transcript_vec_knn` is what an operator quotes when a count looks wrong. */
+   `transcript_vec_knn` is what an operator quotes when a count looks wrong —
+   which is also why it is not set in `label`'s case. `label` is a column name,
+   tracked and uppercased because it is read as a word; these two are an
+   identifier and a unit, and `TRANSCRIPT_VEC_KNN` is not the string anybody
+   greps for. `label`'s size in `label`'s face, and the case the machine used. */
 .legKey,
 .legUnit {
-  composes: t-label from global;
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  font-weight: var(--w-mono-label);
+  font-variant-ligatures: none;
   color: var(--fg3);
 }
 
@@ -85,63 +92,20 @@
 
 /* ----------------------------------------------------------- the results
 
-   Ten flat hits are usually three talks, so a result is a talk with its moments
-   under it. The group's own line is the title and the machine strings; the
-   moments below it carry the evidence. */
-.groups {
-  margin: var(--s4) 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.group {
-  padding: var(--s4) 0;
-  border-top: 1px solid var(--seam);
-}
-
-.group:first-child {
-  border-top-color: var(--seam2);
-}
-
-.groupHead {
-  min-width: 0;
-}
-
-.groupTitle {
-  composes: t-cell-strong from global;
-  margin: 0;
-  /* A corpus title. `anywhere`, not `break-word`: only `anywhere` also reports
-     a zero min-content width, which is what stops one long token widening the
-     row. */
-  overflow-wrap: anywhere;
-}
-
-.groupTitle a {
-  color: var(--fg);
-  text-decoration: none;
-}
-
-.groupTitle a:hover {
-  text-decoration: underline;
-}
-
-.groupMeta {
-  composes: t-machine-sm from global;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0 var(--s1);
-  margin: var(--s1) 0 0;
-  color: var(--muted);
-}
-
+   One row per moment, in the ranking the server sent: `search.html`'s flat
+   `<ol start="{{ offset + 1 }}">`, whose numbers are the answer an operator
+   came for. */
 .where {
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
+/* `list-style: none` on an ordered list, exactly as `.search-results` had it:
+   the ordinal is the list's, read out by a screen reader and carried by
+   `start`, and a column of printed numbers beside a column of stills is a
+   second thing to scan past. */
 .hits {
-  margin: var(--s3) 0 0;
+  margin: var(--s4) 0 0;
   padding: 0;
   list-style: none;
 }
@@ -159,7 +123,7 @@
 }
 
 .hit:first-child {
-  border-top: 0;
+  border-top-color: var(--seam2);
 }
 
 /* Fixed box, mirrored in the img attributes, so a row keeps its height whether

@@ -79,18 +79,18 @@ describe("the owner's search page", () => {
     vi.resetModules();
   });
 
-  it("groups the ranking by talk and says which slice it is showing", async () => {
+  it("lists the ranking a moment a row, and says which slice it is showing", async () => {
     await mount({ body: OWNER_SEARCH }, { search: "q=cache" });
 
     expect(await screen.findByRole("heading", { name: "Results" })).toBeInTheDocument();
-    // Five hits over two videos: the server ranked and paginated, and the page
-    // grouped what it was handed.
-    expect(screen.getByText("3 moment(s)")).toBeInTheDocument();
-    expect(screen.getByText("2 moment(s)")).toBeInTheDocument();
-    // The group's head links to the video plainly; each moment under it links
-    // to the second — and, for a frame hit, to the frame — so a talk with three
-    // hits carries one head link and three moment links.
-    expect(screen.getAllByRole("link", { name: "Making LLMs go brrr" })).toHaveLength(4);
+    // Five hits, five rows, in the order the server ranked them — no head over
+    // a talk, so a single-hit video's title is printed once and the second
+    // moment in the ranking is the second row on the page.
+    expect(screen.queryByText("3 moment(s)")).toBeNull();
+    expect(momentAt("0:05").closest("ol")?.children).toHaveLength(5);
+    // Three of the five moments are in that talk, and each row's title is its
+    // own link into the index — never a heading's, printed once above them.
+    expect(screen.getAllByRole("link", { name: "Making LLMs go brrr" })).toHaveLength(3);
 
     const head = screen
       .getByRole("heading", { name: "Search the corpus" })
@@ -99,23 +99,20 @@ describe("the owner's search page", () => {
     expect(head).toHaveTextContent("of 5");
   });
 
-  // `<ol start="{{ offset + 1 }}">` in Jinja. Grouping rearranges one page of
-  // results and never re-ranks them, so a moment keeps the position the server
-  // gave it — and a group's hits need not be adjacent in that ranking, which is
-  // why the number is on the item rather than on the list.
-  it("keeps each moment's place in the ranking, page two included", async () => {
+  // `<ol start="{{ offset + 1 }}">`, as `search.html` drew it: the list is the
+  // ranking and page two picks it up where page one left off.
+  it("numbers a page of hits from where the ranking starts", async () => {
     await mount({ body: PAGED_SEARCH }, { search: "q=cache&limit=1&offset=1" });
     await screen.findByRole("heading", { name: "Results" });
 
-    expect(momentAt("3:20")).toHaveAttribute("value", "2");
+    expect(momentAt("3:20").closest("ol")).toHaveAttribute("start", "2");
   });
 
-  it("numbers a page of hits from where the ranking starts", async () => {
+  it("starts at one on the first page", async () => {
     await mount({ body: OWNER_SEARCH }, { search: "q=cache" });
     await screen.findByRole("heading", { name: "Results" });
 
-    expect(momentAt("0:05")).toHaveAttribute("value", "1");
-    expect(momentAt("3:20")).toHaveAttribute("value", "2");
+    expect(momentAt("0:05").closest("ol")).toHaveAttribute("start", "1");
   });
 
   // The `~` is `has_more` over exact totals reaching the one line on the page
@@ -242,9 +239,9 @@ describe("the owner's search page", () => {
 
   // The group's head prints the channel once. A moment prints its own only when
   // it is not the one already on the head — two hits filed under one `video_id`
-  // that disagree about their channel is a corpus fact, and the row that has it
-  // is the row that says so.
-  it("prints a moment's channel only where the group head does not", async () => {
+  // that disagree about their channel is a corpus fact, and a row that borrowed
+  // a heading's answer could not report it.
+  it("prints every moment's own channel", async () => {
     const odd = { ...OWNER_SEARCH.results[1], channel: "GPU MODE reruns", match_start: 250.0 };
     await mount(
       {
@@ -259,7 +256,7 @@ describe("the owner's search page", () => {
     await screen.findByRole("heading", { name: "Results" });
 
     expect(within(momentAt("4:10")).getByText("GPU MODE reruns")).toBeInTheDocument();
-    expect(within(momentAt("3:20")).queryByText("GPU MODE")).toBeNull();
+    expect(within(momentAt("3:20")).getByText("GPU MODE")).toBeInTheDocument();
   });
 
   // ------------------------------------------------------------- the frame
