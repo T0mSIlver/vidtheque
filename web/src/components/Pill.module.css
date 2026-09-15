@@ -1,10 +1,26 @@
+/* Every pill carries its own word, so the colour is reinforcement and never
+   the message. `inline-block` and a line-height, not `inline-flex`: a flex
+   container makes an item of every text run inside it and drops the whitespace
+   between them, which turned a countdown's `held <span>1m 28s</span> more` into
+   `held1m 28smore`. The box carries the height and the leading centres the
+   text.
+
+   The height is fixed rather than padded, because one height is what makes a
+   state cell a strip instead of a row of two kinds of thing: the pills, the
+   error code and the countdown are all 20px (`dashboard.css`'s `--chip-h`,
+   Tom, 2026-08-10). `vertical-align` sets it on the text baseline beside it,
+   and it never wraps: a two-word state broken across lines is two states. */
 .pill {
   composes: t-label-sm from global;
   display: inline-block;
-  padding: 1px var(--s2);
+  height: 1.25rem;
+  line-height: calc(1.25rem - 2px);
+  padding: 0 var(--s2);
   border: 1px solid var(--tone-neutral-line);
   background: var(--tone-neutral-bg);
   color: var(--tone-neutral);
+  vertical-align: -0.3em;
+  white-space: nowrap;
 }
 
 .neutral {
