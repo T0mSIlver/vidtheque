@@ -617,15 +617,21 @@
 
 /* --------------------------------------------------------------- notices */
 
+/* Not a card: a band under a rule thick enough to be the loudest thing on the
+   page. The band itself is neutral — an empty jobs list, a deployment that does
+   not index and a job that is waiting rather than stuck all wear it, and none of
+   them has failed. A tone is opted into, and saying so is the point: a notice
+   that is red by default makes the page cry wolf four times before it means it
+   (`dashboard.css`'s `.notice` / `.notice-bad` / `.notice-warn`). */
 .notice {
   margin-top: var(--s6);
   padding: var(--s3) 0 var(--s4);
-  border-top: 2px solid var(--tone-bad);
+  border-top: 2px solid var(--seam2);
 }
 
 .noticeTitle {
   composes: t-cell-strong from global;
-  color: var(--tone-bad);
+  color: var(--fg);
 }
 
 .noticeDetail {
@@ -640,6 +646,22 @@
   composes: t-cell from global;
   margin-top: var(--s2);
   max-width: var(--note);
+}
+
+/* The band as an alarm: a read that refused, a filter the server would not run,
+   an instance whose config and vector tables disagree. */
+.noticeBad {
+  composes: notice;
+  border-top-color: var(--tone-bad);
+}
+
+.noticeBadTitle {
+  /* `t-cell-strong` said again rather than inherited through `.noticeTitle`:
+     `composes` copies the class it names, not the chain that class itself
+     composes. */
+  composes: t-cell-strong from global;
+  composes: noticeTitle;
+  color: var(--tone-bad);
 }
 
 /* The same band in the tone that is not an error: something matched a rule and

@@ -352,6 +352,18 @@ describe("the jobs table", () => {
     );
   });
 
+  // Nothing has failed on a listing that is simply empty, and the band that
+  // says so is the loudest rule on the page. It wears the neutral tone, which
+  // is what `jobs.html`'s bare `class="notice"` said.
+  it("draws the empty state in the neutral tone", async () => {
+    await mount({ body: EMPTY_JOBS });
+    await screen.findByRole("heading", { name: "No jobs to show." });
+    const band = screen.getByRole("region", { name: "No jobs to show." });
+    expect(band.className).toMatch(/notice/);
+    expect(band.className).not.toMatch(/noticeBad/);
+    expect(within(band).getByRole("heading").className).not.toMatch(/noticeBadTitle/);
+  });
+
   // A listing narrowed by something other than `state` is not the screen that
   // sentence describes: it would send the reader looking for a filter they
   // would then have to find.

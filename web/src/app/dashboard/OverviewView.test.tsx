@@ -238,6 +238,10 @@ describe("the corpus overview", () => {
       ).toBeInTheDocument();
       expect(screen.getByText("refused")).toBeInTheDocument();
       expect(screen.queryByText("allowed")).not.toBeInTheDocument();
+      // The one band on this page that opts into the failure tone, as
+      // `overview.html`'s `notice notice-bad` did.
+      const band = screen.getByRole("region", { name: "The corpus and the worker disagree" });
+      expect(band.className).toMatch(/noticeBad/);
     });
   });
 

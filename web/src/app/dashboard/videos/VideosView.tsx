@@ -194,8 +194,8 @@ export function VideosView() {
       {state.status === "loading" ? <Reading /> : null}
 
       {told && refusal instanceof DashboardError ? (
-        <section className={dash.notice} aria-labelledby="filter-refused">
-          <h2 className={dash.noticeTitle} id="filter-refused">
+        <section className={dash.noticeBad} aria-labelledby="filter-refused">
+          <h2 className={dash.noticeBadTitle} id="filter-refused">
             {refusal.message}
           </h2>
           <p className={dash.noticeDetail}>

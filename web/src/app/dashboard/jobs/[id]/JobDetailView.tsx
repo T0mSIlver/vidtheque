@@ -217,8 +217,8 @@ function Deferred({ job, moving }: { job: JobDetail["job"]; moving: boolean }) {
 
 function JobError({ job, redacted }: { job: JobDetail["job"]; redacted: boolean }) {
   return (
-    <section className={dash.notice} aria-labelledby="joberr">
-      <h2 className={dash.noticeTitle} id="joberr">
+    <section className={dash.noticeBad} aria-labelledby="joberr">
+      <h2 className={dash.noticeBadTitle} id="joberr">
         <code>{job.error_code}</code>
       </h2>
       {job.error_message ? (
