@@ -806,14 +806,18 @@ its coupling: the bound rides along so the count and the sentence cannot
 disagree), tone them `warn` while the check is still coming back on its own
 and error once it has stopped, and print `—` for a next check nothing will
 act on — a paused or a gave-up row keeps a `next_check_at` that is a promise
-nobody will keep. Two more things arrive with the same change: an unfollow's
-outcome carries `spent_s`, the rolling day the delete did **not** refund
-(migration 0007 — print the tool's "not a refund" line off it when there is a
-number to print, and nothing at `0.0`), and `check_now` on a follow nothing
-will schedule is refused `409 E_NOT_SCHEDULABLE`, with the tool's own
-sentence as the message — so the control is drawn disabled on a gave-up
-follow with that refusal as its help, and a refusal that still arrives (the
-page a beat behind the row) renders inline as the other refusals do.
+nobody will keep. One field on the row is **not the client's to compose**:
+`not_schedulable_reason` is Python's own refusal sentence (the same string the
+`409` answers with; `null` on a row that will be scheduled), and the disabled
+Check-now's help renders it verbatim rather than re-wording it. Two more
+things arrive with the same change: an unfollow's outcome carries `spent_s`,
+the rolling day the delete did **not** refund (migration 0007 — print the
+tool's "not a refund" line off it when there is a number to print, and nothing
+at `0.0`), and `check_now` on a follow nothing will schedule is refused `409
+E_NOT_SCHEDULABLE`, with the tool's own sentence as the message — so the
+control is drawn disabled on a gave-up follow with that refusal as its help,
+and a refusal that still arrives (the page a beat behind the row) renders
+inline as the other refusals do.
 
 Three things worth knowing before writing the pages:
 

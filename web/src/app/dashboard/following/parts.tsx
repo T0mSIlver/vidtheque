@@ -138,19 +138,6 @@ export function retryWords(follow: FollowRow): string {
 }
 
 /**
- * The refusal a dead Check-now would be refused with, composed exactly as
- * Python composes it (`tools/follows.not_scheduled_line`) so a disabled
- * control's help is the sentence the write would answer with — not a second
- * wording invented beside the first.
- */
-export function notSchedulableTitle(follow: FollowRow): string {
-  return (
-    `Not scheduled: ${follow.title} is failing and has stopped retrying ` +
-    `after ${follow.fail_count} consecutive failures. Nothing was queued.`
-  );
-}
-
-/**
  * When this follow is next looked at — or why that is not a time.
  *
  * Three answers, and the third is Tom's (2026-09-05): with

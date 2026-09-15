@@ -36,10 +36,12 @@ export const KARPATHY = {
   source_url: "https://www.youtube.com/@karpathy",
   state: "active",
   // A healthy follow's count is zero and its derived half is false: the
-  // retry fields are on every row, not only on a failing one's.
+  // retry fields are on every row, not only on a failing one's. Nothing will
+  // refuse its check, so the refusal sentence is null.
   fail_count: 0,
   retrying: false,
   max_tries: 7,
+  not_schedulable_reason: null,
   mode: "auto",
   tabs: ["videos"],
   channels: "all",
@@ -68,6 +70,11 @@ export const PAUSED = {
   fail_count: 0,
   retrying: false,
   max_tries: 7,
+  // Policy text, Python's: the sentence the check write would be refused
+  // with, carried on the row rather than re-composed here.
+  not_schedulable_reason:
+    "Not scheduled: Paused Channel is paused, and a paused follow is never " +
+    "checked. Nothing was queued.",
   mode: "review",
   tabs: ["videos", "shorts"],
   channels: "all",
@@ -95,6 +102,7 @@ export const RETRYING = {
   fail_count: 2,
   retrying: true,
   next_check_at: NOW + 86400,
+  not_schedulable_reason: null,
   last_error_code: "E_UNSUPPORTED_SOURCE",
 };
 
@@ -104,6 +112,9 @@ export const GAVE_UP = {
   fail_count: 7,
   retrying: false,
   next_check_at: NOW + 86400,
+  not_schedulable_reason:
+    "Not scheduled: Andrej Karpathy is failing and has stopped retrying " +
+    "after 7 consecutive failures. Nothing was queued.",
   last_error_code: "E_UNSUPPORTED_SOURCE",
 };
 
@@ -319,7 +330,16 @@ const FAILING = {
   last_error_message: "the source rate-limited this box",
 };
 
-export const PAUSED_OUTCOME = { follow: { ...FAILING, state: "paused" } };
+export const PAUSED_OUTCOME = {
+  follow: {
+    ...FAILING,
+    state: "paused",
+    // A pause puts the row on the other branch of the same sentence.
+    not_schedulable_reason:
+      "Not scheduled: Andrej Karpathy is paused, and a paused follow is never " +
+      "checked. Nothing was queued.",
+  },
+};
 
 /** `set_state` nulls both error columns when it resumes, so the row that comes
  *  back is the receipt for the error going away as well as for the state. */
