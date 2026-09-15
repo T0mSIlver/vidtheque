@@ -636,6 +636,16 @@
   color: var(--muted);
 }
 
+/* A panel heading is a label; a video title is not. The subject keeps its own
+   case and its own register inside the heading. */
+.subject {
+  composes: t-cell-strong from global;
+  font-family: var(--sans);
+  text-transform: none;
+  letter-spacing: -0.012em;
+  color: var(--fg);
+}
+
 /* --------------------------------------------------------------- notices */
 
 /* Not a card: a band under a rule thick enough to be the loudest thing on the
