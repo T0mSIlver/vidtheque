@@ -109,3 +109,51 @@ describe("the dev server's allowed origins", () => {
     expect(await origins()).toEqual(["127.0.0.1"]);
   });
 });
+
+// The two `Cache-Control` answers, as paths and not as prose. The middleware
+// set the first of them for a whole port's worth of releases and Next
+// overwrote it on every dynamic render, which is exactly the kind of thing a
+// comment cannot catch: `headers()` is applied to the finished response.
+describe("the document cache policy", () => {
+  /** The value one path is given, compiled the way Next compiles a `source`. */
+  async function policyFor(pathname: string): Promise<string | undefined> {
+    const rules = await nextConfig.headers!();
+    const hit = rules.find((rule) => getPathMatch(rule.source)(pathname) !== false);
+    return hit?.headers.find((header) => header.key === "Cache-Control")?.value;
+  }
+
+  it("keeps every dashboard document out of every cache", async () => {
+    for (const path of [
+      "/dashboard",
+      "/dashboard/ledger",
+      "/dashboard/search",
+      "/dashboard/videos",
+      "/dashboard/videos/kCc8FmEb1nY",
+      "/dashboard/jobs",
+      "/dashboard/jobs/job_20260909abc",
+      "/dashboard/following",
+      "/dashboard/following/andrej-karpathy",
+      "/dashboard/index",
+      "/dashboard/login",
+      "/dashboard/no-such-page",
+    ]) {
+      expect(await policyFor(path)).toBe("no-store");
+    }
+  });
+
+  // The stills are content-addressed by the video id they came out of and are
+  // replaced by adding a file, never by editing one, which is what makes the
+  // year honest.
+  it("gives the landing's stills the year they had", async () => {
+    expect(await policyFor("/landing/wall/kCc8FmEb1nY.jpg")).toBe(
+      "public, max-age=31536000, immutable",
+    );
+  });
+
+  // The front doors are the same document for everyone and are not the
+  // dashboard: nothing here claims them, so what they get is the render's own.
+  it("claims nothing outside those two", async () => {
+    expect(await policyFor("/")).toBeUndefined();
+    expect(await policyFor("/demo")).toBeUndefined();
+  });
+});

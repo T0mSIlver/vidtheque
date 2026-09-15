@@ -51,6 +51,13 @@ describe("proxy", () => {
   // rendered, for a reason the port does not change: a management page
   // describes state that moves under the reader, some of it behind a session
   // cookie, and a shared cache holding one is somebody else's dashboard.
+  //
+  // What *reaches the wire* is `next.config.ts`'s `headers()`, not this: a
+  // header the middleware sets on a document is overwritten by the dynamic
+  // render underneath it, which is how `no-cache, must-revalidate` was what a
+  // `curl -D-` saw for the whole of the port. This says it first, and the two
+  // agree — a second copy of one value is only worth keeping while both are
+  // asserted, which is why the twin assertion is in `next.config.test.ts`.
   it("says no-store on a dashboard document and nothing else", () => {
     vi.stubEnv("NODE_ENV", "production");
     for (const path of [

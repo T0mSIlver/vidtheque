@@ -105,6 +105,15 @@ export function proxy(request: NextRequest): NextResponse {
   // (`lib/dashboard/client.ts` already says `no-store` on the reads). It is
   // scoped to `/dashboard` because the landing and the demo are the same
   // document for everyone and are meant to be cached.
+  //
+  // **This is not what reaches the browser.** A header the middleware sets on a
+  // document is overwritten by the dynamic render underneath it, and for the
+  // whole of the port what a `curl -D-` saw here was Next's own `no-cache,
+  // must-revalidate`. `next.config.ts`'s `headers()` is applied to the finished
+  // response and is the copy that sticks; this one stays because it is also
+  // what the RSC payloads and anything else this matcher touches carry, and
+  // because a policy stated in one place and contradicted in another is worse
+  // than the same policy stated twice.
   if (isDashboard(request.nextUrl.pathname)) response.headers.set("Cache-Control", "no-store");
   return response;
 }
