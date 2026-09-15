@@ -256,6 +256,14 @@
   }
 }
 
+/* This table stacks, so it is one of the grids that must *not* pick up the
+   minimum width `dashboard.module.css` gives the ones that stay tables and
+   scroll. `.stacked` is that switch as well as the face the column names are
+   drawn in. */
+.videos {
+  composes: stacked from "../dashboard.module.css";
+}
+
 /* At a phone's width the grid stops being a grid: each row becomes its own
    block and every cell wears the column's name, which is what `data-label`
    is on the cells for. */

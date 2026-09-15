@@ -1171,9 +1171,24 @@
   }
 }
 
-/* 780px — `--bp-hand`: the band goes to two columns and the row's clock stops
+/* 780px — `--bp-hand`: the page title drops a rung, the band goes to two
+   columns and two fields a row, the figures re-flow, and the row's clock stops
    fighting the title for the line. */
 @media (max-width: 48.75rem) {
+  /* `question`, at the weight the ladder gives it — fixed like the headline
+     above, and for the same reason. */
+  .pagehead h1 {
+    font-size: 1.5rem;
+    font-weight: 250;
+    letter-spacing: -0.028em;
+  }
+
+  /* One step less air between panels: at this width the column is narrow
+     enough that `--s8` reads as a gap in the page rather than as a seam. */
+  .panel {
+    margin-top: var(--s6);
+  }
+
   .ledger {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -1186,9 +1201,61 @@
     border-left: 0;
   }
 
-  .rowWhen {
+  /* The fifth figure takes the full width rather than sitting alone beside a
+     hole. */
+  .ledger > .figure:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  .figures {
+    grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+    gap: var(--s4) var(--s5);
+  }
+
+  .filters {
+    padding: var(--s3);
+  }
+
+  /* On a hand the fixed widths become fractions of the row rather than
+     absolute ones: 13rem is wider than the viewport. Two per row for the text
+     fields and the pickers, and the one flexible field and the buttons take a
+     row each. */
+  .wide {
+    flex-basis: 100%;
+  }
+
+  .text,
+  .pickField {
+    flex: 1 1 9rem;
+  }
+
+  .actions {
+    flex-basis: 100%;
     margin-left: 0;
-    padding-left: 0;
+  }
+
+  .actions button,
+  .actions a {
+    flex: 1 1 auto;
+    text-align: center;
+  }
+
+  /* The row's far-end fact wraps to its own line and lines up under the title
+     rather than squeezing it: at 375px a clock on the right turns a four-word
+     title into five lines. */
+  .rowWhen {
+    flex: 1 1 100%;
+    margin: 2px 0 0;
+    padding-left: calc(96px + var(--s3));
     text-align: left;
+  }
+
+  /* The tables that do not stack keep being tables and scroll inside their own
+     wrapper instead: a five-column provenance table squeezed into 375px breaks
+     `text_embed` across three lines, which is worse than a swipe, and the items
+     table carries a colspan error row that stacking would tear off its own
+     item. The page body still never scrolls sideways; `.tablewrap` does. */
+  .grid:not(.stacked) {
+    min-width: 34rem;
   }
 }
