@@ -474,7 +474,10 @@ describe("the videos table", () => {
   it("gives the demo the browsable corpus whole", async () => {
     await mount({ body: DEMO_LIBRARY }, { search: "index_state=all", session: DEMO_SESSION });
 
-    expect(await screen.findByRole("status")).toHaveTextContent("4 shown of 4.");
+    // The table first: `reading…` is a status region too, and a page that is
+    // still reading has one on it that is not the count line.
+    await screen.findByRole("table");
+    expect(screen.getByRole("status")).toHaveTextContent("4 shown of 4.");
     expect(screen.getByRole("link", { name: "Let's build GPT: from scratch" })).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/null|NaN|undefined/);
   });

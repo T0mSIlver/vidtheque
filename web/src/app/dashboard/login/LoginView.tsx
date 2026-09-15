@@ -255,10 +255,18 @@ function Form({
           which field was wrong is not something this side could do even if it
           wanted to. */}
       {error && !limited ? (
-        <p className={styles.error}>
-          <Pill state="refused" tone="bad" />
-          <span>{message}</span>
-        </p>
+        <>
+          <p className={styles.error}>
+            <Pill state="refused" tone="bad" />
+            <span>{message}</span>
+          </p>
+          {/* The refusal's `next:` line — "the sign-in page names which secret
+              this deployment accepts." It is written in `writes.py` beside the
+              message and is neutral about which secret this deployment holds;
+              dropping it here left the one refusal on the surface whose
+              recovery sentence the reader never saw. */}
+          {refusal?.next ? <p className={styles.errorNext}>{refusal.next}</p> : null}
+        </>
       ) : null}
 
       {limited ? (

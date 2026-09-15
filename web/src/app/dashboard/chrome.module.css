@@ -263,7 +263,7 @@
 
 /* 1120px — `--bp-stack`. There is no room for 240px of navigation beside the
    content, so the rail stops being a column and becomes a strip across the
-   top: the word, a wrapping row of links with the current one underlined, and
+   top: the word, a wrapping row of links with the current one marked, and
    the deployment state on its own line. No drawer, no scrim, no checkbox — a
    nav that fits on one line has nothing to gain from being hidden behind a
    control, and the control is the part of that pattern that costs the keyboard
@@ -301,15 +301,21 @@
     gap: 0 var(--s2);
   }
 
+  /* Every item reserves the rule the current one draws, so nothing moves by
+     two pixels as the reader walks the strip. */
   .navlink {
     padding: var(--s1) var(--s2);
+    border-bottom: 2px solid transparent;
   }
 
+  /* You-are-here, in the strip: the gold edge that is an inset on the rail
+     becomes the item's own underline rule. A `text-decoration` said it in the
+     ink colour and at the platform's weight, which on a row of links reads as
+     a link rather than as a position (`dashboard.css:2619-2623`). */
   .navlink[aria-current="page"] {
     background: transparent;
     box-shadow: none;
-    text-decoration: underline;
-    text-underline-offset: 4px;
+    border-bottom: 2px solid var(--gold);
   }
 
   /* The group heading goes entirely. It names a *column* of items, and in a

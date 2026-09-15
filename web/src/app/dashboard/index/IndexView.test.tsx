@@ -222,6 +222,9 @@ describe("the index form", () => {
       cleanup();
       await mount();
 
+      // The form first: until the read lands the only status region on the
+      // page is `reading…`, which is not the receipt this test restored.
+      await screen.findByLabelText("URLs");
       const receipt = await screen.findByRole("status");
       expect(receipt).toHaveTextContent("1 URL(s) in one job.");
       expect(within(receipt).getByRole("link", { name: "job_02e028870c97" })).toBeInTheDocument();

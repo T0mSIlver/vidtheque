@@ -30,6 +30,15 @@
   min-width: 12rem;
 }
 
+/* 780px — `--bp-hand`: the field takes the row, which is what the band's own
+   `.field-wide` does at this width and what `dashboard.css:2749` did here. A
+   12rem floor beside a submit is a password box two words wide. */
+@media (max-width: 48.75rem) {
+  .secret {
+    flex-basis: 100%;
+  }
+}
+
 .secret > input {
   width: 100%;
 }
@@ -46,6 +55,16 @@
   margin-top: var(--s3);
   max-width: var(--note);
   color: var(--fg);
+}
+
+/* The recovery sentence under it. Python's words, at the note measure, in the
+   muted step — the same shape `.outcomeNext` gives an inline refusal on the
+   pages that write. */
+.errorNext {
+  composes: t-cell from global;
+  margin-top: var(--s2);
+  max-width: var(--note);
+  color: var(--muted);
 }
 
 .code {
