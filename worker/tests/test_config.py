@@ -36,6 +36,8 @@ def two_model_settings(**env) -> Settings:
 
 DOCUMENTED_ENV = (
     "STT_BACKEND",
+    "MISTRAL_API_KEY",
+    "MISTRAL_BASE_URL",
     "EMBED_BACKEND",
     "IMAGE_EMBED_BACKEND",
     "OCR_BACKEND",
@@ -125,6 +127,26 @@ def test_build_backends_instantiates_without_loading_weights():
         "rapidocr",
     ]
     assert not any(b.loaded for b in backends.values())
+
+
+def test_voxtral_is_selectable_and_has_no_vram_charge():
+    backend = build_backend(
+        "stt",
+        "voxtral",
+        settings(
+            stt_backend="voxtral",
+            stt_model="voxtral-mini-latest",
+            mistral_api_key="secret",
+        ),
+    )
+    assert backend.name == "voxtral"
+    assert backend.model_id == "voxtral-mini-latest"
+    assert backend.vram_estimate_mb == 0
+
+
+def test_voxtral_without_an_api_key_fails_while_backends_are_built():
+    with pytest.raises(ValueError, match="MISTRAL_API_KEY is required"):
+        build_backends(settings(stt_backend="voxtral", mistral_api_key=""))
 
 
 # --------------------------------------------------------------------------
