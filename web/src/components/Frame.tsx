@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useId, useRef, useState, useSyncExternalStore } from "react";
-import { receipt } from "@/lib/format";
+import { Receipt } from "./Receipt";
 import styles from "./Frame.module.css";
 
 // A keyframe: a fixed 16:9 box on `--black` with explicit dimensions, so the
@@ -182,9 +182,7 @@ export function FrameShot({ shot, alt, label }: { shot: Shot; alt: string; label
             </p>
             {/* The receipt again, at full size: the picture is the evidence and
                 this is where it came from, on the second. */}
-            <a className={styles.receipt} href={href} target="_blank" rel="noopener noreferrer">
-              {receipt(href)}
-            </a>
+            <Receipt href={href} size="lg" className={styles.receipt} />
           </div>
           <button
             type="button"

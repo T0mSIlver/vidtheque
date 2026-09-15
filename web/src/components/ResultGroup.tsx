@@ -1,8 +1,8 @@
 import { Fragment } from "react";
 import type { Hit } from "@/lib/api/schemas";
-import { receipt } from "@/lib/format";
 import { badges, channelWord, highlight, presentationOf, type VideoGroup } from "@/lib/group";
 import { FrameShot } from "./Frame";
+import { Receipt } from "./Receipt";
 import styles from "./ResultGroup.module.css";
 
 // A card per video: header, then that video's moments, each ending in its
@@ -110,9 +110,11 @@ function Moment({ hit, query }: { hit: Hit; query: string }) {
           </span>
         ) : null}
       </a>
-      <a href={hit.link} target="_blank" rel="noopener noreferrer" className={styles.receipt}>
-        {receipt(hit.link)}
-      </a>
+      {/* Every moment ends in its receipt, and it sits outside the row's
+          anchor for the same reason the thumbnail does: a link inside a link
+          is neither valid nor operable. The small slab — ten filled gold
+          blocks down a page would spend the accent on the list. */}
+      <Receipt href={hit.link} className={styles.receipt} />
     </li>
   );
 }

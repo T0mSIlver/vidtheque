@@ -483,19 +483,9 @@
   font-variant-ligatures: none;
 }
 
-/* The filled slab, where there are three of them and they are the payoff. */
+/* Where the slab sits in the row; its face is `Receipt.module.css`'s. */
 .receipt {
-  composes: t-machine-sm from global;
   align-self: flex-start;
-  padding: 6px 9px;
-  color: var(--fg);
-  background: var(--gold-6);
-  border: 1px solid var(--gold);
-}
-
-.receipt:hover,
-.receipt:focus-visible {
-  background: var(--gold-12);
 }
 
 .foot {

@@ -56,8 +56,13 @@ describe("ResultGroup", () => {
         })}
       />,
     );
-    expect(screen.getByText("youtu.be/kCc8FmEb1nY?t=10")).toBeInTheDocument();
-    expect(screen.getByText("youtu.be/kCc8FmEb1nY?t=428")).toBeInTheDocument();
+    // Three spans, so the assertion is the printed line rather than one node.
+    for (const t of ["10", "428"]) {
+      const slab = document.querySelector(
+        `a[class*="rcpt"][href="https://youtu.be/kCc8FmEb1nY?t=${t}"]`,
+      );
+      expect(slab).toHaveTextContent(`youtu.be/kCc8FmEb1nY?t=${t}`);
+    }
     expect(screen.getByText("2 moments")).toBeInTheDocument();
   });
 

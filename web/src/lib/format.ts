@@ -10,9 +10,33 @@ export function clock(seconds: number): string {
   return `${h ? `${h}:` : ""}${mm}:${String(s).padStart(2, "0")}`;
 }
 
-/** `youtu.be/ID?t=705`: the receipt, as the page prints it. */
-export function receipt(link: string): string {
-  return link.replace(/^https?:\/\//, "");
+/** The three parts a receipt is printed in (`components/Receipt`). */
+export interface ReceiptParts {
+  /** `youtu.be/` — which surface, trailing slash included. */
+  host: string;
+  /** The path with its leading slash off: which talk. */
+  id: string;
+  /** `?t=705` — which second, or empty when the link names none. */
+  query: string;
+}
+
+/**
+ * `https://youtu.be/ID?t=705` split into `youtu.be/` · `ID` · `?t=705`.
+ *
+ * The receipt is printed rather than described, and the split is the printing:
+ * the host says which surface, the id says which talk and `?t=` says which
+ * second, which is the pair the product's whole argument rests on
+ * (`demo/app.js`'s `receiptEl`). A link that is not an http(s) URL has no
+ * honest receipt, and gets none rather than one the page guessed.
+ */
+export function receiptParts(link: string): ReceiptParts | null {
+  try {
+    const url = new URL(link);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    return { host: `${url.host}/`, id: url.pathname.replace(/^\//, ""), query: url.search };
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------

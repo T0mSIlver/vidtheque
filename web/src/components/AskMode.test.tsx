@@ -269,7 +269,9 @@ describe("AskMode", () => {
 
       await waitFor(() => expect(screen.getByText("Sources")).toBeInTheDocument());
       expect(screen.getByText("on-screen")).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: "youtu.be/zduSFxRajkE?t=11" })).toBeInTheDocument();
+      expect(
+        document.querySelector('a[class*="rcpt"][href="https://youtu.be/zduSFxRajkE?t=11"]'),
+      ).toHaveTextContent("youtu.be/zduSFxRajkE?t=11");
     });
 
     // The title went to `/videos/{id}` while that page existed; it goes back to
