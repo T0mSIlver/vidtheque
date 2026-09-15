@@ -1180,3 +1180,128 @@ with caddy in front and point the `web` service at a dev server, and the thing
 under test is the thing that will be deployed. Until someone does that and the
 shim is removed in a commit of its own, it stays, because deleting it first
 would break every local write.
+
+## 11. The parity round: four differences that stand, and six calls (2026-09-16)
+
+*Recorded 2026-09-16 while closing the front-end parity audit against the Jinja
+surface at `6785195`. The audit's own artefacts are
+`.agent-runs/parity/REPORT.md`; this section is only the part of it that ends in
+a decision rather than in a commit, so nobody re-derives it from the screenshots
+a year from now. Everything not named here was fixed.*
+
+### 11.1 Four differences that stand
+
+**A refusal is a `200` document (audit X1).** Python answered `401` on a
+signed-out page and `404` on an unknown video, job or follow, and the refusal
+*was* the document. Here the document is the shell, the read happens in the
+browser, and the status the refusal carries is on the XHR — `DashboardError`
+holds it, `ReadFailure` renders from it, and the page the reader sees is the
+same refusal it always was. Making the document itself `404` would mean the
+shell knowing the answer before it has asked, which is the one thing §1's first
+decision says it must not do: the pages fetch client-side and Next never sees
+the session cookie. **The status is not lost, it moved** — a client wanting it
+reads `/dashboard/api/*` directly, which is where it was always authoritative.
+The two that *can* be documents are, and now are: an unmatched path under
+`/dashboard` and an unmatched path at the root both answer `404` with a page in
+this system's own type (`app/dashboard/not-found.tsx`, `app/not-found.tsx`).
+
+**The deployment's facts arrive after mount (audit S1).** `write_side`,
+`readonly`, `auth_mode` and the version were inline in `base.html` and are read
+from `/dashboard/api/session` here, so the Manage group, the demo line, Sign out
+and the version are absent for one round trip and permanently if that read
+fails. This is the same decision as the one above and is not separable from it:
+the shell is served without the cookie. What the chassis does do is render
+everything that does *not* depend on the session immediately — the wordmark
+and the five sections — rather than waiting for the read to draw a rail.
+
+**Dashboard search builds its thumbnail URLs unsigned (audit V6).** `thumb_url`
+signed them with `?exp=&sig=`; `SearchView` composes
+`/frames/{id}.jpg?w=192&q=70` from `frame_id`, which is the rendering choice
+§14.2 of `dashboard.md` already records — the page wants the dashboard's two
+widths and the facade sends the demo's. `/frames/*` takes the session cookie
+and the bearer beside the signature, so a cookie session and an `AUTH=none`
+instance are both fine. **The case that would break is a bearer-token dashboard
+with no cookie**, which is not a deployment this surface has: every page here
+reads `/dashboard/api/*` with `credentials: same-origin`. If one is ever wanted,
+the fix is the payload carrying signed URLs at the dashboard's widths, not the
+page learning to sign.
+
+**Four option vocabularies are hardcoded client-side (audit V11, J8).**
+`index_state`, `has` and `order` on the videos band, and the follow-rule choices
+(`TABS`, `MODES`, `MAX_BACKFILL`, `MAX_PER_CHECK`, `MIN_CHECK_INTERVAL_S`), came
+from `queries.py` and `follows/rules.py` through the view; they are written into
+`VideosView.tsx` and `following/parts.tsx` now, and none of them is on a
+payload. Nothing is wrong today and nothing tells anybody the day it is: a
+vocabulary Python grows desyncs silently, and the follow rules are the worse
+half, because the number in a label and the number the validator clamps to stop
+being one set. **This is a contract gap, not a rendering one** — the fix is
+fields on `/dashboard/api/session` or on the two listings, and it belongs in a
+commit that changes the payload. Until then, a change to either vocabulary is a
+change in two files.
+
+### 11.2 Six calls, and what outranks the audit
+
+**Gold does not follow the pointer (audit X7).** `dashboard.css` kept the
+browser's underline on every link and sent `a:hover` to `--accent`. The
+underline is back, scoped to a link inside a sentence (`.col a:not([class])` —
+the classed families draw their own affordance, exactly as the old stylesheet
+turned it off per component). The hover colour is not: `dashboard.md` §12.2
+item 3 settles what gold means on this surface and lists five things, a
+hovered link is not one of them, and DESIGN.md's One Signal Rule is the reason
+the list is a list. Hover takes the `--fg` step, which is what the old
+stylesheet's own named link rules took.
+
+**The rail's group heading keeps `label` (audit X9).** The audit is right that
+`Manage` was sentence case at the nav items' size and is uppercase tracked mono
+now. DESIGN.md's `nav-group` token says `typography: {typography.label}` and
+`padding: 0.75rem 1rem 0.25rem`, which is what the port implements — the old
+surface was the deviation. What *was* a gap is ported: the heading is gone
+entirely in the ≤1120px strip, where it labels a column that no longer exists.
+
+**Dashboard search is a flat ranking again (audit V4).** The port grouped a page
+of hits by video. Nothing asks for that: `dashboard.md` §14.1 is written per
+hit throughout — per-hit badges, the frame on the row, two links per hit —
+§14.2's field table is per hit, and §20 is about the videos table.
+`search.html` drew `<ol start="{{ offset + 1 }}">`, one row per moment, each
+with its own title and channel, and the ranking is the answer an operator came
+for. Grouping printed the title twice for a single-hit video and hid whether
+the second-ranked moment was in the same talk as the first.
+
+**The final-record note keeps the port's wording (audit J3).** The condition was
+the gap and is fixed: the note appears only on a live→terminal transition,
+which is what `job.html` kept it hidden in the markup for. The sentence is not
+restored. `job.html` said "so reload for the final record" because its ticker
+patched a handful of fields and left the rest of the document at the reading it
+was rendered from; here the poll replaces the whole payload, so the page the
+reader is looking at *is* the final record and "reload" would send them to
+re-fetch what they already have. `useJobsPoll` gained `wasLive` for the
+condition, which is the honest place for it — a ref read during a render is a
+value React is free not to have re-rendered for.
+
+**`Rows` keeps no `max` (audit V9, J9).** `videos.html` and `jobs.html` had
+`max="100"`. The ceiling is `OWNER_CLAMPS.videos_max_limit` and
+`views.JOB_PAGE_MAX`, neither is on a payload, and a hundred written into the
+page is a second bound that is wrong on the deployment that moved its own —
+which is the prompt-only limit `CLAUDE.md`'s token-discipline invariant names.
+The server clamps and says so in `notes`, in its own words, and the box echoes
+the page size that was *accepted*. If the boxes are ever to carry a ceiling, the
+payload has to carry it first, the way `transcript.max_limit` does.
+
+**The refused sign-in keeps its typographic apostrophe (audit S5).**
+`login.html` wrote `deployment's` with an ASCII quote. Eleven other sentences
+on this surface use `&rsquo;` and this one would be the odd one out; the
+audit's own severity is cosmetic. What was a real loss and is restored is the
+refusal's `next:` line —
+"the sign-in page names which secret this deployment accepts." — which
+`writes.py` sends beside the message and the page dropped, leaving the refusal
+here whose recovery sentence the reader never saw.
+
+### 11.3 Left for the branches that own them
+
+`lib/format.ts`'s em dash for a null clock (audit X8) is the demo branch's file.
+The follow pages' budget note, `next check` column, post-follow navigation and
+button weights (J6, J7, J12, J13), and the `seen` table's stacking breakpoint
+(J11's second half), are another branch's — `dashboard/following/**`. The jobs
+half of J11 and J13 landed here, so the two tables that stack together do again:
+jobs, items and videos at 52rem, with follows, and `seen` still at 780px until
+that branch moves it.
