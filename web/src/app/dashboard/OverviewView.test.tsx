@@ -177,8 +177,9 @@ describe("the corpus overview", () => {
       ).toBeInTheDocument();
 
       expect(screen.getByText("Let's build GPT: from scratch")).toBeInTheDocument();
-      // 7000 s, formatted here, in the span the whole surface uses.
-      expect(screen.getByText("1h 56m")).toBeInTheDocument();
+      // 7000 s as a clock, seconds and all — the runtime the detail page this
+      // row links to prints, and the one the videos table prints beside it.
+      expect(screen.getByText("1:56:40")).toBeInTheDocument();
       // A video with no keyframe keeps the row's height and says so.
       expect(screen.getByText("no frame")).toBeInTheDocument();
     });

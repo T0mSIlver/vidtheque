@@ -142,7 +142,10 @@ describe("one job's page", () => {
       "/dashboard/videos/eMlx5fFNoYc",
     );
     expect(within(items).getByText("1/3")).toBeInTheDocument();
+    // What the stage took is a span; what the video runs is a clock, and the
+    // two sit in the same row without reading as one unit.
     expect(within(items).getByText("15m 00s")).toBeInTheDocument();
+    expect(within(items).getByText(/3Blue1Brown/)).toHaveTextContent("0:20:00");
 
     // Never resolved: the URL it was submitted as, and the error underneath.
     expect(within(items).getByText("https://youtu.be/failedvideo")).toBeInTheDocument();
