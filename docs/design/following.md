@@ -241,6 +241,10 @@ dashboard is built *on* the tool rather than beside it:
 | arrival mode | `mode` | `auto` | `auto` \| `review` |
 | interval | `check_interval_s` | `VIDTHEQUE_FOLLOW_INTERVAL_S` (21600) | ≥ 900, clamped at 7 days |
 
+*Amended 2026-09-15 by the orchestrator for AI Engineer Paris 2026:*
+`title_include` and `title_exclude` accept at most 50 terms. The 80-character
+per-term limit is unchanged.
+
 `channels` is `index-video`'s own vocabulary and not a new one. A podcast follow
 that only wants transcripts is where that parameter finally pays for itself.
 
