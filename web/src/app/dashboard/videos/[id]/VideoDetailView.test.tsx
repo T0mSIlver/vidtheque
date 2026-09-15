@@ -334,7 +334,7 @@ describe("the video detail", () => {
     const { fetcher } = await mount({ body: OWNER_VIDEO });
     await screen.findByText("we cache the keys and the values at every new token");
 
-    await userEvent.click(screen.getByRole("button", { name: /Next 50 cues/ }));
+    await userEvent.click(screen.getByRole("link", { name: /Next 50 cues/ }));
 
     // The offset is the server's own: `page.offset + page.cues.length`, not
     // this page's arithmetic over a limit it asked for.
@@ -344,7 +344,7 @@ describe("the video detail", () => {
     );
     // Nothing above the first row, so nothing to go back to: the Earlier
     // control belongs to a panel that was deep-linked into.
-    expect(screen.queryByRole("button", { name: "← Earlier" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "← Earlier" })).toBeNull();
   });
 
   // The transcript's place is in the URL again. Appending in place is how a
@@ -361,7 +361,33 @@ describe("the video detail", () => {
       "/dashboard/api/videos/kCc8FmEb1nY/cues?offset=100&limit=25",
       expect.objectContaining({ credentials: "same-origin" }),
     );
-    expect(screen.getByRole("button", { name: "Next 25 cues →" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Next 25 cues →" })).toBeInTheDocument();
+    // Real addresses, at the server's own offsets and carrying the strip's
+    // page, exactly as `video.html`'s two links did: a reader can open the next
+    // page of a transcript in a tab, or copy where they got to.
+    expect(screen.getByRole("link", { name: "Next 25 cues →" })).toHaveAttribute(
+      "href",
+      "/dashboard/videos/kCc8FmEb1nY?cues=25&cue_offset=125#transcript",
+    );
+    expect(screen.getByRole("link", { name: "← Earlier" })).toHaveAttribute(
+      "href",
+      "/dashboard/videos/kCc8FmEb1nY?cues=25&cue_offset=75#transcript",
+    );
+  });
+
+  // The empty *page*, which is what `video.html` keyed on: a `?cue_offset=`
+  // past the end of a transcript that does exist met an empty scrollbox with a
+  // pager under it, rather than the panel that says so.
+  it("says the page is empty when the offset lands past the end", async () => {
+    await mount(
+      { body: OWNER_VIDEO },
+      {
+        search: "cue_offset=9000",
+        cues: { body: { cues: [], offset: 9000, limit: 50, has_more: false } },
+      },
+    );
+
+    expect(await screen.findByText("No transcript cues on this page.")).toBeInTheDocument();
   });
 
   // A hand-typed page size above the endpoint's own ceiling is held at it,
@@ -394,7 +420,7 @@ describe("the video detail", () => {
       "/dashboard/api/videos/kCc8FmEb1nY/cues?offset=0&limit=1",
       expect.anything(),
     );
-    expect(screen.getByRole("button", { name: "Next 1 cues →" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Next 1 cues →" })).toBeInTheDocument();
   });
 
   it("pages back from a seeded offset and writes where it landed", async () => {
@@ -405,7 +431,7 @@ describe("the video detail", () => {
     );
     await screen.findByText("cue 100");
 
-    await userEvent.click(screen.getByRole("button", { name: "← Earlier" }));
+    await userEvent.click(screen.getByRole("link", { name: "← Earlier" }));
 
     expect(fetcher).toHaveBeenCalledWith(
       "/dashboard/api/videos/kCc8FmEb1nY/cues?offset=75&limit=25",
@@ -434,7 +460,7 @@ describe("the video detail", () => {
     );
     await screen.findByText("cue 10");
 
-    await userEvent.click(screen.getByRole("button", { name: "← Earlier" }));
+    await userEvent.click(screen.getByRole("link", { name: "← Earlier" }));
 
     // The backwards page starts at 0 and runs past the rows already on screen,
     // so only the ones that are actually earlier are kept — cue 12 is printed
@@ -442,7 +468,7 @@ describe("the video detail", () => {
     await screen.findByText("cue 0");
     expect(screen.getAllByText("cue 12")).toHaveLength(1);
     // Nothing above the first row now, so the control goes.
-    await waitFor(() => expect(screen.queryByRole("button", { name: "← Earlier" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("link", { name: "← Earlier" })).toBeNull());
   });
 
   // `cue.t` is the whole second the endpoint sends for exactly this, and the

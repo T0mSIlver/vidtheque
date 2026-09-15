@@ -477,6 +477,7 @@ function Loaded({
       <Transcript
         key={video.video_id}
         onWhere={onWhere}
+        search={search}
         seedOffset={seedOffset}
         seedSize={seedSize}
         transcript={data.transcript}
@@ -712,11 +713,15 @@ function Timeline({
   const [still, setStill] = useState<string | null>(null);
 
   // A native tooltip under a real preview is the same sentence told twice and
-  // a second late. The bars carry it until the handlers above are bound —
-  // `dashboard.js` took it off at exactly this moment, and for the same reason:
-  // this is the only place that knows the preview exists.
-  const [bound, setBound] = useState(false);
-  useEffect(() => setBound(true), []);
+  // a second late. The bars carry it in the markup and it comes off here, on
+  // bind — `dashboard.js:429-435` took it off at exactly this moment, and for
+  // the same reason: this is the only place that knows the preview exists.
+  // Taken off the node rather than not rendered, so the attribute is what the
+  // markup holds for the paint before this runs; React re-sets it only when the
+  // shots change, which is when this runs again.
+  useEffect(() => {
+    for (const bar of Array.from(band.current?.children ?? [])) bar.removeAttribute("title");
+  }, [shots]);
 
   // A video with no recorded duration still has shots with ends: the band is
   // drawn against the furthest one rather than against zero.
@@ -891,11 +896,7 @@ function Timeline({
               // moment the platform's version of this sentence stops being the
               // best one on offer. On the `li` rather than on the anchor
               // because the anchor fills the bar.
-              title={
-                bound
-                  ? undefined
-                  : `shot ${shot.shot_id}, ${clock(shot.start_s)} to ${clock(shot.end_s)}, ${shot.kept}/${shot.frames} frames kept`
-              }
+              title={`shot ${shot.shot_id}, ${clock(shot.start_s)} to ${clock(shot.end_s)}, ${shot.kept}/${shot.frames} frames kept`}
             >
               <DashLink
                 href={href}
@@ -1278,12 +1279,16 @@ function Card({
 function Transcript({
   transcript,
   videoId,
+  search,
   seedSize,
   seedOffset,
   onWhere,
 }: {
   transcript: VideoDetail["transcript"];
   videoId: string;
+  /** This page's own query, so the pager's two links can be the addresses
+   *  Jinja's `nav_link` macro built rather than controls with no href. */
+  search: string;
   /** `?cues=`, or `null` for the endpoint's own default. */
   seedSize: number | null;
   /** `?cue_offset=` — the first cue this panel asks for. */
@@ -1397,14 +1402,17 @@ function Transcript({
     if (element.scrollTop + element.clientHeight * 2 >= element.scrollHeight) loadMore();
   }
 
-  if (transcript.cues === 0) {
+  // The empty *page*, which is what `video.html` keyed on — not the empty
+  // transcript. `?cue_offset=` can land past the end of a transcript that does
+  // exist, and what that reader met here was an empty scrollbox with a pager
+  // under it rather than the panel that says so. The sentence has always been
+  // page-scoped; now the condition is too.
+  if (transcript.cues === 0 || (!busy && !error && cues.length === 0)) {
     return (
       <Panel id="transcript" title="Transcript">
         <div className={styles.empty}>
-          {/* Page-scoped, as Jinja said it: the panel is bounded and
-              `?cue_offset=` can land past the end of a transcript that does
-              exist, so "for this video" would be this page reporting an empty
-              corpus row off an offset the reader typed. */}
+          {/* Page-scoped, as Jinja said it: "for this video" would be this page
+              reporting an empty corpus row off an offset the reader typed. */}
           <p className={styles.emptyLead}>No transcript cues on this page.</p>
           <p className={dash.emptyNote}>
             The <code>stt</code> row in Provenance says whether one was produced.
@@ -1440,23 +1448,43 @@ function Transcript({
       ) : null}
       {first > 0 || more ? (
         <nav className={styles.pager} aria-label="Transcript pages">
-          {/* Only where there is something above the first row on screen —
+          {/* Real links, at the server's own offsets, exactly as `video.html`
+              drew them: a reader can middle-click the next page of a transcript
+              into a tab or copy its address, which a `<button>` does not offer
+              and which is the whole difference between paging a document and
+              operating a widget. The click is intercepted so the batch still
+              arrives in place — the strip, the frames and the reader's position
+              are not thrown away to move fifty rows — and a modified click is
+              left to the browser, which is the point of the href.
+
+              Only where there is something above the first row on screen —
               which on a panel nobody deep-linked into is never, and the control
               is not drawn at all. */}
           {first > 0 ? (
-            <button
+            <DashLink
               className={styles.ghostlink}
-              type="button"
-              onClick={loadEarlier}
-              disabled={busy}
+              href={cueLink(search, videoId, Math.max(first - size, 0))}
+              onClick={(event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                event.preventDefault();
+                loadEarlier();
+              }}
             >
               ← Earlier
-            </button>
+            </DashLink>
           ) : null}
           {more ? (
-            <button className={styles.ghostlink} type="button" onClick={loadMore} disabled={busy}>
+            <DashLink
+              className={styles.ghostlink}
+              href={cueLink(search, videoId, first + cues.length)}
+              onClick={(event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                event.preventDefault();
+                loadMore();
+              }}
+            >
               Next {size} cues →
-            </button>
+            </DashLink>
           ) : null}
         </nav>
       ) : null}
@@ -1631,6 +1659,20 @@ function frameLink(
   if (select !== null) query.set("select", String(select));
   const fragment = anchor ? `#${anchor}` : select !== null ? `#frame-${select}` : "";
   return `${ROOT}/videos/${encodeURIComponent(videoId)}?${query}${fragment}`;
+}
+
+/**
+ * This page at another page of the transcript, anchored at the panel.
+ *
+ * `nav_link(frame_offset, cue_offset, 'transcript')`, which is the address the
+ * pager's two links have always carried: paging the transcript keeps the strip
+ * where it is, and a page reached by a `?frame_offset=` deep link stays that
+ * page.
+ */
+function cueLink(search: string, videoId: string, offset: number): string {
+  const query = keptQuery(search, [...FRAME_KEYS, ...CUE_KEYS]);
+  query.set("cue_offset", String(offset));
+  return `${ROOT}/videos/${encodeURIComponent(videoId)}?${query}#transcript`;
 }
 
 /** `?cues=` and `?cue_offset=` as the panel's seed: a whole number, or nothing.
