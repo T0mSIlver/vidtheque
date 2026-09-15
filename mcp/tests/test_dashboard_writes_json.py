@@ -1144,6 +1144,13 @@ def test_index_anyway_and_unfollow_answer_what_they_did(tmp_path: Path) -> None:
         assert gone.json()["deleted"] is True
         # The videos it brought in stay: they are corpus, not membership.
         assert isinstance(gone.json()["videos_kept"], int)
+        # The day it spent does not come back with them (migration 0007): the
+        # accepted candidate cost an hour of video inside the window, the
+        # budget the list re-reads will not move, and the receipt says so as
+        # seconds rather than as the tool's sentence — the page prints the
+        # line, off the same figure the tool's "not a refund" is rendered
+        # from.
+        assert gone.json()["spent_s"] == 3600.0
         assert client.get(f"{ROOT}/following/{slug}", headers=BEARER).status_code == 404
 
 

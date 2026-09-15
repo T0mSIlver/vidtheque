@@ -911,14 +911,25 @@ async def _follow_action(request: Request, action: str, back: str) -> Response:
 
     JSON outcome: the follow row as it stands after the action, except for
     `unfollow`, where there is no row left to send — that one answers
-    ``{"slug", "deleted", "videos_kept"}``, the count being the tool's own
-    receipt for the videos an unfollow deliberately leaves in the corpus.
+    ``{"slug", "deleted", "videos_kept", "spent_s"}``, the count being the
+    tool's own receipt for the videos an unfollow deliberately leaves in the
+    corpus and the seconds being the day it did **not** hand back (migration
+    0007).
     """
     assembled = request.app.state.assembled
     slug = str(request.path_params["slug"])
     row = await assembled.db.read(lambda c: follows_store.by_slug(c, slug))
     if row is None:
         return _refusal_json(_no_such_follow(slug))
+    # Before the tool, and only for the one action that destroys the owner:
+    # the delete is what nulls it on the spend rows. Read here rather than off
+    # the tool's payload — the sum is the store's, and the tool renders it
+    # into a sentence instead of returning it.
+    spent_s: float | None = None
+    if action == "unfollow":
+        spent_s = await assembled.db.read(
+            lambda c: follows_store.spend_of_s(c, int(row["collection_id"]))
+        )
     result = await follows_tool.follow_channel(
         assembled.deps, url=str(row["source_url"]), action=action
     )
@@ -941,6 +952,13 @@ async def _follow_action(request: Request, action: str, back: str) -> Response:
                     "slug": slug,
                     "deleted": True,
                     "videos_kept": int(payload.get("videos_kept") or 0),
+                    # The budget the list re-reads is about to look unchanged,
+                    # and this is why: the hours this follow accepted in the
+                    # rolling day stayed spent. `0.0` is nothing spent, and
+                    # the page prints the line only when there is one to
+                    # print — the omission is the client's, like a null near
+                    # miss's.
+                    "spent_s": float(spent_s or 0.0),
                 }
             )
         return await _follow_json(request, slug)
