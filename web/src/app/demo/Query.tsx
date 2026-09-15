@@ -59,6 +59,11 @@ export function Query({
           <ShapeMemo shape={shape} remember={setLast} />
         </Suspense>
       ) : null}
+      {/* The Answer region is in the markup in both modes, as it was in
+          `index.html`: a live region a screen reader met for the first time
+          when it already had content in it is one it may not announce. Search
+          answers in the list below, so here it is empty and hidden. */}
+      <section aria-live="polite" aria-label="Answer" hidden />
       {pending ? <Skeleton shape={last} /> : children}
     </>
   );

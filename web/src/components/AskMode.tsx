@@ -7,7 +7,7 @@ import { badgeWords, channelWord, presentationOf } from "@/lib/group";
 import { framingOf, readJsonEvents } from "@/lib/sse";
 import { FrameShot } from "./Frame";
 import { Receipt } from "./Receipt";
-import { AskSwitch, StateCell } from "./SearchBox";
+import { AskSwitch, QueryMark, StateCell } from "./SearchBox";
 import styles from "./AskMode.module.css";
 
 // Ask mode is one Client Component that owns the question, the stream and
@@ -180,7 +180,9 @@ export function AskMode({
   const state = busy ? "reading" : phase.kind === "degraded" ? "refused" : "ready";
   return (
     <div className={styles.ask}>
-      <form onSubmit={onSubmit} className={styles.form} aria-busy={busy}>
+      {/* One form in both modes, and it is a search landmark in both: the mode
+          changes what the answer looks like, not what the box is for. */}
+      <form role="search" onSubmit={onSubmit} className={styles.form} aria-busy={busy}>
         {/* A real `<label>` and not an `aria-label` (demo-site.md §6.2): the
             field's name is a thing in the document, and clicking the label
             focuses the field. */}
@@ -188,10 +190,12 @@ export function AskMode({
           Your question
         </label>
         <div className={styles.bar}>
+          <QueryMark className={styles.ic} />
           <input
             id="q"
             ref={input}
             type="search"
+            name="q"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="ask a question about AI engineering…"

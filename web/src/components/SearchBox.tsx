@@ -36,6 +36,23 @@ const TONE: Record<MachineState, string> = {
   "rate limited": "refused",
 };
 
+/**
+ * The bar's own mark: a prompt's chevron, in gold, in its own cell.
+ *
+ * It is what makes the box read as a console line rather than as a text field,
+ * and it is the same mark in both modes — the class is the caller's, because
+ * each mode's bar is styled in its own module.
+ */
+export function QueryMark({ className }: { className: string }) {
+  return (
+    <span className={className} aria-hidden="true">
+      <svg viewBox="0 0 12 12">
+        <path d="M3.6 1.8 L8.2 6 L3.6 10.2" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      </svg>
+    </span>
+  );
+}
+
 export function StateCell({ state }: { state: MachineState }) {
   return (
     <span className={styles.state} data-s={TONE[state]}>
@@ -156,6 +173,9 @@ export function ModeSwitch({
   onLeave?: () => void;
 }) {
   const router = useRouter();
+  // The pin is the URL's, not this component's: in ask mode there is no chip
+  // row to read it off, and the switch still has to hand it back.
+  const pinned = useSearchParams().get("type");
   if (!enabled) return null;
 
   function go(next: boolean) {
@@ -163,6 +183,11 @@ export function ModeSwitch({
     onLeave?.();
     const params = new URLSearchParams({ ask: next ? "1" : "0" });
     if (q.trim()) params.set("q", q.trim());
+    // The pinned channel survives the switch. `setAskMode` rewrote one search
+    // parameter and left the rest of the URL alone; rebuilding it from scratch
+    // dropped `type`, so a visitor who had pinned "on-screen text", looked at
+    // an answer and came back was silently searching all four channels again.
+    if (pinned && pinned !== "all") params.set("type", pinned);
     router.push(`/demo?${params}`);
   }
 
@@ -260,6 +285,7 @@ export function SearchBox({
         Search this video corpus
       </label>
       <div className={styles.bar}>
+        <QueryMark className={styles.ic} />
         <input
           id="q"
           ref={input}
