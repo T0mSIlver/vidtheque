@@ -797,6 +797,24 @@ about one follow's clock, and with checks off that clock is a schedule nothing
 will run)*, the decision counts, the two job lists as job ids, the in-flight
 check, and the passed-over ledger with `reason` verbatim.
 
+*Amended 2026-09-15:* every follow row — list, detail and write outcome, one
+shape — carries `fail_count`, the derived `retrying`, and `max_tries` beside
+them, because `failing` has covered two situations since migration 0008 and
+`state` alone cannot say which one a row is in. The pages compose `retry 2 of
+7` / `gave up after 7 tries` off those three (the near-miss line's split, and
+its coupling: the bound rides along so the count and the sentence cannot
+disagree), tone them `warn` while the check is still coming back on its own
+and error once it has stopped, and print `—` for a next check nothing will
+act on — a paused or a gave-up row keeps a `next_check_at` that is a promise
+nobody will keep. Two more things arrive with the same change: an unfollow's
+outcome carries `spent_s`, the rolling day the delete did **not** refund
+(migration 0007 — print the tool's "not a refund" line off it when there is a
+number to print, and nothing at `0.0`), and `check_now` on a follow nothing
+will schedule is refused `409 E_NOT_SCHEDULABLE`, with the tool's own
+sentence as the message — so the control is drawn disabled on a gave-up
+follow with that refusal as its help, and a refusal that still arrives (the
+page a beat behind the row) renders inline as the other refusals do.
+
 Three things worth knowing before writing the pages:
 
 - **The follow row is the same object a write answers with** (§9,

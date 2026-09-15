@@ -35,6 +35,11 @@ export const KARPATHY = {
   kind: "channel",
   source_url: "https://www.youtube.com/@karpathy",
   state: "active",
+  // A healthy follow's count is zero and its derived half is false: the
+  // retry fields are on every row, not only on a failing one's.
+  fail_count: 0,
+  retrying: false,
+  max_tries: 7,
   mode: "auto",
   tabs: ["videos"],
   channels: "all",
@@ -60,6 +65,9 @@ export const PAUSED = {
   kind: "channel",
   source_url: "https://www.youtube.com/@paused",
   state: "paused",
+  fail_count: 0,
+  retrying: false,
+  max_tries: 7,
   mode: "review",
   tabs: ["videos", "shorts"],
   channels: "all",
@@ -75,6 +83,28 @@ export const PAUSED = {
   last_check_at: null,
   last_new_at: null,
   last_error_code: null,
+};
+
+/** The two rows one word covers since migration 0008: a follow retrying once
+ *  a day needs nothing from anyone, and one that gave up is waiting on a
+ *  human. The count is the receipt — not a fourth state word. The retry clock
+ *  is a day out, never sooner than the follow's own interval. */
+export const RETRYING = {
+  ...KARPATHY,
+  state: "failing",
+  fail_count: 2,
+  retrying: true,
+  next_check_at: NOW + 86400,
+  last_error_code: "E_UNSUPPORTED_SOURCE",
+};
+
+export const GAVE_UP = {
+  ...KARPATHY,
+  state: "failing",
+  fail_count: 7,
+  retrying: false,
+  next_check_at: NOW + 86400,
+  last_error_code: "E_UNSUPPORTED_SOURCE",
 };
 
 export const FOLLOWING = {
@@ -262,6 +292,21 @@ export const CHECKS_OFF_DETAIL = {
   checks_enabled: false,
 };
 
+/** A channel that 404'd twice and is coming back on its own: still `failing`,
+ *  still schedulable, so `Check now` is a control that does what it says. */
+export const RETRYING_DETAIL = {
+  ...FOLLOW_DETAIL,
+  follow: { ...RETRYING, last_error_message: "This channel does not exist" },
+};
+
+/** Seven strikes: the follow stops being due and waits on a human. `Check
+ *  now` would be refused, so the page draws it disabled with the refusal as
+ *  its help, and `Try again` is the control that clears the count. */
+export const GAVE_UP_DETAIL = {
+  ...FOLLOW_DETAIL,
+  follow: { ...GAVE_UP, last_error_message: "This channel does not exist" },
+};
+
 // ---------------------------------------------------------- write outcomes
 
 // Every block here is the *detail* row, because §21 builds it with the function
@@ -312,7 +357,17 @@ export const CREATED_OUTCOME = {
  *  is what makes a retried submission safe. */
 export const ALREADY_FOLLOWING = { follow: FAILING, already_following: true };
 
-export const DELETED_OUTCOME = { slug: "andrej-karpathy", deleted: true, videos_kept: 1 };
+export const DELETED_OUTCOME = {
+  slug: "andrej-karpathy",
+  deleted: true,
+  videos_kept: 1,
+  spent_s: 0.0,
+};
+
+/** The follow that spent an hour of the day's budget before it was unfollowed:
+ *  the hour stays spent (migration 0007), so the receipt owes the operator the
+ *  line the tool prints rather than a budget that appears not to have moved. */
+export const DELETED_SPENT_OUTCOME = { ...DELETED_OUTCOME, spent_s: 3600.0 };
 
 export const QUEUED_OUTCOME = {
   slug: "andrej-karpathy",
@@ -343,4 +398,16 @@ export const UNKNOWN_FOLLOW = {
   error: "E_UNKNOWN_FOLLOW",
   message: '"nope" is not a follow on this instance.',
   next: "the Following page lists every channel this index watches.",
+};
+
+/** Check-now on a follow that gave up. The message is the tool's own first
+ *  line — one renderer beside `tools/follows.not_scheduled_line`, so the two
+ *  media cannot describe one refusal two ways — and the way out is the
+ *  control that clears the count. */
+export const NOT_SCHEDULABLE = {
+  error: "E_NOT_SCHEDULABLE",
+  message:
+    "Not scheduled: Andrej Karpathy is failing and has stopped retrying after 7 " +
+    "consecutive failures. Nothing was queued.",
+  next: "Try again (resume) clears the failure count and re-arms the clock.",
 };

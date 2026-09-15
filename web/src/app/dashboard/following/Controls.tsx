@@ -5,10 +5,11 @@ import { useCallback, useRef, useState, type ReactNode } from "react";
 import { Pill } from "@/components/Pill";
 import { dashboard, ROOT } from "@/lib/dashboard/client";
 import type { FollowDetailRow } from "@/lib/dashboard/schemas";
+import { hours } from "@/lib/format";
 import dash from "../dashboard.module.css";
 import { DashLink, refusalOf, useWrite, type Write } from "../parts";
 import styles from "./following.module.css";
-import { RuleFields, RuleForm, ruleValues } from "./parts";
+import { notSchedulableTitle, RuleFields, RuleForm, ruleValues } from "./parts";
 
 // The five writes on a follow's own page (dashboard.md §18.5, §21). Not one of
 // them decides anything: four go through `tools/follows.follow_channel` — the
@@ -73,7 +74,13 @@ export function StateControl({
 /** Check now: it does not run a check, it makes the clock due, and the queue
  *  claims a `follow_check` on its next tick. The row that comes back says so —
  *  `next_check_at: 0` is due immediately — which is why the button answers
- *  with the clock rather than with a sentence about what will happen. */
+ *  with the clock rather than with a sentence about what will happen.
+ *
+ *  A follow that gave up draws the control disabled rather than dropping it,
+ *  with the refusal the write would be refused with as its help: the sentence
+ *  says why nothing will queue, and the control that clears the count is
+ *  standing right beside it. A refusal that still arrives — a state that
+ *  changed under the page — renders inline below, as the other refusals do. */
 export function CheckControl({
   follow,
   onWritten,
@@ -83,6 +90,19 @@ export function CheckControl({
 }) {
   const send = useCallback(() => dashboard.checkFollowNow(follow.slug), [follow.slug]);
   const [write, run] = useWrite(send, onWritten);
+
+  if (follow.state === "failing" && !follow.retrying) {
+    return (
+      <button
+        className={styles.rowbutton}
+        type="button"
+        disabled
+        title={notSchedulableTitle(follow)}
+      >
+        Check now
+      </button>
+    );
+  }
 
   return (
     <Control
@@ -124,6 +144,17 @@ export function DeleteControl({ slug }: { slug: string }) {
         <span>
           Unfollowed. {write.outcome.videos_kept} video(s) it brought in stayed in the corpus.
         </span>
+        {/* The budget the list lands on is about to look unchanged, because
+            since migration 0007 the day stays spent — so the receipt says why,
+            the tool's own line composed off `spent_s`. `0.0` is nothing spent
+            and prints nothing. */}
+        {write.outcome.spent_s > 0 ? (
+          <span className={dash.outcomeNext}>
+            Not a refund: the {hours(write.outcome.spent_s)}h this follow accepted in the last 24h
+            stay spent. They were downloaded and indexed; deleting the rule does not un-spend the
+            day.
+          </span>
+        ) : null}
       </span>
     );
   }

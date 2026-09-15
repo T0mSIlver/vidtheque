@@ -994,6 +994,14 @@ export const FollowRow = z.object({
   // `active | paused | failing` — the store's own words, as strings, so a
   // state the schema grows renders neutral instead of failing the parse.
   state: z.string(),
+  // `failing` covers two situations since migration 0008 — a follow retrying
+  // once a day and one waiting on a human — and the count is the receipt, not
+  // a fourth state word. `retrying` is the derived half, computed Python-side
+  // off the store's own predicate; the bound rides along so a page printing
+  // `retry 2 of 7` reads every number in the phrase off the row.
+  fail_count: count(),
+  retrying: z.boolean(),
+  max_tries: count(),
   mode: z.string(),
   tabs: z.array(z.string()),
   // `all`, or a comma-joined subset: `index-video`'s own vocabulary rather
@@ -1202,11 +1210,17 @@ export type FollowWritten = z.infer<typeof FollowWritten>;
  *
  *  `videos_kept` is the receipt for the asymmetry §18.5 asks this control to
  *  state: the rule and the ledger go, and the videos the follow brought in
- *  stay, because they are corpus and not membership. */
+ *  stay, because they are corpus and not membership.
+ *
+ *  `spent_s` is the other half of what an unfollow does not undo: since
+ *  migration 0007 the day stays spent, so the budget the list re-reads will
+ *  not move — and `0.0` means there was nothing spent and the page prints no
+ *  not-a-refund line at all. */
 export const FollowDeleted = z.object({
   slug: z.string(),
   deleted: z.boolean(),
   videos_kept: count(),
+  spent_s: seconds(),
 });
 export type FollowDeleted = z.infer<typeof FollowDeleted>;
 

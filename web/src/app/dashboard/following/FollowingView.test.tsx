@@ -9,8 +9,11 @@ import {
   CLAMPED_FOLLOWING,
   CREATED_OUTCOME,
   FOLLOWING,
+  GAVE_UP,
   NO_FOLLOWS,
   NOT_A_CHANNEL,
+  PAUSED,
+  RETRYING,
 } from "@/test/following-fixtures";
 import { firstPaint } from "@/test/retry";
 
@@ -101,8 +104,10 @@ describe("the follows table", () => {
     expect(within(karpathy).getByText("2026-09-05 14:34")).toBeInTheDocument();
     expect(within(karpathy).getByText("2026-09-05 15:34")).toBeInTheDocument();
     expect(within(karpathy).getByText("2026-09-05 20:34")).toBeInTheDocument();
-    // A follow that has never run a check prints the dash, not 1970.
-    expect(within(rowOf("Paused Channel")).getAllByText("—")).toHaveLength(2);
+    // A follow that has never run a check prints the dash, not 1970 — and
+    // since 0008 so does its next check, which names a moment nothing will
+    // act on: the scheduler will not enqueue a paused follow.
+    expect(within(rowOf("Paused Channel")).getAllByText("—")).toHaveLength(3);
 
     // A follow in `review` mode says so, and one watching two listings names
     // both.
@@ -187,6 +192,37 @@ describe("the follows table", () => {
     const band = await screen.findByRole("region", { name: /waiting for you/ });
     expect(band.className).toMatch(/noticeWarn/);
     expect(within(band).getByRole("heading").className).toMatch(/noticeWarnTitle/);
+  });
+
+  // `failing` covers two situations since 0008 and the row has to say which:
+  // a follow retrying daily needs nothing from anyone, one that gave up is
+  // waiting on a human. The count is the receipt, not a fourth state word.
+  it("says a failing follow is retrying, in the warn tone", async () => {
+    await mount({ list: { body: { ...FOLLOWING, follows: [RETRYING, PAUSED] } } });
+    await screen.findByRole("status");
+    const row = rowOf("Andrej Karpathy");
+
+    const fact = within(row).getByText("retry 2 of 7");
+    expect(fact.className).toMatch(/factWarn/);
+    // The clock it is still coming back on is a clock: the cell keeps its
+    // machine-readable stamp.
+    expect(row.querySelector('[data-label="Next check"] time')).toHaveAttribute("datetime");
+    noNulls();
+  });
+
+  it("says a follow that gave up in the error tone, and promises no next check", async () => {
+    await mount({ list: { body: { ...FOLLOWING, follows: [GAVE_UP, PAUSED] } } });
+    await screen.findByRole("status");
+    const row = rowOf("Andrej Karpathy");
+
+    const fact = within(row).getByText("gave up");
+    expect(fact.className).toMatch(/factBad/);
+    expect(within(row).getByText("failing")).toBeInTheDocument();
+    // A clock nothing will act on is not printed as one it will.
+    const next = row.querySelector('[data-label="Next check"] time');
+    expect(next).toHaveTextContent("—");
+    expect(next).not.toHaveAttribute("datetime");
+    noNulls();
   });
 
   // The head strip was a server-rendered line: it did not appear a beat after

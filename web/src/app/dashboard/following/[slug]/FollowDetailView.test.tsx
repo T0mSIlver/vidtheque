@@ -7,13 +7,17 @@ import {
   BAD_DURATION,
   CHECKED_OUTCOME,
   DELETED_OUTCOME,
+  DELETED_SPENT_OUTCOME,
   CHECKS_OFF_DETAIL,
   FOLLOW_DETAIL,
+  GAVE_UP_DETAIL,
   IN_FLIGHT_DETAIL,
+  NOT_SCHEDULABLE,
   PAUSED_OUTCOME,
   QUEUED_OUTCOME,
   QUIET_DETAIL,
   RESUMED_OUTCOME,
+  RETRYING_DETAIL,
   RULES_OUTCOME,
   UNKNOWN_FOLLOW,
 } from "@/test/following-fixtures";
@@ -332,6 +336,73 @@ describe("one follow's page", () => {
       expect(String(posts[0].init.body)).toBe("action=resume");
     });
 
+    // Since 0008 a `failing` follow with retries left is schedulable, so
+    // Check now does what it says — the gesture an operator makes when a
+    // channel comes back, which used to have to be spelled pause-then-resume.
+    it("spells the retry out beside the state, and offers Check now to a retrying follow", async () => {
+      const { posts } = await mount({
+        detail: { body: RETRYING_DETAIL },
+        post: { body: CHECKED_OUTCOME },
+      });
+      await screen.findByRole("heading", { name: "Andrej Karpathy" });
+
+      const fact = screen.getByText("retry 2 of 7, once a day");
+      expect(fact.className).toMatch(/factWarn/);
+      // The clock it is still coming back on is a clock the minirow prints —
+      // a day out, which is the retry cadence.
+      expect(screen.getByText("2026-09-06 16:34")).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("button", { name: "Check now" }));
+      expect(posts[0].path).toBe("/dashboard/following/andrej-karpathy/check");
+      expect(await screen.findByText("due now")).toBeInTheDocument();
+      noNulls();
+    });
+
+    it("says a follow that gave up in the error tone, disables Check now on it, and prints no next check", async () => {
+      const { posts } = await mount({ detail: { body: GAVE_UP_DETAIL } });
+      await screen.findByRole("heading", { name: "Andrej Karpathy" });
+
+      const fact = screen.getByText("gave up after 7 tries");
+      expect(fact.className).toMatch(/factBad/);
+      // Nothing will enqueue it, so no clock is promised: the minirow prints
+      // the dash, not the timestamp its `next_check_at` still carries.
+      const rule = screen.getByRole("region", { name: "The rule" });
+      expect(within(rule).getAllByText("—")).toHaveLength(1);
+      expect(within(rule).queryByText("2026-09-06 16:34")).not.toBeInTheDocument();
+
+      // The control stays, disabled, with the refusal the write would be
+      // refused with as its help — and the control that clears the count is
+      // the one standing beside it.
+      const check = screen.getByRole("button", { name: "Check now" });
+      expect(check).toBeDisabled();
+      expect(check).toHaveAttribute(
+        "title",
+        "Not scheduled: Andrej Karpathy is failing and has stopped retrying after 7 " +
+          "consecutive failures. Nothing was queued.",
+      );
+      expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+      expect(posts).toHaveLength(0);
+      noNulls();
+    });
+
+    // The page can be a beat behind the row: a follow that gave up between
+    // the read and the click is refused, and the refusal renders inline with
+    // Python's own words rather than as a button that looks broken.
+    it("renders a check-now refusal that still arrives, in the API's words", async () => {
+      await mount({
+        detail: { body: RETRYING_DETAIL },
+        post: { status: 409, body: NOT_SCHEDULABLE },
+      });
+      await screen.findByRole("heading", { name: "Andrej Karpathy" });
+
+      await userEvent.click(screen.getByRole("button", { name: "Check now" }));
+
+      expect(await screen.findByText("E_NOT_SCHEDULABLE")).toBeInTheDocument();
+      expect(screen.getByText(/has stopped retrying after 7/)).toBeInTheDocument();
+      expect(screen.getByText(/clears the failure count/)).toBeInTheDocument();
+      noNulls();
+    });
+
     // It does not run a check; it makes the clock due. `next_check_at: 0` is
     // the row saying so.
     it("makes the clock due, and says it is due", async () => {
@@ -454,6 +525,37 @@ describe("one follow's page", () => {
       expect(posts[0].path).toBe("/dashboard/following/andrej-karpathy/delete");
       expect(await screen.findByText(/stayed in the corpus/)).toBeInTheDocument();
       expect(push).toHaveBeenCalledWith("/dashboard/following");
+    });
+
+    // Since migration 0007 the day an unfollowed follow spent stays spent, so
+    // the budget on the list it lands on will not move — and the receipt owes
+    // the operator the line the tool prints before they wonder whether the
+    // unfollow worked. Nothing spent, and there is no line at all.
+    it("prints the not-a-refund line when the unfollow kept a spent day", async () => {
+      await mount({ post: { body: DELETED_SPENT_OUTCOME } });
+      await screen.findByRole("heading", { name: "Andrej Karpathy" });
+
+      await userEvent.click(screen.getByRole("button", { name: "Unfollow" }));
+      await userEvent.click(screen.getByRole("button", { name: "Unfollow" }));
+
+      expect(
+        await screen.findByText(
+          "Not a refund: the 1.0h this follow accepted in the last 24h stay spent. " +
+            "They were downloaded and indexed; deleting the rule does not un-spend the day.",
+        ),
+      ).toBeInTheDocument();
+      noNulls();
+    });
+
+    it("prints no not-a-refund line when the follow spent nothing", async () => {
+      await mount({ post: { body: DELETED_OUTCOME } });
+      await screen.findByRole("heading", { name: "Andrej Karpathy" });
+
+      await userEvent.click(screen.getByRole("button", { name: "Unfollow" }));
+      await userEvent.click(screen.getByRole("button", { name: "Unfollow" }));
+
+      expect(await screen.findByText(/stayed in the corpus/)).toBeInTheDocument();
+      expect(screen.queryByText(/Not a refund/)).not.toBeInTheDocument();
     });
 
     it("keeps the follow when the confirmation is declined", async () => {
