@@ -6,6 +6,76 @@ and `research/pipeline-tooling-research.md`. Where a design doc disagrees with
 this file, this file wins; fold changes back into the docs as implementation
 touches them.
 
+## AI Engineer Paris 2026 edition, set by the orchestrator (flag to Tom)
+
+The hero line, the 50-term follow bound, and the organizer gate below are
+orchestrator defaults flagged to Tom. They remain binding unless Tom overrides
+them.
+
+Set 2026-09-15. The edition is `GET /paris` in the existing Next.js app, under
+the same document policy as `/demo`. It is not a new host or deployable. The
+MCP tools stay unchanged; the public additions are one facade read and
+optional tag filters on the existing search and Ask reads.
+
+The existing tag validator requires namespaced tags, so the brief's three tag
+labels are represented as `series:aie-paris-2026`,
+`series:aie-paris-2026-stream`, and `series:aie-paris-2026-talk`. A day VOD
+and a later talk upload remain distinct videos. The page prefers an explicitly
+mapped talk upload and otherwise uses the mapped span in a day VOD.
+
+The committed schedule is Python-owned JSON at
+`mcp/src/vidtheque_mcp/editions/aie-paris-2026.json`. The additive
+`GET /api/editions/{slug}` facade read is its browser boundary. Search and Ask
+accept the existing namespaced `tags` filter, and Ask applies that scope to
+every internal search and segment read.
+
+Only the main stage is treated as streamed. The other schedule rows remain
+visible with the exact label "not streamed; may arrive later as individual
+uploads". Main-stage rows expose three honest states: `not_yet_indexed`,
+`indexed_not_aligned`, and `aligned`. Unknown VOD ids and offsets stay null.
+
+The second hero line is "Every main-stage talk from AI Engineer Paris, cited
+to the second, slides included. Point your own agent at it." The
+"main-stage" qualifier admits the 23 schedule sessions that were not streamed.
+
+One auto follow watches the channel's streams and videos, applies the common
+edition tag, uses `backfill=0` and `max_per_check=2`, and matches `Paris` plus
+the schedule's speaker names. The global `MAX_TITLE_TERMS` bound is 50, while
+the 80-character per-term limit stays unchanged. Operators add the stream or
+talk subtype tag with the existing `tag-video` tool after classification.
+
+Voxtral is an API-backed STT worker backend for this edition only. It receives
+a bounded per-request `context_bias` list over the existing HTTP seam, uses
+word timestamps without a language pin, and treats `align=True` as a no-op.
+Calls cover at most 60 minutes, overlap by 30 seconds, run sequentially, and
+deduplicate safe word matches at each seam. Diarization stays off because the
+shared transcription response has no speaker field and the talk table already
+provides attribution.
+
+The bias list prioritizes speaker names, companies, the committed AI lexicon,
+then distinctive title terms, with 100 terms at most. The private three-arm
+2025 evaluation compares the existing whisperX transcript, Voxtral without
+bias, and Voxtral with bias on proper-noun term accuracy. It prints current or
+operator-supplied pricing before execution and does not publish private source
+material, per-talk results, or aggregate results.
+
+The edition indexing box raises the existing duration guard to 39,600 seconds
+without using its `0` opt-out. The existing 600-keyframe cap, batch limits,
+heartbeats, five-minute stale-claim recovery, and three-attempt queue limit
+remain unchanged. The two 2025 videos may be used only in an isolated private
+data directory for the dress rehearsal.
+
+Transcript and slide OCR remain untrusted evidence, are rendered as text, and
+are not rewritten by a prompt-injection filter that would alter receipts. The
+pre-publication audit is a delta over the existing public baseline, covering
+the money-bearing Mistral credential, edition facade, and untrusted content
+handoff.
+
+The organizer gate is satisfied when the request has been sent and no refusal
+has arrived before the announcement. An explicit refusal blocks publication.
+The public page keeps the existing source links and "Removal on request"
+footer.
+
 ## Frontend replacement, decided by Tom, 2026-09-05
 
 All three web surfaces move to Next.js and React: the landing at `/`, the
