@@ -31,9 +31,12 @@
 }
 
 /* The demo's shape: the notice `app.js` drew where the results were, or in the
-   foot under the rows a failed second page did not cost the visitor. */
+   foot under the rows a failed second page did not cost the visitor. A
+   sentence, so it is a sentence's width — the same measure every other notice
+   on the surface takes, and not a 1300px plate holding six words. */
 .notice {
   padding: var(--s4);
+  max-width: var(--note);
   border: 1px solid var(--seam2);
   background: var(--plate);
 }

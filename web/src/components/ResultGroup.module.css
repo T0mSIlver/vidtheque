@@ -1,4 +1,5 @@
 .card {
+  composes: plate from "./ornament.module.css";
   background: var(--plate);
   border: 1px solid var(--seam2);
 }
@@ -28,8 +29,8 @@
   overflow-wrap: anywhere;
 }
 
-.title:hover,
-.title:focus-visible {
+.title a:hover,
+.title a:focus-visible {
   color: var(--gold);
 }
 
@@ -202,15 +203,37 @@
   align-self: center;
 }
 
-/* A phone has no one-line row that is still a sentence: the row goes to three
-   lines rather than dropping anything, and the snippet is clamped to two. */
-@media (max-width: 40rem) {
-  .momentLink {
+/* `--bp-hand`. A phone has no one-line row that is still a sentence: the row
+   goes to three lines rather than dropping anything — the receipt is the
+   argument and a truncated one proves nothing — and the snippet is clamped to
+   two, because the whole sentence is one tap away in the talk itself.
+   160×90 beside a 390px row leaves no room for the text, so every frame on the
+   surface is one size down: 112×63, still one box for every kind of hit. */
+@media (max-width: 780px) {
+  .head {
+    grid-template-columns: 7rem minmax(0, 1fr);
+    gap: var(--s3);
+    padding: 12px;
+  }
+
+  .momentShot {
+    width: 7rem;
+  }
+
+  .moment {
     flex-wrap: wrap;
+    padding: 10px 12px;
+    gap: var(--s2);
+  }
+
+  .momentLink {
+    flex: 1 0 100%;
+    flex-wrap: wrap;
+    gap: var(--s2);
   }
 
   .snip {
-    flex: 1 1 100%;
+    flex: 1 0 100%;
     white-space: normal;
     display: -webkit-box;
     -webkit-line-clamp: 2;

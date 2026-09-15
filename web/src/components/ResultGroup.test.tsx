@@ -151,6 +151,18 @@ describe("ResultGroup", () => {
     }
   });
 
+  // A page of results is a list of talks, so the talks are in the document
+  // outline: without headings there is nothing for a screen-reader user to
+  // navigate by, and the page has to be read end to end.
+  it("gives every talk a heading, and the meta under it in reading order", () => {
+    render(<ResultGroup group={group()} />);
+    expect(screen.getByRole("heading", { level: 3, name: "Let's build GPT" })).toBeInTheDocument();
+    // Who said it, how much of it is here, then the machine's own id.
+    expect(screen.getByText("Andrej Karpathy").parentElement).toHaveTextContent(
+      "Andrej Karpathy1 momentkCc8FmEb1nY",
+    );
+  });
+
   // The card's header says *which talk*, so it goes to the talk — the moment's
   // own link with the `?t=` taken off. It pointed at `/videos/{id}` until
   // 2026-09-07, when that page went.
