@@ -154,6 +154,42 @@ const nextConfig: NextConfig = {
   // Which hosts those are is a fact about one machine and not about this repo,
   // so it is named in the environment rather than written down here.
   allowedDevOrigins: devOrigins(),
+  // The two `Cache-Control` answers this app owes, and both of them are the
+  // Python instance's own, ported.
+  //
+  // They are here and not in `proxy.ts` because a header the middleware sets on
+  // a document is overwritten by the dynamic render underneath it — measured:
+  // `proxy.ts` has set `no-store` on `/dashboard` since the port and what came
+  // back on the wire was Next's own `no-cache, must-revalidate`, capitalised
+  // the way Next capitalises it. `headers()` is applied to the finished
+  // response, which is the only place this can be said and stick. (The one
+  // exception Next documents is a truly immutable asset — the hashed files
+  // under `/_next/static`, which it already serves at the year below and which
+  // no config can override. The vendored faces are among them: `next/font`
+  // emits them into `/_next/static/media`, so their year is Next's and not
+  // this block's.)
+  async headers() {
+    return [
+      {
+        // A management page describes state that changes under the reader, and
+        // a shared cache must never hold one: `dashboard/views.py` sent
+        // `no-store` with every document it rendered (§19), and losing it is a
+        // proxy holding one operator's corpus for the next reader.
+        source: "/dashboard/:path*",
+        headers: [{ key: "Cache-Control", value: "no-store" }],
+      },
+      {
+        // The landing's 155 stills, and only them. They are content-addressed
+        // by the video id they came out of and are replaced by adding a file,
+        // never by editing one, which is what makes the year honest — it is
+        // the value `public/__init__.py:59,183` served them at. `public/` is
+        // otherwise served `max-age=0`, so every one of them revalidated on
+        // every load of the front door.
+        source: "/landing/:path*",
+        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+      },
+    ];
+  },
   async rewrites() {
     const base = process.env.VIDTHEQUE_API_URL?.replace(/\/+$/, "");
     if (process.env.NODE_ENV === "production" || !base) return [];
