@@ -8,16 +8,18 @@ be swapped by an env var.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import tempfile
+import unicodedata
 from typing import Annotated, Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse
 
 from . import __version__
-from .backends.base import Backend, InvalidImageError
+from .backends.base import Backend, BackendInputError, InvalidImageError
 from .lifecycle import LifecycleManager
 from .schemas import (
     EmbeddingsRequest,
@@ -45,6 +47,9 @@ MAX_FRAME_QUERY_BATCH = 32
 strings at a time, not the indexing path that earns a big batch."""
 MAX_OCR_IMAGES = 64
 MAX_PATCH_BUDGET = 4096
+MAX_CONTEXT_BIAS_TERMS = 100
+MAX_CONTEXT_BIAS_TERM_CHARS = 100
+MAX_CONTEXT_BIAS_BYTES = 12_000
 """Ceiling on the frame embedder's resolution knob. The model's trained budgets
 top out at 1024; this only stops a request from asking for a quadratic blow-up."""
 
@@ -124,6 +129,10 @@ async def transcriptions(
     timestamp_granularities: Annotated[
         list[str] | None, Form(alias="timestamp_granularities[]")
     ] = None,
+    context_bias: Annotated[
+        str | None,
+        Form(description="JSON string array; at most 100 unique trimmed terms"),
+    ] = None,
 ) -> Any:
     if response_format not in {"json", "verbose_json", "text"}:
         raise HTTPException(
@@ -153,11 +162,15 @@ async def transcriptions(
     align = True
     if timestamp_granularities:
         align = "word" in {g.strip().lower() for g in timestamp_granularities}
+    bias = _context_bias(context_bias)
 
     path = await _spool(file)
     try:
         def job(backend: Backend) -> Any:
-            return backend.infer(path, language=language, align=align)
+            kwargs: dict[str, Any] = {"language": language, "align": align}
+            if context_bias is not None:
+                kwargs["context_bias"] = bias
+            return backend.infer(path, **kwargs)
 
         result = await manager.submit("stt", job, label=file.filename or "audio")
     finally:
@@ -168,6 +181,42 @@ async def transcriptions(
     if response_format == "json":
         return TranscriptionOut(text=result.text)
     return to_verbose(result, model=configured, backend=_backend_name(manager, "stt"))
+
+
+def _context_bias(encoded: str | None) -> list[str]:
+    if encoded is None:
+        return []
+    if len(encoded.encode("utf-8")) > MAX_CONTEXT_BIAS_BYTES:
+        raise BackendInputError(
+            f"context_bias exceeds the {MAX_CONTEXT_BIAS_BYTES}-byte encoded limit"
+        )
+    try:
+        raw = json.loads(encoded)
+    except json.JSONDecodeError as exc:
+        raise BackendInputError("context_bias must be a JSON string array") from exc
+    if not isinstance(raw, list):
+        raise BackendInputError("context_bias must be a JSON string array")
+    if len(raw) > MAX_CONTEXT_BIAS_TERMS:
+        raise BackendInputError(
+            f"context_bias has {len(raw)} terms; maximum is {MAX_CONTEXT_BIAS_TERMS}"
+        )
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for index, value in enumerate(raw):
+        if not isinstance(value, str):
+            raise BackendInputError(f"context_bias[{index}] must be a string")
+        value = value.strip()
+        if not value or len(value) > MAX_CONTEXT_BIAS_TERM_CHARS:
+            raise BackendInputError(
+                f"context_bias[{index}] must contain 1..{MAX_CONTEXT_BIAS_TERM_CHARS} "
+                "characters after trimming"
+            )
+        key = unicodedata.normalize("NFKC", value).casefold()
+        if key not in seen:
+            seen.add(key)
+            out.append(value)
+    return out
 
 
 async def _spool(upload: UploadFile) -> str:

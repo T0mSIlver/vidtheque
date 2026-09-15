@@ -305,6 +305,19 @@ async def test_transcription_asks_for_verbose_json_with_word_timestamps(tmp_path
     assert "word" in seen["body"] and "segment" in seen["body"]
 
 
+async def test_transcription_sends_context_bias_as_a_json_form_field(tmp_path: Path) -> None:
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = request.content.decode("utf-8")
+        return httpx.Response(200, json={"segments": []})
+
+    client, _ = make_client(handler)
+    await client.transcribe(_wav(tmp_path), context_bias=["Lélio Renard Lavaud", "Voxtral"])
+    assert 'name="context_bias"' in seen["body"]
+    assert "Lélio Renard Lavaud" in seen["body"]
+
+
 async def test_ocr_results_come_back_aligned_with_the_frames_sent(tmp_path: Path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(

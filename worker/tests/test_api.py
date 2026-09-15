@@ -172,6 +172,32 @@ def test_segment_granularity_turns_alignment_off(client, parts):
     assert kwargs == {"language": "fr", "align": False}
 
 
+def test_context_bias_is_validated_deduplicated_and_forwarded(client, parts):
+    backends, _ = parts
+    response = client.post(
+        "/v1/audio/transcriptions",
+        files={"file": ("clip.wav", b"fake", "audio/wav")},
+        data={"context_bias": '[" Voxtral ", "Ｖｏｘｔｒａｌ", "KV cache"]'},
+    )
+    assert response.status_code == 200, response.text
+    _, kwargs = backends["stt"].infer_calls[0]
+    assert kwargs["context_bias"] == ["Voxtral", "KV cache"]
+
+
+@pytest.mark.parametrize(
+    "encoded",
+    ["not json", "{}", '[""]', "[1]", "[" + ",".join('"x"' for _ in range(101)) + "]"],
+)
+def test_invalid_context_bias_uses_the_typed_input_envelope(client, encoded):
+    response = client.post(
+        "/v1/audio/transcriptions",
+        files={"file": ("clip.wav", b"fake", "audio/wav")},
+        data={"context_bias": encoded},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["type"] == "invalid_input"
+
+
 def test_unsupported_response_format_is_rejected(client):
     response = client.post(
         "/v1/audio/transcriptions",
