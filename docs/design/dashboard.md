@@ -2409,6 +2409,19 @@ of 7, once a day` / `gave up after 7 tries`), offers **Check now** only while
 the scheduler would actually enqueue it, and prints `—` for the next check when
 it would not.
 
+*Amended 2026-09-15: the pages are React's, so the fact is a field on the row
+they read.* §22's block carries `fail_count`, the derived `retrying`, and the
+`max_tries` bound beside them — typed values, the sentence `retry 2 of 7`
+composed at the edge off numbers the payload owns, the same split the near-miss
+line takes, and `max_tries` on the row for the same reason `within_s` is on the
+finding: the count and the number in the sentence cannot disagree. The detail
+page's rules are unchanged in substance — **Check now** is offered while the
+scheduler would enqueue the follow (`active`, or `failing` with retries left),
+and the next check prints `—` when it would not — except on one point: a follow
+that gave up keeps the control, disabled, carrying the refusal the write would
+be refused with as its help (§21), because a control that says why it does
+nothing is worth more than its absence.
+
 That compression is deliberate and it is not a second `describe`. The sentence
 renderer is the only thing that renders a policy as English, and it lives on the
 follow's own page; sixty follows scanned at 03:00 are a column to compare, not
@@ -3000,8 +3013,10 @@ refusal — is not the obvious one:
   in the handler). The row and the manage panel still read the field rather
   than assume it, because the outcome's shape is the contract and not the
   handler's confidence in its own call.
-- **The follow block is the row, typed** — identity, state, every rule column
-  and the last failure (`last_error_code`, `last_error_message`), with epochs
+- **The follow block is the row, typed** — identity, state, the retry count
+  with its derived half and its bound (`fail_count`, `retrying`, `max_tries`,
+  §22's 2026-09-15 amendment), every rule column and the last failure
+  (`last_error_code`, `last_error_message`), with epochs
   where `tools/follows._follow_fields` sends `iso_minute` strings, and built
   from `Rules.from_row` so the payload and the check cannot disagree about what
   a CSV column meant. It is `read_models.follow_row_json_with_error`, which is
@@ -3129,6 +3144,20 @@ because it is the same function (§21, amended 2026-09-05). The **list** is the
 one payload that stops at the code: its table has a column for the code and
 none for the prose, and sixty rows are a column to compare.
 
+*Amended 2026-09-15: the row says whether a `failing` follow is coming back.*
+Since migration 0008 the word covers a follow retrying once a day and one that
+has stopped, and the difference travels typed rather than as a fourth state
+word: `fail_count` (the count the store keeps), `retrying` (the derived half —
+`state` through the store's own `retries_left`, never re-derived on the
+client) and `max_tries` (the bound, `FAILING_MAX_TRIES`). `tools/follows`'s
+structured payload answers the same question as `consecutive_failures` and
+`retrying`; the row's names are the store's column and the tool's boolean,
+with the bound beside them because a page printing `retry 2 of 7` must read
+every number in the phrase off the payload — the same coupling that puts
+`within_s` beside a near-miss count. The words around the numbers — `retry 2
+of 7`, `gave up after 7 tries` — are the client's, the same split the near-miss
+line takes.
+
 **Three renderings the pages have and these payloads do not**, all three
 because they are values a client can compute from the columns beside them, and
 §21 already ruled a composed sentence off this surface:
@@ -3168,6 +3197,7 @@ it does on the page.
   "vectors_reason": null,          // and why not, when it is false
   "follows": [{"slug": "andrej-karpathy", "title": "…", "kind": "channel",
                "source_url": "…", "state": "active", "mode": "auto",
+               "fail_count": 0, "retrying": false, "max_tries": 7,
                "tabs": ["videos"], "channels": "all", "tags": ["topic:llm"],
                "min_duration_s": 480, "max_duration_s": null,
                "title_include": [], "title_exclude": [],

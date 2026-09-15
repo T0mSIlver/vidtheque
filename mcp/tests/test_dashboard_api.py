@@ -1506,6 +1506,93 @@ def test_the_following_list_is_the_bands_and_the_rows_typed(tmp_path: Path) -> N
     assert body["held"][0]["url"].endswith("heldreview1")
 
 
+def _make_failing(client: TestClient, tries: int, slug: str = SLUG) -> None:
+    """`tries` consecutive failed checks on one seeded follow.
+
+    The row the retry arithmetic reads: `failing` with the count beside it,
+    written straight to the table the way the check's own `note_failure`
+    would have.
+    """
+    conn = open_write_connection(
+        client.app.state.assembled.settings.data_dir / "vidtheque.db"
+    )
+    try:
+        conn.execute(
+            "UPDATE follows SET state = 'failing', fail_count = ?, "
+            "last_error_code = 'E_UNSUPPORTED_SOURCE', "
+            "last_error_message = 'This channel does not exist' "
+            "WHERE collection_id = (SELECT id FROM collections WHERE slug = ?)",
+            (tries, slug),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_a_failing_follow_says_whether_it_is_coming_back(tmp_path: Path) -> None:
+    """`failing` covers two situations since 0008, and the row has to say which.
+
+    A follow retrying daily needs nothing from anyone; one that gave up is
+    waiting on a human. The count is the receipt rather than a fourth state
+    word, and it travels typed — `fail_count`, the derived `retrying`, and the
+    `max_tries` bound beside them — because `retry 2 of 7` is a sentence a
+    page composes, not one Python renders (DECISIONS.md, 2026-09-05). The
+    bound rides along for the same reason `within_s` does: so the count and
+    the number in the client's sentence cannot disagree.
+    """
+    with follow_owner(tmp_path) as client:
+        _make_failing(client, 2)
+        listed = read(client, FOLLOWING, headers=BEARER)["follows"]
+        row = next(item for item in listed if item["slug"] == SLUG)
+        assert row["state"] == "failing"
+        assert row["fail_count"] == 2
+        assert row["retrying"] is True
+        assert row["max_tries"] == 7
+
+        # The detail answers with the same three fields off the same row —
+        # one shape, §22's own rule — and still names the failure itself.
+        detail = read(client, FOLLOW, headers=BEARER)["follow"]
+        assert detail["fail_count"] == 2
+        assert detail["retrying"] is True
+        assert detail["max_tries"] == 7
+        assert detail["last_error_code"] == "E_UNSUPPORTED_SOURCE"
+
+        # A retrying follow is schedulable, so the one control that says so is
+        # honest: the write arms it exactly as it arms an active follow, which
+        # since 0008 is the gesture an operator makes when a channel comes back.
+        sign_in(client)
+        checked = client.post(
+            f"{ROOT}/following/{SLUG}/check",
+            headers={"Accept": "application/json", **SAME_ORIGIN},
+        )
+        assert checked.status_code == 200, checked.text
+        assert checked.json()["follow"]["next_check_at"] == 0
+
+
+def test_a_follow_that_gave_up_says_so_on_both_payloads(tmp_path: Path) -> None:
+    """Seven strikes and the follow stops being due: `retrying` goes false.
+
+    The word stays `failing` — no fourth state word (PRODUCT.md) — and the
+    count is what a page reads to print `gave up after 7 tries`.
+    """
+    with follow_owner(tmp_path) as client:
+        _make_failing(client, 7)
+        listed = read(client, FOLLOWING, headers=BEARER)["follows"]
+        row = next(item for item in listed if item["slug"] == SLUG)
+        assert row["state"] == "failing"
+        assert row["fail_count"] == 7
+        assert row["retrying"] is False
+
+        detail = read(client, FOLLOW, headers=BEARER)["follow"]
+        assert detail["fail_count"] == 7
+        assert detail["retrying"] is False
+        # A healthy follow's count is zero and its derived half is false: the
+        # fields are on every row, not only on a failing one's.
+        quiet = read(client, f"{FOLLOWING}/paused-channel", headers=BEARER)["follow"]
+        assert quiet["fail_count"] == 0
+        assert quiet["retrying"] is False
+
+
 def test_a_read_and_a_write_describe_a_follow_identically(tmp_path: Path) -> None:
     """§21's outcome block and §22's row are one function, and this is why.
 
