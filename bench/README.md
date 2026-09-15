@@ -200,6 +200,54 @@ own reserve; `nvidia-smi memory.used` does not. On this box that is a constant
 believes 322 MB less is free than the card reports. Never mix the two in one
 figure.
 
+## Paris proper-noun evaluation
+
+`aie_paris_eval.py` compares the indexed whisperX transcript with two Voxtral
+runs over the same private Paris 2025 audio spans. The paid runs use an empty
+bias list and the schedule-derived bias list. The manifest records each source
+id, local audio file, span, title, speaker, and company. Its format is
+`scenarios/aie-paris-eval-manifest.schema.json`; keep the populated manifest,
+audio, transcripts, and output outside the repository.
+
+Arm 1 reads cues from `$VIDTHEQUE_DATA_DIR/vidtheque.db`. Start a worker with
+`STT_BACKEND=voxtral`, `STT_MODEL=voxtral-mini-latest`, and
+`MISTRAL_API_KEY` set before the paid run. A command without `--execute` only
+prints the cost preflight. Supply the current price per minute from Mistral;
+the repository does not carry a price.
+
+```bash
+uv run python bench/aie_paris_eval.py /private/aie-paris-2025-eval.json \
+  --data-dir /private/aie-paris-2025-data \
+  --price-per-minute PRICE
+
+MISTRAL_API_KEY=... uv run python bench/aie_paris_eval.py \
+  /private/aie-paris-2025-eval.json \
+  --data-dir /private/aie-paris-2025-data \
+  --price-per-minute PRICE --execute \
+  --out /private/aie-paris-2025-eval.md
+```
+
+The report begins with the metric limitation, then prints matched and missed
+terms, the fraction and accuracy for each talk and arm, and the macro average
+for each arm.
+
+## Long-VOD rehearsal counts
+
+`long_vod_measure.py` snapshots the database size and the counts of cues,
+chunks, live keyframes, OCR lines, text vectors, and frame vectors. Save one
+snapshot before the 8h27 rehearsal and compare it with the same data directory
+after indexing.
+
+```bash
+uv run python bench/long_vod_measure.py /private/aie-paris-2025-data \
+  --out /private/aie-before.json
+uv run python bench/long_vod_measure.py /private/aie-paris-2025-data \
+  --before /private/aie-before.json --out /private/aie-after.json
+```
+
+The comparison exits with status 2 and sets `follow_gate` to `blocked` when
+frame vectors grow by more than 600 or text vectors grow by more than 960.
+
 ## Status
 
 The runner and its measurement bodies are real; the first hardware run is
