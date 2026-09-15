@@ -184,12 +184,10 @@ describe("the video detail", () => {
       "href",
       "/dashboard/videos/kCc8FmEb1nY?frame_offset=0&select=7#frame-7",
     );
-    // The same facts as a native tooltip, for the pointer that rests on a bar
-    // and waits — which neither the sr-only label nor the scrub box answers.
-    expect(band.querySelector("[data-shot='0']")).toHaveAttribute(
-      "title",
-      "shot 0, 0:05 to 0:10, 1/1 frames kept",
-    );
+    // …and the native tooltip is gone once the preview is bound: two renderings
+    // of one sentence, the platform's arriving a second later, under a box that
+    // already said it with the frame attached (`dashboard.js:429-435`).
+    expect(band.querySelector("[data-shot='0']")).not.toHaveAttribute("title");
     // The scale is the video's runtime quartered, not the band's fallback span.
     const ticks = band.parentElement?.querySelectorAll("p[aria-hidden='true'] span");
     expect(Array.from(ticks ?? []).map((tick) => tick.textContent)).toEqual([
@@ -702,6 +700,52 @@ describe("the video detail", () => {
       fireEvent.pointerMove(band, { clientX: 62, pointerType: "touch" });
 
       expect(screen.queryByText("shot 1 · 1/1 kept")).not.toBeInTheDocument();
+    });
+
+    // The keyboard path through this page, and the reason `selectFrame` exists:
+    // the card the bar points at is already on screen, so following the link
+    // would reload the whole page to move a mark and drop the reader at the top
+    // of it. The click is intercepted instead — the mark goes in the URL, the
+    // strip scrolls to that moment, and focus lands on the frame's own button,
+    // which is the control the next Enter should open (`dashboard.js:261-296`).
+    it("selects a frame in place rather than navigating to it", async () => {
+      const replaceState = vi.spyOn(window.history, "replaceState");
+      const scroll = vi.fn();
+      Element.prototype.scrollIntoView = scroll;
+      await mount({ body: OWNER_VIDEO });
+      const band = await bandOf();
+      const bar = within(band).getAllByRole("link")[1];
+
+      const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+      bar.dispatchEvent(click);
+
+      expect(click.defaultPrevented).toBe(true);
+      expect(replaceState).toHaveBeenCalledWith(
+        null,
+        "",
+        expect.stringContaining("select=1#frame-1"),
+      );
+      expect(scroll).toHaveBeenCalledWith({ block: "center", behavior: "smooth" });
+      expect(document.activeElement).toBe(
+        screen.getByRole("button", { name: "Keyframe 1 at 7:10" }),
+      );
+      replaceState.mockRestore();
+    });
+
+    // …and a bar pointing at a page of the strip this one is not showing has
+    // nothing to select, so the link it always was does the navigating.
+    it("lets the link navigate when the frame is not on this page", async () => {
+      const thin = {
+        ...OWNER_VIDEO,
+        frames: { ...OWNER_VIDEO.frames, frames: [] },
+      };
+      await mount({ body: thin });
+      const band = await bandOf();
+
+      const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+      within(band).getAllByRole("link")[1].dispatchEvent(click);
+
+      expect(click.defaultPrevented).toBe(false);
     });
 
     // Focus is the keyboard's pointer, and the arrows step between the bars'
