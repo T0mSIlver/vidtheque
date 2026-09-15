@@ -232,6 +232,7 @@
 
 .figureValue > a {
   color: var(--accent);
+  text-decoration: none;
 }
 
 .figureValue > a:hover {
@@ -298,6 +299,7 @@
   font-size: 0.8125rem;
   text-align: right;
   color: var(--accent);
+  text-decoration: none;
 }
 
 .gaplist a:hover {
@@ -407,6 +409,12 @@
 .minirow > :first-child {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+/* A figure in a row is a number and a name, not a sentence: the underline is
+   the hover, as it is on every other machine string that is also a door. */
+.minirow a {
+  text-decoration: none;
 }
 
 .minirow a:hover {

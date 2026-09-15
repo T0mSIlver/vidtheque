@@ -223,12 +223,16 @@
    gold on this surface means five things, and a hovered link is not one of
    them — "if everything is gold, nothing is" (DESIGN.md, the One Signal Rule).
    `--fg` is the step the old stylesheet's own named link rules took. */
-.col a:not([class]) {
+/* `:where`, so the whole rule weighs what `.col` alone weighs: this is the
+   default a component overrides, never the other way round, and every rule that
+   turns the underline off — a row title, a receipt, a timecode, a crumb, a
+   column head — is more specific than one class and wins without saying so. */
+.col :where(a:not([class])) {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 
-.col a:not([class]):hover {
+.col :where(a:not([class])):hover {
   color: var(--fg);
 }
 
