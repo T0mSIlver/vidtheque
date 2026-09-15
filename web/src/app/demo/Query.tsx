@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, use, useEffect, useState } from "react";
 import { SearchBox, type MachineState } from "@/components/SearchBox";
 import styles from "./page.module.css";
 
@@ -12,6 +12,10 @@ import styles from "./page.module.css";
 // A navigation started in a transition never shows a fallback (that is what a
 // transition is for), so the skeleton would only ever appear on a cold load,
 // which is the one moment there is nothing to reserve *for*.
+//
+// Every read the page makes arrives here as a promise and is consumed by a
+// leaf under `<Suspense>`: the box itself must be in the markup at first
+// paint, and a component that awaits is a component that is not there yet.
 
 // Reserve the space the results will occupy, so nothing below them moves when
 // they land. Results are cards — a video header and its moments — so the shape
@@ -21,42 +25,64 @@ import styles from "./page.module.css";
 // one on a small corpus. The best evidence available is what the *last* search
 // actually returned, so that is the shape the next one reserves; the first
 // search of a session guesses this, which is a ten-hit page over three talks.
-const DEFAULT_SHAPE = [4, 3, 3];
+export const DEFAULT_SHAPE = [4, 3, 3];
 
 export function Query({
   state,
+  whileWaiting = "ready",
   askEnabled,
   shape,
   children,
 }: {
-  state: MachineState;
-  askEnabled: boolean;
+  /** The machine's word for how the read ended, once it has. */
+  state: Promise<MachineState>;
+  /** …and the word the cell prints until then. */
+  whileWaiting?: MachineState;
+  askEnabled: Promise<boolean>;
   /** Moments per card, as this render's results actually came back. */
-  shape?: number[];
+  shape?: Promise<number[]> | null;
   children?: React.ReactNode;
 }) {
   const [pending, setPending] = useState(false);
-  // Remembered across renders, and taken from a fresh render rather than from
-  // an effect: the shape arrives as a prop, so the reservation is a value this
-  // component derives and not a side effect it performs. `shape` is a new array
-  // every render, so what is compared is its reading.
-  const reading = shape?.join(",") ?? "";
-  const [seen, setSeen] = useState(reading);
-  const [last, setLast] = useState<number[]>(shape?.length ? shape : DEFAULT_SHAPE);
-  if (!pending && reading !== seen) {
-    setSeen(reading);
-    if (shape?.length) setLast(shape);
-  }
+  const [last, setLast] = useState<number[]>(DEFAULT_SHAPE);
 
   return (
     <>
-      <SearchBox state={state} askEnabled={askEnabled} onPending={setPending} />
+      <SearchBox
+        state={state}
+        whileWaiting={whileWaiting}
+        askEnabled={askEnabled}
+        onPending={setPending}
+      />
+      {shape ? (
+        <Suspense fallback={null}>
+          <ShapeMemo shape={shape} remember={setLast} />
+        </Suspense>
+      ) : null}
       {pending ? <Skeleton shape={last} /> : children}
     </>
   );
 }
 
-function Skeleton({ shape }: { shape: number[] }) {
+// What the page reserves next time, taken from what came back this time. A
+// leaf, because `use` suspends whatever calls it and the query bar above it
+// must not be a thing that suspends.
+function ShapeMemo({
+  shape,
+  remember,
+}: {
+  shape: Promise<number[]>;
+  remember: (shape: number[]) => void;
+}) {
+  const reading = use(shape);
+  const key = reading.join(",");
+  useEffect(() => {
+    if (reading.length) remember(reading);
+  }, [key, reading, remember]);
+  return null;
+}
+
+export function Skeleton({ shape }: { shape: number[] }) {
   return (
     <>
       <p className={styles.status} role="status">

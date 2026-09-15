@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { Query } from "./Query";
@@ -19,6 +19,11 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/demo",
 }));
 
+// Every read the page makes reaches this component as a promise, because the
+// box has to be in the markup before any of them land.
+const ready = Promise.resolve("ready" as const);
+const no = Promise.resolve(false);
+
 function cards(container: HTMLElement) {
   return [...container.querySelectorAll("[class*='skelCard']")].map(
     (card) => card.querySelectorAll("[class*='skelMoment']").length,
@@ -28,7 +33,7 @@ function cards(container: HTMLElement) {
 describe("the query bar and the space under it", () => {
   it("shows the results it was handed until a search is out", () => {
     const { container } = render(
-      <Query state="ready" askEnabled={false}>
+      <Query state={ready} askEnabled={no}>
         <p>ten rows</p>
       </Query>,
     );
@@ -42,7 +47,7 @@ describe("the query bar and the space under it", () => {
   it("guesses a shape before there has been one", async () => {
     const user = userEvent.setup();
     const { container } = render(
-      <Query state="ready" askEnabled={false} shape={[]}>
+      <Query state={ready} askEnabled={no} shape={Promise.resolve([])}>
         <p>the cold page</p>
       </Query>,
     );
@@ -58,11 +63,16 @@ describe("the query bar and the space under it", () => {
   // actually returned.
   it("reserves the shape the last search had", async () => {
     const user = userEvent.setup();
-    const { container } = render(
-      <Query state="ready" askEnabled={false} shape={[2, 2]}>
-        <p>two cards</p>
-      </Query>,
-    );
+    // The shape arrives with the results, which is after the box: the awaited
+    // `act` is the page settling, before the visitor asks for the next search.
+    let container!: HTMLElement;
+    await act(async () => {
+      container = render(
+        <Query state={ready} askEnabled={no} shape={Promise.resolve([2, 2])}>
+          <p>two cards</p>
+        </Query>,
+      ).container;
+    });
 
     await user.type(screen.getByLabelText("Search this video corpus"), "{Enter}");
 

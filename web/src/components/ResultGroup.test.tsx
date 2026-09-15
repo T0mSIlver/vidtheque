@@ -117,9 +117,7 @@ describe("ResultGroup", () => {
   // its own name, and its snippet is set as neither speech nor screen text.
   it("badges a leg it has never heard of with its own name", () => {
     const { container } = render(
-      <ResultGroup
-        group={group({ hits: [hit({ source: "audio", text: "someone humming" })] })}
-      />,
+      <ResultGroup group={group({ hits: [hit({ source: "audio", text: "someone humming" })] })} />,
     );
     expect(screen.getByText("audio")).toBeInTheDocument();
     expect(container.querySelector("[class*='snipSpoken']")).toBeNull();

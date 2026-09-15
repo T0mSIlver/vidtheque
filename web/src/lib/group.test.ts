@@ -1,13 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Hit } from "@/lib/api";
-import {
-  badges,
-  badgeWords,
-  channelWord,
-  groupByVideo,
-  highlight,
-  presentationOf,
-} from "./group";
+import { badges, badgeWords, channelWord, groupByVideo, highlight, presentationOf } from "./group";
 
 function hit(over: Partial<Hit>): Hit {
   return {

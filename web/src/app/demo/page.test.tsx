@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Hit, Meta, SearchResponse, Video } from "@/lib/api/schemas";
 
@@ -12,11 +13,10 @@ const reads = vi.hoisted(() => ({
   readCorpus: vi.fn(),
 }));
 vi.mock("@/lib/search", () => reads);
+const nav = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
-    push: vi.fn(),
-    replace: vi.fn(),
-    refresh: vi.fn(),
+    ...nav,
     back: vi.fn(),
     forward: vi.fn(),
     prefetch: vi.fn(),
@@ -89,20 +89,28 @@ const VIDEO: Video = {
 
 type Boot = { kind: "ok"; meta: Meta } | { kind: "rate_limited" } | { kind: "unreachable" };
 
+// The page renders its box before any read lands and streams the rest in, so a
+// test has to let the stream finish: `act` awaited around the render is what
+// flushes the `<Suspense>` boundaries the reads sit behind. What is asserted
+// after it is the settled page.
 async function mount(
   params: Record<string, string> = {},
   { meta = { kind: "ok", meta: META } as Boot, videos = [] as Video[] } = {},
 ) {
   reads.readMeta.mockResolvedValue(meta);
   reads.readCorpus.mockResolvedValue(videos);
-  const { Mode } = await import("./page");
-  render(await Mode({ searchParams: Promise.resolve(params) }));
+  const { Console } = await import("./page");
+  await act(async () => {
+    render(<Console params={params} />);
+  });
 }
 
 describe("the demo page", () => {
   afterEach(() => {
     vi.resetModules();
     reads.searchCorpus.mockReset();
+    nav.replace.mockClear();
+    nav.refresh.mockClear();
   });
 
   // The headline says "ask it something", so the box under it had better be
@@ -141,11 +149,64 @@ describe("the demo page", () => {
     });
 
     // The one load that swaps the mode on screen, and it is the
-    // misconfiguration rather than the demo.
-    it("falls back to search, with no switch, on a deployment with no key", async () => {
+    // misconfiguration rather than the demo. It is a *correction* now, not a
+    // decision: waiting on `/api/meta` to find out which box to draw costs
+    // every other visitor a round trip with nothing to type into, so the
+    // markup states the default and the boot call moves the page if it must.
+    it("moves a deployment with no key to search, and offers no switch", async () => {
       await mount({ ask: "1" }, { meta: { kind: "ok", meta: { ...META, ask_enabled: false } } });
-      expect(screen.getByLabelText("Search this video corpus")).toBeInTheDocument();
+      expect(nav.replace).toHaveBeenCalledWith("/demo?ask=0");
       expect(screen.queryByRole("button", { name: "ask ✨" })).not.toBeInTheDocument();
+    });
+
+    it("carries the typed question into the search it moves to", async () => {
+      await mount(
+        { ask: "1", q: "why do agents write bad AGENTS.md?" },
+        { meta: { kind: "ok", meta: { ...META, ask_enabled: false } } },
+      );
+      expect(nav.replace).toHaveBeenCalledWith(
+        "/demo?ask=0&q=why%20do%20agents%20write%20bad%20AGENTS.md%3F",
+      );
+    });
+
+    it("leaves every other deployment where it is", async () => {
+      await mount({ ask: "1" });
+      expect(nav.replace).not.toHaveBeenCalled();
+      expect(screen.getByRole("button", { name: "ask ✨" })).toBeInTheDocument();
+    });
+  });
+
+  // The font preloads, the `autofocus` and the whole argument for this being a
+  // search surface rest on the box being *in the markup*. It was behind a
+  // `<Suspense>` waiting on `/api/meta`, so a visitor's first paint was an
+  // empty 12rem rectangle with nothing to type into.
+  describe("the first paint", () => {
+    // Reads that never settle: this is what is on screen while they are out.
+    async function firstPaint(params: Record<string, string>) {
+      const never = () => new Promise(() => {});
+      reads.readMeta.mockReturnValue(never());
+      reads.readCorpus.mockReturnValue(never());
+      reads.searchCorpus.mockReturnValue(never());
+      const { Console } = await import("./page");
+      render(<Console params={params} />);
+    }
+
+    it("draws the box, the chips and the examples before a read lands", async () => {
+      await firstPaint({ ask: "0" });
+      expect(screen.getByLabelText("Search this video corpus")).toBeInTheDocument();
+      expect(screen.getByRole("group", { name: "Search which channel" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("link", { name: "context window costs money tokens" }),
+      ).toBeInTheDocument();
+      expect(screen.getByText("ready")).toHaveAttribute("data-s", "ready");
+    });
+
+    // …and it says the true thing about itself while it waits: a query in the
+    // URL means the machine is already inside the corpus.
+    it("says the machine is scanning while the search is out", async () => {
+      await firstPaint({ ask: "0", q: "kv cache" });
+      expect(screen.getByLabelText("Search this video corpus")).toBeInTheDocument();
+      expect(screen.getByText("scanning")).toHaveAttribute("data-s", "working");
     });
   });
 
@@ -289,6 +350,67 @@ describe("the demo page", () => {
       expect(screen.getByText("Could not reach the server.")).toBeInTheDocument();
       expect(screen.getByText("no reply")).toBeInTheDocument();
       expect(document.body.textContent).not.toMatch(/\b5\d\d\b/);
+    });
+
+    // A leg that could not run is exactly what "all means all" is a promise
+    // about, and a page with no hits is where it matters most: the note is the
+    // difference between "the corpus does not have this" and "two thirds of
+    // the corpus was never searched".
+    it("prints the notes on a page that found nothing", async () => {
+      reads.searchCorpus.mockResolvedValue({
+        kind: "ok",
+        page: found([], { notes: ["note: the embedding worker is unreachable; fts only."] }),
+      });
+      await mount({ ask: "0", q: "kv cache" });
+
+      expect(
+        screen.getByText("note: the embedding worker is unreachable; fts only."),
+      ).toBeInTheDocument();
+      expect(screen.getByText("Nothing in the corpus matches this.")).toBeInTheDocument();
+    });
+
+    it("prints them over an empty corpus too", async () => {
+      reads.searchCorpus.mockResolvedValue({
+        kind: "ok",
+        page: found([], { data_status: "empty", notes: ["note: nothing is queryable yet."] }),
+      });
+      await mount({ ask: "0", q: "kv cache" });
+
+      expect(screen.getByText("note: nothing is queryable yet.")).toBeInTheDocument();
+      expect(screen.getByText("Nothing is indexed yet.")).toBeInTheDocument();
+    });
+  });
+
+  // Page one is the server's, so a retry is the page asking for itself again.
+  // A notice that names a failure and offers nothing to do about it is where a
+  // visitor leaves; `app.js` handed a retry to every failure it drew.
+  describe("trying again", () => {
+    it("offers a retry when the facade refused page one", async () => {
+      reads.searchCorpus.mockResolvedValue({
+        kind: "refused",
+        message: "search needs either a query or at least one filter.",
+      });
+      await mount({ ask: "0", q: "kv cache" });
+
+      await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+      expect(nav.refresh).toHaveBeenCalled();
+    });
+
+    it("offers one when the server never answered at all", async () => {
+      reads.searchCorpus.mockResolvedValue({ kind: "unreachable" });
+      await mount({ ask: "0", q: "kv cache" });
+
+      await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+      expect(nav.refresh).toHaveBeenCalled();
+    });
+
+    // The 429 already had one, and it stays gated until the limiter's own
+    // countdown is over: a retry fired into a refusal is one more refusal.
+    it("keeps the rate limiter's retry behind its countdown", async () => {
+      reads.searchCorpus.mockResolvedValue({ kind: "rate_limited", retryAfter: 12 });
+      await mount({ ask: "0", q: "kv cache" });
+
+      expect(screen.getByRole("button", { name: "Try again" })).toBeDisabled();
     });
   });
 });

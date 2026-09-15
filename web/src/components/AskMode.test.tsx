@@ -469,7 +469,10 @@ describe("AskMode", () => {
   // answered for eighty seconds was reported as unreachable.
   it("says the answer was interrupted when the bytes stop mid-frame", async () => {
     const cut = openStream();
-    vi.stubGlobal("fetch", vi.fn(async () => cut.response));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => cut.response),
+    );
     const user = userEvent.setup();
     render(<AskMode initialQ="what is a kv cache" />);
 
