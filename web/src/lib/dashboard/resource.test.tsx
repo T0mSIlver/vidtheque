@@ -174,6 +174,51 @@ describe("the dashboard read cache", () => {
     expect(calls).toHaveLength(2);
   });
 
+  describe("the 64-entry bound", () => {
+    const answer = (id: string) => async () => `payload ${id}`;
+    const keys = (from: number, to: number) =>
+      Array.from({ length: to - from }, (_, i) => `k${from + i}`);
+
+    /** Mount these keys together, let every read land, then leave them all. */
+    async function visit(ids: string[]) {
+      const view = render(
+        <>
+          {ids.map((id) => (
+            <Probe key={id} id={id} read={answer(id)} />
+          ))}
+        </>,
+      );
+      await flush();
+      view.unmount();
+      await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    }
+
+    /** What a remount paints before its own read lands. */
+    async function cached(id: string) {
+      const view = render(<Probe id={id} read={() => new Promise<string>(() => {})} />);
+      const data = text("data");
+      view.unmount();
+      await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+      return data;
+    }
+
+    it("trims a burst back to 64 once its reads settle and its pages leave", async () => {
+      await visit(keys(0, 70));
+      expect(await cached("k69")).toBe("payload k69");
+      expect(await cached("k6")).toBe("payload k6");
+      expect(await cached("k5")).toBe("none");
+      expect(await cached("k0")).toBe("none");
+    });
+
+    it("evicts the least recently used entry, not the oldest", async () => {
+      await visit(keys(0, 64));
+      expect(await cached("k0")).toBe("payload k0");
+      await visit(["k64"]);
+      expect(await cached("k0")).toBe("payload k0");
+      expect(await cached("k1")).toBe("none");
+    });
+  });
+
   it("polls on the cadence the payload names, and not once unmounted", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const read = vi.fn(async () => "tick");
