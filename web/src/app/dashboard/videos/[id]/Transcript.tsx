@@ -147,9 +147,9 @@ export function Transcript({
     read(state.next, false);
   }
 
-  function loadEarlier() {
+  function loadEarlier(offset: number) {
     dispatch({ type: "ask" });
-    read(Math.max(state.first - size, 0), true);
+    read(offset, true);
   }
 
   // One boxful short of the end, so the next batch is arriving before the
@@ -165,6 +165,7 @@ export function Transcript({
   // The empty page, not the empty transcript: `?cue_offset=` can land past the
   // end of one that exists.
   if (total === 0 || (!busy && !error && cues.length === 0)) {
+    const backFromEnd = Math.max(Math.min(first, total) - size, 0);
     return (
       <Panel id="transcript" title="Transcript">
         <div className={styles.empty}>
@@ -173,6 +174,24 @@ export function Transcript({
             The <code>stt</code> row in Provenance says whether one was produced.
           </p>
         </div>
+        {/* A transcript that exists has cues behind this page: the way back.
+            It steps off the end rather than off an offset the transcript never
+            had, so one click reaches rows however far past the end this is. */}
+        {total > 0 && first > 0 ? (
+          <nav className={table.pager} aria-label="Transcript pages">
+            <DashLink
+              className={controls.ghostlink}
+              href={cueLink(search, videoId, backFromEnd)}
+              onClick={(event) => {
+                if (!plain(event)) return;
+                event.preventDefault();
+                loadEarlier(backFromEnd);
+              }}
+            >
+              ← Earlier
+            </DashLink>
+          </nav>
+        ) : null}
       </Panel>
     );
   }
@@ -215,7 +234,7 @@ export function Transcript({
               onClick={(event) => {
                 if (!plain(event)) return;
                 event.preventDefault();
-                loadEarlier();
+                loadEarlier(Math.max(first - size, 0));
               }}
             >
               ← Earlier
