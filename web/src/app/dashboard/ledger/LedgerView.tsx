@@ -1,9 +1,11 @@
 "use client";
 
 import { dashboard, ROOT } from "@/lib/dashboard/client";
+import { useResource } from "@/lib/dashboard/resource";
 import type { Ledger } from "@/lib/dashboard/schemas";
 import { at, bytes, count, DASH, hours, iso } from "@/lib/format";
-import styles from "../dashboard.module.css";
+import { ReadFailure } from "../kit/notice";
+import { Readiness } from "../kit/Readiness";
 import {
   CountLink,
   DashLink,
@@ -12,33 +14,21 @@ import {
   GapLine,
   PageHead,
   Panel,
+  Pending,
   publishedNote,
-  Readiness,
-  ReadFailure,
-  Reading,
   Sep,
+  ui,
   Unbroken,
   Unit,
-} from "../parts";
-import { useRead } from "../useRead";
+} from "../kit/ui";
 
-// The ledger — `templates/ledger.html`, reading `GET /dashboard/api/ledger`.
-//
-// Nothing on this page is new information: it is the counts from the overview,
-// the queue's two sentences, the state filter that only existed as a URL on the
-// videos table, and the byte totals, in one column of figures. Every number
-// carries its label, and a number that is a door into a filtered page is the
-// link — a zero is not a door, so it does not wear the accent.
-//
-// No chart, no axis, no history (dashboard.md §1 non-goal 5). One reading,
-// taken inside one request, stamped once at the top.
+// Every key number this instance counts, in one reading stamped once
+// (dashboard.md §17). No chart, no history (§1 non-goal 5).
 
 const read = (signal: AbortSignal) => dashboard.ledger(signal);
 
-// The five `index_state` words, and the jobs view's four filters. `queued` and
-// `running` both link to `active`, which is exactly the filter that holds them;
-// `cancelled` has no filter of its own, so it is a figure and not a link. This
-// page does not invent a sixth vocabulary for either (§4.5).
+// The five `index_state` words, and the jobs view's filters: `queued` and
+// `running` both link to `active`; `cancelled` has no filter (§4.5).
 const VIDEO_STATES = ["ready", "pending", "indexing", "failed", "stale"] as const;
 const JOB_STATES = [
   { state: "queued", filter: "active" },
@@ -49,24 +39,15 @@ const JOB_STATES = [
 ] as const;
 
 export function LedgerView() {
-  const state = useRead(read);
+  const ledger = useResource("ledger", read);
+  const data = ledger.data;
 
-  if (state.status === "loading") return <Reading />;
-  // The refusal replaces the page, head and all, exactly as `views.ledger`
-  // rendered `error.html` instead of `ledger.html`.
-  if (state.status === "failed") return <ReadFailure error={state.error} onRetry={state.reload} />;
-  return <Loaded data={state.data} />;
-}
+  if (!data && ledger.error !== undefined) {
+    return <ReadFailure error={ledger.error} onRetry={ledger.reload} />;
+  }
 
-function Loaded({ data }: { data: Ledger }) {
-  const { corpus, queue, readiness } = data;
-  const failedWindowHours = Math.round(queue.failed_window_s / 3600);
-  // Every figure on this page was counted inside one request, so the page
-  // carries one stamp and not a per-panel one — and it is the instant of that
-  // reading rather than a date in the corpus, which is why it keeps its
-  // seconds and wears the `<time>` the template gave it.
-  const counted = iso(data.counted_at);
-
+  // The instant of the reading, so it keeps its seconds.
+  const counted = data ? iso(data.counted_at) : undefined;
   return (
     <>
       <PageHead title="The ledger">
@@ -74,23 +55,24 @@ function Loaded({ data }: { data: Ledger }) {
           <Fact label="counted" value={<time dateTime={counted}>{counted ?? DASH}</time>} />
           <Sep />
         </Unbroken>
-        <Fact label="indexed" value={at(corpus.last_indexed)} />
+        <Fact label="indexed" value={data ? at(data.corpus.last_indexed) : DASH} />
       </PageHead>
+      {data ? <Loaded data={data} /> : <Pending />}
+    </>
+  );
+}
 
-      {/* The band, and the page's one corner tick: the five figures that are
-          the corpus. The same five the overview leads with, deliberately —
-          this page is where they are all together, not a second set of them. */}
+function Loaded({ data }: { data: Ledger }) {
+  const { corpus, queue, readiness } = data;
+  const failedWindowHours = Math.round(queue.failed_window_s / 3600);
+
+  return (
+    <>
       <section aria-labelledby="corpus">
-        <h2 className={styles.srOnly} id="corpus">
+        <h2 className={ui.srOnly} id="corpus">
           The corpus
         </h2>
-        <dl className={styles.ledger}>
-          {/* When *these videos* were published, off the payload's own
-              `corpus.published` (frontend-migration.md §5) — the overview's
-              field, printed by the overview's own note, because a reader
-              moving between the two pages must not be shown one fact in two
-              spellings. An empty corpus has no span at all and gets no line:
-              the count above it already says none. */}
+        <dl className={ui.ledger}>
           <Figure label="videos" notes={publishedNote(corpus.published)}>
             <DashLink href={`${ROOT}/videos?index_state=all`}>{count(corpus.videos)}</DashLink>
           </Figure>
@@ -110,14 +92,9 @@ function Loaded({ data }: { data: Ledger }) {
         </dl>
       </section>
 
-      <div className={styles.split}>
-        {/* The five state words, counted. They existed only as a filter on the
-            videos table until now, which meant "how many are failed" was a
-            question you answered by applying a filter and reading a count line.
-            Each figure is the link to its own filter, so it still is — in one
-            click, from a page that already told you the number. */}
+      <div className={ui.split}>
         <Panel id="states" title="Videos by state">
-          <dl className={`${styles.figures} ${styles.figuresTight}`}>
+          <dl className={`${ui.figures} ${ui.figuresTight}`}>
             {VIDEO_STATES.map((state) => (
               <Figure label={state} key={state}>
                 <CountLink
@@ -130,7 +107,7 @@ function Loaded({ data }: { data: Ledger }) {
         </Panel>
 
         <Panel id="queue" title="Jobs by state">
-          <dl className={`${styles.figures} ${styles.figuresTight}`}>
+          <dl className={`${ui.figures} ${ui.figuresTight}`}>
             {JOB_STATES.map(({ state, filter }) => (
               <Figure label={state} key={state}>
                 {filter ? (
@@ -141,7 +118,7 @@ function Loaded({ data }: { data: Ledger }) {
               </Figure>
             ))}
           </dl>
-          <ul className={styles.gaplist}>
+          <ul className={ui.gaplist}>
             <GapLine href={`${ROOT}/jobs?state=active`} n={queue.deferred}>
               of the queued jobs are waiting on a backoff
             </GapLine>
@@ -152,12 +129,9 @@ function Loaded({ data }: { data: Ledger }) {
         </Panel>
       </div>
 
-      <div className={styles.split}>
-        {/* What the corpus is short of. Two of these are a re-embed in progress
-            and one is a coverage gap; all three are counts of videos, and all
-            three are zero on a corpus that finished everything it started. */}
+      <div className={ui.split}>
         <Panel id="behind" title="What is missing">
-          <dl className={`${styles.figures} ${styles.figuresTight}`}>
+          <dl className={`${ui.figures} ${ui.figuresTight}`}>
             <Figure label="no on-screen text" notes={[<>have a transcript, no OCR</>]}>
               <CountLink
                 href={`${ROOT}/videos?has=transcript&index_state=all`}
@@ -174,15 +148,13 @@ function Loaded({ data }: { data: Ledger }) {
         </Panel>
 
         <Panel id="holds" title="What it is filed under">
-          <dl className={`${styles.figures} ${styles.figuresTight}`}>
+          <dl className={`${ui.figures} ${ui.figuresTight}`}>
             <Figure label="channels">{count(corpus.channels)}</Figure>
             <Figure label="tags">{count(corpus.tags)}</Figure>
           </dl>
-          {/* §2.4 keeps the corpus and drops the box: two byte totals are a
-              measurement of the operator's disk, and the projection does not
-              take the read at all rather than taking it and not printing it. */}
+          {/* §2.4: the projection does not take the byte read at all. */}
           {data.storage ? (
-            <dl className={`${styles.figures} ${styles.figuresTight}`}>
+            <dl className={`${ui.figures} ${ui.figuresTight}`}>
               <Figure label="keyframe JPEGs">{bytes(data.storage.keyframe_bytes)}</Figure>
               <Figure label="index file">{bytes(data.storage.database_bytes)}</Figure>
             </dl>
@@ -190,11 +162,6 @@ function Loaded({ data }: { data: Ledger }) {
         </Panel>
       </div>
 
-      {/* The same observation the overview makes, and the same one: a
-          current-state reading with no history behind it, taken concurrently
-          with the counts above so a silent worker costs this page a second at
-          most (§15). The overview's model diff is not here; this page's panel
-          is the strip. */}
       <Readiness
         readiness={readiness}
         redacted={data.redacted}

@@ -1,44 +1,19 @@
-// The four derivations the owner's search page performs on a hit, and the leg
-// table it reads `leg_counts` through.
-//
-// Every one of them is a *rendering* of a field the payload already carries
-// (dashboard.md §14.2's table): the receipt is `link` checked, the in-index
-// link is `video_id` and `frame_id` with the strip's own arithmetic, the
-// evidence badges are `source` in the demo's three words, and the marked runs
-// are `text` and the query. Nothing here queries anything, and nothing here
-// builds markup — `highlight` returns text runs with a flag, and the component
-// decides what a marked run looks like.
-//
-// The Jinja page these replace is `dashboard/views.py`'s `_search_receipt`,
-// `_search_inside`, `_search_evidence`, `_highlighted` and `_search_legs`; each
-// function below is named after the one it replaces and is tested against its
-// cases, because two surfaces disagreeing about which second a hit happened at
-// is worse than either of them being wrong.
+// What the owner's search page derives from a hit, each a rendering of a field
+// the payload carries (dashboard.md §14.2). Each function mirrors the
+// `dashboard/views.py` helper it names and is tested against its cases.
 
 import type { Hit } from "@/lib/api/schemas";
 import { ROOT } from "@/lib/dashboard/client";
 import { badges, type Badge } from "@/lib/group";
 
-/** `read_models.FRAME_PAGE` — how many keyframes a strip page holds.
- *
- *  Reimplemented rather than read off a payload, because the link is built
- *  before the video's own detail has been fetched. It is the *default* the
- *  detail endpoint applies when no `frames=` is asked for, and this link asks
- *  for none, so the page the reader lands on is paged by exactly this number.
- *  A `?frames=` in the URL over there moves the strip and the fragment still
- *  finds the frame. */
+/** `read_models.FRAME_PAGE`: the detail strip's default page size, which the
+ *  in-index link pages by (it asks for no `frames=`). */
 export const FRAME_PAGE = 24;
 
-/** What `str.isdigit()` admits on the other side of this parity: every Unicode
- *  decimal digit, not the ASCII ten `\d` stops at. `Nd` is also what Python's
- *  `int()` reads, so a tail this admits is one the twin turns into an ordinal. */
+/** Every Unicode decimal digit, as Python's `str.isdigit()` and `int()` read. */
 const DIGITS = /^\p{Nd}+$/u;
 
-/** One `Nd` digit's value. Python's `int()` reads `١٢` as twelve; `Number`
- *  answers `NaN`, and an ordinal of `NaN` is a link into the strip pointing
- *  nowhere. Every decimal digit sits in a contiguous run of ten that opens with
- *  its script's zero, so a digit's value is how far into its run it is — runs
- *  that abut, as the mathematical alphabets do, stay aligned to ten. */
+/** One `Nd` digit's value: its offset into its script's run of ten. */
 function digitValue(digit: string): number {
   const point = digit.codePointAt(0) as number;
   let zero = point;
@@ -46,7 +21,6 @@ function digitValue(digit: string): number {
   return (point - zero) % 10;
 }
 
-/** A run of decimal digits as the integer `int()` reads out of it. */
 function intOf(digits: string): number {
   if (/^[0-9]+$/.test(digits)) return Number(digits);
   let value = 0;
@@ -54,16 +28,8 @@ function intOf(digits: string): number {
   return value;
 }
 
-/** The receipt: the tool's YouTube link, admitted as one exact-second proof.
- *
- *  `views._search_receipt`. HTTPS, `youtu.be`, a video id, and a `t=` that is
- *  digits — a link that is anything else is not printed at all, rather than
- *  printed unchecked. The page never reconstructs a timestamp from display text
- *  or invents a link for a source that has none (dashboard.md §14).
- *
- *  The digits are `DIGITS` and not `\d`: the twin tests `str.isdigit()`, and a
- *  receipt the Jinja page prints while this one drops it is the exact
- *  disagreement these functions exist not to have. */
+/** `_search_receipt`: an HTTPS `youtu.be` link with a digit `t=`, or nothing —
+ *  never an unchecked link, never a reconstructed timestamp (§14). */
 export function receiptOf(link: string): { href: string; label: string } | null {
   let url: URL;
   try {
@@ -78,21 +44,9 @@ export function receiptOf(link: string): { href: string; label: string } | null 
   return { href: link, label: `youtu.be/${id}?t=${seconds}` };
 }
 
-/** The other link on the row: the same moment *inside this deployment*.
- *
- *  `views._search_inside`. The receipt goes to YouTube, which is the product's
- *  argument; this goes to what the index actually stored about that second,
- *  which is what this surface is for.
- *
- *  A hit that names a keyframe lands **on that frame**: `ord` is dense per
- *  video and the strip pages by ordinal, so which page holds it is arithmetic
- *  rather than a second query — the same arithmetic the shot bars do — and
- *  `select=` plus `#frame-N` mark it whether or not the script runs.
- *
- *  A transcript hit does not get the same treatment, and that is deliberate: it
- *  names its cues by **id**, the transcript panel pages by *offset*, and there
- *  is no honest arithmetic from one to the other. It links to the video plainly
- *  and lets the panel say where it is. */
+/** `_search_inside`: the same moment inside this deployment. A frame hit lands
+ *  on its frame (the strip page is arithmetic on the dense ordinal); a
+ *  transcript hit names cues by id, which has no offset, so it links plainly. */
 export function insideLink(hit: Pick<Hit, "video_id" | "frame_id">): string | null {
   if (!hit.video_id) return null;
   const page = `${ROOT}/videos/${encodeURIComponent(hit.video_id)}`;
@@ -106,14 +60,11 @@ export function insideLink(hit: Pick<Hit, "video_id" | "frame_id">): string | nu
   return `${page}?frame_offset=${offset}&select=${ordinal}#frame-${ordinal}`;
 }
 
-/** Which of the four ways the snippet under a hit is set. `screen` is the one
- *  allowed lime, because it is the only one that is text the machine read off
- *  a slide (The Lime Rule). */
+/** How a snippet is set; `screen` is the one allowed lime (The Lime Rule). */
 export type EvidenceKind = "spoken" | "screen" | "frame" | "mixed" | "other";
 
 export interface Evidence {
-  /** The tool's own `source` string, kept: this is an instrument, and
-   *  `source=transcript+ocr` is what a bug report quotes. */
+  /** The tool's own `source`, kept for bug reports. */
   key: string;
   pills: { label: string; kind: EvidenceKind }[];
   kind: EvidenceKind;
@@ -125,12 +76,8 @@ const KINDS: Record<Badge, EvidenceKind> = {
   frame: "frame",
 };
 
-/** `source` as words a human reads, with the key kept (`views._search_evidence`).
- *
- *  The words are `lib/group`'s — the demo's own — so a badge means the same
- *  thing on both surfaces. A source that table does not know still gets a badge
- *  carrying its own name: a fourth leg one day must arrive as an unfamiliar
- *  word, never as a hit with no provenance on it at all. */
+/** `_search_evidence`: `source` in the demo's words (`lib/group`); an unknown
+ *  source still arrives as a badge carrying its own name. */
 export function evidenceOf(source: string): Evidence {
   const key = source || "";
   const words = badges(key);
@@ -143,10 +90,7 @@ export function evidenceOf(source: string): Evidence {
   return { key, pills, kind: pills.length > 1 ? "mixed" : pills[0].kind };
 }
 
-// Enough terms to mark a real question, few enough that a query pasted out of a
-// log cannot turn a snippet into a solid block of gold; and a ceiling on the
-// marks themselves, because the text this runs over is capped by the tool but
-// the number of occurrences in it is not.
+// Bounds on a pasted query: how many terms are marked, and how many marks.
 export const HIGHLIGHT_TERMS = 8;
 export const HIGHLIGHT_MARKS = 40;
 
@@ -155,21 +99,15 @@ export interface Run {
   hit: boolean;
 }
 
-/** The snippet, split into the parts the query matched and the parts it did not
- *  — never into markup (`views._highlighted`).
- *
- *  Not the tool's own matching: the FTS leg stems and the vector legs do not
- *  match words at all, so a mark is "these are your words, here" and never a
- *  claim about *why* this hit ranked. A hit with nothing marked is ordinary —
- *  that is what a semantic match looks like. */
+/** `_highlighted`: the snippet split into runs the query's words matched.
+ *  "Your words, here", never a claim about why a hit ranked. */
 export function highlight(text: string | null, query: string): Run[] {
   if (!text) return [];
   const seen = new Set<string>();
   for (const word of query.toLowerCase().split(/[^\p{L}\p{N}_'-]+/u)) {
     if (word.length > 1) seen.add(word);
   }
-  // Longest first, so a short term cannot shadow the long one containing it:
-  // alternation matches leftmost-first, not leftmost-longest.
+  // Longest first: alternation is leftmost-first, not leftmost-longest.
   const terms = [...seen].sort((a, b) => b.length - a.length).slice(0, HIGHLIGHT_TERMS);
   if (!terms.length) return [{ text, hit: false }];
 
@@ -192,18 +130,8 @@ function escapeRe(term: string): string {
   return term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-// The query planner's own leg names, in a human's words (`views._LEG_LABELS`).
-// The count line under a search is the one thing tool-surface.md tells callers
-// to *read* — `fts 0` is how you learn the corpus does not contain your
-// phrasing — so this page prints it as a sentence rather than as eight
-// identifiers, with the raw key beside each label because an operator comparing
-// this page against a `search` payload is comparing keys, not prose.
-//
-// The units are part of the labels because the numbers are three different
-// units and are famously not summands (tool-surface.md §9.2): the fused leg
-// counts segments, `fts` counts cues, the vector legs count chunks and frames,
-// and `…_knn` is what the nearest-neighbour search *considered* before the
-// relevance band cut it down.
+// `_LEG_LABELS`: the planner's leg keys in words, with units, because the
+// counts are different units and not summands (tool-surface.md §9.2).
 const LEG_LABELS: [string, string, string][] = [
   ["transcript", "Transcript — ranked into these results", "segments"],
   ["transcript_fts", "Transcript — keyword match (FTS)", "cues"],
@@ -215,7 +143,7 @@ const LEG_LABELS: [string, string, string][] = [
   ["frame_knn", "Frames — visual candidates considered", "frames"],
 ];
 
-/** A fused leg is a peer; the three `…_knn`/`…_vec` counts explain one. */
+/** A fused leg is a peer; the others explain one. */
 const FUSED = new Set(["transcript", "ocr", "frame"]);
 
 export interface Leg {
@@ -223,18 +151,11 @@ export interface Leg {
   label: string;
   unit: string;
   count: number;
-  /** A candidate count behind a fused leg: set one step back rather than
-   *  printed as a ninth peer. */
+  /** A candidate count behind a fused leg, set one step back. */
   sub: boolean;
 }
 
-/** `leg_counts` in reading order, each with its label, unit and raw key
- *  (`views._search_legs`).
- *
- *  Ordered by this table rather than by the payload, so a sub-leg always sits
- *  under the leg it explains; a key the table does not know is appended with
- *  its own name for a label rather than dropped, for the same reason an
- *  unfamiliar `source` still gets a badge. */
+/** `_search_legs`: in table order, unknown keys appended under their own name. */
 export function legsOf(counts: Record<string, number> | undefined): Leg[] {
   if (!counts) return [];
   const known = LEG_LABELS.map(([key]) => key);
