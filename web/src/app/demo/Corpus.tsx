@@ -1,12 +1,7 @@
 import type { Video } from "@/lib/api/schemas";
-import { readCorpus } from "@/lib/search";
 import styles from "./page.module.css";
 
 /** What is in the corpus, under the cold page's examples. */
-export async function CorpusPanel() {
-  return <Corpus videos={await readCorpus()} />;
-}
-
 export function Corpus({ videos }: { videos: Video[] }) {
   if (!videos.length) return null;
   return (

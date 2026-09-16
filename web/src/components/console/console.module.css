@@ -371,12 +371,6 @@
   transition: opacity var(--t-state) linear;
 }
 
-/* The bar's footprint while the bootstrap read is out. */
-.reserve {
-  max-width: var(--query-w, 44rem);
-  padding-bottom: calc(var(--s4) + 2.75rem);
-}
-
 /* ───────────────────────────────────────────────────────────── the pane */
 
 /* The measure belongs to a *column* and the width to the pane: the answer, its
