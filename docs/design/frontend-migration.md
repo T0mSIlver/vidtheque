@@ -147,6 +147,16 @@ at all, has no `unstable_cache` equivalent (the `stale` half went with the
 prerender either way), and nothing in the tree calls `revalidateTag` — the tags
 are written for an invalidation that does not exist yet.
 
+*Amended 2026-09-16:* `library.ts` and its cached reads went with the library
+pages on 2026-09-07; no data cache remains in `web/`.
+
+**Cache headers** *(recorded 2026-09-16)*. `next.config.ts`'s `headers()` sends
+`Cache-Control: no-store` on `/dashboard/*`, because a management page must
+never sit in a shared cache, and `public, max-age=31536000, immutable` on
+`/landing/*`, because a still is added or removed and never edited under its
+own name. They are set there and not in `proxy.ts`: a header the proxy sets on
+a rendered document is overwritten by the render (`docs/LESSONS.md`).
+
 ## 1c. One origin in development, too
 
 *Recorded 2026-09-05.* Production is one origin because a reverse proxy makes
@@ -278,6 +288,15 @@ both are lists a port has to add itself to:
   page is named back in, one entry per path. That list is therefore *the record
   of what is ported*, and a port that forgets to add its path ships a document
   with no CSP on it. Deliberately not a prefix, for exactly that reason.
+
+  *Superseded 2026-09-16:* every path under `/dashboard` is now a document this
+  app serves (a page, or the surface's not-found refusal), so the matcher is a
+  single lookahead that excludes only Python's paths: the public prefixes of
+  §1a, `/dashboard/api/` and exactly `/dashboard/logout`. The record of what is
+  a page is `ported.ts`, and `proxy.test.ts` asserts the two lists agree.
+  Prefetch requests (`next-router-prefetch`, `purpose: prefetch`) fetch a
+  payload, not a document, and are skipped; the chunks a navigation then loads
+  are covered by `'strict-dynamic'`.
 
 **The two videos pages, and the one segment that keeps the writes Python's**
 *(landed 2026-09-05)*. `GET /dashboard/videos` and
