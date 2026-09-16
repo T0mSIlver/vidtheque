@@ -122,6 +122,13 @@ defaults to `"nearest"` as well, so pointing between two OCR boxes slid the
 whole line list under the reader (2026-08-10). Scroll the scroller itself, on
 one axis.
 
+**`columns: 2` on a box with a bounded height overflows sideways.** The frame
+overlay's line list slid under the pointer (2026-08-10). A grid overflows
+downward.
+
+**React's `autoFocus` fires on mount only.** A refused sign-in kept the wrong
+secret on screen with focus on the button; clear and refocus the field by hand.
+
 **JSX drops whitespace that holds a newline.** Facts glued with a separator
 and no explicit `{" "}` have no break opportunity: the video header ran 56 px
 off a 390 px screen (2026-09-05). Every strip writes the space out.
