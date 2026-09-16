@@ -694,6 +694,13 @@ its outcome inline where the Jinja form had a redirect; and a refused read now
 redraws this band from the `filters` block the refusal itself carries (§20),
 rather than from the URL the server has just said is not what it ran.
 
+*Amended 2026-09-16: the band is never replaced.* One `FilterBand` serves the
+videos, jobs and search pages. The form stays mounted across navigations, so
+the control that was used keeps focus and its caret without anything being
+remembered; a navigation keeps the scroll position; and a control is re-seeded
+from the resolved filters in place, except the focused one while it still
+holds what the band last sent. The `sessionStorage` focus key is gone.
+
 ### 5.3 `GET /dashboard/videos/{video_id}` — the detail page
 
 The reason the dashboard exists. Five panels.
