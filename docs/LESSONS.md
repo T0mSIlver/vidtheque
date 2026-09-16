@@ -150,11 +150,14 @@ nothing else.
 **A router navigation per search is a scroll to the top.** The public console
 pushed `/paris?q=…` through the App Router, so every search, chip and mode
 switch re-rendered the page on the server and moved `scrollY` from 1766 to 0
-(2026-09-16). A plain `history.pushState(null, …)` is not the whole cure
-either. Next 16 adopts it as a restore, and on a page keyed by its search
-params that restore sometimes fetched the RSC payload and scrolled anyway.
-Measure `_rsc` requests and `scrollY` around each interaction; do not infer
-them from the code.
+(2026-09-16). Measure `_rsc` requests and `scrollY` around each interaction;
+do not infer them from the code.
+
+**Measure router traffic on `next start`, not `next dev`.** Hot reloads
+refresh the router, so the dev server showed RSC refetches and scroll jumps
+after plain `history.pushState(null, …)` writes. That led to forging Next's
+private history state. On a production build the documented writes measured
+zero `_rsc` requests and no scroll change (2026-09-16).
 
 **`/api/meta` shares the search bucket, so its 429 is a JSON error body, not
 a parse failure.** A visitor who spent the bucket and reloaded got `undefined`

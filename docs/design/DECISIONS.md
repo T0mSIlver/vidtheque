@@ -31,21 +31,22 @@ once per request through React `cache`.
 
 The contract is `demo-site.md` §6.1–§6.2 and `aie-paris-2026.md` §4.
 
-## The console's history entries bypass the router, recorded 2026-09-16 (flag to Tom)
+## The console writes history through Next's native History API integration, recorded 2026-09-16
 
-A plain `pushState(null, …)` is adopted by Next 16 as a restore. On a page
-whose segment is keyed by its search params, some of those restores fetched
-the RSC payload for the new URL and scrolled to the top: measured on `/demo`,
-intermittently on the second push and on back. The console therefore writes
-each entry with the router's own current history state, which Next's patched
-`pushState` passes through untouched. It restores its own entries from a
-capture-phase `popstate` listener that stops the router's listener for the
-console's path. The console also reads the URL on mount, so a page the
-router restores from its cache never shows an older snapshot than its address.
-The cost: the
-router's `useSearchParams` does not follow these writes, and nothing in the
-console reads it; and a router refresh, which in development is every hot
-reload, puts the address back to the router's last URL.
+This supersedes an earlier same-day entry that forged the router's private
+history state and stopped its `popstate` listener. The console calls
+`history.pushState(null, "", url)` and `replaceState` as the Next.js docs
+describe, and restores from `useSearchParams()`: search params unlike the
+committed snapshot are Back, Forward or a page restored from the router's
+cache. A render whose params trail `location.search` is ignored.
+
+Measured on a production build (`next start`) on `/demo` and `/paris` at
+1440 px and 390 px. Search, a second search, a chip, a mode switch, a loaded
+question, four Backs and four Forwards gave zero `_rsc` requests. `scrollY`
+did not move, and the input stayed the same element. The console's state
+matched the URL at every step, including after a 65 s pause. The forged-state
+build measured the same. The refetches that had motivated it were seen on
+`next dev`, where hot reloads refresh the router.
 
 ## Web fonts use `font-display: optional`, recorded 2026-09-16 (flag to Tom)
 
