@@ -215,9 +215,9 @@ async function Outcome({
     );
   }
 
-  const { results, pagination, notes, data_status } = outcome.page;
+  const { results, pagination, notes, data_status, dropped } = outcome.page;
   if (results.length === 0)
-    return <NoResults q={q} type={type} dataStatus={data_status} notes={notes} />;
+    return <NoResults q={q} type={type} dataStatus={data_status} notes={notes} dropped={dropped} />;
   return <Results q={q} type={type} hits={results} pagination={pagination} notes={notes} />;
 }
 
@@ -230,12 +230,18 @@ function NoResults({
   type,
   dataStatus,
   notes,
+  dropped,
 }: {
   q: string;
   type: Channel;
   dataStatus: string | null;
   notes: string[];
+  dropped: number;
 }) {
+  // A page whose every hit came back in a shape this page cannot read *did*
+  // match something, so the note that says so is the whole story and the
+  // headline under it would be a false one.
+  const empty = dataStatus === "empty" ? <NothingIndexed /> : <NothingMatched q={q} type={type} />;
   return (
     <>
       {/* **A page with no hits still says what it could not do.** A leg that
@@ -251,7 +257,7 @@ function NoResults({
           ))}
         </p>
       ) : null}
-      {dataStatus === "empty" ? <NothingIndexed /> : <NothingMatched q={q} type={type} />}
+      {dropped ? null : empty}
     </>
   );
 }

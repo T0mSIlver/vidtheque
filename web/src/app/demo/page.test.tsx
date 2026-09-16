@@ -69,6 +69,7 @@ function found(results: Hit[], over: Partial<SearchResponse> = {}): SearchRespon
     pagination: { limit: 10, offset: 0, has_more: false },
     notes: [],
     data_status: results.length ? null : "ok",
+    dropped: 0,
     ...over,
   };
 }
@@ -367,6 +368,27 @@ describe("the demo page", () => {
         screen.getByText("note: the embedding worker is unreachable; fts only."),
       ).toBeInTheDocument();
       expect(screen.getByText("Nothing in the corpus matches this.")).toBeInTheDocument();
+    });
+
+    // A page that dropped every hit it was sent matched something — it just
+    // could not read what came back. The note says that; "Nothing in the
+    // corpus matches this." would say the opposite over the top of it.
+    it("says what it could not read, and does not call the corpus empty for it", async () => {
+      reads.searchCorpus.mockResolvedValue({
+        kind: "ok",
+        page: found([], {
+          dropped: 2,
+          notes: ["2 result(s) came back in a shape this page cannot read and were left out."],
+        }),
+      });
+      await mount({ ask: "0", q: "kv cache" });
+
+      expect(
+        screen.getByText(
+          "2 result(s) came back in a shape this page cannot read and were left out.",
+        ),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Nothing in the corpus matches this.")).not.toBeInTheDocument();
     });
 
     it("prints them over an empty corpus too", async () => {
