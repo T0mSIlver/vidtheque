@@ -1,6 +1,11 @@
 /* The video detail: a timeline, provenance, keyframes with their OCR, and a
    scrolling transcript. Shared vocabulary is the kit's. */
 
+/* Only a listener for the shot linking: it takes no box of its own. */
+.detail {
+  display: contents;
+}
+
 /* Separators glue to the fact before them, so a wrapped strip never starts
    with a middot. */
 .facts {
@@ -104,13 +109,14 @@
     repeating-linear-gradient(135deg, var(--accent) 0 2px, transparent 2px 6px), var(--console);
 }
 
-/* Pointing at a bar or a card lights the other. The mark goes on the frame
-   box: the box clips, so an outline on the image would paint nothing. */
-.isLinked a {
+/* Pointing at a bar or a card lights the other (`link.ts` sets the
+   attribute). The mark goes on the frame box: the box clips, so an outline on
+   the image would paint nothing. */
+.shotbar[data-linked] a {
   background: var(--accent);
 }
 
-.framecard.isLinked .framebtn {
+.framecard[data-linked] .framebtn {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -300,6 +306,12 @@
   list-style: none;
 }
 
+/* The strip being replaced by the next page: still readable, visibly old. */
+.paging {
+  opacity: 0.5;
+  transition: opacity var(--t-fast);
+}
+
 .framecard {
   min-width: 0;
   scroll-margin-top: var(--s8);
@@ -401,8 +413,17 @@ a.at:hover {
   color: var(--muted);
 }
 
+/* At least roughly what the first batch brings (its rows and one chunk mark,
+   at measured heights), from before it lands, so the page does not move when
+   it does. A batch that fills the box is exact. */
 .cuebox {
+  --cue-row: 1.5rem;
+  --cue-mark: 1.3rem;
   max-height: 26rem;
+  min-block-size: min(
+    26rem,
+    calc(var(--cue-rows, 1) * var(--cue-row) + var(--cue-mark) + var(--s2) * 2 + 0.9rem)
+  );
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--s2) var(--s3);
@@ -410,9 +431,12 @@ a.at:hover {
   border: 1px solid var(--seam2);
 }
 
-/* Until the first batch lands, hold roughly the rows it will bring. */
-.cueboxPending {
-  min-block-size: min(26rem, calc(var(--cue-rows, 1) * 1.6rem + var(--s4)));
+/* A cue wraps to two lines about half the time at phone width. */
+@media (max-width: 48.75rem) {
+  .cuebox {
+    --cue-row: 2.35rem;
+    --cue-mark: 2.1rem;
+  }
 }
 
 .cues {
