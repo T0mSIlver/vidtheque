@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { screen, within } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { deferred, type Answer } from "@/test/dashboard";
@@ -80,6 +80,27 @@ describe("the frames panel", () => {
     expect(landed.closest("[aria-busy]")).toBeNull();
     expect(within(pager).getByRole("link", { name: "Next 1 frames →" })).toBe(next);
     expect(document.activeElement).toBe(next);
+  });
+
+  // The last page has no Next link, so the one that was used cannot keep focus.
+  it("hands focus to Earlier when the next page is the last", async () => {
+    const { navigate } = await mountVideo(
+      (url) => ({ body: stripPage(url.includes("frame_offset=2") ? 2 : 1) }),
+      { search: "frames=1&frame_offset=1" },
+    );
+    const pager = await screen.findByRole("navigation", { name: "Keyframe pages" });
+    const next = within(pager).getByRole("link", { name: "Next 1 frames →" });
+    next.focus();
+    // A click the router takes; the test moves the URL itself.
+    next.addEventListener("click", (event) => event.preventDefault(), { once: true });
+    fireEvent.click(next);
+
+    await navigate("/dashboard/videos/kCc8FmEb1nY?frames=1&frame_offset=2");
+
+    await screen.findByRole("button", { name: "Keyframe 7 at 11:40" });
+    expect(document.activeElement).toBe(
+      within(pager).getByRole("link", { name: "← Earlier frames" }),
+    );
   });
 
   it("tells a refused strip page inside the panel, over the strip it replaces", async () => {

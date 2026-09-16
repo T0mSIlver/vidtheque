@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useState } from "react";
+import { memo, useLayoutEffect, useRef, useState } from "react";
 import { Pill } from "@/components/Pill";
 import type { FrameCard, VideoDetail } from "@/lib/dashboard/schemas";
 import { bytes, clock, count, DASH } from "@/lib/format";
@@ -38,6 +38,16 @@ export function Frames({
   onRetry: () => void;
   onOpen: (frame: FrameCard) => void;
 }) {
+  // The last page has no Next: its link goes, and focus would fall to <body>.
+  const pager = useRef<HTMLDivElement>(null);
+  const paged = useRef(false);
+  useLayoutEffect(() => {
+    if (!paged.current) return;
+    paged.current = false;
+    if (document.activeElement && document.activeElement !== document.body) return;
+    pager.current?.querySelector<HTMLAnchorElement>("a")?.focus({ preventScroll: true });
+  }, [frames.offset]);
+
   return (
     <Panel id="frames" title="Frames, and what the machine read">
       {error !== undefined ? (
@@ -73,16 +83,18 @@ export function Frames({
                 <code>?frames=</code> to read them.
               </p>
             ) : null}
-            <Pager
-              limit={frames.limit}
-              offset={frames.offset}
-              hasMore={frames.has_more}
-              href={(offset) => frameLink(search, videoId, offset, null, "frames")}
-              previous="← Earlier frames"
-              next={`Next ${frames.limit} frames →`}
-              label="Keyframe pages"
-              scroll={false}
-            />
+            <div ref={pager} onClick={() => (paged.current = true)}>
+              <Pager
+                limit={frames.limit}
+                offset={frames.offset}
+                hasMore={frames.has_more}
+                href={(offset) => frameLink(search, videoId, offset, null, "frames")}
+                previous="← Earlier frames"
+                next={`Next ${frames.limit} frames →`}
+                label="Keyframe pages"
+                scroll={false}
+              />
+            </div>
           </>
         ) : (
           <div className={styles.empty}>
