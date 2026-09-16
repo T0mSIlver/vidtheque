@@ -767,6 +767,29 @@ async def test_the_ledger_and_the_header_band_count_the_same_rows(db) -> None:
     }
 
 
+async def test_due_soon_counts_the_set_the_scheduler_will_enqueue(db) -> None:
+    """The band and the table have to agree about who is coming round.
+
+    Since 0008 a `failing` follow with retries left is still checked, so a band
+    that counted only `active` would print "0 due" over a table whose next
+    check is an hour away. One that has used up its retries is not counted,
+    because nothing will pick it up.
+    """
+    active = await make_follow(db, title="A", source_url=f"{CHANNEL}1")
+    retrying = await make_follow(db, title="B", source_url=f"{CHANNEL}2")
+    gave_up = await make_follow(db, title="C", source_url=f"{CHANNEL}3")
+    paused = await make_follow(db, title="D", source_url=f"{CHANNEL}4")
+    await fail_check(db, retrying, times=1)
+    await fail_check(db, gave_up, times=store.FAILING_MAX_TRIES)
+    await db.write(lambda c: store.set_state(c, paused, "paused"))
+    for collection_id in (active, retrying, gave_up, paused):
+        await arm(db, collection_id, +600)
+
+    totals = await db.read(store.totals)
+    assert totals["due_soon"] == 2  # the active one and the one still retrying
+    assert (totals["active"], totals["failing"], totals["paused"]) == (1, 2, 1)
+
+
 async def test_the_ledger_page_asks_for_one_more_row_than_it_shows(db) -> None:
     """`has_more` over an exact total, like every other list on these surfaces."""
     collection_id = await make_follow(db)

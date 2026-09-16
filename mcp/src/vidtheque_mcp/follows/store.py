@@ -403,19 +403,28 @@ def brought_in_counts(conn: sqlite3.Connection) -> dict[int, int]:
 
 
 def totals(conn: sqlite3.Connection) -> dict[str, int]:
-    """The Following page's header band. One query, no per-follow round trip."""
+    """The Following page's header band. One query, no per-follow round trip.
+
+    `due_soon` counts the same set `due()` reads, `_SCHEDULABLE` — so a
+    `failing` follow with retries left is counted, because it really is coming
+    round within the hour. Counting only `active` would have the band disagree
+    with the table underneath it, which prints that row's next check as a time.
+    """
     row = conn.execute(
         """
         SELECT (SELECT COUNT(*) FROM follows)                               AS follows,
                (SELECT COUNT(*) FROM follows WHERE state = 'active')        AS active,
                (SELECT COUNT(*) FROM follows WHERE state = 'paused')        AS paused,
                (SELECT COUNT(*) FROM follows WHERE state = 'failing')       AS failing,
-               (SELECT COUNT(*) FROM follows WHERE state = 'active'
+               (SELECT COUNT(*) FROM follows WHERE """
+        + _SCHEDULABLE
+        + """
                   AND next_check_at <= unixepoch() + 3600)                  AS due_soon,
                (SELECT COUNT(*) FROM follow_seen WHERE decision = 'queued') AS brought_in,
                (SELECT COUNT(*) FROM follow_seen
                  WHERE decision IN ('held_budget','held_review'))           AS held
-        """
+        """,
+        (FAILING_MAX_TRIES,),
     ).fetchone()
     return {key: int(row[key] or 0) for key in row.keys()}
 

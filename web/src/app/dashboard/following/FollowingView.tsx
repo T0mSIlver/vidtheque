@@ -177,7 +177,10 @@ function Band({ data }: { data: Following }) {
         <Figure label="held" notes={["waiting on you or on the budget"]}>
           {count(totals.held)}
         </Figure>
-        <Figure label="due within the hour" notes={["active follows whose clock comes round"]}>
+        <Figure
+          label="due within the hour"
+          notes={["follows a check will pick up, whose clock comes round"]}
+        >
           {count(totals.due_soon)}
         </Figure>
         {/* Hours of *video*, not GPU-minutes: a check knows a candidate's
