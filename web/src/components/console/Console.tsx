@@ -208,7 +208,8 @@ export function Console(props: ConsoleProps) {
         word={machineWord(state, boot)}
         busy={busy}
         inputRef={input}
-        autoFocus={props.autoFocus}
+        // The search box takes the caret on load; a loaded question waits for a reader.
+        autoFocus={props.autoFocus && props.initial.mode === "search"}
         onDraft={(value) => dispatch({ type: "draft", value })}
         onSubmit={submit}
         onChannel={pickChannel}

@@ -77,7 +77,7 @@ function WorkLog({ lines, folded = false }: { lines: Line[]; folded?: boolean })
     >
       {lines.map((l) => (
         <li key={l.id} className={l.result === undefined ? styles.running : undefined}>
-          <span className={styles.logText}>{l.text}</span>
+          <span>{l.text}</span>
           {l.result ? <span className={styles.logResult}>{` → ${l.result}`}</span> : null}
         </li>
       ))}
