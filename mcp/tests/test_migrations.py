@@ -391,6 +391,39 @@ def test_the_spend_table_carries_todays_budget_across_the_upgrade(
     assert spent == 3600.0
 
 
+def test_the_upgrade_gives_a_parked_follow_its_week_of_retries(
+    fresh: sqlite3.Connection, tmp_path: Path
+) -> None:
+    """0008 is only worth deploying if the follows already parked come back.
+
+    Before it, a `failing` follow waited for a human forever — the afternoon
+    of privacy and the broken yt-dlp build both landed there. The new column
+    defaults to 0 on the rows that are already in the table, so every one of
+    them is schedulable again, and bounded by the same seven tries a fresh
+    failure gets.
+    """
+    from vidtheque_mcp.follows import store as follows_store
+
+    _migrate_up_to(fresh, 7, tmp_path / "staged")
+    fresh.execute(
+        "INSERT INTO collections (kind, slug, title, source_url) "
+        "VALUES ('channel', 'c', 'C', 'https://www.youtube.com/@c')"
+    )
+    cid = fresh.execute("SELECT id FROM collections").fetchone()[0]
+    fresh.execute(
+        "INSERT INTO follows (collection_id, state, next_check_at) "
+        "VALUES (?, 'failing', unixepoch() - 600)",
+        (cid,),
+    )
+
+    assert migrations.migrate(fresh)[0] == 8
+
+    row = fresh.execute("SELECT state, fail_count FROM follows").fetchone()
+    assert (row[0], row[1]) == ("failing", 0)
+    due = follows_store.due(fresh, 10)
+    assert [r["collection_id"] for r in due] == [cid]
+
+
 def test_unfollowing_orphans_the_spend_rather_than_deleting_it(
     fresh: sqlite3.Connection,
 ) -> None:
