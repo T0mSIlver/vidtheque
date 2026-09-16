@@ -1,28 +1,12 @@
-// The wire contract of the `/api/*` facade (docs/design/demo-site.md §2),
-// declared once as Zod schemas. The TypeScript types are inferred from them,
-// so there is no second declaration to drift, and `parse()` at the boundary
-// turns a server-side change into a loud error here rather than an
-// `undefined` three components deep.
-//
-// `z.object` strips unknown keys, which is the forward-compatible reading of
-// the contract: an unknown field is ignored (DECISIONS.md, frame embeddings).
+// The `/api/*` wire contract (demo-site.md §2) as Zod schemas; types are
+// inferred. Unknown keys are stripped: an added field is ignored.
 import { z } from "zod";
 
-// Zod compiles a validator with `new Function` when it can, and finds out
-// whether it can by calling `Function("")` the first time something parses.
-// In the browser that call is refused — the page's `script-src` carries no
-// `'unsafe-eval'` (see `proxy.ts`) — and the browser reports the refusal,
-// which puts a CSP violation in the console for a feature probe that was
-// always going to fall back. `jitless` makes the fallback the decision, on
-// both sides of the boundary: these schemas parse a few small objects per
-// request and one small event per stream frame, and never needed a compiler.
+// No `new Function` probe: the CSP has no 'unsafe-eval', and the probe alone
+// logs a violation. These payloads are small enough not to need a compiler.
 z.config({ jitless: true });
 
-// Every URL in a payload is rendered: as an anchor's href, or as an image's
-// src. `javascript:` and `data:` are URLs by the parser's reckoning and
-// scripts by the browser's, and the facade has no reason to mint either, so
-// the contract says http(s) and a payload that says otherwise is rejected
-// here rather than handed to the DOM.
+// Every payload URL reaches an href or a src, so only http(s) passes.
 const httpUrl = () => z.url().refine(isHttpUrl, "must be an http(s) URL");
 
 function isHttpUrl(value: string): boolean {
@@ -34,13 +18,8 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
-// `mcp_url` is the one URL in a payload that never becomes an href. It becomes
-// a line somebody pastes into a shell — `claude mcp add --transport http
-// vidtheque <mcp_url>` — so http(s) is necessary and not sufficient: a newline
-// ends that command and begins a second one, and `;` does the same without
-// needing the newline. An endpoint carries none of this punctuation, so a
-// value that does is not one, and the demo prints its unavailable line rather
-// than a paste it cannot vouch for.
+// `mcp_url` is pasted into a shell (`claude mcp add … <mcp_url>`), so shell
+// punctuation, whitespace included, makes it not an endpoint.
 const SHELL_PUNCTUATION = /[\s;&|<>$`'"\\()]/;
 const pasteableUrl = () =>
   httpUrl().refine((value) => !SHELL_PUNCTUATION.test(value), "must be a plain http(s) URL");
@@ -82,16 +61,8 @@ export const ContentType = z.enum(["all", "transcript", "ocr", "frame"]);
 export type ContentType = z.infer<typeof ContentType>;
 
 /**
- * A page of results.
- *
- * **One unreadable hit costs one hit.** The results array is read row by row
- * rather than all-or-nothing: a hit whose `thumb` came back relative, or whose
- * `link` is not a URL, is dropped and *said to have been dropped*, where
- * `z.array(Hit)` threw and collapsed a page of nine good rows into "Could not
- * reach the server." The disclosure is a `note:` line, which is where this
- * surface already prints what it could not do (demo-site.md §2; "all means
- * all"). Everything outside `results` is still strict — a payload with no
- * `pagination` is not a page.
+ * A page of results. One unreadable hit costs one hit, and a note says so;
+ * everything outside `results` is strict (demo-site.md §2).
  */
 export const SearchResponse = z
   .object({
@@ -100,11 +71,8 @@ export const SearchResponse = z
     results: z.array(z.unknown()),
     pagination: Pagination,
     leg_counts: z.record(z.string(), z.number()).optional(),
-    // The same `note:` lines the MCP payload prints. "all means all" is a
-    // promise to a human too, so the page renders them.
     notes: z.array(z.string()),
-    // Set only on the empty path: "nothing matched" and "nothing is indexed" are
-    // different screens.
+    // Set on the empty path only: "nothing matched" vs "nothing is indexed".
     data_status: z.string().nullable(),
   })
   .transform((page) => {
@@ -119,9 +87,6 @@ export const SearchResponse = z
       ...page,
       results,
       dropped,
-      // No `note:` marker on this one. `public/humanize.py` strips that prefix
-      // off every line before the facade sends it, so the list this joins is a
-      // list of sentences and a machine word in it would be this page's own.
       notes: dropped
         ? [
             ...page.notes,
@@ -288,14 +253,11 @@ export const AskDegraded = z.object({
 });
 export type AskDegraded = z.infer<typeof AskDegraded>;
 
-// What stopped an ask, whichever layer stopped it. §3.4's degraded body is
-// one of them; the rate limiter's general envelope (§2.4) is another, and it
-// has no `reason` to give, so requiring one there threw away the limiter's
-// real sentence and its delay. A code and a sentence are what they all share.
+// What stopped an ask, whichever layer did: §3.4's degraded body or the
+// limiter's envelope, which has no `reason`.
 export const AskFailure = z.object({
   error: z.string(),
   message: z.string(),
-  // Present only on the typed degraded body — never invented for the rest.
   reason: z.string().nullish(),
   retry_after_s: z.number().nullish(),
 });
@@ -314,25 +276,18 @@ export const AskEvent = z.discriminatedUnion("event", [
 ]);
 export type AskEvent = z.infer<typeof AskEvent>;
 
-// Every non-2xx answer from the facade: a code, a sentence, and what to do
-// next. The API serialises "no next step" as `next: null`, not by omitting the
-// key, so a schema that only allowed a string rejected the whole envelope and
-// lost the code and the sentence with it.
+// Every non-2xx answer: a code, a sentence, and what to do next (`null` for
+// none).
 export const ErrorEnvelope = z.object({
   error: z.string(),
   message: z.string(),
   next: z.string().nullish(),
-  // The limiter states its own delay in the body as well as in `Retry-After`.
-  // The body is the one to believe: a proxy may drop or rewrite a header, and
-  // the demo used to fall back to a header-only reading and paint 60s over a
-  // limiter that had said 17 (`app.js`'s `renderRateLimited`).
+  // Believed over `Retry-After`, which a proxy may rewrite.
   retry_after_s: z.number().nullish(),
 });
 export type ErrorEnvelope = z.infer<typeof ErrorEnvelope>;
 
-// The same envelope read field by field, so one field the API grew out from
-// under us costs only that field. Used where an error body is the last thing
-// we have to explain a failure with, and dropping it leaves nothing.
+// The envelope read field by field, so one unexpected field costs only itself.
 export const PartialErrorEnvelope = z.object({
   error: z.string().optional().catch(undefined),
   message: z.string().optional().catch(undefined),

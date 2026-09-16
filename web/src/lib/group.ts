@@ -1,19 +1,18 @@
-// Ten flat hits are usually three talks. The server ranks and paginates; the
-// page groups what it was handed and nothing else (demo-site.md §6.5), so a
-// card's position is the position of its best hit and never a re-ranking.
-// `schemas` and not the package index: the index is `server-only`, and the
-// dashboard's search page groups the same hits in the browser.
+// Grouping and provenance words for hits. The server ranks and paginates; the
+// page groups what it was handed and never re-ranks (demo-site.md §6.5).
+// `schemas`, not the package index: the index is server-only.
 import type { Hit } from "@/lib/api/schemas";
 
 export interface VideoGroup {
   video_id: string;
   title: string;
   channel: string;
-  /** The first hit's frame, or the first frame any hit has. */
+  /** The first frame any hit in the group has. */
   thumb: string | null;
   hits: Hit[];
 }
 
+/** Cards in order of each video's first appearance. */
 export function groupByVideo(hits: readonly Hit[]): VideoGroup[] {
   const groups = new Map<string, VideoGroup>();
   for (const hit of hits) {
@@ -34,8 +33,8 @@ export function groupByVideo(hits: readonly Hit[]): VideoGroup[] {
   return [...groups.values()];
 }
 
-// The three kinds of evidence, as words (demo-site.md §6.3). `source` can be
-// one leg or a fusion of legs ("ocr+frame"), so this reads it as a set.
+// The three kinds of evidence as words (demo-site.md §6.3). `source` is one
+// leg or a fusion ("ocr+frame").
 export type Badge = "spoken" | "on-screen" | "frame";
 
 const LEG_WORD: Record<string, Badge> = {
@@ -44,8 +43,7 @@ const LEG_WORD: Record<string, Badge> = {
   frame: "frame",
 };
 
-/** The legs this build knows, in the words it prints them as. A `source` it
- *  cannot read every leg of is handed back whole by `badgeWords`. */
+/** The legs this build knows, in the words it prints. */
 export function badges(source: string): Badge[] {
   const legs = new Set(source.split("+"));
   const out: Badge[] = [];
@@ -56,14 +54,9 @@ export function badges(source: string): Badge[] {
 }
 
 /**
- * The badges a result row actually prints.
- *
- * A leg this build has never heard of — a fourth one, one day — gets a badge
- * carrying its own raw name rather than none at all: **dropping the provenance
- * silently is the one thing that must not happen** (`app.js`'s `badgesFor`).
- * One unknown leg takes the whole `source` string with it, because "spoken"
- * printed beside a dropped half is a claim, where `transcript+audio` is only
- * an unfamiliar word.
+ * The badges a row prints. Provenance is never dropped silently: a leg this
+ * build does not know prints the whole raw `source`, since "spoken" beside a
+ * dropped half would be a claim.
  */
 export function badgeWords(source: string): string[] {
   if (!source) return [];
@@ -72,11 +65,7 @@ export function badgeWords(source: string): string[] {
   return badges(source);
 }
 
-// The word a placeholder prints when a moment has no frame behind it: the
-// channel it came from, rather than a blank box (`app.js`'s `placeholder`).
-// Deliberately not `badges`: a badge names an unknown leg so the provenance is
-// never dropped, while a picture that is missing says "video" — the raw name of
-// a leg nobody has heard of is not what belongs in a grey rectangle.
+/** A frameless moment's placeholder word; an unknown leg says "video". */
 export function channelWord(source: string): string {
   for (const leg of source.split("+")) {
     if (LEG_WORD[leg]) return LEG_WORD[leg];
@@ -84,17 +73,12 @@ export function channelWord(source: string): string {
   return "video";
 }
 
-// The four ways a snippet is set, one per provenance (demo-site.md §6.3).
-// `mixed` is neither a quote nor screen text: both channels agreed and the text
-// is whichever was longer, so it is presented as neither.
+// How a snippet is set (demo-site.md §6.3). `mixed` is neither a quote nor
+// screen text, and neither is a leg this build cannot vouch for.
 export type Presentation = "spoken" | "screen" | "frame" | "mixed";
 
 export function presentationOf(source: string): Presentation {
   const legs = source.split("+");
-  // A leg this build does not know is set as neither a quote nor screen text:
-  // what its snippet *is* evidence of is precisely what we cannot say, and
-  // quotation marks around it would claim somebody said it (`app.js`'s
-  // `SNIPPET_CLASS[hit.source] || "snip"`).
   if (legs.some((leg) => LEG_WORD[leg] === undefined)) return "mixed";
   const kinds = badges(source);
   if (kinds.length > 1) return "mixed";
@@ -109,19 +93,9 @@ export interface Run {
   hit: boolean;
 }
 
-// Mark the query's own words inside a snippet. The demo's rule, kept as it was
-// (`app.js`'s `highlight`): a term is three characters or more — shorter ones
-// mark the joins between words rather than the words — and at each position the
-// *earliest* remaining occurrence of any term wins, so the marks come out in
-// reading order and never overlap.
-//
-// Deliberately not the dashboard's `highlight` (`app/dashboard/search/parts.ts`),
-// which admits two-character terms and prefers the longest match: that page is
-// an instrument for an operator reading a query plan, and this one is a demo.
-// Two surfaces, two rules, each with the tests of the page it belongs to.
-//
-// Runs, never markup: the caller decides what a marked run looks like, and
-// corpus text never becomes HTML on the way (demo-site.md §6.2).
+// Terms of three characters or more; the earliest occurrence wins, so marks
+// come out in reading order and never overlap. Deliberately not the
+// dashboard's rule (`app/dashboard/search/parts.ts`). Runs, never markup.
 export function highlight(text: string | null, query: string): Run[] {
   if (!text) return [];
   const terms = (query || "")

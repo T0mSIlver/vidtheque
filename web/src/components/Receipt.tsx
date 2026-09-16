@@ -1,28 +1,18 @@
 import { receiptParts } from "@/lib/format";
 import styles from "./Receipt.module.css";
 
-// **The product's signature artifact** (`demo/style.css`, "the receipts"), and
-// the landing's own slab drawn against live data. Three spans and never one
-// string: `youtu.be/` in the muted ink says which surface, the id in the
-// reading ink says which talk, and the block says which second — with the
-// arrow that says this one leaves the page.
-//
-// Two sizes, and the difference is the fill. The small slab is border and ink,
-// because ten filled gold blocks down a page of moments would spend the accent
-// on the list instead of on the hit; the large one fills its `?t=` block and
-// there are three of it — one per Sources row, one in the lightbox.
-//
-// A link the page cannot parse has no honest receipt: it prints none rather
-// than a URL it guessed at.
+/**
+ * The receipt slab: `youtu.be/` · the talk's id · `?t=` the second, printed as
+ * three spans (demo-site.md §6.5). `lg` is the filled slab; `sm` is the
+ * bordered one a list of moments uses. A link that is not http(s) prints none.
+ */
 export function Receipt({
   href,
   size = "sm",
   className = "",
 }: {
   href: string;
-  /** `lg` is the filled slab (demo-site.md §6.5); `sm` is the moment's own. */
   size?: "sm" | "lg";
-  /** Where the caller puts it — the slab owns its face, the row its place. */
   className?: string;
 }) {
   const parts = receiptParts(href);
