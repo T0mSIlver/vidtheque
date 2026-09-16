@@ -118,10 +118,14 @@ export const SearchResponse = z
     return {
       ...page,
       results,
+      dropped,
+      // No `note:` marker on this one. `public/humanize.py` strips that prefix
+      // off every line before the facade sends it, so the list this joins is a
+      // list of sentences and a machine word in it would be this page's own.
       notes: dropped
         ? [
             ...page.notes,
-            `note: ${dropped} result(s) came back in a shape this page cannot read and were left out.`,
+            `${dropped} result(s) came back in a shape this page cannot read and were left out.`,
           ]
         : page.notes,
     };

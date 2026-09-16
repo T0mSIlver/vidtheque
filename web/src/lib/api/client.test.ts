@@ -252,7 +252,7 @@ describe("createClient", () => {
       const page = await client.search({ q: "hello" });
       expect(page.results).toHaveLength(1);
       expect(page.notes).toEqual([
-        "note: 1 result(s) came back in a shape this page cannot read and were left out.",
+        "1 result(s) came back in a shape this page cannot read and were left out.",
       ]);
     });
   });
