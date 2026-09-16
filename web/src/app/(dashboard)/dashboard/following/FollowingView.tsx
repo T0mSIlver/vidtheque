@@ -68,10 +68,7 @@ export function FollowingView() {
 export function FollowingAbsent() {
   return (
     <Absent title="Following" heading="This deployment does not follow channels.">
-      Following is part of the write side, and this instance registers none — it is either a
-      read-only projection of somebody&rsquo;s index, or an instance with no credential configured
-      to check. Nothing is disabled here: the rules, the checks and the ledger are not on this box
-      at all.
+      No write side on this instance, so no rules, checks or ledger live here.
     </Absent>
   );
 }
@@ -100,7 +97,7 @@ function Band({ data }: { data: Following }) {
         What this instance is watching
       </h2>
       <dl className={`${ui.ledger} ${ui.ledger6}`}>
-        <Figure label="follows" notes={["channels and playlists watched"]}>
+        <Figure label="follows" notes={["channels and playlists"]}>
           {count(totals.follows)}
         </Figure>
         <Figure
@@ -114,26 +111,22 @@ function Band({ data }: { data: Following }) {
         >
           {count(totals.active)}
         </Figure>
-        <Figure label="brought in" notes={["videos a check accepted"]}>
+        <Figure label="brought in" notes={["videos accepted"]}>
           {count(totals.brought_in)}
         </Figure>
-        <Figure label="held" notes={["waiting on you or on the budget"]}>
+        <Figure label="held" notes={["for you or the budget"]}>
           {count(totals.held)}
         </Figure>
-        <Figure
-          label="due within the hour"
-          notes={["follows a check will pick up, whose clock comes round"]}
-        >
-          {count(totals.due_soon)}
-        </Figure>
+        {/* Counts what a check will pick up, retries included (dashboard.md §18.3). */}
+        <Figure label="due within the hour">{count(totals.due_soon)}</Figure>
         {/* Hours of video, rolling, across every follow together. */}
         <Figure
           label="budget"
           notes={[
             budget.ceiling_h
-              ? `of ${budget.ceiling_h}h, over the last ${window}`
+              ? `of ${budget.ceiling_h}h, last ${window}`
               : // `0` is the ceiling turned off, not "no budget left".
-                `used in the last ${window}; no ceiling is set`,
+                `last ${window}, no ceiling`,
           ]}
         >
           {duration(budget.spent_s)}
@@ -151,9 +144,7 @@ function ChecksOff() {
       title="Follow checks are off on this instance."
       detail={
         <>
-          Nothing claims a <code>follow_check</code>, so no rule below is running and no clock below
-          is due. The rules and their ledgers are unchanged, and <em>Check now</em> still only moves
-          a clock.
+          Nothing claims a <code>follow_check</code>; the rules stay, the clocks do not run.
         </>
       }
     />
@@ -174,14 +165,7 @@ function Held({ data }: { data: Following }) {
           ? `More than ${shown} videos are waiting for you.`
           : `${shown} ${shown === 1 ? "video is" : "videos are"} waiting for you.`
       }
-      next={
-        data.held_more ? (
-          <>
-            More are held than the {data.held_cap} listed here; each follow&rsquo;s own page has its
-            whole ledger.
-          </>
-        ) : null
-      }
+      next={data.held_more ? <>Each follow&rsquo;s page lists the rest.</> : null}
     >
       <ul className={`${ui.rowlist} ${ui.tight}`}>
         {data.held.map((item) => (

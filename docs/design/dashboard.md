@@ -2459,7 +2459,7 @@ over an exact total, like every list on this surface.
 store's one `_SCHEDULABLE` predicate, so a `failing` follow with retries left is
 counted and one that gave up is not (index-schema §1.8). The band would
 otherwise read *0 due* over a table printing that row's next check as a time,
-and the figure's note says *follows a check will pick up* for the same reason.
+and the figure carries no note *(2026-09-16: the label says it)*.
 
 **The budget is on this page and nowhere else.** *Spent of ceiling*, in hours of
 video, because it is the number that explains a page full of `held_budget` rows.
