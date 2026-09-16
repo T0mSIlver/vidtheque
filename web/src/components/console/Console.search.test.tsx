@@ -2,13 +2,10 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { found, hit, mountConsole, never, SEARCH_BOX, wire } from "./testing";
+import { navigateTo } from "@/test/next";
+import { found, hit, mountConsole, never, SEARCH_BOX, traverse, wire } from "./testing";
 
-// `RetryIn` still reads the router for its default retry; the console always
-// hands it one.
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
-}));
+vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 
 const SEARCH = { mode: "search", q: "kv cache", type: "all" } as const;
 
@@ -316,34 +313,29 @@ describe("the console in search mode", () => {
       initialSearch: { kind: "ok", page: found([hit()]) },
     });
 
-    window.history.replaceState(null, "", "/demo?q=paged&type=frame");
-    act(() => window.dispatchEvent(new PopStateEvent("popstate")));
+    await traverse("/demo?q=paged&type=frame");
     expect(screen.getByLabelText(SEARCH_BOX)).toHaveValue("paged");
     expect(await screen.findByText("Frames talk")).toBeInTheDocument();
     expect(searchUrl(fetchSpy).searchParams.get("content_type")).toBe("frame");
 
-    window.history.replaceState(null, "", "/demo?ask=why%3F");
-    act(() => window.dispatchEvent(new PopStateEvent("popstate")));
+    await traverse("/demo?ask=why%3F");
     expect(screen.getByLabelText("Your question")).toHaveValue("why?");
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("stops the router's own handling of its entries, and leaves other paths alone", () => {
-    vi.stubGlobal("fetch", vi.fn(never));
-    mountConsole({ initial: { mode: "ask", q: "", type: "all" } });
-    const router = vi.fn();
-    window.addEventListener("popstate", router);
-    try {
-      window.history.replaceState(null, "", "/demo?ask=why%3F");
-      act(() => window.dispatchEvent(new PopStateEvent("popstate")));
-      expect(router).not.toHaveBeenCalled();
+  it("ignores search params the address has already moved past", async () => {
+    const fetchSpy = vi.fn(async () => wire(found([hit()])));
+    vi.stubGlobal("fetch", fetchSpy);
+    const user = userEvent.setup();
+    const { push } = mountConsole({ initial: { mode: "search", q: "", type: "all" } });
+    await user.type(screen.getByLabelText(SEARCH_BOX), "kv cache{Enter}");
+    expect(push).toHaveBeenCalledWith(null, "", "/demo?q=kv+cache");
+    expect(await screen.findByText("1 result")).toBeInTheDocument();
 
-      window.history.replaceState(null, "", "/");
-      act(() => window.dispatchEvent(new PopStateEvent("popstate")));
-      expect(router).toHaveBeenCalledOnce();
-    } finally {
-      window.removeEventListener("popstate", router);
-    }
+    // A router render one entry behind the address restores nothing.
+    await navigateTo("/demo?q=older");
+    expect(screen.getByLabelText(SEARCH_BOX)).toHaveValue("kv cache");
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
   // A page the router restored from its cache can be older than its URL.
