@@ -63,10 +63,13 @@ fallback face for that page load.
 ## Dashboard reads are cached in the browser per request, recorded 2026-09-16 (flag to Tom)
 
 Inside "Dashboard pages fetch client-side" below. Each read is keyed by the
-request it makes and held in memory for the life of the document, at most 64
-entries. A revisit, Back or Forward paints the last payload at once and
-re-reads underneath it; a read younger than 2 s is not asked again. A `429`
-waits out its `Retry-After` and asks again. Nothing is persisted and nothing
+request it makes and held in memory for the life of the document. The bound is
+64 entries, enforced on idle ones: an entry on screen or in flight is never
+evicted, so a burst can overshoot until those settle and leave. The least
+recently used idle entry goes first. A revisit, Back or Forward paints the last
+payload at once and re-reads underneath it; a read younger than 2 s is not
+asked again. A `429` waits out its `Retry-After` and asks again, and neither a
+tab coming back nor a remount cuts that wait short. Nothing is persisted and nothing
 leaves the tab, so Next still caches nothing per user and the wire still says
 `no-store`. Measured cost of the old behaviour: every rail navigation showed
 `reading…` for the whole request, revisits included (frontend-migration.md §3).
