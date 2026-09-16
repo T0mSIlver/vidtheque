@@ -4,31 +4,20 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { dashboard, ROOT } from "@/lib/dashboard/client";
+import { useResource } from "@/lib/dashboard/resource";
 import type { Session } from "@/lib/dashboard/schemas";
 import styles from "./chrome.module.css";
-import { DashLink } from "./parts";
+import { DashLink } from "./kit/ui";
 import { sectionOf, type Section } from "./ported";
 import { SessionScope } from "./session";
-import { useRead } from "./useRead";
 
-// The management chassis — `templates/base.html`, in React. It holds the two
-// things that are true of every page on this surface: where you are, and what
-// this deployment is allowed to do.
-//
-// It is a Client Component because the second of those is read in the browser:
-// `/dashboard/api/session` is outside the read gate, so a signed-out visitor
-// gets an answer, and the shell can render the right chrome without Next ever
-// seeing the session cookie. Everything that does not depend on it — the
-// wordmark, the five sections — renders immediately and does not wait.
+// The chassis: where you are, and what this deployment may do. The session is
+// read here once per document (dashboard.md §19); everything that does not
+// depend on it renders at once, and everything that does reserves its space
+// until it lands, so the column never moves.
 
 type Item = { href: string; label: string; section: Section; hook?: string };
 
-// Whether a path is a page this app serves is `ported.ts`'s answer, not a flag
-// repeated here: `DashLink` asks it, and so does every other link into this
-// surface. All five sections are pages here now, and the question survives the
-// port because `/dashboard` still holds paths that are Python's and are not
-// pages — a client-side navigation to one of those would ask this app's router
-// for a route it does not have.
 const SECTIONS: Item[] = [
   { href: ROOT, label: "Overview", section: "corpus" },
   { href: `${ROOT}/ledger`, label: "Ledger", section: "ledger" },
@@ -37,14 +26,9 @@ const SECTIONS: Item[] = [
   { href: `${ROOT}/jobs`, label: "Jobs", section: "jobs" },
 ];
 
-// The write side, as its own group. It appears exactly when the routes behind
-// it are registered — in the demo projection and in `AUTH=none` there is no
-// group at all, rather than a link to a page that 404s (dashboard.md §2.3,
-// §3.2 rule 3). A dead link is not room.
+// Present exactly when the write routes are registered (§2.3, §3.2 rule 3).
+// `data-add-videos` is the smoke check's hook for the first link.
 const MANAGE: Item[] = [
-  // `data-add-videos` is `base.html`'s one test hook, and it is only that: a
-  // smoke check finds the write side's first link by it rather than by the
-  // words on it, so renaming the link cannot quietly pass.
   { href: `${ROOT}/index`, label: "Add videos", section: "index", hook: "" },
   { href: `${ROOT}/following`, label: "Following", section: "following" },
 ];
@@ -52,15 +36,12 @@ const MANAGE: Item[] = [
 const readSession = (signal: AbortSignal) => dashboard.session(signal);
 
 export function Chrome({ children }: { children: ReactNode }) {
-  const session = useRead(readSession);
-  const deployment = session.status === "ready" ? session.data : null;
+  const session = useResource<Session>("session", readSession);
+  const deployment = session.data ?? null;
+  const known = deployment !== null || session.error !== undefined;
   const path = usePathname();
 
-  // The rail offers Sign out when there is a cookie to clear, which is not the
-  // same question as whether the next request will be served: a session row
-  // that expired under a browser still holding the cookie reads `signed_in:
-  // false` and `has_session_cookie: true`, and that is exactly the reader who
-  // needs the button (dashboard.md §19). Either field is enough.
+  // A stale cookie reads `signed_in: false` and still needs Sign out (§19).
   const canSignOut = Boolean(deployment?.signed_in || deployment?.has_session_cookie);
 
   return (
@@ -80,19 +61,14 @@ export function Chrome({ children }: { children: ReactNode }) {
           </div>
 
           <nav className={styles.nav} aria-label="Sections">
-            {/* The first group has no heading: a rail of five words is its own
-                label. The groups that *change* what the rail means keep theirs,
-                because there an item's absence is a fact about the deployment. */}
             <NavList items={SECTIONS} path={path} />
-            {deployment?.write_side ? (
-              <>
+            {deployment?.write_side || !known ? (
+              // Held, invisible, until the session says whether it exists.
+              <div className={known ? undefined : styles.reserved} inert={!known}>
                 <p className={styles.group}>Manage</p>
                 <NavList items={MANAGE} path={path} />
-              </>
+              </div>
             ) : null}
-            {/* The demo's way back. In read-only mode this surface is the
-                browsable corpus behind the reader at `/demo`, and a visitor who
-                followed the link in ought to be able to follow one back out. */}
             {deployment?.readonly ? (
               <>
                 <p className={styles.group}>This demo</p>
@@ -107,26 +83,16 @@ export function Chrome({ children }: { children: ReactNode }) {
             ) : null}
           </nav>
 
-          <div className={styles.foot}>
+          <div className={`${styles.foot} ${known ? "" : styles.footPending}`}>
             {deployment ? <Deployment session={deployment} /> : null}
             {canSignOut ? (
-              // The only control in the chassis, and it is a POST: signing out
-              // changes state, and dashboard.md §3.3 has no state-changing GET
-              // in it. A real form, so it needs no JavaScript — and the browser
-              // sends `Sec-Fetch-Site: same-origin` with it, which is the
-              // positive evidence §3.3's Origin rule asks of an ambient
-              // credential. `form-action 'self'` in `proxy.ts` allows it.
+              // A real POST form: signing out changes state (§3.3).
               <form className={styles.signout} method="post" action={`${ROOT}/logout`}>
                 <button className={styles.ghost} type="submit">
                   Sign out
                 </button>
               </form>
             ) : deployment?.login_url ? (
-              // A `DashLink`, like every other link into this surface: the
-              // sign-in page is this app's now, so it is reached by swapping
-              // the React tree rather than by loading a document.
-              // `login_url` is the instance's own path, so `isPorted` is still
-              // the thing that decides — this rail names no route of its own.
               <DashLink className={styles.signin} href={deployment.login_url}>
                 Sign in
               </DashLink>
@@ -154,40 +120,25 @@ function NavList({ items, path }: { items: Item[]; path: string | null }) {
   const here = sectionOf(path);
   return (
     <ul className={styles.navlist}>
-      {items.map((item) => {
-        // The section this page declares it is in, exactly as every Jinja view
-        // declared its own word to `_chrome(request, page)`: a reader on a
-        // video's detail page is in Videos because that page says so, and the
-        // sign-in page is in no section at all although it sits under
-        // `/dashboard` like everything else. A `startsWith` reading gets both
-        // of those right by accident and hands the next `/dashboard/…/…` route
-        // a section it has nothing to do with.
-        const current = here === item.section ? "page" : undefined;
-        return (
-          <li key={item.href}>
-            <DashLink
-              className={styles.navlink}
-              href={item.href}
-              aria-current={current}
-              data-add-videos={item.hook}
-            >
-              {item.label}
-            </DashLink>
-          </li>
-        );
-      })}
+      {items.map((item) => (
+        <li key={item.href}>
+          <DashLink
+            className={styles.navlink}
+            href={item.href}
+            aria-current={here === item.section ? "page" : undefined}
+            data-add-videos={item.hook}
+          >
+            {item.label}
+          </DashLink>
+        </li>
+      ))}
     </ul>
   );
 }
 
-// What this deployment is allowed to do, in the rail's foot.
-//
-// The projection's line says what the *reader* is allowed to do and stops
-// there: `auth=…` names an environment variable and its value, and "indexing
-// refused" is a sentence about a worker nobody visiting the demo can reach —
-// both are the operator's console leaking onto a page a stranger can screenshot
-// (dashboard.md §2.4). What survives is the one line that changes what a
-// visitor should expect: nothing here writes.
+/** What the deployment allows, in the rail's foot. The projection says only
+ *  that nothing writes: `auth=` and "indexing refused" are the operator's
+ *  console (§2.4). */
 function Deployment({ session }: { session: Session }) {
   if (session.readonly) {
     return (
@@ -203,10 +154,7 @@ function Deployment({ session }: { session: Session }) {
         {session.writes_allowed ? null : <span className={styles.refused}>indexing refused</span>}
         {session.write_side ? null : <span>no write side</span>}
       </p>
-      {/* §3.2 rule 3 asks the `none`-mode dashboard to say *why* it is
-          read-only and give the one-line fix. It lives in the rail because
-          DESIGN.md gives the rail's foot the job of carrying what this
-          deployment is allowed to do; as a banner it would be on every page. */}
+      {/* §3.2 rule 3: say why there is no write side, and the fix, once. */}
       {session.write_side ? null : (
         <p className={styles.why}>
           Adding to the index needs a credential to check. Set <code>VIDTHEQUE_AUTH=token</code> and{" "}

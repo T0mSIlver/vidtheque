@@ -1,0 +1,150 @@
+/* A list page's furniture: the grid, the clamp notes, the count line, the
+   pager and the crumbs. */
+
+.tablewrap {
+  position: relative;
+  overflow-x: auto;
+}
+
+.grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.grid thead th {
+  padding: var(--s2);
+  text-align: left;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  font-weight: var(--w-mono-label);
+  letter-spacing: 0.19em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--panel);
+  /* An inset shadow: `border-collapse` drops a sticky cell's own border. */
+  box-shadow: inset 0 -1px 0 var(--seam2);
+}
+
+.grid thead th.num {
+  text-align: right;
+}
+
+.grid tbody th,
+.grid tbody td {
+  height: 2.125rem;
+  padding: var(--s2);
+  text-align: left;
+  vertical-align: top;
+  font-weight: var(--w-body);
+  border-bottom: 1px solid var(--seam);
+  overflow-wrap: anywhere;
+}
+
+.grid tbody td.num {
+  text-align: right;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.grid code {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  font-variant-ligatures: none;
+  overflow-wrap: anywhere;
+}
+
+/* On a phone a stacked table's cells wear the column name they lost, from
+   `data-label`; each page's media query supplies the `content`. */
+.stacked {
+  --stacked-label: 5.5rem;
+}
+
+.stacked td::before {
+  flex: 0 0 var(--stacked-label);
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  font-weight: var(--w-mono-label);
+  letter-spacing: 0.19em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.num {
+  text-align: right;
+}
+
+/* Declared beside served, read across. */
+.models {
+  margin-top: var(--s3);
+  gap: 0 var(--s6);
+}
+
+/* What a clamp moved, in Python's words, above the count it qualifies. */
+.notes {
+  composes: t-machine-sm from global;
+  margin: var(--s4) 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--tone-warn);
+}
+
+.notes li {
+  max-width: var(--note);
+  margin-top: var(--s1);
+}
+
+.tablecount {
+  composes: t-machine-sm from global;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 var(--s4);
+  margin: var(--s5) 0 var(--s1);
+  color: var(--muted);
+}
+
+/* One flex item for the sentence, or every text run becomes one. */
+.tablecount > * {
+  min-width: 0;
+}
+
+.shown {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8125rem;
+  color: var(--fg);
+}
+
+.pager {
+  display: flex;
+  gap: var(--s2);
+  margin-top: var(--s4);
+}
+
+.crumbs {
+  composes: t-machine-sm from global;
+  padding-top: var(--s6);
+  color: var(--muted);
+}
+
+.crumbs a {
+  color: var(--fg2);
+  text-decoration: none;
+}
+
+.crumbs a:hover {
+  color: var(--gold);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 48.75rem) {
+  /* Tables that do not stack scroll inside `.tablewrap`; the page never does. */
+  .grid:not(.stacked) {
+    min-width: 34rem;
+  }
+}
