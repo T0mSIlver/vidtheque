@@ -6,6 +6,29 @@ and `research/pipeline-tooling-research.md`. Where a design doc disagrees with
 this file, this file wins; fold changes back into the docs as implementation
 touches them.
 
+## The web tree is split by surface, decided by Tom, 2026-09-16
+
+`web/src` has three halves and they do not read each other. The public front
+doors are `app/(public)/**` (the landing, `/demo`, `/paris`), their kit
+`components/public/**` and the facade client `lib/api/**`. The management
+dashboard is `app/(dashboard)/dashboard/**`, `components/dashboard/**` and
+`lib/dashboard/**`. Between them sit exactly three shared directories:
+`components/ui/` (the primitives both draw with, today `Pill` and `RetryIn`),
+`lib/format/` and `lib/schemas/` (the `/api/search` payload, which both halves
+read because `/dashboard/api/search` is the facade's own handler behind the
+read gate). Nothing else is shared; a fourth shared directory is a decision,
+not a refactor.
+
+`app/layout.tsx`, `app/error.tsx`, `app/not-found.tsx` and `src/styles/` stay
+at the root and belong to neither half. Route groups carry no URL, so every
+path is unchanged and `proxy.ts`'s matcher is untouched.
+
+The contract is the ESLint guard in `web/eslint.config.mjs`: a
+`no-restricted-imports` rule scoped by file glob, one direction each, which
+fails `pnpm lint` on a crossing whether it is spelled through the `@/` alias or
+as a relative path. The rule is the enforcement, not this paragraph — change
+the rule and you have changed the decision.
+
 ## The public console is one client component, decided by Tom, 2026-09-16
 
 Search and ask on `/demo` and `/paris` are one persistent client component:
