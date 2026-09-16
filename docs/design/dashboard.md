@@ -2437,6 +2437,12 @@ per-follow round trip: a table that costs a query per line stops being loadable
 at the size it exists for (§6.3). `limit` clamps 1..100 default 25, `has_more`
 over an exact total, like every list on this surface.
 
+**`due_soon` counts what a check will pick up**, not what is `active` — the
+store's one `_SCHEDULABLE` predicate, so a `failing` follow with retries left is
+counted and one that gave up is not (index-schema §1.8). The band would
+otherwise read *0 due* over a table printing that row's next check as a time,
+and the figure's note says *follows a check will pick up* for the same reason.
+
 **The budget is on this page and nowhere else.** *Spent of ceiling*, in hours of
 video, because it is the number that explains a page full of `held_budget` rows.
 A ceiling of `0` renders as words, not as *of 0h* — which reads as "no budget
