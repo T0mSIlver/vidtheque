@@ -147,6 +147,57 @@ def test_an_unsafe_seam_keeps_both_sides_and_records_it(tmp_path: Path) -> None:
         )
 
 
+def test_a_repeated_trigram_far_from_the_seam_is_not_a_match(tmp_path: Path) -> None:
+    """The true overlap match failed — ffmpeg cut mid-word — and a filler
+    trigram matches instead, the earlier chunk's copy 27 s after the later
+    chunk's. Dropping the later prefix on that would append words starting
+    before the last word kept, so the seam degrades instead."""
+
+    client = FakeClient(
+        [
+            response(
+                [
+                    ("opening", 0.0, 0.4),
+                    ("and", 3_598.0, 3_598.2),
+                    ("so", 3_598.3, 3_598.5),
+                    ("the", 3_598.6, 3_598.8),
+                ]
+            ),
+            response(
+                [
+                    ("and", 1.0, 1.2),
+                    ("so", 1.3, 1.5),
+                    ("the", 1.6, 1.8),
+                    ("model", 2.0, 2.4),
+                    ("closing", 25.0, 25.5),
+                ]
+            ),
+        ]
+    )
+
+    def chunker(_source: str, _start: float, _duration: float, destination: str) -> None:
+        Path(destination).write_bytes(b"audio")
+
+    audio = tmp_path / "day.opus"
+    audio.write_bytes(b"audio")
+    backend = VoxtralBackend(
+        api_key="secret",
+        client_factory=lambda _key, _url: client,
+        duration_probe=lambda _path: 3_630.0,
+        chunker=chunker,
+    )
+    backend.load()
+    result = backend.infer(str(audio))
+
+    assert backend.last_degraded_seams == [3_570.0]
+    words = [word for segment in result.segments for word in segment.words]
+    assert [word.start for word in words] == sorted(word.start for word in words)
+    assert all(
+        right.start >= left.end for left, right in zip(result.segments, result.segments[1:])
+    )
+    assert [word.word for word in words].count("model") == 1
+
+
 def test_chunk_starts_use_a_thirty_second_overlap() -> None:
     assert _chunk_starts(10_800.0) == [0.0, 3_570.0, 7_140.0, 10_710.0]
 

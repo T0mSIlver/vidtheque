@@ -402,7 +402,12 @@ concurrency, and the number of paid requests in flight.
 The seam merge keeps the earlier copy of a repeated word sequence. It compares
 normalized words inside the overlap, chooses the longest suffix and prefix
 match of at least three words, shifts the later timestamps by the chunk start,
-and drops only the matched prefix. If no safe match exists, it keeps both sides
+and drops only the matched prefix. A match counts only when the clock agrees
+with the words: the two copies start within two seconds of each other, and the
+first word kept from the later chunk does not start before the last word
+already kept. A filler phrase repeated elsewhere in the overlap passes the word
+test and would append speech that runs backwards, so a match failing the time
+test is treated as no match. If no safe match exists, it keeps both sides
 — interleaved by timestamp, so the same seconds appear twice but never out of
 order — and records a degraded seam instead of deleting speech by guess. Word
 timestamps are therefore monotonic on both paths. Segments are rebuilt from the
