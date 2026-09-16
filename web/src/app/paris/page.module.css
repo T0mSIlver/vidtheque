@@ -1,0 +1,271 @@
+.main {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: var(--gap-head) var(--gut) var(--beat);
+}
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-copy);
+  margin-bottom: var(--gap-block);
+}
+.kick {
+  composes: t-label-sm from global;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--gold);
+}
+.kick s {
+  display: block;
+  width: 34px;
+  height: 1px;
+  background: var(--gold);
+}
+.big {
+  composes: t-display from global;
+  max-width: 18ch;
+  text-wrap: balance;
+}
+.lede {
+  composes: t-lede from global;
+  max-width: var(--lede);
+  color: var(--fg2);
+}
+.credit {
+  composes: t-machine-sm from global;
+  color: var(--fg3);
+}
+.timeline {
+  margin-top: var(--gap-block);
+}
+.sectionHead {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s5);
+  align-items: end;
+}
+.sectionTitle {
+  composes: t-headline from global;
+  margin-top: var(--s3);
+}
+.scheduleLink {
+  composes: t-label-sm from global;
+  color: var(--gold);
+  border-bottom: 1px solid var(--gold-44);
+}
+.retry {
+  composes: t-label-sm from global;
+  color: var(--gold);
+  border-bottom: 1px solid var(--gold-44);
+}
+.day {
+  margin-top: var(--s6);
+  border: 1px solid var(--seam2);
+  background: var(--plate);
+}
+
+/* The type roles, spelled out: `composes` takes a simple class selector only,
+   and most of this page's text is an element inside a row rather than a class
+   of its own. `app/demo/page.module.css` does the same for the same reason. */
+.day h3 {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+  font-variant-ligatures: none;
+  padding: 10px 14px;
+  color: var(--gold);
+  background: var(--plate2);
+  border-bottom: 1px solid var(--seam);
+}
+.day ol {
+  list-style: none;
+}
+.talk {
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr) 11rem;
+  gap: var(--s4);
+  align-items: start;
+  padding: 15px 16px;
+  border-bottom: 1px solid var(--seam);
+}
+.talk:last-child {
+  border-bottom: 0;
+}
+.talk[data-state="aligned"] {
+  border-left: 2px solid var(--gold);
+}
+
+/* The `t-machine-sm` role: the scheduled clock, the state word, the category
+   and the receipt. */
+.talk time,
+.talkState,
+.talkCopy small,
+.receipt,
+.other summary small,
+.other li time,
+.other li small {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.55;
+  letter-spacing: 0.005em;
+  font-variant-numeric: tabular-nums;
+  font-variant-ligatures: none;
+}
+.talk time {
+  color: var(--fg3);
+}
+
+/* The `t-cell-strong` role: a talk's title, and a track's name. */
+.talkCopy b,
+.other summary span {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 520;
+  line-height: 1.4;
+  letter-spacing: -0.02em;
+}
+.talkCopy a:hover b {
+  color: var(--gold);
+}
+
+/* The `t-cell` role: the speaker line, and an unstreamed session's title. */
+.talkCopy p,
+.other li b {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 340;
+  line-height: 1.4;
+  letter-spacing: -0.012em;
+}
+.talkCopy p {
+  margin-top: 3px;
+  color: var(--fg2);
+}
+.talkCopy small {
+  display: block;
+  margin-top: 5px;
+  color: var(--fg3);
+}
+
+/* The printed proof, exactly as a result row prints one: the video and the
+   second, in the text of the link that goes there (demo-site.md §6.5). */
+.receipt {
+  display: block;
+  margin-top: 6px;
+  color: var(--fg3);
+}
+.receipt:hover,
+.receipt:focus-visible {
+  color: var(--gold);
+}
+.talkState {
+  justify-self: end;
+  text-align: right;
+  color: var(--gold);
+}
+.otherTracks {
+  margin-top: var(--s5);
+  display: grid;
+  gap: var(--s3);
+}
+.other {
+  border: 1px solid var(--seam);
+  background: color-mix(in srgb, var(--plate) 55%, transparent);
+  color: var(--fg3);
+}
+.other summary {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s4);
+  padding: 12px 14px;
+  cursor: pointer;
+}
+.other ul {
+  list-style: none;
+  border-top: 1px solid var(--seam);
+}
+.other li {
+  display: grid;
+  grid-template-columns: 5rem 1fr;
+  gap: var(--s3);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--seam);
+}
+.other li:last-child {
+  border-bottom: 0;
+}
+.other li b {
+  color: var(--fg2);
+}
+.other li small {
+  display: block;
+  margin-top: 3px;
+}
+.query {
+  margin-top: var(--beat);
+}
+.prompt {
+  composes: t-body from global;
+  margin-top: var(--s4);
+  color: var(--fg2);
+}
+.notice {
+  margin-top: var(--s5);
+  max-width: var(--note);
+  padding: var(--s5);
+  border: 1px solid var(--seam2);
+  background: var(--plate);
+}
+.noticeBad {
+  border-color: var(--tone-bad-line);
+  background: var(--tone-bad-bg);
+}
+.state {
+  composes: t-label-sm from global;
+  margin-bottom: var(--s2);
+  color: var(--gold);
+}
+.next {
+  margin-top: var(--s2);
+  color: var(--fg2);
+}
+.notice .retry {
+  display: inline-block;
+  margin-top: var(--s3);
+}
+.loading {
+  min-height: 42rem;
+  border: 1px solid var(--seam2);
+  padding: var(--s5);
+}
+.loading span {
+  display: block;
+  height: 4.5rem;
+  margin-top: var(--s3);
+  background: var(--plate);
+  border: 1px solid var(--seam);
+}
+@media (max-width: 780px) {
+  .sectionHead,
+  .other summary {
+    align-items: start;
+    flex-direction: column;
+  }
+  .talk {
+    grid-template-columns: 3.5rem minmax(0, 1fr);
+    gap: var(--s3);
+  }
+  .talkState {
+    grid-column: 2;
+    justify-self: start;
+    text-align: left;
+  }
+  .other li {
+    grid-template-columns: 3.5rem 1fr;
+  }
+}

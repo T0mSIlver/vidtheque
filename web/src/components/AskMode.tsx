@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, Suspense, use, useEffect, useRef, useState } from "react";
 import {
   AskEvent,
   AskFailure,
@@ -84,12 +84,22 @@ export function AskMode({
   askEnabled?: boolean | Promise<boolean>;
   /** What is in this corpus, listed under the examples. */
   children?: React.ReactNode;
+  /** The scope every question on this surface is asked inside. */
   tags?: string;
+  /** The page the switch and the way out of a refusal navigate within. */
   path?: string;
-  talks?: EditionTalk[];
+  /** The edition's talks, for naming a citation by the talk it landed in
+   *  rather than by the day-long stream it was cut from — or the read that
+   *  will bring them, which nothing here waits for (`app/paris/page.tsx`). */
+  talks?: EditionTalk[] | Promise<EditionTalk[]>;
 }) {
   const [q, setQ] = useState(initialQ);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
+  // The table names the citations and nothing else, so it is remembered as it
+  // lands rather than waited for: the box is drawn either way, and an answer
+  // that beat the read to the screen is renamed when it arrives.
+  const [landed, setLanded] = useState<EditionTalk[]>([]);
+  const table = Array.isArray(talks) ? talks : landed;
   const input = useRef<HTMLInputElement>(null);
   // The in-flight request, so a second ask or an unmount cancels the first.
   const abort = useRef<AbortController | null>(null);
@@ -193,6 +203,11 @@ export function AskMode({
   const state = busy ? "reading" : phase.kind === "degraded" ? "refused" : "ready";
   return (
     <div className={styles.ask}>
+      {Array.isArray(talks) ? null : (
+        <Suspense fallback={null}>
+          <TalkTable talks={talks} remember={setLanded} />
+        </Suspense>
+      )}
       {/* One form in both modes, and it is a search landmark in both: the mode
           changes what the answer looks like, not what the box is for. */}
       <form role="search" onSubmit={onSubmit} className={styles.form} aria-busy={busy}>
@@ -268,10 +283,27 @@ export function AskMode({
           {children}
         </section>
       ) : (
-        <Pane phase={phase} q={q} path={path} talks={talks} onRetry={() => void ask(q.trim())} />
+        <Pane phase={phase} q={q} path={path} talks={table} onRetry={() => void ask(q.trim())} />
       )}
     </div>
   );
+}
+
+// The page's read of the edition, consumed in a leaf that draws nothing, for
+// the reason `Query`'s `ShapeMemo` is one: `use` suspends whatever calls it,
+// and the question box above must never be a thing React replaces.
+function TalkTable({
+  talks,
+  remember,
+}: {
+  talks: Promise<EditionTalk[]>;
+  remember: (talks: EditionTalk[]) => void;
+}) {
+  const table = use(talks);
+  useEffect(() => {
+    if (table.length) remember(table);
+  }, [table, remember]);
+  return null;
 }
 
 // The pane is a live region and stays `aria-busy` until the answer: without
