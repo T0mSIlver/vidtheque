@@ -6,6 +6,7 @@ from bench.aie_paris_eval import (
     ARMS,
     LIMITATION,
     Manifest,
+    Speaker,
     Talk,
     format_report,
     preflight,
@@ -13,7 +14,6 @@ from bench.aie_paris_eval import (
     score_transcript,
 )
 from bench.long_vod_measure import Snapshot, compare, snapshot
-from vidtheque_mcp.editions import Speaker
 
 
 def manifest() -> Manifest:
