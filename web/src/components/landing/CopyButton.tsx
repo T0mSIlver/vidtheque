@@ -2,8 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 
-// The quickstart's copy control. No clipboard, no drama: the command is
-// already on screen and selectable, so a refusal costs nothing.
 export function CopyButton({ value, label = "copy" }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -19,7 +17,7 @@ export function CopyButton({ value, label = "copy" }: { value: string; label?: s
     try {
       await navigator.clipboard.writeText(value);
     } catch {
-      // no clipboard, no drama
+      // refused: the text is still selectable
     }
     setCopied(true);
     if (timer.current) clearTimeout(timer.current);

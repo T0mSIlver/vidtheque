@@ -3,11 +3,9 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import styles from "./landing.module.css";
 
-// BEAT 3 — the wall, running. The rows themselves are server-rendered; this
-// paces them. The drift speed is a constant few px/s, so the duration follows
-// the track's width and every row moves at the same rate whatever the viewport
-// gave it. Frozen under reduced motion and `?still=1`.
-const SPEED = 4.2; // px per second — nudged up, Tom 2026-08-11
+// Constant drift speed whatever the track width: the duration follows the
+// measured half-track.
+const SPEED = 4.2; // px per second
 
 export function BandPacer({ children }: { children: ReactNode }) {
   const band = useRef<HTMLDivElement>(null);

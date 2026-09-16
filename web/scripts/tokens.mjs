@@ -4,10 +4,8 @@
 //   pnpm tokens          rewrite both files
 //   pnpm tokens:check    exit 1 if either file is stale (CI, pre-commit)
 //
-// A `{colors.gold}` reference becomes `var(--gold)` rather than the literal
-// hex, so an alias stays an alias in the emitted CSS: the six pinned role names
-// (`--bg`, `--accent`, ...) carry no value of their own, exactly as DESIGN.md
-// says they must.
+// References stay var() aliases, so the pinned role names carry no value of
+// their own (DESIGN.md).
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -26,10 +24,7 @@ function frontmatter(markdown) {
   return parse(match[1]);
 }
 
-// Groups emitted as custom properties, and the prefix each name gets. Colours,
-// spacing, layout, elevation and motion are unprefixed on purpose: the three
-// Python-served stylesheets already use `--gold`, `--s4`, `--gut`, `--drop`,
-// and one vocabulary across four surfaces is the point.
+// Unprefixed groups share one vocabulary with the Python-served stylesheets.
 const GROUPS = [
   ["colors", ""],
   ["spacing", ""],
@@ -76,9 +71,7 @@ function tokensCss(design) {
     }
     lines.push("");
   }
-  // `--sans` and `--mono` are deliberately not emitted: next/font names the
-  // loaded faces itself, so app/globals.css binds the two aliases to the
-  // font loader's variables. type.css only ever refers to the aliases.
+  // --sans/--mono are bound to next/font's variables in app/globals.css.
   lines.push("}", "");
   return lines.join("\n");
 }

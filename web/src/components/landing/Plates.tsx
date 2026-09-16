@@ -5,9 +5,6 @@ import { EvidenceFrame } from "./EvidenceFrame";
 import { Receipt } from "./Receipt";
 import styles from "./landing.module.css";
 
-// BEAT 2 — four stills, off the wall. Every one is a real moment out of the
-// corpus readout: the sentence a builder said, the lines the machine read off
-// the screen with the boxes they were read from, and the receipt.
 export function Plates() {
   return (
     <div className={styles.plates}>
@@ -51,8 +48,6 @@ function Plate({ id }: { id: number }) {
           </em>
         </div>
         <p className={styles.said}>{cue.t}</p>
-        {/* ocr_state=empty: no seen-line at all — the moment stands on the
-            sentence, and the frame is the evidence. */}
         {m.ocr.length > 0 ? (
           <div className={styles.seenline}>
             <span className={styles.ll}>seen</span>
