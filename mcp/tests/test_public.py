@@ -486,6 +486,32 @@ def test_a_fixture_that_cannot_fit_is_the_internal_error_not_an_oversized_body(
     assert response.headers["cache-control"] == "no-store"
 
 
+@pytest.mark.parametrize("ceiling", [1_000, 1_500, 3_000, 6_000])
+def test_a_page_the_character_cap_empties_would_never_advance_so_it_keeps_a_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ceiling: int
+) -> None:
+    """`next_offset` is the offset plus what the page kept, so a page trimmed to
+    nothing hands back the offset it was asked for and a client following the
+    hint re-requests the same trimmed page forever. The last row stays instead,
+    over the ceiling and named in `notes` (§3.1)."""
+    from vidtheque_mcp import editions
+
+    _settings(tmp_path)
+    _tag_video(tmp_path, "kCc8FmEb1nY", "series:aie-paris-2026")
+    _tag_video(tmp_path, "zduSFxRajkE", "series:aie-paris-2026")
+    monkeypatch.setattr(editions, "MAX_RESPONSE_CHARS", ceiling)
+    with make_client(tmp_path, PUBLIC, fresh=False) as client:
+        response = client.get("/api/editions/aie-paris-2026?limit=3&video_limit=2")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sessions"] and payload["videos"], "a page trimmed to nothing cannot resume"
+    for page in (payload["pagination"], payload["video_pagination"]):
+        if page["has_more"]:
+            assert page["next_offset"] > page["offset"]
+    if len(json.dumps(payload, ensure_ascii=False, separators=(",", ":"))) > ceiling:
+        assert any("cap" in note for note in payload["notes"])
+
+
 def test_search_facade_passes_namespaced_tags_with_and_semantics(tmp_path: Path) -> None:
     _settings(tmp_path)
     _tag_video(tmp_path, "kCc8FmEb1nY", "series:aie-paris-2026")
