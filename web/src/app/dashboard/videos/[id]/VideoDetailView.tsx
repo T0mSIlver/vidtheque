@@ -73,7 +73,12 @@ export function VideoDetailView({ videoId }: { videoId: string }) {
     <>
       <Crumbs section="videos" label="Videos" id={videoId} />
       <PageHead title="Video" />
-      {refusal !== undefined ? <ReadFailure error={refusal} onRetry={video.reload} /> : <Pending />}
+      {/* A video's panels always run past one screen, so the footer waits below it. */}
+      {refusal !== undefined ? (
+        <ReadFailure error={refusal} onRetry={video.reload} />
+      ) : (
+        <Pending height="100dvh" />
+      )}
     </>
   );
 }
