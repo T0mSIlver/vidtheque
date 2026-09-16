@@ -387,6 +387,19 @@ def test_a_broken_fixture_is_an_internal_error_not_half_a_schedule(
         (lambda e: e["sessions"][0].update(stage="keynote"), "stage is invalid"),
         (lambda e: e["sessions"][0].update(day="2019-01-01"), "outside the edition"),
         (lambda e: e.update(schema_version=2), "schema_version must be 1"),
+        (lambda e: e.update(slug="aie-london-2027"), "not an edition this build ships"),
+        (lambda e: e.update(timezone="UTC"), "timezone must be Europe/Paris"),
+        (lambda e: e.update(source_url="http://ai.engineer/paris"), "must be an HTTPS URL"),
+        (lambda e: e.update(title="x" * 121), "title must be at most 120"),
+        (lambda e: e["sessions"][0].update(title="x" * 257), "title must be at most 256"),
+        (lambda e: e["sessions"][0].update(category="x" * 121), "category must be at most 120"),
+        (lambda e: e.update(operator_notes="x"), "unknown or missing fields: operator_notes"),
+        (lambda e: e.pop("organizer"), "unknown or missing fields: organizer"),
+        (lambda e: e["sessions"][0].update(room="A"), "unknown or missing fields: room"),
+        (lambda e: e["sessions"][0]["speakers"][0].update(email="a@b.c"), "fields: email"),
+        (lambda e: e["tags"].update(keynote="series:x"), "unknown or missing fields: keynote"),
+        (lambda e: e["context_bias"].update(learned=[]), "unknown or missing fields: learned"),
+        (lambda e: e["context_bias"].update(fixed=[""]), r"context_bias\.fixed\[0\] must be"),
     ],
 )
 def test_the_committed_fixture_is_validated_field_by_field(break_it, message: str) -> None:
@@ -397,6 +410,65 @@ def test_the_committed_fixture_is_validated_field_by_field(break_it, message: st
     break_it(edition)
     with pytest.raises(editions.EditionValidationError, match=message):
         editions.validate_edition(edition)
+
+
+def test_the_payload_carries_the_documented_fields_and_no_others(tmp_path: Path) -> None:
+    """The second half of the same rule: validation rejects an unknown key, and
+    the payload is built from named fields, so a key that reached the file
+    anyway still never reaches a reader."""
+    from vidtheque_mcp import editions
+
+    _settings(tmp_path)
+    edition = json.loads(json.dumps(editions.load_edition("aie-paris-2026")))
+    edition["operator_notes"] = "who to call about the VOD"
+    edition["sessions"][0]["room"] = "Hall 1"
+    edition["sessions"][0]["speakers"][0]["email"] = "speaker@example.com"
+    payload = _edition_payload(tmp_path, edition)
+
+    assert set(payload["edition"]) == {
+        "schema_version",
+        "slug",
+        "title",
+        "timezone",
+        "starts_on",
+        "ends_on",
+        "source_url",
+        "source_captured_on",
+        "organizer",
+        "streamed_stage",
+        "tags",
+    }
+    assert set(payload["sessions"][0]) == {
+        "id",
+        "day",
+        "start",
+        "end",
+        "stage",
+        "title",
+        "speakers",
+        "category",
+        "alignment",
+    }
+    assert set(payload["sessions"][0]["speakers"][0]) == {"name", "company"}
+    assert set(payload["talks"][0]["speakers"][0]) == {"name", "company"}
+    assert "operator_notes" not in json.dumps(payload)
+    assert "Hall 1" not in json.dumps(payload)
+    assert "speaker@example.com" not in json.dumps(payload)
+
+
+def test_a_fixture_that_cannot_fit_is_the_internal_error_not_an_oversized_body(
+    public_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The character cap drops the tails first; when there is no tail left and
+    the edition metadata alone is over the ceiling, there is no honest response
+    to send, so the refusal is the documented `E_INTERNAL` (§3.1)."""
+    from vidtheque_mcp import editions
+
+    monkeypatch.setattr(editions, "MAX_RESPONSE_CHARS", 200)
+    response = public_client.get("/api/editions/aie-paris-2026")
+    assert response.status_code == 500
+    assert response.json()["error"] == "E_INTERNAL"
+    assert response.headers["cache-control"] == "no-store"
 
 
 def test_search_facade_passes_namespaced_tags_with_and_semantics(tmp_path: Path) -> None:
