@@ -13,7 +13,13 @@ import { navigateTo, resetNavigation } from "./next";
 
 export type Answer = { status?: number; body?: unknown; headers?: Record<string, string> };
 
-export type Request = { method: string; path: string; url: string; fields: URLSearchParams };
+export type Request = {
+  method: string;
+  path: string;
+  url: string;
+  fields: URLSearchParams;
+  headers: Headers;
+};
 
 /** A canned answer, a queue of them (the last one repeats), or a function of
  *  the request. */
@@ -58,7 +64,8 @@ export async function mountDashboard(ui: ReactElement, options: MountOptions = {
     const method = (init?.method ?? "GET").toUpperCase();
     const parsed = new URL(url, "http://dashboard.test");
     const fields = new URLSearchParams(typeof init?.body === "string" ? init.body : "");
-    const request = { method, path: parsed.pathname, url, fields };
+    const headers = new Headers(init?.headers);
+    const request = { method, path: parsed.pathname, url, fields, headers };
     requests.push(request);
 
     const key = routeKey(routes, method, parsed.pathname);
