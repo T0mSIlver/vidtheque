@@ -1,6 +1,6 @@
-import { ASSETS, MOMENTS_BY_ID } from "@/landing/corpus";
+import { ASSETS, MOMENTS_BY_ID } from "./data/corpus";
 import { hms } from "@/lib/format/landing";
-import { PLATE_IDS, PLATE_TABS, type Box } from "@/landing/show";
+import { PLATE_IDS, PLATE_TABS, type Box } from "./data/show";
 import { EvidenceFrame } from "./EvidenceFrame";
 import { Receipt } from "./Receipt";
 import styles from "./landing.module.css";

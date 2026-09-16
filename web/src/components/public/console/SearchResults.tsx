@@ -1,5 +1,6 @@
-import { ResultGroup } from "@/components/ResultGroup";
+import { ResultGroup } from "@/components/public/ResultGroup";
 import { RetryIn } from "@/components/ui/RetryIn";
+import { BadNotice } from "./Notice";
 import type { SearchOutcome } from "@/lib/api/outcome";
 import type { ContentType, EditionTalk, SearchResponse } from "@/lib/api/schemas";
 import { labelHit } from "@/lib/api/edition";
@@ -80,17 +81,12 @@ export function SearchResults({
   if (outcome.kind !== "ok") {
     return (
       <div className={styles.foot}>
-        <div className={`${styles.notice} ${styles.noticeBad}`}>
-          <p className={styles.noticeTitle}>
-            {outcome.kind === "refused" ? outcome.message : "Could not reach the server."}
-          </p>
-          {outcome.kind === "refused" && outcome.next ? (
-            <p className={styles.noticeDetail}>{outcome.next}</p>
-          ) : null}
-          <button type="button" className={styles.ghost} disabled={pending} onClick={actions.retry}>
-            Try again
-          </button>
-        </div>
+        <BadNotice
+          title={outcome.kind === "refused" ? outcome.message : "Could not reach the server."}
+          detail={outcome.kind === "refused" ? outcome.next : undefined}
+          onRetry={actions.retry}
+          disabled={pending}
+        />
       </div>
     );
   }
@@ -151,18 +147,12 @@ function Rows({
         {foot.kind === "rate_limited" ? (
           <RetryIn seconds={foot.seconds} variant="notice" onRetry={actions.more} />
         ) : foot.kind === "failed" ? (
-          <div className={`${styles.notice} ${styles.noticeBad}`}>
-            <p className={styles.noticeTitle}>{foot.message}</p>
-            {foot.next ? <p className={styles.noticeDetail}>{foot.next}</p> : null}
-            <button
-              type="button"
-              className={styles.ghost}
-              disabled={pending}
-              onClick={actions.more}
-            >
-              Try again
-            </button>
-          </div>
+          <BadNotice
+            title={foot.message}
+            detail={foot.next}
+            onRetry={actions.more}
+            disabled={pending}
+          />
         ) : latest.pagination.has_more ? (
           <button
             type="button"

@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
-import { ASSETS, GRID_BY_VID } from "@/landing/corpus";
-import { QUERIES, WALL_ORDER, type CannedQuery } from "@/landing/show";
+import { ASSETS, GRID_BY_VID } from "./data/corpus";
+import { QUERIES, WALL_ORDER, type CannedQuery } from "./data/show";
 import { EvidenceFrame } from "./EvidenceFrame";
 import { HeroController, type HeroCue } from "./HeroController";
 import { Receipt } from "./Receipt";
