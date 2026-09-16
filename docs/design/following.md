@@ -196,7 +196,7 @@ they meant.
 
 **Title terms are plain substrings, matched case-insensitively — not regex.** A
 regex in a stored config field is unbounded compute from a stored string, and
-every rule here has to be cheap enough to run against a listing. Bounded at 10
+every rule here has to be cheap enough to run against a listing. Bounded at 50
 terms of at most 80 characters each (`follows/params.py`).
 
 **The two evaluation points for duration are the interesting part, and the
@@ -233,7 +233,7 @@ dashboard is built *on* the tool rather than beside it:
 |---|---|---|---|
 | tabs | `tabs` | `videos` | subset of `videos,streams,shorts` |
 | min/max length | `min_duration_s`, `max_duration_s` | NULL (no floor/ceiling) | parsed by the offset axis (`480`, `8:00`, `1:30:00`) |
-| title include/exclude | `title_include`, `title_exclude` | NULL | ≤ 10 terms, ≤ 80 chars each |
+| title include/exclude | `title_include`, `title_exclude` | NULL | ≤ 50 terms, ≤ 80 chars each |
 | stage set | `channels` | `all` | `all` or a subset of `transcript,ocr,frames` — **verbatim from `index-video`** |
 | tags to apply | `tags` | NULL | ≤ 10, §3.7 validation |
 | backfill horizon | `backfill` | `0` | 0..25 |

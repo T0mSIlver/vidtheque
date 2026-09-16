@@ -423,11 +423,12 @@ async def test_the_payload_is_the_same_size_whatever_the_input(
     big = await follow(
         assembled.deps,
         url=CHANNEL,
-        title_include=",".join(f"term{i}" for i in range(30)),
-        title_exclude=",".join(f"nope{i}" for i in range(30)),
+        title_include=",".join(f"term{i}" for i in range(60)),
+        title_exclude=",".join(f"nope{i}" for i in range(60)),
         tags=",".join(f"topic:t{i}" for i in range(30)),
     )
-    # `split_csv` caps every list at ten before it is ever stored or echoed.
+    # `split_csv` caps every list — fifty title terms, ten tags — before any of
+    # it is stored or echoed.
     assert structured(big)["code"] == "E_BAD_PARAM"
     assert len(body(small)) < 2000
 

@@ -36,8 +36,10 @@ from .rules import (
 )
 
 # A title term is a plain substring and stays one. Bounded because it is stored
-# and then run against every listing entry forever.
-MAX_TITLE_TERMS = 10
+# and then run against every listing entry forever. Fifty, because one follow
+# has to hold a conference's speaker list — `Paris` plus 34 names is the
+# contracted AI Engineer Paris follow (aie-paris-2026.md §5, DECISIONS.md).
+MAX_TITLE_TERMS = 50
 MAX_TERM_CHARS = 80
 
 

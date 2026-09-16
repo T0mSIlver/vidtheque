@@ -440,6 +440,23 @@ def test_a_floor_above_the_ceiling_is_refused_for_saying_so() -> None:
     assert "nothing could ever match" in caught.value.message
 
 
+def test_title_terms_hold_a_conference_speaker_list_and_stop_at_fifty() -> None:
+    """The contracted AI Engineer Paris follow is `Paris` plus 34 speaker names
+    (aie-paris-2026.md §5), so a ten-term bound refused the follow the edition
+    rests on. Fifty is the bound; fifty-one is still a typed refusal naming it."""
+    speakers = [f"Speaker Name {i}" for i in range(51)]
+    accepted = params.build_rules(title_include=",".join(speakers[:50]))
+    assert len(accepted.title_include) == 50
+    with pytest.raises(ToolError) as caught:
+        params.build_rules(title_exclude=",".join(speakers))
+    assert caught.value.code == "E_BAD_PARAM"
+    assert "at most 50 values" in caught.value.message
+    # The per-term length is the other half of the bound and did not move.
+    with pytest.raises(ToolError) as long_term:
+        params.build_rules(title_include="x" * 81)
+    assert "at most 80 characters" in long_term.value.message
+
+
 def test_an_unknown_tab_is_refused_rather_than_dropped() -> None:
     """Silently narrowing to /videos would be a follow watching less than it was told to."""
     with pytest.raises(ToolError) as caught:
