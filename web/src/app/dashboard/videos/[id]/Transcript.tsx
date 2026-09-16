@@ -101,7 +101,7 @@ export function Transcript({
     cues: [],
     first,
     next: first,
-    // The totals predict the pager, so it is not there and gone when they agree.
+    // Predicted from the totals, so the pager does not appear and then vanish.
     hasMore: first + size < total,
     busy: total > 0,
     error: null,
