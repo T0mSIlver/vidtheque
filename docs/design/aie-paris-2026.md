@@ -158,10 +158,17 @@ would lie.
 
 The response also has the facade's 60,000-character ceiling. If the character
 ceiling drops a session or video from the tail, the matching `has_more` is true
-and `notes` names the bound. Item and character caps are independent. A payload
-still over the ceiling with every session and video dropped is a fixture nobody
-can serve, and answers as the §3.2 `E_INTERNAL` rather than as an oversized
-response.
+and `notes` names the bound. Item and character caps are independent.
+
+Neither page is trimmed to nothing. `next_offset` is the offset plus what the
+page kept, so an emptied page hands back the offset it was asked for and a
+client following the hint re-requests the same trimmed page forever. The first
+row of each page stays, the response exceeds the ceiling by that row, and
+`notes` says so. A payload still over the ceiling with no rows at all — the
+edition metadata by itself — is a fixture nobody can serve at any offset, and
+answers as the §3.2 `E_INTERNAL` rather than as an oversized response.
+*(Amended 2026-09-16: the trim could empty a page and leave `next_offset` on
+the offset it had been given, which is a loop rather than a hint.)*
 
 ### 3.2 Payload fields
 

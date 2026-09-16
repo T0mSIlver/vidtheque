@@ -484,16 +484,25 @@ def _fit(payload: dict[str, Any], offset: int, video_offset: int, notes: list[st
     dropped says so in `has_more` and `next_offset`, so a second request
     resumes exactly where this one stopped.
 
-    A payload that is still over the ceiling with nothing left to drop is a
-    committed file this facade cannot serve at all, so it becomes the `E_INTERNAL`
-    §3.2 documents rather than an oversized response.
+    Neither page is trimmed to nothing, and that is the whole reason the loops
+    stop at one row. `next_offset` is the offset plus what the page kept, so an
+    emptied page hands back the offset it was asked for and a client following
+    the hint asks for the same trimmed page forever. The first row stays, the
+    ceiling is exceeded by that row, and `notes` says so — over the cap once and
+    visibly beats a pagination hint that never moves. It is also why the video
+    leg keeps a row while the schedule is being trimmed: one row of programme is
+    a smaller loss than a hint that cannot advance.
+
+    A payload over the ceiling with no rows at all — the metadata by itself — is
+    a committed file this facade cannot serve at any offset, so it becomes the
+    `E_INTERNAL` §3.2 documents rather than an oversized response.
     """
-    while _size(payload) > MAX_RESPONSE_CHARS and payload["videos"]:
+    while _size(payload) > MAX_RESPONSE_CHARS and len(payload["videos"]) > 1:
         payload["videos"].pop()
         payload["video_pagination"]["has_more"] = True
         payload["video_pagination"]["next_offset"] = video_offset + len(payload["videos"])
         _once(notes, "video page shortened by the response character cap")
-    while _size(payload) > MAX_RESPONSE_CHARS and payload["sessions"]:
+    while _size(payload) > MAX_RESPONSE_CHARS and len(payload["sessions"]) > 1:
         removed = payload["sessions"].pop()
         payload["talks"] = [
             talk for talk in payload["talks"] if talk["session_id"] != removed["id"]
@@ -501,11 +510,17 @@ def _fit(payload: dict[str, Any], offset: int, video_offset: int, notes: list[st
         payload["pagination"]["has_more"] = True
         payload["pagination"]["next_offset"] = offset + len(payload["sessions"])
         _once(notes, "session page shortened by the response character cap")
-    _need(
-        _size(payload) <= MAX_RESPONSE_CHARS,
-        f"edition metadata exceeds {MAX_RESPONSE_CHARS} characters with every session "
-        "and video dropped",
-    )
+    if _size(payload) > MAX_RESPONSE_CHARS:
+        _need(
+            _size(payload | {"sessions": [], "talks": [], "videos": []}) <= MAX_RESPONSE_CHARS,
+            f"edition metadata exceeds {MAX_RESPONSE_CHARS} characters with every session "
+            "and video dropped",
+        )
+        _once(
+            notes,
+            f"one row kept over the {MAX_RESPONSE_CHARS}-character cap "
+            "so the next offset advances",
+        )
 
 
 def _size(payload: dict[str, Any]) -> int:
