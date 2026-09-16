@@ -9,7 +9,7 @@ import { count, day, hms } from "@/lib/format";
 import controls from "../kit/controls.module.css";
 import { Notice, ReadFailure, RefusalNotice } from "../kit/notice";
 import { Notes, Pager, table, TableCount } from "../kit/table";
-import { DashLink, PageHead, Pending, Sep, ui } from "../kit/ui";
+import { Body, DashLink, PageHead, Sep, ui } from "../kit/ui";
 import { useWriteSide } from "../kit/write";
 import { Filters, Narrowing } from "./Filters";
 import { ReindexControl } from "./Manage";
@@ -54,14 +54,14 @@ export function VideosView() {
 
       {gated ? null : <Filters band={band} />}
 
-      {data ? (
-        <Table band={band} data={data} offset={params.get("offset") ?? ""} />
-      ) : told ? (
+      {!data && told ? (
         <RefusalNotice error={error} variant="notice" id="filter-refused" />
-      ) : error !== undefined ? (
+      ) : !data && error !== undefined ? (
         <ReadFailure error={error} onRetry={library.reload} />
       ) : (
-        <Pending height="40dvh" />
+        <Body ready={data !== undefined} height="40dvh">
+          {data ? <Table band={band} data={data} offset={params.get("offset") ?? ""} /> : null}
+        </Body>
       )}
     </>
   );

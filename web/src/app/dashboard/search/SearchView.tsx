@@ -12,7 +12,7 @@ import controls from "../kit/controls.module.css";
 import { FilterBand } from "../kit/FilterBand";
 import { notice, ReadFailure, RefusalNotice } from "../kit/notice";
 import { Notes, Pager } from "../kit/table";
-import { DashLink, PageHead, Pending, Sep, ui, Unbroken } from "../kit/ui";
+import { Body, DashLink, PageHead, Sep, ui, Unbroken } from "../kit/ui";
 import { Moment, momentKey } from "./Moment";
 import { legsOf } from "./parts";
 import styles from "./search.module.css";
@@ -73,10 +73,10 @@ export function SearchView() {
         <ReadFailure error={refusal} onRetry={search.reload} />
       ) : null}
 
-      {page ? (
-        <Results page={page} query={marked} params={params} />
-      ) : searched && refusal === undefined ? (
-        <Pending height="100dvh" />
+      {searched && (page || refusal === undefined) ? (
+        <Body ready={Boolean(page)} height="100dvh">
+          {page ? <Results page={page} query={marked} params={params} /> : null}
+        </Body>
       ) : null}
 
       {!searched ? (

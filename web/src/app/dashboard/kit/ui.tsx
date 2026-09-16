@@ -1,5 +1,14 @@
+"use client";
+
 import Link from "next/link";
-import type { AnchorHTMLAttributes, CSSProperties, ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type AnchorHTMLAttributes,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { Pill, type Tone } from "@/components/Pill";
 import { count, DASH, day } from "@/lib/format";
 import { isPorted } from "../ported";
@@ -287,4 +296,32 @@ export function Slot({ ch }: { ch: number }) {
       {DASH}
     </span>
   );
+}
+
+/**
+ * A page body that, while its read is out, holds the height its last answer
+ * took, so a filter change or a new query neither collapses the page nor
+ * clamps the scroll position.
+ */
+export function Body({
+  ready,
+  height,
+  children,
+}: {
+  ready: boolean;
+  /** The reservation before any answer has been measured. */
+  height?: string;
+  children: ReactNode;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  const [held, setHeld] = useState<number | null>(null);
+  useEffect(() => {
+    const element = box.current;
+    if (!ready || !element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => setHeld(element.offsetHeight));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ready]);
+  if (ready) return <div ref={box}>{children}</div>;
+  return <Pending height={held ? `${held}px` : height} />;
 }
