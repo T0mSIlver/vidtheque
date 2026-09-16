@@ -64,10 +64,17 @@ describe("the URL fields of the dashboard payloads", () => {
   // clothes, and it resolves to `https:` — the exact shape `safeNext` refuses
   // for `next`, said here for the field that carries the destination.
   it("keeps login_url on this instance", () => {
-    for (const login_url of ["/dashboard/login", "https://box.example/dashboard/login", null]) {
+    for (const login_url of ["/dashboard/login", null]) {
       expect(Session.safeParse({ ...SESSION, login_url }).success, String(login_url)).toBe(true);
     }
-    for (const login_url of ["//evil.example/dashboard/login", "/\\evil.example", "javascript:1"]) {
+    for (const login_url of [
+      "https://box.example/dashboard/login",
+      "dashboard/login",
+      "//evil.example/dashboard/login",
+      "/\\evil.example",
+      "/\t/evil.example",
+      "javascript:1",
+    ]) {
       expect(Session.safeParse({ ...SESSION, login_url }).success, login_url).toBe(false);
     }
   });

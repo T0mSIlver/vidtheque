@@ -31,15 +31,19 @@ function isHttpUrl(value: string): boolean {
 export const httpUrl = () =>
   z.string().refine(isHttpUrl, "must be an http(s) URL or a same-origin path");
 
-/** A destination a refusal sends a browser to: never `//host` or `/\host`,
- *  which are absolute URLs wearing a path's clothes. */
-export const localUrl = () =>
-  z
-    .string()
-    .refine(
-      (value) => isHttpUrl(value) && !value.startsWith("//") && !value.startsWith("/\\"),
-      "must be a same-origin path or an http(s) URL",
-    );
+/** Does this path stay on the origin it is resolved against? `//host`, `/\host`
+ *  and a tab between the slashes all leave it. */
+function isLocalPath(value: string): boolean {
+  if (!value.startsWith("/")) return false;
+  try {
+    return new URL(value, BASE).origin === new URL(BASE).origin;
+  } catch {
+    return false;
+  }
+}
+
+/** A destination a refusal sends a browser to: a path on this origin, never a URL. */
+export const localUrl = () => z.string().refine(isLocalPath, "must be a same-origin path");
 
 /** The refusal envelope. Partial, because a proxy's HTML 502 is still an error
  *  this client carries. */
