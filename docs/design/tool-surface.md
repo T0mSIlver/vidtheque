@@ -2418,7 +2418,7 @@ Unfollowed: @GPUMODE — the rule is gone and no further check will run.
   The 41 video(s) it brought in stay in the corpus and stay searchable; only the following stops. Its indexing jobs keep their history too.
 ```
 
-Four precisions those lines are carrying deliberately:
+Six precisions those lines are carrying deliberately:
 
 - **`check_now` marks the follow due; it does not queue a job.** The scheduler
   queues on the next tick (`following.md` §3), and the payload says "has not run
