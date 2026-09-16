@@ -117,6 +117,34 @@ runs after static pages but before dynamic segments, so a `/dashboard/:path*`
 forward sent every detail page (`/dashboard/videos/{id}` and its siblings) to
 Python's 404 in development. Forwards go in `beforeFiles`, named exactly.
 
+**`scrollIntoView({ block: "nearest" })` also scrolls sideways.** `inline`
+defaults to `"nearest"` as well, so pointing between two OCR boxes slid the
+whole line list under the reader (2026-08-10). Scroll the scroller itself, on
+one axis.
+
+**JSX drops whitespace that holds a newline.** Facts glued with a separator
+and no explicit `{" "}` have no break opportunity: the video header ran 56 px
+off a 390 px screen (2026-09-05). Every strip writes the space out.
+
+**A test that spells out a live countdown after an `await` is a flake.** The
+timer can tick between the render and the assertion; six page tests failed
+that way under load. Stop the clock before mounting (`test/retry.ts`).
+
+**An effect cleanup that restores `document.title` runs after the next page
+named itself.** Leaving an "Unknown video" page for Jobs left the tab titled
+"Video". A rendered `<title>` has no cleanup to get wrong.
+
+**A table keyed by its query, fed the previous query's payload, freezes the
+wrong baseline.** The jobs poll kept its last reading across a filter change,
+so the re-keyed table patched the new listing onto the old rows and claimed a
+job had arrived (2026-09-16). A read's data belongs to its request key and to
+nothing else.
+
+**`/tmp` is a 4 GB tmpfs shared by every agent on the box.** When it fills,
+headless Chromium and tool output fail with `ENOSPC`, not with a hint. Point
+`TMPDIR` at `/var/tmp` or a gitignored cache for test and browser runs, and
+delete what you create.
+
 ## Design and assets
 
 **Vendored fonts stay under a 200 KB total budget**, OFL-licensed and
