@@ -3,11 +3,8 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import styles from "./landing.module.css";
 
-// BEAT 4 — the booth log. The transcript is server-rendered and passed in; what
-// this owns is the one piece of motion the inventory lists for this beat: the
-// question types itself when you reach the terminal, and the log behind it
-// unveils once it has been asked. Under reduced motion or `?still=1` both are
-// already there.
+// Rendered asked and unveiled. The question types itself only when the log is
+// still below the fold on arrival, so nothing visible is taken back.
 export function BoothLog({
   question,
   head,
@@ -18,35 +15,31 @@ export function BoothLog({
   children: ReactNode;
 }) {
   const term = useRef<HTMLDivElement>(null);
-  const asked = useRef<HTMLParagraphElement>(null);
+  const full = useRef<HTMLSpanElement>(null);
+  const typed = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
     const termEl = term.current;
-    const askedEl = asked.current;
-    if (!termEl || !askedEl) return;
+    const fullEl = full.current;
+    const askedEl = typed.current;
+    if (!termEl || !fullEl || !askedEl || !("IntersectionObserver" in window)) return;
+    if (location.search.includes("still")) return;
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (termEl.getBoundingClientRect().top < innerHeight) return;
 
     let cancelled = false;
-    const timers = new Set<ReturnType<typeof setTimeout>>();
-    const sleep = (ms: number) =>
-      new Promise<void>((resolve) => {
-        const id = setTimeout(() => {
-          timers.delete(id);
-          resolve();
-        }, ms);
-        timers.add(id);
-      });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const sleep = (ms: number) => new Promise<void>((resolve) => (timer = setTimeout(resolve, ms)));
 
-    const finish = () => {
-      askedEl.textContent = question;
-      termEl.classList.remove(styles.veiled, styles.typingq);
+    const settle = () => {
+      fullEl.hidden = false;
+      askedEl.hidden = true;
+      termEl.classList.remove(styles.typingq, styles.veiled);
     };
-
-    const still = location.search.includes("still");
-    const reduce = still || matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduce || !("IntersectionObserver" in window)) {
-      finish();
-      return;
-    }
+    askedEl.textContent = "";
+    askedEl.hidden = false;
+    fullEl.hidden = true;
+    termEl.classList.add(styles.veiled);
 
     const io = new IntersectionObserver(
       (entries) => {
@@ -59,9 +52,7 @@ export function BoothLog({
             askedEl.textContent = question.slice(0, i + 1);
             await sleep(22 + (question[i] === " " ? 12 : 0));
           }
-          if (cancelled) return;
-          termEl.classList.remove(styles.typingq);
-          termEl.classList.remove(styles.veiled);
+          if (!cancelled) settle();
         })();
       },
       { threshold: 0.22 },
@@ -69,19 +60,22 @@ export function BoothLog({
     io.observe(termEl);
     return () => {
       cancelled = true;
-      timers.forEach(clearTimeout);
-      timers.clear();
+      clearTimeout(timer);
       io.disconnect();
+      settle();
     };
   }, [question]);
 
   return (
-    <div className={`${styles.term} ${styles.veiled}`} ref={term}>
+    <div className={styles.term} ref={term}>
       <div className={styles.termhead}>{head}</div>
       <div className={styles.termbody}>
         <div className={styles.ask}>
           <span className={styles.pfx}>&gt;</span>
-          <p className={styles.termq} ref={asked} />
+          <p className={styles.termq}>
+            <span ref={full}>{question}</span>
+            <span ref={typed} hidden />
+          </p>
           <span className={styles.caret2} />
         </div>
         <div className={styles.termrest}>{children}</div>
