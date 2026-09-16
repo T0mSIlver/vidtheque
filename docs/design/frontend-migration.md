@@ -55,7 +55,7 @@ for, whereas `/api/*` under a prefix rule is the whole facade in one line.
 | `/videos/{id}/export.md` | Python |
 | `/dashboard` page GETs | **Next** (*landed 2026-09-06* — §1d) |
 | `/dashboard/api/*`, the thirteen `POST`s, `/dashboard/` | Python — §1d |
-| anything else | Python (`Mount("/", mcp_app)`, which 404s) |
+| anything else | **Next** — its designed 404, with the document headers (*amended 2026-09-16*; §11.3. The edge sends every unmatched path to Next, and Python's `Mount("/", mcp_app)` 404 answers only a request that reaches Python directly) |
 
 *Dropped 2026-09-07 by Tom:* `GET /videos` and `GET /videos/{id}` — the reader's
 library — were Next's from 2026-09-01 until that day. They duplicated
