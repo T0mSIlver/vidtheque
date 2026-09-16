@@ -1,5 +1,5 @@
 import { STATS } from "@/landing/corpus";
-import { num } from "@/landing/format";
+import { num } from "@/lib/format/landing";
 import styles from "./landing.module.css";
 
 // Floats over the hero; the wordmark is not a link on the page it would point at.

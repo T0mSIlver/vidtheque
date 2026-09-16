@@ -1,4 +1,4 @@
-import { youtubeAt } from "@/landing/format";
+import { youtubeAt } from "@/lib/format/landing";
 import styles from "./landing.module.css";
 
 // The receipt: the link that lands on the second (positioning.md, pillar 3).

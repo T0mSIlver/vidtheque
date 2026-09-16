@@ -1,6 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 import { ASSETS, GRID_BY_VID } from "@/landing/corpus";
-import { hms, num, tcToSeconds } from "@/landing/format";
+import { hms, num, tcToSeconds } from "@/lib/format/landing";
 import { TILES } from "@/landing/show";
 import { BandPacer } from "./BandPacer";
 import styles from "./landing.module.css";

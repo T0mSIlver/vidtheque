@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { STATS } from "@/landing/corpus";
-import { num, ymd } from "@/landing/format";
+import { num, ymd } from "@/lib/format/landing";
 import { BOOTH_QUESTION } from "@/landing/show";
 import { BoothLog } from "@/components/landing/BoothLog";
 import { CopyButton } from "@/components/landing/CopyButton";

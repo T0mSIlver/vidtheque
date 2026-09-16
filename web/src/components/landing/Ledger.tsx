@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { STATS } from "@/landing/corpus";
-import { num, pad } from "@/landing/format";
+import { num, pad } from "@/lib/format/landing";
 import styles from "./landing.module.css";
 
 type Cell = { label: string; target: number; render: (v: number) => ReactNode };
