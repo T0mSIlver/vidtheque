@@ -40,8 +40,9 @@ intermittently on the second push and on back. The console therefore writes
 each entry with the router's own current history state, which Next's patched
 `pushState` passes through untouched. It restores its own entries from a
 capture-phase `popstate` listener that stops the router's listener for the
-console's path. The next render re-reads the URL on mount, so a page the
-router restores from cache is not older than its address. The cost: the
+console's path. The console also reads the URL on mount, so a page the
+router restores from its cache never shows an older snapshot than its address.
+The cost: the
 router's `useSearchParams` does not follow these writes, and nothing in the
 console reads it.
 
