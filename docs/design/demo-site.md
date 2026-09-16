@@ -1509,8 +1509,11 @@ A real `<form>` and a real `<a href>` on every result, so Enter submits and
 middle-click opens — the two things a search page is expected to do. (The
 thumbnail is the one exception, and it is a `<button>` for a reason: §6.4.)
 
-No inline `<script>` beyond a nonce-free module tag — the page is static files
-served from disk, so a CSP could be added later without rewriting it.
+~~No inline `<script>` beyond a nonce-free module tag — the page is static files
+served from disk, so a CSP could be added later without rewriting it.~~
+*Superseded 2026-09-16:* `/demo` and `/paris` are Next pages rendered per
+request. Every script carries the request's CSP nonce from `web/src/proxy.ts`
+(frontend-migration.md §1b).
 
 ### 6.3 Provenance — three sources, three kinds of evidence
 

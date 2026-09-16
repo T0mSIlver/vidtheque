@@ -810,8 +810,9 @@ is the single most convincing thing on the page — it is the difference between
 - **The title arrives after the read.** Next serves this page as a data-free
   shell and never sees the session cookie (frontend-migration.md §1d), so the
   server cannot know the video's name. The document title is the generic
-  "Video" and the view sets `document.title` when the payload lands, which is
-  the first moment anything on this side knows it.
+  "Video" until the payload lands. *Amended 2026-09-16:* the view then renders
+  a `<title>` with the video's name, which React hoists into the head, rather
+  than setting `document.title` from an effect.
 - ~~**The lightbox is a link, for now.**~~ *Landed 2026-09-06.* A frame card is
   a button again and opens the still in a native `<dialog>` at 1280px, with its
   detection boxes over it, its lines beside it and `frame_id · clock · W×H ·
