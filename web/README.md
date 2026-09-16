@@ -29,6 +29,33 @@ answers `localhost` and refuses a cross-origin request from anything else, so
 addresses that box is reached on. Without it the pages load over the LAN and
 never hydrate.
 
+## The layout
+
+`src/` is split by surface and the two halves do not import each other
+(`docs/design/DECISIONS.md`, 2026-09-16). `pnpm lint` fails on a crossing.
+
+```
+src/app/layout.tsx            fonts, tokens, globals — the one shared root
+src/app/error.tsx             the root boundaries, and `not-found.tsx` beside it
+src/app/(public)/             page.tsx (landing), demo/, paris/
+src/app/(dashboard)/dashboard/  every /dashboard page, URLs unchanged
+src/components/public/        landing/ (with its canned data/), console/,
+                              frames, rail, receipt, result group, shell
+src/components/dashboard/     kit/, the chassis, session, polling, ported
+src/components/ui/            Pill, RetryIn — the primitives both halves draw
+src/lib/api/                  the public facade client, its schemas and reads
+src/lib/dashboard/            the /dashboard/api client, resources and schemas
+src/lib/format/               index.ts and landing.ts, read from both halves
+src/lib/schemas/              the /api/search payload, read from both halves
+src/styles/                   generated tokens, the type scale, the ornament
+src/test/                     next.ts and setup.ts, then public/ and dashboard/
+```
+
+A route group carries no URL, so `(public)` and `(dashboard)` change no path
+and `proxy.ts`'s matcher is untouched. There is no `(public)/layout.tsx`: the
+landing wears no shell, and `/demo` and `/paris` each pass `PublicShell`
+different props and carry their own metadata.
+
 ## One origin, two servers
 
 In production a reverse proxy puts both behind one origin and routes by path:
@@ -47,7 +74,7 @@ The last three of those page paths are also POST routes Python keeps, so the
 proxy splits each by method: the `GET` is the page here, the `POST` is the
 page's write. `proxy.ts`'s matcher gives the document policy to every path
 under `/dashboard` except `/dashboard/api/*` and `/dashboard/logout`, and
-`src/app/dashboard/ported.ts` lists the pages every link into the surface asks
+`src/components/dashboard/ported.ts` lists the pages every link into the surface asks
 about. Its data is not this server's — the
 browser reads `/dashboard/api/*` itself, same-origin, with the session cookie
 (`src/lib/dashboard/`), so Next never sees a credential and caches nothing per

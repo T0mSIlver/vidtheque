@@ -365,7 +365,7 @@ development-only entry, deleted the day development runs both processes behind
 one proxy, and it must not be read as the production arrangement.
 
 A third list joined those two with these pages, and it is the one a component
-asks: `web/src/app/dashboard/ported.ts` holds the ported page paths — `ROOT`,
+asks: `web/src/components/dashboard/ported.ts` holds the ported page paths — `ROOT`,
 `ROOT/ledger`, `ROOT/videos`, plus the same one-segment pattern for the detail
 — behind `isPorted(href)`, which every link into this surface asks so a page
 this app serves is reached with `Link` and a page Python still renders stays a
@@ -873,7 +873,7 @@ pages)*. These payloads carry a follow's *rules*; they carry none of the
 *options* the add-and-edit form offers, because the Jinja form reads those out
 of a `views._follow_choices` context neither payload has and putting them on
 the wire would be Python owning the controls of a React form. So the React
-pages **hard-code them**, in `web/src/app/dashboard/following/parts.tsx`, under
+pages **hard-code them**, in `web/src/app/(dashboard)/dashboard/following/parts.tsx`, under
 a comment naming the module each one comes from:
 
 | Copied into `parts.tsx` | Owned by |
@@ -1248,7 +1248,7 @@ the session cookie. **The status is not lost, it moved** — a client wanting it
 reads `/dashboard/api/*` directly, which is where it was always authoritative.
 The two that *can* be documents are, and now are: an unmatched path under
 `/dashboard` and an unmatched path at the root both answer `404` with a page in
-this system's own type (`app/dashboard/not-found.tsx`, `app/not-found.tsx`).
+this system's own type (`app/(dashboard)/dashboard/not-found.tsx`, `app/not-found.tsx`).
 
 **The deployment's facts arrive after mount (audit S1).** `write_side`,
 `readonly`, `auth_mode` and the version were inline in `base.html` and are read
@@ -1355,7 +1355,7 @@ one, and `DASH` is the single constant both halves of `format.ts` read.
 
 ### 11.3 §1d's two lists stop being one list
 
-`app/dashboard/[...rest]` is new, and it is what makes the designed `404`
+`app/(dashboard)/dashboard/[...rest]` is new, and it is what makes the designed `404`
 reachable at all: Next renders a segment's `not-found.tsx` when `notFound()` is
 thrown *inside* that segment, and an unmatched URL is inside nothing — it gets
 the **root** `app/not-found.tsx`, which is the front door's page and knows

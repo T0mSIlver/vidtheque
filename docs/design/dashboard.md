@@ -151,7 +151,7 @@ are two different questions and §3 answers the second one.
 
 `/demo` serves the welcome page (amended 2026-08-11: the landing owns `/`
 since commit `4ddd45d`'s topology swap; amended 2026-09-05: the page left the
-Python package for the Next.js front end at `web/src/app/demo/` — the route is
+Python package for the Next.js front end at `web/src/app/(public)/demo/` — the route is
 still `/demo` and its role is unchanged): search, ask, and a six-video "in
 this corpus" list. **That page is the welcome page.**
 It stays, it keeps its aesthetic (demo-site.md §6: a search engine, not a
@@ -766,7 +766,7 @@ below are `read_models.video_detail_reads`' and reach a client through
 `GET /dashboard/api/library/{video_id}` (§20) with the cue pager beside it. The
 descriptions of the *markup* — the scrollbox, the lightbox, the shot band's
 percentages, the `#frame-N` fragment and the `?select=` ordinal it lands on —
-describe a page Python no longer renders; `web/src/app/dashboard/videos/[id]/`
+describe a page Python no longer renders; `web/src/app/(dashboard)/dashboard/videos/[id]/`
 owns them, and what stays here is what the panels are for and what they must
 not show.
 
@@ -2171,7 +2171,7 @@ at `showModal()`, `frame_id · clock · title` in the caption, "Open at this
 second" under the picture, Close on the button, the backdrop and Escape, the
 focus back where it came from, and the JPEG released when the dialog shuts. It
 is not a second implementation of §5.3's — it is literally that component
-(`web/src/app/dashboard/FrameOverlay.tsx`), with the machine's reading of the
+(`web/src/components/dashboard/FrameOverlay.tsx`), with the machine's reading of the
 frame as the layer the video page adds: one lightbox contract, one lightbox, as
 `dashboard.js` had one delegated opener for both pages. The two standing
 divergences on this page are unchanged and neither is a gap: the band does not

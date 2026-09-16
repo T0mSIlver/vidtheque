@@ -167,7 +167,7 @@ Both enhancement layers — *landed 2026-09-06*, in `66f9cb1`:
   the payload's own 0–1 coordinates, its lines beside it, and the file still
   one click further in. The search page opens the same overlay on the same
   contract, and since the consolidation it is the same component
-  (`web/src/app/dashboard/FrameOverlay.tsx`), with the OCR layer the video
+  (`web/src/components/dashboard/FrameOverlay.tsx`), with the OCR layer the video
   page's own (dashboard.md §5.3, §14).
 - **Videos, the timeline scrub preview** — pointing along the shot band shows
   the shot under the pointer again: its still, its span and its kept ratio,

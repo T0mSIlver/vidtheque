@@ -11,10 +11,10 @@ lives and which document owns it.
 | Pipeline + jobs | — | `mcp/src/vidtheque_mcp/{pipeline,jobs}/` | `docs/design/index-schema.md`, `docs/design/DECISIONS.md` |
 | Following (channels, budget, ledger) | — | `mcp/src/vidtheque_mcp/follows/` | `docs/design/following.md` |
 | Auth (none / token / oauth) | `/{authorize,token,register,revoke}`, `/auth/*`, `/.well-known/*` | `mcp/src/vidtheque_mcp/auth/` | `docs/design/DECISIONS.md` #1 |
-| Landing | `/` | `web/src/landing/`, `web/src/app/page.tsx` | `DESIGN.md` |
-| Demo (read-only projection) | `/demo` | `web/src/app/demo/` | `docs/design/demo-site.md` |
+| Landing | `/` | `web/src/components/public/landing/`, `web/src/app/(public)/page.tsx` | `DESIGN.md` |
+| Demo (read-only projection) | `/demo` | `web/src/app/(public)/demo/` | `docs/design/demo-site.md` |
 | Public read facade | `/api/*`, `/videos/{id}/export.md` | `mcp/src/vidtheque_mcp/public/` | `docs/design/demo-site.md` |
-| Dashboard | `/dashboard` | `web/src/app/dashboard/` (pages), `mcp/src/vidtheque_mcp/dashboard/` (JSON + writes) | `docs/design/dashboard.md` |
+| Dashboard | `/dashboard` | `web/src/app/(dashboard)/dashboard/` (pages), `mcp/src/vidtheque_mcp/dashboard/` (JSON + writes) | `docs/design/dashboard.md` |
 | Worker HTTP API | `:8081/v1/*` | `worker/` | `worker/openapi.json`, `worker/README.md` |
 | Deploy | — | `deploy/`, `deploy/staging/` | `docs/deploy-public.md` |
 | Bench | — | `bench/` | `bench/README.md` |

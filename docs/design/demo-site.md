@@ -1014,7 +1014,8 @@ adding a file there is publishing it.
 
 ### 6.1 The landing at `/` (added 2026-08-11)
 
-*Where it lives, as of 2026-09-05: `web/src/landing` and `web/src/app/page.tsx`,
+*Where it lives, as of 2026-09-16: `web/src/components/public/landing/` and
+`web/src/app/(public)/page.tsx`,
 with the stills in `web/public/landing/`. The paths named below are the Python
 bundle it was ported from and are gone from `main`; the design they describe is
 unchanged, which is why this section is.*
@@ -1406,7 +1407,7 @@ A demo is judged on the four screens that are not "ten results came back".
 *Amended 2026-09-16 (Tom): one console, and no skeleton.* Search and ask are
 one client component on both `/demo` and `/paris`: one form, one input
 element, one mode control, one output region
-(`web/src/components/console/`, DECISIONS.md 2026-09-16). What changes on this
+(`web/src/components/public/console/`, DECISIONS.md 2026-09-16). What changes on this
 list:
 
 - **The default mode is decided before the first paint, not corrected after
