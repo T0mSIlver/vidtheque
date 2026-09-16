@@ -6,11 +6,9 @@ import { useState } from "react";
 // this reader, so both hooks measure against the first reading, never the last.
 
 /**
- * The rows a tick patches: the ones on the page when it loaded, in that order.
- * A row that arrived since is not invented (the count line would stop being
- * true) but reported through `arrived`; a row that dropped out keeps its last
- * reading rather than vanishing mid-triage. Remount the caller to start a new
- * baseline.
+ * The rows a tick patches: the page's first rows, in that order. A new row is
+ * reported through `arrived`, not inserted; a row that dropped out keeps its
+ * last reading. Remount the caller for a new baseline.
  */
 export function usePatchedRows<Row>(
   rows: Row[],

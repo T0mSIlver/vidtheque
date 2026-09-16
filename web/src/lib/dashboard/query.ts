@@ -1,10 +1,7 @@
 /**
- * The page's URL, filtered down to the parameters a read takes.
- *
- * A whitelist, because this string becomes a request. Values go as typed and
- * trimmed: every clamp is Python's, and one applied here would be a bound the
- * reader is never told about. An empty value is dropped unless its key is in
- * `keepEmpty` (search's `q`, whose emptiness is the handler's to refuse).
+ * The page's URL, whitelisted down to the parameters a read takes. Values pass
+ * trimmed but unclamped: every clamp is Python's. Empty values drop unless
+ * their key is in `keepEmpty`.
  */
 export function pick(
   search: string | URLSearchParams,

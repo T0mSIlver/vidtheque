@@ -4,9 +4,7 @@ import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { DashboardError } from "./client";
 
 // Every dashboard read, behind one stale-while-revalidate cache keyed by the
-// request. The pages still fetch in the browser (DECISIONS.md, 2026-09-05); the
-// cache is what lets a revisit, Back and Forward paint the last payload at once
-// and revalidate underneath it (dashboard.md §5).
+// request (DECISIONS.md 2026-09-16).
 
 /** A read younger than this is not asked again when a page mounts on it. */
 const FRESH_MS = 2_000;

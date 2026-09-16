@@ -39,11 +39,8 @@ describe("the provenance panel", () => {
     expect(screen.getByText("E_INDEXING")).toBeInTheDocument();
   });
 
-  // §2.4: the demo gets the detail whole minus the two fields that are the
-  // operator's console. The column those fields filled keeps its place and
-  // prints the dash — the table is five columns wide on both projections, so
-  // the absence is something a reader can see rather than a layout that
-  // silently differs from the one in the screenshot they are comparing against.
+  // §2.4: the demo loses the operator's two fields, but their column stays and
+  // prints the dash, so both projections are five columns wide.
   it("drops the model ids and the pipeline's prose in the projection", async () => {
     await mountVideo({ body: DEMO_HALF }, { videoId: "aaaaaaaaaaa", session: DEMO_SESSION });
 

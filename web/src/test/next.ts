@@ -1,10 +1,6 @@
-// Stand-ins for the App Router hooks a Client Component reads, over a URL that
-// can change inside one mount.
-//
-// Two ways in. A file that mounts statically declares
+// App Router hook stand-ins over a URL that can move inside one mount. Declare
 // `vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule)`
-// and drives the URL with `navigateTo`. An older file calls `mockNavigation()`
-// and imports the component under test afterwards.
+// and drive it with `navigateTo`, or call `mockNavigation()` before importing.
 import { act } from "@testing-library/react";
 import { useSyncExternalStore } from "react";
 import { vi } from "vitest";
