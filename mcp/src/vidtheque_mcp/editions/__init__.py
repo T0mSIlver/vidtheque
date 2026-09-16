@@ -530,3 +530,19 @@ def _size(payload: dict[str, Any]) -> int:
 def _once(notes: list[str], line: str) -> None:
     if line not in notes:
         notes.append(line)
+
+
+# Last, deliberately. `bias` reads the edition this module loads, so it imports
+# back into the package; re-exporting it from here rather than from the top is
+# what keeps that cycle from closing while the loader is still being defined.
+from .bias import build_context_bias, context_bias_for_tags  # noqa: E402
+
+__all__ = [
+    "EditionValidationError",
+    "build_context_bias",
+    "build_payload",
+    "context_bias_for_tags",
+    "load_edition",
+    "validate_edition",
+    "validate_editions",
+]

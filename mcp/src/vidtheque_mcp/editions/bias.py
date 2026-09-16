@@ -1,13 +1,25 @@
-"""Build bounded context bias from validated edition data."""
+"""The context-bias builder over a validated edition (aie-paris-2026.md §7).
+
+The list the worker biases with is derived from the schedule the facade already
+validated, so there is never a second speaker list in worker code, bench code or
+an environment value. This module reads four fields of that object —
+`context_bias.fixed` and, per session, `title` and `speakers[].{name, company}` —
+and nothing about how it was loaded.
+
+`load_edition` is imported from the package body rather than the other way
+round: `__init__` re-exports these two functions from its last lines, after the
+loader exists, so the cycle never closes during module definition.
+"""
 
 from __future__ import annotations
 
 import re
 import unicodedata
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any
 
-from .loader import Edition, load_edition
+from . import KNOWN_EDITIONS, load_edition
 
 MAX_CONTEXT_BIAS_TERMS = 100
 
@@ -74,28 +86,32 @@ def _append_unique(out: list[str], seen: set[str], values: Iterable[str]) -> Non
             return
 
 
-def build_context_bias(edition: Edition) -> list[str]:
+def build_context_bias(edition: Mapping[str, Any]) -> list[str]:
     """Return the edition's speaker, company, fixed, then rare-title terms."""
+    sessions: Sequence[Mapping[str, Any]] = edition["sessions"]
     out: list[str] = []
     seen: set[str] = set()
 
     _append_unique(
         out,
         seen,
-        (speaker.name for session in edition.sessions for speaker in session.speakers),
+        (speaker["name"] for session in sessions for speaker in session["speakers"]),
     )
     _append_unique(
         out,
         seen,
-        (speaker.company for session in edition.sessions for speaker in session.speakers),
+        (speaker["company"] for session in sessions for speaker in session["speakers"]),
     )
-    _append_unique(out, seen, edition.fixed_context_bias)
+    _append_unique(out, seen, edition["context_bias"]["fixed"])
     if len(out) == MAX_CONTEXT_BIAS_TERMS:
         return out
 
     title_tokens = [
-        [(match.group(0), _key(match.group(0))) for match in _TITLE_TOKEN.finditer(session.title)]
-        for session in edition.sessions
+        [
+            (match.group(0), _key(match.group(0)))
+            for match in _TITLE_TOKEN.finditer(session["title"])
+        ]
+        for session in sessions
     ]
     title_frequency = Counter(
         key for tokens in title_tokens for key in {key for _source, key in tokens}
@@ -111,6 +127,14 @@ def build_context_bias(edition: Edition) -> list[str]:
 
 
 def context_bias_for_tags(tags: Iterable[str]) -> list[str]:
-    """Return bias only when the video's tags select the packaged edition."""
-    edition = load_edition()
-    return build_context_bias(edition) if edition.edition_tag in set(tags) else []
+    """Return bias only when the video's own tags name a committed edition.
+
+    The video decides, so the pipeline never has to learn which backend or which
+    conference it is running for: a tag an operator applied is the whole input.
+    """
+    applied = set(tags)
+    for slug in KNOWN_EDITIONS:
+        edition = load_edition(slug)
+        if edition is not None and edition["tags"]["edition"] in applied:
+            return build_context_bias(edition)
+    return []
