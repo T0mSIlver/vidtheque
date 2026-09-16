@@ -1112,11 +1112,10 @@ JSON on both branches with `retry_after_s` and a `Retry-After` header.
 before it ever reaches the client, and that is not a reason for the client to
 skip its own check: a redirect target that arrived over the wire is an input
 like any other, and the page that mints the session cookie is the worst place
-on this surface to have an open redirect. `LoginView.safeNext` is stricter
-than `writes._safe_next` *(amended 2026-09-16)*: it resolves the value the way
-a browser would and accepts only a same-origin path that is `/dashboard` or
-under `/dashboard/`, so `//host`, `/\host`, `/dashboard/../admin` and
-`/dashboard.evil` all become `/dashboard`. The session's `login_url` must be
+on this surface to have an open redirect. Both fences judge the value after
+a browser's normalisation *(amended 2026-09-16)*: only `/dashboard` or a path
+under `/dashboard/` survives, so `//host`, `/\host`, `/dashboard/../admin`,
+`/dashboard/%2e%2e/admin` and `/dashboard.evil` all become `/dashboard`. The session's `login_url` must be
 a same-origin path too. The page applies `safeNext` twice: to its own `?next=` before that
 value ever enters the hidden field the form posts, and to the outcome's `next`
 before the shell navigates anywhere.

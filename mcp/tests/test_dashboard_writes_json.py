@@ -707,7 +707,15 @@ def test_signing_in_answers_typed_and_still_mints_the_cookie(tmp_path: Path) -> 
 def test_the_next_in_the_payload_is_fenced_like_the_redirect(tmp_path: Path) -> None:
     """`_safe_next`, on both branches — an open redirect the shell performs is
     still an open redirect on the page that mints the session cookie."""
-    for away in ("https://evil.example/steal", "//evil.example", "/etc/passwd"):
+    for away in (
+        "https://evil.example/steal",
+        "//evil.example",
+        "/etc/passwd",
+        "/dashboard/../admin",
+        "/dashboard.evil",
+        "/dashboard/%2e%2e/admin",
+        "/dashboard\\..\\admin",
+    ):
         with owner_client(tmp_path) as client:
             signed = post(
                 client, f"{ROOT}/login", data={"password": PASSWORD, "next": away}

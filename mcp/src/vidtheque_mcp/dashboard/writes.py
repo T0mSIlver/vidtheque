@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import posixpath
 import re
 import secrets
 import time
@@ -208,13 +209,12 @@ def _outcome(
 
 
 def _safe_next(raw: str | None) -> str:
-    """A redirect target that cannot leave this surface.
-
-    Only a path under `/dashboard`, and never `//host` — a protocol-relative
-    URL is an absolute one wearing a path's clothes, and an open redirect on
-    the page that mints the session cookie is the worst place to have one.
-    """
-    if not raw or not raw.startswith(ROOT) or raw.startswith("//"):
+    """A redirect target that cannot leave `/dashboard`, judged after the
+    browser's own normalisation (`/dashboard/../x`, `/dashboard.evil`, `//host`)."""
+    if not raw or "\\" in raw or "%2e" in raw.lower() or raw.startswith("//"):
+        return ROOT
+    normal = posixpath.normpath(re.split(r"[?#]", raw, maxsplit=1)[0])
+    if normal != ROOT and not normal.startswith(ROOT + "/"):
         return ROOT
     return raw
 
