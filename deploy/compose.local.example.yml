@@ -40,6 +40,15 @@
 # stops being what routes a write, and the thing under test is the thing that
 # will be deployed.
 #
+# A HOST CADDY IN FRONT OF THE EDGE — one terminating TLS for a name like
+# private.vidtheque.dev and proxying to 127.0.0.1:${EDGE_PORT} — does not close
+# the LAN off by itself: the base file's `${EDGE_PORT:-8080}:80` publishes on
+# every interface, so the plain-http edge stays reachable beside it. Close the
+# port at the box firewall, or restate the mapping here with a `127.0.0.1:`
+# prefix under `ports: !override` — appending would leave both. The other
+# constraint is the host caddy's, and deploy/Caddyfile's header states it: it
+# must pass `Host` through unchanged.
+#
 # This overlay adds no new environment variables. The host path below is the
 # one thing to edit.
 
