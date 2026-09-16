@@ -70,7 +70,7 @@ describe("proxy", () => {
     }
     // The two public documents are the same page for every reader, and a
     // front-end cache in front of them is the point.
-    for (const path of ["/", "/demo"]) {
+    for (const path of ["/", "/demo", "/paris"]) {
       expect(send(path).headers.get("Cache-Control"), path).toBeNull();
     }
   });
@@ -131,7 +131,7 @@ describe("proxy", () => {
     config.matcher.some((entry) => new RegExp(`^${entry.source}$`).test(path));
 
   it("runs on the documents and nothing else", () => {
-    for (const path of ["/", "/demo"]) {
+    for (const path of ["/", "/demo", "/paris"]) {
       expect(matches(path), path).toBe(true);
     }
     // The build's own output, and the prefixes `next.config.ts` gives Python.

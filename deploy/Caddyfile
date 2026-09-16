@@ -153,7 +153,7 @@
 	reverse_proxy @dashboard_writes {$EDGE_MCP_UPSTREAM:mcp:8080}
 
 	# Everything else is a page GET, Next's build output, or something that
-	# belongs to neither and gets Next's 404: `/`, `/demo`, the eleven
+	# belongs to neither and gets Next's 404: `/`, `/demo`, `/paris`, the eleven
 	# `/dashboard` pages, `/_next/*`, `/landing/*`. `/videos` and `/videos/{id}`
 	# were pages here until 2026-09-07 and are now two more paths that 404 from
 	# Next; the export a segment deeper is matched above and stays Python's.
