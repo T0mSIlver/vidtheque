@@ -1,7 +1,5 @@
-// One way to mount a dashboard page in a test: the chassis around it, a fetch
-// that answers by route, and a URL that can move inside the mount.
-//
-// A file using it declares, once, at the top:
+// Mounts a dashboard page with its chassis, a fetch answered by route and a
+// movable URL. The file must declare:
 //   vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 import { render } from "@testing-library/react";
 import type { ReactElement } from "react";

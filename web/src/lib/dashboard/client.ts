@@ -1,8 +1,6 @@
-// The dashboard's reads and writes, from the browser: same-origin with the
-// session cookie, which Next never sees (DECISIONS.md, 2026-09-05;
-// frontend-migration.md §1a, §9). A refused read sends the browser to sign in,
-// once, from here. No CSRF token: a same-origin `fetch` carries
-// `Sec-Fetch-Site`, which is the evidence §3.3 asks for.
+// The dashboard's reads and writes, same-origin from the browser with the
+// session cookie Next never sees (frontend-migration.md §1a, §9). No CSRF
+// token: a same-origin `fetch` carries `Sec-Fetch-Site` (dashboard.md §3.3).
 import type { ZodType } from "zod";
 // The facade's own schema (§14.2); `schemas`, not the `server-only` index.
 import { SearchResponse } from "../api/schemas";
@@ -147,11 +145,9 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
   }
 
   /**
-   * A write to the route the form posts to (§21): same-origin credentials, a
-   * form-encoded body, and `Accept: application/json`, which alone switches the
-   * answer from a `303` to a typed outcome. `alsoRead` lists statuses whose
-   * body is still a receipt (`409` on retry and index); `gated: false` is the
-   * sign-in write, whose `401` must not send the reader to the page they are on.
+   * A form write (§21); `Accept: application/json` turns its `303` into a typed
+   * outcome. `alsoRead`: statuses whose body is still a receipt. `gated: false`:
+   * the sign-in write, whose `401` must not bounce to sign-in.
    */
   async function postForm<T>(
     path: string,

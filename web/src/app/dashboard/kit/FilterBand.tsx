@@ -10,18 +10,9 @@ export const DEBOUNCE_MS = 450;
 const TYPED = "input[type='search'], input[type='text'], input[type='number']";
 
 /**
- * A filter band: a real form over the URL, always mounted, that navigates
- * without scrolling and leaves focus on the control that was used.
- *
- * `values` are what the listing ran with (the server's resolved filters, or
- * the URL until they land). A control is re-seeded from them imperatively,
- * never by a remount — except the focused control while it still holds what
- * this band last sent, so a reply to an earlier keystroke never overwrites the
- * typing that followed it.
- *
- * `auto` submits a picker the moment it changes and a text field when the
- * typing pauses; its `Apply` button (rendered by the caller with
- * `data-apply`) is hidden once this has hydrated.
+ * A real form over the URL that stays mounted, so focus and scroll survive its
+ * navigations (dashboard.md §5.2). `values` re-seed the controls in place;
+ * `auto` submits a picker at once and a text field when typing pauses.
  */
 export function FilterBand({
   values,
@@ -96,6 +87,7 @@ export function FilterBand({
       }
       const next = String(value);
       if (control.value === next) continue;
+      // A reply to an earlier keystroke never overwrites the typing after it.
       if (control === document.activeElement && sent.current[name] === next) continue;
       control.value = next;
     }

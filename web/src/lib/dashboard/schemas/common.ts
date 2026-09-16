@@ -1,8 +1,6 @@
 // The wire contract of `/dashboard/api/*` (dashboard.md §19-§22,
-// frontend-migration.md §§4-7). The projection redacts by omission, and
-// omission is `null`: a nullable field needs a designed absent state, never the
-// word "null" on a screen. `z.object` strips unknown keys, so a field Python
-// adds later is ignored until a schema asks for it.
+// frontend-migration.md §§4-7). Redaction is `null`, so a nullable field needs
+// a designed absent state; unknown keys are stripped.
 import { z } from "zod";
 
 // These parse in the browser under a `script-src` without `'unsafe-eval'`, so
