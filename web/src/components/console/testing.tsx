@@ -1,6 +1,7 @@
 // Shared fixtures for the console's tests.
 import { render } from "@testing-library/react";
 import { vi } from "vitest";
+import { navigateTo, resetNavigation } from "@/test/next";
 import type { SearchOutcome } from "@/lib/api/outcome";
 import type { Hit, SearchResponse } from "@/lib/api/schemas";
 import { Console, type ConsoleProps } from "./Console";
@@ -100,6 +101,8 @@ export function mountConsole(
   const snapshot = props.initial ?? { mode: "ask", q: "", type: "all" };
   const at = url ?? (props.path ?? "/demo") + serializeSnapshot(snapshot, props.askEnabled ?? true);
   window.history.replaceState(null, "", at);
+  const parsed = new URL(at, "http://x");
+  resetNavigation(parsed.search, parsed.pathname);
   const push = vi.spyOn(window.history, "pushState");
   const view = render(
     <Console
@@ -115,6 +118,12 @@ export function mountConsole(
     />,
   );
   return { ...view, push };
+}
+
+/** Back or Forward: the address moves, then the router's search params follow. */
+export async function traverse(url: string) {
+  window.history.replaceState(null, "", url);
+  await navigateTo(url);
 }
 
 export const ASK = { name: /^Ask/ };

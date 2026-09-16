@@ -18,9 +18,7 @@ import {
   wire,
 } from "./testing";
 
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
-}));
+vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 
 // The exact bytes the API sent, from the project root where vitest runs.
 const FIXTURE = readFileSync("src/lib/__fixtures__/ask.sse", "utf8");

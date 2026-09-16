@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useEffect, useEffectEvent, useReducer, useRef } from "react";
 import type { SearchOutcome } from "@/lib/api/outcome";
 import type { ContentType, EditionTalk } from "@/lib/api/schemas";
@@ -151,8 +152,13 @@ export function Console(props: ConsoleProps) {
     void search(q, type);
   }
 
-  const restore = useEffectEvent(() => {
-    const snapshot = parseSnapshot(new URLSearchParams(window.location.search), askEnabled);
+  // The URL is the snapshot: Back, Forward and a page restored from the
+  // router's cache arrive as search params unlike the committed ones.
+  const query = useSearchParams().toString();
+  const restore = useEffectEvent((query: string) => {
+    // A render the router has not caught up on names an older entry.
+    if (query !== window.location.search.slice(1)) return;
+    const snapshot = parseSnapshot(new URLSearchParams(query), askEnabled);
     if (sameSnapshot(snapshot, state.committed)) {
       // Same state, different spelling (a question on a keyless deployment).
       writeUrl(href(snapshot), "replaceState");
@@ -165,24 +171,12 @@ export function Console(props: ConsoleProps) {
     }
   });
 
+  useEffect(() => restore(query), [query]);
+
   useEffect(() => {
-    // A page restored from the router's cache can carry an older snapshot than
-    // its URL, so the URL is read once on mount too.
-    restore();
     const box = flight.current;
-    // Capture phase, ahead of the App Router's own listener: an entry this
-    // console wrote is restored here, never as a route traversal.
-    const listener = (event: PopStateEvent) => {
-      if (window.location.pathname !== path) return;
-      event.stopImmediatePropagation();
-      restore();
-    };
-    window.addEventListener("popstate", listener, { capture: true });
-    return () => {
-      window.removeEventListener("popstate", listener, { capture: true });
-      box.controller?.abort();
-    };
-  }, [path]);
+    return () => box.controller?.abort();
+  }, []);
 
   const actions: SearchActions = {
     href: (q, type) => href({ mode: "search", q, type }),
@@ -260,12 +254,11 @@ export function Console(props: ConsoleProps) {
   );
 }
 
-// The entry keeps the router's own history state, so Next.js treats it as
-// already handled rather than as a route change to re-render from the server
-// (demo-site.md §6.2).
+// Next.js's documented native History API integration: the router follows the
+// URL without navigating (demo-site.md §6.2).
 function writeUrl(url: string, method: "pushState" | "replaceState") {
   if (window.location.pathname + window.location.search === url) return;
-  window.history[method](window.history.state, "", url);
+  window.history[method](null, "", url);
 }
 
 function machineWord(state: ConsoleState, boot: Boot): MachineState {
