@@ -451,13 +451,13 @@
   gap: var(--s2) var(--s4);
 }
 
-/* A key and its pill as one object; the zeroed font-size closes the line-box
-   gap between the two inline-blocks. */
+/* A key and its pill as one object. Inline-flex, not a zeroed font-size: the
+   zero collapsed the strut, so the pair's baseline sat at its top edge and the
+   whole pill hung under the text beside it in a page head. A flex box has no
+   gap to close, and its baseline is the key's, on the line it sits in. */
 .statepair {
-  display: inline-block;
-  vertical-align: -0.3em;
+  display: inline-flex;
   white-space: nowrap;
-  font-size: 0;
 }
 
 .statepairKey {
@@ -470,10 +470,6 @@
   background: var(--plate2);
   border: 1px solid var(--seam2);
   border-right: 0;
-}
-
-.statepair > * {
-  vertical-align: top;
 }
 
 .detail {
