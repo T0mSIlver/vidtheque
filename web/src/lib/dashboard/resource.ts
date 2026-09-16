@@ -10,7 +10,7 @@ import { DashboardError } from "./client";
 
 /** A read younger than this is not asked again when a page mounts on it. */
 const FRESH_MS = 2_000;
-/** Entries kept for the life of the document; the oldest idle ones go first. */
+/** Idle entries kept for the life of the document, least recently used out first. */
 const MAX_ENTRIES = 64;
 /** `Retry-After`-less 429s wait this long, in seconds. */
 const FALLBACK_RETRY_S = 60;
@@ -67,7 +67,11 @@ const entries = new Map<string, Entry>();
 
 function entryOf(key: string): Entry {
   let entry = entries.get(key);
-  if (!entry) {
+  if (entry) {
+    // Map order is the LRU order: an access moves the key to the end.
+    entries.delete(key);
+    entries.set(key, entry);
+  } else {
     entry = {
       data: undefined,
       error: undefined,
@@ -85,16 +89,19 @@ function entryOf(key: string): Entry {
       snapshot: PENDING,
     };
     entries.set(key, entry);
-    evict();
   }
   return entry;
 }
 
+// On screen, in flight or inside its release grace, an entry is never evicted,
+// so a burst can overshoot until those settle.
 function evict() {
   if (entries.size <= MAX_ENTRIES) return;
   for (const [key, entry] of entries) {
     if (entries.size <= MAX_ENTRIES) return;
-    if (entry.subscribers === 0 && !entry.controller) entries.delete(key);
+    if (entry.subscribers > 0 || entry.controller || entry.release !== null) continue;
+    clearTimer(entry);
+    entries.delete(key);
   }
 }
 
@@ -140,6 +147,7 @@ function load(entry: Entry) {
       const next = entry.poll?.(data) ?? null;
       if (next !== null) schedule(entry, next);
       publish(entry);
+      evict();
     },
     (error: unknown) => {
       // An abort is the page leaving, not a failure to report.
@@ -153,6 +161,7 @@ function load(entry: Entry) {
         schedule(entry, ms);
       }
       publish(entry);
+      evict();
     },
   );
 }
@@ -180,6 +189,7 @@ function subscribe(key: string, listener: () => void): () => void {
       if (next !== null) schedule(entry, next);
     }
   }
+  evict();
   return () => {
     entry.listeners.delete(listener);
     entry.subscribers -= 1;
@@ -193,6 +203,7 @@ function subscribe(key: string, listener: () => void): () => void {
         entry.controller = null;
         entry.snapshot = { ...entry.snapshot, isPending: !entry.hasData };
       }
+      evict();
     }, 0);
   };
 }
