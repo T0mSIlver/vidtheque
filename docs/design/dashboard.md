@@ -821,6 +821,16 @@ is the single most convincing thing on the page — it is the difference between
   the tag form — and the header's "Queue more from this channel" link are
   absent, with the rest of the writes in `docs/ROADMAP.md`.
 
+*Amended 2026-09-16: paging moves one panel, not the page.* A strip page is a
+router navigation (`frame_offset` keys the read) that keeps the scroll position:
+until the next page answers, the strip on screen stays, dimmed and
+`aria-busy`, and every other panel — the transcript with the cues already
+appended — is untouched. A refused page read is told inside the Frames panel
+with a retry. The transcript box reserves the height its first batch takes
+(the rows the totals predict, at measured row heights) and the pager the totals
+predict, so the page does not move when the cues land. Pointing at a shot bar
+or a frame card lights the other without re-rendering either.
+
 ### 5.4 `GET /dashboard/jobs` and `/dashboard/jobs/{job_id}` — the war-story page
 
 The motivating incident, 2026-08-09: YouTube's bot-check was
