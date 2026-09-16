@@ -2,12 +2,10 @@
 
 import { useSearchParams } from "next/navigation";
 import { dashboard, ROOT } from "@/lib/dashboard/client";
-import { pick, withQuery } from "@/lib/dashboard/query";
+import { pick } from "@/lib/dashboard/query";
 import { isRateLimited, useResource } from "@/lib/dashboard/resource";
 import type { JobCard, Jobs } from "@/lib/dashboard/schemas";
 import { at, DASH } from "@/lib/format";
-import controls from "../kit/controls.module.css";
-import { FilterBand } from "../kit/FilterBand";
 import { notice, Notice, ReadFailure } from "../kit/notice";
 import { Notes, Pager, table, TableCount } from "../kit/table";
 import { Body, DashLink, Facts, PageHead, Sep, ui } from "../kit/ui";
@@ -15,6 +13,7 @@ import { refusalOf, useWriteSide } from "../kit/write";
 import { usePatchedRows } from "../polling";
 import { useSession } from "../session";
 import { CancelControl } from "./CancelControl";
+import { DEFAULTS, factsOf, FILTERS, Filters } from "./Filters";
 import styles from "./jobs.module.css";
 import { countsOf, jobHeadline, JobStates, livePoll, Progress, WallClock } from "./parts";
 
@@ -22,16 +21,7 @@ import { countsOf, jobHeadline, JobStates, livePoll, Progress, WallClock } from 
 // URL; every bound and predicate is `list_jobs`'s, and the page shows what the
 // listing ran with rather than what was typed.
 
-const FILTERS = ["state", "kind", "error_code", "order", "degraded", "limit"] as const;
 const PAGE_KEYS = [...FILTERS, "offset"];
-
-// The pickers' words (`views._JOB_STATES` and friends): options, not bounds.
-const STATES = ["all", "active", "failed", "done"];
-const KINDS = ["all", "index", "reindex", "delete", "follow_check"];
-const ORDERS = ["newest", "priority", "wall_clock"];
-
-/** Values the API would use anyway, left off a link. */
-const DEFAULTS: Record<string, string> = { state: "all", kind: "all", order: "newest" };
 
 export function JobsView() {
   const params = useSearchParams();
@@ -72,124 +62,6 @@ export function JobsView() {
         </Body>
       )}
     </>
-  );
-}
-
-/** `state` and `order` always (the table is read in an order); the rest only
- *  when they narrow. Dashes until the listing answers. */
-function factsOf(filters?: Jobs["filters"]): [string, string][] {
-  if (!filters) {
-    return [
-      ["state", DASH],
-      ["order", DASH],
-    ];
-  }
-  const facts: [string, string][] = [["state", filters.state]];
-  if (filters.kind !== DEFAULTS.kind) facts.push(["kind", filters.kind]);
-  if (filters.error_code) facts.push(["error code", filters.error_code]);
-  if (filters.degraded) facts.push(["degraded", "only"]);
-  facts.push(["order", filters.order]);
-  return facts;
-}
-
-/** The band, seeded from what the listing ran with (the URL until it answers). */
-function Filters({ params, data }: { params: URLSearchParams; data?: Jobs }) {
-  const asked = (key: string, fallback = "") => params.get(key) ?? fallback;
-  const filters = data?.filters;
-  const values = {
-    state: filters?.state ?? asked("state", "all"),
-    kind: filters?.kind ?? asked("kind", "all"),
-    order: filters?.order ?? asked("order", "newest"),
-    error_code: filters ? (filters.error_code ?? "") : asked("error_code"),
-    degraded: filters ? filters.degraded : asked("degraded") === "1",
-    limit: data ? String(data.pagination.limit) : asked("limit"),
-  };
-
-  function toUrl(form: FormData) {
-    const next = new URLSearchParams();
-    for (const key of FILTERS) {
-      const entry = form.get(key);
-      if (typeof entry !== "string") continue;
-      const chosen = entry.trim();
-      if (chosen && chosen !== DEFAULTS[key]) next.set(key, chosen);
-    }
-    return withQuery(`${ROOT}/jobs`, next);
-  }
-
-  return (
-    <FilterBand values={values} toUrl={toUrl}>
-      <div className={`${controls.field} ${controls.pickField}`}>
-        <label htmlFor="f-jobstate">State</label>
-        <span className={controls.pick}>
-          <select id="f-jobstate" name="state" defaultValue={values.state}>
-            {STATES.map((entry) => (
-              <option key={entry} value={entry}>
-                {entry}
-              </option>
-            ))}
-          </select>
-        </span>
-      </div>
-      <div className={`${controls.field} ${controls.pickField}`}>
-        <label htmlFor="f-jobkind">Kind</label>
-        <span className={controls.pick}>
-          <select id="f-jobkind" name="kind" defaultValue={values.kind}>
-            {KINDS.map((entry) => (
-              <option key={entry} value={entry}>
-                {entry}
-              </option>
-            ))}
-          </select>
-        </span>
-      </div>
-      <div className={`${controls.field} ${controls.text}`}>
-        <label htmlFor="f-joberror">Error code</label>
-        <input
-          id="f-joberror"
-          name="error_code"
-          type="text"
-          defaultValue={values.error_code}
-          placeholder="E_RATE_LIMIT"
-          autoComplete="off"
-        />
-      </div>
-      <div className={`${controls.field} ${controls.pickField}`}>
-        <label htmlFor="f-joborder">Order</label>
-        <span className={controls.pick}>
-          <select id="f-joborder" name="order" defaultValue={values.order}>
-            {ORDERS.map((entry) => (
-              <option key={entry} value={entry}>
-                {entry.replace("_", " ")}
-              </option>
-            ))}
-          </select>
-        </span>
-      </div>
-      <label className={controls.check}>
-        <input type="checkbox" name="degraded" value="1" defaultChecked={values.degraded} />
-        <span className={controls.checkWord}>Degraded only</span>
-      </label>
-      <div className={`${controls.field} ${controls.narrow}`}>
-        <label htmlFor="f-joblimit">Rows</label>
-        {/* No `max`: the ceiling is the server's, disclosed in `notes`. */}
-        <input
-          id="f-joblimit"
-          name="limit"
-          type="number"
-          min={1}
-          defaultValue={values.limit}
-          inputMode="numeric"
-        />
-      </div>
-      <div className={`${controls.field} ${controls.actions}`}>
-        <button className={controls.button} type="submit">
-          Apply
-        </button>
-        <DashLink className={controls.ghostlink} href={`${ROOT}/jobs`}>
-          Reset
-        </DashLink>
-      </div>
-    </FilterBand>
   );
 }
 
