@@ -45,10 +45,12 @@ export function JobsView() {
   return (
     <>
       <PageHead title="Jobs">
-        <Facts facts={factsOf(data?.filters)} />{" "}
-        <Unbroken>
-          <Fact label="refresh" value={data ? `${Math.round(data.poll_ms / 1000)}s` : DASH} />
-        </Unbroken>
+        <Facts
+          facts={[
+            ...factsOf(data?.filters),
+            ["refresh", data ? `${Math.round(data.poll_ms / 1000)}s` : DASH],
+          ]}
+        />
       </PageHead>
 
       <Filters params={params} data={data} />
