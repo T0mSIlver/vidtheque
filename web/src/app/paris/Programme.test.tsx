@@ -3,17 +3,21 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { EditionResponse, EditionTalk } from "@/lib/api/schemas";
 
+const edition = vi.hoisted(() => ({ read: vi.fn() }));
 vi.mock("@/lib/api", async () => {
   const schemas = await vi.importActual<typeof import("@/lib/api/schemas")>("@/lib/api/schemas");
-  return { ...schemas, ApiError: class ApiError extends Error {}, api: vi.fn() };
+  class ApiError extends Error {
+    next?: string;
+    constructor(_status: number, envelope: { message: string; next?: string }) {
+      super(envelope.message);
+      this.next = envelope.next;
+    }
+  }
+  return { ...schemas, ApiError, api: () => ({ edition: edition.read }) };
 });
-vi.mock("@/lib/search", () => ({ readMeta: vi.fn(), searchCorpus: vi.fn(), visitorIp: vi.fn() }));
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
-  useSearchParams: () => new URLSearchParams(""),
-  usePathname: () => "/paris",
-}));
-import { EditionFailure, Loading, TalkRow, Timeline } from "./page";
+vi.mock("@/lib/search", () => ({ visitorIp: vi.fn() }));
+import { ApiError } from "@/lib/api";
+import { EditionFailure, Programme, ProgrammeLoading, TalkRow, Timeline } from "./Programme";
 
 const speaker = { name: "Alice Martin", company: "Mistral" };
 
@@ -152,7 +156,7 @@ describe("the Paris edition states", () => {
   });
 
   it("reserves the timeline and prints loading", () => {
-    render(<Loading />);
+    render(<ProgrammeLoading />);
     expect(screen.getByLabelText("Loading edition")).toHaveAttribute("aria-busy", "true");
     expect(screen.getByText("loading")).toBeInTheDocument();
   });
@@ -173,5 +177,23 @@ describe("the Paris edition states", () => {
     rerender(<EditionFailure outcome={{ kind: "unreachable", word: "unavailable" }} />);
     expect(screen.getByRole("status")).toHaveTextContent("unavailable");
     expect(screen.getByRole("link", { name: "Retry" })).toHaveAttribute("href", "/paris");
+  });
+
+  it("draws the programme from the edition read, or the facade's refusal", async () => {
+    edition.read.mockResolvedValueOnce(EDITION);
+    const { unmount } = render(await Programme());
+    expect(screen.getByText("The programme, mapped to evidence")).toBeInTheDocument();
+    unmount();
+
+    edition.read.mockRejectedValueOnce(
+      new ApiError(404, { message: "No edition.", next: "Use another slug." }),
+    );
+    const refused = render(await Programme());
+    expect(screen.getByRole("status")).toHaveTextContent("refusedNo edition.Use another slug.");
+    refused.unmount();
+
+    edition.read.mockRejectedValueOnce(new TypeError("fetch failed"));
+    render(await Programme());
+    expect(screen.getByRole("status")).toHaveTextContent("unavailable");
   });
 });

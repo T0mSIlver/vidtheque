@@ -36,8 +36,9 @@
   composes: t-machine-sm from global;
   color: var(--fg3);
 }
-.timeline {
-  margin-top: var(--gap-block);
+/* Below the console, so its height never moves the box. */
+.programme {
+  margin-top: var(--beat);
 }
 .sectionHead {
   display: flex;
@@ -65,9 +66,7 @@
   background: var(--plate);
 }
 
-/* The type roles, spelled out: `composes` takes a simple class selector only,
-   and most of this page's text is an element inside a row rather than a class
-   of its own. `app/demo/page.module.css` does the same for the same reason. */
+/* Type roles spelled out: `composes` takes simple class selectors only. */
 .day h3 {
   font-family: var(--mono);
   font-size: 9.5px;
@@ -152,8 +151,7 @@
   color: var(--fg3);
 }
 
-/* The printed proof, exactly as a result row prints one: the video and the
-   second, in the text of the link that goes there (demo-site.md §6.5). */
+/* The printed proof: the video and the second (demo-site.md §6.5). */
 .receipt {
   display: block;
   margin-top: 6px;
@@ -205,14 +203,6 @@
 .other li small {
   display: block;
   margin-top: 3px;
-}
-.query {
-  margin-top: var(--beat);
-}
-.prompt {
-  composes: t-body from global;
-  margin-top: var(--s4);
-  color: var(--fg2);
 }
 .notice {
   margin-top: var(--s5);
