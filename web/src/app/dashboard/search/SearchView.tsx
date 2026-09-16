@@ -2,7 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { useCallback, useState } from "react";
-import { ContentType, type SearchResponse } from "@/lib/api/schemas";
+import { ContentType, type SearchResponse } from "@/lib/dashboard/schemas";
 import { dashboard, DashboardError, ROOT } from "@/lib/dashboard/client";
 import { pick } from "@/lib/dashboard/query";
 import { useResource } from "@/lib/dashboard/resource";

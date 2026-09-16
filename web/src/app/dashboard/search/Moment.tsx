@@ -1,6 +1,6 @@
 "use client";
 
-import type { Hit } from "@/lib/api/schemas";
+import type { Hit } from "@/lib/dashboard/schemas";
 import { clock, DASH } from "@/lib/format";
 import type { Shot } from "../FrameOverlay";
 import { DashLink, Sep } from "../kit/ui";

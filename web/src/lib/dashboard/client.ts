@@ -2,8 +2,6 @@
 // session cookie Next never sees (frontend-migration.md §1a, §9). No CSRF
 // token: a same-origin `fetch` carries `Sec-Fetch-Site` (dashboard.md §3.3).
 import type { ZodType } from "zod";
-// The facade's own schema (§14.2); `schemas`, not the `server-only` index.
-import { SearchResponse } from "../api/schemas";
 import {
   CancelOutcome,
   CuePage,
@@ -22,6 +20,7 @@ import {
   PartialRefusal,
   ReindexOutcome,
   RetryOutcome,
+  SearchResponse,
   Session,
   SignedIn,
   TagsOutcome,
