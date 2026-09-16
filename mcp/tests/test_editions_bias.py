@@ -23,6 +23,25 @@ def test_committed_fixture_pins_priority_and_cap() -> None:
     assert bias[-4:] == ["Loads", "Optimizing", "Small", "VideoLLM"]
 
 
+def test_speaker_names_alone_can_fill_the_cap_and_later_tiers_add_nothing() -> None:
+    edition = {
+        "slug": "test",
+        "tags": {"edition": "series:test"},
+        "context_bias": {"fixed": ["Voxtral"]},
+        "sessions": [
+            {
+                "title": f"Distinctive Session {index}",
+                "speakers": [{"name": f"Speaker Number{index}", "company": "Mistral"}],
+            }
+            for index in range(120)
+        ],
+    }
+    bias = build_context_bias(edition)
+    assert len(bias) == 100
+    assert bias[0] == "Speaker Number0" and bias[-1] == "Speaker Number99"
+    assert "Mistral" not in bias and "Voxtral" not in bias
+
+
 def test_nfkc_casefold_dedup_keeps_the_first_spelling() -> None:
     edition = {
         "slug": "test",

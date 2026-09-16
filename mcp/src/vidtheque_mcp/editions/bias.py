@@ -75,15 +75,18 @@ def _key(value: str) -> str:
 
 
 def _append_unique(out: list[str], seen: set[str], values: Iterable[str]) -> None:
+    # The cap is checked before the append, not after it: a tier that finds the
+    # list already full must add nothing. Equality after the fact let the next
+    # tier write term 101, and the worker rejects a list of 101 with a 400.
     for value in values:
+        if len(out) >= MAX_CONTEXT_BIAS_TERMS:
+            return
         value = value.strip()
         key = _key(value)
         if not value or key in seen:
             continue
         seen.add(key)
         out.append(value)
-        if len(out) == MAX_CONTEXT_BIAS_TERMS:
-            return
 
 
 def build_context_bias(edition: Mapping[str, Any]) -> list[str]:
@@ -103,7 +106,7 @@ def build_context_bias(edition: Mapping[str, Any]) -> list[str]:
         (speaker["company"] for session in sessions for speaker in session["speakers"]),
     )
     _append_unique(out, seen, edition["context_bias"]["fixed"])
-    if len(out) == MAX_CONTEXT_BIAS_TERMS:
+    if len(out) >= MAX_CONTEXT_BIAS_TERMS:
         return out
 
     title_tokens = [
