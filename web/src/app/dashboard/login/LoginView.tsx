@@ -68,16 +68,24 @@ export function LoginView() {
   );
 }
 
+const ORIGIN = "http://dashboard.invalid";
+
 /**
  * A path under `/dashboard` this page may send a browser to, or the overview.
- * Applied to the URL's `next` and the outcome's, because the page that mints
- * the session cookie is the worst place for an open redirect. `//host` and
- * `/\host` are absolute URLs wearing a path's clothes.
+ * The page that mints the session cookie is the worst place for an open
+ * redirect, so `next` is judged after the browser's own normalisation.
  */
 export function safeNext(raw: string | null | undefined): string {
-  if (!raw || !raw.startsWith(ROOT)) return ROOT;
-  if (raw.startsWith("//") || raw.startsWith("/\\")) return ROOT;
-  return raw;
+  if (!raw?.startsWith("/")) return ROOT;
+  let url: URL;
+  try {
+    url = new URL(raw, ORIGIN);
+  } catch {
+    return ROOT;
+  }
+  if (url.origin !== ORIGIN) return ROOT;
+  if (url.pathname !== ROOT && !url.pathname.startsWith(`${ROOT}/`)) return ROOT;
+  return url.pathname + url.search + url.hash;
 }
 
 /** Signed in already: on to where the reader was going (an effect, because

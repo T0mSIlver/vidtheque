@@ -229,10 +229,20 @@ describe("the sign-in page", () => {
       // A query is part of where the reader was going, and the fence is about
       // where that is — the same reading `_safe_next` takes.
       expect(safeNext("/dashboard/jobs?state=active")).toBe("/dashboard/jobs?state=active");
+      expect(safeNext("/dashboard")).toBe("/dashboard");
+      expect(safeNext("/dashboard/videos/a/../b#t")).toBe("/dashboard/videos/b#t");
       for (const away of [
         "https://evil.example/x",
+        "https://evil.com",
         "//evil.example",
+        "//evil.com",
+        "/\t/evil.com",
         String.raw`/\evil.example`,
+        "/dashboard/../admin",
+        "/dashboard/%2e%2e/admin",
+        "/dashboard.evil",
+        "/dashboardx",
+        "dashboard/jobs",
         "/videos",
         "javascript:alert(1)",
         "",
