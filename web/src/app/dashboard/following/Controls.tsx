@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { Pill } from "@/components/Pill";
 import { dashboard, ROOT } from "@/lib/dashboard/client";
 import type { FollowDetailRow } from "@/lib/dashboard/schemas";
@@ -46,7 +46,7 @@ export function StateControl({
 }
 
 /** Check now makes the clock due; it does not run a check. On a follow that
- *  gave up it stays, disabled, with Python's refusal as its help. */
+ *  gave up it stays, disabled, with Python's refusal beside it as its help. */
 export function CheckControl({
   follow,
   onWritten,
@@ -55,17 +55,27 @@ export function CheckControl({
   onWritten: Written;
 }) {
   const [write, run] = useWrite(() => dashboard.checkFollowNow(follow.slug), onWritten);
+  const reasonId = useId();
 
   if (follow.state === "failing" && !follow.retrying) {
+    // Visible, not a `title`: a native tooltip is unreachable by touch and by
+    // keyboard, the same reading that moved §15's state detail off `title`.
     return (
-      <button
-        className={notice.rowbutton}
-        type="button"
-        disabled
-        title={follow.not_schedulable_reason ?? undefined}
-      >
-        Check now
-      </button>
+      <span className={styles.stopped}>
+        <button
+          className={notice.rowbutton}
+          type="button"
+          disabled
+          aria-describedby={follow.not_schedulable_reason ? reasonId : undefined}
+        >
+          Check now
+        </button>
+        {follow.not_schedulable_reason ? (
+          <span className={styles.stoppedWhy} id={reasonId}>
+            {follow.not_schedulable_reason}
+          </span>
+        ) : null}
+      </span>
     );
   }
 

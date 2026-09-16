@@ -118,6 +118,20 @@
   margin-top: var(--s4);
 }
 
+/* A disabled Check now says why in text beside it, not in a tooltip. */
+.stopped {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  align-items: center;
+}
+
+.stoppedWhy {
+  composes: t-cell from global;
+  max-width: var(--note);
+  color: var(--muted);
+}
+
 /* Unfollow asks twice (§18.5). */
 .confirm {
   display: flex;
