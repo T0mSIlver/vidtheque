@@ -35,7 +35,7 @@ export default function ParisPage({ searchParams }: PageProps<"/paris">) {
           <s />
           <span>search or ask</span>
         </p>
-        <h2 id="query-title" className={styles.sectionTitle}>
+        <h2 id="query-title" className={`${styles.sectionTitle} ${styles.queryTitle}`}>
           Find a moment in the main-stage corpus
         </h2>
         <ParisConsole searchParams={searchParams} />

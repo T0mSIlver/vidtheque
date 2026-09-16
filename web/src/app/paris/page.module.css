@@ -50,6 +50,10 @@
   composes: t-headline from global;
   margin-top: var(--s3);
 }
+
+.queryTitle {
+  margin-bottom: var(--gap-head);
+}
 .scheduleLink {
   composes: t-label-sm from global;
   color: var(--gold);
