@@ -4,8 +4,8 @@ import { dashboard, ROOT } from "@/lib/dashboard/client";
 import { useResource } from "@/lib/dashboard/resource";
 import type { Ledger } from "@/lib/dashboard/schemas";
 import { at, bytes, count, hours, iso } from "@/lib/format";
-import { ReadFailure } from "../kit/notice";
-import { Readiness } from "../kit/Readiness";
+import { ReadFailure } from "@/components/dashboard/kit/notice";
+import { Readiness } from "@/components/dashboard/kit/Readiness";
 import {
   CountLink,
   DashLink,
@@ -21,7 +21,7 @@ import {
   ui,
   Unbroken,
   Unit,
-} from "../kit/ui";
+} from "@/components/dashboard/kit/ui";
 
 // Every key number this instance counts, in one reading stamped once
 // (dashboard.md §17). No chart, no history (§1 non-goal 5).

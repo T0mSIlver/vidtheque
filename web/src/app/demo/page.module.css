@@ -55,7 +55,7 @@
 
 /* The cold page's corpus listing, under the examples. */
 .corpus {
-  composes: plate from "../../styles/ornament.module.css";
+  composes: plate from "@/styles/ornament.module.css";
   margin-top: clamp(26px, 3vw, 40px);
   background: var(--plate);
   border: 1px solid var(--seam2);

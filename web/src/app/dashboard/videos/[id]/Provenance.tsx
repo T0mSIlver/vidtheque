@@ -1,8 +1,8 @@
 import { Pill } from "@/components/ui/Pill";
 import type { Stage, VideoDetail } from "@/lib/dashboard/schemas";
 import { at, bytes, count, DASH, duration, iso } from "@/lib/format";
-import { table } from "../../kit/table";
-import { Figure, Panel, ui } from "../../kit/ui";
+import { table } from "@/components/dashboard/kit/table";
+import { Figure, Panel, ui } from "@/components/dashboard/kit/ui";
 import styles from "./detail.module.css";
 
 /** What the pipeline stored for this video, and where its cues came from. */

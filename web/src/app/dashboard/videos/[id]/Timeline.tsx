@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState, type RefObject } from "react";
 import type { Shot } from "@/lib/dashboard/schemas";
 import { clock, count } from "@/lib/format";
-import { DashLink, Panel, ui } from "../../kit/ui";
+import { DashLink, Panel, ui } from "@/components/dashboard/kit/ui";
 import styles from "./detail.module.css";
 import { frameLink } from "./query";
 

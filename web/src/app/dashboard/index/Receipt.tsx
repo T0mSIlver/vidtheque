@@ -1,10 +1,10 @@
 import { Pill } from "@/components/ui/Pill";
 import { ROOT } from "@/lib/dashboard/client";
 import type { IndexOutcome } from "@/lib/dashboard/schemas";
-import controls from "../kit/controls.module.css";
-import { notice } from "../kit/notice";
-import { table } from "../kit/table";
-import { DashLink, ui } from "../kit/ui";
+import controls from "@/components/dashboard/kit/controls.module.css";
+import { notice } from "@/components/dashboard/kit/notice";
+import { table } from "@/components/dashboard/kit/table";
+import { DashLink, ui } from "@/components/dashboard/kit/ui";
 import styles from "./index.module.css";
 
 /** The two ids the "already indexed" line prints before "and more". */

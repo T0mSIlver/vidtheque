@@ -4,10 +4,18 @@ import { Pill } from "@/components/ui/Pill";
 import { ROOT } from "@/lib/dashboard/client";
 import type { VideoDetail } from "@/lib/dashboard/schemas";
 import { at, day, hms } from "@/lib/format";
-import { Notice } from "../../kit/notice";
-import { Notes } from "../../kit/table";
-import { DashLink, Fact, PageHead, Sep, StatePair, ui, Unbroken } from "../../kit/ui";
-import { useWriteSide } from "../../kit/write";
+import { Notice } from "@/components/dashboard/kit/notice";
+import { Notes } from "@/components/dashboard/kit/table";
+import {
+  DashLink,
+  Fact,
+  PageHead,
+  Sep,
+  StatePair,
+  ui,
+  Unbroken,
+} from "@/components/dashboard/kit/ui";
+import { useWriteSide } from "@/components/dashboard/kit/write";
 import styles from "./detail.module.css";
 
 /** The video's name, states and source facts, and what the pipeline said

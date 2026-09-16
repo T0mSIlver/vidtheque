@@ -4,7 +4,7 @@
 import { render } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, vi } from "vitest";
-import { Chrome } from "@/app/dashboard/Chrome";
+import { Chrome } from "@/components/dashboard/Chrome";
 import { clearResources } from "@/lib/dashboard/resource";
 import { OWNER_SESSION } from "./dashboard-fixtures";
 import { navigateTo, resetNavigation } from "./next";

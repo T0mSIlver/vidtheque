@@ -3,9 +3,9 @@
 import type { FormEvent, ReactNode } from "react";
 import type { FollowDetail, FollowRow } from "@/lib/dashboard/schemas";
 import { at, DASH, duration, hms } from "@/lib/format";
-import controls from "../kit/controls.module.css";
-import { ui } from "../kit/ui";
-import { CHANNEL_BOXES, formFields } from "../kit/write";
+import controls from "@/components/dashboard/kit/controls.module.css";
+import { ui } from "@/components/dashboard/kit/ui";
+import { CHANNEL_BOXES, formFields } from "@/components/dashboard/kit/write";
 import styles from "./following.module.css";
 
 // What the two following pages are built from: values composed from the

@@ -329,11 +329,11 @@
 
 /* On a phone each row is a block and each cell wears its column's name. */
 .jobs {
-  composes: stacked from "../kit/table.module.css";
+  composes: stacked from "@/components/dashboard/kit/table.module.css";
 }
 
 .items {
-  composes: stacked from "../kit/table.module.css";
+  composes: stacked from "@/components/dashboard/kit/table.module.css";
 }
 
 @media (max-width: 52rem) {

@@ -3,8 +3,8 @@
 import { Pill } from "@/components/ui/Pill";
 import { dashboard } from "@/lib/dashboard/client";
 import type { JobCard } from "@/lib/dashboard/schemas";
-import { notice, RefusalNotice } from "../kit/notice";
-import { focusOnArrival, useWrite } from "../kit/write";
+import { notice, RefusalNotice } from "@/components/dashboard/kit/notice";
+import { focusOnArrival, useWrite } from "@/components/dashboard/kit/write";
 
 // Cancel, on a live job (dashboard.md §16.1, §21). Inline, because whether the
 // job settled now or is still stopping is what the next tick cannot say. A

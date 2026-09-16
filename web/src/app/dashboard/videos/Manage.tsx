@@ -2,10 +2,15 @@
 
 import { useRef, type FormEvent } from "react";
 import { dashboard, ROOT } from "@/lib/dashboard/client";
-import controls from "../kit/controls.module.css";
-import { notice, RefusalNotice } from "../kit/notice";
-import { DashLink, ui } from "../kit/ui";
-import { focusOnArrival, formFields, useWrite, useWriteSide } from "../kit/write";
+import controls from "@/components/dashboard/kit/controls.module.css";
+import { notice, RefusalNotice } from "@/components/dashboard/kit/notice";
+import { DashLink, ui } from "@/components/dashboard/kit/ui";
+import {
+  focusOnArrival,
+  formFields,
+  useWrite,
+  useWriteSide,
+} from "@/components/dashboard/kit/write";
 import styles from "./videos.module.css";
 
 // The two writes on one video, shared by the table and the detail page

@@ -1,5 +1,5 @@
 .card {
-  composes: plate from "../../styles/ornament.module.css";
+  composes: plate from "@/styles/ornament.module.css";
   background: var(--plate);
   border: 1px solid var(--seam2);
 }

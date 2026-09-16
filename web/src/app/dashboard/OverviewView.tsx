@@ -4,9 +4,9 @@ import { dashboard, ROOT } from "@/lib/dashboard/client";
 import { useResource } from "@/lib/dashboard/resource";
 import type { Overview } from "@/lib/dashboard/schemas";
 import { at, bytes, count, DASH, hms, hours, iso } from "@/lib/format";
-import { Notice, ReadFailure } from "./kit/notice";
-import { Readiness } from "./kit/Readiness";
-import { table } from "./kit/table";
+import { Notice, ReadFailure } from "@/components/dashboard/kit/notice";
+import { Readiness } from "@/components/dashboard/kit/Readiness";
+import { table } from "@/components/dashboard/kit/table";
 import {
   DashLink,
   Fact,
@@ -21,7 +21,7 @@ import {
   ui,
   Unbroken,
   Unit,
-} from "./kit/ui";
+} from "@/components/dashboard/kit/ui";
 
 // The corpus overview (dashboard.md §5.1): what is in the corpus, what is
 // missing, what arrived last, and whether the declared models are the served

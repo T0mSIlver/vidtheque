@@ -4,9 +4,9 @@ import { ROOT } from "@/lib/dashboard/client";
 import { withQuery } from "@/lib/dashboard/query";
 import type { Jobs } from "@/lib/dashboard/schemas";
 import { DASH } from "@/lib/format";
-import controls from "../kit/controls.module.css";
-import { FilterBand } from "../kit/FilterBand";
-import { DashLink } from "../kit/ui";
+import controls from "@/components/dashboard/kit/controls.module.css";
+import { FilterBand } from "@/components/dashboard/kit/FilterBand";
+import { DashLink } from "@/components/dashboard/kit/ui";
 
 // The jobs band: its pickers and the head's facts, both read off what the
 // listing ran with.
