@@ -504,6 +504,11 @@ async def _refused(send: Send, bucket: str, limit: int, wait: float) -> None:
         "status": 429,
         "headers": [
             (b"content-type", b"application/json"),
+            # Nothing the facade answers is cacheable, and this refusal is the
+            # one it sends before a handler runs (demo-site.md §2): a bucket
+            # empties and refills under the reader, so a held 429 outlives the
+            # minute it was true for.
+            (b"cache-control", b"no-store"),
             (b"retry-after", str(retry_after).encode("ascii")),
             (b"x-ratelimit-limit", str(limit).encode("ascii")),
             (b"x-ratelimit-remaining", b"0"),

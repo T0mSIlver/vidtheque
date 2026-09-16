@@ -456,6 +456,21 @@ def test_the_payload_carries_the_documented_fields_and_no_others(tmp_path: Path)
     assert "speaker@example.com" not in json.dumps(payload)
 
 
+def test_a_refused_edition_read_is_no_more_cacheable_than_an_answered_one(
+    tmp_path: Path,
+) -> None:
+    """The 429 comes out of the shared search bucket, ahead of the handler that
+    sets the header. `no-store` covers every response the facade sends (§3), so
+    the one refusal a handler never sees has to carry it too."""
+    tight = PublicSettings(enabled=True, search_per_min=1)
+    with make_client(tmp_path, tight) as client:
+        assert client.get("/api/editions/aie-paris-2026").status_code == 200
+        refused = client.get("/api/editions/aie-paris-2026")
+    assert refused.status_code == 429
+    assert refused.json()["bucket"] == "search"
+    assert refused.headers["cache-control"] == "no-store"
+
+
 def test_a_fixture_that_cannot_fit_is_the_internal_error_not_an_oversized_body(
     public_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
