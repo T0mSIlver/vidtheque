@@ -1,100 +1,17 @@
 // @vitest-environment jsdom
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mountDashboard, type Answer } from "@/test/dashboard";
 import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
-import { REINDEX_REFUSED, REINDEXED, TAG_REFUSED, TAGGED } from "@/test/index-fixtures";
-import {
-  DEMO_HALF,
-  DEMO_VIDEO,
-  OWNER_CUES,
-  OWNER_HALF,
-  OWNER_VIDEO,
-} from "@/test/library-fixtures";
+import { REINDEX_REFUSED, TAG_REFUSED, TAGGED } from "@/test/index-fixtures";
+import { DEMO_VIDEO, OWNER_HALF, OWNER_VIDEO } from "@/test/library-fixtures";
 import { firstPaint } from "@/test/retry";
-import { VideoDetailView } from "./VideoDetailView";
+import { mountVideo } from "./detail-harness";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 
-// The receipts of one video: the seven stages and their models, the shot band
-// drawn from seconds, the OCR boxes at stored coordinates, and what the
-// projection drops.
-
-function mount(
-  detail: Answer,
-  {
-    // A function where the answer depends on which page of cues was asked for.
-    cues = { body: OWNER_CUES } as Answer | ((url: string) => Answer),
-    post = { body: REINDEXED } as Answer,
-    search = "",
-    session = OWNER_SESSION as unknown,
-    videoId = "kCc8FmEb1nY",
-  } = {},
-) {
-  return mountDashboard(<VideoDetailView videoId={videoId} />, {
-    path: `/dashboard/videos/${videoId}`,
-    search,
-    session,
-    routes: {
-      "/dashboard/api/library/*": detail,
-      "/dashboard/api/videos/*": (request) =>
-        typeof cues === "function" ? cues(request.url) : cues,
-      "POST /dashboard/videos/*": post,
-    },
-  });
-}
-
-/** `OWNER_VIDEO` with a second OCR line on frame 1: the pairing is by index,
- *  and one line cannot tell a working pairing from a lit-everything one. */
-const TWO_LINES = {
-  ...OWNER_VIDEO,
-  frames: {
-    ...OWNER_VIDEO.frames,
-    frames: OWNER_VIDEO.frames.frames.map((frame) =>
-      frame.ord === 1
-        ? {
-            ...frame,
-            lines: [
-              ...frame.lines,
-              { line_no: 1, text: "loss 3.14", conf: 0.71, box: [0.1, 0.6, 0.4, 0.68] },
-            ],
-          }
-        : frame,
-    ),
-  },
-};
-
-/**
- * A page of cues the endpoint would answer with, for whatever `offset` and
- * `limit` were asked for — the one panel here that reads more than once, and
- * the only way to tell an appended batch from a prepended one is for the two
- * to hold different rows. Each cue's text is its own ordinal, and `limit` is
- * echoed back as the endpoint echoes the number it ran.
- */
-function cuePage(url: string): unknown {
-  const asked = new URL(url, "http://localhost").searchParams;
-  const offset = Number(asked.get("offset") ?? 0);
-  const limit = Number(asked.get("limit") ?? 50);
-  const rows = Array.from({ length: Math.min(limit, 25) }, (_, index) => ({
-    ...OWNER_CUES.cues[1],
-    start_s: offset + index,
-    end_s: offset + index + 1,
-    t: offset + index,
-    text: `cue ${offset + index}`,
-  }));
-  return { cues: rows, offset, limit, has_more: true };
-}
-
-/** The shot band, with the geometry jsdom does not compute: 1000px wide, a
- *  hundred pixels down the viewport. Every percentage the preview clamps
- *  against is read off this. */
-async function bandOf(): Promise<HTMLElement> {
-  const band = await screen.findByRole("list", { name: "Shots across the runtime" });
-  band.getBoundingClientRect = () =>
-    ({ left: 0, top: 100, right: 1000, bottom: 148, width: 1000, height: 48 }) as DOMRect;
-  return band;
-}
+// The page around its panels: the header, what was stored, chapters and runs,
+// a read that does not land, and the write side.
 
 describe("the video detail", () => {
   afterEach(() => {
@@ -102,7 +19,7 @@ describe("the video detail", () => {
   });
 
   it("carries the header, both state words and the source", async () => {
-    await mount({ body: OWNER_VIDEO });
+    await mountVideo({ body: OWNER_VIDEO });
 
     expect(
       await screen.findByRole("heading", { name: "Let's build GPT: from scratch" }),
@@ -124,7 +41,7 @@ describe("the video detail", () => {
   });
 
   it("counts what was stored, and where the cues came from", async () => {
-    await mount({ body: OWNER_VIDEO });
+    await mountVideo({ body: OWNER_VIDEO });
 
     expect(await screen.findByText("What was stored")).toBeInTheDocument();
     // The breakdown is the bare integer, not a second grouped figure.
@@ -136,311 +53,8 @@ describe("the video detail", () => {
     );
   });
 
-  // The percentages are this page's arithmetic over three numbers that are all
-  // on the payload; none of the three is a percentage.
-  it("draws one bar per shot, positioned against the runtime", async () => {
-    await mount({ body: OWNER_VIDEO });
-
-    const band = await screen.findByRole("list", { name: "Shots across the runtime" });
-    const bars = within(band).getAllByRole("listitem");
-    expect(bars).toHaveLength(3);
-    // 5s into 7000s, five seconds long.
-    expect(bars[0]).toHaveStyle({ left: "0.07142857142857142%" });
-    expect(
-      within(band).getByText("Shot 0, 0:05 to 0:10, 1 of 1 keyframes kept"),
-    ).toBeInTheDocument();
-    // A bar carries the strip page holding its first keyframe, and the ordinal
-    // the fragment carries — a fragment never reaches a server.
-    expect(within(band).getAllByRole("link")[2]).toHaveAttribute(
-      "href",
-      "/dashboard/videos/kCc8FmEb1nY?frame_offset=0&select=7#frame-7",
-    );
-    // No native tooltip under the preview.
-    expect(band.querySelector("[data-shot='0']")).not.toHaveAttribute("title");
-    // The scale is the video's runtime quartered, not the band's fallback span.
-    const ticks = band.parentElement?.querySelectorAll("p[aria-hidden='true'] span");
-    expect(Array.from(ticks ?? []).map((tick) => tick.textContent)).toEqual([
-      "0:00",
-      "29:10",
-      "58:20",
-      "1:27:30",
-      "1:56:40",
-    ]);
-  });
-
-  // Paging the strip keeps the transcript's place, and vice versa.
-  it("carries the transcript's bounds across a strip navigation", async () => {
-    await mount(
-      { body: { ...OWNER_VIDEO, frames: { ...OWNER_VIDEO.frames, limit: 2, has_more: true } } },
-      { search: "frames=2&cues=25&cue_offset=100", cues: (url) => ({ body: cuePage(url) }) },
-    );
-
-    const pager = await screen.findByRole("navigation", { name: "Keyframe pages" });
-    expect(within(pager).getByRole("link", { name: "Next 2 frames →" })).toHaveAttribute(
-      "href",
-      "/dashboard/videos/kCc8FmEb1nY?frames=2&cues=25&cue_offset=100&frame_offset=2#frames",
-    );
-    const band = await screen.findByRole("list", { name: "Shots across the runtime" });
-    expect(within(band).getAllByRole("link")[0].getAttribute("href")).toContain(
-      "cues=25&cue_offset=100",
-    );
-  });
-
-  it("shows the seven stages with the model that produced each", async () => {
-    await mount({ body: OWNER_HALF }, { videoId: "aaaaaaaaaaa" });
-
-    const table = await screen.findByRole("table", {
-      name: /Each pipeline stage, its state and the model/,
-    });
-    // All seven, `absent` included: a stage that never ran is a different fact
-    // from a stage that ran and produced nothing.
-    expect(within(table).getAllByRole("row")).toHaveLength(9); // head + 7 + the error row
-    expect(within(table).getByText("yt-dlp-2026.07.04")).toBeInTheDocument();
-    expect(within(table).getAllByText("absent")).toHaveLength(5);
-    // The pipeline's own words about the operator's box, on the owner's page.
-    expect(within(table).getByText(/Sign in to confirm you are not a bot/)).toBeInTheDocument();
-  });
-
-  it("names the failed stage where the eye already is", async () => {
-    await mount({ body: OWNER_HALF }, { videoId: "aaaaaaaaaaa" });
-
-    expect(await screen.findByText(/did not finish/)).toBeInTheDocument();
-    // `video-summary`'s refusal is why the panels below are thin, so it is a
-    // fact about the video rather than a failure of this page's read.
-    expect(screen.getByText(/mid-pipeline; only partial data is queryable/)).toBeInTheDocument();
-    expect(screen.getByText("E_INDEXING")).toBeInTheDocument();
-  });
-
-  it("draws every OCR box at the coordinates the store holds", async () => {
-    await mount({ body: OWNER_VIDEO });
-
-    await screen.findByText("Frames, and what the machine read");
-    const boxes = document.body.querySelectorAll("[data-ocrbox]");
-    // Two of the three keyframes carry a line; the third was deduplicated.
-    expect(boxes.length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText("nvidia-smi 18304MiB")).toBeInTheDocument();
-    expect(screen.getByText("duplicate of #0")).toBeInTheDocument();
-    // The card is the way into the enlarged frame, not a link out to a JPEG:
-    // the still it shows is the 512px one, and the 1280px one is the dialog's.
-    const card = screen.getByRole("button", { name: "Keyframe 0 at 0:05" });
-    expect(within(card).getByRole("img")).toHaveAttribute(
-      "src",
-      "/frames/kCc8FmEb1nY-00000.jpg?w=512&q=70",
-    );
-  });
-
-  // Point at a line and its box lights. Only that direction at this size: a
-  // detection box on a 512px still is a few millimetres of screen, and a
-  // pointer aimed at one would be stealing the click that opens the frame.
-  it("lights a card's box from its line", async () => {
-    await mount({ body: OWNER_VIDEO });
-    await screen.findByText("Frames, and what the machine read");
-
-    const line = screen.getByText("nvidia-smi 18304MiB").closest("li");
-    const card = line?.closest("li[id]");
-    const box = card?.querySelector("[data-ocrbox]");
-    expect(box).toBeTruthy();
-    expect(box).not.toHaveAttribute("data-lit");
-
-    await userEvent.hover(line as HTMLElement);
-    expect(box).toHaveAttribute("data-lit");
-    expect(line).toHaveAttribute("data-lit");
-
-    await userEvent.unhover(line as HTMLElement);
-    expect(box).not.toHaveAttribute("data-lit");
-  });
-
-  it("pages the strip through the URL, keeping the reader's page size", async () => {
-    await mount(
-      { body: { ...OWNER_VIDEO, frames: { ...OWNER_VIDEO.frames, limit: 2, has_more: true } } },
-      { search: "frames=2" },
-    );
-
-    const pager = await screen.findByRole("navigation", { name: "Keyframe pages" });
-    expect(within(pager).getByRole("link", { name: "Next 2 frames →" })).toHaveAttribute(
-      "href",
-      "/dashboard/videos/kCc8FmEb1nY?frames=2&frame_offset=2#frames",
-    );
-  });
-
-  // The transcript is a pointer, not a copy: the detail payload carries the
-  // totals and the endpoint's name, and the cues arrive a page at a time.
-  it("reads the transcript from the endpoint the payload names", async () => {
-    const { fetcher } = await mount({ body: OWNER_VIDEO });
-
-    expect(await screen.findByText("we cache the keys and the values at every new token"));
-    expect(fetcher).toHaveBeenCalledWith(
-      "/dashboard/api/videos/kCc8FmEb1nY/cues?offset=0&limit=50",
-      expect.objectContaining({ credentials: "same-origin" }),
-    );
-    // Totals, not position: the count the counts band already read, plus the
-    // words and characters, which is what "how big is this transcript" means.
-    const totals = screen.getByText("292").closest("p");
-    expect(totals).toHaveTextContent("6 cues");
-    expect(totals).toHaveTextContent("54 words");
-    expect(totals).toHaveTextContent("292 chars");
-  });
-
-  // The endpoint answers in numbers and every rendering is this page's: the
-  // timecode from `start_s`, the confidence from `avg_logprob`, the chunk label
-  // composed from the chunk's own five fields.
-  it("composes the timecode, the confidence and the chunk label from the numbers", async () => {
-    await mount({ body: OWNER_VIDEO });
-    expect(
-      await screen.findByText(/chunk 0 · 0:00–7:03 · 54 words · 297 chars/),
-    ).toBeInTheDocument();
-    expect(screen.getAllByText("0:00").length).toBeGreaterThan(0);
-    expect(screen.getByText("-0.42")).toBeInTheDocument();
-    // A cue whose log-probability is `null` prints no confidence at all, rather
-    // than a word standing in for one.
-    expect(screen.getAllByTitle("avg_logprob")).toHaveLength(1);
-  });
-
-  it("appends the next batch rather than reloading the page", async () => {
-    const { fetcher } = await mount({ body: OWNER_VIDEO });
-    await screen.findByText("we cache the keys and the values at every new token");
-
-    await userEvent.click(screen.getByRole("link", { name: /Next 50 cues/ }));
-
-    // The offset is the server's own: `page.offset + page.cues.length`, not
-    // this page's arithmetic over a limit it asked for.
-    expect(fetcher).toHaveBeenCalledWith(
-      "/dashboard/api/videos/kCc8FmEb1nY/cues?offset=3&limit=50",
-      expect.anything(),
-    );
-    // Nothing above the first row, so nothing to go back to: the Earlier
-    // control belongs to a panel that was deep-linked into.
-    expect(screen.queryByRole("link", { name: "← Earlier" })).toBeNull();
-  });
-
-  // Appending in place does not stop the position being addressable.
-  it("seeds the transcript from ?cue_offset= and ?cues=", async () => {
-    const { fetcher } = await mount(
-      { body: OWNER_VIDEO },
-      { search: "cue_offset=100&cues=25", cues: (url) => ({ body: cuePage(url) }) },
-    );
-
-    expect(await screen.findByText("cue 100")).toBeInTheDocument();
-    expect(fetcher).toHaveBeenCalledWith(
-      "/dashboard/api/videos/kCc8FmEb1nY/cues?offset=100&limit=25",
-      expect.objectContaining({ credentials: "same-origin" }),
-    );
-    expect(screen.getByRole("link", { name: "Next 25 cues →" })).toBeInTheDocument();
-    // Real addresses at the server's offsets, so a page can go to a tab.
-    expect(screen.getByRole("link", { name: "Next 25 cues →" })).toHaveAttribute(
-      "href",
-      "/dashboard/videos/kCc8FmEb1nY?cues=25&cue_offset=125#transcript",
-    );
-    expect(screen.getByRole("link", { name: "← Earlier" })).toHaveAttribute(
-      "href",
-      "/dashboard/videos/kCc8FmEb1nY?cues=25&cue_offset=75#transcript",
-    );
-  });
-
-  // The empty page, not the empty transcript: an offset past the end.
-  it("says the page is empty when the offset lands past the end", async () => {
-    await mount(
-      { body: OWNER_VIDEO },
-      {
-        search: "cue_offset=9000",
-        cues: { body: { cues: [], offset: 9000, limit: 50, has_more: false } },
-      },
-    );
-
-    expect(await screen.findByText("No transcript cues on this page.")).toBeInTheDocument();
-  });
-
-  // A hand-typed page size above the endpoint's own ceiling is held at it,
-  // using the number the payload carries rather than one written here.
-  it("holds ?cues= under the endpoint's max_limit", async () => {
-    const { fetcher } = await mount(
-      { body: OWNER_VIDEO },
-      { search: "cues=5000", cues: (url) => ({ body: cuePage(url) }) },
-    );
-
-    await screen.findByText("cue 0");
-    expect(fetcher).toHaveBeenCalledWith(
-      "/dashboard/api/videos/kCc8FmEb1nY/cues?offset=0&limit=200",
-      expect.anything(),
-    );
-  });
-
-  // `?cues=0` asks for a page of no cues: the pager reads "Next 0 cues", and
-  // Earlier steps back by nothing, so neither control moves. A size is at
-  // least one cue — `?cue_offset=0`, which is the top of the transcript, keeps
-  // its zero.
-  it("floors ?cues= at a cue, and leaves ?cue_offset= its zero", async () => {
-    const { fetcher } = await mount(
-      { body: OWNER_VIDEO },
-      { search: "cues=0&cue_offset=0", cues: (url) => ({ body: cuePage(url) }) },
-    );
-
-    await screen.findByText("cue 0");
-    expect(fetcher).toHaveBeenCalledWith(
-      "/dashboard/api/videos/kCc8FmEb1nY/cues?offset=0&limit=1",
-      expect.anything(),
-    );
-    expect(screen.getByRole("link", { name: "Next 1 cues →" })).toBeInTheDocument();
-  });
-
-  it("pages back from a seeded offset and writes where it landed", async () => {
-    const { fetcher } = await mount(
-      { body: OWNER_VIDEO },
-      { search: "cue_offset=100&cues=25", cues: (url) => ({ body: cuePage(url) }) },
-    );
-    await screen.findByText("cue 100");
-
-    await userEvent.click(screen.getByRole("link", { name: "← Earlier" }));
-
-    expect(fetcher).toHaveBeenCalledWith(
-      "/dashboard/api/videos/kCc8FmEb1nY/cues?offset=75&limit=25",
-      expect.anything(),
-    );
-    // Prepended, not appended: the earlier batch goes above the rows the reader
-    // was already on.
-    await screen.findByText("cue 75");
-    const rows = screen.getAllByText(/^cue \d+$/).map((row) => row.textContent);
-    expect(rows[0]).toBe("cue 75");
-    expect(rows[rows.length - 1]).toBe("cue 124");
-    // …and the address bar names where this view now starts, under the panel's
-    // own fragment, so the link is one somebody can send.
-    expect(window.location.href).toContain("cue_offset=75#transcript");
-  });
-
-  it("reaches the first cue and then stops offering Earlier", async () => {
-    await mount(
-      { body: OWNER_VIDEO },
-      { search: "cue_offset=10&cues=25", cues: (url) => ({ body: cuePage(url) }) },
-    );
-    await screen.findByText("cue 10");
-
-    await userEvent.click(screen.getByRole("link", { name: "← Earlier" }));
-
-    // The backwards page starts at 0 and runs past the rows already on screen,
-    // so only the ones that are actually earlier are kept — cue 12 is printed
-    // once, not twice.
-    await screen.findByText("cue 0");
-    expect(screen.getAllByText("cue 12")).toHaveLength(1);
-    // Nothing above the first row now, so the control goes.
-    await waitFor(() => expect(screen.queryByRole("link", { name: "← Earlier" })).toBeNull());
-  });
-
-  // `cue.t` is the whole second the endpoint sends for the deeplink.
-  it("makes each cue timecode the deeplink at that second", async () => {
-    await mount({ body: OWNER_VIDEO });
-    const row = (
-      await screen.findByText("otherwise you would recompute attention over the entire prefix")
-    ).closest("li");
-
-    expect(within(row!).getByRole("link", { name: "0:03" })).toHaveAttribute(
-      "href",
-      "https://youtu.be/kCc8FmEb1nY?t=3",
-    );
-    expect(within(row!).getByRole("link", { name: "0:03" })).toHaveAttribute("target", "_blank");
-  });
-
   it("says a transcript is absent rather than showing an empty box", async () => {
-    await mount({ body: OWNER_HALF }, { videoId: "aaaaaaaaaaa" });
+    await mountVideo({ body: OWNER_HALF }, { videoId: "aaaaaaaaaaa" });
 
     expect(await screen.findByText("No transcript cues on this page.")).toBeInTheDocument();
     expect(
@@ -451,7 +65,7 @@ describe("the video detail", () => {
 
   // A chapter start is a boundary, not a quoted moment: no `DEEPLINK_LEAD` (§3.6).
   it("links a chapter at its own start, not two seconds before it", async () => {
-    await mount({
+    await mountVideo({
       body: {
         ...OWNER_VIDEO,
         chapters: [
@@ -468,7 +82,7 @@ describe("the video detail", () => {
   });
 
   it("lists the jobs that touched this video", async () => {
-    await mount({ body: OWNER_VIDEO });
+    await mountVideo({ body: OWNER_VIDEO });
 
     expect(await screen.findByText("Recent indexing runs")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "job_running001" })).toHaveAttribute(
@@ -478,275 +92,19 @@ describe("the video detail", () => {
     expect(screen.getByText("Latest 10 at most; no total is computed.")).toBeInTheDocument();
   });
 
-  // §2.4: the demo gets the detail whole minus the two fields that are the
-  // operator's console. The column those fields filled keeps its place and
-  // prints the dash — the table is five columns wide on both projections, so
-  // the absence is something a reader can see rather than a layout that
-  // silently differs from the one in the screenshot they are comparing against.
-  it("drops the model ids and the pipeline's prose in the projection", async () => {
-    await mount({ body: DEMO_HALF }, { videoId: "aaaaaaaaaaa", session: DEMO_SESSION });
-
-    const table = await screen.findByRole("table", {
-      name: /Each pipeline stage, its state and the model/,
-    });
-    expect(within(table).getByRole("columnheader", { name: "model" })).toBeInTheDocument();
-    // Seven rows, and not one of them names a model.
-    expect(within(table).getAllByRole("row")).toHaveLength(8);
-    expect(within(table).queryByRole("cell", { name: /whisper|paddle|nvidia/i })).toBeNull();
-    expect(screen.queryByText(/Sign in to confirm you are not a bot/)).not.toBeInTheDocument();
-    expect(document.body.textContent).not.toContain("yt-dlp");
-    // …and what a reader can act on survives: the states, the versions and the
-    // clocks. Dropping them would leave an empty shell.
-    expect(within(table).getByText("failed")).toBeInTheDocument();
-    expect(within(table).getAllByText("absent")).toHaveLength(5);
-  });
-
   it("gives the demo every panel of a finished video", async () => {
-    await mount({ body: DEMO_VIDEO }, { session: DEMO_SESSION });
+    await mountVideo({ body: DEMO_VIDEO }, { session: DEMO_SESSION });
 
     expect(await screen.findByText("What was stored")).toBeInTheDocument();
     expect(screen.getByText("nvidia-smi 18304MiB")).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/null|NaN|undefined/);
   });
 
-  // The enlarged frame — the half of the interaction a 512px card cannot
-  // carry. At this size a detection box is a target a pointer can find, which
-  // is why the linkage runs both ways here and one way on the card.
-  describe("the enlarged frame", () => {
-    it("opens the frame in the page rather than navigating to a JPEG", async () => {
-      await mount({ body: TWO_LINES });
-      await screen.findByText("Frames, and what the machine read");
-
-      await userEvent.click(screen.getByRole("button", { name: "Keyframe 1 at 7:10" }));
-
-      const shot = screen.getByRole("dialog");
-      expect(within(shot).getByRole("img")).toHaveAttribute(
-        "src",
-        "/frames/kCc8FmEb1nY-00001.jpg?w=1280&q=70",
-      );
-      // Id, second, pixel size and bytes: facts about the file on screen (§5.3).
-      expect(
-        within(shot).getByText("kCc8FmEb1nY-00001 · 7:10 · 1280×720 · 70 B"),
-      ).toBeInTheDocument();
-      expect(within(shot).getByText(/shot 1 · sharpness 10.0 · done · 2 line/)).toBeInTheDocument();
-      // Both lines, and a box for each at the coordinates the store holds.
-      expect(within(shot).getByText("loss 3.14")).toBeInTheDocument();
-      expect(shot.querySelectorAll("[data-ocrbox]")).toHaveLength(2);
-      // The file itself stays reachable, one click further in.
-      expect(within(shot).getByRole("link", { name: "Open the file" })).toHaveAttribute(
-        "href",
-        "/frames/kCc8FmEb1nY-00001.jpg?w=1280&q=70",
-      );
-      expect(within(shot).getByRole("link", { name: "Open at this second" })).toHaveAttribute(
-        "href",
-        "https://youtu.be/kCc8FmEb1nY?t=430",
-      );
-      expect(shot.textContent).not.toMatch(/null|NaN|undefined/);
-    });
-
-    // The frame going into evidence is written in the one place it belongs:
-    // `?select=`, the same address a shot bar would have produced.
-    it("marks the opened frame in the URL", async () => {
-      await mount({ body: TWO_LINES });
-      await screen.findByText("Frames, and what the machine read");
-
-      await userEvent.click(screen.getByRole("button", { name: "Keyframe 1 at 7:10" }));
-
-      expect(window.location.href).toContain("select=1#frame-1");
-    });
-
-    it("lights a line from its box and a box from its line", async () => {
-      await mount({ body: TWO_LINES });
-      await screen.findByText("Frames, and what the machine read");
-      await userEvent.click(screen.getByRole("button", { name: "Keyframe 1 at 7:10" }));
-
-      const shot = screen.getByRole("dialog");
-      const boxes = shot.querySelectorAll("[data-ocrbox]");
-      const second = within(shot).getByText("loss 3.14").closest("li");
-
-      // Point at the second box: its line lights, and only its line.
-      await userEvent.hover(boxes[1] as HTMLElement);
-      expect(second).toHaveAttribute("data-lit");
-      expect(boxes[1]).toHaveAttribute("data-lit");
-      expect(boxes[0]).not.toHaveAttribute("data-lit");
-
-      await userEvent.unhover(boxes[1] as HTMLElement);
-      expect(second).not.toHaveAttribute("data-lit");
-
-      // And the other way: point at the line, the box lights.
-      await userEvent.hover(second as HTMLElement);
-      expect(boxes[1]).toHaveAttribute("data-lit");
-      expect(boxes[0]).not.toHaveAttribute("data-lit");
-    });
-
-    it("closes on Escape and hands the focus back to the card", async () => {
-      await mount({ body: TWO_LINES });
-      await screen.findByText("Frames, and what the machine read");
-      const card = screen.getByRole("button", { name: "Keyframe 1 at 7:10" });
-
-      await userEvent.click(card);
-      const shot = screen.getByRole("dialog");
-      expect(document.activeElement).toBe(within(shot).getByRole("button", { name: "Close" }));
-
-      await userEvent.keyboard("{Escape}");
-
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-      expect(document.activeElement).toBe(card);
-    });
-
-    it("closes on the Close control", async () => {
-      await mount({ body: TWO_LINES });
-      await screen.findByText("Frames, and what the machine read");
-
-      await userEvent.click(screen.getByRole("button", { name: "Keyframe 1 at 7:10" }));
-      await userEvent.click(screen.getByRole("button", { name: "Close" }));
-
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
-
-    // A frame with nothing on it is the same dialog without the list, and its
-    // pill says which kind of nothing it is.
-    it("says what a deduplicated frame is instead of listing lines", async () => {
-      await mount({ body: OWNER_VIDEO });
-      await screen.findByText("Frames, and what the machine read");
-
-      await userEvent.click(screen.getByRole("button", { name: "Keyframe 7 at 11:40" }));
-
-      const shot = screen.getByRole("dialog");
-      expect(within(shot).getByText(/shot 7 · duplicate of #0 · skipped/)).toBeInTheDocument();
-      expect(shot.textContent).not.toMatch(/null|NaN|undefined/);
-    });
-  });
-
-  // Point anywhere along the shot band and the shot under the pointer shows
-  // its own first keyframe, the way a video player previews a seek — except
-  // that the unit here is a shot, because that is the unit the band is made of
-  // and the only one the index has a frame for.
-  describe("the scrub preview", () => {
-    it("previews the shot the pointer is inside", async () => {
-      await mount({ body: OWNER_VIDEO });
-      const band = await bandOf();
-
-      fireEvent.pointerMove(band, { clientX: 62, pointerType: "mouse" });
-
-      // shot 1 runs 430–435s of a 7000s runtime: 6.143% to 6.214% of the band,
-      // and 62px of 1000 is 6.2%.
-      expect(screen.getByText("7:10–7:15")).toBeInTheDocument();
-      expect(screen.getByText("shot 1 · 1/1 kept")).toBeInTheDocument();
-      // The 192px still, after the pause that keeps a sweep from being one
-      // request per bar.
-      await waitFor(() =>
-        expect(
-          document.querySelector('img[src="/frames/kCc8FmEb1nY-00001.jpg?w=192&q=70"]'),
-        ).toBeInTheDocument(),
-      );
-    });
-
-    // `min-width: 3px` means a rendered bar can be wider than its share of the
-    // runtime, so a pointer in the gap between two bars is previewing the
-    // nearest one rather than nothing.
-    it("previews the nearest shot when the pointer is in a gap", async () => {
-      await mount({ body: OWNER_VIDEO });
-      const band = await bandOf();
-
-      fireEvent.pointerMove(band, { clientX: 500, pointerType: "mouse" });
-
-      expect(screen.getByText("shot 7 · 0/1 kept")).toBeInTheDocument();
-      expect(screen.getByText("11:40–12:25")).toBeInTheDocument();
-
-      fireEvent.pointerLeave(band);
-      expect(screen.queryByText("shot 7 · 0/1 kept")).not.toBeInTheDocument();
-    });
-
-    // A tap is a navigation, not a hover: on a touch screen the bar's own link
-    // is the whole interaction and a preview would only be in front of it.
-    it("stays out of the way of a tap", async () => {
-      await mount({ body: OWNER_VIDEO });
-      const band = await bandOf();
-
-      fireEvent.pointerMove(band, { clientX: 62, pointerType: "touch" });
-
-      expect(screen.queryByText("shot 1 · 1/1 kept")).not.toBeInTheDocument();
-    });
-
-    // The card is already on screen: mark it in the URL, scroll to it, and
-    // focus its button rather than reloading the page to move a mark.
-    it("selects a frame in place rather than navigating to it", async () => {
-      const scroll = vi.fn();
-      Element.prototype.scrollIntoView = scroll;
-      await mount({ body: OWNER_VIDEO });
-      const band = await bandOf();
-      const bar = within(band).getAllByRole("link")[1];
-
-      const click = new MouseEvent("click", { bubbles: true, cancelable: true });
-      bar.dispatchEvent(click);
-
-      expect(click.defaultPrevented).toBe(true);
-      expect(window.location.href).toContain("select=1#frame-1");
-      expect(scroll).toHaveBeenCalledWith({ block: "center", behavior: "smooth" });
-      expect(document.activeElement).toBe(
-        screen.getByRole("button", { name: "Keyframe 1 at 7:10" }),
-      );
-    });
-
-    // …and a bar pointing at a page of the strip this one is not showing has
-    // nothing to select, so the link it always was does the navigating.
-    it("lets the link navigate when the frame is not on this page", async () => {
-      const thin = {
-        ...OWNER_VIDEO,
-        frames: { ...OWNER_VIDEO.frames, frames: [] },
-      };
-      await mount({ body: thin });
-      const band = await bandOf();
-
-      const click = new MouseEvent("click", { bubbles: true, cancelable: true });
-      within(band).getAllByRole("link")[1].dispatchEvent(click);
-
-      expect(click.defaultPrevented).toBe(false);
-    });
-
-    // Focus is the keyboard's pointer, and the arrows step between the bars'
-    // own links rather than inventing a selection model of their own.
-    it("previews what the keyboard is on, and steps with the arrows", async () => {
-      await mount({ body: OWNER_VIDEO });
-      const band = await bandOf();
-      const bars = within(band).getAllByRole("link");
-
-      bars[0].focus();
-      await waitFor(() => expect(screen.getByText("shot 0 · 1/1 kept")).toBeInTheDocument());
-
-      fireEvent.keyDown(bars[0], { key: "ArrowRight" });
-      expect(document.activeElement).toBe(bars[1]);
-
-      fireEvent.keyDown(bars[1], { key: "End" });
-      expect(document.activeElement).toBe(bars[2]);
-
-      fireEvent.keyDown(bars[2], { key: "Escape" });
-      expect(screen.queryByText(/^shot \d+ · \d+\/\d+ kept$/)).not.toBeInTheDocument();
-    });
-
-    // The band and the strip are two views of one thing, and the link between
-    // them is otherwise invisible.
-    it("lights a shot's frames from its bar", async () => {
-      await mount({ body: OWNER_VIDEO });
-      const band = await bandOf();
-      const bars = within(band).getAllByRole("listitem");
-      const card = screen.getByRole("button", { name: "Keyframe 1 at 7:10" }).closest("li");
-
-      fireEvent.pointerEnter(bars[1]);
-      expect(card).toHaveAttribute("data-linked");
-      expect(bars[1]).toHaveAttribute("data-linked");
-
-      fireEvent.pointerLeave(bars[1]);
-      expect(card).not.toHaveAttribute("data-linked");
-    });
-  });
-
   describe("when the read does not land", () => {
     // An id that is not in the corpus is not a failure to read the instance:
     // the read succeeded and the answer is "there is no such video".
     it("answers an unknown video with the refusal and a way back", async () => {
-      await mount(
+      await mountVideo(
         {
           status: 404,
           body: {
@@ -770,7 +128,7 @@ describe("the video detail", () => {
     });
 
     it("prints the instance's own refusal when it is signed out", async () => {
-      await mount({
+      await mountVideo({
         status: 401,
         body: {
           error: "E_AUTH_REQUIRED",
@@ -788,7 +146,7 @@ describe("the video detail", () => {
     // and a page that halved it would count down just as convincingly.
     it("counts down a 429", async () => {
       await firstPaint(() =>
-        mount({
+        mountVideo({
           status: 429,
           body: { error: "E_RATE_LIMIT", message: "Too many dashboard requests.", next: null },
           headers: { "retry-after": "7" },
@@ -798,20 +156,8 @@ describe("the video detail", () => {
       expect(screen.getByRole("button", { name: "retry in 7s" })).toBeDisabled();
     });
 
-    it("keeps the page when only the transcript's next batch fails", async () => {
-      await mount(
-        { body: OWNER_VIDEO },
-        { cues: { status: 429, body: { error: "E_RATE_LIMIT", message: "Slow down." } } },
-      );
-
-      expect(await screen.findByText("What was stored")).toBeInTheDocument();
-      expect(await screen.findByText("Slow down.")).toBeInTheDocument();
-      // The panels the detail payload answered for are untouched.
-      expect(screen.getByText("Provenance")).toBeInTheDocument();
-    });
-
     it("says so when the instance answers in a shape it cannot read", async () => {
-      await mount({ body: { ...OWNER_VIDEO, stages: null } });
+      await mountVideo({ body: { ...OWNER_VIDEO, stages: null } });
 
       expect(await screen.findByText(/shape this page cannot read/)).toBeInTheDocument();
     });
@@ -822,7 +168,7 @@ describe("the video detail", () => {
   // pipeline behind it, so a delete button here would queue a job that fails.
   describe("the manage panel", () => {
     it("queues a forced rebuild and names the job it made", async () => {
-      const { posts } = await mount({ body: OWNER_VIDEO });
+      const { posts } = await mountVideo({ body: OWNER_VIDEO });
       await screen.findByRole("heading", { name: "Manage this video" });
 
       await userEvent.click(screen.getByRole("button", { name: "Re-index this video" }));
@@ -842,7 +188,7 @@ describe("the video detail", () => {
     });
 
     it("prints the tool's refusal rather than claiming it queued something", async () => {
-      await mount({ body: OWNER_VIDEO }, { post: { status: 409, body: REINDEX_REFUSED } });
+      await mountVideo({ body: OWNER_VIDEO }, { post: { status: 409, body: REINDEX_REFUSED } });
       await screen.findByRole("heading", { name: "Manage this video" });
 
       await userEvent.click(screen.getByRole("button", { name: "Re-index this video" }));
@@ -855,7 +201,7 @@ describe("the video detail", () => {
     // this side, because `tag_video` reports what it changed across a batch and
     // this panel is showing the row.
     it("replaces the tag list with the tags the row carries after the write", async () => {
-      const { posts } = await mount({ body: OWNER_VIDEO }, { post: { body: TAGGED } });
+      const { posts } = await mountVideo({ body: OWNER_VIDEO }, { post: { body: TAGGED } });
       await screen.findByRole("heading", { name: "Manage this video" });
 
       await userEvent.type(screen.getByLabelText("Add"), "topic:json, series:writes");
@@ -873,7 +219,7 @@ describe("the video detail", () => {
     });
 
     it("prints tag_video's own refusal, in its own words", async () => {
-      await mount({ body: OWNER_VIDEO }, { post: { status: 400, body: TAG_REFUSED } });
+      await mountVideo({ body: OWNER_VIDEO }, { post: { status: 400, body: TAG_REFUSED } });
       await screen.findByRole("heading", { name: "Manage this video" });
 
       await userEvent.type(screen.getByLabelText("Add"), "NotATag");
@@ -888,7 +234,10 @@ describe("the video detail", () => {
     // §5.5: the database's own flag disables the one control that feeds
     // `index_video`. Tagging writes the row, not the index, and stays live.
     it("disables only the rebuild when the database refuses writes", async () => {
-      await mount({ body: OWNER_VIDEO }, { session: { ...OWNER_SESSION, writes_allowed: false } });
+      await mountVideo(
+        { body: OWNER_VIDEO },
+        { session: { ...OWNER_SESSION, writes_allowed: false } },
+      );
       await screen.findByRole("heading", { name: "Manage this video" });
 
       expect(screen.getByRole("button", { name: "Re-index this video" })).toBeDisabled();
@@ -897,7 +246,7 @@ describe("the video detail", () => {
     });
 
     it("is not on the page at all in the projection", async () => {
-      await mount({ body: DEMO_VIDEO }, { session: DEMO_SESSION });
+      await mountVideo({ body: DEMO_VIDEO }, { session: DEMO_SESSION });
       await screen.findByRole("heading", { name: "Let's build GPT: from scratch" });
 
       expect(screen.queryByText("Manage this video")).not.toBeInTheDocument();
@@ -909,7 +258,7 @@ describe("the video detail", () => {
     // A `GET` prefill and not a write: the index form remains the place the
     // operator reviews it, and the POST remains the only state change.
     it("links the channel into the index form, seeded", async () => {
-      await mount({ body: OWNER_VIDEO });
+      await mountVideo({ body: OWNER_VIDEO });
 
       expect(
         await screen.findByRole("link", { name: "Queue more from this channel" }),
