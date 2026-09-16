@@ -165,7 +165,8 @@ browser still has to see one origin: Python's CSRF origin check reads a request
 from `localhost:3000` against its own `localhost:8080` as cross-site and
 refuses the write, which is a refusal no CORS header should be asked to lift.
 So `web/next.config.ts` forwards Python's prefixes — `/api/*`, `/frames/*`,
-`/mcp`, `/auth/*`, `/.well-known/*`, `/healthz`, `/dashboard/*` and
+`/mcp`, `/auth/*`, `/.well-known/*`, the root OAuth endpoints (`/authorize`,
+`/token`, `/register`, `/revoke`), `/healthz`, `/dashboard/*` and
 `/videos/{id}/export.md` — to `VIDTHEQUE_API_URL` with `rewrites()` whenever
 `NODE_ENV` is not `production`. In production the list is empty, because the
 proxy is doing it. **No CORS anywhere**, by decision 4, and this is the one
@@ -1366,7 +1367,10 @@ where the path it names ends: `api/` carries its slash and `logout` its `$`.
 Written without the anchor, as it shipped on 2026-09-16 and was corrected the
 same day, the second one excused every path *beginning* with the word — and
 `/dashboard/logout-now` is this app's own refusal, so the hole this entry
-closes was still open on it.
+closes was still open on it. *Amended 2026-09-16:* the matcher is one pattern now, and every
+exclusion ends at a boundary: a prefix at `/` or the end of the path
+(`dashboard/api` included, so `/dashboard/api` itself), an exact path at `$`.
+The root OAuth endpoints are excluded with the rest of §1a's Python paths.
 
 So `proxy.test.ts`'s "agrees with the list every link asks" no longer reads
 `isPorted(path) === matches(path)`. The two answer different questions and now
