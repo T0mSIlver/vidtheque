@@ -842,6 +842,7 @@ Response on refusal:
 
 ```
 HTTP/1.1 429 Too Many Requests
+Cache-Control: no-store
 Retry-After: 4
 X-RateLimit-Limit: 30
 X-RateLimit-Remaining: 0
