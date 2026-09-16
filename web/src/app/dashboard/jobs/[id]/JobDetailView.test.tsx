@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { mountDashboard, type Answer, type Route } from "@/test/dashboard";
 import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
 import {
   CANCEL_QUEUED,
@@ -17,59 +18,29 @@ import {
   UNFOCUSED_JOB_DETAIL,
 } from "@/test/jobs-fixtures";
 import { firstPaint } from "@/test/retry";
+import { JobDetailView } from "./JobDetailView";
 
-// The job's own page is the war story: what it cost, which item it broke on,
-// and — the reason the page exists — what it is waiting for. So the assertions
-// are the deferral notice and its countdown, the three clocks and what
-// separates them, the items table's three shapes of row, and the two controls,
-// each under exactly the condition `job.html` renders it under.
+vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 
-type Route = { status?: number; body?: unknown; headers?: Record<string, string> };
+// The war story: the deferral and its countdown, the three clocks, the items
+// table's three row shapes, and the two controls under `job.html`'s conditions.
 
-async function mount(
-  detail: Route | Route[],
+function mount(
+  detail: Route,
   {
     session = OWNER_SESSION,
     write,
     jobId = "job_finished01",
-  }: { session?: unknown; write?: Route; jobId?: string } = {},
+  }: { session?: unknown; write?: Answer; jobId?: string } = {},
 ) {
-  const answers = Array.isArray(detail) ? [...detail] : [detail];
-  const posts: { path: string; init: RequestInit }[] = [];
-  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input);
-    if (init?.method === "POST") {
-      posts.push({ path: url, init });
-      const answer = write ?? { body: CANCEL_QUEUED };
-      return new Response(JSON.stringify(answer.body ?? {}), {
-        status: answer.status ?? 200,
-        headers: { "content-type": "application/json" },
-      });
-    }
-    const route: Route = url.startsWith("/dashboard/api/jobs/")
-      ? answers.length > 1
-        ? answers.shift()!
-        : answers[0]
-      : url === "/dashboard/api/session"
-        ? { body: session }
-        : { status: 404, body: {} };
-    const text = typeof route.body === "string" ? route.body : JSON.stringify(route.body ?? {});
-    return new Response(text, {
-      status: route.status ?? 200,
-      headers: { "content-type": "application/json", ...route.headers },
-    });
+  return mountDashboard(<JobDetailView jobId={jobId} />, {
+    path: `/dashboard/jobs/${jobId}`,
+    session,
+    routes: {
+      "/dashboard/api/jobs/*": detail,
+      "POST /dashboard/jobs/*": write ?? { body: CANCEL_QUEUED },
+    },
   });
-  vi.stubGlobal("fetch", fetcher);
-  const { mockNavigation } = await import("@/test/next");
-  const nav = mockNavigation("", `/dashboard/jobs/${jobId}`);
-  const { Chrome } = await import("../../Chrome");
-  const { JobDetailView } = await import("./JobDetailView");
-  render(
-    <Chrome>
-      <JobDetailView jobId={jobId} />
-    </Chrome>,
-  );
-  return { ...nav, fetcher, posts };
 }
 
 /** The countdown pill, whose number sits in a span of its own so the two
@@ -80,15 +51,15 @@ function held() {
 
 describe("one job's page", () => {
   afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.resetModules();
     vi.useRealTimers();
   });
 
   it("shows the three clocks, and says what each of them measures", async () => {
     await mount({ body: OWNER_JOB_DETAIL });
 
-    expect(await screen.findByRole("heading", { name: /Job job_finished01/ })).toBeInTheDocument();
+    // The head is there while the read is out; the panels arrive with it.
+    expect(screen.getByRole("heading", { name: /Job job_finished01/ })).toBeInTheDocument();
+    await screen.findByRole("region", { name: "What it cost" });
     // `started_at` is the *first* claim, so created -> finished is the honest
     // wall clock and first claim -> finished is time on the runner. A deferred
     // job spends the difference waiting, which is why both are printed.
@@ -111,7 +82,7 @@ describe("one job's page", () => {
     const cost = await screen.findByRole("region", { name: "What it cost" });
     expect(within(cost).getByText("20m 00s")).toBeInTheDocument();
 
-    await vi.advanceTimersByTimeAsync(3000);
+    await act(() => vi.advanceTimersByTimeAsync(3000));
     expect(within(cost).getByText("20m 03s")).toBeInTheDocument();
   });
 
@@ -120,7 +91,7 @@ describe("one job's page", () => {
     await mount({ body: OWNER_JOB_DETAIL });
     const cost = await screen.findByRole("region", { name: "What it cost" });
 
-    await vi.advanceTimersByTimeAsync(5000);
+    await act(() => vi.advanceTimersByTimeAsync(5000));
     expect(within(cost).getByText("26m 40s")).toBeInTheDocument();
   });
 
@@ -163,8 +134,7 @@ describe("one job's page", () => {
     };
     await mount({ body: broken });
     const band = await screen.findByRole("region", { name: "E_PARTIAL" });
-    expect(band.className).toMatch(/noticeBad/);
-    expect(within(band).getByRole("heading").className).toMatch(/noticeBadTitle/);
+    expect(band).toHaveAttribute("data-tone", "bad");
   });
 
   // The page's whole reason for existing: "waiting, and coming back" was the
@@ -181,7 +151,7 @@ describe("one job's page", () => {
     // Waiting is not failing, and the band that says so does not wear the
     // failure tone — `job.html` gave this one a bare `class="notice"` and kept
     // `notice-bad` for the error panel below it.
-    expect(notice.className).not.toMatch(/noticeBad/);
+    expect(notice).toHaveAttribute("data-tone", "neutral");
   });
 
   // The number inside the sentence is part of the countdown, not a stamp of
@@ -193,7 +163,7 @@ describe("one job's page", () => {
     const notice = await screen.findByRole("region", { name: "Waiting, not stuck" });
     expect(within(notice).getByText("4m 00s")).toBeInTheDocument();
 
-    await vi.advanceTimersByTimeAsync(3000);
+    await act(() => vi.advanceTimersByTimeAsync(3000));
     expect(within(notice).getByText("3m 57s")).toBeInTheDocument();
     expect(held()).toHaveTextContent("held 3m 57s more");
   });
@@ -210,7 +180,7 @@ describe("one job's page", () => {
     await mount({ body: brief }, { jobId: "job_deferred01" });
     expect(await screen.findByRole("region", { name: "Waiting, not stuck" })).toBeInTheDocument();
 
-    await vi.advanceTimersByTimeAsync(3000);
+    await act(() => vi.advanceTimersByTimeAsync(3000));
     expect(screen.queryByRole("region", { name: "Waiting, not stuck" })).not.toBeInTheDocument();
   });
 
@@ -222,23 +192,22 @@ describe("one job's page", () => {
       job: { ...DEFERRED_JOB_DETAIL.job, cancel_requested: true },
     };
     await mount({ body: requested }, { jobId: "job_deferred01" });
-    const head = (await screen.findByRole("heading", { name: /Job job_deferred01/ })).closest(
-      "div",
-    )?.textContent;
+    await screen.findByRole("region", { name: "Items" });
+    const head = screen
+      .getByRole("heading", { name: /Job job_deferred01/ })
+      .closest("div")?.textContent;
     expect(head?.indexOf("E_RATE_LIMIT")).toBeLessThan(head?.indexOf("cancel requested") ?? -1);
   });
 
   // `job.html` drew the stage table on `focus` and nothing else: the endpoint
   // sends all seven rows whether or not there is an item to attribute them to.
   it("draws the stage table only for the item the job is on", async () => {
-    await mount({ body: FOCUSED_JOB_DETAIL });
+    const { unmount } = await mount({ body: FOCUSED_JOB_DETAIL });
     expect(
       await screen.findByRole("region", { name: /Stage by stage — Visualizing transformers/ }),
     ).toBeInTheDocument();
 
-    cleanup();
-    vi.unstubAllGlobals();
-    vi.resetModules();
+    unmount();
     await mount({ body: UNFOCUSED_JOB_DETAIL });
     await screen.findByRole("region", { name: "Items" });
     expect(screen.queryByRole("region", { name: /Stage by stage/ })).not.toBeInTheDocument();
@@ -260,32 +229,25 @@ describe("one job's page", () => {
       ...RUNNING_JOB_DETAIL,
       job: { ...RUNNING_JOB_DETAIL.job, progress: 61 },
     };
-    const { fetcher } = await mount([{ body: RUNNING_JOB_DETAIL }, { body: advanced }], {
+    const live = await mount([{ body: RUNNING_JOB_DETAIL }, { body: advanced }], {
       jobId: "job_running001",
     });
     await screen.findByRole("region", { name: "Items" });
     expect(screen.getByText("10%")).toBeInTheDocument();
 
-    await vi.advanceTimersByTimeAsync(2000);
+    await act(() => vi.advanceTimersByTimeAsync(2000));
     expect(screen.getByText("61%")).toBeInTheDocument();
 
     // The finished job is the contrast: one reading and no more. The live page
     // is unmounted first, or its own tick would be counted against this one.
-    cleanup();
-    vi.resetModules();
-    vi.unstubAllGlobals();
+    live.unmount();
     const settled = await mount({ body: OWNER_JOB_DETAIL });
     await screen.findByRole("region", { name: "Items" });
-    await vi.advanceTimersByTimeAsync(10_000);
-    expect(
-      settled.fetcher.mock.calls.filter((call) =>
-        String(call[0]).startsWith("/dashboard/api/jobs/"),
-      ),
-    ).toHaveLength(1);
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    expect(settled.calls("/dashboard/api/jobs/")).toHaveLength(1);
     // …and it says nothing about a final record: this page never watched the
     // job run, so nothing under the reader went stale.
     expect(screen.queryByText(/final record/)).toBeNull();
-    void fetcher;
   });
 
   // The note is owed to the reader whose page *did* go stale under them, and
@@ -304,7 +266,7 @@ describe("one job's page", () => {
     await screen.findByRole("region", { name: "Items" });
     expect(screen.queryByText(/final record/)).toBeNull();
 
-    await vi.advanceTimersByTimeAsync(2000);
+    await act(() => vi.advanceTimersByTimeAsync(2000));
     expect(screen.getByText(/this is the final record/)).toBeInTheDocument();
   });
 
@@ -327,7 +289,7 @@ describe("one job's page", () => {
 
   it("waits out a 429 by the delay it named", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    const { fetcher } = await mount(
+    const { calls } = await mount(
       [
         { body: RUNNING_JOB_DETAIL },
         {
@@ -340,25 +302,23 @@ describe("one job's page", () => {
       { jobId: "job_running001" },
     );
     await screen.findByRole("region", { name: "Items" });
-    const reads = () =>
-      fetcher.mock.calls.filter((call) => String(call[0]).startsWith("/dashboard/api/jobs/"))
-        .length;
+    const reads = () => calls("/dashboard/api/jobs/").length;
 
-    await vi.advanceTimersByTimeAsync(2000);
+    await act(() => vi.advanceTimersByTimeAsync(2000));
     expect(reads()).toBe(2);
     // The war story is still on the page; only the liveness stopped.
     expect(screen.getByText(/the live view stopped/)).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Items" })).toBeInTheDocument();
 
-    await vi.advanceTimersByTimeAsync(3000);
+    await act(() => vi.advanceTimersByTimeAsync(3000));
     expect(reads()).toBe(2);
-    await vi.advanceTimersByTimeAsync(2000);
+    await act(() => vi.advanceTimersByTimeAsync(2000));
     expect(reads()).toBe(3);
   });
 
   it("sends a refused reader to its signed-out state and stops asking", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    const { fetcher } = await mount({
+    const { calls } = await mount({
       status: 401,
       body: {
         error: "E_AUTH_REQUIRED",
@@ -368,10 +328,8 @@ describe("one job's page", () => {
     });
 
     expect(await screen.findByText(/needs the owner.s token or session/)).toBeInTheDocument();
-    await vi.advanceTimersByTimeAsync(10_000);
-    expect(
-      fetcher.mock.calls.filter((call) => String(call[0]).startsWith("/dashboard/api/jobs/")),
-    ).toHaveLength(1);
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    expect(calls("/dashboard/api/jobs/")).toHaveLength(1);
   });
 
   // An id that is not a job here is not a failed read: the read succeeded and
@@ -459,10 +417,8 @@ describe("one job's page", () => {
         await screen.findByRole("button", { name: "Retry 2 failed or degraded item(s)" }),
       );
 
-      expect(posts[0].path).toBe("/dashboard/jobs/job_finished01/retry");
-      expect((posts[0].init.headers as Record<string, string>)["content-type"]).toBe(
-        "application/x-www-form-urlencoded",
-      );
+      expect(posts()[0].path).toBe("/dashboard/jobs/job_finished01/retry");
+      expect(posts()[0].headers.get("content-type")).toBe("application/x-www-form-urlencoded");
       const receipt = await screen.findByRole("status");
       expect(within(receipt).getByRole("heading", { name: "Repair queued" })).toBeInTheDocument();
       expect(receipt).toHaveTextContent("2 failed or degraded item(s) selected");
@@ -634,11 +590,10 @@ describe("one job's page", () => {
       jobId: "job_deferred01",
     });
     const log = await screen.findByRole("region", { name: "Event log" });
-    const marked = () =>
-      Array.from(log.querySelectorAll("li")).filter((li) => /isNew/.test(li.className));
+    const marked = () => Array.from(log.querySelectorAll("li[data-new]"));
     expect(marked()).toHaveLength(0);
 
-    await vi.advanceTimersByTimeAsync(2000);
+    await act(() => vi.advanceTimersByTimeAsync(2000));
 
     expect(within(log).getByText(/retrying in 600s/)).toBeInTheDocument();
     expect(marked()).toHaveLength(1);
@@ -650,16 +605,14 @@ describe("one job's page", () => {
   // meanwhile — a heading over an empty panel is a page pretending to have an
   // answer it was never given.
   it("draws the degraded list and the stage table only when the payload carries them", async () => {
-    await mount({ body: OWNER_JOB_DETAIL });
+    const { unmount } = await mount({ body: OWNER_JOB_DETAIL });
     await screen.findByRole("region", { name: "Items" });
     expect(screen.queryByRole("region", { name: /Stage by stage/ })).not.toBeInTheDocument();
     expect(
       screen.queryByRole("region", { name: "Finished with something missing" }),
     ).not.toBeInTheDocument();
 
-    cleanup();
-    vi.resetModules();
-    vi.unstubAllGlobals();
+    unmount();
     await mount({
       body: {
         ...OWNER_JOB_DETAIL,
