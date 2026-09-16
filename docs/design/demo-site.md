@@ -1498,10 +1498,12 @@ forward restore the snapshot. A search the console already holds is shown
 again without a request, and any other search is fetched again. A deep link
 renders on the server: `?q=` arrives with page one in the HTML, and `?ask=`
 arrives with the question loaded and unfired. On a deployment with no ask,
-`?ask=…` becomes a search for the same words. Each history entry keeps the
-router's own state, and the console answers `popstate` for its own path ahead
-of the router. A plain `pushState` let Next 16 re-fetch the page's RSC payload
-and scroll to the top (DECISIONS.md 2026-09-16, `docs/LESSONS.md`).
+`?ask=…` becomes a search for the same words. The writes are
+`history.pushState(null, "", url)` and `replaceState`, Next.js's documented
+native History API integration, so the router's `useSearchParams` follows
+them without a server round trip. The console restores whenever those search
+params name a snapshot other than the committed one (DECISIONS.md
+2026-09-16).
 
 A real `<form>` and a real `<a href>` on every result, so Enter submits and
 middle-click opens — the two things a search page is expected to do. (The
