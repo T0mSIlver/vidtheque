@@ -439,7 +439,7 @@ def check_now_refusal(row: sqlite3.Row) -> dict[str, str]:
             "Resume the follow; a paused follow is never checked, and resuming "
             "re-arms its clock."
             if paused
-            else "Try again (resume) clears the failure count and re-arms the clock."
+            else "Try again (resume): it clears the failure count and re-arms the clock."
         ),
     }
 

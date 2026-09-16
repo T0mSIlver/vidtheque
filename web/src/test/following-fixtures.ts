@@ -429,5 +429,5 @@ export const NOT_SCHEDULABLE = {
   message:
     "Not scheduled: Andrej Karpathy is failing and has stopped retrying after 7 " +
     "consecutive failures. Nothing was queued.",
-  next: "Try again (resume) clears the failure count and re-arms the clock.",
+  next: "Try again (resume): it clears the failure count and re-arms the clock.",
 };
