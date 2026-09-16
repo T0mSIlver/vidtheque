@@ -6,6 +6,45 @@ and `research/pipeline-tooling-research.md`. Where a design doc disagrees with
 this file, this file wins; fold changes back into the docs as implementation
 touches them.
 
+## The public console is one client component, decided by Tom, 2026-09-16
+
+Search and ask on `/demo` and `/paris` are one persistent client component:
+one form, one input element, one mode control, one output region. Its
+interactions never navigate the App Router. Search calls `GET /api/search` and
+ask streams `POST /api/ask`, both same-origin from the browser, as the
+2026-09-05 entry below requires. Tom chose this over re-rendering the page per
+URL, which scrolled `/paris` from 1766px to the top on every search and re-read
+the edition and `/api/meta` on the server each time.
+
+The URL stays the shareable state, written with `window.history.pushState` and
+`replaceState`, never `router.push`. Search is `?q=…&type=…` with no `type` for
+all; a loaded question is `?ask=…` and never fires on load, because an answer
+spends model budget. `ask=0/1` is gone, with no compatibility. Back and forward
+restore the committed snapshot.
+
+The server resolves what the first paint needs, as plain values: ask
+availability from `/api/meta`, the edition's talks on `/paris`, and page one
+when `?q=` is present. No promise reaches a client component. A deployment
+with no ask renders search from the first paint. On `/paris` the console
+follows the hero and the programme streams in below it, reading the edition
+once per request through React `cache`.
+
+The contract is `demo-site.md` §6.1–§6.2 and `aie-paris-2026.md` §4.
+
+## The console's history entries bypass the router, recorded 2026-09-16 (flag to Tom)
+
+A plain `pushState(null, …)` is adopted by Next 16 as a restore. On a page
+whose segment is keyed by its search params, some of those restores fetched
+the RSC payload for the new URL and scrolled to the top: measured on `/demo`,
+intermittently on the second push and on back. The console therefore writes
+each entry with the router's own current history state, which Next's patched
+`pushState` passes through untouched. It restores its own entries from a
+capture-phase `popstate` listener that stops the router's listener for the
+console's path. The next render re-reads the URL on mount, so a page the
+router restores from cache is not older than its address. The cost: the
+router's `useSearchParams` does not follow these writes, and nothing in the
+console reads it.
+
 ## Web fonts use `font-display: optional`, recorded 2026-09-16 (flag to Tom)
 
 This amends DESIGN.md Fonts rule 4 (`block`) for `web/`. Both faces are
