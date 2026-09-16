@@ -40,7 +40,7 @@
 }
 
 .box {
-  composes: plate from "../../components/ornament.module.css";
+  composes: plate from "../ornament.module.css";
   margin-top: var(--gap-head);
   background: var(--plate);
   border: 1px solid var(--seam2);

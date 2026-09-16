@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import DemoLayout from "@/app/demo/layout";
+import { PublicShell } from "@/components/public/PublicShell";
 
 export const metadata: Metadata = {
   title: { absolute: "vidtheque — AI Engineer Paris 2026" },
@@ -15,12 +15,7 @@ export const metadata: Metadata = {
   twitter: { card: "summary" },
 };
 
-export default function ParisLayout({ children, params }: LayoutProps<"/paris">) {
-  // The demo chrome, minus the corpus count: beside this wordmark a
-  // whole-corpus total would read as the size of the edition (4.4).
-  return (
-    <DemoLayout params={params} count={null}>
-      {children}
-    </DemoLayout>
-  );
+// No corpus count: beside this wordmark it would read as the edition's size.
+export default function ParisLayout({ children }: LayoutProps<"/paris">) {
+  return <PublicShell showCount={false}>{children}</PublicShell>;
 }
