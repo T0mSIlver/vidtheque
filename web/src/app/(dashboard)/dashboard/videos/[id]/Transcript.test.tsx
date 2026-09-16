@@ -2,8 +2,8 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { deferred, type Answer } from "@/test/dashboard";
-import { OWNER_CUES, OWNER_VIDEO } from "@/test/library-fixtures";
+import { deferred, type Answer } from "@/test/dashboard/harness";
+import { OWNER_CUES, OWNER_VIDEO } from "@/test/dashboard/library-fixtures";
 import { cuePage, mountVideo, stripPage } from "./detail-harness";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);

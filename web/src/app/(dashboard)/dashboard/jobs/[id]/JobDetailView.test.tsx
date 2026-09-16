@@ -2,8 +2,8 @@
 import { act, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mountDashboard, type Answer, type Route } from "@/test/dashboard";
-import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
+import { mountDashboard, type Answer, type Route } from "@/test/dashboard/harness";
+import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard/fixtures";
 import {
   CANCEL_QUEUED,
   DEFERRED_JOB_DETAIL,
@@ -16,8 +16,8 @@ import {
   RETRY_RECEIPT,
   RUNNING_JOB_DETAIL,
   UNFOCUSED_JOB_DETAIL,
-} from "@/test/jobs-fixtures";
-import { firstPaint } from "@/test/retry";
+} from "@/test/dashboard/jobs-fixtures";
+import { firstPaint } from "@/test/dashboard/retry";
 import { JobDetailView } from "./JobDetailView";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);

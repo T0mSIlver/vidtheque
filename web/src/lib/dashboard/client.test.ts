@@ -14,7 +14,7 @@ import {
   QUIET_DETAIL,
   RULES_OUTCOME,
   UNKNOWN_FOLLOW,
-} from "@/test/following-fixtures";
+} from "@/test/dashboard/following-fixtures";
 import { createDashboardClient, DashboardError, DashboardShapeError } from "./client";
 
 // A fetch that records the request and answers per path, so one stub can serve

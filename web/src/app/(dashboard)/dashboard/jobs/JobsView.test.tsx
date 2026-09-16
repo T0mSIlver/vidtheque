@@ -9,8 +9,8 @@ import {
   type Answer,
   type MountOptions,
   type Route,
-} from "@/test/dashboard";
-import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
+} from "@/test/dashboard/harness";
+import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard/fixtures";
 import {
   CANCEL_QUEUED,
   CLAMPED_JOBS,
@@ -23,8 +23,8 @@ import {
   REFUSAL,
   RUNNING_JOB,
   SETTLED_JOBS,
-} from "@/test/jobs-fixtures";
-import { firstPaint } from "@/test/retry";
+} from "@/test/dashboard/jobs-fixtures";
+import { firstPaint } from "@/test/dashboard/retry";
 import { JobsView } from "./JobsView";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);

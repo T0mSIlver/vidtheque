@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { mountDashboard } from "@/test/dashboard";
+import { mountDashboard } from "@/test/dashboard/harness";
 import NotFound from "./not-found";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);

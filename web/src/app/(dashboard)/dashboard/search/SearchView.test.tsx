@@ -2,8 +2,8 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { mountDashboard, type Answer } from "@/test/dashboard";
-import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
+import { mountDashboard, type Answer } from "@/test/dashboard/harness";
+import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard/fixtures";
 import {
   AUTH_REFUSAL,
   BAD_PARAM_REFUSAL,
@@ -16,8 +16,8 @@ import {
   PROBED_SEARCH,
   RATE_REFUSAL,
   TRAP_SEARCH,
-} from "@/test/search-fixtures";
-import { firstPaint } from "@/test/retry";
+} from "@/test/dashboard/search-fixtures";
+import { firstPaint } from "@/test/dashboard/retry";
 import { SearchView } from "./SearchView";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);

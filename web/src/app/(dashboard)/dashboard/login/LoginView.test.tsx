@@ -3,9 +3,9 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { navigation } from "@/lib/dashboard/client";
-import { mountDashboard, type Answer } from "@/test/dashboard";
-import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
-import { firstPaint, settled } from "@/test/retry";
+import { mountDashboard, type Answer } from "@/test/dashboard/harness";
+import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard/fixtures";
+import { firstPaint, settled } from "@/test/dashboard/retry";
 import { LoginView, safeNext } from "./LoginView";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);

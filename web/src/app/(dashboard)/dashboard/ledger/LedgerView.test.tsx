@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { mountDashboard, type Answer } from "@/test/dashboard";
-import { DEMO_LEDGER, DEMO_SESSION, OWNER_LEDGER, OWNER_SESSION } from "@/test/dashboard-fixtures";
-import { firstPaint } from "@/test/retry";
+import { mountDashboard, type Answer } from "@/test/dashboard/harness";
+import { DEMO_LEDGER, DEMO_SESSION, OWNER_LEDGER, OWNER_SESSION } from "@/test/dashboard/fixtures";
+import { firstPaint } from "@/test/dashboard/retry";
 import { LedgerView } from "./LedgerView";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);

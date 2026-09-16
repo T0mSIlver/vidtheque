@@ -2,8 +2,8 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { fullText, mountDashboard, type Answer, type Route } from "@/test/dashboard";
-import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
+import { fullText, mountDashboard, type Answer, type Route } from "@/test/dashboard/harness";
+import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard/fixtures";
 import {
   ALREADY_FOLLOWING,
   CHECKS_OFF,
@@ -15,8 +15,8 @@ import {
   NOT_A_CHANNEL,
   PAUSED,
   RETRYING,
-} from "@/test/following-fixtures";
-import { firstPaint } from "@/test/retry";
+} from "@/test/dashboard/following-fixtures";
+import { firstPaint } from "@/test/dashboard/retry";
 import { FollowingView } from "./FollowingView";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);

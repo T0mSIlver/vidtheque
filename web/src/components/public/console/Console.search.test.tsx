@@ -3,7 +3,7 @@ import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { navigateTo } from "@/test/next";
-import { found, hit, mountConsole, never, SEARCH_BOX, traverse, wire } from "./testing";
+import { found, hit, mountConsole, never, SEARCH_BOX, traverse, wire } from "@/test/public/console";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 
