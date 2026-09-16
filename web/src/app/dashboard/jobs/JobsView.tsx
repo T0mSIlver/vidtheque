@@ -10,7 +10,7 @@ import controls from "../kit/controls.module.css";
 import { FilterBand } from "../kit/FilterBand";
 import { notice, Notice, ReadFailure } from "../kit/notice";
 import { Notes, Pager, table, TableCount } from "../kit/table";
-import { DashLink, Fact, Facts, Body, PageHead, Sep, ui, Unbroken } from "../kit/ui";
+import { Body, DashLink, Facts, PageHead, Sep, ui } from "../kit/ui";
 import { refusalOf, useWriteSide } from "../kit/write";
 import { usePatchedRows } from "../polling";
 import { useSession } from "../session";
