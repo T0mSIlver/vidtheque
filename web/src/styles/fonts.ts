@@ -1,17 +1,14 @@
-// The two faces, loaded once. next/font/local self-hosts the files under
-// /_next/static, writes the @font-face itself, preloads them, and exposes each
-// face as a CSS variable that globals.css binds to `--sans` and `--mono`.
-//
-// The woff2 files are byte-identical copies of the document of record at
-// mcp/src/vidtheque_mcp/public/static/fonts/ (DESIGN.md, Fonts rule 1);
-// mcp/tests/test_web_assets.py fails the suite if they drift.
+// Byte-identical to the document of record in mcp/.../public/static/fonts/
+// (DESIGN.md Fonts rule 1; mcp/tests/test_web_assets.py). `optional`: a face
+// that misses first paint is skipped for that load rather than swapped in, so
+// the headline never reflows and never renders blank (DECISIONS.md, 2026-09-16).
 import localFont from "next/font/local";
 
 export const sans = localFont({
   src: "../fonts/archivo-latin-wght-normal.woff2",
   weight: "100 900",
   style: "normal",
-  display: "block",
+  display: "optional",
   fallback: ["system-ui", "-apple-system", "sans-serif"],
   variable: "--font-sans",
 });
@@ -20,7 +17,7 @@ export const mono = localFont({
   src: "../fonts/jetbrains-mono-latin-wght-normal.woff2",
   weight: "100 800",
   style: "normal",
-  display: "block",
+  display: "optional",
   fallback: ["ui-monospace", "SFMono-Regular", "monospace"],
   variable: "--font-mono",
 });

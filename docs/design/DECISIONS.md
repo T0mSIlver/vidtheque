@@ -6,6 +6,18 @@ and `research/pipeline-tooling-research.md`. Where a design doc disagrees with
 this file, this file wins; fold changes back into the docs as implementation
 touches them.
 
+## Web fonts use `font-display: optional`, recorded 2026-09-16 (flag to Tom)
+
+This amends DESIGN.md Fonts rule 4 (`block`) for `web/`. Both faces are
+preloaded through `next/font`. With `block`, a late face still reflows the page
+when it arrives. The text is laid out in the fallback while it is invisible.
+Measured on `/` with the woff2 files held back 1.5 s, cumulative layout shift
+was 0.009 at 1440 px and 0.079 at 390 px. `swap` gave 0.080 and 0.214, plus
+the FOUT on the headline that rule 4 exists to prevent. `optional` gave 0.0002
+and 0.0008. With no delay, all three rendered the real faces, and shift stayed
+at or below 0.001. The cost is that a first visit on a slow link can keep the
+fallback face for that page load.
+
 ## AI Engineer Paris 2026 edition, set by the orchestrator (flag to Tom)
 
 The hero line, the 50-term follow bound, and the organizer gate below are
