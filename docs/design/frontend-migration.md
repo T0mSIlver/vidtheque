@@ -1351,7 +1351,7 @@ while a job is queued or running" — which is exactly an `iso_minute` stamp. Th
 old surface printed two glyphs for one meaning depending on which module the
 value came through, and a timestamp is not a different kind of absence from a
 duration. DESIGN.md prescribes neither glyph; `dashboard.md` prescribes this
-one, and `DASH` is the single constant both halves of `format.ts` read.
+one, and `DASH` is the single constant both files under `lib/format/` read.
 
 ### 11.3 §1d's two lists stop being one list
 
