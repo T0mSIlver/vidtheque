@@ -1401,6 +1401,31 @@ A demo is judged on the four screens that are not "ten results came back".
   — because "we cannot reserve for the answer" was never a licence for the log
   to grow a line at a time under a reader.
 
+*Amended 2026-09-16 (Tom): one console, and no skeleton.* Search and ask are
+one client component on both `/demo` and `/paris`: one form, one input
+element, one mode control, one output region
+(`web/src/components/console/`, DECISIONS.md 2026-09-16). What changes on this
+list:
+
+- **The default mode is decided before the first paint, not corrected after
+  it.** The server reads `/api/meta` and hands the console a resolved
+  `askEnabled`, so a deployment with no key renders search from the start. The
+  post-hydration swap described above is gone, and so is the reserved mode
+  switch that appeared only when the boot call landed.
+- **Loading keeps the previous screen.** A search in flight leaves the results
+  (or the cold page) where they are, dimmed and `aria-busy`, while the state
+  cell says `scanning`; the reply replaces them only when it lands, and a
+  refusal replaces them with the refusal. The skeleton and its guessed shape
+  are retired: replacing real rows with grey ones was itself the jump the shape
+  guess tried to minimise.
+- **Nothing on this list navigates.** An example, `Search all`, `one of the
+  examples`, a chip, `Search instead`, a retry and "More results" all act on
+  the console's own request. Each link keeps a real `href` for a middle-click.
+  A retry repeats the failed request, never a page refresh.
+- **Focus stays in the box.** Submitting no longer blurs the input, except on a
+  coarse pointer, where the blur dismisses the keyboard over the results.
+  Switching mode keeps the same element, its value and its caret.
+
 Requests are spent on **Enter or a click, never on a keystroke**: a
 search-as-you-type box against a shared 30/min bucket would refuse a visitor
 mid-word.
@@ -1457,6 +1482,21 @@ made before the change honest: **`?q=` with no `ask=` at all means search**,
 because that is what every `syncUrl` write and every previously shared result
 link looks like. `?ask=1&q=…` is the one combination that loads a question
 without running anything.
+
+*Amended 2026-09-16 (Tom): a new URL shape, written without navigating.*
+Search is `?q=…&type=…`, with no `type` for all and `?q=` alone for an empty
+search where ask is the default. A loaded question is `?ask=…`. `ask=0` and
+`ask=1` are gone, with no compatibility. A bare path opens the default mode.
+The console writes a snapshot with `history.pushState` when it commits one
+(a search, a chip, a mode switch, an ask) and never calls the router. Back and
+forward restore the snapshot. A search the console already holds is shown
+again without a request, and any other search is fetched again. A deep link
+renders on the server: `?q=` arrives with page one in the HTML, and `?ask=`
+arrives with the question loaded and unfired. On a deployment with no ask,
+`?ask=…` becomes a search for the same words. Each history entry keeps the
+router's own state, and the console answers `popstate` for its own path ahead
+of the router. A plain `pushState` let Next 16 re-fetch the page's RSC payload
+and scroll to the top (DECISIONS.md 2026-09-16, `docs/LESSONS.md`).
 
 A real `<form>` and a real `<a href>` on every result, so Enter submits and
 middle-click opens — the two things a search page is expected to do. (The
