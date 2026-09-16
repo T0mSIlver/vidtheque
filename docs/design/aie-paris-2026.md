@@ -57,6 +57,12 @@ does not follow its start, a stage is unknown, or a main-stage row lacks an
 alignment object. A bad committed fixture must not become a partially rendered
 public schedule.
 
+The field lists in §2.1 and §2.2 are exact. An edition, session, speaker,
+`tags`, `context_bias`, or `alignment` object carrying a key those tables do not
+name fails to load, because the facade answers out of this file and a field no
+review saw is a field a reader could be shown. *(Amended 2026-09-16: the
+unknown-key rule was implied by "the records in §2.2" and was not enforced.)*
+
 ### 2.1 Edition fields
 
 | Field | Type | Rule |
@@ -152,13 +158,16 @@ would lie.
 
 The response also has the facade's 60,000-character ceiling. If the character
 ceiling drops a session or video from the tail, the matching `has_more` is true
-and `notes` names the bound. Item and character caps are independent.
+and `notes` names the bound. Item and character caps are independent. A payload
+still over the ceiling with every session and video dropped is a fixture nobody
+can serve, and answers as the §3.2 `E_INTERNAL` rather than as an oversized
+response.
 
 ### 3.2 Payload fields
 
 | Field | Type | Meaning |
 |---|---|---|
-| `edition` | object | slug, title, dates, timezone, organizer, source URL, and tags |
+| `edition` | object | `schema_version`, `slug`, `title`, `timezone`, `starts_on`, `ends_on`, `source_url`, `source_captured_on`, `organizer`, `streamed_stage`, and `tags` — never `sessions` or `context_bias` |
 | `sessions` | array | the paged schedule records from §2.2 |
 | `pagination` | object | `{limit, offset, has_more, next_offset}` for `sessions` |
 | `talks` | array | main-stage talk rows for the returned session page |
@@ -170,6 +179,9 @@ Each talk row contains the schedule id, day, scheduled start and end, title,
 speakers, category, `alignment_state`, selected `video_id`, `source_kind`,
 `start_s`, `end_s`, and a timestamped source link when aligned. `source_kind`
 is `talk`, `stream`, or `null`.
+
+Every object here is built field by field from the lists above, so a fixture key
+outside §2.1 and §2.2 has no route to a reader even if one is committed.
 
 An unknown slug returns HTTP 404 with `{error: "E_UNKNOWN_EDITION", message,
 next}`. A malformed committed fixture is an HTTP 500 `E_INTERNAL`, is logged

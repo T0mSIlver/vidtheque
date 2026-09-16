@@ -36,6 +36,7 @@ from datetime import date
 from functools import lru_cache
 from importlib import resources
 from typing import Any
+from urllib.parse import urlsplit
 
 from ..db import queries
 
@@ -48,6 +49,59 @@ MAX_RESPONSE_CHARS = 60_000
 _SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _TIME = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 _STAGES = {"main", "discovery-1", "discovery-2", "workshop"}
+_TIMEZONE = "Europe/Paris"
+_MAX_TITLE_CHARS = 120
+_MAX_SESSION_TITLE_CHARS = 256
+_MAX_CATEGORY_CHARS = 120
+
+# The field lists are exact in both directions: a fixture carrying a key these
+# do not name fails to load, and the payload is built from these names rather
+# than copied from the file, so a key that reaches the fixture anyway cannot
+# reach a reader (§2.1, §2.2, §3.2).
+_EDITION_KEYS = {
+    "schema_version",
+    "slug",
+    "title",
+    "timezone",
+    "starts_on",
+    "ends_on",
+    "source_url",
+    "source_captured_on",
+    "organizer",
+    "streamed_stage",
+    "tags",
+    "context_bias",
+    "sessions",
+}
+_SESSION_KEYS = {
+    "id",
+    "day",
+    "start",
+    "end",
+    "stage",
+    "title",
+    "speakers",
+    "category",
+    "alignment",
+}
+_SPEAKER_KEYS = {"name", "company"}
+_TAG_KEYS = {"edition", "stream", "talk"}
+_ALIGNMENT_FIELDS = ("talk_video_id", "stream_video_id", "start_s", "end_s")
+_ALIGNMENT_KEYS = set(_ALIGNMENT_FIELDS)
+# What the `edition` object carries, beside `tags`. `sessions` are paged on
+# their own and `context_bias` is the worker's input, so neither is here.
+_PUBLIC_EDITION_KEYS = (
+    "schema_version",
+    "slug",
+    "title",
+    "timezone",
+    "starts_on",
+    "ends_on",
+    "source_url",
+    "source_captured_on",
+    "organizer",
+    "streamed_stage",
+)
 
 # The wire tag is `<namespace>:<value>` and the namespace is bounded at 64
 # characters by `text.validate_tag`; `series:` plus that is the longest thing a
@@ -64,8 +118,22 @@ def _need(condition: bool, message: str) -> None:
         raise EditionValidationError(message)
 
 
-def _text(value: Any, field: str) -> str:
+def _text(value: Any, field: str, *, max_chars: int | None = None) -> str:
     _need(isinstance(value, str) and bool(value.strip()), f"{field} must be a non-empty string")
+    if max_chars is not None:
+        _need(len(value) <= max_chars, f"{field} must be at most {max_chars} characters")
+    return value
+
+
+def _exact_keys(value: Any, allowed: set[str], field: str) -> dict[str, Any]:
+    """The documented fields, all of them and nothing else.
+
+    An unknown key fails rather than being ignored: the facade answers from the
+    fixture, so a field no review saw is a field a reader could be shown.
+    """
+    _need(isinstance(value, dict), f"{field} must be an object")
+    wrong = set(value) ^ allowed
+    _need(not wrong, f"{field} has unknown or missing fields: {', '.join(sorted(wrong))}")
     return value
 
 
@@ -75,20 +143,20 @@ def validate_edition(raw: Any) -> dict[str, Any]:
     Raises rather than repairing. The file is committed, so a violation is a
     review that let something through, not a caller's mistake to be tolerated.
     """
-    _need(isinstance(raw, dict), "edition must be an object")
-    edition = deepcopy(raw)
+    edition = _exact_keys(deepcopy(raw), _EDITION_KEYS, "edition")
     _need(edition.get("schema_version") == 1, "schema_version must be 1")
     slug = _text(edition.get("slug"), "slug")
     _need(bool(_SLUG.fullmatch(slug)), "slug is invalid")
-    for field in (
-        "title",
-        "timezone",
-        "source_url",
-        "source_captured_on",
-        "organizer",
-        "streamed_stage",
-    ):
+    _need(slug in KNOWN_EDITIONS, f"slug {slug} is not an edition this build ships")
+    _text(edition.get("title"), "title", max_chars=_MAX_TITLE_CHARS)
+    for field in ("timezone", "source_url", "source_captured_on", "organizer", "streamed_stage"):
         _text(edition.get(field), field)
+    _need(edition["timezone"] == _TIMEZONE, f"timezone must be {_TIMEZONE}")
+    source = urlsplit(edition["source_url"])
+    _need(
+        source.scheme == "https" and bool(source.netloc),
+        "source_url must be an HTTPS URL",
+    )
     try:
         starts = date.fromisoformat(_text(edition.get("starts_on"), "starts_on"))
         ends = date.fromisoformat(_text(edition.get("ends_on"), "ends_on"))
@@ -98,14 +166,20 @@ def validate_edition(raw: Any) -> dict[str, Any]:
     _need(starts <= ends, "starts_on must not follow ends_on")
     _need(edition["streamed_stage"] == "main", "streamed_stage must be main")
 
-    tags = edition.get("tags")
-    _need(isinstance(tags, dict), "tags must be an object")
-    for key in ("edition", "stream", "talk"):
+    tags = _exact_keys(edition.get("tags"), _TAG_KEYS, "tags")
+    for key in sorted(_TAG_KEYS):
         value = _text(tags.get(key), f"tags.{key}")
         _need(
             value.startswith("series:") and len(value) <= _MAX_TAG_CHARS,
             f"tags.{key} is invalid",
         )
+
+    # The worker's term list (§7): validated here because it is committed here,
+    # even though nothing in the payload carries it.
+    bias = _exact_keys(edition.get("context_bias"), {"fixed"}, "context_bias")
+    _need(isinstance(bias["fixed"], list), "context_bias.fixed must be an array")
+    for index, term in enumerate(bias["fixed"]):
+        _text(term, f"context_bias.fixed[{index}]")
 
     sessions = edition.get("sessions")
     _need(
@@ -121,7 +195,7 @@ def validate_edition(raw: Any) -> dict[str, Any]:
 def _validate_session(
     session: Any, prefix: str, starts: date, ends: date, seen: set[str]
 ) -> None:
-    _need(isinstance(session, dict), f"{prefix} must be an object")
+    _exact_keys(session, _SESSION_KEYS, prefix)
     session_id = _text(session.get("id"), f"{prefix}.id")
     _need(session_id not in seen, f"duplicate session id {session_id}")
     seen.add(session_id)
@@ -140,16 +214,16 @@ def _validate_session(
     )
     stage = _text(session.get("stage"), f"{prefix}.stage")
     _need(stage in _STAGES, f"{prefix}.stage is invalid")
-    _text(session.get("title"), f"{prefix}.title")
-    _text(session.get("category"), f"{prefix}.category")
+    _text(session.get("title"), f"{prefix}.title", max_chars=_MAX_SESSION_TITLE_CHARS)
+    _text(session.get("category"), f"{prefix}.category", max_chars=_MAX_CATEGORY_CHARS)
     speakers = session.get("speakers")
     _need(isinstance(speakers, list) and bool(speakers), f"{prefix}.speakers must not be empty")
-    for speaker in speakers:
-        _need(isinstance(speaker, dict), f"{prefix}.speakers entries must be objects")
-        _text(speaker.get("name"), f"{prefix}.speakers.name")
+    for index, speaker in enumerate(speakers):
+        _exact_keys(speaker, _SPEAKER_KEYS, f"{prefix}.speakers[{index}]")
+        _text(speaker.get("name"), f"{prefix}.speakers[{index}].name")
         _need(
             isinstance(speaker.get("company"), str),
-            f"{prefix}.speakers.company must be a string",
+            f"{prefix}.speakers[{index}].company must be a string",
         )
 
     alignment = session.get("alignment")
@@ -159,11 +233,7 @@ def _validate_session(
     if stage != "main":
         _need(alignment is None, f"{prefix}.alignment must be null off the main stage")
         return
-    _need(isinstance(alignment, dict), f"{prefix}.alignment must be an object")
-    _need(
-        set(alignment) == {"talk_video_id", "stream_video_id", "start_s", "end_s"},
-        f"{prefix}.alignment has the wrong fields",
-    )
+    _exact_keys(alignment, _ALIGNMENT_KEYS, f"{prefix}.alignment")
     for key in ("talk_video_id", "stream_video_id"):
         _need(
             alignment[key] is None or isinstance(alignment[key], str),
@@ -187,7 +257,9 @@ def load_edition(slug: str) -> dict[str, Any] | None:
     if slug not in KNOWN_EDITIONS or not _SLUG.fullmatch(slug):
         return None
     data = resources.files(__package__).joinpath(f"{slug}.json").read_text(encoding="utf-8")
-    return validate_edition(json.loads(data))
+    edition = validate_edition(json.loads(data))
+    _need(edition["slug"] == slug, f"{slug}.json declares slug {edition['slug']}")
+    return edition
 
 
 def validate_editions() -> None:
@@ -324,7 +396,7 @@ def _talk(
         "scheduled_start": session["start"],
         "scheduled_end": session["end"],
         "title": session["title"],
-        "speakers": session["speakers"],
+        "speakers": _speakers(session),
         "category": session["category"],
         "alignment_state": state,
         "video_id": video_id,
@@ -335,6 +407,25 @@ def _talk(
             f"https://youtu.be/{video_id}?t={int(float(start))}" if aligned and video_id else None
         ),
     }
+
+
+def _speakers(session: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {"name": speaker["name"], "company": speaker["company"]}
+        for speaker in session["speakers"]
+    ]
+
+
+def _session_row(session: dict[str, Any]) -> dict[str, Any]:
+    """One schedule record, named field by field (§2.2)."""
+    row = {key: session[key] for key in ("id", "day", "start", "end", "stage", "title")}
+    row["speakers"] = _speakers(session)
+    row["category"] = session["category"]
+    alignment = session["alignment"]
+    row["alignment"] = (
+        None if alignment is None else {key: alignment[key] for key in _ALIGNMENT_FIELDS}
+    )
+    return row
 
 
 def build_payload(
@@ -358,14 +449,13 @@ def build_payload(
     if unclassified:
         notes.append("tagged but not classified as stream or talk: " + ", ".join(unclassified))
     talks = [_talk(row, edition, lookup, notes) for row in session_page if row["stage"] == "main"]
-    # `context_bias` is the worker's input, not the page's: it stays in the
-    # fixture and out of the payload.
-    metadata = {
-        key: value for key, value in edition.items() if key not in {"sessions", "context_bias"}
-    }
+    # Named, not copied: the payload carries the documented fields and only
+    # those, so a fixture key nobody put in §3.2 cannot ride out to a reader.
+    metadata: dict[str, Any] = {key: edition[key] for key in _PUBLIC_EDITION_KEYS}
+    metadata["tags"] = {key: edition["tags"][key] for key in ("edition", "stream", "talk")}
     payload = {
         "edition": metadata,
-        "sessions": session_page,
+        "sessions": [_session_row(row) for row in session_page],
         "pagination": _page(limit, offset, len(sessions) > limit),
         "talks": talks,
         "videos": videos,
@@ -392,6 +482,10 @@ def _fit(payload: dict[str, Any], offset: int, video_offset: int, notes: list[st
     loses the tail of the corpus listing still has the programme. Whatever is
     dropped says so in `has_more` and `next_offset`, so a second request
     resumes exactly where this one stopped.
+
+    A payload that is still over the ceiling with nothing left to drop is a
+    committed file this facade cannot serve at all, so it becomes the `E_INTERNAL`
+    §3.2 documents rather than an oversized response.
     """
     while _size(payload) > MAX_RESPONSE_CHARS and payload["videos"]:
         payload["videos"].pop()
@@ -406,6 +500,11 @@ def _fit(payload: dict[str, Any], offset: int, video_offset: int, notes: list[st
         payload["pagination"]["has_more"] = True
         payload["pagination"]["next_offset"] = offset + len(payload["sessions"])
         _once(notes, "session page shortened by the response character cap")
+    _need(
+        _size(payload) <= MAX_RESPONSE_CHARS,
+        f"edition metadata exceeds {MAX_RESPONSE_CHARS} characters with every session "
+        "and video dropped",
+    )
 
 
 def _size(payload: dict[str, Any]) -> int:
