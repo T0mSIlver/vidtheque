@@ -48,6 +48,17 @@ class VerboseTranscriptionOut(BaseModel):
     segments: list[SegmentOut] = Field(default_factory=list)
     model: str | None = None
     backend: str | None = None
+    degraded_seams: list[float] | None = Field(
+        default=None,
+        description=(
+            "Seconds where a chunked backend kept both copies of a chunk "
+            "overlap, so those seconds are transcribed twice. Absent when "
+            "nothing degraded."
+        ),
+    )
+    """Non-OpenAI extra, and absent unless it happened: a caller storing the
+    transcript has no other way to tell which recordings carry a duplicated
+    half-minute, and the worker is the only thing that knows."""
 
 
 def to_verbose(
@@ -72,6 +83,7 @@ def to_verbose(
         ],
         model=model,
         backend=backend,
+        degraded_seams=list(result.degraded_seams) or None,
     )
 
 

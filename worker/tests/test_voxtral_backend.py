@@ -105,7 +105,7 @@ def test_long_audio_is_sequentially_chunked_and_safely_merged(tmp_path: Path) ->
     ]
     assert [call[2] for call in client.calls] == [["Voxtral", "Mistral"]] * 2
     assert result.language == "en" and result.duration == 3_630.0
-    assert backend.last_degraded_seams == []
+    assert backend.last_degraded_seams == [] and result.degraded_seams == []
     assert all(
         right.start >= left.end for left, right in zip(result.segments, result.segments[1:])
     )
@@ -140,6 +140,7 @@ def test_an_unsafe_seam_keeps_both_sides_and_records_it(tmp_path: Path) -> None:
     result = backend.infer(str(audio))
     assert result.text == "opening kept different tail closing"
     assert backend.last_degraded_seams == [3_570.0]
+    assert result.degraded_seams == [3_570.0], "the caller is told which seconds repeat"
 
     words = [word for segment in result.segments for word in segment.words]
     assert [word.start for word in words] == sorted(word.start for word in words)
@@ -192,7 +193,7 @@ def test_a_repeated_trigram_far_from_the_seam_is_not_a_match(tmp_path: Path) -> 
     backend.load()
     result = backend.infer(str(audio))
 
-    assert backend.last_degraded_seams == [3_570.0]
+    assert backend.last_degraded_seams == [3_570.0] == result.degraded_seams
     words = [word for segment in result.segments for word in segment.words]
     assert [word.start for word in words] == sorted(word.start for word in words)
     assert all(

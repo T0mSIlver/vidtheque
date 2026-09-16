@@ -120,6 +120,25 @@ def test_verbose_json_carries_word_timestamps(client, parts):
     assert kwargs == {"language": None, "align": True}
 
 
+def test_a_degraded_seam_is_named_in_the_response_or_is_absent(client, transcription):
+    """A chunked backend that kept both copies of an overlap knows which
+    seconds are transcribed twice, and it is the only thing that does. Saying
+    so in the answer is what lets a caller record it against the video."""
+
+    def body():
+        response = client.post(
+            "/v1/audio/transcriptions",
+            files={"file": ("clip.wav", b"RIFFfake", "audio/wav")},
+            data={"response_format": "verbose_json"},
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    assert body()["degraded_seams"] is None
+    transcription.degraded_seams = [3_570.0]
+    assert body()["degraded_seams"] == [3_570.0]
+
+
 def test_temperature_is_honoured_or_refused_never_dropped(client, parts):
     """The field was accepted, documented, and then never passed to the
     backend. Invisible while every caller sends 0 — which mcp/ does — and a

@@ -282,6 +282,15 @@ class Transcription:
     language: str | None = None
     duration: float | None = None
     segments: list[Segment] = field(default_factory=list)
+    degraded_seams: list[float] = field(default_factory=list)
+    """Seconds where a chunked backend could not identify the repeated speech
+    and kept both copies of an overlap (``aie-paris-2026.md`` §6).
+
+    It is here rather than on the backend instance because the caller is what
+    needs it: a transcript with a duplicated half-minute is honest but not
+    clean, and ``mcp/`` can only record which video carries one if the answer
+    to *that* request says so. Empty for a backend that transcribes in one
+    pass, which is every other one."""
 
 
 @dataclass(slots=True)

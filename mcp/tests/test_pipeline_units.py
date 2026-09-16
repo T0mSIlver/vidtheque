@@ -221,6 +221,16 @@ def test_whisperx_cue_text_is_exactly_the_joined_words() -> None:
     assert cues[0].avg_logprob == pytest.approx(-0.21)
 
 
+def test_a_degraded_seam_in_the_response_is_ignored_not_fatal() -> None:
+    """A chunked STT backend reports which seconds it transcribed twice
+    (`aie-paris-2026.md` §6). The cue reader has no use for the field and must
+    read the transcript exactly as it would without it."""
+    payload = {**WHISPERX_RESPONSE, "degraded_seams": [3_570.0]}
+    assert captions.cues_from_verbose_json(payload) == captions.cues_from_verbose_json(
+        WHISPERX_RESPONSE
+    )
+
+
 def test_vtt_is_understood_as_a_last_resort() -> None:
     payload = (
         "WEBVTT\n\n"

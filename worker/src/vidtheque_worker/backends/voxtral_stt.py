@@ -214,6 +214,7 @@ class VoxtralBackend(BaseBackend):
             language=language_seen,
             duration=duration,
             segments=segments,
+            degraded_seams=list(self.last_degraded_seams),
         )
 
 
