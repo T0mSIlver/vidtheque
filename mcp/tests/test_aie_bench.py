@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import argparse
+
+import pytest
+
 from bench.aie_paris_eval import (
     ARMS,
     LIMITATION,
@@ -10,6 +14,7 @@ from bench.aie_paris_eval import (
     Talk,
     format_report,
     preflight,
+    price_per_minute,
     proper_noun_terms,
     score_transcript,
 )
@@ -78,6 +83,13 @@ def test_cost_preflight_counts_both_paid_arms() -> None:
     assert "request count: 4" in text
     assert "Voxtral arms: 2" in text
     assert "projected cost: 0.04" in text
+
+
+def test_a_price_that_cannot_be_read_is_refused_at_the_argument() -> None:
+    assert price_per_minute("0.01") == 0.01
+    for value in ("0", "-1", "nan", "inf", "-inf", "cheap"):
+        with pytest.raises(argparse.ArgumentTypeError):
+            price_per_minute(value)
 
 
 def test_long_vod_snapshot_reads_the_seeded_database(seeded) -> None:
