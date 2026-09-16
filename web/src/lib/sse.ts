@@ -96,9 +96,16 @@ export function framingOf(contentType: string | null): Framing | null {
  * and what came out of the buffer is half of a `{`. Thrown, it left the reader
  * with a network error and the pane saying "Could not reach the server.", which
  * is a different claim from the true one: the stream stopped without ever
- * saying it was finished. So it is skipped, no terminal event arrives, and the
- * caller lands on the honest end for a stream that stopped (`app.js`'s
- * `parseFrame`, which returned `null` for exactly this).
+ * saying it was finished.
+ *
+ * **It is not skipped either: the read ends there.** The vocabulary is three
+ * events and a stream that has started is committed to a terminal one
+ * (demo-site.md §3.5), so a payload that is not JSON is not one frame lost —
+ * it is the stream having stopped making sense, and a frame after it in the
+ * same chunk is not evidence of anything. Ending is what puts the caller on
+ * the honest end for a stream that stopped: no terminal event, no partial
+ * answer shown (`app.js`'s `parseFrame`, which returned `null` for exactly
+ * this).
  */
 export async function* readJsonEvents(
   body: ReadableStream<Uint8Array>,
@@ -107,13 +114,19 @@ export async function* readJsonEvents(
   const reader = body.getReader();
   const decoder = new TextDecoder();
   const parser = framing === "ndjson" ? ndjsonParser() : sseParser();
+  // Set by the frame that did not parse, read by the loop below: a generator
+  // can only end itself, and what has to end is this one.
+  let broken = false;
   function* parsed(frames: string[]): Generator<unknown> {
     for (const data of frames) {
+      let event: unknown;
       try {
-        yield JSON.parse(data);
+        event = JSON.parse(data);
       } catch {
+        broken = true;
         return;
       }
+      yield event;
     }
   }
   try {
@@ -121,10 +134,12 @@ export async function* readJsonEvents(
       const { value, done } = await reader.read();
       if (done) break;
       yield* parsed(parser.push(decoder.decode(value, { stream: true })));
+      if (broken) return;
     }
     // The decoder may be holding the first bytes of a character split across
     // the last two chunks; flushing it is what completes them.
     yield* parsed(parser.push(decoder.decode()));
+    if (broken) return;
     yield* parsed(parser.flush());
   } finally {
     // A consumer that stops early — because the answer arrived, or because
