@@ -20,15 +20,8 @@ export interface ReceiptParts {
   query: string;
 }
 
-/**
- * `https://youtu.be/ID?t=705` split into `youtu.be/` · `ID` · `?t=705`.
- *
- * The receipt is printed rather than described, and the split is the printing:
- * the host says which surface, the id says which talk and `?t=` says which
- * second, which is the pair the product's whole argument rests on
- * (`demo/app.js`'s `receiptEl`). A link that is not an http(s) URL has no
- * honest receipt, and gets none rather than one the page guessed.
- */
+/** `https://youtu.be/ID?t=705` as `youtu.be/` · `ID` · `?t=705`; `null` for a
+ *  link that is not http(s), which gets no receipt. */
 export function receiptParts(link: string): ReceiptParts | null {
   try {
     const url = new URL(link);
@@ -40,22 +33,13 @@ export function receiptParts(link: string): ReceiptParts | null {
 }
 
 // ---------------------------------------------------------------------------
-// The dashboard's half. Python sends typed values and React formats them
-// (frontend-migration.md §1 decision 5), so every one of these was a Jinja
-// filter until 2026-09-05 and is named after the one it replaces
-// (`dashboard/render.py`, `vidtheque_mcp/text.py`). They are here rather than
-// in `lib/dashboard/` because a duration is a duration on every surface.
+// Display formatting for typed values (frontend-migration.md §1 decision 5).
 
-/** The one rendering for "this is not recorded" (`render.dash`). */
+/** The one rendering for "this is not recorded". */
 export const DASH = "—";
 
-/**
- * A number of seconds as a span a human reads: `12s`, `4m 12s`, `1h 05m`.
- *
- * One formatter for every duration on the management surface — how long a
- * video runs, how long a stage took, how much of a backoff is left. They are
- * the same unit and must not read as three different ones (`render.span`).
- */
+/** Seconds as a span a human reads: `12s`, `4m 12s`, `1h 05m`. One formatter
+ *  for every duration, so they never read as different units. */
 export function duration(seconds: number | null | undefined): string {
   if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return DASH;
   const total = Math.floor(seconds);
@@ -66,15 +50,8 @@ export function duration(seconds: number | null | undefined): string {
   return `${Math.floor(minutes / 60)}h ${pad(minutes % 60)}m`;
 }
 
-/**
- * Seconds as a length always spelled `h:mm:ss` — `0:08:00`, `1:30:00`.
- *
- * `text.duration_clock`'s shape, and deliberately not `clock`'s: a rule's floor
- * is a *bound the operator typed*, and printing it as `8:00` beside a ceiling
- * of `1:30:00` makes two numbers in one line read on two scales. `clock` is the
- * receipt's timecode and drops the hour when there is none; this one never
- * does, because the leading `0:` is what says which scale you are on.
- */
+/** Seconds always as `h:mm:ss` (`0:08:00`): unlike `clock`, it keeps the hour,
+ *  so a floor and a ceiling on one line read on one scale. */
 export function hms(seconds: number | null | undefined): string {
   if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return DASH;
   const total = Math.max(0, Math.floor(seconds));
@@ -89,13 +66,13 @@ export function hours(seconds: number | null | undefined): string {
   return (seconds / 3600).toFixed(1);
 }
 
-/** A count, grouped: `1,204`. `render.count`'s `{:,}`, and its `0` for nothing. */
+/** A count, grouped: `1,204`; `0` for nothing. */
 export function count(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "0";
   return Math.round(value).toLocaleString("en-US");
 }
 
-/** `1.4 GB`. Base-10, because that is what a disk reports (`render.bytes_human`). */
+/** `1.4 GB`. Base-10, as a disk reports. */
 export function bytes(value: number | null | undefined): string {
   if (!value || !Number.isFinite(value)) return "0 B";
   let size = Math.abs(value);
@@ -106,12 +83,8 @@ export function bytes(value: number | null | undefined): string {
   return `${size.toFixed(1)} TB`;
 }
 
-// Every clock on this surface is UTC and is printed as one, which is what the
-// Jinja pages did (`text.iso_day`, `text.iso_minute`): an operator reading a
-// tunnelled dashboard at 03:00 is comparing it to a log line, and a
-// browser-local rendering of a server-side stamp is a subtraction they have to
-// do in their head. `0` and `null` are both "the corpus has none" — an empty
-// corpus has no oldest video and no last index — and both print the dash.
+// Clocks print in UTC, to compare against log lines. `0` and `null` both mean
+// "none" and print the dash.
 
 /** Epoch seconds -> `2026-08-13 04:12` (UTC). */
 export function at(epochSeconds: number | null | undefined): string {
