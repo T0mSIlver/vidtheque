@@ -438,7 +438,9 @@ follow identically rather than by two functions agreeing.
   on a revisit, Back or Forward while it re-reads (DECISIONS.md, 2026-09-16).
   A page shows data only for its current request: a filter change shows the
   page's reserved placeholder until the new listing answers, never the last
-  listing's rows.
+  listing's rows. The one exception is a video's keyframe strip, whose next
+  page replaces a panel rather than a listing: the strip on screen stays,
+  dimmed and `aria-busy`, until it lands (dashboard.md §5.3).
 - **Parameters.** `overview` and `ledger` read no query string at all, so there
   is nothing to clamp; their bounds are the constants in §4. The two `library`
   routes take the pages' parameters under the pages' clamps, and say in `notes`
