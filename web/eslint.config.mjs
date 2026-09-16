@@ -20,16 +20,28 @@ const DASHBOARD_FILES = [
   "src/test/dashboard/**",
 ];
 
-// Four spellings per forbidden directory: the alias and a relative path out of
-// one, each as the directory itself (`@/lib/api`, the package index) and as
-// anything under it.
+// What both halves share may read neither half, or the guard has a way round.
+const SHARED_FILES = ["src/components/ui/**", "src/lib/format/**", "src/lib/schemas/**"];
+
+// Six spellings per forbidden directory: the alias, a relative path out of one,
+// and the sibling step (`../dashboard` from components/public/), each as the
+// directory itself (`@/lib/api`, the package index) and as anything under it.
 function forbid(where, directories, message) {
-  const group = directories.flatMap((dir) => [
-    `@/${dir}`,
-    `@/${dir}/**`,
-    `**/${dir}`,
-    `**/${dir}/**`,
-  ]);
+  const group = [
+    ...new Set(
+      directories.flatMap((dir) => {
+        const leaf = dir.split("/").pop();
+        return [
+          `@/${dir}`,
+          `@/${dir}/**`,
+          `**/${dir}`,
+          `**/${dir}/**`,
+          `../${leaf}`,
+          `../${leaf}/**`,
+        ];
+      }),
+    ),
+  ];
   return {
     files: where,
     rules: {
@@ -50,6 +62,11 @@ const eslintConfig = defineConfig([
     DASHBOARD_FILES,
     ["components/public", "lib/api"],
     "The dashboard may not read the public surface. Share through components/ui, lib/format or lib/schemas.",
+  ),
+  forbid(
+    SHARED_FILES,
+    ["components/public", "lib/api", "components/dashboard", "lib/dashboard"],
+    "A shared module reads neither surface, or the split has a way round.",
   ),
   // Formatting is Prettier's job; this turns off every ESLint rule that
   // would argue with it. Must come last.
