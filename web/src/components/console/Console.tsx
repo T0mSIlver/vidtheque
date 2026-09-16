@@ -126,11 +126,14 @@ export function Console(props: ConsoleProps) {
     else void search(q, state.type);
   }
 
-  // A chip is the filter, so it re-runs the search on screen.
+  // A chip is the filter, so it re-runs the search on screen. A cold page has
+  // nothing to re-run, but the chip is a committing action either way
+  // (DECISIONS.md 2026-09-16): the URL carries the channel it pinned.
   function pickChannel(value: ContentType) {
     dispatch({ type: "channel", value });
     const q = state.draft.trim();
     if (q) void search(q, value);
+    else commit({ mode: "search", q: "", type: value });
   }
 
   function switchMode(mode: Mode) {
