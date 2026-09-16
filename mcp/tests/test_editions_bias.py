@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from vidtheque_mcp.editions import Edition, Session, Speaker, build_context_bias, load_edition
+from vidtheque_mcp.editions import build_context_bias, load_edition
 
 
 def test_committed_fixture_pins_priority_and_cap() -> None:
-    bias = build_context_bias(load_edition())
+    bias = build_context_bias(load_edition("aie-paris-2026"))
     assert len(bias) == 100
     assert bias[:3] == ["Clemens Rawert", "Lélio Renard Lavaud", "Jakob Pörschmann"]
     assert bias[34:38] == ["Langfuse", "Mistral", "Black Forest Labs", "ElevenLabs"]
@@ -24,15 +24,21 @@ def test_committed_fixture_pins_priority_and_cap() -> None:
 
 
 def test_nfkc_casefold_dedup_keeps_the_first_spelling() -> None:
-    edition = Edition(
-        slug="test",
-        edition_tag="series:test",
-        fixed_context_bias=("MISTRAL", "Qwen"),
-        sessions=(
-            Session("Unique Quartz", (Speaker("Alice Smith", "Mistral"),)),
-            Session("Other Quartz", (Speaker("Ａlice Smith", "MISTRAL"),)),
-        ),
-    )
+    edition = {
+        "slug": "test",
+        "tags": {"edition": "series:test"},
+        "context_bias": {"fixed": ["MISTRAL", "Qwen"]},
+        "sessions": [
+            {
+                "title": "Unique Quartz",
+                "speakers": [{"name": "Alice Smith", "company": "Mistral"}],
+            },
+            {
+                "title": "Other Quartz",
+                "speakers": [{"name": "Ａlice Smith", "company": "MISTRAL"}],
+            },
+        ],
+    }
     bias = build_context_bias(edition)
     assert bias[:3] == ["Alice Smith", "Mistral", "Qwen"]
     assert bias.count("Mistral") == 1
