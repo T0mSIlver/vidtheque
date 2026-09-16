@@ -66,9 +66,7 @@ export function IndexView() {
   if (!rendered) {
     return (
       <Absent title={TITLE} heading="This deployment does not index anything.">
-        Adding to the index is the write side, and this instance registers none — it is either a
-        read-only projection of somebody&rsquo;s index, or an instance with no credential configured
-        to check.
+        No write side on this instance, so nothing can be queued here.
       </Absent>
     );
   }
@@ -190,9 +188,8 @@ function Form({ indexable, reason }: { indexable: boolean; reason: string | null
             disabled={!indexable}
           />
           <p className={styles.fieldHelp}>
-            One per line, or separated by spaces or commas; a bare 11-character id works. Up to{" "}
-            <span className={ui.mono}>{MAX_FORM_URLS}</span> per submission, queued as jobs of{" "}
-            <span className={ui.mono}>{URLS_PER_JOB}</span>.
+            One per line or comma-separated; bare ids work. Up to{" "}
+            <span className={ui.mono}>{MAX_FORM_URLS}</span> at once.
           </p>
         </div>
 
@@ -250,16 +247,14 @@ function Form({ indexable, reason }: { indexable: boolean; reason: string | null
           </div>
         </div>
         <p className={styles.fieldHelp}>
-          <em>Expand</em> decides what a playlist or channel URL means: <code>none</code> indexes
-          the one video, <code>playlist</code> takes the list it is in, <code>channel_recent</code>{" "}
-          takes the channel&rsquo;s latest. <em>Max items</em> caps that expansion, and caps each
-          job.
+          <code>none</code> takes the video, <code>playlist</code> its list,{" "}
+          <code>channel_recent</code> the latest, up to <em>max items</em>.
         </p>
 
         <fieldset className={controls.checkList}>
           <legend className={controls.checkLegend}>Channels to build</legend>
-          {CHANNEL_BOXES.map(([name, label, note]) => (
-            <label className={controls.checkNoted} key={name}>
+          {CHANNEL_BOXES.map(([name, label]) => (
+            <label className={controls.check} key={name}>
               <input
                 type="checkbox"
                 name={`channel_${name}`}
@@ -267,22 +262,20 @@ function Form({ indexable, reason }: { indexable: boolean; reason: string | null
                 defaultChecked
                 disabled={!indexable}
               />
-              <span className={controls.checkNotedWord}>{label}</span>
-              <span className={controls.checkNote}>{note}</span>
+              <span className={controls.checkWord}>{label}</span>
             </label>
           ))}
         </fieldset>
 
         <fieldset className={controls.checkList}>
-          <legend className={controls.checkLegend}>If it is already indexed</legend>
-          <label className={controls.checkNoted}>
+          <legend className={controls.checkLegend}>Already indexed</legend>
+          <label className={controls.check}>
             <input type="checkbox" name="force_reindex" value="1" disabled={!indexable} />
-            <span className={controls.checkNotedWord}>Force re-index</span>
-            <span className={controls.checkNote}>
-              rebuild every stage. Without this, an incomplete video resumes at its outstanding
-              stages and a finished one is left alone.
-            </span>
+            <span className={controls.checkWord}>Force re-index</span>
           </label>
+          <span className={styles.inlineHelp}>
+            otherwise finished videos are skipped, partial ones resume
+          </span>
         </fieldset>
 
         {/* The refusal lands under the actions and takes focus, so nothing the
