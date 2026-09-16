@@ -1,9 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { Video } from "@/lib/api/schemas";
-
-vi.mock("@/lib/search", () => ({ readCorpus: vi.fn() }));
 import { Corpus } from "./Corpus";
 
 const VIDEO: Video = {
