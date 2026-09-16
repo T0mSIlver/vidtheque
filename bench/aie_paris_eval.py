@@ -20,7 +20,7 @@ try:
 except ImportError:  # direct `python bench/aie_paris_eval.py` execution
     from harness import post_multipart
 from vidtheque_mcp.db.connection import open_read_connection
-from vidtheque_mcp.editions import Edition, Session, Speaker, build_context_bias
+from vidtheque_mcp.editions import build_context_bias
 
 LIMITATION = (
     "This measures schedule-derived proper-noun coverage, not general word error.\n"
@@ -55,6 +55,12 @@ _STOP_WORDS = frozenset(
         "your",
     }
 )
+
+
+@dataclass(frozen=True, slots=True)
+class Speaker:
+    name: str
+    company: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,13 +216,28 @@ def format_report(scores: list[Score]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _edition(manifest: Manifest) -> Edition:
-    return Edition(
-        slug="aie-paris-2025-private-eval",
-        edition_tag="series:aie-paris-2025-private-eval",
-        fixed_context_bias=manifest.fixed_context_bias,
-        sessions=tuple(Session(talk.title, talk.speakers) for talk in manifest.talks),
-    )
+def _edition(manifest: Manifest) -> dict[str, Any]:
+    """The private manifest, shaped like the edition object the builder reads.
+
+    The eval runs on audio the repository does not ship, so there is no fixture
+    to load here — but the builder stays the one in `mcp`, because an arm scored
+    against a second bias algorithm would not be comparable to the first.
+    """
+    return {
+        "slug": "aie-paris-2025-private-eval",
+        "tags": {"edition": "series:aie-paris-2025-private-eval"},
+        "context_bias": {"fixed": list(manifest.fixed_context_bias)},
+        "sessions": [
+            {
+                "title": talk.title,
+                "speakers": [
+                    {"name": speaker.name, "company": speaker.company}
+                    for speaker in talk.speakers
+                ],
+            }
+            for talk in manifest.talks
+        ],
+    }
 
 
 def indexed_transcript(db_path: Path, talk: Talk) -> str:
