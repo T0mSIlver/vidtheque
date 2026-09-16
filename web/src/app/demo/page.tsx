@@ -1,8 +1,7 @@
-import { Suspense } from "react";
 import { loadConsole } from "@/components/console/bootstrap";
 import { Console } from "@/components/console/Console";
-import { ConsoleReserve } from "@/components/console/Reserve";
-import { CorpusPanel } from "./Corpus";
+import { readCorpus } from "@/lib/search";
+import { Corpus } from "./Corpus";
 import styles from "./page.module.css";
 
 // Receipt-checked in `research/demo-queries-2026-08-10.md`; each pins the
@@ -40,15 +39,15 @@ export default function DemoPage({ searchParams }: PageProps<"/demo">) {
           <b>the sentence, the slide, and the second it happened.</b>
         </p>
       </div>
-      <Suspense fallback={<ConsoleReserve />}>
-        <DemoConsole searchParams={searchParams} />
-      </Suspense>
+      {/* Awaited, not streamed: a console that swaps in under the hero moves
+          everything below it, results most of all. */}
+      <DemoConsole searchParams={searchParams} />
     </main>
   );
 }
 
 async function DemoConsole({ searchParams }: Pick<PageProps<"/demo">, "searchParams">) {
-  const bootstrap = await loadConsole(searchParams);
+  const [bootstrap, videos] = await Promise.all([loadConsole(searchParams), readCorpus()]);
   return (
     <Console
       {...bootstrap}
@@ -57,11 +56,7 @@ async function DemoConsole({ searchParams }: Pick<PageProps<"/demo">, "searchPar
       askExamples={ASK_EXAMPLES}
       noMatch="Nothing in the corpus matches this."
       autoFocus
-      corpus={
-        <Suspense fallback={null}>
-          <CorpusPanel />
-        </Suspense>
-      }
+      corpus={<Corpus videos={videos} />}
     />
   );
 }

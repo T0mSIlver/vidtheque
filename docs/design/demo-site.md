@@ -1412,6 +1412,11 @@ list:
   `askEnabled`, so a deployment with no key renders search from the start. The
   post-hydration swap described above is gone, and so is the reserved mode
   switch that appeared only when the boot call landed.
+- **The console is awaited with the hero, not streamed under it.** A console
+  that swaps in below the hero moves everything under it, the connect panel
+  included: 0.15 layout shift at 1440px and 0.42 at 390px on `/demo?q=cache`,
+  measured 2026-09-16. Only the chrome's meta leaves and `/paris`'s programme,
+  which sits below the console, stream.
 - **Loading keeps the previous screen.** A search in flight leaves the results
   (or the cold page) where they are, dimmed and `aria-busy`, while the state
   cell says `scanning`; the reply replaces them only when it lands, and a

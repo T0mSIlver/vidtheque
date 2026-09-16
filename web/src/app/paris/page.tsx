@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import { loadConsole } from "@/components/console/bootstrap";
 import { Console } from "@/components/console/Console";
-import { ConsoleReserve } from "@/components/console/Reserve";
 import { readEdition, TAG } from "./edition";
 import { Programme, ProgrammeLoading } from "./Programme";
 import styles from "./page.module.css";
@@ -12,8 +11,8 @@ const ASK_EXAMPLES = [
   "What practical advice appeared on the slides?",
 ];
 
-// The console comes straight after the hero; the programme streams in below
-// it, so its height never moves the box (aie-paris-2026.md §4).
+// The console is awaited with the hero, so nothing swaps in above the fold;
+// the programme streams in below it (aie-paris-2026.md §4).
 export default function ParisPage({ searchParams }: PageProps<"/paris">) {
   return (
     <main className={styles.main}>
@@ -39,9 +38,7 @@ export default function ParisPage({ searchParams }: PageProps<"/paris">) {
         <h2 id="query-title" className={styles.sectionTitle}>
           Find a moment in the main-stage corpus
         </h2>
-        <Suspense fallback={<ConsoleReserve />}>
-          <ParisConsole searchParams={searchParams} />
-        </Suspense>
+        <ParisConsole searchParams={searchParams} />
       </section>
       <div className={styles.programme}>
         <Suspense fallback={<ProgrammeLoading />}>
