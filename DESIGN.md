@@ -560,8 +560,9 @@ This file does **not** override `docs/design/demo-site.md` or
 override `docs/design/positioning.md` on voice. It owns how the surfaces look,
 and nothing else.
 
-**Reference implementation:** `web/src/app/page.tsx`, its components under
-`web/src/components/landing/`, its data under `web/src/landing/` and its
+**Reference implementation:** `web/src/app/(public)/page.tsx`, its components
+under `web/src/components/public/landing/`, its data under
+`web/src/components/public/landing/data/` and its
 stills under `web/public/landing/` ("projection room"). Tom picked it on
 2026-08-10 as the product's visual identity; it graduated out of
 `lab/versions/v5.html` to the served landing on 2026-08-11 (demo-site.md §6.1)
@@ -987,8 +988,8 @@ spends.
 
 ### The landing page — the maximal expression
 
-**The Next front end's landing is the reference** (`web/src/app/page.tsx`, v5
-as it graduated). Full-bleed imagery, the display ladder at its top rungs, the
+**The Next front end's landing is the reference** (`web/src/app/(public)/page.tsx`,
+v5 as it graduated). Full-bleed imagery, the display ladder at its top rungs, the
 drifting wall, the lift, the light table, the evidence wall, the booth log. This is the only surface where a beat may exist purely to make an
 argument, and the only one that may spend a whole viewport on one idea. Motion
 inventory as v5 ships it; nothing is added to it without Tom.
