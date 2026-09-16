@@ -1154,7 +1154,11 @@ upstreams — are environment placeholders whose defaults are the compose
 answers, so the table is never copied. Nothing else is configured there: no
 CORS, no security headers (they are `proxy.ts`'s, per request, and an edge
 cannot see a nonce), no buffering (measured: SSE and NDJSON both arrive as
-produced).
+produced). A third topology reuses that table unchanged (added 2026-09-16): a
+host-level caddy terminating TLS for `private.vidtheque.dev` in front of this
+edge on loopback. The Caddyfile's header states the two constraints it carries
+— `Host` must reach this edge unrewritten, and the published port must not be
+reachable from the LAN beside it.
 
 **One correction to §1a's table, found while writing that file.** Under
 `VIDTHEQUE_AUTH=oauth` the MCP SDK registers its own handlers at the **root** —

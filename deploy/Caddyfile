@@ -6,17 +6,38 @@
 # middleware matcher both match paths, and three of the paths below are routed
 # by method.
 #
-# Topology, both ways round:
+# Topology, three ways round:
 #
 #   public box   cloudflared -> caddy (loopback) -> { web:3000, mcp:8080 }
 #   private box  browser     -> caddy (LAN)      -> { web:3000, mcp:8080 }
+#   private box  browser -> host caddy (TLS for private.vidtheque.dev, issued
+#   behind a     through the Cloudflare DNS module) -> caddy on
+#   host caddy   127.0.0.1:${EDGE_PORT} -> { web:3000, mcp:8080 }
 #
 # **TLS is terminated in front of this file, never by it.** On the public box
 # that is Cloudflare's edge, and the tunnel's hop to caddy is plain http inside
 # the machine; on a LAN it is plain http on the wire, which is the same posture
-# the compose file had before an edge existed. So the site address below is a
-# port and nothing else, and automatic HTTPS is off rather than merely unused:
-# this server never asks for a certificate and never redirects to one.
+# the compose file had before an edge existed; on the third it is the host
+# caddy, and its hop down to this one is plain http over loopback. So the site
+# address below is a port and nothing else, and automatic HTTPS is off rather
+# than merely unused: this server never asks for a certificate and never
+# redirects to one.
+#
+# THE THIRD TOPOLOGY HAS TWO CONSTRAINTS, neither of them visible from here:
+#
+#   * The host caddy must reach this edge with `Host` UNCHANGED. A plain
+#     `reverse_proxy 127.0.0.1:${EDGE_PORT}` already does; a `header_up Host
+#     {upstream_hostport}` does not. The MCP transport's DNS-rebinding guard
+#     compares that header against VIDTHEQUE_PUBLIC_HOSTNAME, so a rewritten
+#     Host answers `421 Misdirected Request` on `/mcp` while every other route
+#     looks perfect — the §3.2 footgun in docs/deploy-public.md, reached from
+#     a second direction.
+#   * The compose file's `${EDGE_PORT:-8080}:80` PUBLISHES ON EVERY INTERFACE,
+#     so the host caddy is one way in and the LAN is another, reaching this
+#     plain-http edge directly and skipping the TLS in front of it. Either the
+#     box firewall closes that port, or `compose.local.yml` restates the
+#     mapping with a `127.0.0.1:` prefix — which is the public overlay's own
+#     line, for the same reason.
 #
 # WHAT THIS FILE DOES NOT DO, deliberately:
 #
