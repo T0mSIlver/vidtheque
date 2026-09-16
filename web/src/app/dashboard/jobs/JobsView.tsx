@@ -10,7 +10,7 @@ import controls from "../kit/controls.module.css";
 import { FilterBand } from "../kit/FilterBand";
 import { notice, Notice, ReadFailure } from "../kit/notice";
 import { Notes, Pager, table, TableCount } from "../kit/table";
-import { DashLink, Fact, Facts, PageHead, Pending, Sep, ui, Unbroken } from "../kit/ui";
+import { DashLink, Fact, Facts, Body, PageHead, Sep, ui, Unbroken } from "../kit/ui";
 import { refusalOf, useWriteSide } from "../kit/write";
 import { usePatchedRows } from "../polling";
 import { useSession } from "../session";
@@ -53,14 +53,21 @@ export function JobsView() {
 
       <Filters params={params} data={data} />
 
-      {data ? (
-        // A new baseline for a new listing, and for the first fresh reading
-        // after a cached one.
-        <Table key={`${key}:${jobs.isStale}`} data={data} stopped={jobs.error} polling={moving} />
-      ) : jobs.error !== undefined ? (
+      {!data && jobs.error !== undefined ? (
         <ReadFailure error={jobs.error} onRetry={jobs.reload} />
       ) : (
-        <Pending height="40dvh" />
+        <Body ready={data !== undefined} height="40dvh">
+          {/* A new baseline for a new listing, and for the first fresh reading
+              after a cached one. */}
+          {data ? (
+            <Table
+              key={`${key}:${jobs.isStale}`}
+              data={data}
+              stopped={jobs.error}
+              polling={moving}
+            />
+          ) : null}
+        </Body>
       )}
     </>
   );
