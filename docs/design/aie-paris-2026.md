@@ -428,8 +428,8 @@ later, but it does not change the worker response shape.
 shape without disabling the existing duration guard. The public default stays
 four hours.
 
-The API key never enters `mcp/`, `web/`, a job payload, a log, or an eval
-result. The Mistral account must have its own spend cap before a batch runs.
+The API key never enters `mcp/`, `web/`, a job payload, a log, the eval
+process, or an eval result. The Mistral account must have its own spend cap before a batch runs.
 
 ## 7. The context-bias builder
 
@@ -460,6 +460,11 @@ arms incomparable.
 
 The eval lives under `bench/` and runs only on Tom's box. CPU tests use recorded
 responses and never call Mistral or download a model.
+
+The paid arms go through an already configured worker over HTTP, so the eval
+command holds no credential of its own: §6.1 keeps `MISTRAL_API_KEY` in the
+worker process, and the worker's boot check is what refuses `voxtral` without
+it. The eval never reads the variable and never asks the operator to export it.
 
 About ten Paris 2025 talks form one fixed manifest of source ids and audio
 spans. All three arms use the same audio:

@@ -210,8 +210,9 @@ id, local audio file, span, title, speaker, and company. Its format is
 audio, transcripts, and output outside the repository.
 
 Arm 1 reads cues from `$VIDTHEQUE_DATA_DIR/vidtheque.db`. Start a worker with
-`STT_BACKEND=voxtral`, `STT_MODEL=voxtral-mini-latest`, and
-`MISTRAL_API_KEY` set before the paid run. A command without `--execute` only
+`STT_BACKEND=voxtral`, `STT_MODEL=voxtral-mini-latest`, and `MISTRAL_API_KEY`
+set before the paid run — the key stays in that worker and never in this
+command, which only speaks HTTP to it. A command without `--execute` only
 prints the cost preflight. Supply the current price per minute from Mistral;
 the repository does not carry a price.
 
@@ -220,8 +221,7 @@ uv run python bench/aie_paris_eval.py /private/aie-paris-2025-eval.json \
   --data-dir /private/aie-paris-2025-data \
   --price-per-minute PRICE
 
-MISTRAL_API_KEY=... uv run python bench/aie_paris_eval.py \
-  /private/aie-paris-2025-eval.json \
+uv run python bench/aie_paris_eval.py /private/aie-paris-2025-eval.json \
   --data-dir /private/aie-paris-2025-data \
   --price-per-minute PRICE --execute \
   --out /private/aie-paris-2025-eval.md
