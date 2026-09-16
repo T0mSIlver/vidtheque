@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { OWNER_OVERVIEW } from "@/test/dashboard-fixtures";
+import { OWNER_OVERVIEW } from "@/test/dashboard/fixtures";
 import { Overview, Session } from "./schemas";
 
 // `static/dashboard.js` had one function guarding every URL it put in the DOM:

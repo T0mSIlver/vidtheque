@@ -17,7 +17,7 @@ import {
   SEARCH_BOX,
   streamResponse,
   wire,
-} from "./testing";
+} from "@/test/public/console";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 

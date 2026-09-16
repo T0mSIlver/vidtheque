@@ -2,10 +2,10 @@
 // panel tests share. Each test file still declares its own
 // `vi.mock("next/navigation", …)`.
 import { screen } from "@testing-library/react";
-import { mountDashboard, type Answer } from "@/test/dashboard";
-import { OWNER_SESSION } from "@/test/dashboard-fixtures";
-import { REINDEXED } from "@/test/index-fixtures";
-import { OWNER_CUES, OWNER_VIDEO } from "@/test/library-fixtures";
+import { mountDashboard, type Answer } from "@/test/dashboard/harness";
+import { OWNER_SESSION } from "@/test/dashboard/fixtures";
+import { REINDEXED } from "@/test/dashboard/index-fixtures";
+import { OWNER_CUES, OWNER_VIDEO } from "@/test/dashboard/library-fixtures";
 import { VideoDetailView } from "./VideoDetailView";
 
 export function mountVideo(

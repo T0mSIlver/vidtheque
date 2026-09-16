@@ -2,10 +2,10 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
-import { REINDEX_REFUSED, TAG_REFUSED, TAGGED } from "@/test/index-fixtures";
-import { DEMO_VIDEO, OWNER_HALF, OWNER_VIDEO } from "@/test/library-fixtures";
-import { firstPaint } from "@/test/retry";
+import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard/fixtures";
+import { REINDEX_REFUSED, TAG_REFUSED, TAGGED } from "@/test/dashboard/index-fixtures";
+import { DEMO_VIDEO, OWNER_HALF, OWNER_VIDEO } from "@/test/dashboard/library-fixtures";
+import { firstPaint } from "@/test/dashboard/retry";
 import { mountVideo } from "./detail-harness";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);

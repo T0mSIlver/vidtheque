@@ -1,11 +1,12 @@
-// Shared fixtures for the console's tests.
+// Shared fixtures for the console's tests. Under `test/` rather than beside
+// the console: it imports `vitest`, which no shipped module may.
 import { render } from "@testing-library/react";
 import { vi } from "vitest";
 import { navigateTo, resetNavigation } from "@/test/next";
 import type { SearchOutcome } from "@/lib/api/outcome";
 import type { Hit, SearchResponse } from "@/lib/api/schemas";
-import { Console, type ConsoleProps } from "./Console";
-import { serializeSnapshot } from "./url";
+import { Console, type ConsoleProps } from "@/components/public/console/Console";
+import { serializeSnapshot } from "@/components/public/console/url";
 
 export function hit(over: Partial<Hit> = {}): Hit {
   return {

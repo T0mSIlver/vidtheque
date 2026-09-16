@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DEMO_SESSION } from "@/test/dashboard-fixtures";
-import { DEMO_HALF, OWNER_HALF } from "@/test/library-fixtures";
+import { DEMO_SESSION } from "@/test/dashboard/fixtures";
+import { DEMO_HALF, OWNER_HALF } from "@/test/dashboard/library-fixtures";
 import { mountVideo } from "./detail-harness";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);

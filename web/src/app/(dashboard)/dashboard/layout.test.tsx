@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { act, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { deferred, mountDashboard, type Answer } from "@/test/dashboard";
-import { OWNER_SESSION } from "@/test/dashboard-fixtures";
+import { deferred, mountDashboard, type Answer } from "@/test/dashboard/harness";
+import { OWNER_SESSION } from "@/test/dashboard/fixtures";
 import DashboardError from "./error";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);

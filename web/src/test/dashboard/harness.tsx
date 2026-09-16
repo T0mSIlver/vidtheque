@@ -6,8 +6,8 @@ import type { ReactElement } from "react";
 import { afterEach, vi } from "vitest";
 import { Chrome } from "@/components/dashboard/Chrome";
 import { clearResources } from "@/lib/dashboard/resource";
-import { OWNER_SESSION } from "./dashboard-fixtures";
-import { navigateTo, resetNavigation } from "./next";
+import { OWNER_SESSION } from "./fixtures";
+import { navigateTo, resetNavigation } from "@/test/next";
 
 export type Answer = { status?: number; body?: unknown; headers?: Record<string, string> };
 

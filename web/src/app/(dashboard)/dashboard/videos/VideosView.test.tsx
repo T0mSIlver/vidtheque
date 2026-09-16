@@ -2,11 +2,15 @@
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mountDashboard, type Answer, type Route } from "@/test/dashboard";
-import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
-import { REINDEX_REFUSED, REINDEXED } from "@/test/index-fixtures";
-import { DEMO_LIBRARY, OWNER_LIBRARY, OWNER_LIBRARY_CLAMPED } from "@/test/library-fixtures";
-import { firstPaint } from "@/test/retry";
+import { mountDashboard, type Answer, type Route } from "@/test/dashboard/harness";
+import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard/fixtures";
+import { REINDEX_REFUSED, REINDEXED } from "@/test/dashboard/index-fixtures";
+import {
+  DEMO_LIBRARY,
+  OWNER_LIBRARY,
+  OWNER_LIBRARY_CLAMPED,
+} from "@/test/dashboard/library-fixtures";
+import { firstPaint } from "@/test/dashboard/retry";
 import { DEBOUNCE_MS } from "@/components/dashboard/kit/FilterBand";
 import { VideosView } from "./VideosView";
 

@@ -1,14 +1,14 @@
 // @vitest-environment jsdom
 import { screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { mountDashboard, type Answer } from "@/test/dashboard";
+import { mountDashboard, type Answer } from "@/test/dashboard/harness";
 import {
   DEMO_OVERVIEW,
   DEMO_SESSION,
   OWNER_OVERVIEW,
   OWNER_SESSION,
-} from "@/test/dashboard-fixtures";
-import { firstPaint } from "@/test/retry";
+} from "@/test/dashboard/fixtures";
+import { firstPaint } from "@/test/dashboard/retry";
 import { OverviewView } from "./OverviewView";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);

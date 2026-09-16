@@ -2,16 +2,16 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { mountDashboard, type Answer } from "@/test/dashboard";
-import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
+import { mountDashboard, type Answer } from "@/test/dashboard/harness";
+import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard/fixtures";
 import {
   NO_URLS,
   NOTHING_ACCEPTED,
   ONE_JOB,
   SPLIT_RECEIPT,
   TOO_MANY_URLS,
-} from "@/test/index-fixtures";
-import { countingDownFrom } from "@/test/retry";
+} from "@/test/dashboard/index-fixtures";
+import { countingDownFrom } from "@/test/dashboard/retry";
 import { IndexView } from "./IndexView";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
