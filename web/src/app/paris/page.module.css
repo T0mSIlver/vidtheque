@@ -32,10 +32,6 @@
   max-width: var(--lede);
   color: var(--fg2);
 }
-.credit {
-  composes: t-machine-sm from global;
-  color: var(--fg3);
-}
 /* Below the console, so its height never moves the box. */
 .programme {
   margin-top: var(--beat);

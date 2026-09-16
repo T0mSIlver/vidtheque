@@ -28,7 +28,6 @@ export default function ParisPage({ searchParams }: PageProps<"/paris">) {
           Every main-stage talk from AI Engineer Paris, cited to the second, slides included. Point
           your own agent at it.
         </p>
-        <p className={styles.credit}>Organized by Mistral.</p>
       </header>
       <section aria-labelledby="query-title">
         <p className={styles.kick}>
