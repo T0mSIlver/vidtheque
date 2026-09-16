@@ -69,7 +69,11 @@ describe("the landing at /", () => {
     const html = renderToString(<LandingPage />);
     const doc = new DOMParser().parseFromString(html, "text/html");
     const wall = doc.querySelector('[data-hero="wall"]')!;
-    expect(wall.querySelectorAll("[data-vid] > img").length).toBeGreaterThanOrEqual(200);
+    const tiles = [...wall.querySelectorAll("[data-vid] > img")];
+    expect(tiles).toHaveLength(192);
+    // A first paint's tiles load eagerly; the rest wait for layout.
+    expect(tiles.slice(0, 120).every((img) => !img.hasAttribute("loading"))).toBe(true);
+    expect(tiles.slice(120).every((img) => img.getAttribute("loading") === "lazy")).toBe(true);
     expect(doc.querySelectorAll('[data-hero="chips"] button')).toHaveLength(3);
     const panels = doc.querySelectorAll("[data-panel]");
     expect(panels).toHaveLength(3);

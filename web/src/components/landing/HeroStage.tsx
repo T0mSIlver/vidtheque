@@ -11,9 +11,12 @@ import styles from "./landing.module.css";
 // wall, the chips and each answer the light table can hold. HeroController
 // only measures and toggles, so nothing appears or moves at hydration.
 
-// Enough tiles for a tall stacked hero; CSS sizes them and the controller
-// hides the rows below the room.
-const WALL_TILES = 288;
+// The tallest room the controller fills: 12 columns × 16 rows (4K landscape) or
+// 8 × 24 (a 1920-tall portrait screen). It hides the rows below the room.
+const WALL_TILES = 192;
+// A 1440 × 900 room shows 10 × 12. Tiles past that wait for layout, so they
+// never queue ahead of the page's critical assets.
+const EAGER_TILES = 120;
 
 const CUES: HeroCue[] = QUERIES.map((q) => ({
   q: q.q,
@@ -32,7 +35,12 @@ export function HeroStage() {
             const g = WALL_ORDER[i % WALL_ORDER.length];
             return (
               <div className={styles.wt} data-vid={g.vid} key={i}>
-                <img src={ASSETS + g.img} alt="" decoding="async" />
+                <img
+                  src={ASSETS + g.img}
+                  alt=""
+                  decoding="async"
+                  loading={i < EAGER_TILES ? undefined : "lazy"}
+                />
               </div>
             );
           })}
