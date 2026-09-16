@@ -55,11 +55,14 @@ export function SearchResults({
   talks,
   noMatch,
   actions,
+  pending,
 }: {
   view: SearchView & { outcome: SearchOutcome };
   talks: EditionTalk[];
   noMatch: string;
   actions: SearchActions;
+  /** Page one of a newer search is out; this view's controls are inert. */
+  pending: boolean;
 }) {
   const { outcome } = view;
   if (outcome.kind === "rate_limited") {
@@ -84,7 +87,7 @@ export function SearchResults({
           {outcome.kind === "refused" && outcome.next ? (
             <p className={styles.noticeDetail}>{outcome.next}</p>
           ) : null}
-          <button type="button" className={styles.ghost} onClick={actions.retry}>
+          <button type="button" className={styles.ghost} disabled={pending} onClick={actions.retry}>
             Try again
           </button>
         </div>
@@ -94,7 +97,9 @@ export function SearchResults({
   if (!outcome.page.results.length) {
     return <NoResults view={view} page={outcome.page} noMatch={noMatch} actions={actions} />;
   }
-  return <Rows view={view} first={outcome.page} talks={talks} actions={actions} />;
+  return (
+    <Rows view={view} first={outcome.page} talks={talks} actions={actions} pending={pending} />
+  );
 }
 
 function Notes({ notes }: { notes: string[] }) {
@@ -110,11 +115,13 @@ function Rows({
   first,
   talks,
   actions,
+  pending,
 }: {
   view: SearchView;
   first: SearchResponse;
   talks: EditionTalk[];
   actions: SearchActions;
+  pending: boolean;
 }) {
   const pages = [first, ...view.more];
   const hits = pages.flatMap((page) => page.results).map((hit) => labelHit(hit, talks));
@@ -147,7 +154,12 @@ function Rows({
           <div className={`${styles.notice} ${styles.noticeBad}`}>
             <p className={styles.noticeTitle}>{foot.message}</p>
             {foot.next ? <p className={styles.noticeDetail}>{foot.next}</p> : null}
-            <button type="button" className={styles.ghost} onClick={actions.more}>
+            <button
+              type="button"
+              className={styles.ghost}
+              disabled={pending}
+              onClick={actions.more}
+            >
               Try again
             </button>
           </div>
@@ -155,7 +167,7 @@ function Rows({
           <button
             type="button"
             className={styles.ghost}
-            disabled={foot.kind === "loading"}
+            disabled={foot.kind === "loading" || pending}
             onClick={actions.more}
           >
             More results
