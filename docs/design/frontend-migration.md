@@ -1394,3 +1394,9 @@ button weights (J6, J7, J12, J13), and the `seen` table's stacking breakpoint
 half of J11 and J13 landed here, so the two tables that stack together do again:
 jobs, items and videos at 52rem, with follows, and `seen` still at 780px until
 that branch moves it.
+
+The public pages left the parity frame on the same day. `/demo` and `/paris`
+no longer port the old search box and ask pane one-for-one: one client console
+replaces both, with its own URL shape and no router navigation (DECISIONS.md
+2026-09-16; `demo-site.md` §6.1–§6.2). A parity finding about `?ask=0`, the
+post-hydration mode swap or the results skeleton is now superseded, not open.
