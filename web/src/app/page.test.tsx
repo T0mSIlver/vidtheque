@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
+import { renderToString } from "react-dom/server";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import LandingPage from "./page";
 
-// jsdom below the version that ships matchMedia still has to answer the motion
-// query the hero and the booth log ask before they decide to move.
+// Older jsdom has no matchMedia; the hero and the booth log ask the motion query.
 beforeAll(() => {
   if (!window.matchMedia) {
     Object.defineProperty(window, "matchMedia", {
@@ -35,11 +35,7 @@ describe("the landing at /", () => {
     expect(screen.getByRole("link", { name: /Open the demo/ })).toHaveAttribute("href", "/demo");
   });
 
-  // This page makes zero network requests, which is the whole of its budget
-  // argument. A viewport-triggered prefetch of `/demo`'s payload spends the
-  // visitor's bandwidth — and a slice of a shared per-IP limit — on a page
-  // nobody asked for. `prefetch` never reaches the DOM, so a stand-in `Link`
-  // is what records it.
+  // `prefetch` never reaches the DOM, so a stand-in `Link` records it.
   it("does not fetch the demo before anyone asks for it", async () => {
     vi.resetModules();
     vi.doMock("next/link", () => ({
@@ -67,6 +63,20 @@ describe("the landing at /", () => {
       vi.doUnmock("next/link");
       vi.resetModules();
     }
+  });
+
+  it("server-renders the hero wall, its chips and every light-table answer", () => {
+    const html = renderToString(<LandingPage />);
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const wall = doc.querySelector('[data-hero="wall"]')!;
+    expect(wall.querySelectorAll("[data-vid] > img").length).toBeGreaterThanOrEqual(200);
+    expect(doc.querySelectorAll('[data-hero="chips"] button')).toHaveLength(3);
+    const panels = doc.querySelectorAll("[data-panel]");
+    expect(panels).toHaveLength(3);
+    expect(panels[0].querySelector('a[href="https://youtu.be/Sir59K8ZDPU?t=1136"]')).not.toBeNull();
+    // Final values in the HTML: the ledger and the booth question never start empty.
+    expect(doc.querySelector("dl dd")?.textContent).toBe("310");
+    expect(html).toContain("What do speakers disagree about when it comes to LLM as a judge?");
   });
 
   it("is the landing, not the reader: no search box lives here", () => {
@@ -118,13 +128,7 @@ describe("the landing at /", () => {
     expect(screen.getAllByRole("button", { name: "copy" })).toHaveLength(2);
   });
 
-  // The footer is where a public commitment is made, not decoration.
-  // `research/positioning-2026-08-10.md` §9.1 counts "an unfollow/remove path
-  // exists and is documented" as the obligation the attribution line creates,
-  // and `mcp/tests/test_public.py` asserted it until the pages left Python.
-  // The named path — `docs/takedown.md`, linked as "Removal on request" — was
-  // the Python demo's footer, and `/demo` has no footer here; what the landing
-  // promises in its own words is what this asserts.
+  // A public commitment (research/positioning-2026-08-10.md §9.1).
   it("keeps the footer's promise: the videos are theirs, and no needs no appeal", () => {
     render(<LandingPage />);
 

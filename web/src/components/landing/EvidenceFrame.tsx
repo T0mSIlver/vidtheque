@@ -3,24 +3,24 @@ import type { CSSProperties } from "react";
 import type { Box } from "@/landing/show";
 import styles from "./landing.module.css";
 
-// The frame and its detections — boxes exactly where `ocr_lines` put them.
-// A plain <img>: these are the packaged stills under /public/landing, already
-// sized, and the wall's whole point is that the frames are the evidence.
+// A plain <img>: the stills under /public/landing are already sized.
 export function EvidenceFrame({
   src,
   alt,
   boxes,
   acquiring = false,
+  loading = "eager",
 }: {
   src: string;
   alt: string;
   boxes: Box[];
-  /** Play the acquire animation on the boxes — the machine reading the frame. */
+  /** Play the acquire animation on the boxes. */
   acquiring?: boolean;
+  loading?: "eager" | "lazy";
 }) {
   return (
     <figure className={`${styles.frame} ${acquiring ? styles.acq : ""}`}>
-      <img src={src} alt={alt} loading="eager" decoding="async" />
+      <img src={src} alt={alt} loading={loading} decoding="async" />
       {boxes.map((box, i) => (
         <div
           key={i}

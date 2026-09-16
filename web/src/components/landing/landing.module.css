@@ -1,23 +1,7 @@
-/* THE LANDING PAGE — PROJECTION ROOM.
-   Ported rule-for-rule from `mcp/src/vidtheque_mcp/public/static/landing/landing.css`,
-   which DESIGN.md names the reference implementation of the visual system.
-   Nothing here is a redesign; where a value moved it moved into a token.
+/* The landing, DESIGN.md's reference surface. Tokens, faces and the reset
+   live in styles/ and globals.css. */
 
-   What is gone, because it already exists once in this app:
-     - the `@font-face` pair — next/font loads the same two files (styles/fonts.ts)
-       and globals.css binds them to `--sans` / `--mono`;
-     - the `:root` block — every custom property it declared is in
-       styles/tokens.css, generated from DESIGN.md, at the same values;
-     - the reset and the `body` rule — globals.css, ported from the demo.
-
-   What is different: the selectors are module-scoped, so element selectors are
-   nested under `.landing` rather than written globally, and the six ids the
-   script used to address (`#benchframe`, `#corpus`, `#wallband`, `#run`) are
-   classes. Class names and their meanings are otherwise the originals'. */
-
-/* The scroll-behavior belongs to the scrolling element, and the one anchor on
-   this page ("+ follow a channel" → the quickstart) is the reason it is here.
-   Scoped with :has so the reader surfaces keep the app default. */
+/* For the one in-page anchor; :has keeps other surfaces on the default. */
 :global(html):has(.landing) {
   scroll-behavior: smooth;
 }
@@ -28,10 +12,7 @@
   }
 }
 
-/* The display ladder at its top rungs — the landing's own register
-   (DESIGN.md, "Per-surface guidance"). CSS Modules only composes on a simple
-   selector, so the ladder rung is a class on the element rather than a rule
-   on `h1`/`h2`; the values are the ones the stylesheet had. */
+/* Ladder rungs as classes: CSS Modules composes only on a simple selector. */
 .h1 {
   composes: t-display from global;
   color: var(--fg-max);
@@ -153,11 +134,60 @@
   display: flex;
   flex-direction: column;
   border-bottom: 1px solid var(--seam);
+  /* one wall tile per ~145px of viewport, 4 to 12 columns, 16:9 */
+  --cols: 4;
+  --tile-h: calc(110vw / var(--cols) * 9 / 16);
 }
 
-/* the gate breathes. Amplitude is deliberately small: the lit tile is placed
-   with measured clearance from the copy and the light table, and that
-   clearance has to survive the whole drift cycle. */
+@media (min-width: 652.5px) {
+  .hero {
+    --cols: 5;
+  }
+}
+
+@media (min-width: 797.5px) {
+  .hero {
+    --cols: 6;
+  }
+}
+
+@media (min-width: 942.5px) {
+  .hero {
+    --cols: 7;
+  }
+}
+
+@media (min-width: 1087.5px) {
+  .hero {
+    --cols: 8;
+  }
+}
+
+@media (min-width: 1232.5px) {
+  .hero {
+    --cols: 9;
+  }
+}
+
+@media (min-width: 1377.5px) {
+  .hero {
+    --cols: 10;
+  }
+}
+
+@media (min-width: 1522.5px) {
+  .hero {
+    --cols: 11;
+  }
+}
+
+@media (min-width: 1667.5px) {
+  .hero {
+    --cols: 12;
+  }
+}
+
+/* Small amplitude: the lit tile's clearance must survive the whole cycle. */
 @keyframes drift {
   0% {
     transform: translate3d(-0.5%, -0.4%, 0) scale(1.012);
@@ -178,15 +208,15 @@
   animation: drift var(--drift-gate);
 }
 
-/* v1's wall texture: the frames butt, no gap and no hairline between them —
-   one surface, not a grid of cards (Tom, 2026-08-10). */
+/* The frames butt: one surface, not a grid of cards. */
 .wall {
   display: grid;
   width: 100%;
   height: 100%;
   gap: 0;
   background: #07070a;
-  grid-auto-rows: 1fr;
+  grid-template-columns: repeat(var(--cols), 1fr);
+  grid-auto-rows: var(--tile-h);
 }
 
 .wt {
@@ -393,11 +423,7 @@
   flex-wrap: wrap;
 }
 
-/* `line-height:normal` is stated because the CTA is an `<a>` (it points at
-   /demo): a form control does not inherit line-height, so the button was on
-   `normal` and an anchor takes the body's 1.55 — two pixels of button height,
-   and the hero column is centred, so it moved the H1, the lede and the query
-   bar a pixel each. `normal` is what the button had; it is measured, at 46px. */
+/* An <a> inherits the body line-height; normal keeps the CTA at 46px. */
 .cta {
   display: inline-flex;
   align-items: center;
@@ -481,10 +507,8 @@
   opacity: 0.72;
 }
 
-/* veiled: laid out at final size but not yet shown — the lift is in flight.
-   The frame slot itself stays, empty, as the landing pad; hiding the image
-   and the boxes rather than the figure, because the bench is populated with
-   an inline opacity and inline beats a class. */
+/* Veiled while the lift is in flight: final size, and the empty frame slot
+   stays as the landing pad. */
 .bench.veil .frame > img,
 .bench.veil .frame .det,
 .bench.veil .benchsay,
@@ -597,9 +621,24 @@
   isolation: isolate;
 }
 
-/* the table's slot before anything has been lifted onto it */
-.benchSlot {
-  opacity: 0;
+/* Before the first lift the table holds the first answer's place, unlit. */
+.blankhead {
+  display: none;
+}
+
+.bench.blank .blankhead {
+  display: flex;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+.bench.blank .panel .benchhead,
+.bench.blank .frame,
+.bench.blank .benchsay,
+.bench.blank .benchfoot {
+  visibility: hidden;
 }
 
 .frame > img {
@@ -623,9 +662,7 @@
   top: var(--y);
   width: var(--w);
   height: var(--h);
-  /* The unlit box, at `landing.css`'s own alpha. `--seen-24` is two hundredths
-     brighter, which is two hundredths of the difference between a box that has
-     been read and one that has not — the whole point of the panel. */
+  /* Deliberately dimmer than --seen-24: read vs unread is the point. */
   outline: 1px solid rgb(201 249 56 / 22%);
   pointer-events: none;
 }
@@ -673,11 +710,8 @@
   animation-delay: calc(var(--i) * 46ms + 120ms);
 }
 
-/* the lift — a frame coming off the wall.
-   Sized at the landing rect and scaled DOWN onto the source tile, so the
-   flight is one composited transform: no per-frame layout, no jitter, and
-   the two rects are both 16:9 so nothing is ever squashed. The outline is
-   counter-scaled at the start so it reads as 2px the whole way. */
+/* Laid out at the landing rect and scaled down onto the tile: one composited
+   transform, outline counter-scaled to read 2px throughout. */
 .lift {
   position: fixed;
   z-index: 60;
@@ -1035,11 +1069,7 @@
   margin-top: 12px;
 }
 
-/* ── beat 3 · the wall, full width, drifting (v4's treatment, Tom's pick) ──
-   Alternating rows, a constant few px/s, every tile carrying its own id and
-   timecode. The corpus was watched; the wall moves at reading pace and at
-   nothing else. Class names carry a b- prefix: this page already spends
-   .wt on the hero wall and .slug on the query bar. */
+/* ── beat 3 · the wall band (b- prefix: .wt and .slug belong to the hero) ── */
 .corpus {
   padding-bottom: clamp(44px, 5vw, 84px);
 }
@@ -1197,10 +1227,7 @@
   padding: 16px 0 0;
 }
 
-/* ── beat 4 · the booth log — v4's terminal (v1's look, v2's air) ──────
-   Tom's pick, 2026-08-10: the transcript reads as a transcript, not as a
-   results table. Only v5's typing-in of the question is kept on top of it,
-   because the motion law's inventory lists it. */
+/* ── beat 4 · the booth log ── */
 .term {
   border: 1px solid var(--seam2);
   background: var(--console);
@@ -1510,14 +1537,13 @@
 
 /* ── responsive ──────────────────────────────────────────────────── */
 @media (max-width: 1120px) {
-  /* stacked: the lane between the copy and the light table is sized in JS to
-     one wall tile plus air, so the found frame has somewhere clear to sit
-     directly above the table it is about to land on. minmax(0,·) because a
-     bare 1fr lets the table's longest mono token widen the whole hero. */
+  /* Stacked: a lane of one wall tile plus air between the copy and the table,
+     where the found frame sits. minmax(0,·) keeps a long mono token from
+     widening the hero. */
   .heroin {
     grid-template-columns: minmax(0, 1fr);
     align-items: start;
-    row-gap: var(--lane, 112px);
+    row-gap: calc(var(--tile-h) + 58px);
     column-gap: 30px;
     padding-top: clamp(76px, 10vh, 110px);
   }
@@ -1702,8 +1728,6 @@
     font-size: 14.5px;
   }
 
-  /* at 390 the wall band's own tiles carry the id; the slug stays, the
-     hairline goes — same reasoning as the hero wall */
   .bwt {
     width: clamp(116px, 32vw, 150px);
   }
@@ -1745,9 +1769,5 @@
   .bench,
   .lift {
     transition: none;
-  }
-
-  .term.veiled .termrest {
-    opacity: 1;
   }
 }
