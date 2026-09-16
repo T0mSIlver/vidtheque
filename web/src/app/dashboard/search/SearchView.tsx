@@ -76,7 +76,7 @@ export function SearchView() {
       {page ? (
         <Results page={page} query={marked} params={params} />
       ) : searched && refusal === undefined ? (
-        <Pending height="40dvh" />
+        <Pending height="100dvh" />
       ) : null}
 
       {!searched ? (
