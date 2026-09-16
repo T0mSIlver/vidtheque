@@ -1,41 +1,10 @@
-// The dashboard's reads and writes, from the browser.
-//
-// This is the one module in `web/` that talks to Python from the *client*, and
-// it is deliberately not `lib/api`'s pattern. That client is server-only: it
-// holds a base URL, forwards the visitor's address and reads the public
-// facade. This one reads `/dashboard/api/*` **same-origin with the session
-// cookie**, which is the whole design (frontend-migration.md §1a, and Tom,
-// 2026-09-05): Next serves a data-free shell, the browser carries the cookie,
-// and Next never sees it, so there is nothing per-user for this server to
-// cache or to leak between two readers of the same page.
-//
-// Three rules live here so no page has to keep them:
-//
-// * `credentials: "same-origin"` and `cache: "no-store"`. The payloads describe
-//   state that changes under the reader and Python already says `no-store`;
-//   the request says it too, so a back/forward navigation re-reads rather than
-//   painting a stale count.
-// * A typed error carrying the status, the refusal code, the `next:` line and
-//   `Retry-After`. The pages render the API's own message — policy text stays
-//   Python's (§1 decision 5).
-// * **The 401, in one place.** A refused read sends the browser to the sign-in
-//   page with somewhere to come back to, and the page renders its signed-out
-//   state meanwhile. The one exception is the sign-in page's own write, whose
-//   `401` would send a reader to the page they are typing into.
-//
-// The write half arrived with the jobs pages (dashboard.md §21,
-// frontend-migration.md §9) and adds no fourth rule: a write is a `POST` to the
-// *same* `/dashboard/*` route the Jinja form posts to, with the same cookie,
-// the same form-encoded body, and `Accept: application/json` — which is the
-// only thing that switches the answer from a `303` to a typed outcome. There is
-// no CSRF token on this surface and none is planned: `dashboard/access.py`
-// asks an ambient credential for positive same-origin evidence instead, and a
-// same-origin `fetch` sends `Sec-Fetch-Site: same-origin` itself — a header
-// script cannot forge, so there is nothing for this file to attach.
+// The dashboard's reads and writes, from the browser: same-origin with the
+// session cookie, which Next never sees (DECISIONS.md, 2026-09-05;
+// frontend-migration.md §1a, §9). A refused read sends the browser to sign in,
+// once, from here. No CSRF token: a same-origin `fetch` carries
+// `Sec-Fetch-Site`, which is the evidence §3.3 asks for.
 import type { ZodType } from "zod";
-// The search read's contract is the `/api` facade's, because the handler is
-// (dashboard.md §14.2). `schemas` and not the package index: that index is
-// `server-only`, and this module runs in the browser.
+// The facade's own schema (§14.2); `schemas`, not the `server-only` index.
 import { SearchResponse } from "../api/schemas";
 import {
   CancelOutcome,
@@ -68,15 +37,11 @@ export class DashboardError extends Error {
   readonly status: number;
   /** The refusal's `E_*` code, or `E_HTTP` when the body was not an envelope. */
   readonly code: string;
-  /** The refusal's "what to do next" line, when it sent one. */
   readonly next?: string;
-  /** Seconds, from `Retry-After`, on a 429 or a 503. */
+  /** Seconds, from `Retry-After`. */
   readonly retryAfter?: number;
-  /** The refused body, whole. Two routes answer a refusal with what the server
-   *  had already resolved beside the envelope's three fields — the videos
-   *  table's `filters` and the index form's `accepted` (dashboard.md §20, §21)
-   *  — and the page that asked is the one that knows which shape to expect, so
-   *  it is carried unparsed and read with `echoOf`. */
+  /** The refused body, unparsed: two routes echo what they resolved beside the
+   *  envelope, and only the caller knows the shape (`echoOf`). */
   readonly body: unknown;
 
   constructor(status: number, envelope: PartialRefusal, retryAfter?: number, body?: unknown) {
@@ -84,27 +49,21 @@ export class DashboardError extends Error {
     this.name = "DashboardError";
     this.status = status;
     this.code = envelope.error ?? "E_HTTP";
-    // The wire says `null` for "no next step"; callers ask `err.next ? …`, so
-    // the two absences become one.
     this.next = envelope.next ?? undefined;
     this.retryAfter = retryAfter;
     this.body = body;
   }
 }
 
-/** What a refusal echoed, against the shape the route promises — or `null`.
- *
- *  Never a throw and never a `DashboardShapeError`: the page has a refusal to
- *  render either way, and an instance that predates the echo is a page that
- *  seeds its controls the way it did before, not a page that breaks over a
- *  field it only wanted for a redraw. */
+/** What a refusal echoed, or `null` — never a throw: the page has a refusal to
+ *  render either way. */
 export function echoOf<T>(error: unknown, schema: ZodType<T>): T | null {
   if (!(error instanceof DashboardError)) return null;
   const parsed = schema.safeParse(error.body);
   return parsed.success ? parsed.data : null;
 }
 
-/** A body that did not parse against its schema — a contract change, loudly. */
+/** A body that did not parse: a contract change, loudly. */
 export class DashboardShapeError extends Error {
   constructor(
     readonly path: string,
@@ -116,18 +75,12 @@ export class DashboardShapeError extends Error {
   }
 }
 
-// The one place this module leaves the page. A named holder rather than a call
-// to `location.assign` inline, so a test can watch it without a jsdom
-// navigation, and so there is exactly one line to read when the question is
-// "what sends a reader to the sign-in page".
+/** The one place this module leaves the page, so a test can watch it. */
 export const navigation = {
   go(url: string) {
     if (typeof window !== "undefined") window.location.assign(url);
   },
-  /** The same navigation without a history entry — what a `303` is. The
-   *  sign-in page uses it for both of its exits: a reader who signs in, and a
-   *  reader who was signed in already, must not land back on the sign-in page
-   *  by pressing Back. */
+  /** No history entry, as a `303` leaves none. */
   replace(url: string) {
     if (typeof window !== "undefined") window.location.replace(url);
   },
@@ -144,30 +97,17 @@ export interface DashboardClientConfig {
 }
 
 export function createDashboardClient(config: DashboardClientConfig = {}) {
-  // Bound through a wrapper: a bare `globalThis.fetch` called detached from
-  // its receiver is an illegal invocation in some browsers.
+  // A wrapper: a detached `globalThis.fetch` is an illegal invocation in some
+  // browsers.
   const doFetch: typeof fetch = config.fetch ?? ((input, init) => globalThis.fetch(input, init));
   const navigate = config.navigate ?? ((url: string) => navigation.go(url));
   const currentPath = config.currentPath ?? (() => navigation.path());
 
-  // One redirect per page load. A dashboard page can have several reads in
-  // flight, and three simultaneous 401s must not mean three navigations.
+  // Several reads can be refused at once; one navigation is enough.
   let leaving = false;
 
-  /** Where a refused reader goes, when this deployment has anywhere to send them.
-   *
-   * `/dashboard/login` is registered only where the write side is
-   * (`access.write_side_enabled`), and a read-only instance with a token still
-   * gates its reads — so it can refuse a reader while having no sign-in page at
-   * all, and sending them to one would 404. `session.login_url` is `null`
-   * exactly then, which is why this asks rather than assumes. The endpoint is
-   * outside the read gate, so this second request cannot itself be refused.
-   *
-   * The return path is `?next=`, the parameter the sign-in page reads off its
-   * own URL and `writes._safe_next` fences on the way back out. It leaves by a
-   * document navigation rather than by a `Link`: this refusal arrived at a
-   * `fetch`, so there is no router event to ride on.
-   */
+  /** Send a refused reader to sign in — when this deployment has a sign-in page
+   *  (`login_url` is `null` where no write side is registered). */
   async function toSignIn(): Promise<void> {
     if (leaving) return;
     leaving = true;
@@ -179,8 +119,6 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
       }
       navigate(`${session.login_url}?next=${encodeURIComponent(currentPath())}`);
     } catch {
-      // The shell has nowhere reliable to send the reader; the page's
-      // signed-out state is the answer instead.
       leaving = false;
     }
   }
@@ -192,9 +130,9 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
   ): Promise<T> {
     const res = await doFetch(path, {
       headers: { accept: "application/json" },
-      // The cookie is the whole point, and same-origin is the whole policy:
-      // there is no CORS anywhere in this design (§1 decision 4).
       credentials: "same-origin",
+      // The payloads change under the reader; the in-memory cache in
+      // `resource.ts` is the only one.
       cache: "no-store",
       signal: opts.signal,
     });
@@ -209,35 +147,11 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
   }
 
   /**
-   * One write, to the route the Jinja form posts to (frontend-migration.md §9).
-   *
-   * All three of these travel together or the write is not the one the
-   * contract describes:
-   *
-   * * `credentials: "same-origin"` — `fetch`'s default only for a same-origin
-   *   request, so it is said rather than assumed. Next never sees this cookie
-   *   and the browser is the only thing that holds it.
-   * * `Accept: application/json` — the whole switch. Nothing else picks the
-   *   typed outcome over the `303` a form navigation gets, and a wildcard
-   *   `Accept` will not: a request for anything is not a request for a typed
-   *   outcome, which is what makes the strictness safe.
-   * * a **form-encoded body**. None of the thirteen handlers parses a JSON
-   *   body; they read a form on both branches.
-   *
-   * A refusal is the same envelope a read is refused with, at the code's own
-   * status and with `Retry-After` when the refusal named a delay, so it lands
-   * in `DashboardError` exactly as a read's does. `401` is the same signal too:
-   * authorization is decided in one place and no page keeps a rule of its own.
-   *
-   * `alsoRead` is for the statuses that are not refusals: `retry` and `index`
-   * answer `409` when *nothing* was accepted, and the body is still the
-   * receipt — the job it came from, what it selected, and the refusals in
-   * `errors` (§21).
-   *
-   * `gated: false` is for the one write whose `401` is not that signal.
-   * `POST /dashboard/login` refuses a wrong secret with `E_BAD_CREDENTIAL` at
-   * `401`, and sending *that* reader to the sign-in page is a loop, because
-   * they are on it (§21).
+   * A write to the route the form posts to (§21): same-origin credentials, a
+   * form-encoded body, and `Accept: application/json`, which alone switches the
+   * answer from a `303` to a typed outcome. `alsoRead` lists statuses whose
+   * body is still a receipt (`409` on retry and index); `gated: false` is the
+   * sign-in write, whose `401` must not send the reader to the page they are on.
    */
   async function postForm<T>(
     path: string,
@@ -265,6 +179,8 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
     return parsed.data;
   }
 
+  // Queries are the page's URL filtered to the parameters each read takes and
+  // sent as typed: every clamp is Python's.
   return {
     overview(signal?: AbortSignal) {
       return get(`${ROOT}/api/overview`, Overview, { signal });
@@ -272,29 +188,16 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
     ledger(signal?: AbortSignal) {
       return get(`${ROOT}/api/ledger`, Ledger, { signal });
     },
-    /**
-     * The videos table. `query` is the page's own URL, filtered down to the
-     * parameters the contract lists and passed through untouched: every bound
-     * is server-side (§20), so a value this client "helpfully" corrected would
-     * be a clamp the reader is never told about.
-     */
     library(query: URLSearchParams, signal?: AbortSignal) {
       return get(`${ROOT}/api/library${suffix(query)}`, Library, { signal });
     },
-    /** One video's panels, minus the transcript — that is `cues`. */
+    /** One video's panels; the transcript is `cues`. */
     video(videoId: string, query: URLSearchParams, signal?: AbortSignal) {
       const path = `${ROOT}/api/library/${encodeURIComponent(videoId)}`;
       return get(`${path}${suffix(query)}`, VideoDetail, { signal });
     },
-    /**
-     * A page of one video's cues.
-     *
-     * The endpoint is named *by the detail payload* rather than built here
-     * (§20: "the transcript is a pointer"), so the bounds and the path stay
-     * Python's. It is still checked against this prefix before being fetched:
-     * a payload naming somewhere else is a contract change, not a redirect
-     * this client should follow.
-     */
+    /** A page of cues from the endpoint the detail payload names (§20), which
+     *  must resolve inside `/dashboard/api/`. */
     cues(endpoint: string, query: URLSearchParams, signal?: AbortSignal) {
       const path = insideTheApi(endpoint);
       if (path === null) {
@@ -302,176 +205,67 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
       }
       return get(`${path}${suffix(query)}`, CuePage, { signal });
     },
-    /**
-     * The jobs table, and the 2 s tick that keeps it true.
-     *
-     * `query` is the page's own URL filtered to the parameters the view takes,
-     * passed through untouched for the reason every other list here does:
-     * `list_jobs` owns every predicate, and a value corrected on this side
-     * would be a bound the reader is never told about.
-     */
     jobs(query: URLSearchParams, signal?: AbortSignal) {
       return get(`${ROOT}/api/jobs${suffix(query)}`, Jobs, { signal });
     },
-    /**
-     * The corpus, queried — the facade's own handler under this prefix, behind
-     * the read gate (dashboard.md §14.2).
-     *
-     * The one read on this surface whose schema is `lib/api`'s rather than this
-     * folder's, because it is literally the same payload the public `/api`
-     * facade answers with: one handler, two prefixes, differing only in the
-     * gate in front of them and the one `note:` line the demo drops.
-     *
-     * `query` is the page's own URL filtered to the parameters the handler
-     * takes, passed through untouched like every other list here. The clamp is
-     * the *caller's* — `policy_for` gives a bearer, a session or a trusted peer
-     * a page of up to 50 and everyone else up to 20, on this prefix as well —
-     * so a `limit` corrected on this side would be a bound the reader is never
-     * told about, and the accepted one comes back in `pagination`.
-     */
+    /** The facade's search handler behind the read gate (§14.2). */
     search(query: URLSearchParams, signal?: AbortSignal) {
       return get(`${ROOT}/api/search${suffix(query)}`, SearchResponse, { signal });
     },
-    /** One job — its card, its items and the tail of its event log. */
     job(jobId: string, signal?: AbortSignal) {
       return get(`${ROOT}/api/jobs/${encodeURIComponent(jobId)}`, JobDetail, { signal });
     },
-    /**
-     * The follows table, its band and its budget.
-     *
-     * The one read on this surface that can be **absent**: both following
-     * routes are registered with the write routes, so a deployment with no
-     * write side answers `404` here exactly as it does on the page (§18.6,
-     * §22). The pages read `write_side` off `/api/session` before rendering
-     * the surface at all and treat that `404` as the same answer.
-     */
+    /** Registered with the writes: `404` where there is no write side (§22). */
     following(query: URLSearchParams, signal?: AbortSignal) {
       return get(`${ROOT}/api/following${suffix(query)}`, Following, { signal });
     },
-    /** One follow: its rule, its checks, and what it passed over. */
     follow(slug: string, query: URLSearchParams, signal?: AbortSignal) {
       const path = `${ROOT}/api/following/${encodeURIComponent(slug)}`;
       return get(`${path}${suffix(query)}`, FollowDetail, { signal });
     },
-    /** Outside the read gate: a signed-out browser may ask what this deployment is. */
+    /** Outside the read gate: a signed-out browser may ask. */
     session(signal?: AbortSignal) {
       return get(`${ROOT}/api/session`, Session, { signal, gated: false });
     },
 
-    /** `POST /dashboard/login` — the secret, and where the reader was going.
-     *
-     *  The thirteenth write, and the only one that carries no session cookie:
-     *  not having one is the point of the page. Everything else is the same
-     *  three things — the form-encoded body, `Accept: application/json`, and a
-     *  request the browser vouches for as same-origin (§21).
-     *
-     *  `gated: false` is the whole difference. Every other `401` on this
-     *  surface means "go and sign in" and this client acts on it by navigating
-     *  to the sign-in page; here the `401` is `E_BAD_CREDENTIAL`, the refusal
-     *  of the sign-in page's own write, and acting on it would send the reader
-     *  to the page they are typing into. The page renders the instance's
-     *  sentence instead — the same one for both secrets, so nothing on this
-     *  side can infer which field was wrong. */
+    /** The one write without a session; its `401` is `E_BAD_CREDENTIAL`. */
     signIn(fields: Record<string, string>) {
       return postForm(`${ROOT}/login`, fields, SignedIn, { gated: false });
     },
-
-    // ------------------------------------------------------------- writes
-
-    /** `POST /dashboard/jobs/{job_id}/cancel`. No fields: the Jinja form posts
-     *  none either, and the job is named by the path. */
     cancelJob(jobId: string) {
-      const path = `${ROOT}/jobs/${encodeURIComponent(jobId)}/cancel`;
-      return postForm(path, {}, CancelOutcome);
+      return postForm(`${ROOT}/jobs/${encodeURIComponent(jobId)}/cancel`, {}, CancelOutcome);
     },
-    /** `POST /dashboard/jobs/{job_id}/retry` — the failed and degraded items,
-     *  and nothing else. `409` is read rather than thrown: it means every batch
-     *  was refused, and the refusals are on the receipt. */
     retryJob(jobId: string) {
       const path = `${ROOT}/jobs/${encodeURIComponent(jobId)}/retry`;
       return postForm(path, {}, RetryOutcome, { alsoRead: [409] });
     },
-
-    // The three writes on the corpus itself (dashboard.md §5.5, §21). Like the
-    // following six, not one of them decides anything: `index` and `reindex` go
-    // through `tools/indexing.index_video` and `tags` through
-    // `tools/library.tag_video` — the same calls the model makes — so the URL
-    // parsing, the expansion bound, the namespace rules and the ten-tag cap are
-    // all *there*. This side sends the form as typed and renders what came back.
-
-    /** `POST /dashboard/index` — a batch, split server-side into jobs of ten.
-     *
-     *  The fields are the Jinja form's, exactly, and every one of them goes as
-     *  typed: `max_items` is clamped by the handler and the URL list is capped
-     *  by it, so a value corrected here would be a bound the operator is never
-     *  told about. `409` is read rather than thrown for the same reason
-     *  `retry`'s is — nothing was accepted, and why is on the receipt. */
     indexUrls(fields: Record<string, string>) {
       return postForm(`${ROOT}/index`, fields, IndexOutcome, { alsoRead: [409] });
     },
-    /** `POST /dashboard/videos/{video_id}/reindex` — one row, forced.
-     *
-     *  No fields: the Jinja form posts none either, and the video is named by
-     *  the path. `expand=none` and `force_reindex` are the handler's, so this
-     *  button cannot queue a surprise playlist. */
     reindexVideo(videoId: string) {
       return postForm(`${videoPath(videoId)}/reindex`, {}, ReindexOutcome);
     },
-    /** `POST /dashboard/videos/{video_id}/tags` — add and remove, one form.
-     *
-     *  Both fields go as typed. The row's tags come back read back *after* the
-     *  write, which is the question the panel is showing. */
     setVideoTags(videoId: string, fields: Record<string, string>) {
       return postForm(`${videoPath(videoId)}/tags`, fields, TagsOutcome);
     },
-
-    // The six following writes (dashboard.md §18.5, §21). Not one of them
-    // decides anything: five go through `tools/follows.follow_channel` — the
-    // same call the model makes — and the sixth through the validator that
-    // tool shares. Every clamp, the URL normalisation, the duration parser and
-    // the tag rules are *there*, so this side sends the form as typed and
-    // renders whatever came back.
-
-    /** `POST /dashboard/following` — the add form's own route, which is also
-     *  the list page's path. The fields are the Jinja form's, exactly. */
     followChannel(fields: Record<string, string>) {
       return postForm(`${ROOT}/following`, fields, FollowCreated);
     },
-    /** `POST /dashboard/following/{slug}/state` — pause or resume.
-     *
-     *  One route with the verb in the body, not two URLs: they are the two
-     *  directions of one control, and a surface with a URL for each is a
-     *  surface where a page can offer the wrong one. */
+    /** Pause or resume: one route, the verb in the body. */
     setFollowState(slug: string, action: "pause" | "resume") {
       return postForm(`${followPath(slug)}/state`, { action }, FollowWritten);
     },
-    /** `POST /dashboard/following/{slug}/check` — make the clock due now.
-     *
-     *  It does not run a check; it moves `next_check_at`, and the queue claims
-     *  a `follow_check` on its next tick. The row that comes back is the
-     *  receipt for that, which is why it is read rather than assumed. */
+    /** Makes the clock due; the queue runs the check. */
     checkFollowNow(slug: string) {
       return postForm(`${followPath(slug)}/check`, {}, FollowWritten);
     },
-    /** `POST /dashboard/following/{slug}/rules` — the edit disclosure.
-     *
-     *  The row it answers with carries every rule column, so the form reads
-     *  back the rule the store *kept* rather than the one it sent. */
     setFollowRules(slug: string, fields: Record<string, string>) {
       return postForm(`${followPath(slug)}/rules`, fields, FollowWritten);
     },
-    /** `POST /dashboard/following/{slug}/delete` — unfollow.
-     *
-     *  The one irreversible control on this surface, and `videos_kept` is what
-     *  makes the asymmetry sayable: the rule and the ledger go, the videos
-     *  stay. */
     deleteFollow(slug: string) {
       return postForm(`${followPath(slug)}/delete`, {}, FollowDeleted);
     },
-    /** `POST /dashboard/following/{slug}/queue` — "Index anyway", one row.
-     *
-     *  `expand=none` and the follow's own channels and tags are Python's, so
-     *  the only field this sends is the URL off the ledger row. */
+    /** "Index anyway" for one ledger row. */
     queueFollowUrl(slug: string, url: string) {
       return postForm(`${followPath(slug)}/queue`, { url }, FollowQueued);
     },
@@ -490,26 +284,17 @@ async function toError(res: Response): Promise<DashboardError> {
     const parsed = PartialRefusal.safeParse(body);
     if (parsed.success) envelope = parsed.data;
   } catch {
-    // A non-JSON body — a proxy's HTML 502, or the rate limiter's bare 429 —
-    // is still a typed error here, just one with no message of its own.
+    // A proxy's HTML 502 or a bare 429 is still a typed error, without a message.
   }
   return new DashboardError(res.status, envelope, retryAfter, body);
 }
 
-/** The instance the pages use. Same origin, real cookie, real navigation. */
+/** The instance the pages use. */
 export const dashboard = createDashboardClient();
 
-/** A path the payload named, resolved, or `null` when it lands outside the
- *  read slice this client is allowed to fetch.
- *
- *  Resolved first, because the string and the request are not the same thing:
- *  `/dashboard/api/../../frames/x` starts with the prefix and *arrives*
- *  somewhere else, and it is the arrival the browser makes with the session
- *  cookie attached. So the check is on what came out — the origin this page is
- *  already on, and the normalised path under the prefix — rather than on the
- *  characters that went in. The query is this client's to build, so an
- *  endpoint carrying one of its own is a contract change like any other.
- */
+/** A path the payload named, resolved on this origin, or `null` when it lands
+ *  outside `/dashboard/api/`. Resolved first: `/dashboard/api/../../frames/x`
+ *  starts with the prefix and arrives elsewhere. */
 function insideTheApi(endpoint: string): string | null {
   const origin =
     typeof window === "undefined" ? "http://dashboard.invalid" : window.location.origin;
@@ -523,20 +308,15 @@ function insideTheApi(endpoint: string): string | null {
   return url.pathname.startsWith(`${ROOT}/api/`) ? url.pathname : null;
 }
 
-/** One follow's write prefix. The slug is a path segment the reader can have
- *  typed, so it is encoded exactly as a video id and a job id are. */
 function followPath(slug: string): string {
   return `${ROOT}/following/${encodeURIComponent(slug)}`;
 }
 
-/** One video's write prefix. Encoded for the same reason: an id off a payload
- *  is still a path segment, and these two routes have a third one after it. */
 function videoPath(videoId: string): string {
   return `${ROOT}/videos/${encodeURIComponent(videoId)}`;
 }
 
-/** A query string, or nothing at all — never a bare `?` on a request with no
- *  parameters, which would make two spellings of one URL. */
+/** Never a bare `?`: two spellings of one URL. */
 function suffix(query: URLSearchParams): string {
   const search = query.toString();
   return search ? `?${search}` : "";
