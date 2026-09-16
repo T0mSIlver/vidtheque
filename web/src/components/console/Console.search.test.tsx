@@ -353,6 +353,21 @@ describe("the console in search mode", () => {
       );
     });
 
+    it("pins a channel into the URL with no query to run", async () => {
+      const fetchSpy = vi.fn(never);
+      vi.stubGlobal("fetch", fetchSpy);
+      const user = userEvent.setup();
+      const { push } = mountConsole({ initial: { mode: "search", q: "", type: "all" } });
+
+      await user.click(screen.getByRole("button", { name: "frames" }));
+      expect(push).toHaveBeenCalledWith(null, "", "/demo?q=&type=frame");
+      expect(screen.getByRole("button", { name: "frames" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
     it("says a spent bucket is a spent bucket", () => {
       mountConsole({ boot: "rate_limited", askEnabled: false, initial: { ...SEARCH, q: "" } });
       expect(screen.getByRole("status")).toHaveTextContent("too many requests");
