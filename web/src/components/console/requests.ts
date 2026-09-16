@@ -9,7 +9,7 @@ import {
   type AskAnswer,
   type ContentType,
 } from "@/lib/api/schemas";
-import { framingOf, readJsonEvents } from "@/lib/sse";
+import { framingOf, readJsonEvents } from "@/lib/api/sse";
 
 export async function fetchSearch(
   params: { q: string; type: ContentType; offset: number; tags?: string },

@@ -2,8 +2,8 @@ import { ResultGroup } from "@/components/ResultGroup";
 import { RetryIn } from "@/components/RetryIn";
 import type { SearchOutcome } from "@/lib/api/outcome";
 import type { ContentType, EditionTalk, SearchResponse } from "@/lib/api/schemas";
-import { labelHit } from "@/lib/edition";
-import { groupByVideo } from "@/lib/group";
+import { labelHit } from "@/lib/api/edition";
+import { groupByVideo } from "@/lib/api/group";
 import type { SearchView } from "./state";
 import styles from "./console.module.css";
 

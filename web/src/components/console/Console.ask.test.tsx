@@ -22,7 +22,7 @@ import {
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 
 // The exact bytes the API sent, from the project root where vitest runs.
-const FIXTURE = readFileSync("src/lib/__fixtures__/ask.sse", "utf8");
+const FIXTURE = readFileSync("src/lib/api/__fixtures__/ask.sse", "utf8");
 
 const CITATION = {
   n: 1,

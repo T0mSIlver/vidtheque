@@ -1,6 +1,6 @@
 import { loadConsole } from "@/components/console/bootstrap";
 import { Console } from "@/components/console/Console";
-import { readCorpus } from "@/lib/search";
+import { readCorpus } from "@/lib/api/search";
 import { Corpus } from "./Corpus";
 import styles from "./page.module.css";
 

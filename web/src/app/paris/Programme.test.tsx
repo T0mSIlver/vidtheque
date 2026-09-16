@@ -15,7 +15,7 @@ vi.mock("@/lib/api", async () => {
   }
   return { ...schemas, ApiError, api: () => ({ edition: edition.read }) };
 });
-vi.mock("@/lib/search", () => ({ visitorIp: vi.fn() }));
+vi.mock("@/lib/api/search", () => ({ visitorIp: vi.fn() }));
 import { ApiError } from "@/lib/api";
 import { EditionFailure, Programme, ProgrammeLoading, TalkRow, Timeline } from "./Programme";
 

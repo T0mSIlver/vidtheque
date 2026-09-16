@@ -2,7 +2,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { Hit } from "@/lib/api";
-import type { VideoGroup } from "@/lib/group";
+import type { VideoGroup } from "@/lib/api/group";
 import { ResultGroup } from "./ResultGroup";
 
 function hit(over: Partial<Hit>): Hit {

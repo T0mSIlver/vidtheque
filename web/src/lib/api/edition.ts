@@ -1,4 +1,4 @@
-import type { Citation, EditionTalk, Hit } from "./api/schemas";
+import type { Citation, EditionTalk, Hit } from "./schemas";
 
 export function speakerLine(talk: Pick<EditionTalk, "speakers">): string {
   return talk.speakers

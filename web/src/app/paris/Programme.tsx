@@ -1,5 +1,5 @@
 import type { EditionResponse, EditionTalk } from "@/lib/api/schemas";
-import { speakerLine } from "@/lib/edition";
+import { speakerLine } from "@/lib/api/edition";
 import { clock, receiptParts } from "@/lib/format";
 import { readEdition, type EditionOutcome } from "./edition";
 import styles from "./page.module.css";
