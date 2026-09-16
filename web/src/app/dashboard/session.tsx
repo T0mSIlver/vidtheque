@@ -32,18 +32,6 @@ export function useSessionResource(): Resource<Session> {
   return useContext(SessionContext);
 }
 
-/** @deprecated Transitional: the old three-state shape, until every page reads
- *  `useSessionResource`. */
-export function useSessionRead():
-  | { status: "loading" }
-  | { status: "failed"; error: unknown }
-  | { status: "ready"; data: Session } {
-  const read = useContext(SessionContext);
-  if (read.data) return { status: "ready", data: read.data };
-  if (read.error !== undefined) return { status: "failed", error: read.error };
-  return { status: "loading" };
-}
-
 /** The session when it has landed, and `null` while it has not or could not. */
 export function useSession(): Session | null {
   return useContext(SessionContext).data ?? null;
