@@ -25,6 +25,7 @@ log = logging.getLogger(__name__)
 MAX_CHUNK_SECONDS = 3_600.0
 CHUNK_OVERLAP_SECONDS = 30.0
 MIN_SAFE_MATCH_WORDS = 3
+MAX_SEAM_DRIFT_SECONDS = 2.0
 
 
 class _MistralClient:
@@ -327,6 +328,8 @@ def _merge_at_seam(earlier: list[Word], later: list[Word], seam: float) -> bool:
         if left_keys[-size:] == right_keys[:size] and all(left_keys[-size:]):
             matched = size
             break
+    if matched and not _same_moment(earlier, later, left, right, matched):
+        matched = 0
     if not matched:
         # Nothing is deleted by guess, so both copies of the overlap survive —
         # but the later chunk restarts 30 s before the earlier one ended, and
@@ -338,6 +341,37 @@ def _merge_at_seam(earlier: list[Word], later: list[Word], seam: float) -> bool:
         return False
     earlier.extend(later[matched:])
     return True
+
+
+def _word_start(word: Word) -> float:
+    return word.start if word.start is not None else 0.0
+
+
+def _same_moment(
+    earlier: list[Word],
+    later: list[Word],
+    left: Sequence[Word],
+    right: Sequence[Word],
+    matched: int,
+) -> bool:
+    """Is the matched word sequence the *seam*, or just the same words twice?
+
+    ffmpeg cuts the chunk mid-word, so the two transcriptions of the overlap
+    differ at their edges and the true match can fail on an hour of speech. A
+    common trigram — "and so the" — then matches somewhere else entirely: the
+    earlier chunk's copy near its end, the later chunk's near its start, half a
+    minute apart. Dropping the later prefix on that match appends words that
+    begin before the last word already kept, which sends the receipts backwards
+    and collapses the seam into one oversized segment.
+
+    Word spellings alone cannot tell the two apart; the clock can. The genuine
+    seam is the same seconds transcribed twice, so the two copies agree on when
+    they happened, and what follows the match starts after what precedes it.
+    """
+    if abs(_word_start(right[0]) - _word_start(left[-matched])) > MAX_SEAM_DRIFT_SECONDS:
+        return False
+    tail = later[matched:]
+    return not tail or _word_start(tail[0]) >= _word_start(earlier[-1])
 
 
 def _segments_from_words(words: Sequence[Word]) -> list[Segment]:
