@@ -5,21 +5,9 @@ import { useEffect, useState } from "react";
 import styles from "./RetryIn.module.css";
 
 // The limiter's delay as a ticking countdown, with the retry disabled until it
-// reaches zero. It says only when to try again; it does not explain the limiter
-// and it never shows a status code (demo-site.md §6.1). A countdown is machine
-// work, so it moves: a frozen number reads as broken where a moving one reads
-// as busy.
-//
-// Two props for the surfaces that are not the demo's search. The dashboard
-// reads its payloads in the browser, so refreshing the route would re-render a
-// shell and re-run nothing — it hands its own reload in `onRetry` — and it is
-// refused for reading a dashboard, not for searching, so it names its own
-// limit.
-//
-// `variant` is the shape, and the demo's is the notice `app.js` drew: a title,
-// a detail line that counts, and a "Try again" button beside it. The dashboard
-// refuses inside a panel that already has a heading, so there the whole thing
-// is one button that counts down in its own label.
+// runs out. It says when to try again and never shows a status code
+// (demo-site.md §6.1). `onRetry` is for a page whose data did not come through
+// the router; `variant="notice"` is the demo's titled shape.
 export function RetryIn({
   seconds,
   message = "Too many requests.",
@@ -32,28 +20,7 @@ export function RetryIn({
   onRetry?: () => void;
 }) {
   const router = useRouter();
-  const [sent, setSent] = useState(seconds);
-  const [left, setLeft] = useState(() => wholeSeconds(seconds));
-  // A second refusal on a control that never unmounted is a new wait, not the
-  // remainder of the last one: an initialiser runs once, so a retry that came
-  // back refused with 58s left kept counting down from the 6s of the first
-  // one and re-armed the button early. Re-seeded during render, which is
-  // React's own answer to "reset when a prop changes" — and the same one
-  // `dashboard/jobs/parts.tsx` gives its two clocks.
-  if (sent !== seconds) {
-    setSent(seconds);
-    setLeft(wholeSeconds(seconds));
-  }
-
-  // An effect is the escape hatch for things React does not own: here, a
-  // timer. The cleanup runs when the component unmounts or `left` changes,
-  // so a countdown never keeps ticking into a page that replaced it.
-  useEffect(() => {
-    if (left <= 0) return;
-    const id = setTimeout(() => setLeft(left - 1), 1000);
-    return () => clearTimeout(id);
-  }, [left]);
-
+  const left = useTicking(wholeSeconds(seconds), true, -1) ?? 0;
   const retry = () => (onRetry ? onRetry() : router.refresh());
 
   if (variant === "notice") {
@@ -78,9 +45,32 @@ export function RetryIn({
   );
 }
 
-/** A floor of one second and the ceiling of a fraction: `retry_after_s` is a
- *  float on the wire, and a 0.4 rendered raw paints "try again" on a bucket
- *  that is still empty — which is one more refused request, not a retry. */
+/**
+ * A number of seconds a payload named, counting by `step` each second while
+ * `moving`. A new `seconds` is a new count, re-seeded during render so the old
+ * number never paints; a countdown stops at zero.
+ */
+export function useTicking(seconds: number | null, moving: boolean, step: 1 | -1): number | null {
+  const [sent, setSent] = useState(seconds);
+  const [now, setNow] = useState(seconds);
+  if (sent !== seconds) {
+    setSent(seconds);
+    setNow(seconds);
+  }
+
+  const spent = step === -1 && now !== null && now <= 0;
+
+  useEffect(() => {
+    if (!moving || seconds === null || spent) return;
+    const id = setInterval(() => setNow((value) => Math.max(0, (value ?? 0) + step)), 1000);
+    return () => clearInterval(id);
+  }, [moving, seconds, step, spent]);
+
+  return now;
+}
+
+/** At least a second, and a fraction rounds up: `retry_after_s` is a float,
+ *  and a 0.4 painted as "retry" is one more refused request. */
 function wholeSeconds(seconds: number): number {
   return Math.max(1, Math.ceil(Number(seconds) || 1));
 }

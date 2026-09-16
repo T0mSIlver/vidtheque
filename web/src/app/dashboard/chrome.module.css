@@ -126,6 +126,17 @@
   border-top: 1px solid var(--seam);
 }
 
+/* Until the session lands, the foot holds an owner's deployment line and Sign
+   out, and the Manage group holds its box without showing it, so nothing below
+   the rail moves when they fill in. */
+.footPending {
+  min-height: calc(var(--s4) + 1.25rem + var(--s3) + var(--row));
+}
+
+.reserved {
+  visibility: hidden;
+}
+
 /* One fact per line in the rail, a row when the rail is a strip. */
 .deployment {
   composes: t-machine-sm from global;
@@ -340,6 +351,10 @@
     gap: var(--s2) var(--s5);
     margin-top: 0;
     padding: var(--s2) 0 0;
+  }
+
+  .footPending {
+    min-height: calc(var(--s2) + var(--row));
   }
 
   .deployment {

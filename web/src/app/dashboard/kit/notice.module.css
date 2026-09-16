@@ -1,0 +1,163 @@
+/* A notice is a band under a rule, not a card. It is neutral unless a tone is
+   opted into: an empty list or a deployment that does not index has not
+   failed. */
+
+.notice {
+  margin-top: var(--s6);
+  padding: var(--s3) 0 var(--s4);
+  border-top: 2px solid var(--seam2);
+}
+
+.notice[data-tone="bad"] {
+  border-top-color: var(--tone-bad);
+}
+
+.notice[data-tone="warn"] {
+  border-top-color: var(--tone-warn);
+}
+
+.title {
+  composes: t-cell-strong from global;
+  color: var(--fg);
+}
+
+.notice[data-tone="bad"] .title {
+  color: var(--tone-bad);
+}
+
+.notice[data-tone="warn"] .title {
+  color: var(--tone-warn);
+}
+
+.detail {
+  composes: t-cell from global;
+  margin-top: var(--s2);
+  max-width: var(--note);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.next {
+  composes: t-cell from global;
+  margin-top: var(--s2);
+  max-width: var(--note);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-top: var(--s4);
+}
+
+.digest {
+  composes: t-machine-sm from global;
+  margin-top: var(--s2);
+  color: var(--mark);
+}
+
+/* A sentence under a panel's content. */
+.panelNote {
+  composes: t-cell from global;
+  margin-top: var(--s3);
+  max-width: var(--note);
+  color: var(--muted);
+}
+
+.panelNote code {
+  font-family: var(--mono);
+  font-variant-ligatures: none;
+}
+
+/* ---------------------------------------------------------------- writes */
+
+/* One step down from the 34px chassis height, so a control inside a 34px row
+   does not touch its rules. */
+.rowbutton {
+  composes: t-label-sm from global;
+  height: var(--s6);
+  padding: 0 var(--s2);
+  color: var(--fg2);
+  background: transparent;
+  border: 1px solid var(--seam2);
+  letter-spacing: 0.17em;
+  cursor: pointer;
+}
+
+.rowbutton:hover:not(:disabled, [aria-disabled="true"]) {
+  color: var(--gold);
+  border-color: var(--gold-44);
+}
+
+.rowbutton:disabled,
+.rowbutton[aria-disabled="true"] {
+  color: var(--fg3);
+  border-color: var(--seam);
+  cursor: not-allowed;
+}
+
+/* What a write answered, beside the control that made it. */
+.outcome {
+  composes: t-machine-sm from global;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+  align-items: center;
+  color: var(--fg2);
+  white-space: normal;
+}
+
+.outcome:focus {
+  outline: none;
+}
+
+.outcome:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.outcome[data-tone="bad"] {
+  color: var(--tone-bad);
+}
+
+/* The refusal's `next:` line, on its own flex line. */
+.outcomeNext {
+  composes: t-cell from global;
+  flex: 0 0 100%;
+  color: var(--muted);
+}
+
+/* The same answer with room for the message and the `next:` line. */
+.receipt {
+  margin-top: var(--s3);
+  padding: var(--s3) 0 0;
+  border-top: 1px solid var(--seam);
+}
+
+.receipt:focus {
+  outline: none;
+}
+
+.receiptLine {
+  composes: t-cell from global;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  align-items: center;
+  max-width: var(--note);
+}
+
+.receiptLine[data-tone="bad"] {
+  color: var(--tone-bad);
+}
+
+.receiptNext {
+  composes: t-cell from global;
+  margin-top: var(--s1);
+  max-width: var(--note);
+  color: var(--muted);
+}
+
+.notice:focus {
+  outline: none;
+}

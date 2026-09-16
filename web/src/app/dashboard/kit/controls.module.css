@@ -1,0 +1,258 @@
+/* Form controls: the filter band and every write form. Every control is one
+   row tall (34px), the same as a table row and a nav item. */
+
+.filters {
+  --row: 2.125rem;
+  --pick-w: 9.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s3) var(--s4);
+  margin-top: var(--s5);
+  padding: var(--s3) var(--s4);
+  background: var(--plate);
+  border: 1px solid var(--seam2);
+}
+
+/* A band that submits itself does not need its Apply once scripted; a browser
+   that never ran the script still has it. */
+.filters[data-scripted] [data-apply] {
+  display: none;
+}
+
+.field {
+  --row: 2.125rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* `t-label`'s values: `composes` cannot reach a descendant selector. */
+.field label,
+.field legend {
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: var(--w-mono-label);
+  line-height: 1.4;
+  letter-spacing: 0.19em;
+  text-transform: uppercase;
+  font-variant-ligatures: none;
+  color: var(--muted);
+}
+
+/* One flexible field per band and everything else fixed, so the band's
+   geometry depends on the viewport alone. */
+.wide {
+  flex: 1 1 16rem;
+}
+
+.text {
+  flex: 0 0 13rem;
+}
+
+.text > input,
+.narrow > input {
+  width: 100%;
+}
+
+.narrow {
+  flex: 0 0 5rem;
+}
+
+.pickField {
+  flex: 0 0 var(--pick-w, 9.5rem);
+}
+
+.field input,
+.field select {
+  height: var(--row);
+  min-width: 0;
+  padding: 0 var(--s2);
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--fg);
+  background: var(--console);
+  border: 1px solid var(--seam2);
+  border-radius: 0;
+}
+
+.field input::placeholder {
+  color: var(--fg3);
+  opacity: 1;
+}
+
+.field input:hover,
+.field select:hover {
+  border-color: var(--gold-44);
+}
+
+/* Only the select loses its platform drawing, never a date field. */
+.pick {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+
+.pick > select {
+  width: 100%;
+  padding-right: var(--s6);
+  appearance: none;
+}
+
+.pick::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: var(--s3);
+  width: 6px;
+  height: 6px;
+  border-right: 1px solid var(--fg2);
+  border-bottom: 1px solid var(--fg2);
+  transform: translateY(-70%) rotate(45deg);
+  transition: border-color var(--t-fast);
+  pointer-events: none;
+}
+
+.pick:hover::after {
+  border-color: var(--accent);
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  height: 2.125rem;
+  align-self: flex-end;
+}
+
+.check input {
+  width: 0.875rem;
+  height: 0.875rem;
+  accent-color: var(--gold);
+}
+
+.checkWord {
+  composes: t-cell from global;
+  color: var(--fg2);
+}
+
+/* A box that carries a sentence spans two rows, the word over its note. */
+.checkList {
+  margin: var(--s5) 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.checkLegend {
+  composes: t-label from global;
+  padding: 0;
+  color: var(--muted);
+}
+
+.checkNoted {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0 var(--s2);
+  align-items: baseline;
+  padding: var(--s2) 0;
+  border-bottom: 1px solid var(--seam);
+  cursor: pointer;
+}
+
+.checkNoted:last-child {
+  border-bottom: 0;
+}
+
+.checkNoted input {
+  grid-row: 1 / 3;
+  align-self: center;
+  width: 0.875rem;
+  height: 0.875rem;
+  accent-color: var(--gold);
+}
+
+.checkNotedWord {
+  composes: t-cell from global;
+  font-weight: var(--w-strong);
+  color: var(--fg);
+}
+
+.checkNote {
+  composes: t-machine-sm from global;
+  color: var(--fg3);
+}
+
+/* Buttons pack at the end of the controls, not the far end of the band. */
+.actions {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  align-items: center;
+}
+
+/* Nothing on this surface is a gold fill: gold means position, focus, the
+   sorted column and a timecode worth clicking. */
+.ghostlink {
+  composes: t-label from global;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.125rem;
+  padding: 0 var(--s3);
+  color: var(--fg2);
+  background: transparent;
+  border: 1px solid var(--seam2);
+  cursor: pointer;
+}
+
+.ghostlink:hover {
+  color: var(--gold);
+  border-color: var(--gold-44);
+}
+
+.ghostlink:disabled,
+.ghostlink[aria-disabled="true"] {
+  color: var(--fg3);
+  border-color: var(--seam);
+  cursor: not-allowed;
+}
+
+/* The page's one real action: a ground under it, not a fill. `t-label` said
+   again because `composes` does not follow chains. */
+.button {
+  composes: t-label from global;
+  composes: ghostlink;
+  color: var(--fg);
+  background: var(--plate3);
+}
+
+@media (max-width: 48.75rem) {
+  .filters {
+    padding: var(--s3);
+  }
+
+  .wide {
+    flex-basis: 100%;
+  }
+
+  .text,
+  .pickField {
+    flex: 1 1 9rem;
+  }
+
+  .actions {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+
+  .actions button,
+  .actions a {
+    flex: 1 1 auto;
+    text-align: center;
+  }
+}
