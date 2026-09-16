@@ -148,14 +148,18 @@ prerender either way), and nothing in the tree calls `revalidateTag` — the tag
 are written for an invalidation that does not exist yet.
 
 *Amended 2026-09-16:* `library.ts` and its cached reads went with the library
-pages on 2026-09-07; no data cache remains in `web/`.
+pages on 2026-09-07; no server data cache remains in `web/`. The dashboard's
+reads are held in the browser tab instead (`lib/dashboard/resource.ts`,
+DECISIONS.md 2026-09-16), which Next never sees.
 
 **Cache headers** *(recorded 2026-09-16)*. `next.config.ts`'s `headers()` sends
 `Cache-Control: no-store` on `/dashboard/*`, because a management page must
 never sit in a shared cache, and `public, max-age=31536000, immutable` on
 `/landing/*`, because a still is added or removed and never edited under its
-own name. They are set there and not in `proxy.ts`: a header the proxy sets on
-a rendered document is overwritten by the render (`docs/LESSONS.md`).
+own name. The wire copy on a document is set there, not in `proxy.ts`: a
+header the proxy sets on a rendered document is overwritten by the render
+(`docs/LESSONS.md`). `proxy.ts` still sets `no-store` on `/dashboard/*`, and
+that mirror is the copy the RSC payloads of client navigations carry.
 
 ## 1c. One origin in development, too
 
