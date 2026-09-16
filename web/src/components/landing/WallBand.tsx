@@ -5,10 +5,7 @@ import { TILES } from "@/landing/show";
 import { BandPacer } from "./BandPacer";
 import styles from "./landing.module.css";
 
-// BEAT 3 — the wall, running: 70 real keyframes in four rows drifting in
-// alternation, every tile carrying its own id and timecode and linking into
-// the talk at that second. Each row's list is rendered twice so the loop is
-// seamless; `BandPacer` measures the half and sets the duration.
+// Each row renders twice so the loop is seamless.
 const ROWS = 4;
 
 export function WallBand() {

@@ -2,10 +2,7 @@ import { STATS } from "@/landing/corpus";
 import { num } from "@/landing/format";
 import styles from "./landing.module.css";
 
-// The landing's own rail: it floats over the room rather than sitting on a
-// page, and it carries the corpus readout instead of navigation. The wordmark
-// is not a link here — this is the page it would point at. The Font-Logo Rule:
-// the word, the gold full stop, nothing else.
+// Floats over the hero; the wordmark is not a link on the page it would point at.
 export function LandingRail() {
   return (
     <header className={styles.rail}>

@@ -1,9 +1,5 @@
-// The landing's canned show, transcribed verbatim from `landing.js`.
-//
-// The three hero searches are v1's canned set, verified against the live
-// corpus (research/demo-queries-2026-08-09.md); the frames and boxes were read
-// off the box. Beat 3's wall is v1's 70-keyframe monitor-wall set, ids and
-// timecodes verbatim.
+// The landing's canned show. The hero queries are verified against the corpus
+// (research/demo-queries-2026-08-09.md).
 
 import { GRID, type GridVideo } from "./corpus";
 

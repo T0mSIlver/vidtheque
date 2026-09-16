@@ -1,14 +1,8 @@
-// The landing's corpus readout, transcribed verbatim from
-// `mcp/src/vidtheque_mcp/public/static/landing/data.js` — harvested read-only
-// from vidtheque.db on 2026-08-10; stats and grid counts re-read 2026-08-13
-// from the demo-corpus snapshot (generation 2026-08-13-aie310, all 310 AI
-// Engineer 2026 talks). Every number, frame, sentence, box and id on the page
-// is read out of this file at render time. Nothing in here is written by hand.
-//
-// The landing makes zero network requests (demo-site.md §6.1): the landing
-// argues, the demo works. `img` paths are relative to ASSETS.
+// The landing's corpus readout, harvested read-only from the demo corpus
+// (snapshot 2026-08-13-aie310). Every figure, frame and id on the page comes
+// from here; the page fetches nothing (demo-site.md §6.1).
 
-/** Where the stills live under `web/public/`. Was `/static/landing/`. */
+/** The stills, under web/public/. */
 export const ASSETS = "/landing/";
 
 export type Stats = {

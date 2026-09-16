@@ -1,10 +1,5 @@
-/* **The one ornament in the system**: a plate on a light table, marked at one
-   corner. One corner, never four, and nowhere but the four plates that carry
-   evidence — the corpus list, a result card, the answer and the connect panel.
-
-   It lives in a module of its own because four copies of twelve lines is how
-   one ornament becomes four that disagree; each plate composes it and keeps
-   its own ground and border. */
+/* The one ornament (DESIGN.md): one gold corner, only on plates that carry
+   evidence. Composed so the copies cannot drift. */
 .plate {
   position: relative;
 }

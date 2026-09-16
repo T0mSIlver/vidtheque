@@ -11,22 +11,8 @@ import { Plates } from "@/components/landing/Plates";
 import { WallBand } from "@/components/landing/WallBand";
 import styles from "@/components/landing/landing.module.css";
 
-// THE LANDING PAGE — PROJECTION ROOM. Served at `/`; the demo is at `/demo`
-// (demo-site.md §1). DESIGN.md names this page the reference implementation of
-// the visual system and the maximal expression of it.
-//
-// THESIS: the corpus itself is the opening image. The hero IS the wall —
-// full-bleed, dimmed to after-hours levels, drifting the way a projector gate
-// breathes — with the H1 and a self-typing query floating over it. The receipt
-// emerges FROM the wall. Every beat after keeps the same fiction: stills pulled
-// off the wall onto the bench, the wall running full width as the index, the
-// booth log of the agent that was in here last night.
-//
-// COPY: bound by docs/design/positioning.md (LOCKED 2026-08-10). H1 is Tom's
-// order. The protocol word appears once, in the quickstart, nowhere above.
-// DATA: `@/landing/corpus` renders every count, frame, box, sentence and id.
-// The page makes zero network requests — the live corpus is one link away,
-// at /demo.
+// The landing (DESIGN.md's reference surface). Copy is bound by positioning.md;
+// every figure comes from @/landing/corpus, and the page fetches nothing.
 
 export const metadata: Metadata = {
   title: { absolute: "vidtheque — Builders talk. Your agent listens." },
@@ -37,7 +23,6 @@ export const metadata: Metadata = {
     title: "vidtheque — Builders talk. Your agent listens.",
     description: "Empowering AI with the knowledge of the builders and creators.",
   },
-  // No og:image yet — a wrong one is worse than none.
   twitter: { card: "summary" },
 };
 
@@ -46,10 +31,8 @@ export default function LandingPage() {
     <div className={styles.landing}>
       <LandingRail />
 
-      {/* ───────── beat 1 · the projection room ───────── */}
       <HeroStage />
 
-      {/* ───────── beat 2 · stills off the wall + the ledger ───────── */}
       <section className={styles.beat} id="stills">
         <div className={styles.wrap}>
           <div className={styles.bhead}>
@@ -98,7 +81,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ───────── beat 3 · the wall, lit ───────── */}
       <section className={`${styles.beat} ${styles.corpus}`} id="corpus">
         <div className={styles.wrap}>
           <div className={styles.bhead}>
@@ -139,7 +121,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ───────── beat 4 · the booth log ───────── */}
       <section className={styles.beat} id="ask">
         <div className={styles.wrap}>
           <div className={styles.bhead}>
@@ -227,7 +208,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ───────── beat 5 · quickstart + footer ───────── */}
       <section className={`${styles.beat} ${styles.run}`} id="run">
         <div className={styles.wrap}>
           <div className={styles.bhead}>
@@ -310,7 +290,6 @@ export default function LandingPage() {
               </b>
             </div>
           </div>
-          {/* The readout's own line — about the corpus rather than about the page. */}
           <div className={styles.fbase}>
             <span className={`${styles.label} ${styles.r}`} />
           </div>

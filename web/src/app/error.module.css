@@ -1,7 +1,3 @@
-/* The root boundary's own ground. A beat, a hairline, nothing else: this is
-   what renders when the landing could not, so it spends no imagery, no wall
-   and no motion — there is no machine working behind it. */
-
 .main {
   min-height: 100dvh;
   display: flex;
@@ -45,8 +41,6 @@
   text-underline-offset: 3px;
 }
 
-/* A digest is a machine string, so it is mono and it is the only thing on this
-   page that is. */
 .ref {
   composes: t-machine-sm from global;
   color: var(--mark);

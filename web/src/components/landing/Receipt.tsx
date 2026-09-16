@@ -1,9 +1,7 @@
 import { youtubeAt } from "@/landing/format";
 import styles from "./landing.module.css";
 
-// The receipt slab: `youtu.be/<id>?t=<second>`, printed rather than described.
-// The product's signature artifact (positioning.md, pillar 3) — the link that
-// lands on the second it was said.
+// The receipt: the link that lands on the second (positioning.md, pillar 3).
 export function Receipt({
   videoId,
   t,

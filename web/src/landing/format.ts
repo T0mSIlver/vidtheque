@@ -1,5 +1,3 @@
-// The landing's number and time formatting, ported from `landing.js`.
-
 export const pad = (n: number) => String(n).padStart(2, "0");
 
 /** `h:mm:ss` past an hour, `mm:ss` below it — the page's own clock. */

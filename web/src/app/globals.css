@@ -1,16 +1,12 @@
-/* The ground every page stands on. Tokens come from styles/tokens.css and the
-   type ladder from styles/type.css, both generated from DESIGN.md; this file
-   is the reset and the body, ported from the demo's style.css. */
+/* Reset and body. Tokens and type roles are generated into styles/. */
 
 :root {
-  /* The two faces, one meaning each. next/font sets --font-sans/--font-mono
-     on <html> in layout.tsx; everything else says --sans or --mono. */
+  /* next/font sets --font-sans/--font-mono on <html> (layout.tsx). */
   --sans: var(--font-sans);
   --mono: var(--font-mono);
 }
 
-/* Zero radius everywhere: a frame has square corners, and every box here is a
-   frame, a plate or a rule. */
+/* Zero radius: every box is a frame, a plate or a rule. */
 * {
   margin: 0;
   padding: 0;
@@ -23,15 +19,13 @@
   display: none !important;
 }
 
-/* The gutter is reserved whether or not there is a scrollbar in it, so a
-   result set that shortens the page does not shift every column sideways. */
+/* A shorter page must not shift every column sideways. */
 html {
   -webkit-text-size-adjust: 100%;
   scrollbar-gutter: stable;
 }
 
-/* The body is the `body` type role, spelled out because an element cannot
-   compose a class. */
+/* The body type role, spelled out: an element cannot compose a class. */
 body {
   background: var(--bg);
   color: var(--fg);
@@ -66,8 +60,7 @@ a {
   outline-offset: 2px;
 }
 
-/* Motion is only ever a report that the machine is working; under reduced
-   motion everything freezes at its end state rather than disappearing. */
+/* Reduced motion freezes everything at its end state. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
