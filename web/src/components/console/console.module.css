@@ -221,6 +221,23 @@
 
 /* ─────────────────────────────────── the cold page — teach it first */
 
+/* The gold rule and the micro-label that open a beat. */
+.kick {
+  composes: t-label-sm from global;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--gold);
+}
+
+.kick s {
+  display: block;
+  flex: none;
+  width: 34px;
+  height: 1px;
+  background: var(--gold);
+}
+
 /* It belongs to the input and not to the results: under the query bar at the
    query bar's measure, so the chips and the corpus list read as the box's own
    suggestions rather than as a very wide empty table. */
