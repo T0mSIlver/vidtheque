@@ -1,13 +1,8 @@
-// Server-Sent Events as a wire format, parsed by hand. `EventSource` is
-// GET-only and the ask is a POST with a body, so the browser side is `fetch`
-// plus a reader either way; this is the reader. Pure: chunks in, `data`
-// payloads out, no framework and no DOM, so the fixture test drives it with
-// the exact bytes the API sent.
+// The ask stream's two framings over one POST, parsed by hand: `EventSource`
+// is GET-only. Pure, so the fixture test drives it with the API's own bytes.
 
-// A blank line ends a frame, in whichever newline the sender uses. The buffer
-// stays raw and the separator is matched across the whole of it: normalising
-// each chunk on its own turned a CRLF that straddled a chunk boundary into
-// two lone newlines, and the frame it ended went unnoticed.
+// A blank line ends a frame, in whichever newline the sender uses. Matched on
+// the raw buffer, so a CRLF split across chunks still ends its frame.
 const FRAME_END = /\r\n\r\n|\n\n|\r\r/;
 const LINE_END = /\r\n|\n|\r/;
 
@@ -37,9 +32,8 @@ export function sseParser() {
   };
 }
 
-// A frame is lines; `data:` lines join with "\n", `:` comments and `event:`
-// names are ignored (the payload carries `event` itself, so the two cannot
-// disagree). A frame with no data line, like the opening `: ok`, is skipped.
+// `data:` lines join with "\n"; comments and `event:` names are ignored (the
+// payload carries `event`). A frame with no data line is skipped.
 function frameData(frame: string): string | null {
   const data: string[] = [];
   for (const line of frame.split(LINE_END)) {
@@ -48,13 +42,8 @@ function frameData(frame: string): string | null {
   return data.length ? data.join("\n") : null;
 }
 
-// NDJSON is the other framing over the same POST (demo-site.md §3.5), and it
-// came first: `json.dumps` escapes every newline in a payload, so an event is
-// always exactly one line and a corpus title with a line break in it cannot
-// split a frame. SSE is asked for first because it is the one that survives a
-// CDN — Cloudflare buffers every proxied response except `text/event-stream` —
-// but a deployment behind a proxy that does not care answers this, and a page
-// that could not read it would show a stream that never started.
+// NDJSON: one event per line, since `json.dumps` escapes every newline. SSE is
+// preferred because it survives a CDN (demo-site.md §3.5).
 export function ndjsonParser() {
   let buffer = "";
   return {
@@ -89,23 +78,11 @@ export function framingOf(contentType: string | null): Framing | null {
 }
 
 /**
- * Read a streaming Response body as parsed JSON events, one at a time.
+ * Read a streaming body as parsed JSON events.
  *
- * **A payload that does not parse is not an event, and not an exception.** It
- * is the shape a truncated stream ends in — the connection dropped mid-frame,
- * and what came out of the buffer is half of a `{`. Thrown, it left the reader
- * with a network error and the pane saying "Could not reach the server.", which
- * is a different claim from the true one: the stream stopped without ever
- * saying it was finished.
- *
- * **It is not skipped either: the read ends there.** The vocabulary is three
- * events and a stream that has started is committed to a terminal one
- * (demo-site.md §3.5), so a payload that is not JSON is not one frame lost —
- * it is the stream having stopped making sense, and a frame after it in the
- * same chunk is not evidence of anything. Ending is what puts the caller on
- * the honest end for a stream that stopped: no terminal event, no partial
- * answer shown (`app.js`'s `parseFrame`, which returned `null` for exactly
- * this).
+ * A payload that does not parse ends the read, neither thrown nor skipped: it
+ * is what a truncated stream looks like, and the caller then reports a stream
+ * that stopped without its terminal event (demo-site.md §3.5).
  */
 export async function* readJsonEvents(
   body: ReadableStream<Uint8Array>,
@@ -114,8 +91,6 @@ export async function* readJsonEvents(
   const reader = body.getReader();
   const decoder = new TextDecoder();
   const parser = framing === "ndjson" ? ndjsonParser() : sseParser();
-  // Set by the frame that did not parse, read by the loop below: a generator
-  // can only end itself, and what has to end is this one.
   let broken = false;
   function* parsed(frames: string[]): Generator<unknown> {
     for (const data of frames) {
@@ -136,19 +111,16 @@ export async function* readJsonEvents(
       yield* parsed(parser.push(decoder.decode(value, { stream: true })));
       if (broken) return;
     }
-    // The decoder may be holding the first bytes of a character split across
-    // the last two chunks; flushing it is what completes them.
+    // Completes a character split across the last two chunks.
     yield* parsed(parser.push(decoder.decode()));
     if (broken) return;
     yield* parsed(parser.flush());
   } finally {
-    // A consumer that stops early — because the answer arrived, or because
-    // the events stopped making sense — leaves the body open otherwise, and
-    // the connection with it.
+    // A consumer that stops early would otherwise leave the connection open.
     try {
       await reader.cancel();
     } catch {
-      // Already errored or closed: there is nothing left to cancel.
+      // Already closed.
     }
     reader.releaseLock();
   }

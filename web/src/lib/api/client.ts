@@ -1,9 +1,6 @@
-// The one module that reads bytes off the Python API. Everything above it
-// works with parsed, typed values and a typed error.
-//
-// Built as a factory so a test can hand it a fake `fetch` and a fixed base
-// URL; the app's instance lives in ./index.ts, which also marks the whole
-// package server-only.
+// The one module that reads the Python API: parsed values out, `ApiError` on
+// failure. A factory, so tests hand it a fake `fetch`; the app's instance is
+// in ./index.ts.
 import type { ZodType } from "zod";
 import {
   type ContentType,
@@ -21,11 +18,8 @@ export class ApiError extends Error {
   readonly code: string;
   /** The facade's "what to do next" line, when it sent one. */
   readonly next?: string;
-  /** Seconds to wait, on a 429 or 503: the body's own `retry_after_s` when it
-   *  sent one, else `Retry-After`. The body leads because it is the limiter
-   *  speaking, where the header can be dropped or rewritten by anything on the
-   *  way (demo-site.md §4; `app.js`'s `renderRateLimited` read them in this
-   *  order and this one had read only the header). */
+  /** Seconds to wait: the body's `retry_after_s`, else `Retry-After`, which a
+   *  proxy may rewrite (demo-site.md §4). */
   readonly retryAfter?: number;
 
   constructor(status: number, envelope: Partial<ErrorEnvelope>, retryAfter?: number) {
@@ -33,8 +27,6 @@ export class ApiError extends Error {
     this.name = "ApiError";
     this.status = status;
     this.code = envelope.error ?? "E_HTTP";
-    // The wire says `null` for "no next step"; callers ask `err.next ? …`, so
-    // the two absences become one.
     this.next = envelope.next ?? undefined;
     this.retryAfter = envelope.retry_after_s ?? retryAfter;
   }
@@ -130,8 +122,7 @@ async function toError(res: Response): Promise<ApiError> {
     const parsed = PartialErrorEnvelope.safeParse(await res.json());
     if (parsed.success) envelope = parsed.data;
   } catch {
-    // A non-JSON body (a proxy's HTML 502, say) is still an ApiError, just a
-    // bare one.
+    // A non-JSON body (a proxy's HTML 502) is still an ApiError, a bare one.
   }
   return new ApiError(res.status, envelope, retryAfter);
 }

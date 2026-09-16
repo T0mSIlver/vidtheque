@@ -5,13 +5,10 @@ import { FrameShot } from "./Frame";
 import { Receipt } from "./Receipt";
 import styles from "./ResultGroup.module.css";
 
-// A card per video: header, then that video's moments, each ending in its
-// receipt (demo-site.md §6.5). Three controls per row, never nested: the
-// thumbnail opens the frame full size, the text links to the talk at the
-// second, and the receipt is the printed proof.
+// A card per video, then its moments, each ending in its receipt (demo-site.md
+// §6.5). Three sibling controls per row, never nested: thumbnail, text, receipt.
 export function ResultGroup({ group, query = "" }: { group: VideoGroup; query?: string }) {
-  // Source-agnostic: whichever moment of this video has a frame behind it. The
-  // header says *which talk*, so it does not care which leg found it.
+  // Whichever moment has a frame: the header names the talk, not the leg.
   const cover = group.hits.find((hit) => hit.thumb) ?? group.hits[0];
   const talk = videoUrl(cover.link);
   return (
@@ -21,9 +18,6 @@ export function ResultGroup({ group, query = "" }: { group: VideoGroup; query?: 
           <FrameShot shot={cover} alt="" label={channelWord(cover.source)} />
         </div>
         <div className={styles.headText}>
-          {/* A heading, because it is one: a page of results is a list of
-              talks, and a document outline with no talks in it is a page a
-              screen-reader user has to read end to end to navigate. */}
           <h3 className={styles.title}>
             {talk ? (
               <a href={talk} target="_blank" rel="noopener noreferrer">
@@ -33,9 +27,6 @@ export function ResultGroup({ group, query = "" }: { group: VideoGroup; query?: 
               group.title
             )}
           </h3>
-          {/* Who said it, how much of it is here, and the talk's own id in the
-              machine's face — the count beside the channel, because that is
-              the pair a reader scans for. */}
           <p className={styles.headMeta}>
             <span>{group.channel}</span>
             <span className={styles.id}>
@@ -58,10 +49,7 @@ export function ResultGroup({ group, query = "" }: { group: VideoGroup; query?: 
   );
 }
 
-// The video itself, not the moment: the same link with the `?t=` taken off
-// (`app.js`'s `videoUrl`, restored 2026-09-07 when `/videos/{id}` went). A hit
-// with no honest deep link has no honest video URL either, and gets a title
-// that is text rather than a URL the page guessed.
+// The video, not the moment: the link without `?t=`. No honest link, no URL.
 function videoUrl(link: string): string | null {
   try {
     const url = new URL(link);
@@ -72,11 +60,7 @@ function videoUrl(link: string): string | null {
   }
 }
 
-// The snippet, presented as what it is evidence of (demo-site.md §6.3): speech
-// in quotation marks, screen text in the mono face and lime, a visual match
-// muted and never quoted, and the fusion of two channels as neither. A frame
-// hit whose text the server dropped — there was none, the match was visual —
-// gets no snippet at all rather than a sentence standing in for one.
+// The snippet, presented as what it is evidence of (demo-site.md §6.3).
 const SNIPPET: Record<string, string> = {
   spoken: styles.snipSpoken,
   screen: styles.snipScreen,
@@ -89,8 +73,6 @@ function Moment({ hit, query }: { hit: Hit; query: string }) {
   const isFrame = hit.source === "frame";
   return (
     <li className={`${styles.moment} ${isFrame ? styles.isFrame : ""}`}>
-      {/* A frame hit carries its own picture into the list: the image is the
-          evidence, and the card's header frame is a different second. */}
       {isFrame && hit.thumb ? (
         <div className={styles.momentShot}>
           <FrameShot shot={hit} alt="" label={channelWord(hit.source)} />
@@ -118,18 +100,13 @@ function Moment({ hit, query }: { hit: Hit; query: string }) {
           </span>
         ) : null}
       </a>
-      {/* Every moment ends in its receipt, and it sits outside the row's
-          anchor for the same reason the thumbnail does: a link inside a link
-          is neither valid nor operable. The small slab — ten filled gold
-          blocks down a page would spend the accent on the list. */}
       <Receipt href={hit.link} className={styles.receipt} />
     </li>
   );
 }
 
-// The visitor's own words, marked inside the corpus's sentence. Runs of text
-// and `<mark>`, never markup built from either: the query is whatever was typed
-// and the snippet is whatever was on somebody's screen.
+// The query's words marked in the snippet: text runs and `<mark>`, never markup
+// built from either.
 export function Marked({ text, query }: { text: string; query: string }) {
   return (
     <>
