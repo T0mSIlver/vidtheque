@@ -233,6 +233,13 @@ function Form({ indexable, reason }: { indexable: boolean; reason: string | null
               </select>
             </span>
           </div>
+        </div>
+        <p className={styles.fieldHelp}>
+          <code>none</code> takes the video, <code>playlist</code> its list,{" "}
+          <code>channel_recent</code> the latest, up to <em>max items</em>.
+        </p>
+
+        <div className={styles.formrow}>
           <div className={`${controls.field} ${controls.wide}`}>
             <label htmlFor="i-tags">Tags</label>
             <input
@@ -246,10 +253,6 @@ function Form({ indexable, reason }: { indexable: boolean; reason: string | null
             />
           </div>
         </div>
-        <p className={styles.fieldHelp}>
-          <code>none</code> takes the video, <code>playlist</code> its list,{" "}
-          <code>channel_recent</code> the latest, up to <em>max items</em>.
-        </p>
 
         <fieldset className={controls.checkList}>
           <legend className={controls.checkLegend}>Channels to build</legend>
