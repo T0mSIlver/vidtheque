@@ -89,17 +89,31 @@ describe("the transcript", () => {
     );
   });
 
-  // The empty page, not the empty transcript: an offset past the end.
-  it("says the page is empty when the offset lands past the end", async () => {
+  // The empty page, not the empty transcript: an offset past the end. The
+  // transcript is still there, so the page that says so carries the way back.
+  it("says the page is empty when the offset lands past the end, and offers Earlier", async () => {
     await mountVideo(
       { body: OWNER_VIDEO },
       {
         search: "cue_offset=9000",
-        cues: { body: { cues: [], offset: 9000, limit: 50, has_more: false } },
+        cues: (url) =>
+          new URL(url, "http://localhost").searchParams.get("offset") === "9000"
+            ? { body: { cues: [], offset: 9000, limit: 50, has_more: false } }
+            : { body: cuePage(url) },
       },
     );
 
     expect(await screen.findByText("No transcript cues on this page.")).toBeInTheDocument();
+    // A step back from the end of the transcript, not from an offset it never
+    // had: 9000 minus a page would still be past the last cue.
+    const earlier = screen.getByRole("link", { name: "← Earlier" });
+    expect(earlier).toHaveAttribute(
+      "href",
+      "/dashboard/videos/kCc8FmEb1nY?cue_offset=0#transcript",
+    );
+
+    await userEvent.click(earlier);
+    expect(await screen.findByText("cue 0")).toBeInTheDocument();
   });
 
   // A hand-typed page size above the endpoint's own ceiling is held at it,
