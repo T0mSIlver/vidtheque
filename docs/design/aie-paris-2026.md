@@ -371,7 +371,8 @@ backend name.
 
 The worker's transcription endpoint gains one optional multipart field,
 `context_bias`, encoded as a JSON string array. It is the only change to the
-HTTP seam. `mcp/` sends it per request because `mcp/` owns the edition file and
+request half of the HTTP seam; the response gains one optional field, below.
+`mcp/` sends it per request because `mcp/` owns the edition file and
 the worker must remain stateless.
 
 | Field rule | Bound |
@@ -419,6 +420,14 @@ order — and records a degraded seam instead of deleting speech by guess. Word
 timestamps are therefore monotonic on both paths. Segments are rebuilt from the
 merged words, span every word they hold, start in order, and never overlap
 after a safe merge.
+
+A degraded seam is reported, not only logged. `verbose_json` gains one optional
+field, `degraded_seams`, a list of seam seconds, absent unless a seam degraded.
+It is the second and last change to the HTTP seam, and it is small on purpose:
+a transcript carrying a duplicated half-minute is honest but not clean, and
+`mcp/` can only record which video carries one if the worker's answer says so.
+A backend that transcribes in one pass never sets it, and `mcp/` ignores the
+field when reading cues.
 
 The official overview currently says recordings up to three hours, while the
 known-limitations page says 60 minutes and 500 MB. The backend follows the

@@ -683,6 +683,21 @@
             ],
             "title": "Backend"
           },
+          "degraded_seams": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Seconds where a chunked backend kept both copies of a chunk overlap, so those seconds are transcribed twice. Absent when nothing degraded.",
+            "title": "Degraded Seams"
+          },
           "duration": {
             "anyOf": [
               {
