@@ -432,7 +432,13 @@ follow identically rather than by two functions agreeing.
   `VIDTHEQUE_AUTH=none`) answers `404` on both exactly as it does on the pages
   — dashboard.md §18.6 and §22. A client asks `/api/session` first and renders
   the Following surface only when `write_side` is true.
-- **Caching.** Every response carries `Cache-Control: no-store`.
+- **Caching.** Every response carries `Cache-Control: no-store`. *Amended
+  2026-09-16:* the browser keeps each read in memory for the life of the
+  document, keyed by the request (`lib/dashboard/resource.ts`), and paints it
+  on a revisit, Back or Forward while it re-reads (DECISIONS.md, 2026-09-16).
+  A page shows data only for its current request: a filter change shows the
+  page's reserved placeholder until the new listing answers, never the last
+  listing's rows.
 - **Parameters.** `overview` and `ledger` read no query string at all, so there
   is nothing to clamp; their bounds are the constants in §4. The two `library`
   routes take the pages' parameters under the pages' clamps, and say in `notes`
@@ -1114,6 +1120,13 @@ nothing under it. That is what keeps `form-action 'self'` a policy that holds
 rather than one that only holds while the JavaScript has loaded: a click that
 lands before this tree has hydrated still reaches Python and still gets the
 `303` the Jinja page always sent.
+
+**A write keeps the keyboard where the reader is** *(recorded 2026-09-16)*.
+While a write is out its control is `aria-disabled`, not `disabled`, so focus
+does not fall to `<body>`; a second press is ignored. What the route answers —
+the outcome or the refusal, in the API's words — takes focus when it replaces
+the control or appears beside it, and a form's refusal renders next to its
+actions rather than above the form, so nothing the reader is looking at moves.
 
 ## 10. The cutover: the edge, and what has to be true before it (2026-09-06)
 
