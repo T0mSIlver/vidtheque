@@ -109,6 +109,11 @@
   font-variant-ligatures: none;
 }
 
+/* The form's buttons stand off the last row of boxes. */
+.formActions {
+  margin-top: var(--s5);
+}
+
 /* --------------------------------------------------------- the controls */
 
 .followactions {

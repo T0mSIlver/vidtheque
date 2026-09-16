@@ -440,7 +440,7 @@ describe("one follow's page", () => {
       expect(screen.getByLabelText("Title contains")).toHaveValue("lecture");
       expect(screen.getByLabelText("Title never contains")).toHaveValue("trailer");
       expect(screen.getByLabelText("Tags")).toHaveValue("topic:llm, series:zero");
-      expect(screen.getByLabelText("When something matches")).toHaveValue("review");
+      expect(screen.getByLabelText("On match")).toHaveValue("review");
       expect(screen.getByLabelText("/shorts")).toBeChecked();
       expect(screen.getByLabelText(/On-screen text/)).not.toBeChecked();
     });

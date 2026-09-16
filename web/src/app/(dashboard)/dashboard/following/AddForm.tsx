@@ -34,19 +34,14 @@ export function AddForm({
 
   return (
     <Panel id="add" title="Follow a channel">
-      <p className={ui.emptyNote}>
-        {follows
-          ? "A follow checks a channel or a playlist on its own clock, judges every new upload against a rule you write, and records what it decided either way."
-          : "Nothing is followed yet. A follow checks a channel or a playlist on its own clock, indexes the new uploads that match a rule you write, and keeps a ledger of every one it passed over and the number that made the decision."}
-      </p>
+      {follows ? null : <p className={ui.emptyNote}>Nothing is followed yet.</p>}
 
       {/* §5.5: refused above the controls, in the instance's words; the fields
           stay live, because a rule is worth writing down while that is fixed. */}
       {indexable ? null : (
         <p className={notice.panelNote}>
           Indexing is disabled on this instance
-          {vectorsReason ? ` (${vectorsReason})` : ""}, so a follow would queue videos it cannot
-          build. Fix the config or dimension mismatch and restart.
+          {vectorsReason ? ` (${vectorsReason})` : ""}; a follow would queue videos it cannot build.
         </p>
       )}
 
@@ -71,19 +66,18 @@ export function AddForm({
               name="title"
               type="text"
               autoComplete="off"
-              placeholder="read off the URL if you leave it empty"
+              placeholder="from the URL if empty"
             />
           </div>
         </div>
         <p className={styles.fieldHelp}>
-          A channel URL (<code>/@handle</code>, <code>/channel/UC…</code>) or a playlist. A single
-          video is not a follow — <DashLink href={`${ROOT}/index`}>Add videos</DashLink> indexes one
-          of those.
+          Channels and playlists only; a single video goes to{" "}
+          <DashLink href={`${ROOT}/index`}>Add videos</DashLink>.
         </p>
 
         <RuleFields ns="f" values={ruleValues()} />
 
-        <div data-write="">
+        <div data-write="" className={styles.formActions}>
           <div className={`${controls.field} ${controls.actions}`}>
             <button
               className={controls.ghostlink}
@@ -118,11 +112,6 @@ function MadeIt({ outcome }: { outcome: FollowCreated }) {
             <DashLink href={`${ROOT}/following/${encodeURIComponent(outcome.follow.slug)}`}>
               {outcome.follow.title}
             </DashLink>
-          </p>
-          <p className={notice.receiptNext}>
-            {outcome.already_following
-              ? "Nothing was made: the tool returns the follow that was already there, unchanged."
-              : "Its own page has the rule the check will obey, and everything it passes over."}
           </p>
         </>
       ) : (

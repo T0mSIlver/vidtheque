@@ -150,7 +150,7 @@ export function RuleFields({
   return (
     <>
       <fieldset className={styles.checks}>
-        <legend className={styles.legend}>Which listings to watch</legend>
+        <legend className={styles.legend}>Listings to watch</legend>
         {TABS.map((tab) => (
           <label className={controls.check} key={tab}>
             <input
@@ -164,10 +164,7 @@ export function RuleFields({
           </label>
         ))}
       </fieldset>
-      <p className={styles.fieldHelp}>
-        A channel&rsquo;s <code>/videos</code>, <code>/streams</code> and <code>/shorts</code> are
-        three listings, and each one this follow watches is one more request per check.
-      </p>
+      <p className={styles.fieldHelp}>One request per listing per check.</p>
 
       <div className={styles.formrow}>
         <div className={`${controls.field} ${controls.text}`}>
@@ -223,7 +220,7 @@ export function RuleFields({
           />
         </div>
         <div className={`${controls.field} ${controls.text}`}>
-          <label htmlFor={`${ns}-every`}>Check every</label>
+          <label htmlFor={`${ns}-every`}>Check every (s)</label>
           <input
             id={`${ns}-every`}
             name="check_interval_s"
@@ -236,7 +233,7 @@ export function RuleFields({
           />
         </div>
         <div className={`${controls.field} ${controls.pickField}`}>
-          <label htmlFor={`${ns}-mode`}>When something matches</label>
+          <label htmlFor={`${ns}-mode`}>On match</label>
           <span className={controls.pick}>
             <select id={`${ns}-mode`} name="mode" defaultValue={values.mode} disabled={disabled}>
               {MODES.map((mode) => (
@@ -249,11 +246,8 @@ export function RuleFields({
         </div>
       </div>
       <p className={styles.fieldHelp}>
-        Lengths read <code>480</code>, <code>8:00</code> or <code>1:30:00</code>; leave one empty
-        for no bound. <em>Check every</em> is seconds, floor{" "}
-        <span className={ui.mono}>{MIN_CHECK_INTERVAL_S}</span>, and a week is as far as it goes.{" "}
-        <em>Backfill</em> reaches back that many uploads once, at the moment you follow.{" "}
-        <code>review</code> holds every match for you instead of queueing it.
+        Lengths as <code>480</code> or <code>8:00</code>. <em>Backfill</em> reaches back once;{" "}
+        <code>review</code> holds matches for you.
       </p>
 
       <div className={styles.formrow}>
@@ -295,15 +289,14 @@ export function RuleFields({
         </div>
       </div>
       <p className={styles.fieldHelp}>
-        Comma-separated plain substrings, matched case-insensitively — not patterns. Exclude wins
-        over include. Tags are applied to every video this follow brings in, under the same
-        namespace rules <code>tag-video</code> uses.
+        Case-insensitive substrings; <em>never contains</em> wins. Tags are applied to every video
+        brought in.
       </p>
 
-      <fieldset className={controls.checkList}>
-        <legend className={controls.checkLegend}>Channels to build</legend>
-        {CHANNEL_BOXES.map(([name, label, note]) => (
-          <label className={controls.checkNoted} key={name}>
+      <fieldset className={styles.checks}>
+        <legend className={styles.legend}>Channels to build</legend>
+        {CHANNEL_BOXES.map(([name, label]) => (
+          <label className={controls.check} key={name}>
             <input
               type="checkbox"
               name={`channel_${name}`}
@@ -311,8 +304,7 @@ export function RuleFields({
               defaultChecked={values.channels.includes(name)}
               disabled={disabled}
             />
-            <span className={controls.checkNotedWord}>{label}</span>
-            <span className={controls.checkNote}>{note}</span>
+            <span className={controls.checkWord}>{label}</span>
           </label>
         ))}
       </fieldset>

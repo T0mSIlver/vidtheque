@@ -97,7 +97,7 @@ describe("the follows table", () => {
     await loaded();
 
     expect(screen.getByText("1h 00m")).toBeInTheDocument();
-    expect(screen.getByText("of 16h, over the last 24h")).toBeInTheDocument();
+    expect(screen.getByText("of 16h, last 24h")).toBeInTheDocument();
   });
 
   // A ceiling of `0` is the operator turning it off. "of 0h" reads as "no
@@ -106,7 +106,7 @@ describe("the follows table", () => {
     await mount({ list: { body: NO_FOLLOWS } });
     await screen.findByRole("heading", { name: "Follow a channel" });
 
-    expect(screen.getByText(/no ceiling is set/)).toBeInTheDocument();
+    expect(screen.getByText(/no ceiling/)).toBeInTheDocument();
     expect(screen.queryByText(/of 0h/)).not.toBeInTheDocument();
   });
 
@@ -390,7 +390,6 @@ describe("the follows table", () => {
       await userEvent.click(screen.getByRole("button", { name: "Follow" }));
 
       expect(await screen.findByText("Already following")).toBeInTheDocument();
-      expect(screen.getByText(/Nothing was made/)).toBeInTheDocument();
       // And no second row for a follow that already had one.
       expect(screen.getAllByRole("row")).toHaveLength(3);
     });
@@ -434,9 +433,8 @@ describe("the follows table", () => {
       await loaded();
 
       expect(screen.getByText(/Indexing is disabled on this instance/)).toHaveTextContent(
-        "Indexing is disabled on this instance (text_embed dim 768 ≠ the store's 1024), so a " +
-          "follow would queue videos it cannot build. Fix the config or dimension mismatch and " +
-          "restart.",
+        "Indexing is disabled on this instance (text_embed dim 768 ≠ the store's 1024); a " +
+          "follow would queue videos it cannot build.",
       );
       expect(screen.getByRole("button", { name: "Follow" })).toBeEnabled();
       expect(screen.getByLabelText("Channel or playlist URL")).toBeEnabled();
@@ -452,7 +450,7 @@ describe("the follows table", () => {
       });
       await loaded();
       expect(screen.getByText(/Indexing is disabled on this instance/)).toHaveTextContent(
-        /^Indexing is disabled on this instance, so a follow/,
+        /^Indexing is disabled on this instance; a follow/,
       );
     });
   });
