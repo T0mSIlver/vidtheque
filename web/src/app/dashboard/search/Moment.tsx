@@ -2,8 +2,8 @@
 
 import type { Hit } from "@/lib/dashboard/schemas";
 import { clock, DASH } from "@/lib/format";
-import type { Shot } from "../FrameOverlay";
-import { DashLink, Sep } from "../kit/ui";
+import type { Shot } from "@/components/dashboard/FrameOverlay";
+import { DashLink, Sep } from "@/components/dashboard/kit/ui";
 import { evidenceOf, highlight, insideLink, receiptOf } from "./parts";
 import styles from "./search.module.css";
 

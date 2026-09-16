@@ -1,9 +1,9 @@
 "use client";
 
 import { ROOT } from "@/lib/dashboard/client";
-import controls from "../kit/controls.module.css";
-import { FilterBand } from "../kit/FilterBand";
-import { DashLink, Fact, Sep, ui, Unbroken } from "../kit/ui";
+import controls from "@/components/dashboard/kit/controls.module.css";
+import { FilterBand } from "@/components/dashboard/kit/FilterBand";
+import { DashLink, Fact, Sep, ui, Unbroken } from "@/components/dashboard/kit/ui";
 import { bandUrl, type Band, type DateKey } from "./query";
 import styles from "./videos.module.css";
 

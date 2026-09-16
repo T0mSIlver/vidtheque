@@ -1,6 +1,6 @@
 "use client";
 
-import { Refusal } from "./kit/notice";
+import { Refusal } from "@/components/dashboard/kit/notice";
 
 // A mistyped path under `/dashboard`, in this surface's refusal shape rather
 // than Next's stock page. Next answers `404` with it.

@@ -6,11 +6,21 @@ import { dashboard, DashboardError } from "@/lib/dashboard/client";
 import { isRateLimited, useResource } from "@/lib/dashboard/resource";
 import type { JobDetail } from "@/lib/dashboard/schemas";
 import { count, duration } from "@/lib/format";
-import { Notice, notice, ReadFailure, Refusal } from "../../kit/notice";
-import { Crumbs } from "../../kit/table";
-import { Fact, Figure, PageHead, Panel, Pending, Sep, Title, ui, Unbroken } from "../../kit/ui";
-import { refusalOf, useWriteSide } from "../../kit/write";
-import { useSession } from "../../session";
+import { Notice, notice, ReadFailure, Refusal } from "@/components/dashboard/kit/notice";
+import { Crumbs } from "@/components/dashboard/kit/table";
+import {
+  Fact,
+  Figure,
+  PageHead,
+  Panel,
+  Pending,
+  Sep,
+  Title,
+  ui,
+  Unbroken,
+} from "@/components/dashboard/kit/ui";
+import { refusalOf, useWriteSide } from "@/components/dashboard/kit/write";
+import { useSession } from "@/components/dashboard/session";
 import { CancelControl } from "../CancelControl";
 import styles from "../jobs.module.css";
 import { countsOf, JobStates, livePoll, Progress, tallyOf, WallClock } from "../parts";

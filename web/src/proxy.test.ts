@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isPorted } from "./app/dashboard/ported";
+import { isPorted } from "@/components/dashboard/ported";
 import { config, proxy } from "./proxy";
 
 // frontend-migration.md §1b, verbatim, with the nonce filled in.

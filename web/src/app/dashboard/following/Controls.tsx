@@ -6,10 +6,10 @@ import { Pill } from "@/components/ui/Pill";
 import { dashboard, ROOT } from "@/lib/dashboard/client";
 import type { FollowDetailRow } from "@/lib/dashboard/schemas";
 import { hours } from "@/lib/format";
-import controls from "../kit/controls.module.css";
-import { notice, RefusalNotice } from "../kit/notice";
-import { DashLink } from "../kit/ui";
-import { focusOnArrival, useWrite, type Write } from "../kit/write";
+import controls from "@/components/dashboard/kit/controls.module.css";
+import { notice, RefusalNotice } from "@/components/dashboard/kit/notice";
+import { DashLink } from "@/components/dashboard/kit/ui";
+import { focusOnArrival, useWrite, type Write } from "@/components/dashboard/kit/write";
 import styles from "./following.module.css";
 import { RuleFields, RuleForm, ruleValues } from "./parts";
 

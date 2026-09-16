@@ -6,11 +6,11 @@ import { dashboard, DashboardError, echoOf, ROOT } from "@/lib/dashboard/client"
 import { useResource } from "@/lib/dashboard/resource";
 import { type Library, type LibraryRow, RefusedLibrary } from "@/lib/dashboard/schemas";
 import { count, day, hms } from "@/lib/format";
-import controls from "../kit/controls.module.css";
-import { Notice, ReadFailure, RefusalNotice } from "../kit/notice";
-import { Notes, Pager, table, TableCount } from "../kit/table";
-import { Body, DashLink, PageHead, Sep, ui } from "../kit/ui";
-import { useWriteSide } from "../kit/write";
+import controls from "@/components/dashboard/kit/controls.module.css";
+import { Notice, ReadFailure, RefusalNotice } from "@/components/dashboard/kit/notice";
+import { Notes, Pager, table, TableCount } from "@/components/dashboard/kit/table";
+import { Body, DashLink, PageHead, Sep, ui } from "@/components/dashboard/kit/ui";
+import { useWriteSide } from "@/components/dashboard/kit/write";
 import { Filters, Narrowing } from "./Filters";
 import { ReindexControl } from "./Manage";
 import { apiQuery, type Band, bandOf, carriedOf, linkTo } from "./query";

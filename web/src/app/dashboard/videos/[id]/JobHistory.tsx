@@ -2,8 +2,8 @@ import { Pill } from "@/components/ui/Pill";
 import { ROOT } from "@/lib/dashboard/client";
 import type { VideoDetail } from "@/lib/dashboard/schemas";
 import { at, count, DASH } from "@/lib/format";
-import { table } from "../../kit/table";
-import { DashLink, Panel, ui } from "../../kit/ui";
+import { table } from "@/components/dashboard/kit/table";
+import { DashLink, Panel, ui } from "@/components/dashboard/kit/ui";
 import styles from "./detail.module.css";
 
 export function JobHistory({ history }: { history: VideoDetail["job_history"] }) {

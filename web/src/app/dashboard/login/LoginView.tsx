@@ -6,11 +6,11 @@ import { Pill } from "@/components/ui/Pill";
 import { RetryIn } from "@/components/ui/RetryIn";
 import { dashboard, DashboardError, navigation, ROOT } from "@/lib/dashboard/client";
 import { DASH } from "@/lib/format";
-import controls from "../kit/controls.module.css";
-import { Absent, ReadFailure } from "../kit/notice";
-import { Fact, PageHead, Pending, ui } from "../kit/ui";
-import { formFields, useWrite } from "../kit/write";
-import { useSessionResource } from "../session";
+import controls from "@/components/dashboard/kit/controls.module.css";
+import { Absent, ReadFailure } from "@/components/dashboard/kit/notice";
+import { Fact, PageHead, Pending, ui } from "@/components/dashboard/kit/ui";
+import { formFields, useWrite } from "@/components/dashboard/kit/write";
+import { useSessionResource } from "@/components/dashboard/session";
 import styles from "./login.module.css";
 
 // Sign in: one field over `POST /dashboard/login` (dashboard.md §21). The page

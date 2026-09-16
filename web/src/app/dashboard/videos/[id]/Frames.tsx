@@ -4,11 +4,11 @@ import { memo, useLayoutEffect, useRef, useState } from "react";
 import { Pill } from "@/components/ui/Pill";
 import type { FrameCard, VideoDetail } from "@/lib/dashboard/schemas";
 import { bytes, clock, count, DASH } from "@/lib/format";
-import { OcrBoxes, OcrLines } from "../../FrameOverlay";
-import controls from "../../kit/controls.module.css";
-import { RefusalNotice } from "../../kit/notice";
-import { Pager } from "../../kit/table";
-import { Panel, Sep, ui } from "../../kit/ui";
+import { OcrBoxes, OcrLines } from "@/components/dashboard/FrameOverlay";
+import controls from "@/components/dashboard/kit/controls.module.css";
+import { RefusalNotice } from "@/components/dashboard/kit/notice";
+import { Pager } from "@/components/dashboard/kit/table";
+import { Panel, Sep, ui } from "@/components/dashboard/kit/ui";
 import styles from "./detail.module.css";
 import { frameLink } from "./query";
 

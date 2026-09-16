@@ -7,7 +7,7 @@ import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
 import { REINDEX_REFUSED, REINDEXED } from "@/test/index-fixtures";
 import { DEMO_LIBRARY, OWNER_LIBRARY, OWNER_LIBRARY_CLAMPED } from "@/test/library-fixtures";
 import { firstPaint } from "@/test/retry";
-import { DEBOUNCE_MS } from "../kit/FilterBand";
+import { DEBOUNCE_MS } from "@/components/dashboard/kit/FilterBand";
 import { VideosView } from "./VideosView";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);

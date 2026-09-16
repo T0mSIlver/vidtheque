@@ -7,10 +7,18 @@ import { pick } from "@/lib/dashboard/query";
 import { useResource } from "@/lib/dashboard/resource";
 import type { FollowListRow, Following } from "@/lib/dashboard/schemas";
 import { at, count, DASH, duration, iso } from "@/lib/format";
-import { Absent, Notice, ReadFailure } from "../kit/notice";
-import { Notes, Pager, table, TableCount } from "../kit/table";
-import { DashLink, Fact, Figure, PageHead, Pending, ui, Unbroken } from "../kit/ui";
-import { useSessionResource } from "../session";
+import { Absent, Notice, ReadFailure } from "@/components/dashboard/kit/notice";
+import { Notes, Pager, table, TableCount } from "@/components/dashboard/kit/table";
+import {
+  DashLink,
+  Fact,
+  Figure,
+  PageHead,
+  Pending,
+  ui,
+  Unbroken,
+} from "@/components/dashboard/kit/ui";
+import { useSessionResource } from "@/components/dashboard/session";
 import { AddForm } from "./AddForm";
 import styles from "./following.module.css";
 import { nextCheckWords, RetryFact, RuleFacts, schedulable, windowWords } from "./parts";

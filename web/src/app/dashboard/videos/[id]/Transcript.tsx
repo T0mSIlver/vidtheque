@@ -13,9 +13,9 @@ import {
 import { dashboard, DashboardError } from "@/lib/dashboard/client";
 import type { Cue, CuePage, VideoDetail } from "@/lib/dashboard/schemas";
 import { clock, count } from "@/lib/format";
-import controls from "../../kit/controls.module.css";
-import { table } from "../../kit/table";
-import { DashLink, Panel, Sep, ui } from "../../kit/ui";
+import controls from "@/components/dashboard/kit/controls.module.css";
+import { table } from "@/components/dashboard/kit/table";
+import { DashLink, Panel, Sep, ui } from "@/components/dashboard/kit/ui";
 import styles from "./detail.module.css";
 import { cueLink, markCues } from "./query";
 

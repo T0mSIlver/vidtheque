@@ -1,6 +1,6 @@
 "use client";
 
-import { notice, Refusal } from "./kit/notice";
+import { notice, Refusal } from "@/components/dashboard/kit/notice";
 
 // Inside the layout, so a throw keeps the rail and replaces only the column.
 // A thrown render is `E_INTERNAL`; production strips the message and sends a

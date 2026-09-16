@@ -8,10 +8,20 @@ import { pick } from "@/lib/dashboard/query";
 import { useResource } from "@/lib/dashboard/resource";
 import type { FollowDetail, FollowJob, SeenRow } from "@/lib/dashboard/schemas";
 import { at, count, DASH, day, duration, iso } from "@/lib/format";
-import { notice, ReadFailure, Refusal } from "../../kit/notice";
-import { Crumbs, Notes, Pager, table, TableCount } from "../../kit/table";
-import { DashLink, Fact, PageHead, Panel, Pending, Sep, Title, ui, Unbroken } from "../../kit/ui";
-import { useSessionResource } from "../../session";
+import { notice, ReadFailure, Refusal } from "@/components/dashboard/kit/notice";
+import { Crumbs, Notes, Pager, table, TableCount } from "@/components/dashboard/kit/table";
+import {
+  DashLink,
+  Fact,
+  PageHead,
+  Panel,
+  Pending,
+  Sep,
+  Title,
+  ui,
+  Unbroken,
+} from "@/components/dashboard/kit/ui";
+import { useSessionResource } from "@/components/dashboard/session";
 import {
   CheckControl,
   DeleteControl,

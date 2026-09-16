@@ -4,10 +4,10 @@ import { Pill } from "@/components/ui/Pill";
 import { ROOT } from "@/lib/dashboard/client";
 import type { JobDetail, JobEvent, JobItem } from "@/lib/dashboard/schemas";
 import { at, DASH, duration, hms, iso } from "@/lib/format";
-import { notice } from "../../kit/notice";
-import { table } from "../../kit/table";
-import { DashLink, Panel, Sep, ui } from "../../kit/ui";
-import { useArrivals } from "../../polling";
+import { notice } from "@/components/dashboard/kit/notice";
+import { table } from "@/components/dashboard/kit/table";
+import { DashLink, Panel, Sep, ui } from "@/components/dashboard/kit/ui";
+import { useArrivals } from "@/components/dashboard/polling";
 import styles from "../jobs.module.css";
 
 // The lower panels of a job's page: items, the stages in focus, the degraded

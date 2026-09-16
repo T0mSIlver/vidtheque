@@ -170,7 +170,7 @@
 }
 
 .videos {
-  composes: stacked from "../kit/table.module.css";
+  composes: stacked from "@/components/dashboard/kit/table.module.css";
 }
 
 /* Each row a block, each cell wearing its column's name (`data-label`). */

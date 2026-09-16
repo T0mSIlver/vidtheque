@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Chrome } from "./Chrome";
+import { Chrome } from "@/components/dashboard/Chrome";
 
 // Every page under `/dashboard` wears the chassis. `noindex`: an instrument
 // behind a gate, even in a demo's projection.

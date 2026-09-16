@@ -6,11 +6,16 @@ import { Pill } from "@/components/ui/Pill";
 import { dashboard, echoOf, ROOT } from "@/lib/dashboard/client";
 import { RefusedIndex } from "@/lib/dashboard/schemas";
 import { DASH } from "@/lib/format";
-import controls from "../kit/controls.module.css";
-import { Absent, Notice, ReadFailure, RefusalNotice } from "../kit/notice";
-import { DashLink, Fact, PageHead, Pending, ui } from "../kit/ui";
-import { CHANNEL_BOXES, formFields, useWrite, useWriteSide } from "../kit/write";
-import { useSessionResource } from "../session";
+import controls from "@/components/dashboard/kit/controls.module.css";
+import { Absent, Notice, ReadFailure, RefusalNotice } from "@/components/dashboard/kit/notice";
+import { DashLink, Fact, PageHead, Pending, ui } from "@/components/dashboard/kit/ui";
+import {
+  CHANNEL_BOXES,
+  formFields,
+  useWrite,
+  useWriteSide,
+} from "@/components/dashboard/kit/write";
+import { useSessionResource } from "@/components/dashboard/session";
 import { Receipt } from "./Receipt";
 import styles from "./index.module.css";
 import { useStoredReceipt } from "./useStoredReceipt";
