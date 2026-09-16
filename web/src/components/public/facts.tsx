@@ -1,6 +1,6 @@
 // The chrome's facts from `/api/meta`, each a small async leaf the shell
 // streams in under its own <Suspense>.
-import { RailMeta } from "@/components/Rail";
+import { RailMeta } from "@/components/public/Rail";
 import { browsePath, claudeCommand, corpusCount } from "@/lib/api/meta";
 import { readMeta } from "@/lib/api/search";
 import { CopyRows } from "./CopyRows";

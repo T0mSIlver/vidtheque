@@ -1,6 +1,6 @@
 import { Fragment } from "react";
-import { FrameShot } from "@/components/Frame";
-import { Receipt } from "@/components/Receipt";
+import { FrameShot } from "@/components/public/Frame";
+import { Receipt } from "@/components/public/Receipt";
 import type { AskAnswer, Citation, EditionTalk } from "@/lib/api/schemas";
 import { labelCitation } from "@/lib/api/edition";
 import { badgeWords, channelWord, presentationOf } from "@/lib/api/group";

@@ -1,6 +1,6 @@
 import { Suspense } from "react";
-import { loadConsole } from "@/components/console/bootstrap";
-import { Console } from "@/components/console/Console";
+import { loadConsole } from "@/components/public/console/bootstrap";
+import { Console } from "@/components/public/console/Console";
 import { readEdition, TAG } from "./edition";
 import { Programme, ProgrammeLoading } from "./Programme";
 import styles from "./page.module.css";

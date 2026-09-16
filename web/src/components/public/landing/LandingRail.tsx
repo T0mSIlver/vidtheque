@@ -1,4 +1,4 @@
-import { STATS } from "@/landing/corpus";
+import { STATS } from "./data/corpus";
 import { num } from "@/lib/format/landing";
 import styles from "./landing.module.css";
 

@@ -1,6 +1,6 @@
 "use client";
 
-import ui from "@/components/console/console.module.css";
+import { BadNotice } from "@/components/public/console/Notice";
 import styles from "./page.module.css";
 
 // Only a render that threw reaches here; a refused read is a console state.
@@ -23,13 +23,11 @@ export default function DemoError({
           The knowledge of AI Engineer 2026, on tap. <em>Ask it something.</em>
         </h1>
       </div>
-      <div className={`${ui.notice} ${ui.noticeBad}`}>
-        <p className={ui.noticeTitle}>Could not reach the server.</p>
-        {error.digest ? <p className={ui.noticeDetail}>ref {error.digest}</p> : null}
-        <button type="button" className={ui.ghost} onClick={() => retry()}>
-          Try again
-        </button>
-      </div>
+      <BadNotice
+        title="Could not reach the server."
+        detail={error.digest ? `ref ${error.digest}` : undefined}
+        onRetry={() => retry()}
+      />
     </main>
   );
 }

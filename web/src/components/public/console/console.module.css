@@ -423,7 +423,7 @@
    breakpoint the sources move beside the answer and the prose still breaks at
    70ch, because that is what the column is. */
 .answer {
-  composes: plate from "../ornament.module.css";
+  composes: plate from "../../../styles/ornament.module.css";
   --answer-pad: clamp(18px, 2.2vw, 26px);
   --answer-gap: clamp(24px, 2.6vw, 40px);
   display: grid;

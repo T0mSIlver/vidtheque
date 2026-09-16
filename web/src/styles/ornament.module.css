@@ -1,5 +1,7 @@
 /* The one ornament (DESIGN.md): one gold corner, only on plates that carry
-   evidence. Composed so the copies cannot drift. */
+   evidence. Composed so the copies cannot drift. In the style layer rather
+   than a component's folder: a route's own stylesheet composes it too, and a
+   route must not reach into a component. */
 .plate {
   position: relative;
 }

@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { Rail } from "@/components/Rail";
+import { Rail } from "@/components/public/Rail";
 import { CopyRows } from "./CopyRows";
 import { ConnectRows, RailFacts, RepoLink, SourceLink, REPO } from "./facts";
 import connect from "./connect.module.css";

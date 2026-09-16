@@ -1,6 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 import type { CSSProperties } from "react";
-import type { Box } from "@/landing/show";
+import type { Box } from "./data/show";
 import styles from "./landing.module.css";
 
 // A plain <img>: the stills under /public/landing are already sized.

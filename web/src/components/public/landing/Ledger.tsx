@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { STATS } from "@/landing/corpus";
+import { STATS } from "./data/corpus";
 import { num, pad } from "@/lib/format/landing";
 import styles from "./landing.module.css";
 
