@@ -33,6 +33,7 @@ export function Query({
   askEnabled,
   shape,
   children,
+  path,
 }: {
   /** The machine's word for how the read ended, once it has. */
   state: Promise<MachineState>;
@@ -42,6 +43,7 @@ export function Query({
   /** Moments per card, as this render's results actually came back. */
   shape?: Promise<number[]> | null;
   children?: React.ReactNode;
+  path?: string;
 }) {
   const [pending, setPending] = useState(false);
   const [last, setLast] = useState<number[]>(DEFAULT_SHAPE);
@@ -52,6 +54,7 @@ export function Query({
         state={state}
         whileWaiting={whileWaiting}
         askEnabled={askEnabled}
+        path={path}
         onPending={setPending}
       />
       {shape ? (

@@ -46,12 +46,24 @@ export const metadata: Metadata = {
 // demo-site.md §6 items 6 and 7 ask for a line and a panel that never get
 // culled: the layout wraps every `/demo` state, so results, the examples, an
 // empty corpus and the error boundary all carry them.
-export default async function DemoLayout({ children }: LayoutProps<"/demo">) {
+//
+// `count` is the one prop a second surface overrides. The corpus total
+// beside the wordmark is a fact about the whole corpus, and on an edition page
+// it would read as the size of that edition (aie-paris-2026.md 4.4) — so
+// `/paris` passes null and the rail prints none. undefined keeps the demo
+// behaviour, which is every other caller.
+export default async function DemoLayout({
+  children,
+  count,
+}: LayoutProps<"/demo"> & { count?: string | null }) {
   const outcome = await readMeta();
   const meta = outcome.kind === "ok" ? outcome.meta : null;
   return (
     <>
-      <Rail count={corpusCount(meta?.videos)} browse={browsePath(meta?.browse)} />
+      <Rail
+        count={count === undefined ? corpusCount(meta?.videos) : count}
+        browse={browsePath(meta?.browse)}
+      />
       {children}
       <Connect
         mcpUrl={meta?.mcp_url ?? null}

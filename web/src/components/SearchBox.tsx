@@ -103,18 +103,21 @@ export function AskSwitch({
   q,
   enabled,
   onLeave,
+  path = "/demo",
 }: {
   ask: boolean;
   q: string;
   enabled: boolean | Promise<boolean>;
   onLeave?: () => void;
+  /** The page the switch and its correction navigate within. */
+  path?: string;
 }) {
   if (typeof enabled === "boolean") {
-    return <ModeSwitch ask={ask} q={q} enabled={enabled} onLeave={onLeave} />;
+    return <ModeSwitch ask={ask} q={q} enabled={enabled} onLeave={onLeave} path={path} />;
   }
   return (
     <Suspense fallback={null}>
-      <ResolvedAskSwitch ask={ask} q={q} enabled={enabled} onLeave={onLeave} />
+      <ResolvedAskSwitch ask={ask} q={q} enabled={enabled} onLeave={onLeave} path={path} />
     </Suspense>
   );
 }
@@ -124,11 +127,13 @@ function ResolvedAskSwitch({
   q,
   enabled,
   onLeave,
+  path,
 }: {
   ask: boolean;
   q: string;
   enabled: Promise<boolean>;
   onLeave?: () => void;
+  path: string;
 }) {
   const available = use(enabled);
   const router = useRouter();
@@ -147,12 +152,12 @@ function ResolvedAskSwitch({
     const typed = q.trim();
     const pin = pinned && pinned !== "all" ? `&type=${encodeURIComponent(pinned)}` : "";
     router.replace(
-      typed ? `/demo?ask=0&q=${encodeURIComponent(typed)}${pin}` : `/demo?ask=0${pin}`,
+      typed ? `${path}?ask=0&q=${encodeURIComponent(typed)}${pin}` : `${path}?ask=0${pin}`,
     );
-  }, [available, ask, q, pinned, router]);
+  }, [available, ask, q, pinned, path, router]);
 
   if (!available) return null;
-  return <ModeSwitch ask={ask} q={q} enabled onLeave={onLeave} />;
+  return <ModeSwitch ask={ask} q={q} enabled onLeave={onLeave} path={path} />;
 }
 
 /**
@@ -172,6 +177,7 @@ export function ModeSwitch({
   q,
   enabled,
   onLeave,
+  path = "/demo",
 }: {
   ask: boolean;
   q: string;
@@ -179,6 +185,7 @@ export function ModeSwitch({
   /** Ask mode's chance to abort whatever it had in flight before the mode it
    *  belonged to leaves the screen. */
   onLeave?: () => void;
+  path?: string;
 }) {
   const router = useRouter();
   // The pin is the URL's, not this component's: in ask mode there is no chip
@@ -196,7 +203,7 @@ export function ModeSwitch({
     // dropped `type`, so a visitor who had pinned "on-screen text", looked at
     // an answer and came back was silently searching all four channels again.
     if (pinned && pinned !== "all") params.set("type", pinned);
-    router.push(`/demo?${params}`);
+    router.push(`${path}?${params}`);
   }
 
   return (
@@ -216,6 +223,7 @@ export function SearchBox({
   whileWaiting = "ready",
   askEnabled = false,
   onPending,
+  path = "/demo",
 }: {
   /** The machine's word, or the read that will say it (`Query`). */
   state?: MachineState | Promise<MachineState>;
@@ -225,6 +233,7 @@ export function SearchBox({
   /** A navigation is out. The caller reserves the results' space while it is
    *  (see `app/demo/Query.tsx`); the state cell says the word here. */
   onPending?: (pending: boolean) => void;
+  path?: string;
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -267,7 +276,7 @@ export function SearchBox({
     if (query.trim()) next.set("q", query.trim());
     if (channel !== "all") next.set("type", channel);
     if (askEnabled) next.set("ask", "0");
-    startTransition(() => router.push(`/demo?${next}`));
+    startTransition(() => router.push(`${path}?${next}`));
   }
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -336,7 +345,7 @@ export function SearchBox({
             </button>
           ))}
         </div>
-        <AskSwitch ask={false} q={q} enabled={askEnabled} />
+        <AskSwitch ask={false} q={q} enabled={askEnabled} path={path} />
       </div>
     </form>
   );

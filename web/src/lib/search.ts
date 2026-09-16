@@ -29,10 +29,17 @@ export async function searchCorpus(params: {
   q: string;
   type: ContentType;
   offset: number;
+  tags?: string;
 }): Promise<SearchOutcome> {
   try {
     const page = await api().search(
-      { q: params.q, content_type: params.type, limit: SEARCH_PAGE, offset: params.offset },
+      {
+        q: params.q,
+        content_type: params.type,
+        limit: SEARCH_PAGE,
+        offset: params.offset,
+        tags: params.tags,
+      },
       { clientIp: await visitorIp() },
     );
     return { kind: "ok", page };

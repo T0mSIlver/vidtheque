@@ -8,6 +8,7 @@ import type { ZodType } from "zod";
 import {
   type ContentType,
   type ErrorEnvelope,
+  EditionResponse,
   Meta,
   PartialErrorEnvelope,
   SearchResponse,
@@ -95,6 +96,7 @@ export function createClient(config: ClientConfig) {
         offset?: number;
         channel?: string;
         video_id?: string;
+        tags?: string;
       },
       opts?: RequestOptions,
     ) {
@@ -108,6 +110,13 @@ export function createClient(config: ClientConfig) {
     },
     meta(opts?: RequestOptions) {
       return get("/api/meta", {}, Meta, opts);
+    },
+    edition(
+      slug: string,
+      params: { limit?: number; offset?: number; video_limit?: number; video_offset?: number } = {},
+      opts?: RequestOptions,
+    ) {
+      return get(`/api/editions/${encodeURIComponent(slug)}`, params, EditionResponse, opts);
     },
   };
 }

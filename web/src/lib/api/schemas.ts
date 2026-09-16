@@ -153,6 +153,84 @@ export const VideosResponse = z.object({
 });
 export type VideosResponse = z.infer<typeof VideosResponse>;
 
+const EditionSpeaker = z.object({ name: z.string(), company: z.string() });
+const EditionAlignment = z.object({
+  talk_video_id: z.string().nullable(),
+  stream_video_id: z.string().nullable(),
+  start_s: z.number().nullable(),
+  end_s: z.number().nullable(),
+});
+export const EditionSession = z.object({
+  id: z.string(),
+  day: z.string(),
+  start: z.string(),
+  end: z.string(),
+  stage: z.string(),
+  title: z.string(),
+  speakers: z.array(EditionSpeaker),
+  category: z.string(),
+  alignment: EditionAlignment.nullable(),
+});
+export type EditionSession = z.infer<typeof EditionSession>;
+
+export const EditionTalk = z.object({
+  session_id: z.string(),
+  day: z.string(),
+  scheduled_start: z.string(),
+  scheduled_end: z.string(),
+  title: z.string(),
+  speakers: z.array(EditionSpeaker),
+  category: z.string(),
+  alignment_state: z.enum(["not_yet_indexed", "indexed_not_aligned", "aligned"]),
+  video_id: z.string().nullable(),
+  source_kind: z.enum(["talk", "stream"]).nullable(),
+  start_s: z.number().nullable(),
+  end_s: z.number().nullable(),
+  source: httpUrl().nullable(),
+});
+export type EditionTalk = z.infer<typeof EditionTalk>;
+
+const EditionPage = z.object({
+  limit: z.number().int(),
+  offset: z.number().int(),
+  has_more: z.boolean(),
+  next_offset: z.number().int().nullable(),
+});
+
+export const EditionResponse = z.object({
+  edition: z.object({
+    schema_version: z.literal(1),
+    slug: z.string(),
+    title: z.string(),
+    timezone: z.string(),
+    starts_on: z.string(),
+    ends_on: z.string(),
+    source_url: httpUrl(),
+    source_captured_on: z.string(),
+    organizer: z.string(),
+    streamed_stage: z.string(),
+    tags: z.object({ edition: z.string(), stream: z.string(), talk: z.string() }),
+  }),
+  sessions: z.array(EditionSession),
+  pagination: EditionPage,
+  talks: z.array(EditionTalk),
+  videos: z.array(
+    z.object({
+      video_id: z.string(),
+      title: z.string(),
+      channel: z.string(),
+      duration: z.number(),
+      tags: z.array(z.string()),
+      index_state: z.string(),
+      kind: z.enum(["talk", "stream", "other"]),
+      link: httpUrl(),
+    }),
+  ),
+  video_pagination: EditionPage,
+  notes: z.array(z.string()),
+});
+export type EditionResponse = z.infer<typeof EditionResponse>;
+
 export const Meta = z.object({
   name: z.string(),
   version: z.string(),
