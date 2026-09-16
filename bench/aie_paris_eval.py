@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import subprocess
 import tempfile
@@ -347,12 +348,30 @@ def preflight(manifest: Manifest, price_per_minute: float, checked_at: str) -> s
     )
 
 
+def price_per_minute(value: str) -> float:
+    """A price the preflight can actually put in front of the operator.
+
+    `float` alone accepts `-1`, `nan` and `inf`, and the preflight exists to
+    show a real projected cost before paid calls: `projected cost: nan` is not
+    a figure anyone can approve.
+    """
+    try:
+        price = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"{value!r} is not a number") from exc
+    if not math.isfinite(price) or price <= 0:
+        raise argparse.ArgumentTypeError(
+            f"{value!r} is not a finite price above zero"
+        )
+    return price
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("manifest", type=Path)
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--worker-url", default="http://127.0.0.1:8081")
-    parser.add_argument("--price-per-minute", type=float, required=True)
+    parser.add_argument("--price-per-minute", type=price_per_minute, required=True)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--out", type=Path)
     return parser.parse_args()

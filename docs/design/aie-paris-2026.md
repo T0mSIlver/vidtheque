@@ -489,7 +489,10 @@ Every output starts with this limitation:
 > the intended mention.
 
 The command is a dry run until cost is known. Before submission it requires an
-explicit `--price-per-minute` read from Mistral's official pricing page. The
+explicit `--price-per-minute` read from Mistral's official pricing page, and
+the figure must be finite and above zero: zero, a negative, `nan` or `inf` is
+refused at the argument, because a projection nobody can read is not a price
+preflight. The
 repository does not scrape that page: a scraper is one more thing to break on a
 page the operator is already looking at, and a silently stale number is worse
 than no number. The command prints the price source, the time the operator's
