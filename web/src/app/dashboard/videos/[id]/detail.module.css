@@ -1,24 +1,8 @@
-/* The video detail: a timeline, a provenance table, a grid of keyframes with
-   the machine's reading drawn over them, and a transcript that scrolls.
+/* The video detail: a timeline, provenance, keyframes with their OCR, and a
+   scrolling transcript. Shared vocabulary is the kit's. */
 
-   The values came out of `dashboard/static/dashboard.css`, retired on
-   2026-09-06; DESIGN.md is the source now. The shared vocabulary — panel,
-   figure, grid, pill, notice — is `dashboard.module.css`; this is what only
-   this page draws. */
-
-.crumbs {
-  composes: t-machine-sm from global;
-  margin: var(--s5) 0 0;
-  color: var(--muted);
-}
-
-.crumbs a {
-  text-decoration: none;
-}
-
-/* The header's fact strips. Each separator is glued to the fact *before* it,
-   so a strip that runs out of room ends a line with its separator instead of
-   starting the next one with a dangling middot. */
+/* Separators glue to the fact before them, so a wrapped strip never starts
+   with a middot. */
 .facts {
   composes: t-machine-sm from global;
   margin-top: var(--s2);
@@ -31,23 +15,8 @@
   gap: var(--s1);
 }
 
-/* What a clamp moved, in Python's own words. */
-.notes {
-  composes: t-machine-sm from global;
-  margin: var(--s4) 0 0;
-  padding: 0;
-  list-style: none;
-  color: var(--tone-warn);
-}
-
-.notes li {
-  max-width: var(--note);
-  margin-top: var(--s1);
-}
-
-/* One line under the header naming the stage that failed. Not a `.notice`: a
-   notice's 2px rule is the alarm on this surface, and the failed stage already
-   has one in the table below. */
+/* The failed stage named under the header. Not a notice: the table below
+   already carries the alarm. */
 .alarm {
   composes: t-cell from global;
   margin: var(--s4) 0 0;
@@ -80,15 +49,9 @@
 
 /* --------------------------------------------------------------- timeline */
 
-/* The spine, and the first thing after the header: one bar per shot across the
-   video's duration, positioned as a percentage of the runtime. Real data, so
-   it earns the pixels — this is the video's cut structure, not a sparkline
-   standing in for content. It is not a panel: its label sits under it with the
-   scale, where a film strip's footage counter goes. */
 .timeband {
   position: relative;
-  /* The band's own height, named once: the scrub preview drops below the bars
-     when there is no room above them, and the two must not drift apart. */
+  /* Named once: the preview drops below the bars by this much. */
   --timeline-h: 3rem;
   margin-top: var(--s8);
 }
@@ -104,9 +67,7 @@
   overflow: hidden;
 }
 
-/* A shot can be two seconds of a two-hour talk. The minimum keeps it visible
-   rather than sub-pixel: the bar's *position* is the fact, and a mark you
-   cannot see is a mark that lies about the cut structure. */
+/* A bar's position is the fact, so a two-second shot stays visible. */
 .shotbar {
   position: absolute;
   top: 0;
@@ -114,8 +75,6 @@
   min-width: 3px;
 }
 
-/* The bars are neutral and the one you are pointing at is gold. A band of
-   sixty gold bars would be sixty moments you are pointing at, which is none. */
 .shotbar a {
   display: block;
   height: 100%;
@@ -133,9 +92,7 @@
   z-index: 1;
 }
 
-/* A shot whose every frame was deduplicated: hatched, so it reads as
-   "captured, then dropped" and not as an empty stretch of video. The bar
-   paints its own ground and hatches at full strength on top of it. */
+/* Every frame deduplicated: hatched, captured then dropped. */
 .dedup a {
   background:
     repeating-linear-gradient(135deg, var(--mark) 0 2px, transparent 2px 6px), var(--console);
@@ -147,12 +104,8 @@
     repeating-linear-gradient(135deg, var(--accent) 0 2px, transparent 2px 6px), var(--console);
 }
 
-/* The timeline and the strip are two views of one thing; pointing at either
-   end lights the other, which is the only way that link is visible at all.
-
-   The mark goes on the frame *box*, never on the `<img>` inside it: `.framebtn`
-   clips its overflow and the image fills it exactly, so an offset outline on
-   the image would be drawn entirely inside the clip and paint nothing. */
+/* Pointing at a bar or a card lights the other. The mark goes on the frame
+   box: the box clips, so an outline on the image would paint nothing. */
 .isLinked a {
   background: var(--accent);
 }
@@ -162,26 +115,14 @@
   outline-offset: 2px;
 }
 
-/* ------------------------------------------------------------ scrub preview
-
-   Point anywhere along the band and the shot under the pointer shows its own
-   first keyframe. It reports the *shot*, not the pointer: the span and the
-   kept ratio are index facts and read the same whether a mouse or the arrow
-   keys got here, where a cursor-derived clock would be a number the index
-   never wrote.
-
-   `top: 0` is the band's own top edge and the transform lifts the box above
-   it, so the preview never covers the bars it is describing.
-   `pointer-events: none` because a box that follows the pointer must never be
-   the thing the pointer is over. */
+/* The shot under the pointer, above the bars it describes, never under the
+   pointer itself. */
 .scrubpreview {
   position: absolute;
   top: 0;
   left: 0;
   z-index: 2;
-  /* 12rem — the served frame is 192px, so the picture lands very slightly
-     downscaled, which is the right direction to be wrong in. Fixed, because a
-     preview that resizes with its content jumps as you sweep. */
+  /* Fixed: a preview that resizes jumps as you sweep. */
   width: 12rem;
   padding: var(--s1);
   background: var(--plate);
@@ -190,23 +131,16 @@
   pointer-events: none;
 }
 
-/* Not `hidden`: the box is measured to clamp itself inside the band, and
-   `display: none` has no width to measure. Out of the a11y tree either way —
-   every string it holds is already in the bar's own description. */
+/* Hidden, not `display: none`: the box is measured to clamp itself. */
 .isOff {
   visibility: hidden;
 }
 
-/* Scrolled until the band is near the top of the viewport there is no room
-   above it, and a preview clipped by the window edge is worse than one under
-   the scale. */
 .isBelow {
   top: var(--timeline-h);
   transform: translate(-50%, var(--s2));
 }
 
-/* The box owns the geometry, so a keyframe still loading or gone missing
-   leaves the ground behind and nothing moves. */
 .scrubshot {
   display: block;
   aspect-ratio: 16 / 9;
@@ -222,9 +156,6 @@
   object-fit: cover;
 }
 
-/* Both lines are machine strings — a span the index wrote and a count — so
-   both are tabular by construction. A span whose digits shift width as you
-   sweep the band is the one thing a scrub preview must not do. */
 .scrubspan,
 .scrubmeta {
   display: block;
@@ -270,8 +201,7 @@
   background: var(--mark);
 }
 
-/* The ends label the ends: a centred `0:00` would hang half of itself off the
-   left of the band, and its tick belongs on the band's own edge. */
+/* The ends label the band's own edges. */
 .tick:first-child {
   transform: none;
 }
@@ -288,8 +218,6 @@
   left: 100%;
 }
 
-/* No rule under it: the next panel brings its own hairline a beat later, and
-   two rules that close together read as one thick rule that means nothing. */
 .timebandFoot {
   display: flex;
   flex-wrap: wrap;
@@ -338,9 +266,7 @@
   color: var(--tone-bad);
 }
 
-/* An `absent` stage is a dimmed rule, not a missing row: a stage with no
-   `video_stages` row never ran, which is a different fact from a stage that
-   ran and produced nothing. The pill inside it still carries the word. */
+/* A stage that never ran recedes; its pill still says `absent`. */
 .absent th[scope="row"] code,
 .absent td {
   color: var(--muted);
@@ -362,10 +288,8 @@
 
 /* ----------------------------------------------------------------- frames */
 
-/* One grid for every keyframe on the page. The cell is the size a detection
-   box needs to be read at rather than the size a thumbnail wants to be
-   scanned at — this grid is read, not swept — and the cards start-align so one
-   holding thirty OCR lines grows without stretching the empty ones beside it. */
+/* Cells sized for reading detection boxes; cards start-align so a long OCR
+   list does not stretch its neighbours. */
 .frames {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
@@ -381,10 +305,6 @@
   scroll-margin-top: var(--s8);
 }
 
-/* The frame a shot bar sent you to keeps a mark on it. On the *box*, never on
-   the image inside it: the box clips its overflow and the image fills it
-   exactly, so an offset outline on the image would be drawn entirely inside
-   the clip and paint nothing at all. */
 .framecard:target .framebtn,
 .isSelected .framebtn {
   outline: 2px solid var(--accent);
@@ -396,15 +316,11 @@
   color: var(--gold-hi);
 }
 
-/* The box, not the image, owns the geometry: a keyframe file that has gone
-   missing leaves black where it was, and nothing below it moves. */
+/* The box owns the geometry, so a missing still leaves black and nothing moves. */
 .framebtn {
   position: relative;
   display: block;
   width: 100%;
-  /* A button, because clicking a frame opens the enlarged one in this page
-     rather than navigating to a JPEG. So: no chrome of its own, and the
-     geometry below is the same it had as a link. */
   padding: 0;
   appearance: none;
   border: 0;
@@ -424,8 +340,6 @@
   transition: filter var(--t-fast);
 }
 
-/* A deduplicated frame is dimmed, not hidden. Pointing at it brings it back:
-   a filter change is the one thing hover is allowed to move. */
 .isDup .framebtn img {
   filter: brightness(0.42) saturate(0.7);
 }
@@ -443,7 +357,6 @@
   margin: var(--s1) 0 0;
 }
 
-/* The timecode worth clicking — one of the five things gold means here. */
 .at {
   composes: t-machine from global;
   color: var(--accent);
@@ -459,15 +372,8 @@ a.at:hover {
   border-bottom: 1px dashed var(--seam2);
 }
 
-/* -------------------------------------------------------------------- ocr */
-
-/* The box a card's lines scroll in. The lines themselves, and the detection
-   boxes over the still, are `FrameOverlay`'s: the card and the enlarged frame
-   draw the same pairing off the same coordinates, so those classes live in
-   `frame.module.css` beside the component that draws both.
-
-   Ten lines: past that a slide is a document and the reader wants to scroll
-   it; under it the box shrinks to fit and the grid keeps its rhythm. */
+/* A card's lines scroll past ten; the line and box classes are
+   `frame.module.css`'s, shared with the overlay. */
 .ocrlines {
   composes: t-cell from global;
   margin: var(--s2) 0 0;
@@ -478,9 +384,6 @@ a.at:hover {
   overscroll-behavior: contain;
 }
 
-/* De-emphasised but never dropped: it is part of the receipt, and it is the
-   one number a reader needs when a word looks wrong. A fixed basis so thirty
-   of them read as a column. */
 .conf {
   composes: t-machine-sm from global;
   flex: 0 0 2.25rem;
@@ -492,19 +395,12 @@ a.at:hover {
 
 /* ------------------------------------------------------------- transcript */
 
-/* How big this transcript is, printed above the box. It used to be where you
-   *are* in it — which the scrollbar was already saying, and which moved under
-   the reader on every appended batch. */
 .cuepos {
   composes: t-machine-sm from global;
   margin: 0 0 var(--s2);
   color: var(--muted);
 }
 
-/* Bounded, because a four-hour talk is three thousand cues and the panels
-   under this one are not worth burying; scrolled rather than paged, because
-   the next batch arrives without throwing the frames grid and the reader's
-   place away. */
 .cuebox {
   max-height: 26rem;
   overflow-y: auto;
@@ -512,6 +408,11 @@ a.at:hover {
   padding: var(--s2) var(--s3);
   background: var(--console);
   border: 1px solid var(--seam2);
+}
+
+/* Until the first batch lands, hold roughly the rows it will bring. */
+.cueboxPending {
+  min-block-size: min(26rem, calc(var(--cue-rows, 1) * 1.6rem + var(--s4)));
 }
 
 .cues {
@@ -527,9 +428,7 @@ a.at:hover {
   padding: 2px 0;
 }
 
-/* A cue inside an embedding chunk. The chunk is the unit a vector hit points
-   at, and "what exactly is the embedding unit" is one of the questions this
-   page exists to answer. */
+/* Inside an embedding chunk, the unit a vector hit points at. */
 .inChunk {
   box-shadow: inset 2px 0 0 var(--seam2);
   padding-left: var(--s2);
@@ -567,10 +466,7 @@ a.at:hover {
 
 /* --------------------------------------------------------------- chapters */
 
-/* A timecode and a title, in that order and next to each other. Deliberately
-   not the shared `minirow`, which is a three-column row built for the
-   overview's channels: with two children its space-between throws the title to
-   the far end of a 1400px column, half a metre from the time it belongs to. */
+/* A timecode and its title side by side, not `minirow`'s space-between. */
 .chapters {
   margin: 0;
   padding: 0;
@@ -583,35 +479,4 @@ a.at:hover {
   gap: var(--s3);
   align-items: baseline;
   padding: 2px 0;
-}
-
-/* ------------------------------------------------------------------ pager */
-
-.pager {
-  display: flex;
-  gap: var(--s2);
-  margin-top: var(--s4);
-}
-
-.ghostlink {
-  composes: t-label from global;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 2.125rem;
-  padding: 0 var(--s3);
-  color: var(--fg2);
-  background: transparent;
-  border: 1px solid var(--seam2);
-  cursor: pointer;
-}
-
-.ghostlink:hover {
-  color: var(--gold);
-  border-color: var(--gold-44);
-}
-
-.ghostlink:disabled {
-  color: var(--mark);
-  cursor: default;
 }

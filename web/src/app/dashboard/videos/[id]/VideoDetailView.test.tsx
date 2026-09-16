@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { mountDashboard, type Answer } from "@/test/dashboard";
 import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
+import { REINDEX_REFUSED, REINDEXED, TAG_REFUSED, TAGGED } from "@/test/index-fixtures";
 import {
   DEMO_HALF,
   DEMO_VIDEO,
@@ -10,62 +12,37 @@ import {
   OWNER_HALF,
   OWNER_VIDEO,
 } from "@/test/library-fixtures";
-import { REINDEX_REFUSED, REINDEXED, TAG_REFUSED, TAGGED } from "@/test/index-fixtures";
 import { firstPaint } from "@/test/retry";
+import { VideoDetailView } from "./VideoDetailView";
 
-// The page the dashboard exists for: what the pipeline did to one video, what
-// it produced, and what it read off the screen. So the assertions are the
-// receipts — the seven stages with the model that produced each, the shot band
-// drawn from seconds this page turned into percentages, the OCR boxes at the
-// coordinates the store holds — and the two fields the projection drops.
+vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 
-type Route = { status?: number; body?: unknown; headers?: Record<string, string> };
+// The receipts of one video: the seven stages and their models, the shot band
+// drawn from seconds, the OCR boxes at stored coordinates, and what the
+// projection drops.
 
-async function mount(
-  detail: Route,
+function mount(
+  detail: Answer,
   {
-    // A function where the answer depends on which page was asked for: the
-    // transcript is the one panel here that reads more than once.
-    cues = { body: OWNER_CUES } as Route | ((url: string) => Route),
-    post = { body: REINDEXED } as Route,
+    // A function where the answer depends on which page of cues was asked for.
+    cues = { body: OWNER_CUES } as Answer | ((url: string) => Answer),
+    post = { body: REINDEXED } as Answer,
     search = "",
     session = OWNER_SESSION as unknown,
     videoId = "kCc8FmEb1nY",
   } = {},
 ) {
-  const posts: { path: string; init: RequestInit }[] = [];
-  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input);
-    if (init?.method === "POST") posts.push({ path: url, init });
-    const route: Route =
-      init?.method === "POST"
-        ? post
-        : url.includes("/cues")
-          ? typeof cues === "function"
-            ? cues(url)
-            : cues
-          : url.startsWith("/dashboard/api/library/")
-            ? detail
-            : url === "/dashboard/api/session"
-              ? { body: session }
-              : { status: 404, body: {} };
-    const text = typeof route.body === "string" ? route.body : JSON.stringify(route.body ?? {});
-    return new Response(text, {
-      status: route.status ?? 200,
-      headers: { "content-type": "application/json", ...route.headers },
-    });
+  return mountDashboard(<VideoDetailView videoId={videoId} />, {
+    path: `/dashboard/videos/${videoId}`,
+    search,
+    session,
+    routes: {
+      "/dashboard/api/library/*": detail,
+      "/dashboard/api/videos/*": (request) =>
+        typeof cues === "function" ? cues(request.url) : cues,
+      "POST /dashboard/videos/*": post,
+    },
   });
-  vi.stubGlobal("fetch", fetcher);
-  const { mockNavigation } = await import("@/test/next");
-  const nav = mockNavigation(search, `/dashboard/videos/${videoId}`);
-  const { Chrome } = await import("../../Chrome");
-  const { VideoDetailView } = await import("./VideoDetailView");
-  render(
-    <Chrome>
-      <VideoDetailView videoId={videoId} />
-    </Chrome>,
-  );
-  return { ...nav, fetcher, posts };
 }
 
 /** `OWNER_VIDEO` with a second OCR line on frame 1: the pairing is by index,
@@ -121,8 +98,7 @@ async function bandOf(): Promise<HTMLElement> {
 
 describe("the video detail", () => {
   afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.resetModules();
+    window.history.replaceState(null, "", "/");
   });
 
   it("carries the header, both state words and the source", async () => {
@@ -144,10 +120,6 @@ describe("the video detail", () => {
       "href",
       "https://youtu.be/kCc8FmEb1nY",
     );
-    // The document is named after data the server never saw, in the effect
-    // that runs once the read lands — so it is waited for like every other
-    // consequence of that read, rather than read out of the render that
-    // happened to be on screen when the assertion ran.
     await waitFor(() => expect(document.title).toBe("Let's build GPT: from scratch — vidtheque"));
   });
 
@@ -155,8 +127,7 @@ describe("the video detail", () => {
     await mount({ body: OWNER_VIDEO });
 
     expect(await screen.findByText("What was stored")).toBeInTheDocument();
-    // The breakdown is the bare integer Jinja printed, not a second grouped
-    // figure beside the one above it.
+    // The breakdown is the bare integer, not a second grouped figure.
     expect(screen.getByText("cues").closest("div")).toHaveTextContent("whisperx 6");
     expect(screen.getByText("keyframes").closest("div")).toHaveTextContent("kept of 3 captured");
     expect(screen.getByText("frames with text").closest("div")).toHaveTextContent("2 lines read");
@@ -184,9 +155,7 @@ describe("the video detail", () => {
       "href",
       "/dashboard/videos/kCc8FmEb1nY?frame_offset=0&select=7#frame-7",
     );
-    // …and the native tooltip is gone once the preview is bound: two renderings
-    // of one sentence, the platform's arriving a second later, under a box that
-    // already said it with the frame attached (`dashboard.js:429-435`).
+    // No native tooltip under the preview.
     expect(band.querySelector("[data-shot='0']")).not.toHaveAttribute("title");
     // The scale is the video's runtime quartered, not the band's fallback span.
     const ticks = band.parentElement?.querySelectorAll("p[aria-hidden='true'] span");
@@ -199,9 +168,7 @@ describe("the video detail", () => {
     ]);
   });
 
-  // Every link off this page carries all four bounds, as Jinja's `nav_link`
-  // did: paging the strip must not throw away where the reader had got to in
-  // the transcript, and a page reached by a `?cue_offset=` link stays that link.
+  // Paging the strip keeps the transcript's place, and vice versa.
   it("carries the transcript's bounds across a strip navigation", async () => {
     await mount(
       { body: { ...OWNER_VIDEO, frames: { ...OWNER_VIDEO.frames, limit: 2, has_more: true } } },
@@ -245,11 +212,10 @@ describe("the video detail", () => {
   });
 
   it("draws every OCR box at the coordinates the store holds", async () => {
-    const { container } = { container: document.body };
     await mount({ body: OWNER_VIDEO });
 
     await screen.findByText("Frames, and what the machine read");
-    const boxes = container.querySelectorAll("[aria-hidden='true'][style*='left']");
+    const boxes = document.body.querySelectorAll("[data-ocrbox]");
     // Two of the three keyframes carry a line; the third was deduplicated.
     expect(boxes.length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("nvidia-smi 18304MiB")).toBeInTheDocument();
@@ -272,16 +238,16 @@ describe("the video detail", () => {
 
     const line = screen.getByText("nvidia-smi 18304MiB").closest("li");
     const card = line?.closest("li[id]");
-    const box = card?.querySelector("[aria-hidden='true'][style*='left']");
+    const box = card?.querySelector("[data-ocrbox]");
     expect(box).toBeTruthy();
-    const before = box?.getAttribute("class");
+    expect(box).not.toHaveAttribute("data-lit");
 
     await userEvent.hover(line as HTMLElement);
-    expect(box?.getAttribute("class")).not.toBe(before);
-    expect(line?.getAttribute("class")).toContain("isLit");
+    expect(box).toHaveAttribute("data-lit");
+    expect(line).toHaveAttribute("data-lit");
 
     await userEvent.unhover(line as HTMLElement);
-    expect(box?.getAttribute("class")).toBe(before);
+    expect(box).not.toHaveAttribute("data-lit");
   });
 
   it("pages the strip through the URL, keeping the reader's page size", async () => {
@@ -347,9 +313,7 @@ describe("the video detail", () => {
     expect(screen.queryByRole("link", { name: "← Earlier" })).toBeNull();
   });
 
-  // The transcript's place is in the URL again. Appending in place is how a
-  // batch arrives; it was never a reason for the position to stop being
-  // addressable, and Jinja's two parameters are the ones a reader already has.
+  // Appending in place does not stop the position being addressable.
   it("seeds the transcript from ?cue_offset= and ?cues=", async () => {
     const { fetcher } = await mount(
       { body: OWNER_VIDEO },
@@ -362,9 +326,7 @@ describe("the video detail", () => {
       expect.objectContaining({ credentials: "same-origin" }),
     );
     expect(screen.getByRole("link", { name: "Next 25 cues →" })).toBeInTheDocument();
-    // Real addresses, at the server's own offsets and carrying the strip's
-    // page, exactly as `video.html`'s two links did: a reader can open the next
-    // page of a transcript in a tab, or copy where they got to.
+    // Real addresses at the server's offsets, so a page can go to a tab.
     expect(screen.getByRole("link", { name: "Next 25 cues →" })).toHaveAttribute(
       "href",
       "/dashboard/videos/kCc8FmEb1nY?cues=25&cue_offset=125#transcript",
@@ -375,9 +337,7 @@ describe("the video detail", () => {
     );
   });
 
-  // The empty *page*, which is what `video.html` keyed on: a `?cue_offset=`
-  // past the end of a transcript that does exist met an empty scrollbox with a
-  // pager under it, rather than the panel that says so.
+  // The empty page, not the empty transcript: an offset past the end.
   it("says the page is empty when the offset lands past the end", async () => {
     await mount(
       { body: OWNER_VIDEO },
@@ -424,7 +384,6 @@ describe("the video detail", () => {
   });
 
   it("pages back from a seeded offset and writes where it landed", async () => {
-    const replaceState = vi.spyOn(window.history, "replaceState");
     const { fetcher } = await mount(
       { body: OWNER_VIDEO },
       { search: "cue_offset=100&cues=25", cues: (url) => ({ body: cuePage(url) }) },
@@ -445,12 +404,7 @@ describe("the video detail", () => {
     expect(rows[rows.length - 1]).toBe("cue 124");
     // …and the address bar names where this view now starts, under the panel's
     // own fragment, so the link is one somebody can send.
-    expect(replaceState).toHaveBeenCalledWith(
-      null,
-      "",
-      expect.stringContaining("cue_offset=75#transcript"),
-    );
-    replaceState.mockRestore();
+    expect(window.location.href).toContain("cue_offset=75#transcript");
   });
 
   it("reaches the first cue and then stops offering Earlier", async () => {
@@ -471,8 +425,7 @@ describe("the video detail", () => {
     await waitFor(() => expect(screen.queryByRole("link", { name: "← Earlier" })).toBeNull());
   });
 
-  // `cue.t` is the whole second the endpoint sends for exactly this, and the
-  // timecode has been the link to it since Jinja.
+  // `cue.t` is the whole second the endpoint sends for the deeplink.
   it("makes each cue timecode the deeplink at that second", async () => {
     await mount({ body: OWNER_VIDEO });
     const row = (
@@ -496,10 +449,7 @@ describe("the video detail", () => {
     expect(screen.getByText("No indexing job is linked to this video.")).toBeInTheDocument();
   });
 
-  // §3.6's `DEEPLINK_LEAD` exists so a *quoted moment* is not missed by a
-  // second. A chapter start is not a moment, it is a boundary — two seconds
-  // before it is the previous chapter — so this page builds the href from the
-  // chapter's own start, as Jinja did, and ignores the payload's led `link`.
+  // A chapter start is a boundary, not a quoted moment: no `DEEPLINK_LEAD` (§3.6).
   it("links a chapter at its own start, not two seconds before it", async () => {
     await mount({
       body: {
@@ -574,17 +524,14 @@ describe("the video detail", () => {
         "src",
         "/frames/kCc8FmEb1nY-00001.jpg?w=1280&q=70",
       );
-      // The caption is `video.html`'s `data-caption`, all four facts of it:
-      // the frame's own id, the second it was cut at, its pixel size and its
-      // byte weight. §5.3 puts the last two here rather than on the card,
-      // because they are facts about the file you are now looking at.
+      // Id, second, pixel size and bytes: facts about the file on screen (§5.3).
       expect(
         within(shot).getByText("kCc8FmEb1nY-00001 · 7:10 · 1280×720 · 70 B"),
       ).toBeInTheDocument();
       expect(within(shot).getByText(/shot 1 · sharpness 10.0 · done · 2 line/)).toBeInTheDocument();
       // Both lines, and a box for each at the coordinates the store holds.
       expect(within(shot).getByText("loss 3.14")).toBeInTheDocument();
-      expect(shot.querySelectorAll("[aria-hidden='true'][style*='left']")).toHaveLength(2);
+      expect(shot.querySelectorAll("[data-ocrbox]")).toHaveLength(2);
       // The file itself stays reachable, one click further in.
       expect(within(shot).getByRole("link", { name: "Open the file" })).toHaveAttribute(
         "href",
@@ -600,18 +547,12 @@ describe("the video detail", () => {
     // The frame going into evidence is written in the one place it belongs:
     // `?select=`, the same address a shot bar would have produced.
     it("marks the opened frame in the URL", async () => {
-      const replaceState = vi.spyOn(window.history, "replaceState");
       await mount({ body: TWO_LINES });
       await screen.findByText("Frames, and what the machine read");
 
       await userEvent.click(screen.getByRole("button", { name: "Keyframe 1 at 7:10" }));
 
-      expect(replaceState).toHaveBeenCalledWith(
-        null,
-        "",
-        expect.stringContaining("select=1#frame-1"),
-      );
-      replaceState.mockRestore();
+      expect(window.location.href).toContain("select=1#frame-1");
     });
 
     it("lights a line from its box and a box from its line", async () => {
@@ -620,22 +561,22 @@ describe("the video detail", () => {
       await userEvent.click(screen.getByRole("button", { name: "Keyframe 1 at 7:10" }));
 
       const shot = screen.getByRole("dialog");
-      const boxes = shot.querySelectorAll("[aria-hidden='true'][style*='left']");
+      const boxes = shot.querySelectorAll("[data-ocrbox]");
       const second = within(shot).getByText("loss 3.14").closest("li");
 
       // Point at the second box: its line lights, and only its line.
       await userEvent.hover(boxes[1] as HTMLElement);
-      expect(second?.getAttribute("class")).toContain("isLit");
-      expect(boxes[1].getAttribute("class")).toContain("isLit");
-      expect(boxes[0].getAttribute("class")).not.toContain("isLit");
+      expect(second).toHaveAttribute("data-lit");
+      expect(boxes[1]).toHaveAttribute("data-lit");
+      expect(boxes[0]).not.toHaveAttribute("data-lit");
 
       await userEvent.unhover(boxes[1] as HTMLElement);
-      expect(second?.getAttribute("class")).not.toContain("isLit");
+      expect(second).not.toHaveAttribute("data-lit");
 
       // And the other way: point at the line, the box lights.
       await userEvent.hover(second as HTMLElement);
-      expect(boxes[1].getAttribute("class")).toContain("isLit");
-      expect(boxes[0].getAttribute("class")).not.toContain("isLit");
+      expect(boxes[1]).toHaveAttribute("data-lit");
+      expect(boxes[0]).not.toHaveAttribute("data-lit");
     });
 
     it("closes on Escape and hands the focus back to the card", async () => {
@@ -728,14 +669,9 @@ describe("the video detail", () => {
       expect(screen.queryByText("shot 1 · 1/1 kept")).not.toBeInTheDocument();
     });
 
-    // The keyboard path through this page, and the reason `selectFrame` exists:
-    // the card the bar points at is already on screen, so following the link
-    // would reload the whole page to move a mark and drop the reader at the top
-    // of it. The click is intercepted instead — the mark goes in the URL, the
-    // strip scrolls to that moment, and focus lands on the frame's own button,
-    // which is the control the next Enter should open (`dashboard.js:261-296`).
+    // The card is already on screen: mark it in the URL, scroll to it, and
+    // focus its button rather than reloading the page to move a mark.
     it("selects a frame in place rather than navigating to it", async () => {
-      const replaceState = vi.spyOn(window.history, "replaceState");
       const scroll = vi.fn();
       Element.prototype.scrollIntoView = scroll;
       await mount({ body: OWNER_VIDEO });
@@ -746,16 +682,11 @@ describe("the video detail", () => {
       bar.dispatchEvent(click);
 
       expect(click.defaultPrevented).toBe(true);
-      expect(replaceState).toHaveBeenCalledWith(
-        null,
-        "",
-        expect.stringContaining("select=1#frame-1"),
-      );
+      expect(window.location.href).toContain("select=1#frame-1");
       expect(scroll).toHaveBeenCalledWith({ block: "center", behavior: "smooth" });
       expect(document.activeElement).toBe(
         screen.getByRole("button", { name: "Keyframe 1 at 7:10" }),
       );
-      replaceState.mockRestore();
     });
 
     // …and a bar pointing at a page of the strip this one is not showing has
@@ -803,11 +734,11 @@ describe("the video detail", () => {
       const card = screen.getByRole("button", { name: "Keyframe 1 at 7:10" }).closest("li");
 
       fireEvent.pointerEnter(bars[1]);
-      expect(card?.getAttribute("class")).toContain("isLinked");
-      expect(bars[1].getAttribute("class")).toContain("isLinked");
+      expect(card).toHaveAttribute("data-linked");
+      expect(bars[1]).toHaveAttribute("data-linked");
 
       fireEvent.pointerLeave(bars[1]);
-      expect(card?.getAttribute("class")).not.toContain("isLinked");
+      expect(card).not.toHaveAttribute("data-linked");
     });
   });
 
@@ -835,9 +766,6 @@ describe("the video detail", () => {
       );
       // Not the error state: retrying will produce this answer again.
       expect(screen.queryByRole("button", { name: "try again" })).not.toBeInTheDocument();
-      // The name `views.video_detail` gave this document. The shell is served
-      // before the read that refuses has gone out, so the page renames itself
-      // when the answer comes back.
       await waitFor(() => expect(document.title).toBe("Unknown video — vidtheque"));
     });
 
@@ -899,12 +827,10 @@ describe("the video detail", () => {
 
       await userEvent.click(screen.getByRole("button", { name: "Re-index this video" }));
 
-      expect(posts[0].path).toBe("/dashboard/videos/kCc8FmEb1nY/reindex");
-      expect(posts[0].init.method).toBe("POST");
-      // No fields: the Jinja form posts none either, and the video is named by
-      // the path.
-      expect(String(posts[0].init.body)).toBe("");
-      expect((posts[0].init.headers as Record<string, string>).accept).toBe("application/json");
+      expect(posts()[0].path).toBe("/dashboard/videos/kCc8FmEb1nY/reindex");
+      // No fields: the video is named by the path.
+      expect(posts()[0].fields.toString()).toBe("");
+      expect(posts()[0].headers.get("accept")).toBe("application/json");
 
       // The control does not come back: a second POST would queue a second
       // rebuild of the same video.
@@ -935,8 +861,8 @@ describe("the video detail", () => {
       await userEvent.type(screen.getByLabelText("Add"), "topic:json, series:writes");
       await userEvent.click(screen.getByRole("button", { name: "Apply" }));
 
-      expect(posts[0].path).toBe("/dashboard/videos/kCc8FmEb1nY/tags");
-      const body = new URLSearchParams(String(posts[0].init.body));
+      expect(posts()[0].path).toBe("/dashboard/videos/kCc8FmEb1nY/tags");
+      const body = posts()[0].fields;
       expect(body.get("add")).toBe("topic:json, series:writes");
       expect(body.get("remove")).toBe("");
 

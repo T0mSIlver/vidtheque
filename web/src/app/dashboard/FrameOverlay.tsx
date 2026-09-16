@@ -1,64 +1,32 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type Ref, type RefObject } from "react";
 import type { OcrLine } from "@/lib/dashboard/schemas";
-import dash from "./dashboard.module.css";
+import controls from "./kit/controls.module.css";
 import styles from "./frame.module.css";
 
-// The frame overlay — `search.html`'s and `video.html`'s `<dialog id="shot">`
-// and the half of `static/dashboard.js` that filled them (dashboard.md §5.2,
-// §5.3).
-//
-// For an OCR or a frame hit the picture *is* the evidence, so it opens where
-// the reader is rather than in a tab that has lost the ranking: the still in
-// the row is a thumbnail, and this is the same keyframe at 1280px, where a
-// slide is something you can read. Both surfaces asked for exactly that, so
-// there is one of it — a search hit and a frame card open the same overlay,
-// and the machine's reading of the frame is the optional layer the video page
-// adds on top.
-//
-// **A real `<dialog>`, opened with `showModal()`.** The backdrop, the focus
-// trap, the inert background and the modal semantics are the platform's, and a
-// hand-built overlay would be four re-implementations of them. What is written
-// here is the four things the platform does not do: the backdrop click, which
-// is a two-line hit test because `.shotInner` covers every pixel of the box;
-// taking Escape so that every close runs the one path that hands the focus
-// back; that hand-back itself; and releasing the bytes on close — a 1280px
-// JPEG per frame opened adds up over a browsing session, and nothing needs it
-// once the dialog is shut.
+// One keyframe at 1280px, opened where the reader is: the search results and
+// the video page share it (dashboard.md §5.2, §5.3). A real `<dialog>` with
+// `showModal()`, so the backdrop, focus trap and inertness are the platform's;
+// this adds the backdrop click, the focus hand-back and releasing the bytes.
 
 /** One frame, as the page that opened it describes it. */
 export interface Shot {
-  /** The tool's own id for the frame, which is what a bug report quotes. It is
-   *  also the remount key: which line is lit is reset by opening another
-   *  frame, not by an effect that would cascade a second render onto every
-   *  open. */
+  /** The tool's id; also the remount key that resets which line is lit. */
   frameId: string;
-  /** The keyframe at the lightbox width, signed by whoever signed the row's. */
   large: string;
   alt: string;
-  /** `frame_id · clock · …` — the facts the caption has always carried. */
   caption: ReactNode;
-  /** A second, quieter line under it, for a page that has more to say. */
   facts?: ReactNode;
-  /** The receipt, when the moment had one: the same second out on YouTube. */
+  /** The same second on YouTube, when the moment had one. */
   link: string | null;
-  /** The JPEG itself, for a page that offers the file as well as the second. */
   file?: string;
-  /** What the machine read off this frame. **Present, even empty, is what asks
-   *  for the OCR layer**: the boxes over the still, the lines beside it and the
-   *  toggle that turns the boxes off. A page with no reading to show — the
-   *  search results — passes nothing and gets the picture and its caption. */
+  /** Present, even empty, asks for the OCR layer. */
   lines?: OcrLine[];
 }
 
-/**
- * The detection boxes over a still, at the 0–1 coordinates the store holds.
- *
- * Shared by the frame card and the overlay because the pairing is the same
- * fact in both, and a second implementation is a second thing to get out of
- * step. The card passes no `onLit`, which is what makes its boxes inert.
- */
+/** Detection boxes at the stored 0–1 coordinates. Without `onLit` (the card)
+ *  they are inert. */
 export function OcrBoxes({
   lines,
   lit,
@@ -66,7 +34,6 @@ export function OcrBoxes({
 }: {
   lines: OcrLine[];
   lit: number | null;
-  /** Only the enlarged frame passes this: at card size a box is not a target. */
   onLit?: (index: number | null) => void;
 }) {
   return (
@@ -75,6 +42,8 @@ export function OcrBoxes({
         <span
           aria-hidden="true"
           className={`${styles.ocrbox} ${lit === index ? styles.isLit : ""}`}
+          data-lit={lit === index || undefined}
+          data-ocrbox=""
           key={line.line_no}
           onMouseEnter={onLit && (() => onLit(index))}
           onMouseLeave={onLit && (() => onLit(null))}
@@ -84,8 +53,7 @@ export function OcrBoxes({
             width: `${(line.box[2] - line.box[0]) * 100}%`,
             height: `${(line.box[3] - line.box[1]) * 100}%`,
           }}
-          // A title, not a label: the text is listed beside the frame, and a
-          // text node here would sit on top of the thing it describes.
+          // The text is listed beside the frame; a node here would cover it.
           title={onLit ? line.text : undefined}
         />
       ))}
@@ -93,13 +61,7 @@ export function OcrBoxes({
   );
 }
 
-/**
- * Every line the machine read off one frame, in the order it read them.
- *
- * `line_no` is the key and the index is the linkage: the box drawn over the
- * still carries the same number, which is what makes the pairing hold for
- * every line rather than for the handful a stylesheet could enumerate.
- */
+/** The lines read off one frame; the index pairs each with its box. */
 export function OcrLines({
   className,
   lines,
@@ -111,13 +73,14 @@ export function OcrLines({
   lines: OcrLine[];
   lit: number | null;
   onLit: (index: number | null) => void;
-  scroller?: React.Ref<HTMLOListElement>;
+  scroller?: Ref<HTMLOListElement>;
 }) {
   return (
     <ol className={className} ref={scroller}>
       {lines.map((line, index) => (
         <li
           className={`${styles.ocrline} ${lit === index ? styles.isLit : ""}`}
+          data-lit={lit === index || undefined}
           key={line.line_no}
           onBlur={() => onLit(null)}
           onFocus={() => onLit(index)}
@@ -133,12 +96,8 @@ export function OcrLines({
   );
 }
 
-/**
- * The dialog itself. Mounted for the life of the page and empty until a frame
- * is opened, so the checkbox keeps its answer across opens — which state the
- * boxes are in is a preference, not a fact about one frame — and so closing it
- * releases the JPEG.
- */
+/** Mounted for the life of the page and empty until a frame opens, so the
+ *  boxes toggle is kept across opens and closing releases the JPEG. */
 export function FrameOverlay({ shot, onClose }: { shot: Shot | null; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -150,8 +109,7 @@ export function FrameOverlay({ shot, onClose }: { shot: Shot | null; onClose: ()
     if (!element) return;
     if (shot) {
       if (!element.open) {
-        // What the reader was on before the dialog took the focus trap. Read
-        // before `showModal()`, because after it the answer is the dialog.
+        // Read before `showModal()`, after which the answer is the dialog.
         returnTo.current = document.activeElement;
         element.showModal();
       }
@@ -160,20 +118,14 @@ export function FrameOverlay({ shot, onClose }: { shot: Shot | null; onClose: ()
     }
     if (!element.open) return;
     element.close();
-    // Only once the dialog is shut: everything outside an open modal is inert,
-    // so a `focus()` before `close()` lands nowhere.
+    // Only once shut: outside an open modal everything is inert.
     const back = returnTo.current;
     returnTo.current = null;
     if (back instanceof HTMLElement) back.focus({ preventScroll: true });
   }, [shot]);
 
-  // Whatever closed the element — the platform, a `close()` from the effect
-  // above, a form inside it — comes back through the element's own `close`
-  // event. A native listener rather than React's `onClose`: `close` does not
-  // bubble, so it is the one dialog event a delegating renderer has had to
-  // special-case, and a page whose overlay will not reopen because that special
-  // case moved is not a thing to find out in production. The effect above only
-  // calls `close()` while the dialog is open, so the two cannot loop.
+  // `close` does not bubble, so a native listener rather than React's
+  // delegated `onClose`.
   useEffect(() => {
     const node = dialog.current;
     if (!node) return;
@@ -186,16 +138,12 @@ export function FrameOverlay({ shot, onClose }: { shot: Shot | null; onClose: ()
     <dialog
       aria-labelledby="shot-caption"
       className={styles.shot}
-      // The dialog element *is* the backdrop: `.shotInner` covers every pixel
-      // of the box, so a click that landed on the dialog itself landed outside
-      // the picture.
       onClick={(event) => {
         if (event.target === dialog.current) onClose();
       }}
       onKeyDown={(event) => {
         if (event.key !== "Escape") return;
-        // The platform would close it on its own; taking the key means every
-        // close runs the one path that hands the focus back.
+        // Every close runs the one path that hands focus back.
         event.preventDefault();
         onClose();
       }}
@@ -215,7 +163,6 @@ export function FrameOverlay({ shot, onClose }: { shot: Shot | null; onClose: ()
   );
 }
 
-/** One frame at 1280px: the still with its boxes over it, and its lines beside. */
 function Stage({
   closeRef,
   onClose,
@@ -223,7 +170,7 @@ function Stage({
   shot,
   showBoxes,
 }: {
-  closeRef: React.RefObject<HTMLButtonElement | null>;
+  closeRef: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
   onShowBoxes: (on: boolean) => void;
   shot: Shot;
@@ -233,9 +180,7 @@ function Stage({
   const [lit, setLit] = useState<number | null>(null);
   const read = shot.lines;
 
-  /** Light the box and the line that share an index; a box also brings its
-   *  line into view, because a line hovering itself is already where the
-   *  reader is looking. */
+  /** A box also brings its line into view; a hovered line already is. */
   const light = (index: number | null, fromBox: boolean) => {
     setLit(index);
     if (index === null || !fromBox) return;
@@ -254,7 +199,7 @@ function Stage({
           {shot.facts ? <p className={styles.shotFacts}>{shot.facts}</p> : null}
         </div>
         <button
-          className={`${dash.ghostlink} ${styles.shotClose}`}
+          className={`${controls.ghostlink} ${styles.shotClose}`}
           onClick={onClose}
           ref={closeRef}
           type="button"
@@ -263,13 +208,8 @@ function Stage({
         </button>
       </div>
 
-      {/* The stage owns the geometry, so a box can never land outside the
-          picture and the dialog does not resize under the pointer while the
-          bytes arrive. */}
       <div className={styles.shotStage}>
-        {/* A signed, expiring `/frames/…` URL on Python's origin, already sized
-            by the API. The optimizer would fetch and cache it past its own
-            signature. */}
+        {/* A signed `/frames/…` URL, already sized: not for the optimizer. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img alt={shot.alt} className={styles.shotImg} decoding="async" src={shot.large} />
         {read ? (
@@ -327,17 +267,9 @@ function Stage({
   );
 }
 
-/**
- * Bring a line into view **only when it is not already in it**.
- *
- * `scrollIntoView({ block: "nearest" })` was the obvious call and it was the
- * bug (Tom, 2026-08-10): `inline` defaults to `"nearest"` too, so moving the
- * pointer between two adjacent detection boxes slid the whole list sideways
- * under the reader. This scrolls the scroller itself, on one axis, by the
- * smallest amount that puts the line inside — and does nothing at all when it
- * is inside already. Instant, never smooth: it is a correction, not a journey,
- * which is also what `prefers-reduced-motion` asks of it.
- */
+/** Scroll the list on its own vertical axis, by the least that shows the line,
+ *  and not at all when it is visible — `scrollIntoView` also scrolls inline
+ *  (docs/LESSONS.md). */
 function reveal(line: HTMLElement, scroller: HTMLElement) {
   const box = scroller.getBoundingClientRect();
   const item = line.getBoundingClientRect();

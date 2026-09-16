@@ -1,18 +1,9 @@
-/* ------------------------------------------------------------ the overlay
-
-   `search.html`'s and `video.html`'s `<dialog id="shot">`, which were always
-   the same overlay on the same contract (dashboard.md §5.2, §5.3): a 1280px
-   keyframe, its caption, the second it came from, and a close path. One block,
-   because two copies of a modal drift — one of them centres itself and the
-   other does not, and nobody finds out until a screenshot.
-
-   The one thing on these surfaces that has been lifted off the wall, so it is
-   the one thing that casts a shadow. */
+/* The frame overlay the search results and the video page share
+   (dashboard.md §5.2, §5.3). The one lifted object, so the one shadow. */
 .shot {
   width: min(96vw, 72rem);
   max-width: min(96vw, 72rem);
-  /* Spelled out rather than left to the user-agent sheet: the reset zeroes
-     every margin, and a modal with none lands in the top-left corner. */
+  /* The reset zeroes margins; a modal without one lands top-left. */
   margin: auto;
   padding: 0;
   color: var(--fg);
@@ -25,14 +16,12 @@
   background: var(--scrim);
 }
 
-/* The dialog element is the *backdrop*: this covers every pixel of the box, so
-   a click that landed on the dialog itself landed outside the picture. */
+/* Covers the box, so a click on the dialog itself is a backdrop click. */
 .shotInner {
   padding: var(--s3);
 }
 
-/* The caption and the close control belong above the picture, not on top of
-   it: the top-right corner of a frame is where a slide puts its title. */
+/* Above the picture: a slide puts its title top right. */
 .shotHead {
   display: flex;
   gap: var(--s3);
@@ -58,8 +47,8 @@
   flex: 0 0 auto;
 }
 
-/* The stage owns the geometry, so a box can never land outside the picture and
-   the dialog does not resize under the pointer while the bytes arrive. */
+/* The stage owns the geometry: boxes stay on the picture, and the dialog does
+   not resize while the bytes arrive. */
 .shotStage {
   position: relative;
   aspect-ratio: 16 / 9;
@@ -78,20 +67,15 @@
 
 /* ------------------------------------------------------------------- ocr */
 
-/* The Lime Rule, and this grid is the whole of it: `--seen` marks what the
-   machine read off the screen — the detection box, the line it points at, and
-   nothing else. It is not a second accent and it appears on no other dashboard
-   page. The classes live here rather than beside the frame grid because the
-   overlay and the card draw the same pairing and a second implementation is a
-   second thing to get out of step. */
+/* The Lime Rule: `--seen` marks what the machine read off the screen — the
+   box and its line — and nothing else. Shared by the card and the overlay. */
 .ocrbox {
   position: absolute;
   border: 1px solid var(--seen-24);
   transition:
     border-color var(--t-fast),
     background-color var(--t-fast);
-  /* At card size a detection box is a few millimetres of screen, and a pointer
-     aimed at one would only be stealing the click that opens the frame. */
+  /* At card size a box would steal the click that opens the frame. */
   pointer-events: none;
 }
 
@@ -101,19 +85,14 @@
   align-items: baseline;
   padding: 2px 0 2px var(--s2);
   scroll-margin: var(--s2);
-  /* One step louder than the box at rest: a 1px rule down the left of a text
-     line has a fraction of a detection box's perimeter to be seen in, and this
-     rule is what says "the machine read this off the screen" to a reader who
-     never points at anything. */
+  /* One step louder than a box at rest: a rule has less perimeter to show. */
   border-left: 1px solid var(--seen-48);
   transition:
     border-color var(--t-fast),
     background-color var(--t-fast);
 }
 
-/* Point at a line, light its box; point at a box, light its line. The pairing
-   is by index, which is what makes it hold for *every* line rather than for
-   the handful a stylesheet could enumerate as pairs. */
+/* A line and its box light together, paired by index. */
 .ocrbox.isLit {
   border-color: var(--seen);
   border-width: 1.5px;
@@ -133,9 +112,7 @@
   overflow-wrap: anywhere;
 }
 
-/* De-emphasised but never dropped: it is part of the receipt, and it is the
-   one number a reader needs when a word looks wrong. A fixed basis so thirty
-   of them read as a column. */
+/* Part of the receipt; a fixed basis so a list of them reads as a column. */
 .conf {
   composes: t-machine-sm from global;
   flex: 0 0 2.25rem;
@@ -150,9 +127,7 @@
   inset: 0;
 }
 
-/* Here the boxes *are* targets — at this size a detection box is something a
-   pointer can find, which is the whole reason the two-way interaction lives in
-   the overlay rather than over a 512px thumbnail in the grid. */
+/* At this size a box is a target, so the pairing runs both ways here. */
 .shotBoxes .ocrbox {
   border-color: var(--seen);
   border-width: 1.5px;
@@ -160,14 +135,8 @@
   cursor: default;
 }
 
-/* The frame's lines, beside the frame, at a size you can read a slide off. Two
-   columns where there is room: a transcription of a dense slide is thirty
-   short strings and one long column of them would push the picture off screen.
-
-   A grid, not multicol (Tom, 2026-08-10): `columns: 2` on a box with a bounded
-   height paginates the overflow *sideways*, so pointing at a detection box
-   slid the whole list under the pointer. A grid overflows down, which is the
-   direction this box has always claimed to scroll. */
+/* A grid, not multicol: bounded multicol overflows sideways and slid the list
+   under the pointer (docs/LESSONS.md). */
 .shotLines {
   composes: t-cell from global;
   display: grid;
@@ -194,8 +163,7 @@
   gap: var(--s2) var(--s4);
   align-items: baseline;
   justify-content: space-between;
-  /* Held open whether or not the moment had a receipt to link: an overlay that
-     changes height with the hit is one that moves under the pointer. */
+  /* Held open with or without a link, so the overlay keeps its height. */
   min-height: var(--s4);
   margin-top: var(--s2);
 }
