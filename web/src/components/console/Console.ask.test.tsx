@@ -11,6 +11,7 @@ import {
   frame,
   hit,
   mountConsole,
+  never,
   openStream,
   QUESTION_BOX,
   SEARCH_BOX,
@@ -50,6 +51,25 @@ describe("the console in ask mode", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it("keeps both modes' cold panels and controls mounted, only the active one live", async () => {
+    vi.stubGlobal("fetch", vi.fn(never));
+    const user = userEvent.setup();
+    const { container } = mountConsole();
+    const askExample = screen.getByText("Why do agents write bad AGENTS.md?");
+    const searchExample = screen.getByText("context window costs money tokens");
+    const chips = screen.getByRole("group", { name: "Search which channel", hidden: true });
+    expect(askExample.closest("[inert]")).toBeNull();
+    expect(searchExample.closest("[inert]")).not.toBeNull();
+    expect(chips.hasAttribute("inert")).toBe(true);
+
+    await user.click(screen.getByRole("button", { name: "search" }));
+    expect(screen.getByText("Why do agents write bad AGENTS.md?")).toBe(askExample);
+    expect(askExample.closest("[inert]")).not.toBeNull();
+    expect(searchExample.closest("[inert]")).toBeNull();
+    expect(chips.hasAttribute("inert")).toBe(false);
+    expect(container.querySelectorAll("button[type=submit]")).toHaveLength(1);
   });
 
   it("loads a shared question without firing, and fires on click", async () => {

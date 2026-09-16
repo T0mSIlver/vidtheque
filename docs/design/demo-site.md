@@ -1118,12 +1118,14 @@ Layout, top to bottom:
    `no hits` / `refused`), then the action. The state cell is the honest signal
    that something is running (the Motion Law's alternative to a spinner), and it
    is a word first and a colour second.
-3. **Controls row** — filter chips on the left (`all` / `transcript` /
-   `on-screen text` / `frames`, mapping to `content_type`, `all` by default),
-   and on the right a two-pill **mode switch**, `search | ask ✨`. The switch is
-   hidden entirely when `ask_enabled` is false. In ask mode the filter chips
-   are hidden rather than disabled: the model picks the channel, so a filter
-   there would be a control that does nothing.
+3. **Mode tabs and controls row** — a two-tab **mode switch**, `search | ask ✨`,
+   sits on the query bar's top edge, hidden entirely when `ask_enabled` is
+   false. Under the bar, one row: the filter chips (`all` / `transcript` /
+   `on-screen text` / `frames`, mapping to `content_type`, `all` by default) in
+   search, a one-line note in ask, where the model picks the channel. *Amended
+   2026-09-16:* both modes' row contents, submit labels and cold-page panels
+   share one grid cell each, the inactive one `visibility: hidden` and `inert`,
+   so switching modes moves nothing on the page.
 4. **Results** — one card per *video*, hairline-separated (§6.5): a header with
    the frame, the title, the channel and the moment count, and under it that
    video's moments — timestamp, source badges, one line of snippet, each a link
