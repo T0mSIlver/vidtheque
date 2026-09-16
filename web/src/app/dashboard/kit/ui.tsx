@@ -170,11 +170,14 @@ export function DashLink({
   href,
   className,
   children,
+  scroll,
   ...rest
 }: {
   href: string;
   className?: string;
   children: ReactNode;
+  /** `false` keeps the scroll position across the navigation. */
+  scroll?: boolean;
   "data-add-videos"?: string;
   "data-empty-add"?: string;
 } & Pick<
@@ -183,7 +186,7 @@ export function DashLink({
 >) {
   if (isPorted(href)) {
     return (
-      <Link className={className} href={href} {...rest}>
+      <Link className={className} href={href} scroll={scroll} {...rest}>
         {children}
       </Link>
     );

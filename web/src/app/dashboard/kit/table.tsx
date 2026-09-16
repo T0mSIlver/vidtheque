@@ -64,6 +64,7 @@ export function Pager({
   previous = "← Previous",
   next = `Next ${limit} →`,
   label = "Pagination",
+  scroll,
 }: {
   limit: number;
   offset: number;
@@ -72,17 +73,23 @@ export function Pager({
   previous?: string;
   next?: string;
   label?: string;
+  /** `false` for a pager whose page replaces a panel in place. */
+  scroll?: boolean;
 }) {
   if (!offset && !hasMore) return null;
   return (
     <nav className={styles.pager} aria-label={label}>
       {offset ? (
-        <DashLink className={controls.ghostlink} href={href(Math.max(offset - limit, 0))}>
+        <DashLink
+          className={controls.ghostlink}
+          href={href(Math.max(offset - limit, 0))}
+          scroll={scroll}
+        >
           {previous}
         </DashLink>
       ) : null}
       {hasMore ? (
-        <DashLink className={controls.ghostlink} href={href(offset + limit)}>
+        <DashLink className={controls.ghostlink} href={href(offset + limit)} scroll={scroll}>
           {next}
         </DashLink>
       ) : null}
