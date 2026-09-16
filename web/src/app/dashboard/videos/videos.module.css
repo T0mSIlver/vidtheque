@@ -1,15 +1,7 @@
-/* The videos table: a control band over a grid, and a pager under it.
-
-   The values came out of `dashboard/static/dashboard.css`, retired on
-   2026-09-06; DESIGN.md is the source now. Everything shared with the other
-   pages is in `dashboard.module.css` — the panel, the figure, the pill, the grid, and
-   since the jobs table the control band, the count line and the pager as well;
-   what is here is what only this page draws. */
+/* The videos table and the two writes on a video. */
 
 /* ------------------------------------------------------------ date ranges */
 
-/* A range is one question asked with two inputs, so it is a fieldset — and the
-   browser's own box around it goes, like every other box here. */
 .rangeField {
   flex: 0 0 auto;
 }
@@ -24,9 +16,7 @@
   color: var(--mark);
 }
 
-/* Fixed width rather than `auto`: the two ends of a range must be the same
-   width whether or not either has a value, or an empty second date collapses
-   and the dash stops reading as a range. */
+/* Fixed width, so an empty end does not collapse the range. */
 .rangeField input {
   width: 8.5rem;
   padding-right: var(--s1);
@@ -45,11 +35,8 @@
   text-decoration: underline;
 }
 
-/* The column the table is ordered by. No caret glyph: this surface has no icon
-   language, and inventing one for a sort arrow is a much bigger new primitive
-   than a colour. The head's own inset underline is redrawn in the signal and
-   the label goes to the foreground; `aria-sort` carries it to a screen
-   reader. */
+/* The sorted column: no caret glyph (no icon language), an accent underline,
+   and `aria-sort` for a screen reader. */
 .videos thead th[aria-sort] {
   color: var(--fg);
   box-shadow: inset 0 -1px 0 var(--accent);
@@ -59,15 +46,11 @@
   color: var(--fg);
 }
 
-/* The row you are pointing at: one plate up, and a 1px gold edge in the
-   gutter. The edge, not the fill, is what makes it readable at a glance. */
 .videos tbody tr:hover {
   background: var(--plate);
   box-shadow: inset 1px 0 0 var(--accent);
 }
 
-/* Scoped through `.videos` so it outweighs the shared grid's own padding
-   without reaching for `!important`. */
 .videos .colShot {
   width: 96px;
   padding-right: 0;
@@ -77,18 +60,11 @@
   min-width: 16rem;
 }
 
-/* A state is one word and reads as one: `indexing` broke over two lines in a
-   narrow column and came out as "index ing". */
 .colState {
   white-space: nowrap;
 }
 
-/* --------------------------------------------------------------- coverage */
-
-/* Three legs, three letters, and the word behind each in the title and for a
-   screen reader. This is what the table shows instead of per-row counts (§4.2)
-   — one query already computes the booleans, where a count per row is the
-   fan-out the rule exists to prevent. */
+/* The tool's own lowercase `t/o/f`, with the word behind each for a reader. */
 .coverage {
   display: inline-flex;
   gap: 2px;
@@ -102,9 +78,6 @@
   width: 1.25rem;
   height: 1.25rem;
   letter-spacing: 0;
-  /* The letters are the tool's own `t/o/f`, and they are lowercase there. The
-     label face uppercases by default; this is the one place that would be the
-     page respelling a value. */
   text-transform: none;
   border: 1px solid var(--seam);
 }
@@ -132,15 +105,8 @@
   font-size: 0.5625rem;
 }
 
-/* -------------------------------------------------------------- the writes
+/* -------------------------------------------------------------- the writes */
 
-   The row's own action, and the panel at the foot of a video's page. Both are
-   here rather than in either page's module because the re-index is on both, and
-   one control styled twice is how two pages start looking like two surfaces. */
-
-/* Deliberately narrow: an action column is a lane, not a purpose. A table of
-   sixty rows with a wide action column reads as a control panel, and the row is
-   still the thing you came for. */
 .colActions {
   white-space: nowrap;
 }
@@ -149,70 +115,22 @@
   vertical-align: middle;
 }
 
-.colActions .ghostlink {
+.colActions > a {
   margin-left: var(--s1);
 }
 
-/* The receipt replaces a 90px button with a 16-character job id, and the lane
-   was sized for the button. Block rather than inline, so the id takes the
-   cell's width and the Tag link drops under it: the row grows by a line instead
-   of the table growing out from under the seven columns the reader came for. */
-.colActions .outcome {
-  display: flex;
+/* A job id replaces the button: it takes the lane's width and the Tag link
+   drops under it, rather than widening the table. */
+.colActions > [data-write] {
+  display: inline-flex;
   white-space: normal;
   overflow-wrap: anywhere;
 }
 
-/* One step down from the 34px chassis height: a control at full height inside
-   a 34px row touches the rules above and below it. */
-.rowbutton {
-  composes: t-label-sm from global;
-  height: var(--s6);
-  padding: 0 var(--s2);
-  color: var(--fg2);
-  background: transparent;
-  border: 1px solid var(--seam2);
-  letter-spacing: 0.17em;
-  cursor: pointer;
-}
-
-.rowbutton:hover:enabled {
-  color: var(--gold);
-  border-color: var(--gold-44);
-}
-
-.rowbutton:disabled {
-  color: var(--fg3);
-  border-color: var(--seam);
-  cursor: not-allowed;
-}
-
-/* What the route answered, in the control's place. None of these actions is
-   repeatable in the same breath, and a button that comes back invites a second
-   POST of a rebuild that is already queued. */
-.outcome {
-  composes: t-machine-sm from global;
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: var(--s1);
-  align-items: center;
-  color: var(--fg2);
-  white-space: normal;
-}
-
-.outcomeBad {
-  color: var(--tone-bad);
-}
-
-/* Two actions and no third, side by side on the video's own page. The `split`
-   grid above them puts a top margin on a second `.panel`; neither of these is
-   one, so both start on the panel title's own baseline. */
 .manageAction {
   min-width: 0;
 }
 
-/* `composes` takes a simple class selector only, so the heading carries its own
-   class rather than being reached through the action that owns it. */
 .label {
   composes: t-label from global;
   display: block;
@@ -220,8 +138,7 @@
   color: var(--muted);
 }
 
-.manageAction > .rowbutton,
-.manageAction > .outcome {
+.manageAction > [data-write] {
   display: block;
   margin-top: var(--s3);
 }
@@ -246,28 +163,17 @@
   margin-top: var(--s3);
 }
 
-/* Where the split becomes one column, the second action needs the gap the grid
-   was giving it sideways — the same width `dashboard.module.css` stacks a
-   `.panel` at, and the same step it gives one. Above it they are two columns
-   and a margin here would push one of them down a band for nothing. */
 @media (max-width: 70rem) {
   .manageAction + .manageAction {
     margin-top: var(--s8);
   }
 }
 
-/* This table stacks, so it is one of the grids that must *not* pick up the
-   minimum width `dashboard.module.css` gives the ones that stay tables and
-   scroll. `.stacked` is that switch as well as the face the column names are
-   drawn in. */
 .videos {
-  composes: stacked from "../dashboard.module.css";
+  composes: stacked from "../kit/table.module.css";
 }
 
-/* 52rem — the dashboard's own breakpoint, the one DESIGN.md registers for it:
-   the grid stops being a grid, each row becomes its own block and every cell
-   wears the column's name, which is what `data-label` is on the cells for.
-   Eight columns run out of width well before `--bp-hand` does. */
+/* Each row a block, each cell wearing its column's name (`data-label`). */
 @media (max-width: 52rem) {
   .videos thead {
     display: none;
@@ -279,10 +185,7 @@
     border-bottom: 1px solid var(--seam);
   }
 
-  /* `text-align` is reset here rather than left to the cell: a `.num` column
-     carries a right alignment that, once the cell is a flex row with a fixed
-     label box, right-aligns the label inside it — so `DURATION` sat at a
-     different indent from `PUBLISHED`. */
+  /* Reset `text-align` so a `.num` label does not hug its value. */
   .videos tbody th,
   .videos tbody td {
     display: flex;
@@ -293,17 +196,11 @@
     text-align: left;
   }
 
-  /* The row's headline and its machine line are two lines, not two columns:
-     the cells around them are label-and-value pairs, and the one cell that is
-     the row's *name* should not be squeezed into that shape as well. The two
-     stacked tables in `jobs.module.css` say the same thing about their own. */
   .videos tbody th {
     flex-direction: column;
     gap: 0;
   }
 
-  /* The label's own face and its indent are `dashboard.module.css`'s
-     `.stacked`; this is the switch that turns it on at this table's width. */
   .videos tbody td::before {
     content: attr(data-label);
   }
