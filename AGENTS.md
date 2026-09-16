@@ -51,6 +51,8 @@ operational rules an incident or a launch paid for.
 - `web/` is the Next.js front end (pnpm, TypeScript, CSS Modules), a separate
   deployable over the `/api/*` facade. DESIGN.md's no-build-step rule binds
   the Python-served pages, not `web/`. `pnpm lint` and `tsc --noEmit` green.
+- Comments are short why-comments (1–3 lines; a `§` pointer is fine). Rationale
+  lives in `docs/`, decisions in `DECISIONS.md`, incidents in `LESSONS.md`.
 
 ## Git — multi-agent, incident-derived; follow exactly
 
