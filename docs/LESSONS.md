@@ -104,6 +104,19 @@ auditable years later. `DEFAULT_RATE_LIMIT_BACKOFF_S = 5400` means nothing
 alone; with `research/ytdlp-usage-audit-2026-08-10.md` beside it, it is a
 finding.
 
+## The web front end
+
+**A header `proxy.ts` sets on a rendered document does not reach the wire.**
+The dynamic render overwrites it: the proxy set `Cache-Control: no-store` on
+every `/dashboard` page for the whole port, and `curl -D-` showed Next's own
+`no-cache, must-revalidate` throughout. Response headers that must stick go in
+`next.config.ts` `headers()`, and a test asserts the value, not the comment.
+
+**A development rewrite in `afterFiles` shadows dynamic routes.** `afterFiles`
+runs after static pages but before dynamic segments, so a `/dashboard/:path*`
+forward sent every detail page (`/dashboard/videos/{id}` and its siblings) to
+Python's 404 in development. Forwards go in `beforeFiles`, named exactly.
+
 ## Design and assets
 
 **Vendored fonts stay under a 200 KB total budget**, OFL-licensed and
