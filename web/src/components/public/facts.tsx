@@ -2,7 +2,7 @@
 // streams in under its own <Suspense>.
 import { RailMeta } from "@/components/Rail";
 import { browsePath, claudeCommand, corpusCount } from "@/lib/api/meta";
-import { readMeta } from "@/lib/search";
+import { readMeta } from "@/lib/api/search";
 import { CopyRows } from "./CopyRows";
 import styles from "./footer.module.css";
 

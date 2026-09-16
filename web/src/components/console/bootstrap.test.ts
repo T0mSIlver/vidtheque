@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const reads = vi.hoisted(() => ({ readMeta: vi.fn(), searchCorpus: vi.fn() }));
-vi.mock("@/lib/search", () => reads);
+vi.mock("@/lib/api/search", () => reads);
 import { loadConsole } from "./bootstrap";
 
 const OK = { kind: "ok", meta: { ask_enabled: true } };

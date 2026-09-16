@@ -19,7 +19,7 @@ const META: Meta = {
 };
 
 const meta = vi.hoisted(() => ({ outcome: {} as unknown }));
-vi.mock("@/lib/search", () => ({ readMeta: async () => meta.outcome }));
+vi.mock("@/lib/api/search", () => ({ readMeta: async () => meta.outcome }));
 
 async function facts(outcome: unknown) {
   meta.outcome = outcome;

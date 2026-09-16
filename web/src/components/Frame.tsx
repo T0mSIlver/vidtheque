@@ -13,7 +13,7 @@ export function Frame({
 }: {
   src: string | null;
   alt: string;
-  /** What the placeholder prints instead of a frame (`lib/group`'s `channelWord`). */
+  /** What the placeholder prints instead of a frame (`lib/api/group`'s `channelWord`). */
   label?: string;
   width?: 320 | 960;
   priority?: boolean;

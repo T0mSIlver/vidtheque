@@ -1,7 +1,7 @@
 // What the console's first paint needs, resolved on the server: whether ask
 // exists, which snapshot the URL names, and page one for a search deep link.
 import type { SearchOutcome } from "@/lib/api/outcome";
-import { readMeta, searchCorpus } from "@/lib/search";
+import { readMeta, searchCorpus } from "@/lib/api/search";
 import type { Boot } from "./Cold";
 import { parseSnapshot, type Snapshot } from "./url";
 

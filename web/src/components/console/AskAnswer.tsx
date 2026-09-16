@@ -2,8 +2,8 @@ import { Fragment } from "react";
 import { FrameShot } from "@/components/Frame";
 import { Receipt } from "@/components/Receipt";
 import type { AskAnswer, Citation, EditionTalk } from "@/lib/api/schemas";
-import { labelCitation } from "@/lib/edition";
-import { badgeWords, channelWord, presentationOf } from "@/lib/group";
+import { labelCitation } from "@/lib/api/edition";
+import { badgeWords, channelWord, presentationOf } from "@/lib/api/group";
 import styles from "./console.module.css";
 
 export function Answer({
