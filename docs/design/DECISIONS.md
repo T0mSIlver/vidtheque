@@ -18,6 +18,43 @@ and 0.0008. With no delay, all three rendered the real faces, and shift stayed
 at or below 0.001. The cost is that a first visit on a slow link can keep the
 fallback face for that page load.
 
+## Dashboard reads are cached in the browser per request, recorded 2026-09-16 (flag to Tom)
+
+Inside "Dashboard pages fetch client-side" below. Each read is keyed by the
+request it makes and held in memory for the life of the document, at most 64
+entries. A revisit, Back or Forward paints the last payload at once and
+re-reads underneath it; a read younger than 2 s is not asked again. A `429`
+waits out its `Retry-After` and asks again. Nothing is persisted and nothing
+leaves the tab, so Next still caches nothing per user and the wire still says
+`no-store`. Measured cost of the old behaviour: every rail navigation showed
+`reading…` for the whole request, revisits included (frontend-migration.md §3).
+
+## Dashboard conventions lifted out of code comments, recorded 2026-09-16
+
+These were settled earlier and lived only in comments; the contracts they
+belong to are named.
+
+- **Polling, not SSE, for the jobs pages** (dashboard.md §5.4). A long-lived
+  connection per tab, against the process that holds the only SQLite writer,
+  buys nothing for a page watched minutes a week.
+- **No CSRF token on the dashboard, and none is planned** (dashboard.md §3.3).
+  A write needs positive same-origin evidence, and a same-origin `fetch` sends
+  `Sec-Fetch-Site`, which script cannot forge.
+- **The transcript header gives totals, not position** (Tom, 2026-08-10;
+  dashboard.md §5.3). "Cues 1–150 of 1,203" repeated the scrollbar and moved
+  under the reader on every batch.
+- **With follow checks off, a clock prints the fact instead of the time**
+  (Tom, 2026-09-05; dashboard.md §22). Every `next_check_at` is then a time at
+  which nothing happens.
+- **Dashboard search lists one row per hit, never grouped by video**
+  (dashboard.md §14.1). The ranking is the answer, and grouping hides whether
+  the second hit is in the same talk as the first.
+- **No delete control on the index form or a video** (dashboard.md §5.5).
+  `jobs.kind='delete'` has no pipeline behind it.
+- **The index receipt is kept in `sessionStorage`, not the URL**
+  (dashboard.md §21). The URL is the form's prefill and belongs to whoever
+  built the link; the receipt belongs to this tab.
+
 ## AI Engineer Paris 2026 edition, set by the orchestrator (flag to Tom)
 
 The hero line, the 50-term follow bound, and the organizer gate below are
