@@ -91,10 +91,9 @@ export function Console(props: ConsoleProps) {
   async function more() {
     const { search: view } = state;
     if (view.outcome?.kind !== "ok") return;
-    const first = view.outcome.page;
-    const offset =
-      first.pagination.offset +
-      [first, ...view.more].reduce((sum, page) => sum + page.results.length, 0);
+    // The server's own cursor: a dropped malformed row still took its slot.
+    const { pagination } = view.more.at(-1) ?? view.outcome.page;
+    const offset = pagination.offset + pagination.limit;
     const { id, signal } = begin();
     dispatch({ type: "more", id });
     try {

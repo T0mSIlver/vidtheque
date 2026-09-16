@@ -163,7 +163,7 @@ describe("the console in search mode", () => {
       const fetchSpy = vi.fn(async () =>
         wire(
           found([hit({ start: 90, link: "https://youtu.be/a?t=88" })], {
-            pagination: { limit: 10, offset: 1, has_more: false },
+            pagination: { limit: 10, offset: 10, has_more: false },
           }),
         ),
       );
@@ -179,8 +179,35 @@ describe("the console in search mode", () => {
       await user.click(screen.getByRole("button", { name: "More results" }));
       expect(await screen.findByText("2 moments")).toBeInTheDocument();
       expect(container.querySelectorAll("article")).toHaveLength(1);
-      expect(searchUrl(fetchSpy).searchParams.get("offset")).toBe("1");
+      expect(searchUrl(fetchSpy).searchParams.get("offset")).toBe("10");
       expect(push).not.toHaveBeenCalled();
+    });
+
+    it("pages by the server's cursor when unreadable rows were dropped", async () => {
+      const row = (start: number) => hit({ start, link: `https://youtu.be/a?t=${start}` });
+      const pageTwo = {
+        query: "kv cache",
+        content_type: "all",
+        // Ten rows sent, one unreadable: the schema keeps nine.
+        results: [...Array.from({ length: 9 }, (_, i) => row(100 + i)), { source: "transcript" }],
+        pagination: { limit: 10, offset: 10, has_more: true },
+        notes: [],
+        data_status: null,
+      };
+      const fetchSpy = vi
+        .fn()
+        .mockResolvedValueOnce(Response.json(pageTwo))
+        .mockResolvedValueOnce(wire(found([row(300)])));
+      vi.stubGlobal("fetch", fetchSpy);
+      const user = userEvent.setup();
+      mountConsole({ url: "/demo?q=kv+cache", initial: SEARCH, initialSearch: first });
+
+      await user.click(screen.getByRole("button", { name: "More results" }));
+      expect(await screen.findByText(/1 result\(s\) came back in a shape/)).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "More results" }));
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2));
+      expect(searchUrl(fetchSpy, 0).searchParams.get("offset")).toBe("10");
+      expect(searchUrl(fetchSpy, 1).searchParams.get("offset")).toBe("20");
     });
 
     it("keeps the rows and the count when page two is refused", async () => {
