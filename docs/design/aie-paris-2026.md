@@ -267,8 +267,10 @@ The second line is:
 "Main-stage" admits the 23 fixture sessions that were not streamed, as
 `positioning.md` requires.
 
-The page credits Mistral as the organizer. It does not imply sponsorship, use a
-logo, or claim endorsement.
+The page carries no organizer credit — Tom asked for the line out on
+2026-09-16. The `organizer` field stays on the edition read and in the
+fixture. The page does not imply sponsorship, use a logo, or claim
+endorsement.
 
 ### 4.2 Timeline and alignment states
 
@@ -607,8 +609,8 @@ corpus. Development and the private dress rehearsal may continue, but the
 route is not announced. The private eval remains unpublished under either
 outcome.
 
-The page carries the existing "Removal on request" footer link and credits the
-organizer. Every search result, Ask citation, screenshot, and post keeps its
+The page carries the existing "Removal on request" footer link and no organizer
+credit (§4.1). Every search result, Ask citation, screenshot, and post keeps its
 source link. No paywalled, private, or unlisted video enters the public edition.
 
 ## 11. Open, for Tom
