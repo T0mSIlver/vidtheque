@@ -1,40 +1,32 @@
 import Link from "next/link";
 import styles from "./Rail.module.css";
 
-// The header on the reader surfaces. `Link` is a client-side navigation: the
-// browser swaps the page's React tree instead of reloading the document, and
-// prefetches the target when the link scrolls into view.
-//
-// The wordmark goes to `/` — the landing, which is what a wordmark means
-// (demo-site.md §6.1).
-//
-// One link and not a nav (demo-site.md §6.1): this page is a search surface
-// and the search box is its one primary action, so the rail carries only the
-// corpus size as a micro-label and one link out into the browsable corpus,
-// both from `/api/meta`. The count is a fact about the corpus rather than
-// about this search, and the link is hidden until the server says the route
-// group is there, so a deployment running the dashboard off — or an edge
-// rule that 404s it — leaves no invitation to a dead page (demo-site.md §6
-// item 1). A caller with no meta to hand renders neither.
-export function Rail({ count, browse }: { count?: string | null; browse?: string | null } = {}) {
+// The reader surfaces' header: the wordmark home, and one quiet slot for what
+// `/api/meta` says about the corpus. One link, not a nav (demo-site.md §6.1).
+export function Rail({ children }: { children?: React.ReactNode }) {
   return (
     <header className={styles.rail}>
       <div className={styles.inner}>
         <Link href="/" className={styles.mark}>
           vidtheque<i className={styles.dot}>.</i>
         </Link>
-        <div className={styles.meta}>
-          {count ? <span className={styles.count}>{count}</span> : null}
-          {/* The accessible name says the whole thing whatever the rail has
-              room to print: below the hand breakpoint the label is "browse →". */}
-          {browse ? (
-            <a className={styles.browse} href={browse} aria-label="Browse the corpus">
-              browse<span className={styles.wide}> the corpus</span>{" "}
-              <span aria-hidden="true">→</span>
-            </a>
-          ) : null}
-        </div>
+        <div className={styles.meta}>{children}</div>
       </div>
     </header>
+  );
+}
+
+/** The corpus size, and the way into the browsable corpus only where the
+ *  server says the route group is there. */
+export function RailMeta({ count, browse }: { count?: string | null; browse?: string | null }) {
+  return (
+    <>
+      {count ? <span className={styles.count}>{count}</span> : null}
+      {browse ? (
+        <a className={styles.browse} href={browse} aria-label="Browse the corpus">
+          browse<span className={styles.wide}> the corpus</span> <span aria-hidden="true">→</span>
+        </a>
+      ) : null}
+    </>
   );
 }
