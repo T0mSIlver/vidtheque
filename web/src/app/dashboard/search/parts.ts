@@ -2,9 +2,8 @@
 // the payload carries (dashboard.md §14.2). Each function mirrors the
 // `dashboard/views.py` helper it names and is tested against its cases.
 
-import type { Hit } from "@/lib/api/schemas";
 import { ROOT } from "@/lib/dashboard/client";
-import { badges, type Badge } from "@/lib/group";
+import { badges, type Badge, type Hit } from "@/lib/dashboard/schemas";
 
 /** `read_models.FRAME_PAGE`: the detail strip's default page size, which the
  *  in-index link pages by (it asks for no `frames=`). */
@@ -76,7 +75,7 @@ const KINDS: Record<Badge, EvidenceKind> = {
   frame: "frame",
 };
 
-/** `_search_evidence`: `source` in the demo's words (`lib/group`); an unknown
+/** `_search_evidence`: `source` in the demo's words (`lib/schemas/evidence`); an unknown
  *  source still arrives as a badge carrying its own name. */
 export function evidenceOf(source: string): Evidence {
   const key = source || "";

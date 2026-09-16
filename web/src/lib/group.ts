@@ -1,7 +1,10 @@
 // Grouping and provenance words for hits. The server ranks and paginates; the
 // page groups what it was handed and never re-ranks (demo-site.md §6.5).
-// `schemas`, not the package index: the index is server-only.
-import type { Hit } from "@/lib/api/schemas";
+// `lib/schemas`, not the api package index: that index is server-only.
+import type { Hit } from "@/lib/schemas/search";
+import { badges, type Badge } from "@/lib/schemas/evidence";
+
+export { badges, type Badge };
 
 export interface VideoGroup {
   video_id: string;
@@ -33,25 +36,11 @@ export function groupByVideo(hits: readonly Hit[]): VideoGroup[] {
   return [...groups.values()];
 }
 
-// The three kinds of evidence as words (demo-site.md §6.3). `source` is one
-// leg or a fusion ("ocr+frame").
-export type Badge = "spoken" | "on-screen" | "frame";
-
 const LEG_WORD: Record<string, Badge> = {
   transcript: "spoken",
   ocr: "on-screen",
   frame: "frame",
 };
-
-/** The legs this build knows, in the words it prints. */
-export function badges(source: string): Badge[] {
-  const legs = new Set(source.split("+"));
-  const out: Badge[] = [];
-  if (legs.has("transcript")) out.push("spoken");
-  if (legs.has("ocr")) out.push("on-screen");
-  if (legs.has("frame")) out.push("frame");
-  return out;
-}
 
 /**
  * The badges a row prints. Provenance is never dropped silently: a leg this
