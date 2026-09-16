@@ -4,13 +4,72 @@ import { useRef, type FormEvent } from "react";
 import { dashboard, ROOT } from "@/lib/dashboard/client";
 import controls from "../kit/controls.module.css";
 import { notice, RefusalNotice } from "../kit/notice";
-import { DashLink } from "../kit/ui";
+import { DashLink, ui } from "../kit/ui";
 import { focusOnArrival, formFields, useWrite, useWriteSide } from "../kit/write";
 import styles from "./videos.module.css";
 
 // The two writes on one video, shared by the table and the detail page
 // (dashboard.md §21). Neither page polls, so the inline answer is the only
 // evidence a write leaves; `tag_video` and `index_video` decide everything.
+
+/** The detail page's write side, where registered. No delete: that job kind
+ *  has no pipeline (§5.2). `id="manage"` is the videos table's Tag link target. */
+export function ManagePanel({
+  videoId,
+  tags,
+  onWritten,
+}: {
+  videoId: string;
+  tags: string[];
+  onWritten: (tags: string[]) => void;
+}) {
+  const { rendered, indexable } = useWriteSide();
+  if (!rendered) return null;
+  return (
+    <section className={ui.panel} id="manage" aria-labelledby="manage-title">
+      <h2 className={ui.panelTitle} id="manage-title">
+        Manage this video
+      </h2>
+
+      <div className={ui.split}>
+        <div className={styles.manageAction}>
+          <h3 className={styles.label}>Re-index</h3>
+          <p className={ui.emptyNote}>
+            Runs <code>index-video</code> with <code>force_reindex</code> on this one URL: every
+            stage runs again, and the old rows are invalidated first.
+          </p>
+          <ReindexControl label="Re-index this video" primary videoId={videoId} />
+          {indexable ? null : (
+            <p className={styles.manageNote}>
+              Indexing is refused on this instance: the corpus config and the vector tables
+              disagree.
+            </p>
+          )}
+        </div>
+
+        <div className={styles.manageAction}>
+          <h3 className={styles.label}>Tags</h3>
+          <p className={ui.emptyNote}>
+            <code>namespace:value</code>, lowercase, comma separated. Ten per field.
+          </p>
+          <TagsForm videoId={videoId} tags={tags} onWritten={onWritten} />
+          {tags.length ? (
+            <p className={styles.manageNote}>
+              On this video now:{" "}
+              {tags.map((tag, index) => (
+                <span key={tag}>
+                  <code>{tag}</code>
+                  {index < tags.length - 1 ? ", " : ""}
+                </span>
+              ))}
+              .
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 /** Re-index one video, forced. The button does not come back: a second POST
  *  would queue a second rebuild. */
