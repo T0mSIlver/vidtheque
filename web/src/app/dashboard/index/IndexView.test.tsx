@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { mountDashboard, type Answer } from "@/test/dashboard";
 import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
 import {
   NO_URLS,
@@ -11,48 +12,29 @@ import {
   TOO_MANY_URLS,
 } from "@/test/index-fixtures";
 import { countingDownFrom } from "@/test/retry";
+import { IndexView } from "./IndexView";
 
-// The index form is the one page on this surface that reads nothing and only
-// writes. So the assertions are: what it draws before it knows what the
-// deployment is, what it draws when the deployment has no write side or a
-// database that refuses one, the fields it posts, and the receipt it renders
-// from what came back — including the `409`, which is a receipt and not an
-// error.
+vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 
-type Route = { status?: number; body?: unknown; headers?: Record<string, string> };
+// The form reads only the session and writes once: what it draws before and
+// without a write side, the fields it posts, and the receipt (a `409` too).
 
-async function mount({
+function mount({
   post = { body: ONE_JOB },
   search = "",
   session = OWNER_SESSION as unknown,
-}: { post?: Route; search?: string; session?: unknown } = {}) {
-  const posts: { path: string; init: RequestInit }[] = [];
-  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input);
-    if (init?.method === "POST") posts.push({ path: url, init });
-    const route: Route =
-      init?.method === "POST"
-        ? post
-        : url === "/dashboard/api/session"
-          ? { body: session }
-          : { status: 404, body: {} };
-    const text = typeof route.body === "string" ? route.body : JSON.stringify(route.body ?? {});
-    return new Response(text, {
-      status: route.status ?? 200,
-      headers: { "content-type": "application/json", ...route.headers },
-    });
+}: { post?: Answer; search?: string; session?: unknown } = {}) {
+  return mountDashboard(<IndexView />, {
+    path: "/dashboard/index",
+    search,
+    session,
+    routes: { "POST /dashboard/index": post },
   });
-  vi.stubGlobal("fetch", fetcher);
-  const { mockNavigation } = await import("@/test/next");
-  const nav = mockNavigation(search, "/dashboard/index");
-  const { Chrome } = await import("../Chrome");
-  const { IndexView } = await import("./IndexView");
-  render(
-    <Chrome>
-      <IndexView />
-    </Chrome>,
-  );
-  return { ...nav, fetcher, posts };
+}
+
+/** The body the one POST carried. */
+function sent(posts: () => { fields: URLSearchParams }[]) {
+  return posts()[0].fields;
 }
 
 /** Fill the paste box and submit. */
@@ -62,11 +44,6 @@ async function queue(urls: string) {
 }
 
 describe("the index form", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.resetModules();
-  });
-
   it("draws the Jinja form's fields, and what a submission is split into", async () => {
     await mount();
 
@@ -105,14 +82,11 @@ describe("the index form", () => {
     await userEvent.click(screen.getByLabelText(/Force re-index/));
     await queue("kCc8FmEb1nY");
 
-    expect(posts[0].path).toBe("/dashboard/index");
-    expect(posts[0].init.method).toBe("POST");
-    const headers = posts[0].init.headers as Record<string, string>;
-    expect(headers.accept).toBe("application/json");
-    expect(headers["content-type"]).toBe("application/x-www-form-urlencoded");
-    expect(posts[0].init.credentials).toBe("same-origin");
+    expect(posts()[0].path).toBe("/dashboard/index");
+    expect(posts()[0].headers.get("accept")).toBe("application/json");
+    expect(posts()[0].headers.get("content-type")).toBe("application/x-www-form-urlencoded");
 
-    const body = new URLSearchParams(String(posts[0].init.body));
+    const body = sent(posts);
     expect(body.get("urls")).toBe("kCc8FmEb1nY");
     expect(body.get("expand")).toBe("playlist");
     expect(body.get("max_items")).toBe("25");
@@ -133,7 +107,7 @@ describe("the index form", () => {
     await userEvent.click(screen.getByLabelText(/Frame embeddings/));
     await queue("kCc8FmEb1nY");
 
-    const body = new URLSearchParams(String(posts[0].init.body));
+    const body = sent(posts);
     expect(body.get("channel_frames")).toBeNull();
     expect(body.get("channel_ocr")).toBe("1");
   });
@@ -212,43 +186,38 @@ describe("the index form", () => {
     // reloads the page — which here is a reader pressing Ctrl-R to see whether
     // the queue moved, and finding no evidence they ever submitted.
     it("survives a reload, where the 303 used to put it", async () => {
-      window.sessionStorage.clear();
-      await mount();
+      const first = await mount();
       await screen.findByLabelText("URLs");
       await queue("https://youtu.be/solo0000002");
       await screen.findByRole("status");
 
       // The reload: this tree goes, and a new one mounts against the same tab.
-      cleanup();
+      first.unmount();
       await mount();
-
-      // The form first: until the read lands the only status region on the
-      // page is `reading…`, which is not the receipt this test restored.
       await screen.findByLabelText("URLs");
       const receipt = await screen.findByRole("status");
       expect(receipt).toHaveTextContent("1 URL(s) in one job.");
       expect(within(receipt).getByRole("link", { name: "job_02e028870c97" })).toBeInTheDocument();
-      window.sessionStorage.clear();
     });
 
     // …and it is the receipt of the batch on screen, never the one before it:
     // a refusal read over an old receipt is a page saying two things about one
     // click.
     it("drops the kept receipt when the next submission is refused", async () => {
-      window.sessionStorage.clear();
-      await mount();
+      const first = await mount();
       await screen.findByLabelText("URLs");
       await queue("https://youtu.be/solo0000002");
       await screen.findByRole("status");
 
-      cleanup();
+      first.unmount();
       await mount({ post: { status: 400, body: NO_URLS } });
-      await screen.findByLabelText("URLs");
+      await screen.findByRole("heading", { name: "What that submission did" });
       await userEvent.click(screen.getByRole("button", { name: "Queue the job" }));
 
       expect(await screen.findByText(NO_URLS.message)).toBeInTheDocument();
-      expect(screen.queryByRole("status")).not.toBeInTheDocument();
-      window.sessionStorage.clear();
+      expect(
+        screen.queryByRole("heading", { name: "What that submission did" }),
+      ).not.toBeInTheDocument();
     });
 
     // `_submitted` clamps `max_items` to the tool's own 1..200 and falls both
@@ -262,7 +231,6 @@ describe("the index form", () => {
     // against a value that arrived some other way, and the two vocabularies
     // falling back rather than being refused.
     it("echoes what the server ran on back into the three controls", async () => {
-      window.sessionStorage.clear();
       await mount({
         post: {
           body: { ...ONE_JOB, accepted: { expand: "playlist", max_items: 200, priority: "high" } },
@@ -281,13 +249,11 @@ describe("the index form", () => {
       // What was typed is still there: the Jinja re-render kept it too, and a
       // form that reseeds three pickers by remounting throws it away.
       expect(screen.getByLabelText("URLs")).toHaveValue("https://youtu.be/solo0000002");
-      window.sessionStorage.clear();
     });
 
     // An instance that predates `accepted` sends none, and the controls keep
     // what was typed rather than snapping back to a default nobody chose.
     it("leaves the controls alone when the outcome carries no echo", async () => {
-      window.sessionStorage.clear();
       await mount();
       await screen.findByLabelText("URLs");
 
@@ -296,7 +262,6 @@ describe("the index form", () => {
       await screen.findByRole("status");
 
       expect(screen.getByLabelText("Priority")).toHaveValue("high");
-      window.sessionStorage.clear();
     });
   });
 
@@ -347,6 +312,23 @@ describe("the index form", () => {
         await screen.findByText("Paste at least one video, playlist or channel URL."),
       ).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Queue the job" })).toBeEnabled();
+    });
+
+    // The refusal lands under the actions and takes the focus the button had:
+    // nothing moves, and the keyboard is not dropped to the document.
+    it("keeps the actions in place and focus on the refusal", async () => {
+      await mount({ post: { status: 400, body: NO_URLS } });
+      await screen.findByLabelText("URLs");
+      const button = screen.getByRole("button", { name: "Queue the job" });
+
+      await userEvent.click(button);
+      const message = await screen.findByText(NO_URLS.message);
+
+      expect(button).toBeInTheDocument();
+      expect(document.activeElement).not.toBe(document.body);
+      const region = button.closest("[data-write]") as HTMLElement;
+      expect(region.contains(document.activeElement)).toBe(true);
+      expect(region.contains(message)).toBe(true);
     });
 
     it("prints the instance's own refusal when the session went away", async () => {
@@ -405,9 +387,9 @@ describe("the index form", () => {
       // Not an error state: nothing here failed — so the band wears the
       // neutral tone rather than the one a refusal wears.
       expect(screen.queryByText(/could not read/)).not.toBeInTheDocument();
-      const band = screen.getByRole("region", { name: "This deployment does not index anything." });
-      expect(band.className).toMatch(/notice/);
-      expect(band.className).not.toMatch(/noticeBad/);
+      expect(
+        screen.getByRole("region", { name: "This deployment does not index anything." }),
+      ).toHaveAttribute("data-tone", "neutral");
     });
 
     // §5.5: refuse honestly. Disabled with the reason above it, rather than
@@ -461,24 +443,34 @@ describe("the index form", () => {
     // Drawn before the session lands, this page would tell the reader indexing
     // is refused on the strength of not yet having asked.
     it("says nothing about the deployment before it has been told", async () => {
-      const never = new Promise<Response>(() => {});
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(() => never),
-      );
-      const { mockNavigation } = await import("@/test/next");
-      mockNavigation("", "/dashboard/index");
-      const { Chrome } = await import("../Chrome");
-      const { IndexView } = await import("./IndexView");
-      render(
-        <Chrome>
-          <IndexView />
-        </Chrome>,
-      );
+      await mountDashboard(<IndexView />, {
+        path: "/dashboard/index",
+        routes: { "/dashboard/api/session": () => new Promise<Answer>(() => {}) },
+      });
 
+      // The head is there, holding its line; the body waits.
+      expect(screen.getByRole("heading", { name: "Add to the index" })).toBeInTheDocument();
       expect(screen.getByText("reading…")).toBeInTheDocument();
       expect(screen.queryByText("Indexing is disabled on this instance.")).not.toBeInTheDocument();
       expect(screen.queryByLabelText("URLs")).not.toBeInTheDocument();
+    });
+
+    // The session is the chassis's read, and retrying it re-asks it in place.
+    it("re-asks a session that could not be read, and draws the form once it answers", async () => {
+      const { calls } = await mountDashboard(<IndexView />, {
+        path: "/dashboard/index",
+        routes: {
+          "/dashboard/api/session": [
+            { status: 500, body: { error: "E_INTERNAL", message: "The instance fell over." } },
+            { body: OWNER_SESSION },
+          ],
+        },
+      });
+
+      await userEvent.click(await screen.findByRole("button", { name: "Try again" }));
+
+      expect(await screen.findByLabelText("URLs")).toBeEnabled();
+      expect(calls("/dashboard/api/session")).toHaveLength(2);
     });
   });
 
@@ -528,7 +520,7 @@ describe("the index form", () => {
 
       await userEvent.click(screen.getByRole("button", { name: "Queue the job" }));
 
-      const body = new URLSearchParams(String(posts[0].init.body));
+      const body = sent(posts);
       expect(body.get("urls")).toBe("kCc8FmEb1nY");
       expect(body.get("expand")).toBe("channel_recent");
     });
