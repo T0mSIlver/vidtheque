@@ -161,7 +161,7 @@ def test_the_read_surface_is_untouched_in_public_mode(public_client: TestClient)
 
 
 def test_api_is_absent_outside_public_mode(private_client: TestClient) -> None:
-    for path in ("/api/search?q=cache", "/api/videos", "/api/meta"):
+    for path in ("/api/search?q=cache", "/api/videos", "/api/meta", "/api/editions/aie-paris-2026"):
         assert private_client.get(path).status_code == 404
     assert private_client.post("/api/ask", json={"q": "x"}).status_code == 404
 
@@ -177,6 +177,238 @@ def test_search_facade_shape(public_client: TestClient) -> None:
     assert {"video_id", "title", "channel", "start", "text", "link", "timestamp"} <= set(hit)
     assert hit["link"].startswith("https://youtu.be/")
     assert hit["timestamp"].count(":") >= 1
+
+
+def _tag_video(tmp_path: Path, video_id: str, *tags: str) -> None:
+    """Tag a seeded video the way `tag-video` does — the edition read joins on
+    exactly these rows, and the public surface cannot write them itself."""
+    from vidtheque_mcp.db.connection import open_write_connection
+
+    conn = open_write_connection(tmp_path / "data" / "vidtheque.db")
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        for full in tags:
+            ns, name = full.split(":", 1)
+            conn.execute(
+                "INSERT OR IGNORE INTO tags (owner_id, ns, name) VALUES (1, ?, ?)", (ns, name)
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO video_tags (video_id, tag_id) "
+                "SELECT v.id, t.id FROM videos v, tags t WHERE v.public_id = ? AND t.full = ?",
+                (video_id, full),
+            )
+        conn.execute("COMMIT")
+    finally:
+        conn.close()
+
+
+def _mapped_edition(**alignment: Any) -> dict[str, Any]:
+    """The committed fixture with one main-stage row mapped onto a seeded video.
+
+    The 2026 ids and offsets are unknowable (aie-paris-2026.md §11), so the
+    committed alignments are all null and `aligned` cannot be reached from the
+    file. The state machine still has to be checked, and this is the same
+    edition object the facade validates with one mapping filled in.
+    """
+    from vidtheque_mcp import editions
+
+    edition = json.loads(json.dumps(editions.load_edition("aie-paris-2026")))
+    main = [session for session in edition["sessions"] if session["stage"] == "main"]
+    main[0]["alignment"] = {
+        "talk_video_id": None,
+        "stream_video_id": None,
+        "start_s": None,
+        "end_s": None,
+        **alignment,
+    }
+    return editions.validate_edition(edition)
+
+
+def _edition_payload(tmp_path: Path, edition: dict[str, Any]) -> dict[str, Any]:
+    from vidtheque_mcp import editions
+    from vidtheque_mcp.db.connection import open_read_connection
+
+    conn = open_read_connection(tmp_path / "data" / "vidtheque.db")
+    try:
+        return editions.build_payload(
+            conn, edition, limit=100, offset=0, video_limit=50, video_offset=0
+        )
+    finally:
+        conn.close()
+
+
+def test_edition_facade_keeps_the_schedule_before_videos_arrive(public_client: TestClient) -> None:
+    response = public_client.get("/api/editions/aie-paris-2026")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    payload = response.json()
+    assert payload["edition"]["slug"] == "aie-paris-2026"
+    assert len(payload["sessions"]) == 34
+    assert len(payload["talks"]) == 11
+    assert {talk["alignment_state"] for talk in payload["talks"]} == {"not_yet_indexed"}
+    assert payload["videos"] == []
+    assert payload["pagination"] == {"limit": 50, "offset": 0, "has_more": False, "next_offset": None}
+
+
+def test_edition_facade_clamps_both_independent_pages(public_client: TestClient) -> None:
+    payload = public_client.get(
+        "/api/editions/aie-paris-2026?limit=999&offset=-5&video_limit=999&video_offset=-2"
+    ).json()
+    assert payload["pagination"]["limit"] == 100
+    assert payload["pagination"]["offset"] == 0
+    assert payload["video_pagination"]["limit"] == 50
+    assert payload["video_pagination"]["offset"] == 0
+
+
+def test_unknown_edition_is_typed_and_not_cached(public_client: TestClient) -> None:
+    response = public_client.get("/api/editions/not-here")
+    assert response.status_code == 404
+    assert response.json()["error"] == "E_UNKNOWN_EDITION"
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_edition_pages_the_schedule_independently_of_the_video_listing(
+    public_client: TestClient,
+) -> None:
+    """Two lists, two bounds. A short schedule page must not hide the corpus."""
+    payload = public_client.get("/api/editions/aie-paris-2026?limit=5&video_limit=1").json()
+    assert len(payload["sessions"]) == 5
+    assert payload["pagination"] == {"limit": 5, "offset": 0, "has_more": True, "next_offset": 5}
+    assert {talk["session_id"] for talk in payload["talks"]} <= {
+        session["id"] for session in payload["sessions"]
+    }
+    assert payload["video_pagination"]["limit"] == 1
+
+
+def test_the_edition_read_is_a_read(public_client: TestClient) -> None:
+    """No write shares the path. The MCP mount at `/` catches the other methods,
+    so the refusal is its 404 rather than a 405 — either way nothing runs."""
+    for method in ("post", "put", "delete"):
+        response = getattr(public_client, method)("/api/editions/aie-paris-2026")
+        assert response.status_code in (404, 405), (method, response.status_code)
+
+
+def test_a_tagged_video_nobody_classified_is_named_rather_than_guessed(tmp_path: Path) -> None:
+    """The edition tag alone does not make a video a stream or a talk (§5)."""
+    _settings(tmp_path)
+    _tag_video(tmp_path, "kCc8FmEb1nY", "series:aie-paris-2026")
+    with make_client(tmp_path, PUBLIC, fresh=False) as client:
+        payload = client.get("/api/editions/aie-paris-2026").json()
+    assert [video["kind"] for video in payload["videos"]] == ["other"]
+    assert payload["notes"] == [
+        "tagged but not classified as stream or talk: kCc8FmEb1nY"
+    ]
+    assert {talk["alignment_state"] for talk in payload["talks"]} == {"not_yet_indexed"}
+
+
+def test_a_mapping_needs_both_tags_and_two_offsets_to_align(tmp_path: Path) -> None:
+    """The three states of §2.3, walked in the order an operator reaches them."""
+    _settings(tmp_path)
+    stream = {"stream_video_id": "kCc8FmEb1nY", "start_s": 120, "end_s": 900}
+
+    # Mapped, but the video carries no edition tag yet: nothing to point at.
+    first = _edition_payload(tmp_path, _mapped_edition(**stream))["talks"][0]
+    assert first["alignment_state"] == "not_yet_indexed"
+    assert (first["video_id"], first["start_s"], first["end_s"]) == (None, None, None)
+
+    # Tagged as the edition but not as the day stream: the subtype tag is what
+    # says which upload this is, so the row stays honest rather than guessing.
+    _tag_video(tmp_path, "kCc8FmEb1nY", "series:aie-paris-2026")
+    assert _edition_payload(tmp_path, _mapped_edition(**stream))["talks"][0][
+        "alignment_state"
+    ] == "not_yet_indexed"
+
+    _tag_video(tmp_path, "kCc8FmEb1nY", "series:aie-paris-2026-stream")
+    payload = _edition_payload(tmp_path, _mapped_edition(**stream))
+    aligned = payload["talks"][0]
+    assert aligned["alignment_state"] == "aligned"
+    assert aligned["source_kind"] == "stream"
+    assert (aligned["video_id"], aligned["start_s"], aligned["end_s"]) == (
+        "kCc8FmEb1nY",
+        120.0,
+        900.0,
+    )
+    assert aligned["source"] == "https://youtu.be/kCc8FmEb1nY?t=120"
+
+    # A tagged video with half a mapping is indexed and not aligned, and says so
+    # in the payload rather than in a rendered offset nobody can check.
+    half = _edition_payload(tmp_path, _mapped_edition(stream_video_id="kCc8FmEb1nY"))["talks"][0]
+    assert half["alignment_state"] == "indexed_not_aligned"
+    assert (half["video_id"], half["start_s"], half["source_kind"]) == (None, None, None)
+    assert "incomplete or invalid alignment" in " ".join(
+        _edition_payload(tmp_path, _mapped_edition(stream_video_id="kCc8FmEb1nY"))["notes"]
+    )
+
+
+def test_a_talk_upload_wins_over_the_day_stream_and_brings_its_own_span(
+    tmp_path: Path,
+) -> None:
+    """An individual upload is the same talk without eight hours around it."""
+    _settings(tmp_path)
+    _tag_video(tmp_path, "kCc8FmEb1nY", "series:aie-paris-2026", "series:aie-paris-2026-stream")
+    _tag_video(tmp_path, "zduSFxRajkE", "series:aie-paris-2026", "series:aie-paris-2026-talk")
+    talk = _edition_payload(
+        tmp_path,
+        _mapped_edition(
+            talk_video_id="zduSFxRajkE",
+            stream_video_id="kCc8FmEb1nY",
+            start_s=120,
+            end_s=900,
+        ),
+    )["talks"][0]
+    assert talk["source_kind"] == "talk"
+    # The whole upload, not the day VOD's committed window.
+    assert (talk["video_id"], talk["start_s"], talk["end_s"]) == ("zduSFxRajkE", 0.0, 3600.0)
+
+
+def test_a_broken_fixture_is_an_internal_error_not_half_a_schedule(
+    public_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from vidtheque_mcp import editions
+
+    def boom(slug: str) -> dict[str, Any]:
+        raise editions.EditionValidationError("sessions[3].day must be an ISO date")
+
+    monkeypatch.setattr(editions, "load_edition", boom)
+    response = public_client.get("/api/editions/aie-paris-2026")
+    assert response.status_code == 500
+    assert response.json()["error"] == "E_INTERNAL"
+    assert response.headers["cache-control"] == "no-store"
+    # The field that failed is the operator's, in the log; the visitor gets none
+    # of the fixture back.
+    assert "sessions[3]" not in response.text
+
+
+@pytest.mark.parametrize(
+    "break_it, message",
+    [
+        (lambda e: e["sessions"][0].update(id=e["sessions"][1]["id"]), "duplicate session id"),
+        (lambda e: e["sessions"][0].update(end=e["sessions"][0]["start"]), "invalid times"),
+        (lambda e: e["sessions"][0].update(stage="keynote"), "stage is invalid"),
+        (lambda e: e["sessions"][0].update(day="2019-01-01"), "outside the edition"),
+        (lambda e: e.update(schema_version=2), "schema_version must be 1"),
+    ],
+)
+def test_the_committed_fixture_is_validated_field_by_field(break_it, message: str) -> None:
+    """A fixture is committed, so a violation is a review that let it through."""
+    from vidtheque_mcp import editions
+
+    edition = json.loads(json.dumps(editions.load_edition("aie-paris-2026")))
+    break_it(edition)
+    with pytest.raises(editions.EditionValidationError, match=message):
+        editions.validate_edition(edition)
+
+
+def test_search_facade_passes_namespaced_tags_with_and_semantics(tmp_path: Path) -> None:
+    _settings(tmp_path)
+    _tag_video(tmp_path, "kCc8FmEb1nY", "series:aie-paris-2026")
+    with make_client(tmp_path, PUBLIC, fresh=False) as client:
+        response = client.get("/api/search?q=cache&tags=series:aie-paris-2026")
+        assert response.status_code == 200
+        assert {hit["video_id"] for hit in response.json()["results"]} == {"kCc8FmEb1nY"}
+        bad = client.get("/api/search?q=cache&tags=not-a-tag")
+        assert bad.status_code == 400
+        assert bad.json()["error"] == "E_BAD_PARAM"
 
 
 def test_search_facade_emits_thumbnail_urls_for_frame_hits(public_client: TestClient) -> None:
@@ -599,6 +831,41 @@ def test_ask_runs_the_tool_loop_and_cites_real_results(tmp_path: Path) -> None:
         "content"
     ].startswith("1 results for") or "results for" in tool_message["content"]
     assert len(tool_message["content"]) < 4000
+
+
+def test_ask_validates_tags_before_calling_the_model(tmp_path: Path) -> None:
+    upstream = Upstream(_completion("unused"))
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        response = client.post("/api/ask", json={"q": "why?", "tags": "not-a-tag"})
+    assert response.status_code == 400
+    assert response.json()["error"] == "E_BAD_PARAM"
+    assert response.headers["cache-control"] == "no-store"
+    assert upstream.requests == []
+
+
+def test_ask_keeps_every_search_and_context_read_inside_the_tag_scope(tmp_path: Path) -> None:
+    _settings(tmp_path)
+    _tag_video(tmp_path, "kCc8FmEb1nY", "series:aie-paris-2026")
+    upstream = Upstream(
+        _completion(
+            tool_calls=[
+                _tool_call("c1", "search", {"query": "cache"}),
+                _tool_call("c2", "get_segment_context", {"video_id": "zduSFxRajkE", "t": 12}),
+            ]
+        ),
+        _completion("The scoped talk says memory [1]."),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream, fresh=False) as client:
+        response = client.post(
+            "/api/ask", json={"q": "what does it cost?", "tags": "series:aie-paris-2026"}
+        )
+    assert response.status_code == 200
+    tool_messages = [
+        message for message in upstream.requests[1]["messages"] if message.get("role") == "tool"
+    ]
+    assert "video_id=kCc8FmEb1nY" in tool_messages[0]["content"]
+    assert "video_id=zduSFxRajkE" not in tool_messages[0]["content"]
+    assert "from a scoped search hit" in tool_messages[1]["content"]
 
 
 def test_the_model_is_told_which_channel_each_hit_came_from(tmp_path: Path) -> None:

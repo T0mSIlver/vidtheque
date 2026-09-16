@@ -42,6 +42,7 @@ still decides what is *registered* (`ask=False` on the dashboard, and
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from dataclasses import dataclass
 from typing import Any
@@ -53,6 +54,7 @@ from starlette.routing import Route
 from .. import __version__
 from ..auth.credential import is_owner
 from ..db import queries
+from .. import editions
 from ..errors import HTTP_STATUS
 from ..text import clamp, clamp_text_chars, clock
 from ..tools import library, search
@@ -86,6 +88,7 @@ CONTENT_TYPES = ("all", "transcript", "ocr", "frame")
 # and a conditional on something a handler cannot know is a conditional that
 # gets it wrong.
 NO_STORE = {"Cache-Control": "no-store"}
+logger = logging.getLogger(__name__)
 
 
 # --------------------------------------------------------------------- policy
@@ -291,6 +294,7 @@ async def search_payload(
         offset=offset,
         channel=params.get("channel"),
         video_id=params.get("video_id"),
+        tags=params.get("tags"),
         max_text_chars=text_chars,
     )
     if result.is_error:
@@ -371,6 +375,46 @@ async def videos_endpoint(request: Request) -> JSONResponse:
         {"videos": videos, "pagination": payload.get("pagination", {})},
         headers=NO_STORE,
     )
+
+
+async def edition_endpoint(request: Request) -> JSONResponse:
+    """One validated edition joined to explicitly tagged corpus videos."""
+    slug = request.path_params["slug"]
+    try:
+        edition = editions.load_edition(slug)
+        if edition is None:
+            return JSONResponse(
+                {
+                    "error": "E_UNKNOWN_EDITION",
+                    "message": f'Edition "{slug}" is not known.',
+                    "next": "use a published edition slug.",
+                },
+                status_code=404,
+                headers=NO_STORE,
+            )
+        limit = _int_param(request, "limit", 1, 100, 50)
+        offset = _int_param(request, "offset", 0, 1_000, 0)
+        video_limit = _int_param(request, "video_limit", 1, 50, 20)
+        video_offset = _int_param(request, "video_offset", 0, 1_000, 0)
+        deps: Deps = request.app.state.assembled.deps
+        payload = await deps.db.read(
+            lambda conn: editions.build_payload(
+                conn,
+                edition,
+                limit=limit,
+                offset=offset,
+                video_limit=video_limit,
+                video_offset=video_offset,
+            )
+        )
+        return JSONResponse(payload, headers=NO_STORE)
+    except (editions.EditionValidationError, json.JSONDecodeError, OSError):
+        logger.exception("edition fixture %s is invalid", slug)
+        return JSONResponse(
+            {"error": "E_INTERNAL", "message": "The edition fixture is invalid.", "next": None},
+            status_code=500,
+            headers=NO_STORE,
+        )
 
 
 def _cover_frames(conn: sqlite3.Connection, public_ids: list[str]) -> dict[str, str]:
@@ -484,6 +528,7 @@ def api_routes(prefix: str = "", *, ask: bool = True, demo: bool = False) -> lis
         ),
         Route(f"{prefix}/api/videos", videos_endpoint, methods=["GET"]),
         Route(f"{prefix}/api/meta", meta_endpoint, methods=["GET"]),
+        Route(f"{prefix}/api/editions/{{slug}}", edition_endpoint, methods=["GET"]),
     ]
     if ask:
         from .ask import ask_endpoint

@@ -40,7 +40,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.types import Scope
 
-from ..text import clock, deeplink, middle_truncate
+from ..errors import ToolError, bad_param
+from ..text import clock, deeplink, middle_truncate, split_csv, validate_tag
 from ..tools import search, segment
 from ..tools.base import Deps
 from . import humanize
@@ -371,6 +372,7 @@ async def run_ask(
     llm: OpenRouter,
     question: str,
     billing: Billing | None = None,
+    tags: str | None = None,
 ) -> dict[str, Any]:
     """The loop, drained. Returns the answer payload, or raises `AskUnavailable`.
 
@@ -380,7 +382,7 @@ async def run_ask(
     carried for the same reason — the two transports must not *bill*
     differently either.
     """
-    async with aclosing(ask_events(deps, public, llm, question, billing)) as events:
+    async with aclosing(ask_events(deps, public, llm, question, billing, tags)) as events:
         async for event in events:
             if event.get("event") == "answer":
                 return event["payload"]
@@ -394,6 +396,7 @@ async def ask_events(
     llm: OpenRouter,
     question: str,
     billing: Billing | None = None,
+    tags: str | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """The loop, as the events a visitor can watch (§3.5).
 
@@ -449,7 +452,7 @@ async def ask_events(
             # asked for, which is all that is known yet, and the visitor is
             # watching the slow part happen rather than a spinner.
             yield {"event": "activity", "id": step, "phase": "start", "text": _asked(call, evidence)}
-            result, summary = await _run_tool(deps, call, evidence)
+            result, summary = await _run_tool(deps, call, evidence, tags)
             messages.append(result)
             yield {"event": "activity", "id": step, "phase": "done", "result": summary}
 
@@ -667,7 +670,7 @@ def _hits_summary(hits: list[dict[str, Any]]) -> str:
 
 
 async def _run_tool(
-    deps: Deps, call: dict[str, Any], evidence: Evidence
+    deps: Deps, call: dict[str, Any], evidence: Evidence, tags: str | None = None
 ) -> tuple[dict[str, Any], str]:
     """Run one internal tool. Returns its `tool` message and one line about it.
 
@@ -678,9 +681,9 @@ async def _run_tool(
     name, args = _call_args(call)
 
     if name == "search":
-        text, summary = await _tool_search(deps, args, evidence)
+        text, summary = await _tool_search(deps, args, evidence, tags)
     elif name == "get_segment_context":
-        text, summary = await _tool_context(deps, args, evidence)
+        text, summary = await _tool_context(deps, args, evidence, scoped=bool(tags))
     else:
         text = f"error: no tool named {name!r}. Use search or get_segment_context."
         summary = "no such tool"
@@ -695,7 +698,7 @@ async def _run_tool(
 
 
 async def _tool_search(
-    deps: Deps, args: dict[str, Any], evidence: Evidence
+    deps: Deps, args: dict[str, Any], evidence: Evidence, tags: str | None = None
 ) -> tuple[str, str]:
     query = str(args.get("query") or "").strip()[:512]
     if not query:
@@ -703,7 +706,7 @@ async def _tool_search(
     content_type = args.get("content_type")
     if content_type not in search.CONTENT_TYPES:
         content_type = "all"
-    result = await search.run(deps, q=query, content_type=content_type)
+    result = await search.run(deps, q=query, content_type=content_type, tags=tags)
     if result.is_error:
         payload = result.structured_content or {}
         # The model gets the typed code; the visitor gets the fact that this
@@ -736,13 +739,18 @@ async def _tool_search(
 
 
 async def _tool_context(
-    deps: Deps, args: dict[str, Any], evidence: Evidence
+    deps: Deps, args: dict[str, Any], evidence: Evidence, *, scoped: bool = False
 ) -> tuple[str, str]:
     video_id = str(args.get("video_id") or "").strip()
     if not video_id:
         return (
             "error: get_segment_context needs a video_id from a search hit.",
             "that read named no video",
+        )
+    if scoped and not any(item.video_id == video_id for item in evidence.items):
+        return (
+            "error: get_segment_context needs a video_id from a scoped search hit.",
+            "that read was outside the scoped search results",
         )
     try:
         t = float(args.get("t"))  # type: ignore[arg-type]
@@ -1007,6 +1015,7 @@ async def _stream(
     question: str,
     framing: Framing,
     billing: Billing,
+    tags: str | None = None,
 ) -> AsyncIterator[bytes]:
     """The loop's events, framed, and the budget accounting that goes with it.
 
@@ -1039,7 +1048,7 @@ async def _stream(
     try:
         if framing.preamble:
             yield framing.preamble
-        async with aclosing(ask_events(deps, public, llm, question, billing)) as events:
+        async with aclosing(ask_events(deps, public, llm, question, billing, tags)) as events:
             async for event in events:
                 yield framing.frame(event)
     except AskUnavailable as exc:
@@ -1075,8 +1084,31 @@ async def _ask(request: Request, billing: Billing) -> Response:
                 "next": None,
             },
             status_code=400,
+            headers={"Cache-Control": "no-store"},
         )
     question = question[:MAX_QUESTION_CHARS]
+    # The scope is validated here rather than trusted from the page, because
+    # `POST /api/ask` is a public endpoint and the tag a caller sends decides
+    # which corpus the model is allowed to read (aie-paris-2026.md §3.3). The
+    # bound and the namespace rule are the tool's own, so a tag that works here
+    # works in `search` and nowhere else does it have to be re-learned.
+    raw_tags = body.get("tags") if isinstance(body, dict) else None
+    try:
+        if raw_tags is not None and not isinstance(raw_tags, str):
+            raise bad_param(
+                "tags must be a comma-separated string.",
+                "pass namespaced tags such as series:aie-paris-2026.",
+            )
+        tag_items = split_csv(raw_tags, 10, "tags")
+        for tag in tag_items:
+            validate_tag(tag)
+        tags = ",".join(tag_items) or None
+    except ToolError as exc:
+        return JSONResponse(
+            {"error": exc.code, "message": exc.message, "next": exc.next_hint},
+            status_code=400,
+            headers={"Cache-Control": "no-store"},
+        )
 
     framing = _negotiate(request)
     if framing is not None:
@@ -1084,7 +1116,7 @@ async def _ask(request: Request, billing: Billing) -> Response:
         # refused above, with a status code. From here the answer is worth
         # watching, so the status line goes out now and the rest is events.
         return StreamingResponse(
-            _stream(request.scope, deps, public, llm, question, framing, billing),
+            _stream(request.scope, deps, public, llm, question, framing, billing, tags),
             media_type=framing.media_type,
             headers={
                 "Cache-Control": "no-store",
@@ -1100,7 +1132,7 @@ async def _ask(request: Request, billing: Billing) -> Response:
 
     try:
         payload = await asyncio.wait_for(
-            run_ask(deps, public, llm, question, billing),
+            run_ask(deps, public, llm, question, billing, tags),
             timeout=public.ask_timeout_s + 5,
         )
     except AskUnavailable as exc:
