@@ -45,9 +45,10 @@ its own.
 
 The last three of those page paths are also POST routes Python keeps, so the
 proxy splits each by method: the `GET` is the page here, the `POST` is the
-page's write. Every dashboard page is named in `proxy.ts`'s matcher, which
-gives it the document policy, and in `src/app/dashboard/ported.ts`, which is
-what every link into the surface asks. Its data is not this server's — the
+page's write. `proxy.ts`'s matcher gives the document policy to every path
+under `/dashboard` except `/dashboard/api/*` and `/dashboard/logout`, and
+`src/app/dashboard/ported.ts` lists the pages every link into the surface asks
+about. Its data is not this server's — the
 browser reads `/dashboard/api/*` itself, same-origin, with the session cookie
 (`src/lib/dashboard/`), so Next never sees a credential and caches nothing per
 reader.
