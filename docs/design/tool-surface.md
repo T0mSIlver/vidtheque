@@ -2341,13 +2341,18 @@ table below, where a caller who cares is already looking.*
 | `title` | string | — | ≤ 60 chars, middle-truncated | The display name. Absent, it is read off the URL (`@handle`, else the playlist id, else the last path segment) — no request is made to find the real one. |
 | `tabs` | string | `videos` | subset of `videos,streams,shorts` | Each tab watched is one more listing request per check. |
 | `min_duration` / `max_duration` | string \| number | — | §3.2 offset axis (`480`, `8:00`, `1:30:00`) | Length rule. `min > max` is a typed error, not a follow that can never match. |
-| `title_include` / `title_exclude` | string | — | ≤ 10 terms, ≤ 80 chars each | Plain case-insensitive substrings, **not** regex. Exclude wins. |
+| `title_include` / `title_exclude` | string | — | ≤ 50 terms, ≤ 80 chars each | Plain case-insensitive substrings, **not** regex. Exclude wins. |
 | `channels` | string | `all` | `all` \| subset of `transcript,ocr,frames` | Same values as `index-video` (§4.7), applied to everything this follow brings in. |
 | `tags` | string | — | ≤ 10, §3.7 validation | Applied to every video this follow brings in. |
 | `backfill` | int | `0` | clamped 0..25 | Uploads to reach back for at the moment of following. `0` = start from now. |
 | `max_per_check` | int | `5` | clamped 1..25 | Ceiling on one check's acceptances. Overflow is held, not dropped. |
 | `mode` | enum `auto\|review` | `auto` | | `review` holds every arrival for a human instead of queueing it. |
 | `check_interval_s` | int | `VIDTHEQUE_FOLLOW_INTERVAL_S` (21600) | ≥ 900 (typed error), clamped at 7 days | Seconds between checks. There is no cron expression, deliberately (`following.md` §9.1). |
+
+*Amended 2026-09-15 by the orchestrator for AI Engineer Paris 2026:* the term
+bound is 50, not 10, so one follow can hold a conference's speaker list
+(following.md §4, aie-paris-2026.md §5). The 80-character per-term limit is
+unchanged.
 
 Clamps are server-side, in `follows/params.py`, and that module is the single
 validator: the dashboard's form calls it too rather than re-implementing a bound
