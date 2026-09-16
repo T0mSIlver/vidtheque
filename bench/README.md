@@ -246,7 +246,10 @@ uv run python bench/long_vod_measure.py /private/aie-paris-2025-data \
 ```
 
 The comparison exits with status 2 and sets `follow_gate` to `blocked` when
-frame vectors grow by more than 600 or text vectors grow by more than 960.
+frame vectors grow by more than 600 or text vectors grow by more than 960. A
+baseline from a different data directory, or one whose counts or size shrank,
+is refused instead of compared: only two readings of one directory across one
+rehearsal are a measurement.
 
 ## Status
 

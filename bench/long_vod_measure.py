@@ -49,10 +49,30 @@ def snapshot(data_dir: Path) -> Snapshot:
 
 
 def compare(before: Snapshot, after: Snapshot) -> dict[str, Any]:
+    """Two readings of one directory, before and after one rehearsal.
+
+    A baseline from another database can only make growth look smaller than it
+    was, and a shrinking count says the same thing: whatever these two files
+    describe, it is not one indexing run. Both refuse here rather than print a
+    clear gate over an arithmetic that means nothing.
+    """
+    if before.data_dir != after.data_dir:
+        raise ValueError(
+            f"snapshots describe different data directories: "
+            f"{before.data_dir!r} then {after.data_dir!r}"
+        )
     delta = {
         name: after.counts.get(name, 0) - before.counts.get(name, 0)
         for name in COUNT_SQL
     }
+    bytes_delta = after.database_bytes - before.database_bytes
+    shrunk = sorted(name for name, value in delta.items() if value < 0)
+    if shrunk or bytes_delta < 0:
+        raise ValueError(
+            "the after snapshot is smaller than the before snapshot "
+            f"({', '.join([*shrunk, *(['database_bytes'] if bytes_delta < 0 else [])])}); "
+            "indexing only adds rows, so these two are not one run"
+        )
     blocks: list[str] = []
     if delta["vec_frames"] > 600:
         blocks.append(f"vec_frames grew by {delta['vec_frames']}, above the 600-frame cap")
@@ -63,7 +83,7 @@ def compare(before: Snapshot, after: Snapshot) -> dict[str, Any]:
     return {
         "before": asdict(before),
         "after": asdict(after),
-        "delta": {**delta, "database_bytes": after.database_bytes - before.database_bytes},
+        "delta": {**delta, "database_bytes": bytes_delta},
         "follow_gate": "blocked" if blocks else "clear",
         "blocks": blocks,
     }

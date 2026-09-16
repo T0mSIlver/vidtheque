@@ -523,7 +523,9 @@ and at most 4.7 MiB for frames before SQLite and vec0 overhead.
 
 The private 2025 rehearsal records the database size and the counts of cues,
 chunks, keyframes, OCR lines, `vec_chunks`, and `vec_frames` before and after
-the 8h27 VOD. More than 600 frame vectors blocks arming the follow because the
+the 8h27 VOD. The two readings must name the same data directory and may only
+grow; a baseline from another database, or a count that shrank, fails the
+comparison rather than clearing the gate with a delta that measures nothing. More than 600 frame vectors blocks arming the follow because the
 hard cap failed. A text count unexpectedly above about 960 also blocks arming
 until duplicate writes and abnormal cue spacing are ruled out; the rehearsal
 does not invent a second text-row cap.

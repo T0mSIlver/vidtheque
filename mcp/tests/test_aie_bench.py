@@ -112,3 +112,27 @@ def test_long_vod_comparison_enforces_both_follow_gates() -> None:
     assert result["follow_gate"] == "blocked"
     assert len(result["blocks"]) == 2
     assert result["delta"]["database_bytes"] == 100
+
+
+def test_a_comparison_needs_two_readings_of_one_growing_directory() -> None:
+    names = ("cues", "chunks", "keyframes", "ocr_lines", "vec_chunks", "vec_frames")
+    zero = dict.fromkeys(names, 0)
+    grown = dict(zero, vec_frames=700)
+
+    with pytest.raises(ValueError, match="different data directories"):
+        compare(
+            Snapshot("before", "/other", 100, dict(zero, vec_frames=1_000)),
+            Snapshot("after", "/data", 200, grown),
+        )
+
+    with pytest.raises(ValueError, match="vec_frames"):
+        compare(
+            Snapshot("before", "/data", 100, dict(zero, vec_frames=1_000)),
+            Snapshot("after", "/data", 200, grown),
+        )
+
+    with pytest.raises(ValueError, match="database_bytes"):
+        compare(
+            Snapshot("before", "/data", 300, zero),
+            Snapshot("after", "/data", 200, grown),
+        )
