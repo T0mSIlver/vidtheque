@@ -267,10 +267,16 @@ def _chunk_starts(duration: float) -> list[float]:
 
 
 def _response_words(payload: Mapping[str, Any], *, offset: float) -> list[Word]:
+    # The two shapes are alternatives, not halves: a response carrying both a
+    # top-level `words` array and words nested under its segments describes the
+    # same speech twice, and taking the union would bill one hour of audio and
+    # return two of it. The flat array is the authoritative one when it is there.
     candidates: list[Mapping[str, Any]] = []
     top_words = payload.get("words")
     if isinstance(top_words, list):
         candidates.extend(item for item in top_words if isinstance(item, Mapping))
+    if candidates:
+        return _words_from(candidates, offset=offset)
 
     raw_segments = payload.get("segments")
     if isinstance(raw_segments, list):
@@ -284,7 +290,10 @@ def _response_words(payload: Mapping[str, Any], *, offset: float) -> list[Word]:
             kind = str(segment.get("type") or "").casefold()
             if "word" in kind or "word" in segment:
                 candidates.append(segment)
+    return _words_from(candidates, offset=offset)
 
+
+def _words_from(candidates: Sequence[Mapping[str, Any]], *, offset: float) -> list[Word]:
     words: list[Word] = []
     for item in candidates:
         source = item.get("word", item.get("text"))

@@ -11,6 +11,7 @@ from vidtheque_worker.backends.voxtral_stt import (
     _chunk_starts,
     _MistralClient,
     _multipart,
+    _response_words,
 )
 
 
@@ -196,6 +197,32 @@ def test_a_repeated_trigram_far_from_the_seam_is_not_a_match(tmp_path: Path) -> 
         right.start >= left.end for left, right in zip(result.segments, result.segments[1:])
     )
     assert [word.word for word in words].count("model") == 1
+
+
+def test_a_response_carrying_both_word_shapes_transcribes_each_word_once() -> None:
+    """Some responses repeat the words under `segments[]` as well as at the top
+    level. They are the same speech described twice, not two halves of it."""
+
+    payload = {
+        "words": [
+            {"word": "one", "start": 0.0, "end": 0.4},
+            {"word": "two", "start": 0.5, "end": 0.9},
+        ],
+        "segments": [
+            {
+                "start": 0.0,
+                "end": 0.9,
+                "text": "one two",
+                "words": [
+                    {"word": "one", "start": 0.0, "end": 0.4},
+                    {"word": "two", "start": 0.5, "end": 0.9},
+                ],
+            }
+        ],
+    }
+    words = _response_words(payload, offset=10.0)
+    assert [word.word for word in words] == ["one", "two"]
+    assert [word.start for word in words] == [10.0, 10.5]
 
 
 def test_chunk_starts_use_a_thirty_second_overlap() -> None:
