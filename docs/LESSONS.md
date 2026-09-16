@@ -140,6 +140,20 @@ so the re-keyed table patched the new listing onto the old rows and claimed a
 job had arrived (2026-09-16). A read's data belongs to its request key and to
 nothing else.
 
+**A router navigation per search is a scroll to the top.** The public console
+pushed `/paris?q=…` through the App Router, so every search, chip and mode
+switch re-rendered the page on the server and moved `scrollY` from 1766 to 0
+(2026-09-16). A plain `history.pushState(null, …)` is not the whole cure
+either. Next 16 adopts it as a restore, and on a page keyed by its search
+params that restore sometimes fetched the RSC payload and scrolled anyway.
+Measure `_rsc` requests and `scrollY` around each interaction; do not infer
+them from the code.
+
+**`/api/meta` shares the search bucket, so its 429 is a JSON error body, not
+a parse failure.** A visitor who spent the bucket and reloaded got `undefined`
+in the MCP line and the paste line, and a hidden ask switch, with nothing
+saying why (2026-08-28). Any non-2xx is a state the page names.
+
 **`/tmp` is a 4 GB tmpfs shared by every agent on the box.** When it fills,
 headless Chromium and tool output fail with `ENOSPC`, not with a hint. Point
 `TMPDIR` at `/var/tmp` or a gitignored cache for test and browser runs, and
