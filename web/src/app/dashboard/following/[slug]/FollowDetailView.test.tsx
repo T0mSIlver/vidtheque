@@ -326,12 +326,13 @@ describe("one follow's page", () => {
       expect(within(rule).queryByText("2026-09-06 16:34")).not.toBeInTheDocument();
 
       // The control stays, disabled, with the refusal the write would be
-      // refused with as its help — and the control that clears the count is
-      // the one standing beside it.
+      // refused with beside it in text — reachable without a pointer — and the
+      // control that clears the count is the one standing beside it.
       const check = screen.getByRole("button", { name: "Check now" });
       expect(check).toBeDisabled();
-      expect(check).toHaveAttribute(
-        "title",
+      expect(check).not.toHaveAttribute("title");
+      const reason = document.getElementById(check.getAttribute("aria-describedby") ?? "");
+      expect(reason).toHaveTextContent(
         "Not scheduled: Andrej Karpathy is failing and has stopped retrying after 7 " +
           "consecutive failures. Nothing was queued.",
       );
