@@ -208,6 +208,12 @@ describe("proxy", () => {
       "/dashboard/jobs/job_finished01/retry",
       "/dashboard/following/andrej-karpathy/state",
       "/dashboard/following/andrej-karpathy/delete",
+      // Python owns the word `logout` and nothing that merely starts with it.
+      // A mistyped or crawled one of these is the refusal this app draws, so
+      // the exclusion that keeps the real path out has to end at it.
+      "/dashboard/logoutx",
+      "/dashboard/logout-now",
+      "/dashboard/logout.php",
     ]) {
       expect(matches(path), path).toBe(true);
     }

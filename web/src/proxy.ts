@@ -295,7 +295,13 @@ export const config = {
       // JSON the pages read, and `/dashboard/logout`, the write that ends a
       // session. Both are named here rather than left to luck, and the entries
       // above stay as the record of which paths are pages.
-      source: "/dashboard/((?!api/|logout).*)",
+      //
+      // Each exclusion ends where the path it names ends: `api/` carries its
+      // slash and `logout` its `$`. Unanchored, the second one excused every
+      // path *beginning* with the word, and `/dashboard/logout-now` is not
+      // Python's — it is this app's own refusal, and it was the last document
+      // on this surface reaching a reader with no policy on it.
+      source: "/dashboard/((?!api/|logout$).*)",
       missing: [
         { type: "header", key: "next-router-prefetch" },
         { type: "header", key: "purpose", value: "prefetch" },
