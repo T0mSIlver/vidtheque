@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { mountDashboard, type Answer, type Route } from "@/test/dashboard";
 import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
 import {
   BAD_DURATION,
@@ -22,60 +23,32 @@ import {
   UNKNOWN_FOLLOW,
 } from "@/test/following-fixtures";
 import { firstPaint } from "@/test/retry";
+import { FollowDetailView } from "./FollowDetailView";
 
-// A follow's own page is the one place on this instance that says what a
-// standing rule *did not* do. So the assertions are the third band and its
-// receipts — the reason printed verbatim, the near-miss line that exists only
-// when it is true, and the button that overrules a decision — plus the five
-// writes, each of which has to show its outcome inline because this page does
-// not poll.
+vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 
-type Route = { status?: number; body?: unknown; headers?: Record<string, string> };
+// What a standing rule did not do: the ledger and its receipts, the near-miss
+// line that exists only when true, and the five writes, each answered inline.
 
-async function mount({
+function mount({
   detail = { body: FOLLOW_DETAIL },
   post = { body: PAUSED_OUTCOME },
   search = "",
   session = OWNER_SESSION,
   slug = "andrej-karpathy",
 }: {
-  detail?: Route | Route[];
-  post?: Route;
+  detail?: Route;
+  post?: Answer;
   search?: string;
   session?: unknown;
   slug?: string;
 } = {}) {
-  const reads = Array.isArray(detail) ? [...detail] : [detail];
-  const posts: { path: string; init: RequestInit }[] = [];
-  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input);
-    if (init?.method === "POST") posts.push({ path: url, init });
-    let route: Route;
-    if (init?.method === "POST") route = post;
-    else if (url === "/dashboard/api/session") route = { body: session };
-    else if (url.startsWith("/dashboard/api/following"))
-      route = reads.length > 1 ? reads.shift()! : reads[0];
-    else route = { status: 404, body: {} };
-    // A read that never answers, for the assertions about what the page says
-    // while it is still asking.
-    if (route.status === 0) return new Promise<Response>(() => {});
-    const text = typeof route.body === "string" ? route.body : JSON.stringify(route.body ?? {});
-    return new Response(text, {
-      status: route.status ?? 200,
-      headers: { "content-type": "application/json", ...route.headers },
-    });
+  return mountDashboard(<FollowDetailView slug={slug} />, {
+    path: `/dashboard/following/${slug}`,
+    search,
+    session,
+    routes: { "/dashboard/api/following/*": detail, "POST /dashboard/following/*": post },
   });
-  vi.stubGlobal("fetch", fetcher);
-  const { mockNavigation } = await import("@/test/next");
-  const nav = mockNavigation(search, `/dashboard/following/${slug}`);
-  const { Chrome } = await import("../../Chrome");
-  const { FollowDetailView } = await import("./FollowDetailView");
-  render(
-    <Chrome>
-      <FollowDetailView slug={slug} />
-    </Chrome>,
-  );
-  return { ...nav, fetcher, posts };
 }
 
 /** The ledger row a candidate's title is in. */
@@ -88,11 +61,6 @@ function noNulls() {
 }
 
 describe("one follow's page", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.resetModules();
-  });
-
   it("opens with the rule as facts, the clocks and the last error", async () => {
     await mount();
 
@@ -258,22 +226,18 @@ describe("one follow's page", () => {
 
       await userEvent.click(screen.getByRole("button", { name: "Pause" }));
 
-      expect(posts[0].path).toBe("/dashboard/following/andrej-karpathy/state");
-      expect(String(posts[0].init.body)).toBe("action=pause");
-      expect((posts[0].init.headers as Record<string, string>).accept).toBe("application/json");
-      // The outcome *is* the row, so the page follows it with no second read.
+      expect(posts()[0].path).toBe("/dashboard/following/andrej-karpathy/state");
+      expect(posts()[0].fields.toString()).toBe("action=pause");
+      expect(posts()[0].headers.get("accept")).toBe("application/json");
       const head = await screen.findAllByText("paused");
       expect(head.length).toBeGreaterThan(0);
+      // The answer takes the focus the button had.
+      expect(document.activeElement).toHaveAttribute("role", "status");
+      expect(document.activeElement).toHaveTextContent("paused");
     });
 
-    // §21's follow block is `read_models.follow_row_json_with_error`, the same
-    // function §22's detail read calls, so it carries the two failure columns —
-    // and a `resume` nulls both. The page used to re-read after every write to
-    // learn that; a complete row means it does not have to.
-    // A resume clears both error columns *and* re-arms the clock, and the page
-    // re-reads so the bands the row cannot speak for — the checks, the
-    // in-flight line, the jobs, the counts and the ledger — catch up with it.
-    // That is what `writes.py` did by redirecting back to this page.
+    // A resume clears both error columns and re-arms the clock; the page re-reads
+    // once so the checks, jobs and ledger catch up too.
     it("clears the last failure on a resume, and re-reads the page it changed", async () => {
       const resumed = {
         ...FOLLOW_DETAIL,
@@ -284,7 +248,7 @@ describe("one follow's page", () => {
           last_error_message: null,
         },
       };
-      const { posts, fetcher } = await mount({
+      const { posts, calls } = await mount({
         detail: [
           { body: { ...FOLLOW_DETAIL, follow: { ...FOLLOW_DETAIL.follow, state: "failing" } } },
           { body: resumed },
@@ -294,22 +258,13 @@ describe("one follow's page", () => {
       await screen.findByRole("heading", { name: "Andrej Karpathy" });
       expect(screen.getByText("E_RATE_LIMIT")).toBeInTheDocument();
 
-      const reads = () =>
-        fetcher.mock.calls.filter(
-          ([url, init]) =>
-            String(url).startsWith("/dashboard/api/following") &&
-            (init as RequestInit | undefined)?.method !== "POST",
-        ).length;
+      const reads = () => calls("/dashboard/api/following").length;
       expect(reads()).toBe(1);
 
       await userEvent.click(screen.getByRole("button", { name: "Try again" }));
 
-      expect(posts[0].path).toBe("/dashboard/following/andrej-karpathy/state");
-      // The wait is on the assertion rather than on a word that arrives ahead
-      // of it. `active` comes off the write's own outcome and the cleared pill
-      // off the read that follows, so a query run the moment the state word
-      // lands is a query run one reading early — which is what it was, twice
-      // in five passes on a loaded box.
+      expect(posts()[0].path).toBe("/dashboard/following/andrej-karpathy/state");
+      // `active` arrives with the outcome, the cleared pill with the re-read.
       await waitFor(() => {
         expect(screen.queryByText("E_RATE_LIMIT")).not.toBeInTheDocument();
         expect(reads()).toBe(2);
@@ -333,7 +288,7 @@ describe("one follow's page", () => {
       await screen.findByRole("heading", { name: "Andrej Karpathy" });
 
       await userEvent.click(screen.getByRole("button", { name: "Try again" }));
-      expect(String(posts[0].init.body)).toBe("action=resume");
+      expect(posts()[0].fields.toString()).toBe("action=resume");
     });
 
     // Since 0008 a `failing` follow with retries left is schedulable, so
@@ -347,13 +302,13 @@ describe("one follow's page", () => {
       await screen.findByRole("heading", { name: "Andrej Karpathy" });
 
       const fact = screen.getByText("retry 2 of 7, once a day");
-      expect(fact.className).toMatch(/factWarn/);
+      expect(fact).toHaveAttribute("data-tone", "warn");
       // The clock it is still coming back on is a clock the minirow prints —
       // a day out, which is the retry cadence.
       expect(screen.getByText("2026-09-06 16:34")).toBeInTheDocument();
 
       await userEvent.click(screen.getByRole("button", { name: "Check now" }));
-      expect(posts[0].path).toBe("/dashboard/following/andrej-karpathy/check");
+      expect(posts()[0].path).toBe("/dashboard/following/andrej-karpathy/check");
       expect(await screen.findByText("due now")).toBeInTheDocument();
       noNulls();
     });
@@ -363,7 +318,7 @@ describe("one follow's page", () => {
       await screen.findByRole("heading", { name: "Andrej Karpathy" });
 
       const fact = screen.getByText("gave up after 7 tries");
-      expect(fact.className).toMatch(/factBad/);
+      expect(fact).toHaveAttribute("data-tone", "bad");
       // Nothing will enqueue it, so no clock is promised: the minirow prints
       // the dash, not the timestamp its `next_check_at` still carries.
       const rule = screen.getByRole("region", { name: "The rule" });
@@ -381,7 +336,7 @@ describe("one follow's page", () => {
           "consecutive failures. Nothing was queued.",
       );
       expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
-      expect(posts).toHaveLength(0);
+      expect(posts()).toHaveLength(0);
       noNulls();
     });
 
@@ -411,7 +366,7 @@ describe("one follow's page", () => {
 
       await userEvent.click(screen.getByRole("button", { name: "Check now" }));
 
-      expect(posts[0].path).toBe("/dashboard/following/andrej-karpathy/check");
+      expect(posts()[0].path).toBe("/dashboard/following/andrej-karpathy/check");
       // The control says what the route answered, beside the button that
       // stays: asking twice is a thing an operator does when the first check
       // found nothing.
@@ -441,8 +396,8 @@ describe("one follow's page", () => {
       await userEvent.type(floor, "9:00");
       await userEvent.click(screen.getByRole("button", { name: "Save the rule" }));
 
-      expect(posts[0].path).toBe("/dashboard/following/andrej-karpathy/rules");
-      const body = new URLSearchParams(String(posts[0].init.body));
+      expect(posts()[0].path).toBe("/dashboard/following/andrej-karpathy/rules");
+      const body = new URLSearchParams(posts()[0].fields.toString());
       expect(body.get("min_duration")).toBe("9:00");
       expect(body.get("tab_videos")).toBe("1");
       expect(body.get("tags")).toBe("topic:llm");
@@ -508,6 +463,9 @@ describe("one follow's page", () => {
       await userEvent.click(screen.getByRole("button", { name: "Save the rule" }));
 
       expect(await screen.findByText("E_BAD_TIME_FORMAT")).toBeInTheDocument();
+      expect(document.activeElement).toBe(
+        screen.getByText("E_BAD_TIME_FORMAT").closest('[role="status"]'),
+      );
       expect(screen.getByText(/Could not parse min_duration/)).toBeInTheDocument();
     });
 
@@ -518,11 +476,11 @@ describe("one follow's page", () => {
       await screen.findByRole("heading", { name: "Andrej Karpathy" });
 
       await userEvent.click(screen.getByRole("button", { name: "Unfollow" }));
-      expect(posts).toHaveLength(0);
+      expect(posts()).toHaveLength(0);
       expect(screen.getByText(/Stop the checks and delete the ledger\?/)).toBeInTheDocument();
 
       await userEvent.click(screen.getByRole("button", { name: "Unfollow" }));
-      expect(posts[0].path).toBe("/dashboard/following/andrej-karpathy/delete");
+      expect(posts()[0].path).toBe("/dashboard/following/andrej-karpathy/delete");
       expect(await screen.findByText(/stayed in the corpus/)).toBeInTheDocument();
       expect(push).toHaveBeenCalledWith("/dashboard/following");
     });
@@ -565,7 +523,7 @@ describe("one follow's page", () => {
       await userEvent.click(screen.getByRole("button", { name: "Unfollow" }));
       await userEvent.click(screen.getByRole("button", { name: "Keep it" }));
 
-      expect(posts).toHaveLength(0);
+      expect(posts()).toHaveLength(0);
       expect(screen.getByRole("button", { name: "Unfollow" })).toBeInTheDocument();
     });
 
@@ -578,8 +536,8 @@ describe("one follow's page", () => {
       const row = rowOf("Near the floor");
       await userEvent.click(within(row).getByRole("button", { name: "Index anyway" }));
 
-      expect(posts[0].path).toBe("/dashboard/following/andrej-karpathy/queue");
-      expect(String(posts[0].init.body)).toBe("url=https%3A%2F%2Fyoutu.be%2Fnearmiss001");
+      expect(posts()[0].path).toBe("/dashboard/following/andrej-karpathy/queue");
+      expect(posts()[0].fields.toString()).toBe("url=https%3A%2F%2Fyoutu.be%2Fnearmiss001");
       expect(await within(row).findByRole("link", { name: "job_02e028870c97" })).toHaveAttribute(
         "href",
         "/dashboard/jobs/job_02e028870c97",
@@ -596,12 +554,13 @@ describe("one follow's page", () => {
     // stands in until the read has a better name — never the section's word
     // over a page about one channel.
     it("names the tab from the URL until the read lands, then from the follow", async () => {
-      await mount({ detail: { status: 0 }, slug: "andrej-karpathy" });
+      const { unmount } = await mount({
+        detail: () => new Promise<Answer>(() => {}),
+        slug: "andrej-karpathy",
+      });
       expect(document.title).toBe("andrej-karpathy — vidtheque");
 
-      cleanup();
-      vi.unstubAllGlobals();
-      vi.resetModules();
+      unmount();
       await mount();
       await screen.findByRole("heading", { name: "Andrej Karpathy" });
       expect(document.title).toBe("Andrej Karpathy — vidtheque");
@@ -612,8 +571,9 @@ describe("one follow's page", () => {
       await mount({
         detail: { body: { ...FOLLOW_DETAIL, follow: { ...FOLLOW_DETAIL.follow, title: "" } } },
       });
+      await screen.findByRole("region", { name: "The rule" });
       expect(
-        await screen.findByRole("heading", { name: "andrej-karpathy", level: 1 }),
+        screen.getByRole("heading", { name: "andrej-karpathy", level: 1 }),
       ).toBeInTheDocument();
     });
 

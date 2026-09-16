@@ -1,19 +1,8 @@
-/* The two following pages: the table of standing rules, and one rule's ledger.
+/* The two following pages: the rule as a row of facts, the form a rule is
+   written in, and the ledger of what a follow passed over. */
 
-   The values came out of `dashboard/static/dashboard.css`, retired on
-   2026-09-06; DESIGN.md is the source now. The band, the count line, the pager,
-   the grid and every control in a form are `dashboard.module.css`'s; what is here
-   is the vocabulary only these two pages have — the rule as a row of facts,
-   the multi-row form the rule is written in, and the controls that write.
-
-   Both pages import this one file rather than a module each: they are the same
-   object at two zoom levels, exactly as the two jobs pages are. */
-
-/* ------------------------------------------------------------- the rule
-
-   Facts, not a sentence: a column to compare down, so every fact is one
-   unbreakable unit and the middot between two of them belongs to the fact
-   before it (`parts.tsx` glues them the same way the strips do). */
+/* Facts, not a sentence: each one is unbreakable, and the middot belongs to
+   the fact before it. */
 .facts {
   display: flex;
   flex-wrap: wrap;
@@ -27,20 +16,17 @@
   white-space: nowrap;
 }
 
-/* The retry fact beside a `failing` pill: `warn` while the check is still
-   coming back on its own — nothing has failed that a day will not fix — and
-   the error tone once it has stopped and a human is the only thing that
-   re-arms it. Colour reinforces; the count is the message. */
-.factWarn {
+/* The retry fact: warn while it still comes back on its own, bad once a human
+   is the only way back. */
+.fact[data-tone="warn"] {
   color: var(--tone-warn);
 }
 
-.factBad {
+.fact[data-tone="bad"] {
   color: var(--tone-bad);
 }
 
-/* The rule at the top of a follow's own page. Same formatter, one size up:
-   this is the thing the reader came to check. */
+/* The rule on a follow's own page: the same facts, one size up. */
 .rule {
   composes: t-machine from global;
   display: flex;
@@ -55,8 +41,7 @@
   min-width: 14rem;
 }
 
-/* The reason column carries a whole sentence, so it is the one cell on either
-   table that wraps. */
+/* The reason column carries a sentence, so it is the one cell that wraps. */
 .colWhy {
   min-width: 16rem;
 }
@@ -65,10 +50,6 @@
   max-width: var(--note);
 }
 
-/* A decision is one word even when it is `skipped_duration`, a length is one
-   span and a date is one date: a value broken across two lines is a value the
-   reader has to reassemble before they can compare it down the column. What
-   wraps inside these cells is the note under the word, which says so. */
 .colDecision,
 .colWhen {
   white-space: nowrap;
@@ -83,11 +64,8 @@
   white-space: nowrap;
 }
 
-/* ------------------------------------------------------------- the form
+/* ------------------------------------------------------------- the form */
 
-   The add form and the edit disclosure, which are the same eleven controls.
-   `.filters` is a band that fits on one line; this is a form with rows in it,
-   so it keeps the plate and the seam and stacks instead. */
 .form {
   margin-top: var(--s4);
 }
@@ -118,9 +96,7 @@
   color: var(--muted);
 }
 
-/* What a control means, under the row it belongs to. Never a tooltip: the
-   ceilings in it are the numbers the validator clamps to, and a number a
-   reader has to hover to find is a number they will guess instead. */
+/* Under the row it explains, never a tooltip: the ceilings are numbers. */
 .fieldHelp {
   composes: t-cell from global;
   margin-top: var(--s2);
@@ -133,11 +109,8 @@
   font-variant-ligatures: none;
 }
 
-/* --------------------------------------------------------- the controls
+/* --------------------------------------------------------- the controls */
 
-   Every affordance on this surface POSTs, so the row of buttons under the rule
-   is the page's control panel — and the receipt under it is the only evidence
-   a write leaves, because these pages do not poll. */
 .followactions {
   display: flex;
   flex-wrap: wrap;
@@ -145,31 +118,7 @@
   margin-top: var(--s4);
 }
 
-.rowbutton {
-  composes: t-label-sm from global;
-  height: var(--s6);
-  padding: 0 var(--s2);
-  color: var(--fg2);
-  background: transparent;
-  border: 1px solid var(--seam2);
-  letter-spacing: 0.17em;
-  cursor: pointer;
-}
-
-.rowbutton:hover:enabled {
-  color: var(--gold);
-  border-color: var(--gold-44);
-}
-
-.rowbutton:disabled {
-  color: var(--fg3);
-  border-color: var(--seam);
-  cursor: not-allowed;
-}
-
-/* Unfollow, mid-confirmation. It is the one irreversible control here and the
-   only one that asks twice; the sentence beside it is what survives, because
-   that is the asymmetry worth stating (§18.5). */
+/* Unfollow asks twice (§18.5). */
 .confirm {
   display: flex;
   flex-wrap: wrap;
@@ -182,64 +131,17 @@
   color: var(--tone-bad);
 }
 
-.danger {
+.confirm .danger,
+.confirm .danger:hover {
   color: var(--tone-bad);
   border-color: var(--tone-bad);
 }
 
-.danger:hover:enabled {
-  color: var(--tone-bad);
-  border-color: var(--tone-bad);
-}
-
-/* What the write answered, beside the control that made it. */
-.outcome {
-  composes: t-machine-sm from global;
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: var(--s1);
-  align-items: center;
-  color: var(--fg2);
-  white-space: normal;
-}
-
-.outcomeBad {
-  color: var(--tone-bad);
-}
-
-.receipt {
-  margin-top: var(--s3);
-  padding: var(--s3) 0 0;
-  border-top: 1px solid var(--seam);
-}
-
-.receiptLine {
-  composes: t-cell from global;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s2);
-  align-items: center;
-  max-width: var(--note);
-}
-
-.receiptNext {
-  composes: t-cell from global;
-  margin-top: var(--s1);
-  max-width: var(--note);
-  color: var(--muted);
-}
-
-/* The rule's own disclosure. A `<details>` element does this with no script at
-   all, which is what kept these pages CSP-ready in Jinja and keeps them so
-   here. */
 .disclose {
   margin-top: var(--s4);
   border-top: 1px solid var(--seam);
 }
 
-/* `t-label`'s own values rather than `composes: t-label from global`: composes
-   takes a simple class selector only, and a disclosure's control is reached
-   through the element that owns it. */
 .disclose > summary {
   font-family: var(--mono);
   font-size: 10px;
@@ -277,23 +179,6 @@
 
 /* ------------------------------------------------------- the detail page */
 
-.crumbs {
-  composes: t-machine-sm from global;
-  padding-top: var(--s6);
-  color: var(--muted);
-}
-
-.crumbs a {
-  color: var(--fg2);
-  text-decoration: none;
-}
-
-.crumbs a:hover {
-  color: var(--gold);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
 .headstates {
   display: flex;
   flex-wrap: wrap;
@@ -301,21 +186,7 @@
   align-items: center;
 }
 
-.panelNote {
-  composes: t-cell from global;
-  margin-top: var(--s3);
-  max-width: var(--note);
-  color: var(--muted);
-}
-
-.panelNote code {
-  font-family: var(--mono);
-  font-variant-ligatures: none;
-}
-
-/* The one derived line above the ledger, and it is a finding rather than a
-   note: it is printed only when it is true, so when it is there it is the
-   most valuable sentence on the page. */
+/* Printed only when true, so it is the page's most valuable sentence. */
 .finding {
   composes: t-cell from global;
   margin-top: var(--s3);
@@ -325,8 +196,6 @@
   border-left: 1px solid var(--gold-44);
 }
 
-/* Every decision this follow has ever made, as words with counts. The words
-   are the store's own; the tone is the pill's. */
 .decisions {
   display: flex;
   flex-wrap: wrap;
@@ -347,20 +216,12 @@
   color: var(--muted);
 }
 
-.label {
-  composes: t-label-sm from global;
-  color: var(--muted);
-}
-
 .errText {
   composes: t-log from global;
   color: var(--fg2);
   overflow-wrap: anywhere;
 }
 
-/* The last error, printed whether or not the state is `failing`: one rate
-   limit does not fail a follow, and an operator reading a green pill still
-   wants to know what the last check hit. */
 .lasterror {
   display: flex;
   flex-wrap: wrap;
@@ -369,7 +230,6 @@
   margin-top: var(--s4);
 }
 
-/* A provisional decision says so rather than looking terminal. */
 .rowMeta {
   composes: t-machine-sm from global;
   display: block;
@@ -386,22 +246,13 @@
 
 /* ------------------------------------------------------- the narrow screen
 
-   At a phone's width both grids stop being grids: each row becomes its own
-   block and every cell wears the column's name, which is what the `data-label`
-   attributes on the cells have been for since the port — they were emitted and
-   nothing consumed them, so a six-column table of standing rules scrolled
-   sideways at 390 and the whole rule column went off the edge.
-
-   The head goes away entirely rather than into a visually-hidden box: once
-   `display: block` has taken the table apart there is no table left for a
-   screen reader to associate a `<th scope="col">` with, and every cell in the
-   stack prints its own column name. */
+   Each row becomes a block and each cell wears its column's name. */
 .follows {
-  composes: stacked from "../dashboard.module.css";
+  composes: stacked from "../kit/table.module.css";
 }
 
 .seen {
-  composes: stacked from "../dashboard.module.css";
+  composes: stacked from "../kit/table.module.css";
 }
 
 @media (max-width: 52rem) {
@@ -427,12 +278,8 @@
     border-bottom: 0;
   }
 
-  /* The value group wraps. Without it a state cell put the word and its error
-     code on one unwrappable line beside a fixed label, and the code — the half
-     that says what the last check hit — was pushed off the right edge. */
-  /* `text-align` is reset here rather than left to the cell: a `.num` column
-     carries a right alignment that, once the cell is a flex row with a fixed
-     label box, right-aligns the label inside it. */
+  /* Wraps, so an error code is not pushed off the edge; `text-align` reset so
+     a label does not hug its value. */
   .follows tbody td[data-label] {
     display: flex;
     flex-wrap: wrap;
@@ -445,16 +292,13 @@
     content: attr(data-label);
   }
 
-  /* The row's name is a name, not a label-and-value pair. */
   .follows tbody th {
     min-width: 0;
     margin-bottom: var(--s1);
   }
 }
 
-/* The ledger of passed-over candidates stacks lower down, at the breakpoint the
-   jobs and items tables use: it carries a whole sentence in its `why` column,
-   and a sentence has room to be a column for longer than six clocks do. */
+/* The ledger carries a sentence per row, so it stays a table longer. */
 @media (max-width: 780px) {
   .seen thead {
     display: none;
@@ -495,8 +339,6 @@
     margin-bottom: var(--s1);
   }
 
-  /* The `why` cell's own paragraph takes the rest of the line, and the two
-     nowrap columns stop being nowrap: there is no column left to keep. */
   .seen tbody .colWhy p,
   .seen tbody .colDecision,
   .seen tbody .colWhen {

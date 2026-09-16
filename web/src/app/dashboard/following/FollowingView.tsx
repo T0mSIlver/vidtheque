@@ -1,162 +1,97 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useCallback, useRef, useState } from "react";
 import { Pill } from "@/components/Pill";
 import { dashboard, DashboardError, ROOT } from "@/lib/dashboard/client";
-import type { FollowCreated, FollowListRow, Following } from "@/lib/dashboard/schemas";
+import { pick } from "@/lib/dashboard/query";
+import { useResource } from "@/lib/dashboard/resource";
+import type { FollowListRow, Following } from "@/lib/dashboard/schemas";
 import { at, count, DASH, duration, iso } from "@/lib/format";
-import dash from "../dashboard.module.css";
-import {
-  DashLink,
-  Fact,
-  Figure,
-  PageHead,
-  Panel,
-  ReadFailure,
-  Reading,
-  refusalOf,
-  Unbroken,
-  useWrite,
-  useWriteSide,
-} from "../parts";
-import { useSessionRead } from "../session";
-import { useRead } from "../useRead";
-import { Absent } from "./Absent";
+import { Absent, Notice, ReadFailure } from "../kit/notice";
+import { Notes, Pager, table, TableCount } from "../kit/table";
+import { DashLink, Fact, Figure, PageHead, Pending, ui, Unbroken } from "../kit/ui";
+import { useSessionResource } from "../session";
+import { AddForm } from "./AddForm";
 import styles from "./following.module.css";
-import {
-  nextCheckWords,
-  retryFact,
-  RuleFacts,
-  RuleFields,
-  RuleForm,
-  ruleValues,
-  schedulable,
-  windowWords,
-} from "./parts";
+import { nextCheckWords, RetryFact, RuleFacts, schedulable, windowWords } from "./parts";
 
-// The follows table — `templates/following.html`, reading
-// `GET /dashboard/api/following` in the browser (dashboard.md §18.3, §22).
-//
-// A follow is the one thing on this instance that acts while nobody is
-// watching, so this page's job is not "configure a follow": it is *show me what
-// they did, and what they decided not to do*. That is why the band counts what
-// is held as well as what arrived, why the budget is on this page and nowhere
-// else, and why the one band addressed to a person — the candidates waiting on
-// a human — sits above the table rather than inside it.
-//
-// **The whole surface can be absent.** Both `GET`s are registered with the
-// write routes, so a deployment with no write side answers `404` on the page
-// and on the JSON alike (§18.6). The shell has already asked `/api/session`,
-// so this renders the designed absent state rather than a failed read — and a
-// `404` from the list is the same answer arriving from the other direction.
+// The follows table (dashboard.md §18.3, §22): what the instance watches, what
+// it held back, and the budget. Both reads are registered with the writes, so
+// a deployment without a write side has no page here at all (§18.6).
 
-/** The two parameters the view takes. Nothing else reaches the API because
- *  somebody pasted it into the address bar. */
 const PAGE_KEYS = ["limit", "offset"];
 
 export function FollowingView() {
   const params = useSearchParams();
-  const search = params.toString();
-  const read = useCallback(
-    (signal: AbortSignal) => dashboard.following(apiQuery(search), signal),
-    [search],
+  const query = pick(params, PAGE_KEYS);
+  const following = useResource(`following?${query}`, (signal) =>
+    dashboard.following(query, signal),
   );
-  const state = useRead(read);
-  const session = useSessionRead();
+  const session = useSessionResource();
+  const data = following.data;
+  const error = following.error;
 
-  // The last reading, kept across the next one. A write on this page re-reads
-  // the whole listing — that is how the store's `failing_first` order survives
-  // a follow being made — and a page that blanked to `reading…` in between
-  // would take the receipt of that write off the screen with it.
-  const [held, setHeld] = useState<Following | null>(null);
-  if (state.status === "ready" && held !== state.data) setHeld(state.data);
-  const data = state.status === "ready" ? state.data : held;
-
-  // Two ways to learn one fact, and either is enough: the deployment says it
-  // registers no write side, or the endpoint that is registered *with* the
-  // writes answered `404`. The session is the faster of the two and the only
-  // one that can answer before this page's own read lands.
-  const refusal = state.status === "failed" ? state.error : null;
-  const absent =
-    (session.status === "ready" && !session.data.write_side) ||
-    (refusal instanceof DashboardError && refusal.status === 404);
-  if (absent) return <Absent />;
+  if (
+    session.data?.write_side === false ||
+    (error instanceof DashboardError && error.status === 404)
+  ) {
+    return <FollowingAbsent />;
+  }
 
   return (
     <>
       <PageHead title="Following">
-        {/* One fact, not two. The budget is a figure in the band directly
-            under this line, and a copy of it up here would be the same number
-            twice on the one row of the page that cannot wrap.
-
-            Present whatever the read is doing, which is what a server-rendered
-            head could not help but be: a strip that appears a beat after the
-            title is a strip that moves the page under the reader, and the em
-            dash is the honest value for a number nobody has yet. */}
         <Unbroken>
           <Fact label="follows" value={data ? count(data.totals.follows) : DASH} />
         </Unbroken>
       </PageHead>
 
-      {state.status === "loading" && !data ? <Reading /> : null}
-      {state.status === "failed" ? (
-        <ReadFailure error={state.error} onRetry={state.reload} />
-      ) : null}
-      {data ? <Loaded data={data} onMade={state.reload} /> : null}
+      {data ? (
+        <Loaded data={data} onMade={following.reload} />
+      ) : error !== undefined ? (
+        <ReadFailure error={error} onRetry={following.reload} />
+      ) : (
+        <Pending />
+      )}
     </>
+  );
+}
+
+export function FollowingAbsent() {
+  return (
+    <Absent title="Following" heading="This deployment does not follow channels.">
+      Following is part of the write side, and this instance registers none — it is either a
+      read-only projection of somebody&rsquo;s index, or an instance with no credential configured
+      to check. Nothing is disabled here: the rules, the checks and the ledger are not on this box
+      at all.
+    </Absent>
   );
 }
 
 function Loaded({ data, onMade }: { data: Following; onMade: () => void }) {
   const rows = data.follows;
-
   return (
     <>
       <Band data={data} />
       {data.checks_enabled ? null : <ChecksOff />}
       <Held data={data} />
-
-      {/* Where a clamp is disclosed. A payload has no form to echo an accepted
-          `limit` back into, so the sentence rides on `notes` — policy text,
-          composed in Python and rendered here. */}
-      {data.notes.length ? (
-        <ul className={dash.notes}>
-          {data.notes.map((note) => (
-            <li key={note}>{note}</li>
-          ))}
-        </ul>
-      ) : null}
-
+      <Notes notes={data.notes} />
       {rows.length ? <Table rows={rows} data={data} /> : null}
-
-      {/* A created follow is not on the payload this page has already read, and
-          putting the returned row at the top of the table would put it *above*
-          the store's own order — `failing_first`, which is the order this table
-          is read in at 03:00. So the listing is re-read and the receipt says
-          what was made. */}
       <AddForm follows={rows.length} vectorsReason={data.vectors_reason ?? null} onMade={onMade} />
     </>
   );
 }
 
-/**
- * The band: six figures, and every state printed as its own word.
- *
- * A follow that is paused and a follow that is failing are two different
- * mornings, and the colour reinforces the word rather than replacing it
- * (DESIGN.md, the Word-and-Colour Rule). A zero wears no tone, because a tone
- * on a zero is a warning about nothing.
- */
+/** Six figures; a zero wears no tone. */
 function Band({ data }: { data: Following }) {
   const { totals, budget } = data;
   const window = windowWords(budget.window_s);
   return (
     <section aria-labelledby="band">
-      <h2 className={dash.srOnly} id="band">
+      <h2 className={ui.srOnly} id="band">
         What this instance is watching
       </h2>
-      <dl className={`${dash.ledger} ${dash.ledger6}`}>
+      <dl className={`${ui.ledger} ${ui.ledger6}`}>
         <Figure label="follows" notes={["channels and playlists watched"]}>
           {count(totals.follows)}
         </Figure>
@@ -183,18 +118,13 @@ function Band({ data }: { data: Following }) {
         >
           {count(totals.due_soon)}
         </Figure>
-        {/* Hours of *video*, not GPU-minutes: a check knows a candidate's
-            length before it knows what indexing it will cost, and hours of
-            video is the number an operator reasons about. Rolling and across
-            every follow together — a per-follow accounting would let five
-            follows spend five budgets. */}
+        {/* Hours of video, rolling, across every follow together. */}
         <Figure
           label="budget"
           notes={[
             budget.ceiling_h
               ? `of ${budget.ceiling_h}h, over the last ${window}`
-              : // A ceiling of `0` is the operator turning it off. "of 0h"
-                // reads as "no budget left" and means the opposite.
+              : // `0` is the ceiling turned off, not "no budget left".
                 `used in the last ${window}; no ceiling is set`,
           ]}
         >
@@ -205,85 +135,69 @@ function Band({ data }: { data: Following }) {
   );
 }
 
-/**
- * The deployment fact that decides what every clock under it means (Tom,
- * 2026-09-05).
- *
- * With follow checks off, each `next_check_at` in the table is a time at which
- * nothing will happen — so the column prints the fact instead of the time
- * (`nextCheckWords`) and this line explains it once. It is in the list's voice
- * rather than the rail's because it is about *these rows*: the rail says what
- * the deployment may do, and this says what it will not.
- */
+/** With checks off every clock below is a time nothing happens at (§22). */
 function ChecksOff() {
   return (
-    <section className={dash.notice} aria-labelledby="checksoff">
-      <h2 className={dash.noticeTitle} id="checksoff">
-        Follow checks are off on this instance.
-      </h2>
-      <p className={dash.noticeDetail}>
-        Nothing claims a <code>follow_check</code>, so no rule below is running and no clock below
-        is due. The rules and their ledgers are unchanged, and <em>Check now</em> still only moves a
-        clock.
-      </p>
-    </section>
+    <Notice
+      id="checksoff"
+      title="Follow checks are off on this instance."
+      detail={
+        <>
+          Nothing claims a <code>follow_check</code>, so no rule below is running and no clock below
+          is due. The rules and their ledgers are unchanged, and <em>Check now</em> still only moves
+          a clock.
+        </>
+      }
+    />
   );
 }
 
-/** The one band addressed to a person rather than describing the instance:
- *  something matched a rule and is waiting for a human. It names the rows and
- *  gives each one its door, because "N are waiting" with nowhere to go is a
- *  notification and not a control. */
+/** Candidates waiting on a person, each with its door; warn, because nothing
+ *  failed and nothing moves until somebody decides. */
 function Held({ data }: { data: Following }) {
   const shown = data.held.length;
   if (!shown) return null;
   return (
-    // The `warn` tone, which is what `dashboard.css` gave this band: nothing
-    // has failed, and nothing is neutral either — a held video stays held until
-    // somebody decides. It is the tone the `held_review` pill wears in the
-    // ledger below, so the band and the rows it points at are one colour.
-    <section className={dash.noticeWarn} aria-labelledby="waiting">
-      {/* The count is this band's own rows and not the band figure above it:
-          `held` up there is everything held, and the budget holds a candidate
-          without asking anybody. These are the ones waiting on a *person*. */}
-      <h2 className={dash.noticeWarnTitle} id="waiting">
-        {data.held_more
+    <Notice
+      id="waiting"
+      tone="warn"
+      title={
+        data.held_more
           ? `More than ${shown} videos are waiting for you.`
-          : `${shown} ${shown === 1 ? "video is" : "videos are"} waiting for you.`}
-      </h2>
-      <ul className={`${dash.rowlist} ${dash.tight}`}>
+          : `${shown} ${shown === 1 ? "video is" : "videos are"} waiting for you.`
+      }
+      next={
+        data.held_more ? (
+          <>
+            More are held than the {data.held_cap} listed here; each follow&rsquo;s own page has its
+            whole ledger.
+          </>
+        ) : null
+      }
+    >
+      <ul className={`${ui.rowlist} ${ui.tight}`}>
         {data.held.map((item) => (
-          <li className={dash.minirow} key={`${item.slug}-${item.url}`}>
+          <li className={ui.minirow} key={`${item.slug}-${item.url}`}>
             <DashLink href={`${ROOT}/following/${encodeURIComponent(item.slug)}#passed`}>
               {item.title}
             </DashLink>
-            <span className={`${dash.minirowFigure} ${dash.muted}`}>{item.follow}</span>
+            <span className={`${ui.minirowFigure} ${ui.muted}`}>{item.follow}</span>
           </li>
         ))}
       </ul>
-      {data.held_more ? (
-        <p className={dash.noticeNext}>
-          More are held than the {data.held_cap} listed here; each follow&rsquo;s own page has its
-          whole ledger.
-        </p>
-      ) : null}
-    </section>
+    </Notice>
   );
 }
 
 function Table({ rows, data }: { rows: FollowListRow[]; data: Following }) {
+  const { limit, offset, has_more } = data.pagination;
   return (
     <>
-      <p className={dash.tablecount} role="status">
-        <span>
-          <span className={dash.shown}>{rows.length}</span> shown
-          {data.pagination.has_more ? ", more available" : null}.
-        </span>
-      </p>
+      <TableCount shown={rows.length} hasMore={has_more} />
 
-      <div className={dash.tablewrap}>
-        <table className={`${dash.grid} ${styles.follows}`}>
-          <caption className={dash.srOnly}>
+      <div className={table.tablewrap}>
+        <table className={`${table.grid} ${styles.follows}`}>
+          <caption className={ui.srOnly}>
             Every followed channel, its rule, its state and its clocks
           </caption>
           <thead>
@@ -304,7 +218,15 @@ function Table({ rows, data }: { rows: FollowListRow[]; data: Following }) {
         </table>
       </div>
 
-      <Pager pagination={data.pagination} />
+      {/* The accepted page size rides on both links (`page_link`). */}
+      <Pager
+        limit={limit}
+        offset={offset}
+        hasMore={has_more}
+        href={(next) =>
+          `${ROOT}/following?${new URLSearchParams({ limit: String(limit), offset: String(next) })}`
+        }
+      />
     </>
   );
 }
@@ -313,50 +235,33 @@ function Row({ follow, checksEnabled }: { follow: FollowListRow; checksEnabled: 
   return (
     <tr>
       <th scope="row" data-label="Channel">
-        {/* The slug when there is no name, which is `views._follow_row`'s own
-            fallback: a follow made from a URL with nothing readable in it
-            would otherwise be a link with no text in it at all. */}
+        {/* The slug when there is no name, or the link has no text. */}
         <DashLink
-          className={dash.rowTitle}
+          className={ui.rowTitle}
           href={`${ROOT}/following/${encodeURIComponent(follow.slug)}`}
         >
           {follow.title || follow.slug}
         </DashLink>
-        <span className={dash.rowMeta}>{follow.kind}</span>
+        <span className={ui.rowMeta}>{follow.kind}</span>
       </th>
-      {/* The rule as facts, never as a sentence: sixty rows at 03:00 are a
-          column to compare. The sentence the check obeys is one click away. */}
       <td className={styles.colRule} data-label="Rule">
         <RuleFacts follow={follow} />
       </td>
       <td data-label="State">
         <Pill state={follow.state} />
-        {/* `failing` covers two situations since 0008 and the row has to say
-            which: a follow retrying daily needs nothing from anyone, one that
-            gave up is waiting on a human. The count is the receipt, not a
-            fourth state word. */}
-        {follow.state === "failing" ? (
-          <span className={`${styles.fact} ${follow.retrying ? styles.factWarn : styles.factBad}`}>
-            {retryFact(follow)}
-          </span>
-        ) : null}
-        {/* Printed whether or not the state is `failing`: one rate limit does
-            not fail a follow, and a reader looking at a green pill still wants
-            to know what the last check hit. */}
+        {follow.state === "failing" ? <RetryFact follow={follow} /> : null}
+        {/* Printed whatever the state: one rate limit does not fail a follow. */}
         {follow.last_error_code ? <Pill state={follow.last_error_code} tone="bad" /> : null}
       </td>
       <td data-label="Last check">
-        <time className={dash.nowrap}>{at(follow.last_check_at)}</time>
+        <time className={ui.nowrap}>{at(follow.last_check_at)}</time>
       </td>
       <td data-label="Last arrival">
-        <time className={dash.nowrap}>{at(follow.last_new_at)}</time>
+        <time className={ui.nowrap}>{at(follow.last_new_at)}</time>
       </td>
-      {/* A `<time>` like the two clocks beside it — with a machine-readable
-          stamp when there is one, and without when the cell is printing why
-          there is not. */}
       <td data-label="Next check">
         <time
-          className={dash.nowrap}
+          className={ui.nowrap}
           dateTime={
             checksEnabled && schedulable(follow) && follow.next_check_at
               ? iso(follow.next_check_at)
@@ -368,213 +273,4 @@ function Row({ follow, checksEnabled }: { follow: FollowListRow; checksEnabled: 
       </td>
     </tr>
   );
-}
-
-function Pager({ pagination }: { pagination: Following["pagination"] }) {
-  const { limit, offset, has_more } = pagination;
-  if (!offset && !has_more) return null;
-  // `following.html`'s `page_link`, spelled out: the page size the server
-  // accepted rides on every link whether or not the reader typed it, in that
-  // order. A pager carrying only the offset pages a listing of twenty-five
-  // through a listing of a hundred the moment somebody sends the link on.
-  const link = (next: number) =>
-    `${ROOT}/following?${new URLSearchParams({ limit: String(limit), offset: String(next) })}`;
-  return (
-    <nav className={dash.pager} aria-label="Pagination">
-      {offset ? (
-        <DashLink className={dash.ghostlink} href={link(Math.max(offset - limit, 0))}>
-          ← Previous
-        </DashLink>
-      ) : null}
-      {has_more ? (
-        <DashLink className={dash.ghostlink} href={link(offset + limit)}>
-          Next {limit} →
-        </DashLink>
-      ) : null}
-    </nav>
-  );
-}
-
-/**
- * Follow a channel — `POST /dashboard/following`, which is this page's own
- * path with a different method.
- *
- * When there is nothing to list, this *is* the empty state: one sentence
- * naming what a follow does, then the controls that make one. An empty state
- * you have to leave in order to act on it is a screen that wasted the trip.
- *
- * The Jinja form redirects to the new follow's page. This one stays put and
- * puts the returned row at the top of the table, because the outcome is
- * inline: `already_following` is the tool saying it made nothing, and a
- * redirect cannot say that. The way to the new rule is on the receipt.
- */
-function AddForm({
-  follows,
-  vectorsReason,
-  onMade,
-}: {
-  follows: number;
-  vectorsReason: string | null;
-  onMade: () => void;
-}) {
-  const { indexable } = useWriteSide();
-  // A ref rather than state: the fields are read by the request this submit
-  // makes, not by anything that renders, and a `setState` here would put the
-  // POST a render behind the form it came from.
-  const fields = useRef<Record<string, string>>({});
-  const send = useCallback(() => dashboard.followChannel(fields.current), []);
-  const [write, run] = useWrite(send, (outcome) => {
-    // `already_following` made nothing, and the follow it names is already in
-    // the table this page read. A follow that *was* made is not, and it goes in
-    // where the store puts it rather than on top: `failing_first` is the order
-    // this table is read in, and a row parked above it is a row in no order at
-    // all.
-    if (outcome.follow && !outcome.already_following) onMade();
-  });
-
-  return (
-    <Panel id="add" title="Follow a channel">
-      <p className={dash.emptyNote}>
-        {follows
-          ? "A follow checks a channel or a playlist on its own clock, judges every new upload against a rule you write, and records what it decided either way."
-          : "Nothing is followed yet. A follow checks a channel or a playlist on its own clock, indexes the new uploads that match a rule you write, and keeps a ledger of every one it passed over and the number that made the decision."}
-      </p>
-
-      {/* §5.5's honest refusal, for the follow form too: `follow_channel`
-          raises `E_FEATURE_DISABLED` on the same condition `index_video` does,
-          so the page says so above the controls rather than after a
-          submission. */}
-      {indexable ? null : (
-        <p className={styles.panelNote}>
-          {/* The instance's own reason, verbatim — one `VectorState.reason`
-              through one `drift_reason`, so the follow form and the index form
-              cannot be refused with two explanations. Policy text, Python's,
-              and printed in the parenthesis `following.html` put it in. */}
-          Indexing is disabled on this instance
-          {vectorsReason ? ` (${vectorsReason})` : ""}, so a follow would queue videos it cannot
-          build. Fix the config or dimension mismatch and restart.
-        </p>
-      )}
-
-      <RuleForm
-        onFields={(next) => {
-          fields.current = next;
-          run();
-        }}
-      >
-        <div className={styles.formrow}>
-          <div className={`${dash.field} ${dash.wide}`}>
-            <label htmlFor="f-url">Channel or playlist URL</label>
-            <input
-              id="f-url"
-              name="url"
-              type="text"
-              required
-              autoComplete="off"
-              spellCheck={false}
-              placeholder="https://www.youtube.com/@handle"
-            />
-          </div>
-          <div className={`${dash.field} ${dash.wide}`}>
-            <label htmlFor="f-title">Name</label>
-            <input
-              id="f-title"
-              name="title"
-              type="text"
-              autoComplete="off"
-              placeholder="read off the URL if you leave it empty"
-            />
-          </div>
-        </div>
-        <p className={styles.fieldHelp}>
-          A channel URL (<code>/@handle</code>, <code>/channel/UC…</code>) or a playlist. A single
-          video is not a follow — <DashLink href={`${ROOT}/index`}>Add videos</DashLink> indexes one
-          of those.
-        </p>
-
-        {/* The fields stay live where the database refuses writes, exactly as
-            `following.html` left them. The refusal is stated above the form in
-            the instance's own words, and a rule is worth writing down while a
-            dimension mismatch is being fixed — a form that greys out is a form
-            that has to be retyped. The submission is honestly refused by
-            `follow_channel` and the refusal is printed under it. */}
-        <RuleFields ns="f" values={ruleValues()} />
-
-        <div className={`${dash.field} ${dash.actions}`}>
-          <button
-            className={dash.ghostlink}
-            type="submit"
-            disabled={write.status === "sending"}
-            // The database's own flag, said where a reader meets it: the rail's
-            // foot already prints `indexing refused` for the deployment.
-            title={indexable ? undefined : "This instance's database refuses writes."}
-          >
-            {write.status === "sending" ? "following…" : "Follow"}
-          </button>
-          <DashLink className={dash.ghostlink} href={`${ROOT}/index`}>
-            Add videos
-          </DashLink>
-        </div>
-      </RuleForm>
-
-      {write.status === "done" ? <MadeIt outcome={write.outcome} /> : null}
-      {write.status === "failed" ? <Refused error={write.error} /> : null}
-    </Panel>
-  );
-}
-
-/** What the tool did — and `already_following` is the half a redirect could
- *  never say: this URL already had a rule, so nothing was made and the rule in
- *  front of you is the one that was already there. */
-function MadeIt({ outcome }: { outcome: FollowCreated }) {
-  if (!outcome.follow) {
-    return (
-      <div className={styles.receipt} role="status">
-        <p className={styles.receiptLine}>The follow was accepted.</p>
-      </div>
-    );
-  }
-  return (
-    <div className={styles.receipt} role="status">
-      <p className={styles.receiptLine}>
-        <span>{outcome.already_following ? "Already following" : "Now following"}</span>
-        <DashLink href={`${ROOT}/following/${encodeURIComponent(outcome.follow.slug)}`}>
-          {outcome.follow.title}
-        </DashLink>
-      </p>
-      <p className={styles.receiptNext}>
-        {outcome.already_following
-          ? "Nothing was made: the tool returns the follow that was already there, unchanged."
-          : "Its own page has the rule the check will obey, and everything it passes over."}
-      </p>
-    </div>
-  );
-}
-
-/** The refusal, in the API's own words: the code, the message and the `next:`
- *  line are policy text and stay Python's. */
-function Refused({ error }: { error: unknown }) {
-  const refusal = refusalOf(error);
-  return (
-    <div className={styles.receipt} role="status">
-      <p className={`${styles.receiptLine} ${styles.outcomeBad}`}>
-        <code>{refusal.code}</code>
-        <span>{refusal.message}</span>
-      </p>
-      {refusal.next ? <p className={styles.receiptNext}>{refusal.next}</p> : null}
-    </div>
-  );
-}
-
-/** The page's URL, filtered to the parameters the view takes. Values go as
- *  typed: every clamp is Python's, and one corrected here would be a bound the
- *  reader is never told about — `notes` is where a moved one is disclosed. */
-export function apiQuery(search: string): URLSearchParams {
-  const from = new URLSearchParams(search);
-  const query = new URLSearchParams();
-  for (const key of PAGE_KEYS) {
-    const value = from.get(key);
-    if (value !== null && value.trim()) query.set(key, value.trim());
-  }
-  return query;
 }

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { fullText, mountDashboard, type Answer, type Route } from "@/test/dashboard";
 import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
 import {
   ALREADY_FOLLOWING,
@@ -16,54 +17,31 @@ import {
   RETRYING,
 } from "@/test/following-fixtures";
 import { firstPaint } from "@/test/retry";
+import { FollowingView } from "./FollowingView";
 
-// The follows table exists to answer one question in one glance: what is this
-// box watching while nobody is looking, and what is it holding back. So the
-// assertions are the facts no other page carries — the budget with its window,
-// the band of candidates waiting on a person, the rule compressed to a column
-// you can compare down — and the three states in which the page is not a table
-// at all: absent, empty, and refused.
+vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 
-type Route = { status?: number; body?: unknown; headers?: Record<string, string> };
+// What the box watches and holds back: the budget, the held band, the rule as
+// a column, and the three states where the page is not a table.
 
-/** One canned listing, or a queue of them: the second entry is what the read a
- *  write triggers comes back with. */
-async function mount({
+/** One canned listing, or a queue: the second is what a write's re-read gets. */
+function mount({
   list = { body: FOLLOWING },
   post = { body: CREATED_OUTCOME },
   search = "",
   session = OWNER_SESSION,
-}: { list?: Route | Route[]; post?: Route; search?: string; session?: unknown } = {}) {
-  const listings = Array.isArray(list) ? [...list] : [list];
-  const posts: { path: string; init: RequestInit }[] = [];
-  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input);
-    if (init?.method === "POST") posts.push({ path: url, init });
-    const next = listings.length > 1 ? listings.shift()! : listings[0];
-    const route: Route = init?.method === "POST" ? post : answer(url, next, session);
-    const text = typeof route.body === "string" ? route.body : JSON.stringify(route.body ?? {});
-    return new Response(text, {
-      status: route.status ?? 200,
-      headers: { "content-type": "application/json", ...route.headers },
-    });
+}: { list?: Route; post?: Answer; search?: string; session?: unknown } = {}) {
+  return mountDashboard(<FollowingView />, {
+    path: "/dashboard/following",
+    search,
+    session,
+    routes: { "/dashboard/api/following": list, "POST /dashboard/following": post },
   });
-  vi.stubGlobal("fetch", fetcher);
-  const { mockNavigation } = await import("@/test/next");
-  const nav = mockNavigation(search, "/dashboard/following");
-  const { Chrome } = await import("../Chrome");
-  const { FollowingView } = await import("./FollowingView");
-  render(
-    <Chrome>
-      <FollowingView />
-    </Chrome>,
-  );
-  return { ...nav, fetcher, posts };
 }
 
-function answer(url: string, list: Route, session: unknown): Route {
-  if (url === "/dashboard/api/session") return { body: session };
-  if (url.startsWith("/dashboard/api/following")) return list;
-  return { status: 404, body: {} };
+/** The page has answered: the add form is on every loaded listing. */
+function loaded() {
+  return screen.findByRole("region", { name: "Follow a channel" });
 }
 
 /** The table row a follow's title is in. Scoped to the table, because a title
@@ -79,16 +57,11 @@ function noNulls() {
 }
 
 describe("the follows table", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.resetModules();
-  });
-
   it("shows every follow, its rule as facts and its three clocks", async () => {
     await mount();
 
-    expect(await screen.findByRole("heading", { name: "Following" })).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("2 shown.");
+    expect(await screen.findByText(fullText("2 shown."))).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Following" })).toBeInTheDocument();
 
     const karpathy = rowOf("Andrej Karpathy");
     // The rule, compressed: the same facts `views._rule_facts` prints, from one
@@ -121,7 +94,7 @@ describe("the follows table", () => {
   // explains a page full of `held_budget` rows.
   it("prints the budget as hours of video, with the window it is counted over", async () => {
     await mount();
-    await screen.findByRole("status");
+    await loaded();
 
     expect(screen.getByText("1h 00m")).toBeInTheDocument();
     expect(screen.getByText("of 16h, over the last 24h")).toBeInTheDocument();
@@ -153,7 +126,7 @@ describe("the follows table", () => {
   // which nothing will happen, so the page says so instead of printing one.
   it("says checks are off rather than promising a next check", async () => {
     await mount({ list: { body: CHECKS_OFF } });
-    await screen.findByRole("status");
+    await loaded();
 
     expect(
       screen.getByRole("heading", { name: "Follow checks are off on this instance." }),
@@ -168,20 +141,19 @@ describe("the follows table", () => {
 
   it("renders the clamp the server moved", async () => {
     await mount({ list: { body: CLAMPED_FOLLOWING }, search: "limit=100000&offset=-3" });
-    await screen.findByRole("status");
+    await loaded();
 
     expect(screen.getByText("limit=100000 → 100")).toBeInTheDocument();
     expect(screen.getByText("offset=-3 → 0")).toBeInTheDocument();
   });
 
   it("sends the two parameters the view takes, as the reader typed them", async () => {
-    const { fetcher } = await mount({ search: "limit=100000&offset=25&nonsense=1" });
-    await screen.findByRole("status");
+    const { calls } = await mount({ search: "limit=100000&offset=25&nonsense=1" });
+    await loaded();
 
-    const read = fetcher.mock.calls.find((call) =>
-      String(call[0]).startsWith("/dashboard/api/following"),
+    expect(calls("/dashboard/api/following")[0].url).toBe(
+      "/dashboard/api/following?limit=100000&offset=25",
     );
-    expect(String(read?.[0])).toBe("/dashboard/api/following?limit=100000&offset=25");
   });
 
   // The band that is addressed to a person rather than describing the instance.
@@ -190,8 +162,7 @@ describe("the follows table", () => {
   it("draws the held band in the warn tone rather than as an error", async () => {
     await mount();
     const band = await screen.findByRole("region", { name: /waiting for you/ });
-    expect(band.className).toMatch(/noticeWarn/);
-    expect(within(band).getByRole("heading").className).toMatch(/noticeWarnTitle/);
+    expect(band).toHaveAttribute("data-tone", "warn");
   });
 
   // `failing` covers two situations since 0008 and the row has to say which:
@@ -199,11 +170,11 @@ describe("the follows table", () => {
   // waiting on a human. The count is the receipt, not a fourth state word.
   it("says a failing follow is retrying, in the warn tone", async () => {
     await mount({ list: { body: { ...FOLLOWING, follows: [RETRYING, PAUSED] } } });
-    await screen.findByRole("status");
+    await loaded();
     const row = rowOf("Andrej Karpathy");
 
     const fact = within(row).getByText("retry 2 of 7");
-    expect(fact.className).toMatch(/factWarn/);
+    expect(fact).toHaveAttribute("data-tone", "warn");
     // The clock it is still coming back on is a clock: the cell keeps its
     // machine-readable stamp.
     expect(row.querySelector('[data-label="Next check"] time')).toHaveAttribute("datetime");
@@ -212,11 +183,11 @@ describe("the follows table", () => {
 
   it("says a follow that gave up in the error tone, and promises no next check", async () => {
     await mount({ list: { body: { ...FOLLOWING, follows: [GAVE_UP, PAUSED] } } });
-    await screen.findByRole("status");
+    await loaded();
     const row = rowOf("Andrej Karpathy");
 
     const fact = within(row).getByText("gave up");
-    expect(fact.className).toMatch(/factBad/);
+    expect(fact).toHaveAttribute("data-tone", "bad");
     expect(within(row).getByText("failing")).toBeInTheDocument();
     // A clock nothing will act on is not printed as one it will.
     const next = row.querySelector('[data-label="Next check"] time');
@@ -243,7 +214,7 @@ describe("the follows table", () => {
     await mount({
       list: { body: { ...FOLLOWING, follows: [{ ...FOLLOWING.follows[0], title: "" }] } },
     });
-    await screen.findByRole("status");
+    await loaded();
     expect(screen.getByRole("link", { name: "andrej-karpathy" })).toHaveAttribute(
       "href",
       "/dashboard/following/andrej-karpathy",
@@ -253,16 +224,14 @@ describe("the follows table", () => {
   // A clock in a cell is a `<time>`, with the stamp a machine can read on it —
   // and without one when the cell is printing why there is no clock.
   it("marks the next check up as a time, and does not when it is not one", async () => {
-    await mount();
-    await screen.findByRole("status");
+    const { unmount } = await mount();
+    await loaded();
     const cell = rowOf("Andrej Karpathy").querySelector('[data-label="Next check"] time');
     expect(cell).toHaveAttribute("datetime");
 
-    cleanup();
-    vi.unstubAllGlobals();
-    vi.resetModules();
+    unmount();
     await mount({ list: { body: CHECKS_OFF } });
-    await screen.findByRole("status");
+    await loaded();
     const off = rowOf("Andrej Karpathy").querySelector('[data-label="Next check"] time');
     expect(off).toHaveTextContent("checks off");
     expect(off).not.toHaveAttribute("datetime");
@@ -273,7 +242,7 @@ describe("the follows table", () => {
       list: { body: { ...FOLLOWING, pagination: { limit: 25, offset: 25, has_more: true } } },
       search: "offset=25",
     });
-    await screen.findByRole("status");
+    await loaded();
 
     // The page size the server accepted rides on both links whether or not the
     // reader typed it: a pager carrying only the offset pages a listing of
@@ -359,7 +328,7 @@ describe("the follows table", () => {
   });
 
   describe("the add form", () => {
-    it("posts the fields the Jinja form posts, and re-reads the listing it made", async () => {
+    it("posts the form's fields, and re-reads the listing it made once", async () => {
       const withNew = {
         body: {
           ...FOLLOWING,
@@ -369,8 +338,8 @@ describe("the follows table", () => {
           follows: [FOLLOWING.follows[0], CREATED_OUTCOME.follow, FOLLOWING.follows[1]],
         },
       };
-      const { posts, fetcher } = await mount({ list: [{ body: FOLLOWING }, withNew] });
-      await screen.findByRole("status");
+      const { posts, calls } = await mount({ list: [{ body: FOLLOWING }, withNew] });
+      await loaded();
 
       await userEvent.type(
         screen.getByLabelText("Channel or playlist URL"),
@@ -380,10 +349,10 @@ describe("the follows table", () => {
       await userEvent.click(screen.getByRole("button", { name: "Follow" }));
 
       expect(await screen.findByText("Now following")).toBeInTheDocument();
-      expect(posts).toHaveLength(1);
-      expect(posts[0].path).toBe("/dashboard/following");
-      expect((posts[0].init.headers as Record<string, string>).accept).toBe("application/json");
-      const body = new URLSearchParams(String(posts[0].init.body));
+      expect(posts()).toHaveLength(1);
+      expect(posts()[0].path).toBe("/dashboard/following");
+      expect(posts()[0].headers.get("accept")).toBe("application/json");
+      const body = posts()[0].fields;
       expect(body.get("url")).toBe("https://www.youtube.com/@newone");
       expect(body.get("title")).toBe("New One");
       // The checkbox groups go as the browser sends them: ticked boxes only,
@@ -397,12 +366,12 @@ describe("the follows table", () => {
       // The listing is read again rather than the returned row being parked on
       // top of it, so the new follow lands where the store puts it — second
       // here, not first — and the receipt survives the re-read.
-      const reads = fetcher.mock.calls.filter(
-        (call) =>
-          String(call[0]).startsWith("/dashboard/api/following") && call[1]?.method !== "POST",
-      );
-      expect(reads).toHaveLength(2);
-      expect(await screen.findByText("Now following")).toBeInTheDocument();
+      // The request budget: one re-read per write.
+      await screen.findByText(fullText("3 shown."));
+      expect(calls("/dashboard/api/following")).toHaveLength(2);
+      // The receipt survives the re-read and holds the focus.
+      const receipt = screen.getByText("Now following").closest('[role="status"]');
+      expect(document.activeElement).toBe(receipt);
       const rows = screen.getAllByRole("row");
       expect(rows).toHaveLength(4); // the head and three follows
       expect(rows[2]).toHaveTextContent("New One");
@@ -412,7 +381,7 @@ describe("the follows table", () => {
     // that is the half a redirect could never say.
     it("says when nothing was made because the URL was already followed", async () => {
       await mount({ post: { body: ALREADY_FOLLOWING } });
-      await screen.findByRole("status");
+      await loaded();
 
       await userEvent.type(
         screen.getByLabelText("Channel or playlist URL"),
@@ -428,7 +397,7 @@ describe("the follows table", () => {
 
     it("prints a refusal in the API's own words, with its next step", async () => {
       await mount({ post: { status: 400, body: NOT_A_CHANNEL } });
-      await screen.findByRole("status");
+      await loaded();
 
       await userEvent.type(
         screen.getByLabelText("Channel or playlist URL"),
@@ -437,6 +406,9 @@ describe("the follows table", () => {
       await userEvent.click(screen.getByRole("button", { name: "Follow" }));
 
       expect(await screen.findByText("E_BAD_PARAM")).toBeInTheDocument();
+      expect(document.activeElement).toBe(
+        screen.getByText("E_BAD_PARAM").closest('[role="status"]'),
+      );
       expect(screen.getByText(/is a single video/)).toBeInTheDocument();
       expect(screen.getByText(/index-video url=/)).toBeInTheDocument();
     });
@@ -445,7 +417,7 @@ describe("the follows table", () => {
     // on the same condition it does for an index, so the page says so before
     // the typing rather than after it.
     // The refusal is stated above the form, in the instance's own words — and
-    // the form stays live, exactly as `following.html` left it. A rule is worth
+    // the form stays live, exactly as the old page left it. A rule is worth
     // writing down while a dimension mismatch is being fixed, and a form that
     // greys out is a form that has to be retyped.
     it("refuses honestly where the database will not take a write", async () => {
@@ -459,7 +431,7 @@ describe("the follows table", () => {
         },
         session: { ...OWNER_SESSION, writes_allowed: false },
       });
-      await screen.findByRole("status");
+      await loaded();
 
       expect(screen.getByText(/Indexing is disabled on this instance/)).toHaveTextContent(
         "Indexing is disabled on this instance (text_embed dim 768 ≠ the store's 1024), so a " +
@@ -478,7 +450,7 @@ describe("the follows table", () => {
         list: { body: { ...FOLLOWING, vectors: false } },
         session: { ...OWNER_SESSION, writes_allowed: false },
       });
-      await screen.findByRole("status");
+      await loaded();
       expect(screen.getByText(/Indexing is disabled on this instance/)).toHaveTextContent(
         /^Indexing is disabled on this instance, so a follow/,
       );
