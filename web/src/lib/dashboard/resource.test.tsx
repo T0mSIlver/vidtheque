@@ -174,6 +174,27 @@ describe("the dashboard read cache", () => {
     expect(calls).toHaveLength(2);
   });
 
+  it("drops a Retry-After the next refusal replaced, so a remount reads at once", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { read, calls } = held();
+    const first = render(<Probe id="a" read={read} />);
+    await flush();
+    const limited = new DashboardError(429, { error: "E_RATE_LIMIT", message: "slow down" }, 60);
+    await act(async () => calls[0].reject(limited));
+
+    await act(async () => screen.getByRole("button", { name: "reload" }).click());
+    expect(calls).toHaveLength(2);
+    const broke = new DashboardError(500, { error: "E_INTERNAL", message: "server gave up" });
+    await act(async () => calls[1].reject(broke));
+
+    // Inside the old window, but nothing is scheduled: the remount asks now.
+    first.unmount();
+    await act(() => vi.advanceTimersByTimeAsync(1_000));
+    render(<Probe id="a" read={read} />);
+    await flush();
+    expect(calls).toHaveLength(3);
+  });
+
   describe("the 64-entry bound", () => {
     const answer = (id: string) => async () => `payload ${id}`;
     const keys = (from: number, to: number) =>

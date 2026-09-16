@@ -157,6 +157,10 @@ function load(entry: Entry) {
         const ms = (error.retryAfter ?? FALLBACK_RETRY_S) * 1000;
         entry.retryAt = Date.now() + ms;
         schedule(entry, ms);
+      } else {
+        // An earlier Retry-After is over: nothing is scheduled now, so leaving
+        // it set would make a remount inside that window wait for no one.
+        entry.retryAt = 0;
       }
       publish(entry);
       evict();
