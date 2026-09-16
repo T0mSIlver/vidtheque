@@ -47,6 +47,11 @@
   color: var(--fg);
 }
 
+.slot {
+  display: inline-block;
+  min-inline-size: var(--ch);
+}
+
 .sep {
   padding: 0 var(--s1);
   color: var(--mark);

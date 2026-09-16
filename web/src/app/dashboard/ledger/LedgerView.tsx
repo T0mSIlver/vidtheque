@@ -3,7 +3,7 @@
 import { dashboard, ROOT } from "@/lib/dashboard/client";
 import { useResource } from "@/lib/dashboard/resource";
 import type { Ledger } from "@/lib/dashboard/schemas";
-import { at, bytes, count, DASH, hours, iso } from "@/lib/format";
+import { at, bytes, count, hours, iso } from "@/lib/format";
 import { ReadFailure } from "../kit/notice";
 import { Readiness } from "../kit/Readiness";
 import {
@@ -15,6 +15,7 @@ import {
   PageHead,
   Panel,
   Pending,
+  Slot,
   publishedNote,
   Sep,
   ui,
@@ -52,10 +53,13 @@ export function LedgerView() {
     <>
       <PageHead title="The ledger">
         <Unbroken>
-          <Fact label="counted" value={<time dateTime={counted}>{counted ?? DASH}</time>} />
+          <Fact
+            label="counted"
+            value={counted ? <time dateTime={counted}>{counted}</time> : <Slot ch={20} />}
+          />
           <Sep />
         </Unbroken>
-        <Fact label="indexed" value={data ? at(data.corpus.last_indexed) : DASH} />
+        <Fact label="indexed" value={data ? at(data.corpus.last_indexed) : <Slot ch={16} />} />
       </PageHead>
       {data ? <Loaded data={data} /> : <Pending />}
     </>

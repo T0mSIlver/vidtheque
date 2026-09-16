@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { AnchorHTMLAttributes, CSSProperties, ReactNode } from "react";
 import { Pill, type Tone } from "@/components/Pill";
-import { count, day } from "@/lib/format";
+import { count, DASH, day } from "@/lib/format";
 import { isPorted } from "../ported";
 import styles from "./ui.module.css";
 
@@ -276,5 +276,15 @@ export function Pending({ height }: { height?: string }) {
     >
       <span className={styles.srOnly}>reading…</span>
     </div>
+  );
+}
+
+/** A pending value that holds the width of the one it stands for, so a fact
+ *  strip does not re-wrap when the read lands. */
+export function Slot({ ch }: { ch: number }) {
+  return (
+    <span className={styles.slot} style={{ "--ch": `${ch}ch` } as CSSProperties}>
+      {DASH}
+    </span>
   );
 }
