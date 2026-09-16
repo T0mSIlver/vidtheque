@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import logging
 import mimetypes
@@ -66,6 +67,14 @@ class _MistralClient:
             raise BackendUnavailable(f"Mistral transcription failed with HTTP {exc.code}") from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise BackendUnavailable(f"Mistral transcription request failed: {exc}") from exc
+        except http.client.HTTPException as exc:
+            # A body that stops short of its declared length (IncompleteRead) is
+            # the upstream connection dropping mid-answer, not a refusal: it is
+            # retryable, so it leaves here as the 503 and never as a 500 that
+            # would settle a paid transcription as unsupported.
+            raise BackendUnavailable(
+                f"Mistral transcription response body was truncated: {exc!r}"
+            ) from exc
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise BackendUnavailable("Mistral transcription response was not JSON") from exc
         if not isinstance(payload, dict):

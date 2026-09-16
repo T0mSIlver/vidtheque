@@ -1,8 +1,17 @@
 from __future__ import annotations
 
+import http.client
 from pathlib import Path
 
-from vidtheque_worker.backends.voxtral_stt import VoxtralBackend, _chunk_starts, _multipart
+import pytest
+
+from vidtheque_worker.backends.base import BackendUnavailable
+from vidtheque_worker.backends.voxtral_stt import (
+    VoxtralBackend,
+    _chunk_starts,
+    _MistralClient,
+    _multipart,
+)
 
 
 class FakeClient:
@@ -144,3 +153,35 @@ def test_upstream_multipart_repeats_array_fields_and_omits_language(tmp_path: Pa
     assert body.count(b'name="timestamp_granularities"') == 2
     assert b'name="context_bias"' in body and b"KV cache" in body
     assert b'name="language"' not in body
+
+
+def test_a_truncated_response_body_is_the_retryable_failure(tmp_path: Path) -> None:
+    """The connection drops after Mistral has already transcribed the hour. That
+    is a read to retry, not a payload to reject, so it leaves as the 503 rather
+    than a 500 that would settle the item as unsupported."""
+
+    class TruncatedResponse:
+        def __enter__(self) -> TruncatedResponse:
+            return self
+
+        def __exit__(self, *_exc: object) -> None:
+            return None
+
+        def read(self, *_args: object) -> bytes:
+            raise http.client.IncompleteRead(b'{"segments": [', 4_096)
+
+    class TruncatingOpener:
+        def open(self, _request: object, timeout: float) -> TruncatedResponse:
+            del timeout
+            return TruncatedResponse()
+
+    audio = tmp_path / "clip.wav"
+    audio.write_bytes(b"RIFF")
+    client = _MistralClient("secret", "https://api.mistral.ai/v1")
+    client._opener = TruncatingOpener()
+
+    with pytest.raises(BackendUnavailable) as caught:
+        client.transcribe(str(audio), model="voxtral-mini-latest", context_bias=[])
+    assert caught.value.code == "backend_unavailable"
+    assert "truncated" in str(caught.value)
+    assert "secret" not in str(caught.value)
