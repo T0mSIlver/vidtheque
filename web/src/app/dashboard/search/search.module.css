@@ -117,8 +117,8 @@
 .hit {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: var(--s2) var(--s4);
-  padding: var(--s3) 0;
+  gap: var(--s3) var(--s4);
+  padding: var(--s4) 0;
   border-top: 1px solid var(--seam);
 }
 
@@ -178,21 +178,17 @@ button.shot:focus-visible {
 
 /* The moment's own title, linking to that *frame* inside this deployment — the
    receipt at the end of the row goes out to YouTube, and this goes to what the
-   index actually stored about the second. The group head above carries the same
-   words linking to the video plainly; they are two different destinations, and
-   the flat list this page grew out of printed the title on every hit for the
-   same reason. */
+   index actually stored about the second. The list is flat, so every row prints
+   it: the title is what tells one result from the next, and it is set like the
+   head of a row and not like the row's text. */
 .title {
-  composes: t-cell from global;
+  composes: t-cell-strong from global;
   margin: 0 0 var(--s1);
   overflow-wrap: anywhere;
 }
 
-/* One step under the group's head, which is the same words in the same face:
-   the head is the talk and this is a moment inside it, and two headlines a line
-   apart would read as two results. */
 .title a {
-  color: var(--fg2);
+  color: var(--fg);
   text-decoration: none;
 }
 
