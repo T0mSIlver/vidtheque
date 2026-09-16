@@ -193,9 +193,18 @@ same corpus-wide behavior they have now.
 ## 4. The `/paris` page
 
 `GET /paris` is a fourth route in the existing front end, not a fourth
-deployable. Caddy sends the exact page GET to Next. `web/src/proxy.ts` names it
-in the matcher so it receives a fresh nonce, the production CSP, and the three
-companion document headers used by `/demo`.
+deployable. It reaches Next the way `/` and `/demo` do, and for the same
+reason: the edge names the paths that are **Python's** and everything else
+falls through to the app that serves pages, and `web/src/proxy.ts`'s document
+matcher is an exclusion list of what is not a document. So the page receives a
+fresh nonce, the production CSP and the three companion document headers with
+no new row in either file. *(Amended 2026-09-16: the contract asked for an
+explicit row in each. Both were written, and both were wrong — a Caddy matcher
+for `/paris` restates the fall-through, and naming `/paris` in `proxy.ts` means
+excluding the prefix from the catch-all, which takes the policy off the 404
+document at `/paris/anything`. `frontend-migration.md` §1a and §1b carry the
+route and the policy; a row is added there when a path becomes Python's, which
+this one never does.)*
 
 The page reads `GET /api/editions/aie-paris-2026` through the typed server-only
 client. Search and Ask continue to call Python directly through same-origin

@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 // Python owns every path that is not a page. In production both processes sit
-// behind one reverse proxy on one origin: exact page GETs (`/`, `/demo`,
+// behind one reverse proxy on one origin: exact page GETs (`/`, `/demo`, `/paris`,
 // and under the dashboard `/dashboard`,
 // `/dashboard/ledger`, `/dashboard/search`, `/dashboard/videos`, `/dashboard/videos/{video_id}`,
 // `/dashboard/jobs`, `/dashboard/jobs/{job_id}`, `/dashboard/following`,

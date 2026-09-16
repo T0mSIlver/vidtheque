@@ -1,8 +1,9 @@
 # web — the Next.js front end
 
 A separate deployable that talks to a vidtheque instance over its public
-`/api/*` facade (`docs/design/demo-site.md` §2). It serves the two front doors —
-the landing at `/`, the reader at `/demo` (§1) — reading the instance only
+`/api/*` facade (`docs/design/demo-site.md` §2). It serves the public front doors:
+the landing at `/`, the reader at `/demo` (§1), and the AI Engineer Paris 2026
+edition at `/paris`. They read the instance only
 through the facade, and the whole of `/dashboard`, which reads
 `/dashboard/api/*` in the browser with the session cookie. **Every page on both
 surfaces is served from here.** Python's own copies of the front doors left on
@@ -31,7 +32,7 @@ never hydrate.
 ## One origin, two servers
 
 In production a reverse proxy puts both behind one origin and routes by path:
-the exact page GETs — `/`, `/demo`, and under the
+the exact page GETs — `/`, `/demo`, `/paris`, and under the
 dashboard `/dashboard`, `/dashboard/ledger`, `/dashboard/search`,
 `/dashboard/videos`, `/dashboard/videos/{id}`, `/dashboard/jobs`,
 `/dashboard/jobs/{id}`, `/dashboard/following`, `/dashboard/following/{slug}`,
