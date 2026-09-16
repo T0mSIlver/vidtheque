@@ -44,6 +44,7 @@ from .dashboard import (
 )
 from .db import Database
 from .embeddings import EmbeddingClient
+from .editions import validate_editions
 from .http import export_routes, frames_routes, health_routes
 from .follows.scheduler import enqueue_due
 from .jobs.runner import Pipeline, PipelineRunner
@@ -139,6 +140,7 @@ def assemble(
     HTTP seam for the dashboard's bounded ``GET /status`` probe. ``dashboard``
     is the same seam for the management route group."""
     settings.validate()
+    validate_editions()
     run_pipeline = settings.run_pipeline if run_pipeline is None else run_pipeline
     public = public if public is not None else PublicSettings.from_env()
     dashboard = dashboard if dashboard is not None else DashboardSettings.from_env()
