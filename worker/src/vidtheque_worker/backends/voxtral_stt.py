@@ -328,7 +328,13 @@ def _merge_at_seam(earlier: list[Word], later: list[Word], seam: float) -> bool:
             matched = size
             break
     if not matched:
+        # Nothing is deleted by guess, so both copies of the overlap survive —
+        # but the later chunk restarts 30 s before the earlier one ended, and
+        # appending it would send word timestamps backwards. Interleaving by
+        # start keeps the receipts monotonic; the stable sort keeps the earlier
+        # chunk's spelling first where the two agree on a start.
         earlier.extend(later)
+        earlier.sort(key=lambda word: word.start if word.start is not None else 0.0)
         return False
     earlier.extend(later[matched:])
     return True
@@ -353,10 +359,14 @@ def _segments_from_words(words: Sequence[Word]) -> list[Segment]:
     segments: list[Segment] = []
     previous_end = 0.0
     for index, items in enumerate(groups):
-        raw_start = items[0].start if items[0].start is not None else previous_end
-        raw_end = items[-1].end if items[-1].end is not None else raw_start
-        start = max(previous_end, raw_start)
-        end = max(start, raw_end)
+        # A segment spans the words it holds rather than being clamped to the
+        # previous end: after a degraded seam the same seconds are transcribed
+        # twice, and a clamp would push a segment's start past a word it
+        # carries, leaving that word's receipt outside its own segment.
+        starts = [word.start for word in items if word.start is not None]
+        ends = [word.end for word in items if word.end is not None]
+        start = min(starts) if starts else previous_end
+        end = max([*ends, start])
         segments.append(
             Segment(
                 id=index,

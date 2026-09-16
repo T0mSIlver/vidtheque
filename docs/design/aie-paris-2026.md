@@ -403,9 +403,11 @@ The seam merge keeps the earlier copy of a repeated word sequence. It compares
 normalized words inside the overlap, chooses the longest suffix and prefix
 match of at least three words, shifts the later timestamps by the chunk start,
 and drops only the matched prefix. If no safe match exists, it keeps both sides
-and records a degraded seam instead of deleting speech by guess. Segments are
-rebuilt from the merged words, stay monotonic, and never overlap after a safe
-merge.
+— interleaved by timestamp, so the same seconds appear twice but never out of
+order — and records a degraded seam instead of deleting speech by guess. Word
+timestamps are therefore monotonic on both paths. Segments are rebuilt from the
+merged words, span every word they hold, start in order, and never overlap
+after a safe merge.
 
 The official overview currently says recordings up to three hours, while the
 known-limitations page says 60 minutes and 500 MB. The backend follows the

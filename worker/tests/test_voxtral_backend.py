@@ -111,8 +111,14 @@ def test_long_audio_is_sequentially_chunked_and_safely_merged(tmp_path: Path) ->
 def test_an_unsafe_seam_keeps_both_sides_and_records_it(tmp_path: Path) -> None:
     client = FakeClient(
         [
-            response([("kept", 3_575.0, 3_576.0)]),
-            response([("different", 5.0, 6.0)]),
+            response(
+                [
+                    ("opening", 0.0, 0.4),
+                    ("kept", 3_575.0, 3_576.0),
+                    ("tail", 3_590.0, 3_591.0),
+                ]
+            ),
+            response([("different", 8.0, 9.0), ("closing", 25.0, 26.0)]),
         ]
     )
 
@@ -129,8 +135,16 @@ def test_an_unsafe_seam_keeps_both_sides_and_records_it(tmp_path: Path) -> None:
     )
     backend.load()
     result = backend.infer(str(audio))
-    assert result.text == "kept different"
+    assert result.text == "opening kept different tail closing"
     assert backend.last_degraded_seams == [3_570.0]
+
+    words = [word for segment in result.segments for word in segment.words]
+    assert [word.start for word in words] == sorted(word.start for word in words)
+    for segment in result.segments:
+        assert all(
+            segment.start <= word.start and word.end <= segment.end
+            for word in segment.words
+        )
 
 
 def test_chunk_starts_use_a_thirty_second_overlap() -> None:
