@@ -1548,6 +1548,13 @@
     padding-top: clamp(76px, 10vh, 110px);
   }
 
+  /* whole pixels, so the table below is not resampled at a fractional offset */
+  @supports (row-gap: round(1.5px, 1px)) {
+    .heroin {
+      row-gap: round(calc(var(--tile-h) + 58px), 1px);
+    }
+  }
+
   .herocopy {
     max-width: 44rem;
     min-width: 0;
