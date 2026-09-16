@@ -21,10 +21,14 @@ const META: Meta = {
 // `lib/search` is `server-only` all the way down, and the whole of what this
 // layout wants from it is the boot answer. Mocked before the import, so the
 // package index — and the `server-only` marker in it — is never loaded.
-async function mountWith(outcome: unknown, children: React.ReactNode = null) {
+async function mountWith(
+  outcome: unknown,
+  children: React.ReactNode = null,
+  count?: string | null,
+) {
   vi.doMock("@/lib/search", () => ({ readMeta: async () => outcome }));
   const { default: DemoLayout } = await import("./layout");
-  render(await DemoLayout({ params: Promise.resolve({}), children }));
+  render(await DemoLayout({ params: Promise.resolve({}), children, count }));
 }
 
 describe("the reader's chrome at /demo", () => {
@@ -70,6 +74,18 @@ describe("the reader's chrome at /demo", () => {
       "href",
       "/dashboard",
     );
+  });
+
+  // `/paris` reuses this chrome and asks for no count: the corpus total is a
+  // fact about the whole corpus, and beside an edition wordmark it would read
+  // as the size of that edition (aie-paris-2026.md 4.4).
+  it("prints no corpus size when the surface asked for none", async () => {
+    await mountWith({ kind: "ok", meta: META }, null, null);
+
+    expect(screen.queryByText("473 talks watched")).not.toBeInTheDocument();
+    // One micro-label, not a mode: the rest of the chrome is unchanged.
+    expect(screen.getByRole("link", { name: "Browse the corpus" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Removal on request" })).toBeInTheDocument();
   });
 
   it("leaves no invitation to a dead page when the routes are not there", async () => {

@@ -5,12 +5,14 @@ import { ResultGroup } from "@/components/ResultGroup";
 import { RetryIn } from "@/components/RetryIn";
 import {
   type ContentType,
+  type EditionTalk,
   type Hit,
   type Pagination,
   PartialErrorEnvelope,
   SearchResponse,
 } from "@/lib/api/schemas";
 import { groupByVideo } from "@/lib/group";
+import { labelHit } from "@/lib/edition";
 import styles from "./page.module.css";
 
 // The rows, the count over them, and the one control under them.
@@ -42,18 +44,22 @@ export function Results({
   hits: first,
   pagination: firstPage,
   notes: firstNotes,
+  tags,
+  talks = [],
 }: {
   q: string;
   type: ContentType;
   hits: Hit[];
   pagination: Pagination;
   notes: string[];
+  tags?: string;
+  talks?: EditionTalk[];
 }) {
   const [pages, setPages] = useState<{ hits: Hit[]; page: Pagination; notes: string[] }[]>([]);
   const [foot, setFoot] = useState<Foot>({ kind: "none" });
   const abort = useRef<AbortController | null>(null);
 
-  const hits = [...first, ...pages.flatMap((p) => p.hits)];
+  const hits = [...first, ...pages.flatMap((p) => p.hits)].map((hit) => labelHit(hit, talks));
   const latest = pages.at(-1);
   const page = latest?.page ?? firstPage;
   const notes = latest?.notes ?? firstNotes;
@@ -77,6 +83,7 @@ export function Results({
       limit: String(PAGE),
       offset: String(shown),
     });
+    if (tags) params.set("tags", tags);
     let response: Response;
     try {
       response = await fetch(`/api/search?${params}`, { signal: controller.signal });

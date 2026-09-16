@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { Fragment, useEffect, useRef, useState } from "react";
-import { AskEvent, AskFailure, type AskAnswer, type Citation } from "@/lib/api/schemas";
+import {
+  AskEvent,
+  AskFailure,
+  type AskAnswer,
+  type Citation,
+  type EditionTalk,
+} from "@/lib/api/schemas";
+import { labelCitation } from "@/lib/edition";
 import { badgeWords, channelWord, presentationOf } from "@/lib/group";
 import { framingOf, readJsonEvents } from "@/lib/sse";
 import { FrameShot } from "./Frame";
@@ -63,6 +70,9 @@ export function AskMode({
   examples = [],
   askEnabled = true,
   children,
+  tags,
+  path = "/demo",
+  talks = [],
 }: {
   initialQ: string;
   /** The cold page's questions. Copy, so they are the page's and not this
@@ -74,6 +84,9 @@ export function AskMode({
   askEnabled?: boolean | Promise<boolean>;
   /** What is in this corpus, listed under the examples. */
   children?: React.ReactNode;
+  tags?: string;
+  path?: string;
+  talks?: EditionTalk[];
 }) {
   const [q, setQ] = useState(initialQ);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
@@ -103,7 +116,7 @@ export function AskMode({
           "content-type": "application/json",
           accept: CAN_STREAM ? STREAM_ACCEPT : "application/json",
         },
-        body: JSON.stringify({ q: question }),
+        body: JSON.stringify({ q: question, ...(tags ? { tags } : {}) }),
         signal: controller.signal,
       });
       // Everything that fails *before* the model is reached is still a status
@@ -212,7 +225,13 @@ export function AskMode({
         {/* In ask mode the model picks the channel, so the content-type filter
             has nothing to act on and is not drawn at all. */}
         <div className={styles.controls}>
-          <AskSwitch ask q={q} enabled={askEnabled} onLeave={() => abort.current?.abort()} />
+          <AskSwitch
+            ask
+            q={q}
+            enabled={askEnabled}
+            path={path}
+            onLeave={() => abort.current?.abort()}
+          />
         </div>
       </form>
 
@@ -249,7 +268,7 @@ export function AskMode({
           {children}
         </section>
       ) : (
-        <Pane phase={phase} q={q} onRetry={() => void ask(q.trim())} />
+        <Pane phase={phase} q={q} path={path} talks={talks} onRetry={() => void ask(q.trim())} />
       )}
     </div>
   );
@@ -262,10 +281,14 @@ function Pane({
   phase,
   q,
   onRetry,
+  path,
+  talks,
 }: {
   phase: Exclude<Phase, { kind: "idle" }>;
   q: string;
   onRetry: () => void;
+  path: string;
+  talks: EditionTalk[];
 }) {
   const busy = phase.kind === "working";
   return (
@@ -289,9 +312,11 @@ function Pane({
           </p>
         </>
       ) : null}
-      {phase.kind === "answered" ? <Answer answer={phase.answer} lines={phase.lines} /> : null}
+      {phase.kind === "answered" ? (
+        <Answer answer={phase.answer} lines={phase.lines} talks={talks} />
+      ) : null}
       {phase.kind === "degraded" ? (
-        <Degraded body={phase.body} q={q} lines={phase.lines} onRetry={onRetry} />
+        <Degraded body={phase.body} q={q} path={path} lines={phase.lines} onRetry={onRetry} />
       ) : null}
     </section>
   );
@@ -389,8 +414,17 @@ function WorkDisclosure({ lines }: { lines: Line[] }) {
   );
 }
 
-function Answer({ answer, lines }: { answer: AskAnswer; lines: Line[] }) {
-  const byNumber = new Map(answer.citations.map((c) => [c.n, c]));
+function Answer({
+  answer,
+  lines,
+  talks,
+}: {
+  answer: AskAnswer;
+  lines: Line[];
+  talks: EditionTalk[];
+}) {
+  const citations = answer.citations.map((citation) => labelCitation(citation, talks));
+  const byNumber = new Map(citations.map((c) => [c.n, c]));
   return (
     <>
       {/* The prose is one column of the pane, not the pane: above the demo's
@@ -402,11 +436,11 @@ function Answer({ answer, lines }: { answer: AskAnswer; lines: Line[] }) {
           </p>
         ))}
       </div>
-      {answer.citations.length > 0 ? (
+      {citations.length > 0 ? (
         <div className={styles.sources}>
           <h2 className={styles.label}>Sources</h2>
           <ol>
-            {answer.citations.map((c) => (
+            {citations.map((c) => (
               <Source key={c.n} c={c} />
             ))}
           </ol>
@@ -543,11 +577,13 @@ function Degraded({
   q,
   lines,
   onRetry,
+  path,
 }: {
   body: AskFailure;
   q: string;
   lines: Line[];
   onRetry: () => void;
+  path: string;
 }) {
   const left = useCountdown(body.retry_after_s);
   return (
@@ -567,7 +603,7 @@ function Degraded({
         </button>{" "}
         <Link
           className={styles.ghost}
-          href={q.trim() ? `/demo?ask=0&q=${encodeURIComponent(q.trim())}` : "/demo?ask=0"}
+          href={q.trim() ? `${path}?ask=0&q=${encodeURIComponent(q.trim())}` : `${path}?ask=0`}
         >
           Search instead
         </Link>

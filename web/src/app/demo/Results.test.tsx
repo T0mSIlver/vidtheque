@@ -260,5 +260,63 @@ describe("the results and their one control", () => {
         ).toBeInTheDocument(),
       );
     });
+
+    // The scope is the page's, so page two carries it too: a "More results"
+    // that dropped the tag would walk out of the edition one click in
+    // (aie-paris-2026.md §4.3).
+    it("keeps an edition scope on page two", async () => {
+      const fetchSpy = vi.fn(async () => Response.json(page([], { has_more: false })));
+      vi.stubGlobal("fetch", fetchSpy);
+      const user = userEvent.setup();
+      render(
+        <Results
+          q="kv cache"
+          type="all"
+          hits={[hit({})]}
+          pagination={pagination()}
+          notes={[]}
+          tags="series:aie-paris-2026"
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "More results" }));
+
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+      const [url] = fetchSpy.mock.calls[0] as unknown as [string];
+      expect(url).toContain("tags=series%3Aaie-paris-2026");
+    });
+  });
+
+  // The corpus calls a day VOD by the stream's title; the page calls the
+  // moment by the talk it landed in (§4.3).
+  it("labels a hit with the talk whose span contains it", () => {
+    render(
+      <Results
+        q="kv cache"
+        type="all"
+        hits={[hit({ start: 700 })]}
+        pagination={pagination({ has_more: false })}
+        notes={[]}
+        talks={[
+          {
+            session_id: "s1",
+            day: "2026-09-24",
+            scheduled_start: "10:00",
+            scheduled_end: "10:30",
+            title: "Serving models without the tail latency",
+            speakers: [{ name: "Alice Martin", company: "Mistral" }],
+            category: "Inference",
+            alignment_state: "aligned",
+            video_id: "a",
+            source_kind: "stream",
+            start_s: 600,
+            end_s: 1800,
+            source: "https://youtu.be/a?t=600",
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText("Serving models without the tail latency")).toBeInTheDocument();
+    expect(screen.getByText("Alice Martin, Mistral")).toBeInTheDocument();
   });
 });

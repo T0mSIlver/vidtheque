@@ -132,6 +132,17 @@ describe("AskMode", () => {
     expect(screen.getByText("Sources")).toBeInTheDocument();
   });
 
+  it("keeps a page-provided edition scope on the ask body", async () => {
+    const fetchSpy = vi.fn(async () => streamResponse(answerFrame("Scoped.")));
+    vi.stubGlobal("fetch", fetchSpy);
+    const user = userEvent.setup();
+    render(<AskMode initialQ="what changed?" tags="series:aie-paris-2026" path="/paris" />);
+
+    await user.click(screen.getByRole("button", ASK));
+    const [, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.body).toBe(JSON.stringify({ q: "what changed?", tags: "series:aie-paris-2026" }));
+  });
+
   // Both framings over one POST, and the fallback is not a worse answer — it
   // is the same answer with nothing to watch on the way (demo-site.md §3.5).
   describe("the framings", () => {
