@@ -1313,8 +1313,13 @@ that retired on 2026-09-06 with the Jinja surface. What it left behind was a
 hole: a mistyped `/dashboard/…` is a document this app renders, and it was the
 one document on this surface shipped with **no CSP, no `X-Frame-Options` and no
 `Referrer-Policy`** on it. The new entry is
-`/dashboard/((?!api/|logout).*)` — everything under the prefix that is not one
-of Python's two, which are named rather than left to luck.
+`/dashboard/((?!api/|logout$).*)` — everything under the prefix that is not one
+of Python's two, which are named rather than left to luck. Each exclusion ends
+where the path it names ends: `api/` carries its slash and `logout` its `$`.
+Written without the anchor, as it shipped on 2026-09-16 and was corrected the
+same day, the second one excused every path *beginning* with the word — and
+`/dashboard/logout-now` is this app's own refusal, so the hole this entry
+closes was still open on it.
 
 So `proxy.test.ts`'s "agrees with the list every link asks" no longer reads
 `isPorted(path) === matches(path)`. The two answer different questions and now
