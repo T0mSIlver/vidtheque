@@ -232,6 +232,36 @@ describe("the console in search mode", () => {
       expect(screen.getByRole("status")).toHaveTextContent("1 result of ~38");
     });
 
+    it("is inert while page one of a newer search is out, which then lands", async () => {
+      let land!: (response: Response) => void;
+      const fetchSpy = vi.fn(() => new Promise<Response>((resolve) => (land = resolve)));
+      vi.stubGlobal("fetch", fetchSpy);
+      const user = userEvent.setup();
+      const { push } = mountConsole({
+        url: "/demo?q=kv+cache",
+        initial: SEARCH,
+        initialSearch: first,
+      });
+
+      const box = screen.getByLabelText(SEARCH_BOX);
+      await user.clear(box);
+      await user.type(box, "paged{Enter}");
+      expect(push).toHaveBeenCalledWith(null, "", "/demo?q=paged");
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+      const more = screen.getByRole("button", { name: "More results" });
+      expect(more).toBeDisabled();
+      fireEvent.click(more);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const { signal } = (
+        fetchSpy.mock.calls[0] as unknown as [string, { signal: AbortSignal }]
+      )[1];
+      expect(signal.aborted).toBe(false);
+
+      await act(async () => land(await wire(found([hit({ title: "Paged talk" })]))));
+      expect(await screen.findByText("Paged talk")).toBeInTheDocument();
+    });
+
     it("keeps an edition scope on page two", async () => {
       const fetchSpy = vi.fn(async () => wire(found([])));
       vi.stubGlobal("fetch", fetchSpy);

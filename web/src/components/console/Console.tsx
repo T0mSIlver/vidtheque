@@ -89,6 +89,9 @@ export function Console(props: ConsoleProps) {
   }
 
   async function more() {
+    // Page one of a newer search is still out: paging or retrying the view
+    // under it would abort that request and page the query the URL left.
+    if (state.pending) return;
     const { search: view } = state;
     if (view.outcome?.kind !== "ok") return;
     // The server's own cursor: a dropped malformed row still took its slot.
@@ -179,7 +182,10 @@ export function Console(props: ConsoleProps) {
 
   const actions: SearchActions = {
     href: (q, type) => href({ mode: "search", q, type }),
-    retry: () => void search(state.search.q, state.search.type, false),
+    retry: () => {
+      if (state.pending) return;
+      void search(state.search.q, state.search.type, false);
+    },
     more: () => void more(),
     searchAll: () => runExample(state.search.q, "all"),
     examples: props.searchExamples?.length
@@ -216,6 +222,7 @@ export function Console(props: ConsoleProps) {
             talks={talks}
             noMatch={props.noMatch}
             actions={actions}
+            pending={state.pending}
           />
         </div>
       ) : state.mode === "search" || state.ask.phase.kind === "idle" ? (
