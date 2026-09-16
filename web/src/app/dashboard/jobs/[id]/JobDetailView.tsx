@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useTicking } from "@/components/RetryIn";
+import { useTicking } from "@/components/ui/RetryIn";
 import { dashboard, DashboardError } from "@/lib/dashboard/client";
 import { isRateLimited, useResource } from "@/lib/dashboard/resource";
 import type { JobDetail } from "@/lib/dashboard/schemas";

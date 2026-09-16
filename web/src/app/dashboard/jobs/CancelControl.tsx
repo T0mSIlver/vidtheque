@@ -1,6 +1,6 @@
 "use client";
 
-import { Pill } from "@/components/Pill";
+import { Pill } from "@/components/ui/Pill";
 import { dashboard } from "@/lib/dashboard/client";
 import type { JobCard } from "@/lib/dashboard/schemas";
 import { notice, RefusalNotice } from "../kit/notice";

@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useId, useState, type ReactNode } from "react";
-import { Pill } from "@/components/Pill";
+import { Pill } from "@/components/ui/Pill";
 import { dashboard, ROOT } from "@/lib/dashboard/client";
 import type { FollowDetailRow } from "@/lib/dashboard/schemas";
 import { hours } from "@/lib/format";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { Pill } from "@/components/Pill";
+import { Pill } from "@/components/ui/Pill";
 import { dashboard, DashboardError, echoOf, ROOT } from "@/lib/dashboard/client";
 import { useResource } from "@/lib/dashboard/resource";
 import { type Library, type LibraryRow, RefusedLibrary } from "@/lib/dashboard/schemas";

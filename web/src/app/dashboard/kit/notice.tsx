@@ -2,8 +2,8 @@
 
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { Pill } from "@/components/Pill";
-import { RetryIn } from "@/components/RetryIn";
+import { Pill } from "@/components/ui/Pill";
+import { RetryIn } from "@/components/ui/RetryIn";
 import { DashboardError, ROOT } from "@/lib/dashboard/client";
 import { sectionOf } from "../ported";
 import { useSession } from "../session";

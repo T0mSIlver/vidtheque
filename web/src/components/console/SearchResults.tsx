@@ -1,5 +1,5 @@
 import { ResultGroup } from "@/components/ResultGroup";
-import { RetryIn } from "@/components/RetryIn";
+import { RetryIn } from "@/components/ui/RetryIn";
 import type { SearchOutcome } from "@/lib/api/outcome";
 import type { ContentType, EditionTalk, SearchResponse } from "@/lib/api/schemas";
 import { labelHit } from "@/lib/api/edition";

@@ -2,7 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, type FormEvent } from "react";
-import { Pill } from "@/components/Pill";
+import { Pill } from "@/components/ui/Pill";
 import { dashboard, echoOf, ROOT } from "@/lib/dashboard/client";
 import { RefusedIndex } from "@/lib/dashboard/schemas";
 import { DASH } from "@/lib/format";

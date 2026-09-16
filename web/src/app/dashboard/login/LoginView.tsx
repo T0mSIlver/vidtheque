@@ -2,8 +2,8 @@
 
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, type FormEvent } from "react";
-import { Pill } from "@/components/Pill";
-import { RetryIn } from "@/components/RetryIn";
+import { Pill } from "@/components/ui/Pill";
+import { RetryIn } from "@/components/ui/RetryIn";
 import { dashboard, DashboardError, navigation, ROOT } from "@/lib/dashboard/client";
 import { DASH } from "@/lib/format";
 import controls from "../kit/controls.module.css";

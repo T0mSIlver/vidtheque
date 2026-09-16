@@ -2,7 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
-import { Pill } from "@/components/Pill";
+import { Pill } from "@/components/ui/Pill";
 import { dashboard, DashboardError, ROOT } from "@/lib/dashboard/client";
 import { pick } from "@/lib/dashboard/query";
 import { useResource } from "@/lib/dashboard/resource";
