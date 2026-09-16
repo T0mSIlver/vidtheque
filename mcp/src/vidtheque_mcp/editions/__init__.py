@@ -42,8 +42,9 @@ from ..db import queries
 
 KNOWN_EDITIONS = ("aie-paris-2026",)
 MAX_SESSIONS = 100
-# The facade's own ceiling (demo-site.md §2.2), applied to the whole payload:
-# items and characters are independent caps, and this is the second one.
+# The facade's own ceiling (demo-site.md §2.5, aie-paris-2026.md §3.1), applied
+# to the whole payload: items and characters are independent caps, and this is
+# the second one.
 MAX_RESPONSE_CHARS = 60_000
 
 _SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
