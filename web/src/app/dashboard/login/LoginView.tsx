@@ -1,81 +1,58 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useRef, type FormEvent } from "react";
+import { useEffect, useRef, type FormEvent } from "react";
 import { Pill } from "@/components/Pill";
 import { RetryIn } from "@/components/RetryIn";
 import { dashboard, DashboardError, navigation, ROOT } from "@/lib/dashboard/client";
-import dash from "../dashboard.module.css";
-import { DashLink, Fact, formFields, PageHead, ReadFailure, Reading, useWrite } from "../parts";
-import { useSessionRead } from "../session";
+import { DASH } from "@/lib/format";
+import controls from "../kit/controls.module.css";
+import { Absent, ReadFailure } from "../kit/notice";
+import { Fact, PageHead, Pending, ui } from "../kit/ui";
+import { formFields, useWrite } from "../kit/write";
+import { useSessionResource } from "../session";
 import styles from "./login.module.css";
 
-// Sign in — `templates/login.html`, posting to `POST /dashboard/login`
-// (dashboard.md §21, frontend-migration.md §9).
-//
-// **The second page on this surface that reads nothing**, and it reads nothing
-// for a sharper reason than the index form does: the endpoint that would answer
-// "who are you" is `/dashboard/api/session`, which the chassis has already
-// asked, outside the read gate, precisely so a signed-out browser gets an
-// answer. So this page is the session, three flags of it, and one field.
-//
-// The `GET` is Next's from here on; the `POST` stays Python's, and here that is
-// not a convention — the response's `Set-Cookie` is the whole write, and an
-// `HttpOnly` cookie is not a thing this shell could mint or clear. They share a
-// path and are split by method, the third such path under `/dashboard`.
-//
-// What this page must never do is act on its own `401`. Every other refusal on
-// this surface means "go and sign in" and the client answers it by navigating
-// to this page; the refused secret is `E_BAD_CREDENTIAL` at the same status,
-// and `signIn` is the one write that leaves the client's redirect off, because
-// obeying it would be a loop through the page the reader is typing into (§21).
+// Sign in: one field over `POST /dashboard/login` (dashboard.md §21). The page
+// is the session plus that field, and it never acts on its own `401`: that is
+// the refused secret, and `signIn` leaves the client's redirect off.
 
 export function LoginView() {
-  const session = useSessionRead();
+  const session = useSessionResource();
   const params = useSearchParams();
-  // Where the reader was going, off this page's own URL — the parameter the
-  // Jinja handler read out of the same query string, fenced here on the way in
-  // as well as on the way back out.
   const next = safeNext(params.get("next"));
 
-  // The page waits for the session, like the index form and unlike every read
-  // page: which secret this deployment accepts is the difference between a
-  // field labelled with the right environment variable and one labelled with a
-  // guess, and "this deployment has no sign-in page" is the difference between
-  // a form and no form at all.
-  if (session.status === "loading") {
+  // Waits for the session: which secret the field is labelled with, and
+  // whether there is a form at all, are the deployment's answer.
+  if (!session.data) {
     return (
       <>
-        <PageHead title="Sign in" />
-        <Reading />
+        <PageHead title="Sign in">
+          <Fact label="auth" value={DASH} />
+        </PageHead>
+        {session.error !== undefined ? (
+          <ReadFailure error={session.error} onRetry={session.reload} />
+        ) : (
+          <Pending height="14rem" />
+        )}
       </>
     );
   }
 
-  // The chassis could not ask what this deployment is, so neither can this
-  // page. A document reload rather than a re-render: the read that failed was
-  // made once on mount, and there is no route to refresh.
-  if (session.status === "failed") {
-    return <ReadFailure error={session.error} onRetry={reload} />;
-  }
-
   const deployment = session.data;
-
-  // Already signed in, so this page has nothing to offer and sends them where
-  // they were going — exactly what the Jinja `GET` does with a `303` when
-  // `credential()` answers. `signed_in` is the validated session row rather
-  // than the cookie's presence: a cookie whose row expired is a reader who
-  // still has to type the secret.
+  // The validated row, not the cookie: an expired row still has to sign in.
   if (deployment.signed_in) return <Elsewhere next={next} />;
 
-  // `/dashboard/login` is registered only where the write side is, so on a
-  // read-only projection or in `VIDTHEQUE_AUTH=none` there is no sign-in page
-  // on the instance at all and `login_url` is `null` (frontend-migration.md
-  // §6). This app serves the path either way — a proxy routes by path and
-  // cannot ask the deployment a question — so the absent state is a page
-  // saying which of the two facts it is, and not a form that would post to a
-  // route that is not there.
-  if (!deployment.login_url) return <Absent />;
+  // No write side means no sign-in route on the instance (§2.3).
+  if (!deployment.login_url) {
+    return (
+      <Absent title="Sign in" heading="This deployment has nobody to sign in as.">
+        Signing in mints the owner&rsquo;s session for the write side, and this instance registers
+        none — it is either a read-only projection of somebody&rsquo;s index, or an instance with no
+        credential configured to check. There is no secret here that would change what you can see.
+      </Absent>
+    );
+  }
 
   return (
     <>
@@ -91,27 +68,11 @@ export function LoginView() {
   );
 }
 
-/** The one retry on this page, and it is the document's: the session is read
- *  once by the chassis on mount, so nothing short of loading the page again
- *  re-asks it. Named rather than inlined so a test can watch it. */
-export const reload = () => {
-  if (typeof window !== "undefined") window.location.reload();
-};
-
 /**
- * A path this page may send a browser to, or the overview.
- *
- * `writes._safe_next` fences the same parameter on the Python side and this is
- * the same fence in TypeScript, applied to both ends: the `next` off this
- * page's URL, and the `next` that comes back on the outcome. A target that
- * arrived over the wire is an input like any other, and the page that mints
- * the session cookie is the worst place on this surface to have an open
- * redirect — so it is checked here rather than trusted because Python checked
- * it first.
- *
- * A path under `/dashboard`, and nothing else: never an absolute URL, and
- * never `//host` or `/\host`, which are absolute URLs wearing a path's
- * clothes.
+ * A path under `/dashboard` this page may send a browser to, or the overview.
+ * Applied to the URL's `next` and the outcome's, because the page that mints
+ * the session cookie is the worst place for an open redirect. `//host` and
+ * `/\host` are absolute URLs wearing a path's clothes.
  */
 export function safeNext(raw: string | null | undefined): string {
   if (!raw || !raw.startsWith(ROOT)) return ROOT;
@@ -119,12 +80,8 @@ export function safeNext(raw: string | null | undefined): string {
   return raw;
 }
 
-/** Signed in already, on the way out.
- *
- *  The navigation is an effect and not something the render does: leaving is a
- *  thing that happens to the browser, and a render that navigates fires twice
- *  under React's own double-render. The line is what a reader sees for the
- *  moment it takes — not a page, because there is no page here for them. */
+/** Signed in already: on to where the reader was going (an effect, because
+ *  leaving is something that happens to the browser, not a render). */
 function Elsewhere({ next }: { next: string }) {
   useEffect(() => {
     leave(next);
@@ -132,52 +89,17 @@ function Elsewhere({ next }: { next: string }) {
   return (
     <>
       <PageHead title="Sign in" />
-      <p className={dash.reading}>signed in already — going on to {next}</p>
-    </>
-  );
-}
-
-/** The deployment has no sign-in page of its own.
- *
- *  Not an error state: in `VIDTHEQUE_PUBLIC_READONLY=1` and in
- *  `VIDTHEQUE_AUTH=none` this route, its `POST` and every other write are not
- *  registered on the instance at all — a sign-in that grants nothing is a probe
- *  magnet with a password field on it (dashboard.md §2.3, §3.2 rule 3). */
-function Absent() {
-  return (
-    <>
-      <PageHead title="Sign in" />
-      <section className={dash.notice} aria-labelledby="nosignin">
-        <h2 className={dash.noticeTitle} id="nosignin">
-          This deployment has nobody to sign in as.
-        </h2>
-        <p className={dash.noticeDetail}>
-          Signing in mints the owner&rsquo;s session for the write side, and this instance registers
-          none — it is either a read-only projection of somebody&rsquo;s index, or an instance with
-          no credential configured to check. There is no secret here that would change what you can
-          see.
-        </p>
-        <p className={dash.noticeNext}>
-          <DashLink href={ROOT}>The overview</DashLink> and{" "}
-          <DashLink href={`${ROOT}/videos`}>the videos this index holds</DashLink> are what it does
-          answer for.
-        </p>
-      </section>
+      <p className={ui.emptyNote} role="status">
+        signed in already — going on to {next}
+      </p>
     </>
   );
 }
 
 /**
- * The field, the refusal it can come back with, and the way out of the page.
- *
- * One field, named `password`, whatever this deployment accepts — because that
- * is the field `writes.login` reads, and `_accepted` compares what arrives
- * against both secrets without saying which matched. The flags change the
- * *label*, so a reader in `token` mode with no password set is told the name of
- * the environment variable they are looking for, and nothing else changes.
- *
- * Uncontrolled and seeded by nothing: a password field is the one control on
- * this surface a page must not hold a copy of.
+ * One field named `password`, whatever the deployment accepts: the flags only
+ * change its label. Uncontrolled and seeded by nothing, and a real POST form
+ * underneath the fetch, so a click before hydration still reaches Python.
  */
 function Form({
   next,
@@ -188,49 +110,37 @@ function Form({
   acceptsPassword: boolean;
   acceptsToken: boolean;
 }) {
-  // A ref rather than state: the fields are read by the request this submit
-  // makes, not by anything that renders, and a `setState` here would put the
-  // POST a render behind the form it came from.
-  const fields = useRef<Record<string, string>>({});
+  const form = useRef<HTMLFormElement>(null);
   const secret = useRef<HTMLInputElement>(null);
-  const send = useCallback(() => dashboard.signIn(fields.current), []);
-  // The outcome carries where to go, and Python has already fenced it; this
-  // fences it again before the browser is sent anywhere.
-  const [write, run] = useWrite(send, (outcome) => {
-    if (outcome.signed_in) leave(safeNext(outcome.next));
-  });
+  const [write, run] = useWrite(
+    (fields: Record<string, string>) => dashboard.signIn(fields),
+    (outcome) => {
+      if (outcome.signed_in) leave(safeNext(outcome.next));
+    },
+  );
+  const sending = write.status === "sending";
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    fields.current = formFields(event.currentTarget);
-    run();
+    run(formFields(event.currentTarget));
   }
 
   const error = write.status === "failed" ? write.error : null;
   const refusal = error instanceof DashboardError ? error : null;
-  // The limiter's, charged ahead of the handler, so it is JSON whatever was
-  // asked for (§21). It gets the countdown and the other refusals do not: the
-  // index form's argument — a write re-runs when the operator submits again —
-  // does not hold on a page where submitting again is the only thing there is
-  // to do, and the tight sign-in bucket is precisely the one that will say no.
+  // The sign-in bucket's own refusal gets the countdown: submitting again is
+  // the only thing this page offers.
   const limited = refusal?.status === 429 ? refusal : null;
 
-  // A refused submit leaves an empty field with the caret in it, which is what
-  // the re-rendered Jinja page was: `login.html`'s input carries no value and
-  // an `autofocus`, so what the reader met was the box, empty, ready. React's
-  // `autoFocus` fires on mount and this tree never unmounts, so the focus
-  // stayed on the button and the wrong secret stayed on screen — visible to
-  // whoever is behind them, and one Enter away from being sent again.
+  // A refused secret leaves the field empty with the caret in it: it must not
+  // stay on screen one Enter away from being sent again.
   useEffect(() => {
-    if (!error || !secret.current) return;
+    if (!error || limited || !secret.current) return;
     secret.current.value = "";
     secret.current.focus();
-  }, [error]);
+  }, [error, limited]);
 
-  // The sentence this page has always printed for a request from somewhere
-  // else. `access.bad_origin()`'s copy is written for a client reading a code;
-  // the form branch kept its own, because this is visible copy on a rendered
-  // page and it names the act the reader performed.
+  // A request from another origin gets this page's own sentence: it names the
+  // act the reader performed.
   const message =
     refusal?.code === "E_BAD_ORIGIN"
       ? "That sign-in came from another origin."
@@ -239,8 +149,8 @@ function Form({
         : "The sign-in did not reach this instance.";
 
   return (
-    <section className={dash.panel} aria-labelledby="signin">
-      <h2 className={dash.panelTitle} id="signin">
+    <section className={ui.panel} aria-labelledby="signin">
+      <h2 className={ui.panelTitle} id="signin">
         {acceptsPassword && acceptsToken
           ? "Owner password, or the API token"
           : acceptsToken
@@ -248,23 +158,12 @@ function Form({
             : "Owner password"}
       </h2>
 
-      {/* In the tone, with the word: a refusal is a state like any other on
-          this surface, and the pill contract says a state prints its own word.
-          The sentence beside it is the instance's own, in every case — the
-          refused secret's is deliberately the same for both secrets, so naming
-          which field was wrong is not something this side could do even if it
-          wanted to. */}
       {error && !limited ? (
         <>
           <p className={styles.error}>
             <Pill state="refused" tone="bad" />
             <span>{message}</span>
           </p>
-          {/* The refusal's `next:` line — "the sign-in page names which secret
-              this deployment accepts." It is written in `writes.py` beside the
-              message and is neutral about which secret this deployment holds;
-              dropping it here left the one refusal on the surface whose
-              recovery sentence the reader never saw. */}
           {refusal?.next ? <p className={styles.errorNext}>{refusal.next}</p> : null}
         </>
       ) : null}
@@ -274,24 +173,20 @@ function Form({
           <RetryIn
             seconds={limited.retryAfter ?? 60}
             message={limited.message || "Too many sign-in attempts for now."}
-            onRetry={run}
+            onRetry={() => form.current?.requestSubmit()}
           />
         </div>
       ) : null}
 
-      {/* A real `<form>`, with the method and the action the Jinja page has,
-          and not only an `onSubmit`: `submit` prevents the navigation and does
-          the write as a `fetch`, but a click that lands before this tree has
-          hydrated still reaches Python and still gets the `303`. It is the
-          same shape the chassis's Sign out has, and the reason `form-action
-          'self'` is in the policy at all — a policy that only holds while the
-          JavaScript works is the wrong shape. */}
-      <form className={styles.form} method="post" action={`${ROOT}/login`} onSubmit={submit}>
-        {/* Where the reader was going, carried as the field the handler reads
-            on both branches. Hidden rather than derived on the server, because
-            this shell has no server side to derive it on. */}
+      <form
+        className={styles.form}
+        method="post"
+        action={`${ROOT}/login`}
+        onSubmit={submit}
+        ref={form}
+      >
         <input type="hidden" name="next" value={next} />
-        <div className={`${dash.field} ${styles.secret}`}>
+        <div className={`${controls.field} ${styles.secret}`}>
           <label htmlFor="secret">
             {acceptsToken && !acceptsPassword ? "VIDTHEQUE_TOKEN" : "VIDTHEQUE_PASSWORD"}
           </label>
@@ -306,16 +201,14 @@ function Form({
             spellCheck={false}
           />
         </div>
-        <div className={`${dash.field} ${dash.actions}`}>
-          <button className={dash.button} type="submit" disabled={write.status === "sending"}>
-            {write.status === "sending" ? "signing in…" : "Sign in"}
+        <div className={`${controls.field} ${controls.actions}`}>
+          <button className={controls.button} type="submit" aria-disabled={sending || undefined}>
+            {sending ? "signing in…" : "Sign in"}
           </button>
         </div>
       </form>
 
-      {/* Which environment variable holds the secret, and nothing else: a
-          sign-in page that explains the auth design is a page arguing with the
-          person locked out. */}
+      {/* Which variable holds the secret, and nothing else. */}
       <p className={styles.note}>
         {acceptsPassword && acceptsToken ? (
           <>
@@ -336,16 +229,8 @@ function Form({
   );
 }
 
-/** Leave for a path on this surface, without leaving this page in the history.
- *
- *  A document navigation and never a `Link`: half of `/dashboard` is still
- *  Jinja, so `next` can name a page this app does not serve, and a router push
- *  to one of those asks for a route that does not exist. It is also the honest
- *  thing after a sign-in — the session cookie has just changed, and every read
- *  on the page being loaded is made with it.
- *
- *  `replace` rather than `assign`, because a `303` leaves no entry either: a
- *  reader who signs in and presses Back must not land on the sign-in page. */
+/** A document navigation without a history entry: the cookie just changed, and
+ *  Back must not land on the sign-in page. */
 function leave(path: string): void {
   navigation.replace(path);
 }

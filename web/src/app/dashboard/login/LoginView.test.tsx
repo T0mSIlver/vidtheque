@@ -1,17 +1,17 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { navigation } from "@/lib/dashboard/client";
+import { mountDashboard, type Answer } from "@/test/dashboard";
 import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
 import { firstPaint, settled } from "@/test/retry";
+import { LoginView, safeNext } from "./LoginView";
 
-// The sign-in page reads nothing and writes once, so the assertions are: which
-// secret it says this deployment takes, what it does with a reader who is
-// already signed in or a deployment with no sign-in at all, the three things
-// the write carries, where a success sends the browser — and the three
-// refusals, each of which the instance words itself.
+vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 
-type Route = { status?: number; body?: unknown; headers?: Record<string, string> };
+// Which secret the deployment takes, the readers the page has nothing for, the
+// write, where success goes, and the refusals in the instance's own words.
 
 const SIGNED_IN = { signed_in: true, next: "/dashboard/jobs" };
 
@@ -19,47 +19,16 @@ async function mount({
   post = { body: SIGNED_IN },
   search = "",
   session = OWNER_SESSION as unknown,
-}: { post?: Route; search?: string; session?: unknown } = {}) {
-  const posts: { path: string; init: RequestInit }[] = [];
-  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input);
-    if (init?.method === "POST") posts.push({ path: url, init });
-    const route: Route =
-      init?.method === "POST"
-        ? post
-        : url === "/dashboard/api/session"
-          ? { body: session }
-          : { status: 404, body: {} };
-    const text = typeof route.body === "string" ? route.body : JSON.stringify(route.body ?? {});
-    return new Response(text, {
-      status: route.status ?? 200,
-      headers: { "content-type": "application/json", ...route.headers },
-    });
+}: { post?: Answer; search?: string; session?: unknown } = {}) {
+  // Leaving the document is the one thing jsdom will not do; watch the exit.
+  const replace = vi.spyOn(navigation, "replace").mockImplementation(() => {});
+  const mounted = await mountDashboard(<LoginView />, {
+    path: "/dashboard/login",
+    search,
+    session,
+    routes: { "POST /dashboard/login": post },
   });
-  vi.stubGlobal("fetch", fetcher);
-  const replace = await watchTheExit();
-  const { mockNavigation } = await import("@/test/next");
-  mockNavigation(search, "/dashboard/login");
-  const { Chrome } = await import("../Chrome");
-  const { LoginView } = await import("./LoginView");
-  render(
-    <Chrome>
-      <LoginView />
-    </Chrome>,
-  );
-  return { fetcher, posts, replace };
-}
-
-/** The one thing this page does that jsdom will not: leave.
- *
- *  Spied rather than stubbed globally, because `navigation` is the single named
- *  holder the whole client leaves the page through — and imported here rather
- *  than at the top of the file, because `vi.resetModules()` between tests means
- *  the module the page imports is a different copy from the one a static import
- *  would have spied on. */
-async function watchTheExit() {
-  const { navigation } = await import("@/lib/dashboard/client");
-  return vi.spyOn(navigation, "replace").mockImplementation(() => {});
+  return { ...mounted, replace };
 }
 
 /** Type the secret and submit. */
@@ -71,8 +40,6 @@ async function signIn(secret: string) {
 describe("the sign-in page", () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.unstubAllGlobals();
-    vi.resetModules();
   });
 
   // One field, named `password`, whatever the deployment accepts — that is the
@@ -160,23 +127,31 @@ describe("the sign-in page", () => {
     // Drawn before the session lands, this page would label its field with a
     // guess about which secret the deployment holds.
     it("says nothing about the deployment before it has been told", async () => {
-      const never = new Promise<Response>(() => {});
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(() => never),
-      );
-      const { mockNavigation } = await import("@/test/next");
-      mockNavigation("", "/dashboard/login");
-      const { Chrome } = await import("../Chrome");
-      const { LoginView } = await import("./LoginView");
-      render(
-        <Chrome>
-          <LoginView />
-        </Chrome>,
-      );
+      await mountDashboard(<LoginView />, {
+        path: "/dashboard/login",
+        routes: { "/dashboard/api/session": () => new Promise<Answer>(() => {}) },
+      });
 
+      expect(screen.getByRole("heading", { name: "Sign in" })).toBeInTheDocument();
       expect(screen.getByText("reading…")).toBeInTheDocument();
       expect(screen.queryByLabelText(/VIDTHEQUE_/)).not.toBeInTheDocument();
+    });
+
+    it("re-asks a session that could not be read, and draws the field once it answers", async () => {
+      const { calls } = await mountDashboard(<LoginView />, {
+        path: "/dashboard/login",
+        routes: {
+          "/dashboard/api/session": [
+            { status: 500, body: { error: "E_INTERNAL", message: "The instance fell over." } },
+            { body: { ...OWNER_SESSION, signed_in: false, has_session_cookie: false } },
+          ],
+        },
+      });
+
+      await userEvent.click(await screen.findByRole("button", { name: "Try again" }));
+
+      expect(await screen.findByLabelText("VIDTHEQUE_PASSWORD")).toBeInTheDocument();
+      expect(calls("/dashboard/api/session")).toHaveLength(2);
     });
   });
 
@@ -195,14 +170,11 @@ describe("the sign-in page", () => {
 
       await signIn("hunter2");
 
-      expect(posts[0].path).toBe("/dashboard/login");
-      expect(posts[0].init.method).toBe("POST");
-      const headers = posts[0].init.headers as Record<string, string>;
-      expect(headers.accept).toBe("application/json");
-      expect(headers["content-type"]).toBe("application/x-www-form-urlencoded");
-      expect(posts[0].init.credentials).toBe("same-origin");
+      expect(posts()[0].path).toBe("/dashboard/login");
+      expect(posts()[0].headers.get("accept")).toBe("application/json");
+      expect(posts()[0].headers.get("content-type")).toBe("application/x-www-form-urlencoded");
 
-      const body = new URLSearchParams(String(posts[0].init.body));
+      const body = posts()[0].fields;
       expect(body.get("password")).toBe("hunter2");
       expect(body.get("next")).toBe("/dashboard/following");
     });
@@ -217,6 +189,24 @@ describe("the sign-in page", () => {
       const form = (await screen.findByLabelText(/VIDTHEQUE_/)).closest("form");
       expect(form).toHaveAttribute("method", "post");
       expect(form).toHaveAttribute("action", "/dashboard/login");
+    });
+
+    // While the write is out the button stays focusable: `aria-disabled`, not
+    // `disabled`, so the keyboard is not dropped to the document.
+    it("keeps the button focusable while the write is out", async () => {
+      vi.spyOn(navigation, "replace").mockImplementation(() => {});
+      await mountDashboard(<LoginView />, {
+        path: "/dashboard/login",
+        session: SIGNED_OUT,
+        routes: { "POST /dashboard/login": () => new Promise<Answer>(() => {}) },
+      });
+      await screen.findByLabelText(/VIDTHEQUE_/);
+      await signIn("hunter2");
+
+      const button = await screen.findByRole("button", { name: "signing in…" });
+      expect(button).toHaveAttribute("aria-disabled", "true");
+      expect(button).toBeEnabled();
+      expect(button).toHaveFocus();
     });
 
     it("goes where the outcome says, once the cookie is set", async () => {
@@ -236,8 +226,6 @@ describe("the sign-in page", () => {
     // page that mints the session cookie is the worst place to have an open
     // redirect. Same rule as Python's, said in TypeScript.
     it("fences every shape that is not a path on this surface", async () => {
-      const { safeNext } = await import("./LoginView");
-
       // A query is part of where the reader was going, and the fence is about
       // where that is — the same reading `_safe_next` takes.
       expect(safeNext("/dashboard/jobs?state=active")).toBe("/dashboard/jobs?state=active");
@@ -275,7 +263,7 @@ describe("the sign-in page", () => {
 
       await signIn("hunter2");
 
-      expect(new URLSearchParams(String(posts[0].init.body)).get("next")).toBe("/dashboard");
+      expect(posts()[0].fields.get("next")).toBe("/dashboard");
     });
   });
 
@@ -400,25 +388,14 @@ describe("the sign-in page", () => {
     });
 
     it("is still a sentence when the instance could not be reached at all", async () => {
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-          if (init?.method === "POST") throw new TypeError("Failed to fetch");
-          return new Response(JSON.stringify(SIGNED_OUT), {
-            headers: { "content-type": "application/json" },
-          });
-        }),
-      );
-      await watchTheExit();
-      const { mockNavigation } = await import("@/test/next");
-      mockNavigation("", "/dashboard/login");
-      const { Chrome } = await import("../Chrome");
-      const { LoginView } = await import("./LoginView");
-      render(
-        <Chrome>
-          <LoginView />
-        </Chrome>,
-      );
+      vi.spyOn(navigation, "replace").mockImplementation(() => {});
+      await mountDashboard(<LoginView />, {
+        path: "/dashboard/login",
+        session: SIGNED_OUT,
+        routes: {
+          "POST /dashboard/login": () => Promise.reject(new TypeError("Failed to fetch")),
+        },
+      });
       await screen.findByLabelText(/VIDTHEQUE_/);
 
       await signIn("hunter2");

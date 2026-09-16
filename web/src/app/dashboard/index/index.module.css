@@ -1,27 +1,11 @@
-/* The index form. Its values came out of `templates/index.html` and
-   `dashboard/static/dashboard.css`, both retired on 2026-09-06; DESIGN.md is
-   the source now.
+/* The index form: the paste box, the form's column measure, and the receipt. */
 
-   The plate, the fields, the pickers and both checkbox shapes are
-   `dashboard.module.css`'s. What is here is the vocabulary only this page has:
-   the paste box, the form's own column measure, and the receipt a submission
-   leaves behind it. */
-
-/* One column, measured. A form is prose with controls in it — the reader goes
-   down it once, top to bottom — so it takes `--prose` like every other sentence
-   on this surface, and not the full-bleed width the scanning grids take.
-
-   It is the first block on its page (2026-08-13): the panel it used to sit in
-   drew a second hairline under the page head's own and an empty band between
-   them, so it carries the gap a panel used to and lands where every other
-   page's controls land — straight under the head, no rule in between. */
+/* A form is prose with controls in it, so it takes `--prose`. */
 .form {
   margin-top: var(--s6);
   max-width: var(--prose);
 }
 
-/* One wrapping row of controls, the filter band's metrics without the filter
-   band's ground: this is the page's subject, not a strip above a table. */
 .formrow {
   display: flex;
   flex-wrap: wrap;
@@ -34,20 +18,14 @@
   margin-top: var(--s5);
 }
 
-/* The paste box is a field whose label sits above it like every other, but it
-   is the page's subject and it stacks rather than sharing a row. */
 .block {
   display: flex;
   flex-direction: column;
   gap: var(--s1);
 }
 
-/* Machine text, set as machine text: JetBrains Mono was picked for one
-   measurable property — it draws 0/O and 1/l/I apart — and a column of ids like
-   `kCc8FmEb1nY` is exactly the string that property was bought for. */
+/* Mono, because a column of ids is what its 0/O and 1/l/I were chosen for. */
 .block > textarea {
-  /* Four table rows tall: the box should look like it holds a list, not like an
-     input that grew. */
   min-height: calc(var(--row) * 4);
   padding: var(--s3);
   font-family: var(--mono);
@@ -76,9 +54,6 @@
   cursor: default;
 }
 
-/* The sentence under a control, in body voice. Never a `title` and never a
-   placeholder — both are text you have to go and find, and this is the half of
-   the contract the label has no room for. */
 .fieldHelp {
   composes: t-cell from global;
   margin-top: var(--s2);
@@ -91,10 +66,8 @@
   font-variant-ligatures: none;
 }
 
-/* ------------------------------------------------------------- the receipt
+/* ------------------------------------------------------------- the receipt */
 
-   Above the form and not instead of it: the next thing an operator does after
-   queueing a batch is queue another one. */
 .jobs {
   margin: var(--s3) 0 0;
   padding: 0;
@@ -130,8 +103,7 @@
   font-variant-ligatures: none;
 }
 
-/* One refused batch: the code in its tone, the message beside it, and the URLs
-   it was refused for underneath. */
+/* One refused batch: the code, the message, then its URLs underneath. */
 .refusal {
   composes: t-cell from global;
   display: flex;
@@ -139,16 +111,4 @@
   gap: var(--s1) var(--s2);
   align-items: baseline;
   margin-top: var(--s4);
-}
-
-.panelNote {
-  composes: t-cell from global;
-  margin-top: var(--s3);
-  max-width: var(--note);
-  color: var(--muted);
-}
-
-.panelNote code {
-  font-family: var(--mono);
-  font-variant-ligatures: none;
 }

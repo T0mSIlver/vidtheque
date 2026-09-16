@@ -1,19 +1,5 @@
-/* The sign-in page. Its values came out of `templates/login.html` and
-   `dashboard/static/dashboard.css`, both retired on 2026-09-06; DESIGN.md is
-   the source now.
+/* The sign-in page: one panel, its form measured to `--prose`. */
 
-   The panel, the field, the button and the refusal pill are
-   `dashboard.module.css`'s. What is here is the one thing only this page has:
-   a page with a single job, and therefore the one layout on this surface that
-   is not a full-bleed grid — a `--prose`-wide column under the page head's own
-   band, exactly as the error page is a header band and one panel. Nothing here
-   is a card; the field sits under the same hairline every other panel sits
-   under. */
-
-/* The panel's hairline runs the column, like every other panel on this
-   surface; it is the *form* under it that is measured. A rule that stopped
-   where the field stops would be a second width on a page with one object on
-   it. */
 .form {
   display: flex;
   flex-wrap: wrap;
@@ -23,16 +9,12 @@
   max-width: var(--prose);
 }
 
-/* A password is a short string and should look like one — it does not take the
-   band's flexible lane, and on a phone it takes the width there is. */
+/* A password is a short string; on a phone it takes the row. */
 .secret {
   flex: 0 1 20rem;
   min-width: 12rem;
 }
 
-/* 780px — `--bp-hand`: the field takes the row, which is what the band's own
-   `.field-wide` does at this width and what `dashboard.css:2749` did here. A
-   12rem floor beside a submit is a password box two words wide. */
 @media (max-width: 48.75rem) {
   .secret {
     flex-basis: 100%;
@@ -43,9 +25,6 @@
   width: 100%;
 }
 
-/* The refusal, on one baseline: the word in its tone, the instance's sentence
-   beside it, and the code a client would have matched on last. It wraps as a
-   sentence rather than as three columns, because it is one. */
 .error {
   composes: t-cell from global;
   display: flex;
@@ -57,9 +36,6 @@
   color: var(--fg);
 }
 
-/* The recovery sentence under it. Python's words, at the note measure, in the
-   muted step — the same shape `.outcomeNext` gives an inline refusal on the
-   pages that write. */
 .errorNext {
   composes: t-cell from global;
   margin-top: var(--s2);
@@ -67,12 +43,6 @@
   color: var(--muted);
 }
 
-.code {
-  composes: t-machine-sm from global;
-  color: var(--mark);
-}
-
-/* The countdown carries its own box, so this only places it. */
 .limited {
   margin-top: var(--s3);
 }
