@@ -13,6 +13,11 @@ const PYTHON_PATHS = [
   "/mcp/:path*",
   "/auth/:path*",
   "/.well-known/:path*",
+  // The OAuth endpoints the SDK registers at the root (§10).
+  "/authorize",
+  "/token",
+  "/register",
+  "/revoke",
   "/healthz",
   "/dashboard/api/:path*",
   "/dashboard/logout",

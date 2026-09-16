@@ -111,12 +111,22 @@ describe("proxy", () => {
       "/mcp",
       "/auth/login",
       "/.well-known/oauth-authorization-server",
+      "/authorize",
+      "/token",
+      "/register",
+      "/revoke",
       "/healthz",
+      "/landing/wall/t00.jpg",
       "/icon.svg",
       "/favicon.ico",
       "/videos/kCc8FmEb1nY/export.md",
     ]) {
       expect(matches(path), path).toBe(false);
+    }
+    // Exclusions end at a segment boundary: a path that only shares a prefix is
+    // a document (Next's 404).
+    for (const path of ["/apiary", "/mcpx", "/authors", "/tokens", "/registered", "/healthzz"]) {
+      expect(matches(path), path).toBe(true);
     }
   });
 
@@ -155,10 +165,12 @@ describe("proxy", () => {
       "/dashboard/logoutx",
       "/dashboard/logout-now",
       "/dashboard/logout.php",
+      "/dashboard/apis",
     ]) {
       expect(matches(path), path).toBe(true);
     }
     for (const path of [
+      "/dashboard/api",
       "/dashboard/api/session",
       "/dashboard/api/overview",
       "/dashboard/api/library",

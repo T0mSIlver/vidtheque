@@ -54,6 +54,16 @@ describe("the development rewrites", () => {
     );
   });
 
+  it("forwards the root OAuth endpoints, exactly", async () => {
+    const { beforeFiles } = await devRewrites();
+    for (const path of ["/authorize", "/token", "/register", "/revoke", "/dashboard/api"]) {
+      expect(matches(beforeFiles, path), path).toBe(true);
+    }
+    for (const path of ["/tokens", "/authorize/x", "/registered"]) {
+      expect(matches(beforeFiles, path), path).toBe(false);
+    }
+  });
+
   it("sends nothing anywhere in production", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("VIDTHEQUE_API_URL", API);

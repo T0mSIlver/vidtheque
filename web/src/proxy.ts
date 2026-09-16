@@ -63,7 +63,7 @@ export const config = {
   matcher: [
     {
       source:
-        "/((?!_next|api|frames|mcp|auth|\\.well-known|healthz|dashboard/api/|dashboard/logout$|landing|favicon\\.ico|icon\\.svg|videos/[^/]+/export\\.md).*)",
+        "/((?!(?:_next|api|frames|mcp|auth|\\.well-known|dashboard/api|landing)(?:/|$)|(?:healthz|authorize|token|register|revoke|dashboard/logout|favicon\\.ico|icon\\.svg|videos/[^/]+/export\\.md)$).*)",
       missing: [
         { type: "header", key: "next-router-prefetch" },
         { type: "header", key: "purpose", value: "prefetch" },
