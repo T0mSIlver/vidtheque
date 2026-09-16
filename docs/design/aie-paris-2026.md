@@ -171,7 +171,7 @@ response.
 | `sessions` | array | the paged schedule records from §2.2 |
 | `pagination` | object | `{limit, offset, has_more, next_offset}` for `sessions` |
 | `talks` | array | main-stage talk rows for the returned session page |
-| `videos` | array | tagged queryable videos with `video_id`, title, duration, tags, `index_state`, and kind |
+| `videos` | array | tagged queryable videos with `video_id`, `title`, `channel`, `duration`, `tags`, `index_state`, `kind`, and `link` |
 | `video_pagination` | object | `{limit, offset, has_more, next_offset}` for `videos` |
 | `notes` | string array | clamps, dropped tails, or tagged videos that cannot be classified |
 
@@ -182,6 +182,12 @@ is `talk`, `stream`, or `null`.
 
 Every object here is built field by field from the lists above, so a fixture key
 outside §2.1 and §2.2 has no route to a reader even if one is committed.
+
+A video row's `channel` is the uploader as indexed and `link` is the plain
+`https://youtu.be/<video_id>` the search facade already returns, so the corpus
+listing names its source without the page composing a URL of its own.
+*(Amended 2026-09-16: both were emitted and accepted by the typed client from
+the start and only the table was short.)*
 
 An unknown slug returns HTTP 404 with `{error: "E_UNKNOWN_EDITION", message,
 next}`. A malformed committed fixture is an HTTP 500 `E_INTERNAL`, is logged
