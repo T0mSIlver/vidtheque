@@ -107,6 +107,32 @@ describe("readJsonEvents", () => {
     expect(events).toEqual([{ event: "activity", id: 1 }]);
   });
 
+  // A frame that is not JSON mid-stream is not one row lost: the framing has
+  // stopped making sense, and what follows it in the same read is not evidence
+  // of anything. The read ends where it stopped, which is the end a truncated
+  // stream reaches — the caller gets no terminal event and says the answer was
+  // interrupted, rather than printing an answer that arrived after a hole.
+  it("ends at a frame it cannot parse, in that read and in the one after it", async () => {
+    const bytes = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        // The good frame after the bad one is in the same read…
+        c.enqueue(
+          bytes.encode(
+            'data: {"event":"activity","id":1}\n\ndata: {oh no\n\n' +
+              'data: {"event":"answer","payload":{"answer":"kv caching"}}\n\n',
+          ),
+        );
+        // …and this one is in the read after it, which the loop used to go on to.
+        c.enqueue(bytes.encode('data: {"event":"answer","payload":{"answer":"kv caching"}}\n\n'));
+        c.close();
+      },
+    });
+    const events: unknown[] = [];
+    for await (const raw of readJsonEvents(body)) events.push(raw);
+    expect(events).toEqual([{ event: "activity", id: 1 }]);
+  });
+
   it("cancels the body when the consumer stops early", async () => {
     let cancelled = false;
     // Never closed: only the cancel releases it, which is what a component
