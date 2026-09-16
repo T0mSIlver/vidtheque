@@ -1,4 +1,4 @@
-import { Pill } from "@/components/Pill";
+import { Pill } from "@/components/ui/Pill";
 import type { Stage, VideoDetail } from "@/lib/dashboard/schemas";
 import { at, bytes, count, DASH, duration, iso } from "@/lib/format";
 import { table } from "../../kit/table";

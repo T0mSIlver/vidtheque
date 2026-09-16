@@ -1,7 +1,7 @@
 "use client";
 
-import { Pill } from "@/components/Pill";
-import { useTicking } from "@/components/RetryIn";
+import { Pill } from "@/components/ui/Pill";
+import { useTicking } from "@/components/ui/RetryIn";
 import type { JobCard } from "@/lib/dashboard/schemas";
 import { count, duration } from "@/lib/format";
 import styles from "./jobs.module.css";

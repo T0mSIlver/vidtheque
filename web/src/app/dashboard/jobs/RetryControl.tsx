@@ -1,6 +1,6 @@
 "use client";
 
-import { Pill } from "@/components/Pill";
+import { Pill } from "@/components/ui/Pill";
 import { dashboard, ROOT } from "@/lib/dashboard/client";
 import type { JobCard, RetryOutcome } from "@/lib/dashboard/schemas";
 import { DASH } from "@/lib/format";

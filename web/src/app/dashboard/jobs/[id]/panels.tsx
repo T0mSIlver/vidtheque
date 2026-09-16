@@ -1,6 +1,6 @@
 "use client";
 
-import { Pill } from "@/components/Pill";
+import { Pill } from "@/components/ui/Pill";
 import { ROOT } from "@/lib/dashboard/client";
 import type { JobDetail, JobEvent, JobItem } from "@/lib/dashboard/schemas";
 import { at, DASH, duration, hms, iso } from "@/lib/format";

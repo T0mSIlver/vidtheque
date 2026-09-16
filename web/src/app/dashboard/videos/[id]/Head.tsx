@@ -1,6 +1,6 @@
 "use client";
 
-import { Pill } from "@/components/Pill";
+import { Pill } from "@/components/ui/Pill";
 import { ROOT } from "@/lib/dashboard/client";
 import type { VideoDetail } from "@/lib/dashboard/schemas";
 import { at, day, hms } from "@/lib/format";

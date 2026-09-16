@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useLayoutEffect, useRef, useState } from "react";
-import { Pill } from "@/components/Pill";
+import { Pill } from "@/components/ui/Pill";
 import type { FrameCard, VideoDetail } from "@/lib/dashboard/schemas";
 import { bytes, clock, count, DASH } from "@/lib/format";
 import { OcrBoxes, OcrLines } from "../../FrameOverlay";

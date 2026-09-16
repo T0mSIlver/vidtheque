@@ -9,7 +9,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { Pill, type Tone } from "@/components/Pill";
+import { Pill, type Tone } from "@/components/ui/Pill";
 import { count, DASH, day } from "@/lib/format";
 import { isPorted } from "../ported";
 import styles from "./ui.module.css";
