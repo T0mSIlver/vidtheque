@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import http.client
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
+from vidtheque_worker.backends import voxtral_stt
 from vidtheque_worker.backends.base import BackendUnavailable
 from vidtheque_worker.backends.voxtral_stt import (
     VoxtralBackend,
@@ -197,6 +199,79 @@ def test_a_repeated_trigram_far_from_the_seam_is_not_a_match(tmp_path: Path) -> 
         right.start >= left.end for left, right in zip(result.segments, result.segments[1:])
     )
     assert [word.word for word in words].count("model") == 1
+
+
+def test_short_audio_is_still_extracted_before_it_is_uploaded(tmp_path: Path) -> None:
+    """One chunk is normalised like any other, so the body on the wire is the
+    mono 16 kHz FLAC and never the pipeline's own file at whatever size it is."""
+
+    client = FakeClient([response([("hello", 0.0, 0.5)])])
+    chunks: list[tuple[float, float]] = []
+
+    def chunker(_source: str, start: float, duration: float, destination: str) -> None:
+        chunks.append((start, duration))
+        Path(destination).write_bytes(b"audio")
+
+    audio = tmp_path / "talk.opus"
+    audio.write_bytes(b"audio")
+    backend = VoxtralBackend(
+        api_key="secret",
+        client_factory=lambda _key, _url: client,
+        duration_probe=lambda _path: 900.0,
+        chunker=chunker,
+    )
+    backend.load()
+    backend.infer(str(audio))
+
+    assert chunks == [(0.0, 900.0)]
+    assert client.calls[0][0] != str(audio)
+    assert client.calls[0][0].endswith("chunk-000.flac")
+
+
+def test_a_chunk_over_the_upload_limit_never_reaches_the_paid_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A body upstream would answer with 413 is a 503 here: the 400 that a
+    refusal becomes would fail the video without a retry."""
+
+    monkeypatch.setattr(voxtral_stt, "MAX_UPLOAD_BYTES", 4)
+    client = FakeClient([response([("hello", 0.0, 0.5)])])
+
+    def chunker(_source: str, _start: float, _duration: float, destination: str) -> None:
+        Path(destination).write_bytes(b"audio")
+
+    audio = tmp_path / "talk.opus"
+    audio.write_bytes(b"audio")
+    backend = VoxtralBackend(
+        api_key="secret",
+        client_factory=lambda _key, _url: client,
+        duration_probe=lambda _path: 900.0,
+        chunker=chunker,
+    )
+    backend.load()
+    with pytest.raises(BackendUnavailable) as caught:
+        backend.infer(str(audio))
+
+    assert caught.value.code == "backend_unavailable"
+    assert "4-byte upload limit" in str(caught.value)
+    assert client.calls == []
+
+
+def test_the_extraction_downmixes_to_one_channel_at_sixteen_kilohertz() -> None:
+    recorded: list[list[str]] = []
+
+    class Completed:
+        returncode = 0
+
+    def fake_run(command: list[str], **_kwargs: object) -> Completed:
+        recorded.append(command)
+        return Completed()
+
+    with mock.patch.object(voxtral_stt.subprocess, "run", fake_run):
+        voxtral_stt._extract_chunk("in.opus", 12.0, 30.0, "out.flac")
+
+    assert recorded[0][recorded[0].index("-ac") + 1] == "1"
+    assert recorded[0][recorded[0].index("-ar") + 1] == "16000"
 
 
 def test_a_response_carrying_both_word_shapes_transcribes_each_word_once() -> None:

@@ -399,6 +399,12 @@ One upstream request covers at most 3,600 seconds. Adjacent requests overlap by
 30 seconds and run sequentially. Sequential calls bound temporary disk, API
 concurrency, and the number of paid requests in flight.
 
+Every request sends an extracted chunk, including a recording short enough for
+one request. The extraction is ffmpeg to mono 16 kHz FLAC: speech recognition
+reads one channel at 16 kHz, so anything above that is bandwidth and megabytes
+rather than accuracy, and forwarding the pipeline's own file would put a body
+on the wire that nothing here had bounded.
+
 The seam merge keeps the earlier copy of a repeated word sequence. It compares
 normalized words inside the overlap, chooses the longest suffix and prefix
 match of at least three words, shifts the later timestamps by the chunk start,
@@ -416,8 +422,13 @@ after a safe merge.
 
 The official overview currently says recordings up to three hours, while the
 known-limitations page says 60 minutes and 500 MB. The backend follows the
-smaller limit. A change to the upstream limit may reduce the number of calls
-later, but it does not change the worker response shape.
+smaller limit, and it follows both halves of it: chunking answers the minutes,
+and the encoded chunk's size is checked against 500,000,000 bytes before the
+paid call. A chunk over that limit fails as the retryable 503, not as the 400
+that the upstream 413 would become — a rejection settles the item, and an hour
+of a conference VOD should not be dropped on a bound a differently configured
+worker would clear. A change to the upstream limit may reduce the number of
+calls later, but it does not change the worker response shape.
 
 ### 6.1 Environment
 

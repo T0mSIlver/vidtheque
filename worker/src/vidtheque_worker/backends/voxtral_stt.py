@@ -26,6 +26,10 @@ MAX_CHUNK_SECONDS = 3_600.0
 CHUNK_OVERLAP_SECONDS = 30.0
 MIN_SAFE_MATCH_WORDS = 3
 MAX_SEAM_DRIFT_SECONDS = 2.0
+MAX_UPLOAD_BYTES = 500 * 1_000_000
+"""The other half of Mistral's documented pair of limits (`aie-paris-2026.md`
+§6): 60 minutes *and* 500 MB. Chunking answers the minutes; this answers the
+megabytes, and it is the decimal reading because that is the smaller one."""
 
 
 class _MistralClient:
@@ -177,11 +181,14 @@ class VoxtralBackend(BaseBackend):
         with tempfile.TemporaryDirectory(prefix="vidtheque-voxtral-") as scratch:
             for index, start in enumerate(starts):
                 length = min(MAX_CHUNK_SECONDS, duration - start)
-                if len(starts) == 1:
-                    chunk_path = audio_path
-                else:
-                    chunk_path = os.path.join(scratch, f"chunk-{index:03d}.flac")
-                    self._chunker(audio_path, start, length, chunk_path)
+                # One chunk is extracted the same way as five. The pipeline's
+                # own audio file is whatever the download gave — stereo, 48 kHz,
+                # any size — and forwarding it untouched sent bodies upstream
+                # that nothing here had bounded. Extraction is what makes the
+                # body mono 16 kHz FLAC, so it is what the size check can trust.
+                chunk_path = os.path.join(scratch, f"chunk-{index:03d}.flac")
+                self._chunker(audio_path, start, length, chunk_path)
+                _check_upload_size(chunk_path)
                 payload = self._client.transcribe(
                     chunk_path,
                     model=self.model_id,
@@ -243,6 +250,13 @@ def _extract_chunk(source: str, start: float, duration: float, destination: str)
             "-i",
             source,
             "-vn",
+            # Speech recognition reads one channel at 16 kHz, so anything above
+            # that is paid bandwidth and megabytes against the upload limit, not
+            # accuracy.
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
             "-c:a",
             "flac",
             destination,
@@ -250,6 +264,24 @@ def _extract_chunk(source: str, start: float, duration: float, destination: str)
         check=True,
         capture_output=True,
     )
+
+
+def _check_upload_size(chunk_path: str) -> None:
+    """Refuse an oversized body here rather than pay for the 413.
+
+    Upstream answers a body over the limit with HTTP 413, which this backend can
+    only read as "the audio was refused": `InvalidMediaError`, HTTP 400, and an
+    item `mcp/` fails without retrying — an hour of a conference VOD dropped on
+    a limit that a differently configured worker would not hit. The size is read
+    from the directory entry, so the check costs nothing and the body is still
+    only built once, by the request that sends it.
+    """
+    size = os.path.getsize(chunk_path)
+    if size > MAX_UPLOAD_BYTES:
+        raise BackendUnavailable(
+            f"encoded chunk is {size} bytes, over Mistral's "
+            f"{MAX_UPLOAD_BYTES}-byte upload limit"
+        )
 
 
 def _chunk_starts(duration: float) -> list[float]:
