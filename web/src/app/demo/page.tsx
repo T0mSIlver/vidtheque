@@ -85,13 +85,15 @@ export default async function DemoPage(props: PageProps<"/demo">) {
 // Ask is the default mode (Tom, 2026-08-11; demo-site.md §6.1): the headline
 // says "ask it something", so the box under it had better be the one that
 // answers a question. Exactly two things override it, and each is explicit.
+// Exported because it is the rule and not this page's: `/paris` reads the same
+// three-valued `ask` out of its own URL (§6.2).
 //
 // The third — a deployment with no key configured — is *not* read here, because
 // reading it means waiting on `/api/meta` to find out which box to draw. The
 // markup states the default, as `demo/index.html` did, and `AskSwitch` corrects
 // it when the boot call lands: that swap is rare and it is the misconfiguration
 // rather than the demo.
-function wantsAsk(ask: string | undefined, q: string): boolean {
+export function wantsAsk(ask: string | undefined, q: string): boolean {
   if (ask === "0") return false;
   if (ask === "1") return true;
   // `?q=` with no `ask=` at all is search: that is what every link written
