@@ -15,12 +15,8 @@
   transition: filter var(--t-state);
 }
 
-/* Hover may change colour, not geometry: the frame lights, nothing moves.
-   **The button is named alongside the anchor.** Every frame on the demo sits
-   in a `<button class="shotButton">` — the enlarge control cannot live inside
-   the row's anchor — so a rule keyed on `a` alone left every still on that
-   surface at `--film-rest` for good, lighting for nobody (parity round,
-   2026-09-16). */
+/* Hover changes colour, not geometry. The enlarge button is named beside the
+   anchor: every demo frame sits in one. */
 a:hover .img,
 a:focus-visible .img,
 .shotButton:hover .img,
@@ -28,15 +24,21 @@ a:focus-visible .img,
   filter: var(--film-full);
 }
 
-/* No keyframe for this moment, or the bytes never arrived. It says which
-   channel the moment came from rather than leaving a hole where a frame is. */
-.placeholder {
+/* No keyframe, or the bytes never arrived: the channel's word, not a hole. */
+.placeholder,
+.fallback {
   composes: t-tag from global;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--plate3);
   color: var(--fg3);
+}
+
+.fallback {
+  width: 100%;
+  height: 100%;
+  line-height: normal;
 }
 
 /* ─────────────────────────────────────────────────── click to enlarge */
@@ -55,16 +57,13 @@ a:focus-visible .img,
   transition: box-shadow var(--t-state) linear;
 }
 
-/* …and the ring the old page drew on the same hover (`style.css`'s
-   `.hit-shot:hover .hit-thumb`), keyboard included. */
+/* The ring, keyboard included. */
 .shotButton:hover .box,
 .shotButton:focus-visible .box {
   box-shadow: inset 0 0 0 2px var(--gold);
 }
 
-/* The dialog element is the *backdrop*: it carries no padding, so `.inner`
-   covers every pixel of the box and a click that lands on the dialog itself
-   landed outside the picture. */
+/* No padding on the dialog, so a click on it is a click on the backdrop. */
 .shot {
   width: min(96vw, 64rem);
   max-width: min(96vw, 64rem);
@@ -110,9 +109,7 @@ a:focus-visible .img,
   overflow-wrap: anywhere;
 }
 
-/* The filled slab, not the small one: there is one of it and it is the payoff
-   (demo-site.md §6.5). Its face is `Receipt.module.css`'s; the foot only says
-   that it may shrink before the caption beside it does. */
+/* The slab's face is `Receipt.module.css`'s; the caption shrinks first. */
 .receipt {
   flex: none;
 }

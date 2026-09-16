@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { Frame, FrameShot, type Shot } from "./Frame";
@@ -44,6 +45,14 @@ describe("Frame", () => {
 });
 
 describe("FrameShot", () => {
+  // The server markup is the hydrated markup: no plain image swapped for a
+  // button after capability detection.
+  it("renders the enlarge control in the server markup", () => {
+    const html = renderToString(<FrameShot shot={shot()} alt="" />);
+    expect(html).toContain('aria-label="Enlarge the frame from Context engineering at 2:18"');
+    expect(html).toContain("<dialog");
+  });
+
   it("enlarges the frame the server sized, and never one it did not", async () => {
     const user = userEvent.setup();
     render(<FrameShot shot={shot()} alt="" />);
