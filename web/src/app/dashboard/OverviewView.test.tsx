@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { mountDashboard, type Answer } from "@/test/dashboard";
 import {
   DEMO_OVERVIEW,
   DEMO_SESSION,
@@ -8,55 +9,36 @@ import {
   OWNER_SESSION,
 } from "@/test/dashboard-fixtures";
 import { firstPaint } from "@/test/retry";
+import { OverviewView } from "./OverviewView";
 
-// The page renders against two payloads, not one. `docs/ROADMAP.md` names the
-// failure this guards: a page that renders a field the projection drops. So
-// every state below is asserted twice where the two differ — the operator's
-// instance sees the box it is on, the demo sees the corpus and nothing else.
+vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 
-type Route = { status?: number; body?: unknown; headers?: Record<string, string> };
+// Two payloads, not one: every state that differs is asserted for the owner's
+// instance and for the projection, which drops the box and keeps the corpus.
 
-function stub(routes: Record<string, Route>) {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
-      const route = routes[String(input)] ?? { status: 404, body: {} };
-      const text = typeof route.body === "string" ? route.body : JSON.stringify(route.body ?? {});
-      return new Response(text, {
-        status: route.status ?? 200,
-        headers: { "content-type": "application/json", ...route.headers },
-      });
-    }),
-  );
-}
-
-async function mount(overview: Route, session: unknown = OWNER_SESSION) {
-  stub({
-    "/dashboard/api/overview": overview,
-    "/dashboard/api/session": { body: session },
+function mount(overview: Answer, session: unknown = OWNER_SESSION, path = "/dashboard") {
+  return mountDashboard(<OverviewView />, {
+    path,
+    session,
+    routes: { "/dashboard/api/overview": overview },
   });
-  const { Chrome } = await import("./Chrome");
-  const { OverviewView } = await import("./OverviewView");
-  render(
-    <Chrome>
-      <OverviewView />
-    </Chrome>,
-  );
 }
 
 describe("the corpus overview", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.resetModules();
-  });
-
   describe("on the owner's instance", () => {
-    it("counts the corpus, in the band", async () => {
-      const { mockNavigation } = await import("@/test/next");
-      mockNavigation("", "/dashboard");
+    it("holds the head and the page's space while the read is out", async () => {
       await mount({ body: OWNER_OVERVIEW });
 
-      expect(await screen.findByRole("heading", { name: "Corpus overview" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Corpus overview" })).toBeInTheDocument();
+      expect(screen.getByText("reading…")).toBeInTheDocument();
+      expect(await screen.findByText("transcript cues")).toBeInTheDocument();
+      expect(screen.queryByText("reading…")).not.toBeInTheDocument();
+    });
+
+    it("counts the corpus, in the band", async () => {
+      await mount({ body: OWNER_OVERVIEW });
+
+      expect(await screen.findByText("transcript cues")).toBeInTheDocument();
       // Five figures, each with its label; the hours are rounded here and not
       // on the wire.
       expect(screen.getByText("videos").closest("div")).toHaveTextContent("4");
@@ -74,8 +56,6 @@ describe("the corpus overview", () => {
     // ready" by the same one, which is the reading an operator came here to
     // get: a stale video is precisely one that needs looking at.
     it("counts a stale video as not ready, the way the rollup does", async () => {
-      const { mockNavigation } = await import("@/test/next");
-      mockNavigation("", "/dashboard");
       await mount({
         body: {
           ...OWNER_OVERVIEW,
@@ -90,7 +70,7 @@ describe("the corpus overview", () => {
         },
       });
 
-      expect(await screen.findByRole("heading", { name: "Corpus overview" })).toBeInTheDocument();
+      expect(await screen.findByText("transcript cues")).toBeInTheDocument();
       expect(screen.getByText("videos").closest("div")).toHaveTextContent("3 ready · 2 not ready");
     });
 
@@ -99,8 +79,6 @@ describe("the corpus overview", () => {
     // and a `5` written into the page is how a cap gets reported as an exact
     // count the day the `LIMIT` changes.
     it("says a capped gap is a ceiling and not a count", async () => {
-      const { mockNavigation } = await import("@/test/next");
-      mockNavigation("", "/dashboard");
       await mount({
         body: {
           ...OWNER_OVERVIEW,
@@ -115,8 +93,6 @@ describe("the corpus overview", () => {
     });
 
     it("prints an uncapped gap as the number it is", async () => {
-      const { mockNavigation } = await import("@/test/next");
-      mockNavigation("", "/dashboard");
       await mount({
         body: {
           ...OWNER_OVERVIEW,
@@ -133,8 +109,6 @@ describe("the corpus overview", () => {
     // line — the same absent state the ledger renders, because it is the same
     // note printed from the same place.
     it("leaves the published span out on a corpus that has none", async () => {
-      const { mockNavigation } = await import("@/test/next");
-      mockNavigation("", "/dashboard");
       await mount({
         body: {
           ...OWNER_OVERVIEW,
@@ -142,14 +116,12 @@ describe("the corpus overview", () => {
         },
       });
 
-      expect(await screen.findByRole("heading", { name: "Corpus overview" })).toBeInTheDocument();
+      expect(await screen.findByText("transcript cues")).toBeInTheDocument();
       expect(screen.getByText("videos").closest("div")).not.toHaveTextContent("published");
       expect(document.body.textContent).not.toMatch(/null|NaN|undefined/);
     });
 
     it("prints corpus-summary's own state word and the last index clock", async () => {
-      const { mockNavigation } = await import("@/test/next");
-      mockNavigation("", "/dashboard");
       await mount({ body: OWNER_OVERVIEW });
 
       expect(await screen.findByText("indexing")).toBeInTheDocument();
@@ -165,8 +137,6 @@ describe("the corpus overview", () => {
     });
 
     it("shows the queue, the gaps and the arrivals as sentences with numbers in them", async () => {
-      const { mockNavigation } = await import("@/test/next");
-      mockNavigation("", "/dashboard");
       await mount({ body: OWNER_OVERVIEW });
 
       expect(await screen.findByText(/job\(s\) queued or running/)).toBeInTheDocument();
@@ -188,8 +158,6 @@ describe("the corpus overview", () => {
     // or a `#` unencoded would open the detail page for a different video, or
     // for none — with the rest of the id read as a query string.
     it("encodes the id of the video each arrival links to", async () => {
-      const { mockNavigation } = await import("@/test/next");
-      mockNavigation("", "/dashboard");
       await mount({
         body: {
           ...OWNER_OVERVIEW,
@@ -204,8 +172,6 @@ describe("the corpus overview", () => {
     });
 
     it("shows the box: the models it was built with, the worker, and the bytes", async () => {
-      const { mockNavigation } = await import("@/test/next");
-      mockNavigation("", "/dashboard");
       await mount({ body: OWNER_OVERVIEW });
 
       expect(await screen.findByText("large-v3")).toBeInTheDocument();
@@ -226,8 +192,6 @@ describe("the corpus overview", () => {
     // read for other reasons and lands whenever it lands, and a banner that
     // appears a moment after the page is a banner the reader watches arrive.
     it("draws the write state and the drift banner from the payload, not the session", async () => {
-      const { mockNavigation } = await import("@/test/next");
-      mockNavigation("", "/dashboard");
       await mount({ body: { ...OWNER_OVERVIEW, writes_allowed: false } }, OWNER_SESSION);
 
       expect(
@@ -241,18 +205,16 @@ describe("the corpus overview", () => {
       // The one band on this page that opts into the failure tone, as
       // `overview.html`'s `notice notice-bad` did.
       const band = screen.getByRole("region", { name: "The corpus and the worker disagree" });
-      expect(band.className).toMatch(/noticeBad/);
+      expect(band).toHaveAttribute("data-tone", "bad");
     });
   });
 
   describe("in the public projection", () => {
     it("keeps the corpus and drops the box, with no nulls on screen", async () => {
-      const { mockNavigation } = await import("@/test/next");
-      mockNavigation("", "/dashboard");
       await mount({ body: DEMO_OVERVIEW }, DEMO_SESSION);
 
       // The corpus is all still there.
-      expect(await screen.findByRole("heading", { name: "Corpus overview" })).toBeInTheDocument();
+      expect(await screen.findByText("transcript cues")).toBeInTheDocument();
       expect(screen.getByText("videos").closest("div")).toHaveTextContent("3 ready");
       expect(screen.getByText("Let's build GPT: from scratch")).toBeInTheDocument();
       expect(screen.getByText("topic:attention")).toBeInTheDocument();
@@ -273,8 +235,6 @@ describe("the corpus overview", () => {
     // what changes a visitor's reading of the results, so the projection keeps
     // the effect and loses the sentence.
     it("tells a visitor search is answering from full-text, and not why", async () => {
-      const { mockNavigation } = await import("@/test/next");
-      mockNavigation("", "/dashboard");
       await mount(
         {
           body: {
@@ -300,8 +260,6 @@ describe("the corpus overview", () => {
 
   describe("when the read does not land", () => {
     it("says the instance refused it, and offers the way in", async () => {
-      const { mockNavigation } = await import("@/test/next");
-      mockNavigation("", "/dashboard");
       await mount({
         status: 401,
         body: {
@@ -331,8 +289,6 @@ describe("the corpus overview", () => {
     // rail already carries every destination, so what a refusal owes the
     // operator is the list the thing they asked for should have been in.
     it("offers somewhere to go, and the way in when there is one", async () => {
-      const { mockNavigation } = await import("@/test/next");
-      mockNavigation("", "/dashboard");
       await mount({
         status: 401,
         body: {
@@ -372,12 +328,14 @@ describe("the corpus overview", () => {
     // The same panel from a page in the jobs section: the standing link is the
     // list the thing they asked for should have been in.
     it("points a jobs refusal at the jobs list", async () => {
-      const { mockNavigation } = await import("@/test/next");
-      mockNavigation("", "/dashboard/jobs/job_missing01");
-      await mount({
-        status: 404,
-        body: { error: "E_UNKNOWN_JOB", message: 'No job "job_missing01".', next: null },
-      });
+      await mount(
+        {
+          status: 404,
+          body: { error: "E_UNKNOWN_JOB", message: 'No job "job_missing01".', next: null },
+        },
+        OWNER_SESSION,
+        "/dashboard/jobs/job_missing01",
+      );
 
       expect(
         await screen.findByRole("link", { name: "Every job this index has run" }),
@@ -391,8 +349,6 @@ describe("the corpus overview", () => {
     // whichever second the box got here: a page halving `Retry-After` counts
     // down just as convincingly.
     it("counts down a 429 rather than inventing a wait", async () => {
-      const { mockNavigation } = await import("@/test/next");
-      mockNavigation("", "/dashboard");
       await firstPaint(() =>
         mount({
           status: 429,

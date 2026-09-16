@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { mountDashboard, type Answer } from "@/test/dashboard";
 import { DEMO_SESSION, OWNER_SESSION } from "@/test/dashboard-fixtures";
 import {
   AUTH_REFUSAL,
@@ -17,48 +18,24 @@ import {
   TRAP_SEARCH,
 } from "@/test/search-fixtures";
 import { firstPaint } from "@/test/retry";
+import { SearchView } from "./SearchView";
 
-// The page that answers the question the corpus exists for. Its job is to say
-// what matched, what kind of thing it is evidence of, and *which second*, and
-// then to hand over two links that answer two different questions: the receipt
-// out to YouTube, and the moment inside this deployment's own index.
-//
-// So the assertions are the three traps §14.2 names — the timecode is
-// `match_start` and not `timestamp`, a frame hit with no text says so in the
-// page's own words, and the notes arrive with their `note:` marker already
-// gone — plus the URL round trips, the states a reader lands in with nothing to
-// show, and the refusals.
+vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 
-type Route = { status?: number; body?: unknown; headers?: Record<string, string> };
+// What matched, what kind of evidence it is, and which second; the receipt out
+// and the moment in; §14.2's three traps; the URL round trip; the empties and
+// the refusals.
 
-async function mount(
-  search_: Route,
+function mount(
+  search_: Answer,
   { search = "", session = OWNER_SESSION }: { search?: string; session?: unknown } = {},
 ) {
-  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input);
-    const route: Route = url.startsWith("/dashboard/api/search")
-      ? search_
-      : url === "/dashboard/api/session"
-        ? { body: session }
-        : { status: 404, body: {} };
-    const text = typeof route.body === "string" ? route.body : JSON.stringify(route.body ?? {});
-    return new Response(text, {
-      status: route.status ?? 200,
-      headers: { "content-type": "application/json", ...route.headers },
-    });
+  return mountDashboard(<SearchView />, {
+    path: "/dashboard/search",
+    search,
+    session,
+    routes: { "/dashboard/api/search": search_ },
   });
-  vi.stubGlobal("fetch", fetcher);
-  const { mockNavigation } = await import("@/test/next");
-  const nav = mockNavigation(search, "/dashboard/search");
-  const { Chrome } = await import("../Chrome");
-  const { SearchView } = await import("./SearchView");
-  render(
-    <Chrome>
-      <SearchView />
-    </Chrome>,
-  );
-  return { ...nav, fetcher };
 }
 
 /** The row one moment is on, found by the timecode it prints. */
@@ -74,11 +51,6 @@ function frameOf(timecode: string) {
 }
 
 describe("the owner's search page", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.resetModules();
-  });
-
   it("lists the ranking a moment a row, and says which slice it is showing", async () => {
     await mount({ body: OWNER_SEARCH }, { search: "q=cache" });
 
@@ -356,26 +328,27 @@ describe("the owner's search page", () => {
   // own query string, and a whitelist that quietly dropped it was a filter that
   // silently did not apply — with no `note:` to say so.
   it("passes a video_id filter through to the handler that takes it", async () => {
-    const { fetcher } = await mount(
+    const { calls } = await mount(
       { body: OWNER_SEARCH },
       { search: "q=cache&video_id=kCc8FmEb1nY" },
     );
     await screen.findByRole("heading", { name: "Results" });
 
-    expect(fetcher).toHaveBeenCalledWith(
+    expect(calls("/dashboard/api/search")[0].url).toBe(
       "/dashboard/api/search?q=cache&video_id=kCc8FmEb1nY",
-      expect.objectContaining({ credentials: "same-origin" }),
     );
   });
 
   // ---------------------------------------------------------- the empties
 
   it("tells the two empties apart", async () => {
-    await mount({ body: NO_MATCH_SEARCH }, { search: "q=zzzznothingmatchesthis" });
+    const { unmount } = await mount(
+      { body: NO_MATCH_SEARCH },
+      { search: "q=zzzznothingmatchesthis" },
+    );
     expect(await screen.findByText("No moments matched.")).toBeInTheDocument();
 
-    vi.resetModules();
-    vi.unstubAllGlobals();
+    unmount();
     await mount({ body: EMPTY_CORPUS_SEARCH }, { search: "q=zzzznothingmatchesthis" });
     expect(await screen.findByText("Nothing is indexed in this corpus yet.")).toBeInTheDocument();
   });
@@ -396,25 +369,20 @@ describe("the owner's search page", () => {
   // A page nobody has asked anything of yet is not an error and not an empty
   // result set: it is a page with no question on it.
   it("reads nothing at all until there is a query in the URL", async () => {
-    const { fetcher } = await mount({ body: OWNER_SEARCH });
+    const { calls } = await mount({ body: OWNER_SEARCH });
 
     expect(await screen.findByText("No search has run.")).toBeInTheDocument();
-    expect(
-      fetcher.mock.calls.filter((call) => String(call[0]).startsWith("/dashboard/api/search")),
-    ).toHaveLength(0);
+    expect(calls("/dashboard/api/search")).toHaveLength(0);
   });
 
   // ------------------------------------------------------- the URL round trip
 
   it("submits the band as a navigation, and sends what the reader typed", async () => {
-    const { push, fetcher } = await mount({ body: OWNER_SEARCH }, { search: "q=cache" });
+    const { push, calls } = await mount({ body: OWNER_SEARCH }, { search: "q=cache" });
     await screen.findByRole("heading", { name: "Results" });
 
     // Every bound is Python's and caller-keyed, so the query goes as typed.
-    const read = fetcher.mock.calls.find((call) =>
-      String(call[0]).startsWith("/dashboard/api/search"),
-    );
-    expect(String(read?.[0])).toBe("/dashboard/api/search?q=cache");
+    expect(calls("/dashboard/api/search")[0].url).toBe("/dashboard/api/search?q=cache");
 
     await userEvent.clear(screen.getByLabelText("Query"));
     await userEvent.type(screen.getByLabelText("Query"), "paged attention");
@@ -422,12 +390,27 @@ describe("the owner's search page", () => {
     await userEvent.type(screen.getByLabelText("Video channel"), "GPU MODE");
     await userEvent.click(screen.getByRole("button", { name: "Search" }));
 
-    // `content_type=all` is the value the handler would have used anyway, and a
-    // link carrying it says nothing twice. The parameter names are the
-    // handler's, so a link bookmarked off the Jinja page still opens this one.
+    // `content_type=all` would say nothing twice, so it is left off.
     expect(push).toHaveBeenCalledWith(
       "/dashboard/search?q=paged+attention&content_type=ocr&channel=GPU+MODE",
+      { scroll: false },
     );
+  });
+
+  // The band is one form for the life of the page: a resubmit keeps the node,
+  // the caret stays in the query box, and the page does not scroll.
+  it("keeps the band and the caret through a resubmit", async () => {
+    const { push } = await mount({ body: OWNER_SEARCH }, { search: "q=cache" });
+    await screen.findByRole("heading", { name: "Results" });
+    const form = screen.getByRole("search");
+    const box = screen.getByLabelText("Query");
+
+    await userEvent.type(box, " size{Enter}");
+
+    expect(push).toHaveBeenCalledWith("/dashboard/search?q=cache+size", { scroll: false });
+    await screen.findByRole("heading", { name: "Results" });
+    expect(screen.getByRole("search")).toBe(form);
+    expect(screen.getByLabelText("Query")).toHaveFocus();
   });
 
   it("carries a bound the URL holds but the band has no control for", async () => {
@@ -435,7 +418,7 @@ describe("the owner's search page", () => {
     await screen.findByRole("heading", { name: "Results" });
 
     await userEvent.click(screen.getByRole("button", { name: "Search" }));
-    expect(push).toHaveBeenCalledWith("/dashboard/search?q=cache&limit=50");
+    expect(push).toHaveBeenCalledWith("/dashboard/search?q=cache&limit=50", { scroll: false });
   });
 
   it("pages on the limit the server accepted, not the one it was asked for", async () => {
@@ -496,16 +479,15 @@ describe("the owner's search page", () => {
 
   // ---------------------------------------------------------- the refusals
 
-  // The code is the heading and the sentence is under it, which is the way
-  // round `search.html` printed them: on an instrument the code is the half a
-  // bug report quotes.
+  // The one refusal shape on this surface: the message is the heading, the code
+  // under it, and the `next:` line as the API wrote it.
   it("keeps the band on the page when the query itself is refused", async () => {
     await mount({ status: 400, body: EMPTY_QUERY_REFUSAL }, { search: "q=" });
 
-    const notice = (await screen.findByText("E_EMPTY_QUERY")).closest("section") as HTMLElement;
-    expect(notice.querySelector("h2")).toHaveTextContent("E_EMPTY_QUERY");
-    expect(within(notice).getByText(EMPTY_QUERY_REFUSAL.message)).toBeInTheDocument();
-    expect(within(notice).getByText(`next: ${EMPTY_QUERY_REFUSAL.next}`)).toBeInTheDocument();
+    const notice = await screen.findByRole("region", { name: EMPTY_QUERY_REFUSAL.message });
+    expect(notice).toHaveAttribute("data-tone", "bad");
+    expect(within(notice).getByText("E_EMPTY_QUERY")).toBeInTheDocument();
+    expect(within(notice).getByText(EMPTY_QUERY_REFUSAL.next as string)).toBeInTheDocument();
     // The band is what the reader fixes it with, so it stays.
     expect(screen.getByLabelText("Query")).toBeInTheDocument();
   });
@@ -522,9 +504,8 @@ describe("the owner's search page", () => {
       { search: "q=cache" },
     );
 
-    const notice = (await screen.findByText("E_INTERNAL")).closest("section") as HTMLElement;
-    expect(notice.querySelector("h2")).toHaveTextContent("E_INTERNAL");
-    expect(within(notice).getByText("search failed")).toBeInTheDocument();
+    const notice = await screen.findByRole("region", { name: "search failed" });
+    expect(within(notice).getByText("E_INTERNAL")).toBeInTheDocument();
     expect(screen.getByLabelText("Query")).toBeInTheDocument();
   });
 

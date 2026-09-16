@@ -1,9 +1,12 @@
 "use client";
 
 import { dashboard, ROOT } from "@/lib/dashboard/client";
+import { useResource } from "@/lib/dashboard/resource";
 import type { Overview } from "@/lib/dashboard/schemas";
-import { at, bytes, count, hms, hours, iso } from "@/lib/format";
-import styles from "./dashboard.module.css";
+import { at, bytes, count, DASH, hms, hours, iso } from "@/lib/format";
+import { Notice, ReadFailure } from "./kit/notice";
+import { Readiness } from "./kit/Readiness";
+import { table } from "./kit/table";
 import {
   DashLink,
   Fact,
@@ -11,117 +14,94 @@ import {
   GapLine,
   PageHead,
   Panel,
+  Pending,
   publishedNote,
-  Readiness,
-  ReadFailure,
-  Reading,
   Sep,
   StatePair,
+  ui,
   Unbroken,
   Unit,
-} from "./parts";
-import { useRead } from "./useRead";
+} from "./kit/ui";
 
-// The corpus overview — `templates/overview.html`, reading
-// `GET /dashboard/api/overview` in the browser instead of being rendered from
-// the same query in Python.
-//
-// It is a ledger, not a dashboard of cards: what is in the corpus, what is
-// missing from it, what arrived last, and whether the models the corpus was
-// built with are still the ones being served. Read top to bottom it is the
-// answer to "what happened while I was asleep".
-//
-// Every figure here is a value Python sent typed and this file formats
-// (frontend-migration.md §1 decision 5) — including `hours`, which is
-// deliberately *not* on the wire, because the rollup's own comment calls it a
-// display rounding and deriving seconds back out of it once reported a 149 s
-// corpus as 0.
+// The corpus overview (dashboard.md §5.1): what is in the corpus, what is
+// missing, what arrived last, and whether the declared models are the served
+// ones. Every figure is a typed value formatted here, `hours` included.
 
 const read = (signal: AbortSignal) => dashboard.overview(signal);
 
 export function OverviewView() {
-  const state = useRead(read);
+  const overview = useResource("overview", read);
+  const data = overview.data;
 
-  if (state.status === "loading") return <Reading />;
-  // The refusal replaces the page, head and all — `views.overview` rendered
-  // `error.html` *instead of* `overview.html`, never underneath it, and a page
-  // head over a refusal is a title claiming a reading that did not happen.
-  if (state.status === "failed") return <ReadFailure error={state.error} onRetry={state.reload} />;
-  return <Loaded data={state.data} />;
-}
-
-function Loaded({ data }: { data: Overview }) {
-  const { corpus, gaps, jobs, readiness } = data;
-  // The projection's own word for itself. `redacted` and the session's
-  // `readonly` are the same flag read on two endpoints; this page has the
-  // payload in hand, so it asks the payload.
-  const projection = data.redacted;
-  const failedWindowHours = Math.round(jobs.failed_window_s / 3600);
-
-  // The drift banner is the private half of §2.4's overview row, and the
-  // projection keeps the half a visitor can act on. The flag is this payload's
-  // own (§19): a banner that appears a moment after the page, when
-  // `/api/session` lands, is a banner the reader watches arrive. The *reason* is written for
-  // whoever set the env; the *effect* — that search is answering from full-text
-  // alone — changes what a visitor should believe about the results, so it
-  // survives with the operator's sentence cut out of it.
-  const writesRefused = !data.writes_allowed && !projection;
-  const drift = !readiness.vectors.enabled || writesRefused;
+  // A refusal replaces the page: a head over it would claim a reading.
+  if (!data && overview.error !== undefined) {
+    return <ReadFailure error={overview.error} onRetry={overview.reload} />;
+  }
 
   return (
     <>
       <PageHead title="Corpus overview">
         <Unbroken>
-          <StatePair label="data_status" word={corpus.data_status} />
+          {data ? (
+            <StatePair label="data_status" word={data.corpus.data_status} />
+          ) : (
+            <Fact label="data_status" value={DASH} />
+          )}
           <Sep />
         </Unbroken>
-        <Fact label="indexed" value={at(corpus.last_indexed)} />
+        <Fact label="indexed" value={data ? at(data.corpus.last_indexed) : DASH} />
       </PageHead>
+      {data ? <Loaded data={data} /> : <Pending />}
+    </>
+  );
+}
 
+function Loaded({ data }: { data: Overview }) {
+  const { corpus, gaps, jobs, readiness } = data;
+  const projection = data.redacted;
+  const failedWindowHours = Math.round(jobs.failed_window_s / 3600);
+
+  // The flag is this payload's own (§19), so the banner paints with the page.
+  // The projection keeps the effect on search and drops the operator's reason.
+  const writesRefused = !data.writes_allowed && !projection;
+  const drift = !readiness.vectors.enabled || writesRefused;
+
+  return (
+    <>
       {drift ? (
-        <section className={styles.noticeBad} aria-labelledby="drift">
-          {projection ? (
-            <>
-              <h2 className={styles.noticeBadTitle} id="drift">
-                Vector search is off on this instance
-              </h2>
-              <p className={styles.noticeNext}>
-                Search still answers from full-text, and every response says so.
-              </p>
-            </>
-          ) : (
-            <>
-              <h2 className={styles.noticeBadTitle} id="drift">
-                The corpus and the worker disagree
-              </h2>
-              {readiness.vectors.reason ? (
-                <p className={styles.noticeDetail}>{readiness.vectors.reason}</p>
-              ) : null}
-              <p className={styles.noticeNext}>
+        projection ? (
+          <Notice
+            id="drift"
+            tone="bad"
+            title="Vector search is off on this instance"
+            next="Search still answers from full-text, and every response says so."
+          />
+        ) : (
+          <Notice
+            id="drift"
+            tone="bad"
+            title="The corpus and the worker disagree"
+            detail={readiness.vectors.reason}
+            next={
+              <>
                 Search still answers from full-text; the vector legs are off and every response says
                 so. Indexing is{" "}
                 {writesRefused ? "refused, so no video can mix embedding spaces" : "still allowed"}.
-              </p>
-            </>
-          )}
-        </section>
+              </>
+            }
+          />
+        )
       ) : null}
 
-      {/* The band. Five counts across the full measure, divided by hairlines,
-          set in the machine face — the whole corpus as one line in a log. */}
       <section aria-labelledby="figures">
-        <h2 className={styles.srOnly} id="figures">
+        <h2 className={ui.srOnly} id="figures">
           What is in it
         </h2>
-        <dl className={styles.ledger}>
+        <dl className={ui.ledger}>
           <Figure
             label="videos"
             notes={[
-              // `videos_ready` and not `queryable_videos`: the second is ready
-              // *plus* stale, so reading it here calls a stale video ready and
-              // undercounts "not ready" by the same one. The two numbers the
-              // rollup keeps are ready and not-ready, and they add up to the
-              // corpus by construction.
+              // `videos_ready`, not `queryable_videos` (ready plus stale).
               <>
                 {count(corpus.videos_ready)} ready
                 {corpus.videos - corpus.videos_ready > 0 ? (
@@ -133,10 +113,6 @@ function Loaded({ data }: { data: Overview }) {
                   </>
                 ) : null}
               </>,
-              // When *these videos* were published, which is a fact about the
-              // corpus's contents and not about its state — and the ledger's
-              // own second line, printed from the same place so the two pages
-              // cannot spell one fact two ways.
               ...publishedNote(corpus.published),
             ]}
           >
@@ -158,11 +134,7 @@ function Loaded({ data }: { data: Overview }) {
         </dl>
       </section>
 
-      {/* One panel, and it is a diff: what the pipeline reports right now on
-          top as states, and what it was *declared* with beside what the worker
-          says it is *serving* — those two tables only mean something read
-          against each other. In the projection both are absent rather than
-          redacted in place. */}
+      {/* Declared beside served: the two tables only mean something together. */}
       <Readiness
         drift={drift}
         readiness={readiness}
@@ -170,16 +142,16 @@ function Loaded({ data }: { data: Overview }) {
         writesAllowed={data.writes_allowed}
       >
         {data.declared_models?.length || readiness.worker?.models.length ? (
-          <div className={`${styles.split} ${styles.models}`}>
+          <div className={`${ui.split} ${table.models}`}>
             {data.declared_models?.length ? (
-              <div className={styles.tablewrap}>
-                <table className={styles.grid}>
-                  <caption className={styles.srOnly}>The models this corpus was built with</caption>
+              <div className={table.tablewrap}>
+                <table className={table.grid}>
+                  <caption className={ui.srOnly}>The models this corpus was built with</caption>
                   <thead>
                     <tr>
                       <th scope="col">stage</th>
                       <th scope="col">model declared</th>
-                      <th scope="col" className={styles.num}>
+                      <th scope="col" className={table.num}>
                         dim
                       </th>
                     </tr>
@@ -191,7 +163,7 @@ function Loaded({ data }: { data: Overview }) {
                         <td>
                           <code>{model.value}</code>
                         </td>
-                        <td className={styles.num}>{model.dim || "—"}</td>
+                        <td className={table.num}>{model.dim || DASH}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -199,9 +171,9 @@ function Loaded({ data }: { data: Overview }) {
               </div>
             ) : null}
             {readiness.worker?.models.length ? (
-              <div className={styles.tablewrap}>
-                <table className={styles.grid}>
-                  <caption className={styles.srOnly}>The models the worker reports serving</caption>
+              <div className={table.tablewrap}>
+                <table className={table.grid}>
+                  <caption className={ui.srOnly}>The models the worker reports serving</caption>
                   <thead>
                     <tr>
                       <th scope="col">worker task</th>
@@ -229,28 +201,23 @@ function Loaded({ data }: { data: Overview }) {
         ) : null}
       </Readiness>
 
-      {/* The zone: what arrived (dense, wants the width) beside what is wrong
-          and what it costs (short answers that never wanted 1400px). */}
-      <div className={`${styles.split} ${styles.splitMain}`}>
+      <div className={`${ui.split} ${ui.splitMain}`}>
         <Panel id="recent" title="Recently indexed">
           {data.recent.length ? (
-            <ul className={styles.rowlist}>
+            <ul className={ui.rowlist}>
               {data.recent.map((video) => (
-                <li className={styles.row} key={video.video_id}>
+                <li className={ui.row} key={video.video_id}>
                   <DashLink
-                    className={styles.shot}
+                    className={ui.shot}
                     href={`${ROOT}/videos/${encodeURIComponent(video.video_id)}`}
                     tabIndex={-1}
                     aria-hidden="true"
                   >
                     {video.thumb ? (
-                      // A signed, expiring `/frames/…` URL on Python's origin,
-                      // already sized by the API at the width it is displayed
-                      // at. The optimizer would fetch and cache it past its own
-                      // signature, for a 96px still.
+                      // A signed, expiring frame URL already at display width.
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        className={styles.thumb}
+                        className={ui.thumb}
                         src={video.thumb}
                         alt=""
                         width={96}
@@ -259,28 +226,25 @@ function Loaded({ data }: { data: Overview }) {
                         decoding="async"
                       />
                     ) : (
-                      <span className={`${styles.thumb} ${styles.thumbEmpty}`}>no frame</span>
+                      <span className={`${ui.thumb} ${ui.thumbEmpty}`}>no frame</span>
                     )}
                   </DashLink>
-                  <div className={styles.rowBody}>
+                  <div className={ui.rowBody}>
                     <DashLink
-                      className={styles.rowTitle}
+                      className={ui.rowTitle}
                       href={`${ROOT}/videos/${encodeURIComponent(video.video_id)}`}
                     >
                       {video.title}
                     </DashLink>
-                    {/* The break opportunity sits after the separator: a
-                        conference channel name is long enough to wrap, and when
-                        it does the runtime should start the next line. */}
-                    <p className={styles.rowMeta}>
+                    <p className={ui.rowMeta}>
                       {video.channel}
                       <Sep />
-                      <span className={styles.mono}>{hms(video.duration_s)}</span>
+                      <span className={ui.mono}>{hms(video.duration_s)}</span>
                     </p>
                   </div>
-                  <p className={styles.rowWhen}>
+                  <p className={ui.rowWhen}>
                     indexed{" "}
-                    <time className={styles.mono} dateTime={iso(video.indexed_at)}>
+                    <time className={ui.mono} dateTime={iso(video.indexed_at)}>
                       {at(video.indexed_at)}
                     </time>
                   </p>
@@ -288,25 +252,22 @@ function Loaded({ data }: { data: Overview }) {
               ))}
             </ul>
           ) : (
-            <p className={styles.emptyNote}>
+            <p className={ui.emptyNote}>
               Nothing has finished indexing yet. Add one with <code>index-video</code>.
             </p>
           )}
         </Panel>
 
         <div>
-          {/* First in this column because it is the only panel on the page
-              describing something happening *now*: the operator who arrives
-              mid-batch reads this line, clicks the figure next to the thing
-              that is wrong, and is on the jobs view. */}
+          {/* First: the one panel about something happening now. */}
           <Panel id="queue" title="The queue">
-            <ul className={styles.gaplist}>
+            <ul className={ui.gaplist}>
               <GapLine href={`${ROOT}/jobs?state=active`} n={jobs.active}>
                 job(s) queued or running
                 {jobs.deferred ? (
                   <>
                     ,{" "}
-                    <span className={styles.warn}>
+                    <span className={ui.warn}>
                       {count(jobs.deferred)} of them waiting on a backoff
                     </span>
                   </>
@@ -318,15 +279,10 @@ function Loaded({ data }: { data: Overview }) {
             </ul>
           </Panel>
 
-          {/* Three zeros is not a panel. This block answers "what should I go
-              and look at", and when the answer is nothing it was three rows of
-              `0` taking a third of the column to say so. Nothing is hidden:
-              every figure is a link into a filter one click away. The queue
-              panel above deliberately does not do this — a queue that is empty
-              right now is a fact about this second. */}
+          {/* Three zeros is not a panel; the queue above stays even when empty. */}
           {gaps.transcript_no_ocr + gaps.indexing + gaps.failed > 0 ? (
             <Panel id="gaps" title="What is missing">
-              <ul className={styles.gaplist}>
+              <ul className={ui.gaplist}>
                 <GapLine
                   href={`${ROOT}/videos?has=transcript&index_state=all`}
                   n={gaps.transcript_no_ocr}
@@ -336,11 +292,7 @@ function Loaded({ data }: { data: Overview }) {
                 <GapLine href={`${ROOT}/videos?index_state=indexing`} n={gaps.indexing}>
                   video(s) are mid-pipeline
                 </GapLine>
-                {/* The rollup probes this one with a `LIMIT`, so at the cap the
-                    count means "this many or more" and the page says so rather
-                    than reporting a ceiling as an exact number. The payload
-                    carries both halves, so nothing here knows what the limit
-                    is. */}
+                {/* A capped probe prints `N+`, off the payload's own flag. */}
                 <GapLine
                   href={`${ROOT}/videos?index_state=failed`}
                   n={gaps.failed}
@@ -352,12 +304,10 @@ function Loaded({ data }: { data: Overview }) {
             </Panel>
           ) : null}
 
-          {/* §2.4: the demo overview carries the corpus, not the box it is on.
-              Two byte totals are a measurement of somebody's disk, and the
-              projection does not take that read at all. */}
+          {/* §2.4: the projection does not take the byte read at all. */}
           {data.storage ? (
             <Panel id="storage" title="Storage">
-              <dl className={styles.figures}>
+              <dl className={ui.figures}>
                 <Figure label="keyframe JPEGs">{bytes(data.storage.keyframe_bytes)}</Figure>
                 <Figure label="index">{bytes(data.storage.database_bytes)}</Figure>
               </dl>
@@ -366,22 +316,22 @@ function Loaded({ data }: { data: Overview }) {
         </div>
       </div>
 
-      <div className={styles.split}>
+      <div className={ui.split}>
         <Panel id="channels" title="Channels">
           {data.channels.length ? (
-            <ul className={`${styles.rowlist} ${styles.tight}`}>
+            <ul className={`${ui.rowlist} ${ui.tight}`}>
               {data.channels.map((entry) => (
-                <li className={styles.minirow} key={entry.channel}>
+                <li className={ui.minirow} key={entry.channel}>
                   <DashLink
                     href={`${ROOT}/videos?channel=${encodeURIComponent(entry.channel)}&index_state=all`}
                   >
                     {entry.channel}
                   </DashLink>
-                  <span className={styles.minirowFigure}>
+                  <span className={ui.minirowFigure}>
                     {count(entry.videos)}
                     <Unit> vid</Unit>
                   </span>
-                  <span className={`${styles.minirowFigure} ${styles.dim}`}>
+                  <span className={`${ui.minirowFigure} ${ui.dim}`}>
                     {hours(entry.seconds)}
                     <Unit>h</Unit>
                   </span>
@@ -389,29 +339,26 @@ function Loaded({ data }: { data: Overview }) {
               ))}
             </ul>
           ) : (
-            <p className={styles.emptyNote}>No channels yet.</p>
+            <p className={ui.emptyNote}>No channels yet.</p>
           )}
         </Panel>
 
         <Panel id="tags" title="Tags">
           {data.tags.length ? (
-            <ul className={styles.chiplist}>
+            <ul className={ui.chiplist}>
               {data.tags.map((entry) => (
                 <li key={entry.tag}>
                   <DashLink
-                    className={styles.chip}
+                    className={ui.chip}
                     href={`${ROOT}/videos?tags=${encodeURIComponent(entry.tag)}&index_state=all`}
                   >
-                    {entry.tag} <span className={styles.chipN}>{entry.videos}</span>
+                    {entry.tag} <span className={ui.chipN}>{entry.videos}</span>
                   </DashLink>
                 </li>
               ))}
             </ul>
           ) : (
-            // "no tags", and nothing after it: the sentence that followed
-            // taught `<namespace>:<name>`, a format lesson on the surface whose
-            // whole brief is that it does not narrate.
-            <p className={styles.emptyNote}>no tags</p>
+            <p className={ui.emptyNote}>no tags</p>
           )}
         </Panel>
       </div>

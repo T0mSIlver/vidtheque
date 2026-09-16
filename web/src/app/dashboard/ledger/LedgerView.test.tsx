@@ -1,56 +1,29 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { mountDashboard, type Answer } from "@/test/dashboard";
 import { DEMO_LEDGER, DEMO_SESSION, OWNER_LEDGER, OWNER_SESSION } from "@/test/dashboard-fixtures";
 import { firstPaint } from "@/test/retry";
+import { LedgerView } from "./LedgerView";
 
-// Nothing on this page is new information; what it must not do is disagree with
-// the page the numbers came from. So the assertions are the counts, the state
-// words with their filters behind them, and the two byte totals the projection
-// does not take the read for at all.
+vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 
-type Route = { status?: number; body?: unknown; headers?: Record<string, string> };
+// The ledger must not disagree with the pages its numbers came from: the
+// counts, the state words with their filters, and what the projection drops.
 
-function stub(routes: Record<string, Route>) {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
-      const route = routes[String(input)] ?? { status: 404, body: {} };
-      const text = typeof route.body === "string" ? route.body : JSON.stringify(route.body ?? {});
-      return new Response(text, {
-        status: route.status ?? 200,
-        headers: { "content-type": "application/json", ...route.headers },
-      });
-    }),
-  );
-}
-
-async function mount(ledger: Route, session: unknown = OWNER_SESSION) {
-  stub({
-    "/dashboard/api/ledger": ledger,
-    "/dashboard/api/session": { body: session },
+function mount(ledger: Answer, session: unknown = OWNER_SESSION) {
+  return mountDashboard(<LedgerView />, {
+    path: "/dashboard/ledger",
+    session,
+    routes: { "/dashboard/api/ledger": ledger },
   });
-  const { mockNavigation } = await import("@/test/next");
-  mockNavigation("", "/dashboard/ledger");
-  const { Chrome } = await import("../Chrome");
-  const { LedgerView } = await import("./LedgerView");
-  render(
-    <Chrome>
-      <LedgerView />
-    </Chrome>,
-  );
 }
 
 describe("the ledger", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.resetModules();
-  });
-
   it("carries the corpus band, stamped once", async () => {
     await mount({ body: OWNER_LEDGER });
 
-    expect(await screen.findByRole("heading", { name: "The ledger" })).toBeInTheDocument();
+    expect(await screen.findByText("transcript cues")).toBeInTheDocument();
     expect(screen.getByText("videos").closest("div")).toHaveTextContent("4");
     expect(screen.getByText("runtime").closest("div")).toHaveTextContent("4.8h");
     expect(screen.getByText("transcript cues").closest("div")).toHaveTextContent(
@@ -88,7 +61,7 @@ describe("the ledger", () => {
       },
     });
 
-    expect(await screen.findByRole("heading", { name: "The ledger" })).toBeInTheDocument();
+    expect(await screen.findByText("transcript cues")).toBeInTheDocument();
     expect(screen.getByText("videos").closest("div")).not.toHaveTextContent("published");
     expect(document.body.textContent).not.toMatch(/null|NaN|undefined/);
   });
@@ -151,7 +124,7 @@ describe("the ledger", () => {
   it("keeps the corpus and drops the box in the projection", async () => {
     await mount({ body: DEMO_LEDGER }, DEMO_SESSION);
 
-    expect(await screen.findByRole("heading", { name: "The ledger" })).toBeInTheDocument();
+    expect(await screen.findByText("transcript cues")).toBeInTheDocument();
     expect(screen.getByText("videos").closest("div")).toHaveTextContent("4");
     // §2.4 drops the operator's box, not the corpus: the span is a fact about
     // what is in it, so a visitor gets it.
