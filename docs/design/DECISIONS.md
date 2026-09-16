@@ -44,7 +44,8 @@ console's path. The console also reads the URL on mount, so a page the
 router restores from its cache never shows an older snapshot than its address.
 The cost: the
 router's `useSearchParams` does not follow these writes, and nothing in the
-console reads it.
+console reads it; and a router refresh, which in development is every hot
+reload, puts the address back to the router's last URL.
 
 ## Web fonts use `font-display: optional`, recorded 2026-09-16 (flag to Tom)
 
