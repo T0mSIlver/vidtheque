@@ -141,12 +141,26 @@ describe("the document cache policy", () => {
     }
   });
 
+  const YEAR = "public, max-age=31536000, immutable";
+
   // A still is named after where it came from and is added or removed, never
   // edited under its own name, which is what makes the year honest.
   it("gives the landing's stills the year they had", async () => {
-    const year = "public, max-age=31536000, immutable";
-    expect(await policyFor("/landing/wall/t00.jpg")).toBe(year);
-    expect(await policyFor("/landing/grid/-561cZmir5Q.jpg")).toBe(year);
+    expect(await policyFor("/landing/wall/t00.jpg")).toBe(YEAR);
+    expect(await policyFor("/landing/grid/-561cZmir5Q.jpg")).toBe(YEAR);
+  });
+
+  // A rule matches the request path and not the outcome, so a still that is
+  // not there matches this one too — and a year on a refusal is a refusal that
+  // does not heal when the file lands. What keeps it off is Next's own 404:
+  // `render404` → `renderErrorImpl` sets `Cache-Control` itself, last and
+  // unconditionally, where a successful render only sets it if nothing has.
+  // Measured on the release build, `next start` and the standalone server
+  // both, at `.agent-runs/parity/dash/headers.txt` (2026-09-16): a missing
+  // still comes back `private, no-cache, no-store, max-age=0, must-revalidate`.
+  // So this asserts what the config says, and names where the wire is.
+  it("matches a still that is not there too, which the 404 then overwrites", async () => {
+    expect(await policyFor("/landing/nope.jpg")).toBe(YEAR);
   });
 
   // The front doors are the same document for everyone and are not the
