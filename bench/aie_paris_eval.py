@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Private three-arm proper-noun evaluation for the Paris dress rehearsal."""
+"""Private three-arm proper-noun evaluation for the Paris dress rehearsal.
+
+The paid arms go through a worker that is already configured for Voxtral, over
+HTTP, so `MISTRAL_API_KEY` belongs to that worker's environment and to nothing
+here: this process never reads it, and the worker's boot check is the one that
+refuses a run without it (`aie-paris-2026.md` §6.1 and §8).
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import subprocess
 import tempfile
@@ -363,8 +368,6 @@ def main() -> int:
     if not args.execute:
         print("dry run: no audio was submitted; pass --execute to run both paid arms")
         return 0
-    if not os.environ.get("MISTRAL_API_KEY"):
-        raise SystemExit("MISTRAL_API_KEY is required with --execute")
     scores = run_eval(manifest, args.data_dir / "vidtheque.db", args.worker_url)
     report = format_report(scores)
     if args.out:
