@@ -5,7 +5,7 @@ import { useEffect, useEffectEvent, useReducer, useRef } from "react";
 import type { SearchOutcome } from "@/lib/api/outcome";
 import type { ContentType, EditionTalk } from "@/lib/api/schemas";
 import { AskPane } from "./AskPane";
-import { AskCold, SearchCold, type Boot, type SearchExample } from "./Cold";
+import { Cold, type Boot, type SearchExample } from "./Cold";
 import { ConsoleForm, type MachineState } from "./ConsoleForm";
 import { fetchSearch, streamAsk } from "./requests";
 import { SearchResults, type SearchActions } from "./SearchResults";
@@ -208,36 +208,33 @@ export function Console(props: ConsoleProps) {
         onChannel={pickChannel}
         onMode={switchMode}
       />
-      {state.mode === "search" ? (
+      {state.mode === "search" && state.search.outcome ? (
         // The previous screen stays until the new one lands, dimmed while busy.
         <div className={state.pending ? styles.stale : undefined} aria-busy={state.pending}>
-          {state.search.outcome ? (
-            <SearchResults
-              view={{ ...state.search, outcome: state.search.outcome }}
-              talks={talks}
-              noMatch={props.noMatch}
-              actions={actions}
-            />
-          ) : (
-            <SearchCold
-              boot={boot}
-              examples={props.searchExamples ?? []}
-              prompt={props.searchPrompt}
-              corpus={props.corpus}
-              href={(q, type) => href({ mode: "search", q, type })}
-              onExample={(example) => runExample(example.q, example.type ?? "all")}
-            />
-          )}
+          <SearchResults
+            view={{ ...state.search, outcome: state.search.outcome }}
+            talks={talks}
+            noMatch={props.noMatch}
+            actions={actions}
+          />
         </div>
-      ) : state.ask.phase.kind === "idle" ? (
-        <AskCold
-          examples={props.askExamples}
-          corpus={props.corpus}
-          onExample={(question) => {
-            dispatch({ type: "draft", value: question });
-            ask(question);
-          }}
-        />
+      ) : state.mode === "search" || state.ask.phase.kind === "idle" ? (
+        <div className={state.pending ? styles.stale : undefined} aria-busy={state.pending}>
+          <Cold
+            mode={state.mode}
+            boot={boot}
+            searchExamples={props.searchExamples ?? []}
+            searchPrompt={props.searchPrompt}
+            askExamples={props.askExamples}
+            corpus={props.corpus}
+            href={(q, type) => href({ mode: "search", q, type })}
+            onSearchExample={(example) => runExample(example.q, example.type ?? "all")}
+            onAskExample={(question) => {
+              dispatch({ type: "draft", value: question });
+              ask(question);
+            }}
+          />
+        </div>
       ) : (
         <AskPane
           key={state.ask.id}

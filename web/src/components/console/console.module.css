@@ -109,8 +109,8 @@
 /* The one filled control on the page. */
 .go {
   composes: t-action from global;
-  display: inline-flex;
-  align-items: center;
+  display: inline-grid;
+  place-items: center;
   flex: none;
   padding: 0 20px;
   background: var(--gold);
@@ -119,6 +119,10 @@
   border-left: 0;
   cursor: pointer;
   transition: background var(--t-fast) linear;
+}
+
+.go > span {
+  grid-area: 1 / 1;
 }
 
 .go:hover,
@@ -136,17 +140,33 @@
   cursor: default;
 }
 
-/* The filters and the mode switch belong to the input, so they share its
-   measure: a mode switch flung to the far edge of the column reads as chrome
-   that belongs to the page rather than to the box above it. */
+/* A mode's panel that is not on screen still holds its space: it shares a
+   grid cell with the other mode's, so switching never moves what is below. */
+.off {
+  visibility: hidden;
+}
+
+.stack,
 .controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s3);
+  display: grid;
+  align-items: start;
+}
+
+.stack > *,
+.controls > * {
+  grid-area: 1 / 1;
+}
+
+/* The chips in search, the ask note in ask: one row under the bar. */
+.controls {
   margin-top: var(--s4);
   max-width: var(--query-w, 44rem);
+}
+
+.askNote {
+  composes: t-machine-sm from global;
+  align-self: center;
+  color: var(--fg2);
 }
 
 /* One bordered group: the chips butt against each other and the row reads as
@@ -155,7 +175,13 @@
 .modes {
   display: flex;
   flex-wrap: wrap;
+  width: fit-content;
   border: 1px solid var(--seam2);
+}
+
+/* The mode tabs sit on the bar's top edge, so they read as the bar's own. */
+.modes {
+  border-bottom: 0;
 }
 
 /* The `t-label-sm` role, spelled out: `composes` only takes a simple class
@@ -198,8 +224,9 @@
   color: var(--gold);
 }
 
-.modes {
-  margin-left: auto;
+.modes button {
+  height: 2.5rem;
+  padding: 0 16px;
 }
 
 /* The count line, and the notes under it. `all` means all: a leg that could
@@ -809,16 +836,14 @@
     border-top: 0;
   }
 
-  .controls {
-    justify-content: flex-start;
+  /* One row of chips at phone width, so the row is the same height in both modes. */
+  .chips {
+    flex-wrap: nowrap;
   }
 
   .chips button {
     flex: 1 1 auto;
-  }
-
-  .modes {
-    margin-left: 0;
+    padding: 0 8px;
   }
 }
 

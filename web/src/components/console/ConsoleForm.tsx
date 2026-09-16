@@ -67,6 +67,17 @@ export function ConsoleForm({
   const ask = mode === "ask";
   return (
     <form role="search" onSubmit={onSubmit} className={styles.form} aria-busy={busy}>
+      {/* Tabs on the bar's top edge: the same place in both modes. */}
+      {askEnabled ? (
+        <div className={styles.modes} role="group" aria-label="Result mode">
+          <button type="button" aria-pressed={!ask} onClick={() => onMode("search")}>
+            search
+          </button>
+          <button type="button" aria-pressed={ask} onClick={() => onMode("ask")}>
+            ask ✨
+          </button>
+        </div>
+      ) : null}
       <label className={styles.srOnly} htmlFor="q">
         {ask ? "Your question" : "Search this video corpus"}
       </label>
@@ -98,36 +109,38 @@ export function ConsoleForm({
           className={styles.input}
         />
         <StateCell state={word} />
+        {/* Both labels share one cell, so the button is as wide in either mode. */}
         <button type="submit" className={styles.go} disabled={busy}>
-          {ask ? "Ask ✨" : "Search"}
+          <span className={ask ? styles.off : undefined} aria-hidden={ask}>
+            Search
+          </span>
+          <span className={ask ? undefined : styles.off} aria-hidden={!ask}>
+            Ask ✨
+          </span>
         </button>
       </div>
+      {/* The chips and the ask note share one cell, so the row keeps its height. */}
       <div className={styles.controls}>
-        {/* In ask mode the model picks the channel, so there is no filter. */}
-        {ask ? null : (
-          <div className={styles.chips} role="group" aria-label="Search which channel">
-            {CHIPS.map((chip) => (
-              <button
-                key={chip.value}
-                type="button"
-                aria-pressed={channel === chip.value}
-                onClick={() => onChannel(chip.value)}
-              >
-                {chip.label}
-              </button>
-            ))}
-          </div>
-        )}
-        {askEnabled ? (
-          <div className={styles.modes} role="group" aria-label="Result mode">
-            <button type="button" aria-pressed={!ask} onClick={() => onMode("search")}>
-              search
+        <div
+          className={ask ? `${styles.chips} ${styles.off}` : styles.chips}
+          role="group"
+          aria-label="Search which channel"
+          inert={ask}
+        >
+          {CHIPS.map((chip) => (
+            <button
+              key={chip.value}
+              type="button"
+              aria-pressed={channel === chip.value}
+              onClick={() => onChannel(chip.value)}
+            >
+              {chip.label}
             </button>
-            <button type="button" aria-pressed={ask} onClick={() => onMode("ask")}>
-              ask ✨
-            </button>
-          </div>
-        ) : null}
+          ))}
+        </div>
+        <p className={ask ? styles.askNote : `${styles.askNote} ${styles.off}`} aria-hidden={!ask}>
+          The model picks the channels, and every answer cites the second it read.
+        </p>
       </div>
     </form>
   );
