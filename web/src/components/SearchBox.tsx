@@ -132,6 +132,11 @@ function ResolvedAskSwitch({
 }) {
   const available = use(enabled);
   const router = useRouter();
+  // The pin is the URL's here for the same reason it is in `ModeSwitch`: ask
+  // mode draws no chip row to read it off, and the correction rebuilds the URL
+  // from scratch. A visitor who opened `?ask=1&q=…&type=ocr` on a deployment
+  // with no key was landed in a search across all four channels.
+  const pinned = useSearchParams().get("type");
   // Once, and only in the deployment that has no ask to offer. `q` is in the
   // deps because the correction carries the typed question with it, and the
   // latch is what stops a keystroke from firing a second navigation.
@@ -140,8 +145,11 @@ function ResolvedAskSwitch({
     if (available || !ask || sent.current) return;
     sent.current = true;
     const typed = q.trim();
-    router.replace(typed ? `/demo?ask=0&q=${encodeURIComponent(typed)}` : "/demo?ask=0");
-  }, [available, ask, q, router]);
+    const pin = pinned && pinned !== "all" ? `&type=${encodeURIComponent(pinned)}` : "";
+    router.replace(
+      typed ? `/demo?ask=0&q=${encodeURIComponent(typed)}${pin}` : `/demo?ask=0${pin}`,
+    );
+  }, [available, ask, q, pinned, router]);
 
   if (!available) return null;
   return <ModeSwitch ask={ask} q={q} enabled onLeave={onLeave} />;

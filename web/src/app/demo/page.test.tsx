@@ -13,7 +13,15 @@ const reads = vi.hoisted(() => ({
   readCorpus: vi.fn(),
 }));
 vi.mock("@/lib/search", () => reads);
-const nav = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }));
+// `search` is what the client hooks read off the URL — the page's own params
+// come in as props, so a test that is about a pinned channel has to say it in
+// both places.
+const nav = vi.hoisted(() => ({
+  push: vi.fn(),
+  replace: vi.fn(),
+  refresh: vi.fn(),
+  search: "",
+}));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     ...nav,
@@ -21,7 +29,7 @@ vi.mock("next/navigation", () => ({
     forward: vi.fn(),
     prefetch: vi.fn(),
   }),
-  useSearchParams: () => new URLSearchParams(""),
+  useSearchParams: () => new URLSearchParams(nav.search),
   usePathname: () => "/demo",
 }));
 
@@ -112,6 +120,7 @@ describe("the demo page", () => {
     reads.searchCorpus.mockReset();
     nav.replace.mockClear();
     nav.refresh.mockClear();
+    nav.search = "";
   });
 
   // The headline says "ask it something", so the box under it had better be
@@ -168,6 +177,27 @@ describe("the demo page", () => {
       expect(nav.replace).toHaveBeenCalledWith(
         "/demo?ask=0&q=why%20do%20agents%20write%20bad%20AGENTS.md%3F",
       );
+    });
+
+    // The same pin `ModeSwitch` carries through the switch. A correction that
+    // drops it is "all means all" broken by the page rather than by the
+    // instance: the chips say `all` and the visitor never asked for it.
+    it("carries a pinned channel into the search it moves to", async () => {
+      nav.search = "ask=1&q=kv+cache&type=ocr";
+      await mount(
+        { ask: "1", q: "kv cache", type: "ocr" },
+        { meta: { kind: "ok", meta: { ...META, ask_enabled: false } } },
+      );
+      expect(nav.replace).toHaveBeenCalledWith("/demo?ask=0&q=kv%20cache&type=ocr");
+    });
+
+    it("writes no channel where the pin was `all`", async () => {
+      nav.search = "ask=1&type=all";
+      await mount(
+        { ask: "1", type: "all" },
+        { meta: { kind: "ok", meta: { ...META, ask_enabled: false } } },
+      );
+      expect(nav.replace).toHaveBeenCalledWith("/demo?ask=0");
     });
 
     it("leaves every other deployment where it is", async () => {
