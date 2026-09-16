@@ -78,24 +78,6 @@
   margin-top: var(--s4);
 }
 
-.checks {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0 var(--s4);
-  margin: var(--s4) 0 0;
-  padding: 0;
-  border: 0;
-}
-
-.legend {
-  composes: t-label from global;
-  float: left;
-  width: 100%;
-  padding: 0;
-  color: var(--muted);
-}
-
 /* Under the row it explains, never a tooltip: the ceilings are numbers. */
 .fieldHelp {
   composes: t-cell from global;

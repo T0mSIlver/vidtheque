@@ -149,8 +149,8 @@ export function RuleFields({
 }) {
   return (
     <>
-      <fieldset className={styles.checks}>
-        <legend className={styles.legend}>Listings to watch</legend>
+      <fieldset className={controls.checkList}>
+        <legend className={controls.checkLegend}>Listings to watch</legend>
         {TABS.map((tab) => (
           <label className={controls.check} key={tab}>
             <input
@@ -293,8 +293,8 @@ export function RuleFields({
         brought in.
       </p>
 
-      <fieldset className={styles.checks}>
-        <legend className={styles.legend}>Channels to build</legend>
+      <fieldset className={controls.checkList}>
+        <legend className={controls.checkLegend}>Channels to build</legend>
         {CHANNEL_BOXES.map(([name, label]) => (
           <label className={controls.check} key={name}>
             <input

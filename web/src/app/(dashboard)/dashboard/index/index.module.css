@@ -61,6 +61,12 @@
   color: var(--muted);
 }
 
+/* A box's one-line note, on the box's own row. */
+.inlineHelp {
+  composes: t-cell from global;
+  color: var(--muted);
+}
+
 .fieldHelp code {
   font-family: var(--mono);
   font-variant-ligatures: none;

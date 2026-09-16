@@ -211,13 +211,11 @@ describe("the index form", () => {
 
       first.unmount();
       await mount({ post: { status: 400, body: NO_URLS } });
-      await screen.findByRole("heading", { name: "What that submission did" });
+      await screen.findByRole("heading", { name: "Queued" });
       await userEvent.click(screen.getByRole("button", { name: "Queue the job" }));
 
       expect(await screen.findByText(NO_URLS.message)).toBeInTheDocument();
-      expect(
-        screen.queryByRole("heading", { name: "What that submission did" }),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "Queued" })).not.toBeInTheDocument();
     });
 
     // `_submitted` clamps `max_items` to the tool's own 1..200 and falls both

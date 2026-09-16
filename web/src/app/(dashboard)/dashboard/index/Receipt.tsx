@@ -19,7 +19,7 @@ export function Receipt({ outcome, perJob }: { outcome: IndexOutcome; perJob: nu
   return (
     <section className={ui.panel} aria-labelledby="queued" role="status">
       <h2 className={ui.panelTitle} id="queued">
-        What that submission did
+        Queued
       </h2>
       <p className={notice.panelNote}>
         <span className={ui.mono}>{outcome.urls}</span> URL(s){" "}
@@ -66,8 +66,7 @@ export function Receipt({ outcome, perJob }: { outcome: IndexOutcome; perJob: nu
                 {index < shown.length - 1 ? ", " : ""}
               </span>
             ))}
-            {outcome.already_indexed.length > ALREADY_SHOWN ? " and more" : ""}. Tick{" "}
-            <em>force re-index</em> to rebuild one.
+            {outcome.already_indexed.length > ALREADY_SHOWN ? " and more" : ""}.
           </p>
         </>
       ) : null}
