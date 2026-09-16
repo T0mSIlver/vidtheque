@@ -134,6 +134,46 @@ describe("the dashboard read cache", () => {
     expect(calls).toHaveLength(2);
   });
 
+  it("reads a waiting poll when the tab comes back, but never inside a Retry-After", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { read, calls } = held();
+    render(<Probe id="a" read={read} poll={2_000} />);
+    await flush();
+    await act(async () => calls[0].resolve("first"));
+    const show = async () => {
+      vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+      await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    };
+
+    await show();
+    expect(calls).toHaveLength(2);
+    const limited = new DashboardError(429, { error: "E_RATE_LIMIT", message: "slow down" }, 60);
+    await act(async () => calls[1].reject(limited));
+
+    await act(() => vi.advanceTimersByTimeAsync(1_000));
+    await show();
+    expect(calls).toHaveLength(2);
+    await act(() => vi.advanceTimersByTimeAsync(59_500));
+    expect(calls).toHaveLength(3);
+  });
+
+  it("waits out a Retry-After across a remount", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { read, calls } = held();
+    const first = render(<Probe id="a" read={read} />);
+    await flush();
+    const limited = new DashboardError(429, { error: "E_RATE_LIMIT", message: "slow down" }, 30);
+    await act(async () => calls[0].reject(limited));
+    first.unmount();
+    await act(() => vi.advanceTimersByTimeAsync(5_000));
+
+    render(<Probe id="a" read={read} />);
+    await flush();
+    expect(calls).toHaveLength(1);
+    await act(() => vi.advanceTimersByTimeAsync(25_500));
+    expect(calls).toHaveLength(2);
+  });
+
   it("polls on the cadence the payload names, and not once unmounted", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const read = vi.fn(async () => "tick");

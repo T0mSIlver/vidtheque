@@ -46,6 +46,8 @@ interface Entry {
   stale: boolean;
   controller: AbortController | null;
   timer: ReturnType<typeof setTimeout> | null;
+  /** When a 429's `Retry-After` runs out; 0 when no refusal is being waited out. */
+  retryAt: number;
   release: ReturnType<typeof setTimeout> | null;
   subscribers: number;
   listeners: Set<() => void>;
@@ -74,6 +76,7 @@ function entryOf(key: string): Entry {
       stale: false,
       controller: null,
       timer: null,
+      retryAt: 0,
       release: null,
       subscribers: 0,
       listeners: new Set(),
@@ -131,6 +134,7 @@ function load(entry: Entry) {
       entry.data = data;
       entry.hasData = true;
       entry.error = undefined;
+      entry.retryAt = 0;
       entry.stale = false;
       entry.landedAt = Date.now();
       const next = entry.poll?.(data) ?? null;
@@ -144,7 +148,9 @@ function load(entry: Entry) {
       entry.error = error;
       // The limiter names when to come back; every other refusal stops here.
       if (error instanceof DashboardError && error.status === 429) {
-        schedule(entry, (error.retryAfter ?? FALLBACK_RETRY_S) * 1000);
+        const ms = (error.retryAfter ?? FALLBACK_RETRY_S) * 1000;
+        entry.retryAt = Date.now() + ms;
+        schedule(entry, ms);
       }
       publish(entry);
     },
@@ -166,7 +172,9 @@ function subscribe(key: string, listener: () => void): () => void {
       entry.stale = true;
       publish(entry);
     }
-    if (!fresh && !entry.controller) queueMicrotask(() => load(entry));
+    const waitMs = entry.retryAt - Date.now();
+    if (!fresh && !entry.controller && waitMs > 0) schedule(entry, waitMs);
+    else if (!fresh && !entry.controller) queueMicrotask(() => load(entry));
     else if (fresh && entry.poll && entry.timer === null && entry.hasData) {
       const next = entry.poll(entry.data);
       if (next !== null) schedule(entry, next);
@@ -190,12 +198,15 @@ function subscribe(key: string, listener: () => void): () => void {
 }
 
 if (typeof document !== "undefined") {
-  // A countdown or a wall clock is wrong by however long the tab was away, so a
-  // poll waiting on its timer reads again the moment the tab is back.
+  // A poll waiting on its timer reads again the moment the tab is back; a 429's
+  // Retry-After is still waited out.
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) return;
+    const now = Date.now();
     for (const entry of entries.values()) {
-      if (entry.subscribers > 0 && entry.timer !== null && entry.poll) load(entry);
+      if (entry.subscribers > 0 && entry.timer !== null && entry.poll && entry.retryAt <= now) {
+        load(entry);
+      }
     }
   });
 }
