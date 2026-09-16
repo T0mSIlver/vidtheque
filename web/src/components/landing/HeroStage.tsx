@@ -140,7 +140,7 @@ function BenchPanel({ q }: { q: CannedQuery }) {
     <>
       <div className={styles.benchhead}>
         <span className={`${styles.label} ${styles.gold}`}>the light table</span>
-        <span className={`${styles.label} ${styles.seen}`}>seen — {q.seen}</span>
+        <span className={`${styles.label} ${styles.seen}`}>{`seen — ${q.seen}`}</span>
         <span className={`${styles.label} ${styles.r} ${styles.hideS}`}>
           src <span className={styles.id}>{q.vid}</span> · tc {q.tc}
         </span>
@@ -152,7 +152,7 @@ function BenchPanel({ q }: { q: CannedQuery }) {
         loading="lazy"
       />
       <div className={styles.benchsay}>
-        <span className={`${styles.label} ${styles.gold}`}>heard — spoken at {q.saidTc}</span>
+        <span className={`${styles.label} ${styles.gold}`}>{`heard — spoken at ${q.saidTc}`}</span>
         <p className={styles.said}>{q.said}</p>
         <div className={styles.who}>
           <strong>{q.who}</strong>
@@ -162,7 +162,7 @@ function BenchPanel({ q }: { q: CannedQuery }) {
       <div className={styles.benchfoot}>
         <Receipt videoId={q.vid} t={q.t} />
         <span className={`${styles.label} ${styles.r} ${styles.hideS}`}>
-          {q.mode} · {q.counts}
+          {`${q.mode} · ${q.counts}`}
         </span>
       </div>
     </>
