@@ -1,3 +1,8 @@
+// The landing's own formatters, kept beside `./index` rather than merged into
+// it: `hms` here drops the hour below one (`08:00`) where `index`'s keeps it
+// (`0:08:00`), and `num` takes a number where `count` takes a nullable. One
+// module would have to rename one of each pair, which is a change to what the
+// pages print.
 export const pad = (n: number) => String(n).padStart(2, "0");
 
 /** `h:mm:ss` past an hour, `mm:ss` below it — the page's own clock. */

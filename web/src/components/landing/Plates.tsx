@@ -1,5 +1,5 @@
 import { ASSETS, MOMENTS_BY_ID } from "@/landing/corpus";
-import { hms } from "@/landing/format";
+import { hms } from "@/lib/format/landing";
 import { PLATE_IDS, PLATE_TABS, type Box } from "@/landing/show";
 import { EvidenceFrame } from "./EvidenceFrame";
 import { Receipt } from "./Receipt";

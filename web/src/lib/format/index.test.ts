@@ -11,7 +11,7 @@ import {
   hours,
   iso,
   receiptParts,
-} from "./format";
+} from "./index";
 
 // These are the Jinja filters the dashboard read out of Python until the JSON
 // slice landed, so the cases are the ones `render.py` and `text.py` document:

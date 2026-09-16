@@ -1,4 +1,5 @@
 // Machine strings, formatted once. Everything here renders in the mono face.
+// Both halves read this module; the landing's own pair is `./landing`.
 
 /** Seconds -> `m:ss` or `h:mm:ss`, the timecode a receipt prints. */
 export function clock(seconds: number): string {
