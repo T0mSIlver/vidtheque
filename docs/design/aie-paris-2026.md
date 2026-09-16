@@ -236,6 +236,17 @@ client. Search and Ask continue to call Python directly through same-origin
 `/api/search` and `/api/ask` with the edition tag. No browser bundle reads the
 fixture.
 
+*Amended 2026-09-16 (Tom): the page order and the URL.* The hero comes
+first, then the search-or-ask console, then the programme. The programme sits
+in its own server `<Suspense>` below the console, so its height never moves
+the box. The page reads the edition once per request, through React `cache`,
+and that one read serves both the console's talk labels and the programme.
+Search and ask are the same client console as `/demo` (`demo-site.md` §6.1),
+with the edition tag fixed and no corpus count. Interactions call
+`/api/search` and `/api/ask` directly and never re-render the page. The URL is
+`/paris?q=…&type=…` for a search and `/paris?ask=…` for a loaded, unfired
+question (`demo-site.md` §6.2).
+
 The visual system is `DESIGN.md`'s demo register. The page uses the existing
 tokens, zero radius, gold only for the selected moment, lime only for OCR
 evidence, visible state words, reduced motion, fixed image boxes, and no new
@@ -292,7 +303,10 @@ While the edition read is pending, the page reserves the timeline's layout and
 prints `loading`. A typed refusal prints its word, message, and `next` value.
 An unreachable facade prints `unavailable` and offers one retry.
 
-Search reuses `/demo`'s query states and result receipts. An empty query does
+Search reuses `/demo`'s query states and result receipts. *(Amended
+2026-09-16: the states are the shared console's own, so a refusal, an
+unreachable server and a rate limit print exactly as on `/demo`, and a retry
+repeats the request rather than reloading the page.)* An empty query does
 not run. No hits, an empty corpus, a rate limit, a refusal, and an unavailable
 server remain distinct states. Results are labelled client-side by the talk row
 whose selected `video_id` and `[start_s, end_s)` contain the hit.
