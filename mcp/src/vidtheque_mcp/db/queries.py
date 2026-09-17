@@ -1945,8 +1945,24 @@ def keyframe_page(
     ).fetchall()
 
 
+# The span predicate `cue_page` and `probe_cues` share. A cue is in the span
+# when it overlaps it, not when it starts inside it: `t_start=600` on a cue
+# running 598-602 is a line the caller asked for and a half-sentence they would
+# otherwise have to find by paging backwards.
+_CUE_SPAN = """
+        AND (:t_start IS NULL OR c.end_s >= :t_start)
+        AND (:t_end IS NULL OR c.start_s <= :t_end)
+"""
+
+
 def cue_page(
-    conn: sqlite3.Connection, video_id: int, offset: int, limit: int
+    conn: sqlite3.Connection,
+    video_id: int,
+    offset: int,
+    limit: int,
+    *,
+    t_start: float | None = None,
+    t_end: float | None = None,
 ) -> list[sqlite3.Row]:
     """Transcript cues by time, on `cues_time(video_id, start_s)`.
 
@@ -1956,6 +1972,9 @@ def cue_page(
     sees that a video came in through YouTube's captions rather than whisperX.
 
     Returns ``limit + 1`` rows — `has_more` over a total, as everywhere else.
+
+    ``t_start``/``t_end`` are the §3.2 intra-video axis, both optional; the
+    export passes neither and reads the whole talk.
     """
     return conn.execute(
         """
@@ -1964,10 +1983,62 @@ def cue_page(
                COALESCE(s.display_name, s.label) AS speaker
         FROM cues c LEFT JOIN speakers s ON s.id = c.speaker_id
         WHERE c.video_id = :vid
+        """
+        + _CUE_SPAN
+        + """
         ORDER BY c.start_s, c.seq LIMIT :limit OFFSET :offset
         """,
-        {"vid": video_id, "limit": limit + 1, "offset": offset},
+        {
+            "vid": video_id,
+            "limit": limit + 1,
+            "offset": offset,
+            "t_start": t_start,
+            "t_end": t_end,
+        },
     ).fetchall()
+
+
+# How deep `get-transcript`'s count probe counts before it says "at least".
+# Bigger than COUNT_PROBE_FLOOR because the unit is a cue, not a video: a
+# 70-minute talk is ~900 of them, and a pager whose ceiling sits below one
+# video's cue count would print `~500+` on every page of every talk.
+CUE_PROBE_FLOOR = 2_000
+
+
+def probe_cues(
+    conn: sqlite3.Connection,
+    video_id: int,
+    limit: int,
+    offset: int,
+    *,
+    t_start: float | None = None,
+    t_end: float | None = None,
+    headroom: int = 30,
+) -> tuple[int, bool]:
+    """Cues in the span, counted to a ceiling — `has_more` over an exact total.
+
+    Same bounded-probe shape as :func:`probe_videos`, and the ceiling has the
+    same floor for the same reason: a total that moves with the page size is
+    not a total (terra eval §4.12).
+    """
+    ceiling = offset + max(limit + headroom, CUE_PROBE_FLOOR)
+    total = int(
+        conn.execute(
+            """
+            WITH probe AS (
+                SELECT 1 FROM cues c
+                WHERE c.video_id = :vid
+            """
+            + _CUE_SPAN
+            + """
+                ORDER BY c.start_s, c.seq LIMIT :ceiling
+            )
+            SELECT COUNT(*) FROM probe
+            """,
+            {"vid": video_id, "ceiling": ceiling, "t_start": t_start, "t_end": t_end},
+        ).fetchone()[0]
+    )
+    return total, total >= ceiling
 
 
 def chunk_spans(
