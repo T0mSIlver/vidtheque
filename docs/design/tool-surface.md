@@ -63,8 +63,9 @@ in them are made up.
 
 ## 2. The surface at a glance
 
-Ten tools. Kebab-case, following screenpipe (their original Python server shipped
-`search-content` in 2024-12 and the name/params are unchanged 20 months later).
+Eleven tools. Kebab-case, following screenpipe (their original Python server
+shipped `search-content` in 2024-12 and the name/params are unchanged 20 months
+later).
 
 Nine until 2026-08-15, when `follow-channel` un-deferred the subscriptions row of
 §6. The budget argument in §1 has not softened and the tenth is counted as a cost
@@ -73,6 +74,18 @@ priced, it dispatches on `action` so a later merge of the management tools into
 one does not have to rename its parameters, and reading stays on `corpus-summary`
 rather than becoming an eleventh.
 
+**The eleventh is `get-transcript`, added 2026-09-17** (§4.11), and it is the
+first tool on this surface whose job is bulk text. The budget argument says a
+tool must earn its description tokens; this one earns them from the calls it
+replaces. A model asked to read a 70-minute talk had three options and all three
+were bad: walk `get-segment-context` at ±300 s with guessed `t` values and no
+signal for the end (~7 calls, each re-rendering a header, an OCR block and a
+frame list), page `search` browse mode against a `max_per_video` that clamps at
+20 and a `cluster_gap` that merges the cues it returns, or reach
+`GET /videos/<id>/export.md`, which is the right bytes behind a gate no MCP
+client carries. Three honest pages beat seven blind ones, and the absence was
+not stopping anyone reading transcripts — only stopping them reading well.
+
 | # | Tool | One-line purpose | readOnly | idempotent |
 |---|---|---|---|---|
 | 1 | `search` | Cross-video search over transcripts, on-screen text and frame imagery, with timestamped deep links. | ✅ | ✅ |
@@ -80,6 +93,7 @@ rather than becoming an eleventh.
 | 3 | `corpus-summary` | Pre-aggregated rollup of the whole library: channels, tags, coverage, gaps. | ✅ | ✅ |
 | 4 | `video-summary` | Pre-aggregated rollup of one video: chapters, key texts, speakers, tags. | ✅ | ✅ |
 | 5 | `get-segment-context` | Full detail around one moment: transcript window, nearby OCR, chapter, frame refs. | ✅ | ✅ |
+| 5b | `get-transcript` | One video's transcript in order, paged. The only bulk-text tool. Masked on a public instance. | ✅ | ✅ |
 | 6 | `get-frames` | Fetch keyframe images as authenticated URLs (default) or inline base64. | ✅ | ✅ |
 | 7 | `index-video` | Add a video/playlist to the corpus. Async — returns a job id. | ❌ | ✅ |
 | 8 | `job-status` | Poll an indexing job. | ✅ | ❌ |
@@ -88,8 +102,13 @@ rather than becoming an eleventh.
 
 Three resources: `vidtheque://corpus`, `vidtheque://context`, `vidtheque://guide`.
 
-Deliberately **not** in the surface: `get-clip`, markdown export, speaker
-identity management, per-channel permissions. See §6 for the sketches and why.
+Numbered `5b` rather than renumbered: the sections below are cited by number
+from `DECISIONS.md`, `demo-site.md` and the code, and a renumbering would
+silently repoint every one of them. Its own section is §4.11.
+
+Deliberately **not** in the surface: `get-clip`, markdown export as a *tool*,
+speaker identity management, per-channel permissions. See §6 for the sketches
+and why.
 
 ---
 
@@ -572,9 +591,10 @@ The affected copy: the guide's "Adding to the library" line and its
 "the answer is index-video" rule, `E_UNKNOWN_VIDEO`, `E_NOT_INDEXED`,
 `list-videos`' incomplete-coverage footer, `corpus-summary`'s empty-corpus
 `next_best_query`, `search`'s empty-corpus hint, and every `next:` in
-`job-status`. There is no second list to keep in sync: the masked set is derived
-from the `readOnlyHint` annotations, so a tenth tool is covered the day it is
-added.
+`job-status`. The *write* half of the masked set is derived from the
+`readOnlyHint` annotations, so a write tool is covered the day it is added; the
+deployment's policy, and the one written-down exception to the derivation, are
+in §4.11 and `public/readonly.py`.
 
 | Code | HTTP | When | `next:` hint |
 |---|---|---|---|
@@ -2501,7 +2521,105 @@ reasoning about the effect. It is the second tool on this surface to carry it.
 `idempotentHint` because following the same URL twice returns the first follow
 and creates no second row. `readOnlyHint: false` is what masks the tool from
 `tools/list` on the read-only public deployment, through the derivation in §3.8
-— there is no second list to keep in sync.
+— a write tool needs no second list to keep in sync. (`get-transcript` does, and
+§4.11 says why the derivation cannot reach it.)
+
+---
+
+### 4.11 `get-transcript`
+
+**Purpose:** one video's transcript, in order, paged — the only tool on this
+surface whose output is bulk text.
+
+Added 2026-09-17. §2 has the argument for the eleventh tool; this section is the
+contract.
+
+**Description (specification, per the §4 preamble):** purpose in one sentence
+under 80 characters; USE WHEN the user wants the talk itself, to summarise the
+whole of it, trace an argument, or quote a passage running for minutes; DO NOT
+USE to find a moment (`search`), for structure or a timestamp to aim at
+(`video-summary`), or when one window around one hit is the answer
+(`get-segment-context`), with the cost said plainly — reading a talk whole costs
+many times what finding the part that answers costs. Start at `limit=400` and
+page with `offset`.
+
+**Parameters:**
+
+| name | type | default | constraint | notes |
+|---|---|---|---|---|
+| `video_id` | string | — | **required** | |
+| `t_start` | number \| string | — | §3.2 intra-video axis | Seconds or `hh:mm:ss`. |
+| `t_end` | number \| string | — | must not precede `t_start` | A reversed span is `E_BAD_PARAM`, not an empty page: it is a mistake the caller can fix, and silence would read as "this video has nothing there". |
+| `limit` | int | `400` | clamped 1..500 | Cues per page. |
+| `offset` | int | `0` | ≥ 0 | §3.4 pagination; counts **cues**, as `offset` counts rows everywhere else. |
+| `max_text_chars` | int | `20000` | `0` or 200..40000 | The page's char budget. `0` opts out of *this* cap only — `limit` still binds, so the worst case in §7 holds either way. Floor shared with `get-segment-context`. |
+| `include_speakers` | bool | `true` | | Ignored where diarization is off. |
+| `format` | string | `"text"` | `text` \| `tsv` | `tsv` carries a `t` column and no per-line prose; cheaper when the caller is processing rather than quoting. |
+
+**A cue is in the span when it overlaps it**, not when it starts inside it:
+`t_start=600` against a cue running 598-602 is a line the caller asked for, and
+starting one cue later hands them half a sentence and no way to know it.
+
+**The pager advances by what was printed, not by what was asked for.** The two
+caps are independent and either can bind. When `max_text_chars` binds first the
+page is shorter than `limit`, and `offset + limit` would resume past the cues
+the budget could not afford — the caller would read a talk with a hole in it and
+get a `200`. So the next offset is `offset + shown`, the payload says which cap
+bound, and a `note:` names the one that did. A budget too small for even the
+first cue still returns that cue whole: a page of zero would make the next
+offset equal to this one, and the caller would loop on the same call forever.
+
+**No OCR, no frame refs, no chapter.** Those belong to `get-segment-context` and
+`get-frames`, one call away, and a page budget shared with an OCR block is a
+page budget that means nothing. The closing `next:` points at them when the
+transcript ends.
+
+**Return shape:**
+
+```
+kCc8FmEb1nY · Let's build GPT: from scratch — Andrej Karpathy
+Transcript 0:00-18:42 of 1:56:40 · 241 cues · 19,840 chars · https://youtu.be/kCc8FmEb1nY?t=0
+
+TRANSCRIPT (cite one line: https://youtu.be/kCc8FmEb1nY + the ?t= printed on it)
+[0:00 ?t=0] hi everyone, so by now you have probably heard of chatgpt, and
+[0:07 ?t=5] what it does is it lets you interact with an ai and give it
+…
+[18:35 ?t=1113] so that is the bigram language model, and it is already producing
+[18:42 ?t=1120] something that looks vaguely like shakespeare if you squint.
+
+Cues: 241/903 (use offset=241 for more)
+note: max_text_chars (20,000) bound before limit=400 — 241 of the 400 cues this
+page held were printed.
+
+next: offset=241 continues this transcript (or raise max_text_chars, up to
+40,000, for fewer, bigger pages). To stop reading and jump instead, search
+q="…" video_id="kCc8FmEb1nY".
+```
+
+`structuredContent` carries the same substance, per §3.5: `cues[]` with
+`cue_id`, `start`, `end`, `text`, `speaker` and a whole `link` per cue, plus
+`chars`, `binding_cap` and the §3.4 `pagination` block with `next_offset`.
+
+**Annotations:** `{title: "Read a video transcript", readOnlyHint: true,
+idempotentHint: true, openWorldHint: false}` — all three true to the tool.
+
+**Masked on a public deployment, and the annotations do not say so.** §3.8's
+derivation masks a tool because `readOnlyHint` is `false`; this one is honestly
+read-only and is masked anyway, on a second axis the contract had no word for
+until now: *bulk*. It is the model-facing half of the `export.md` hatch (§6),
+and that route is already owner-only where `VIDTHEQUE_PUBLIC_READONLY=1`,
+because the demo runs `VIDTHEQUE_AUTH=none` and every request there is `"open"`.
+A surface that lets an anonymous caller page one whole transcript, then the
+next, is a bulk download of the corpus with a tool description on it —
+`demo-site.md` §1.1 said "never a full transcript" about the pages, and the tool
+surface owes the same answer. So `public/readonly.py` carries a second,
+written-down set (`OWNER_ONLY_TOOLS`) beside the derived one, and each name in
+it is there for a stated reason rather than a category. The guide resource
+(§5.3) drops its row on the same condition, because a guide that teaches a tool
+absent from `tools/list` is the demo-queries §9.1.8 bug.
+
+**Errors:** `E_UNKNOWN_VIDEO`, `E_NOT_INDEXED` and `E_INDEXING` in the wording
+`video-summary` uses, and `E_BAD_PARAM` for a bad `format` or a reversed span.
 
 ---
 
@@ -2650,6 +2768,7 @@ the top down — each step narrows what the next one has to read.
 | 3 | video-summary | you have a video_id and need its structure or a timestamp to aim at |
 | 4 | get-segment-context | you have (video_id, t) and need the actual words |
 | 5 | get-frames | text is not enough and you have frame ids. return="url" unless you render images |
+| 6 | get-transcript | the words themselves, the whole way through. limit=400 cues a page, then offset |
 
 Adding to the library: index-video → job-status. Nothing is searchable until the
 job reports "done".
@@ -2686,6 +2805,8 @@ count, never the number you asked for.
 | `get-frames frame_ids` | ≤ 12 ids | — |
 | `get-frames max_text_chars` | `0` or 120–2000 | 300 |
 | `get-segment-context window` | 5–300 s | 45 |
+| `get-transcript limit` | 1–500 cues | 400 |
+| `get-transcript max_text_chars` | `0` or 200–40000 | 20000 |
 
 To get past a cap, page with `offset` — the pagination line tells you the next
 one. To check what you actually got, read the printed count, never the number
@@ -2804,8 +2925,17 @@ transcript is unbounded (it *is* the artifact) while the frame walk is capped at
 400 distinct frames and says so in the file when the cap binds; `?ocr=0` drops
 that half entirely.
 
-**The gate is the part worth reading.** The export is the full-transcript hatch
-in file form. On a public instance (`VIDTHEQUE_PUBLIC_READONLY=1`) it requires
+**Its MCP counterpart arrived 2026-09-17** as `get-transcript` (§4.11), and
+the row's "**no MCP tool**" is now a statement about *this artifact*, not about
+transcripts. The two do not merge: this one is a file for a notes app — YAML
+front matter, the stage table, an unbounded transcript because the document *is*
+the artifact, the frame walk in the order it happened — and the tool is a paged
+reader with a char budget and no frames in it at all. One renderer would have to
+be two anyway; what they do share is `queries.cue_page`, which is still the only
+full-transcript reader, and now takes an optional span for the tool's sake.
+
+**The gate is the part worth reading**, and `get-transcript` inherits it. The
+export is the full-transcript hatch in file form. On a public instance (`VIDTHEQUE_PUBLIC_READONLY=1`) it requires
 `auth.credential.is_owner` — proved ownership, not the read gate — because that
 deployment runs `VIDTHEQUE_AUTH=none`, every request is therefore `"open"`, and
 a route that read `"open"` as "the owner" would turn `/demo` into a bulk
@@ -2835,6 +2965,7 @@ parameter gets added.
 | `corpus-summary` | ~3,500 at the defaults; ~4,000 with `include_follows=true` | fixed section caps (50/100/25), and the follows section at ≤ 10 rows — off by default, so the default worst case is unchanged from v1 |
 | `video-summary` | ~6,000 | 50 chapters + 30 key texts + 30 OCR × 1,200 chars, response cap |
 | `get-segment-context` | ~22,000 (`max_text_chars=20000` + 1,200 OCR) | window ≤300s **and** char budget |
+| `get-transcript` | ~40,000 (`max_text_chars=40000` + ~200 header/footer) | `limit` ≤500 cues **and** char budget, whichever binds first |
 | `get-frames` (`url`) | 12 × ~400 ≈ 5,000 at the default; 12 × ~2,000 ≈ 25,000 at `max_text_chars=2000`, and one full frame's OCR per frame at the `0` opt-out | ≤ 12 ids (`frame_ids` **or** `limit`), OCR 300/frame by default |
 | `get-frames` (`image`) | 4 images / 6MB + ~1,600 chars | inline cap independent of `limit` |
 | `index-video` | ~1,200 | ≤10 titles echoed |

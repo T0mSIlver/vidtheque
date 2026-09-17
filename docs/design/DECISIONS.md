@@ -6,6 +6,36 @@ and `research/pipeline-tooling-research.md`. Where a design doc disagrees with
 this file, this file wins; fold changes back into the docs as implementation
 touches them.
 
+## `get-transcript` is the eleventh tool, decided by Tom, 2026-09-17
+
+A model had no good way to read one video end to end. `get-segment-context` is
+capped at ±300 s and 20,000 chars and its own description says "DO NOT USE as a
+transcript dump", so reading a 70-minute talk meant about seven calls at guessed
+`t` values, each re-rendering a header, an OCR block and a frame list, with no
+signal for where the transcript ended. `search` browse mode is not a reader —
+`max_per_video` clamps at 20 and `cluster_gap` merges what it returns.
+`GET /videos/<id>/export.md` is the right bytes behind a gate no MCP client
+carries.
+
+Tom chose the new tool over the two cheaper alternatives. A span mode on
+`get-segment-context` would have cost that tool its single identity and put the
+second mode in the description tail that truncating clients never render
+(tool-surface §4, D12). A chaining hint alone would have left the seven calls
+in place and only made them less blind.
+
+**It is masked on a public deployment even though it is read-only.** The mask
+had one axis — `readOnlyHint: false` — and now has two, the second being bulk;
+`public/readonly.py` carries `OWNER_ONLY_TOOLS` beside the derived set, each
+name in it there for a stated reason. Same gate and same reasoning as
+`export.md`'s owner-only rule: the demo runs `VIDTHEQUE_AUTH=none`, every
+request is `"open"`, and a caller who can page one transcript to its end can
+page the next one.
+
+Contract: tool-surface §2, §4.11 and §7. The parameters are the surface's own —
+`t_start`/`t_end` for the intra-video axis, `limit`/`offset` for pagination,
+`max_text_chars` for the char budget — rather than a `cursor` that would have
+been a second name for `offset`.
+
 ## The web tree is split by surface, decided by Tom, 2026-09-16
 
 `web/src` has three halves and they do not read each other. The public front
