@@ -103,10 +103,20 @@ package; it is derived from the annotations already in the contract:
 WRITE_TOOLS = frozenset(n for n, a in ANNOTATIONS.items() if not a.read_only_hint)
 ```
 
-so a tenth tool with `readOnlyHint: False` is masked the day it is added, with
-no second list to keep in sync. `job-status` stays: it is read-only, it is how
+so a new tool with `readOnlyHint: False` is masked the day it is added, with no
+second list to keep in sync. `job-status` stays: it is read-only, it is how
 a curious visitor sees that indexing is a real pipeline, and it exposes
 nothing a job id doesn't already name.
+
+**One tool is masked that the derivation cannot reach**, and it is written down
+beside it as `OWNER_ONLY_TOOLS`: `get-transcript` (tool-surface §4.11) is
+read-only and idempotent and still must not exist here. It is the model-facing
+half of `GET /videos/<id>/export.md`, which this deployment already gates on
+proved ownership rather than on the read gate (tool-surface §6, `http/export.py`),
+for the reason that carries over unchanged — every request here is `"open"`, and
+a caller who can page one transcript to its end can page the next one. "Never a
+full transcript" was written in §3.2 about what the `/api/ask` loop hands its
+model; it binds the tool surface too.
 
 ---
 
