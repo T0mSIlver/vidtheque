@@ -1,6 +1,6 @@
 """Tool and resource registration against the MCP server.
 
-Ten tools, kebab-case, each carrying the annotations from tool-surface §3.9.
+Eleven tools, kebab-case, each carrying the annotations from tool-surface §3.9.
 Every handler returns a ``CallToolResult`` directly so it controls its own
 content blocks (text, and for ``get-frames`` the opt-in ``ImageContent``) and
 its ``structuredContent`` — conformant clients read the latter without spending
@@ -19,6 +19,7 @@ from pydantic import Field
 from . import follows as follows_tool
 from . import frames as frames_tool
 from . import indexing, library, params, resources, search
+from . import transcript as transcript_tool
 from .base import Deps
 from .descriptions import ANNOTATIONS, DESCRIPTIONS
 
@@ -226,6 +227,28 @@ def _register_tools(mcp: MCPServer, deps: Deps, hidden: frozenset[str]) -> None:
             max_text_chars=max_text_chars,
         )
 
+    async def get_transcript_tool(
+        video_id: str,
+        t_start: float | str | None = None,
+        t_end: float | str | None = None,
+        limit: int = transcript_tool.DEFAULT_CUES,
+        offset: int = 0,
+        max_text_chars: int = transcript_tool.DEFAULT_TEXT_CHARS,
+        include_speakers: bool = True,
+        format: str = "text",
+    ) -> CallToolResult:
+        return await transcript_tool.run(
+            deps,
+            video_id=video_id,
+            t_start=t_start,
+            t_end=t_end,
+            limit=limit,
+            offset=offset,
+            max_text_chars=max_text_chars,
+            include_speakers=include_speakers,
+            format=format,
+        )
+
     async def get_frames_tool(
         frame_ids: list[str] | None = None,
         video_id: str | None = None,
@@ -339,6 +362,7 @@ def _register_tools(mcp: MCPServer, deps: Deps, hidden: frozenset[str]) -> None:
         ("corpus-summary", corpus_summary_tool),
         ("video-summary", video_summary_tool),
         ("get-segment-context", get_segment_context_tool),
+        ("get-transcript", get_transcript_tool),
         ("get-frames", get_frames_tool),
         ("index-video", index_video_tool),
         ("job-status", job_status_tool),

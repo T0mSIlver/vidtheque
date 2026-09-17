@@ -103,6 +103,23 @@ want is cut off, raise window rather than guessing new t. Pass video_id and t
 exactly as a result gave them.
 """.strip()
 
+GET_TRANSCRIPT = """
+Read an indexed video's transcript in order, paged.
+Every cue from start to finish, each carrying the ?t= seconds that cite it.
+
+USE WHEN: the user wants the talk itself — to summarise the whole of it, trace
+an argument, or quote a passage running for minutes.
+
+DO NOT USE: to find a moment (search); for structure or a timestamp to aim at
+(video-summary); when one window around one hit is the answer
+(get-segment-context). Reading a talk whole costs many times what finding the
+part that answers costs.
+
+START WITH limit=400 and page with offset — the pagination line gives the next
+one. max_text_chars caps the page too; the payload names which bound.
+format="tsv" is cheaper when processing, not quoting.
+""".strip()
+
 GET_FRAMES = """
 Fetch keyframe images from indexed videos, as URLs (default) or inline base64.
 
@@ -213,6 +230,13 @@ ANNOTATIONS: dict[str, ToolAnnotations] = {
         idempotentHint=True,
         openWorldHint=False,
     ),
+    # readOnlyHint is True and it is still masked on a public deployment —
+    # `public/readonly.py` masks on a second axis, "hands over the whole
+    # artifact", which is the gate `export.md` already applies to the same
+    # bytes. The annotation describes the tool; the mask is the deployment's.
+    "get-transcript": ToolAnnotations(
+        title="Read a video transcript", readOnlyHint=True, idempotentHint=True, openWorldHint=False
+    ),
     "get-frames": ToolAnnotations(
         title="Get keyframe images", readOnlyHint=True, idempotentHint=True, openWorldHint=False
     ),
@@ -241,6 +265,7 @@ DESCRIPTIONS: dict[str, str] = {
     "corpus-summary": CORPUS_SUMMARY,
     "video-summary": VIDEO_SUMMARY,
     "get-segment-context": GET_SEGMENT_CONTEXT,
+    "get-transcript": GET_TRANSCRIPT,
     "get-frames": GET_FRAMES,
     "index-video": INDEX_VIDEO,
     "job-status": JOB_STATUS,
