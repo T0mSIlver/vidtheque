@@ -34,6 +34,14 @@ RESERVED_NAMESPACES = ("topic", "person", "project", "source", "lang", "series")
 # the deployment's own mask.
 ADDING = "{{ADDING}}"
 MISSING = "{{MISSING}}"
+# A third substitution on a second axis: `get-transcript` is read-only and
+# still masked on a public deployment (`public/readonly.py`), so the step table
+# has to resolve against `offers("get-transcript")` and not against whether the
+# write tools are there. Two flags rather than one `writable`, because the day
+# they stop agreeing is the day the guide starts teaching a tool that is not in
+# `tools/list` — which is the bug this template already exists to prevent.
+TRANSCRIPT = "{{TRANSCRIPT}}"
+TRANSCRIPT_LIMITS = "{{TRANSCRIPT_LIMITS}}"
 
 _ADDING_WRITABLE = (
     "Adding to the library: index-video → job-status. Nothing is searchable until the\n"
@@ -66,6 +74,7 @@ the top down — each step narrows what the next one has to read.
 | 3 | video-summary | you have a video_id and need its structure or a timestamp to aim at |
 | 4 | get-segment-context | you have (video_id, t) and need the actual words |
 | 5 | get-frames | text is not enough and you have frame ids. return="url" unless you render images |
+{{TRANSCRIPT}}
 
 {{ADDING}}
 
@@ -101,6 +110,7 @@ count, never the number you asked for.
 | `get-frames frame_ids` | ≤ 12 ids | — |
 | `get-frames max_text_chars` | `0` or 120–2000 | 300 |
 | `get-segment-context window` | 5–300 s | 45 |
+{{TRANSCRIPT_LIMITS}}
 
 To get past a cap, page with `offset` — the pagination line tells you the next
 one. To check what you actually got, read the printed count, never the number
@@ -184,21 +194,45 @@ you asked for.
 """
 
 
-def _render_guide(writable: bool) -> str:
-    return GUIDE_TEMPLATE.replace(
-        ADDING, _ADDING_WRITABLE if writable else _ADDING_READONLY
-    ).replace(MISSING, _MISSING_WRITABLE if writable else _MISSING_READONLY)
+_TRANSCRIPT_ROW = (
+    "| 6 | get-transcript | the words themselves, the whole way through. "
+    "limit=400 cues a page, then offset |"
+)
+_TRANSCRIPT_LIMIT_ROWS = (
+    "| `get-transcript limit` | 1–500 cues | 400 |\n"
+    "| `get-transcript max_text_chars` | `0` or 200–40000 | 20000 |"
+)
+
+
+def _render_guide(writable: bool, transcript: bool = True) -> str:
+    return (
+        GUIDE_TEMPLATE.replace(ADDING, _ADDING_WRITABLE if writable else _ADDING_READONLY)
+        .replace(MISSING, _MISSING_WRITABLE if writable else _MISSING_READONLY)
+        # Dropping a row takes its newline with it, leaving the table closed by
+        # the blank line that already followed it.
+        .replace(TRANSCRIPT + "\n", _TRANSCRIPT_ROW + "\n" if transcript else "")
+        .replace(
+            TRANSCRIPT_LIMITS + "\n", _TRANSCRIPT_LIMIT_ROWS + "\n" if transcript else ""
+        )
+    )
 
 
 # The full deployment's guide, resolved once. Kept as a module constant because
 # it is the canonical text — `docs/design/tool-surface.md` §5.3 quotes it.
 GUIDE = _render_guide(writable=True)
-GUIDE_READONLY = _render_guide(writable=False)
+GUIDE_READONLY = _render_guide(writable=False, transcript=False)
 
 
 def guide(deps: Deps) -> str:
-    """`vidtheque://guide`, resolved against what this deployment registers."""
-    return GUIDE if deps.offers("index-video") else GUIDE_READONLY
+    """`vidtheque://guide`, resolved against what this deployment registers.
+
+    Rendered per call rather than picked from the two constants: the axes are
+    independent (`public/readonly.py`), and a lookup keyed on one of them would
+    answer the other from memory.
+    """
+    return _render_guide(
+        writable=deps.offers("index-video"), transcript=deps.offers("get-transcript")
+    )
 
 
 async def corpus_resource(deps: Deps) -> str:
