@@ -28,7 +28,8 @@ from vidtheque_mcp.app import build_app
 from vidtheque_mcp.config import Settings
 from vidtheque_mcp.public import ratelimit
 from vidtheque_mcp.public.ratelimit import Bucket, RateLimiter, client_key
-from vidtheque_mcp.public.readonly import WRITE_TOOLS, hidden_tools
+from vidtheque_mcp.public.readonly import OWNER_ONLY_TOOLS, WRITE_TOOLS, hidden_tools
+from vidtheque_mcp.tools.descriptions import ANNOTATIONS
 from vidtheque_mcp.public.settings import PublicSettings
 
 from .conftest import FakeEmbeddings, rpc, rpc_headers, seed
@@ -114,25 +115,48 @@ def call(client: TestClient, method: str, params: dict | None = None) -> dict:
 
 
 def test_write_tools_are_derived_from_the_annotations() -> None:
-    """The mask is not a second hand-written list; it follows readOnlyHint."""
+    """The write half of the mask is not a hand-written list; it follows readOnlyHint."""
     assert WRITE_TOOLS == {"index-video", "tag-video", "follow-channel"}
     assert hidden_tools(False) == frozenset()
-    assert hidden_tools(True) == WRITE_TOOLS
+    assert hidden_tools(True) == WRITE_TOOLS | OWNER_ONLY_TOOLS
 
 
-def test_private_mode_still_lists_all_ten_tools(private_client: TestClient) -> None:
+def test_the_owner_only_tool_is_read_only_and_masked_anyway() -> None:
+    """The second axis is bulk, and no annotation carries it.
+
+    `get-transcript` declares `readOnlyHint: True` — truthfully — so deriving
+    the whole mask from the annotations would leave the demo handing an
+    anonymous caller one talk per call until it had the corpus. Same gate, same
+    reason as `GET /videos/<id>/export.md` (`http/export.py`).
+    """
+    assert OWNER_ONLY_TOOLS == {"get-transcript"}
+    assert not (OWNER_ONLY_TOOLS & WRITE_TOOLS)
+    assert ANNOTATIONS["get-transcript"].read_only_hint is True
+
+
+def test_private_mode_still_lists_every_tool(private_client: TestClient) -> None:
     tools = {t["name"] for t in call(private_client, "tools/list")["result"]["tools"]}
-    assert tools == READ_TOOLS | WRITE_TOOLS
+    assert tools == READ_TOOLS | WRITE_TOOLS | OWNER_ONLY_TOOLS
 
 
-def test_public_mode_never_registers_the_write_tools(public_client: TestClient) -> None:
+def test_public_mode_never_registers_the_masked_tools(public_client: TestClient) -> None:
     tools = {t["name"] for t in call(public_client, "tools/list")["result"]["tools"]}
     assert tools == READ_TOOLS
-    assert not tools & WRITE_TOOLS
+    assert not tools & (WRITE_TOOLS | OWNER_ONLY_TOOLS)
 
 
-@pytest.mark.parametrize("name", sorted(WRITE_TOOLS))
-def test_calling_a_masked_write_tool_is_unknown_not_refused(
+def test_the_public_guide_does_not_teach_the_masked_transcript_tool(
+    public_client: TestClient,
+) -> None:
+    """A guide row for a tool absent from `tools/list` is the demo-queries §9.1.8 bug."""
+    result = call(public_client, "resources/read", {"uri": "vidtheque://guide"})["result"]
+    text = result["contents"][0]["text"]
+    assert "get-transcript" not in text
+    assert "get-segment-context" in text
+
+
+@pytest.mark.parametrize("name", sorted(WRITE_TOOLS | OWNER_ONLY_TOOLS))
+def test_calling_a_masked_tool_is_unknown_not_refused(
     public_client: TestClient, name: str
 ) -> None:
     """Absent, not present-and-erroring: the model must read "no such tool"."""

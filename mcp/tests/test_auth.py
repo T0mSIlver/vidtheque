@@ -23,6 +23,7 @@ from vidtheque_mcp.auth.metadata import (
 from vidtheque_mcp.auth.modes import build_auth
 from vidtheque_mcp.auth.tokens import FrameUrlSigner, TokenIssuer, hash_refresh_token
 from vidtheque_mcp.config import ConfigError, OFFLINE_SCOPE, Settings
+from vidtheque_mcp.tools.descriptions import ANNOTATIONS
 
 from .conftest import rpc, rpc_headers, seed
 
@@ -150,7 +151,9 @@ def test_token_mode_accepts_the_bearer(corpus: Path) -> None:
             "/mcp", json=rpc("tools/list"), headers=rpc_headers("tools/list", "s3cret")
         )
         assert response.status_code == 200
-        assert len(response.json()["result"]["tools"]) == 10
+        # The count follows the contract rather than a literal: this test is
+        # about the bearer, and an eleventh tool must not fail it.
+        assert len(response.json()["result"]["tools"]) == len(ANNOTATIONS)
 
 
 def test_unknown_host_is_421(corpus: Path) -> None:
