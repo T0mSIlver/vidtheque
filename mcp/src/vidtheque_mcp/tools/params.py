@@ -130,6 +130,7 @@ _ENUM_SOURCES: dict[str, dict[str, str | tuple[str, ...]]] = {
         "format": ("text", "tsv"),
     },
     "get-frames": {"return": ("url", "image")},
+    "get-transcript": {"format": "transcript.FORMATS"},
     "index-video": {
         "expand": "indexing.EXPANSIONS",
         "priority": ("normal", "high"),
@@ -151,9 +152,14 @@ def enum_domain(tool: str, param: str) -> tuple[str, ...] | None:
     if isinstance(source, tuple):
         return source
     module_name, attribute = source.split(".")
-    from . import indexing, library, search  # noqa: PLC0415 - see docstring
+    from . import indexing, library, search, transcript  # noqa: PLC0415 - see docstring
 
-    module = {"search": search, "library": library, "indexing": indexing}[module_name]
+    module = {
+        "search": search,
+        "library": library,
+        "indexing": indexing,
+        "transcript": transcript,
+    }[module_name]
     return tuple(getattr(module, attribute))
 
 
