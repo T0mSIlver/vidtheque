@@ -1,6 +1,6 @@
 """Registration smoke test through the actual MCP app.
 
-Ten tools with the contract's names and annotations, three resources, and one
+Eleven tools with the contract's names and annotations, three resources, and one
 real `tools/call` round trip over streamable HTTP — the surface a client sees,
 not the Python functions behind it.
 """
@@ -24,6 +24,7 @@ EXPECTED_TOOLS = {
     "corpus-summary",
     "video-summary",
     "get-segment-context",
+    "get-transcript",
     "get-frames",
     "index-video",
     "job-status",
@@ -60,7 +61,7 @@ def call(client: TestClient, method: str, params: dict | None = None) -> dict:
     return payload["result"]
 
 
-def test_all_ten_tools_are_registered(client: TestClient) -> None:
+def test_every_tool_is_registered(client: TestClient) -> None:
     tools = {t["name"]: t for t in call(client, "tools/list")["tools"]}
     assert set(tools) == EXPECTED_TOOLS
 
