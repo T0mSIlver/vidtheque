@@ -806,7 +806,7 @@
   "info": {
     "description": "Stateless inference worker for vidtheque: speech-to-text with word timestamps,\ntext embeddings, frame embeddings, and on-screen-text OCR. One lifecycle manager\nowns the GPU \u2014 requests queue rather than compete. The transcription and text\nembedding endpoints follow OpenAI's shapes so a GPU-less deployment can swap in a\nhosted provider.\n\nText and frame embeddings are separate endpoints, always. Whether they are\nseparate vector *spaces* is configuration: the shipped default is one unified\nmultimodal embedder (Qwen3-VL-Embedding) serving both from one loaded model, and\na two-model setup (Qwen3-Embedding + SigLIP 2) is still selectable and gives two\nspaces that must never be compared. The endpoints do not change between those,\nwhich is the point \u2014 a natural-language query reaches the frame space on\n/v1/embeddings/frame-query and never through /v1/embeddings, so pointing\nWORKER_URL at a hosted provider 404s loudly instead of answering in the wrong\nspace. GET /status says which arrangement is live: entries sharing a `slot`\nshare one loaded model, and `instructions` is what an instruction-aware embedder\nactually applies.\n",
     "title": "vidtheque-worker",
-    "version": "0.0.7"
+    "version": "0.0.8"
   },
   "openapi": "3.1.0",
   "paths": {
