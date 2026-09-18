@@ -1222,7 +1222,7 @@ Layout, top to bottom:
    `claude mcp add --transport http vidtheque <mcp_url>`, `codex` /
    `codex mcp add vidtheque --url <mcp_url>`, and `mistral vibe` /
    `vibe mcp add vidtheque --url <mcp_url>`. Under them: "Claude, ChatGPT and
-   Le Chat: add a custom connector and paste the endpoint. No sign-in." Every
+   Vibe: add a custom connector and paste the endpoint. No sign-in." Every
    command uses the one `mcp_url` returned by `/api/meta`.
 7. **Footer** — the vidtheque name, the GitHub link, and one muted line
    that never gets culled: “The videos belong to the people who made

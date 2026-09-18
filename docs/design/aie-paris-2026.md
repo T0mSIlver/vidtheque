@@ -345,7 +345,7 @@ codex         codex mcp add vidtheque --url <mcp_url>
 mistral vibe  vibe mcp add vidtheque --url <mcp_url>
 ```
 
-Under the rows, the panel says: "Claude, ChatGPT and Le Chat: add a custom
+Under the rows, the panel says: "Claude, ChatGPT and Vibe: add a custom
 connector and paste the endpoint. No sign-in."
 
 *Amended 2026-09-18 (Tom): add Codex, Mistral Vibe, and custom connectors.* The
