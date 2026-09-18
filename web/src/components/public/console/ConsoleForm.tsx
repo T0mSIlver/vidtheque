@@ -139,7 +139,7 @@ export function ConsoleForm({
           ))}
         </div>
         <p className={ask ? styles.askNote : `${styles.askNote} ${styles.off}`} aria-hidden={!ask}>
-          The model picks the channels, and every answer cites the second it read.
+          Every answer cites the talk and second.
         </p>
       </div>
     </form>

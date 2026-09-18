@@ -28,6 +28,8 @@ export interface ConsoleProps {
   searchExamples?: readonly SearchExample[];
   searchPrompt?: string;
   askExamples: readonly string[];
+  /** Keeps the cold page to its example controls on compact editions. */
+  showColdIntro?: boolean;
   noMatch: string;
   /** Server-rendered corpus listing for the cold pages. */
   corpus?: React.ReactNode;
@@ -236,6 +238,7 @@ export function Console(props: ConsoleProps) {
             searchExamples={props.searchExamples ?? []}
             searchPrompt={props.searchPrompt}
             askExamples={props.askExamples}
+            showIntro={props.showColdIntro ?? true}
             corpus={props.corpus}
             href={(q, type) => href({ mode: "search", q, type })}
             onSearchExample={(example) => runExample(example.q, example.type ?? "all")}

@@ -54,7 +54,7 @@ export function Timeline({ edition }: { edition: EditionResponse }) {
             <span>main stage</span>
           </p>
           <h2 id="timeline-title" className={styles.sectionTitle}>
-            The programme, mapped to evidence
+            Programme
           </h2>
         </div>
         <a

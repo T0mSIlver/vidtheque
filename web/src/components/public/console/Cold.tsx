@@ -35,6 +35,7 @@ export function Cold({
   searchExamples,
   searchPrompt,
   askExamples,
+  showIntro,
   corpus,
   href,
   onSearchExample,
@@ -45,6 +46,7 @@ export function Cold({
   searchExamples: readonly SearchExample[];
   searchPrompt?: string;
   askExamples: readonly string[];
+  showIntro: boolean;
   corpus?: React.ReactNode;
   href: (q: string, type: ContentType) => string;
   onSearchExample: (example: SearchExample) => void;
@@ -54,19 +56,25 @@ export function Cold({
   return (
     <section className={styles.empty} aria-label="Getting started">
       <BootNotice boot={boot} />
-      <p className={styles.kick}>
-        <s />
-        <span>start here</span>
-      </p>
+      {showIntro ? (
+        <p className={styles.kick}>
+          <s />
+          <span>start here</span>
+        </p>
+      ) : null}
       <div className={styles.stack}>
         <div className={search ? undefined : styles.off} inert={!search}>
-          <h2 className={styles.exhead}>
-            {searchExamples.length ? "Try one of these" : "Search by keyword"}
-          </h2>
-          <p className={styles.exnote}>
-            {searchPrompt ??
-              "Keyword search over every sentence spoken, every line that crossed the screen, and the frames themselves."}
-          </p>
+          {showIntro ? (
+            <>
+              <h2 className={styles.exhead}>
+                {searchExamples.length ? "Try one of these" : "Search by keyword"}
+              </h2>
+              <p className={styles.exnote}>
+                {searchPrompt ??
+                  "Keyword search over every sentence spoken, every line that crossed the screen, and the frames themselves."}
+              </p>
+            </>
+          ) : null}
           {searchExamples.length ? (
             <ul className={styles.examples}>
               {searchExamples.map((example) => (
@@ -85,13 +93,15 @@ export function Cold({
           ) : null}
         </div>
         <div className={search ? styles.off : undefined} inert={search}>
-          <h2 className={styles.exhead}>Ask one of these</h2>
-          {/* A question box does not teach itself: say the answer is read out
-              of the talks, not invented over them. */}
-          <p className={styles.exnote}>
-            None of these is answered by one talk. The model reads the corpus to build the answer
-            and hands back the sentence, the talk and the second it was said.
-          </p>
+          {showIntro ? (
+            <>
+              <h2 className={styles.exhead}>Ask one of these</h2>
+              <p className={styles.exnote}>
+                None of these is answered by one talk. The model reads the corpus to build the
+                answer and hands back the sentence, the talk and the second it was said.
+              </p>
+            </>
+          ) : null}
           <ul className={styles.examples}>
             {askExamples.map((question) => (
               <li key={question}>
