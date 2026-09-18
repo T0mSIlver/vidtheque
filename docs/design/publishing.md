@@ -40,11 +40,18 @@ poller does with it changes: it reads the requested ref's `IMAGE_TAG`, fetches
 that ref's compose files and `Caddyfile`, runs `docker compose pull` and
 `up -d`, and checks `/healthz`, `/` and `/api/meta` through the edge. A failed
 check restores the previous tag and compose files and reports the deployment
-failed. It never touches the corpus (§2 owns that).
+failed. It never touches the corpus (§2 owns that). The checks keep the
+worker probe the systemd-era script carried: `/healthz` reports the
+database's vector state and stays green with the embedding worker dead.
 
 **The GPU** reaches the worker container the way it does on the private box:
 the NVIDIA container toolkit with cgroup management off, over the device nodes
 the Proxmox container already passes through.
+
+*Checked on the box, 2026-09-18:* the tunnel's ingress is `http://127.0.0.1:8100`
+(Python directly), no Caddy or front end was ever installed, and `:8080` is
+free. `deploy/staging/cloudflared-config.yml` describes an `:8080` edge that
+was never applied.
 
 **Cutover** is one reversible step. The compose stack comes up on
 `127.0.0.1:8080` beside the running systemd services and is checked there
@@ -117,12 +124,27 @@ A root-owned systemd path unit watches for `READY`. Its service:
 mounted, so a restart follows the symlink. The resize cache `derived/` is per
 generation and starts empty.
 
-**2026-09-18 activation note.** The running service writes `secret.key` inside
-the current generation. Activation copies that file into the new generation
-before moving `current`; it creates no key when the outgoing generation has
-none. Every attempted `READY` is consumed. Success renames it to `ACTIVATED`,
-and a pre-switch verification failure renames it to `REJECTED` and writes the
-reason into the file.
+**2026-09-18 activation notes**, from the first review of this contract.
+
+- *The signing secret.* The running service would write `secret.key` inside
+  whichever generation it serves, and a new generation would rotate it. The
+  public box sets the existing `VIDTHEQUE_SECRET` in its `.env` instead, so
+  no generation holds a key and activation handles none.
+- *Serving changes the database.* The server opens its database for writing
+  at boot even when read-only: it switches the file to WAL and keeps the ask
+  budget in it. The size and sha256 are therefore checked only on a
+  generation's first activation; a return to one that carries `ACTIVATED`
+  checks everything else. A publish also restarts the day's ask budget count.
+- *Schema.* A generation is refused unless its schema version equals the
+  serving release's migration head: newer would crash-loop the server, older
+  would be migrated in place. Both boxes run the same release (§1).
+- *`READY` is always consumed*: renamed to `ACTIVATED`, or to `REJECTED` with
+  the reason inside when verification fails before the switch. Activations
+  take a lock, so two `READY` files landing together cannot interleave.
+- *Pruning* removes only generations whose `READY` was consumed, never the
+  current or previous one, and never one still arriving.
+- *An id is used once.* The publish command refuses an id the public box
+  has already activated, because rsync would write over it in place.
 
 Rollback is the same service pointed at the previous id. Two generations are
 kept, current and previous; older ones are pruned after a successful
@@ -139,6 +161,11 @@ count and the activation journal. `--dry-run` prints every command.
 `deploy/staging/corpus-manifest.json`, the release-asset parts and the
 poller's corpus stage are deleted when this lands.
 
+The landing page's figures are baked into the web image
+(`web/src/components/public/landing/data/corpus.ts`). A publish that changes
+them needs that file regenerated and a release, or the wall and the corpus
+disagree in public; `/demo` and `/paris` read live and need nothing.
+
 ## 3. Talk alignment is data
 
 The schedule stays the committed, reviewed fixture. Which video and which
@@ -149,7 +176,8 @@ correction a release.
 - Migration `0009`: table `edition_alignment(edition_slug, session_id,
   talk_video_id, stream_video_id, start_s, end_s, updated_at)`, primary key
   `(edition_slug, session_id)`.
-- The fixture's four alignment fields are removed (`schema_version: 2`); a
+- The fixture's four alignment fields are removed (`schema_version: 2`, which
+  amends `aie-paris-2026.md` §2.1's "exactly `1`" and the loader with it); a
   main-stage session keeps `"alignment": {}` as the marker that it was
   streamed, and an unstreamed stage keeps `null`.
 - `python -m vidtheque_mcp.editions align <slug> <session_id> …` writes one

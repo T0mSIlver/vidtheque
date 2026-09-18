@@ -36,7 +36,6 @@ def test_activate_failure_rollback_and_pruning(tmp_path: Path) -> None:
     # No marker: a transfer still arriving, which pruning must leave alone.
     arriving = _generation(data_root, "2025-12-15-arriving", 1)
     second = _generation(data_root, "2026-02-01-second", 2, ready=True)
-    (first / "secret.key").write_text("stable-secret")
     (data_root / "current").symlink_to("generations/2026-01-01-first")
 
     docker = fake_bin / "docker"
@@ -67,7 +66,6 @@ def test_activate_failure_rollback_and_pruning(tmp_path: Path) -> None:
     subprocess.run([BASH, str(script), second.name], env=env, check=True)
     assert os.readlink(data_root / "current") == f"generations/{second.name}"
     assert (data_root / "generations" / ".previous").read_text().strip() == first.name
-    assert (second / "secret.key").read_text() == "stable-secret"
     assert (second / "ACTIVATED").is_file()
     assert not (second / "READY").exists()
     assert not old.exists()

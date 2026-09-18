@@ -269,7 +269,13 @@ def _immutable_copy(path: Path) -> sqlite3.Connection:
     return destination
 
 
-def verify_generation(generation_dir: Path) -> str:
+def verify_generation(generation_dir: Path, *, served: bool = False) -> str:
+    """Check a generation against its manifest.
+
+    `served` is for a generation that has already been activated once: the
+    server opens its database for writing at boot (WAL, migrations, the ask
+    budget), so the file no longer matches the manifest's size and hash.
+    """
     generation_dir = generation_dir.resolve()
     generation_id = generation_dir.name
     manifest_path = generation_dir / "MANIFEST.json"
@@ -291,12 +297,11 @@ def verify_generation(generation_dir: Path) -> str:
         raise SnapshotError("database file check failed: vidtheque.db is missing")
 
     actual_bytes = database_path.stat().st_size
-    if manifest.get("db_bytes") != actual_bytes:
+    if not served and manifest.get("db_bytes") != actual_bytes:
         raise SnapshotError(
             f"db_bytes check failed: expected {manifest.get('db_bytes')!r}, got {actual_bytes}"
         )
-    actual_sha256 = _sha256(database_path)
-    if manifest.get("db_sha256") != actual_sha256:
+    if not served and manifest.get("db_sha256") != _sha256(database_path):
         raise SnapshotError("db_sha256 check failed")
 
     keyframes_dir = generation_dir / "keyframes"
@@ -315,14 +320,16 @@ def verify_generation(generation_dir: Path) -> str:
     try:
         database_version = current_version(conn)
         latest_version = max((migration.version for migration in discover()), default=0)
-        if manifest.get("schema_version") != database_version:
+        if not served and manifest.get("schema_version") != database_version:
             raise SnapshotError(
                 "schema_version check failed: manifest "
                 f"{manifest.get('schema_version')!r}, database {database_version}"
             )
-        if database_version > latest_version:
+        # Newer would crash-loop the server; older would be migrated in place at boot.
+        if database_version != latest_version:
             raise SnapshotError(
-                f"schema_version check failed: {database_version} is newer than {latest_version}"
+                f"schema_version check failed: generation is at {database_version}, this "
+                f"release serves {latest_version}; run the same release on both boxes"
             )
         _check_operational_tables(conn)
         database_keyframe_dirs = len(_keyframe_files(conn, generation_dir))
@@ -422,6 +429,9 @@ def build_generation(
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--verify", type=Path, metavar="GENERATION_DIR")
+    parser.add_argument(
+        "--served", action="store_true", help="with --verify: skip the size and hash checks"
+    )
     parser.add_argument("--data-dir", type=Path)
     parser.add_argument("--out-dir", type=Path)
     parser.add_argument("--generation")
@@ -438,7 +448,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.verify is not None:
             if any((args.data_dir, args.out_dir, args.generation, args.keep_channel, args.keep_tag)):
                 parser.error("--verify cannot be combined with build arguments")
-            generation_id = verify_generation(args.verify)
+            generation_id = verify_generation(args.verify, served=args.served)
             print(f"ok {generation_id}")
             return 0
         if args.data_dir is None or args.out_dir is None or args.generation is None:

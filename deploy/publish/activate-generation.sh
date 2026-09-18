@@ -118,6 +118,11 @@ if [[ ! -d "$GENERATIONS" ]]; then
     fi
     mkdir -p "$GENERATIONS"
 fi
+# Two READY files landing together must not interleave two switches.
+if ((!DRY_RUN)); then
+    exec 9>"$GENERATIONS/.lock"
+    flock 9
+fi
 case "$MODE" in
     --ready)
         GENERATION_ID=$(
@@ -152,13 +157,17 @@ fi
 [[ "$GENERATION_ID" != "$OUTGOING_ID" ]] || fail_before_switch "generation is already current"
 
 STEP=verification
+# A generation served before was opened for writing by the server; its file no longer hashes
+# to the manifest, so a return to it checks everything but the size and hash.
+VERIFY_ARGS=(--verify "/data/generations/$GENERATION_ID")
+[[ ! -f "$GENERATION_DIR/ACTIVATED" ]] || VERIFY_ARGS+=(--served)
 log "verifying generation $GENERATION_ID"
 if ((DRY_RUN)); then
     printf 'DRY-RUN '
     print_command docker compose run --rm --no-deps -T mcp python -m \
-        vidtheque_mcp.corpus_snapshot --verify "/data/generations/$GENERATION_ID"
+        vidtheque_mcp.corpus_snapshot "${VERIFY_ARGS[@]}"
 elif ! VERIFY_OUTPUT=$(cd "$DEPLOY_DIR" && docker compose run --rm --no-deps -T mcp \
-    python -m vidtheque_mcp.corpus_snapshot --verify "/data/generations/$GENERATION_ID" 2>&1); then
+    python -m vidtheque_mcp.corpus_snapshot "${VERIFY_ARGS[@]}" 2>&1); then
     fail_before_switch "verification failed: $VERIFY_OUTPUT"
 else
     log "$VERIFY_OUTPUT"
@@ -172,13 +181,6 @@ if [[ -n "$OUTGOING_ID" && -f "$GENERATIONS/$OUTGOING_ID/MANIFEST.json" ]]; then
         <(jq --sort-keys '.alignment // []' "$GENERATION_DIR/MANIFEST.json") || true
 else
     jq --sort-keys '.alignment // []' "$GENERATION_DIR/MANIFEST.json"
-fi
-
-STEP=secret-copy
-log "checking secret.key carry-forward for $GENERATION_ID"
-if [[ -n "$OUTGOING_ID" && -f "$GENERATIONS/$OUTGOING_ID/secret.key" ]]; then
-    log "copying secret.key from $OUTGOING_ID"
-    mutate cp -p "$GENERATIONS/$OUTGOING_ID/secret.key" "$GENERATION_DIR/secret.key"
 fi
 
 STEP=switch
