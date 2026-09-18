@@ -200,6 +200,32 @@ def test_a_silent_hour_is_silence_not_a_failure(tmp_path: Path) -> None:
     assert [word.start for s in result.segments for word in s.words] == [10.0, 3_590.0, 7_190.0]
 
 
+def test_a_cue_is_a_sentence_not_a_thirty_second_block() -> None:
+    from vidtheque_worker.backends.base import Word
+    from vidtheque_worker.backends.voxtral_stt import _segments_from_words
+
+    def say(text: str, start: float, step: float = 0.4) -> list[Word]:
+        return [
+            Word(word=w, start=start + n * step, end=start + n * step + 0.3, score=None)
+            for n, w in enumerate(text.split())
+        ]
+
+    words = (
+        say("We cache the keys and the values.", 0.0)
+        + say("Why does that matter?", 3.0)
+        + say("because decoding is memory bound", 8.0)  # a pause, no full stop before it
+        + say("and " * 60, 12.0)  # speech that never ends a sentence
+    )
+    segments = _segments_from_words(words)
+    assert [s.text for s in segments[:3]] == [
+        "We cache the keys and the values.",
+        "Why does that matter?",
+        "because decoding is memory bound",
+    ]
+    assert all(s.end - s.start <= 16.0 and len(s.words) <= 45 for s in segments)
+    assert [w for s in segments for w in s.words] == words
+
+
 def test_text_without_timed_words_is_still_refused() -> None:
     with pytest.raises(BackendUnavailable):
         _response_words({"text": "hello there", "segments": []}, offset=0.0)
