@@ -549,7 +549,12 @@ system + user
   2026-08-15; was 90) across the whole loop, not per request. A free-tier queue
   that stalls turns into a clean 503, not a held connection. 180 is past
   Cloudflare's 125s proxy read timeout — see §3.5, which was written when the
-  budget fitted inside it.
+  budget fitted inside it. The budget ends in an answer, not in an error
+  (amended 2026-09-19: a two-minute ask lost everything it had read to one
+  timed-out model call). Tool rounds stop once less than 45 s is left, so the
+  tools-off completion has time to write; a round whose call fails lands on the
+  same completion when evidence is in hand and more than 10 s remains. A
+  failure before anything was read is still the clean 503.
 - **Output ceiling** `max_tokens=32768` on every completion (was 700). It is a
   runaway-generation backstop rather than a length policy: "under 150 words"
   is still the prompt's ask, and at 700 the clamp was cutting honest answers
