@@ -32,9 +32,10 @@
   max-width: var(--lede);
   color: var(--fg2);
 }
-/* Below the console, so its height never moves the box. */
 .programme {
-  margin-top: var(--beat);
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: var(--beat) var(--gut);
 }
 .sectionHead {
   display: flex;
@@ -47,9 +48,6 @@
   margin-top: var(--s3);
 }
 
-.queryTitle {
-  margin-bottom: var(--gap-head);
-}
 .scheduleLink {
   composes: t-label-sm from global;
   color: var(--gold);

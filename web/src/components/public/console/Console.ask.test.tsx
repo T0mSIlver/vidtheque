@@ -390,6 +390,16 @@ describe("the console in ask mode", () => {
     expect(screen.getByLabelText(QUESTION_BOX)).toHaveValue("Why do agents write bad AGENTS.md?");
   });
 
+  it("keeps the Paris cold page to the questions", () => {
+    mountConsole({ path: "/paris", showColdIntro: false });
+    expect(
+      screen.getByRole("button", { name: "Why do agents write bad AGENTS.md?" }),
+    ).toBeVisible();
+    expect(screen.queryByText("start here")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ask one of these")).not.toBeInTheDocument();
+    expect(screen.queryByText(/None of these is answered by one talk/)).not.toBeInTheDocument();
+  });
+
   describe("the mode switch", () => {
     it("keeps the same input element, its value and its focus", async () => {
       const fetchSpy = vi.fn(async () => wire(found([hit()])));

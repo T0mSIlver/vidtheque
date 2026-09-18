@@ -182,7 +182,7 @@ describe("the Paris edition states", () => {
   it("draws the programme from the edition read, or the facade's refusal", async () => {
     edition.read.mockResolvedValueOnce(EDITION);
     const { unmount } = render(await Programme());
-    expect(screen.getByText("The programme, mapped to evidence")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Programme" })).toBeInTheDocument();
     unmount();
 
     edition.read.mockRejectedValueOnce(

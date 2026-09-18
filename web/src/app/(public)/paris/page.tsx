@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { ConnectSection } from "@/components/public/PublicShell";
 import { loadConsole } from "@/components/public/console/bootstrap";
 import { Console } from "@/components/public/console/Console";
 import { readEdition, TAG } from "./edition";
@@ -13,55 +14,45 @@ const ASK_EXAMPLES = [
 
 // The console is awaited with the hero, so nothing swaps in above the fold;
 // the programme streams in below it (aie-paris-2026.md §4).
-export default function ParisPage({ searchParams }: PageProps<"/paris">) {
+export default async function ParisPage({ searchParams }: PageProps<"/paris">) {
+  const [bootstrap, edition] = await Promise.all([
+    loadConsole(searchParams, { tags: TAG }),
+    readEdition(),
+  ]);
   return (
-    <main className={styles.main}>
-      <header className={styles.hero}>
-        <p className={styles.kick}>
-          <s />
-          <span>ai engineer paris · 2026</span>
-        </p>
-        <h1 className={styles.big}>
-          The main stage was eight and a half hours. Ask it a question.
-        </h1>
-        <p className={styles.lede}>
-          Every main-stage talk from AI Engineer Paris, cited to the second, slides included. Point
-          your own agent at it.
-        </p>
-      </header>
-      <section aria-labelledby="query-title">
-        <p className={styles.kick}>
-          <s />
-          <span>search or ask</span>
-        </p>
-        <h2 id="query-title" className={`${styles.sectionTitle} ${styles.queryTitle}`}>
-          Find a moment in the main-stage corpus
-        </h2>
-        <ParisConsole searchParams={searchParams} />
-      </section>
+    <main>
+      <div className={styles.main}>
+        <header className={styles.hero}>
+          <p className={styles.kick}>
+            <s />
+            <span>ai engineer paris · 2026</span>
+          </p>
+          <h1 className={styles.big}>
+            The main stage was eight and a half hours. Ask it a question.
+          </h1>
+          <p className={styles.lede}>
+            Every main-stage talk from AI Engineer Paris, cited to the second, slides included.
+            Point your own agent at it.
+          </p>
+        </header>
+        <section aria-label="Search or ask the main-stage corpus">
+          <Console
+            {...bootstrap}
+            path="/paris"
+            tags={TAG}
+            talks={edition.kind === "ok" ? edition.page.talks : []}
+            askExamples={ASK_EXAMPLES}
+            noMatch="Nothing in this edition matches this."
+            showColdIntro={false}
+          />
+        </section>
+      </div>
+      <ConnectSection />
       <div className={styles.programme}>
         <Suspense fallback={<ProgrammeLoading />}>
           <Programme />
         </Suspense>
       </div>
     </main>
-  );
-}
-
-async function ParisConsole({ searchParams }: Pick<PageProps<"/paris">, "searchParams">) {
-  const [bootstrap, edition] = await Promise.all([
-    loadConsole(searchParams, { tags: TAG }),
-    readEdition(),
-  ]);
-  return (
-    <Console
-      {...bootstrap}
-      path="/paris"
-      tags={TAG}
-      talks={edition.kind === "ok" ? edition.page.talks : []}
-      searchPrompt="Search every spoken sentence, slide and frame in this edition."
-      askExamples={ASK_EXAMPLES}
-      noMatch="Nothing in this edition matches this."
-    />
   );
 }

@@ -17,5 +17,9 @@ export const metadata: Metadata = {
 
 // No corpus count: beside this wordmark it would read as the edition's size.
 export default function ParisLayout({ children }: LayoutProps<"/paris">) {
-  return <PublicShell showCount={false}>{children}</PublicShell>;
+  return (
+    <PublicShell showCount={false} showConnect={false}>
+      {children}
+    </PublicShell>
+  );
 }
