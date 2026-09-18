@@ -168,6 +168,43 @@ def test_a_seam_whose_edges_differ_still_merges_without_doubling(tmp_path: Path)
     assert starts == sorted(starts)
 
 
+def test_a_silent_hour_is_silence_not_a_failure(tmp_path: Path) -> None:
+    """The rehearsal's day stream (2026-09-18) has an hour with nobody speaking. The
+    API answers it with no text and no words, which failed the whole 8-hour job."""
+
+    silent = {"language": None, "text": "", "segments": []}
+    client = FakeClient(
+        [
+            response([("before", 10.0, 10.4), ("break", 3_590.0, 3_590.4)]),
+            silent,
+            response([("after", 50.0, 50.4)]),
+        ]
+    )
+
+    def chunker(_source: str, _start: float, _duration: float, destination: str) -> None:
+        Path(destination).write_bytes(b"audio")
+
+    audio = tmp_path / "day.opus"
+    audio.write_bytes(b"audio")
+    backend = VoxtralBackend(
+        api_key="secret",
+        client_factory=lambda _key, _url: client,
+        duration_probe=lambda _path: 10_000.0,
+        chunker=chunker,
+    )
+    backend.load()
+    result = backend.infer(str(audio))
+
+    assert result.text == "before break after"
+    assert result.degraded_seams == [], "a seam with a silent side has nothing to double"
+    assert [word.start for s in result.segments for word in s.words] == [10.0, 3_590.0, 7_190.0]
+
+
+def test_text_without_timed_words_is_still_refused() -> None:
+    with pytest.raises(BackendUnavailable):
+        _response_words({"text": "hello there", "segments": []}, offset=0.0)
+
+
 def test_an_unsafe_seam_keeps_both_sides_and_records_it(tmp_path: Path) -> None:
     client = FakeClient(
         [
