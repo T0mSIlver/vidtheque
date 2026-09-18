@@ -234,9 +234,14 @@ The fix:
   plus the base Dockerfile. It is built only when that hash has no image.
 - **The release image** is `FROM` the base at that tag, plus the package's own
   source. Building it takes seconds and pushing or pulling it moves megabytes.
-- **Retag, do not rebuild.** When an image's inputs match the previous
-  release, the new version tag is pointed at the existing digest.
-- Build cache moves to `type=registry`.
+- The two Python image builds keep no build cache. The pushed base image is
+  the cache, and what is left to build is two small layers.
+
+*Amended 2026-09-18, the day it was written: "retag when unchanged" is
+dropped.* Every release bumps the version inside `mcp/` and `worker/`, so an
+image's inputs never match the previous release, and a retagged image would
+report the old version at `/healthz`. The web image keeps its `type=gha`
+cache, which fits under the 10 GB cap.
 
 Dropping the CUDA base image (its libraries largely duplicate the NVIDIA
 wheels) would cut about a quarter of the worker. It needs a GPU validation run

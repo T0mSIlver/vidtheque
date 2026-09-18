@@ -19,8 +19,8 @@ Contract: `docs/design/publishing.md`, in its §5 order. None of it is built.
 
 - Public box on the compose stack at a pinned tag, checked beside the running
   services, then the tunnel cutover from `:8100` to `:8080`.
-- Dependency base images, retag-when-unchanged and a registry build cache, then
-  release `0.0.9`.
+- Dependency base images, then release `0.0.9`. The first tag builds both
+  bases once; watch that run.
 - Corpus generations: `vidtheque_mcp.corpus_snapshot`, the `rrsync` push, the
   activation unit with rollback, `scripts/publish_corpus.sh`. Delete
   `corpus-manifest.json` and the poller's corpus stage with it.
