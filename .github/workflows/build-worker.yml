@@ -4,13 +4,13 @@ on:
   pull_request:
     paths:
       - "worker/**"
+      - "scripts/image_inputs.sh"
       - "pyproject.toml"
       - "uv.lock"
       - ".python-version"
       - ".github/workflows/build-worker.yml"
   # Deliberately no `paths` filter on tags: path filters are evaluated against
-  # a push's commit range, and a tag push usually has none — the publish build
-  # would silently never run.
+  # a push's commit range, and a tag push usually has none.
   push:
     tags:
       - "v*"
@@ -23,18 +23,25 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/t0msilver/vidtheque-worker
+  BASE_IMAGE: ghcr.io/t0msilver/vidtheque-worker-base
 
 jobs:
-  build:
-    # amd64 only: the image is CUDA-based and there is no arm64 story for it.
+  base:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    outputs:
+      tag: ${{ steps.inputs.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
-      # A CUDA runtime base plus torch wheels does not fit next to the
+      # The base tag hashes `uv export`; pin the uv the Dockerfiles use.
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.24"
+
+      # A CUDA runtime base plus torch wheels does not fit beside the
       # preinstalled toolchains on a stock runner.
       - name: Reclaim runner disk
         run: |
@@ -52,6 +59,56 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Compute base inputs
+        id: inputs
+        run: |
+          tag=$(scripts/image_inputs.sh worker --tag)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if docker buildx imagetools inspect "$BASE_IMAGE:$tag" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build base for pull request
+        if: steps.inputs.outputs.exists != 'true' && !startsWith(github.ref, 'refs/tags/')
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: worker/Dockerfile.base
+          platforms: linux/amd64
+          push: false
+          tags: ${{ env.BASE_IMAGE }}:${{ steps.inputs.outputs.tag }}
+
+      - name: Build and push base
+        if: steps.inputs.outputs.exists != 'true' && startsWith(github.ref, 'refs/tags/')
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: worker/Dockerfile.base
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.BASE_IMAGE }}:${{ steps.inputs.outputs.tag }}
+
+  image:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: base
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Image metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -63,14 +120,13 @@ jobs:
             type=ref,event=branch
             type=sha,format=short
 
-      - name: Build (and push on tag)
+      - name: Build and push image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: worker/Dockerfile
           platforms: linux/amd64
-          push: ${{ startsWith(github.ref, 'refs/tags/') }}
+          push: true
+          build-args: BASE_IMAGE=${{ env.BASE_IMAGE }}:${{ needs.base.outputs.tag }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=worker
-          cache-to: type=gha,mode=max,scope=worker
