@@ -6,6 +6,27 @@ and `research/pipeline-tooling-research.md`. Where a design doc disagrees with
 this file, this file wins; fold changes back into the docs as implementation
 touches them.
 
+## One deployment shape, corpus generations, alignment as data, decided by Tom, 2026-09-18
+
+The public box ran a git checkout under systemd and built the front end on the
+box; the private box ran pinned GHCR images under compose. The corpus crossed
+between two containers on one Proxmox host as 2.3 GB of GitHub release assets.
+A talk's alignment was a committed JSON field, so a corrected offset on the day
+of a conference was a commit, a PR, a 22-minute image build and a deployment.
+
+Tom chose to refactor before AI Engineer Paris rather than script the hand
+recipe. Both boxes run the same compose stack at a pinned tag and the public
+deploy poller stays pull-based. The corpus moves as immutable generations by
+rsync, pushed by the private box with a key that can only write files, and is
+activated by a symlink move with automatic rollback. Alignment moves from the
+edition fixture to a table the snapshot carries, written by an operator command
+on the private box. Releases build on dependency base images so a version bump
+stops rebuilding the 8.4 GB layer. Dropping the CUDA base image is deferred
+until after the edition because it needs a GPU validation run.
+
+The contract is `publishing.md`. It supersedes `install.md` §12 and
+`aie-paris-2026.md` §2.3's committed alignment fields when each part lands.
+
 ## `get-transcript` is the eleventh tool, decided by Tom, 2026-09-17
 
 A model had no good way to read one video end to end. `get-segment-context` is

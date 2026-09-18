@@ -13,6 +13,23 @@ and anything marked **[Tom]** is a decision before it is a ticket.
 
 ## Open
 
+### 2026-09-18: publishing — one deployment shape, generations, light releases
+
+Contract: `docs/design/publishing.md`, in its §5 order. None of it is built.
+
+- Public box on the compose stack at a pinned tag, checked beside the running
+  services, then the tunnel cutover from `:8100` to `:8080`.
+- Dependency base images, retag-when-unchanged and a registry build cache, then
+  release `0.0.9`.
+- Corpus generations: `vidtheque_mcp.corpus_snapshot`, the `rrsync` push, the
+  activation unit with rollback, `scripts/publish_corpus.sh`. Delete
+  `corpus-manifest.json` and the poller's corpus stage with it.
+- Alignment as data: migration `0009`, the `editions align` and `propose`
+  commands, the fixture at `schema_version: 2`.
+- A full rehearsal before 2026-09-23: index, tag, publish, align, roll back.
+- After the edition: drop the CUDA base image from the worker, behind a GPU
+  validation run.
+
 ### 2026-09-15: AI Engineer Paris 2026 edition
 
 - Review and approve `docs/design/aie-paris-2026.md`, especially the
