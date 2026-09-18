@@ -430,15 +430,18 @@ reads one channel at 16 kHz, so anything above that is bandwidth and megabytes
 rather than accuracy, and forwarding the pipeline's own file would put a body
 on the wire that nothing here had bounded.
 
-The seam merge keeps the earlier copy of a repeated word sequence. It compares
-normalized words inside the overlap, chooses the longest suffix and prefix
-match of at least three words, shifts the later timestamps by the chunk start,
-and drops only the matched prefix. A match counts only when the clock agrees
-with the words: the two copies start within two seconds of each other, and the
-first word kept from the later chunk does not start before the last word
-already kept. A filler phrase repeated elsewhere in the overlap passes the word
-test and would append speech that runs backwards, so a match failing the time
-test is treated as no match. If no safe match exists, it keeps both sides
+The seam merge shifts the later timestamps by the chunk start, then cuts where
+the two copies of the overlap agree: a run of at least three normalized words
+with the same spelling whose starts are within two seconds of each other. The
+earlier chunk is kept up to that run and the later chunk from it; of several
+runs, the one nearest the middle of the overlap wins, away from both edges. The
+first word kept from the later chunk never starts before the last word already
+kept. (Amended 2026-09-18. The first rule wanted the earlier chunk's whole tail
+to equal the later chunk's head. ffmpeg cuts both edges mid-word, so the two
+copies never agree end to end, and the private rehearsal's first real seam
+degraded and doubled every word of its half minute.) A filler phrase repeated
+elsewhere in the overlap passes the word test and fails the clock, so it is no
+match. If no safe match exists, it keeps both sides
 — interleaved by timestamp, so the same seconds appear twice but never out of
 order — and records a degraded seam instead of deleting speech by guess. Word
 timestamps are therefore monotonic on both paths. Segments are rebuilt from the
