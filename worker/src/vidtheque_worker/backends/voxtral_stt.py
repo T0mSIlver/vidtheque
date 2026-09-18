@@ -382,17 +382,8 @@ def _merge_at_seam(earlier: list[Word], later: list[Word], seam: float) -> bool:
     overlap_end = seam + CHUNK_OVERLAP_SECONDS
     left = [word for word in earlier if (word.end or 0.0) >= seam]
     right = [word for word in later if (word.start or overlap_end) <= overlap_end]
-    left_keys = [_normalized_word(word.word) for word in left]
-    right_keys = [_normalized_word(word.word) for word in right]
-    limit = min(len(left_keys), len(right_keys))
-    matched = 0
-    for size in range(limit, MIN_SAFE_MATCH_WORDS - 1, -1):
-        if left_keys[-size:] == right_keys[:size] and all(left_keys[-size:]):
-            matched = size
-            break
-    if matched and not _same_moment(earlier, later, left, right, matched):
-        matched = 0
-    if not matched:
+    cut = _seam_cut(left, right, seam + CHUNK_OVERLAP_SECONDS / 2)
+    if cut is None:
         # Nothing is deleted by guess, so both copies of the overlap survive —
         # but the later chunk restarts 30 s before the earlier one ended, and
         # appending it would send word timestamps backwards. Interleaving by
@@ -401,39 +392,47 @@ def _merge_at_seam(earlier: list[Word], later: list[Word], seam: float) -> bool:
         earlier.extend(later)
         earlier.sort(key=lambda word: word.start if word.start is not None else 0.0)
         return False
-    earlier.extend(later[matched:])
+    left_at, right_at = cut
+    del earlier[len(earlier) - len(left) + left_at :]
+    earlier.extend(later[right_at:])
     return True
+
+
+def _seam_cut(left: Sequence[Word], right: Sequence[Word], middle: float) -> tuple[int, int] | None:
+    """Where the two copies of the overlap agree: the same words at the same seconds.
+
+    The overlap is never transcribed identically twice (the rehearsal, 2026-09-18:
+    ffmpeg cuts both edges mid-word, and the merge that wanted the whole half
+    minute equal doubled every word of it). A run of `MIN_SAFE_MATCH_WORDS` words
+    that agree on spelling *and* clock is the same moment, so the earlier chunk is
+    kept up to it and the later chunk from it; the run nearest the middle wins,
+    away from both ragged edges. A repeated filler trigram half a minute apart
+    fails the clock and is no match.
+    """
+    left_keys = [_normalized_word(word.word) for word in left]
+    right_keys = [_normalized_word(word.word) for word in right]
+    best: tuple[float, int, int] | None = None
+    for i in range(len(left) - MIN_SAFE_MATCH_WORDS + 1):
+        for j in range(len(right) - MIN_SAFE_MATCH_WORDS + 1):
+            if not all(
+                left_keys[i + k]
+                and left_keys[i + k] == right_keys[j + k]
+                and abs(_word_start(left[i + k]) - _word_start(right[j + k]))
+                <= MAX_SEAM_DRIFT_SECONDS
+                for k in range(MIN_SAFE_MATCH_WORDS)
+            ):
+                continue
+            # The receipts stay monotonic across the cut.
+            if i and _word_start(right[j]) < _word_start(left[i - 1]):
+                continue
+            distance = abs(_word_start(left[i]) - middle)
+            if best is None or distance < best[0]:
+                best = (distance, i, j)
+    return None if best is None else (best[1], best[2])
 
 
 def _word_start(word: Word) -> float:
     return word.start if word.start is not None else 0.0
-
-
-def _same_moment(
-    earlier: list[Word],
-    later: list[Word],
-    left: Sequence[Word],
-    right: Sequence[Word],
-    matched: int,
-) -> bool:
-    """Is the matched word sequence the *seam*, or just the same words twice?
-
-    ffmpeg cuts the chunk mid-word, so the two transcriptions of the overlap
-    differ at their edges and the true match can fail on an hour of speech. A
-    common trigram — "and so the" — then matches somewhere else entirely: the
-    earlier chunk's copy near its end, the later chunk's near its start, half a
-    minute apart. Dropping the later prefix on that match appends words that
-    begin before the last word already kept, which sends the receipts backwards
-    and collapses the seam into one oversized segment.
-
-    Word spellings alone cannot tell the two apart; the clock can. The genuine
-    seam is the same seconds transcribed twice, so the two copies agree on when
-    they happened, and what follows the match starts after what precedes it.
-    """
-    if abs(_word_start(right[0]) - _word_start(left[-matched])) > MAX_SEAM_DRIFT_SECONDS:
-        return False
-    tail = later[matched:]
-    return not tail or _word_start(tail[0]) >= _word_start(earlier[-1])
 
 
 def _segments_from_words(words: Sequence[Word]) -> list[Segment]:

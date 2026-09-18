@@ -111,6 +111,63 @@ def test_long_audio_is_sequentially_chunked_and_safely_merged(tmp_path: Path) ->
     )
 
 
+def test_a_seam_whose_edges_differ_still_merges_without_doubling(tmp_path: Path) -> None:
+    """The rehearsal's seam (2026-09-18): both chunks hear the same half minute, but each
+    is cut mid-word at its own edge, so the two copies never agree end to end. The
+    merge that wanted them equal kept both and doubled every word."""
+
+    client = FakeClient(
+        [
+            response(
+                [
+                    ("opening", 0.0, 0.4),
+                    ("code", 3_572.0, 3_572.3),
+                    ("agent", 3_572.4, 3_572.8),
+                    ("labs", 3_584.0, 3_584.3),
+                    ("have", 3_584.4, 3_584.6),
+                    ("really", 3_584.7, 3_585.0),
+                    ("exploded", 3_585.1, 3_585.6),
+                    ("rec", 3_599.6, 3_600.0),
+                ]
+            ),
+            response(
+                [
+                    ("ode", 0.1, 0.3),
+                    ("agent", 2.5, 2.9),
+                    ("labs", 14.1, 14.4),
+                    ("have", 14.5, 14.7),
+                    ("really", 14.8, 15.1),
+                    ("exploded.", 15.2, 15.7),
+                    ("recently", 29.6, 30.2),
+                    ("closing", 40.0, 40.5),
+                ]
+            ),
+        ]
+    )
+
+    def chunker(_source: str, _start: float, _duration: float, destination: str) -> None:
+        Path(destination).write_bytes(b"audio")
+
+    audio = tmp_path / "day.opus"
+    audio.write_bytes(b"audio")
+    backend = VoxtralBackend(
+        api_key="secret",
+        client_factory=lambda _key, _url: client,
+        duration_probe=lambda _path: 3_660.0,
+        chunker=chunker,
+    )
+    backend.load()
+    result = backend.infer(str(audio))
+
+    assert result.degraded_seams == []
+    words = [word.word for segment in result.segments for word in segment.words]
+    assert words == [
+        "opening", "code", "agent", "labs", "have", "really", "exploded.", "recently", "closing",
+    ]  # fmt: skip
+    starts = [word.start for segment in result.segments for word in segment.words]
+    assert starts == sorted(starts)
+
+
 def test_an_unsafe_seam_keeps_both_sides_and_records_it(tmp_path: Path) -> None:
     client = FakeClient(
         [
