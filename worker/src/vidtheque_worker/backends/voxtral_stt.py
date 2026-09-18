@@ -343,7 +343,12 @@ def _response_words(payload: Mapping[str, Any], *, offset: float) -> list[Word]:
                 continue
             # Asked for words, the API answers one word per `transcription_segment`.
             candidates.append(segment)
-    return _words_from(candidates, offset=offset)
+    words = _words_from(candidates, offset=offset)
+    # An hour of a day stream can be a break: no text and no words is silence. Text
+    # without a single timed word is a shape this cannot read, and says so.
+    if not words and str(payload.get("text") or "").strip():
+        raise BackendUnavailable("Mistral returned text but no word timestamps")
+    return words
 
 
 def _words_from(candidates: Sequence[Mapping[str, Any]], *, offset: float) -> list[Word]:
@@ -368,8 +373,6 @@ def _words_from(candidates: Sequence[Mapping[str, Any]], *, offset: float) -> li
                 score=float(score) if isinstance(score, (int, float)) else None,
             )
         )
-    if not words:
-        raise BackendUnavailable("Mistral returned no word timestamps")
     return words
 
 
@@ -382,8 +385,19 @@ def _merge_at_seam(earlier: list[Word], later: list[Word], seam: float) -> bool:
     overlap_end = seam + CHUNK_OVERLAP_SECONDS
     left = [word for word in earlier if (word.end or 0.0) >= seam]
     right = [word for word in later if (word.start or overlap_end) <= overlap_end]
+    if not left or not right:
+        # One side heard nothing in the overlap, so nothing can appear twice.
+        earlier.extend(later)
+        return True
     cut = _seam_cut(left, right, seam + CHUNK_OVERLAP_SECONDS / 2)
     if cut is None:
+        # What each chunk heard, so a degraded seam can be read instead of guessed at.
+        log.info(
+            "Voxtral seam at %.3fs: earlier heard %r, later heard %r",
+            seam,
+            " ".join(word.word for word in left)[:400],
+            " ".join(word.word for word in right)[:400],
+        )
         # Nothing is deleted by guess, so both copies of the overlap survive —
         # but the later chunk restarts 30 s before the earlier one ended, and
         # appending it would send word timestamps backwards. Interleaving by
