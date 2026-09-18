@@ -36,11 +36,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The base tag hashes `uv export`; pin the uv the Dockerfiles use.
-      - uses: astral-sh/setup-uv@v5
-        with:
-          version: "0.11.24"
-
       # A CUDA runtime base plus torch wheels does not fit beside the
       # preinstalled toolchains on a stock runner.
       - name: Reclaim runner disk
@@ -48,6 +43,12 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
                       /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
           df -h /
+
+      # The base tag hashes `uv export`; pin the uv the Dockerfiles use.
+      # After the reclaim: setup-uv installs into the tools directory it wipes.
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.24"
 
       - uses: docker/setup-buildx-action@v3
 
