@@ -155,7 +155,8 @@ Facade rules:
   `{"error": code, "message": …, "next": …}`. One table, two consumers.
 - **Nothing new is queried.** The facade adds three derived fields per result —
   a `timestamp` clock string and two frame URLs, `thumb` and `thumb_large` —
-  every one of them computed from data the tool already returned. `thumb_large`
+  every one of them computed from data the tool already returned, except the
+  frame a spoken hit is pictured with (§2.1). `thumb_large`
   is a *URL*, not bytes: the enlarged frame is fetched only if a visitor opens
   one (§6.4), and it is built here because the width has to be clamped (and,
   under `token`/`oauth`, signed) server-side.
@@ -200,7 +201,7 @@ GET /api/search?q=kv+cache&content_type=all&limit=10&offset=0
       "timestamp": "0:12",
       "text": "we cache the keys and the values at every new token",
       "link": "https://youtu.be/kCc8FmEb1nY?t=10",
-      "frame_id": "kCc8FmEb1nY-00000",
+      "frame_id": null,
       "thumb": "https://…/frames/kCc8FmEb1nY-00000.jpg?w=320&q=70",
       "thumb_large": "https://…/frames/kCc8FmEb1nY-00000.jpg?w=960&q=70",
       "score": 0.0312
@@ -211,10 +212,19 @@ GET /api/search?q=kv+cache&content_type=all&limit=10&offset=0
 }
 ```
 
-`thumb` and `thumb_large` are both `null` when the hit has no `frame_id` (a
-transcript-only hit in a video with no keyframes). The page falls back to a text
-card, not a broken image — and offers no enlarge control for a frame that does
-not exist.
+A transcript hit matched no frame, so the tool returns it with `frame_id: null`
+as in the example above. For those hits the facade pictures the moment
+instead (amended 2026-09-18, Tom's review: an empty box labelled
+"spoken" read as an image that failed to load): `thumb` and `thumb_large` point
+at the keyframe showing at `start` — the latest keyframe at or before it, a
+duplicate resolved to the frame it repeats, the first keyframe when the hit
+precedes them all. `frame_id` stays `null`, because it names what matched. This
+is the facade's one extra read per search, a single grouped query bounded by the
+`limit` clamp; the MCP tool's payload is unchanged.
+
+`thumb` and `thumb_large` are both `null` only when the video has no keyframes.
+The page falls back to a text card, not a broken image — and offers no enlarge
+control for a frame that does not exist.
 
 `notes` is the same `note:` array the MCP payload prints. The page renders it
 in a muted line — "`all` means all" is a promise to a human too, and a search

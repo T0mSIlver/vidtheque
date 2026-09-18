@@ -14,8 +14,11 @@ import styles from "./ResultGroup.module.css";
 // A card per video, then its moments, each ending in its receipt (demo-site.md
 // §6.5). Three sibling controls per row, never nested: thumbnail, text, receipt.
 export function ResultGroup({ group, query = "" }: { group: VideoGroup; query?: string }) {
-  // Whichever moment has a frame: the header names the talk, not the leg.
-  const cover = group.hits.find((hit) => hit.thumb) ?? group.hits[0];
+  // A frame that matched first; a spoken moment's is only what was on screen then.
+  const cover =
+    group.hits.find((hit) => hit.thumb && hit.source !== "transcript") ??
+    group.hits.find((hit) => hit.thumb) ??
+    group.hits[0];
   const talk = videoUrl(cover.link);
   return (
     <article className={styles.card}>
