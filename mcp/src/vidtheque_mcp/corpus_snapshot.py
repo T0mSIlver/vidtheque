@@ -32,7 +32,34 @@ OPERATIONAL_TABLES = (
     "follows",
     "follow_seen",
     "follow_spend",
+    # Client addresses and daily spend; the serving box keeps its own.
+    "ask_budget",
+    # Titles and descriptions the owner wrote; no public read uses them.
+    "collections",
+    "collection_videos",
 )
+# Every other table must be empty in a generation, so a table a later migration adds
+# fails the build until someone decides which side of this line it is on.
+CORPUS_TABLES = frozenset(
+    {
+        "videos",
+        "video_stages",
+        "chapters",
+        "video_links",
+        "cues",
+        "chunks",
+        "keyframes",
+        "ocr_lines",
+        "ocr_frames",
+        "video_tags",
+        "tags",
+        "speakers",
+        "owners",
+        "config",
+        "schema_migrations",
+    }
+)
+VIRTUAL_PREFIXES = ("cues_fts", "ocr_frames_fts", "videos_fts", "vec_chunks", "vec_frames", "sqlite_")
 FTS_TABLES = ("cues_fts", "ocr_frames_fts", "videos_fts")
 
 
@@ -123,16 +150,19 @@ def _filter_copy(conn: sqlite3.Connection, rules: Sequence[KeepRule]) -> tuple[i
             f"WHERE v.index_state IN ({state_marks}) AND ({predicate})",
             (*QUERYABLE_INDEX_STATES, *values),
         )
-        conn.execute(
-            "CREATE TEMP TABLE snapshot_follow_collections AS SELECT collection_id FROM follows"
-        )
         conn.execute("DELETE FROM jobs")
         conn.execute("DELETE FROM follow_spend")
-        conn.execute(
-            "DELETE FROM collections WHERE id IN "
-            "(SELECT collection_id FROM snapshot_follow_collections)"
-        )
+        conn.execute("DELETE FROM ask_budget")
+        conn.execute("DELETE FROM collections")
         conn.execute("DELETE FROM videos WHERE id NOT IN (SELECT video_id FROM snapshot_keep)")
+        # What a dropped video leaves behind by name: its tags, its speakers.
+        conn.execute("DELETE FROM tags WHERE id NOT IN (SELECT tag_id FROM video_tags)")
+        conn.execute(
+            "DELETE FROM speakers WHERE id NOT IN "
+            "(SELECT speaker_id FROM cues WHERE speaker_id IS NOT NULL)"
+        )
+        # Pipeline error text can name the private box's paths and hosts.
+        conn.execute("UPDATE video_stages SET error = NULL WHERE error IS NOT NULL")
     except BaseException:
         conn.execute("ROLLBACK")
         raise
@@ -150,6 +180,20 @@ def _check_operational_tables(conn: sqlite3.Connection) -> None:
     remaining = {table: count for table, count in counts.items() if count}
     if remaining:
         raise SnapshotError(f"operational table check failed: {remaining}")
+    unclassified = {}
+    for (table,) in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'"):
+        if table in CORPUS_TABLES or table in OPERATIONAL_TABLES:
+            continue
+        if table.startswith(VIRTUAL_PREFIXES):
+            continue
+        count = int(conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0])
+        if count:
+            unclassified[table] = count
+    if unclassified:
+        raise SnapshotError(
+            f"unclassified table check failed: {unclassified} - add each table to "
+            "CORPUS_TABLES or OPERATIONAL_TABLES"
+        )
 
 
 def _verify_snapshot(conn: sqlite3.Connection) -> None:
@@ -331,7 +375,8 @@ def verify_generation(generation_dir: Path, *, served: bool = False) -> str:
                 f"schema_version check failed: generation is at {database_version}, this "
                 f"release serves {latest_version}; run the same release on both boxes"
             )
-        _check_operational_tables(conn)
+        if not served:
+            _check_operational_tables(conn)
         database_keyframe_dirs = len(_keyframe_files(conn, generation_dir))
         if database_keyframe_dirs != actual_keyframe_dirs:
             raise SnapshotError(
