@@ -1134,6 +1134,8 @@ Layout, top to bottom:
    false. Under the bar, one row: the filter chips (`all` / `transcript` /
    `on-screen text` / `frames`, mapping to `content_type`, `all` by default) in
    search, a one-line note in ask, where the model picks the channel. *Amended
+   2026-09-18 (Tom):* the note reads "Every answer cites the talk and second."
+   on both consoles. *Amended
    2026-09-16:* both modes' row contents, submit labels and cold-page panels
    share one grid cell each, the inactive one `visibility: hidden` and `inert`,
    so switching modes moves nothing on the page.

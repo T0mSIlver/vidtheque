@@ -106,7 +106,7 @@ describe("the public chrome", () => {
   it("prints the endpoint and all three client commands", async () => {
     const { ConnectRows } = await facts({ kind: "ok", meta: META });
     render(await ConnectRows());
-    expect(screen.getAllByRole("button", { name: "copy" })).toHaveLength(4);
+    expect(screen.getAllByRole("button", { name: /^copy / })).toHaveLength(4);
     expect(screen.getByText("mcp endpoint")).toBeInTheDocument();
     expect(screen.getByText("claude code")).toBeInTheDocument();
     expect(screen.getByText("codex")).toBeInTheDocument();
@@ -133,7 +133,7 @@ describe("the public chrome", () => {
       4,
     );
     expect(document.body.textContent).not.toMatch(/undefined/);
-    for (const button of screen.getAllByRole("button", { name: "copy" })) {
+    for (const button of screen.getAllByRole("button", { name: /^copy / })) {
       expect(button).toBeDisabled();
     }
   });
@@ -159,7 +159,7 @@ describe("the public chrome", () => {
       render(<CopyRows mcpUrl="https://x.test/mcp" unavailable="-" />);
       const writeText = vi.fn(async () => {});
       const user = clipboard(writeText);
-      await user.click(screen.getAllByRole("button", { name: "copy" })[0]);
+      await user.click(screen.getAllByRole("button", { name: /^copy / })[0]);
       expect(writeText).toHaveBeenCalledWith("https://x.test/mcp");
       expect(await screen.findByText("copied")).toBeInTheDocument();
       expect(screen.getByRole("status")).toHaveTextContent("mcp endpoint copied to the clipboard.");
@@ -171,7 +171,7 @@ describe("the public chrome", () => {
       const user = clipboard(async () => {
         throw new Error("denied");
       });
-      await user.click(screen.getAllByRole("button", { name: "copy" })[1]);
+      await user.click(screen.getAllByRole("button", { name: /^copy / })[1]);
       expect(await screen.findByText("select it")).toBeInTheDocument();
       expect(getSelection()?.getRangeAt(0).toString()).toContain("claude mcp add");
       expect(screen.getByRole("status")).toBeEmptyDOMElement();

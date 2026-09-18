@@ -400,6 +400,17 @@ describe("the console in ask mode", () => {
     expect(screen.queryByText(/None of these is answered by one talk/)).not.toBeInTheDocument();
   });
 
+  it("gives the Paris cold page something to search for without the intro", () => {
+    mountConsole({
+      path: "/paris",
+      showColdIntro: false,
+      initial: { mode: "search", q: "", type: "all" },
+      searchExamples: [{ q: "vLLM" }],
+    });
+    expect(screen.getByRole("link", { name: /vLLM/ })).toBeVisible();
+    expect(screen.queryByText("Try one of these")).not.toBeInTheDocument();
+  });
+
   describe("the mode switch", () => {
     it("keeps the same input element, its value and its focus", async () => {
       const fetchSpy = vi.fn(async () => wire(found([hit()])));

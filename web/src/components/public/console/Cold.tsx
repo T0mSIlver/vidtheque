@@ -33,7 +33,6 @@ export function Cold({
   mode,
   boot,
   searchExamples,
-  searchPrompt,
   askExamples,
   showIntro,
   corpus,
@@ -44,7 +43,6 @@ export function Cold({
   mode: Mode;
   boot: Boot;
   searchExamples: readonly SearchExample[];
-  searchPrompt?: string;
   askExamples: readonly string[];
   showIntro: boolean;
   corpus?: React.ReactNode;
@@ -70,8 +68,8 @@ export function Cold({
                 {searchExamples.length ? "Try one of these" : "Search by keyword"}
               </h2>
               <p className={styles.exnote}>
-                {searchPrompt ??
-                  "Keyword search over every sentence spoken, every line that crossed the screen, and the frames themselves."}
+                Keyword search over every sentence spoken, every line that crossed the screen, and
+                the frames themselves.
               </p>
             </>
           ) : null}

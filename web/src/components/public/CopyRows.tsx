@@ -44,6 +44,7 @@ export function CopyRows({
               text={mcpUrl ? template.replace("<mcp_url>", mcpUrl) : null}
               fallback={unavailable}
               prompt={prompt}
+              name={label}
               said={`${label} copied to the clipboard.`}
               onSay={setSaid}
             />
@@ -61,12 +62,14 @@ function CopyRow({
   text,
   fallback,
   prompt = false,
+  name,
   said,
   onSay,
 }: {
   text: string | null;
   fallback: string;
   prompt?: boolean;
+  name: string;
   said: string;
   onSay: (text: string) => void;
 }) {
@@ -104,7 +107,13 @@ function CopyRow({
         {prompt && text ? <i className={styles.prompt}>$</i> : null}
         <span ref={source}>{text ?? fallback}</span>
       </code>
-      <button type="button" className={styles.copy} onClick={copy} disabled={!text}>
+      <button
+        type="button"
+        className={styles.copy}
+        onClick={copy}
+        disabled={!text}
+        aria-label={`${label} ${name}`}
+      >
         {label}
       </button>
     </div>
