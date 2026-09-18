@@ -1203,6 +1203,15 @@ Layout, top to bottom:
    the one-liner gets a copy button of its own — it is the line somebody
    actually pastes — and a clipboard that refuses still selects the text, so
    there is always a way to take it.
+
+   *Amended 2026-09-18 (Tom): three clients and custom connectors.* The four
+   rows replace the endpoint and Claude-only pair, each with its own copy
+   button: `mcp endpoint` / `<mcp_url>`, `claude code` /
+   `claude mcp add --transport http vidtheque <mcp_url>`, `codex` /
+   `codex mcp add vidtheque --url <mcp_url>`, and `mistral vibe` /
+   `vibe mcp add vidtheque --url <mcp_url>`. Under them: "Claude, ChatGPT and
+   Le Chat: add a custom connector and paste the endpoint. No sign-in." Every
+   command uses the one `mcp_url` returned by `/api/meta`.
 7. **Footer** — the vidtheque name, the GitHub link, and one muted line
    that never gets culled: “The videos belong to the people who made
    them.” — the attribution ethic is page-visible wherever creators’
