@@ -231,17 +231,63 @@ def _int_param(request: Request, name: str, low: int, high: int, default: int) -
     return clamp(request.query_params.get(name), low, high, default)  # type: ignore[arg-type]
 
 
-def _decorate_hit(deps: Deps, hit: dict[str, Any]) -> dict[str, Any]:
-    """The fields the facade adds, all of them from data already returned."""
+def _decorate_hit(
+    deps: Deps, hit: dict[str, Any], shown: str | None = None
+) -> dict[str, Any]:
+    """The fields the facade adds. `shown` is the keyframe on screen at a spoken hit."""
     row = dict(hit)
     row["timestamp"] = clock(hit.get("start"))
-    row["thumb"] = thumb_url(deps, hit.get("frame_id"), THUMB_WIDTH)
+    # `frame_id` stays the tool's: it names the frame that matched, and nothing matched here.
+    frame = hit.get("frame_id") or shown
+    row["thumb"] = thumb_url(deps, frame, THUMB_WIDTH)
     # The enlarged frame. A second *URL*, not a second query — and under
     # `token`/`oauth` it has to be signed here, because the page cannot sign a
     # width of its own (which is the point: the clamp is the server's).
-    row["thumb_large"] = thumb_url(deps, hit.get("frame_id"), LIGHTBOX_WIDTH)
+    row["thumb_large"] = thumb_url(deps, frame, LIGHTBOX_WIDTH)
     row["text"] = humanize.snippet(hit.get("text"), hit.get("source"))
     return row
+
+
+def _frames_on_screen(
+    conn: sqlite3.Connection, hits: list[dict[str, Any]]
+) -> dict[int, str]:
+    """For each hit without a frame, the keyframe showing at its second (demo-site.md §2.1).
+
+    One read for the page, bounded by the search clamp. A duplicate resolves to the
+    frame it repeats, and a hit before the first keyframe takes the first.
+    """
+    wanted = [
+        [index, hit.get("video_id"), float(hit.get("start") or 0.0)]
+        for index, hit in enumerate(hits)
+        if not hit.get("frame_id") and hit.get("video_id")
+    ]
+    if not wanted:
+        return {}
+    rows = conn.execute(
+        """
+        WITH want(idx, public_id, t) AS (
+          SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]'),
+                 json_extract(value, '$[2]')
+          FROM json_each(?)
+        )
+        SELECT w.idx AS idx, w.public_id AS public_id,
+          COALESCE(
+            (SELECT COALESCE(o.ord, k.ord) FROM keyframes k
+               LEFT JOIN keyframes o ON o.id = k.dup_of
+              WHERE k.video_id = v.id AND k.t_s <= w.t
+              ORDER BY k.t_s DESC LIMIT 1),
+            (SELECT MIN(k.ord) FROM keyframes k
+              WHERE k.video_id = v.id AND k.dup_of IS NULL)
+          ) AS ord
+        FROM want w JOIN videos v ON v.public_id = w.public_id
+        """,
+        (json.dumps(wanted),),
+    ).fetchall()
+    return {
+        int(r["idx"]): f"{r['public_id']}-{int(r['ord']):05d}"
+        for r in rows
+        if r["ord"] is not None
+    }
 
 
 # ------------------------------------------------------------------ endpoints
@@ -310,11 +356,15 @@ async def search_payload(
         )
 
     payload = result.structured_content or {}
+    hits = list(payload.get("results", []))
+    shown = await deps.db.read(lambda c: _frames_on_screen(c, hits))
     return (
         {
             "query": params.get("q") or "",
             "content_type": content_type,
-            "results": [_decorate_hit(deps, hit) for hit in payload.get("results", [])],
+            "results": [
+                _decorate_hit(deps, hit, shown.get(index)) for index, hit in enumerate(hits)
+            ],
             "pagination": payload.get("pagination", {}),
             "leg_counts": payload.get("leg_counts", {}),
             # The `note:` prefix marks a line as machinery for a model reading

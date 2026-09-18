@@ -573,10 +573,33 @@ def test_every_frame_backed_hit_carries_an_enlargeable_url(
     large = hits[0]["thumb_large"]
     assert large.endswith(".jpg?w=960&q=70")
     assert public_client.get(large).status_code == 200
-    # A hit with no keyframe has nothing to enlarge, and says so with a null
-    # rather than a URL that 404s inside a dialog.
-    empty = [h for h in payload["results"] if not h["frame_id"]]
-    assert all(h["thumb_large"] is None for h in empty)
+
+
+def test_a_spoken_hit_shows_the_frame_on_screen_at_its_second(public_client: TestClient) -> None:
+    """A transcript hit matched no frame, so `frame_id` stays null; the picture is the
+    keyframe showing when it was said (§2.1). A video with no keyframes has none."""
+    from vidtheque_mcp.public.api import _frames_on_screen
+
+    deps = public_client.app.state.assembled.deps
+    payload = public_client.get("/api/search?q=the&content_type=transcript&limit=20").json()
+    spoken = [h for h in payload["results"] if not h["frame_id"]]
+    assert spoken, "the transcript leg should return hits without a matched frame"
+    pictured = [h for h in spoken if h["thumb"]]
+    assert pictured, "a video with keyframes pictures its spoken hits"
+    for hit in pictured:
+        assert f"/frames/{hit['video_id']}-" in hit["thumb"]
+        assert hit["thumb_large"].endswith(".jpg?w=960&q=70")
+    assert public_client.get(pictured[0]["thumb"]).status_code == 200
+
+    # A second before the first keyframe takes the first; no keyframes, no picture
+    # and no URL that 404s inside a dialog.
+    probe = [
+        {"video_id": "kCc8FmEb1nY", "start": -1.0},
+        {"video_id": "eMlx5fFNoYc", "start": 5.0},
+        {"video_id": "kCc8FmEb1nY", "start": 5.0, "frame_id": "kCc8FmEb1nY-00000"},
+    ]
+    found = public_client.portal.call(deps.db.read, lambda c: _frames_on_screen(c, probe))
+    assert found == {0: "kCc8FmEb1nY-00000"}
 
 
 def test_every_kind_of_hit_asks_for_the_same_thumbnail(public_client: TestClient) -> None:
