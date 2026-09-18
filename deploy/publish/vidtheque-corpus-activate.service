@@ -1,0 +1,8 @@
+[Unit]
+Description=Activate a ready vidtheque corpus generation
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/srv/vidtheque-deploy/deploy/publish/activate-generation.sh --ready
