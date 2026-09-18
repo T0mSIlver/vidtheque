@@ -34,7 +34,7 @@ CPU-only, multi-arch, and runs on a Pi. No GPU? Drop the worker: a hosted
 OpenAI-compatible provider covers the transcript leg, and YouTube captions are
 the zero-GPU indexing path. `deploy/vidtheque-update.sh` makes upgrades one
 command; pin exact tags — `v0.0.x` schemas can still change. To build from source instead: clone this repo, `cp deploy/.env.example
-deploy/.env`, then `docker compose -f deploy/docker-compose.yml up -d`.
+deploy/.env`, run `make images`, then `docker compose -f deploy/docker-compose.yml up -d`.
 
 ## Follow the builders
 

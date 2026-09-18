@@ -15,6 +15,10 @@
 #
 #   curl -s http://127.0.0.1:${EDGE_PORT:-8080}/healthz
 #
+# Source builds use content-addressed Python bases. Run `make images` from the
+# repository root before `docker compose up`; compose then uses the local
+# `vidtheque-{mcp,worker}:dev` images without rebuilding them.
+#
 # GOING PUBLIC NEEDS THE OVERLAY, NOT THE `tunnel` PROFILE ON ITS OWN.
 # The `mcp` service reads the whole `.env` via `env_file` (so your mode flags
 # do reach the process — this file used to hand it four variables by name and

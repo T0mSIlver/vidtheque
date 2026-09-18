@@ -53,7 +53,11 @@ web-check: ## Run every web/ check CI runs, in the same order
 	cd web && pnpm build
 
 .PHONY: images
-images: ## Build the three container images locally
-	docker build -f worker/Dockerfile -t vidtheque-worker:dev .
-	docker build -f mcp/Dockerfile -t vidtheque-mcp:dev .
+images: ## Build the dependency bases and three runnable images locally
+	worker_base_tag="$$(scripts/image_inputs.sh worker --tag)"; \
+	docker build -f worker/Dockerfile.base -t "vidtheque-worker-base:$$worker_base_tag" .; \
+	docker build --build-arg "BASE_IMAGE=vidtheque-worker-base:$$worker_base_tag" -f worker/Dockerfile -t vidtheque-worker:dev .
+	mcp_base_tag="$$(scripts/image_inputs.sh mcp --tag)"; \
+	docker build -f mcp/Dockerfile.base -t "vidtheque-mcp-base:$$mcp_base_tag" .; \
+	docker build --build-arg "BASE_IMAGE=vidtheque-mcp-base:$$mcp_base_tag" -f mcp/Dockerfile -t vidtheque-mcp:dev .
 	docker build -f web/Dockerfile -t vidtheque-web:dev web
