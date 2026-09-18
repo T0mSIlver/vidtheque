@@ -46,10 +46,11 @@ class _MistralClient:
         fields: list[tuple[str, str]] = [
             ("model", model),
             ("diarize", "false"),
-            ("timestamp_granularities", "segment"),
+            # One granularity: the API refuses a second with a 422 (checked 2026-09-18).
+            # Words are the one needed; the segments are rebuilt from them.
             ("timestamp_granularities", "word"),
         ]
-        fields.extend(("context_bias", term) for term in context_bias)
+        fields.extend(("context_bias", term) for term in _bias_terms(context_bias))
         body, content_type = _multipart(fields, audio_path)
         request = urllib.request.Request(
             self._url,
@@ -66,8 +67,10 @@ class _MistralClient:
                 payload = json.load(response)
         except urllib.error.HTTPError as exc:
             if exc.code in {400, 413, 415, 422}:
+                # Mistral's reason is about the request, never the key, and without it a
+                # refused field reads as bad audio.
                 raise InvalidMediaError(
-                    f"Mistral refused the audio with HTTP {exc.code}"
+                    f"Mistral refused the request with HTTP {exc.code}: {_error_detail(exc)}"
                 ) from exc
             raise BackendUnavailable(f"Mistral transcription failed with HTTP {exc.code}") from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
@@ -85,6 +88,24 @@ class _MistralClient:
         if not isinstance(payload, dict):
             raise BackendUnavailable("Mistral transcription response was not an object")
         return payload
+
+
+def _bias_terms(terms: Sequence[str]) -> list[str]:
+    """Mistral takes no whitespace or comma in a term and spells a phrase with underscores."""
+    out: list[str] = []
+    for term in terms:
+        joined = "_".join(term.replace(",", " ").split())
+        if joined and joined not in out:
+            out.append(joined)
+    return out
+
+
+def _error_detail(exc: urllib.error.HTTPError) -> str:
+    try:
+        text = exc.read(2_000).decode("utf-8", "replace")
+    except OSError:
+        return "no detail"
+    return " ".join(text.split())[:300] or "no detail"
 
 
 def _multipart(fields: Sequence[tuple[str, str]], audio_path: str) -> tuple[bytes, str]:
@@ -320,9 +341,8 @@ def _response_words(payload: Mapping[str, Any], *, offset: float) -> list[Word]:
             if isinstance(nested, list):
                 candidates.extend(item for item in nested if isinstance(item, Mapping))
                 continue
-            kind = str(segment.get("type") or "").casefold()
-            if "word" in kind or "word" in segment:
-                candidates.append(segment)
+            # Asked for words, the API answers one word per `transcription_segment`.
+            candidates.append(segment)
     return _words_from(candidates, offset=offset)
 
 
