@@ -97,6 +97,10 @@ nothing.
 
 The last file written is `generations/<id>/READY`.
 
+**2026-09-18 transfer note.** The receiving `corpus` account has uid and gid
+10001, matching the container user. Its restricted key may read the
+generations directory because `--link-dest` must read the previous generation.
+
 ### 2.3 Activate, on the public box
 
 A root-owned systemd path unit watches for `READY`. Its service:
@@ -110,9 +114,15 @@ A root-owned systemd path unit watches for `READY`. Its service:
    in the generation naming the step.
 
 `mcp` reads `VIDTHEQUE_DATA_DIR=/data/current`, with the parent directory
-mounted, so a restart follows the symlink. `secret.key` lives beside
-`generations/`, not inside one, so signed frame URLs survive a swap. The
-resize cache `derived/` is per generation and starts empty.
+mounted, so a restart follows the symlink. The resize cache `derived/` is per
+generation and starts empty.
+
+**2026-09-18 activation note.** The running service writes `secret.key` inside
+the current generation. Activation copies that file into the new generation
+before moving `current`; it creates no key when the outgoing generation has
+none. Every attempted `READY` is consumed. Success renames it to `ACTIVATED`,
+and a pre-switch verification failure renames it to `REJECTED` and writes the
+reason into the file.
 
 Rollback is the same service pointed at the previous id. Two generations are
 kept, current and previous; older ones are pruned after a successful
