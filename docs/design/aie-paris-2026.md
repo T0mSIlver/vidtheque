@@ -104,6 +104,11 @@ uploads may be mapped without rewriting the schedule.
 
 ### 2.3 Alignment data and the talk table
 
+*Amended 2026-09-18 (Tom): the four fields below move out of the committed
+fixture into the `edition_alignment` table when `publishing.md` §3 lands. The
+states, the validation rules and the payload in this section do not change;
+until then the fixture fields stand.*
+
 Each main-stage session carries four nullable alignment fields. They begin
 `null` because an offset cannot be known before the VOD exists.
 
