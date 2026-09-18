@@ -247,6 +247,11 @@ with the edition tag fixed and no corpus count. Interactions call
 `/paris?q=…&type=…` for a search and `/paris?ask=…` for a loaded, unfired
 question (`demo-site.md` §6.2).
 
+*Amended 2026-09-18 (Tom): place the connect panel before the programme.* The
+page order is hero, console, connect panel, programme. The programme keeps its
+own server `<Suspense>` below the connect panel and never moves the console as
+it streams in.
+
 The visual system is `DESIGN.md`'s demo register. The page uses the existing
 tokens, zero radius, gold only for the selected moment, lime only for OCR
 evidence, visible state words, reduced motion, fixed image boxes, and no new
@@ -331,12 +336,21 @@ data after the stable VOD is indexed.
 ### 4.5 MCP endpoint and footer
 
 The endpoint block is copied from `/demo`: the heading "Add this corpus to your
-own agent", the label `MCP endpoint`, `mcp_url` from `/api/meta`, a copy button,
-and this command with its own copy button:
+own agent", `mcp_url` from `/api/meta`, and one copy button for each row:
 
 ```
-claude mcp add --transport http vidtheque <mcp_url>
+mcp endpoint  <mcp_url>
+claude code   claude mcp add --transport http vidtheque <mcp_url>
+codex         codex mcp add vidtheque --url <mcp_url>
+mistral vibe  vibe mcp add vidtheque --url <mcp_url>
 ```
+
+Under the rows, the panel says: "Claude, ChatGPT and Le Chat: add a custom
+connector and paste the endpoint. No sign-in."
+
+*Amended 2026-09-18 (Tom): add Codex, Mistral Vibe, and custom connectors.* The
+four rows above replace the endpoint and Claude-only pair. All commands derive
+from the same `mcp_url`.
 
 The footer keeps `/demo`'s line, "The videos belong to the people who made
 them.", with the `Removal on request` link to `docs/takedown.md`.
