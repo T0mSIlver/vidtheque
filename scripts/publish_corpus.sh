@@ -11,11 +11,13 @@ PRIVATE_COMPOSE_FILES=${PRIVATE_COMPOSE_FILES:--f docker-compose.yml -f compose.
 
 DRY_RUN=0
 ROLLBACK=0
+SKIP_BUILD=0
 GENERATION=
 KEEP_RULES=()
 
 usage() {
     echo "usage: $0 --generation <id> [--keep-channel <name> | --keep-tag <tag>]... [--dry-run]" >&2
+    echo "       $0 --generation <id> --skip-build [--dry-run]   # resend a generation already built" >&2
     echo "       $0 --rollback [--dry-run]" >&2
     exit 2
 }
@@ -57,6 +59,7 @@ while (($#)); do
             shift
             ;;
         --rollback) ROLLBACK=1 ;;
+        --skip-build) SKIP_BUILD=1 ;;
         --dry-run) DRY_RUN=1 ;;
         *) usage ;;
     esac
@@ -79,16 +82,20 @@ if ((ROLLBACK)); then
 fi
 
 [[ "$GENERATION" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9-]+$ ]] || usage
-((${#KEEP_RULES[@]} > 0)) || usage
+# The builder refuses an id that exists, so a transfer that failed is retried without it.
+((SKIP_BUILD)) || ((${#KEEP_RULES[@]} > 0)) || usage
 read -r -a COMPOSE_ARGS <<<"$PRIVATE_COMPOSE_FILES"
 
-BUILD=(docker compose "${COMPOSE_ARGS[@]}" exec -T mcp python -m
-    vidtheque_mcp.corpus_snapshot --data-dir /data --out-dir /data/generations
-    --generation "$GENERATION" "${KEEP_RULES[@]}")
-step "build generation $GENERATION on the private box"
-printf -v PRIVATE_DEPLOY_Q '%q' "$PRIVATE_DEPLOY_DIR"
-BUILD_Q=$(remote_command "${BUILD[@]}")
-run ssh "$PRIVATE_SSH" "cd $PRIVATE_DEPLOY_Q && $BUILD_Q"
+if ((!SKIP_BUILD)); then
+
+    BUILD=(docker compose "${COMPOSE_ARGS[@]}" exec -T mcp python -m
+        vidtheque_mcp.corpus_snapshot --data-dir /data --out-dir /data/generations
+        --generation "$GENERATION" "${KEEP_RULES[@]}")
+    step "build generation $GENERATION on the private box"
+    printf -v PRIVATE_DEPLOY_Q '%q' "$PRIVATE_DEPLOY_DIR"
+    BUILD_Q=$(remote_command "${BUILD[@]}")
+    run ssh "$PRIVATE_SSH" "cd $PRIVATE_DEPLOY_Q && $BUILD_Q"
+fi
 
 step "print the generation manifest"
 run ssh "$PRIVATE_SSH" "$(remote_command sh -c "cat '$PRIVATE_DATA_ROOT/generations/$GENERATION/MANIFEST.json'")"
