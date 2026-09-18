@@ -633,6 +633,11 @@ services:
       - /srv/vidtheque-data:/data
 ```
 
+Set `VIDTHEQUE_SECRET` in the public box's `deploy/.env` (any long random
+string, or the old `secret.key`'s content to keep existing frame URLs valid).
+Without it the server writes a fresh `secret.key` into each generation it
+serves and every publish rotates the signing key.
+
 Install and start the activation watcher:
 
 ```bash

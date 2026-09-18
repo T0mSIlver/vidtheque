@@ -103,6 +103,13 @@ else
     PREVIOUS=$(ssh "$PUBLIC_SSH" "$CURRENT_QUERY")
 fi
 
+# An id that already exists on the public box would be rsynced over in place, under a
+# generation that may be the one being served.
+if ((!DRY_RUN)) && ssh "$PUBLIC_SSH" "$(remote_command test -e "/srv/vidtheque-data/generations/$GENERATION/ACTIVATED")"; then
+    echo "generation $GENERATION was already activated on the public box; pick a new id" >&2
+    exit 1
+fi
+
 # A rerun finds READY already in the source; it must still arrive last.
 RSYNC_ARGS=(rsync -a --exclude=/READY)
 [[ -z "$PREVIOUS" ]] || RSYNC_ARGS+=("--link-dest=../$PREVIOUS")
