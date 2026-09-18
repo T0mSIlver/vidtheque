@@ -26,6 +26,9 @@ MAX_CHUNK_SECONDS = 3_600.0
 CHUNK_OVERLAP_SECONDS = 30.0
 MIN_SAFE_MATCH_WORDS = 3
 MAX_SEAM_DRIFT_SECONDS = 2.0
+SEGMENT_PAUSE_SECONDS = 1.0
+SEGMENT_MAX_SECONDS = 15.0
+SEGMENT_MAX_WORDS = 45
 MAX_UPLOAD_BYTES = 500 * 1_000_000
 """The other half of Mistral's documented pair of limits (`aie-paris-2026.md`
 §6): 60 minutes *and* 500 MB. Chunking answers the minutes; this answers the
@@ -452,14 +455,28 @@ def _word_start(word: Word) -> float:
 def _segments_from_words(words: Sequence[Word]) -> list[Segment]:
     if not words:
         return []
+    # A cue is what a receipt points at, so it is a sentence, not a block: the first
+    # rule cut every 30 s or 100 words, and the rehearsal's cues were ten times the
+    # length of whisperX's (p50 30 s against 3 s). A sentence end or a pause closes
+    # one; the caps only catch speech that offers neither.
     groups: list[list[Word]] = []
     group: list[Word] = []
     group_start = words[0].start or 0.0
     for word in words:
         start = word.start if word.start is not None else group_start
-        if group and (start - group_start >= 30.0 or len(group) >= 100):
-            groups.append(group)
-            group = []
+        if group:
+            last = group[-1]
+            pause = start - (last.end if last.end is not None else start)
+            sentence_over = last.word.rstrip("\"')”’")[-1:] in ".?!" and len(group) >= 3
+            if (
+                sentence_over
+                or pause >= SEGMENT_PAUSE_SECONDS
+                or start - group_start >= SEGMENT_MAX_SECONDS
+                or len(group) >= SEGMENT_MAX_WORDS
+            ):
+                groups.append(group)
+                group = []
+        if not group:
             group_start = start
         group.append(word)
     if group:
