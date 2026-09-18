@@ -6,6 +6,13 @@ import { readEdition, TAG } from "./edition";
 import { Programme, ProgrammeLoading } from "./Programme";
 import styles from "./page.module.css";
 
+// Words from the programme's own titles, so each has a talk to land on once indexed.
+const SEARCH_EXAMPLES = [
+  { q: "vLLM" },
+  { q: "voice AI", type: "transcript" },
+  { q: "Gemma 4", type: "ocr" },
+] as const;
+
 const ASK_EXAMPLES = [
   "What did the main stage say about running agents in production?",
   "Where do the speakers disagree about inference infrastructure?",
@@ -41,6 +48,7 @@ export default async function ParisPage({ searchParams }: PageProps<"/paris">) {
             path="/paris"
             tags={TAG}
             talks={edition.kind === "ok" ? edition.page.talks : []}
+            searchExamples={SEARCH_EXAMPLES}
             askExamples={ASK_EXAMPLES}
             noMatch="Nothing in this edition matches this."
             showColdIntro={false}

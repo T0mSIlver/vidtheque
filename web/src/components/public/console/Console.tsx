@@ -26,7 +26,6 @@ export interface ConsoleProps {
   /** Edition talks, for naming hits and citations by the talk they land in. */
   talks?: EditionTalk[];
   searchExamples?: readonly SearchExample[];
-  searchPrompt?: string;
   askExamples: readonly string[];
   /** Keeps the cold page to its example controls on compact editions. */
   showColdIntro?: boolean;
@@ -236,7 +235,6 @@ export function Console(props: ConsoleProps) {
             mode={state.mode}
             boot={boot}
             searchExamples={props.searchExamples ?? []}
-            searchPrompt={props.searchPrompt}
             askExamples={props.askExamples}
             showIntro={props.showColdIntro ?? true}
             corpus={props.corpus}
