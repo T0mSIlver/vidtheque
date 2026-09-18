@@ -139,6 +139,9 @@ class ItemRun:
     media: Path | None = None
     cues: list[CueDraft] = field(default_factory=list)
     cue_ids: list[int] = field(default_factory=list)
+    # This attempt replaced the chunks, which deletes their vectors: `text_embed`
+    # runs whatever its recorded state says.
+    chunks_replaced: bool = False
     worker_ok: bool = False
     degraded: list[str] = field(default_factory=list)
     failed_stages: list[str] = field(default_factory=list)
@@ -831,6 +834,7 @@ class IndexingPipeline:
         chunks = build_chunks(run.cues, target, overlap)
         video_id, cue_ids = run.video_id, run.cue_ids
         await self.db.write(lambda c: store.replace_chunks(c, video_id, chunks, cue_ids))
+        run.chunks_replaced = True
         await self._stage_done(run, "chunk", model_key)
         await run.ctx.record("chunk", 1.0)
 
@@ -838,7 +842,9 @@ class IndexingPipeline:
 
     async def _stage_text_embed(self, run: ItemRun) -> None:
         model = self.db.config.get("text_embed.model", "")
-        if not self._should_run(run, "text_embed", model):
+        # A resumed `stt` rebuilt the chunks under a `text_embed` row already `done`
+        # (the rehearsal, 2026-09-18): the video finished with no text vectors.
+        if not run.chunks_replaced and not self._should_run(run, "text_embed", model):
             return
         if self.worker is None:
             await self._skip(run, "text_embed", "no worker is configured")
