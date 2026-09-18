@@ -230,8 +230,8 @@ The fix:
 - **A base image per Python image.** `vidtheque-worker-base` and
   `vidtheque-mcp-base` hold the OS packages, Python and the locked third-party
   dependencies, installed from `uv export --no-emit-workspace` so a version
-  bump does not change the input. The base tag is the sha256 of that export
-  plus the base Dockerfile. It is built only when that hash has no image.
+  bump does not change the input. The base tag is the sha256 of that export,
+  the base Dockerfile and `.python-version`. It is built only when that hash has no image.
 - **The release image** is `FROM` the base at that tag, plus the package's own
   source. Building it takes seconds and pushing or pulling it moves megabytes.
 - The two Python image builds keep no build cache. The pushed base image is
