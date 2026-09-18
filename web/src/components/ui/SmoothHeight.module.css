@@ -1,0 +1,21 @@
+/* `clip` with a margin, not `hidden`: a focus ring and the plate's corner mark
+   sit just outside the content box and must not be shaved while it grows. */
+.outer {
+  overflow: clip;
+  overflow-clip-margin: 6px;
+}
+
+.armed {
+  transition: height var(--t-state) var(--ease-lift);
+}
+
+/* Margins inside would otherwise collapse through and escape the measurement. */
+.inner {
+  display: flow-root;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .armed {
+    transition: none;
+  }
+}

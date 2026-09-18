@@ -883,12 +883,17 @@ reporting, it does not move.
 | detection boxes acquiring, staggered | the machine is reading the screen | `--t-acquire`, `--ease-acquire` |
 | a counter ticking up | counts are counts | — |
 | a panel un-veiling as its data arrives | the answer landed | `--t-veil` |
+| a light passing through the text of **the one step in flight**, a new step growing in as the oldest folds away | the model is running that tool call, or deciding the next | `--t-state`, `--ease-lift` |
+| a panel following its content's height | the machine's answer is taking the room it needs | `--t-state` |
 
 **Banned outright, with no exception and no "but it's subtle":**
 
 - pulsing or breathing dots, badges or rings;
 - scan lines, CRT flicker, film grain, vignettes that move;
-- ambient glow, halos, glimmer, shimmer, aurora, gradient animation;
+- ambient glow, halos, glimmer, shimmer, aurora, gradient animation — *ambient*
+  is the word: the one sanctioned light sits on the single row that names work
+  in flight and stops the moment that work does (Tom, 2026-09-19). On a
+  heading, a finished row, a card or a background it is still banned;
 - decorative hover motion — no lift, no scale, no translate, no wiggle, no
   parallax, no tilt, on anything, ever;
 - entrance animation on scroll (fade-up, stagger-in) for content that is simply

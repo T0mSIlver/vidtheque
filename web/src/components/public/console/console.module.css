@@ -474,7 +474,7 @@
      live log, or an answer with sources. A degraded pane — one sentence and a
      button — stays at the measure, because widening a refusal is the one place
      the extra room says nothing. */
-  .answer:has(> .log),
+  .answer:has(> .work),
   .answer:has(.sources) {
     max-width: none;
   }
@@ -516,73 +516,132 @@
 
 /* ─────────────────────────────────────────────────────── the work log */
 
-/* What the model did, while it does it: one line per tool call, the result
-   appended when it lands. The console's own ground, because this is a surface
-   the machine writes into. */
-.log {
-  list-style: none;
-  padding: 14px 16px;
-  background: var(--console);
-  border: 1px solid var(--seam2);
+/* What the model is doing, while it does it: one row per tool call. No box and
+   no scrollbar — the live block is six rows tall whatever happens inside it, so
+   nothing under the pane moves per tool call. */
+.work {
+  --step-h: 1.95em;
   font-family: var(--mono);
   font-size: 12.5px;
-  line-height: 1.85;
-  color: var(--fg2);
   font-variant-ligatures: none;
-  overflow-wrap: anywhere;
 }
 
-/* The live log is a fixed six-line box: a longer run scrolls inside it, so
-   nothing below the pane moves per tool call. */
-.answer > .log {
-  --log-lines: 6;
-  height: calc(var(--log-lines) * 1.85em + 30px);
-  overflow-y: auto;
-  scrollbar-gutter: stable;
-  overscroll-behavior: contain;
+.workHead {
+  composes: t-label-sm from global;
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin-bottom: var(--s3);
+  color: var(--fg3);
 }
 
-.running {
-  color: var(--fg);
+.steps {
+  list-style: none;
 }
 
-.thinking {
-  margin-top: var(--s3);
-  color: var(--fg2);
-  font-family: var(--mono);
-  font-size: 12.5px;
+.work .steps {
+  height: calc(6 * var(--step-h));
+  overflow: clip;
 }
 
-/* The idle line while a tool call owns the caret: gone from the screen and
-   from the accessibility tree, still holding its line. `visibility` and not
-   `display`, because a line that leaves the flow six times an ask is a
-   document that changes height six times an ask. */
-.parked {
-  visibility: hidden;
+/* One line each, so every row is the same height and a fold is exact. */
+.step {
+  height: var(--step-h);
+  line-height: var(--step-h);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--fg3);
+  transition:
+    height var(--t-state) var(--ease-lift),
+    opacity var(--t-state) linear,
+    color var(--t-state) linear;
+  animation: stepIn var(--t-state) var(--ease-lift);
 }
 
-/* The one moving thing on this page, and it reports real work: a gold block
-   that blinks while the machine is actually inside the corpus. */
-.thinking::after,
-.running::after {
+.step::before {
   content: "";
   display: inline-block;
-  width: 8px;
-  height: 13px;
-  margin-left: 6px;
-  background: var(--gold);
-  vertical-align: -2px;
-  animation: blink var(--blink);
+  width: 5px;
+  height: 5px;
+  margin-right: 12px;
+  background: var(--seam2);
+  vertical-align: 1px;
+  transition: background var(--t-state) linear;
 }
 
-@keyframes blink {
-  0%,
-  52% {
-    opacity: 1;
-  }
-  53%,
-  100% {
+@keyframes stepIn {
+  from {
+    height: 0;
     opacity: 0;
+  }
+}
+
+/* Older than the last few, or the idle row while a tool call is in flight. */
+.stepGone {
+  height: 0;
+  opacity: 0;
+}
+
+.stepLive {
+  color: var(--fg2);
+}
+
+.stepLive::before {
+  background: var(--gold);
+}
+
+/* A light passing through the text of the step in flight, and only that one: it
+   reports a running tool call or the model deciding the next (DESIGN.md, Motion). */
+.stepLive .stepText {
+  color: transparent;
+  background: linear-gradient(
+      100deg,
+      var(--fg2) 0%,
+      var(--fg2) 42%,
+      var(--fg-max) 50%,
+      var(--fg2) 58%,
+      var(--fg2) 100%
+    )
+    0 0 / 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: sweep 2.2s linear infinite;
+}
+
+@keyframes sweep {
+  from {
+    background-position: 100% 0;
+  }
+
+  to {
+    background-position: 0 0;
+  }
+}
+
+/* Under an answer the log is the whole list, still and unclamped. */
+.workFolded {
+  --step-h: 1.95em;
+  margin-top: var(--s2);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-variant-ligatures: none;
+}
+
+.workFolded .step {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step {
+    transition: none;
+    animation: none;
+  }
+
+  .stepLive .stepText {
+    color: var(--fg);
+    background: none;
+    animation: none;
   }
 }
 
@@ -613,10 +672,6 @@
 
 .disclosure[open] > summary {
   margin-bottom: var(--s3);
-}
-
-.logFolded {
-  margin-top: var(--s2);
 }
 
 /* ─────────────────────────────────────────────────────── the sources */

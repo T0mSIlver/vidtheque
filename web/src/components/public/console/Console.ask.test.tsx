@@ -130,7 +130,7 @@ describe("the console in ask mode", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
-  it("parks the idle line in the flow while a tool call runs, busy until the answer", async () => {
+  it("folds the idle row away while a tool call runs, busy until the answer", async () => {
     const open = openStream();
     vi.stubGlobal(
       "fetch",
@@ -141,12 +141,14 @@ describe("the console in ask mode", () => {
     await user.click(screen.getByRole("button", ASK));
 
     const pane = await screen.findByLabelText("Answer");
-    const idle = screen.getByText("reading the corpus…");
+    // The row stays in the list, so the six-row block never changes height.
+    const idle = screen.getByText("Thinking").closest("li")!;
     expect(pane).toHaveAttribute("aria-busy", "true");
-    expect(idle.className).not.toMatch(/parked/);
+    expect(idle.className).not.toMatch(/stepGone/);
 
     act(() => open.send(ACTIVITY));
-    await waitFor(() => expect(idle.className).toMatch(/parked/));
+    await waitFor(() => expect(idle.className).toMatch(/stepGone/));
+    expect(idle).toHaveAttribute("aria-hidden", "true");
     expect(screen.getByText("reading")).toHaveAttribute("data-s", "working");
 
     act(() => {
