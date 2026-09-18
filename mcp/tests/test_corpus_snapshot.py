@@ -8,7 +8,12 @@ from pathlib import Path
 
 import pytest
 from vidtheque_mcp import corpus_snapshot
-from vidtheque_mcp.corpus_snapshot import KeepRule, SnapshotError, build_generation
+from vidtheque_mcp.corpus_snapshot import (
+    KeepRule,
+    SnapshotError,
+    build_generation,
+    verify_generation,
+)
 from vidtheque_mcp.db.connection import open_read_connection, open_write_connection
 from vidtheque_mcp.db.migrations import current_version, migrate
 from vidtheque_mcp.db.queries import pack_f32
@@ -441,3 +446,57 @@ def test_verification_failure_removes_partial_generation(
     with pytest.raises(SnapshotError, match="integrity_check failed"):
         build_generation(seeded.data_dir, generation.parent, generation.name, _rules())
     assert not generation.exists()
+
+
+def _built_generation(seeded: Seeded, tmp_path: Path) -> Path:
+    generation = tmp_path / "generations" / "2026-09-18-verify"
+    build_generation(seeded.data_dir, generation.parent, generation.name, _rules())
+    return generation
+
+
+def test_verify_generation_ok_without_sidecar_files(
+    seeded: Seeded, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    generation = _built_generation(seeded, tmp_path)
+
+    assert corpus_snapshot.main(["--verify", str(generation)]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == f"ok {generation.name}\n"
+    assert not (generation / "vidtheque.db-wal").exists()
+    assert not (generation / "vidtheque.db-shm").exists()
+
+
+def test_verify_generation_rejects_tampered_database(seeded: Seeded, tmp_path: Path) -> None:
+    generation = _built_generation(seeded, tmp_path)
+    with (generation / "vidtheque.db").open("ab") as stream:
+        stream.write(b"tampered")
+
+    with pytest.raises(SnapshotError, match="db_bytes check failed"):
+        verify_generation(generation)
+    assert not (generation / "vidtheque.db-wal").exists()
+
+
+def test_verify_generation_rejects_missing_keyframe_directory(
+    seeded: Seeded, tmp_path: Path
+) -> None:
+    generation = _built_generation(seeded, tmp_path)
+    missing = next((generation / "keyframes").iterdir())
+    for path in missing.iterdir():
+        path.unlink()
+    missing.rmdir()
+
+    with pytest.raises(SnapshotError, match="keyframe_dirs check failed"):
+        verify_generation(generation)
+
+
+def test_verify_generation_rejects_manifest_id_mismatch(
+    seeded: Seeded, tmp_path: Path
+) -> None:
+    generation = _built_generation(seeded, tmp_path)
+    manifest_path = generation / "MANIFEST.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["id"] = "2026-09-18-other"
+    manifest_path.write_text(json.dumps(manifest))
+
+    with pytest.raises(SnapshotError, match="manifest id check failed"):
+        verify_generation(generation)

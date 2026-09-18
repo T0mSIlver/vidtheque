@@ -16,9 +16,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
+
+import sqlite_vec
 
 from .db.connection import open_read_connection, open_write_connection
-from .db.migrations import migrate
+from .db.migrations import current_version, discover, migrate
 from .db.queries import QUERYABLE_INDEX_STATES
 
 GENERATION_RE = re.compile(r"\d{4}-\d{2}-\d{2}-[a-z0-9-]+\Z")
@@ -246,6 +249,94 @@ def _write_manifest(path: Path, manifest: dict[str, Any]) -> None:
     os.replace(temporary, path)
 
 
+def _immutable_copy(path: Path) -> sqlite3.Connection:
+    uri = f"file:{quote(str(path.resolve()))}?mode=ro&immutable=1"
+    source = sqlite3.connect(uri, uri=True, isolation_level=None)
+    destination = sqlite3.connect(":memory:", isolation_level=None)
+    try:
+        for conn in (source, destination):
+            conn.enable_load_extension(True)
+            sqlite_vec.load(conn)
+            conn.enable_load_extension(False)
+        source.backup(destination)
+    except BaseException:
+        destination.close()
+        raise
+    finally:
+        source.close()
+    destination.row_factory = sqlite3.Row
+    destination.execute("PRAGMA foreign_keys = ON")
+    return destination
+
+
+def verify_generation(generation_dir: Path) -> str:
+    generation_dir = generation_dir.resolve()
+    generation_id = generation_dir.name
+    manifest_path = generation_dir / "MANIFEST.json"
+    database_path = generation_dir / "vidtheque.db"
+
+    if not generation_dir.is_dir():
+        raise SnapshotError(f"generation directory check failed: {generation_dir}")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SnapshotError(f"manifest check failed: {exc}") from exc
+    if not isinstance(manifest, dict):
+        raise SnapshotError("manifest check failed: root must be an object")
+    if manifest.get("id") != generation_id:
+        raise SnapshotError(
+            f"manifest id check failed: expected {generation_id!r}, got {manifest.get('id')!r}"
+        )
+    if not database_path.is_file():
+        raise SnapshotError("database file check failed: vidtheque.db is missing")
+
+    actual_bytes = database_path.stat().st_size
+    if manifest.get("db_bytes") != actual_bytes:
+        raise SnapshotError(
+            f"db_bytes check failed: expected {manifest.get('db_bytes')!r}, got {actual_bytes}"
+        )
+    actual_sha256 = _sha256(database_path)
+    if manifest.get("db_sha256") != actual_sha256:
+        raise SnapshotError("db_sha256 check failed")
+
+    keyframes_dir = generation_dir / "keyframes"
+    actual_keyframe_dirs = (
+        sum(1 for path in keyframes_dir.iterdir() if path.is_dir())
+        if keyframes_dir.is_dir()
+        else 0
+    )
+    if manifest.get("keyframe_dirs") != actual_keyframe_dirs:
+        raise SnapshotError(
+            "keyframe_dirs check failed: "
+            f"expected {manifest.get('keyframe_dirs')!r}, got {actual_keyframe_dirs}"
+        )
+
+    conn = _immutable_copy(database_path)
+    try:
+        database_version = current_version(conn)
+        latest_version = max((migration.version for migration in discover()), default=0)
+        if manifest.get("schema_version") != database_version:
+            raise SnapshotError(
+                "schema_version check failed: manifest "
+                f"{manifest.get('schema_version')!r}, database {database_version}"
+            )
+        if database_version > latest_version:
+            raise SnapshotError(
+                f"schema_version check failed: {database_version} is newer than {latest_version}"
+            )
+        _check_operational_tables(conn)
+        database_keyframe_dirs = len(_keyframe_files(conn, generation_dir))
+        if database_keyframe_dirs != actual_keyframe_dirs:
+            raise SnapshotError(
+                "keyframe_dirs database check failed: "
+                f"database {database_keyframe_dirs}, files {actual_keyframe_dirs}"
+            )
+        _verify_snapshot(conn)
+    finally:
+        conn.close()
+    return generation_id
+
+
 def build_generation(
     data_dir: Path,
     out_dir: Path,
@@ -330,9 +421,10 @@ def build_generation(
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data-dir", required=True, type=Path)
-    parser.add_argument("--out-dir", required=True, type=Path)
-    parser.add_argument("--generation", required=True)
+    parser.add_argument("--verify", type=Path, metavar="GENERATION_DIR")
+    parser.add_argument("--data-dir", type=Path)
+    parser.add_argument("--out-dir", type=Path)
+    parser.add_argument("--generation")
     parser.add_argument("--keep-channel", action="append", default=[], metavar="NAME")
     parser.add_argument("--keep-tag", action="append", default=[], metavar="TAG")
     parser.add_argument("--allow-busy", action="store_true")
@@ -342,9 +434,17 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
-    rules = [KeepRule("channel", value) for value in args.keep_channel]
-    rules.extend(KeepRule("tag", value) for value in args.keep_tag)
     try:
+        if args.verify is not None:
+            if any((args.data_dir, args.out_dir, args.generation, args.keep_channel, args.keep_tag)):
+                parser.error("--verify cannot be combined with build arguments")
+            generation_id = verify_generation(args.verify)
+            print(f"ok {generation_id}")
+            return 0
+        if args.data_dir is None or args.out_dir is None or args.generation is None:
+            parser.error("build mode requires --data-dir, --out-dir, and --generation")
+        rules = [KeepRule("channel", value) for value in args.keep_channel]
+        rules.extend(KeepRule("tag", value) for value in args.keep_tag)
         manifest = build_generation(
             args.data_dir,
             args.out_dir,
