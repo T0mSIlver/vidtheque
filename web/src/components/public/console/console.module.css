@@ -546,14 +546,6 @@
   color: var(--fg);
 }
 
-.logResult {
-  color: var(--fg);
-}
-
-.running .logResult {
-  display: none;
-}
-
 .thinking {
   margin-top: var(--s3);
   color: var(--fg2);

@@ -701,7 +701,11 @@ server already had:
 | `error` | once, last, instead | `status: 503` and `payload`: the §3.4 body, unchanged |
 
 `id` pairs a `done` with its `start` — that pairing is what lets the page mark
-exactly one line as the one still running. It is **not** a citation `[n]`; the
+exactly one line as the one still running. The page prints the `start` text only
+(amended 2026-09-19, Tom's review): what the model is doing is worth watching,
+“44 lines of transcript” is not; `result` stays in the stream for other clients.
+The stream is sent `Cache-Control: no-store, no-transform`, because a proxy that
+gzips it holds every event until the answer (Next's dev rewrite did). It is **not** a citation `[n]`; the
 two numbering schemes never meet.
 
 Two rules keep the lines honest, and they are the reason this is not just a
@@ -1160,7 +1164,9 @@ Layout, top to bottom:
 5. **Ask pane** (ask mode) — while the model works, the activity log (§6.6);
    when the answer lands, the answer as prose with `[n]` markers rendered as
    superscript links to the moment they cite, followed by the same result rows
-   numbered to match, and the log folded underneath. A 503 replaces the pane
+   numbered to match — `[1]`, `[2]`, `[3]` in order of first mention, renumbered
+   by the API from the hit numbers the model cited (amended 2026-09-19); a
+   spoken citation is pictured with the keyframe on screen at its second (§2.1), and the log folded underneath. A 503 replaces the pane
    with the degradation message and a "search instead" button; a 429 says how
    long to wait.
 
