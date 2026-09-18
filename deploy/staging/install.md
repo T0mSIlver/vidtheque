@@ -597,37 +597,59 @@ connector, force-disconnect existing connections via the API.
 `OPENROUTER_API_KEY` leaked → revoke at OpenRouter **first**, change the config
 second; the running process holds it in memory until restart.
 
-## 12. Corpus refresh — the manifest (2026-08-13)
+## 12. Corpus generations (2026-09-18)
 
-The box's corpus deploys the way its code does: pulled, never pushed. There
-is no ssh into CT 9001 and the firewall keeps it that way, so the refresh
-rides the one channel the box already trusts — the deploy poller (§ the
-script itself, `vidtheque-deploy.sh`).
+### One-time setup
 
-**To ship a new corpus:**
+On the public box, create the receiving account and directory:
 
-1. Build the snapshot wherever the full corpus lives (the takedown recipe in
-   reverse: `VACUUM INTO`, one cascading `DELETE` down to the channel you are
-   publishing, verify per `docs/takedown.md` §2.6, `VACUUM`). The tarball
-   holds exactly `vidtheque.db` and `keyframes/`.
-2. `tar -czf` it, `split -b 1900m` under GitHub's 2 GB/asset cap, and attach
-   the parts to a **non-`v*`** release tag (a `v*` tag would trigger the
-   image build).
-3. Write `deploy/staging/corpus-manifest.json`: a fresh `generation` string,
-   `bytes_packed`, `bytes_unpacked`, and per-part `{url, sha256}` in order.
-4. Land it on `main`, request a deployment (`request-deploy.sh`). The box
-   verifies every part's sha256, stream-extracts, stops the services, swaps
-   `vidtheque.db` + `keyframes/` in one move each, wipes `derived/` (a resize
-   cache of frames that just changed), restarts, and answers `/healthz`.
+```bash
+groupadd --gid 10001 corpus
+useradd --uid 10001 --gid 10001 --create-home --shell /bin/sh corpus
+install -d -o corpus -g corpus /srv/vidtheque-data/generations
+```
 
-**Rollback** is `git revert` of the manifest commit plus one more
-deployment: the outgoing generation waits in `$DATA_DIR/corpus-previous/`
-(exactly one is kept), and the script stages a requested generation from
-there without re-downloading.
+Generate the transfer key on the private box. Put its public half in
+`/home/corpus/.ssh/authorized_keys` on the public box with this prefix:
 
-The stats on the landing page are harvested from the same snapshot —
-regenerate them in the commit that bumps the manifest, or the wall and the
-corpus disagree in public. **They live in `web/src/landing/corpus.ts` now**,
-not in the deleted `static/landing/data.js`, which means the refresh needs the
-front end rebuilt: the deploy that ships the manifest ships the new numbers,
-because `vidtheque-deploy.sh` runs `pnpm build` before it restarts anything.
+```bash
+ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519_corpus -N ''
+```
+
+```text
+restrict,command="rrsync /srv/vidtheque-data/generations" ssh-ed25519 …
+```
+
+Configure the private box to use that key for `corpus@192.168.1.42`.
+
+The public box's `compose.local.yml` must contain:
+
+```yaml
+services:
+  mcp:
+    environment:
+      VIDTHEQUE_DATA_DIR: /data/current
+    volumes: !override
+      - /srv/vidtheque-data:/data
+```
+
+Install and start the activation watcher:
+
+```bash
+install -m 0644 deploy/publish/vidtheque-corpus-activate.{path,service} /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now vidtheque-corpus-activate.path
+```
+
+### Publish and rollback
+
+Run the publish command from the dev sandbox:
+
+```bash
+scripts/publish_corpus.sh --generation 2026-09-18-public \
+  --keep-channel "AI Engineer" --keep-tag series:aie-paris-2026
+scripts/publish_corpus.sh --rollback
+```
+
+Use `--dry-run` on the publish command to inspect every remote command without
+running it.
