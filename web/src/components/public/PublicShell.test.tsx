@@ -58,7 +58,7 @@ describe("the public chrome", () => {
     expect(screen.getByText("Add this corpus to your own agent")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Claude, ChatGPT and Le Chat: add a custom connector and paste the endpoint. No sign-in.",
+        "Claude, ChatGPT and Vibe: add a custom connector and paste the endpoint. No sign-in.",
       ),
     ).toBeInTheDocument();
   });

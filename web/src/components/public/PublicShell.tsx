@@ -76,7 +76,7 @@ export function ConnectSection() {
           <ConnectRows />
         </Suspense>
         <p className={connect.lede}>
-          Claude, ChatGPT and Le Chat: add a custom connector and paste the endpoint. No sign-in.
+          Claude, ChatGPT and Vibe: add a custom connector and paste the endpoint. No sign-in.
         </p>
       </div>
     </section>
