@@ -35,7 +35,7 @@ def response(words: list[tuple[str, float, float]]) -> dict:
     return {
         "language": "en",
         "segments": [
-            {"type": "transcription_word", "text": text, "start": start, "end": end}
+            {"type": "transcription_segment", "text": text, "start": start, "end": end}
             for text, start, end in words
         ],
     }
@@ -311,16 +311,82 @@ def test_upstream_multipart_repeats_array_fields_and_omits_language(tmp_path: Pa
     body, content_type = _multipart(
         [
             ("model", "voxtral-mini-latest"),
-            ("timestamp_granularities", "segment"),
             ("timestamp_granularities", "word"),
-            ("context_bias", "KV cache"),
+            ("context_bias", "KV_cache"),
+            ("context_bias", "vLLM"),
         ],
         str(audio),
     )
     assert content_type.startswith("multipart/form-data; boundary=")
-    assert body.count(b'name="timestamp_granularities"') == 2
-    assert b'name="context_bias"' in body and b"KV cache" in body
+    assert body.count(b'name="context_bias"') == 2 and b"KV_cache" in body
     assert b'name="language"' not in body
+
+
+class _RecordingOpener:
+    def __init__(self, answer: object) -> None:
+        self.answer = answer
+        self.body = b""
+
+    def open(self, request: object, timeout: float) -> object:
+        del timeout
+        self.body = request.data  # type: ignore[attr-defined]
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return self.answer
+
+
+def test_the_request_is_the_one_the_live_api_accepts(tmp_path: Path) -> None:
+    """Checked against the API on 2026-09-18: a second granularity is a 422, and a
+    bias term with a space is a 400, so a phrase goes out with underscores."""
+    import io
+
+    class Answer(io.BytesIO):
+        def __enter__(self) -> Answer:
+            return self
+
+        def __exit__(self, *_exc: object) -> None:
+            return None
+
+    audio = tmp_path / "clip.wav"
+    audio.write_bytes(b"RIFF")
+    client = _MistralClient("secret", "https://api.mistral.ai/v1")
+    opener = _RecordingOpener(Answer(b'{"segments": []}'))
+    client._opener = opener
+    client.transcribe(
+        str(audio),
+        model="voxtral-mini-latest",
+        context_bias=["KV cache", "Clemens  Rawert", "vLLM", "KV_cache", "a,b"],
+    )
+    body = opener.body
+    assert body.count(b'name="timestamp_granularities"') == 1
+    assert b"\r\n\r\nword\r\n" in body and b"\r\n\r\nsegment\r\n" not in body
+    assert body.count(b'name="context_bias"') == 4
+    for term in (b"KV_cache", b"Clemens_Rawert", b"vLLM", b"a_b"):
+        assert b"\r\n\r\n" + term + b"\r\n" in body
+    assert b"KV cache" not in body
+
+
+def test_a_refused_request_says_why(tmp_path: Path) -> None:
+    import io
+    import urllib.error
+
+    from vidtheque_worker.backends.base import InvalidMediaError
+
+    audio = tmp_path / "clip.wav"
+    audio.write_bytes(b"RIFF")
+    client = _MistralClient("secret", "https://api.mistral.ai/v1")
+    refusal = urllib.error.HTTPError(
+        "https://api.mistral.ai/v1/audio/transcriptions",
+        422,
+        "Unprocessable",
+        {},  # type: ignore[arg-type]
+        io.BytesIO(b'{"message": "List should have at most 1 item"}'),
+    )
+    client._opener = _RecordingOpener(refusal)
+    with pytest.raises(InvalidMediaError) as caught:
+        client.transcribe(str(audio), model="voxtral-mini-latest", context_bias=[])
+    assert "at most 1 item" in str(caught.value)
+    assert "secret" not in str(caught.value)
 
 
 def test_a_truncated_response_body_is_the_retryable_failure(tmp_path: Path) -> None:

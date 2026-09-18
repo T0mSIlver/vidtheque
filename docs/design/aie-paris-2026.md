@@ -402,8 +402,16 @@ Duplicates are removed by NFKC plus case-fold comparison, with the first source
 spelling kept. The worker forwards the validated list unchanged to Mistral.
 
 Word timestamps win over the language pin. The upstream request sends
-`timestamp_granularities=["segment", "word"]` and omits `language`, because
-Mistral documents those parameters as incompatible. `align=True` is accepted
+`timestamp_granularities=word` alone and omits `language`, because Mistral
+documents those parameters as incompatible. One granularity, not two (amended
+2026-09-18, found by the private rehearsal): the live API answers a second with
+HTTP 422 "List should have at most 1 item", and asked for words it returns one
+word per `transcription_segment`; the backend rebuilds its segments from them.
+The same run showed that a bias term may contain no whitespace or comma, and
+Mistral's documentation spells a phrase with underscores, so the backend sends
+`KV cache` as `KV_cache`. The validated list in §6's table is unchanged; the
+rewrite happens at the upstream boundary only. A refused request carries
+Mistral's reason in the worker's error, bounded to 300 characters. `align=True` is accepted
 by the backend and is a documented no-op because the words already carry the
 model's alignment.
 
