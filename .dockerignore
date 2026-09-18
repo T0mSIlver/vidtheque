@@ -15,7 +15,9 @@ deploy/.env
 .claude
 .impeccable
 tools
-scripts
+scripts/*
+# The base images run the same export their tag is hashed from.
+!scripts/image_inputs.sh
 mcp/tests
 worker/tests
 .agent-runs

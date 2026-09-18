@@ -1,0 +1,57 @@
+# vidtheque-worker dependency image. The CUDA image stays until the GPU
+# validation described in docs/design/publishing.md section 4 is complete.
+#
+# TODO(pin): replace this tag with the digest tested on the deployment GPU.
+# A floating CUDA tag can change cuDNN beneath ctranslate2 and invalidate a
+# benchmark. Resolve it with `docker buildx imagetools inspect`.
+ARG CUDA_IMAGE=nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+FROM ${CUDA_IMAGE}
+
+ARG PYTHON_VERSION=3.12
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_INSTALL_DIR=/opt/python \
+    HF_HOME=/hf-cache \
+    PATH=/app/.venv/bin:/root/.local/bin:$PATH
+
+# whisperX needs ffmpeg. RapidOCR's opencv-python import needs libGL and glib.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        ffmpeg \
+        libgl1 \
+        libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:0.11.24 /uv /uvx /usr/local/bin/
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock .python-version ./
+COPY worker/pyproject.toml worker/
+COPY mcp/pyproject.toml mcp/
+COPY scripts/image_inputs.sh scripts/image_inputs.sh
+
+# The lock has hashes for torch and every other wheel, so installation can
+# reject any artifact that the lock did not name.
+# Removing uv's cache in the same layer avoids shipping a second copy of the
+# 7.4 GB environment when UV_LINK_MODE is `copy`.
+RUN uv python install ${PYTHON_VERSION} \
+    && uv venv --python ${PYTHON_VERSION} \
+    && scripts/image_inputs.sh worker > /tmp/requirements.txt \
+    && uv pip install --require-hashes --requirements /tmp/requirements.txt \
+    && rm -f /tmp/requirements.txt \
+    && rm -rf /root/.cache/uv
+
+# The process loads remote model weights and decodes untrusted media, but it
+# writes only the model cache and /tmp. Keeping /app root-owned also avoids the
+# 8.26 GB copy-up caused by a recursive chown. (2026-08-10 audit, F-28.)
+RUN groupadd --system --gid 10001 vidtheque \
+    && useradd --system --uid 10001 --gid vidtheque --no-create-home vidtheque \
+    && mkdir -p /hf-cache \
+    && chown vidtheque:vidtheque /hf-cache
+USER vidtheque:vidtheque
