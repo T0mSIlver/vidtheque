@@ -134,6 +134,8 @@ def _seed(data_dir: Path) -> Seeded:
         other_tag = int(
             conn.execute("INSERT INTO tags (ns, name) VALUES ('topic', 'other')").lastrowid or 0
         )
+        # On no video at all: a name that must not travel.
+        conn.execute("INSERT INTO tags (ns, name) VALUES ('person', 'private-name')")
         manual = int(
             conn.execute(
                 "INSERT INTO collections (slug, title) VALUES ('manual', 'Manual')"
@@ -188,6 +190,11 @@ def _seed(data_dir: Path) -> Seeded:
             "VALUES (?, 'seen-video', 'https://example.test/seen', 'queued', ?, ?)",
             (follow_collection, video_ids["channel0001"], job),
         )
+        conn.execute(
+            "INSERT INTO ask_budget (bucket, client, day, spent) "
+            "VALUES ('ask_ip', '203.0.113.7', '2026-09-18', 3)"
+        )
+        conn.execute("UPDATE video_stages SET error = 'boom at /srv/private/path'")
         conn.execute(
             "INSERT INTO follow_spend (collection_id, source_id, duration_s) "
             "VALUES (?, 'seen-video', 10)",
@@ -259,7 +266,6 @@ def test_builds_filtered_generation_without_touching_source(
                 "ocr_lines",
                 "ocr_frames",
                 "video_tags",
-                "collection_videos",
                 "vec_chunks",
                 "vec_frames",
             ):
@@ -341,9 +347,14 @@ def test_builds_filtered_generation_without_touching_source(
             conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
             for table in corpus_snapshot.OPERATIONAL_TABLES
         )
+        # Nothing named only by a dropped video, and no private-box error text.
+        assert sorted(tuple(row) for row in conn.execute("SELECT ns, name FROM tags")) == [
+            ("topic", "keep"),
+            ("topic", "other"),
+        ]
         assert (
             conn.execute(
-                "SELECT COUNT(*) FROM collections WHERE source_url IS NOT NULL"
+                "SELECT COUNT(*) FROM video_stages WHERE error IS NOT NULL"
             ).fetchone()[0]
             == 0
         )
