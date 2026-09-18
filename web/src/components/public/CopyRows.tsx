@@ -1,22 +1,35 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import styles from "./connect.module.css";
 
 const RESET_MS = 1600;
 
+const ROWS = [
+  { label: "mcp endpoint", template: "<mcp_url>", prompt: false },
+  {
+    label: "claude code",
+    template: "claude mcp add --transport http vidtheque <mcp_url>",
+    prompt: true,
+  },
+  { label: "codex", template: "codex mcp add vidtheque --url <mcp_url>", prompt: true },
+  {
+    label: "mistral vibe",
+    template: "vibe mcp add vidtheque --url <mcp_url>",
+    prompt: true,
+  },
+] as const;
+
 /**
- * The endpoint and the line somebody pastes, each with a copy button. A
+ * The endpoint and client commands, each with a copy button. A
  * clipboard that refuses selects the text instead; one live region announces
  * what was copied.
  */
 export function CopyRows({
   mcpUrl,
-  command,
   unavailable,
 }: {
   mcpUrl: string | null;
-  command: string | null;
   /** Printed in place of the endpoint when the boot call did not land. */
   unavailable: string;
 }) {
@@ -24,21 +37,18 @@ export function CopyRows({
   return (
     <>
       <div className={styles.box}>
-        <p className={styles.phead}>mcp endpoint</p>
-        <CopyRow
-          text={mcpUrl}
-          fallback={unavailable}
-          said="Endpoint copied to the clipboard."
-          onSay={setSaid}
-        />
-        <p className={styles.phead}>claude code</p>
-        <CopyRow
-          text={command}
-          fallback={unavailable}
-          prompt
-          said="Command copied to the clipboard."
-          onSay={setSaid}
-        />
+        {ROWS.map(({ label, template, prompt }) => (
+          <Fragment key={label}>
+            <p className={styles.phead}>{label}</p>
+            <CopyRow
+              text={mcpUrl ? template.replace("<mcp_url>", mcpUrl) : null}
+              fallback={unavailable}
+              prompt={prompt}
+              said={`${label} copied to the clipboard.`}
+              onSay={setSaid}
+            />
+          </Fragment>
+        ))}
       </div>
       <p className={styles.srOnly} role="status">
         {said}

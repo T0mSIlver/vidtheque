@@ -10,26 +10,8 @@
   padding: 0 var(--gut);
 }
 
-/* The gold rule and the micro-label that open a beat. */
-.kick {
-  composes: t-label-sm from global;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: var(--gold);
-}
-
-.kick s {
-  display: block;
-  flex: none;
-  width: 34px;
-  height: 1px;
-  background: var(--gold);
-}
-
 .head {
   composes: t-headline from global;
-  margin-top: var(--s3);
   color: var(--fg);
 }
 
