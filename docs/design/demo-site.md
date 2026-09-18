@@ -1752,6 +1752,25 @@ Four decisions worth stating:
   reading; the page does not move at all. This is the one auto-scroll on the
   surface and it moves a 169px box, never the document.
 
+  *Amended 2026-09-19 (Tom: "there is a scroll bar after a few lines; it makes no
+  sense", "tool calls jump around", "the panel appears instantly and the page
+  jumps"): the six rows stay, the box and its scrollbar go.* The live log is a
+  plain list of single-line rows, still six rows tall before the first event: the
+  last five steps and the one in flight. A new row grows in over `--t-state` and
+  the oldest folds to nothing at the same time, so the block never changes
+  height and nothing scrolls; a header counts the steps a fold has hidden from
+  view. The blinking gold block is retired. The row in flight carries a gold
+  mark and a light passing through its text, and between tool calls a last row,
+  "Thinking", carries the same — DESIGN.md's Motion law names this motion and
+  what it reports. Finished rows go quiet. The idle row folds with the others
+  instead of being parked with `visibility`, inside the same fixed block, so the
+  2026-08-11 measurement (0px per tool call) still holds. Under
+  `prefers-reduced-motion` rows appear and leave at once and the live row is
+  simply brighter. And the panel region under the form follows its content's
+  height with one `--t-state` transition (`SmoothHeight`), so a click that swaps
+  the examples for results, a log or an answer pushes the page instead of
+  jolting it.
+
   Three smaller sources of the same complaint went with it, all measured on the
   stub: the **scrollbar** leaving as an ask emptied the results and returning as
   the answer filled the pane, moving every column 15px sideways and back

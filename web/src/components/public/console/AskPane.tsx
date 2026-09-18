@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { AskFailure, EditionTalk } from "@/lib/api/schemas";
 import { Answer } from "./AskAnswer";
 import type { AskPhase, Line } from "./requests";
@@ -27,20 +27,7 @@ export function AskPane({
   const busy = phase.kind === "working";
   return (
     <section className={styles.answer} aria-live="polite" aria-busy={busy} aria-label="Answer">
-      {busy ? (
-        <>
-          <WorkLog lines={phase.lines} />
-          {/* Parked in the flow, not removed, so the document keeps its height
-              while a tool call owns the caret. */}
-          <p
-            className={`${styles.thinking} ${
-              phase.lines.some((l) => l.result === undefined) ? styles.parked : ""
-            }`}
-          >
-            reading the corpus…
-          </p>
-        </>
-      ) : null}
+      {busy ? <WorkLog lines={phase.lines} live /> : null}
       {phase.kind === "answered" ? (
         <Answer answer={phase.answer} talks={talks}>
           <WorkDisclosure lines={phase.lines} />
@@ -61,28 +48,54 @@ export function AskPane({
   );
 }
 
-// A fixed six-line box that scrolls itself to the newest line, so the page
-// under it never grows a row per tool call.
-function WorkLog({ lines, folded = false }: { lines: Line[]; folded?: boolean }) {
-  const list = useRef<HTMLOListElement>(null);
-  useEffect(() => {
-    if (list.current) list.current.scrollTop = list.current.scrollHeight;
-  }, [lines.length]);
+// How many finished steps stay on screen while the model works.
+const RECENT = 5;
 
+/**
+ * One row per tool call. Live, it is a fixed six-row block — the last few steps
+ * and the one in flight — so the page under it never moves and nothing scrolls:
+ * a new row grows in, the oldest folds away. Folded under an answer, it is the
+ * whole list, still.
+ */
+function WorkLog({ lines, live = false }: { lines: Line[]; live?: boolean }) {
+  const inFlight = lines.some((l) => l.result === undefined);
+  const hidden = live ? Math.max(0, lines.length - RECENT) : 0;
   return (
-    <ol
-      ref={list}
-      className={`${styles.log} ${folded ? styles.logFolded : ""}`}
-      aria-label="What the model is doing"
-    >
-      {/* What it is doing, not what came back: "44 lines of transcript" is the
-          model's business. `result` still marks the line as finished. */}
-      {lines.map((l) => (
-        <li key={l.id} className={l.result === undefined ? styles.running : undefined}>
-          <span>{l.text}</span>
-        </li>
-      ))}
-    </ol>
+    <div className={live ? styles.work : styles.workFolded}>
+      {live ? (
+        <p className={styles.workHead}>
+          <span>Reading the corpus</span>
+          {lines.length > 0 ? (
+            <span>{`${lines.length} step${lines.length === 1 ? "" : "s"}`}</span>
+          ) : null}
+        </p>
+      ) : null}
+      <ol className={styles.steps} aria-label="What the model is doing">
+        {lines.map((l, i) => (
+          <li
+            key={l.id}
+            className={[
+              styles.step,
+              live && l.result === undefined ? styles.stepLive : "",
+              i < hidden ? styles.stepGone : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            <span className={styles.stepText}>{l.text}</span>
+          </li>
+        ))}
+        {/* Between tool calls the model is deciding what to read next. */}
+        {live ? (
+          <li
+            className={`${styles.step} ${styles.stepLive} ${inFlight ? styles.stepGone : ""}`}
+            aria-hidden={inFlight}
+          >
+            <span className={styles.stepText}>Thinking</span>
+          </li>
+        ) : null}
+      </ol>
+    </div>
   );
 }
 
@@ -91,7 +104,7 @@ function WorkDisclosure({ lines }: { lines: Line[] }) {
   return (
     <details className={styles.disclosure}>
       <summary>Show its work</summary>
-      <WorkLog lines={lines} folded />
+      <WorkLog lines={lines} />
     </details>
   );
 }

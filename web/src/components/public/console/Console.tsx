@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useEffectEvent, useReducer, useRef } from "react";
 import type { SearchOutcome } from "@/lib/api/outcome";
 import type { ContentType, EditionTalk } from "@/lib/api/schemas";
+import { SmoothHeight } from "@/components/ui/SmoothHeight";
 import { AskPane } from "./AskPane";
 import { Cold, type Boot, type SearchExample } from "./Cold";
 import { ConsoleForm, type MachineState } from "./ConsoleForm";
@@ -218,45 +219,48 @@ export function Console(props: ConsoleProps) {
         onChannel={pickChannel}
         onMode={switchMode}
       />
-      {state.mode === "search" && state.search.outcome ? (
-        // The previous screen stays until the new one lands, dimmed while busy.
-        <div className={state.pending ? styles.stale : undefined} aria-busy={state.pending}>
-          <SearchResults
-            view={{ ...state.search, outcome: state.search.outcome }}
+      {/* One height for whichever panel is showing, so a click never jolts the page. */}
+      <SmoothHeight>
+        {state.mode === "search" && state.search.outcome ? (
+          // The previous screen stays until the new one lands, dimmed while busy.
+          <div className={state.pending ? styles.stale : undefined} aria-busy={state.pending}>
+            <SearchResults
+              view={{ ...state.search, outcome: state.search.outcome }}
+              talks={talks}
+              noMatch={props.noMatch}
+              actions={actions}
+              pending={state.pending}
+            />
+          </div>
+        ) : state.mode === "search" || state.ask.phase.kind === "idle" ? (
+          <div className={state.pending ? styles.stale : undefined} aria-busy={state.pending}>
+            <Cold
+              mode={state.mode}
+              boot={boot}
+              searchExamples={props.searchExamples ?? []}
+              askExamples={props.askExamples}
+              showIntro={props.showColdIntro ?? true}
+              corpus={props.corpus}
+              href={(q, type) => href({ mode: "search", q, type })}
+              onSearchExample={(example) => runExample(example.q, example.type ?? "all")}
+              onAskExample={(question) => {
+                dispatch({ type: "draft", value: question });
+                ask(question);
+              }}
+            />
+          </div>
+        ) : (
+          <AskPane
+            key={state.ask.id}
+            phase={state.ask.phase}
+            draft={state.draft}
             talks={talks}
-            noMatch={props.noMatch}
-            actions={actions}
-            pending={state.pending}
+            searchHref={href({ mode: "search", q: state.draft.trim(), type: state.type })}
+            onRetry={() => ask(state.draft.trim())}
+            onSearch={() => switchMode("search")}
           />
-        </div>
-      ) : state.mode === "search" || state.ask.phase.kind === "idle" ? (
-        <div className={state.pending ? styles.stale : undefined} aria-busy={state.pending}>
-          <Cold
-            mode={state.mode}
-            boot={boot}
-            searchExamples={props.searchExamples ?? []}
-            askExamples={props.askExamples}
-            showIntro={props.showColdIntro ?? true}
-            corpus={props.corpus}
-            href={(q, type) => href({ mode: "search", q, type })}
-            onSearchExample={(example) => runExample(example.q, example.type ?? "all")}
-            onAskExample={(question) => {
-              dispatch({ type: "draft", value: question });
-              ask(question);
-            }}
-          />
-        </div>
-      ) : (
-        <AskPane
-          key={state.ask.id}
-          phase={state.ask.phase}
-          draft={state.draft}
-          talks={talks}
-          searchHref={href({ mode: "search", q: state.draft.trim(), type: state.type })}
-          onRetry={() => ask(state.draft.trim())}
-          onSearch={() => switchMode("search")}
-        />
-      )}
+        )}
+      </SmoothHeight>
     </div>
   );
 }
