@@ -1,9 +1,9 @@
-ARG BASE_IMAGE
+# No real default: the tag is computed. A plain `docker build` fails on this name, which says what to run.
+ARG BASE_IMAGE=vidtheque-mcp-base:run-make-images-first
 FROM ${BASE_IMAGE}
 
 USER root
 
-COPY pyproject.toml ./
 COPY mcp/ mcp/
 
 # --no-deps installs only this project and leaves the base environment intact.
