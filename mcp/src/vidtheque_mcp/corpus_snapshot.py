@@ -375,6 +375,13 @@ def verify_generation(generation_dir: Path, *, served: bool = False) -> str:
                 f"schema_version check failed: generation is at {database_version}, this "
                 f"release serves {latest_version}; run the same release on both boxes"
             )
+        # Activation compares /api/meta to this number, so it has to be the database's own.
+        expected = (manifest.get("videos") or {}).get("total")
+        actual = int(conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0])
+        if expected != actual:
+            raise SnapshotError(
+                f"videos.total check failed: manifest {expected!r}, database {actual}"
+            )
         if not served:
             _check_operational_tables(conn)
         database_keyframe_dirs = len(_keyframe_files(conn, generation_dir))
@@ -491,7 +498,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.verify is not None:
-            if any((args.data_dir, args.out_dir, args.generation, args.keep_channel, args.keep_tag)):
+            build_args = (
+                args.data_dir,
+                args.out_dir,
+                args.generation,
+                args.keep_channel,
+                args.keep_tag,
+                args.allow_busy,
+            )
+            if any(build_args):
                 parser.error("--verify cannot be combined with build arguments")
             generation_id = verify_generation(args.verify, served=args.served)
             print(f"ok {generation_id}")

@@ -606,6 +606,9 @@ On the public box, create the receiving account and directory:
 ```bash
 groupadd --gid 10001 corpus
 useradd --uid 10001 --gid 10001 --create-home --shell /bin/sh corpus
+# The data root stays root's: `current` is renamed into it, and the activation script
+# refuses a root that anyone else can write. Only generations/ is the corpus user's.
+install -d -o root -g root -m 0755 /srv/vidtheque-data
 install -d -o corpus -g corpus /srv/vidtheque-data/generations
 ```
 

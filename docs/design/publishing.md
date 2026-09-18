@@ -138,11 +138,25 @@ generation and starts empty.
 - *Schema.* A generation is refused unless its schema version equals the
   serving release's migration head: newer would crash-loop the server, older
   would be migrated in place. Both boxes run the same release (§1).
-- *`READY` is always consumed*: renamed to `ACTIVATED`, or to `REJECTED` with
-  the reason inside when verification fails before the switch. Activations
+- *`READY` is always consumed*: unlinked, with the outcome recorded as a
+  marker (below), so the path unit cannot loop. Activations
   take a lock, so two `READY` files landing together cannot interleave.
 - *Pruning* removes only generations whose `READY` was consumed, never the
   current or previous one, and never one still arriving.
+- *Root trusts nothing under `generations/`.* That directory is writable by uid
+  10001, which is both the rsync sender and the public-facing `mcp` container,
+  so a compromised container must not be able to steer a root script. The
+  activation script keeps its record in `/var/lib/vidtheque-activate` (root
+  only): one marker per id (`ACTIVATED`, `REJECTED`, `FAILED`), the previous
+  id, and its lock. Inside a generation it reads `MANIFEST.json`, unlinks
+  `READY` and prunes, and it never writes or renames a file there. Whether a
+  generation was served before, and so may skip the hash, is its own marker,
+  not a file the generation's owner could plant. The data root itself is
+  root's and the script refuses one that anyone else can write. When two
+  `READY` files wait, the newest is activated and the older are marked
+  superseded.
+- *The count is the database's.* `--verify` checks `videos.total` against the
+  database, because activation compares `/api/meta` to that number.
 - *An id is used once.* The publish command refuses an id the public box
   has already activated, because rsync would write over it in place.
 

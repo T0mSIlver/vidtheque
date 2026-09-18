@@ -511,3 +511,16 @@ def test_verify_generation_rejects_manifest_id_mismatch(
 
     with pytest.raises(SnapshotError, match="manifest id check failed"):
         verify_generation(generation)
+
+
+def test_verify_generation_rejects_a_video_count_the_database_does_not_have(
+    seeded: Seeded, tmp_path: Path
+) -> None:
+    generation = _built_generation(seeded, tmp_path)
+    manifest_path = generation / "MANIFEST.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["videos"]["total"] += 1
+    manifest_path.write_text(json.dumps(manifest))
+
+    with pytest.raises(SnapshotError, match="videos.total check failed"):
+        verify_generation(generation)

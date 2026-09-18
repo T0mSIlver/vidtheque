@@ -7,6 +7,7 @@ PUBLIC_RSYNC=${PUBLIC_RSYNC:-corpus@192.168.1.42}
 PRIVATE_DEPLOY_DIR=${PRIVATE_DEPLOY_DIR:-/srv/vidtheque-deploy}
 PRIVATE_DATA_ROOT=${PRIVATE_DATA_ROOT:-/srv/vidtheque-data}
 PUBLIC_ACTIVATE=${PUBLIC_ACTIVATE:-/srv/vidtheque-deploy/deploy/publish/activate-generation.sh}
+PUBLIC_MARKERS=${PUBLIC_MARKERS:-/var/lib/vidtheque-activate/markers}
 PRIVATE_COMPOSE_FILES=${PRIVATE_COMPOSE_FILES:--f docker-compose.yml -f compose.release.yml -f compose.local.yml}
 
 DRY_RUN=0
@@ -112,7 +113,7 @@ fi
 
 # An id that already exists on the public box would be rsynced over in place, under a
 # generation that may be the one being served.
-if ((!DRY_RUN)) && ssh "$PUBLIC_SSH" "$(remote_command test -e "/srv/vidtheque-data/generations/$GENERATION/ACTIVATED")"; then
+if ((!DRY_RUN)) && ssh "$PUBLIC_SSH" "$(remote_command test -e "$PUBLIC_MARKERS/$GENERATION.ACTIVATED")"; then
     echo "generation $GENERATION was already activated on the public box; pick a new id" >&2
     exit 1
 fi
@@ -124,6 +125,9 @@ RSYNC_ARGS+=("$PRIVATE_DATA_ROOT/generations/$GENERATION/" "$PUBLIC_RSYNC:$GENER
 step "transfer generation $GENERATION from the private box"
 run ssh "$PRIVATE_SSH" "$(remote_command "${RSYNC_ARGS[@]}")"
 
+# An earlier attempt's outcome would answer the wait below before this one does.
+run ssh "$PUBLIC_SSH" "$(remote_command rm -f "$PUBLIC_MARKERS/$GENERATION.REJECTED" "$PUBLIC_MARKERS/$GENERATION.FAILED")"
+
 READY_PATH="$PRIVATE_DATA_ROOT/generations/$GENERATION/READY"
 step "transfer READY last"
 TOUCH_Q=$(remote_command touch "$READY_PATH")
@@ -133,14 +137,14 @@ run ssh "$PRIVATE_SSH" "$TOUCH_Q && $READY_RSYNC_Q"
 step "wait for public activation"
 if ((DRY_RUN)); then
     run ssh "$PUBLIC_SSH" "$(remote_command sh -c \
-        "test -f '/srv/vidtheque-data/generations/$GENERATION/ACTIVATED' -o -f '/srv/vidtheque-data/generations/$GENERATION/REJECTED' -o -f '/srv/vidtheque-data/generations/$GENERATION/FAILED'")"
+        "test -f '$PUBLIC_MARKERS/$GENERATION.ACTIVATED' -o -f '$PUBLIC_MARKERS/$GENERATION.REJECTED' -o -f '$PUBLIC_MARKERS/$GENERATION.FAILED'")"
 else
     deadline=$((SECONDS + 600))
     marker=
     while ((SECONDS < deadline)); do
         for candidate in ACTIVATED REJECTED FAILED; do
             if ssh "$PUBLIC_SSH" test -f \
-                "/srv/vidtheque-data/generations/$GENERATION/$candidate"; then
+                "$PUBLIC_MARKERS/$GENERATION.$candidate"; then
                 marker=$candidate
                 break 2
             fi
@@ -149,6 +153,7 @@ else
     done
     [[ -n "$marker" ]] || { echo "activation timed out after 10 minutes" >&2; exit 1; }
     echo "activation result: $marker"
+    ssh "$PUBLIC_SSH" cat "$PUBLIC_MARKERS/$GENERATION.$marker"
 fi
 
 print_public_status
