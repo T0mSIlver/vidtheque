@@ -15,10 +15,13 @@ const TAKEDOWN = `${REPO}/blob/main/docs/takedown.md`;
 export function PublicShell({
   children,
   showCount = true,
+  showConnect = true,
 }: {
   children: React.ReactNode;
   /** Off where a corpus total would read as an edition's size (aie-paris-2026.md §4.4). */
   showCount?: boolean;
+  /** Off when a page places the shared connect section inside its own order. */
+  showConnect?: boolean;
 }) {
   return (
     <>
@@ -28,21 +31,7 @@ export function PublicShell({
         </Suspense>
       </Rail>
       {children}
-      <section className={connect.connect}>
-        <div className={connect.inner}>
-          <p className={connect.kick}>
-            <s />
-            <span>yours, mid-task</span>
-          </p>
-          <h2 className={connect.head}>Add this corpus to your own agent</h2>
-          <p className={connect.lede}>
-            The same corpus this page is searching, on tap for whatever you are building.
-          </p>
-          <Suspense fallback={<CopyRows mcpUrl={null} command={null} unavailable="loading…" />}>
-            <ConnectRows />
-          </Suspense>
-        </div>
-      </section>
+      {showConnect ? <ConnectSection /> : null}
       <footer className={styles.footer}>
         <div className={styles.inner}>
           <div className={styles.grid}>
@@ -75,5 +64,21 @@ export function PublicShell({
         </div>
       </footer>
     </>
+  );
+}
+
+export function ConnectSection() {
+  return (
+    <section className={connect.connect}>
+      <div className={connect.inner}>
+        <h2 className={connect.head}>Add this corpus to your own agent</h2>
+        <Suspense fallback={<CopyRows mcpUrl={null} unavailable="loading…" />}>
+          <ConnectRows />
+        </Suspense>
+        <p className={connect.lede}>
+          Claude, ChatGPT and Le Chat: add a custom connector and paste the endpoint. No sign-in.
+        </p>
+      </div>
+    </section>
   );
 }

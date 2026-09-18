@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { browsePath, claudeCommand, corpusCount } from "./meta";
+import { browsePath, corpusCount } from "./meta";
 
 describe("corpusCount", () => {
   it("counts the talks, and agrees with itself about one", () => {
@@ -32,13 +32,5 @@ describe("browsePath", () => {
   it("says nothing when the deployment turned the route group off", () => {
     expect(browsePath(null)).toBeNull();
     expect(browsePath(undefined)).toBeNull();
-  });
-});
-
-describe("claudeCommand", () => {
-  it("hands over the server's own endpoint, never a guessed one", () => {
-    expect(claudeCommand("https://vidtheque.example.com/mcp")).toBe(
-      "claude mcp add --transport http vidtheque https://vidtheque.example.com/mcp",
-    );
   });
 });

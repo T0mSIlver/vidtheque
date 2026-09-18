@@ -19,8 +19,3 @@ export function browsePath(browse: string | null | undefined): string | null {
   if (typeof browse !== "string") return null;
   return /^\/[a-z0-9][a-z0-9/_-]*$/i.test(browse) ? browse : null;
 }
-
-/** The one-liner under the endpoint (demo-site.md §6 item 6). */
-export function claudeCommand(mcpUrl: string): string {
-  return `claude mcp add --transport http vidtheque ${mcpUrl}`;
-}

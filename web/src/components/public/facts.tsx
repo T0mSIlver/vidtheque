@@ -1,7 +1,7 @@
 // The chrome's facts from `/api/meta`, each a small async leaf the shell
 // streams in under its own <Suspense>.
 import { RailMeta } from "@/components/public/Rail";
-import { browsePath, claudeCommand, corpusCount } from "@/lib/api/meta";
+import { browsePath, corpusCount } from "@/lib/api/meta";
 import { readMeta } from "@/lib/api/search";
 import { CopyRows } from "./CopyRows";
 import styles from "./footer.module.css";
@@ -27,7 +27,6 @@ export async function ConnectRows() {
   return (
     <CopyRows
       mcpUrl={meta?.mcp_url ?? null}
-      command={meta ? claudeCommand(meta.mcp_url) : null}
       unavailable={
         outcome.kind === "rate_limited"
           ? "unavailable while rate limited — reload in a minute"
