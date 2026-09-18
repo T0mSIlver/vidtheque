@@ -1745,6 +1745,28 @@ def test_an_annotated_marker_resolves_and_renders_bare(tmp_path: Path) -> None:
     assert [c["n"] for c in payload["citations"]] == [1]
 
 
+def test_a_round_that_fails_after_reading_still_lands_on_an_answer(tmp_path: Path) -> None:
+    """A long ask read for two minutes, one model call failed, and the visitor got
+    "unavailable" with everything thrown away (2026-09-19). With evidence in hand the
+    loop stops asking for tools and answers from what it read."""
+    upstream = Upstream(
+        _completion(tool_calls=[_tool_call("c1", "search", {"query": "kv cache"})]),
+        httpx.Response(502, json={"error": "bad gateway"}),
+        _completion("The cache trades memory for time [1]."),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        response = client.post("/api/ask", json={"q": "what does the kv cache cost?"})
+    assert response.status_code == 200
+    assert response.json()["answer"] == "The cache trades memory for time [1]."
+    assert upstream.requests[-1].get("tool_choice") == "none"
+
+
+def test_a_failure_before_anything_was_read_is_still_unavailable(tmp_path: Path) -> None:
+    upstream = Upstream(httpx.Response(502, json={"error": "bad gateway"}))
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        assert client.post("/api/ask", json={"q": "what?"}).status_code == 503
+
+
 def test_citations_are_renumbered_in_order_of_first_mention(tmp_path: Path) -> None:
     """The model cites by hit number, so a raw answer reads `[2] … [1] … [2]`. The reader
     gets `[1] [2]` in the order the prose uses them, markers and Sources together, and a

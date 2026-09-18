@@ -77,6 +77,12 @@ MAX_QUESTION_CHARS = 400
 # needs far less. (2026-08-15, Tom: the demo's limits were the bottleneck.)
 ASK_MAX_OUTPUT_TOKENS = 32768
 
+# The tail of `VIDTHEQUE_ASK_TIMEOUT_S` kept for writing the answer: tool rounds
+# stop once less than the reserve is left, and a failed round still lands on an
+# answer while more than the floor is.
+ANSWER_RESERVE_S = 45.0
+ANSWER_FLOOR_S = 10.0
+
 # No facade bounds on the two tools any more (2026-08-15): the loop asks for
 # what the MCP surface hands anyone else — `search.run`'s ten hits of 1000
 # chars, three per video, and `segment.run`'s 45s window of 4000 chars — so the
@@ -419,17 +425,30 @@ async def ask_events(
     step = 0
 
     for _ in range(max(1, public.ask_max_rounds)):
-        payload = await llm.complete(
-            {
-                "model": public.openrouter_model,
-                "messages": messages,
-                "tools": TOOL_SPECS,
-                "temperature": 0.2,
-                "max_tokens": ASK_MAX_OUTPUT_TOKENS,
-            },
-            deadline,
-            billing,
-        )
+        # The budget ends in an answer, never in an error that throws away two
+        # minutes of reading (Tom's ask, 2026-09-19): stop asking for tools while
+        # there is still time to write, and land on what was already read when a
+        # round's call fails.
+        if evidence.items and deadline - time.monotonic() < ANSWER_RESERVE_S:
+            break
+        try:
+            payload = await llm.complete(
+                {
+                    "model": public.openrouter_model,
+                    "messages": messages,
+                    "tools": TOOL_SPECS,
+                    "temperature": 0.2,
+                    "max_tokens": ASK_MAX_OUTPUT_TOKENS,
+                },
+                deadline,
+                billing,
+            )
+        except AskUnavailable as exc:
+            if exc.reason != "upstream_unavailable" or not evidence.items:
+                raise
+            if deadline - time.monotonic() < ANSWER_FLOOR_S:
+                raise
+            break
         message = _first_message(payload)
         calls = message.get("tool_calls") or []
         if not calls:
