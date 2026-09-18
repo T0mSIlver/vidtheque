@@ -75,10 +75,11 @@ function WorkLog({ lines, folded = false }: { lines: Line[]; folded?: boolean })
       className={`${styles.log} ${folded ? styles.logFolded : ""}`}
       aria-label="What the model is doing"
     >
+      {/* What it is doing, not what came back: "44 lines of transcript" is the
+          model's business. `result` still marks the line as finished. */}
       {lines.map((l) => (
         <li key={l.id} className={l.result === undefined ? styles.running : undefined}>
           <span>{l.text}</span>
-          {l.result ? <span className={styles.logResult}>{` → ${l.result}`}</span> : null}
         </li>
       ))}
     </ol>

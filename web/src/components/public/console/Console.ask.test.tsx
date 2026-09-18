@@ -92,7 +92,8 @@ describe("the console in ask mode", () => {
 
     await waitFor(() => expect(screen.getByText("Sources")).toBeInTheDocument());
     expect(screen.getByLabelText("What the model is doing").querySelectorAll("li")).toHaveLength(5);
-    expect(screen.getByText(/10 hits in 8 talks/)).toBeInTheDocument();
+    // The log says what the model is doing, never what came back.
+    expect(screen.queryByText(/10 hits in 8 talks/)).not.toBeInTheDocument();
   });
 
   it("carries the page's edition scope, and writes the asked question to the URL", async () => {

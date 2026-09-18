@@ -435,7 +435,7 @@ async def ask_events(
         if not calls:
             content = (message.get("content") or "").strip()
             if content:
-                yield {"event": "answer", "payload": _answer(deps, content, evidence, rounds, public)}
+                yield {"event": "answer", "payload": await _answer(deps, content, evidence, rounds, public)}
                 return
             break
 
@@ -485,7 +485,7 @@ async def ask_events(
     if not content:
         logger.warning("ask: model produced no answer after %s rounds", rounds)
         raise AskUnavailable("upstream_unavailable")
-    yield {"event": "answer", "payload": _answer(deps, content, evidence, rounds, public)}
+    yield {"event": "answer", "payload": await _answer(deps, content, evidence, rounds, public)}
 
 
 def _first_message(payload: dict[str, Any]) -> dict[str, Any]:
@@ -840,7 +840,7 @@ def _last_char(parts: list[str]) -> str:
     return ""
 
 
-def _answer(
+async def _answer(
     deps: Deps,
     content: str,
     evidence: Evidence,
@@ -848,6 +848,11 @@ def _answer(
     public: PublicSettings,
 ) -> dict[str, Any]:
     """Strip citations that name nothing, and return only the ones used.
+
+    The model cites by the number of the hit it was shown, so a raw answer reads
+    `[18] … [20] … [3]`. The reader gets `[1] [2] [3]` in order of first mention
+    (Tom's review, 2026-09-19): the markers and the Sources list are renumbered
+    together, here, so neither can drift from the other.
 
     Stripping is a rewrite, not a deletion: `"the block table [9] is kept"` has
     to come back as `"the block table is kept"` — not with the double space a
@@ -859,7 +864,7 @@ def _answer(
     decision depends on what has already been *written* — two fabricated markers
     in a row (`"text [8][9] end"`) would otherwise each add their own space.
     """
-    from .api import LIGHTBOX_WIDTH, THUMB_WIDTH, thumb_url
+    from .api import LIGHTBOX_WIDTH, THUMB_WIDTH, _frames_on_screen, thumb_url
 
     known = {c.n: c for c in evidence.items}
     used: list[int] = []
@@ -875,7 +880,7 @@ def _answer(
                 used.append(n)
             # Normalised, not untouched: an annotated `[29 transcript]` renders
             # as `[29]`; the flanking spaces are kept as written.
-            out.append(f"{match.group('pre')}[{n}]{match.group('post')}")
+            out.append(f"{match.group('pre')}[{used.index(n) + 1}]{match.group('post')}")
             continue
         # A marker pointing at nothing is not a link, it is noise. One space is
         # left where it separated two words, and none where the text either side
@@ -890,16 +895,24 @@ def _answer(
             out.append(" ")
     out.append(content[pos:])
     cleaned = "".join(out).strip()
-    citations = [
-        known[n].as_dict(
-            # One width for every kind of citation (§5): a Sources list whose
-            # rows are different sizes depending on which leg found them is a
-            # list that looks broken before it is read.
-            thumb_url(deps, known[n].frame_id, THUMB_WIDTH),
-            thumb_url(deps, known[n].frame_id, LIGHTBOX_WIDTH),
-        )
-        for n in sorted(used)
+    # A spoken citation matched no frame; it is pictured like a spoken search hit,
+    # with the keyframe on screen at its second (demo-site.md §2.1).
+    moments = [
+        {"video_id": known[n].video_id, "start": known[n].t, "frame_id": known[n].frame_id}
+        for n in used
     ]
+    shown = await deps.db.read(lambda c: _frames_on_screen(c, moments))
+    citations = []
+    for index, n in enumerate(used):
+        frame = known[n].frame_id or shown.get(index)
+        # One width for every kind of citation (§5): a Sources list whose rows
+        # are different sizes depending on which leg found them is a list that
+        # looks broken before it is read.
+        row = known[n].as_dict(
+            thumb_url(deps, frame, THUMB_WIDTH), thumb_url(deps, frame, LIGHTBOX_WIDTH)
+        )
+        row["n"] = index + 1
+        citations.append(row)
     return {
         "answer": cleaned,
         "citations": citations,
@@ -1119,7 +1132,10 @@ async def _ask(request: Request, billing: Billing) -> Response:
             _stream(request.scope, deps, public, llm, question, framing, billing, tags),
             media_type=framing.media_type,
             headers={
-                "Cache-Control": "no-store",
+                # `no-transform`: a proxy that gzips the stream holds every small
+                # event in its compressor until the answer (Next's dev rewrite did,
+                # 2026-09-19), and this is the standard way to tell one not to.
+                "Cache-Control": "no-store, no-transform",
                 # nginx buffers a proxied response by default, which would hold
                 # every activity line until the answer landed — i.e. exactly the
                 # ninety seconds of silence this exists to remove. It is an

@@ -1745,6 +1745,22 @@ def test_an_annotated_marker_resolves_and_renders_bare(tmp_path: Path) -> None:
     assert [c["n"] for c in payload["citations"]] == [1]
 
 
+def test_citations_are_renumbered_in_order_of_first_mention(tmp_path: Path) -> None:
+    """The model cites by hit number, so a raw answer reads `[2] … [1] … [2]`. The reader
+    gets `[1] [2]` in the order the prose uses them, markers and Sources together, and a
+    spoken citation is pictured with the keyframe on screen at its second."""
+    upstream = Upstream(
+        _completion(tool_calls=[_tool_call("c1", "search", {"query": "the"})]),
+        _completion("Second hit first [2]. Then the first [1], and again [2]. Never [9]."),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        payload = client.post("/api/ask", json={"q": "what?"}).json()
+    assert payload["answer"] == "Second hit first [1]. Then the first [2], and again [1]. Never."
+    assert [c["n"] for c in payload["citations"]] == [1, 2]
+    pictured = [c for c in payload["citations"] if c["video_id"] == "kCc8FmEb1nY"]
+    assert all(c["thumb"] and "/frames/kCc8FmEb1nY-" in c["thumb"] for c in pictured)
+
+
 def test_an_answer_with_only_real_citations_is_passed_through_verbatim(
     tmp_path: Path,
 ) -> None:
