@@ -405,6 +405,39 @@ async def test_resume_reruns_the_failed_stage_and_nothing_else(
         parts.parts.auth.close()
 
 
+async def test_a_resumed_transcription_gets_its_new_chunks_embedded(
+    settings: Settings, clip: Path
+) -> None:
+    """The rehearsal, 2026-09-18: the worker refused the first transcription, captions
+    stood in and were embedded, and the resume transcribed for real. That rebuilt the
+    chunks, which deletes their vectors, under a `text_embed` row already `done` — the
+    video finished searchable by keyword only."""
+    worker = FakeWorker(fail={"transcribe", "ocr"})
+    parts = await harness(settings, clip, worker=worker)
+    try:
+        await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+        first = await parts.one("SELECT origin FROM cues LIMIT 1")
+        assert (await parts.stages())["text_embed"]["state"] == "done"
+
+        worker.fail = set()  # the worker came back
+        video = await parts.one("SELECT id FROM videos")
+        video_id = int(video["id"])
+        await parts.db.write(
+            lambda c: jobs_store.create_job(c, "index", {}, [(VIDEO_URL, video_id)])
+        )
+        assert await parts.run() is True
+
+        second = await parts.one("SELECT origin FROM cues LIMIT 1")
+        assert second["origin"] != first["origin"], "the resume transcribed with the worker"
+        chunks = await parts.one("SELECT COUNT(*) AS n FROM chunks")
+        vectors = await parts.one("SELECT COUNT(*) AS n FROM vec_chunks")
+        assert chunks["n"] > 0 and vectors["n"] == chunks["n"]
+    finally:
+        await parts.db.close()
+        parts.parts.auth.close()
+
+
 async def test_cancellation_is_honoured_between_stages(settings: Settings, clip: Path) -> None:
     parts_holder: list[Harness] = []
 
