@@ -7,14 +7,16 @@ from unittest import mock
 import pytest
 
 from vidtheque_worker.backends import voxtral_stt
-from vidtheque_worker.backends.base import BackendUnavailable
+from vidtheque_worker.backends.base import BackendUnavailable, InvalidMediaError, Word
 from vidtheque_worker.backends.voxtral_stt import (
     VoxtralBackend,
     _chunk_starts,
     _MistralClient,
+    _merge_at_seam,
     _multipart,
     _response_words,
 )
+
 
 
 class FakeClient:
@@ -229,6 +231,35 @@ def test_a_cue_is_a_sentence_not_a_thirty_second_block() -> None:
 def test_text_without_timed_words_is_still_refused() -> None:
     with pytest.raises(BackendUnavailable):
         _response_words({"text": "hello there", "segments": []}, offset=0.0)
+
+
+def test_text_with_unreadable_flat_words_is_still_refused() -> None:
+    """Review of #54: the flat `words` shape skipped the refusal and read as silence."""
+    with pytest.raises(BackendUnavailable):
+        _response_words({"text": "hello there", "words": [{"word": "hello"}]}, offset=0.0)
+
+
+def test_a_seam_cut_on_overlapping_stamps_neither_doubles_nor_drops() -> None:
+    """Review of #54: `c` ends before the seam but sits after `b`, which straddles
+    it, so the overlap is not a contiguous suffix; counting from the end doubled
+    `b` and dropped `c`."""
+    earlier = [
+        Word("a", 0.0, 10.0),
+        Word("b", 29.0, 31.0),
+        Word("c", 29.5, 29.9),
+        Word("d", 35.0, 36.0),
+        Word("x", 40.0, 41.0),
+        Word("y", 50.0, 51.0),
+    ]
+    later = [
+        Word("b", 30.0, 31.0),
+        Word("d", 35.1, 36.0),
+        Word("x", 40.0, 41.0),
+        Word("q", 52.0, 53.0),
+        Word("g", 70.0, 71.0),
+    ]
+    assert _merge_at_seam(earlier, later, 30.0) is True
+    assert [word.word for word in earlier] == ["a", "c", "b", "d", "x", "q", "g"]
 
 
 def test_an_unsafe_seam_keeps_both_sides_and_records_it(tmp_path: Path) -> None:
@@ -507,6 +538,33 @@ def test_a_refused_request_says_why(tmp_path: Path) -> None:
         client.transcribe(str(audio), model="voxtral-mini-latest", context_bias=[])
     assert "at most 1 item" in str(caught.value)
     assert "secret" not in str(caught.value)
+
+
+def test_a_refusal_whose_body_is_cut_short_is_still_a_refusal(tmp_path: Path) -> None:
+    """Review of #54: IncompleteRead is no OSError, and escaped as a raw 500."""
+    import urllib.error
+
+    class CutShort:
+        def read(self, *_args: object) -> bytes:
+            raise http.client.IncompleteRead(b'{"message": "List sh', 4_096)
+
+        def close(self) -> None:
+            return None
+
+    audio = tmp_path / "clip.wav"
+    audio.write_bytes(b"RIFF")
+    client = _MistralClient("secret", "https://api.mistral.ai/v1")
+    refusal = urllib.error.HTTPError(
+        "https://api.mistral.ai/v1/audio/transcriptions",
+        422,
+        "Unprocessable",
+        {},  # type: ignore[arg-type]
+        CutShort(),  # type: ignore[arg-type]
+    )
+    client._opener = _RecordingOpener(refusal)
+    with pytest.raises(InvalidMediaError) as caught:
+        client.transcribe(str(audio), model="voxtral-mini-latest", context_bias=[])
+    assert "no detail" in str(caught.value)
 
 
 def test_a_truncated_response_body_is_the_retryable_failure(tmp_path: Path) -> None:

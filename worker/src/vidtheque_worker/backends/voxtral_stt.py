@@ -106,7 +106,8 @@ def _bias_terms(terms: Sequence[str]) -> list[str]:
 def _error_detail(exc: urllib.error.HTTPError) -> str:
     try:
         text = exc.read(2_000).decode("utf-8", "replace")
-    except OSError:
+    # A refusal body cut short raises IncompleteRead, which is no OSError.
+    except (OSError, http.client.HTTPException):
         return "no detail"
     return " ".join(text.split())[:300] or "no detail"
 
@@ -332,11 +333,9 @@ def _response_words(payload: Mapping[str, Any], *, offset: float) -> list[Word]:
     top_words = payload.get("words")
     if isinstance(top_words, list):
         candidates.extend(item for item in top_words if isinstance(item, Mapping))
-    if candidates:
-        return _words_from(candidates, offset=offset)
 
     raw_segments = payload.get("segments")
-    if isinstance(raw_segments, list):
+    if not candidates and isinstance(raw_segments, list):
         for segment in raw_segments:
             if not isinstance(segment, Mapping):
                 continue
@@ -410,8 +409,15 @@ def _merge_at_seam(earlier: list[Word], later: list[Word], seam: float) -> bool:
         earlier.sort(key=lambda word: word.start if word.start is not None else 0.0)
         return False
     left_at, right_at = cut
-    del earlier[len(earlier) - len(left) + left_at :]
-    earlier.extend(later[right_at:])
+    # Found by identity, not by counting from the end: word stamps may overlap, so
+    # `left` need not be a contiguous suffix. A word after the cut that ended
+    # before the seam is outside the later chunk's audio, so it is kept.
+    at = next(i for i, word in enumerate(earlier) if word is left[left_at])
+    before_seam = [word for word in earlier[at:] if (word.end or 0.0) < seam]
+    del earlier[at:]
+    earlier.extend(before_seam)
+    start = next(i for i, word in enumerate(later) if word is right[right_at])
+    earlier.extend(later[start:])
     return True
 
 

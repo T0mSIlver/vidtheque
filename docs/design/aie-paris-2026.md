@@ -399,7 +399,8 @@ the worker must remain stateless.
 
 Invalid input returns the worker's existing 400 `invalid_input` envelope.
 Duplicates are removed by NFKC plus case-fold comparison, with the first source
-spelling kept. The worker forwards the validated list unchanged to Mistral.
+spelling kept. The worker forwards the validated list unchanged to the backend;
+the Voxtral backend rewrites each term for Mistral's request as below.
 
 Word timestamps win over the language pin. The upstream request sends
 `timestamp_granularities=word` alone and omits `language`, because Mistral
