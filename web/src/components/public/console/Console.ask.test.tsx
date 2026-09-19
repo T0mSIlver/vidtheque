@@ -220,6 +220,27 @@ describe("the console in ask mode", () => {
       expect(cards()).toHaveLength(1);
     });
 
+    it("keeps the card a second marker raised when the first one blurs", async () => {
+      const other = { ...CITATION, n: 2, title: "Paged attention", link: CITATION.link + "0" };
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          streamResponse(answerFrame("One [1], two [2].", { citations: [CITATION, other] })),
+        ),
+      );
+      const user = userEvent.setup();
+      mountConsole(LOADED);
+      await user.click(screen.getByRole("button", ASK));
+      const first = await screen.findByRole("link", { name: /^Source 1/ });
+      const second = screen.getByRole("link", { name: /^Source 2/ });
+
+      act(() => first.focus());
+      fireEvent.mouseEnter(second);
+      act(() => first.blur());
+      const card = document.querySelector('[class*="citeCard"][aria-hidden]');
+      expect(card).toHaveTextContent("Paged attention");
+    });
+
     // Corpus text is adversarial: it reaches the page as text nodes only.
     it("renders markup in an answer as text, and refuses a script link", async () => {
       const fetchSpy = vi
