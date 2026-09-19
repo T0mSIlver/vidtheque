@@ -1225,6 +1225,18 @@ Layout, top to bottom:
    Measured at 1440: pane 1319px, prose column 621px, sources column 607px, no
    horizontal overflow, receipts intact. At 1920 the chassis caps at 1460 and
    the two columns are 621/604.
+
+   *Amended 2026-09-19 (Tom, DECISIONS.md): one column, read as a chat turn.*
+   The two columns above `--bp-wide` are retired: the Sources arriving beside
+   the answer reshaped the whole pane at the moment it landed. The pane is one
+   column in the query bar's measure (`--query-w`) at every width — the work,
+   folded to one line (§6.6), then the prose, then the Sources, then the model
+   line — so everything arrives under what is already on screen. A Sources
+   snippet is clamped to three lines; the receipt under it is the whole of it.
+   A `[n]` marker shows its moment on hover or keyboard focus — the frame, the
+   talk, the second and the snippet — in a card fixed to the viewport (so the
+   panel's clip cannot cut it), gone on leave, blur or scroll. A touch screen
+   has no hover to end it, so a tap only follows the link.
 6. **"Add this corpus to your own agent"** — the label `MCP endpoint`, the
    `mcp_url` from `/api/meta`, a copy button, and the one-liner:
    `claude mcp add --transport http vidtheque <mcp_url>`. *Amended 2026-08-10:*
@@ -1790,11 +1802,27 @@ Four decisions worth stating:
   arriving. Both are the page answering the visitor. Between them — from the
   first activity event to the last — the pane holds 261px at 1440 and the
   document does not move: 2 layout shifts for a whole ask, down from 8.
+
+  *Amended 2026-09-19 (Tom: "every new tool call or thinking block overriding
+  the preceding one", "an expander above the final answer"): the work is one
+  line.* The six rows go. The work is a native `<details>`, closed by default,
+  whose summary is one line tall: the step in flight — or "Thinking" between
+  steps — lit, and replaced by the next step as it starts; the outgoing line
+  lifts out while the new one rises in over `--t-state`, in the same cell, so
+  the line never changes height. The step count sits on its right. Opened, it
+  lists every step so far, the one in flight lit; opening it is the visitor's
+  choice, so the page growing then is theirs too. When the answer lands the
+  summary reads "Worked for N s" — measured by the page from submit to answer —
+  and the disclosure stays where it was, above the answer. Under
+  `prefers-reduced-motion` a new step replaces the line at once and the live
+  one is simply brighter.
 - **The result is a text node with its arrow in it**, not a `::before`. The
   arrow is chrome, but a log a visitor copies out of the page should still read
   as a log, and so should one whose stylesheet never arrived.
-- **When the answer lands, the log stops owning the pane.** It folds into a
-  native `<details>` — "Show its work" — placed under the answer and its Sources.
+- **When the answer lands, the log stops owning the pane.** *Superseded
+  2026-09-19: the work is already folded, above the answer (see above).* It
+  folded into a native `<details>` — "Show its work" — placed under the answer
+  and its Sources.
   The evidence trail stays one click away, and the disclosure is the platform's:
   keyboard, semantics and state for free, as with the lightbox (§6.4).
 - **The pane is a live region, and stays `aria-busy` until the answer.** Without

@@ -1,34 +1,59 @@
-import { Fragment } from "react";
-import { FrameShot } from "@/components/public/Frame";
+import { Fragment, useEffect, useState } from "react";
+import { Frame, FrameShot } from "@/components/public/Frame";
 import { Receipt } from "@/components/public/Receipt";
 import type { AskAnswer, Citation, EditionTalk } from "@/lib/api/schemas";
 import { labelCitation } from "@/lib/api/edition";
 import { badgeWords, channelWord, presentationOf } from "@/lib/api/group";
 import styles from "./console.module.css";
 
-export function Answer({
-  answer,
-  talks,
-  children,
-}: {
-  answer: AskAnswer;
-  talks: EditionTalk[];
-  /** The folded work log, under the prose. */
-  children?: React.ReactNode;
-}) {
+type Card = { c: Citation; x: number; y: number; above: boolean };
+
+/** The answer, then the moments it cites. A marker shows its moment on hover. */
+export function Answer({ answer, talks }: { answer: AskAnswer; talks: EditionTalk[] }) {
   const citations = answer.citations.map((citation) => labelCitation(citation, talks));
   const byNumber = new Map(citations.map((c) => [c.n, c]));
+  const [card, setCard] = useState<Card | null>(null);
+  // Fixed to the viewport, so the panel's clip cannot cut it: under the marker,
+  // or over it when the room below is short. A scroll would strand it, and a
+  // touch screen has no hover to end it, so a tap just follows the link.
+  const point = (c: Citation, el: HTMLElement | null) => {
+    if (!el || window.matchMedia?.("(hover: none)").matches) return setCard(null);
+    const r = el.getBoundingClientRect();
+    const x = Math.min(Math.max(12, r.left + r.width / 2 - 160), window.innerWidth - 332);
+    const above = window.innerHeight - r.bottom < 360;
+    setCard({ c, x, y: above ? window.innerHeight - r.top + 8 : r.bottom + 8, above });
+  };
+  useEffect(() => {
+    if (!card) return;
+    const drop = () => setCard(null);
+    window.addEventListener("scroll", drop, { passive: true, once: true });
+    return () => window.removeEventListener("scroll", drop);
+  }, [card]);
   return (
     <>
-      <div className={styles.prose}>
+      <div className={`${styles.prose} ${styles.landed}`}>
         {answer.answer.split(/\n{2,}/).map((para, i) => (
           <p key={i} className={styles.para}>
-            <Cited text={para} byNumber={byNumber} />
+            <Cited text={para} byNumber={byNumber} point={point} />
           </p>
         ))}
       </div>
+      {card ? (
+        <span
+          className={styles.citeCard}
+          style={card.above ? { left: card.x, bottom: card.y } : { left: card.x, top: card.y }}
+          aria-hidden
+        >
+          <Frame src={card.c.thumb} alt="" label={channelWord(card.c.source ?? "")} />
+          <span className={styles.citeCardTitle}>{card.c.title}</span>
+          <span className={styles.citeCardMeta}>
+            {card.c.channel} · <span className={styles.mono}>{card.c.timestamp}</span>
+          </span>
+          {card.c.text ? <span className={styles.citeCardText}>{card.c.text}</span> : null}
+        </span>
+      ) : null}
       {citations.length > 0 ? (
-        <div className={styles.sources}>
+        <div className={`${styles.sources} ${styles.landedLate}`}>
           <h2 className={styles.label}>Sources</h2>
           <ol>
             {citations.map((c) => (
@@ -37,15 +62,24 @@ export function Answer({
           </ol>
         </div>
       ) : null}
-      {children}
-      {answer.model ? <p className={styles.model}>model · {answer.model}</p> : null}
+      {answer.model ? (
+        <p className={`${styles.model} ${styles.landedLate}`}>model · {answer.model}</p>
+      ) : null}
     </>
   );
 }
 
 // `[n]` becomes a link into the moment it cites; a marker naming nothing stays
 // text rather than becoming a dead link.
-function Cited({ text, byNumber }: { text: string; byNumber: Map<number, Citation> }) {
+function Cited({
+  text,
+  byNumber,
+  point,
+}: {
+  text: string;
+  byNumber: Map<number, Citation>;
+  point: (c: Citation, el: HTMLElement | null) => void;
+}) {
   const out: React.ReactNode[] = [];
   let cursor = 0;
   for (const match of text.matchAll(/\[(\d{1,2})\]/g)) {
@@ -61,6 +95,10 @@ function Cited({ text, byNumber }: { text: string; byNumber: Map<number, Citatio
           target="_blank"
           rel="noopener noreferrer"
           aria-label={`Source ${n}: ${cited.title} at ${cited.timestamp}`}
+          onMouseEnter={(e) => point(cited, e.currentTarget)}
+          onMouseLeave={() => point(cited, null)}
+          onFocus={(e) => point(cited, e.currentTarget)}
+          onBlur={() => point(cited, null)}
         >
           [{n}]
         </a>

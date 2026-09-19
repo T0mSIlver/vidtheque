@@ -6,6 +6,26 @@ and `research/pipeline-tooling-research.md`. Where a design doc disagrees with
 this file, this file wins; fold changes back into the docs as implementation
 touches them.
 
+## The ask pane reads as a chat turn, decided by Tom, 2026-09-19
+
+Tom's review of the Paris console: an answer's sources arriving as a column on
+the right of a wide screen reshaped the whole pane at the moment of landing,
+and a six-row work log read as a console rather than as an answer being
+written. He picked, from three recorded variants (sources below the answer, a
+right rail held from the first frame, a drawer behind a button):
+
+- **Sources below the answer**, one column. Everything arrives under what is
+  already on screen, so nothing the reader is looking at moves. The two-column
+  pane above `--bp-wide` (demo-site.md §6.1 item 5, 2026-08-11) is retired.
+- **The work is one line above the answer**: the step in flight, replaced by
+  each new step, lit while it runs; a disclosure that opens onto every step,
+  closed by default, and once the answer lands it says how long it took
+  (§6.6).
+- **A turn's calls to one tool are one step**: "Searching the corpus for “a”,
+  “b” and “c”" rather than three lines (§3.5).
+- **A citation marker shows its moment on hover or focus**: the frame, the
+  talk, the second and the snippet, in a card that never takes the pointer.
+  The drawer variant's one feature he kept.
 ## One deployment shape, corpus generations, alignment as data, decided by Tom, 2026-09-18
 
 The public box ran a git checkout under systemd and built the front end on the
