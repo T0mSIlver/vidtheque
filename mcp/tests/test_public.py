@@ -2814,6 +2814,22 @@ def test_resume_finds_a_run_and_never_starts_or_charges_one(tmp_path: Path) -> N
     assert len(upstream.requests) == 3
 
 
+def test_asking_a_kept_question_again_gives_the_days_ask_back(tmp_path: Path) -> None:
+    """Review of #59: attaching bought nothing upstream, so the day keeps its ask."""
+    public = PublicSettings(
+        enabled=True, openrouter_key="sk-or-test", ask_per_min=50, ask_per_day=2
+    )
+    with make_client(tmp_path, public, _two_tool_script()) as client:
+        _events(client.post("/api/ask", json=_visited(), headers=NDJSON))
+        _events(client.post("/api/ask", json=_visited(), headers=NDJSON))
+        second = client.post("/api/ask", json=_visited("second?"), headers=NDJSON)
+        assert second.status_code == 200
+        _events(second)
+        spent = client.post("/api/ask", json=_visited("third?"), headers=NDJSON)
+    assert spent.status_code == 429
+    assert spent.json()["bucket"] == "ask_global"
+
+
 def test_a_run_that_ended_in_an_error_is_not_kept(tmp_path: Path) -> None:
     """Asking again after a refusal is a new try, not a replay of the refusal."""
     upstream = Upstream(httpx.Response(503, json={"error": "down"}))
