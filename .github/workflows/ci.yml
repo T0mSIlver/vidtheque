@@ -23,6 +23,12 @@ jobs:
           version: "0.11.24"
           enable-cache: true
 
+      # uv's own CPython, as on every dev box: the runner's /usr/bin/python3.12
+      # links SQLite 3.45.1, whose VACUUM INTO fails on the generated columns of
+      # `videos` (3.46.1 in the image and 3.53 in uv's build do not).
+      - name: Use uv's managed Python
+        run: echo "UV_PYTHON_PREFERENCE=only-managed" >> "$GITHUB_ENV"
+
       # No --extra gpu: CI proves the app imports, routes and lifecycle work
       # without torch/onnxruntime. GPU paths are validated by `make bench` on
       # real hardware — a public repo gets no self-hosted runner.
