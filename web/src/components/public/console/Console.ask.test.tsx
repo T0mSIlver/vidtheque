@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { readFileSync } from "node:fs";
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -91,8 +91,8 @@ describe("the console in ask mode", () => {
     expect(push).not.toHaveBeenCalled();
 
     await waitFor(() => expect(screen.getByText("Sources")).toBeInTheDocument());
-    expect(screen.getByLabelText("What the model is doing").querySelectorAll("li")).toHaveLength(5);
-    // The log says what the model is doing, never what came back.
+    expect(screen.getByLabelText("What the model did").querySelectorAll("li")).toHaveLength(5);
+    // The steps say what the model is doing, never what came back.
     expect(screen.queryByText(/10 hits in 8 talks/)).not.toBeInTheDocument();
   });
 
@@ -130,7 +130,7 @@ describe("the console in ask mode", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
-  it("folds the idle row away while a tool call runs, busy until the answer", async () => {
+  it("folds the work to one line that each step replaces, above the answer", async () => {
     const open = openStream();
     vi.stubGlobal(
       "fetch",
@@ -141,14 +141,16 @@ describe("the console in ask mode", () => {
     await user.click(screen.getByRole("button", ASK));
 
     const pane = await screen.findByLabelText("Answer");
-    // The row stays in the list, so the six-row block never changes height.
-    const idle = screen.getByText("Thinking").closest("li")!;
+    const work = pane.querySelector("details")!;
+    const line = work.querySelector("summary")!;
     expect(pane).toHaveAttribute("aria-busy", "true");
-    expect(idle.className).not.toMatch(/stepGone/);
+    expect(work).not.toHaveAttribute("open");
+    expect(line).toHaveTextContent("Thinking");
 
     act(() => open.send(ACTIVITY));
-    await waitFor(() => expect(idle.className).toMatch(/stepGone/));
-    expect(idle).toHaveAttribute("aria-hidden", "true");
+    // The step takes the line; the one it replaced leaves it, hidden.
+    await waitFor(() => expect(line).toHaveTextContent("Searching…"));
+    expect(within(line).getByText("Thinking")).toHaveAttribute("aria-hidden", "true");
     expect(screen.getByText("reading")).toHaveAttribute("data-s", "working");
 
     act(() => {
@@ -156,8 +158,12 @@ describe("the console in ask mode", () => {
       open.close();
     });
     await waitFor(() => expect(pane).toHaveAttribute("aria-busy", "false"));
-    const disclosure = screen.getByText("Show its work").closest("details");
-    expect(disclosure).not.toHaveAttribute("open");
+    expect(line).toHaveTextContent(/Worked for \d+ s/);
+    expect(line).toHaveTextContent("1 step");
+    expect(work).not.toHaveAttribute("open");
+    // How it was found sits above what it found.
+    const prose = screen.getByText("Done.");
+    expect(work.compareDocumentPosition(prose) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   describe("the answer", () => {
@@ -190,6 +196,28 @@ describe("the console in ask mode", () => {
       ).toHaveTextContent("youtu.be/zduSFxRajkE?t=11");
       const titles = screen.getAllByRole("link", { name: "Making LLMs go brrr" });
       expect(titles[1]).toHaveAttribute("href", "https://youtu.be/zduSFxRajkE");
+    });
+
+    it("shows a marker's moment on hover and focus, and drops it on leave", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => streamResponse(answerFrame("Paged [1].", { citations: [CITATION] }))),
+      );
+      const user = userEvent.setup();
+      mountConsole(LOADED);
+      await user.click(screen.getByRole("button", ASK));
+      const marker = await screen.findByRole("link", { name: /^Source 1/ });
+      const cards = () => document.querySelectorAll('[class*="citeCard"][aria-hidden]');
+
+      expect(cards()).toHaveLength(0);
+      await user.hover(marker);
+      expect(cards()).toHaveLength(1);
+      expect(cards()[0]).toHaveTextContent("Making LLMs go brrr");
+      expect(cards()[0]).toHaveTextContent("GPU MODE · 0:13");
+      await user.unhover(marker);
+      expect(cards()).toHaveLength(0);
+      act(() => marker.focus());
+      expect(cards()).toHaveLength(1);
     });
 
     // Corpus text is adversarial: it reaches the page as text nodes only.

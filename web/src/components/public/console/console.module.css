@@ -4,6 +4,7 @@
   display: flex;
   flex-direction: column;
 }
+
 .form {
   display: flex;
   flex-direction: column;
@@ -417,21 +418,18 @@
 
 /* ───────────────────────────────────────────────────────────── the pane */
 
-/* The measure belongs to a *column* and the width to the pane: the answer, its
-   sources and its work log laid out as a strip down the left of a wide screen
-   is the thing this page exists for, drawn as a sidebar. Above the demo's own
-   breakpoint the sources move beside the answer and the prose still breaks at
-   70ch, because that is what the column is. */
+/* One column, read top to bottom like a chat turn: how the answer was found,
+   folded to one line, then the answer, then what it cites. Everything arrives
+   under what is already there, so nothing the reader is looking at moves. */
 .answer {
   composes: plate from "@/styles/ornament.module.css";
   --answer-pad: clamp(18px, 2.2vw, 26px);
-  --answer-gap: clamp(24px, 2.6vw, 40px);
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-content: start;
   margin-top: var(--s6);
   padding: var(--answer-pad);
-  max-width: calc(var(--prose) + 2 * var(--answer-pad));
+  max-width: var(--query-w, 44rem);
   background: var(--plate);
   border: 1px solid var(--seam2);
 }
@@ -443,6 +441,22 @@
 
 .prose {
   max-width: var(--prose);
+  margin-top: var(--s5);
+}
+
+/* The answer landed: it un-veils in place (DESIGN.md, Motion: `--t-veil`). */
+.landed {
+  animation: veil var(--t-veil) var(--ease-lift) both;
+}
+
+.landedLate {
+  animation: veil var(--t-veil) var(--ease-lift) 120ms both;
+}
+
+@keyframes veil {
+  from {
+    opacity: 0;
+  }
 }
 
 .para {
@@ -469,131 +483,119 @@
   border-bottom: 1px solid var(--gold-44);
 }
 
-@media (min-width: 1380px) {
-  /* The pane takes the width the moment it has something to spend it on: a
-     live log, or an answer with sources. A degraded pane — one sentence and a
-     button — stays at the measure, because widening a refusal is the one place
-     the extra room says nothing. */
-  .answer:has(> .work),
-  .answer:has(.sources) {
-    max-width: none;
-  }
+/* ─────────────────────────────────────────────────────── the work */
 
-  /* Three rows, named: the answer, then how it was found, then what found it.
-     The evidence spans all three — a source list is nearly always taller than
-     the paragraphs it supports. */
-  .answer:has(.sources) {
-    grid-template-columns: minmax(0, var(--prose)) minmax(0, 1fr);
-    grid-template-rows: auto auto minmax(0, 1fr);
-    column-gap: var(--answer-gap);
-  }
-
-  .answer:has(.sources) > .prose {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  .answer:has(.sources) > .disclosure {
-    grid-column: 1;
-    grid-row: 2;
-  }
-
-  .answer:has(.sources) > .model {
-    grid-column: 1;
-    grid-row: 3;
-    align-self: start;
-  }
-
-  .answer:has(.sources) > .sources {
-    grid-column: 2;
-    grid-row: 1 / 4;
-    margin-top: 0;
-    padding-left: var(--answer-gap);
-    border-top: 0;
-    border-left: 1px solid var(--seam);
-  }
-}
-
-/* ─────────────────────────────────────────────────────── the work log */
-
-/* What the model is doing, while it does it: one row per tool call. No box and
-   no scrollbar — the live block is six rows tall whatever happens inside it, so
-   nothing under the pane moves per tool call. */
+/* How the answer was found, folded to one line. Live, the line is the step in
+   flight and each new step replaces it; open, it is every step. */
 .work {
-  --step-h: 1.95em;
   font-family: var(--mono);
   font-size: 12.5px;
   font-variant-ligatures: none;
 }
 
-.workHead {
-  composes: t-label-sm from global;
-  display: flex;
-  justify-content: space-between;
-  gap: var(--s3);
-  margin-bottom: var(--s3);
+.workLine {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 10px;
+  min-height: 2em;
+  cursor: pointer;
+  list-style: none;
+  color: var(--fg2);
+}
+
+.workLine::-webkit-details-marker {
+  display: none;
+}
+
+.workLine:hover {
+  color: var(--gold);
+}
+
+.chevron {
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
   color: var(--fg3);
+}
+
+.chevron svg {
+  width: 12px;
+  height: 12px;
+}
+
+.work[open] .chevron {
+  transform: rotate(90deg);
+}
+
+.workLive .chevron {
+  color: var(--gold);
+}
+
+/* One line tall whatever it holds: the outgoing step and the incoming one share
+   the cell, so a new step never changes the pane's height. */
+.ticker {
+  display: grid;
+  overflow: hidden;
+  height: 2em;
+  line-height: 2em;
+}
+
+.ticker > * {
+  grid-area: 1 / 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tickIn {
+  animation: tickIn var(--t-state) var(--ease-lift) both;
+}
+
+.tickOut {
+  animation: tickOut var(--t-state) var(--ease-lift) both;
+}
+
+@keyframes tickIn {
+  from {
+    opacity: 0;
+    transform: translateY(70%);
+  }
+}
+
+@keyframes tickOut {
+  to {
+    opacity: 0;
+    transform: translateY(-70%);
+  }
+}
+
+.workCount {
+  color: var(--fg3);
+  font-variant-numeric: tabular-nums;
 }
 
 .steps {
   list-style: none;
+  margin: var(--s2) 0 0 22px;
+  padding-left: var(--s3);
+  border-left: 1px solid var(--seam);
 }
 
-.work .steps {
-  height: calc(6 * var(--step-h));
-  overflow: clip;
-}
-
-/* One line each, so every row is the same height and a fold is exact. */
 .step {
-  height: var(--step-h);
-  line-height: var(--step-h);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  padding: 5px 0;
+  line-height: 1.55;
   color: var(--fg3);
-  transition:
-    height var(--t-state) var(--ease-lift),
-    opacity var(--t-state) linear,
-    color var(--t-state) linear;
-  animation: stepIn var(--t-state) var(--ease-lift);
-}
-
-.step::before {
-  content: "";
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  margin-right: 12px;
-  background: var(--seam2);
-  vertical-align: 1px;
-  transition: background var(--t-state) linear;
-}
-
-@keyframes stepIn {
-  from {
-    height: 0;
-    opacity: 0;
-  }
-}
-
-/* Older than the last few, or the idle row while a tool call is in flight. */
-.stepGone {
-  height: 0;
-  opacity: 0;
+  overflow-wrap: anywhere;
 }
 
 .stepLive {
   color: var(--fg2);
 }
 
-.stepLive::before {
-  background: var(--gold);
-}
-
 /* A light passing through the text of the step in flight, and only that one: it
    reports a running tool call or the model deciding the next (DESIGN.md, Motion). */
-.stepLive .stepText {
+.lit {
   color: transparent;
   background: linear-gradient(
       100deg,
@@ -606,6 +608,12 @@
     0 0 / 300% 100%;
   -webkit-background-clip: text;
   background-clip: text;
+  animation:
+    tickIn var(--t-state) var(--ease-lift) both,
+    sweep 2.2s linear infinite;
+}
+
+.steps .lit {
   animation: sweep 2.2s linear infinite;
 }
 
@@ -619,59 +627,24 @@
   }
 }
 
-/* Under an answer the log is the whole list, still and unclamped. */
-.workFolded {
-  --step-h: 1.95em;
-  margin-top: var(--s2);
-  font-family: var(--mono);
-  font-size: 12.5px;
-  font-variant-ligatures: none;
-}
-
-.workFolded .step {
-  animation: none;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .step {
-    transition: none;
+  .tickIn,
+  .landed,
+  .landedLate {
     animation: none;
   }
 
-  .stepLive .stepText {
+  .tickOut {
+    animation: none;
+    visibility: hidden;
+  }
+
+  .lit,
+  .steps .lit {
     color: var(--fg);
     background: none;
     animation: none;
   }
-}
-
-/* Folded away once the answer owns the pane. */
-.disclosure {
-  margin-top: var(--s5);
-  border-top: 1px solid var(--seam);
-  padding-top: var(--s3);
-}
-
-/* The `t-label-sm` role, spelled out: `composes` only takes a simple class
-   selector, and the summary is the disclosure's own element. */
-.disclosure > summary {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  font-weight: 600;
-  line-height: 1.4;
-  letter-spacing: 0.17em;
-  text-transform: uppercase;
-  font-variant-ligatures: none;
-  cursor: pointer;
-  color: var(--fg2);
-}
-
-.disclosure > summary:hover {
-  color: var(--gold);
-}
-
-.disclosure[open] > summary {
-  margin-bottom: var(--s3);
 }
 
 /* ─────────────────────────────────────────────────────── the sources */
@@ -826,6 +799,53 @@
   composes: t-machine-sm from global;
   margin-top: var(--s5);
   color: var(--fg3);
+}
+
+/* Three lines of the moment, then an ellipsis: the receipt under it is the
+   whole of it, one click away. */
+.sources .snippet {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+/* A marker names its moment on hover or focus: the frame, the talk, the second. */
+.citeCard {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 320px;
+  padding: 10px;
+  background: var(--plate2);
+  border: 1px solid var(--seam2);
+  box-shadow: var(--drop-sm);
+  pointer-events: none;
+  animation: veil var(--t-fast) linear;
+}
+
+.citeCardTitle {
+  composes: t-cell-strong from global;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.citeCardMeta {
+  composes: t-cell from global;
+  color: var(--fg2);
+}
+
+.citeCardText {
+  composes: t-cell from global;
+  color: var(--fg);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
 }
 
 /* ──────────────────────────────────────────────────────── the refusal */

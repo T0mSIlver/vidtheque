@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AskFailure, EditionTalk } from "@/lib/api/schemas";
 import { Answer } from "./AskAnswer";
 import type { AskPhase, Line } from "./requests";
@@ -6,8 +6,9 @@ import { InPlaceLink } from "./SearchResults";
 import styles from "./console.module.css";
 
 /**
- * The answer pane: a live region, busy until the answer so a screen reader
- * does not narrate each activity row twice (demo-site.md §6.6).
+ * The answer pane: how the answer was found, folded to one line above it, then
+ * the answer. A live region, busy until the answer so a screen reader does not
+ * narrate each step twice (demo-site.md §6.6).
  */
 export function AskPane({
   phase,
@@ -25,14 +26,20 @@ export function AskPane({
   onSearch: () => void;
 }) {
   const busy = phase.kind === "working";
+  // The pane mounts with the ask (it is keyed by it), so this is when it began.
+  const began = useRef(0);
+  const [took, setTook] = useState<number | null>(null);
+  useEffect(() => {
+    began.current = performance.now();
+  }, []);
+  useEffect(() => {
+    if (!busy) setTook(Math.max(1, Math.round((performance.now() - began.current) / 1000)));
+  }, [busy]);
+
   return (
     <section className={styles.answer} aria-live="polite" aria-busy={busy} aria-label="Answer">
-      {busy ? <WorkLog lines={phase.lines} live /> : null}
-      {phase.kind === "answered" ? (
-        <Answer answer={phase.answer} talks={talks}>
-          <WorkDisclosure lines={phase.lines} />
-        </Answer>
-      ) : null}
+      <Work lines={phase.lines} live={busy} took={took} />
+      {phase.kind === "answered" ? <Answer answer={phase.answer} talks={talks} /> : null}
       {phase.kind === "degraded" ? (
         <Degraded
           body={phase.body}
@@ -40,71 +47,94 @@ export function AskPane({
           searchHref={searchHref}
           onRetry={onRetry}
           onSearch={onSearch}
-        >
-          <WorkDisclosure lines={phase.lines} />
-        </Degraded>
+        />
       ) : null}
     </section>
   );
 }
 
-// How many finished steps stay on screen while the model works.
-const RECENT = 5;
+type Tick = { key: string; text: string };
+
+// Between tool calls the model is deciding what to read next.
+function thinkingAfter(id: number): Tick {
+  return { key: `think-${id}`, text: "Thinking" };
+}
+
+/** The one line the folded work shows while the model works, and the line it replaced. */
+function ticks(lines: Line[]): { now: Tick; before: Tick | null } {
+  const last = lines.at(-1);
+  if (!last) return { now: thinkingAfter(0), before: null };
+  if (last.result === undefined) {
+    return {
+      now: { key: `step-${last.id}`, text: last.text },
+      before: thinkingAfter(lines.at(-2)?.id ?? 0),
+    };
+  }
+  return { now: thinkingAfter(last.id), before: { key: `step-${last.id}`, text: last.text } };
+}
 
 /**
- * One row per tool call. Live, it is a fixed six-row block — the last few steps
- * and the one in flight — so the page under it never moves and nothing scrolls:
- * a new row grows in, the oldest folds away. Folded under an answer, it is the
- * whole list, still.
+ * How the answer was found, as a disclosure folded to one line. Live, the line
+ * is the step in flight, and each new step replaces the last; open, it is every
+ * step so far. Once the answer lands the line says how long it took.
  */
-function WorkLog({ lines, live = false }: { lines: Line[]; live?: boolean }) {
-  const inFlight = lines.some((l) => l.result === undefined);
-  const hidden = live ? Math.max(0, lines.length - RECENT) : 0;
+function Work({ lines, live, took }: { lines: Line[]; live: boolean; took: number | null }) {
+  const [open, setOpen] = useState(false);
+  if (!live && !lines.length) return null;
+  const { now, before } = ticks(lines);
+  const count = `${lines.length} step${lines.length === 1 ? "" : "s"}`;
   return (
-    <div className={live ? styles.work : styles.workFolded}>
-      {live ? (
-        <p className={styles.workHead}>
-          <span>Reading the corpus</span>
-          {lines.length > 0 ? (
-            <span>{`${lines.length} step${lines.length === 1 ? "" : "s"}`}</span>
-          ) : null}
-        </p>
-      ) : null}
-      <ol className={styles.steps} aria-label="What the model is doing">
-        {lines.map((l, i) => (
+    <details
+      className={`${styles.work} ${live ? styles.workLive : ""}`}
+      open={open}
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+    >
+      <summary className={styles.workLine}>
+        <span className={styles.chevron} aria-hidden>
+          <svg viewBox="0 0 12 12">
+            <path
+              d="M3.6 1.8 L8.2 6 L3.6 10.2"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+            />
+          </svg>
+        </span>
+        {live ? (
+          <span className={styles.ticker}>
+            {before ? (
+              <span key={before.key} className={styles.tickOut} aria-hidden>
+                {before.text}
+              </span>
+            ) : null}
+            <span key={now.key} className={`${styles.tickIn} ${styles.lit}`}>
+              {now.text}
+            </span>
+          </span>
+        ) : (
+          <span className={styles.ticker}>
+            <span>{took ? `Worked for ${took} s` : "Show its work"}</span>
+          </span>
+        )}
+        {lines.length ? <span className={styles.workCount}>{count}</span> : null}
+      </summary>
+      <ol className={styles.steps} aria-label="What the model did">
+        {lines.map((l) => (
           <li
             key={l.id}
-            className={[
-              styles.step,
-              live && l.result === undefined ? styles.stepLive : "",
-              i < hidden ? styles.stepGone : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
+            className={`${styles.step} ${live && l.result === undefined ? styles.stepLive : ""}`}
           >
-            <span className={styles.stepText}>{l.text}</span>
+            <span className={live && l.result === undefined ? styles.lit : undefined}>
+              {l.text}
+            </span>
           </li>
         ))}
-        {/* Between tool calls the model is deciding what to read next. */}
-        {live ? (
-          <li
-            className={`${styles.step} ${styles.stepLive} ${inFlight ? styles.stepGone : ""}`}
-            aria-hidden={inFlight}
-          >
-            <span className={styles.stepText}>Thinking</span>
+        {live && now.key.startsWith("think") ? (
+          <li className={`${styles.step} ${styles.stepLive}`}>
+            <span className={styles.lit}>Thinking</span>
           </li>
         ) : null}
       </ol>
-    </div>
-  );
-}
-
-function WorkDisclosure({ lines }: { lines: Line[] }) {
-  if (!lines.length) return null;
-  return (
-    <details className={styles.disclosure}>
-      <summary>Show its work</summary>
-      <WorkLog lines={lines} />
     </details>
   );
 }
@@ -130,14 +160,12 @@ function Degraded({
   searchHref,
   onRetry,
   onSearch,
-  children,
 }: {
   body: AskFailure;
   canRetry: boolean;
   searchHref: string;
   onRetry: () => void;
   onSearch: () => void;
-  children: React.ReactNode;
 }) {
   const left = useCountdown(body.retry_after_s);
   return (
@@ -159,7 +187,6 @@ function Degraded({
           Search instead
         </InPlaceLink>
       </p>
-      {children}
     </div>
   );
 }
