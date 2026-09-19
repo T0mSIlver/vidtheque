@@ -649,7 +649,8 @@
 @media (prefers-reduced-motion: reduce) {
   .tickIn,
   .landed,
-  .landedLate {
+  .landedLate,
+  .citeCard {
     animation: none;
   }
 

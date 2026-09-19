@@ -17,17 +17,22 @@ export function Answer({ answer, talks }: { answer: AskAnswer; talks: EditionTal
   // or over it when the room below is short. A scroll would strand it, and a
   // touch screen has no hover to end it, so a tap just follows the link.
   const point = (c: Citation, el: HTMLElement | null) => {
-    if (!el || window.matchMedia?.("(hover: none)").matches) return setCard(null);
+    if (window.matchMedia?.("(hover: none)").matches) return setCard(null);
+    // Leaving one marker must not drop the card another one just raised.
+    if (!el) return setCard((shown) => (shown?.c.n === c.n ? null : shown));
     const r = el.getBoundingClientRect();
     const x = Math.min(Math.max(12, r.left + r.width / 2 - 160), window.innerWidth - 332);
-    const above = window.innerHeight - r.bottom < 360;
+    const below = window.innerHeight - r.bottom;
+    const above = below < 360 && r.top > below;
     setCard({ c, x, y: above ? window.innerHeight - r.top + 8 : r.bottom + 8, above });
   };
   useEffect(() => {
     if (!card) return;
     const drop = () => setCard(null);
-    window.addEventListener("scroll", drop, { passive: true, once: true });
-    return () => window.removeEventListener("scroll", drop);
+    // Captured, so a scroll inside any scrolling ancestor drops it too.
+    const opts = { capture: true, passive: true, once: true };
+    window.addEventListener("scroll", drop, opts);
+    return () => window.removeEventListener("scroll", drop, opts);
   }, [card]);
   return (
     <>

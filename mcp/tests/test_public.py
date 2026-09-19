@@ -2060,6 +2060,41 @@ def test_a_turn_with_two_tools_is_two_steps_and_keeps_the_call_order(
     assert [m["tool_call_id"] for m in replies] == ["c0", "c1", "c2", "c3"]
 
 
+def test_a_step_where_a_call_failed_says_each_call_instead_of_a_total(
+    tmp_path: Path,
+) -> None:
+    """A total over the calls that ran would read as a total over all of them."""
+    upstream = Upstream(
+        _completion(
+            tool_calls=[
+                _tool_call("c1", "search", {"query": "kv cache"}),
+                _tool_call("c2", "search", {"query": ""}),
+            ]
+        ),
+        _completion("The cache trades memory for time [1]."),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        events = _events(_stream_ask(client))
+    done = next(e for e in events if e.get("phase") == "done")
+    assert re.fullmatch(r"\d+ hits? in \d+ talks?; the search had no query", done["result"])
+
+
+def test_two_calls_to_a_tool_that_does_not_exist_stay_two_steps(tmp_path: Path) -> None:
+    upstream = Upstream(
+        _completion(
+            tool_calls=[
+                _tool_call("c1", "delete_everything", {}),
+                _tool_call("c2", "delete_everything", {}),
+            ]
+        ),
+        _completion("I only have search."),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        events = _events(_stream_ask(client))
+    steps = [(e["id"], e["phase"]) for e in events if e["event"] == "activity"]
+    assert steps == [(1, "start"), (1, "done"), (2, "start"), (2, "done")]
+
+
 def test_searches_on_different_channels_say_which_is_which(tmp_path: Path) -> None:
     upstream = Upstream(
         _completion(
