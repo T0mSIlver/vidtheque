@@ -109,7 +109,9 @@ export async function streamAsk(
       signal,
     });
     if (!shown) {
-      if (!res.ok || !res.body) return false;
+      // 204 is "no run of yours". A browser may give a 204 an empty body
+      // rather than none (Chrome does), so the status decides, not the body.
+      if (res.status === 204 || !res.ok || !res.body) return false;
       shown = true;
       report({ kind: "working", lines });
     }
