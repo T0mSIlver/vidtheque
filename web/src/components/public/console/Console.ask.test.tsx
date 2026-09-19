@@ -201,7 +201,18 @@ describe("the console in ask mode", () => {
     });
 
     it("leaves a loaded question alone when the visitor has no run of it", async () => {
-      const fetchSpy = vi.fn(async () => new Response(null, { status: 204 }));
+      // A 204 the way Chrome hands it over: an empty body stream, not `null`
+      // (the first version read that as an answer and showed a malformed one).
+      const chrome204 = {
+        status: 204,
+        ok: true,
+        headers: new Headers(),
+        body: new ReadableStream(),
+        json: async () => {
+          throw new SyntaxError("Unexpected end of JSON input");
+        },
+      } as unknown as Response;
+      const fetchSpy = vi.fn(async () => chrome204);
       vi.stubGlobal("fetch", fetchSpy);
       mountConsole({ ...LOADED, resume: "live" });
 
