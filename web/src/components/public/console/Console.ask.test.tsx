@@ -21,6 +21,9 @@ import {
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
 
+// The page's random id for this browser (lib/api/visitor.ts).
+const VISITOR_ID = /^v-[0-9a-f]{32}$/;
+
 // The exact bytes the API sent, from the project root where vitest runs.
 const FIXTURE = readFileSync("src/lib/api/__fixtures__/ask.sse", "utf8");
 
@@ -84,7 +87,10 @@ describe("the console in ask mode", () => {
 
     await user.click(screen.getByRole("button", ASK));
     expect((fetchSpy.mock.calls[0] as unknown as [string])[0]).toBe("/api/ask");
-    expect(body(fetchSpy).body).toBe(JSON.stringify({ q: "what is a kv cache" }));
+    expect(JSON.parse(body(fetchSpy).body as string)).toEqual({
+      ...{ q: "what is a kv cache" },
+      visitor: expect.stringMatching(VISITOR_ID),
+    });
     expect((body(fetchSpy).headers as Record<string, string>).accept).toBe(
       "text/event-stream, application/x-ndjson;q=0.9, application/json;q=0.8",
     );
@@ -103,9 +109,10 @@ describe("the console in ask mode", () => {
     const { push } = mountConsole({ url: "/paris", path: "/paris", tags: "series:aie-paris-2026" });
 
     await user.type(screen.getByLabelText(QUESTION_BOX), "what changed?{Enter}");
-    expect(body(fetchSpy).body).toBe(
-      JSON.stringify({ q: "what changed?", tags: "series:aie-paris-2026" }),
-    );
+    expect(JSON.parse(body(fetchSpy).body as string)).toEqual({
+      ...{ q: "what changed?", tags: "series:aie-paris-2026" },
+      visitor: expect.stringMatching(VISITOR_ID),
+    });
     expect(push).toHaveBeenCalledWith(null, "", "/paris?ask=what+changed%3F");
     expect(await screen.findByText("Scoped.")).toBeInTheDocument();
   });
@@ -164,6 +171,74 @@ describe("the console in ask mode", () => {
     // How it was found sits above what it found.
     const prose = screen.getByText("Done.");
     expect(work.compareDocumentPosition(prose) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  describe("a visitor's run (demo-site.md §3.6)", () => {
+    const url = (spy: ReturnType<typeof vi.fn>, call: number) =>
+      (spy.mock.calls[call] as unknown as [string])[0];
+
+    it("picks up a loaded question's run without starting an ask", async () => {
+      const fetchSpy = vi.fn(async () =>
+        streamResponse(
+          ACTIVITY +
+            frame({
+              event: "answer",
+              payload: { answer: "Kept.", citations: [], model: null },
+              took_s: 48,
+            }),
+        ),
+      );
+      vi.stubGlobal("fetch", fetchSpy);
+      mountConsole({ ...LOADED, resume: "live" });
+
+      expect(await screen.findByText("Kept.")).toBeInTheDocument();
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(url(fetchSpy, 0)).toBe("/api/ask/resume");
+      // The server's clock, not the instant the replay took to render.
+      expect(screen.getByLabelText("Answer").querySelector("summary")).toHaveTextContent(
+        "Worked for 48 s",
+      );
+    });
+
+    it("leaves a loaded question alone when the visitor has no run of it", async () => {
+      const fetchSpy = vi.fn(async () => new Response(null, { status: 204 }));
+      vi.stubGlobal("fetch", fetchSpy);
+      mountConsole({ ...LOADED, resume: "live" });
+
+      await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+      expect(url(fetchSpy, 0)).toBe("/api/ask/resume");
+      expect(screen.queryByLabelText("Answer")).not.toBeInTheDocument();
+      expect(screen.getByLabelText(QUESTION_BOX)).toHaveValue("what is a kv cache");
+    });
+
+    it("comes back to a stream the phone dropped, when the page shows again", async () => {
+      let hidden = true;
+      vi.spyOn(document, "visibilityState", "get").mockImplementation(() =>
+        hidden ? "hidden" : "visible",
+      );
+      const dropped = openStream();
+      const fetchSpy = vi
+        .fn()
+        .mockResolvedValueOnce(new Response(null, { status: 204 }))
+        .mockResolvedValueOnce(dropped.response)
+        .mockResolvedValueOnce(streamResponse(ACTIVITY + answerFrame("Came back.")));
+      vi.stubGlobal("fetch", fetchSpy);
+      const user = userEvent.setup();
+      mountConsole({ ...LOADED, resume: "live" });
+      await user.click(screen.getByRole("button", ASK));
+
+      act(() => {
+        dropped.send(ACTIVITY);
+        dropped.close();
+      });
+      expect(await screen.findByText("Answer interrupted.")).toBeInTheDocument();
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+      hidden = false;
+      act(() => document.dispatchEvent(new Event("visibilitychange")));
+      expect(await screen.findByText("Came back.")).toBeInTheDocument();
+      expect(url(fetchSpy, 2)).toBe("/api/ask/resume");
+    });
   });
 
   describe("the answer", () => {
@@ -471,7 +546,10 @@ describe("the console in ask mode", () => {
     mountConsole();
     expect(screen.getByText(/None of these is answered by one talk/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Why do agents write bad AGENTS.md?" }));
-    expect(body(fetchSpy).body).toBe(JSON.stringify({ q: "Why do agents write bad AGENTS.md?" }));
+    expect(JSON.parse(body(fetchSpy).body as string)).toEqual({
+      ...{ q: "Why do agents write bad AGENTS.md?" },
+      visitor: expect.stringMatching(VISITOR_ID),
+    });
     expect(screen.getByLabelText(QUESTION_BOX)).toHaveValue("Why do agents write bad AGENTS.md?");
   });
 

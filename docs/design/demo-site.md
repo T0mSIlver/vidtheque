@@ -1627,7 +1627,9 @@ The console writes a snapshot with `history.pushState` when it commits one
 forward restore the snapshot. A search the console already holds is shown
 again without a request, and any other search is fetched again. A deep link
 renders on the server: `?q=` arrives with page one in the HTML, and `?ask=`
-arrives with the question loaded and unfired. On a deployment with no ask,
+arrives with the question loaded and unfired. *(Amended 2026-09-19: unfired
+still, but the page asks `/api/ask/resume` whether this visitor has a run of
+the question going or kept, and shows it if so — §3.6.)* On a deployment with no ask,
 `?ask=…` becomes a search for the same words. The writes are
 `history.pushState(null, "", url)` and `replaceState`, Next.js's documented
 native History API integration, so the router's `useSearchParams` follows

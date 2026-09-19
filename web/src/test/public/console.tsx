@@ -96,9 +96,23 @@ export const ACTIVITY = frame({ event: "activity", id: 1, phase: "start", text: 
 export const never = () => new Promise<Response>(() => {});
 
 export function mountConsole(
-  over: Partial<ConsoleProps> & { url?: string; initialSearch?: SearchOutcome | null } = {},
+  over: Partial<ConsoleProps> & {
+    url?: string;
+    initialSearch?: SearchOutcome | null;
+    /** `live` lets `/api/ask/resume` reach the stubbed fetch; by default the
+     *  server has no run for this visitor, so every ask starts from nothing. */
+    resume?: "none" | "live";
+  } = {},
 ) {
-  const { url, ...props } = over;
+  const { url, resume = "none", ...props } = over;
+  if (resume === "none") {
+    const stubbed = globalThis.fetch;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).endsWith("/api/ask/resume")
+        ? Promise.resolve(new Response(null, { status: 204 }))
+        : stubbed(input, init),
+    );
+  }
   const snapshot = props.initial ?? { mode: "ask", q: "", type: "all" };
   const at = url ?? (props.path ?? "/demo") + serializeSnapshot(snapshot, props.askEnabled ?? true);
   window.history.replaceState(null, "", at);

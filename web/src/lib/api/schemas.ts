@@ -192,7 +192,8 @@ export const AskEvent = z.discriminatedUnion("event", [
     text: z.string().optional(),
     result: z.string().optional(),
   }),
-  z.object({ event: z.literal("answer"), payload: AskAnswer }),
+  // `took_s` is the server's clock: a replayed run lands at once (§3.6).
+  z.object({ event: z.literal("answer"), payload: AskAnswer, took_s: z.number().optional() }),
   z.object({ event: z.literal("error"), status: z.number().int(), payload: AskDegraded }),
 ]);
 export type AskEvent = z.infer<typeof AskEvent>;

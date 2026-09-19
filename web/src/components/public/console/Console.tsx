@@ -8,7 +8,7 @@ import { SmoothHeight } from "@/components/ui/SmoothHeight";
 import { AskPane } from "./AskPane";
 import { Cold, type Boot, type SearchExample } from "./Cold";
 import { ConsoleForm, type MachineState } from "./ConsoleForm";
-import { fetchSearch, streamAsk } from "./requests";
+import { fetchSearch, streamAsk, wasDropped } from "./requests";
 import { SearchResults, type SearchActions } from "./SearchResults";
 import { holds, initialState, reducer, type ConsoleState } from "./state";
 import { parseSnapshot, sameSnapshot, serializeSnapshot, type Mode, type Snapshot } from "./url";
@@ -119,6 +119,27 @@ export function Console(props: ConsoleProps) {
     );
   }
 
+  // This visitor's run of the question, if the server has one: a `?ask=` link
+  // loading, or a phone coming back to a stream the OS dropped (demo-site.md
+  // §3.6). It never starts a run, and nothing shows until one is found.
+  function resume(question: string) {
+    if (!question) return;
+    const { id, signal } = begin();
+    let shown = false;
+    void streamAsk(
+      { q: question, tags },
+      signal,
+      (phase) => {
+        if (!shown) {
+          shown = true;
+          dispatch({ type: "ask", id, question });
+        }
+        dispatch({ type: "askPhase", id, phase });
+      },
+      "resume",
+    );
+  }
+
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     // Focus stays put; only a touch keyboard is dismissed over the results.
@@ -176,9 +197,36 @@ export function Console(props: ConsoleProps) {
     if (snapshot.mode === "search" && snapshot.q && !holds(state, snapshot.q, snapshot.type)) {
       void search(snapshot.q, snapshot.type, false);
     }
+    if (snapshot.mode === "ask" && snapshot.q) resume(snapshot.q);
   });
 
   useEffect(() => restore(query), [query]);
+
+  // A loaded question never starts an ask; it only picks up one this visitor
+  // already has running or answered.
+  const resumeOnLoad = useEffectEvent(() => {
+    const { initial } = props;
+    if (askEnabled && initial.mode === "ask" && initial.q) resume(initial.q);
+  });
+  useEffect(() => resumeOnLoad(), []);
+
+  // A phone that switched apps comes back to a dead stream: pick the run up
+  // when the page is visible again, and once now in case it never hid.
+  const dropped = state.mode === "ask" && wasDropped(state.ask.phase);
+  const pickUp = useEffectEvent(() => {
+    if (document.visibilityState === "visible") resume(state.ask.question);
+  });
+  useEffect(() => {
+    if (!dropped) return;
+    pickUp();
+    const onShow = () => pickUp();
+    document.addEventListener("visibilitychange", onShow);
+    window.addEventListener("online", onShow);
+    return () => {
+      document.removeEventListener("visibilitychange", onShow);
+      window.removeEventListener("online", onShow);
+    };
+  }, [dropped]);
 
   useEffect(() => {
     const box = flight.current;
