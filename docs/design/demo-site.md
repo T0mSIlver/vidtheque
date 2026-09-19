@@ -668,7 +668,7 @@ No keep-alive heartbeat. That was deliberate while the loop's wall-clock budget
 (`VIDTHEQUE_ASK_TIMEOUT_S`) was 90 s: inside Cloudflare's read timeout, so a
 stream that emitted nothing at all still ended before anything upstream gave up
 on it. **The budget is 180 s since 2026-08-15 and that no longer holds.** What
-carries the stream now is the activity events themselves — every tool call
+carries the stream now is the activity events themselves — every step
 writes two, and bytes reset the timer — so the exposure is a single completion
 that generates for more than ~125 s without a tool call, which is the forced
 final answer. If a 524 shows up there, the fix is a heartbeat comment on the
@@ -700,13 +700,18 @@ server already had:
 
 | event | when | fields |
 |---|---|---|
-| `activity` … `"phase": "start"` | before a tool call runs | `id`, `text` — "Searching on-screen text for “CVE”", "Reading the transcript around 12:34 in “…”" |
-| `activity` … `"phase": "done"` | when it lands | `id`, `result` — "6 hits in 2 talks", "5 lines of transcript", "nothing matched" |
+| `activity` … `"phase": "start"` | before a step's tool calls run | `id`, `text` — "Searching on-screen text for “CVE”", "Searching the corpus for “a” and “b”", "Reading the transcript around 12:34 in “…”" |
+| `activity` … `"phase": "done"` | when the last of them lands | `id`, `result` — "6 hits in 2 talks", "5 lines of transcript", "nothing matched", counted over the step's calls |
 | `answer` | once, last | `payload`: the §3 body, unchanged |
 | `error` | once, last, instead | `status: 503` and `payload`: the §3.4 body, unchanged |
 
-`id` pairs a `done` with its `start` — that pairing is what lets the page mark
-exactly one line as the one still running. The page prints the `start` text only
+A **step** is every call to one tool that the model asked for in one turn
+(amended 2026-09-19, Tom: "searching for A, B and C, rather than searching for A,
+searching for B, searching for C"). A turn that asks for three searches and two
+reads is two steps, in the order of each tool's first call; a tool that does not
+exist is a step of its own. The model still gets one reply per call, in the
+order it made them. `id` pairs a `done` with its `start` — that pairing is what
+lets the page mark exactly one line as the one still running. The page prints the `start` text only
 (amended 2026-09-19, Tom's review): what the model is doing is worth watching,
 “44 lines of transcript” is not; `result` stays in the stream for other clients.
 The stream is sent `Cache-Control: no-store, no-transform`, because a proxy that
