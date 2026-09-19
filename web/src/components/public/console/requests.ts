@@ -10,6 +10,7 @@ import {
   type ContentType,
 } from "@/lib/api/schemas";
 import { framingOf, readJsonEvents } from "@/lib/api/sse";
+import { visitorId } from "@/lib/api/visitor";
 
 export async function fetchSearch(
   params: { q: string; type: ContentType; offset: number; tags?: string },
@@ -54,7 +55,7 @@ export type Line = { id: number; text: string; result?: string };
 export type AskPhase =
   | { kind: "idle" }
   | { kind: "working"; lines: Line[] }
-  | { kind: "answered"; lines: Line[]; answer: AskAnswer }
+  | { kind: "answered"; lines: Line[]; answer: AskAnswer; took?: number }
   | { kind: "degraded"; lines: Line[]; body: AskFailure };
 
 // SSE first: Cloudflare buffers every proxied response except
@@ -78,28 +79,44 @@ const MALFORMED: AskFailure = {
 };
 
 /** Streams one ask, reporting every phase. Resolves once a terminal phase is
- *  reported; stays silent after an abort. */
+ *  reported; stays silent after an abort.
+ *
+ *  `resume` asks only for this visitor's run of the question (§3.6): it never
+ *  starts one, reports nothing until the server has one, and resolves `false`
+ *  when it has none. */
 export async function streamAsk(
   params: { q: string; tags?: string },
   signal: AbortSignal,
   report: (phase: AskPhase) => void,
-): Promise<void> {
+  mode: "ask" | "resume" = "ask",
+): Promise<boolean> {
   let lines: Line[] = [];
-  report({ kind: "working", lines });
+  // Whether the pane is showing this request, so a failure has somewhere to go.
+  let shown = mode === "ask";
+  if (shown) report({ kind: "working", lines });
   try {
-    const res = await fetch("/api/ask", {
+    const res = await fetch(mode === "resume" ? "/api/ask/resume" : "/api/ask", {
       method: "POST",
       headers: {
         "content-type": "application/json",
         accept: CAN_STREAM ? STREAM_ACCEPT : "application/json",
       },
-      body: JSON.stringify({ q: params.q, ...(params.tags ? { tags: params.tags } : {}) }),
+      body: JSON.stringify({
+        q: params.q,
+        ...(params.tags ? { tags: params.tags } : {}),
+        visitor: visitorId(),
+      }),
       signal,
     });
+    if (!shown) {
+      if (!res.ok || !res.body) return false;
+      shown = true;
+      report({ kind: "working", lines });
+    }
     // A refusal before the model is reached is a status code with a JSON body.
     if (!res.ok) {
       report({ kind: "degraded", lines, body: await failureBody(res) });
-      return;
+      return true;
     }
     const framing = framingOf(res.headers.get("content-type"));
     if (!framing || !res.body) {
@@ -107,26 +124,26 @@ export async function streamAsk(
       report(
         answer ? { kind: "answered", lines, answer } : { kind: "degraded", lines, body: MALFORMED },
       );
-      return;
+      return true;
     }
     // Only a terminal event finishes the stream; it also ends the read, so a
     // trailing activity frame cannot reopen a settled pane.
     for await (const raw of readJsonEvents(res.body, framing)) {
-      if (signal.aborted) return;
+      if (signal.aborted) return true;
       const parsed = AskEvent.safeParse(raw);
       if (!parsed.success) {
         if (isFutureEvent(raw)) continue;
         report({ kind: "degraded", lines, body: MALFORMED });
-        return;
+        return true;
       }
       const ev = parsed.data;
       if (ev.event === "answer") {
-        report({ kind: "answered", lines, answer: ev.payload });
-        return;
+        report({ kind: "answered", lines, answer: ev.payload, took: ev.took_s });
+        return true;
       }
       if (ev.event === "error") {
         report({ kind: "degraded", lines, body: ev.payload });
-        return;
+        return true;
       }
       lines =
         ev.phase === "start"
@@ -136,9 +153,19 @@ export async function streamAsk(
     }
     if (!signal.aborted) report({ kind: "degraded", lines, body: INTERRUPTED });
   } catch (err) {
-    if (signal.aborted) return;
+    if (signal.aborted) return true;
+    if (!shown) return false;
     report({ kind: "degraded", lines, body: unreachable(0, err) });
   }
+  return true;
+}
+
+/** A stream that died without its terminal event, which a return can pick up. */
+export function wasDropped(phase: AskPhase): boolean {
+  return (
+    phase.kind === "degraded" &&
+    (phase.body.error === "interrupted" || phase.body.error === "unreachable")
+  );
 }
 
 function unreachable(status: number, err?: unknown): AskFailure {

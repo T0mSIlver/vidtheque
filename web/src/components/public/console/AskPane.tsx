@@ -39,7 +39,11 @@ export function AskPane({
 
   return (
     <section className={styles.answer} aria-live="polite" aria-busy={busy} aria-label="Answer">
-      <Work lines={phase.lines} live={busy} took={took} />
+      <Work
+        lines={phase.lines}
+        live={busy}
+        took={phase.kind === "answered" && phase.took ? phase.took : took}
+      />
       {phase.kind === "answered" ? <Answer answer={phase.answer} talks={talks} /> : null}
       {phase.kind === "degraded" ? (
         <Degraded
