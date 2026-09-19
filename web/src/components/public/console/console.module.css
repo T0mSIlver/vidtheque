@@ -830,6 +830,81 @@
   overflow: hidden;
 }
 
+/* The excerpt is its own control: a click opens what the model read. */
+.excerpt {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+/* Out-ranks the Sources list's three-line clamp. */
+.sources .unclamped {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+
+.readToggle {
+  composes: t-machine-sm from global;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg3);
+  transition: color var(--t-fast) linear;
+}
+
+.readToggle svg {
+  width: 10px;
+  height: 10px;
+}
+
+.excerpt[aria-expanded="true"] .readToggle svg {
+  transform: rotate(90deg);
+}
+
+.excerpt:hover .readToggle,
+.excerpt:focus-visible .readToggle {
+  color: var(--gold);
+}
+
+/* The window as the model got it: one line per cue, its second in the gutter,
+   the cited moment marked by the one rule the list carries. */
+.read {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.readLine {
+  composes: t-cell from global;
+  display: grid;
+  grid-template-columns: 3.4rem minmax(0, 1fr);
+  column-gap: var(--s2);
+  padding: 2px 0 2px 8px;
+  color: var(--fg2);
+  border-left: 1px solid transparent;
+  overflow-wrap: anywhere;
+}
+
+.readAt {
+  color: var(--fg);
+  border-left-color: var(--gold);
+}
+
+.readT {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-variant-ligatures: none;
+  color: var(--fg3);
+}
+
 /* A marker names its moment on hover or focus: the frame, the talk, the second. */
 .citeCard {
   position: fixed;

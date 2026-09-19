@@ -1246,7 +1246,11 @@ Layout, top to bottom:
    column in the query bar's measure (`--query-w`) at every width — the work,
    folded to one line (§6.6), then the prose, then the Sources, then the model
    line — so everything arrives under what is already on screen. A Sources
-   snippet is clamped to three lines; the receipt under it is the whole of it.
+   snippet is clamped to three lines; the receipt under it is the whole of it. The
+   excerpt is a control (Tom, same day: "see exactly what the LLM read"): a
+   click opens what the model read — the `read` lines (§3) with their seconds,
+   the cited moment ruled in gold — or, for a search hit, the whole excerpt,
+   and "What the model read" under it names the action and the span.
    A `[n]` marker shows its moment on hover or keyboard focus — the frame, the
    talk, the second and the snippet — in a card fixed to the viewport (so the
    panel's clip cannot cut it), gone on leave, blur or scroll. A touch screen

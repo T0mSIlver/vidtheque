@@ -220,6 +220,39 @@ describe("the console in ask mode", () => {
       expect(cards()).toHaveLength(1);
     });
 
+    it("opens an excerpt onto the lines the model read, the cited one marked", async () => {
+      const read = [
+        { t: 9, text: "so where does the cache live" },
+        { t: 13, text: "the block table keeps" },
+        { t: 16, text: "one row per sequence" },
+      ];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          streamResponse(
+            answerFrame("Paged [1].", {
+              citations: [{ ...CITATION, source: "transcript", read }],
+            }),
+          ),
+        ),
+      );
+      const user = userEvent.setup();
+      mountConsole(LOADED);
+      await user.click(screen.getByRole("button", ASK));
+      const toggle = await screen.findByRole("button", { name: /What the model read · 0:09–0:16/ });
+      expect(toggle).toHaveAttribute("aria-expanded", "false");
+      expect(screen.queryByText("one row per sequence")).not.toBeInTheDocument();
+
+      await user.click(toggle);
+      expect(toggle).toHaveAttribute("aria-expanded", "true");
+      const cited = within(toggle).getByText("the block table keeps").parentElement!;
+      expect(cited.className).toMatch(/readAt/);
+      expect(within(cited).getByText("0:13")).toBeInTheDocument();
+      expect(
+        within(toggle).getByText("so where does the cache live").parentElement!.className,
+      ).not.toMatch(/readAt/);
+    });
+
     it("keeps the card a second marker raised when the first one blurs", async () => {
       const other = { ...CITATION, n: 2, title: "Paged attention", link: CITATION.link + "0" };
       vi.stubGlobal(
@@ -472,10 +505,7 @@ describe("the console in ask mode", () => {
 
       const box = screen.getByLabelText(QUESTION_BOX);
       await user.type(box, "paged attention");
-      expect(screen.getByRole("button", { name: "ask" })).toHaveAttribute(
-        "aria-pressed",
-        "true",
-      );
+      expect(screen.getByRole("button", { name: "ask" })).toHaveAttribute("aria-pressed", "true");
 
       await user.click(screen.getByRole("button", { name: "search" }));
       box.focus();
