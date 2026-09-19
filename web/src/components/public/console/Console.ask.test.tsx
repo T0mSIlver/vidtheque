@@ -472,7 +472,7 @@ describe("the console in ask mode", () => {
 
       const box = screen.getByLabelText(QUESTION_BOX);
       await user.type(box, "paged attention");
-      expect(screen.getByRole("button", { name: "ask ✨" })).toHaveAttribute(
+      expect(screen.getByRole("button", { name: "ask" })).toHaveAttribute(
         "aria-pressed",
         "true",
       );
@@ -486,7 +486,7 @@ describe("the console in ask mode", () => {
       expect(push).toHaveBeenLastCalledWith(null, "", "/demo?q=paged+attention");
       expect(await screen.findByText("1 result")).toBeInTheDocument();
 
-      await user.click(screen.getByRole("button", { name: "ask ✨" }));
+      await user.click(screen.getByRole("button", { name: "ask" }));
       expect(screen.getByLabelText(QUESTION_BOX)).toBe(box);
       expect(push).toHaveBeenLastCalledWith(null, "", "/demo?ask=paged+attention");
       // A loaded question does not fire.
