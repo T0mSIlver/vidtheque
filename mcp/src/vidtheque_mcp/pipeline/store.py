@@ -262,8 +262,20 @@ def replace_cues(
 def replace_chunks(
     conn: sqlite3.Connection, video_id: int, chunks: Sequence[ChunkDraft], cue_ids: Sequence[int]
 ) -> list[int]:
-    """Chunks first, vectors second — `chunks_ad` cascades vec_chunks on delete."""
+    """Chunks first, vectors second — `chunks_ad` cascades vec_chunks on delete.
+
+    The delete takes the video's text vectors with it, so a `done` `text_embed`
+    row goes back to `pending` in the same transaction, as migration 0004 does
+    for a model swap: an attempt cancelled or killed before the re-embed leaves
+    a stage that is owed, not a `done` row over no vectors (rehearsal, 2026-09-18).
+    """
     conn.execute("DELETE FROM chunks WHERE video_id = ?", (video_id,))
+    conn.execute(
+        "UPDATE video_stages SET state = 'pending', model_key = NULL, started_at = NULL, "
+        "finished_at = NULL, error = NULL "
+        "WHERE video_id = ? AND stage = 'text_embed' AND state = 'done'",
+        (video_id,),
+    )
     ids: list[int] = []
     for chunk in chunks:
         cursor = conn.execute(

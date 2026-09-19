@@ -17,7 +17,9 @@ import pytest
 from vidtheque_mcp.app import Assembled, assemble
 from vidtheque_mcp.config import Settings
 from vidtheque_mcp.jobs import store as jobs_store
+from vidtheque_mcp.jobs.runner import ItemCancelled
 from vidtheque_mcp.pipeline import build_pipeline
+from vidtheque_mcp.pipeline.runner import IndexingPipeline
 from vidtheque_mcp.pipeline.settings import PipelineSettings
 from vidtheque_mcp.tools import indexing, search
 
@@ -430,6 +432,46 @@ async def test_a_resumed_transcription_gets_its_new_chunks_embedded(
 
         second = await parts.one("SELECT origin FROM cues LIMIT 1")
         assert second["origin"] != first["origin"], "the resume transcribed with the worker"
+        chunks = await parts.one("SELECT COUNT(*) AS n FROM chunks")
+        vectors = await parts.one("SELECT COUNT(*) AS n FROM vec_chunks")
+        assert chunks["n"] > 0 and vectors["n"] == chunks["n"]
+    finally:
+        await parts.db.close()
+        parts.parts.auth.close()
+
+
+async def test_a_rebuild_cancelled_before_its_embed_is_embedded_by_the_next_job(
+    settings: Settings, clip: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of #55: an attempt stopped between the chunk rebuild and the embed
+    used to leave `text_embed` reading `done` over no vectors, forever."""
+    worker = FakeWorker(fail={"transcribe", "ocr"})
+    parts = await harness(settings, clip, worker=worker)
+    try:
+        await parts.index(url=VIDEO_URL)
+        assert await parts.run() is True
+        worker.fail = set()
+        video_id = int((await parts.one("SELECT id FROM videos"))["id"])
+
+        embed = IndexingPipeline._stage_text_embed
+
+        async def cancelled(self: IndexingPipeline, run: object) -> None:
+            raise ItemCancelled()
+
+        monkeypatch.setattr(IndexingPipeline, "_stage_text_embed", cancelled)
+        await parts.db.write(
+            lambda c: jobs_store.create_job(c, "index", {}, [(VIDEO_URL, video_id)])
+        )
+        assert await parts.run() is True
+        # The rebuild took the vectors, and the stage row says so.
+        assert (await parts.one("SELECT COUNT(*) AS n FROM vec_chunks"))["n"] == 0
+        assert (await parts.stages())["text_embed"]["state"] == "pending"
+
+        monkeypatch.setattr(IndexingPipeline, "_stage_text_embed", embed)
+        await parts.db.write(
+            lambda c: jobs_store.create_job(c, "index", {}, [(VIDEO_URL, video_id)])
+        )
+        assert await parts.run() is True
         chunks = await parts.one("SELECT COUNT(*) AS n FROM chunks")
         vectors = await parts.one("SELECT COUNT(*) AS n FROM vec_chunks")
         assert chunks["n"] > 0 and vectors["n"] == chunks["n"]
