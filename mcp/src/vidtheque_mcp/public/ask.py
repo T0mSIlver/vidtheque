@@ -46,6 +46,7 @@ from ..tools import search, segment
 from ..tools.base import Deps
 from . import humanize
 from .ratelimit import refund
+from .runs import Run, run_key
 from .settings import PublicSettings
 
 logger = logging.getLogger(__name__)
@@ -424,7 +425,8 @@ async def ask_events(
     Nothing here is fabricated: a line is built from the arguments the model
     actually sent and finished with what the tool actually returned.
     """
-    deadline = time.monotonic() + public.ask_timeout_s
+    started = time.monotonic()
+    deadline = started + public.ask_timeout_s
     evidence = Evidence()
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -463,7 +465,9 @@ async def ask_events(
         if not calls:
             content = (message.get("content") or "").strip()
             if content:
-                yield {"event": "answer", "payload": await _answer(deps, content, evidence, rounds, public)}
+                payload = await _answer(deps, content, evidence, rounds, public)
+                # The server's clock, so a replayed run still says how long it took.
+                yield {"event": "answer", "payload": payload, "took_s": _took(started)}
                 return
             break
 
@@ -522,7 +526,12 @@ async def ask_events(
     if not content:
         logger.warning("ask: model produced no answer after %s rounds", rounds)
         raise AskUnavailable("upstream_unavailable")
-    yield {"event": "answer", "payload": await _answer(deps, content, evidence, rounds, public)}
+    payload = await _answer(deps, content, evidence, rounds, public)
+    yield {"event": "answer", "payload": payload, "took_s": _took(started)}
+
+
+def _took(started: float) -> int:
+    return max(1, round(time.monotonic() - started))
 
 
 def _first_message(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1224,14 +1233,32 @@ async def _stream(
             refund(scope, "ask_global")
 
 
-async def _ask(request: Request, billing: Billing) -> Response:
-    deps: Deps = request.app.state.assembled.deps
-    public: PublicSettings = request.app.state.public_settings
-    llm: OpenRouter | None = request.app.state.openrouter
+_VISITOR = re.compile(r"[A-Za-z0-9_-]{16,64}")
 
-    if llm is None or not public.ask_enabled:
-        return _unavailable("not_configured", 0)
+_STREAM_HEADERS = {
+    # `no-transform`: a proxy that gzips the stream holds every small event in
+    # its compressor until the answer (Next's dev rewrite did, 2026-09-19), and
+    # this is the standard way to tell one not to.
+    "Cache-Control": "no-store, no-transform",
+    # nginx buffers a proxied response by default, which would hold every
+    # activity line until the answer landed — i.e. exactly the ninety seconds of
+    # silence this exists to remove. It is an *nginx* header and nothing else
+    # reads it: Cloudflare decides on the content type, which is why there is an
+    # SSE framing and not a third header here.
+    "X-Accel-Buffering": "no",
+}
 
+
+@dataclass(frozen=True)
+class _Asked:
+    question: str
+    tags: str | None
+    # The page's random id for this browser, when it sent one (§3.6).
+    visitor: str | None
+
+
+async def _read_ask(request: Request) -> _Asked | Response:
+    """The question, its scope and the visitor, or the 400 that says why not."""
     try:
         body = await request.json()
     except Exception:
@@ -1272,8 +1299,47 @@ async def _ask(request: Request, billing: Billing) -> Response:
             status_code=400,
             headers={"Cache-Control": "no-store"},
         )
+    # An id that is not one the page makes is no id: the ask runs as before.
+    raw_visitor = body.get("visitor") if isinstance(body, dict) else None
+    valid = isinstance(raw_visitor, str) and _VISITOR.fullmatch(raw_visitor)
+    visitor = raw_visitor if valid else None
+    return _Asked(question, tags, visitor)
+
+
+async def _ask(request: Request, billing: Billing) -> Response:
+    deps: Deps = request.app.state.assembled.deps
+    public: PublicSettings = request.app.state.public_settings
+    llm: OpenRouter | None = request.app.state.openrouter
+
+    if llm is None or not public.ask_enabled:
+        return _unavailable("not_configured", 0)
+
+    asked = await _read_ask(request)
+    if isinstance(asked, Response):
+        return asked
+    question, tags = asked.question, asked.tags
 
     framing = _negotiate(request)
+    runs = getattr(request.app.state, "ask_runs", None)
+    if framing is not None and asked.visitor and runs is not None:
+        # A visitor's ask runs to its end whoever is reading (§3.6).
+        key = run_key(asked.visitor, question, tags)
+        run = runs.get(key)
+        if run is None:
+            scope = request.scope
+
+            def settle() -> None:
+                if not billing.paid:
+                    refund(scope, "ask_global")
+
+            run = runs.start(key, _run_source(deps, public, llm, question, billing, tags), settle)
+        else:
+            # This visitor's run already has this question: nothing new
+            # upstream, so the day's token goes back as it came.
+            refund(request.scope, "ask_global")
+        return StreamingResponse(
+            _follow(run, framing), media_type=framing.media_type, headers=_STREAM_HEADERS
+        )
     if framing is not None:
         # Everything that can be refused *before* the model is reached has been
         # refused above, with a status code. From here the answer is worth
@@ -1281,19 +1347,7 @@ async def _ask(request: Request, billing: Billing) -> Response:
         return StreamingResponse(
             _stream(request.scope, deps, public, llm, question, framing, billing, tags),
             media_type=framing.media_type,
-            headers={
-                # `no-transform`: a proxy that gzips the stream holds every small
-                # event in its compressor until the answer (Next's dev rewrite did,
-                # 2026-09-19), and this is the standard way to tell one not to.
-                "Cache-Control": "no-store, no-transform",
-                # nginx buffers a proxied response by default, which would hold
-                # every activity line until the answer landed — i.e. exactly the
-                # ninety seconds of silence this exists to remove. It is an
-                # *nginx* header and nothing else reads it: Cloudflare decides
-                # on the content type, which is why there is an SSE framing and
-                # not a third header here.
-                "X-Accel-Buffering": "no",
-            },
+            headers=_STREAM_HEADERS,
         )
 
     try:
@@ -1310,6 +1364,61 @@ async def _ask(request: Request, billing: Billing) -> Response:
         logger.exception("ask: unexpected failure")
         return _unavailable("upstream_unavailable", 30)
     return JSONResponse(payload)
+
+
+async def ask_resume_endpoint(request: Request) -> Response:
+    """This visitor's run for this question, from its first event, or a 204.
+
+    It never starts a run, so it costs no ask: the page calls it when a
+    `?ask=` link loads and when a phone comes back to a dropped stream (§3.6),
+    and the limiter charges it to the search bucket like any other read.
+    """
+    runs = getattr(request.app.state, "ask_runs", None)
+    asked = await _read_ask(request)
+    if isinstance(asked, Response):
+        return asked
+    run = (
+        runs.get(run_key(asked.visitor, asked.question, asked.tags))
+        if runs is not None and asked.visitor
+        else None
+    )
+    if run is None:
+        # 204, not 404: a browser logs every 404 fetch as a console error, and
+        # "you have no run of this" is the ordinary answer on a first visit.
+        return Response(status_code=204, headers={"Cache-Control": "no-store"})
+    framing = _negotiate(request) or NDJSON_STREAM
+    return StreamingResponse(
+        _follow(run, framing), media_type=framing.media_type, headers=_STREAM_HEADERS
+    )
+
+
+async def _run_source(
+    deps: Deps,
+    public: PublicSettings,
+    llm: OpenRouter,
+    question: str,
+    billing: Billing,
+    tags: str | None,
+) -> AsyncIterator[dict[str, Any]]:
+    """The loop's events, its failures turned into the terminal `error` event
+    that `_stream` would have written, so a run ends the way a stream does."""
+    try:
+        async with aclosing(ask_events(deps, public, llm, question, billing, tags)) as events:
+            async for event in events:
+                yield event
+    except AskUnavailable as exc:
+        yield _error_event(exc.reason, exc.retry_after_s)
+    except Exception:  # pragma: no cover - last resort, still no leak
+        logger.exception("ask: unexpected failure in a run")
+        yield _error_event("upstream_unavailable", 30)
+
+
+async def _follow(run: Run, framing: Framing) -> AsyncIterator[bytes]:
+    """A run, framed. Leaving stops only this reader, never the run."""
+    if framing.preamble:
+        yield framing.preamble
+    async for event in run.follow():
+        yield framing.frame(event)
 
 
 def _degraded_body(reason: str, retry_after_s: int) -> dict[str, Any]:
