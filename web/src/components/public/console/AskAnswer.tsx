@@ -1,9 +1,10 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Frame, FrameShot } from "@/components/public/Frame";
 import { Receipt } from "@/components/public/Receipt";
 import type { AskAnswer, Citation, EditionTalk } from "@/lib/api/schemas";
 import { labelCitation } from "@/lib/api/edition";
 import { badgeWords, channelWord, presentationOf } from "@/lib/api/group";
+import { clock } from "@/lib/format";
 import styles from "./console.module.css";
 
 type Card = { c: Citation; x: number; y: number; above: boolean };
@@ -154,13 +155,74 @@ function Source({ c }: { c: Citation }) {
           ))}
           {c.channel} · <span className={styles.mono}>{c.timestamp}</span>
         </span>
-        {c.text ? (
-          <span className={`${styles.snippet} ${SNIPPET[presentationOf(c.source ?? "")]}`}>
-            {c.text}
-          </span>
-        ) : null}
+        {c.text ? <Excerpt c={c} /> : null}
         {c.link ? <Receipt href={c.link} size="lg" className={styles.receipt} /> : null}
       </div>
     </li>
+  );
+}
+
+/**
+ * The excerpt, three lines of it; a click opens what the model read — the
+ * window it was given around the moment, each line at its second, or the
+ * whole excerpt when a search hit was all it saw.
+ */
+function Excerpt({ c }: { c: Citation }) {
+  const [open, setOpen] = useState(false);
+  const [clipped, setClipped] = useState(false);
+  const clamp = useRef<HTMLSpanElement>(null);
+  const read = c.read?.length ? c.read : null;
+  useLayoutEffect(() => {
+    const el = clamp.current;
+    if (el) setClipped(el.scrollHeight > el.clientHeight + 1);
+  }, []);
+  const snippet = `${styles.snippet} ${SNIPPET[presentationOf(c.source ?? "")]}`;
+  if (!read && !clipped) {
+    return (
+      <span ref={clamp} className={snippet}>
+        {c.text}
+      </span>
+    );
+  }
+  // The line running at the cited second, and the two after it: the excerpt.
+  const at = read
+    ? Math.max(
+        0,
+        read.findLastIndex((line) => line.t <= c.t),
+      )
+    : -1;
+  return (
+    <button
+      type="button"
+      className={styles.excerpt}
+      aria-expanded={open}
+      onClick={() => setOpen(!open)}
+    >
+      {open && read ? (
+        <span className={styles.read}>
+          {read.map((line, i) => (
+            <span
+              key={`${line.t}-${i}`}
+              className={`${styles.readLine} ${i >= at && i < at + 3 ? styles.readAt : ""}`}
+            >
+              <span className={styles.readT}>{clock(line.t)}</span>
+              <span>{line.text}</span>
+            </span>
+          ))}
+        </span>
+      ) : (
+        <span ref={clamp} className={`${snippet} ${open ? styles.unclamped : ""}`}>
+          {c.text}
+        </span>
+      )}
+      <span className={styles.readToggle}>
+        <svg viewBox="0 0 12 12" aria-hidden>
+          <path d="M3.6 1.8 L8.2 6 L3.6 10.2" fill="none" stroke="currentColor" strokeWidth="1.6" />
+        </svg>
+        {read
+          ? `What the model read · ${clock(read[0].t)}–${clock(read[read.length - 1].t)}`
+          : "What the model read"}
+      </span>
+    </button>
   );
 }

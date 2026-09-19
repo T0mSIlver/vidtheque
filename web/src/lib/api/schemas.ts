@@ -149,6 +149,11 @@ export const Citation = z.object({
   thumb_large: httpUrl().nullable(),
   source: z.string().nullable(),
   text: z.string().nullable(),
+  // What the model read of this moment, line by line (demo-site.md §3).
+  read: z
+    .array(z.object({ t: z.number(), text: z.string() }))
+    .nullable()
+    .optional(),
 });
 export type Citation = z.infer<typeof Citation>;
 
