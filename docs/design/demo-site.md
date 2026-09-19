@@ -1160,13 +1160,14 @@ Layout, top to bottom:
    hero, where it is the page's one big line and its lede — the rail is a rail,
    and a tagline in it competes with the thing it is a tagline for.
 2. **Search box** — autofocus, submits on Enter. One primary button, labelled
-   by the current mode (`Search` / `Ask ✨`). *Amended 2026-08-10:* it is the
+   by the current mode (`Search` / `Ask`; the sparkle went, Tom, 2026-09-19).
+   *Amended 2026-08-10:* it is the
    landing's query bar — a gold cue, the query in the machine's face, **a state
    cell that prints the machine's own word** (`ready` / `scanning` / `reading` /
    `no hits` / `refused`), then the action. The state cell is the honest signal
    that something is running (the Motion Law's alternative to a spinner), and it
    is a word first and a colour second.
-3. **Mode tabs and controls row** — a two-tab **mode switch**, `search | ask ✨`,
+3. **Mode tabs and controls row** — a two-tab **mode switch**, `search | ask`,
    sits on the query bar's top edge, hidden entirely when `ask_enabled` is
    false. Under the bar, one row: the filter chips (`all` / `transcript` /
    `on-screen text` / `frames`, mapping to `content_type`, `all` by default) in
@@ -1359,7 +1360,7 @@ A demo is judged on the four screens that are not "ten results came back".
   one click away and loses nothing.
 
   **The default is stated in the markup, not applied by `app.js`.** The button's
-  word (`Ask ✨`), the placeholder, the hidden content-type row, the pressed
+  word (`Ask`), the placeholder, the hidden content-type row, the pressed
   mode and the visible example set are one state, and applying it a round trip
   after `/api/meta` lands is the same stutter the font preloads exist to
   prevent. `state.askMode` starts `true` to match, and the two must move

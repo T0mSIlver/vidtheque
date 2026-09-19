@@ -372,7 +372,7 @@ describe("the console in search mode", () => {
       mountConsole({ boot: "rate_limited", askEnabled: false, initial: { ...SEARCH, q: "" } });
       expect(screen.getByRole("status")).toHaveTextContent("too many requests");
       expect(screen.getByText("rate limited")).toHaveAttribute("data-s", "refused");
-      expect(screen.queryByRole("button", { name: "ask ✨" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "ask" })).not.toBeInTheDocument();
     });
   });
 

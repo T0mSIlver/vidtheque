@@ -74,7 +74,7 @@ export function ConsoleForm({
             search
           </button>
           <button type="button" aria-pressed={ask} onClick={() => onMode("ask")}>
-            ask ✨
+            ask
           </button>
         </div>
       ) : null}
@@ -115,7 +115,7 @@ export function ConsoleForm({
             Search
           </span>
           <span className={ask ? undefined : styles.off} aria-hidden={!ask}>
-            Ask ✨
+            Ask
           </span>
         </button>
       </div>
