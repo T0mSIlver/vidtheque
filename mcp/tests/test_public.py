@@ -2755,3 +2755,84 @@ def test_a_counter_for_a_stale_day_is_dropped_rather_than_rolled() -> None:
     assert limiter._counters[("ask_global", "@global")].spent == 1
     assert limiter.check("ask_global", "@global", "2026-08-10")[3] == 1, "5 - 3 - 1"
     assert len(limiter._counters) == 1, "yesterday's counter is not kept"
+
+
+# ------------------------------------------------ a visitor's run (§3.6)
+
+VISITOR = "v-0123456789abcdef"
+
+
+def _visited(q: str = "what?", visitor: str = VISITOR) -> dict[str, str]:
+    return {"q": q, "visitor": visitor}
+
+
+def test_a_visitors_ask_outlives_its_stream_and_comes_back_whole(tmp_path: Path) -> None:
+    """A phone switching apps drops the stream; the answer must not go with it."""
+    upstream = _two_tool_script()
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        with client.stream("POST", "/api/ask", json=_visited(), headers=NDJSON) as dropped:
+            first = json.loads(next(dropped.iter_lines()))
+        assert first["event"] == "activity"
+        # Asked again by the same visitor: the whole run, from its first event,
+        # and the model is not asked twice.
+        events = _events(client.post("/api/ask", json=_visited(), headers=NDJSON))
+    assert [e["event"] for e in events] == ["activity"] * 4 + ["answer"]
+    assert events[-1]["payload"]["answer"] == "The cache trades memory for time [1]."
+    assert len(upstream.requests) == 3
+
+
+def test_the_same_words_from_another_visitor_are_a_run_of_their_own(tmp_path: Path) -> None:
+    """Per visitor, never shared (Tom, 2026-09-19)."""
+    upstream = _two_tool_script()
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        _events(client.post("/api/ask", json=_visited(), headers=NDJSON))
+        other = _events(
+            client.post("/api/ask", json=_visited(visitor="v-fedcba9876543210"), headers=NDJSON)
+        )
+    assert other[-1]["event"] == "answer"
+    # The model was asked again (`Upstream` repeats its last scripted reply, so
+    # the second run answers in one completion).
+    assert len(upstream.requests) > 3
+
+
+def test_resume_finds_a_run_and_never_starts_or_charges_one(tmp_path: Path) -> None:
+    public = PublicSettings(
+        enabled=True, openrouter_key="sk-or-test", ask_per_min=1, ask_per_day=50
+    )
+    upstream = _two_tool_script()
+    with make_client(tmp_path, public, upstream) as client:
+        missing = client.post("/api/ask/resume", json=_visited(), headers=NDJSON)
+        assert missing.status_code == 204 and not missing.content
+        assert upstream.requests == []
+
+        _events(client.post("/api/ask", json=_visited(), headers=NDJSON))
+        # The ask bucket holds one a minute and it is spent; resume is a read.
+        for _ in range(3):
+            again = _events(client.post("/api/ask/resume", json=_visited(), headers=NDJSON))
+            assert again[-1]["event"] == "answer"
+        assert client.post("/api/ask", json=_visited("other?"), headers=NDJSON).status_code == 429
+    assert len(upstream.requests) == 3
+
+
+def test_a_run_that_ended_in_an_error_is_not_kept(tmp_path: Path) -> None:
+    """Asking again after a refusal is a new try, not a replay of the refusal."""
+    upstream = Upstream(httpx.Response(503, json={"error": "down"}))
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        events = _events(client.post("/api/ask", json=_visited(), headers=NDJSON))
+        assert events[-1]["event"] == "error"
+        assert client.post("/api/ask/resume", json=_visited(), headers=NDJSON).status_code == 204
+
+
+def test_the_answer_event_says_how_long_the_run_took(tmp_path: Path) -> None:
+    """A replay renders instantly, so the page cannot time it; the server does."""
+    with make_client(tmp_path, PUBLIC_WITH_KEY, _two_tool_script()) as client:
+        events = _events(client.post("/api/ask", json=_visited(), headers=NDJSON))
+    assert isinstance(events[-1]["took_s"], int) and events[-1]["took_s"] >= 1
+
+
+def test_an_id_the_page_does_not_make_is_no_id(tmp_path: Path) -> None:
+    """A malformed visitor id runs the ask as before, and resume finds nothing."""
+    with make_client(tmp_path, PUBLIC_WITH_KEY, _two_tool_script()) as client:
+        _events(client.post("/api/ask", json=_visited(visitor="short"), headers=NDJSON))
+        gone = client.post("/api/ask/resume", json=_visited(visitor="short"), headers=NDJSON)
+    assert gone.status_code == 204

@@ -715,7 +715,7 @@ server already had:
 |---|---|---|
 | `activity` … `"phase": "start"` | before a step's tool calls run | `id`, `text` — "Searching on-screen text for “CVE”", "Searching the corpus for “a” and “b”", "Reading the transcript around 12:34 in “…”" |
 | `activity` … `"phase": "done"` | when the last of them lands | `id`, `result` — "6 hits in 2 talks", "5 lines of transcript", "nothing matched", counted over the step's calls |
-| `answer` | once, last | `payload`: the §3 body, unchanged |
+| `answer` | once, last | `payload`: the §3 body, unchanged; `took_s`, the run's wall-clock seconds by the server's clock (added 2026-09-19, §3.6) |
 | `error` | once, last, instead | `status: 503` and `payload`: the §3.4 body, unchanged |
 
 A **step** is every call to one tool that the model asked for in one turn
@@ -772,6 +772,8 @@ visitor who abandons a stream after the first activity line costs no *second*
 completion. It does cost the first one, and is charged for it. What cannot be
 cancelled is a call already in flight at the moment they leave; that one runs to
 its deadline and is thrown away — and, having been generated, it is billed.
+*Amended 2026-09-19: except a visitor's run, which finishes whoever is
+reading (§3.6).*
 
 **Refusals stay status codes.** Everything that can be refused before the model
 is reached — a 429 from the limiter with its `Retry-After`, a 503 for a missing
@@ -795,6 +797,49 @@ lands is how this file grows folklore; if a proxy buffers, find out what that
 proxy keys on.
 
 ---
+
+### 3.6 A visitor's ask outlives its stream (added 2026-09-19)
+
+A phone that switches apps mid-ask drops the stream. Under §3.5 the loop
+stopped with it: the question came back (the input still held it, and a
+reloaded `?ask=` link loads it), but the answer was gone, the completions it
+had run were paid for, and asking again started from zero. Tom's ruling
+(DECISIONS.md, 2026-09-19): the answer comes back to the visitor who asked,
+and to nobody else.
+
+- **The visitor.** The page keeps a random id for the browser in
+  `localStorage` (`v-` and 32 hex digits; no cookie) and sends it as
+  `"visitor"` in the ask body. Where storage is refused the id lasts as long as
+  the page. An id outside `[A-Za-z0-9_-]{16,64}` is no id.
+- **The run.** With a visitor id and a streaming `Accept`, the loop runs as its
+  own task and every event it yields is kept. The stream only reads the run, so
+  a reader leaving stops the reader, never the run. The same visitor asking the
+  same question (spacing and case aside, same `tags`) while it runs, or within
+  30 minutes of its answer, gets the run's events from the first and then the
+  rest live, and the model is not asked again. A run that ends in an `error`
+  event is not kept, so asking again is a new try. Another visitor asking the
+  same words gets a run of their own: answers are never shared. Runs live in
+  the process: a restart loses them, and at most 256 finished ones are kept,
+  oldest first out.
+- **`POST /api/ask/resume`**, same body, finds that visitor's run and streams
+  it exactly like the ask did, or answers `204` when there is none (not `404`:
+  a browser logs every failed fetch as a console error, and "no run" is the
+  ordinary answer on a first visit). It never starts a run, and the limiter
+  charges it to the search bucket, not the ask ones. The page calls it when a
+  `?ask=` link loads, when Back or Forward lands on an ask, and when a page
+  whose stream died becomes visible or comes back online.
+- **The bill.** A new run is charged as before and refunded under §4.4 when it
+  ends having bought nothing. A request that finds a run already going or kept
+  bought nothing upstream, so `ask_global` goes back at once; the per-IP minute
+  bucket stays spent, as for any retry. A visitor who leaves and never returns
+  now costs a whole ask instead of the steps before they left, bounded as
+  every ask is by the round cap, the deadline and the limits.
+- **`took_s`.** A replay renders at once, so the page cannot time it: the
+  answer event carries the run's duration by the server's clock, and "Worked
+  for N s" prints that when it is there.
+
+Without a visitor id — curl, a script, the JSON body — nothing here applies and
+§3.5 holds as written.
 
 ## 4. Rate limiting
 

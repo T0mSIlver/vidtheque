@@ -57,6 +57,7 @@ from .public import (
     public_routes,
 )
 from .public.ask import OpenRouter
+from .public.runs import Runs
 from .server import build_mcp_server
 from .tools import Deps
 
@@ -231,6 +232,8 @@ def assemble(
     # inside the limiter so its lifecycle hangs off the same lifespan the
     # database's does, in the right order (demo-site.md §4.2).
     budget = SqliteBudgetStore(db) if public.enabled else None
+    # Visitors' asks that outlive their stream (demo-site.md §3.6).
+    ask_runs = Runs() if public.enabled else None
 
     @contextlib.asynccontextmanager
     async def lifespan(_: Starlette) -> AsyncIterator[None]:
@@ -247,6 +250,9 @@ def assemble(
             finally:
                 if run_pipeline:
                     await runner.stop()
+                # Before the HTTP clients the runs are still talking through.
+                if ask_runs is not None:
+                    await ask_runs.close()
                 await client.aclose()
                 if http is not None:
                     await http.aclose()
@@ -295,6 +301,7 @@ def assemble(
     app.state.public_settings = public
     app.state.dashboard_settings = dashboard
     app.state.openrouter = llm
+    app.state.ask_runs = ask_runs
     app.state.assembled = Assembled(
         app=app,
         settings=settings,

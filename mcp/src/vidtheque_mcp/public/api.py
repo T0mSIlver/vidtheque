@@ -581,7 +581,9 @@ def api_routes(prefix: str = "", *, ask: bool = True, demo: bool = False) -> lis
         Route(f"{prefix}/api/editions/{{slug}}", edition_endpoint, methods=["GET"]),
     ]
     if ask:
-        from .ask import ask_endpoint
+        from .ask import ask_endpoint, ask_resume_endpoint
 
         routes.append(Route(f"{prefix}/api/ask", ask_endpoint, methods=["POST"]))
+        # Charged to the search bucket, not the ask one: it never starts a run.
+        routes.append(Route(f"{prefix}/api/ask/resume", ask_resume_endpoint, methods=["POST"]))
     return routes

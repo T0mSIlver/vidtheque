@@ -6,6 +6,19 @@ and `research/pipeline-tooling-research.md`. Where a design doc disagrees with
 this file, this file wins; fold changes back into the docs as implementation
 touches them.
 
+## A visitor's ask outlives its stream, decided by Tom, 2026-09-19
+
+An ask can take up to three minutes, and a phone that switches apps drops the
+stream. The loop stopped with it, so the answer was lost, what it had run was
+paid for, and asking again started from zero. Tom chose to keep the run going
+and give the answer back to the visitor who asked, and only to them: a random
+per-browser id keys the run, the same visitor's same question attaches to it or
+replays it for 30 minutes, and `POST /api/ask/resume` picks it up without ever
+starting one. Sharing one stored answer between visitors was offered and turned
+down: everyone would get the same first answer, a weak one would stick, and
+the suggested questions would stop showing the agent at work. The cost is that
+a visitor who never returns pays for a whole ask. Contract: demo-site.md §3.6.
+
 ## The ask pane reads as a chat turn, decided by Tom, 2026-09-19
 
 Tom's review of the Paris console: an answer's sources arriving as a column on
