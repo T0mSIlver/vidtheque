@@ -1,8 +1,30 @@
 /* The public console: one form and one output region for both modes.
    Visual contract: DESIGN.md, demo register. */
 .console {
+  /* Wider than the box: a result row spends it on the snippet and the receipt. */
+  --results-w: 64rem;
   display: flex;
   flex-direction: column;
+}
+
+/* Centred on the page: the box and everything said about the query — the
+   count, a notice, the answer — share the box's column; result rows take a
+   wider one on the same axis (Tom, 2026-09-19). */
+.form,
+.empty,
+.status,
+.notice,
+.answer {
+  width: 100%;
+  max-width: var(--query-w, 44rem);
+  margin-inline: auto;
+}
+
+.results,
+.foot {
+  width: 100%;
+  max-width: var(--results-w);
+  margin-inline: auto;
 }
 
 .form {
@@ -270,7 +292,6 @@
    query bar's measure, so the chips and the corpus list read as the box's own
    suggestions rather than as a very wide empty table. */
 .empty {
-  max-width: var(--query-w, 44rem);
   margin-top: var(--s6);
 }
 
@@ -344,7 +365,6 @@
 .notice {
   margin-top: var(--s4);
   padding: var(--s5);
-  max-width: var(--note);
   background: var(--plate);
   border: 1px solid var(--seam2);
 }
@@ -429,7 +449,6 @@
   align-content: start;
   margin-top: var(--s6);
   padding: var(--answer-pad);
-  max-width: var(--query-w, 44rem);
   background: var(--plate);
   border: 1px solid var(--seam2);
 }

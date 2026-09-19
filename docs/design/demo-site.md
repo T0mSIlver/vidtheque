@@ -1237,6 +1237,11 @@ Layout, top to bottom:
    talk, the second and the snippet — in a card fixed to the viewport (so the
    panel's clip cannot cut it), gone on leave, blur or scroll. A touch screen
    has no hover to end it, so a tap only follows the link.
+
+   The console is centred on the page, and the hero above it on `/paris` and
+   `/demo` with it: the form, the cold panel, the status line, a notice and the
+   answer share the bar's column; result rows take a wider one (64rem) on the
+   same axis, because a row spends the width on its snippet and its receipt.
 6. **"Add this corpus to your own agent"** — the label `MCP endpoint`, the
    `mcp_url` from `/api/meta`, a copy button, and the one-liner:
    `claude mcp add --transport http vidtheque <mcp_url>`. *Amended 2026-08-10:*
