@@ -406,8 +406,8 @@ async def ask_events(
 ) -> AsyncIterator[dict[str, Any]]:
     """The loop, as the events a visitor can watch (§3.5).
 
-    Yields one `activity` event per tool call *before* it runs and a second when
-    it lands, then exactly one `answer` event carrying the payload the JSON path
+    Yields one `activity` event per step (a turn's calls to one tool) *before*
+    they run and a second when they land, then exactly one `answer` event carrying the payload the JSON path
     returns. Raises :class:`AskUnavailable` instead of yielding an error, so the
     two transports each say "unavailable" in their own vocabulary — a 503 body,
     or a terminal `error` event — from one raise.
@@ -465,15 +465,24 @@ async def ask_events(
         # cap are the budget now.
         batch = _with_ids(calls, rounds)
         messages.append(_assistant_turn(message, batch))
-        for call in batch:
+        replies: dict[str, dict[str, Any]] = {}
+        # One step per tool per turn: three searches the model asked for at once
+        # read as one line, "Searching … for “a”, “b” and “c”" (Tom, 2026-09-19).
+        for group in _steps(batch):
             step += 1
-            # Announced *before* the tool runs — the line is what the model
+            # Announced *before* the tools run — the line is what the model
             # asked for, which is all that is known yet, and the visitor is
             # watching the slow part happen rather than a spinner.
-            yield {"event": "activity", "id": step, "phase": "start", "text": _asked(call, evidence)}
-            result, summary = await _run_tool(deps, call, evidence, tags)
-            messages.append(result)
-            yield {"event": "activity", "id": step, "phase": "done", "result": summary}
+            text = _asked_all(group, evidence)
+            yield {"event": "activity", "id": step, "phase": "start", "text": text}
+            outcomes = []
+            for call in group:
+                result, outcome = await _run_tool(deps, call, evidence, tags)
+                replies[call["id"]] = result
+                outcomes.append(outcome)
+            yield {"event": "activity", "id": step, "phase": "done", "result": _tally(outcomes)}
+        # Back in the order the model called them, whatever the steps grouped.
+        messages.extend(replies[call["id"]] for call in batch)
 
     # Out of rounds, or an empty answer with no tool calls: one last completion
     # with tools off, so the visitor always gets prose rather than a spinner.
@@ -550,7 +559,7 @@ def _assistant_turn(message: dict[str, Any], calls: list[dict[str, Any]]) -> dic
 
 # ------------------------------------------------------------ activity lines
 #
-# One tool call, one line a person can read. Every word of it comes from what
+# One step, one line a person can read. Every word of it comes from what
 # the model asked for or what the tool answered — there is no phrase here that
 # claims something the loop did not do, because the line is the visitor's only
 # window onto the ninety seconds the model spends inside the corpus (§3.5).
@@ -677,35 +686,136 @@ def _asked(call: dict[str, Any], evidence: Evidence) -> str:
     return f"Asking for “{humanize.clip(name, _TITLE_CHARS)}”" if name else "An empty tool call"
 
 
+_GROUPED = ("search", "get_segment_context")
+
+
+def _steps(batch: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """The turn's calls, one group per known tool, in order of first call.
+
+    A tool that does not exist stays a step of its own: there is nothing to say
+    about two of them together that is truer than saying each.
+    """
+    groups: dict[Any, list[dict[str, Any]]] = {}
+    for i, call in enumerate(batch):
+        name, _ = _call_args(call)
+        groups.setdefault(name if name in _GROUPED else (name, i), []).append(call)
+    return list(groups.values())
+
+
+def _and(parts: list[str]) -> str:
+    return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
+
+
+def _asked_all(group: list[dict[str, Any]], evidence: Evidence) -> str:
+    """What one step is about to do: one call's line, or one line for several."""
+    if len(group) == 1:
+        return _asked(group[0], evidence)
+    name, _ = _call_args(group[0])
+    args = [_call_args(call)[1] for call in group]
+    if name == "search":
+        asked = [
+            (
+                humanize.clip(str(a.get("query") or ""), _QUERY_CHARS),
+                _CHANNEL.get(a.get("content_type") if a.get("content_type") in _CHANNEL else "all"),
+            )
+            for a in args
+        ]
+        wheres = {where for _, where in asked}
+        queries = [(f"“{q}”", where) for q, where in asked if q]
+        if not queries:
+            return f"Searching {_and(sorted(wheres))}"
+        if len(wheres) == 1:
+            return f"Searching {wheres.pop()} for {_and([q for q, _ in queries])}"
+        return "Searching for " + _and([f"{q} in {where}" for q, where in queries])
+    # get_segment_context: the talks by the title an earlier hit carried, the
+    # moments by their clock, and one talk named once however often it is read.
+    reads: dict[str, list[str]] = {}
+    for a in args:
+        video_id = str(a.get("video_id") or "")
+        title = humanize.clip(evidence.describe(video_id)[0], _TITLE_CHARS)
+        which = f"“{title}”" if title else f"video {video_id}" if video_id else "a video"
+        try:
+            at = clock(float(a.get("t")))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            at = None
+        reads.setdefault(which, [])
+        if at:
+            reads[which].append(at)
+    if len(reads) == 1:
+        (which, ats), = reads.items()
+        return f"Reading the transcript around {_and(ats)} in {which}" if ats else (
+            f"Reading the transcript in {which}"
+        )
+    return "Reading the transcript around " + _and(
+        [
+            f"{_and(ats)} in {which}" if ats else f"somewhere in {which}"
+            for which, ats in reads.items()
+        ]
+    )
+
+
 def _hits_summary(hits: list[dict[str, Any]]) -> str:
     """What a search actually found — counted, never estimated."""
+    return _hits_line(len(hits), len({str(hit.get("video_id") or "") for hit in hits}))
+
+
+def _hits_line(hits: int, talks: int) -> str:
     if not hits:
         return "nothing matched"
-    talks = len({str(hit.get("video_id") or "") for hit in hits})
-    return (
-        f"{len(hits)} hit{'' if len(hits) == 1 else 's'} "
-        f"in {talks} talk{'' if talks == 1 else 's'}"
+    return f"{hits} hit{'' if hits == 1 else 's'} in {talks} talk{'' if talks == 1 else 's'}"
+
+
+def _lines_line(lines: int) -> str:
+    return f"{lines} line{'' if lines == 1 else 's'} of transcript" if lines else (
+        "no transcript there"
     )
+
+
+@dataclass(frozen=True)
+class Outcome:
+    """What one call came back with: its line, and the counts behind it."""
+
+    summary: str
+    hits: int | None = None
+    talks: frozenset[str] = frozenset()
+    lines: int | None = None
+
+
+def _tally(outcomes: list[Outcome]) -> str:
+    """One step's result: the counts added up, never a count guessed.
+
+    A step where a call failed says each call's line instead, because a total
+    over the calls that ran would read as a total over all of them.
+    """
+    if len(outcomes) == 1:
+        return outcomes[0].summary
+    if all(o.hits is not None for o in outcomes):
+        return _hits_line(
+            sum(o.hits or 0 for o in outcomes), len(frozenset().union(*(o.talks for o in outcomes)))
+        )
+    if all(o.lines is not None for o in outcomes):
+        return _lines_line(sum(o.lines or 0 for o in outcomes))
+    return "; ".join(dict.fromkeys(o.summary for o in outcomes))
 
 
 async def _run_tool(
     deps: Deps, call: dict[str, Any], evidence: Evidence, tags: str | None = None
-) -> tuple[dict[str, Any], str]:
-    """Run one internal tool. Returns its `tool` message and one line about it.
+) -> tuple[dict[str, Any], Outcome]:
+    """Run one internal tool. Returns its `tool` message and what it found.
 
-    Two consumers, one call: the message is the model's evidence, the line is
-    the visitor's. Neither is derived from the other — the model keeps the
-    tool's own text, and the line is counted from the same result.
+    Two consumers, one call: the message is the model's evidence, the outcome
+    is the visitor's. Neither is derived from the other — the model keeps the
+    tool's own text, and the outcome is counted from the same result.
     """
     name, args = _call_args(call)
 
     if name == "search":
-        text, summary = await _tool_search(deps, args, evidence, tags)
+        text, outcome = await _tool_search(deps, args, evidence, tags)
     elif name == "get_segment_context":
-        text, summary = await _tool_context(deps, args, evidence, scoped=bool(tags))
+        text, outcome = await _tool_context(deps, args, evidence, scoped=bool(tags))
     else:
         text = f"error: no tool named {name!r}. Use search or get_segment_context."
-        summary = "no such tool"
+        outcome = Outcome("no such tool")
 
     return {
         # `_with_ids` ran over this batch, so the id exists and is unique.
@@ -713,15 +823,15 @@ async def _run_tool(
         "tool_call_id": call["id"],
         "name": name,
         "content": text,
-    }, summary
+    }, outcome
 
 
 async def _tool_search(
     deps: Deps, args: dict[str, Any], evidence: Evidence, tags: str | None = None
-) -> tuple[str, str]:
+) -> tuple[str, Outcome]:
     query = str(args.get("query") or "").strip()[:512]
     if not query:
-        return "error: search needs a query.", "the search had no query"
+        return "error: search needs a query.", Outcome("the search had no query")
     content_type = args.get("content_type")
     if content_type not in search.CONTENT_TYPES:
         content_type = "all"
@@ -732,13 +842,17 @@ async def _tool_search(
         # leg came back empty-handed, without a code to look up.
         return (
             f"error: {payload.get('code')} — {payload.get('message')}",
-            "that search could not run",
+            Outcome("that search could not run"),
         )
 
     hits = (result.structured_content or {}).get("results", [])
+    outcome = Outcome(
+        _hits_summary(hits),
+        hits=len(hits),
+        talks=frozenset(str(hit.get("video_id") or "") for hit in hits),
+    )
     if not hits:
-        return f'No results for "{query}". Try different words.', _hits_summary(hits)
-    summary = _hits_summary(hits)
+        return f'No results for "{query}". Try different words.', outcome
     lines = [f'{len(hits)} results for "{query}":']
     for hit in hits:
         n = evidence.record(hit)
@@ -754,36 +868,36 @@ async def _tool_search(
             f"(video_id={hit.get('video_id')}, t={int(hit.get('start') or 0)})"
         )
         lines.append(f"    {str(hit.get('text') or '')}")
-    return "\n".join(lines), summary
+    return "\n".join(lines), outcome
 
 
 async def _tool_context(
     deps: Deps, args: dict[str, Any], evidence: Evidence, *, scoped: bool = False
-) -> tuple[str, str]:
+) -> tuple[str, Outcome]:
     video_id = str(args.get("video_id") or "").strip()
     if not video_id:
         return (
             "error: get_segment_context needs a video_id from a search hit.",
-            "that read named no video",
+            Outcome("that read named no video"),
         )
     if scoped and not any(item.video_id == video_id for item in evidence.items):
         return (
             "error: get_segment_context needs a video_id from a scoped search hit.",
-            "that read was outside the scoped search results",
+            Outcome("that read was outside the scoped search results"),
         )
     try:
         t = float(args.get("t"))  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return (
             "error: t must be a number of seconds, as given by a search hit.",
-            "that read named no moment",
+            Outcome("that read named no moment"),
         )
     result = await segment.run(deps, video_id=video_id, t=t, include_frame_refs=False)
     payload = result.structured_content or {}
     if result.is_error:
         return (
             f"error: {payload.get('code')} — {payload.get('message')}",
-            "that moment could not be read",
+            Outcome("that moment could not be read"),
         )
     block = result.content[0]
     text = getattr(block, "text", "")
@@ -824,12 +938,7 @@ async def _tool_context(
         )
     # Counted from the cues the window actually returned, so "no transcript
     # there" is a fact about the corpus rather than a guess about the read.
-    summary = (
-        f"{len(cues)} line{'' if len(cues) == 1 else 's'} of transcript"
-        if cues
-        else "no transcript there"
-    )
-    return text, summary
+    return text, Outcome(_lines_line(len(cues)), lines=len(cues))
 
 
 # A citation marker *with the horizontal space that flanks it*, so dropping one

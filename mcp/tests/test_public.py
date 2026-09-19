@@ -1942,8 +1942,8 @@ def _two_tool_script() -> Upstream:
     )
 
 
-def test_the_stream_narrates_every_tool_call_then_answers(tmp_path: Path) -> None:
-    """n tool calls → 2n activity events, then exactly one answer (§3.5)."""
+def test_the_stream_narrates_every_step_then_answers(tmp_path: Path) -> None:
+    """n steps → 2n activity events, then exactly one answer (§3.5)."""
     with make_client(tmp_path, PUBLIC_WITH_KEY, _two_tool_script()) as client:
         response = _stream_ask(client)
     assert response.status_code == 200
@@ -2004,6 +2004,77 @@ def test_the_activity_lines_say_what_was_searched_and_what_came_back(
     assert lines[(2, "start")]["text"].startswith("Reading the transcript around 0:12 in “")
     assert "Let's build GPT" in lines[(2, "start")]["text"]
     assert re.fullmatch(r"\d+ lines? of transcript", lines[(2, "done")]["result"])
+
+
+def test_calls_of_one_turn_to_one_tool_are_one_step(tmp_path: Path) -> None:
+    """Three searches asked at once read as one line, counted as one (§3.5)."""
+    upstream = Upstream(
+        _completion(
+            tool_calls=[
+                _tool_call("c1", "search", {"query": "kv cache"}),
+                _tool_call("c2", "search", {"query": "block table"}),
+                _tool_call("c3", "search", {"query": "zzzqqqwww"}),
+            ]
+        ),
+        _completion("The cache trades memory for time [1]."),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        events = _events(_stream_ask(client))
+    steps = [e for e in events if e["event"] == "activity"]
+    assert [(e["id"], e["phase"]) for e in steps] == [(1, "start"), (1, "done")]
+    assert steps[0]["text"] == (
+        "Searching the corpus for “kv cache”, “block table” and “zzzqqqwww”"
+    )
+    # Added up across the three, the talks counted once each.
+    assert re.fullmatch(r"\d+ hits? in \d+ talks?", steps[1]["result"])
+    # The model still gets one reply per call, in the order it made them.
+    replies = [m for m in upstream.requests[1]["messages"] if m["role"] == "tool"]
+    assert [m["tool_call_id"] for m in replies] == ["c1", "c2", "c3"]
+
+
+def test_a_turn_with_two_tools_is_two_steps_and_keeps_the_call_order(
+    tmp_path: Path,
+) -> None:
+    """Grouping is per tool, so a read, a search and a read are two steps."""
+    upstream = Upstream(
+        _completion(tool_calls=[_tool_call("c0", "search", {"query": "kv cache"})]),
+        _completion(
+            tool_calls=[
+                _tool_call("c1", "get_segment_context", {"video_id": "kCc8FmEb1nY", "t": 12}),
+                _tool_call("c2", "search", {"query": "block table", "content_type": "ocr"}),
+                _tool_call("c3", "get_segment_context", {"video_id": "kCc8FmEb1nY", "t": 70}),
+            ]
+        ),
+        _completion("The cache trades memory for time [1]."),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        events = _events(_stream_ask(client))
+    starts = [e["text"] for e in events if e.get("phase") == "start"]
+    assert len(starts) == 3, starts
+    # One talk read twice is named once.
+    assert re.fullmatch(r"Reading the transcript around 0:12 and 1:10 in “[^”]+”", starts[1])
+    assert starts[2] == "Searching on-screen text for “block table”"
+    dones = [e["result"] for e in events if e.get("phase") == "done"]
+    assert re.fullmatch(r"\d+ lines? of transcript", dones[1])
+    replies = [m for m in upstream.requests[2]["messages"] if m["role"] == "tool"]
+    assert [m["tool_call_id"] for m in replies] == ["c0", "c1", "c2", "c3"]
+
+
+def test_searches_on_different_channels_say_which_is_which(tmp_path: Path) -> None:
+    upstream = Upstream(
+        _completion(
+            tool_calls=[
+                _tool_call("c1", "search", {"query": "kv cache", "content_type": "ocr"}),
+                _tool_call("c2", "search", {"query": "block table"}),
+            ]
+        ),
+        _completion("The cache trades memory for time [1]."),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        events = _events(_stream_ask(client))
+    assert next(e for e in events if e.get("phase") == "start")["text"] == (
+        "Searching for “kv cache” in on-screen text and “block table” in the corpus"
+    )
 
 
 def test_a_drill_down_into_an_unseen_video_names_the_id_not_a_title(
