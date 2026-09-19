@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AskFailure, EditionTalk } from "@/lib/api/schemas";
 import { Answer } from "./AskAnswer";
 import type { AskPhase, Line } from "./requests";
@@ -27,12 +27,13 @@ export function AskPane({
 }) {
   const busy = phase.kind === "working";
   // The pane mounts with the ask (it is keyed by it), so this is when it began.
+  // Layout effects, so the line never paints a frame without its duration.
   const began = useRef(0);
   const [took, setTook] = useState<number | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     began.current = performance.now();
   }, []);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!busy) setTook(Math.max(1, Math.round((performance.now() - began.current) / 1000)));
   }, [busy]);
 
