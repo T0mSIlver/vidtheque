@@ -26,6 +26,10 @@ right rail held from the first frame, a drawer behind a button):
 - **A citation marker shows its moment on hover or focus**: the frame, the
   talk, the second and the snippet, in a card that never takes the pointer.
   The drawer variant's one feature he kept.
+- **The console and the hero are centred on the page**, the answer and every
+  sentence about the query in the query bar's column, result rows in a wider
+  one on the same axis.
+
 ## One deployment shape, corpus generations, alignment as data, decided by Tom, 2026-09-18
 
 The public box ran a git checkout under systemd and built the front end on the

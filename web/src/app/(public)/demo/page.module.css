@@ -4,11 +4,14 @@
   padding: var(--gap-head) var(--gut) var(--beat);
 }
 
+/* Centred over the console, which is centred on the page (Tom, 2026-09-19). */
 .hero {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: var(--gap-copy);
   margin-bottom: var(--gap-head);
+  text-align: center;
 }
 
 /* The gold rule and the micro-label that open a beat. */
@@ -16,6 +19,7 @@
   composes: t-label-sm from global;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 12px;
   color: var(--gold);
 }

@@ -3,16 +3,20 @@
   margin: 0 auto;
   padding: var(--gap-head) var(--gut) var(--beat);
 }
+/* Centred over the console, which is centred on the page (Tom, 2026-09-19). */
 .hero {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: var(--gap-copy);
   margin-bottom: var(--gap-block);
+  text-align: center;
 }
 .kick {
   composes: t-label-sm from global;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 12px;
   color: var(--gold);
 }
