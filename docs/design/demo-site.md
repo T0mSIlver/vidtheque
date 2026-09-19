@@ -391,12 +391,25 @@ and what either stream's final event carries — one loop, one payload.
     {"n": 1, "video_id": "zduSFxRajkE", "title": "Making LLMs go brrr",
      "channel": "GPU MODE", "t": 13, "timestamp": "0:13",
      "link": "https://youtu.be/zduSFxRajkE?t=11", "thumb": "…",
-     "source": "transcript", "text": "the block table keeps …"}
+     "source": "transcript", "text": "the block table keeps …",
+     "read": [{"t": 9, "text": "so the question is where …"},
+              {"t": 13, "text": "the block table keeps …"}]}
   ],
   "rounds": 2,
   "model": "deepseek/deepseek-v4-flash-0731"
 }
 ```
+
+`read` is what the model read of that moment, so a visitor can check the answer
+against it (added 2026-09-19, Tom: "see exactly what the LLM read"). A citation
+that came from a `get_segment_context` call carries the window's transcript,
+line by line with each line's second, exactly the cues the tool printed under
+its 4000-char budget; a search hit the model later read around gains that
+window too. A citation the model only saw as a search hit has `read: null`,
+because its `text` is all it read. The `text` of a drill-down is the moment
+itself — the cue running at the cited second and the two after it — where it
+used to be the window middle-truncated to 1000 chars, which cut out exactly
+that line.
 
 ### 3.1 The model
 

@@ -983,6 +983,8 @@ def test_ask_runs_the_tool_loop_and_cites_real_results(tmp_path: Path) -> None:
     assert first["n"] == 1
     assert first["link"].startswith("https://youtu.be/")
     assert first["timestamp"]
+    # A search hit is all the model read of it: its excerpt, and no window.
+    assert first["read"] is None
     # The model saw the search tool's own bounded text, not a transcript dump.
     tool_message = next(
         m for m in upstream.requests[1]["messages"] if m.get("role") == "tool"
@@ -1816,6 +1818,12 @@ def test_a_drill_down_window_is_recorded_as_citable_evidence(tmp_path: Path) -> 
     assert cited["video_id"] == "kCc8FmEb1nY"
     assert cited["link"].startswith("https://youtu.be/kCc8FmEb1nY")
     assert cited["text"], "the window's own words, so the source row is not a bare title"
+    # Every line the model read, each at its second, and the excerpt is the
+    # moment itself — one of those lines — not the window's two ends.
+    assert cited["read"] and all(
+        isinstance(line["t"], int) and line["text"] for line in cited["read"]
+    )
+    assert any(line["text"] in cited["text"] for line in cited["read"])
     # And the model was told which number the window is, or it could not cite it.
     tool_message = next(
         m for m in upstream.requests[1]["messages"] if m.get("role") == "tool"
@@ -1837,6 +1845,8 @@ def test_a_drill_down_into_a_known_hit_reuses_that_hit_number(tmp_path: Path) ->
     with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
         payload = client.post("/api/ask", json={"q": "block table?"}).json()
     assert [c["n"] for c in payload["citations"]] == [1]
+    # The hit keeps its excerpt and gains the window the model read around it.
+    assert payload["citations"][0]["read"]
     context_message = [
         m for m in upstream.requests[2]["messages"] if m.get("role") == "tool"
     ][-1]

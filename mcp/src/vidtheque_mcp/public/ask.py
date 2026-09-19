@@ -228,6 +228,9 @@ class Citation:
     # list reads exactly like a search result instead of a bare title.
     source: str | None = None
     text: str | None = None
+    # The transcript lines a drill-down gave the model around this moment,
+    # `{t, text}` each, so the page can show exactly what it read (§3).
+    read: list[dict[str, Any]] | None = None
 
     def as_dict(self, thumb: str | None, thumb_large: str | None) -> dict[str, Any]:
         return {
@@ -243,6 +246,7 @@ class Citation:
             "thumb_large": thumb_large,
             "source": self.source,
             "text": self.text,
+            "read": self.read,
         }
 
 
@@ -259,7 +263,11 @@ class Evidence:
         t = int(hit.get("start") or 0)
         key = (video_id, t)
         if key in self._seen:
-            return self._seen[key]
+            n = self._seen[key]
+            # A drill-down into a hit the model already had: it read the window too.
+            if hit.get("read") and self.items[n - 1].read is None:
+                self.items[n - 1].read = hit["read"]
+            return n
         n = len(self.items) + 1
         self._seen[key] = n
         self.items.append(
@@ -275,6 +283,7 @@ class Evidence:
                 # The citation is rendered as a search row, so it is humanised
                 # like one — the *model* still sees the tool's own text.
                 text=humanize.snippet(hit.get("text"), hit.get("source")),
+                read=hit.get("read"),
             )
         )
         return n
@@ -912,6 +921,18 @@ async def _tool_context(
     if cues:
         centre = float(payload.get("t") or t)
         title, channel = evidence.describe(video_id)
+        # The row's excerpt is the moment cited: the cue running at the centre
+        # and the two after it. The window's middle-truncated whole cut out
+        # exactly that line; the whole window travels as `read`.
+        at = next(
+            (i for i, cue in enumerate(cues) if float(cue.get("end") or 0) > centre),
+            len(cues) - 1,
+        )
+        read = [
+            {"t": int(float(cue.get("start") or 0)), "text": line}
+            for cue in cues
+            if (line := humanize.snippet(str(cue.get("text") or "")))
+        ]
         n = evidence.record(
             {
                 "video_id": video_id,
@@ -921,9 +942,10 @@ async def _tool_context(
                 "link": deeplink(video_id, centre, deps.settings.deeplink_lead_s),
                 "source": "transcript",
                 "text": middle_truncate(
-                    " ".join(str(cue.get("text") or "") for cue in cues),
+                    " ".join(str(cue.get("text") or "") for cue in cues[at : at + 3]),
                     search.DEFAULT_MAX_TEXT_CHARS,
                 ),
+                "read": read,
             }
         )
         # The talk is named here too, so an answer built out of the round where
