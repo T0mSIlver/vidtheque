@@ -1,7 +1,10 @@
-// This browser's random id, sent with each ask so the answer to a dropped
-// stream can be picked up again (demo-site.md §3.6). No cookie: it lives in
-// localStorage, and where storage is refused it lasts as long as the page.
+// This browser's random id: it picks up the answer to a dropped stream again
+// (demo-site.md §3.6), and it is the key the minute limits are charged against,
+// so a room behind one address is a room rather than one visitor (§4.1). No
+// cookie: it lives in localStorage, and where storage is refused it lasts as
+// long as the page.
 const KEY = "vidtheque.visitor";
+const HEADER = "x-vidtheque-visitor";
 const SHAPE = /^[A-Za-z0-9_-]{16,64}$/;
 
 let memo: string | null = null;
@@ -29,4 +32,10 @@ export function visitorId(): string {
     }
   }
   return memo;
+}
+
+/** The header every call from the page carries, so the limiter can tell one
+ *  visitor from the address they share with a conference hall. */
+export function visitorHeader(): Record<string, string> {
+  return { [HEADER]: visitorId() };
 }

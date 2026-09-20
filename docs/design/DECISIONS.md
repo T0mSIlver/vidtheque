@@ -6,6 +6,30 @@ and `research/pipeline-tooling-research.md`. Where a design doc disagrees with
 this file, this file wins; fold changes back into the docs as implementation
 touches them.
 
+## The demo's remaining budgets, decided by Tom, 2026-09-20
+
+Tom's position, reviewing what still bounds an ask three days before AI
+Engineer Paris: budgets everywhere is not how an agent performs well, and this
+is a demo that has to be good. Three minutes of wall clock stays — it is what
+keeps a visitor from watching a spinner — and so do the ceilings that guard
+money and the box. What went:
+
+- **A long question is refused, not cut.** The cap was 400 characters applied
+  as a slice, so a pasted paragraph was answered as far as its 400th character
+  with nothing saying so. It is 1000 now, and over it is `E_BAD_PARAM`.
+- **The model may widen a search or a read.** `limit` and `window` are
+  forwarded to the two tools, clamped server-side as they always were
+  (1..50 hits, 5..300s). A window carries its text budget with it, so a wider
+  read is not middle-truncated back to the default's 4000 chars.
+- **The minute limits key on the visitor, not the address.** A conference hall
+  is one NAT address: five asks and thirty searches a minute *for the room* is
+  an outage, not a rate limit. Each browser's own id is the key, with a much
+  looser per-address ceiling behind it because that id is a script's to mint
+  too. The daily `ask_global` cap is untouched — it is the one that guards
+  money, and money is the budget that actually binds.
+
+Contract: demo-site.md §3, §3.2, §4.1.
+
 ## A visitor's ask outlives its stream, decided by Tom, 2026-09-19
 
 An ask can take up to three minutes, and a phone that switches apps drops the

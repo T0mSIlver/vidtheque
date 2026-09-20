@@ -40,10 +40,20 @@ class PublicSettings:
     ask_timeout_s: float = 180.0
 
     # ---------------------------------------------------------------- limits
+    # `search` and `ask` are per *visitor* — the id the page makes (§4.1) — and
+    # the `_ip` pair is the ceiling for the address they arrive from. A
+    # conference is one NAT address for a whole room, so an address's limit has
+    # to be a room's worth of traffic; what keeps that from being a spending
+    # hole is `ask_per_day`, which is the bucket that guards money.
     search_per_min: int = 30
+    search_ip_per_min: int = 300
     ask_per_min: int = 5
+    ask_ip_per_min: int = 60
     ask_per_day: int = 50
-    frames_per_min: int = 120
+    # Per address, and it has to be: a thumbnail is an `<img>`, and an `<img>`
+    # sends no header, so there is no visitor to charge. One screen of results
+    # is ~10 of them, and a room browsing at once is the case this has to pass.
+    frames_per_min: int = 600
     # `/mcp`, per IP. Loose on purpose: one question answered by somebody's
     # agent is legitimately a burst of tool calls, and this is the product
     # rather than a page. It exists because the alternative was no ceiling at
@@ -72,9 +82,11 @@ class PublicSettings:
             ask_max_rounds=_int_env("VIDTHEQUE_ASK_MAX_ROUNDS", 50),
             ask_timeout_s=_float_env("VIDTHEQUE_ASK_TIMEOUT_S", 180.0),
             search_per_min=_int_env("VIDTHEQUE_RATE_SEARCH_PER_MIN", 30),
+            search_ip_per_min=_int_env("VIDTHEQUE_RATE_SEARCH_IP_PER_MIN", 300),
             ask_per_min=_int_env("VIDTHEQUE_RATE_ASK_PER_MIN", 5),
+            ask_ip_per_min=_int_env("VIDTHEQUE_RATE_ASK_IP_PER_MIN", 60),
             ask_per_day=_int_env("VIDTHEQUE_RATE_ASK_PER_DAY", 50),
-            frames_per_min=_int_env("VIDTHEQUE_RATE_FRAMES_PER_MIN", 120),
+            frames_per_min=_int_env("VIDTHEQUE_RATE_FRAMES_PER_MIN", 600),
             mcp_per_min=_int_env("VIDTHEQUE_RATE_MCP_PER_MIN", 120),
             rate_max_keys=_int_env("VIDTHEQUE_RATE_MAX_KEYS", 10_000),
             trusted_ip_header=_trusted_ip_header(),

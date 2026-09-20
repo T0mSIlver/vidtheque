@@ -91,8 +91,14 @@ describe("the console in ask mode", () => {
       ...{ q: "what is a kv cache" },
       visitor: expect.stringMatching(VISITOR_ID),
     });
-    expect((body(fetchSpy).headers as Record<string, string>).accept).toBe(
+    const headers = body(fetchSpy).headers as Record<string, string>;
+    expect(headers.accept).toBe(
       "text/event-stream, application/x-ndjson;q=0.9, application/json;q=0.8",
+    );
+    // The same id as the body's, as a header: it is what the minute limits are
+    // charged against, so a hall behind one address is a hall (demo-site §4.1).
+    expect(headers["x-vidtheque-visitor"]).toBe(
+      JSON.parse(body(fetchSpy).body as string).visitor,
     );
     expect(push).not.toHaveBeenCalled();
 

@@ -10,7 +10,7 @@ import {
   type ContentType,
 } from "@/lib/api/schemas";
 import { framingOf, readJsonEvents } from "@/lib/api/sse";
-import { visitorId } from "@/lib/api/visitor";
+import { visitorHeader, visitorId } from "@/lib/api/visitor";
 
 export async function fetchSearch(
   params: { q: string; type: ContentType; offset: number; tags?: string },
@@ -25,7 +25,7 @@ export async function fetchSearch(
   if (params.tags) query.set("tags", params.tags);
   let response: Response;
   try {
-    response = await fetch(`/api/search?${query}`, { signal });
+    response = await fetch(`/api/search?${query}`, { headers: visitorHeader(), signal });
   } catch (err) {
     if (signal.aborted) throw err;
     return { kind: "unreachable" };
@@ -100,6 +100,7 @@ export async function streamAsk(
       headers: {
         "content-type": "application/json",
         accept: CAN_STREAM ? STREAM_ACCEPT : "application/json",
+        ...visitorHeader(),
       },
       body: JSON.stringify({
         q: params.q,

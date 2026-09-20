@@ -45,8 +45,8 @@ from ..text import clock, deeplink, middle_truncate, split_csv, validate_tag
 from ..tools import search, segment
 from ..tools.base import Deps
 from . import humanize
-from .ratelimit import refund
-from .runs import Run, run_key
+from .ratelimit import refund, visitor_key
+from .runs import Run, run_key, visitor_of
 from .settings import PublicSettings
 
 logger = logging.getLogger(__name__)
@@ -1299,8 +1299,6 @@ async def _stream(
             refund(scope, "ask_global")
 
 
-_VISITOR = re.compile(r"[A-Za-z0-9_-]{16,64}")
-
 _STREAM_HEADERS = {
     # `no-transform`: a proxy that gzips the stream holds every small event in
     # its compressor until the answer (Next's dev rewrite did, 2026-09-19), and
@@ -1378,9 +1376,12 @@ async def _read_ask(request: Request) -> _Asked | Response:
             headers={"Cache-Control": "no-store"},
         )
     # An id that is not one the page makes is no id: the ask runs as before.
-    raw_visitor = body.get("visitor") if isinstance(body, dict) else None
-    valid = isinstance(raw_visitor, str) and _VISITOR.fullmatch(raw_visitor)
-    visitor = raw_visitor if valid else None
+    # The header first, because that is the copy the limiter charged (§4.1);
+    # the body is the same id and stays readable for a client that sends only
+    # it. Either way one value decides both the bucket and the run.
+    visitor = visitor_key(request.scope) or visitor_of(
+        body.get("visitor") if isinstance(body, dict) else None
+    )
     return _Asked(question, tags, visitor)
 
 

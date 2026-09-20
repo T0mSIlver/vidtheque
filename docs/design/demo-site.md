@@ -826,9 +826,12 @@ had run were paid for, and asking again started from zero. Tom's ruling
 and to nobody else.
 
 - **The visitor.** The page keeps a random id for the browser in
-  `localStorage` (`v-` and 32 hex digits; no cookie) and sends it as
-  `"visitor"` in the ask body. Where storage is refused the id lasts as long as
-  the page. An id outside `[A-Za-z0-9_-]{16,64}` is no id.
+  `localStorage` (`v-` and 32 hex digits; no cookie) and sends it on every call
+  it makes as the `X-Vidtheque-Visitor` header, and on an ask as `"visitor"` in
+  the body too. The header is what the limiter charges (§4.1) and the loop
+  prefers it; the body is the same id, and a client that sends only it still
+  gets a run. Where storage is refused the id lasts as long as the page. An id
+  outside `[A-Za-z0-9_-]{16,64}` is no id.
 - **The run.** With a visitor id and a streaming `Accept`, the loop runs as its
   own task and every event it yields is kept. The stream only reads the run, so
   a reader leaving stops the reader, never the run. The same visitor asking the
@@ -848,8 +851,8 @@ and to nobody else.
   whose stream died becomes visible or comes back online.
 - **The bill.** A new run is charged as before and refunded under §4.4 when it
   ends having bought nothing. A request that finds a run already going or kept
-  bought nothing upstream, so `ask_global` goes back at once; the per-IP minute
-  bucket stays spent, as for any retry. A visitor who leaves and never returns
+  bought nothing upstream, so `ask_global` goes back at once; the minute
+  buckets stay spent, as for any retry. A visitor who leaves and never returns
   now costs a whole ask instead of the steps before they left, bounded as
   every ask is by the round cap, the deadline and the limits.
 - **`took_s`.** A replay renders at once, so the page cannot time it: the
@@ -886,15 +889,34 @@ guarding money only until the next deploy. It is persisted; §4.2 is how.
 
 | bucket | routes | default | env |
 |---|---|---|---|
-| `search` | `/api/search`, `/api/videos`, `/api/meta` | 30/min per IP | `VIDTHEQUE_RATE_SEARCH_PER_MIN` |
-| `ask` | `/api/ask` | 5/min per IP | `VIDTHEQUE_RATE_ASK_PER_MIN` |
+| `search` | `/api/search`, `/api/videos`, `/api/meta` | 30/min per visitor | `VIDTHEQUE_RATE_SEARCH_PER_MIN` |
+| `search_ip` | the same | 300/min per IP | `VIDTHEQUE_RATE_SEARCH_IP_PER_MIN` |
+| `ask` | `/api/ask` | 5/min per visitor | `VIDTHEQUE_RATE_ASK_PER_MIN` |
+| `ask_ip` | `/api/ask` | 60/min per IP | `VIDTHEQUE_RATE_ASK_IP_PER_MIN` |
 | `ask_global` | `/api/ask` | 50/UTC day, whole server, **persisted** | `VIDTHEQUE_RATE_ASK_PER_DAY` |
-| `frames` | `/frames/*` | 120/min per IP | `VIDTHEQUE_RATE_FRAMES_PER_MIN` |
+| `frames` | `/frames/*` | 600/min per IP | `VIDTHEQUE_RATE_FRAMES_PER_MIN` |
 
-`frames` is loose on purpose: one screen of results is ~10 thumbnails, so a
-visitor paging through the corpus legitimately fetches a hundred images a
-minute. It is there to stop a scraper walking the whole keyframe directory, not
-to police normal browsing.
+**Per visitor, with the address as a ceiling (2026-09-20, Tom).** These were all
+per IP, and a conference hall is one NAT address for hundreds of people: five
+asks a minute and thirty searches a minute *for the room* is not a rate limit,
+it is an outage in the first minute of a talk. So the two browser buckets are
+charged against the visitor id the page already keeps (§3.6), sent as
+`X-Vidtheque-Visitor` — a header rather than the body, because the limiter
+charges before anything has read a byte, and buffering the body would mean
+buffering the one path that streams.
+
+A bucket named `<name>_ip` is that bucket's ceiling, charged to the address as
+well. It exists because an id the page mints is an id a script can mint: the
+visitor bucket buys fairness between people, never safety against one. What
+bounds the money is unchanged — `ask_global`, counted for the whole server and
+written down. A request with no id pays the ceiling alone and nothing else,
+which is the honest answer for the two callers that cannot send one: an `<img>`
+fetching a thumbnail, and the page's own server-rendered reads.
+
+`frames` stays per IP for that reason, and is loose on purpose: one screen of
+results is ~10 thumbnails, and a room browsing at once shares one address. It is
+there to stop a scraper walking the whole keyframe directory, not to police
+normal browsing.
 
 `/api/ask` is charged against **both** its per-IP bucket and the global one; the
 per-IP check runs first, so one visitor cannot spend the day's budget before

@@ -13,12 +13,27 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import aclosing
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# The id the page makes, and the two places it arrives: the ask body, which the
+# loop reads, and this header, which the limiter reads before any body exists
+# (§4.1). One shape, checked once, because an id the page did not make is no id.
+VISITOR_HEADER = "x-vidtheque-visitor"
+_SHAPE = re.compile(r"[A-Za-z0-9_-]{16,64}")
+
+
+def visitor_of(raw: object) -> str | None:
+    """A visitor id, or None for anything that is not one."""
+    if not isinstance(raw, str):
+        return None
+    candidate = raw.strip()
+    return candidate if _SHAPE.fullmatch(candidate) else None
 
 # Long enough to switch apps, answer a message and come back; short enough
 # that a restart is the only thing the kept answers ever cost.

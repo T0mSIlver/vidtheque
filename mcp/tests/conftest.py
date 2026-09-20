@@ -152,6 +152,13 @@ VIDEOS = [
 ]
 
 
+# The minute limits are charged against the visitor the page says it is
+# (demo-site.md §4.1), so a test about one browser's rate says which browser and
+# a test about an address sends no id at all.
+A_VISITOR = {"X-Vidtheque-Visitor": "v-" + "0" * 32}
+ANOTHER_VISITOR = {"X-Vidtheque-Visitor": "v-" + "1" * 32}
+
+
 def seed(db_path: Path, keyframes_dir: Path, *, with_vectors: bool = True) -> None:
     conn = open_write_connection(db_path)
     try:

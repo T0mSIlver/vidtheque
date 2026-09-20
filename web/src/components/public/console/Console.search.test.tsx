@@ -51,6 +51,12 @@ describe("the console in search mode", () => {
       limit: "10",
       offset: "0",
     });
+    // A search is charged to this browser, not to the address it shares with a
+    // conference hall, so it carries the same id an ask does (demo-site §4.1).
+    const init = fetchSpy.mock.calls[0][1] as RequestInit;
+    expect((init.headers as Record<string, string>)["x-vidtheque-visitor"]).toMatch(
+      /^v-[0-9a-f]{32}$/,
+    );
     expect(push).toHaveBeenCalledWith(null, "", "/demo?q=kv+cache&type=ocr");
     expect(await screen.findByText("2 results")).toBeInTheDocument();
     // Focus stays in the box on a fine pointer.
