@@ -31,6 +31,7 @@ from vidtheque_mcp.public.ratelimit import Bucket, RateLimiter, client_key
 from vidtheque_mcp.public.readonly import OWNER_ONLY_TOOLS, WRITE_TOOLS, hidden_tools
 from vidtheque_mcp.tools.descriptions import ANNOTATIONS
 from vidtheque_mcp.public.settings import PublicSettings
+from vidtheque_mcp.tools import segment
 
 from .conftest import FakeEmbeddings, rpc, rpc_headers, seed
 
@@ -1278,6 +1279,73 @@ def test_ask_drill_down_tool_reads_the_transcript_window(tmp_path: Path) -> None
     )
     assert "TRANSCRIPT" in tool_message["content"]
     assert "kCc8FmEb1nY" in tool_message["content"]
+
+
+def _tool_text(upstream: "Upstream") -> str:
+    """What the loop handed back for the first tool call of the last round."""
+    return next(m for m in upstream.requests[1]["messages"] if m.get("role") == "tool")[
+        "content"
+    ]
+
+
+def _asks(tmp_path: Path, tool: str, args: dict[str, Any], *, fresh: bool = False) -> str:
+    """One ask whose single tool call is `args`, and the tool's reply to it."""
+    upstream = Upstream(
+        _completion(tool_calls=[_tool_call("c1", tool, args)]),
+        _completion("done."),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream, fresh=fresh) as client:
+        assert client.post("/api/ask", json={"q": "how much?"}).status_code == 200
+    return _tool_text(upstream)
+
+
+def test_the_model_can_ask_for_more_hits_than_the_default(tmp_path: Path) -> None:
+    one = _asks(tmp_path, "search", {"query": "cache", "limit": 1}, fresh=True)
+    # A string, because the cheap tiers this demo pins send numbers as strings.
+    lots = _asks(tmp_path, "search", {"query": "cache", "limit": "50"})
+    default = _asks(tmp_path, "search", {"query": "cache"})
+    assert one.startswith("1 results for")
+    assert int(lots.split(" ", 1)[0]) > 1, "asking for 50 returns what the corpus has"
+    assert int(lots.split(" ", 1)[0]) >= int(default.split(" ", 1)[0])
+    # Nonsense is not an argument: the tool's own default stands.
+    junk = _asks(tmp_path, "search", {"query": "cache", "limit": "lots"})
+    assert junk.split(" ", 1)[0] == default.split(" ", 1)[0]
+
+
+def test_a_wider_window_brings_back_more_transcript_not_the_same_truncated(
+    tmp_path: Path,
+) -> None:
+    here = {"video_id": "kCc8FmEb1nY", "t": 12}
+    default = _asks(tmp_path, "get_segment_context", here, fresh=True)
+    wide = _asks(tmp_path, "get_segment_context", {**here, "window": 300})
+    assert len(wide) > len(default), "the window the model asked for is the window it gets"
+    assert "chars truncated" not in wide, "and it is not cut back to the 45s budget"
+    # Out of range is clamped by the tool, never refused: 5s is the floor.
+    tiny = _asks(tmp_path, "get_segment_context", {**here, "window": 1})
+    assert len(tiny) < len(default)
+
+
+def test_the_text_budget_widens_with_the_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A window worth more than 4000 chars of speech arrives whole (§3.2)."""
+    asked: list[dict[str, Any]] = []
+    real = segment.run
+
+    async def record(deps: Any, **kwargs: Any) -> Any:
+        asked.append(kwargs)
+        return await real(deps, **kwargs)
+
+    monkeypatch.setattr(segment, "run", record)
+    _asks(tmp_path, "get_segment_context", {"video_id": "kCc8FmEb1nY", "t": 12}, fresh=True)
+    _asks(
+        tmp_path,
+        "get_segment_context",
+        {"video_id": "kCc8FmEb1nY", "t": 12, "window": 300},
+    )
+    assert "window" not in asked[0], "no argument, so the tool's own default stands"
+    assert asked[1]["window"] == 300
+    assert asked[1]["max_text_chars"] == 300 * 90
 
 
 def test_a_failing_internal_tool_is_reported_to_the_model(tmp_path: Path) -> None:

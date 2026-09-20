@@ -411,7 +411,7 @@ and what either stream's final event carries — one loop, one payload.
 against it (added 2026-09-19, Tom: "see exactly what the LLM read"). A citation
 that came from a `get_segment_context` call carries the window's transcript,
 line by line with each line's second, exactly the cues the tool printed under
-its 4000-char budget; a search hit the model later read around gains that
+the window's text budget; a search hit the model later read around gains that
 window too. A citation the model only saw as a search hit has `read: null`,
 because its `text` is all it read. The `text` of a drill-down is the moment
 itself — the cue running at the cited second and the two after it — where it
@@ -440,15 +440,26 @@ disclosure.
 
 | tool | args | what it runs | bounds |
 |---|---|---|---|
-| `search` | `query`, `content_type?` | `tools/search.run` | the tool's own defaults — `limit=10`, `max_text_chars=1000`, `max_per_video=3` |
-| `get_segment_context` | `video_id`, `t` | `tools/segment.run` | the tool's own defaults — `window=45`, `max_text_chars=4000` |
+| `search` | `query`, `content_type?`, `limit?` | `tools/search.run` | the tool's own — `limit` 1..50 (default 10), `max_text_chars=1000`, `max_per_video=3` |
+| `get_segment_context` | `video_id`, `t`, `window?` | `tools/segment.run` | the tool's own — `window` 5..300s (default 45), `max_text_chars` 90 per second of window |
 
 **Amended 2026-08-15 (Tom).** The facade used to bound both tools tighter than
 the MCP surface does — six hits of 300 chars, two per video, a 1200-char
 window — and that was the demo's real bottleneck: the model answered from
 scraps of the corpus and the answers read like it. The loop now asks for what
-any MCP client gets. It still forwards no limit argument the model might send,
-so the ceilings are the tools' own server-side clamps, not the model's choice.
+any MCP client gets.
+
+**Amended 2026-09-20 (Tom).** The defaults were still the model's ceiling,
+because the loop forwarded no argument it sent — and the defaults are wrong in
+two opposite directions: a question spanning a dozen talks answered from ten
+hits, a speaker's three-minute argument read forty-five seconds at a time. Two
+arguments are forwarded now, `limit` and `window`, and nothing else. The
+ceilings are unchanged, because they were never the model's to set: they are
+the tools' own server-side clamps, and an argument outside them is clamped
+rather than refused. `window` carries its text budget with it at the ratio the
+defaults already set — 90 chars per second, so 45s is the 4000 chars it always
+was — because a window returned middle-truncated to the middle 4000 chars is
+the silent cut §3 refuses on a question.
 
 `get_segment_context` is handed to the model as the **text** block the tool
 already renders — the model-readable form the whole contract is tuned for —
