@@ -879,6 +879,8 @@ def test_a_room_behind_one_address_is_a_room_and_not_one_visitor(
         refused = client.get("/api/search?q=cache", headers=third)
     assert refused.status_code == 429
     assert refused.json()["bucket"] == "search_ip"
+    # And it says whose limit it was: this visitor has searched nothing.
+    assert refused.json()["message"] == "Too many requests from this network — 2 per minute."
 
 
 def test_a_caller_with_no_id_pays_the_address_ceiling_and_not_a_visitors_rate(

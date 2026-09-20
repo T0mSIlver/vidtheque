@@ -53,7 +53,7 @@ describe("the console in search mode", () => {
     });
     // A search is charged to this browser, not to the address it shares with a
     // conference hall, so it carries the same id an ask does (demo-site §4.1).
-    const init = fetchSpy.mock.calls[0][1] as RequestInit;
+    const init = (fetchSpy.mock.calls[0] as unknown as [string, RequestInit])[1];
     expect((init.headers as Record<string, string>)["x-vidtheque-visitor"]).toMatch(
       /^v-[0-9a-f]{32}$/,
     );

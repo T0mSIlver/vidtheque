@@ -533,9 +533,14 @@ class RateLimitMiddleware:
 async def _refused(send: Send, bucket: str, limit: int, wait: float) -> None:
     retry_after = max(1, math.ceil(wait))
     window = "minute" if bucket != "ask_global" else "day"
+    # Whose limit this was. A visitor refused by the address ceiling has asked
+    # nothing — they are behind a busy network — and "too many requests" reads
+    # as an accusation of something they did not do (§4.1).
+    whose = " from this network" if bucket.endswith("_ip") else ""
     body = (
-        '{"error":"E_RATE_LIMIT","message":"Too many requests — '
-        f'{limit} per {window}.","retry_after_s":{retry_after},"bucket":"{bucket}"}}'
+        '{"error":"E_RATE_LIMIT","message":"Too many requests'
+        f'{whose} — {limit} per {window}.","retry_after_s":{retry_after},'
+        f'"bucket":"{bucket}"}}'
     ).encode("utf-8")
     message: Message = {
         "type": "http.response.start",
