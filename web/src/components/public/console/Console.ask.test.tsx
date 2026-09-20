@@ -177,6 +177,38 @@ describe("the console in ask mode", () => {
     expect(work.compareDocumentPosition(prose) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it("holds a step on the line long enough to read it", async () => {
+    // A search answers in a few hundred milliseconds, so the truth flips back
+    // to "Thinking" before the eye has read what was searched for, and the line
+    // spends the run saying the one thing that carries no information
+    // (Tom, 2026-09-20). The step is paced, the filler is not.
+    const open = openStream();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => open.response),
+    );
+    const user = userEvent.setup();
+    mountConsole(LOADED);
+    await user.click(screen.getByRole("button", ASK));
+    const line = (await screen.findByLabelText("Answer")).querySelector("summary")!;
+
+    act(() => open.send(ACTIVITY));
+    await waitFor(() => expect(line).toHaveTextContent("Searching…"));
+
+    // The result lands at once, and the step is still the line that is lit —
+    // the one that has left carries `aria-hidden`.
+    act(() => open.send(frame({ event: "activity", id: 1, phase: "done", result: "6 hits" })));
+    // Well past the filler's own hold, and the step is still the line.
+    await new Promise((resolve) => setTimeout(resolve, 900));
+    expect(within(line).getByText("Searching…")).not.toHaveAttribute("aria-hidden");
+
+    // And gives the line up once it has been up long enough to read.
+    await waitFor(
+      () => expect(within(line).getByText("Searching…")).toHaveAttribute("aria-hidden", "true"),
+      { timeout: 4000 },
+    );
+  });
+
   describe("a visitor's run (demo-site.md §3.6)", () => {
     const url = (spy: ReturnType<typeof vi.fn>, call: number) =>
       (spy.mock.calls[call] as unknown as [string])[0];

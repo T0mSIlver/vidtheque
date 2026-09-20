@@ -1367,8 +1367,16 @@ Layout, top to bottom:
 
    The console is centred on the page, and the hero above it on `/paris` and
    `/demo` with it: the form, the cold panel, the status line, a notice and the
-   answer share the bar's column; result rows take a wider one (64rem) on the
-   same axis, because a row spends the width on its snippet and its receipt.
+   answer share the bar's column (`--query-w`); result rows and the Sources take
+   a wider one (`--console-w`) on the same axis, because a row spends the width
+   on its snippet and its receipt.
+
+   *Amended 2026-09-20 (Tom: "you're taking up a third of a full-size page,
+   which is not enough").* The two are **58rem and 78rem**, from 44 and 64. The
+   answer's prose measure moves with them — 92ch, from 70 — because a wide pane
+   holding a narrow column of text is a wide pane that looks broken. The
+   headline measures do not move: `--lede`, `--quote` and the hero are
+   typography, and a headline set to a layout width stops being one.
 6. **"Add this corpus to your own agent"** — the label `MCP endpoint`, the
    `mcp_url` from `/api/meta`, a copy button, and the one-liner:
    `claude mcp add --transport http vidtheque <mcp_url>`. *Amended 2026-08-10:*
@@ -1950,6 +1958,19 @@ Four decisions worth stating:
   and the disclosure stays where it was, above the answer. Under
   `prefers-reduced-motion` a new step replaces the line at once and the live
   one is simply brighter.
+
+  *Amended 2026-09-20 (Tom: "you almost never see the tool call the model
+  made"): the line is paced, not live.* A search answers in a few hundred
+  milliseconds, so the truth flips back to "Thinking" before the eye has read
+  what was searched for, and the one line spends the run saying the one thing
+  that carries no information. So a step holds the summary for **2 s** before
+  the next line may take it, and "Thinking" for **0.6 s**; changes queue behind
+  whatever is on screen. The line therefore lags the loop by up to a step,
+  which is the point — it shows the step that ran rather than the gap after it.
+  Two bounds keep the lag from growing: a backlog drops the queued "Thinking"
+  ticks, which are filler, before it drops a step; and the answer ends the
+  pacing outright, because the answer is the thing the visitor is waiting for.
+  The list inside the disclosure is never paced — it is the whole record.
 - **The result is a text node with its arrow in it**, not a `::before`. The
   arrow is chrome, but a log a visitor copies out of the page should still read
   as a log, and so should one whose stylesheet never arrived.

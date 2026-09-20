@@ -65,17 +65,80 @@ function thinkingAfter(id: number): Tick {
   return { key: `think-${id}`, text: "Thinking" };
 }
 
-/** The one line the folded work shows while the model works, and the line it replaced. */
-function ticks(lines: Line[]): { now: Tick; before: Tick | null } {
+/** What the work is doing right now — the truth, before the ticker paces it. */
+function tickOf(lines: Line[]): Tick {
   const last = lines.at(-1);
-  if (!last) return { now: thinkingAfter(0), before: null };
-  if (last.result === undefined) {
-    return {
-      now: { key: `step-${last.id}`, text: last.text },
-      before: thinkingAfter(lines.at(-2)?.id ?? 0),
+  if (!last) return thinkingAfter(0);
+  if (last.result === undefined) return { key: `step-${last.id}`, text: last.text };
+  return thinkingAfter(last.id);
+}
+
+// How long a line holds the summary before the next one may take it. A search
+// answers in a few hundred milliseconds, so the truth flips back to "Thinking"
+// before the eye has read what was searched for, and the line spends the run
+// saying the one thing that carries no information (Tom, 2026-09-20). A step is
+// held long enough to read; the filler between steps is not.
+const STEP_MS = 2000;
+const THINK_MS = 600;
+
+function dwell(tick: Tick): number {
+  return tick.key.startsWith("think") ? THINK_MS : STEP_MS;
+}
+
+/** The next line to show, dropping filler when the model is outrunning the eye. */
+function take(queued: Tick[]): Tick | undefined {
+  while (queued.length > 1 && queued[0].key.startsWith("think")) queued.shift();
+  return queued.shift();
+}
+
+/**
+ * The paced line, and the line it replaced. The pane reads its steps at the
+ * speed they arrive; this is the speed they can be read at (demo-site.md §6.6).
+ */
+function useTicker(key: string, text: string, live: boolean): { now: Tick; before: Tick | null } {
+  const [shown, setShown] = useState<{ now: Tick; before: Tick | null }>({
+    now: { key, text },
+    before: null,
+  });
+  const queued = useRef<Tick[]>([]);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const since = useRef(0);
+
+  useEffect(() => {
+    if (!live) {
+      queued.current = [];
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
+      return;
+    }
+    const tail = queued.current.at(-1) ?? shown.now;
+    if (key === tail.key) return;
+    queued.current.push({ key, text });
+    if (timer.current) return;
+    const pump = () => {
+      const next = take(queued.current);
+      if (!next) {
+        timer.current = null;
+        return;
+      }
+      since.current = performance.now();
+      setShown((was) => ({ now: next, before: was.now }));
+      timer.current = setTimeout(pump, dwell(next));
     };
-  }
-  return { now: thinkingAfter(last.id), before: { key: `step-${last.id}`, text: last.text } };
+    // Whatever is left of the line on screen, so a step is never cut short and
+    // a line that has had its time is replaced on the next frame.
+    const left = Math.max(0, dwell(shown.now) - (performance.now() - since.current));
+    timer.current = setTimeout(pump, left);
+  }, [key, text, live, shown.now]);
+
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+
+  return shown;
 }
 
 /**
@@ -85,8 +148,9 @@ function ticks(lines: Line[]): { now: Tick; before: Tick | null } {
  */
 function Work({ lines, live, took }: { lines: Line[]; live: boolean; took: number | null }) {
   const [open, setOpen] = useState(false);
+  const tick = tickOf(lines);
+  const { now, before } = useTicker(tick.key, tick.text, live);
   if (!live && !lines.length) return null;
-  const { now, before } = ticks(lines);
   const count = `${lines.length} step${lines.length === 1 ? "" : "s"}`;
   return (
     <details

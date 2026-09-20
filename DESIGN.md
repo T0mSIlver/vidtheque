@@ -257,6 +257,8 @@ layout:
   lede: "60ch"
   quote: "58ch"
   note: "74ch"
+  query-w: "58rem"
+  console-w: "78rem"
   bp-stack: "1120px"
   bp-hand: "780px"
 elevation:
@@ -883,7 +885,7 @@ reporting, it does not move.
 | detection boxes acquiring, staggered | the machine is reading the screen | `--t-acquire`, `--ease-acquire` |
 | a counter ticking up | counts are counts | — |
 | a panel un-veiling as its data arrives | the answer landed | `--t-veil` |
-| a light passing through the text of **the one step in flight**, on one line that each new step replaces | the model is running that step, or deciding the next | `--t-state`, `--ease-lift` |
+| a light passing through the text of **the one step in flight**, on one line that each new step replaces, each line held long enough to be read | the model is running that step, or deciding the next | `--t-state`, `--ease-lift`; a step holds 2s, "Thinking" 0.6s |
 | a panel following its content's height | the machine's answer is taking the room it needs | `--t-state` |
 
 **Banned outright, with no exception and no "but it's subtle":**
