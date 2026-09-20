@@ -373,6 +373,13 @@ A server-side agent loop against OpenRouter's OpenAI-compatible
 It exists to show the thing the corpus is actually for — an agent that answers
 from timestamped evidence — to a visitor who has not wired up an MCP client.
 
+`q` is at most **1000 characters** and a longer one is refused with
+`E_BAD_PARAM`, naming both the cap and the length sent. Until 2026-09-20 the cap
+was 400 and it *truncated*: a pasted paragraph was answered as far as the 400th
+character, with nothing in the payload saying the question had been cut. The
+console's field stops at the same number, so the refusal is what a client
+outside the page meets, never a visitor.
+
 `tags` is optional and follows §2.1's ten-tag bound and AND semantics. When it
 is present, the server fixes that scope for the whole loop: every search uses
 it, and `get_segment_context` accepts only video ids returned by those scoped
