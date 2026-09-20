@@ -137,9 +137,17 @@ SYSTEM_PROMPT = (
     # frame is the case that goes wrong silently, because there is nothing in
     # it to quote. The channel is *how* the corpus knows a thing, never who
     # said it — that is the talk and the speaker, above.
+    #
+    # "Say which in your prose" was read as "print the label", and on the live
+    # corpus it produced "Dex Horthy said (transcript) loops are core" ten times
+    # in one answer (Tom, 2026-09-20: "I can't ship this"). So the rule now names
+    # the verb that carries the channel and bans the label outright — the same
+    # shape as the attribution rule above it, which states its failing phrases.
     "Hits are labelled transcript (said aloud), ocr (on-screen text) or frame "
-    "(a visual match): say which in your prose. Describe what a frame shows; "
-    "never quote text from one. Keep "
+    "(a visual match). Carry that in the verb — \"said\", \"the slide reads\", "
+    "\"the frame shows\" — and only where it matters. Never write the label "
+    "itself: no \"(transcript)\", no \"(ocr)\", no \"in the transcript channel\". "
+    "Describe what a frame shows; never quote text from one. Keep "
     "the answer under 150 words and write plain prose, no headings."
 )
 
@@ -545,8 +553,10 @@ async def ask_events(
                         "Answer now from what the tools already returned. Cite "
                         "with the bare marker [n] — no words inside the "
                         "brackets — and name the talk or the speaker whenever "
-                        "you attribute a claim, never \"in a transcript\". If "
-                        "there is not enough evidence, say so."
+                        "you attribute a claim, never \"in a transcript\". Let "
+                        "the verb carry how the corpus knows it; never write "
+                        "the channel label, no \"(transcript)\". If there is "
+                        "not enough evidence, say so."
                     ),
                 },
             ],
@@ -1070,6 +1080,14 @@ async def _tool_context(
 # prose — a year — is read as a marker and dropped; a model that writes one
 # writes it bare, and an unresolvable marker was already dropped at two digits.
 _KINDS = r"(?:transcript|ocr|frame)(?:\+(?:transcript|ocr|frame))?"
+
+# The channel as a label, which is never prose: "Dex Horthy said (transcript)
+# loops are core", ten times in one answer on the live corpus (Tom, 2026-09-20:
+# "I can't ship this"). The prompts ask for the verb to carry it instead and name
+# this exact shape as wrong; this is the belt to those braces, because the model
+# behind the demo is a cheap one and the answer is what a visitor screenshots.
+# The space in front goes with the label, so the sentence closes up.
+_CHANNEL_LABEL = re.compile(r"[ \t]*[(\[]" + _KINDS + r"[)\]]")
 _CITATION = re.compile(
     r"(?P<pre>[ \t]*)\[(?P<n>\d{1,4})(?:[ ,:]+" + _KINDS + r")?\](?P<post>[ \t]*)"
 )
@@ -1111,6 +1129,7 @@ async def _answer(
     """
     from .api import LIGHTBOX_WIDTH, THUMB_WIDTH, _frames_on_screen, thumb_url
 
+    content = _CHANNEL_LABEL.sub("", content)
     known = {c.n: c for c in evidence.items}
     used: list[int] = []
     out: list[str] = []

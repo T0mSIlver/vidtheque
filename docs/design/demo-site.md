@@ -577,14 +577,23 @@ system + user
 - The system prompt is short and says the things that matter: answer only from
   tool results, mark each claim with the bare `[n]` of the result it came from
   (no words inside the brackets — the annotated-marker rule above), and
-  — since the hits are labelled — *say which channel* a fact came from, with one
-  hard rule for the case that fails silently: a frame is a visual match, so
-  describe what it shows and never quote text from one. That last part is
-  **encouragement, not a template**: no phrasing is dictated, because an answer
-  that reads like a form is worse than one that reads like a person who watched
-  the talk. It is worth its ~30 tokens because the alternative is prose that
-  flattens "he said", "the slide read" and "the screen showed" into one voice —
-  which is exactly the distinction the corpus exists to keep.
+  — since the hits are labelled — let *the verb* carry which channel a fact came
+  from, with one hard rule for the case that fails silently: a frame is a visual
+  match, so describe what it shows and never quote text from one. That last part
+  is **encouragement, not a template**: no phrasing is dictated, because an
+  answer that reads like a form is worse than one that reads like a person who
+  watched the talk. It is worth its ~30 tokens because the alternative is prose
+  that flattens "he said", "the slide read" and "the screen showed" into one
+  voice — which is exactly the distinction the corpus exists to keep.
+- **The channel is never a label** (*amended 2026-09-20*). The rule used to read
+  "say which channel in your prose", and the model read it as "print the label":
+  one broad answer on the live corpus carried "Dex Horthy said (transcript)
+  loops are core" ten times over (Tom: "I can't ship this"). Both prompts now
+  name the verb that carries it — "said", "the slide reads", "the frame shows" —
+  and name the failing shape outright, the way the attribution rule above does.
+  A label that reaches the answer anyway is **stripped**, with the space in
+  front of it, exactly as an unresolvable marker is: the model behind the demo
+  is a cheap one, and an answer is the thing a visitor screenshots.
 - One overall wall-clock budget (`VIDTHEQUE_ASK_TIMEOUT_S`, default 180 since
   2026-08-15; was 90) across the whole loop, not per request. A free-tier queue
   that stalls turns into a clean 503, not a held connection. 180 is past
