@@ -461,7 +461,7 @@
 /* Wider than `--prose`, because this pane is wider than a column of body copy
    and a wide pane holding a narrow column of text looks broken (§6.1). */
 .prose {
-  max-width: 92ch;
+  max-width: 110ch;
   margin-top: var(--s5);
 }
 
