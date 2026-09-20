@@ -247,7 +247,7 @@ spacing:
   s10: "2.5rem"
   s12: "3rem"
 layout:
-  maxw: "1460px"
+  maxw: "1760px"
   gut: "clamp(20px, 4.2vw, 72px)"
   beat: "clamp(64px, 7.4vw, 124px)"
   gap-block: "clamp(34px, 4vw, 58px)"
@@ -257,8 +257,8 @@ layout:
   lede: "60ch"
   quote: "58ch"
   note: "74ch"
-  query-w: "58rem"
-  console-w: "78rem"
+  query-w: "72rem"
+  console-w: "92rem"
   bp-stack: "1120px"
   bp-hand: "780px"
 elevation:

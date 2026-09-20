@@ -1372,11 +1372,15 @@ Layout, top to bottom:
    on its snippet and its receipt.
 
    *Amended 2026-09-20 (Tom: "you're taking up a third of a full-size page,
-   which is not enough").* The two are **58rem and 78rem**, from 44 and 64. The
-   answer's prose measure moves with them — 92ch, from 70 — because a wide pane
-   holding a narrow column of text is a wide pane that looks broken. The
-   headline measures do not move: `--lede`, `--quote` and the hero are
-   typography, and a headline set to a layout width stops being one.
+   which is not enough").* The two are **72rem and 92rem**, from 44 and 64, and
+   the page shell grows with them — `--maxw` 1460px → 1760px — so the hero, the
+   connect block and the footer widen on the same axis rather than leaving the
+   console wider than the page it sits in. The answer's prose measure moves too
+   — 110ch, from 70 — because a wide pane holding a narrow column of text is a
+   wide pane that looks broken. The headline measures do not move: `--lede`,
+   `--quote` and the hero's own type are typography, and a headline set to a
+   layout width stops being one. Tom picked this from three recorded widths at
+   1920 (44/58/72rem); at that size the console holds 60% of the window.
 6. **"Add this corpus to your own agent"** — the label `MCP endpoint`, the
    `mcp_url` from `/api/meta`, a copy button, and the one-liner:
    `claude mcp add --transport http vidtheque <mcp_url>`. *Amended 2026-08-10:*
