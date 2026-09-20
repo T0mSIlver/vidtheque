@@ -66,7 +66,12 @@ logger = logging.getLogger(__name__)
 NDJSON_MEDIA_TYPE = "application/x-ndjson"
 SSE_MEDIA_TYPE = "text/event-stream"
 
-MAX_QUESTION_CHARS = 400
+# A question, not an essay — but 400 was short enough to cut one. It was
+# applied as `question[:400]`, so a visitor who pasted a paragraph got an answer
+# to a sentence that stopped mid-word, with nothing anywhere saying so. A cap
+# that truncates silently is worse than a smaller cap that refuses, so this one
+# refuses (2026-09-20, Tom: the demo's limits are the bottleneck again).
+MAX_QUESTION_CHARS = 1000
 
 # The output ceiling, sent on every completion — a backstop against a provider
 # that never stops generating, not a length policy. It was 700 (2026-08-10
@@ -1276,7 +1281,19 @@ async def _read_ask(request: Request) -> _Asked | Response:
             status_code=400,
             headers={"Cache-Control": "no-store"},
         )
-    question = question[:MAX_QUESTION_CHARS]
+    if len(question) > MAX_QUESTION_CHARS:
+        return JSONResponse(
+            {
+                "error": "E_BAD_PARAM",
+                "message": (
+                    f"ask takes a question of at most {MAX_QUESTION_CHARS} "
+                    f"characters; this one is {len(question)}."
+                ),
+                "next": "shorten it, or search for the passage instead",
+            },
+            status_code=400,
+            headers={"Cache-Control": "no-store"},
+        )
     # The scope is validated here rather than trusted from the page, because
     # `POST /api/ask` is a public endpoint and the tag a caller sends decides
     # which corpus the model is allowed to read (aie-paris-2026.md §3.3). The

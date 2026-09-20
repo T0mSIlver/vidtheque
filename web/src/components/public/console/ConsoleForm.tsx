@@ -1,4 +1,5 @@
 import type { Ref } from "react";
+import { ASK_MAX_CHARS } from "@/lib/api/outcome";
 import type { ContentType } from "@/lib/api/schemas";
 import type { Mode } from "./url";
 import styles from "./console.module.css";
@@ -103,6 +104,7 @@ export function ConsoleForm({
             ask ? "ask a question about AI engineering…" : "kv cache, nvidia-smi, ontology…"
           }
           enterKeyHint="search"
+          maxLength={ask ? ASK_MAX_CHARS : undefined}
           spellCheck={false}
           autoComplete="off"
           autoFocus={autoFocus}

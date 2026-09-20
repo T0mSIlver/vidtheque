@@ -8,6 +8,10 @@ export const SEARCH_PAGE = 10;
 /** The limiter's own minute, for a 429 that did not say how long. */
 export const RETRY_FALLBACK = 60;
 
+/** The server refuses a longer question (demo-site.md §3), so the field stops
+ *  at the same number rather than letting one be typed and then refused. */
+export const ASK_MAX_CHARS = 1000;
+
 export type SearchOutcome =
   | { kind: "ok"; page: SearchResponse }
   | { kind: "rate_limited"; retryAfter: number }

@@ -1369,6 +1369,24 @@ def test_ask_rejects_a_body_with_no_question(tmp_path: Path) -> None:
     assert not upstream.requests, "a bad request never reaches the upstream"
 
 
+def test_ask_refuses_a_long_question_rather_than_answering_part_of_it(
+    tmp_path: Path,
+) -> None:
+    upstream = Upstream(_completion("unused"))
+    long = "why " * 400  # 1600 characters
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        response = client.post("/api/ask", json={"q": long})
+        assert response.status_code == 400
+        body = response.json()
+        assert body["error"] == "E_BAD_PARAM"
+        assert "1000" in body["message"], "the refusal names the cap"
+        assert not upstream.requests, "a refused question never reaches the upstream"
+
+        ok = client.post("/api/ask", json={"q": "why " * 200})
+    assert ok.status_code == 200, "800 characters is a question, not an essay"
+    assert upstream.requests[0]["messages"][-1]["content"].endswith("why")
+
+
 def test_ask_has_a_per_ip_and_a_global_daily_budget(tmp_path: Path) -> None:
     upstream = Upstream(_completion("fine."))
     settings = PublicSettings(
