@@ -36,7 +36,7 @@ from vidtheque_mcp.db.connection import open_write_connection
 from vidtheque_mcp.public.api import OWNER_CLAMPS, PUBLIC_CLAMPS
 from vidtheque_mcp.public.settings import PublicSettings
 
-from .conftest import FakeEmbeddings, rpc, rpc_headers, seed
+from .conftest import A_VISITOR, FakeEmbeddings, rpc, rpc_headers, seed
 
 
 # What was on someone's screen, and what yt-dlp said about it. Both are corpus
@@ -785,6 +785,7 @@ def test_the_public_buckets_are_untouched(tmp_path: Path) -> None:
         public=PublicSettings(enabled=True, search_per_min=2),
         dashboard=DashboardSettings(enabled=False),
     ) as client:
+        client.headers.update(A_VISITOR)
         assert client.get("/api/videos").status_code == 200
         assert client.get("/api/videos").status_code == 200
         refused = client.get("/api/videos")

@@ -89,8 +89,14 @@ def public_middleware(
     if public.enabled:
         limits.update(
             {
+                # A bucket and its `_ip` ceiling: the first is charged to the
+                # visitor the page identifies itself as, the second to the
+                # address, and a caller with no id pays only the second
+                # (`RateLimitMiddleware._charges`).
                 "search": (public.search_per_min, 60.0),
+                "search_ip": (public.search_ip_per_min, 60.0),
                 "ask": (public.ask_per_min, 60.0),
+                "ask_ip": (public.ask_ip_per_min, 60.0),
                 # A window of a day or more makes this a *daily budget* rather
                 # than a rate: `RateLimiter` counts it per UTC day and writes it
                 # down, because it is the one bucket that guards money

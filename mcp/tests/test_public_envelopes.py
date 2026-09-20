@@ -22,6 +22,7 @@ from starlette.testclient import TestClient
 
 from vidtheque_mcp.public.settings import PublicSettings
 
+from .conftest import A_VISITOR
 from .test_public import PUBLIC, PUBLIC_WITH_KEY, make_client
 
 
@@ -123,6 +124,7 @@ def test_meta_and_videos_share_the_search_bucket(tmp_path: Path) -> None:
     """Not a defect on its own — one visitor, one budget across the read API."""
     tight = PublicSettings(enabled=True, search_per_min=1)
     with make_client(tmp_path, tight) as client:
+        client.headers.update(A_VISITOR)
         assert client.get("/api/search?q=cache").status_code == 200
         assert client.get("/api/search?q=cache").status_code == 429
         assert client.get("/api/meta").status_code == 429
@@ -144,6 +146,7 @@ def test_a_refused_boot_call_says_which_bucket_and_for_how_long(
     """
     tight = PublicSettings(enabled=True, search_per_min=1)
     with make_client(tmp_path, tight) as client:
+        client.headers.update(A_VISITOR)
         assert client.get("/api/search?q=cache").status_code == 200
         refused = client.get("/api/meta")
     assert refused.status_code == 429

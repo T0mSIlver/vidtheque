@@ -33,7 +33,7 @@ from vidtheque_mcp.tools.descriptions import ANNOTATIONS
 from vidtheque_mcp.public.settings import PublicSettings
 from vidtheque_mcp.tools import segment
 
-from .conftest import FakeEmbeddings, rpc, rpc_headers, seed
+from .conftest import A_VISITOR, ANOTHER_VISITOR, FakeEmbeddings, rpc, rpc_headers, seed
 
 READ_TOOLS = {
     "search",
@@ -489,6 +489,7 @@ def test_a_refused_edition_read_is_no_more_cacheable_than_an_answered_one(
     the one refusal a handler never sees has to carry it too."""
     tight = PublicSettings(enabled=True, search_per_min=1)
     with make_client(tmp_path, tight) as client:
+        client.headers.update(A_VISITOR)
         assert client.get("/api/editions/aie-paris-2026").status_code == 200
         refused = client.get("/api/editions/aie-paris-2026")
     assert refused.status_code == 429
@@ -834,17 +835,17 @@ def test_the_trusted_header_reaches_the_middleware_and_separates_buckets(
     on is the whole chain — the configured header name reaching the middleware,
     the middleware reading it, and two values getting two buckets — because
     behind the tunnel every request arrives from the same socket and this header
-    is the only thing telling visitors apart. If the wiring broke, the unit test
+    is the only thing telling addresses apart. If the wiring broke, the unit test
     would still pass and the entire internet would share one bucket.
     (2026-08-10 audit: a property with no test.)
     """
-    tight = PublicSettings(enabled=True, search_per_min=1)
+    tight = PublicSettings(enabled=True, search_ip_per_min=1)
     with make_client(tmp_path, tight) as client:
         first = {"CF-Connecting-IP": "9.9.9.9"}
         second = {"CF-Connecting-IP": "8.8.8.8"}
         assert client.get("/api/search?q=cache", headers=first).status_code == 200
         assert client.get("/api/search?q=cache", headers=first).status_code == 429
-        # A different visitor, same socket: their own bucket.
+        # A different address, same socket: its own bucket.
         assert client.get("/api/search?q=cache", headers=second).status_code == 200
         assert client.get("/api/search?q=cache", headers=second).status_code == 429
         # And the first comma-separated entry is the client, not the proxy.
@@ -852,9 +853,51 @@ def test_the_trusted_header_reaches_the_middleware_and_separates_buckets(
         assert client.get("/api/search?q=cache", headers=chained).status_code == 429
 
 
+def test_a_room_behind_one_address_is_a_room_and_not_one_visitor(
+    tmp_path: Path,
+) -> None:
+    """§4.1's reason for existing: a conference is one NAT address.
+
+    Per visitor, two people get two buckets through one address; the address
+    keeps a ceiling of its own, because the id is the page's to mint and so a
+    script's too.
+    """
+    hall = PublicSettings(enabled=True, search_per_min=1, search_ip_per_min=2)
+    venue = {"CF-Connecting-IP": "203.0.113.7"}
+    with make_client(tmp_path, hall) as client:
+        one = {**venue, **A_VISITOR}
+        two = {**venue, **ANOTHER_VISITOR}
+        assert client.get("/api/search?q=cache", headers=one).status_code == 200
+        assert client.get("/api/search?q=cache", headers=one).status_code == 429
+        # The neighbour on the same wifi is not out of asks because of them.
+        assert client.get("/api/search?q=cache", headers=two).status_code == 200
+        assert client.get("/api/search?q=cache", headers=two).status_code == 429
+        # Two requests got through, so the address's own bucket is spent — a
+        # refused one costs nothing anywhere, including here. A third visitor
+        # meets the ceiling, whatever id they arrive with.
+        third = {**venue, "X-Vidtheque-Visitor": "v-" + "2" * 32}
+        refused = client.get("/api/search?q=cache", headers=third)
+    assert refused.status_code == 429
+    assert refused.json()["bucket"] == "search_ip"
+
+
+def test_a_caller_with_no_id_pays_the_address_ceiling_and_not_a_visitors_rate(
+    tmp_path: Path,
+) -> None:
+    """A thumbnail's `<img>` and the page's own server-side reads send no id."""
+    tight = PublicSettings(enabled=True, search_per_min=1, search_ip_per_min=2)
+    with make_client(tmp_path, tight) as client:
+        assert client.get("/api/search?q=cache").status_code == 200
+        assert client.get("/api/search?q=cache").status_code == 200
+        refused = client.get("/api/search?q=cache")
+    assert refused.status_code == 429
+    assert refused.json()["bucket"] == "search_ip"
+
+
 def test_search_is_limited_with_retry_after(tmp_path: Path) -> None:
     tight = PublicSettings(enabled=True, search_per_min=2)
     with make_client(tmp_path, tight) as client:
+        client.headers.update(A_VISITOR)
         assert client.get("/api/search?q=cache").status_code == 200
         assert client.get("/api/search?q=cache").status_code == 200
         refused = client.get("/api/search?q=cache")
@@ -869,6 +912,7 @@ def test_search_is_limited_with_retry_after(tmp_path: Path) -> None:
 def test_frames_have_their_own_looser_bucket(tmp_path: Path) -> None:
     tight = PublicSettings(enabled=True, search_per_min=1, frames_per_min=2)
     with make_client(tmp_path, tight) as client:
+        client.headers.update(A_VISITOR)
         assert client.get("/api/search?q=cache").status_code == 200
         assert client.get("/api/search?q=cache").status_code == 429
         # A spent search bucket does not stop the page loading its thumbnails.
@@ -1471,13 +1515,31 @@ def test_ask_has_a_per_ip_and_a_global_daily_budget(tmp_path: Path) -> None:
     assert spent.json()["bucket"] == "ask_global"
 
 
-def test_the_per_ip_ask_bucket_is_charged_before_the_global_one(tmp_path: Path) -> None:
+def test_two_people_on_one_conference_wifi_get_an_ask_each(tmp_path: Path) -> None:
+    upstream = Upstream(_completion("fine."))
+    hall = PublicSettings(
+        enabled=True, openrouter_key="sk-or-test", ask_per_min=1, ask_ip_per_min=2
+    )
+    venue = {"CF-Connecting-IP": "203.0.113.7"}
+    with make_client(tmp_path, hall, upstream) as client:
+        one, two = {**venue, **A_VISITOR}, {**venue, **ANOTHER_VISITOR}
+        assert client.post("/api/ask", json={"q": "a"}, headers=one).status_code == 200
+        assert client.post("/api/ask", json={"q": "b"}, headers=one).status_code == 429
+        assert client.post("/api/ask", json={"q": "c"}, headers=two).status_code == 200
+        # The address has now paid twice, and that is its minute.
+        third = {**venue, "X-Vidtheque-Visitor": "v-" + "2" * 32}
+        refused = client.post("/api/ask", json={"q": "d"}, headers=third)
+    assert refused.status_code == 429
+    assert refused.json()["bucket"] == "ask_ip"
+
+
+def test_the_visitors_ask_bucket_is_charged_before_the_global_one(tmp_path: Path) -> None:
     upstream = Upstream(_completion("fine."))
     settings = PublicSettings(
         enabled=True, openrouter_key="sk-or-test", ask_per_min=1, ask_per_day=50
     )
     with make_client(tmp_path, settings, upstream) as client:
-        headers = {"CF-Connecting-IP": "1.1.1.1"}
+        headers = {**A_VISITOR, "CF-Connecting-IP": "1.1.1.1"}
         assert client.post("/api/ask", json={"q": "a"}, headers=headers).status_code == 200
         refused = client.post("/api/ask", json={"q": "b"}, headers=headers)
     assert refused.status_code == 429
@@ -1773,13 +1835,14 @@ def test_an_unconfigured_ask_costs_no_budget_either(tmp_path: Path) -> None:
         assert _ask(client).status_code == 503, "still 503, never 429 on a spent budget"
 
 
-def test_the_per_ip_bucket_still_throttles_a_retry_storm(tmp_path: Path) -> None:
+def test_the_minute_bucket_still_throttles_a_retry_storm(tmp_path: Path) -> None:
     """The refund gives back the *cost* control, never the anti-hammer guard."""
     upstream = Flapping(fails=10, then=_completion("unused"))
     settings = PublicSettings(
         enabled=True, openrouter_key="sk-or-test", ask_per_min=2, ask_per_day=50
     )
     with make_client(tmp_path, settings, upstream) as client:
+        client.headers.update(A_VISITOR)
         assert _ask(client).status_code == 503
         assert _ask(client).status_code == 503
         throttled = _ask(client)
@@ -2410,6 +2473,7 @@ def test_a_refused_stream_is_a_status_code_not_an_event(tmp_path: Path) -> None:
         enabled=True, openrouter_key="sk-or-test", ask_per_min=1, ask_per_day=50
     )
     with make_client(tmp_path, settings, Upstream(_completion("fine."))) as client:
+        client.headers.update(A_VISITOR)
         assert _stream_ask(client).status_code == 200
         refused = _stream_ask(client)
     assert refused.status_code == 429
@@ -2453,6 +2517,7 @@ def test_the_second_page_can_be_refused_while_the_first_stands(tmp_path: Path) -
     """
     tight = PublicSettings(enabled=True, search_per_min=1)
     with make_client(tmp_path, tight) as client:
+        client.headers.update(A_VISITOR)
         first = client.get("/api/search?q=cache&limit=2")
         assert first.status_code == 200
         assert first.json()["pagination"]["has_more"] is True, "a second page to refuse"
@@ -2612,6 +2677,7 @@ def test_a_refused_sse_request_is_a_status_code_not_an_event(tmp_path: Path) -> 
         enabled=True, openrouter_key="sk-or-test", ask_per_min=1, ask_per_day=50
     )
     with make_client(tmp_path, settings, Upstream(_completion("fine."))) as client:
+        client.headers.update(A_VISITOR)
         assert _sse_ask(client).status_code == 200
         refused = _sse_ask(client)
     assert refused.status_code == 429
@@ -2887,6 +2953,7 @@ def test_resume_finds_a_run_and_never_starts_or_charges_one(tmp_path: Path) -> N
     )
     upstream = _two_tool_script()
     with make_client(tmp_path, public, upstream) as client:
+        client.headers.update({"X-Vidtheque-Visitor": VISITOR})
         missing = client.post("/api/ask/resume", json=_visited(), headers=NDJSON)
         assert missing.status_code == 204 and not missing.content
         assert upstream.requests == []
@@ -2938,3 +3005,21 @@ def test_an_id_the_page_does_not_make_is_no_id(tmp_path: Path) -> None:
         _events(client.post("/api/ask", json=_visited(visitor="short"), headers=NDJSON))
         gone = client.post("/api/ask/resume", json=_visited(visitor="short"), headers=NDJSON)
     assert gone.status_code == 204
+
+
+def test_the_header_is_the_visitor_the_run_is_keyed_on(tmp_path: Path) -> None:
+    """One id decides both the bucket and the run, and it is the one the
+    limiter charged — the header (§4.1). The body is the same id for a client
+    that sends only it."""
+    upstream = _two_tool_script()
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        headed = {**NDJSON, **A_VISITOR}
+        # The body names somebody else; the header is who this is.
+        _events(client.post("/api/ask", json=_visited(visitor="v-" + "9" * 32), headers=headed))
+        again = _events(client.post("/api/ask/resume", json={"q": "what?"}, headers=headed))
+        assert again[-1]["event"] == "answer"
+        # And the id in that body, which never ran anything, has no run.
+        by_body = client.post(
+            "/api/ask/resume", json=_visited(visitor="v-" + "9" * 32), headers=NDJSON
+        )
+    assert by_body.status_code == 204

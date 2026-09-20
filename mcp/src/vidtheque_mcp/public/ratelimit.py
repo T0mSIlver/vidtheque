@@ -34,6 +34,8 @@ from typing import TYPE_CHECKING, Callable, Iterable, Protocol
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from .runs import VISITOR_HEADER, visitor_of
+
 if TYPE_CHECKING:  # pragma: no cover - typing only, and `db` must not import us
     from ..db import Database
 
@@ -399,6 +401,20 @@ class RateLimiter:
             del self._buckets[key]
 
 
+def visitor_key(scope: Scope) -> str | None:
+    """This browser's own id, when it sent one — demo-site.md §4.1.
+
+    A header rather than the body, because the limiter charges before anything
+    has read a byte of the request: reading the body here would mean buffering
+    and re-injecting it on the one path that streams.
+    """
+    wanted = VISITOR_HEADER.encode("latin-1")
+    for name, value in scope.get("headers") or ():
+        if name == wanted:
+            return visitor_of(value.decode("latin-1"))
+    return None
+
+
 def client_key(scope: Scope, trusted_header: str) -> str:
     """The client's identity for limiting purposes — demo-site.md §4.3."""
     if trusted_header:
@@ -458,10 +474,28 @@ class RateLimitMiddleware:
         self.limiter = limiter
         self.bucket_for = bucket_for
         self.trusted_header = trusted_header
-        # `/api/ask` is charged against its per-IP bucket *and* the global daily
-        # one. Per-IP runs first, so one visitor cannot spend the day's budget
-        # before being told to slow down.
+        # `/api/ask` is charged against its own bucket *and* the global daily
+        # one. The narrower runs first, so one visitor cannot spend the day's
+        # budget before being told to slow down.
         self.extra_buckets = extra_buckets or (lambda _path: ())
+
+    def _charges(self, bucket: str, client: str, visitor: str | None) -> list[tuple[str, str]]:
+        """Which buckets this request pays, and under what key — §4.1.
+
+        A bucket with a `<name>_ip` companion is a *per-visitor* bucket: behind
+        a conference's NAT the whole room is one address, so charging the room
+        five asks a minute between them is not a rate limit, it is an outage.
+        The address keeps a much looser ceiling, because an id the page makes is
+        an id a script can mint — it buys fairness, not safety. A caller with no
+        id pays only the ceiling: an `<img>` cannot send a header, and neither
+        can the page's own server-side reads.
+        """
+        ceiling = f"{bucket}_ip"
+        if self.limiter.limit(ceiling) is None:
+            return [(bucket, client)]
+        if visitor is None:
+            return [(ceiling, client)]
+        return [(bucket, f"v:{visitor}"), (ceiling, client)]
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -478,7 +512,11 @@ class RateLimitMiddleware:
         # every refund it ever produces name the same UTC day.
         day = utc_day()
         charged: list[tuple[str, str]] = []
-        for name, key in [(bucket, client), *((b, "@global") for b in self.extra_buckets(path))]:
+        pays = [
+            *self._charges(bucket, client, visitor_key(scope)),
+            *((b, "@global") for b in self.extra_buckets(path)),
+        ]
+        for name, key in pays:
             allowed, wait, limit, remaining = self.limiter.check(name, key, day)
             if not allowed:
                 # A refused request costs nothing anywhere: the buckets already
