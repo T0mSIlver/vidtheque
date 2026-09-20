@@ -983,6 +983,11 @@ X-RateLimit-Remaining: 0
  "retry_after_s": 4, "bucket": "search"}
 ```
 
+A refusal from an `_ip` bucket says **"Too many requests from this network"**,
+because the visitor it refuses has asked nothing: they are behind a busy
+address, and the unqualified sentence reads as an accusation of something they
+did not do.
+
 `E_RATE_LIMIT` is already in `errors.HTTP_STATUS` at 429; the facade and the
 tool surface use the same code for the same condition.
 

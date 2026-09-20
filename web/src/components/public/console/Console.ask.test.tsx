@@ -97,9 +97,7 @@ describe("the console in ask mode", () => {
     );
     // The same id as the body's, as a header: it is what the minute limits are
     // charged against, so a hall behind one address is a hall (demo-site §4.1).
-    expect(headers["x-vidtheque-visitor"]).toBe(
-      JSON.parse(body(fetchSpy).body as string).visitor,
-    );
+    expect(headers["x-vidtheque-visitor"]).toBe(JSON.parse(body(fetchSpy).body as string).visitor);
     expect(push).not.toHaveBeenCalled();
 
     await waitFor(() => expect(screen.getByText("Sources")).toBeInTheDocument());
