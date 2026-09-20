@@ -93,8 +93,20 @@ ANSWER_FLOOR_S = 10.0
 # what the MCP surface hands anyone else — `search.run`'s ten hits of 1000
 # chars, three per video, and `segment.run`'s 45s window of 4000 chars — so the
 # demo shows the corpus at the same resolution an agent gets. Those defaults are
-# themselves clamped server-side inside the tools; the model still cannot ask
-# for more, because the loop never forwards a limit argument it might send.
+# themselves clamped server-side inside the tools.
+#
+# And since 2026-09-20 the model may move two of them: `limit` on a search and
+# `window` on a read, the two the defaults get wrong in opposite directions — a
+# question spanning a dozen talks answered from ten hits, a speaker's three
+# minutes read forty-five seconds at a time. Nothing else is forwarded, and the
+# ceilings are still the tools' own clamps (1..50, 5..300s) rather than the
+# model's choice, so the worst a bad argument costs is one wider read.
+
+# A window the model widened is only as wide as the text budget that carries
+# it, so the two move together at the ratio the defaults already set (45s of
+# speech for 4000 chars). Otherwise a 300s window comes back middle-truncated
+# to the middle 4000 chars — the same silent cut §3 refuses on a question.
+CHARS_PER_S = 90
 
 SYSTEM_PROMPT = (
     "You answer questions about a personal video corpus using only the tools "
@@ -146,6 +158,14 @@ TOOL_SPECS: list[dict[str, Any]] = [
                         "enum": list(search.CONTENT_TYPES),
                         "description": "Which channel to search. Omit for all.",
                     },
+                    "limit": {
+                        "type": "integer",
+                        "description": (
+                            "How many hits to return, 1 to 50. Omit for 10; ask "
+                            "for more when the question is broad or several "
+                            "talks are likely to cover it."
+                        ),
+                    },
                 },
                 "required": ["query"],
             },
@@ -164,6 +184,13 @@ TOOL_SPECS: list[dict[str, Any]] = [
                 "properties": {
                     "video_id": {"type": "string"},
                     "t": {"type": "number", "description": "Seconds into the video."},
+                    "window": {
+                        "type": "number",
+                        "description": (
+                            "Seconds of transcript around t, 5 to 300. Omit for "
+                            "45; ask for more when the point runs long."
+                        ),
+                    },
                 },
                 "required": ["video_id", "t"],
             },
@@ -682,6 +709,25 @@ def _call_args(call: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     return name, args if isinstance(args, dict) else {}
 
 
+def _number(value: Any) -> float | None:
+    """A number the model sent, or None for anything that is not one.
+
+    Strings included: the cheap tiers this demo pins write `"limit": "20"` about
+    as often as they write `20`. `None` means "it did not ask", which is how the
+    tool's own default is left alone rather than re-stated here.
+    """
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
 def _asked(call: dict[str, Any], evidence: Evidence) -> str:
     """What this tool call is about to do, in one line."""
     name, args = _call_args(call)
@@ -858,7 +904,14 @@ async def _tool_search(
     content_type = args.get("content_type")
     if content_type not in search.CONTENT_TYPES:
         content_type = "all"
-    result = await search.run(deps, q=query, content_type=content_type, tags=tags)
+    limit = _number(args.get("limit"))
+    result = await search.run(
+        deps,
+        q=query,
+        content_type=content_type,
+        tags=tags,
+        **({"limit": int(limit)} if limit is not None else {}),
+    )
     if result.is_error:
         payload = result.structured_content or {}
         # The model gets the typed code; the visitor gets the fact that this
@@ -915,7 +968,15 @@ async def _tool_context(
             "error: t must be a number of seconds, as given by a search hit.",
             Outcome("that read named no moment"),
         )
-    result = await segment.run(deps, video_id=video_id, t=t, include_frame_refs=False)
+    window = _number(args.get("window"))
+    wider = (
+        {"window": window, "max_text_chars": int(window * CHARS_PER_S)}
+        if window is not None
+        else {}
+    )
+    result = await segment.run(
+        deps, video_id=video_id, t=t, include_frame_refs=False, **wider
+    )
     payload = result.structured_content or {}
     if result.is_error:
         return (
