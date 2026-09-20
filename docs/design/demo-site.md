@@ -441,7 +441,7 @@ disclosure.
 | tool | args | what it runs | bounds |
 |---|---|---|---|
 | `search` | `query`, `content_type?`, `limit?` | `tools/search.run` | the tool's own — `limit` 1..50 (default 10), `max_text_chars=1000`, `max_per_video=3` |
-| `get_segment_context` | `video_id`, `t`, `window?` | `tools/segment.run` | the tool's own — `window` 5..300s (default 45), `max_text_chars` 90 per second of window |
+| `get_segment_context` | `video_id`, `t`, `window?` | `tools/segment.run` | the tool's own — `window` 5..300s (default 45), `max_text_chars` 90 per second of window and never past the tool's 20 000 |
 
 **Amended 2026-08-15 (Tom).** The facade used to bound both tools tighter than
 the MCP surface does — six hits of 300 chars, two per video, a 1200-char
@@ -459,7 +459,9 @@ the tools' own server-side clamps, and an argument outside them is clamped
 rather than refused. `window` carries its text budget with it at the ratio the
 defaults already set — 90 chars per second, so 45s is the 4000 chars it always
 was — because a window returned middle-truncated to the middle 4000 chars is
-the silent cut §3 refuses on a question.
+the silent cut §3 refuses on a question. The tool's own 20 000-char ceiling
+still applies above it, so a window past ~220s of dense speech is truncated
+again; that ceiling is the MCP surface's and is not the loop's to move.
 
 `get_segment_context` is handed to the model as the **text** block the tool
 already renders — the model-readable form the whole contract is tuned for —
@@ -918,9 +920,10 @@ results is ~10 thumbnails, and a room browsing at once shares one address. It is
 there to stop a scraper walking the whole keyframe directory, not to police
 normal browsing.
 
-`/api/ask` is charged against **both** its per-IP bucket and the global one; the
-per-IP check runs first, so one visitor cannot spend the day's budget before
-being told to slow down.
+`/api/ask` is charged three times: the visitor's bucket, the address ceiling,
+and the global day. They are checked in that order — narrowest first — so one
+visitor cannot spend the day's budget before being told to slow down, and a
+refused request costs nothing in the buckets that had already let it through.
 
 ### 4.2 The bucket, exactly
 
