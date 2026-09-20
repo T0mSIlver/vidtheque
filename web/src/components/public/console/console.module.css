@@ -2,7 +2,7 @@
    Visual contract: DESIGN.md, demo register. */
 .console {
   /* Wider than the box: a result row spends it on the snippet and the receipt. */
-  --results-w: 64rem;
+  --results-w: var(--console-w);
   display: flex;
   flex-direction: column;
 }
@@ -16,7 +16,7 @@
 .notice,
 .answer {
   width: 100%;
-  max-width: var(--query-w, 44rem);
+  max-width: var(--query-w);
   margin-inline: auto;
 }
 
@@ -49,7 +49,7 @@
   display: flex;
   align-items: stretch;
   width: 100%;
-  max-width: var(--query-w, 44rem);
+  max-width: var(--query-w);
   height: 52px;
   background: var(--console);
   border: 1px solid var(--seam2);
@@ -183,7 +183,7 @@
 /* The chips in search, the ask note in ask: one row under the bar. */
 .controls {
   margin-top: var(--s4);
-  max-width: var(--query-w, 44rem);
+  max-width: var(--query-w);
 }
 
 .askNote {
@@ -458,8 +458,10 @@
   min-width: 0;
 }
 
+/* Wider than `--prose`, because this pane is wider than a column of body copy
+   and a wide pane holding a narrow column of text looks broken (§6.1). */
 .prose {
-  max-width: var(--prose);
+  max-width: 92ch;
   margin-top: var(--s5);
 }
 
