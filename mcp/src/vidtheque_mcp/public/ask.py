@@ -1060,9 +1060,18 @@ async def _tool_context(
 # source words a hit can carry, so `[10 ms]` in prose stays prose) and the
 # rendered marker is normalised back to `[n]`, which is what the page's
 # superscript renderer expects.
+#
+# Four digits, not two. Two was enough while a search returned ten hits and the
+# register rarely passed 99 — and a marker the pattern does not match is neither
+# renumbered nor stripped, so it lands in the prose as a literal `[259]` beside
+# the real `[1]`. Letting the model widen a search (§3.2) made three-digit
+# indices ordinary, and the first broad ask on the live corpus printed eight of
+# them (2026-09-20). The cost of the wider pattern is that a bracketed number in
+# prose — a year — is read as a marker and dropped; a model that writes one
+# writes it bare, and an unresolvable marker was already dropped at two digits.
 _KINDS = r"(?:transcript|ocr|frame)(?:\+(?:transcript|ocr|frame))?"
 _CITATION = re.compile(
-    r"(?P<pre>[ \t]*)\[(?P<n>\d{1,2})(?:[ ,:]+" + _KINDS + r")?\](?P<post>[ \t]*)"
+    r"(?P<pre>[ \t]*)\[(?P<n>\d{1,4})(?:[ ,:]+" + _KINDS + r")?\](?P<post>[ \t]*)"
 )
 
 # What a dropped marker must not leave a space in front of.

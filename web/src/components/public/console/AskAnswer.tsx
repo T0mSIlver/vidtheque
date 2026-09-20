@@ -88,6 +88,9 @@ function Cited({
 }) {
   const out: React.ReactNode[] = [];
   let cursor = 0;
+  // Two digits is enough here and nowhere else: Python renumbers the markers to
+  // 1..N in order of first mention before sending them (demo-site.md §3), so
+  // these are the count of cited sources, not the register's indices.
   for (const match of text.matchAll(/\[(\d{1,2})\]/g)) {
     if (match.index > cursor) out.push(text.slice(cursor, match.index));
     const n = Number(match[1]);
