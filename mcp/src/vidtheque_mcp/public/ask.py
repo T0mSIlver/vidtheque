@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import re
 import time
 from collections.abc import AsyncIterator
@@ -715,17 +716,23 @@ def _number(value: Any) -> float | None:
     Strings included: the cheap tiers this demo pins write `"limit": "20"` about
     as often as they write `20`. `None` means "it did not ask", which is how the
     tool's own default is left alone rather than re-stated here.
+
+    Not a number covers the infinities and NaN, which are *not* theoretical:
+    `json.loads` accepts `Infinity` and `NaN` by default, and `int(inf)` raises
+    where every clamp below would have held.
     """
     if isinstance(value, bool) or value is None:
         return None
     if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
+        number = float(value)
+    elif isinstance(value, str):
         try:
-            return float(value.strip())
+            number = float(value.strip())
         except ValueError:
             return None
-    return None
+    else:
+        return None
+    return number if math.isfinite(number) else None
 
 
 def _asked(call: dict[str, Any], evidence: Evidence) -> str:
