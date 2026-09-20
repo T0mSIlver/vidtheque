@@ -1881,6 +1881,35 @@ def test_a_stripped_citation_leaves_no_seam_behind(tmp_path: Path) -> None:
     assert " ." not in answer, "nor an orphaned full stop"
 
 
+def test_a_three_digit_marker_is_a_marker_and_not_prose(tmp_path: Path) -> None:
+    """The live defect of 2026-09-20: `\\d{1,2}` left `[259]` in the answer.
+
+    A search may now return fifty hits and a hard question runs many rounds, so
+    the register passes 99 routinely. A marker the pattern misses is neither
+    renumbered nor stripped — it lands beside the real ones as literal text.
+    """
+    upstream = Upstream(
+        _completion(tool_calls=[_tool_call("c1", "search", {"query": "kv cache"})]),
+        _completion("Loops are the trick [1][259]. Context rot too [180]."),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        answer = client.post("/api/ask", json={"q": "what?"}).json()["answer"]
+    assert answer == "Loops are the trick [1]. Context rot too."
+
+
+def test_the_marker_pattern_spans_the_register_it_can_produce() -> None:
+    from vidtheque_mcp.public.ask import _CITATION
+
+    assert [m.group("n") for m in _CITATION.finditer("[1] [42] [259] [1234]")] == [
+        "1",
+        "42",
+        "259",
+        "1234",
+    ]
+    # Five digits is not an index this loop can hand out; it is prose.
+    assert not _CITATION.search("[12345]")
+
+
 def test_an_annotated_marker_resolves_and_renders_bare(tmp_path: Path) -> None:
     """deepseek-v4-flash wrote `[1 transcript]` on the first real ask (2026-08-11):
     the annotation must resolve to the evidence and render as bare `[1]` — and a

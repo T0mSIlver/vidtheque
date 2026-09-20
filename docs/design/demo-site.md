@@ -557,6 +557,13 @@ system + user
   (`transcript`, `ocr`, `frame`, and the `+` pair), so `[10 ms]` in prose stays
   prose, and what lands on the page is `[29]`. Both prompts ask for the bare
   marker as well; this is the belt to that braces.
+- **A marker is one to four digits** (*amended 2026-09-20*). Two was enough
+  while a search returned ten hits, and a marker the pattern misses is neither
+  renumbered nor stripped — it lands in the prose as literal text beside the
+  real ones. Letting the model widen a search (§3.2) made three-digit indices
+  ordinary, and the first broad ask on the live corpus printed eight of them.
+  The page's own renderer keeps two digits, deliberately: what reaches it is
+  renumbered 1..N in order of first mention, not the register's indices.
 - **Prose must name the source it attributes to** (*amended 2026-08-11*). The
   system prompt and the forced-answer nudge both carry the rule, with the
   failing phrase named rather than implied: never "in a transcript", never "one
