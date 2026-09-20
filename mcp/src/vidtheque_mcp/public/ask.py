@@ -106,7 +106,9 @@ ANSWER_FLOOR_S = 10.0
 # A window the model widened is only as wide as the text budget that carries
 # it, so the two move together at the ratio the defaults already set (45s of
 # speech for 4000 chars). Otherwise a 300s window comes back middle-truncated
-# to the middle 4000 chars — the same silent cut §3 refuses on a question.
+# to the middle 4000 chars — the same silent cut §3 refuses on a question. The
+# tool's own 20 000-char ceiling still applies above it (~220s of dense speech);
+# that one is the MCP surface's, and not this loop's to move.
 CHARS_PER_S = 90
 
 SYSTEM_PROMPT = (
@@ -718,8 +720,10 @@ def _number(value: Any) -> float | None:
     tool's own default is left alone rather than re-stated here.
 
     Not a number covers the infinities and NaN, which are *not* theoretical:
-    `json.loads` accepts `Infinity` and `NaN` by default, and `int(inf)` raises
-    where every clamp below would have held.
+    `json.loads` accepts the bare `Infinity` and `NaN` literals, `float("1e400")`
+    is `inf`, and `int(inf)` raises where every clamp below would have held —
+    taking the whole ask down and keeping the day's token spent. `parse_offset`
+    guards `t` the same way for the same reason (2026-08-10 audit, F-14).
     """
     if isinstance(value, bool) or value is None:
         return None

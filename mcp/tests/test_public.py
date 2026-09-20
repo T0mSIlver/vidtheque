@@ -1353,9 +1353,10 @@ def test_the_model_can_ask_for_more_hits_than_the_default(tmp_path: Path) -> Non
     assert one.startswith("1 results for")
     assert int(lots.split(" ", 1)[0]) > 1, "asking for 50 returns what the corpus has"
     assert int(lots.split(" ", 1)[0]) >= int(default.split(" ", 1)[0])
-    # Nonsense is not an argument: the tool's own default stands. `Infinity` is
-    # in the list because `json.loads` parses it, and `int(inf)` raises.
-    for junk in ("lots", float("inf"), float("nan"), True, None, {"n": 4}):
+    # Nonsense is not an argument: the tool's own default stands. The infinities
+    # are in the list because `json.loads` parses the bare literals, `"1e400"`
+    # parses to one, and `int(inf)` raises where every clamp would have held.
+    for junk in ("lots", "1e400", "nan", float("inf"), float("nan"), True, None, {"n": 4}):
         text = _asks(tmp_path, "search", {"query": "cache", "limit": junk})
         assert text.split(" ", 1)[0] == default.split(" ", 1)[0], junk
 
