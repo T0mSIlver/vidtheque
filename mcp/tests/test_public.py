@@ -1221,6 +1221,9 @@ def test_the_system_prompt_refuses_an_anonymous_attribution(tmp_path: Path) -> N
     assert '"in a transcript"' in system, "the failing phrase is named, not implied"
     # And the marker rule from 2026-08-11 is still in front of the model.
     assert "no words inside the brackets" in system
+    # As is the channel rule, which says which shape is wrong (2026-09-20).
+    assert '"(transcript)"' in system
+    assert "carry that in the verb" in system.lower()
 
 
 def test_the_forced_answer_asks_for_the_name_and_the_bare_marker(tmp_path: Path) -> None:
@@ -1235,6 +1238,7 @@ def test_the_forced_answer_asks_for_the_name_and_the_bare_marker(tmp_path: Path)
     assert "no words inside the brackets" in nudge["content"]
     assert "name the talk or the speaker" in nudge["content"]
     assert '"in a transcript"' in nudge["content"]
+    assert '"(transcript)"' in nudge["content"]
 
 
 def test_the_drilled_window_names_the_talk_it_came_from(tmp_path: Path) -> None:
@@ -1879,6 +1883,26 @@ def test_a_stripped_citation_leaves_no_seam_behind(tmp_path: Path) -> None:
     assert answer == "The block table is kept [1]. See. Also here."
     assert "  " not in answer, "a removed marker must not leave a double space"
     assert " ." not in answer, "nor an orphaned full stop"
+
+
+def test_the_channel_label_is_never_prose(tmp_path: Path) -> None:
+    """Tom off the live corpus, 2026-09-20: "I can't ship this".
+
+    "Say which channel in your prose" was read as "print the label", and one
+    broad answer carried "(transcript)" ten times. The prompts ask for the verb
+    to carry it; this is the guarantee behind them.
+    """
+    upstream = Upstream(
+        _completion(tool_calls=[_tool_call("c1", "search", {"query": "kv cache"})]),
+        _completion(
+            "Dex Horthy said (transcript) loops are core [1]. The deck (ocr) "
+            "put it at 50% [1], and the room [frame] agreed."
+        ),
+    )
+    with make_client(tmp_path, PUBLIC_WITH_KEY, upstream) as client:
+        answer = client.post("/api/ask", json={"q": "what?"}).json()["answer"]
+    assert answer == "Dex Horthy said loops are core [1]. The deck put it at 50% [1], and the room agreed."
+    assert "  " not in answer, "a removed label must not leave a double space"
 
 
 def test_a_three_digit_marker_is_a_marker_and_not_prose(tmp_path: Path) -> None:
