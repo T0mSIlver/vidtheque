@@ -49,7 +49,7 @@ MAX_RESPONSE_CHARS = 60_000
 
 _SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _TIME = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
-_STAGES = {"main", "discovery-1", "discovery-2", "workshop"}
+_STAGES = {"main", "discovery-1", "discovery-2", "workshop", "creativity-room", "expo"}
 _TIMEZONE = "Europe/Paris"
 _MAX_TITLE_CHARS = 120
 _MAX_SESSION_TITLE_CHARS = 256

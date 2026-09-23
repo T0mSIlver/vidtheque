@@ -6,7 +6,7 @@
   "starts_on": "2026-09-23",
   "ends_on": "2026-09-24",
   "source_url": "https://www.ai.engineer/paris/2026",
-  "source_captured_on": "2026-09-15",
+  "source_captured_on": "2026-09-23",
   "organizer": "Mistral",
   "streamed_stage": "main",
   "tags": {
@@ -30,13 +30,81 @@
   },
   "sessions": [
     {
-      "id": "1297128",
+      "id": "1338842",
+      "day": "2026-09-23",
+      "start": "17:35",
+      "end": "17:40",
+      "stage": "main",
+      "title": "Welcome to AI Engineer Paris 2026!",
+      "speakers": [
+        {
+          "name": "Jen Person",
+          "company": "Mistral"
+        }
+      ],
+      "category": "Welcome",
+      "alignment": {
+        "talk_video_id": null,
+        "stream_video_id": null,
+        "start_s": null,
+        "end_s": null
+      }
+    },
+    {
+      "id": "1334000",
       "day": "2026-09-23",
       "start": "17:40",
-      "end": "18:10",
+      "end": "17:45",
+      "stage": "main",
+      "title": "Intro to AI Engineer",
+      "speakers": [
+        {
+          "name": "Lia McBride",
+          "company": "AI Engineer"
+        }
+      ],
+      "category": "Welcome",
+      "alignment": {
+        "talk_video_id": null,
+        "stream_video_id": null,
+        "start_s": null,
+        "end_s": null
+      }
+    },
+    {
+      "id": "1328301",
+      "day": "2026-09-23",
+      "start": "17:45",
+      "end": "17:50",
+      "stage": "main",
+      "title": "Welcome from Station F",
+      "speakers": [
+        {
+          "name": "Lara Khanafer",
+          "company": "STATION F"
+        }
+      ],
+      "category": "Welcome",
+      "alignment": {
+        "talk_video_id": null,
+        "stream_video_id": null,
+        "start_s": null,
+        "end_s": null
+      }
+    },
+    {
+      "id": "1297128",
+      "day": "2026-09-23",
+      "start": "17:50",
+      "end": "18:15",
       "stage": "main",
       "title": "What Can Economic History Teach Us About the AI Moment?",
-      "speakers": [{ "name": "Clemens Rawert", "company": "Langfuse" }],
+      "speakers": [
+        {
+          "name": "Clemens Rawert",
+          "company": "Langfuse"
+        }
+      ],
       "category": "Inference & AI Infrastructure",
       "alignment": {
         "talk_video_id": null,
@@ -46,29 +114,39 @@
       }
     },
     {
-      "id": "manual-lelio-talk",
+      "id": "1338810",
+      "day": "2026-09-23",
+      "start": "18:15",
+      "end": "18:40",
+      "stage": "main",
+      "title": "The next level of AI engineering",
+      "speakers": [
+        {
+          "name": "Kitze M",
+          "company": "Sizzy"
+        }
+      ],
+      "category": "Coding Agents & Software Factories",
+      "alignment": {
+        "talk_video_id": null,
+        "stream_video_id": null,
+        "start_s": null,
+        "end_s": null
+      }
+    },
+    {
+      "id": "1324799",
       "day": "2026-09-23",
       "start": "18:40",
-      "end": "19:10",
+      "end": "19:05",
       "stage": "main",
       "title": "Building Frontier AI",
-      "speakers": [{ "name": "Lélio Renard Lavaud", "company": "Mistral" }],
-      "category": "Inference & AI Infrastructure",
-      "alignment": {
-        "talk_video_id": null,
-        "stream_video_id": null,
-        "start_s": null,
-        "end_s": null
-      }
-    },
-    {
-      "id": "manual-1313491",
-      "day": "2026-09-24",
-      "start": "09:30",
-      "end": "10:00",
-      "stage": "main",
-      "title": "Where Should a Face Live? Customizing FLUX Video Models for Character Consistency",
-      "speakers": [{ "name": "Jakob Pörschmann", "company": "Black Forest Labs" }],
+      "speakers": [
+        {
+          "name": "Lélio Renard Lavaud",
+          "company": "Mistral"
+        }
+      ],
       "category": "Agentic Engineering & Agents in Production",
       "alignment": {
         "talk_video_id": null,
@@ -78,13 +156,91 @@
       }
     },
     {
-      "id": "manual-generating-identity-at-scale-elevenlabs-ai-driven-orb",
+      "id": "1313491",
+      "day": "2026-09-24",
+      "start": "09:30",
+      "end": "10:00",
+      "stage": "main",
+      "title": "From Pixels to Robots: How we customize FLUX for production to make it steer robots and play games",
+      "speakers": [
+        {
+          "name": "Jakob Pörschmann",
+          "company": "Black Forest Labs"
+        }
+      ],
+      "category": "Model Customization & Post Training",
+      "alignment": {
+        "talk_video_id": null,
+        "stream_video_id": null,
+        "start_s": null,
+        "end_s": null
+      }
+    },
+    {
+      "id": "1335986",
+      "day": "2026-09-24",
+      "start": "10:00",
+      "end": "11:00",
+      "stage": "creativity-room",
+      "title": "Stop Telling Your Agent Where to Look",
+      "speakers": [
+        {
+          "name": "Ina Koleva",
+          "company": "Mistral"
+        }
+      ],
+      "category": "Context & Harness Engineering",
+      "alignment": null
+    },
+    {
+      "id": "1299136",
+      "day": "2026-09-24",
+      "start": "10:00",
+      "end": "10:30",
+      "stage": "discovery-1",
+      "title": "Do you love wasting money? Then you should not care about agent tracing",
+      "speakers": [
+        {
+          "name": "Sergiy Dybskiy",
+          "company": "Sentry"
+        }
+      ],
+      "category": "Evals & Observability",
+      "alignment": null
+    },
+    {
+      "id": "1300066",
+      "day": "2026-09-24",
+      "start": "10:00",
+      "end": "10:30",
+      "stage": "discovery-2",
+      "title": "A Computer for Every Idea: Growing Trees of Live Machines",
+      "speakers": [
+        {
+          "name": "Ondrej Drapalik",
+          "company": "E2B"
+        },
+        {
+          "name": "Mish Ushakov",
+          "company": "E2B"
+        }
+      ],
+      "category": "Agentic Engineering & Agents in Production",
+      "alignment": null
+    },
+    {
+      "id": "1309137",
       "day": "2026-09-24",
       "start": "10:00",
       "end": "10:30",
       "stage": "main",
       "title": "Generating Identity at Scale, ElevenLabs' AI-Driven Orb",
-      "speakers": [{ "name": "Dorian Lods", "company": "ElevenLabs" }],
+      "speakers": [
+        {
+          "name": "Dorian Lods",
+          "company": "ElevenLabs"
+        }
+      ],
       "category": "Voice & Realtime AI",
       "alignment": {
         "talk_video_id": null,
@@ -94,42 +250,20 @@
       }
     },
     {
-      "id": "1289595",
+      "id": "1335145",
       "day": "2026-09-24",
       "start": "10:00",
-      "end": "10:30",
-      "stage": "discovery-1",
-      "title": "Building the next generation of AI developer tools",
-      "speakers": [{ "name": "Krzysztof Cieślak", "company": "GitHub Next" }],
+      "end": "11:00",
+      "stage": "workshop",
+      "title": "Building Your Own Software Factory",
+      "speakers": [
+        {
+          "name": "Ben Miller",
+          "company": "Factory AI"
+        }
+      ],
       "category": "Coding Agents & Software Factories",
       "alignment": null
-    },
-    {
-      "id": "manual-the-low-latency-inference-engineering-playbook",
-      "day": "2026-09-24",
-      "start": "10:00",
-      "end": "10:30",
-      "stage": "discovery-2",
-      "title": "The low-latency inference engineering playbook",
-      "speakers": [{ "name": "Charles Frye", "company": "Modal" }],
-      "category": "Inference & AI Infrastructure",
-      "alignment": null
-    },
-    {
-      "id": "1299321",
-      "day": "2026-09-24",
-      "start": "10:30",
-      "end": "11:00",
-      "stage": "main",
-      "title": "How a Transformers Model Loads in vLLM",
-      "speakers": [{ "name": "Harry Mellor", "company": "Hugging Face" }],
-      "category": "Inference & AI Infrastructure",
-      "alignment": {
-        "talk_video_id": null,
-        "stream_video_id": null,
-        "start_s": null,
-        "end_s": null
-      }
     },
     {
       "id": "1298819",
@@ -138,7 +272,16 @@
       "end": "11:00",
       "stage": "discovery-1",
       "title": "Optimizing Small VideoLLM: an End to End Problem",
-      "speakers": [{ "name": "Yannis Tevissen", "company": "Moments Lab" }],
+      "speakers": [
+        {
+          "name": "Yannis Tevissen",
+          "company": "Moments Lab"
+        },
+        {
+          "name": "Maxime Pariente",
+          "company": "NVIDIA"
+        }
+      ],
       "category": "Inference & AI Infrastructure",
       "alignment": null
     },
@@ -149,19 +292,29 @@
       "end": "11:00",
       "stage": "discovery-2",
       "title": "Dangerous by Design: Engineering Restricted Tool Boundaries for High-Stakes Enterprise Agents",
-      "speakers": [{ "name": "Tomáš Barczi", "company": "Škoda Auto a.s." }],
+      "speakers": [
+        {
+          "name": "Tomáš Barczi",
+          "company": "Škoda Auto a.s."
+        }
+      ],
       "category": "Enterprise & Vertical AI in Regulated Industries",
       "alignment": null
     },
     {
-      "id": "1299945",
+      "id": "1299321",
       "day": "2026-09-24",
-      "start": "11:30",
-      "end": "12:00",
+      "start": "10:30",
+      "end": "11:00",
       "stage": "main",
-      "title": "Inside the AI economy: What Stripe’s data reveals",
-      "speakers": [{ "name": "Arielle Le Bail", "company": "Stripe" }],
-      "category": "Agentic Engineering & Agents in Production",
+      "title": "How a Transformers Model Loads in vLLM",
+      "speakers": [
+        {
+          "name": "Harry Mellor",
+          "company": "Hugging Face"
+        }
+      ],
+      "category": "Inference & AI Infrastructure",
       "alignment": {
         "talk_video_id": null,
         "stream_video_id": null,
@@ -170,14 +323,71 @@
       }
     },
     {
-      "id": "1299136",
+      "id": "1338996",
+      "day": "2026-09-24",
+      "start": "11:05",
+      "end": "11:15",
+      "stage": "expo",
+      "title": "AI Agents Move at Machine Speed. Can Your Database Keep Up?",
+      "speakers": [
+        {
+          "name": "Benjamin Gougerot",
+          "company": "Cockroach Labs"
+        }
+      ],
+      "category": "Agentic Engineering & Agents in Production",
+      "alignment": null
+    },
+    {
+      "id": "1333311",
+      "day": "2026-09-24",
+      "start": "11:15",
+      "end": "11:25",
+      "stage": "expo",
+      "title": "Never Lose a Trace, Control What You Send",
+      "speakers": [
+        {
+          "name": "Erica Pisani",
+          "company": "Sentry"
+        }
+      ],
+      "category": "Evals & Observability",
+      "alignment": null
+    },
+    {
+      "id": "1335110",
+      "day": "2026-09-24",
+      "start": "11:30",
+      "end": "12:00",
+      "stage": "creativity-room",
+      "title": "OCR for Business documents",
+      "speakers": [
+        {
+          "name": "Alodie Boissonnet",
+          "company": "Mistral"
+        },
+        {
+          "name": "Juliette Chevrière",
+          "company": "Mistral"
+        }
+      ],
+      "category": "Enterprise & Vertical AI in Regulated Industries",
+      "alignment": null
+    },
+    {
+      "id": "1291300",
       "day": "2026-09-24",
       "start": "11:30",
       "end": "12:00",
       "stage": "discovery-1",
-      "title": "Do you love wasting money? Then you should not care about agent tracing",
-      "speakers": [{ "name": "Sergiy Dybskiy", "company": "Sentry" }],
-      "category": "Evals & Observability",
+      "title": "How to Prevent AI Agents from Accessing Unauthorized Data",
+      "speakers": [
+        {
+          "name": "Sohan Maheshwar",
+          "company": "AuthZed"
+        }
+      ],
+      "category": "Enterprise & Vertical AI in Regulated Industries",
       "alignment": null
     },
     {
@@ -187,20 +397,100 @@
       "end": "12:00",
       "stage": "discovery-2",
       "title": "Fault-Tolerant GPU Clusters on Kubernetes: Building Resilient Infrastructure for AI at Scale",
-      "speakers": [{ "name": "Connor Guerrero", "company": "Crusoe" }],
+      "speakers": [
+        {
+          "name": "Connor Guerrero",
+          "company": "Crusoe"
+        }
+      ],
       "category": "Inference & AI Infrastructure",
       "alignment": null
     },
     {
-      "id": "manual-nvidia-killing-the-cold-start-tax-on-llm-inference",
+      "id": "1299945",
+      "day": "2026-09-24",
+      "start": "11:30",
+      "end": "12:00",
+      "stage": "main",
+      "title": "Inside the AI economy: What Stripe’s data reveals",
+      "speakers": [
+        {
+          "name": "Arielle Le Bail",
+          "company": "Stripe"
+        }
+      ],
+      "category": "Agentic Engineering & Agents in Production",
+      "alignment": {
+        "talk_video_id": null,
+        "stream_video_id": null,
+        "start_s": null,
+        "end_s": null
+      }
+    },
+    {
+      "id": "1299284",
       "day": "2026-09-24",
       "start": "11:30",
       "end": "12:30",
       "stage": "workshop",
       "title": "From Minutes to Seconds: Killing the Cold Start Tax on LLM Inference",
       "speakers": [
-        { "name": "Ron Kahn", "company": "Nvidia" },
-        { "name": "Dan Feigin", "company": "Nvidia" }
+        {
+          "name": "Ron Kahn",
+          "company": "NVIDIA"
+        },
+        {
+          "name": "Dan Feigin",
+          "company": "NVIDIA"
+        }
+      ],
+      "category": "Inference & AI Infrastructure",
+      "alignment": null
+    },
+    {
+      "id": "1333911",
+      "day": "2026-09-24",
+      "start": "12:00",
+      "end": "12:30",
+      "stage": "creativity-room",
+      "title": "The Model Is Probably Innocent",
+      "speakers": [
+        {
+          "name": "Han Héloir",
+          "company": "Mistral"
+        }
+      ],
+      "category": "Agentic Engineering & Agents in Production",
+      "alignment": null
+    },
+    {
+      "id": "1292876",
+      "day": "2026-09-24",
+      "start": "12:00",
+      "end": "12:30",
+      "stage": "discovery-1",
+      "title": "Bring Deterministic Predictions to AI Agents with Tabular Foundation Models",
+      "speakers": [
+        {
+          "name": "Tuana Çelik",
+          "company": "Prior Labs"
+        }
+      ],
+      "category": "Agentic Engineering & Agents in Production",
+      "alignment": null
+    },
+    {
+      "id": "1300193",
+      "day": "2026-09-24",
+      "start": "12:00",
+      "end": "12:30",
+      "stage": "discovery-2",
+      "title": "SGLang and Miles: Building Frontier AI Infrastructure with RadixArk",
+      "speakers": [
+        {
+          "name": "Alex Nails",
+          "company": "RadixArk"
+        }
       ],
       "category": "Inference & AI Infrastructure",
       "alignment": null
@@ -212,7 +502,12 @@
       "end": "12:30",
       "stage": "main",
       "title": "From research to production: How we rebuilt a streaming model for Voice AI",
-      "speakers": [{ "name": "Hervé Bredin", "company": "pyannoteAI" }],
+      "speakers": [
+        {
+          "name": "Hervé Bredin",
+          "company": "pyannoteAI"
+        }
+      ],
       "category": "Voice & Realtime AI",
       "alignment": {
         "talk_video_id": null,
@@ -222,25 +517,35 @@
       }
     },
     {
-      "id": "1292876",
+      "id": "1337262",
       "day": "2026-09-24",
-      "start": "12:00",
-      "end": "12:30",
-      "stage": "discovery-1",
-      "title": "Bring Deterministic Predictions to AI Agents with Tabular Foundation Models",
-      "speakers": [{ "name": "Tuana Çelik", "company": "Prior Labs" }],
+      "start": "12:45",
+      "end": "13:45",
+      "stage": "workshop",
+      "title": "Pricing AI Products without Destroying your Margins",
+      "speakers": [
+        {
+          "name": "Yohan Bitbol",
+          "company": "Stripe"
+        }
+      ],
       "category": "Agentic Engineering & Agents in Production",
       "alignment": null
     },
     {
-      "id": "1300193",
+      "id": "1334109",
       "day": "2026-09-24",
-      "start": "12:00",
-      "end": "12:30",
-      "stage": "discovery-2",
-      "title": "SGLang and Miles: Building Frontier AI Infrastructure with RadixArk",
-      "speakers": [{ "name": "Alex Nails", "company": "RadixArk" }],
-      "category": "Inference & AI Infrastructure",
+      "start": "14:00",
+      "end": "14:30",
+      "stage": "creativity-room",
+      "title": "The Human Attention Budget",
+      "speakers": [
+        {
+          "name": "Octave Raimbault",
+          "company": "Mistral"
+        }
+      ],
+      "category": "Coding Agents & Software Factories",
       "alignment": null
     },
     {
@@ -250,7 +555,12 @@
       "end": "14:30",
       "stage": "discovery-1",
       "title": "Building the first reliable model for on-device agents",
-      "speakers": [{ "name": "Leonie Monigatti", "company": "Liquid AI" }],
+      "speakers": [
+        {
+          "name": "Leonie Monigatti",
+          "company": "Liquid AI"
+        }
+      ],
       "category": "Agentic Engineering & Agents in Production",
       "alignment": null
     },
@@ -261,19 +571,45 @@
       "end": "14:30",
       "stage": "discovery-2",
       "title": "Software Factories: Greenfield Is Easy. Brownfield Pays the Bills.",
-      "speakers": [{ "name": "Theresa Bradford", "company": "Otto Group data.works GmbH" }],
+      "speakers": [
+        {
+          "name": "Theresa Bradford",
+          "company": "Otto Group data.works GmbH"
+        }
+      ],
       "category": "Enterprise & Vertical AI in Regulated Industries",
       "alignment": null
     },
     {
-      "id": "manual-debugging-agents-in-different-environments",
+      "id": "1330235",
       "day": "2026-09-24",
       "start": "14:00",
       "end": "15:00",
       "stage": "workshop",
       "title": "Debugging Agents in different environments",
-      "speakers": [{ "name": "Sergiy Dybskiy", "company": "Sentry" }],
+      "speakers": [
+        {
+          "name": "Sergiy Dybskiy",
+          "company": "Sentry"
+        }
+      ],
       "category": "Evals & Observability",
+      "alignment": null
+    },
+    {
+      "id": "1333974",
+      "day": "2026-09-24",
+      "start": "14:30",
+      "end": "15:00",
+      "stage": "creativity-room",
+      "title": "Own Your Agent: Building a Fully Sovereign Stack",
+      "speakers": [
+        {
+          "name": "Henry Lagarde",
+          "company": "Mistral"
+        }
+      ],
+      "category": "Enterprise & Vertical AI in Regulated Industries",
       "alignment": null
     },
     {
@@ -283,7 +619,12 @@
       "end": "15:00",
       "stage": "discovery-1",
       "title": "GraphRAG: The Definitive Guide - A Field Guide to Patterns, Trade-offs, and Production Systems",
-      "speakers": [{ "name": "Stephen Chin", "company": "Neo4j" }],
+      "speakers": [
+        {
+          "name": "Stephen Chin",
+          "company": "Neo4j"
+        }
+      ],
       "category": "Context & Harness Engineering",
       "alignment": null
     },
@@ -294,19 +635,29 @@
       "end": "15:00",
       "stage": "discovery-2",
       "title": "Why Software Factories fail: how we failed to make 100% of our code built by autonomous agents",
-      "speakers": [{ "name": "Nikolay Rodionov", "company": "Alpic" }],
+      "speakers": [
+        {
+          "name": "Nikolay Rodionov",
+          "company": "Alpic"
+        }
+      ],
       "category": "Agentic Engineering & Agents in Production",
       "alignment": null
     },
     {
-      "id": "manual-eyes-up-edge-ai-innovation",
+      "id": "1324158",
       "day": "2026-09-24",
-      "start": "15:00",
-      "end": "15:30",
+      "start": "14:30",
+      "end": "15:00",
       "stage": "main",
-      "title": "Eyes Up: Edge AI Innovation",
-      "speakers": [{ "name": "Dominic Pajak", "company": "Arm" }],
-      "category": "Voice & Realtime AI",
+      "title": "The low-latency inference engineering playbook",
+      "speakers": [
+        {
+          "name": "Charles Frye",
+          "company": "Modal"
+        }
+      ],
+      "category": "Inference & AI Infrastructure",
       "alignment": {
         "talk_video_id": null,
         "stream_video_id": null,
@@ -321,7 +672,16 @@
       "end": "15:30",
       "stage": "discovery-1",
       "title": "What Gets Retrieved Gets Reinforced: Detecting Gender Bias in AI Agents",
-      "speakers": [{ "name": "Maria Lungu", "company": "Algolia" }],
+      "speakers": [
+        {
+          "name": "Maria Lungu",
+          "company": "Algolia"
+        },
+        {
+          "name": "Paul-Louis Nech",
+          "company": "Algolia"
+        }
+      ],
       "category": "Evals & Observability",
       "alignment": null
     },
@@ -332,29 +692,97 @@
       "end": "15:30",
       "stage": "discovery-2",
       "title": "Fantastic environments and where to find them",
-      "speakers": [{ "name": "Ben Burtenshaw", "company": "Hugging Face" }],
+      "speakers": [
+        {
+          "name": "Ben Burtenshaw",
+          "company": "Hugging Face"
+        }
+      ],
       "category": "Agentic Engineering & Agents in Production",
       "alignment": null
     },
     {
-      "id": "manual-in-agents-we-trust-how-sonar-protects-your-ai-investment",
+      "id": "1317607",
+      "day": "2026-09-24",
+      "start": "15:00",
+      "end": "15:30",
+      "stage": "main",
+      "title": "Eyes Up: Edge AI Innovation",
+      "speakers": [
+        {
+          "name": "Dominic Pajak",
+          "company": "Arm"
+        }
+      ],
+      "category": "Voice & Realtime AI",
+      "alignment": {
+        "talk_video_id": null,
+        "stream_video_id": null,
+        "start_s": null,
+        "end_s": null
+      }
+    },
+    {
+      "id": "1335090",
       "day": "2026-09-24",
       "start": "15:05",
       "end": "16:05",
       "stage": "workshop",
-      "title": "In agents we trust: How Sonar protects your AI investment",
-      "speakers": [{ "name": "Sylvain Combe", "company": "Sonar" }],
+      "title": "Hands-on Gitar: AI code review that reads your project's rules",
+      "speakers": [
+        {
+          "name": "Killian Carlsen-Phelan",
+          "company": "Sonar"
+        }
+      ],
       "category": "Agentic Engineering & Agents in Production",
       "alignment": null
     },
     {
-      "id": "manual-why-cloud-agents-are-a-systems-problem-in-disguise",
+      "id": "1296049",
+      "day": "2026-09-24",
+      "start": "15:30",
+      "end": "16:00",
+      "stage": "discovery-1",
+      "title": "The Zero-Temperature Lie: Why Your Deterministic LLM is Still Hallucinating Randomness",
+      "speakers": [
+        {
+          "name": "Valeria Zuccoli",
+          "company": "Intella"
+        }
+      ],
+      "category": "Inference & AI Infrastructure",
+      "alignment": null
+    },
+    {
+      "id": "1287177",
+      "day": "2026-09-24",
+      "start": "15:30",
+      "end": "16:00",
+      "stage": "discovery-2",
+      "title": "The Long Tail of \"Done\": Tracking What Agents Actually Ship, and Where It Gets Deployed",
+      "speakers": [
+        {
+          "name": "Theofilos Petsios",
+          "company": "Crash Override"
+        }
+      ],
+      "category": "Agentic Engineering & Agents in Production",
+      "alignment": null
+    },
+    {
+      "id": "1306932",
       "day": "2026-09-24",
       "start": "15:30",
       "end": "16:00",
       "stage": "main",
-      "title": "Why Cloud Agents are a Systems Problem in Disguise",
-      "speakers": [{ "name": "Yannis Psorakis", "company": "Cognition" }],
+      "title": "Closing the Distance: Agentic map-reduce for large-scale coding tasks",
+      "speakers": [
+        {
+          "name": "Yannis Psorakis",
+          "company": "Cognition"
+        }
+      ],
       "category": "Agentic Engineering & Agents in Production",
       "alignment": {
         "talk_video_id": null,
@@ -364,25 +792,51 @@
       }
     },
     {
-      "id": "1296049",
+      "id": "1335541",
       "day": "2026-09-24",
-      "start": "15:30",
-      "end": "16:00",
-      "stage": "discovery-1",
-      "title": "The Zero-Temperature Lie: Why Your Deterministic LLM is Still Hallucinating Randomness",
-      "speakers": [{ "name": "Valeria Zuccoli", "company": "Intella" }],
-      "category": "Inference & AI Infrastructure",
+      "start": "16:05",
+      "end": "16:35",
+      "stage": "creativity-room",
+      "title": "Code for free, by running an LLM on your own laptop",
+      "speakers": [
+        {
+          "name": "Ben Morss",
+          "company": "Mistral"
+        }
+      ],
+      "category": "Coding Agents & Software Factories",
       "alignment": null
     },
     {
-      "id": "1291300",
+      "id": "1329895",
       "day": "2026-09-24",
-      "start": "15:30",
-      "end": "16:00",
-      "stage": "discovery-2",
-      "title": "How to Prevent AI Agents from Accessing Unauthorized Data",
-      "speakers": [{ "name": "Sohan Maheshwar", "company": "AuthZed" }],
-      "category": "Enterprise & Vertical AI in Regulated Industries",
+      "start": "16:05",
+      "end": "16:15",
+      "stage": "expo",
+      "title": "In agents we trust: How Sonar protects your AI investment",
+      "speakers": [
+        {
+          "name": "Sylvain Combe",
+          "company": "Sonar"
+        }
+      ],
+      "category": "Agentic Engineering & Agents in Production",
+      "alignment": null
+    },
+    {
+      "id": "1336043",
+      "day": "2026-09-24",
+      "start": "16:15",
+      "end": "16:25",
+      "stage": "expo",
+      "title": "Fundamentals to build your Software Factory",
+      "speakers": [
+        {
+          "name": "Ben Miller",
+          "company": "Factory AI"
+        }
+      ],
+      "category": "Coding Agents & Software Factories",
       "alignment": null
     },
     {
@@ -392,19 +846,98 @@
       "end": "17:00",
       "stage": "discovery-1",
       "title": "The Harness Is the Product: Engineering Agents Beyond the Happy Path",
-      "speakers": [{ "name": "Dat Ngo", "company": "Arize AI" }],
+      "speakers": [
+        {
+          "name": "Dat Ngo",
+          "company": "Arize AI"
+        }
+      ],
       "category": "Evals & Observability",
       "alignment": null
     },
     {
-      "id": "1287177",
+      "id": "1303664",
       "day": "2026-09-24",
       "start": "16:30",
       "end": "17:00",
       "stage": "discovery-2",
-      "title": "The Long Tail of \"Done\": Tracking What Agents Actually Ship, and Where It Gets Deployed",
-      "speakers": [{ "name": "Theofilos Petsios", "company": "Crash Override" }],
+      "title": "Your agent needs a computer, not a container",
+      "speakers": [
+        {
+          "name": "Fayaz Ahmed",
+          "company": "Cloudflare"
+        }
+      ],
       "category": "Agentic Engineering & Agents in Production",
+      "alignment": null
+    },
+    {
+      "id": "1329541",
+      "day": "2026-09-24",
+      "start": "16:30",
+      "end": "17:00",
+      "stage": "main",
+      "title": "Fixing the PR Bottleneck",
+      "speakers": [
+        {
+          "name": "Matt Pocock",
+          "company": "Matt Pocock Ltd"
+        }
+      ],
+      "category": "Coding Agents & Software Factories",
+      "alignment": {
+        "talk_video_id": null,
+        "stream_video_id": null,
+        "start_s": null,
+        "end_s": null
+      }
+    },
+    {
+      "id": "1337239",
+      "day": "2026-09-24",
+      "start": "16:30",
+      "end": "17:30",
+      "stage": "workshop",
+      "title": "Agentic AI Makes Infrastructure Scale a Systemic Risk",
+      "speakers": [
+        {
+          "name": "Mike Uzan",
+          "company": "Cockroach Labs"
+        }
+      ],
+      "category": "Inference & AI Infrastructure",
+      "alignment": null
+    },
+    {
+      "id": "1290558",
+      "day": "2026-09-24",
+      "start": "17:00",
+      "end": "17:30",
+      "stage": "discovery-1",
+      "title": "Building Agents to Investigate Security Alerts at Scale",
+      "speakers": [
+        {
+          "name": "Anes Bendimerad",
+          "company": "Datadog"
+        }
+      ],
+      "category": "Agentic Engineering & Agents in Production",
+      "alignment": null
+    },
+    {
+      "id": "1300135",
+      "day": "2026-09-24",
+      "start": "17:00",
+      "end": "17:30",
+      "stage": "discovery-2",
+      "title": "Anatomy of a paranoid sandbox: designing for workloads that fight back",
+      "speakers": [
+        {
+          "name": "Ali Akca",
+          "company": "Cast AI"
+        }
+      ],
+      "category": "Inference & AI Infrastructure",
       "alignment": null
     },
     {
@@ -414,7 +947,12 @@
       "end": "17:30",
       "stage": "main",
       "title": "The Efficiency of Gemma 4",
-      "speakers": [{ "name": "Maarten Grootendorst", "company": "Google DeepMind" }],
+      "speakers": [
+        {
+          "name": "Maarten Grootendorst",
+          "company": "Google DeepMind"
+        }
+      ],
       "category": "Inference & AI Infrastructure",
       "alignment": {
         "talk_video_id": null,
@@ -424,35 +962,18 @@
       }
     },
     {
-      "id": "1299116",
-      "day": "2026-09-24",
-      "start": "17:00",
-      "end": "17:30",
-      "stage": "discovery-1",
-      "title": "Kubernetes Is Not Your Sandbox",
-      "speakers": [{ "name": "Ivan Burazin", "company": "Daytona" }],
-      "category": "Inference & AI Infrastructure",
-      "alignment": null
-    },
-    {
-      "id": "manual-your-agent-needs-a-computer-not-a-container",
-      "day": "2026-09-24",
-      "start": "17:00",
-      "end": "17:30",
-      "stage": "discovery-2",
-      "title": "Your agent needs a computer, not a container",
-      "speakers": [{ "name": "Fayaz Ahmed", "company": "Cloudflare" }],
-      "category": "Agentic Engineering & Agents in Production",
-      "alignment": null
-    },
-    {
       "id": "1299052",
       "day": "2026-09-24",
       "start": "17:30",
       "end": "18:00",
       "stage": "main",
       "title": "The Missing Layers of Conversational AI",
-      "speakers": [{ "name": "Neil Zeghidour", "company": "Gradium" }],
+      "speakers": [
+        {
+          "name": "Olivier Teboul",
+          "company": "Gradium"
+        }
+      ],
       "category": "Voice & Realtime AI",
       "alignment": {
         "talk_video_id": null,
