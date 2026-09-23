@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
+from itertools import pairwise
 from typing import Any, Iterable, Sequence
 
 # A cue that spans more than this is a caption bug or a transcription that ran
@@ -165,7 +166,7 @@ def _interpolate(
         share = (i + 1) / (first_index + 1)
         filled[i] = head_floor + (first_value - head_floor) * share
     filled[first_index] = first_value
-    for (left, left_value), (right, right_value) in zip(known, known[1:]):
+    for (left, left_value), (right, right_value) in pairwise(known):
         filled[right] = right_value
         for i in range(left + 1, right):
             share = (i - left) / (right - left)

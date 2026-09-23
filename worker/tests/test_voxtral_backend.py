@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import http.client
+from itertools import pairwise
 from pathlib import Path
 from unittest import mock
 
@@ -109,7 +110,7 @@ def test_long_audio_is_sequentially_chunked_and_safely_merged(tmp_path: Path) ->
     assert result.language == "en" and result.duration == 3_630.0
     assert backend.last_degraded_seams == [] and result.degraded_seams == []
     assert all(
-        right.start >= left.end for left, right in zip(result.segments, result.segments[1:])
+        right.start >= left.end for left, right in pairwise(result.segments)
     )
 
 
@@ -348,7 +349,7 @@ def test_a_repeated_trigram_far_from_the_seam_is_not_a_match(tmp_path: Path) -> 
     words = [word for segment in result.segments for word in segment.words]
     assert [word.start for word in words] == sorted(word.start for word in words)
     assert all(
-        right.start >= left.end for left, right in zip(result.segments, result.segments[1:])
+        right.start >= left.end for left, right in pairwise(result.segments)
     )
     assert [word.word for word in words].count("model") == 1
 
