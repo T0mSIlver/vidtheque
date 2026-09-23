@@ -45,10 +45,6 @@ class VectorState:
         return f"note: vector legs are disabled — {self.reason} Results are FTS-only."
 
 
-class ConfigDriftError(RuntimeError):
-    """Declared vector dimensions and the config table disagree."""
-
-
 @dataclass
 class Database:
     """Owns the write connection, the read pool and the boot-time config."""
@@ -225,16 +221,6 @@ class Database:
         notice (pipeline-perf-2026-08-09.md §5).
         """
         return self.config.get("text_embed.query_prefix", "")
-
-    @property
-    def frame_query_prefix(self) -> str:
-        """The same record for the frame leg, added by migration 0004.
-
-        Empty before it: SigLIP 2's text tower takes no instruction, so there
-        was nothing to record. An instruction-aware unified model has a
-        *different* instruction per leg, and the two are what make one space
-        answer two retrieval tasks."""
-        return self.config.get("frame_embed.query_prefix", "")
 
     @property
     def diarization_enabled(self) -> bool:

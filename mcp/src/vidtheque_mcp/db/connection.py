@@ -19,9 +19,9 @@ import contextlib
 import sqlite3
 import struct
 import time
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import TypeVar
 
 import sqlite_vec
 
@@ -287,18 +287,6 @@ class Writer:
             raise
 
 
-@contextlib.contextmanager
-def immediate(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
-    """Synchronous BEGIN IMMEDIATE helper, for migrations and tests."""
-    conn.execute("BEGIN IMMEDIATE")
-    try:
-        yield conn
-    except BaseException:
-        conn.execute("ROLLBACK")
-        raise
-    conn.execute("COMMIT")
-
-
 @contextlib.asynccontextmanager
 async def admission(sem: asyncio.Semaphore, retry_after_s: int = 1) -> AsyncIterator[None]:
     """Admission control: a third concurrent search gets an immediate E_BUSY.
@@ -318,8 +306,3 @@ async def admission(sem: asyncio.Semaphore, retry_after_s: int = 1) -> AsyncIter
         yield
     finally:
         sem.release()
-
-
-def scalar(conn: sqlite3.Connection, sql: str, params: Any = ()) -> Any:
-    row = conn.execute(sql, params).fetchone()
-    return None if row is None else row[0]
