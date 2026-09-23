@@ -91,7 +91,7 @@ document, not a picture — where CLIP-style dual encoders do 1.3–3.6× worse.
 ## Development
 
 ```bash
-uv sync && make test    # CPU-only, no model downloads; GPU extras: --extra gpu
+uv sync && make test    # CPU-only, no model downloads; GPU box: make sync-gpu
 ```
 
 `AGENTS.md` is how to work in this repo; `docs/README.md` maps every surface
