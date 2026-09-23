@@ -31,7 +31,7 @@ const NOW = 1788626080;
 const BASIS = (items: number) =>
   `of ${items} item(s). An item still in the pipeline counts the stages it has finished, out of 7.`;
 
-export const DEFERRED_JOB = {
+const DEFERRED_JOB = {
   job_id: "job_deferred01",
   state: "queued",
   kind: "index",
@@ -418,14 +418,6 @@ export const DEMO_JOB_DETAIL = {
 };
 
 // ------------------------------------------------------------- the writes
-
-/** Running work does not settle: the request is recorded and the pipeline stops
- *  at its next stage boundary. */
-export const CANCEL_RUNNING = {
-  job_id: "job_running001",
-  state: "running",
-  cancel_requested: true,
-};
 
 /** Queued work has no worker to cooperate with and settles now. */
 export const CANCEL_QUEUED = {
