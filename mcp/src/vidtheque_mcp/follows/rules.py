@@ -31,7 +31,6 @@ from ..text import duration_clock
 TABS = ("videos", "streams", "shorts")
 CHANNEL_SETS = ("all", "transcript", "ocr", "frames")
 MODES = ("auto", "review")
-STATES = ("active", "paused", "failing")
 
 # The ceilings the schema also carries. Duplicated for the same reason
 # tool-surface §3.7's tag regex is duplicated into a CHECK constraint: this
@@ -235,14 +234,6 @@ def normalize_tabs(raw: object) -> tuple[str, ...]:
 
 def unknown_tabs(raw: object) -> list[str]:
     return [tab for tab in split_terms(raw) if tab not in TABS]
-
-
-def clamp_int(value: object, low: int, high: int, default: int) -> int:
-    try:
-        number = int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return default
-    return max(low, min(high, number))
 
 
 def _int_or_none(value: object) -> int | None:

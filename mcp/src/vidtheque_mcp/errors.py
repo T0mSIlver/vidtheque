@@ -80,10 +80,6 @@ class ToolError(Exception):
         self.retry_after_s = retry_after_s
         self.extra = extra or {}
 
-    @property
-    def http_status(self) -> int:
-        return HTTP_STATUS.get(self.code, 500)
-
     def text(self) -> str:
         lines = [f"error: {self.code}", self.message]
         if self.next_hint:

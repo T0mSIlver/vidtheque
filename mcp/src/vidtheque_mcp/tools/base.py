@@ -213,7 +213,7 @@ def handle_errors(fn):
             if interrupted.deadline_expired:
                 return timeout().to_result()
             raise
-        except Exception as exc:  # pragma: no cover - last resort
+        except Exception:  # pragma: no cover - last resort
             # The remedy has always promised the server log has the trace id.
             # It did not — the id did not exist and the exception text went to
             # the caller instead, which on a public deployment means an
