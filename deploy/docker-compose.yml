@@ -78,6 +78,8 @@ services:
       # run the tunnel. Blanked here for this service only; cloudflared still
       # interpolates the real value. (2026-08-10 audit, F-7.)
       TUNNEL_TOKEN: ""
+      # same for the worker's Voxtral key (aie-paris-2026.md §6.1: worker only)
+      MISTRAL_API_KEY: ""
     volumes:
       - vidtheque-data:/data
     # NOT PUBLISHED. It was `"${MCP_PORT:-8080}:8080"` until the edge existed,
