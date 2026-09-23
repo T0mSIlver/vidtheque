@@ -990,6 +990,10 @@ async def _tool_context(
             Outcome("that read named no moment"),
         )
     window = _number(args.get("window"))
+    if window is not None:
+        # The tool's own 5..300s clamp, applied first: a window near 0 would
+        # otherwise price its budget at 0, which is `max_text_chars`' opt-out.
+        window = max(5.0, min(300.0, window))
     wider = (
         {"window": window, "max_text_chars": int(window * CHARS_PER_S)}
         if window is not None
