@@ -104,6 +104,11 @@ async def test_the_page_footer_says_where_the_next_one_starts(deps) -> None:
     assert "offset=2 continues this transcript" in payload["next"]
 
 
+async def test_the_next_hint_repeats_the_span_its_offset_counts_in(deps) -> None:
+    _, payload = await read(deps, video_id=VIDEO, t_start=5, t_end=10, limit=2)
+    assert "offset=2 t_start=5 t_end=10 continues this transcript" in payload["next"]
+
+
 async def test_the_span_selects_by_overlap_not_by_start(deps) -> None:
     """A cue running 3.0-5.8 is part of `t_start=5`, not a line to page back for."""
     _, payload = await read(deps, video_id=VIDEO, t_start=5, t_end=10)
