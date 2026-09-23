@@ -70,7 +70,6 @@ from ..tools.follows import not_scheduled_line
 STRIP_WIDTH = 192
 DETAIL_WIDTH = 512
 LIGHTBOX_WIDTH = 1280
-FRAME_QUALITY = 70
 
 # The overview's list bounds (§5.1). Server-side, like every other list here.
 CHANNEL_CAP = 12

@@ -141,20 +141,3 @@ class HTTPEmbeddingClient:
         if self._client is not None:
             await self._client.aclose()
             self._client = None
-
-
-class NullEmbeddingClient:
-    """Used when the corpus has no vectors or the operator disabled the worker."""
-
-    async def embed(
-        self, texts: Sequence[str], model: str | None = None, input_type: str = "query"
-    ) -> tuple[list[list[float]], str | None, int | None]:
-        raise EmbeddingUnavailable("no embedding worker is configured")
-
-    async def embed_frame_query(
-        self, texts: Sequence[str], model: str | None = None
-    ) -> tuple[list[list[float]], str | None, int | None]:
-        raise EmbeddingUnavailable("no embedding worker is configured")
-
-    async def aclose(self) -> None:  # pragma: no cover - trivial
-        return None

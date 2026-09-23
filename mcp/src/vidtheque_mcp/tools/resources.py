@@ -220,13 +220,12 @@ def _render_guide(writable: bool, transcript: bool = True) -> str:
 # The full deployment's guide, resolved once. Kept as a module constant because
 # it is the canonical text — `docs/design/tool-surface.md` §5.3 quotes it.
 GUIDE = _render_guide(writable=True)
-GUIDE_READONLY = _render_guide(writable=False, transcript=False)
 
 
 def guide(deps: Deps) -> str:
     """`vidtheque://guide`, resolved against what this deployment registers.
 
-    Rendered per call rather than picked from the two constants: the axes are
+    Rendered per call rather than picked from precomputed variants: the axes are
     independent (`public/readonly.py`), and a lookup keyed on one of them would
     answer the other from memory.
     """

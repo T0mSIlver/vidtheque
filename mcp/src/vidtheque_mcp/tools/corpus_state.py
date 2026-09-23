@@ -144,10 +144,6 @@ class QueueState:
             return bool(self.active)
         return bool(self.videos_indexing or self.running or (self.active - self.deferred))
 
-    @property
-    def deferred_only(self) -> bool:
-        return bool(self.deferred) and not self.working
-
     def phrase(self) -> str | None:
         """The queue in one clause, or None when the queue is empty and idle.
 
@@ -173,9 +169,6 @@ class QueueState:
         if self.videos_indexing:
             parts.append(f"{self.videos_indexing} video(s) mid-pipeline")
         return " · ".join(parts) if parts else None
-
-
-EMPTY_QUEUE = QueueState(0, 0, 0, None, 0)
 
 
 async def read_queue(deps: Deps, gap_info: Mapping[str, Any] | None = None) -> QueueState:
