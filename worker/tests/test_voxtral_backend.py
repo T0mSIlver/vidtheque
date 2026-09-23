@@ -597,3 +597,15 @@ def test_a_truncated_response_body_is_the_retryable_failure(tmp_path: Path) -> N
     assert caught.value.code == "backend_unavailable"
     assert "truncated" in str(caught.value)
     assert "secret" not in str(caught.value)
+
+
+def test_a_bare_quote_token_does_not_close_a_sentence() -> None:
+    """A word that strips to nothing has no last character, and "" is in every string."""
+    from vidtheque_worker.backends.voxtral_stt import _segments_from_words
+
+    tokens = ["and", "then", "he", "said", '"', "we", "ship", "it", "today."]
+    words = [
+        Word(word=w, start=n * 0.4, end=n * 0.4 + 0.3, score=None) for n, w in enumerate(tokens)
+    ]
+    segments = _segments_from_words(words)
+    assert [s.text for s in segments] == ['and then he said " we ship it today.']
