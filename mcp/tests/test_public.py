@@ -1401,6 +1401,28 @@ def test_the_text_budget_widens_with_the_window(
     assert asked[1]["max_text_chars"] == 300 * 90
 
 
+def test_a_zero_window_never_lifts_the_text_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`max_text_chars=0` is the tool's opt-out; a tiny window must not reach it."""
+    asked: list[dict[str, Any]] = []
+    real = segment.run
+
+    async def record(deps: Any, **kwargs: Any) -> Any:
+        asked.append(kwargs)
+        return await real(deps, **kwargs)
+
+    monkeypatch.setattr(segment, "run", record)
+    for window in (0, 0.005, -30):
+        _asks(
+            tmp_path,
+            "get_segment_context",
+            {"video_id": "kCc8FmEb1nY", "t": 12, "window": window},
+            fresh=not asked,
+        )
+    assert [call["max_text_chars"] for call in asked] == [5 * 90] * 3
+
+
 def test_a_failing_internal_tool_is_reported_to_the_model(tmp_path: Path) -> None:
     """A typed tool error is evidence for the model, not a 500 for the visitor."""
     upstream = Upstream(
