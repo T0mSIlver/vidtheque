@@ -99,7 +99,7 @@ async def list_videos(
     # spent a paragraph removing.
     clamped = [
         f"{name}={was} → {now}"
-        for name, was, now in zip(("limit", "offset"), asked, (limit, offset))
+        for name, was, now in zip(("limit", "offset"), asked, (limit, offset), strict=True)
         if isinstance(was, int) and not isinstance(was, bool) and was != now
     ]
     tag_list = split_csv(tags, 10, "tags")

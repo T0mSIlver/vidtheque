@@ -206,7 +206,7 @@ async def run(
     clamped = [
         f"{name}={was} → {now}"
         for name, was, now in zip(
-            ("limit", "offset", "max_per_video"), asked, (limit, offset, max_per_video)
+            ("limit", "offset", "max_per_video"), asked, (limit, offset, max_per_video), strict=True
         )
         if isinstance(was, int) and not isinstance(was, bool) and was != now
     ]

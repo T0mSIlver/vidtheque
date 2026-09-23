@@ -169,7 +169,7 @@ def test_the_fused_pass_finds_the_fixtures_hard_cuts(clip: Path) -> None:
     starts = [round(start, 3) for start, _ in spans]
     assert len(starts) == 4
     assert duration == 8.0
-    for found, expected in zip(starts, (0.0, 2.0, 4.0, 6.0)):
+    for found, expected in zip(starts, (0.0, 2.0, 4.0, 6.0), strict=True):
         assert abs(found - expected) <= 0.3, starts
 
 
@@ -184,8 +184,8 @@ def test_the_fused_and_legacy_paths_find_the_same_cuts(clip: Path) -> None:
     fused, _ = keyframes.detect_spans(clip, kind="screencast", fused=True)
     legacy, _ = keyframes.detect_spans(clip, kind="screencast", fused=False)
     assert len(fused) == len(legacy)
-    drift = [abs(a[0] - b[0]) for a, b in zip(fused, legacy)]
-    assert max(drift) <= 0.3, list(zip(fused, legacy))
+    drift = [abs(a[0] - b[0]) for a, b in zip(fused, legacy, strict=True)]
+    assert max(drift) <= 0.3, list(zip(fused, legacy, strict=True))
 
 
 def test_frame_threading_does_not_move_the_cuts(clip: Path) -> None:
@@ -250,7 +250,7 @@ def test_pooled_extraction_returns_exactly_what_the_serial_pass_returns(
     assert len(serial) > 4, "the fixture should produce enough shots to span chunks"
     assert _fingerprint(pooled) == _fingerprint(serial)
     # Same bytes on disk too, not merely the same recorded size.
-    for one, other in zip(serial, pooled):
+    for one, other in zip(serial, pooled, strict=True):
         assert one.absolute is not None and other.absolute is not None
         assert one.absolute.read_bytes() == other.absolute.read_bytes()
 
