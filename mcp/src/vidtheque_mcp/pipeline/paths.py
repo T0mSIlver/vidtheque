@@ -84,11 +84,6 @@ class Layout:
             return []
         return sorted(p for p in directory.glob(f"{source_id}.*") if p.is_file())
 
-    # ---------------------------------------------------------------- scratch
-
-    def tmp_dir(self, job_public_id: str) -> Path:
-        return self.data_dir / "tmp" / job_public_id
-
     # ------------------------------------------------------------------ helpers
 
     def absolute(self, relative: str) -> Path:

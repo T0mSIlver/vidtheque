@@ -229,7 +229,6 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
         client = await self._http()
         attempt = 0
         waited = 0.0
-        last: Exception | None = None
         while True:
             handles: list[Any] = []
             try:
@@ -244,7 +243,6 @@ class HTTPWorkerClient(HTTPEmbeddingClient):
                     kwargs["data"] = data
                 response = await client.post(path, **kwargs)
             except Exception as exc:  # connect/read/timeout
-                last = exc
                 if not replay_after_acceptance and not isinstance(exc, CONNECT_FAILURES):
                     raise WorkerUnavailable(
                         f"{path}: {exc}. The request was accepted before it failed, so it "

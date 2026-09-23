@@ -25,16 +25,6 @@ from .worker_client import OcrLine
 
 STAGES = ("fetch", "stt", "chunk", "text_embed", "keyframe", "ocr", "frame_embed")
 
-# Which `config` key each stage's `model_key` is compared against by the reindex
-# planner in index-schema §1.3. `fetch`, `chunk` and `keyframe` have no model,
-# so they record the tool version / parameters that produced them instead.
-STAGE_CONFIG_KEY = {
-    "stt": "stt.model",
-    "text_embed": "text_embed.model",
-    "ocr": "ocr.model",
-    "frame_embed": "frame_embed.model",
-}
-
 
 # ------------------------------------------------------------------- videos
 
@@ -408,7 +398,7 @@ def write_ocr(
     kept: list[str] = []
     span_x = float(width or 1)
     span_y = float(height or 1)
-    for line_no, line in enumerate(lines):
+    for line in lines:
         text = line.text.strip()
         if not text:
             continue
@@ -628,10 +618,3 @@ def video_tags(conn: sqlite3.Connection, video_id: int) -> list[str]:
             (video_id,),
         )
     ]
-
-
-def existing_video(conn: sqlite3.Connection, source: str, source_id: str) -> sqlite3.Row | None:
-    return conn.execute(
-        "SELECT id, index_state FROM videos WHERE source = ? AND source_id = ?",
-        (source, source_id),
-    ).fetchone()
