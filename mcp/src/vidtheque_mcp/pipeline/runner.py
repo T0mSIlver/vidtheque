@@ -91,11 +91,6 @@ logger = logging.getLogger(__name__)
 LIFECYCLE_RETRY_S = 1_800
 LIFECYCLE_RETRY_MAX_S = 6 * 3_600
 
-CONTAINER_HINT = (
-    "index-video expand=playlist (or channel_recent) to fan that URL out into "
-    "one job item per video."
-)
-
 # `model_key` is "what produced this row", and until now every character of it
 # was also "re-run me if I change". These two split those apart for the one
 # stage that needs them split: everything before the separator is the *contract*
