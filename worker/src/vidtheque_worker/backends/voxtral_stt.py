@@ -473,7 +473,9 @@ def _segments_from_words(words: Sequence[Word]) -> list[Segment]:
         if group:
             last = group[-1]
             pause = start - (last.end if last.end is not None else start)
-            sentence_over = last.word.rstrip("\"')”’")[-1:] in ".?!" and len(group) >= 3
+            tail = last.word.rstrip("\"')”’")[-1:]
+            # A bare quote strips to "", and "" is `in` every string.
+            sentence_over = bool(tail) and tail in ".?!" and len(group) >= 3
             if (
                 sentence_over
                 or pause >= SEGMENT_PAUSE_SECONDS
