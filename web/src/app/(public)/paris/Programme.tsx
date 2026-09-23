@@ -8,6 +8,8 @@ const OTHER_TRACKS = [
   ["discovery-1", "Discovery Track 1"],
   ["discovery-2", "Discovery Track 2"],
   ["workshop", "Workshop"],
+  ["creativity-room", "Creativity Room"],
+  ["expo", "Expo Stage"],
 ] as const;
 
 /** The schedule, or the facade's own sentence for why there is none. */

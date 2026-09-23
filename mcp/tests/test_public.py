@@ -268,11 +268,11 @@ def test_edition_facade_keeps_the_schedule_before_videos_arrive(public_client: T
     assert response.headers["cache-control"] == "no-store"
     payload = response.json()
     assert payload["edition"]["slug"] == "aie-paris-2026"
-    assert len(payload["sessions"]) == 34
-    assert len(payload["talks"]) == 11
+    assert len(payload["sessions"]) == 50
+    assert len(payload["talks"]) == 15
     assert {talk["alignment_state"] for talk in payload["talks"]} == {"not_yet_indexed"}
     assert payload["videos"] == []
-    assert payload["pagination"] == {"limit": 50, "offset": 0, "has_more": False, "next_offset": None}
+    assert payload["pagination"] == {"limit": 50, "offset": 0, "has_more": True, "next_offset": 50}
 
 
 def test_edition_facade_clamps_both_independent_pages(public_client: TestClient) -> None:

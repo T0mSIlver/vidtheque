@@ -300,7 +300,7 @@ async def test_an_edition_tag_derives_context_bias_without_a_backend_name(
         assert await parts.run() is True
         bias = parts.worker.transcribe_context_biases[0]
         assert bias is not None and len(bias) == 100
-        assert bias[:2] == ["Clemens Rawert", "Lélio Renard Lavaud"]
+        assert bias[:2] == ["Jen Person", "Lia McBride"]
     finally:
         await parts.db.close()
         parts.parts.auth.close()

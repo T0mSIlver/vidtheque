@@ -91,16 +91,25 @@ axes and would be wrong whenever a stream starts early or a break runs long.
 | `id` | string | stable id copied from the source page when present |
 | `day` | ISO date | within the edition dates |
 | `start`, `end` | `HH:MM` | local to `timezone`, with `end > start` |
-| `stage` | enum | `main`, `discovery-1`, `discovery-2`, or `workshop` |
+| `stage` | enum | `main`, `discovery-1`, `discovery-2`, `workshop`, `creativity-room`, or `expo` |
 | `title` | string | source spelling, at most 256 characters |
 | `speakers` | array | at least one `{name, company}` pair |
 | `category` | string | source spelling, at most 120 characters |
 | `alignment` | object or `null` | object for `main`; `null` for an unstreamed stage |
 
-The fixture contains 34 sessions, 2 on September 23 and 32 on September 24.
-Eleven are on the main stage. The remaining 23 stay in the fixture because the
-page must state what was not streamed and because their later individual
+The fixture contains 53 sessions, 6 on September 23 and 47 on September 24.
+Seventeen are on the main stage. The remaining 36 stay in the fixture because
+the page must state what was not streamed and because their later individual
 uploads may be mapped without rewriting the schedule.
+*(Amended 2026-09-23: the schedule was recaptured from the source page — the
+published lineup had changed since the 2026-09-15 capture. The refreshed
+fixture holds 53 sessions, 17 on the main stage, up from 34 and 11. Two stages
+appeared that the first capture did not have, `creativity-room` (Creativity
+Room) and `expo` (Expo Stage); §4.2's "not streamed" label applies to both,
+same as the other non-main stages. Three day-1 rows — the two welcome
+messages and the Station F welcome — carry no category on the source page;
+`category` is a required non-empty string, so they are fixtured as
+"Welcome".)*
 
 ### 2.3 Alignment data and the talk table
 
@@ -274,7 +283,7 @@ The second line is:
 > Every main-stage talk from AI Engineer Paris, cited to the second, slides
 > included. Point your own agent at it.
 
-"Main-stage" admits the 23 fixture sessions that were not streamed, as
+"Main-stage" admits the 36 fixture sessions that were not streamed, as
 `positioning.md` requires.
 
 The page carries no organizer credit — Tom asked for the line out on
@@ -285,7 +294,7 @@ endorsement.
 ### 4.2 Timeline and alignment states
 
 The main stage renders as a day-grouped timeline. There is one row for each of
-the 11 main-stage sessions in the fixture.
+the 17 main-stage sessions in the fixture.
 
 A `not_yet_indexed` row prints "not yet indexed" and no fabricated clock or
 disabled timestamp. An `indexed_not_aligned` row prints "indexed, not yet
@@ -296,8 +305,8 @@ Mixed states are valid. One talk upload may be ready while the day VOD still
 has unaligned rows. The page renders each row from its own state and never
 promotes a day to ready because one row is ready.
 
-Discovery Track 1, Discovery Track 2, and Workshop sessions render in muted,
-greyed groups with this exact label:
+Discovery Track 1, Discovery Track 2, Workshop, Creativity Room, and Expo
+Stage sessions render in muted, greyed groups with this exact label:
 
 > not streamed; may arrive later as individual uploads
 
@@ -381,6 +390,14 @@ the later uploads, whose titles carry no conference marker.
 matching, the 80-character per-term limit, and the existing validation path
 stay unchanged. This is a limit adjustment, not a regex feature or a new tool.
 The orchestrator set this global bound and flagged it to Tom.
+*(Amended 2026-09-23: the recaptured fixture has 56 unique speakers, so
+`Paris` plus all of them passes `MAX_TITLE_TERMS`. The follow on vidtheque.dev
+lists `Paris` plus the 17 main-stage speakers instead; only main-stage uploads
+fill talk rows. It watches `videos` only, because day VODs are queued by URL
+once `yt-dlp` reports `was_live` (a `backfill=0` follow skips a stream listed
+before it existed). It also excludes titles containing `2025`, takes up to 5
+uploads per check and checks every 30 minutes, which drains a same-day upload
+batch the evening it lands.)*
 
 The follow applies only the common edition tag because its tags are static for
 the whole rule. After an accepted candidate is identified, the operator uses
