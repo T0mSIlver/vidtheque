@@ -268,8 +268,6 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
   };
 }
 
-export type DashboardClient = ReturnType<typeof createDashboardClient>;
-
 async function toError(res: Response): Promise<DashboardError> {
   const retryAfter = Number(res.headers.get("retry-after")) || undefined;
   let envelope: PartialRefusal = {};

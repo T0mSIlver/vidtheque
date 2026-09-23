@@ -113,8 +113,6 @@ export function createClient(config: ClientConfig) {
   };
 }
 
-export type Client = ReturnType<typeof createClient>;
-
 async function toError(res: Response): Promise<ApiError> {
   const retryAfter = Number(res.headers.get("retry-after")) || undefined;
   let envelope: Partial<ErrorEnvelope> = {};
