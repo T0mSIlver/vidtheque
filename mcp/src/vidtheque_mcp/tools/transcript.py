@@ -119,7 +119,9 @@ async def run(
     # when the char budget binds first, `offset + limit` would skip the cues
     # this page could not afford, and the caller would never know it.
     step = printed if (printed and binding == "max_text_chars") else limit
-    nxt = _next_line(video_id, has_more, offset + printed, binding, max_text_chars)
+    nxt = _next_line(
+        video_id, has_more, offset + printed, binding, max_text_chars, span_start, span_end
+    )
 
     header = [
         f"{video_id} · {row['title']} — {row['channel_name']}",
@@ -277,15 +279,24 @@ def _next_line(
     next_offset: int,
     binding: str,
     max_text_chars: int,
+    span_start: float | None = None,
+    span_end: float | None = None,
 ) -> str:
     if has_more:
+        # The offset counts cues inside the span, so it only means the right
+        # thing when the next call repeats the span.
+        span = "".join(
+            f" {name}={int(value)}"
+            for name, value in (("t_start", span_start), ("t_end", span_end))
+            if value is not None
+        )
         raise_hint = (
             ""
             if binding == "limit" or max_text_chars >= MAX_TEXT_CHARS
             else f" (or raise max_text_chars, up to {MAX_TEXT_CHARS:,}, for fewer, bigger pages)"
         )
         return (
-            f'next: offset={next_offset} continues this transcript{raise_hint}. '
+            f'next: offset={next_offset}{span} continues this transcript{raise_hint}. '
             f'To stop reading and jump instead, search q="…" video_id="{video_id}".'
         )
     return (
