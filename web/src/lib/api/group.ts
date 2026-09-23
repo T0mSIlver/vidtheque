@@ -4,7 +4,7 @@
 import type { Hit } from "@/lib/schemas/search";
 import { badges, type Badge } from "@/lib/schemas/evidence";
 
-export { badges, type Badge };
+export { badges };
 
 export interface VideoGroup {
   video_id: string;

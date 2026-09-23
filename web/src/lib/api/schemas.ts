@@ -5,7 +5,7 @@ import { z } from "zod";
 // `lib/schemas` and is re-exported here; nothing else on this page is shared.
 import { httpUrl, Pagination } from "@/lib/schemas/search";
 
-export { ContentType, Hit, Pagination, SearchResponse } from "@/lib/schemas/search";
+export { ContentType, Hit, SearchResponse } from "@/lib/schemas/search";
 
 // `mcp_url` is pasted into a shell (`claude mcp add … <mcp_url>`), so shell
 // punctuation, whitespace included, makes it not an endpoint.
@@ -41,7 +41,7 @@ const EditionAlignment = z.object({
   start_s: z.number().nullable(),
   end_s: z.number().nullable(),
 });
-export const EditionSession = z.object({
+const EditionSession = z.object({
   id: z.string(),
   day: z.string(),
   start: z.string(),
@@ -52,7 +52,7 @@ export const EditionSession = z.object({
   category: z.string(),
   alignment: EditionAlignment.nullable(),
 });
-export type EditionSession = z.infer<typeof EditionSession>;
+type EditionSession = z.infer<typeof EditionSession>;
 
 export const EditionTalk = z.object({
   session_id: z.string(),
@@ -166,13 +166,13 @@ export const AskAnswer = z.object({
 export type AskAnswer = z.infer<typeof AskAnswer>;
 
 // The §3.4 body: the same shape as a 503's JSON and a stream's error event.
-export const AskDegraded = z.object({
+const AskDegraded = z.object({
   error: z.string(),
   reason: z.string(),
   message: z.string(),
   retry_after_s: z.number().nullable(),
 });
-export type AskDegraded = z.infer<typeof AskDegraded>;
+type AskDegraded = z.infer<typeof AskDegraded>;
 
 // What stopped an ask, whichever layer did: §3.4's degraded body or the
 // limiter's envelope, which has no `reason`.
