@@ -286,7 +286,7 @@ def _next_line(
         # The offset counts cues inside the span, so it only means the right
         # thing when the next call repeats the span.
         span = "".join(
-            f" {name}={int(value)}"
+            f" {name}={value:g}"
             for name, value in (("t_start", span_start), ("t_end", span_end))
             if value is not None
         )
