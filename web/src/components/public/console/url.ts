@@ -11,9 +11,9 @@ export interface Snapshot {
   type: ContentType;
 }
 
-export const CHANNELS: readonly ContentType[] = ["all", "transcript", "ocr", "frame"];
+const CHANNELS: readonly ContentType[] = ["all", "transcript", "ocr", "frame"];
 
-export function isChannel(value: unknown): value is ContentType {
+function isChannel(value: unknown): value is ContentType {
   return typeof value === "string" && (CHANNELS as readonly string[]).includes(value);
 }
 

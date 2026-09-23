@@ -43,7 +43,7 @@ export function Notice({
 }
 
 /** `next:` lines are sentence fragments; standing alone they take a capital. */
-export function capitalise(sentence: string): string {
+function capitalise(sentence: string): string {
   return sentence ? sentence[0].toUpperCase() + sentence.slice(1) : sentence;
 }
 

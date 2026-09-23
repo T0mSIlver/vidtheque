@@ -21,10 +21,10 @@ export type Stats = {
 };
 
 /** One line the machine read off the screen, with the box it was read from. */
-export type OcrLine = { t: string; c: number; b: [number, number, number, number] };
+type OcrLine = { t: string; c: number; b: [number, number, number, number] };
 
 /** One sentence, aligned to the word. */
-export type Cue = { s: number; e: number; t: string };
+type Cue = { s: number; e: number; t: string };
 
 export type Moment = {
   id: number;
@@ -76,7 +76,7 @@ export const STATS: Stats = {
   last_pub: 1786464006,
 };
 
-export const MOMENTS: Moment[] = [
+const MOMENTS: Moment[] = [
   {
     id: 41,
     kind: "slide",

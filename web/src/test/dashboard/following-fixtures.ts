@@ -29,7 +29,7 @@ const NOW = 1788626080;
 /** The hostile pair the Python suite seeds, kept verbatim. */
 const HOSTILE = "<script>alert(document.cookie)</script> <img src=x onerror=alert(1)>";
 
-export const KARPATHY = {
+const KARPATHY = {
   slug: "andrej-karpathy",
   title: "Andrej Karpathy",
   kind: "channel",

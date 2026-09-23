@@ -143,7 +143,7 @@ function StageRows({ stage }: { stage: Stage }) {
 
 /** How long a stage took, or the dash when either clock is missing: a failed
  *  stage has a start and no finish (§4.1). */
-export function elapsed(start: number | null, finish: number | null): string {
+function elapsed(start: number | null, finish: number | null): string {
   if (!start || !finish || finish < start) return DASH;
   return duration(finish - start);
 }

@@ -6,13 +6,13 @@ import { clockOf, count, epoch, httpUrl, Pagination, PartialRefusal, seconds } f
 // says what a percentage is computed over and is policy text.
 
 /** What a job contains, from its items. Optional for an older instance. */
-export const JobContents = z.object({
+const JobContents = z.object({
   title: z.string().nullable(),
   more: count(),
   channel: z.string().nullable(),
   note: z.string().nullable(),
 });
-export type JobContents = z.infer<typeof JobContents>;
+type JobContents = z.infer<typeof JobContents>;
 
 export const JobCard = z.object({
   job_id: z.string(),

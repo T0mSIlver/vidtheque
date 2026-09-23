@@ -209,7 +209,7 @@ export const EMPTY_CORPUS_SEARCH = { ...NO_MATCH_SEARCH, data_status: "empty" };
  *  humanising layer drops the tool's stand-in sentence, so the page prints
  *  *visual match, no text hit* itself rather than styling a sentence as a
  *  quotation. */
-export const FRAME_HIT = {
+const FRAME_HIT = {
   source: "frame",
   video_id: "zduSFxRajkE",
   title: "Making LLMs go brrr",
@@ -232,7 +232,7 @@ export const FRAME_HIT = {
 /** A fused transcript hit whose matching cue is 1:12:03, in a segment that
  *  opens at 1:11:40. `timestamp` is `clock(start)` and names the opening; the
  *  timecode the page prints is `clock(match_start)`. */
-export const FUSED_HIT = {
+const FUSED_HIT = {
   ...KARPATHY_FUSED,
   start: 4300.0,
   end: 4340.0,
@@ -244,7 +244,7 @@ export const FUSED_HIT = {
 /** A hit whose source the badge table does not know, and whose link is not a
  *  receipt: `http`, not `https`, so §14's admission rule refuses it and the row
  *  prints no receipt at all rather than an unchecked link. */
-export const ODD_HIT = {
+const ODD_HIT = {
   ...BRRR_SPOKEN_EARLY,
   source: "caption_track",
   match_start: 10.0,

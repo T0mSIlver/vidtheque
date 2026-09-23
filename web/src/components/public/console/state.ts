@@ -6,7 +6,7 @@ import type { AskPhase } from "./requests";
 import type { Mode, Snapshot } from "./url";
 
 /** Under the rows: a later page loading, or why it did not arrive. */
-export type Foot =
+type Foot =
   | { kind: "none" }
   | { kind: "loading" }
   | { kind: "rate_limited"; seconds: number }

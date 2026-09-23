@@ -12,7 +12,7 @@ export const CUE_OFFSET_MAX = 500_000;
 
 /** Rewrite the address bar in place. The URL is the bookmark, not the state:
  *  a browser that refuses the rewrite loses a link and nothing on screen. */
-export function rewriteUrl(edit: (url: URL) => boolean | void): void {
+function rewriteUrl(edit: (url: URL) => boolean | void): void {
   try {
     const here = new URL(window.location.href);
     if (edit(here) === false || here.href === window.location.href) return;

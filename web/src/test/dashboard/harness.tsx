@@ -11,7 +11,7 @@ import { navigateTo, resetNavigation } from "@/test/next";
 
 export type Answer = { status?: number; body?: unknown; headers?: Record<string, string> };
 
-export type Request = {
+type Request = {
   method: string;
   path: string;
   url: string;
@@ -29,7 +29,7 @@ export type Route = Answer | Answer[] | ((request: Request) => Answer | Promise<
  * `/dashboard/api/session` answers `session` unless a route overrides it, and
  * anything unrouted answers `404 {}`.
  */
-export type Routes = Record<string, Route>;
+type Routes = Record<string, Route>;
 
 export interface MountOptions {
   routes?: Routes;
