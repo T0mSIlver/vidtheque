@@ -150,7 +150,8 @@ def _items(result: Any, min_confidence: float) -> list[OCRItem]:
         scores = [None] * count
 
     items: list[OCRItem] = []
-    for box, text, score in zip(boxes, texts, scores):
+    # Library output, not ours: a length slip drops lines rather than failing the batch.
+    for box, text, score in zip(boxes, texts, scores, strict=False):
         confidence = None if score is None else float(score)
         if confidence is not None and confidence < min_confidence:
             continue
