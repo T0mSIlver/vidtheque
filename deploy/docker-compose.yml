@@ -171,6 +171,9 @@ services:
       IMAGE_EMBED_BACKEND: ${IMAGE_EMBED_BACKEND:-qwen3-vl-embedding}
       OCR_BACKEND: ${OCR_BACKEND:-rapidocr}
       STT_MODEL: ${STT_MODEL:-large-v3}
+      # the voxtral backend reads these directly; unset means STT_BACKEND=voxtral has no key
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      MISTRAL_BASE_URL: ${MISTRAL_BASE_URL:-https://api.mistral.ai/v1}
       EMBED_MODEL: ${EMBED_MODEL:-Qwen/Qwen3-VL-Embedding-2B}
       IMAGE_EMBED_MODEL: ${IMAGE_EMBED_MODEL:-Qwen/Qwen3-VL-Embedding-2B}
       EMBED_DIM: ${EMBED_DIM:-0}
