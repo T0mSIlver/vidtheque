@@ -7,7 +7,7 @@ import { badges, type Badge, type Hit } from "@/lib/dashboard/schemas";
 
 /** `read_models.FRAME_PAGE`: the detail strip's default page size, which the
  *  in-index link pages by (it asks for no `frames=`). */
-export const FRAME_PAGE = 24;
+const FRAME_PAGE = 24;
 
 /** Every Unicode decimal digit, as Python's `str.isdigit()` and `int()` read. */
 const DIGITS = /^\p{Nd}+$/u;
@@ -60,7 +60,7 @@ export function insideLink(hit: Pick<Hit, "video_id" | "frame_id">): string | nu
 }
 
 /** How a snippet is set; `screen` is the one allowed lime (The Lime Rule). */
-export type EvidenceKind = "spoken" | "screen" | "frame" | "mixed" | "other";
+type EvidenceKind = "spoken" | "screen" | "frame" | "mixed" | "other";
 
 export interface Evidence {
   /** The tool's own `source`, kept for bug reports. */
@@ -90,8 +90,8 @@ export function evidenceOf(source: string): Evidence {
 }
 
 // Bounds on a pasted query: how many terms are marked, and how many marks.
-export const HIGHLIGHT_TERMS = 8;
-export const HIGHLIGHT_MARKS = 40;
+const HIGHLIGHT_TERMS = 8;
+const HIGHLIGHT_MARKS = 40;
 
 export interface Run {
   text: string;

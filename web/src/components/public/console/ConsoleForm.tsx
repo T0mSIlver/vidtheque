@@ -26,7 +26,7 @@ const CHIPS: { value: ContentType; label: string }[] = [
   { value: "frame", label: "frames" },
 ];
 
-export function StateCell({ state }: { state: MachineState }) {
+function StateCell({ state }: { state: MachineState }) {
   return (
     <span className={styles.state} data-s={TONE[state]}>
       {state}

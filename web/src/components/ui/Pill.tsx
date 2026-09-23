@@ -48,7 +48,7 @@ const TONES: Record<string, Tone> = {
 };
 
 /** A tone for a state word, or `neutral` for anything unrecognised. */
-export function toneOf(state: string | null | undefined): Tone {
+function toneOf(state: string | null | undefined): Tone {
   return TONES[(state ?? "").trim().toLowerCase()] ?? "neutral";
 }
 

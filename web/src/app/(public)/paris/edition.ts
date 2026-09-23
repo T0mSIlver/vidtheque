@@ -2,7 +2,7 @@ import { cache } from "react";
 import { api, ApiError, type EditionResponse } from "@/lib/api";
 import { visitorIp } from "@/lib/api/search";
 
-export const SLUG = "aie-paris-2026";
+const SLUG = "aie-paris-2026";
 /** Every read on this page stays inside the edition (aie-paris-2026.md §4.3). */
 export const TAG = "series:aie-paris-2026";
 

@@ -116,7 +116,7 @@ function Moment({ hit, query }: { hit: Hit; query: string }) {
 
 // The query's words marked in the snippet: text runs and `<mark>`, never markup
 // built from either.
-export function Marked({ text, query }: { text: string; query: string }) {
+function Marked({ text, query }: { text: string; query: string }) {
   return (
     <>
       {highlight(text, query).map((run, i) =>

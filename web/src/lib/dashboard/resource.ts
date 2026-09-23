@@ -15,7 +15,7 @@ const FALLBACK_RETRY_S = 60;
 
 export type Reader<T> = (signal: AbortSignal) => Promise<T>;
 
-export interface ResourceState<T> {
+interface ResourceState<T> {
   /** The last payload for this key: this visit's, or an earlier one's. */
   data: T | undefined;
   /** The last refusal for this key, cleared by the next answer. */

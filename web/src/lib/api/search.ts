@@ -46,7 +46,7 @@ export const readMeta = cache(async (): Promise<MetaOutcome> => {
   }
 });
 
-export const CORPUS_PREVIEW = 6;
+const CORPUS_PREVIEW = 6;
 
 /** The cold page's listing; a failure is silence, not a state. */
 export async function readCorpus(): Promise<Video[]> {

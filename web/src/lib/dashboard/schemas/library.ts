@@ -219,12 +219,12 @@ export type CuePage = z.infer<typeof CuePage>;
 
 /** What `_submitted` resolved: the batch's real `expand`, `max_items` and
  *  `priority`. */
-export const IndexAccepted = z.object({
+const IndexAccepted = z.object({
   expand: z.string(),
   max_items: count(),
   priority: z.string(),
 });
-export type IndexAccepted = z.infer<typeof IndexAccepted>;
+type IndexAccepted = z.infer<typeof IndexAccepted>;
 
 /** `POST /dashboard/index`: a batch split server-side into jobs (§10.7). `409`
  *  carries the same receipt with every refusal in `errors`. */

@@ -13,16 +13,16 @@ import styles from "./following.module.css";
 
 /** `follows/rules.py`'s vocabularies and ceilings: options on a control, never
  *  a bound — `follows/params.py` is the only thing that clamps. */
-export const TABS = ["videos", "streams", "shorts"] as const;
-export const MODES = ["auto", "review"] as const;
-export const MAX_BACKFILL = 25;
-export const MAX_PER_CHECK = 25;
-export const MIN_CHECK_INTERVAL_S = 900;
-export const DEFAULT_CHECK_INTERVAL_S = 21_600;
+const TABS = ["videos", "streams", "shorts"] as const;
+const MODES = ["auto", "review"] as const;
+const MAX_BACKFILL = 25;
+const MAX_PER_CHECK = 25;
+const MIN_CHECK_INTERVAL_S = 900;
+const DEFAULT_CHECK_INTERVAL_S = 21_600;
 
 /** The rule as facts that fit a table cell (§18.3). Lengths are `hms` so a
  *  floor and a ceiling read on one scale. */
-export function ruleFacts(follow: FollowRow): string[] {
+function ruleFacts(follow: FollowRow): string[] {
   const facts = [follow.tabs.map((tab) => `/${tab}`).join(", ")];
   const low = follow.min_duration_s;
   const high = follow.max_duration_s;

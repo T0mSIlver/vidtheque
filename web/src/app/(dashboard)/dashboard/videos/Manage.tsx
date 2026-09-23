@@ -138,7 +138,7 @@ export function ReindexControl({
  * `tag_video`'s; `onWritten` hands the page the row's tags after the write.
  * The boxes are emptied in place on success, so focus stays in the form.
  */
-export function TagsForm({
+function TagsForm({
   videoId,
   tags,
   onWritten,

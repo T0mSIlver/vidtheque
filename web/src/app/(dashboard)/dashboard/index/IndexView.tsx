@@ -311,7 +311,7 @@ function Form({ indexable, reason }: { indexable: boolean; reason: string | null
  * The prefill a link may carry ("Queue more from this channel"): copied into
  * controls, never normalised. An unknown `expand` leaves the default.
  */
-export function prefill(params: URLSearchParams) {
+function prefill(params: URLSearchParams) {
   const expand = params.get("expand") ?? "";
   return {
     urls: (params.get("urls") ?? "").slice(0, MAX_PREFILL_URLS_CHARS),

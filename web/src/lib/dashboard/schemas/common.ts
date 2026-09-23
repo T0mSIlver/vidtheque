@@ -63,19 +63,19 @@ export type ToolError = z.infer<typeof ToolError>;
 
 // One observation of the pipeline, never a history (dashboard.md §15). Words
 // are strings rather than enums so a new one renders neutral.
-export const WorkerModel = z.object({
+const WorkerModel = z.object({
   task: z.string(),
   model: z.string(),
   loaded: z.boolean(),
 });
-export type WorkerModel = z.infer<typeof WorkerModel>;
+type WorkerModel = z.infer<typeof WorkerModel>;
 
-export const Worker = z.object({
+const Worker = z.object({
   state: z.string(),
   detail: z.string(),
   models: z.array(WorkerModel),
 });
-export type Worker = z.infer<typeof Worker>;
+type Worker = z.infer<typeof Worker>;
 
 export const Readiness = z.object({
   mcp: z.string(),

@@ -6,7 +6,7 @@ import { day } from "@/lib/format";
 // The videos table's URL: what the read takes, what the band holds, and what
 // every link carries (dashboard.md §5.2, §20).
 
-export const FILTERS = [
+const FILTERS = [
   "q",
   "channel",
   "tags",
@@ -24,7 +24,7 @@ const PAGE_KEYS = [...FILTERS, "offset"];
 
 /** `carried()`'s nine keys, empty or not: a key that vanishes when its box is
  *  empty makes two URLs for one query. */
-export const CARRIED = [
+const CARRIED = [
   "q",
   "channel",
   "tags",
@@ -36,7 +36,7 @@ export const CARRIED = [
   "indexed_before",
 ] as const;
 
-export const DATE_KEYS = [
+const DATE_KEYS = [
   "published_after",
   "published_before",
   "indexed_after",
@@ -45,7 +45,7 @@ export const DATE_KEYS = [
 export type DateKey = (typeof DATE_KEYS)[number];
 
 /** Pickers resting on the API's own default are left off a link. */
-export const DEFAULTS: Record<string, string> = { index_state: "all", has: "any" };
+const DEFAULTS: Record<string, string> = { index_state: "all", has: "any" };
 
 const DAY_S = 86_400;
 
