@@ -610,3 +610,86 @@ def test_a_bare_quote_token_does_not_close_a_sentence() -> None:
     ]
     segments = _segments_from_words(words)
     assert [s.text for s in segments] == ['and then he said " we ship it today.']
+
+
+class FlakyClient(FakeClient):
+    """Fails with a 5xx while the bias list is longer than `fails_above`."""
+
+    def __init__(self, responses: list[dict], fails_above: int) -> None:
+        super().__init__(responses)
+        self.fails_above = fails_above
+
+    def transcribe(self, path: str, *, model: str, context_bias: list[str]) -> dict:
+        self.calls.append((path, model, context_bias))
+        if len(context_bias) > self.fails_above:
+            raise voxtral_stt.UpstreamServerError("Mistral transcription failed with HTTP 500")
+        return self.responses.pop(0)
+
+
+def _single_chunk_backend(client: FakeClient, tmp_path: Path) -> tuple[VoxtralBackend, str]:
+    audio = tmp_path / "day.opus"
+    audio.write_bytes(b"audio")
+    backend = VoxtralBackend(
+        api_key="secret",
+        client_factory=lambda _key, _url: client,
+        duration_probe=lambda _path: 60.0,
+        chunker=lambda _s, _st, _d, dest: Path(dest).write_bytes(b"audio"),
+    )
+    backend.load()
+    return backend, str(audio)
+
+
+def test_a_5xx_with_the_full_bias_retries_the_chunk_with_its_first_half(tmp_path: Path) -> None:
+    bias = [f"term{i}" for i in range(100)]
+    client = FlakyClient([response([("hello", 0.0, 0.4)])], fails_above=50)
+    backend, audio = _single_chunk_backend(client, tmp_path)
+    result = backend.infer(audio, context_bias=bias)
+    assert [len(call[2]) for call in client.calls] == [100, 50]
+    assert client.calls[1][2] == bias[:50], "the priority-ordered head is what stays"
+    assert result.text == "hello"
+
+
+def test_a_5xx_on_every_bias_size_ends_with_no_bias_then_raises(tmp_path: Path) -> None:
+    client = FlakyClient([response([("hello", 0.0, 0.4)])], fails_above=0)
+    backend, audio = _single_chunk_backend(client, tmp_path)
+    assert backend.infer(audio, context_bias=["a", "b", "c", "d"]).text == "hello"
+    assert [len(call[2]) for call in client.calls] == [4, 2, 0]
+
+    client = FlakyClient([], fails_above=-1)
+    backend, audio = _single_chunk_backend(client, tmp_path)
+    with pytest.raises(voxtral_stt.UpstreamServerError):
+        backend.infer(audio, context_bias=["a", "b"])
+    assert [len(call[2]) for call in client.calls] == [2, 1, 0]
+
+
+def test_a_non_5xx_failure_is_not_retried_with_less_bias(tmp_path: Path) -> None:
+    class Unauthorized(FakeClient):
+        def transcribe(self, path: str, *, model: str, context_bias: list[str]) -> dict:
+            self.calls.append((path, model, context_bias))
+            raise BackendUnavailable("Mistral transcription failed with HTTP 401")
+
+    client = Unauthorized([])
+    backend, audio = _single_chunk_backend(client, tmp_path)
+    with pytest.raises(BackendUnavailable):
+        backend.infer(audio, context_bias=["a", "b"])
+    assert len(client.calls) == 1
+
+
+def test_a_mistral_5xx_is_the_server_error_the_bias_fallback_catches(tmp_path: Path) -> None:
+    import io
+    import urllib.error
+
+    audio = tmp_path / "clip.wav"
+    audio.write_bytes(b"RIFF")
+    client = _MistralClient("secret", "https://api.mistral.ai/v1")
+    client._opener = _RecordingOpener(
+        urllib.error.HTTPError(
+            "https://api.mistral.ai/v1/audio/transcriptions",
+            500,
+            "Internal Server Error",
+            {},  # type: ignore[arg-type]
+            io.BytesIO(b""),
+        )
+    )
+    with pytest.raises(voxtral_stt.UpstreamServerError):
+        client.transcribe(str(audio), model="voxtral-mini-latest", context_bias=["a"])

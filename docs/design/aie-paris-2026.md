@@ -451,6 +451,10 @@ rewrite happens at the upstream boundary only. A refused request carries
 Mistral's reason in the worker's error, bounded to 300 characters. `align=True` is accepted
 by the backend and is a documented no-op because the words already carry the
 model's alignment.
+*(Amended 2026-09-25: Mistral answered HTTP 500 on one hour of the day-2
+stream whenever all 100 bias terms were sent, and accepted it with either
+half. A chunk that gets a 5xx is resent with the first half of the list, then
+with none; other failures are not retried this way.)*
 
 Diarization stays off. The shared `Transcription` type has no speaker field,
 the corpus setting already defaults to disabled, and the committed talk table
