@@ -75,6 +75,10 @@ class _MistralClient:
                 raise InvalidMediaError(
                     f"Mistral refused the request with HTTP {exc.code}: {_error_detail(exc)}"
                 ) from exc
+            if 500 <= exc.code < 600:
+                raise UpstreamServerError(
+                    f"Mistral transcription failed with HTTP {exc.code}"
+                ) from exc
             raise BackendUnavailable(f"Mistral transcription failed with HTTP {exc.code}") from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise BackendUnavailable(f"Mistral transcription request failed: {exc}") from exc
@@ -138,6 +142,10 @@ def _multipart(fields: Sequence[tuple[str, str]], audio_path: str) -> tuple[byte
     return bytes(out), f"multipart/form-data; boundary={boundary}"
 
 
+class UpstreamServerError(BackendUnavailable):
+    """Mistral answered 5xx: the request reached it and it failed there."""
+
+
 class VoxtralBackend(BaseBackend):
     """API-backed STT with model word timestamps.
 
@@ -180,6 +188,22 @@ class VoxtralBackend(BaseBackend):
             if callable(close):
                 close()
 
+    def _transcribe_chunk(self, chunk_path: str, bias: list[str]) -> dict:
+        attempts = _bias_fallbacks(bias)
+        for n, terms in enumerate(attempts):
+            try:
+                return self._client.transcribe(chunk_path, model=self.model_id, context_bias=terms)
+            except UpstreamServerError:
+                if n == len(attempts) - 1:
+                    raise
+                log.warning(
+                    "Voxtral 5xx on %s with %d bias terms; retrying with %d",
+                    os.path.basename(chunk_path),
+                    len(terms),
+                    len(attempts[n + 1]),
+                )
+        raise AssertionError("unreachable")
+
     def infer(
         self,
         audio_path: str,
@@ -214,11 +238,7 @@ class VoxtralBackend(BaseBackend):
                 chunk_path = os.path.join(scratch, f"chunk-{index:03d}.flac")
                 self._chunker(audio_path, start, length, chunk_path)
                 _check_upload_size(chunk_path)
-                payload = self._client.transcribe(
-                    chunk_path,
-                    model=self.model_id,
-                    context_bias=list(context_bias or ()),
-                )
+                payload = self._transcribe_chunk(chunk_path, list(context_bias or ()))
                 language_seen = language_seen or _optional_string(payload.get("language"))
                 words = _response_words(payload, offset=start)
                 if index:
@@ -241,6 +261,18 @@ class VoxtralBackend(BaseBackend):
             segments=segments,
             degraded_seams=list(self.last_degraded_seams),
         )
+
+
+def _bias_fallbacks(bias: list[str]) -> list[list[str]]:
+    """The full list, then its first half, then none.
+
+    Mistral 500s on some chunks with the full 100-term list and accepts the
+    same chunk with either half (AI Engineer Paris day 2, 2026-09-25). The list
+    is priority-ordered, so the first half keeps the speakers.
+    """
+    if not bias:
+        return [[]]
+    return [bias, bias[: len(bias) // 2], []] if len(bias) > 1 else [bias, []]
 
 
 def _duration_seconds(audio_path: str) -> float:
