@@ -266,9 +266,9 @@ class VoxtralBackend(BaseBackend):
 def _bias_fallbacks(bias: list[str]) -> list[list[str]]:
     """The full list, then its first half, then none.
 
-    Mistral 500s on some chunks with the full 100-term list and accepts the
-    same chunk with either half (AI Engineer Paris day 2, 2026-09-25). The list
-    is priority-ordered, so the first half keeps the speakers.
+    Mistral 500s on some chunks with some bias lists and not others (AI
+    Engineer Paris day 2, 2026-09-25); no bias always passed. The list is
+    priority-ordered, so the first half keeps the speakers.
     """
     if not bias:
         return [[]]
