@@ -108,9 +108,9 @@
       "category": "Inference & AI Infrastructure",
       "alignment": {
         "talk_video_id": null,
-        "stream_video_id": null,
-        "start_s": null,
-        "end_s": null
+        "stream_video_id": "CGq9KRSb9Kc",
+        "start_s": 0,
+        "end_s": 1051
       }
     },
     {
@@ -129,9 +129,9 @@
       "category": "Coding Agents & Software Factories",
       "alignment": {
         "talk_video_id": null,
-        "stream_video_id": null,
-        "start_s": null,
-        "end_s": null
+        "stream_video_id": "CGq9KRSb9Kc",
+        "start_s": 1123,
+        "end_s": 2711
       }
     },
     {
@@ -150,9 +150,9 @@
       "category": "Agentic Engineering & Agents in Production",
       "alignment": {
         "talk_video_id": null,
-        "stream_video_id": null,
-        "start_s": null,
-        "end_s": null
+        "stream_video_id": "CGq9KRSb9Kc",
+        "start_s": 2795,
+        "end_s": 4294
       }
     },
     {
