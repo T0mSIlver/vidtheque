@@ -288,6 +288,26 @@ def test_a_whisperx_word_with_no_start_lands_in_its_segment() -> None:
     assert 3_600.0 <= starts[0] < 3_601.5
 
 
+def test_a_looped_line_keeps_its_first_cue_and_the_real_speech_around_it() -> None:
+    loop = "And we will take the data from the data that we have."
+    segments = [{"start": 3329.5 + i * 1.2, "end": 3330.5 + i * 1.2, "text": loop} for i in range(20)]
+    segments += [
+        {"start": 3345.1, "end": 3345.6, "text": "But for our own tinkerers, enterprise tinkerers."},
+        {"start": 3400.0, "end": 3401.0, "text": "Thank you."},
+        {"start": 3402.0, "end": 3403.0, "text": "Thank you."},
+    ]
+    texts = [cue.text for cue in captions.cues_from_verbose_json({"segments": segments})]
+    assert texts.count(loop) == 1
+    assert "But for our own tinkerers, enterprise tinkerers." in texts
+    assert texts.count("Thank you.") == 2, "short lines repeat in real speech"
+
+
+def test_a_sentence_said_again_later_is_not_a_loop() -> None:
+    line = "Let's give it up one more time."
+    segments = [{"start": 600.0 * i, "end": 600.0 * i + 2, "text": line} for i in range(6)]
+    assert len(captions.cues_from_verbose_json({"segments": segments})) == 6
+
+
 def test_unplaced_whisperx_words_do_not_all_share_one_timestamp() -> None:
     payload = {
         "segments": [

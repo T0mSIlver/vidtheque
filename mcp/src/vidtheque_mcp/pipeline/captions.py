@@ -101,7 +101,37 @@ def cues_from_verbose_json(payload: dict[str, Any]) -> list[CueDraft]:
         cues.append(
             CueDraft(start_s=start, end_s=max(end, start), text=text, avg_logprob=avg_logprob)
         )
-    return _tidy(cues)
+    return drop_repetition_loops(_tidy(cues))
+
+
+# A model stuck in a loop repeats one line every second or so; a speaker
+# repeating a full sentence five times in two minutes does not happen.
+LOOP_MIN_WORDS = 4
+LOOP_MIN_REPEATS = 5
+LOOP_WINDOW_S = 120.0
+
+
+def drop_repetition_loops(cues: list[CueDraft]) -> list[CueDraft]:
+    """Keep the first cue of a looped line, drop its repeats.
+
+    Seen on the AI Engineer Paris day-1 stream (2026-09-23): Voxtral emitted
+    one sentence 93 times across three minutes of glitched audio, interleaved
+    with the real speech, and every copy was a search hit.
+    """
+    by_text: dict[str, list[int]] = {}
+    for i, cue in enumerate(cues):
+        key = " ".join(re.findall(r"\w+", cue.text.lower()))
+        if len(key.split()) >= LOOP_MIN_WORDS:
+            by_text.setdefault(key, []).append(i)
+    drop: set[int] = set()
+    for indexes in by_text.values():
+        if len(indexes) < LOOP_MIN_REPEATS:
+            continue
+        for n, i in enumerate(indexes):
+            window = [j for j in indexes if abs(cues[j].start_s - cues[i].start_s) <= LOOP_WINDOW_S]
+            if len(window) >= LOOP_MIN_REPEATS and n > 0:
+                drop.add(i)
+    return [cue for i, cue in enumerate(cues) if i not in drop]
 
 
 def _whisper_words(
