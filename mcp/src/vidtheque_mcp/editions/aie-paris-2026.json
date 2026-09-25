@@ -26,6 +26,9 @@
       "FlashAttention",
       "Voxtral",
       "Qwen"
+    ],
+    "exclude": [
+      "Modal"
     ]
   },
   "sessions": [

@@ -177,10 +177,11 @@ def validate_edition(raw: Any) -> dict[str, Any]:
 
     # The worker's term list (§7): validated here because it is committed here,
     # even though nothing in the payload carries it.
-    bias = _exact_keys(edition.get("context_bias"), {"fixed"}, "context_bias")
-    _need(isinstance(bias["fixed"], list), "context_bias.fixed must be an array")
-    for index, term in enumerate(bias["fixed"]):
-        _text(term, f"context_bias.fixed[{index}]")
+    bias = _exact_keys(edition.get("context_bias"), {"fixed", "exclude"}, "context_bias")
+    for part in ("fixed", "exclude"):
+        _need(isinstance(bias[part], list), f"context_bias.{part} must be an array")
+        for index, term in enumerate(bias[part]):
+            _text(term, f"context_bias.{part}[{index}]")
 
     sessions = edition.get("sessions")
     _need(
