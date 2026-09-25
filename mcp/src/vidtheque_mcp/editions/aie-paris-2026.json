@@ -171,9 +171,9 @@
       "category": "Model Customization & Post Training",
       "alignment": {
         "talk_video_id": null,
-        "stream_video_id": null,
-        "start_s": null,
-        "end_s": null
+        "stream_video_id": "g0vqT_wZtXA",
+        "start_s": 1128,
+        "end_s": 2546
       }
     },
     {
@@ -244,9 +244,9 @@
       "category": "Voice & Realtime AI",
       "alignment": {
         "talk_video_id": null,
-        "stream_video_id": null,
-        "start_s": null,
-        "end_s": null
+        "stream_video_id": "g0vqT_wZtXA",
+        "start_s": 2640,
+        "end_s": 4088
       }
     },
     {
@@ -317,9 +317,9 @@
       "category": "Inference & AI Infrastructure",
       "alignment": {
         "talk_video_id": null,
-        "stream_video_id": null,
-        "start_s": null,
-        "end_s": null
+        "stream_video_id": "g0vqT_wZtXA",
+        "start_s": 4154,
+        "end_s": 5433
       }
     },
     {
@@ -422,9 +422,9 @@
       "category": "Agentic Engineering & Agents in Production",
       "alignment": {
         "talk_video_id": null,
-        "stream_video_id": null,
-        "start_s": null,
-        "end_s": null
+        "stream_video_id": "g0vqT_wZtXA",
+        "start_s": 8428,
+        "end_s": 10096
       }
     },
     {
@@ -511,9 +511,9 @@
       "category": "Voice & Realtime AI",
       "alignment": {
         "talk_video_id": null,
-        "stream_video_id": null,
-        "start_s": null,
-        "end_s": null
+        "stream_video_id": "g0vqT_wZtXA",
+        "start_s": 10201,
+        "end_s": 11483
       }
     },
     {
@@ -660,9 +660,9 @@
       "category": "Inference & AI Infrastructure",
       "alignment": {
         "talk_video_id": null,
-        "stream_video_id": null,
-        "start_s": null,
-        "end_s": null
+        "stream_video_id": "g0vqT_wZtXA",
+        "start_s": 19083,
+        "end_s": 20610
       }
     },
     {
@@ -717,9 +717,9 @@
       "category": "Voice & Realtime AI",
       "alignment": {
         "talk_video_id": null,
-        "stream_video_id": null,
-        "start_s": null,
-        "end_s": null
+        "stream_video_id": "g0vqT_wZtXA",
+        "start_s": 20676,
+        "end_s": 21952
       }
     },
     {
@@ -786,9 +786,9 @@
       "category": "Agentic Engineering & Agents in Production",
       "alignment": {
         "talk_video_id": null,
-        "stream_video_id": null,
-        "start_s": null,
-        "end_s": null
+        "stream_video_id": "g0vqT_wZtXA",
+        "start_s": 22066,
+        "end_s": 23112
       }
     },
     {
@@ -887,9 +887,9 @@
       "category": "Coding Agents & Software Factories",
       "alignment": {
         "talk_video_id": null,
-        "stream_video_id": null,
-        "start_s": null,
-        "end_s": null
+        "stream_video_id": "g0vqT_wZtXA",
+        "start_s": 26228,
+        "end_s": 27587
       }
     },
     {
@@ -956,9 +956,9 @@
       "category": "Inference & AI Infrastructure",
       "alignment": {
         "talk_video_id": null,
-        "stream_video_id": null,
-        "start_s": null,
-        "end_s": null
+        "stream_video_id": "g0vqT_wZtXA",
+        "start_s": 27678,
+        "end_s": 28969
       }
     },
     {
@@ -977,9 +977,9 @@
       "category": "Voice & Realtime AI",
       "alignment": {
         "talk_video_id": null,
-        "stream_video_id": null,
-        "start_s": null,
-        "end_s": null
+        "stream_video_id": "g0vqT_wZtXA",
+        "start_s": 29224,
+        "end_s": 30624
       }
     }
   ]
