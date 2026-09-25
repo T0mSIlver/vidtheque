@@ -6,17 +6,17 @@ import { readEdition, TAG } from "./edition";
 import { Programme, ProgrammeLoading } from "./Programme";
 import styles from "./page.module.css";
 
-// Words from the programme's own titles, so each has a talk to land on once indexed.
+// Each one lands on a moment picked from the transcripts, not on a topic.
 const SEARCH_EXAMPLES = [
-  { q: "vLLM" },
-  { q: "voice AI", type: "transcript" },
-  { q: "Gemma 4", type: "ocr" },
+  { q: "slop cannon" },
+  { q: "meat proxy" },
+  { q: "printer is on fire", type: "ocr" },
 ] as const;
 
 const ASK_EXAMPLES = [
-  "What did the main stage say about running agents in production?",
-  "Where do the speakers disagree about inference infrastructure?",
-  "What practical advice appeared on the slides?",
+  "Where do the speakers disagree about AI coding agents?",
+  "Why did Opus 5 write tests that just restate the implementation?",
+  "How can a video generation model control a robot arm?",
 ];
 
 // The console is awaited with the hero, so nothing swaps in above the fold;
