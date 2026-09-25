@@ -78,6 +78,7 @@ unknown-key rule was implied by "the records in §2.2" and was not enforced.)*
 | `streamed_stage` | stage | `main` |
 | `tags` | object | the three namespaced tags in §1 |
 | `context_bias.fixed` | string array | the fixed AI lexicon in §7 |
+| `context_bias.exclude` | string array | terms no tier may add (§7) |
 | `sessions` | array | the records in §2.2, capped at 100 at load time |
 
 ### 2.2 Session fields
@@ -539,6 +540,11 @@ fixture spelling. The builder stops at 100 terms in this order:
 4. Distinctive title terms, in session order. A term must be at least four
    characters, occur in only one title after normalization, and not be an
    English stop word.
+
+Terms in `context_bias.exclude` never enter the list, whichever tier would add
+them. It holds names that sound like a common word: on the Paris streams the company
+`Modal` made Voxtral write "model" as "Modal" about a hundred times, in talks
+that never mentioned the company.
 
 Names and companies come first because the eval measures proper nouns. The
 fixed lexicon precedes title terms because these spellings are known ASR risks

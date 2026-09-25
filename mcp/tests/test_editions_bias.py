@@ -9,7 +9,21 @@ def test_committed_fixture_pins_priority_and_cap() -> None:
     assert bias[:3] == ["Jen Person", "Lia McBride", "Lara Khanafer"]
     assert bias[56:60] == ["Mistral", "AI Engineer", "STATION F", "Langfuse"]
     # 56 speakers and their companies leave room for half the fixed terms
-    assert bias[95:100] == ["vLLM", "SGLang", "pyannote", "RRF", "LoRA"]
+    assert bias[95:100] == ["SGLang", "pyannote", "RRF", "LoRA", "KV cache"]
+    # Voxtral wrote "model" as "Modal" while the company was in the list
+    assert "Modal" not in bias
+
+
+def test_an_excluded_term_is_added_by_no_tier() -> None:
+    edition = {
+        "slug": "test",
+        "tags": {"edition": "series:test"},
+        "context_bias": {"fixed": ["modal"], "exclude": ["Modal"]},
+        "sessions": [
+            {"title": "Modal Serving", "speakers": [{"name": "Ann Lee", "company": "Modal"}]},
+        ],
+    }
+    assert build_context_bias(edition) == ["Ann Lee", "Serving"]
 
 
 def test_speaker_names_alone_can_fill_the_cap_and_later_tiers_add_nothing() -> None:

@@ -3,7 +3,7 @@
 The list the worker biases with is derived from the schedule the facade already
 validated, so there is never a second speaker list in worker code, bench code or
 an environment value. This module reads four fields of that object —
-`context_bias.fixed` and, per session, `title` and `speakers[].{name, company}` —
+`context_bias.fixed` and `.exclude` and, per session, `title` and `speakers[].{name, company}` —
 and nothing about how it was loaded.
 
 `load_edition` is imported from the package body rather than the other way
@@ -93,7 +93,8 @@ def build_context_bias(edition: Mapping[str, Any]) -> list[str]:
     """Return the edition's speaker, company, fixed, then rare-title terms."""
     sessions: Sequence[Mapping[str, Any]] = edition["sessions"]
     out: list[str] = []
-    seen: set[str] = set()
+    # An excluded term counts as already seen, so no tier can add it.
+    seen: set[str] = {_key(term) for term in edition["context_bias"].get("exclude", ())}
 
     _append_unique(
         out,
