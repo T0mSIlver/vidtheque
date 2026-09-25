@@ -308,6 +308,22 @@ def test_a_sentence_said_again_later_is_not_a_loop() -> None:
     assert len(captions.cues_from_verbose_json({"segments": segments})) == 6
 
 
+def test_a_stuttered_phrase_is_said_once_and_a_stutter_only_cue_goes() -> None:
+    stutter = " ".join(["a combination of really"] * 10)
+    segments = [
+        {"start": 1.0, "end": 5.0, "text": f"I've talked about what we can do with {stutter}"},
+        {"start": 5.0, "end": 7.0, "text": "more considered and less obtrusive."},
+        {"start": 7.0, "end": 9.0, "text": f"really {stutter}"},
+        {"start": 9.0, "end": 11.0, "text": "Sorry, sorry, sorry, sorry."},
+    ]
+    texts = [cue.text for cue in captions.cues_from_verbose_json({"segments": segments})]
+    assert texts == [
+        "I've talked about what we can do with a combination of really",
+        "more considered and less obtrusive.",
+        "Sorry, sorry, sorry, sorry.",
+    ]
+
+
 def test_unplaced_whisperx_words_do_not_all_share_one_timestamp() -> None:
     payload = {
         "segments": [

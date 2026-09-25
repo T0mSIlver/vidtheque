@@ -101,7 +101,7 @@ def cues_from_verbose_json(payload: dict[str, Any]) -> list[CueDraft]:
         cues.append(
             CueDraft(start_s=start, end_s=max(end, start), text=text, avg_logprob=avg_logprob)
         )
-    return drop_repetition_loops(_tidy(cues))
+    return drop_repetition_loops(collapse_stutters(_tidy(cues)))
 
 
 # A model stuck in a loop repeats one line every second or so; a speaker
@@ -132,6 +132,58 @@ def drop_repetition_loops(cues: list[CueDraft]) -> list[CueDraft]:
             if len(window) >= LOOP_MIN_REPEATS and n > 0:
                 drop.add(i)
     return [cue for i, cue in enumerate(cues) if i not in drop]
+
+
+STUTTER_MIN_REPEATS = 4
+STUTTER_MAX_PHRASE_WORDS = 8
+# A cut-off copy of the phrase at either end of the cue.
+STUTTER_MAX_LEFTOVER_WORDS = 2
+
+
+def collapse_stutters(cues: list[CueDraft]) -> list[CueDraft]:
+    """Say a phrase repeated back to back inside a cue once; drop a cue that was only that.
+
+    Seen on the day-2 Paris stream (2026-09-24): Voxtral filled five cues with
+    "a combination of really" ×10 over glitched audio, between real sentences.
+    """
+    out: list[CueDraft] = []
+    for cue in cues:
+        tokens = cue.text.split()
+        keep, looped = _stutter_mask(tokens)
+        if not looped:
+            out.append(cue)
+            continue
+        if len(tokens) - looped <= STUTTER_MAX_LEFTOVER_WORDS:
+            continue
+        words = [w for w, k in zip(cue.words, keep) if k] if len(cue.words) == len(tokens) else []
+        text = " ".join(t for t, k in zip(tokens, keep) if k)
+        out.append(CueDraft(cue.start_s, cue.end_s, text, words, cue.avg_logprob))
+    return out
+
+
+def _stutter_mask(tokens: list[str]) -> tuple[list[bool], int]:
+    """Which tokens survive, and how many belonged to a stutter run."""
+    norm = [re.sub(r"\W", "", t.lower()) for t in tokens]
+    keep = [True] * len(tokens)
+    looped = 0
+    i = 0
+    while i < len(tokens):
+        # From two words: people do say "sorry, sorry, sorry, sorry".
+        for size in range(2, STUTTER_MAX_PHRASE_WORDS + 1):
+            phrase = norm[i : i + size]
+            reps = 1
+            while norm[i + reps * size : i + (reps + 1) * size] == phrase:
+                reps += 1
+            if reps >= STUTTER_MIN_REPEATS:
+                end = i + reps * size
+                for j in range(i + size, end):
+                    keep[j] = False
+                looped += end - i
+                i = end
+                break
+        else:
+            i += 1
+    return keep, looped
 
 
 def _whisper_words(
