@@ -135,6 +135,7 @@ def drop_repetition_loops(cues: list[CueDraft]) -> list[CueDraft]:
 
 
 STUTTER_MIN_REPEATS = 4
+STUTTER_MIN_PHRASE_WORDS = 3
 STUTTER_MAX_PHRASE_WORDS = 8
 # A cut-off copy of the phrase at either end of the cue.
 STUTTER_MAX_LEFTOVER_WORDS = 2
@@ -168,8 +169,8 @@ def _stutter_mask(tokens: list[str]) -> tuple[list[bool], int]:
     looped = 0
     i = 0
     while i < len(tokens):
-        # From two words: people do say "sorry, sorry, sorry, sorry".
-        for size in range(2, STUTTER_MAX_PHRASE_WORDS + 1):
+        # From three words: people do say "sorry, sorry" and "thank you, thank you".
+        for size in range(STUTTER_MIN_PHRASE_WORDS, STUTTER_MAX_PHRASE_WORDS + 1):
             phrase = norm[i : i + size]
             reps = 1
             while norm[i + reps * size : i + (reps + 1) * size] == phrase:

@@ -315,12 +315,14 @@ def test_a_stuttered_phrase_is_said_once_and_a_stutter_only_cue_goes() -> None:
         {"start": 5.0, "end": 7.0, "text": "more considered and less obtrusive."},
         {"start": 7.0, "end": 9.0, "text": f"really {stutter}"},
         {"start": 9.0, "end": 11.0, "text": "Sorry, sorry, sorry, sorry."},
+        {"start": 11.0, "end": 13.0, "text": "Thank you, thank you, thank you, thank you."},
     ]
     texts = [cue.text for cue in captions.cues_from_verbose_json({"segments": segments})]
     assert texts == [
         "I've talked about what we can do with a combination of really",
         "more considered and less obtrusive.",
         "Sorry, sorry, sorry, sorry.",
+        "Thank you, thank you, thank you, thank you.",
     ]
 
 
