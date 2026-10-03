@@ -9,8 +9,8 @@ import javax.inject.Singleton
  * The server publishes the client document and the callback (mcp auth/android.py).
  */
 @Singleton
-class Instance(val base: String) {
-    @Inject constructor() : this(BuildConfig.INSTANCE)
+class Instance(val base: String, val devToken: String = "") {
+    @Inject constructor() : this(BuildConfig.INSTANCE, BuildConfig.DEV_TOKEN)
 
     val host: String get() = base.substringAfter("://").substringBefore('/')
     val clientId: String get() = "$base/auth/android/client.json"

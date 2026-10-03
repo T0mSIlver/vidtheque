@@ -80,7 +80,7 @@ class SessionTest {
 
     private fun TestScope.session(): Session {
         val instance = Instance(fake.base)
-        return Session(OAuthClient(OkHttpClient(), instance), store, { now }, CoroutineScope(StandardTestDispatcher(testScheduler)))
+        return Session(OAuthClient(OkHttpClient(), instance), instance, store, { now }, CoroutineScope(StandardTestDispatcher(testScheduler)))
             .also { advanceUntilIdle() }
     }
 
