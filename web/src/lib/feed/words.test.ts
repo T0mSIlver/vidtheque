@@ -25,7 +25,16 @@ describe("parsePasted", () => {
   });
 
   it("keeps a number that is part of the text", () => {
-    expect(parsePasted("GPT 5")).toEqual([{ text: "GPT 5", weight: 0.5 }]);
+    expect(
+      parsePasted("GPT 5\nPython 3.10\nGPT 4.0\n1 billion users\nClaude 1\nevals −0.3"),
+    ).toEqual([
+      { text: "GPT 5", weight: 0.5 },
+      { text: "Python 3.10", weight: 0.5 },
+      { text: "GPT 4.0", weight: 0.5 },
+      { text: "1 billion users", weight: 0.5 },
+      { text: "Claude 1", weight: 0.5 },
+      { text: "evals", weight: -0.3 },
+    ]);
   });
 });
 

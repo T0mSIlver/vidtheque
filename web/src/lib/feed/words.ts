@@ -49,11 +49,15 @@ export const DEFAULT_WEIGHT = 0.5;
 export type PastedEntry = { text: string; weight: number };
 
 // A bullet or a list number in front, then the text, then an optional weight
-// at either end: "+0.9 evals", "evals (−0.8)", "evals: 0.6".
+// at either end: "+0.9 evals", "evals (−0.8)", "evals: 0.6". A bare number
+// counts only with a sign or a point, so "1 billion users" and "Python 3.10"
+// stay text.
 const BULLET = /^\s*(?:[-*•·]|\d+[.)])\s+/;
 const WEIGHT = String.raw`([+\-−]?(?:1(?:\.0+)?|0?\.\d+|0))`;
-const LEADING = new RegExp(String.raw`^${WEIGHT}\s+(.+)$`);
-const TRAILING = new RegExp(String.raw`^(.+?)\s*[:(\[]?\s*${WEIGHT}\s*[)\]]?$`);
+const BARE = String.raw`([+\-−](?:1(?:\.0+)?|0?\.\d+|0)|0?\.\d+|1\.0+)`;
+const LEADING = new RegExp(String.raw`^${BARE}\s+(.+)$`);
+const MARKED = new RegExp(String.raw`^(.+?)\s*(?::|\(|\[)\s*${WEIGHT}\s*[)\]]?$`);
+const TRAILING = new RegExp(String.raw`^(.+?)\s+${BARE}$`);
 
 /** One entry per non-empty line (§2.2's fallback), weights clamped to [-1, 1]. */
 export function parsePasted(raw: string): PastedEntry[] {
@@ -64,7 +68,7 @@ export function parsePasted(raw: string): PastedEntry[] {
     let text = bare;
     let weight = DEFAULT_WEIGHT;
     const leading = LEADING.exec(bare);
-    const trailing = TRAILING.exec(bare);
+    const trailing = MARKED.exec(bare) ?? TRAILING.exec(bare);
     if (leading) {
       weight = toWeight(leading[1]);
       text = leading[2];
