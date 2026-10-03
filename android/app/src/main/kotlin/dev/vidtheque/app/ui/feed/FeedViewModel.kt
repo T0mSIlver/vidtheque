@@ -5,8 +5,11 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.vidtheque.app.data.Api
 import dev.vidtheque.app.data.ApiException
+import dev.vidtheque.app.data.FeedFacets
+import dev.vidtheque.app.data.FeedFilters
 import dev.vidtheque.app.data.FeedItem
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,13 +29,20 @@ data class FeedUi(
     val loaded: Boolean = false,
     val refreshing: Boolean = false,
     val error: String? = null,
+    val filters: FeedFilters = FeedFilters(),
+    /** Null until read; a failed read leaves the filters without channels and entries. */
+    val facets: FeedFacets? = null,
 )
+
+/** How long typing pauses before the search is sent. */
+private const val TYPING_MS = 300L
 
 @HiltViewModel
 class FeedViewModel @Inject constructor(private val api: Api) : ViewModel() {
     private val _ui = MutableStateFlow(FeedUi())
     val ui: StateFlow<FeedUi> = _ui.asStateFlow()
     private var paging: Job? = null
+    private var typing: Job? = null
 
     init {
         refresh()
@@ -41,23 +51,63 @@ class FeedViewModel @Inject constructor(private val api: Api) : ViewModel() {
     fun refresh() {
         paging?.cancel()
         _ui.update { it.copy(refreshing = true, error = null) }
+        val filters = _ui.value.filters
         paging = viewModelScope.launch {
             load {
-                val page = api.feed("top", 0)
-                _ui.value = FeedUi(
-                    top = Band(page.items, page.pagination.nextOffset.takeIf { page.pagination.hasMore }),
-                    skippedCount = page.skipped.count,
-                    skippedCapped = page.skipped.capped,
-                    loaded = true,
-                )
+                val page = api.feed("top", 0, filters)
+                _ui.update {
+                    it.copy(
+                        top = Band(page.items, page.pagination.nextOffset.takeIf { page.pagination.hasMore }),
+                        skipped = null,
+                        skippedCount = page.skipped.count,
+                        skippedCapped = page.skipped.capped,
+                        loaded = true,
+                    )
+                }
             }
             _ui.update { it.copy(refreshing = false) }
         }
+        // What the filters offer does not depend on them, so it is read beside the page.
+        viewModelScope.launch {
+            try {
+                val facets = api.facets()
+                _ui.update { it.copy(facets = facets) }
+            } catch (_: ApiException) {
+            } catch (_: IOException) {
+            }
+        }
+    }
+
+    /** The search box: sent once typing pauses. */
+    fun search(q: String) {
+        if (q == _ui.value.filters.q) return
+        _ui.update { it.copy(filters = it.filters.copy(q = q)) }
+        typing?.cancel()
+        typing = viewModelScope.launch {
+            delay(TYPING_MS)
+            refresh()
+        }
+    }
+
+    fun channel(name: String?) = narrow { it.copy(channel = name) }
+
+    /** A profile entry id, `other`, or null for all. */
+    fun entry(id: String?) = narrow { it.copy(entry = id) }
+
+    fun oldest(on: Boolean) = narrow { it.copy(oldest = on) }
+
+    private fun narrow(change: (FeedFilters) -> FeedFilters) {
+        val next = change(_ui.value.filters)
+        if (next == _ui.value.filters) return
+        typing?.cancel()
+        _ui.update { it.copy(filters = next) }
+        refresh()
     }
 
     /** Forget this session's feed (sign-out); the next sign-in loads it again. */
     fun clear() {
         paging?.cancel()
+        typing?.cancel()
         _ui.value = FeedUi()
     }
 
@@ -78,7 +128,7 @@ class FeedViewModel @Inject constructor(private val api: Api) : ViewModel() {
         set(skipped, band.copy(loading = true))
         paging = viewModelScope.launch {
             load {
-                val page = api.feed(if (skipped) "skipped" else "top", offset)
+                val page = api.feed(if (skipped) "skipped" else "top", offset, _ui.value.filters)
                 // Folded while the page was on its way: leave it folded.
                 if (skipped && _ui.value.skipped == null) return@load
                 set(skipped, Band(band.items + page.items, page.pagination.nextOffset.takeIf { page.pagination.hasMore }))
