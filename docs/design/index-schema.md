@@ -1311,6 +1311,37 @@ Registering a token again refreshes `last_seen`. An owner keeps at most 20
 devices; a registration past that removes the one seen longest ago, so tokens
 from reinstalled apps age out without a cleanup job.
 
+### 1.15 `nightly_runs`
+
+Added by 0013 (companion.md §2.4). One row per owner per local day: the
+nightly profile update claims the day before its model call, which is what
+keeps it to once a day across restarts.
+
+```sql
+CREATE TABLE nightly_runs (
+  id          INTEGER PRIMARY KEY,
+  owner_id    INTEGER NOT NULL DEFAULT 1 REFERENCES owners(id),
+  day         TEXT    NOT NULL,                  -- the box's local date, YYYY-MM-DD
+  state       TEXT    NOT NULL CHECK (state IN ('running','done','idle','failed')),
+  attempts    INTEGER NOT NULL DEFAULT 1,
+  started_at  INTEGER NOT NULL,
+  finished_at INTEGER,
+  since_at    INTEGER NOT NULL,                  -- the signals it read: (since_at, until_at]
+  until_at    INTEGER NOT NULL,
+  n_signals   INTEGER NOT NULL DEFAULT 0,
+  n_applied   INTEGER NOT NULL DEFAULT 0,
+  refused     TEXT    NOT NULL DEFAULT '[]',     -- JSON: the proposed ops the guards refused, with why
+  model       TEXT,
+  error       TEXT,
+  UNIQUE (owner_id, day)
+) STRICT;
+```
+
+The ops a `done` run applied are `profile_events` rows with `actor = 'nightly'`,
+committed in the same transaction that set `done`. `failed` and a `running`
+row an hour old are retried that day, up to 3 attempts; `done` and `idle` are
+final for the day.
+
 ---
 
 ## 2. FTS5
