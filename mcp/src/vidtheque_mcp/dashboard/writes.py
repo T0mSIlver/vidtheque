@@ -208,13 +208,17 @@ def _outcome(
     return _see(back)
 
 
+# The owner pages a sign-in may return to: the console and the feed (§25.7).
+NEXT_ROOTS = (ROOT, "/feed")
+
+
 def _safe_next(raw: str | None) -> str:
-    """A redirect target that cannot leave `/dashboard`, judged after the
+    """A redirect target that cannot leave the owner pages, judged after the
     browser's own normalisation (`/dashboard/../x`, `/dashboard.evil`, `//host`)."""
     if not raw or "\\" in raw or "%2e" in raw.lower() or raw.startswith("//"):
         return ROOT
     normal = posixpath.normpath(re.split(r"[?#]", raw, maxsplit=1)[0])
-    if normal != ROOT and not normal.startswith(ROOT + "/"):
+    if not any(normal == root or normal.startswith(root + "/") for root in NEXT_ROOTS):
         return ROOT
     return raw
 

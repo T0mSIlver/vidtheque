@@ -3617,7 +3617,8 @@ behind "skipped (n)". `limit` 1–50 (default 20), `offset` 0–10,000; any othe
 {"band": "top", "order": "newest",
  "items": [{"video_id": "kCc8FmEb1nY", "title": "…", "channel": "Andrej Karpathy",
             "duration_s": 7000.0, "published_at": 1740000000,
-            "score": 3, "reason": "evals ↑", "judged_at": 1790000000}],
+            "score": 3, "reason": "evals ↑", "explored": false,
+            "judged_at": 1790000000}],
  "pagination": {"limit": 20, "offset": 0, "has_more": true, "next_offset": 20},
  "skipped": {"count": 12, "capped": false}}
 ```
@@ -3625,12 +3626,14 @@ behind "skipped (n)". `limit` 1–50 (default 20), `offset` 0–10,000; any othe
 `next_offset` is `null` when the next page would start past 10,000, even
 with `has_more: true`: the band's tail past the ceiling is not paged.
 `skipped.count` is the number of 0–1 verdicts, counted up to 1,000;
-`capped: true` means there are more.
+`capped: true` means there are more. `explored: true` marks a verdict that
+reached 2 only once rescored without the negative entries (companion.md
+§3.2), which the feed shows as outside your profile.
 
 ### 25.3 `GET /dashboard/api/verdicts/{video_id}`
 
 The video screen: `video` (the row fields above), `score`, `reason`,
-`summary`, `moments`, `moments_dropped`, `profile_rev` (the profile revision
+`explored`, `summary`, `moments`, `moments_dropped`, `profile_rev` (the profile revision
 that scored it), `model` and `judged_at`. A moment is
 `{cue_id, offset_s, why, url}`, `url` being `https://youtu.be/<id>?t=<s>` with
 the tools' 2 s lead (`text.deeplink`). A moment whose cue a reindex removed is
@@ -3677,3 +3680,10 @@ most recently, and answers `{"registered": true, "devices", "evicted"}`.
 `DELETE` answers `{"removed": true|false}`, so a second delete is not an error.
 The token is never echoed back. It is the only `DELETE` on this surface, and
 it is in `WRITE_ROUTES` like the rest.
+
+### 25.7 The feed's pages
+
+`/feed`, `/feed/{video_id}` and `/feed/profile` are Next pages outside the
+console's chassis, phone-first (companion.md §6). They read the routes above
+with the console's session, so a sign-in from them returns there: `_safe_next`
+accepts `/feed` and its subpaths beside `/dashboard`, judged the same way.

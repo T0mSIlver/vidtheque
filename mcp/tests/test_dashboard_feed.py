@@ -56,16 +56,17 @@ def _seed_verdicts(data: Path) -> None:
             {"cue_id": 999_999, "offset_s": 10.0, "why": "gone"},
         ]
         now = int(time.time())
-        for source_id, score, age, kept in (
-            ("kCc8FmEb1nY", 3, 10, moments),
-            ("zduSFxRajkE", 2, 20, []),
-            ("eMlx5fFNoYc", 0, 30, []),
-            ("skipme00001", 1, 40, []),
+        for source_id, score, age, kept, explored in (
+            ("kCc8FmEb1nY", 3, 10, moments, 0),
+            ("zduSFxRajkE", 2, 20, [], 1),
+            ("eMlx5fFNoYc", 0, 30, [], 0),
+            ("skipme00001", 1, 40, [], 0),
         ):
             conn.execute(
                 "INSERT INTO verdicts (video_id, score, reason, summary, moments,"
-                " profile_rev, model, created_at) VALUES (?, ?, ?, 'summary', ?, 4, 'm:x', ?)",
-                (ids[source_id], score, f"reason {source_id}", json.dumps(kept), now - age),
+                " profile_rev, model, explored, created_at)"
+                " VALUES (?, ?, ?, 'summary', ?, 4, 'm:x', ?, ?)",
+                (ids[source_id], score, f"reason {source_id}", json.dumps(kept), explored, now - age),
             )
         conn.execute("COMMIT")
     finally:
@@ -133,7 +134,7 @@ def test_feed_pages_the_top_band_newest_first(client: TestClient) -> None:
     assert first["skipped"] == {"count": 2, "capped": False}
 
     second = client.get(f"{API}/feed?limit=1&offset=1", headers=BEARER).json()
-    assert [r["video_id"] for r in second["items"]] == ["zduSFxRajkE"]
+    assert [(r["video_id"], r["explored"]) for r in second["items"]] == [("zduSFxRajkE", True)]
     assert second["pagination"]["has_more"] is False
 
     skipped = client.get(f"{API}/feed?band=skipped", headers=BEARER).json()
