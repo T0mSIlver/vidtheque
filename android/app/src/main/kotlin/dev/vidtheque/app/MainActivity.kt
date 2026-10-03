@@ -19,6 +19,7 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dagger.hilt.android.AndroidEntryPoint
 import dev.vidtheque.app.auth.SessionState
+import dev.vidtheque.app.push.VerdictNotifications
 import dev.vidtheque.app.ui.RootViewModel
 import dev.vidtheque.app.ui.SignedIn
 import dev.vidtheque.app.ui.signin.SignInScreen
@@ -47,7 +48,7 @@ class MainActivity : ComponentActivity() {
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                     when (state) {
                         SessionState.Loading -> Unit
-                        SessionState.SignedIn -> SignedIn(onSignOut = root::signOut)
+                        SessionState.SignedIn -> SignedIn(opening = root.opening, onSignOut = root::signOut)
                         SessionState.SignedOut -> SignInScreen(
                             host = signIn.host,
                             error = ui.error,
@@ -69,6 +70,7 @@ class MainActivity : ComponentActivity() {
 
     // A browser without Auth Tab returns through the verified App Link instead.
     private fun handleCallback(intent: Intent) {
+        intent.getStringExtra(VerdictNotifications.EXTRA_VIDEO)?.let { root.opening.value = it }
         val uri = intent.data ?: return
         if (intent.action == Intent.ACTION_VIEW && uri.scheme == "https" && uri.host == signIn.host && uri.path == "/auth/android/callback") {
             signIn.onRedirect(uri)

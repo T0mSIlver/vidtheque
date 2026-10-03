@@ -49,6 +49,11 @@ jobs:
         env:
           VIDTHEQUE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           VIDTHEQUE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          # The Firebase project's app identity (Actions variables, not secrets); unset, no push.
+          FIREBASE_APP_ID: ${{ vars.FIREBASE_APP_ID }}
+          FIREBASE_API_KEY: ${{ vars.FIREBASE_API_KEY }}
+          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+          FIREBASE_PROJECT_NUMBER: ${{ vars.FIREBASE_PROJECT_NUMBER }}
         run: ./gradlew --console=plain assembleRelease verifyRoborazziDebug
 
       - name: Screenshot diffs
