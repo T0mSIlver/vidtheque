@@ -175,6 +175,11 @@ Two backends, one env var, `VIDTHEQUE_LLM_BACKEND`:
   ([legal and compliance](https://code.claude.com/docs/en/legal-and-compliance),
   checked 2026-10-03). vidtheque never reads the credential.
 
+The client is `mcp/src/vidtheque_mcp/llm.py`, one call for every backend: a
+prompt in, text or a JSON object validated against a schema out.
+`VIDTHEQUE_LLM_TIMEOUT_S` bounds each call; a subprocess past it is killed
+with its children, and its output is capped at 1 MiB.
+
 Tom's instance runs `api`: a verdict reads a whole transcript, and the
 weekly Claude limit is the budget that runs out first. All new vars land in
 `deploy/.env.example` with the code that reads them.
