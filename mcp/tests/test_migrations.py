@@ -529,7 +529,7 @@ def test_0010_keeps_every_job_and_corpus_row_and_admits_verdict_jobs(
         return {t: [tuple(r) for r in fresh.execute(f"SELECT * FROM {t} ORDER BY 1")] for t in tables}
 
     held = snapshot()
-    assert migrations.migrate(fresh) == [10]
+    assert migrations.migrate(fresh)[0] == 10
     assert snapshot() == held
     assert fresh.execute("PRAGMA foreign_key_check").fetchall() == []
 
@@ -555,3 +555,24 @@ def test_0010_keeps_every_job_and_corpus_row_and_admits_verdict_jobs(
     fresh.execute("PRAGMA foreign_keys = ON")
     fresh.execute("DELETE FROM videos WHERE id = ?", (vid,))
     assert fresh.execute("SELECT COUNT(*) FROM verdicts").fetchone()[0] == 0
+
+
+def test_0011_keeps_every_verdict_and_reads_them_as_not_explored(
+    fresh: sqlite3.Connection, tmp_path: Path
+) -> None:
+    _migrate_up_to(fresh, 10, tmp_path / "staged")
+    vid = fresh.execute(
+        "INSERT INTO videos (source_id, url, title, duration_s, index_state)"
+        " VALUES ('kCc8FmEb1nY', 'https://youtu.be/kCc8FmEb1nY', 'GPT from scratch', 7000, 'ready')"
+    ).lastrowid
+    fresh.execute(
+        "INSERT INTO verdicts (video_id, score, reason, summary, moments, profile_rev, model,"
+        " created_at, notified_at) VALUES (?, 2, 'r', 's', '[]', 4, 'm', 100, 200)",
+        (vid,),
+    )
+    held = [tuple(r) for r in fresh.execute("SELECT * FROM verdicts")]
+    assert migrations.migrate(fresh)[0] == 11
+    assert [tuple(r)[:-1] for r in fresh.execute("SELECT * FROM verdicts")] == held
+    assert fresh.execute("SELECT explored FROM verdicts").fetchone()[0] == 0
+    with pytest.raises(sqlite3.IntegrityError):
+        fresh.execute("UPDATE verdicts SET explored = 2")

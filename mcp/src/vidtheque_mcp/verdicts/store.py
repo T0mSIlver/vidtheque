@@ -54,15 +54,17 @@ def save(
     moments: Sequence[Moment],
     profile_rev: int,
     model: str,
+    explored: bool = False,
 ) -> None:
     """Insert or replace the video's verdict. A rerun keeps `notified_at`."""
     conn.execute(
-        "INSERT INTO verdicts (video_id, score, reason, summary, moments, profile_rev, model)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO verdicts"
+        " (video_id, score, reason, summary, moments, profile_rev, model, explored)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         " ON CONFLICT (video_id) DO UPDATE SET score = excluded.score,"
         " reason = excluded.reason, summary = excluded.summary, moments = excluded.moments,"
         " profile_rev = excluded.profile_rev, model = excluded.model,"
-        " created_at = unixepoch()",
+        " explored = excluded.explored, created_at = unixepoch()",
         (
             video_id,
             score,
@@ -71,6 +73,7 @@ def save(
             json.dumps([m.__dict__ for m in moments]),
             profile_rev,
             model,
+            int(explored),
         ),
     )
 
