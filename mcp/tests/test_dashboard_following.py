@@ -301,7 +301,7 @@ def test_the_following_surface_is_absent_in_auth_none(tmp_path: Path) -> None:
         for path in FOLLOW_POSTS:
             assert client.post(path, headers=SAME_ORIGIN).status_code == 404, path
         # Every other read is still open, which is the other half of the rule.
-        assert client.get(f"{ROOT}/api/overview").status_code == 200
+        assert client.get(f"{ROOT}/api/health").status_code == 200
         registered = {str(getattr(r, "path", "")) for r in client.app.routes}
         assert not (registered & set(WRITE_ROUTES))
 

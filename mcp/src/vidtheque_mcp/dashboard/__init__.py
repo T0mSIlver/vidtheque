@@ -235,11 +235,11 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
         # The React dashboard's own reads (`docs/design/frontend-migration.md`,
         # 2026-09-05). `/api/*` answers questions about the *corpus* in the
         # corpus's own shape; these answer "what does this box hold" and "what
-        # is it behind on" — the overview's and the ledger's own reads
+        # is it behind on" — the Health and Corpus pages' own reads
         # (`read_models`), typed. Same gate, and no clamp to state: they take
         # no parameter, so the assemblers' caps are the only bounds there are.
-        Route(f"{ROOT}/api/overview", guarded(api.overview), methods=["GET"]),
-        Route(f"{ROOT}/api/ledger", guarded(api.ledger), methods=["GET"]),
+        Route(f"{ROOT}/api/health", guarded(api.health), methods=["GET"]),
+        Route(f"{ROOT}/api/corpus", guarded(api.corpus), methods=["GET"]),
         # The videos table and the video detail, same argument and same gate
         # (§20). **Not** `/api/videos`: that path at this prefix is the
         # facade's listing, two routes up, and its records are the corpus's own
