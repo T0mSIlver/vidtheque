@@ -535,5 +535,22 @@ def test_the_kind_filter_offers_the_follow_check_job(tmp_path: Path) -> None:
         ).json()
         assert filtered["filters"]["kind"] == "follow_check"
         assert [job["job_id"] for job in filtered["jobs"]] == ["job_followchk1"]
+        # A finished check names what it checked; its item never becomes a video.
+        assert filtered["jobs"][0]["contents"]["note"].startswith("checked ")
+        assert filtered["by_state"]["done"] == 1
+
+
+def test_the_jobs_view_hides_follow_checks_unless_asked(tmp_path: Path) -> None:
+    """The default kind is `videos`: checks fill the first screen and each
+    follow's page lists its own (dashboard.md §24.2). `all` still means all,
+    and the counts by state follow the kind the rows were read under."""
+    with owner_client(tmp_path) as client:
+        default = client.get(f"{ROOT}/api/jobs", headers=BEARER).json()
+        every = client.get(f"{ROOT}/api/jobs?kind=all", headers=BEARER).json()
+
+    ids = [job["job_id"] for job in default["jobs"]]
+    assert "job_followchk1" not in ids and "job_followidx1" in ids
+    assert "job_followchk1" in [job["job_id"] for job in every["jobs"]]
+    assert sum(every["by_state"].values()) == sum(default["by_state"].values()) + 1
 
 

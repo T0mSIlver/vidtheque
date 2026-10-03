@@ -274,7 +274,6 @@ async def corpus(request: Request) -> Response:
     data: CorpusReads = await corpus_reads(request, redact=redact)
     rollup = data.rollup
     row = data.ledger
-    health = data.health
     payload: dict[str, Any] = {
         # Every figure was counted inside this request — there is no cache and
         # no sample behind any of them, so the payload carries one clock.
@@ -321,16 +320,6 @@ async def corpus(request: Request) -> Response:
             TAG_CAP,
             lambda r: {"tag": str(r["full"]), "videos": int(r["n"])},
         ),
-        "jobs_by_state": {
-            str(state): int(n) for state, n in data.jobs_by_state.items()
-        },
-        "queue": {
-            "active": int(health["active"]),
-            "running": int(health["running"]),
-            "deferred": int(health["deferred"]),
-            "failed_recent": int(health["failed_recent"]),
-            "failed_window_s": FAILED_WINDOW_S,
-        },
         "storage": None
         if data.storage is None
         else {
@@ -1163,6 +1152,9 @@ async def jobs_json(request: Request) -> Response:
                 "order": data.filters["order"],
             },
             "notes": data.notes,
+            # Every job under this listing's kind, by state, whatever the state
+            # filter (§24.2): the counts are the state filter's doors.
+            "by_state": {str(state): int(n) for state, n in data.by_state.items()},
         },
         headers=NO_STORE,
     )
