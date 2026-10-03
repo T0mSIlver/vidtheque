@@ -8,7 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onRoot
 import com.github.takahirom.roborazzi.captureRoboImage
-import dev.vidtheque.app.ui.SignInScreen
+import dev.vidtheque.app.ui.signin.SignInScreen
 import dev.vidtheque.app.ui.theme.VidthequeTheme
 import org.junit.Rule
 import org.junit.Test

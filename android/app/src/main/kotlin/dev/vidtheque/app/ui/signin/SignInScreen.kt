@@ -1,4 +1,6 @@
-package dev.vidtheque.app.ui
+package dev.vidtheque.app.ui.signin
+
+import dev.vidtheque.app.ui.Wordmark
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
