@@ -92,7 +92,7 @@ One table, `signals(id, at, kind, video_id, offset_s, text, client)`:
 
 | kind | from | strength |
 |---|---|---|
-| `mcp_search` | any `search` call (`text` = the query) | strongest: what you are working on |
+| `mcp_search` | any `search` call, and a query on the feed's search page (`text` = the query) | strongest: what you are working on |
 | `mcp_read` | `video-summary`, `get-segment-context`, `get-transcript` on a video | strong |
 | `ask_claude`, `thumb_up`, `thumb_down`, `mute` | the app | strong, explicit |
 | `open`, `watch` (with the moment's offset) | the app | medium |
@@ -107,6 +107,15 @@ log, but the nightly update does not read those events: it reads the videos
 whose state moved since it last read them, as they stand now, so a tap taken
 back before the night never reaches the profile and one taken back after it
 reads as "took back".
+
+*Amended 2026-10-04 (#127):* a query run on the feed's search page, in the
+app or on the web, is an `mcp_search` too, with `client` `app` or `web`. It is
+the same search, typed by the owner rather than their agent, and a query typed
+on purpose says what you are working on as plainly as an agent's does. The
+kind stays `mcp_search` rather than a new `search`, because the nightly update
+reads kinds, not clients, and a new kind would mean rebuilding the `signals`
+table for its `CHECK`. The page sends it once per query submitted; paging and
+reloads send nothing. The console's search page sends none: it is inspection.
 
 The MCP signals are logged in the tool layer (`tools/base.py`), for every
 client, owner-scoped. A client can opt out per session with a header
@@ -343,6 +352,11 @@ Two surfaces, each answering one question. Nothing appears on both.
     down, mute, **Ask Claude**.
   - **Profile**: entries, history with revert, **Ask Claude to build my
     profile**, the notification threshold.
+- **Search** (*amended 2026-10-04, #127*), a side page on both, apart from the
+  feed's own title, channel and date search: the same search the MCP `search`
+  tool runs, over every channel. A hit is the video, its channel and date, and
+  the matching moment with its timestamp; the moment opens `youtu.be/ID?t=`,
+  the video opens the video screen, scored or not. dashboard.md §25.9.
 - **The console** (the current `/dashboard`): *is the machine healthy, and
   what is in it?* It keeps indexing, jobs, following, the library and the
   ledger, and loses everything the feed now answers. §7.
