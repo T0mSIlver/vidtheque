@@ -21,7 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.AutoAwesome
-import androidx.compose.material.icons.rounded.NotificationsOff
+import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.ThumbDown
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material3.Button
@@ -34,20 +34,29 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.TooltipAnchorPosition
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -78,6 +87,14 @@ fun VideoScreen(key: VideoKey, onBack: () -> Unit, still: Still, card: Lift = { 
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    // The undo window, on screen: Undo takes the signal back before it is sent.
+    val waiting = ui.sent.entries.firstOrNull { it.value == Sent.Waiting }?.key
+    LaunchedEffect(waiting) {
+        val kind = waiting ?: return@LaunchedEffect
+        val said = SIGNALS.first { it.kind == kind }.done
+        val result = snackbar.showSnackbar("$said. Noted for tonight's profile update.", actionLabel = "Undo", duration = SnackbarDuration.Indefinite)
+        if (result == SnackbarResult.ActionPerformed) model.undo(kind)
+    }
     VideoContent(
         key = key,
         ui = ui,
@@ -86,7 +103,10 @@ fun VideoScreen(key: VideoKey, onBack: () -> Unit, still: Still, card: Lift = { 
         snackbar = snackbar,
         onBack = onBack,
         onRetry = model::load,
-        onSend = model::send,
+        onSignal = { kind ->
+            if (ui.sent[kind] == Sent.Done) scope.launch { snackbar.showSnackbar("Already sent. A sent signal can't be taken back.") }
+            else model.toggle(kind)
+        },
         onMoment = { moment ->
             model.watched(moment.offsetS)
             if (!context.openLink(Uri.parse(moment.url))) scope.launch { snackbar.showSnackbar(NO_APP) }
@@ -114,7 +134,7 @@ fun VideoContent(
     container: Modifier = Modifier,
     onBack: () -> Unit,
     onRetry: () -> Unit,
-    onSend: (String) -> Unit,
+    onSignal: (String) -> Unit,
     onMoment: (Moment) -> Unit,
     onAsk: (Verdict) -> Unit,
 ) {
@@ -151,7 +171,7 @@ fun VideoContent(
                 }
                 Spacer(Modifier.height(112.dp))
             }
-            if (verdict != null) Actions(verdict, ui.sent, onSend, onAsk, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp))
+            if (verdict != null) Actions(verdict, ui.sent, onSignal, onAsk, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp))
         }
     }
 }
@@ -195,10 +215,20 @@ private fun Loaded(verdict: Verdict, onMoment: (Moment) -> Unit) {
     }
 }
 
-/** Thumbs, mute and Ask Claude, in reach of a thumb. */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+/** One feedback button: its signal kind (companion.md §2.3), its label, and what the snackbar says once tapped. */
+private class Signal(val kind: String, val icon: ImageVector, val label: String, val done: String)
+
+// `mute` reads "Less like this": a bell said "notifications", which it never touched.
+private val SIGNALS = listOf(
+    Signal("thumb_up", Icons.Rounded.ThumbUp, "Liked it", "Liked"),
+    Signal("thumb_down", Icons.Rounded.ThumbDown, "Didn't like it", "Disliked"),
+    Signal("mute", Icons.Rounded.Block, "Less like this", "Less like this"),
+)
+
+/** Thumbs, "less like this" and Ask Claude, in reach of a thumb; a long press names each. */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun Actions(verdict: Verdict, sent: Map<String, Sent>, onSend: (String) -> Unit, onAsk: (Verdict) -> Unit, modifier: Modifier) {
+private fun Actions(verdict: Verdict, sent: Map<String, Sent>, onSignal: (String) -> Unit, onAsk: (Verdict) -> Unit, modifier: Modifier) {
     val haptics = LocalHapticFeedback.current
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (sent.values.any { it == Sent.Failed }) {
@@ -207,19 +237,21 @@ private fun Actions(verdict: Verdict, sent: Map<String, Sent>, onSend: (String) 
             }
         }
         HorizontalFloatingToolbar(expanded = true) {
-            listOf(
-                Triple("thumb_up", Icons.Rounded.ThumbUp, "Thumbs up"),
-                Triple("thumb_down", Icons.Rounded.ThumbDown, "Thumbs down"),
-                Triple("mute", Icons.Rounded.NotificationsOff, "Mute"),
-            ).forEach { (kind, icon, label) ->
-                FilledIconToggleButton(
-                    checked = sent[kind] == Sent.Done,
-                    onCheckedChange = {
-                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                        onSend(kind)
-                    },
-                    enabled = sent[kind] != Sent.Sending,
-                ) { Icon(icon, contentDescription = label) }
+            SIGNALS.forEach { signal ->
+                TooltipBox(
+                    positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+                    tooltip = { PlainTooltip { Text(signal.label) } },
+                    state = rememberTooltipState(),
+                ) {
+                    FilledIconToggleButton(
+                        checked = sent[signal.kind].let { it == Sent.Waiting || it == Sent.Sending || it == Sent.Done },
+                        onCheckedChange = {
+                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                            onSignal(signal.kind)
+                        },
+                        enabled = sent[signal.kind] != Sent.Sending,
+                    ) { Icon(signal.icon, contentDescription = signal.label) }
+                }
             }
             Spacer(Modifier.width(8.dp))
             Button(onClick = { onAsk(verdict) }) {
