@@ -164,6 +164,17 @@ again, it continues where the last batch stopped, and `--video ID` reruns one.
 The triage agent reads through `video-summary` as `client=triage` with signals
 off.
 
+As built (0011), novelty and exploration: "opened or asked about" is a signal of
+kind `open`, `watch`, `ask_claude` or `mcp_read` in the last 90 days, newest 200
+videos. Up to 24 of the video's chunks, spread evenly, each look up their 3
+nearest chunks among those videos; a seen video is named when it holds a chunk
+within cosine distance 0.25 of at least a quarter of them, at most three lines,
+largest share first. 0.25 is a first guess, not yet calibrated on the live
+corpus. Exploration rolls only for a verdict scored 0–1 by a profile that has
+negative entries, since without them the rescore is the same prompt. A rescore
+of 2 or more replaces the verdict with `explored = 1`; a lower one leaves the
+first verdict and costs the one extra call. The roll is injected, so tests pick it.
+
 ### 3.3 Proving it gets better
 
 Every verdict is kept with the profile revision that scored it, and the
