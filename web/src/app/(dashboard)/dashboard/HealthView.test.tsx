@@ -65,10 +65,10 @@ describe("the health page", () => {
     it("points at Corpus for failed videos instead of counting them", async () => {
       await mount({ body: { ...OWNER_HEALTH, gaps: { ...OWNER_HEALTH.gaps, has_failed: true } } });
 
-      expect(await screen.findByRole("link", { name: "Corpus counts them" })).toHaveAttribute(
-        "href",
-        "/dashboard/corpus#states",
-      );
+      expect(await screen.findByText("counts the videos marked failed")).toBeInTheDocument();
+      expect(
+        screen.getAllByRole("link", { name: "Corpus" }).map((link) => link.getAttribute("href")),
+      ).toContain("/dashboard/corpus#states");
     });
 
     it("drops the gaps panel when nothing is missing", async () => {
