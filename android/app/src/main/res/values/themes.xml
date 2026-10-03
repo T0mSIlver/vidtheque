@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Dark only (DESIGN.md): the window and the splash are the theme background. -->
-    <style name="Theme.Vidtheque" parent="android:Theme.Material.NoActionBar">
+    <!-- The window and the splash are the theme background, light or dark with the system. -->
+    <style name="Theme.Vidtheque" parent="android:Theme.DeviceDefault.DayNight">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
         <item name="android:windowBackground">@color/ground</item>
     </style>
     <style name="Theme.Vidtheque.Starting" parent="Theme.SplashScreen">
