@@ -446,11 +446,16 @@ class LLMSettings:
         )
 
 
+def is_configured(settings: LLMSettings) -> bool:
+    """`api` needs a URL and a model; the CLI backends bring their own."""
+    return settings.backend != "api" or bool(settings.base_url and settings.model)
+
+
 def build_model(settings: LLMSettings, client: httpx.AsyncClient) -> Model | None:
     """The configured backend, or None when `api` lacks a URL or a model."""
+    if not is_configured(settings):
+        return None
     if settings.backend == "api":
-        if not (settings.base_url and settings.model):
-            return None
         chat = ChatClient(
             client, settings.base_url, settings.api_key, request_cap_s=settings.timeout_s
         )

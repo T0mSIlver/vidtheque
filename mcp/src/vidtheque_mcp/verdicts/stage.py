@@ -25,7 +25,7 @@ from mcp_types import TextContent
 
 from ..config import _bool_env
 from ..jobs.runner import ItemContext, ItemFailed, ItemSkipped
-from ..llm import LLMSettings, LLMUnavailable, Model, build_model
+from ..llm import LLMSettings, LLMUnavailable, Model, build_model, is_configured
 from ..profile import store as profile_store
 from ..tools.base import CALL_CONTEXT, CallContext, Deps
 from ..tools.library import video_summary
@@ -98,9 +98,7 @@ def configured() -> LLMSettings | None:
     if not VerdictSettings.from_env().enabled:
         return None
     settings = LLMSettings.from_env()
-    if settings.backend == "api" and not (settings.base_url and settings.model):
-        return None
-    return settings
+    return settings if is_configured(settings) else None
 
 
 def build_verdicts(deps: Deps) -> tuple["VerdictStage | None", httpx.AsyncClient | None]:
