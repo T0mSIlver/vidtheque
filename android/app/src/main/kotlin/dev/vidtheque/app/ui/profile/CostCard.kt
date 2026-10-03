@@ -54,7 +54,7 @@ fun CostCard(month: CostWindow) {
             }
             val unpriced = if (month.unpricedCalls > 0) " · ${month.unpricedCalls} with no known cost" else ""
             Text(
-                "List price of ${month.calls} call(s) and ${month.verdicts} verdict(s)$unpriced",
+                "List price of ${plural(month.calls, "call")} and ${plural(month.verdicts, "verdict")}$unpriced",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -69,3 +69,5 @@ private fun Figure(value: String, label: String) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
+
+private fun plural(n: Int, word: String) = if (n == 1) "1 $word" else "$n ${word}s"
