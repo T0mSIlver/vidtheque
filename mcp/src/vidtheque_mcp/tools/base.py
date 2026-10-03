@@ -1,12 +1,13 @@
-"""Shared plumbing for the ten tools: dependencies, admission, embedding."""
+"""Shared plumbing for the tools: dependencies, admission, embedding, signals."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 import secrets
+from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from mcp_types import CallToolResult, ContentBlock, TextContent
 
@@ -17,6 +18,8 @@ from ..db import queries
 from ..embeddings import EmbeddingClient, EmbeddingUnavailable, FrameQueryUnsupported
 from ..errors import ToolError, plausible_video_id, timeout, unknown_video
 from ..jobs.runner import PipelineRunner
+from ..profile import signals
+from ..timeparse import parse_offset
 
 log = logging.getLogger(__name__)
 
@@ -47,6 +50,10 @@ class Deps:
     # worker that gains the encoder is picked up on the next restart. Transient
     # outages do NOT set this — they must not be cached. See embed_query.
     frame_text_encoder: bool | None = None
+
+    # Whether tool calls are logged as the owner's signals (companion.md §2.3).
+    # Off on a public deployment, where the caller is a stranger, not the owner.
+    signals: bool = True
 
     def offers(self, tool: str) -> bool:
         """Is ``tool`` part of *this* deployment's surface?"""
@@ -188,6 +195,69 @@ class Deps:
         )
         if note not in notes:
             notes.append(note)
+
+
+SIGNALS_HEADER = "x-vidtheque-signals"
+
+
+@dataclass(frozen=True)
+class CallContext:
+    """Who is calling a tool, as far as signals care."""
+
+    client: str | None = None
+    signals: bool = True
+
+    @classmethod
+    def from_headers(cls, headers: Mapping[str, str] | None, client: str | None) -> "CallContext":
+        opted_out = (headers or {}).get(SIGNALS_HEADER, "").strip().lower() == "off"
+        return cls(client=client, signals=not opted_out)
+
+
+# Set by an in-process caller, so its calls are not mistaken for the owner's: the
+# triage agent sets `CallContext(client="triage", signals=False)` (§2.3).
+CALL_CONTEXT: ContextVar[CallContext | None] = ContextVar("vidtheque_call_context", default=None)
+
+READ_SIGNAL_TOOLS = {
+    "video-summary": None,
+    "get-segment-context": "t",
+    "get-transcript": "t_start",
+}
+
+
+async def record_tool_signal(
+    deps: Deps, tool: str, arguments: Mapping[str, Any], call: CallContext
+) -> None:
+    """Log `search` as `mcp_search` and the three read tools as `mcp_read`.
+
+    A signal is a side record: failing to write one never fails the call.
+    """
+    if not (deps.signals and call.signals):
+        return
+    if tool == "search":
+        q = arguments.get("q")
+        if not isinstance(q, str) or not q.strip():
+            return
+        kwargs: dict[str, Any] = {"text": q}
+        kind = "mcp_search"
+    elif tool in READ_SIGNAL_TOOLS:
+        video_id = arguments.get("video_id")
+        if not isinstance(video_id, str):
+            return
+        offset_param = READ_SIGNAL_TOOLS[tool]
+        try:
+            offset = parse_offset(arguments.get(offset_param), offset_param) if offset_param else None
+        except ToolError:
+            offset = None
+        kwargs = {"video_id": video_id.strip(), "offset_s": offset}
+        kind = "mcp_read"
+    else:
+        return
+    try:
+        await deps.db.write(
+            lambda c: signals.record_signal(c, kind, client=call.client, **kwargs)
+        )
+    except Exception:
+        log.warning("could not record a %s signal", kind, exc_info=True)
 
 
 def text_result(body: str, structured: dict[str, Any] | None = None) -> CallToolResult:

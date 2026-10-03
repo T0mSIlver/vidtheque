@@ -204,6 +204,23 @@ one succeeds and reports no change.
 """.strip()
 
 
+PROFILE = """
+Read or edit the user's interest profile: short plain-word entries, each with a
+weight from -1 (less of this) to 1 (more of this). It steers which new videos
+reach the user.
+
+USE WHEN: the user tells you what they care about or are tired of, asks you to
+build or tune their profile, or asks what it says. Call it bare first to see
+the entries and their ids.
+
+DO NOT USE: to record one search or read — those are noted on their own; to
+rewrite the list. Change only what the user meant.
+
+add=[{text, weight}], drop=[id], reweight=[{id, weight}]; reason= says why.
+Entries the user wrote can be reweighted but not dropped; at most 40 entries.
+""".strip()
+
+
 # openWorldHint is false for every query tool (the corpus is a closed local
 # index) and true for the two that reach the internet — index-video directly,
 # follow-channel through the checks it schedules.
@@ -257,6 +274,14 @@ ANNOTATIONS: dict[str, ToolAnnotations] = {
     "follow-channel": ToolAnnotations(
         title="Follow a channel", readOnlyHint=False, idempotentHint=True, openWorldHint=True
     ),
+    # Not idempotent: two identical reweights write two events and move the
+    # revision twice.
+    "profile": ToolAnnotations(
+        title="Read or edit the interest profile",
+        readOnlyHint=False,
+        idempotentHint=False,
+        openWorldHint=False,
+    ),
 }
 
 DESCRIPTIONS: dict[str, str] = {
@@ -271,4 +296,5 @@ DESCRIPTIONS: dict[str, str] = {
     "job-status": JOB_STATUS,
     "tag-video": TAG_VIDEO,
     "follow-channel": FOLLOW_CHANNEL,
+    "profile": PROFILE,
 }
