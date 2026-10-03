@@ -3622,6 +3622,8 @@ behind "skipped (n)". `limit` 1–50 (default 20), `offset` 0–10,000; any othe
  "skipped": {"count": 12, "capped": false}}
 ```
 
+`next_offset` is `null` when the next page would start past 10,000, even
+with `has_more: true`: the band's tail past the ceiling is not paged.
 `skipped.count` is the number of 0–1 verdicts, counted up to 1,000;
 `capped: true` means there are more.
 
