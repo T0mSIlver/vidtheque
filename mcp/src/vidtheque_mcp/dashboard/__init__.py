@@ -214,6 +214,7 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
                 methods=["GET"],
             ),
             Route(f"{ROOT}/api/signals", feed.signal, methods=["POST"]),
+            Route(f"{ROOT}/api/feedback", feed.feedback, methods=["POST"]),
             Route(f"{ROOT}/api/profile", guarded(feed.profile), methods=["GET"]),
             Route(f"{ROOT}/api/profile", feed.profile_ops, methods=["POST"]),
             Route(f"{ROOT}/api/profile/revert", feed.profile_revert, methods=["POST"]),
