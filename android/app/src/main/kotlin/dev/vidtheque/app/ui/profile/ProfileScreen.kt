@@ -8,6 +8,18 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import android.content.ClipboardManager
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.sp
+import dev.vidtheque.app.ui.dated
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Column
@@ -65,8 +77,6 @@ import dev.vidtheque.app.ui.NO_APP
 import dev.vidtheque.app.ui.WeightDial
 import dev.vidtheque.app.ui.openLink
 import kotlinx.coroutines.launch
-import java.text.DateFormat
-import java.util.Date
 
 @Composable
 fun ProfileScreen(onBack: () -> Unit, onSignOut: () -> Unit) {
@@ -189,41 +199,109 @@ fun ProfileContent(
     }
 }
 
+// An entry's text is a title over 12/16 notes; at the scale's 16/24 its lines sat
+// apart from everything under them, so it keeps the notes' ratio (1.3).
+@Composable
+private fun entryStyle() = MaterialTheme.typography.titleMedium.copy(lineHeight = 21.sp)
+
+/** One interest: its text whole, and the note that put it there, folded to two lines until tapped. */
 @Composable
 private fun Entry(entry: ProfileEntry, busy: Boolean, onDrop: () -> Unit) {
-    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 4.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            WeightDial(entry.weight)
-            Column(Modifier.weight(1f)) {
-                Text(entry.text, style = MaterialTheme.typography.bodyLarge)
+    var open by rememberSaveable(entry.id) { mutableStateOf(false) }
+    Surface(
+        onClick = { open = !open },
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.fillMaxWidth().animateContentSize(),
+    ) {
+        Row(Modifier.padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 4.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            WeightDial(entry.weight, size = 48.dp)
+            Column(Modifier.weight(1f).padding(top = 2.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(entry.text, style = entryStyle())
                 Text(
-                    listOfNotNull(source(entry.source), entry.evidence).joinToString(" · "),
+                    listOfNotNull("by ${source(entry.source)}", entry.createdAt?.let { dated(it) }).joinToString(" · "),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
                 )
+                entry.evidence?.let { Note(it, open) }
             }
             IconButton(onClick = onDrop, enabled = !busy) { Icon(Icons.Rounded.Close, contentDescription = "Drop ${entry.text}") }
         }
     }
 }
 
+/** A reason or evidence: two lines with a chevron while folded, all of it once open. */
+@Composable
+private fun Note(text: String, open: Boolean) {
+    var cut by remember(text) { mutableStateOf(false) }
+    Row(verticalAlignment = Alignment.Bottom) {
+        Text(
+            text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = if (open) Int.MAX_VALUE else 2,
+            overflow = TextOverflow.Ellipsis,
+            onTextLayout = { if (!open) cut = it.hasVisualOverflow },
+            modifier = Modifier.weight(1f),
+        )
+        if (cut || open) Icon(
+            if (open) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+            contentDescription = if (open) "Show less" else "Show more",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+/**
+ * One change per row, every row the same columns: the weight it moved (old, struck,
+ * over new), then what happened to which entry, who did it and when, then why.
+ */
 @Composable
 private fun HistoryRow(event: ProfileEvent, names: Map<Long, String>, busy: Boolean, onRevert: () -> Unit) {
     val text = event.after?.text ?: event.before?.text ?: names[event.entryId] ?: "entry ${event.entryId}"
-    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(start = 16.dp, top = 10.dp, bottom = 10.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    var open by rememberSaveable(event.id) { mutableStateOf(false) }
+    Surface(
+        onClick = { open = !open },
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth().animateContentSize(),
+    ) {
+        Row(Modifier.padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 4.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Moved(event, Modifier.width(56.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(listOf(event.op, change(event)).filter { it.isNotEmpty() }.joinToString(" · "), style = MaterialTheme.typography.labelLargeEmphasized, color = MaterialTheme.colorScheme.primary)
-                Text(text, style = MaterialTheme.typography.bodyMedium)
+                Text(what(event), style = MaterialTheme.typography.labelLargeEmphasized, color = MaterialTheme.colorScheme.primary)
+                Text(text, style = entryStyle().copy(fontSize = MaterialTheme.typography.titleSmall.fontSize, lineHeight = MaterialTheme.typography.titleSmall.lineHeight))
                 Text(
-                    listOfNotNull(source(event.actor), DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(event.at * 1000)), event.reason).joinToString(" · "),
+                    "by ${source(event.actor)} · ${dated(event.at)}",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                event.reason?.takeIf { it.isNotBlank() }?.let { Box(Modifier.padding(top = 2.dp)) { Note(it, open) } }
             }
-            IconButton(onClick = onRevert, enabled = !busy) { Icon(Icons.Rounded.Undo, contentDescription = "Revert: ${event.op} $text") }
+            IconButton(onClick = onRevert, enabled = !busy) { Icon(Icons.Rounded.Undo, contentDescription = "Revert: ${what(event)} $text") }
+        }
+    }
+}
+
+/** The weight column: the new weight large in its sign's colour, the old one struck above it. */
+@Composable
+private fun Moved(event: ProfileEvent, modifier: Modifier) {
+    val old = event.before?.weight
+    val new = event.after?.weight
+    val gone = event.before?.live == true && event.after?.live == false
+    Column(modifier, horizontalAlignment = Alignment.End) {
+        if (old != null && (new != null && new != old || gone)) {
+            Text(
+                signed(old),
+                style = MaterialTheme.typography.labelMedium.copy(textDecoration = if (gone) null else TextDecoration.LineThrough),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        when {
+            gone -> Text("off", style = MaterialTheme.typography.titleMediumEmphasized, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            new != null -> Text(signed(new), style = MaterialTheme.typography.titleMediumEmphasized, color = if (new < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+            old != null -> Text(signed(old), style = MaterialTheme.typography.titleMediumEmphasized, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -237,16 +315,19 @@ private fun source(actor: String): String = when (actor) {
     else -> actor
 }
 
-/** What the event did to the entry, in weights and liveness, as the web prints it. */
-private fun change(event: ProfileEvent): String {
+/** What the event did, from its op and the states on either side. */
+private fun what(event: ProfileEvent): String {
     val before = event.before
     val after = event.after
-    val parts = mutableListOf<String>()
-    if (before == null && after?.weight != null) parts += signed(after.weight)
-    if (before?.weight != null && after?.weight != null && before.weight != after.weight) parts += "${signed(before.weight)} → ${signed(after.weight)}"
-    if (before?.live == true && after?.live == false) parts += "retired"
-    if (before?.live == false && after?.live == true) parts += "back"
-    return parts.joinToString(" · ")
+    val change = when {
+        before == null -> "Added"
+        before.live == true && after?.live == false -> "Dropped"
+        before.live == false && after?.live == true -> "Brought back"
+        before.weight != null && after?.weight != null && before.weight != after.weight -> "Reweighted"
+        before.text != null && after?.text != null && before.text != after.text -> "Reworded"
+        else -> event.op.replaceFirstChar { it.uppercase() }
+    }
+    return if (event.op == "revert") "$change (revert)" else change
 }
 
 /** This phone, yes or no; which verdicts count is the instance's threshold (companion.md §6). */
