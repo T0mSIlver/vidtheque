@@ -600,9 +600,38 @@ def test_0012_leaves_a_populated_corpus_untouched(fresh: sqlite3.Connection, tmp
         return {t: [tuple(r) for r in fresh.execute(f"SELECT * FROM {t} ORDER BY 1")] for t in tables}
 
     held = snapshot()
-    assert migrations.migrate(fresh) == [12]
+    assert migrations.migrate(fresh)[0] == 12
     assert snapshot() == held
     assert fresh.execute("PRAGMA foreign_key_check").fetchall() == []
     fresh.execute("INSERT INTO devices (token) VALUES ('fcm:abc')")
     with pytest.raises(sqlite3.IntegrityError):
         fresh.execute("INSERT INTO devices (token) VALUES ('fcm:abc')")
+
+
+def test_0013_adds_the_nightly_runs_and_leaves_the_profile_as_it_was(
+    fresh: sqlite3.Connection, tmp_path: Path
+) -> None:
+    _migrate_up_to(fresh, 12, tmp_path / "staged")
+    fresh.execute(
+        "INSERT INTO profile_entries (text, weight, source) VALUES ('Evals', 0.6, 'owner')"
+    )
+    fresh.execute(
+        "INSERT INTO profile_events (actor, op, entry_id, after) VALUES ('owner', 'add', 1, '{}')"
+    )
+    tables = ("profile_entries", "profile_events")
+
+    def snapshot() -> dict[str, list[tuple]]:
+        return {t: [tuple(r) for r in fresh.execute(f"SELECT * FROM {t} ORDER BY 1")] for t in tables}
+
+    held = snapshot()
+    assert migrations.migrate(fresh)[0] == 13
+    assert snapshot() == held
+    fresh.execute(
+        "INSERT INTO nightly_runs (day, state, started_at, since_at, until_at)"
+        " VALUES ('2026-10-03', 'running', 1, 0, 1)"
+    )
+    with pytest.raises(sqlite3.IntegrityError):  # one run per owner per day
+        fresh.execute(
+            "INSERT INTO nightly_runs (day, state, started_at, since_at, until_at)"
+            " VALUES ('2026-10-03', 'running', 2, 0, 2)"
+        )
