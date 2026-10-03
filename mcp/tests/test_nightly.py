@@ -16,7 +16,7 @@ import pytest
 from vidtheque_mcp.app import Assembled
 from vidtheque_mcp.llm import LLMUnavailable
 from vidtheque_mcp.profile import nightly as nightly_mod
-from vidtheque_mcp.profile import signals, store
+from vidtheque_mcp.profile import feedback, signals, store
 from vidtheque_mcp.profile.nightly import Nightly
 
 DAY = datetime(2026, 10, 3, 5, 0, tzinfo=timezone.utc)
@@ -256,3 +256,44 @@ async def test_the_tick_starts_the_run_only_from_the_configured_hour(assembled: 
     assert job._task is not None
     await asyncio.wait_for(job._task, 5)
     assert [r["state"] for r in await runs(assembled)] == ["done"]
+
+
+# ------------------------------------------------------- thumbs and mutes
+
+
+async def video(parts: Assembled) -> tuple[str, str]:
+    """A video the fixture's corpus holds: (public id, title)."""
+    row = await parts.db.read(lambda c: c.execute("SELECT public_id, title FROM videos ORDER BY id").fetchone())
+    return row[0], row[1]
+
+
+async def tap(parts: Assembled, video_id: str, state: str, at: datetime) -> None:
+    await parts.db.write(lambda c: feedback.set_state(c, video_id, state, now=int(at.timestamp())))
+
+
+async def test_a_thumb_taken_back_before_the_night_never_reaches_it(assembled: Assembled) -> None:
+    vid, _ = await video(assembled)
+    await tap(assembled, vid, "up", DAY - timedelta(hours=3))
+    await tap(assembled, vid, "none", DAY - timedelta(hours=2))
+    model = FakeModel()
+    assert (await nightly(assembled, model).run_once()).state == "idle"
+    assert model.prompts == []
+
+
+async def test_a_night_reads_each_state_once_and_then_its_taking_back(assembled: Assembled) -> None:
+    vid, title = await video(assembled)
+    await tap(assembled, vid, "down", DAY - timedelta(hours=3))
+    await tap(assembled, vid, "muted", DAY - timedelta(hours=2))
+    first = FakeModel(ops())
+    assert (await nightly(assembled, first).run_once()).state == "done"
+    assert f'mute\t"{title}"' in first.prompts[0]
+    assert "thumb_down" not in first.prompts[0]
+
+    await tap(assembled, vid, "none", DAY + timedelta(hours=12))
+    second = FakeModel(ops())
+    assert (await nightly(assembled, second, Clock(DAY + timedelta(days=1))).run_once()).state == "done"
+    assert f'took back mute\t"{title}"' in second.prompts[0]
+
+    third = FakeModel()
+    assert (await nightly(assembled, third, Clock(DAY + timedelta(days=2))).run_once()).state == "idle"
+    assert await assembled.db.read(lambda c: c.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]) == 0

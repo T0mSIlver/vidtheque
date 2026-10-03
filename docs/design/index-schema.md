@@ -1375,6 +1375,28 @@ price change never rewrites history, and NULL means unknown, never free.
 
 ---
 
+### 1.16 `feedback`
+
+Added by 0015 (companion.md §2.3). Thumbs and "less like this" as one state per
+video, so a second tap takes one back and the app shows what is stored.
+
+```sql
+CREATE TABLE feedback (
+  owner_id INTEGER NOT NULL DEFAULT 1 REFERENCES owners(id),
+  video_id INTEGER NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+  state    TEXT    NOT NULL CHECK (state IN ('none','up','down','muted')),
+  seen     TEXT    NOT NULL DEFAULT 'none'    -- the state the last nightly update read
+           CHECK (seen IN ('none','up','down','muted')),
+  at       INTEGER NOT NULL DEFAULT (unixepoch()),
+  PRIMARY KEY (owner_id, video_id)
+) STRICT;
+```
+
+Every write goes through `profile/feedback.py`. Setting a state also writes
+its event to `signals` (`thumb_up`, `thumb_down`, `mute`); taking it back
+writes none. A row is deleted once `state` and `seen` are both `none`. Taps
+from before 0015 stay events only; nothing is backfilled.
+
 ## 2. FTS5
 
 Three external-content tables: `cues_fts`, `ocr_frames_fts`, `videos_fts`. The

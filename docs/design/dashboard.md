@@ -3650,7 +3650,8 @@ written before migration 0014 has `[]`.
 ### 25.3 `GET /dashboard/api/verdicts/{video_id}`
 
 The video screen: `video` (the row fields above), `score`, `reason`,
-`explored`, `matches` (as in the feed), `summary`, `moments`, `moments_dropped`, `profile_rev` (the profile revision
+`explored`, `matches` (as in the feed), `feedback` (the video's thumb or
+mute: `up`, `down`, `muted` or `none`, §25.4), `summary`, `moments`, `moments_dropped`, `profile_rev` (the profile revision
 that scored it), `model` and `judged_at`. A moment is
 `{cue_id, offset_s, why, url}`, `url` being `https://youtu.be/<id>?t=<s>` with
 the tools' 2 s lead (`text.deeplink`). A moment whose cue a reindex removed is
@@ -3658,14 +3659,22 @@ left out and counted in `moments_dropped` until the rerun replaces the verdict.
 `404 E_UNKNOWN_VIDEO` for a video not in the corpus, `404 E_NO_VERDICT` for
 one not judged yet.
 
-### 25.4 `POST /dashboard/api/signals`
+### 25.4 `POST /dashboard/api/signals`, `POST /dashboard/api/feedback`
 
 `{"kind", "video_id", "offset_s"}`, recorded through `record_signal`
 (companion.md §2.3). `kind` is one of `open`, `watch`, `ask_claude`,
 `thumb_up`, `thumb_down`, `mute`, `dismiss`; the MCP kinds are refused.
 `offset_s` (seconds, 0–172,800) is required for `watch` and refused for every
 other kind. Answers `{"recorded": true, "signal_id", "kind", "video_id"}`;
-`404 E_UNKNOWN_VIDEO` records nothing.
+`404 E_UNKNOWN_VIDEO` records nothing. *Amended 2026-10-03 (0015):* `thumb_up`,
+`thumb_down` and `mute` here also set the video's feedback state, as below.
+
+`POST /dashboard/api/feedback` takes `{"video_id", "state"}`, `state` one of
+`up`, `down`, `muted` or `none`, and stores it as the video's one feedback
+state (companion.md §2.3); `none` takes back whatever was there. Setting a
+state records its event as a signal; `none` records none. Answers
+`{"video_id", "state"}`; `404 E_UNKNOWN_VIDEO` stores nothing, and any other
+`state` is `400 E_BAD_PARAM`.
 
 ### 25.5 `GET|POST /dashboard/api/profile`, `POST /dashboard/api/profile/revert`
 

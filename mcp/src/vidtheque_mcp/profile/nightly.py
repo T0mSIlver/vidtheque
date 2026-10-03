@@ -27,7 +27,7 @@ import httpx2 as httpx
 
 from ..config import ConfigError, _bool_env, _int_env
 from ..llm import LLMSettings, LLMUnavailable, Model, build_model, is_configured
-from . import store
+from . import feedback, store
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +81,9 @@ reason: one line naming the evidence, e.g. "4 searches on eval harnesses".
 Rules the server enforces: a weight moves by at most {MAX_MOVE} a night and a new
 entry starts within ±{MAX_MOVE}; entries marked owner are never
 dropped, only reweighted; the profile holds at most {store.MAX_LIVE} entries.
-Searches say what the person is working on; thumbs, mutes and asks are explicit;
-an open is a mild interest and a dismiss a mild disinterest. Prefer reweighting
+Searches say what the person is working on; thumbs, mutes and asks are explicit
+(a mute means "less like this"); "took back" undoes a thumb or mute an earlier
+update read. An open is a mild interest and a dismiss a mild disinterest. Prefer reweighting
 an entry to adding a near-duplicate."""
 
 
@@ -173,7 +174,7 @@ class Nightly:
         claim = await self.db.write(lambda c: claim_day(c, day, at, self.owner_id))
         if claim is None:
             return None
-        prompt, n_signals = await self.db.read(
+        prompt, n_signals, read = await self.db.read(
             lambda c: _prompt(c, claim.since_at, claim.until_at, self.owner_id)
         )
         if n_signals == 0:
@@ -192,6 +193,7 @@ class Nightly:
 
         def write(c: sqlite3.Connection) -> Outcome:
             outcome = apply_ops(c, answer["ops"], self.owner_id)
+            feedback.mark_read(c, read, self.owner_id)
             _finish(
                 c,
                 claim.run_id,
@@ -350,16 +352,23 @@ def _note(reason: str, capped: bool) -> str:
 
 def _prompt(
     conn: sqlite3.Connection, since: int, until: int, owner_id: int
-) -> tuple[str, int]:
+) -> tuple[str, int, list[tuple[int, str]]]:
+    """The night's prompt, how many things it reads, and the feedback rows it read.
+
+    Thumbs and mutes come from `feedback`, netted to each video's state since
+    the last night, not from their events in `signals`.
+    """
     signals = conn.execute(
         "SELECT s.at, s.kind, s.offset_s, s.text, s.video_id, v.title, v.channel_name"
         " FROM signals s LEFT JOIN videos v ON v.id = s.video_id"
         " WHERE s.owner_id = ? AND s.at > ? AND s.at <= ?"
+        " AND s.kind NOT IN ('thumb_up', 'thumb_down', 'mute')"
         " ORDER BY s.at DESC, s.id DESC LIMIT ?",
         (owner_id, since, until, MAX_SIGNALS),
     ).fetchall()
-    if not signals:
-        return "", 0
+    moved = feedback.unread(conn, until, owner_id, MAX_SIGNALS)
+    if not signals and not moved:
+        return "", 0, []
     entries = store.entries(conn, owner_id)
     profile = (
         "\n".join(
@@ -377,7 +386,14 @@ def _prompt(
                 f" at {float(s['offset_s']):.0f}s" if s["offset_s"] is not None else ""
             ) + (f" — {s['text']}" if s["text"] else "")
         lines.append(f"{s['kind']}\t{what}")
-    video_ids = list(dict.fromkeys(int(s["video_id"]) for s in signals if s["video_id"] is not None))
+    for f in moved:
+        lines.append(f"{_moved(f['state'], f['seen'])}\t\"{f['title']}\" ({f['channel_name'] or '?'})")
+    video_ids = list(
+        dict.fromkeys(
+            [int(s["video_id"]) for s in signals if s["video_id"] is not None]
+            + [int(f["video_id"]) for f in moved]
+        )
+    )
     verdicts = conn.execute(
         "SELECT v.title, d.score, d.reason, d.explored FROM verdicts d"
         " JOIN videos v ON v.id = d.video_id"
@@ -391,11 +407,21 @@ def _prompt(
     ) or "(none)"
     prompt = (
         f"Profile (id, weight, source, entry; {len(entries)} of {store.MAX_LIVE}):\n{profile}\n\n"
-        f"What they did since the last update ({len(signals)} signals, oldest first):\n"
+        f"What they did since the last update ({len(signals)} signals, oldest first;"
+        f" then {len(moved)} thumbs or mutes as they stand now):\n"
         + "\n".join(lines)
         + f"\n\nVerdicts on the videos above (score 0 skip … 3 watch whole):\n{judged}"
     )
-    return prompt, len(signals)
+    return prompt, len(signals) + len(moved), [(int(f["video_id"]), str(f["state"])) for f in moved]
+
+
+def _moved(state: str, seen: str) -> str:
+    """A video's feedback since the last night, as one line's kind."""
+    if state == "none":
+        return f"took back {feedback.KIND_OF[seen]}"
+    if seen == "none":
+        return feedback.KIND_OF[state]
+    return f"{feedback.KIND_OF[state]} (was {feedback.KIND_OF[seen]})"
 
 
 # ------------------------------------------------------------- assembly

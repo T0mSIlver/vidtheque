@@ -660,3 +660,24 @@ def test_0014_keeps_every_verdict_and_reads_them_with_no_matches(
     assert migrations.migrate(fresh)[0] == 14
     assert [tuple(r)[:-1] for r in fresh.execute("SELECT * FROM verdicts")] == held
     assert fresh.execute("SELECT matches FROM verdicts").fetchone()[0] == "[]"
+
+
+def test_0015_adds_feedback_and_leaves_the_signals_as_they_were(
+    fresh: sqlite3.Connection, tmp_path: Path
+) -> None:
+    _migrate_up_to(fresh, 14, tmp_path / "staged")
+    vid = fresh.execute(
+        "INSERT INTO videos (source_id, url, title, duration_s, index_state)"
+        " VALUES ('kCc8FmEb1nY', 'https://youtu.be/kCc8FmEb1nY', 'GPT from scratch', 7000, 'ready')"
+    ).lastrowid
+    fresh.execute("INSERT INTO signals (kind, video_id) VALUES ('thumb_up', ?)", (vid,))
+    held = [tuple(r) for r in fresh.execute("SELECT * FROM signals")]
+    assert migrations.migrate(fresh)[0] == 15
+    assert [tuple(r) for r in fresh.execute("SELECT * FROM signals")] == held
+    # Earlier taps stay events only: nothing is backfilled into a state.
+    assert fresh.execute("SELECT COUNT(*) FROM feedback").fetchone()[0] == 0
+    fresh.execute("INSERT INTO feedback (video_id, state) VALUES (?, 'up')", (vid,))
+    with pytest.raises(sqlite3.IntegrityError):
+        fresh.execute("INSERT INTO feedback (video_id, state) VALUES (?, 'down')", (vid,))
+    with pytest.raises(sqlite3.IntegrityError):
+        fresh.execute("UPDATE feedback SET state = 'thumb_up'")

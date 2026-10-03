@@ -1,7 +1,7 @@
 """The feed's endpoints — companion.md §6, contract in dashboard.md §25.
 
-`feed`, `verdicts/{video_id}`, `signals`, `profile`, `profile/revert` and
-`devices`, for the web feed (#90) and the Android app (#91). They are owner
+`feed`, `verdicts/{video_id}`, `signals`, `feedback`, `profile`,
+`profile/revert` and `devices`, for the web feed (#90) and the Android app (#91). They are owner
 routes: registered with the write side, so a read-only projection and
 `VIDTHEQUE_AUTH=none` 404 them, reads behind the read gate and writes behind
 `require_write`.
@@ -24,6 +24,7 @@ from starlette.responses import JSONResponse, Response
 
 from ..auth.credential import credential
 from ..errors import HTTP_STATUS
+from ..profile import feedback as feedback_store
 from ..profile import signals as signals_store
 from ..profile import store as profile_store
 from ..text import clamp, deeplink
@@ -289,6 +290,7 @@ async def verdict(request: Request) -> Response:
             "reason": row["reason"],
             "explored": bool(row["explored"]),
             "matches": verdicts_store.matches_json(conn, [row])[0],
+            "feedback": feedback_store.state_of(conn, int(video["id"]), OWNER_ID),
             "summary": row["summary"],
             "moments": [
                 {
@@ -346,14 +348,51 @@ async def signal(request: Request) -> Response:
         return _from(refused)
 
     client = "app" if await _actor(request) == "app" else "web"
-    signal_id = await request.app.state.assembled.db.write(
-        lambda conn: signals_store.record_signal(
+
+    def write(conn: sqlite3.Connection) -> int | None:
+        # A thumb or mute sent here sets the video's state, as `feedback` does.
+        if kind in feedback_store.STATE_OF:
+            return feedback_store.set_state(
+                conn, video_id, feedback_store.STATE_OF[kind], client=client, owner_id=OWNER_ID
+            )
+        return signals_store.record_signal(
             conn, kind, video_id=video_id, offset_s=offset_s, client=client, owner_id=OWNER_ID
         )
-    )
+
+    signal_id = await request.app.state.assembled.db.write(write)
     if signal_id is None:
         return _from(_unknown_video(video_id))
     return _json({"recorded": True, "signal_id": signal_id, "kind": kind, "video_id": video_id})
+
+
+async def feedback(request: Request) -> Response:
+    """`POST /dashboard/api/feedback` — set or take back a video's thumb or mute."""
+    refusal = await require_write(request)
+    if refusal is not None:
+        return refusal
+    try:
+        body = await _body(request)
+        _only(body, ("video_id", "state"))
+        video_id = body.get("video_id")
+        if not isinstance(video_id, str) or not 0 < len(video_id) <= VIDEO_ID_CHARS:
+            raise _Refused("E_BAD_PARAM", "video_id is required.", "pass the video_id the feed listed.")
+        state = body.get("state")
+        if state not in feedback_store.STATES:
+            raise _Refused(
+                "E_BAD_PARAM",
+                f"state={state!r} is not a feedback state.",
+                f"use one of {', '.join(feedback_store.STATES)}.",
+            )
+    except _Refused as refused:
+        return _from(refused)
+
+    client = "app" if await _actor(request) == "app" else "web"
+    done = await request.app.state.assembled.db.write(
+        lambda conn: feedback_store.set_state(conn, video_id, state, client=client, owner_id=OWNER_ID)
+    )
+    if done is None:
+        return _from(_unknown_video(video_id))
+    return _json({"video_id": video_id, "state": state})
 
 
 # ------------------------------------------------------------------ profile

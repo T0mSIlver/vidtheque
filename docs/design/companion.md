@@ -92,6 +92,16 @@ One table, `signals(id, at, kind, video_id, offset_s, text, client)`:
 | `open`, `watch` (with the moment's offset) | the app | medium |
 | `dismiss` | the app, a notification swiped away unopened | weak negative |
 
+*Amended 2026-10-03 (Tom: "why only 5 seconds?"):* thumbs up, thumbs down and
+mute ("less like this" in the app) are a **state per video**, not only
+events: one of `up`, `down`, `muted` or `none`, in `feedback` (index-schema
+§1.16). A tap sets it and a second tap takes it back, at any time; the app
+shows the stored state. Each set still writes its event to `signals`, the
+log, but the nightly update does not read those events: it reads the videos
+whose state moved since it last read them, as they stand now, so a tap taken
+back before the night never reaches the profile and one taken back after it
+reads as "took back".
+
 The MCP signals are logged in the tool layer (`tools/base.py`), for every
 client, owner-scoped. A client can opt out per session with a header
 (`X-Vidtheque-Signals: off`). The triage agent's own calls are never signals.
@@ -360,7 +370,7 @@ unregistered is deleted from `devices`.
 **Endpoints**: under the existing owner-only `/dashboard/api/*`, behind the
 existing credential order (bearer or session) and write guard, so no new
 prefix and no new guard: `feed`, `verdicts/{video_id}`, `signals` (POST),
-`profile` (GET, POST ops, POST revert), `devices` (POST, DELETE).
+`feedback` (POST, 0015), `profile` (GET, POST ops, POST revert), `devices` (POST, DELETE).
 `dashboard.md` gets their contract.
 
 ## 7. The console overhaul

@@ -116,6 +116,7 @@ def _rows(tmp_path: Path, sql: str) -> list[tuple]:
 GETS = (f"{API}/feed", f"{API}/verdicts/kCc8FmEb1nY", f"{API}/profile", f"{API}/costs")
 WRITES = (
     ("POST", f"{API}/signals"),
+    ("POST", f"{API}/feedback"),
     ("POST", f"{API}/profile"),
     ("POST", f"{API}/profile/revert"),
     ("POST", f"{API}/devices"),
@@ -232,6 +233,49 @@ def test_signals_record_with_the_callers_client(client: TestClient, tmp_path: Pa
         ("watch", 842.5, "app"),
         ("thumb_up", None, "web"),
     ]
+
+
+def test_feedback_is_a_state_the_verdict_shows_and_a_second_call_takes_back(
+    client: TestClient, tmp_path: Path
+) -> None:
+    def shown() -> str:
+        return client.get(f"{API}/verdicts/kCc8FmEb1nY", headers=BEARER).json()["feedback"]
+
+    assert shown() == "none"
+    for state in ("up", "muted", "none"):
+        done = client.post(f"{API}/feedback", json={"video_id": "kCc8FmEb1nY", "state": state}, headers=BEARER)
+        assert done.status_code == 200, done.text
+        assert done.json() == {"video_id": "kCc8FmEb1nY", "state": state}
+        assert shown() == state
+    # Each set is an event; taking back writes none, and a row never read is gone.
+    assert _rows(tmp_path, "SELECT kind, client FROM signals ORDER BY id") == [
+        ("thumb_up", "app"),
+        ("mute", "app"),
+    ]
+    assert _rows(tmp_path, "SELECT COUNT(*) FROM feedback") == [(0,)]
+
+
+def test_a_thumb_through_signals_sets_the_state_too(client: TestClient) -> None:
+    client.post(f"{API}/signals", json={"kind": "thumb_down", "video_id": "kCc8FmEb1nY"}, headers=BEARER)
+    assert client.get(f"{API}/verdicts/kCc8FmEb1nY", headers=BEARER).json()["feedback"] == "down"
+
+
+@pytest.mark.parametrize(
+    "body,status",
+    [
+        ({"video_id": "kCc8FmEb1nY", "state": "thumb_up"}, 400),
+        ({"video_id": "kCc8FmEb1nY", "state": None}, 400),
+        ({"video_id": "kCc8FmEb1nY"}, 400),
+        ({"state": "up"}, 400),
+        ({"video_id": "kCc8FmEb1nY", "state": "up", "kind": "x"}, 400),
+        ({"video_id": "nope0000000", "state": "up"}, 404),
+    ],
+)
+def test_feedback_refuses_a_malformed_body(
+    client: TestClient, tmp_path: Path, body: dict, status: int
+) -> None:
+    assert client.post(f"{API}/feedback", json=body, headers=BEARER).status_code == status
+    assert _rows(tmp_path, "SELECT COUNT(*) FROM feedback") == [(0,)]
 
 
 @pytest.mark.parametrize(
