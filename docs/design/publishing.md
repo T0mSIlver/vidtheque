@@ -243,6 +243,27 @@ image's inputs never match the previous release, and a retagged image would
 report the old version at `/healthz`. The web image keeps its `type=gha`
 cache, which fits under the 10 GB cap.
 
+*Amended 2026-10-03, at Tom's request: retag returns, with the version string
+taken out of the comparison (issue #48).* On a `v*` tag, each build workflow's
+`plan` job runs `scripts/release_plan.sh <image> <tag>` against the nearest
+earlier release tag. It builds unless every file that differs in the image's
+inputs (`worker/` or `mcp/` or `web/`, `.python-version`,
+`scripts/image_inputs.sh`, the image's workflow) differs only by the quoted
+version string, and, for the Python images, the base tag
+(`image_inputs.sh --tag`) is the same at both tags. `uv.lock` and the root
+`pyproject.toml` reach a Python image only through that base tag. Otherwise the
+`retag` job points the new tags at the previous release's manifest with
+`docker buildx imagetools create`, in seconds, and the box's pull of it moves
+no bytes. A previous image missing from the registry, a component tag, or any
+doubt is a build.
+
+The cost is the one named above: a retagged worker or mcp image reports the
+version that last built it at `/healthz` and `/status`, so a `0.0.21` stack can
+run a worker that says `0.0.20`. Nothing compares the versions across
+services. The web image's own version is fixed and the stack's comes from mcp,
+so a retagged web image is exact. Over `v0.0.14`–`v0.0.20` the planner would
+have retagged the worker in five releases of seven, mcp in two and web in three.
+
 Dropping the CUDA base image (its libraries largely duplicate the NVIDIA
 wheels) would cut about a quarter of the worker. It needs a GPU validation run
 of whisperX's ctranslate2 on Tom's box and is deferred until after the Paris

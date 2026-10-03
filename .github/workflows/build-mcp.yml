@@ -8,6 +8,7 @@ on:
       - "pyproject.toml"
       - "uv.lock"
       - ".python-version"
+      - "scripts/release_plan.sh"
       - ".github/workflows/build-mcp.yml"
   # No `paths` filter on tags; see the note in build-worker.yml.
   push:
@@ -25,7 +26,94 @@ env:
   BASE_IMAGE: ghcr.io/t0msilver/vidtheque-mcp-base
 
 jobs:
+  # A release whose inputs to this image did not change since the previous
+  # release retags that release's image instead of building (publishing.md §4).
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+      prev: ${{ steps.plan.outputs.prev }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # image_inputs.sh hashes `uv export`; the same uv as the base job.
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.24"
+
+      - name: Log in to GHCR
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build or retag
+        id: plan
+        run: |
+          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
+            # Not a release: build, and exercise the planner against the last release.
+            scripts/release_plan.sh mcp "$(git describe --tags --abbrev=0 --match 'v[0-9]*')"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          scripts/release_plan.sh mcp "$GITHUB_REF_NAME" | tee plan.txt
+          # A retag needs the previous image; a release that never published one builds.
+          if grep -qx 'build=false' plan.txt; then
+            prev=$(sed -n 's/^prev=//p' plan.txt)
+            docker buildx imagetools inspect "$IMAGE:$prev" >/dev/null 2>&1 \
+              || { echo "$IMAGE:$prev is not in the registry, building"; sed -i 's/^build=false$/build=true/' plan.txt; }
+          fi
+          cat plan.txt >> "$GITHUB_OUTPUT"
+
+  retag:
+    needs: plan
+    if: needs.plan.outputs.build == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+
+      # Registry-side: the new tags point at the previous release's manifest
+      # list, so the box's pull of an unchanged image moves no bytes.
+      - name: Retag the previous release
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          PREV: ${{ needs.plan.outputs.prev }}
+        run: |
+          args=()
+          while IFS= read -r t; do [[ -n "$t" ]] && args+=(-t "$t"); done <<< "$TAGS"
+          docker buildx imagetools create "${args[@]}" "$IMAGE:$PREV"
+          docker buildx imagetools inspect "$IMAGE:${GITHUB_REF_NAME#v}"
+
   base:
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -86,7 +174,7 @@ jobs:
   image:
     # A pull request builds it too, without pushing, when its base is already in the registry.
     if: startsWith(github.ref, 'refs/tags/') || needs.base.outputs.exists == 'true'
-    needs: base
+    needs: [plan, base]
     runs-on: ubuntu-latest
     permissions:
       contents: read
