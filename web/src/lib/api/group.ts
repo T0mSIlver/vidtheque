@@ -9,7 +9,7 @@ export { badges };
 export interface VideoGroup {
   video_id: string;
   title: string;
-  channel: string;
+  channel: string | null;
   /** The first frame any hit in the group has. */
   thumb: string | null;
   hits: Hit[];
