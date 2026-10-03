@@ -1060,12 +1060,19 @@ give way to Material's: radius (Expressive shapes), motion (the expressive
 motion scheme's springs), the type ladder (Material's type scale in Roboto
 Flex) and the Two-Channel Rule (**no JetBrains Mono anywhere in the app**).
 
-What carries over: dark only; gold `#E7B455` as primary, on a tonal scheme
-seeded from it (`ui/theme/Theme.kt`); the wordmark in Archivo 500 with its
+What carries over: gold `#E7B455` as primary, on a tonal scheme seeded from
+it (`ui/theme/Theme.kt`); the wordmark in Archivo 500 with its
 gold full stop; the Word-and-Colour Rule (a score always prints its word);
 the Lime Rule. A dial (Material's circular progress indicator) shows a value
 the reader acts on, the verdict score and a profile weight, and appears
 nowhere as decoration.
+
+*Amended 2026-10-03 (Tom's first use):* the app follows the phone's light or
+dark mode instead of being dark only, since the colours Tom asked for (green and
+red profile matches) have to read in both. The light scheme takes the same
+palettes at Material's light tones, so gold drops to tone 40 as primary. The
+match colours are the one addition to Material's roles: a green tonal pair for
+"more of this" and the scheme's error container for "less of this".
 
 ## Fonts — one canonical location
 
