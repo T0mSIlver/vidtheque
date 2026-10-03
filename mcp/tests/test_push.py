@@ -27,6 +27,8 @@ class FakeSender:
 
     async def send(self, device_token: str, data: dict[str, str]) -> Delivery:
         self.sent.append((device_token, data))
+        if device_token == "flaky:phone":
+            raise httpx.ConnectError("connection reset")
         return self.outcomes[device_token]
 
 
@@ -50,21 +52,24 @@ async def devices(parts: Assembled, *tokens: str) -> None:
 
 async def test_a_fresh_score_3_reaches_every_phone_once_and_forgets_a_dead_token(assembled: Assembled) -> None:
     vid = await video_id(assembled.db, "kCc8FmEb1nY")
-    await devices(assembled, "live:phone", "dead:phone")
+    # The flaky phone is tried first: its network error must not stop the others.
+    await devices(assembled, "live:phone", "dead:phone", "flaky:phone")
+    await assembled.db.write(lambda c: c.execute("UPDATE devices SET last_seen = last_seen + 10 WHERE token = 'flaky:phone'"))
     sender = FakeSender({"live:phone": Delivery.SENT, "dead:phone": Delivery.GONE})
 
     await judge(assembled, vid, 3, sender)
 
-    assert sorted(t for t, _ in sender.sent) == ["dead:phone", "live:phone"]
+    assert sender.sent[0][0] == "flaky:phone"
+    assert sorted(t for t, _ in sender.sent) == ["dead:phone", "flaky:phone", "live:phone"]
     data = sender.sent[0][1]
     assert (data["score"], data["reason"], data["moment_why"]) == ("3", "evals ↑", "his eval setup")
     assert data["moment_url"].startswith("https://youtu.be/kCc8FmEb1nY?t=")
-    assert [r["token"] for r in await rows(assembled.db, "SELECT token FROM devices")] == ["live:phone"]
+    assert sorted(r["token"] for r in await rows(assembled.db, "SELECT token FROM devices")) == ["flaky:phone", "live:phone"]
     assert (await assembled.db.read(lambda c: store.get(c, vid)))["notified_at"] is not None
 
     # A rerun of the same verdict does not buzz again.
     await judge(assembled, vid, 3, sender)
-    assert len(sender.sent) == 2
+    assert len(sender.sent) == 3
 
 
 @pytest.mark.parametrize(("score", "days_ago"), [(2, 0), (3, 10)])
