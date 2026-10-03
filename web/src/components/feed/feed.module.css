@@ -585,8 +585,10 @@
   list-style: none;
 }
 
+/* Sentence case like the app's chips: an entry is your words, not a label. */
 .match {
-  composes: t-label from global;
+  font-size: 13px;
+  line-height: 1.3;
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -668,8 +670,8 @@
   padding: 0 var(--s4);
 }
 
-.entry {
-  composes: t-label from global;
+.entryChip {
+  font-size: 13px;
   display: inline-flex;
   align-items: center;
   gap: var(--s1);
@@ -682,19 +684,19 @@
   cursor: pointer;
 }
 
-.entry[data-direction="up"] > span:first-child {
+.entryChip[data-direction="up"] > span:first-child {
   color: var(--tone-ok);
 }
 
-.entry[data-direction="down"] > span:first-child {
+.entryChip[data-direction="down"] > span:first-child {
   color: var(--tone-bad);
 }
 
-.entry:hover {
+.entryChip:hover {
   color: var(--fg);
 }
 
-.entry[aria-pressed="true"] {
+.entryChip[aria-pressed="true"] {
   color: var(--gold);
   border-color: var(--gold-44);
   background: var(--plate3);
