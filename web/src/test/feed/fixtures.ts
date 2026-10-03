@@ -16,6 +16,10 @@ export const TOP = {
       score: 3,
       reason: "evals ↑",
       explored: false,
+      matches: [
+        { entry_id: 15, text: "Evals for coding agents", direction: "up", strength: 2 },
+        { entry_id: 36, text: "Launch hype", direction: "down", strength: 1 },
+      ],
       judged_at: now - 10,
     },
     {
@@ -63,6 +67,7 @@ export const VERDICT = {
   score: 3,
   reason: "evals ↑",
   explored: false,
+  matches: [{ entry_id: 15, text: "Evals for coding agents", direction: "up", strength: 2 }],
   summary: "Builds a character-level transformer from an empty file.",
   moments: [
     {
@@ -116,4 +121,15 @@ export const PROFILE = {
     has_more: false,
     next_before: null,
   },
+};
+
+export const FACETS = {
+  band: "top",
+  channels: [{ name: "Andrej Karpathy", count: 2 }],
+  entries: [
+    { entry_id: 15, text: "Evals for coding agents", direction: "up", count: 1 },
+    { entry_id: 36, text: "Launch hype", direction: "down", count: 1 },
+  ],
+  other: 1,
+  capped: false,
 };

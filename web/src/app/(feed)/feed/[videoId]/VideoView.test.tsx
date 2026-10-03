@@ -40,6 +40,9 @@ describe("VideoView", () => {
     expect(moment).toHaveAttribute("href", "https://youtu.be/kCc8FmEb1nY?t=840");
     expect(screen.getByText("14:02")).toBeInTheDocument();
     expect(screen.getByText(/1 moment is left out/)).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Strongly matches an interest: Evals for coding agents"),
+    ).toBeInTheDocument();
     await waitFor(() => expect(signals(view)).toEqual([{ kind: "open", video_id: "kCc8FmEb1nY" }]));
 
     await userEvent.click(moment);

@@ -14,19 +14,39 @@ export const FeedVideo = z.object({
 });
 export type FeedVideo = z.infer<typeof FeedVideo>;
 
+/** A profile entry the verdict hit: `up` an entry you want more of, `down` one
+ *  you want less of; strength 2 central to the video, 1 coming up (§25.2). */
+export const Match = z.object({
+  entry_id: count(),
+  text: z.string(),
+  direction: z.enum(["up", "down"]),
+  strength: z.number().int().min(1).max(2),
+});
+export type Match = z.infer<typeof Match>;
+
 export const FeedItem = FeedVideo.extend({
   /** 0 skip, 1 the summary is enough, 2 watch the moments, 3 watch it whole. */
   score: count(),
   reason: z.string(),
   /** Scored 2+ only once rescored without the negative entries. */
   explored: z.boolean().optional().default(false),
+  matches: z.array(Match).optional().default([]),
   judged_at: epoch(),
 });
 export type FeedItem = z.infer<typeof FeedItem>;
 
+export const FeedOrder = z.enum(["newest", "oldest"]);
+export type FeedOrder = z.infer<typeof FeedOrder>;
+
 export const Feed = z.object({
   band: z.enum(["top", "skipped"]),
   order: z.string(),
+  q: z.string().nullable().optional(),
+  channel: z.string().nullable().optional(),
+  entry: z
+    .union([count(), z.literal("other")])
+    .nullable()
+    .optional(),
   items: z.array(FeedItem),
   pagination: z.object({
     limit: count(),
@@ -37,6 +57,23 @@ export const Feed = z.object({
   skipped: z.object({ count: count(), capped: z.boolean() }),
 });
 export type Feed = z.infer<typeof Feed>;
+
+/** What the feed's channel and entry filters offer for one band (§25.2). */
+export const FeedFacets = z.object({
+  band: z.enum(["top", "skipped"]),
+  channels: z.array(z.object({ name: z.string(), count: count() })),
+  entries: z.array(
+    z.object({
+      entry_id: count(),
+      text: z.string(),
+      direction: z.enum(["up", "down"]),
+      count: count(),
+    }),
+  ),
+  other: count(),
+  capped: z.boolean(),
+});
+export type FeedFacets = z.infer<typeof FeedFacets>;
 
 export const Moment = z.object({
   cue_id: count(),
@@ -55,6 +92,7 @@ export const Verdict = z.object({
   score: count(),
   reason: z.string(),
   explored: z.boolean().optional().default(false),
+  matches: z.array(Match).optional().default([]),
   feedback: FeedbackState.optional().default("none"),
   summary: z.string(),
   moments: z.array(Moment),
