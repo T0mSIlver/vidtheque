@@ -2200,8 +2200,8 @@ configuration (§1 non-goal 4).
   whether that backend is loaded or cold. An unset worker URL says
   `unconfigured`; a timeout, transport failure, non-2xx response or malformed
   status says `unavailable`. None of those failures prevents the overview from
-  rendering. `last health check` is the UTC minute at which this observation (*minute since 2026-10-03*, §24.6)
-  completed, not a stored heartbeat.
+  rendering. `last health check` is the UTC minute at which this observation
+  completed (the second until 2026-10-03, §24.6), not a stored heartbeat.
 - The §2.4 projection applies per field. It keeps **MCP ready** and **database
   ready** because successfully reading the page already reveals both; keeps the
   **vector-search state** because it changes what a visitor should believe about
