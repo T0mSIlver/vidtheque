@@ -130,6 +130,8 @@ class Api @Inject constructor(@Named("api") private val http: OkHttpClient, priv
 
     suspend fun verdict(videoId: String): Verdict = json.decodeFromString(get("$root/verdicts/$videoId"))
 
+    suspend fun costs(): Costs = json.decodeFromString(get("$root/costs"))
+
     suspend fun profile(before: Long? = null): Profile =
         json.decodeFromString(get("$root/profile" + (before?.let { "?before=$it" } ?: "")))
 
