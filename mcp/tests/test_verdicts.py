@@ -20,12 +20,8 @@ from vidtheque_mcp.llm import LLMUnavailable
 from vidtheque_mcp.profile import store as profile_store
 from vidtheque_mcp.verdicts import store
 from vidtheque_mcp.verdicts.stage import (
-    REASON_WORDS,
-    SUMMARY_WORDS,
-    WHY_WORDS,
     VerdictStage,
     build_verdicts,
-    clip_words,
     middle_lines,
 )
 
@@ -178,34 +174,6 @@ async def test_matches_keep_only_live_entries_and_take_their_direction_from_the_
         {"entry_id": ids["Launch hype"], "direction": "down", "strength": 1},
     ]
     assert f"[{ids['Evals']}] +0.9  Evals" in model.prompts[0]
-
-
-async def test_long_answers_are_clipped_whatever_the_prompt_asked(assembled: Assembled) -> None:
-    db = assembled.db
-    vid = await video_id(db, "kCc8FmEb1nY")
-    cue = (await rows(db, "SELECT id, start_s FROM cues WHERE video_id = ? ORDER BY seq", (vid,)))[0]
-    answer = verdict({"cue_id": cue["id"], "offset_s": float(cue["start_s"]), "why": "word " * 40})
-    answer["summary"] = "One claim here. " * 30
-    answer["reason"] = "because " * 40
-    await run_verdict(assembled, vid, FakeModel(answer))
-    row = await db.read(lambda c: store.get(c, vid))
-    assert len(row["summary"].split()) <= SUMMARY_WORDS and row["summary"].endswith(".")
-    assert len(row["reason"].split()) <= REASON_WORDS and row["reason"].endswith("…")
-    [moment] = store.moments_of(row)
-    assert len(moment.why.split()) <= WHY_WORDS
-
-
-@pytest.mark.parametrize(
-    "text,expected",
-    [
-        ("Short and whole.", "Short and whole."),
-        ("One two three. Four five six seven", "One two three."),
-        ("One. Two three four five six", "One. Two three four…"),
-        ("one two three, four five", "one two three, four…"),
-    ],
-)
-def test_clip_words_prefers_a_sentence_end(text: str, expected: str) -> None:
-    assert clip_words(text, 4) == expected
 
 
 # ------------------------------------------------------------------ novelty

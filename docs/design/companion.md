@@ -144,10 +144,10 @@ One per video, written after indexing. Table
   `{entry_id, direction, strength}`. `direction` is `up` or `down`, from the
   entry's weight sign; `strength` 2 means the entry is central to the video,
   1 that it comes up. The apps show them as chips, green up, red down.
-- **summary**: a digest of at most about 60 words: names, numbers, claims and
+- **summary**: a digest of at most 60 words: names, numbers, claims and
   techniques, led by what matters given the profile.
 - **moments**: up to three, each `{cue_id, offset_s, why}`, `why` at most
-  about 12 words.
+  12 words.
 
 **Receipts, always:** every moment is checked against `cues` before the
 verdict is stored. A moment whose cue does not exist, or whose offset is not
@@ -203,9 +203,11 @@ As built (0014), the digest: Tom's first read of the 0010 verdicts (2026-10-03)
 found the summaries long and generic, and the reason, a comma-separated run of
 entries with arrows, hard to skim. The prompt now carries the writing rules
 (no "the speaker discusses", no hedging, no closing sentence, concrete nouns)
-and word targets; the stage clips whatever comes back to 70 words for the
-summary, 14 for a moment's `why` and 20 for the reason, at a sentence end when
-one keeps at least half. The profile goes into the prompt with its entry ids;
+and states the word limits plainly ("never more than 60 words"); the model
+is trusted to keep them, since cutting text mid-thought confused more than a
+long summary did. The only server-side bound is the schema's character cap
+(summary 2,000, reason and `why` 300), there for runaway output; an answer
+past it fails as invalid. The profile goes into the prompt with its entry ids;
 the model names matches by id and strength only. An id that is not a live
 entry, or an entry of weight 0, is dropped, and the stage sets `direction`.
 Verdicts written before 0014 have no matches until rescored.
