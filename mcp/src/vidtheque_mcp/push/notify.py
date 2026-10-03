@@ -19,6 +19,7 @@ import httpx2 as httpx
 
 from ..config import ConfigError, _env, _int_env
 from ..db import Database
+from ..text import deeplink
 from ..verdicts import store
 from .fcm import Delivery, FcmSender, ServiceAccount
 
@@ -113,4 +114,6 @@ class Notifier:
         if best is not None:
             data["moment_s"] = str(int(best.offset_s))
             data["moment_why"] = best.why[:REASON_CHARS]
+            # The link the feed serves (§25.3), so the app builds no URL of its own.
+            data["moment_url"] = deeplink(str(row["public_id"]), best.offset_s) or ""
         return data, tokens
