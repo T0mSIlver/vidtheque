@@ -450,3 +450,35 @@ def test_unfollowing_orphans_the_spend_rather_than_deleting_it(
     assert fresh.execute("SELECT COUNT(*) FROM follow_seen").fetchone()[0] == 0
     row = fresh.execute("SELECT collection_id, duration_s FROM follow_spend").fetchone()
     assert (row[0], row[1]) == (None, 3600.0)
+
+
+def test_0009_leaves_a_populated_corpus_untouched(fresh: sqlite3.Connection, tmp_path: Path) -> None:
+    """The profile migration is additive: rows already in videos/cues come through as they were."""
+    before_0009 = tmp_path / "m"
+    before_0009.mkdir()
+    for path in sorted(migrations.MIGRATIONS_DIR.glob("*.sql")):
+        if int(path.name[:4]) < 9:
+            (before_0009 / path.name).write_text(path.read_text(encoding="utf-8"))
+    migrations.migrate(fresh, before_0009)
+    assert migrations.current_version(fresh) == 8
+
+    vid = fresh.execute(
+        "INSERT INTO videos (source_id, url, title, duration_s, index_state)"
+        " VALUES ('kCc8FmEb1nY', 'https://youtu.be/kCc8FmEb1nY', 'GPT from scratch', 7000, 'ready')"
+    ).lastrowid
+    for seq in range(3):
+        fresh.execute(
+            "INSERT INTO cues (video_id, seq, start_s, end_s, text) VALUES (?, ?, ?, ?, ?)",
+            (vid, seq, seq * 4.0, seq * 4.0 + 3.5, f"cue {seq}"),
+        )
+
+    def snapshot() -> tuple[list[tuple], list[tuple]]:
+        return (
+            [tuple(r) for r in fresh.execute("SELECT * FROM videos ORDER BY id")],
+            [tuple(r) for r in fresh.execute("SELECT * FROM cues ORDER BY id")],
+        )
+
+    held = snapshot()
+    assert migrations.migrate(fresh) == [9]
+    assert snapshot() == held
+    assert fresh.execute("PRAGMA foreign_key_check").fetchall() == []

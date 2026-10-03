@@ -61,6 +61,10 @@ Tables (one new migration; `index-schema.md` gets the entries):
   `add`, `drop`, `reweight` or `revert`. The latest event id is the profile's
   revision, which every verdict records.
 
+  `source` is the actor that created the entry; the evidence shown beside it
+  ("4 asks this week") is its `add` event's `reason`. "Entries the owner
+  wrote" (§2.4) means `source` `owner` or `app`.
+
 ### 2.2 Who writes it
 
 - **Any agent, through one MCP tool, `profile`.** Called bare it returns the
@@ -92,6 +96,7 @@ The MCP signals are logged in the tool layer (`tools/base.py`), for every
 client, owner-scoped. A client can opt out per session with a header
 (`X-Vidtheque-Signals: off`). The triage agent's own calls are never signals.
 Signals older than 180 days are deleted.
+`signals` also carries `owner_id`, like every other owned table.
 
 ### 2.4 The nightly update
 
