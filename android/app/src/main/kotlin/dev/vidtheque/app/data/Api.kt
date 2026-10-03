@@ -2,6 +2,7 @@ package dev.vidtheque.app.data
 
 import dev.vidtheque.app.auth.Instance
 import java.io.IOException
+import java.net.URLEncoder
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
@@ -117,11 +118,43 @@ data class Profile(
     val history: History,
 )
 
+/** One hit of `GET /dashboard/api/search`, the MCP `search` tool's (dashboard.md §25.9). */
+@Serializable
+data class SearchHit(
+    @SerialName("video_id") val videoId: String,
+    val title: String = "",
+    val channel: String = "",
+    val source: String = "",
+    val start: Double = 0.0,
+    /** The second that matched, inside the segment; `link` points there. */
+    @SerialName("match_start") val matchStart: Double? = null,
+    /** `null` on a frame that matched on imagery alone. */
+    val text: String? = null,
+    val link: String = "",
+    @SerialName("published_at") val publishedAt: Long? = null,
+)
+
+@Serializable
+data class SearchPagination(val limit: Int, val offset: Int, @SerialName("has_more") val hasMore: Boolean)
+
+@Serializable
+data class SearchPage(
+    val results: List<SearchHit> = emptyList(),
+    val pagination: SearchPagination,
+    val notes: List<String> = emptyList(),
+    /** Set on an empty page only: "nothing is indexed" rather than "nothing matched". */
+    @SerialName("data_status") val dataStatus: String? = null,
+)
+
+/** What `E_NO_VERDICT` names beside its envelope (dashboard.md §25.3). */
+@Serializable
+data class NoVerdict(val video: VideoRow)
+
 @Serializable
 data class Refusal(val error: String, val message: String)
 
-/** The server said no, in its `{error, message, next}` envelope; [message] is fit to show. */
-class ApiException(val error: String, message: String) : Exception(message)
+/** The server said no, in its `{error, message, next}` envelope; [message] is fit to show, [body] is the whole answer. */
+class ApiException(val error: String, message: String, val body: String = "") : Exception(message)
 
 @Singleton
 class Api @Inject constructor(@Named("api") private val http: OkHttpClient, private val instance: Instance) {
@@ -131,6 +164,22 @@ class Api @Inject constructor(@Named("api") private val http: OkHttpClient, priv
     suspend fun feed(band: String, offset: Int): FeedPage = json.decodeFromString(get("$root/feed?band=$band&offset=$offset&limit=20"))
 
     suspend fun verdict(videoId: String): Verdict = json.decodeFromString(get("$root/verdicts/$videoId"))
+
+    /** Every channel, no filter: the search the MCP tool runs, relevance first. */
+    suspend fun search(query: String, offset: Int): SearchPage =
+        json.decodeFromString(get("$root/search?q=${URLEncoder.encode(query, "UTF-8")}&offset=$offset"))
+
+    /** A query submitted on the search screen, as the tool logs one (companion.md §2.3). */
+    suspend fun searched(query: String) {
+        post("$root/signals", buildJsonObject {
+            put("kind", "mcp_search")
+            put("text", query)
+        })
+    }
+
+    /** The video an `E_NO_VERDICT` refusal names, or null. */
+    fun unjudged(e: ApiException): VideoRow? =
+        if (e.error != "E_NO_VERDICT") null else runCatching { json.decodeFromString<NoVerdict>(e.body).video }.getOrNull()
 
     suspend fun costs(): Costs = json.decodeFromString(get("$root/costs"))
 
@@ -185,7 +234,7 @@ class Api @Inject constructor(@Named("api") private val http: OkHttpClient, priv
                 val text = it.body.string()
                 if (it.isSuccessful) return@use text
                 val refusal = runCatching { json.decodeFromString<Refusal>(text) }.getOrNull()
-                throw ApiException(refusal?.error ?: "http_${it.code}", refusal?.message ?: "The server answered HTTP ${it.code}.")
+                throw ApiException(refusal?.error ?: "http_${it.code}", refusal?.message ?: "The server answered HTTP ${it.code}.", text)
             }
         }
     }

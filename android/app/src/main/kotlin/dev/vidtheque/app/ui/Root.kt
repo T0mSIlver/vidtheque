@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
@@ -49,6 +50,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import dev.vidtheque.app.ui.feed.Lift
 import dev.vidtheque.app.ui.feed.Still
 import dev.vidtheque.app.ui.profile.ProfileScreen
+import dev.vidtheque.app.ui.search.SearchScreen
 import dev.vidtheque.app.ui.video.VideoScreen
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.Serializable
@@ -59,12 +61,18 @@ import androidx.compose.ui.layout.ContentScale
 @Serializable
 data object FeedKey : NavKey
 
-/** [title] and [channel] let the screen draw at once while the verdict loads; a push carries only the id. */
+/**
+ * [title] and [channel] let the screen draw at once while the verdict loads; a push carries only the id.
+ * [alone] opens it without the feed's pager, as search does: its hits are not the feed's order.
+ */
 @Serializable
-data class VideoKey(val videoId: String, val title: String = "", val channel: String = "") : NavKey
+data class VideoKey(val videoId: String, val title: String = "", val channel: String = "", val alone: Boolean = false) : NavKey
 
 @Serializable
 data object ProfileKey : NavKey
+
+@Serializable
+data object SearchKey : NavKey
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 private val LocalShared = staticCompositionLocalOf<SharedTransitionScope?> { null }
@@ -171,8 +179,16 @@ fun SignedIn(opening: MutableStateFlow<String?>, onSignOut: () -> Unit) {
                             card = sharedCard,
                             list = list,
                             actions = {
+                                IconButton(onClick = { stack.add(SearchKey) }) { Icon(Icons.Rounded.Search, contentDescription = "Search the corpus") }
                                 IconButton(onClick = { stack.add(ProfileKey) }) { Icon(Icons.Rounded.AccountCircle, contentDescription = "Your interests") }
                             },
+                        )
+                    }
+                    entry<SearchKey> {
+                        SearchScreen(
+                            onBack = { stack.removeLastOrNull() },
+                            onOpen = { stack.add(VideoKey(it.videoId, it.title, it.channel, alone = true)) },
+                            card = sharedCard,
                         )
                     }
                     entry<ProfileKey> { ProfileScreen(onBack = { stack.removeLastOrNull() }, onSignOut = onSignOut) }
@@ -181,6 +197,7 @@ fun SignedIn(opening: MutableStateFlow<String?>, onSignOut: () -> Unit) {
                         val home = remember(key) { list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset }
                         // The band the video was opened from, and how to page it further.
                         val (pages, more) = when {
+                            key.alone -> emptyList<FeedItem>() to {}
                             feedUi.top.items.any { it.videoId == key.videoId } -> feedUi.top.items to feed::more
                             feedUi.skipped?.items?.any { it.videoId == key.videoId } == true -> feedUi.skipped!!.items to feed::moreSkipped
                             else -> emptyList<FeedItem>() to {}

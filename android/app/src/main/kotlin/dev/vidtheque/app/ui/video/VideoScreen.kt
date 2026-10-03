@@ -142,7 +142,7 @@ fun VideoScreen(
 private fun VideoPage(key: VideoKey, settled: Boolean, still: Still, onBack: () -> Unit, container: Modifier = Modifier) {
     val model = hiltViewModel<VideoViewModel, VideoViewModel.Factory>(key = "video-${key.videoId}", creationCallback = { it.create(key.videoId) })
     val ui by model.ui.collectAsStateWithLifecycle()
-    LaunchedEffect(settled, ui.verdict != null) { if (settled) model.shown() }
+    LaunchedEffect(settled, ui.verdict != null || ui.unjudged != null) { if (settled) model.shown() }
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -208,8 +208,9 @@ fun VideoContent(
     onAsk: (Verdict) -> Unit,
 ) {
     val verdict = ui.verdict
-    val title = verdict?.video?.title ?: key.title
-    val channel = verdict?.video?.channel ?: key.channel
+    val video = verdict?.video ?: ui.unjudged
+    val title = video?.title ?: key.title
+    val channel = video?.channel ?: key.channel
     // A Surface, not a background: it also sets the content colour the text reads.
     Surface(container.fillMaxSize(), color = MaterialTheme.colorScheme.surface) { Box {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
@@ -229,11 +230,15 @@ fun VideoContent(
                 }
             }
             Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                val byline = listOfNotNull(channel.ifEmpty { null }, verdict?.video?.publishedAt?.let { dated(it) }).joinToString(" · ")
+                val byline = listOfNotNull(channel.ifEmpty { null }, video?.publishedAt?.let { dated(it) }).joinToString(" · ")
                 if (byline.isNotEmpty()) Text(byline, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (title.isNotEmpty()) Text(title, style = MaterialTheme.typography.headlineSmallEmphasized)
                 when {
                     verdict != null -> Loaded(verdict, onMoment)
+                    ui.unjudged != null -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(duration(ui.unjudged.durationS), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("No verdict yet: this video has not been scored against your profile.", style = MaterialTheme.typography.bodyLarge)
+                    }
                     ui.error != null -> Column {
                         Text(ui.error, style = MaterialTheme.typography.bodyLarge)
                         TextButton(onClick = onRetry) { Text("Try again") }
