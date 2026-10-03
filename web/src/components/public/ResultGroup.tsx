@@ -37,7 +37,7 @@ export function ResultGroup({ group, query = "" }: { group: VideoGroup; query?: 
             )}
           </h3>
           <p className={styles.headMeta}>
-            <span>{group.channel}</span>
+            {group.channel ? <span>{group.channel}</span> : null}
             <span className={styles.id}>
               {group.hits.length} {group.hits.length === 1 ? "moment" : "moments"}
             </span>

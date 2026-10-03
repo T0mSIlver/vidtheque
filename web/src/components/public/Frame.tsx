@@ -38,7 +38,7 @@ export interface Shot {
   thumb: string | null;
   thumb_large: string | null;
   title: string;
-  channel: string;
+  channel: string | null;
   video_id: string;
   timestamp: string;
   link: string | null;

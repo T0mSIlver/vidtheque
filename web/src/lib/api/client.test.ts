@@ -109,6 +109,16 @@ describe("createClient", () => {
     expect(page.results[0].text).toBeNull();
   });
 
+  it("keeps a hit from a video with no channel", async () => {
+    // `videos.channel_name` is nullable; such a hit used to be dropped as unreadable.
+    const { fetchImpl } = fake(200, { ...SEARCH, results: [{ ...HIT, channel: null }] });
+    const client = createClient({ baseUrl: "https://api.test", fetch: fetchImpl });
+    const page = await client.search({ q: "hello" });
+    expect(page.results).toHaveLength(1);
+    expect(page.results[0].channel).toBeNull();
+    expect(page.notes).toEqual(SEARCH.notes);
+  });
+
   it("turns the facade's error envelope into an ApiError", async () => {
     const { fetchImpl } = fake(400, {
       error: "E_EMPTY_QUERY",

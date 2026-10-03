@@ -35,7 +35,8 @@ export const Hit = z.object({
   source: z.string(),
   video_id: z.string(),
   title: z.string(),
-  channel: z.string(),
+  // `null` for a video whose channel is unknown; such a hit is shown, not dropped.
+  channel: z.string().nullable(),
   start: z.number(),
   end: z.number().nullable(),
   match_start: z.number().nullable(),
