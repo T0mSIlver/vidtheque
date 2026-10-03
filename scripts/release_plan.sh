@@ -59,7 +59,8 @@ if [[ "$name" != web ]]; then
     git worktree add --quiet --detach "$tmp/prev" "$prev"
     git worktree add --quiet --detach "$tmp/now" "$tag"
     [[ -x "$tmp/prev/scripts/image_inputs.sh" ]] || out true "$old" "$prev has no scripts/image_inputs.sh"
-    was=$("$tmp/prev/scripts/image_inputs.sh" "$name" --tag)
+    was=$("$tmp/prev/scripts/image_inputs.sh" "$name" --tag) \
+        || out true "$old" "base inputs at $prev could not be computed"
     now=$("$tmp/now/scripts/image_inputs.sh" "$name" --tag)
     [[ "$was" == "$now" ]] || out true "$old" "base inputs changed since $prev ($was -> $now)"
 fi
