@@ -55,6 +55,12 @@ class FeedViewModel @Inject constructor(private val api: Api) : ViewModel() {
         }
     }
 
+    /** Forget this session's feed (sign-out); the next sign-in loads it again. */
+    fun clear() {
+        paging?.cancel()
+        _ui.value = FeedUi()
+    }
+
     /** The next page of the top band, when the list nears its end. */
     fun more() = page(skipped = false)
 
