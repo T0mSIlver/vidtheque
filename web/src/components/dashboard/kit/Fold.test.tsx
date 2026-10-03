@@ -19,16 +19,28 @@ describe("a fold", () => {
     expect(toggle.parentElement).toHaveAttribute("data-open");
   });
 
-  // A selected frame is a deep link into the strip, so the strip opens.
-  it("opens when told to", () => {
-    render(
+  // A selected frame is a deep link into the strip, so the strip opens; the
+  // toggle still closes it, and losing the selection does not.
+  it("opens when told to, and stays the reader's to close", async () => {
+    const { rerender } = render(
+      <Fold phone label="24 frames">
+        inside
+      </Fold>,
+    );
+    rerender(
       <Fold phone open label="24 frames">
         inside
       </Fold>,
     );
-    expect(screen.getByRole("button", { name: "Hide 24 frames" })).toHaveAttribute(
-      "aria-expanded",
-      "true",
+    const toggle = screen.getByRole("button", { name: "Hide 24 frames" });
+    rerender(
+      <Fold phone label="24 frames">
+        inside
+      </Fold>,
     );
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
   });
 });

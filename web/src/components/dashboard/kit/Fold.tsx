@@ -7,7 +7,7 @@ import styles from "./fold.module.css";
 /**
  * Content behind a toggle (dashboard.md §24.3). `phone` folds it only on a
  * narrow viewport and shows it whole elsewhere, by CSS, so the server's render
- * and the first paint agree. `open` forces it open, for a deep link into it.
+ * and the first paint agree. `open` opens it, for a deep link into it.
  */
 export function Fold({
   label,
@@ -21,9 +21,15 @@ export function Fold({
   open?: boolean;
   children: ReactNode;
 }) {
-  const [toggled, setToggled] = useState(false);
+  // `open` opens it when it turns true and never closes it: paging away from
+  // a selected frame keeps the strip, and the toggle still closes it.
+  const [open, setOpen] = useState(forced);
+  const [wasForced, setWasForced] = useState(forced);
+  if (forced !== wasForced) {
+    setWasForced(forced);
+    if (forced) setOpen(true);
+  }
   const id = useId();
-  const open = toggled || forced;
   return (
     <div className={phone ? styles.phone : styles.fold} data-open={open ? "" : undefined}>
       <button
@@ -31,7 +37,7 @@ export function Fold({
         className={`${controls.ghostlink} ${styles.toggle}`}
         aria-expanded={open}
         aria-controls={id}
-        onClick={() => setToggled(!open)}
+        onClick={() => setOpen(!open)}
       >
         {open ? "Hide" : "Show"} {label}
       </button>
