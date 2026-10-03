@@ -1,0 +1,571 @@
+/* The feed: the dashboard's world at a phone's width (DESIGN.md, direction A
+   of the Android proposal). One column, hairlines, gold on the thing to act
+   on: a score of 3, a moment's timecode, Ask Claude. */
+
+.shell {
+  --col: 40rem; /* 640px — a reading column, also on a desktop */
+  --tap: 2.75rem; /* 44px — the smallest thing a thumb is asked to hit */
+
+  min-height: 100dvh;
+  background: var(--pitch);
+}
+
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s4);
+  max-width: var(--col);
+  margin: 0 auto;
+  padding: env(safe-area-inset-top) var(--s4) 0;
+  background: var(--pitch);
+  border-bottom: 1px solid var(--seam);
+}
+
+.mark {
+  composes: t-brand from global;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  color: var(--fg);
+}
+
+.dot {
+  color: var(--gold);
+  font-style: normal;
+}
+
+.nav {
+  display: flex;
+  gap: var(--s1);
+}
+
+.navlink {
+  composes: t-label from global;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding: 0 var(--s2);
+  color: var(--fg2);
+}
+
+.navlink:hover,
+.navlink[aria-current="page"] {
+  color: var(--gold);
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s8);
+  max-width: var(--col);
+  margin: 0 auto;
+  padding: var(--s4) var(--s4) calc(var(--s12) + env(safe-area-inset-bottom));
+}
+
+.label {
+  composes: t-label from global;
+  color: var(--fg2);
+  margin-bottom: var(--s2);
+}
+
+.quiet {
+  composes: t-cell from global;
+  color: var(--fg2);
+  max-width: var(--prose);
+}
+
+.code {
+  composes: t-machine from global;
+  color: var(--tone-bad);
+}
+
+.pending {
+  min-height: 6rem;
+  list-style: none;
+}
+
+/* --------------------------------------------------------------- rows */
+
+.rows {
+  list-style: none;
+  border-top: 1px solid var(--seam);
+}
+
+.rows > li {
+  border-bottom: 1px solid var(--seam);
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--s3) 0;
+  color: var(--fg);
+}
+
+.row:hover .title {
+  text-decoration: underline;
+  text-decoration-color: var(--gold-44);
+  text-underline-offset: 3px;
+}
+
+.rowNote {
+  padding: var(--s3) 0;
+  color: var(--fg2);
+  font-size: 14px;
+}
+
+.channel {
+  font-size: 13px;
+  color: var(--fg2);
+  overflow-wrap: anywhere;
+}
+
+.title {
+  font-size: 16px;
+  font-weight: var(--w-strong);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s3);
+  margin-top: var(--s1);
+}
+
+.duration {
+  composes: t-machine-sm from global;
+  margin-left: auto;
+  color: var(--fg2);
+}
+
+.reason {
+  composes: t-cell from global;
+  color: var(--fg2);
+  overflow-wrap: anywhere;
+}
+
+/* The score: a mono figure in a box, and its word. 3 is filled gold. */
+.score {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.scoreFigure {
+  composes: t-machine-sm from global;
+  font-weight: 700;
+  min-width: 1.25rem;
+  padding: 0 var(--s1);
+  text-align: center;
+  border: 1px solid var(--seam2);
+}
+
+.score[data-score="3"] .scoreFigure {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: var(--gold-ink);
+}
+
+.scoreWord {
+  composes: t-label from global;
+  color: var(--fg);
+}
+
+.score[data-score="0"] .scoreWord,
+.score[data-score="1"] .scoreWord {
+  color: var(--fg2);
+}
+
+.outside {
+  composes: t-label from global;
+  padding: 0 var(--s1);
+  color: var(--tone-work);
+  border: 1px solid var(--tone-work-line);
+  background: var(--tone-work-bg);
+}
+
+.skipped h2 {
+  font: inherit;
+}
+
+.fold {
+  composes: t-label from global;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0;
+  color: var(--fg2);
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--seam);
+  cursor: pointer;
+}
+
+.fold:hover {
+  color: var(--gold);
+}
+
+/* -------------------------------------------------------------- video */
+
+.video {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s6);
+}
+
+.videoHead {
+  position: relative;
+  padding: var(--s4) 0 0 var(--s4);
+}
+
+/* The corner tick: the one ornament, once on the page. */
+.videoHead::before,
+.videoHead::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  background: var(--gold);
+}
+
+.videoHead::before {
+  width: 12px;
+  height: 1px;
+}
+
+.videoHead::after {
+  width: 1px;
+  height: 12px;
+}
+
+.videoTitle {
+  composes: t-question from global;
+  margin: var(--s1) 0 var(--s2);
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.videoHead .reason {
+  display: block;
+  margin-top: var(--s2);
+}
+
+.summary {
+  composes: t-prose from global;
+  color: var(--fg-over);
+  max-width: var(--prose);
+  overflow-wrap: anywhere;
+}
+
+.moments {
+  list-style: none;
+  border-top: 1px solid var(--seam);
+  margin-bottom: var(--s3);
+}
+
+.moments > li {
+  border-bottom: 1px solid var(--seam);
+}
+
+.moment {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  min-height: var(--tap);
+  padding: var(--s3) 0;
+}
+
+.timecode {
+  composes: t-machine from global;
+  min-width: 3.5rem;
+  color: var(--gold);
+}
+
+.why {
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.arrow {
+  margin-left: auto;
+  color: var(--fg2);
+}
+
+.moment:hover .why {
+  text-decoration: underline;
+  text-decoration-color: var(--gold-44);
+  text-underline-offset: 3px;
+}
+
+/* The actions sit where a thumb is: the column's foot, over the page. */
+.bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin: 0 calc(-1 * var(--s4)) calc(-1 * var(--s12));
+  padding: var(--s2) var(--s4) calc(var(--s2) + env(safe-area-inset-bottom));
+  background: var(--plate);
+  border-top: 1px solid var(--seam2);
+}
+
+.barInner {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.barNote {
+  composes: t-cell from global;
+  margin-top: var(--s1);
+  color: var(--tone-bad);
+}
+
+.signal {
+  composes: t-label from global;
+  min-width: var(--tap);
+  min-height: var(--tap);
+  padding: 0 var(--s2);
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--seam2);
+  cursor: pointer;
+}
+
+.signal:hover {
+  border-color: var(--gold-44);
+}
+
+.signal[aria-pressed="true"] {
+  color: var(--gold);
+  border-color: var(--gold);
+  background: var(--gold-12);
+}
+
+.signal[data-failed] {
+  border-color: var(--tone-bad-line);
+}
+
+.copy {
+  composes: t-label from global;
+  min-height: var(--tap);
+  margin-left: auto;
+  padding: 0 var(--s2);
+  color: var(--fg2);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.copy:hover {
+  color: var(--gold);
+}
+
+.ask,
+.askWide {
+  composes: t-action from global;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap);
+  padding: 0 var(--s4);
+  color: var(--gold-ink);
+  background: var(--gold);
+  white-space: nowrap;
+}
+
+.ask:hover,
+.askWide:hover {
+  background: var(--gold-hi);
+}
+
+/* ------------------------------------------------------------ profile */
+
+.entry {
+  display: grid;
+  grid-template-columns: 3.25rem minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--s3);
+  padding: var(--s3) 0;
+}
+
+.weight {
+  composes: t-machine from global;
+  padding-top: 2px;
+  color: var(--fg);
+}
+
+.weight[data-negative] {
+  color: var(--tone-bad);
+}
+
+.entryText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.evidence {
+  composes: t-machine-sm from global;
+  color: var(--fg2);
+  overflow-wrap: anywhere;
+}
+
+.small {
+  composes: t-label from global;
+  min-height: var(--tap);
+  padding: 0 var(--s3);
+  color: var(--fg2);
+  background: none;
+  border: 1px solid var(--seam2);
+  cursor: pointer;
+}
+
+.small:hover {
+  color: var(--gold);
+  border-color: var(--gold-44);
+}
+
+.small[aria-disabled="true"] {
+  color: var(--fg3);
+  cursor: progress;
+}
+
+.refused {
+  composes: t-cell from global;
+  color: var(--tone-bad);
+}
+
+.build {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s6);
+}
+
+.buildRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+}
+
+.buildRow .copy {
+  margin-left: 0;
+}
+
+.buildRow .quiet {
+  flex-basis: 100%;
+}
+
+.paste {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s2);
+}
+
+.pasteLabel {
+  composes: t-cell from global;
+  color: var(--fg2);
+}
+
+.textarea {
+  composes: t-machine from global;
+  width: 100%;
+  padding: var(--s3);
+  color: var(--fg);
+  background: var(--console);
+  border: 1px solid var(--seam2);
+  resize: vertical;
+}
+
+.textarea::placeholder {
+  color: var(--fg3);
+}
+
+.action {
+  composes: t-label from global;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap);
+  padding: 0 var(--s4);
+  color: var(--fg);
+  background: var(--plate3);
+  border: 1px solid var(--seam2);
+  cursor: pointer;
+}
+
+.action:hover {
+  color: var(--gold);
+  border-color: var(--gold-44);
+}
+
+.action[aria-disabled="true"] {
+  color: var(--fg3);
+  border-color: var(--seam);
+  cursor: not-allowed;
+}
+
+.event {
+  display: grid;
+  gap: 2px;
+  padding: var(--s3) 0;
+}
+
+.eventHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s1) var(--s3);
+}
+
+.op {
+  composes: t-label from global;
+  color: var(--fg);
+}
+
+.change {
+  composes: t-machine-sm from global;
+  color: var(--fg2);
+}
+
+.when {
+  composes: t-machine-sm from global;
+  margin-left: auto;
+  color: var(--fg2);
+}
+
+.eventFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s3);
+  margin-top: var(--s1);
+}
+
+/* ------------------------------------------------------------ failure */
+
+.failure {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s3);
+  padding: var(--s6) 0;
+}
+
+.failureTitle {
+  composes: t-question from global;
+  overflow-wrap: anywhere;
+}
