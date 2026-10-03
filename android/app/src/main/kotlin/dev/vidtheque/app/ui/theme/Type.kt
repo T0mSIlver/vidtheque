@@ -6,44 +6,59 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.LineHeightStyle
-import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import dev.vidtheque.app.R
 
-// Variable faces: each rung is its own Font so the wght axis lands on the exact
-// value of DESIGN.md's weight law (200 / 250 / 340 / 500 / 600; mono 400 / 600 / 700).
-private fun archivo(w: Int) = Font(R.font.archivo, FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w)))
-private fun mono(w: Int) = Font(R.font.jetbrains_mono, FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w)))
+// Roboto Flex, subset to Latin with the wght, wdth and opsz axes kept. Each weight
+// is its own Font so the axis lands exactly; opsz follows the size, as Flex intends.
+private fun flex(w: Int) = Font(
+    R.font.roboto_flex,
+    FontWeight(w),
+    variationSettings = FontVariation.Settings(FontVariation.weight(w)),
+)
 
-val Archivo = FontFamily(archivo(200), archivo(250), archivo(340), archivo(500), archivo(600))
-val JetBrainsMono = FontFamily(mono(400), mono(600), mono(700))
+val RobotoFlex = FontFamily(flex(400), flex(500), flex(600), flex(700), flex(800))
 
-private val trim = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
+/** The wordmark keeps the web's face: the logo is the word, in Archivo 500. */
+val Archivo = FontFamily(
+    Font(R.font.archivo, FontWeight(500), variationSettings = FontVariation.Settings(FontVariation.weight(500))),
+)
 
-/** The ladder at the phone breakpoint (below --bp-hand: body 15). Mono is the machine's voice. */
-object VtType {
-    val display = TextStyle(fontFamily = Archivo, fontWeight = FontWeight(200), fontSize = 34.sp, lineHeight = 36.sp, letterSpacing = (-0.03).em)
-    val headline = TextStyle(fontFamily = Archivo, fontWeight = FontWeight(250), fontSize = 22.sp, lineHeight = 27.sp, letterSpacing = (-0.015).em)
-    val body = TextStyle(fontFamily = Archivo, fontWeight = FontWeight(340), fontSize = 15.sp, lineHeight = 22.sp)
-    val prose = TextStyle(fontFamily = Archivo, fontWeight = FontWeight(340), fontSize = 15.5.sp, lineHeight = 24.sp)
-    val cell = TextStyle(fontFamily = Archivo, fontWeight = FontWeight(340), fontSize = 14.sp, lineHeight = 19.sp)
-    val cellStrong = cell.copy(fontWeight = FontWeight(500))
-    val action = TextStyle(fontFamily = Archivo, fontWeight = FontWeight(600), fontSize = 15.sp, lineHeight = 20.sp)
-    val wordmark = TextStyle(fontFamily = Archivo, fontWeight = FontWeight(500), fontSize = 15.sp, letterSpacing = (-0.035).em)
-    val machine = TextStyle(fontFamily = JetBrainsMono, fontWeight = FontWeight(400), fontSize = 13.sp, lineHeight = 18.sp, fontFeatureSettings = "tnum, liga 0, calt 0")
-    val machineSm = machine.copy(fontSize = 11.sp, lineHeight = 15.sp)
-    val label = TextStyle(fontFamily = JetBrainsMono, fontWeight = FontWeight(600), fontSize = 10.sp, lineHeight = 14.sp, letterSpacing = 0.19.em, fontFeatureSettings = "tnum, liga 0, calt 0", lineHeightStyle = trim)
-    val labelSm = label.copy(fontSize = 9.5.sp, letterSpacing = 0.17.em)
-}
+private fun style(size: TextUnit, line: TextUnit, weight: Int, tracking: TextUnit = 0.sp) =
+    TextStyle(fontFamily = RobotoFlex, fontWeight = FontWeight(weight), fontSize = size, lineHeight = line, letterSpacing = tracking)
 
-internal val materialTypography = Typography(
-    displaySmall = VtType.display,
-    headlineSmall = VtType.headline,
-    titleMedium = VtType.cellStrong,
-    bodyLarge = VtType.body,
-    bodyMedium = VtType.cell,
-    labelLarge = VtType.action,
-    labelMedium = VtType.label,
-    labelSmall = VtType.labelSm,
+// Material 3's type scale (sizes and line heights as specified), set in Roboto Flex;
+// the emphasized styles are the Expressive scale's heavier twins.
+internal val typography = Typography(
+    displayLarge = style(57.sp, 64.sp, 400, (-0.25).sp),
+    displayMedium = style(45.sp, 52.sp, 400),
+    displaySmall = style(36.sp, 44.sp, 400),
+    headlineLarge = style(32.sp, 40.sp, 400),
+    headlineMedium = style(28.sp, 36.sp, 400),
+    headlineSmall = style(24.sp, 32.sp, 400),
+    titleLarge = style(22.sp, 28.sp, 400),
+    titleMedium = style(16.sp, 24.sp, 500, 0.15.sp),
+    titleSmall = style(14.sp, 20.sp, 500, 0.1.sp),
+    bodyLarge = style(16.sp, 24.sp, 400, 0.5.sp),
+    bodyMedium = style(14.sp, 20.sp, 400, 0.25.sp),
+    bodySmall = style(12.sp, 16.sp, 400, 0.4.sp),
+    labelLarge = style(14.sp, 20.sp, 500, 0.1.sp),
+    labelMedium = style(12.sp, 16.sp, 500, 0.5.sp),
+    labelSmall = style(11.sp, 16.sp, 500, 0.5.sp),
+    displayLargeEmphasized = style(57.sp, 64.sp, 600, (-0.25).sp),
+    displayMediumEmphasized = style(45.sp, 52.sp, 600),
+    displaySmallEmphasized = style(36.sp, 44.sp, 600),
+    headlineLargeEmphasized = style(32.sp, 40.sp, 600),
+    headlineMediumEmphasized = style(28.sp, 36.sp, 600),
+    headlineSmallEmphasized = style(24.sp, 32.sp, 600),
+    titleLargeEmphasized = style(22.sp, 28.sp, 600),
+    titleMediumEmphasized = style(16.sp, 24.sp, 700, 0.15.sp),
+    titleSmallEmphasized = style(14.sp, 20.sp, 700, 0.1.sp),
+    bodyLargeEmphasized = style(16.sp, 24.sp, 500, 0.5.sp),
+    bodyMediumEmphasized = style(14.sp, 20.sp, 500, 0.25.sp),
+    bodySmallEmphasized = style(12.sp, 16.sp, 500, 0.4.sp),
+    labelLargeEmphasized = style(14.sp, 20.sp, 700, 0.1.sp),
+    labelMediumEmphasized = style(12.sp, 16.sp, 700, 0.5.sp),
+    labelSmallEmphasized = style(11.sp, 16.sp, 700, 0.5.sp),
 )
