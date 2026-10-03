@@ -88,13 +88,14 @@ fun VideoScreen(key: VideoKey, onBack: () -> Unit, still: Still) {
             if (!context.openLink(Uri.parse(moment.url))) scope.launch { snackbar.showSnackbar(NO_APP) }
         },
         onAsk = { verdict ->
-            // Whether the Claude app keeps `q` is unverified (companion.md §6): the
-            // prompt goes to the clipboard too, so an empty chat is one paste away.
+            // The Claude app opens claude.ai/new with `q` filled in (checked on Tom's phone,
+            // 2026-10-03); the clipboard is only for a phone where nothing opens the link.
             val prompt = videoPrompt(verdict.video)
-            context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Ask Claude", prompt))
             model.askedClaude()
-            val opened = context.openLink(claudeUri(prompt))
-            scope.launch { snackbar.showSnackbar(if (opened) "Prompt copied. Paste it if Claude opens empty." else "Prompt copied. $NO_APP") }
+            if (!context.openLink(claudeUri(prompt))) {
+                context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Ask Claude", prompt))
+                scope.launch { snackbar.showSnackbar("Prompt copied. $NO_APP") }
+            }
         },
     )
 }
