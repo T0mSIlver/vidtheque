@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Any, Sequence
 
 from ..db.queries import QUERYABLE_INDEX_STATES
 from ..jobs import store as jobs_store
@@ -26,6 +26,16 @@ class Moment:
     cue_id: int
     offset_s: float
     why: str
+
+
+@dataclass(frozen=True)
+class Match:
+    """A profile entry the verdict hit. `direction` follows the entry's weight
+    sign when scored; `strength` 2 is central to the video, 1 comes up."""
+
+    entry_id: int
+    direction: str
+    strength: int
 
 
 def check_receipts(
@@ -55,16 +65,17 @@ def save(
     profile_rev: int,
     model: str,
     explored: bool = False,
+    matches: Sequence[Match] = (),
 ) -> None:
     """Insert or replace the video's verdict. A rerun keeps `notified_at`."""
     conn.execute(
         "INSERT INTO verdicts"
-        " (video_id, score, reason, summary, moments, profile_rev, model, explored)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        " (video_id, score, reason, summary, moments, profile_rev, model, explored, matches)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
         " ON CONFLICT (video_id) DO UPDATE SET score = excluded.score,"
         " reason = excluded.reason, summary = excluded.summary, moments = excluded.moments,"
         " profile_rev = excluded.profile_rev, model = excluded.model,"
-        " explored = excluded.explored, created_at = unixepoch()",
+        " explored = excluded.explored, matches = excluded.matches, created_at = unixepoch()",
         (
             video_id,
             score,
@@ -74,6 +85,7 @@ def save(
             profile_rev,
             model,
             int(explored),
+            json.dumps([m.__dict__ for m in matches]),
         ),
     )
 
@@ -84,6 +96,33 @@ def get(conn: sqlite3.Connection, video_id: int) -> sqlite3.Row | None:
 
 def moments_of(row: sqlite3.Row) -> list[Moment]:
     return [Moment(int(m["cue_id"]), float(m["offset_s"]), str(m["why"])) for m in json.loads(row["moments"])]
+
+
+def matches_json(conn: sqlite3.Connection, rows: Sequence[sqlite3.Row]) -> list[list[dict[str, Any]]]:
+    """Each row's matches as `{entry_id, text, direction, strength}`, the text
+    read from `profile_entries` (a retired entry keeps its row and its text)."""
+    stored = [json.loads(row["matches"]) for row in rows]
+    ids = sorted({int(m["entry_id"]) for ms in stored for m in ms})
+    texts = {
+        int(r[0]): str(r[1])
+        for r in conn.execute(
+            "SELECT id, text FROM profile_entries WHERE id IN (SELECT value FROM json_each(?))",
+            (json.dumps(ids),),
+        )
+    }
+    return [
+        [
+            {
+                "entry_id": int(m["entry_id"]),
+                "text": texts[int(m["entry_id"])],
+                "direction": m["direction"],
+                "strength": int(m["strength"]),
+            }
+            for m in ms
+            if int(m["entry_id"]) in texts
+        ]
+        for ms in stored
+    ]
 
 
 # ------------------------------------------------------------------ queue

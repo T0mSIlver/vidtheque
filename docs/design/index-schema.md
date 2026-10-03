@@ -1279,7 +1279,8 @@ CREATE TABLE verdicts (
   created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
   notified_at INTEGER,                        -- kept across a rerun
   explored    INTEGER NOT NULL DEFAULT 0      -- 0011: 1 = rescored without the negative
-              CHECK (explored IN (0,1))       --   entries, shown as outside the profile
+              CHECK (explored IN (0,1)),      --   entries, shown as outside the profile
+  matches     TEXT    NOT NULL DEFAULT '[]'   -- 0014: JSON [{entry_id, direction, strength}], ≤ 4
 ) STRICT;
 CREATE INDEX verdicts_recent ON verdicts(created_at DESC);
 ```

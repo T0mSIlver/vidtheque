@@ -55,6 +55,20 @@ def _seed_verdicts(data: Path) -> None:
             # A cue a reindex took away: shown as dropped, never as a link.
             {"cue_id": 999_999, "offset_s": 10.0, "why": "gone"},
         ]
+        # Retired, so the profile tests start empty; a retired entry still
+        # names the match a past verdict made on it.
+        evals = conn.execute(
+            "INSERT INTO profile_entries (text, weight, source, retired_at)"
+            " VALUES ('Evals', 0.9, 'owner', 1)"
+        ).lastrowid
+        hype = conn.execute(
+            "INSERT INTO profile_entries (text, weight, source, retired_at)"
+            " VALUES ('Launch hype', -0.7, 'owner', 1)"
+        ).lastrowid
+        matches = [
+            {"entry_id": evals, "direction": "up", "strength": 2},
+            {"entry_id": hype, "direction": "down", "strength": 1},
+        ]
         now = int(time.time())
         for source_id, score, age, kept, explored in (
             ("kCc8FmEb1nY", 3, 10, moments, 0),
@@ -64,9 +78,17 @@ def _seed_verdicts(data: Path) -> None:
         ):
             conn.execute(
                 "INSERT INTO verdicts (video_id, score, reason, summary, moments,"
-                " profile_rev, model, explored, created_at)"
-                " VALUES (?, ?, ?, 'summary', ?, 4, 'm:x', ?, ?)",
-                (ids[source_id], score, f"reason {source_id}", json.dumps(kept), explored, now - age),
+                " profile_rev, model, explored, created_at, matches)"
+                " VALUES (?, ?, ?, 'summary', ?, 4, 'm:x', ?, ?, ?)",
+                (
+                    ids[source_id],
+                    score,
+                    f"reason {source_id}",
+                    json.dumps(kept),
+                    explored,
+                    now - age,
+                    json.dumps(matches if source_id == "kCc8FmEb1nY" else []),
+                ),
             )
         conn.execute("COMMIT")
     finally:
@@ -167,6 +189,19 @@ def test_verdict_links_only_the_moments_whose_receipt_holds(client: TestClient) 
     assert moment["url"].startswith("https://youtu.be/kCc8FmEb1nY?t=")
     assert isinstance(moment["cue_id"], int)
     assert body["moments_dropped"] == 1
+
+
+def test_feed_and_verdict_name_the_matched_entries(client: TestClient) -> None:
+    expected = [
+        {"text": "Evals", "direction": "up", "strength": 2},
+        {"text": "Launch hype", "direction": "down", "strength": 1},
+    ]
+    [item] = [i for i in client.get(f"{API}/feed", headers=BEARER).json()["items"] if i["video_id"] == "kCc8FmEb1nY"]
+    body = client.get(f"{API}/verdicts/kCc8FmEb1nY", headers=BEARER).json()
+    for matches in (item["matches"], body["matches"]):
+        assert [{k: m[k] for k in ("text", "direction", "strength")} for m in matches] == expected
+        assert all(isinstance(m["entry_id"], int) for m in matches)
+    assert client.get(f"{API}/verdicts/zduSFxRajkE", headers=BEARER).json()["matches"] == []
 
 
 @pytest.mark.parametrize(

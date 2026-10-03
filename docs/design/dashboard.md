@@ -3617,7 +3617,12 @@ behind "skipped (n)". `limit` 1–50 (default 20), `offset` 0–10,000; any othe
 {"band": "top", "order": "newest",
  "items": [{"video_id": "kCc8FmEb1nY", "title": "…", "channel": "Andrej Karpathy",
             "duration_s": 7000.0, "published_at": 1740000000,
-            "score": 3, "reason": "evals ↑", "explored": false,
+            "score": 3, "reason": "His eval harness is the one you are building.",
+            "explored": false,
+            "matches": [{"entry_id": 15, "text": "Evals and benchmarks for coding agents",
+                         "direction": "up", "strength": 2},
+                        {"entry_id": 36, "text": "Vendor launches with no evaluation",
+                         "direction": "down", "strength": 1}],
             "judged_at": 1790000000}],
  "pagination": {"limit": 20, "offset": 0, "has_more": true, "next_offset": 20},
  "skipped": {"count": 12, "capped": false}}
@@ -3630,10 +3635,16 @@ with `has_more: true`: the band's tail past the ceiling is not paged.
 reached 2 only once rescored without the negative entries (companion.md
 §3.2), which the feed shows as outside your profile.
 
+`matches` are the profile entries the verdict hit, at most four, strongest
+first (companion.md §3.1): `direction` is `up` for an entry of positive weight
+and `down` for a negative one, `strength` 2 central to the video and 1 coming
+up, `text` the entry's text, still given after the entry is retired. A verdict
+written before migration 0014 has `[]`.
+
 ### 25.3 `GET /dashboard/api/verdicts/{video_id}`
 
 The video screen: `video` (the row fields above), `score`, `reason`,
-`explored`, `summary`, `moments`, `moments_dropped`, `profile_rev` (the profile revision
+`explored`, `matches` (as in the feed), `summary`, `moments`, `moments_dropped`, `profile_rev` (the profile revision
 that scored it), `model` and `judged_at`. A moment is
 `{cue_id, offset_s, why, url}`, `url` being `https://youtu.be/<id>?t=<s>` with
 the tools' 2 s lead (`text.deeplink`). A moment whose cue a reindex removed is
