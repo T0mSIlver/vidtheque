@@ -576,3 +576,33 @@ def test_0011_keeps_every_verdict_and_reads_them_as_not_explored(
     assert fresh.execute("SELECT explored FROM verdicts").fetchone()[0] == 0
     with pytest.raises(sqlite3.IntegrityError):
         fresh.execute("UPDATE verdicts SET explored = 2")
+
+
+def test_0012_leaves_a_populated_corpus_untouched(fresh: sqlite3.Connection, tmp_path: Path) -> None:
+    """The devices migration is additive: every earlier row comes through as it was."""
+    _migrate_up_to(fresh, 11, tmp_path / "staged")
+    vid = fresh.execute(
+        "INSERT INTO videos (source_id, url, title, duration_s, index_state)"
+        " VALUES ('kCc8FmEb1nY', 'https://youtu.be/kCc8FmEb1nY', 'GPT from scratch', 7000, 'ready')"
+    ).lastrowid
+    fresh.execute(
+        "INSERT INTO cues (video_id, seq, start_s, end_s, text) VALUES (?, 0, 0, 3.5, 'hi')", (vid,)
+    )
+    fresh.execute(
+        "INSERT INTO verdicts (video_id, score, reason, summary, profile_rev, model) "
+        "VALUES (?, 2, 'r', 's', 0, 'm')",
+        (vid,),
+    )
+    fresh.execute("INSERT INTO signals (kind, video_id) VALUES ('open', ?)", (vid,))
+    tables = ("videos", "cues", "verdicts", "signals")
+
+    def snapshot() -> dict[str, list[tuple]]:
+        return {t: [tuple(r) for r in fresh.execute(f"SELECT * FROM {t} ORDER BY 1")] for t in tables}
+
+    held = snapshot()
+    assert migrations.migrate(fresh) == [12]
+    assert snapshot() == held
+    assert fresh.execute("PRAGMA foreign_key_check").fetchall() == []
+    fresh.execute("INSERT INTO devices (token) VALUES ('fcm:abc')")
+    with pytest.raises(sqlite3.IntegrityError):
+        fresh.execute("INSERT INTO devices (token) VALUES ('fcm:abc')")
