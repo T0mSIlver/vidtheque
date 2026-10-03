@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -52,6 +53,9 @@ import dev.vidtheque.app.ui.thumbnail
 
 /** How a still is drawn, so the caller can make it a shared element with the video screen. */
 typealias Still = @Composable (videoId: String, modifier: Modifier) -> Unit
+
+/** The modifier that makes a card one container with the page it opens (see Root). */
+typealias Lift = @Composable (videoId: String, shape: Shape) -> Modifier
 
 val plainStill: Still = { id, modifier ->
     AsyncImage(model = thumbnail(id), contentDescription = null, contentScale = ContentScale.Crop, modifier = modifier)
@@ -67,6 +71,7 @@ fun FeedScreen(
     onMoreSkipped: () -> Unit,
     onOpen: (FeedItem) -> Unit,
     still: Still = plainStill,
+    card: Lift = { _, _ -> Modifier },
     actions: @Composable () -> Unit = {},
 ) {
     val bar = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -101,13 +106,13 @@ fun FeedScreen(
                     item { Notice("Nothing to watch yet. New videos from the channels you follow land here once they are judged.") }
                 }
                 itemsIndexed(ui.top.items, key = { _, it -> "top-${it.videoId}" }) { index, item ->
-                    if (index == 0) Hero(item, still) { onOpen(item) } else Row(item, still) { onOpen(item) }
+                    if (index == 0) Hero(item, still, card) { onOpen(item) } else Row(item, still, card) { onOpen(item) }
                 }
                 if (ui.top.loading) item { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { LoadingIndicator() } }
                 if (ui.skippedCount > 0 && ui.top.nextOffset == null) {
                     item(key = "skipped") { SkippedToggle(ui, onToggleSkipped) }
                     ui.skipped?.let { band ->
-                        itemsIndexed(band.items, key = { _, it -> "skipped-${it.videoId}" }) { _, item -> Row(item, still) { onOpen(item) } }
+                        itemsIndexed(band.items, key = { _, it -> "skipped-${it.videoId}" }) { _, item -> Row(item, still, card) { onOpen(item) } }
                         if (band.nextOffset != null) item { TextButton(onClick = onMoreSkipped, enabled = !band.loading) { Text("More skipped") } }
                     }
                 }
@@ -120,8 +125,9 @@ private fun worthLine(ui: FeedUi): String =
     if (ui.top.items.isEmpty()) "Nothing new" else "Newest first"
 
 @Composable
-private fun Hero(item: FeedItem, still: Still, onClick: () -> Unit) {
-    Card(onClick = onClick, shape = MaterialTheme.shapes.extraLarge, modifier = Modifier.fillMaxWidth()) {
+private fun Hero(item: FeedItem, still: Still, card: Lift, onClick: () -> Unit) {
+    val shape = MaterialTheme.shapes.extraLarge
+    Card(onClick = onClick, shape = shape, modifier = Modifier.fillMaxWidth().then(card(item.videoId, shape))) {
         Box {
             still(item.videoId, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
             Verdict(item.score, onImage = true, Modifier.align(Alignment.BottomStart).padding(12.dp))
@@ -135,12 +141,13 @@ private fun Hero(item: FeedItem, still: Still, onClick: () -> Unit) {
 }
 
 @Composable
-private fun Row(item: FeedItem, still: Still, onClick: () -> Unit) {
+private fun Row(item: FeedItem, still: Still, card: Lift, onClick: () -> Unit) {
+    val shape = MaterialTheme.shapes.large
     Card(
         onClick = onClick,
-        shape = MaterialTheme.shapes.large,
+        shape = shape,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().then(card(item.videoId, shape)),
     ) {
         Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             still(item.videoId, Modifier.width(128.dp).aspectRatio(16f / 9f).clip(MaterialTheme.shapes.medium))

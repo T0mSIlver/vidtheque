@@ -1,8 +1,17 @@
 package dev.vidtheque.app.ui
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material3.Icon
@@ -24,6 +33,7 @@ import androidx.navigation3.ui.NavDisplay
 import coil3.compose.AsyncImage
 import dev.vidtheque.app.ui.feed.FeedScreen
 import dev.vidtheque.app.ui.feed.FeedViewModel
+import dev.vidtheque.app.ui.feed.Lift
 import dev.vidtheque.app.ui.feed.Still
 import dev.vidtheque.app.ui.profile.ProfileScreen
 import dev.vidtheque.app.ui.video.VideoScreen
@@ -56,6 +66,41 @@ val sharedStill: Still = { id, modifier ->
     AsyncImage(model = thumbnail(id), contentDescription = null, contentScale = ContentScale.Crop, modifier = lifted)
 }
 
+/**
+ * A feed card and the video page it opens are one container (Material's container
+ * transform): the page grows out of the card, and a back gesture shrinks it into
+ * the card with the gesture's progress. Scaled, not remeasured, so the text keeps
+ * its layout while it shrinks. A tween, not a spring: a seek maps the gesture's
+ * progress onto time, and a spring would cover most of the way in the first few
+ * percent. Each side stays opaque until the last third, then the two fade
+ * through, so the page never shows its text over the card's.
+ */
+@OptIn(ExperimentalSharedTransitionApi::class)
+val sharedCard: Lift = { id, shape ->
+    val shared = LocalShared.current
+    val scope = LocalNavAnimatedContentScope.current
+    if (shared == null) Modifier else with(shared) {
+        Modifier.sharedBounds(
+            rememberSharedContentState("card-$id"),
+            animatedVisibilityScope = scope,
+            enter = fadeIn(tween(FADE_MS, delayMillis = BOUNDS_MS - FADE_MS)),
+            exit = fadeOut(tween(FADE_MS, delayMillis = BOUNDS_MS - 2 * FADE_MS)),
+            boundsTransform = { _, _ -> tween(BOUNDS_MS, easing = FastOutSlowInEasing) },
+            resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(ContentScale.FillWidth, Alignment.TopCenter),
+            clipInOverlayDuringTransition = OverlayClip(shape),
+        )
+    }
+}
+
+private const val BOUNDS_MS = 450
+private const val FADE_MS = 120
+
+// The container transform is the whole motion: the feed stays put underneath, whole,
+// instead of fading in over the page (Navigation 3's default pop).
+private val containerOnly = NavDisplay.transitionSpec { EnterTransition.None togetherWith ExitTransition.KeepUntilTransitionsFinished } +
+    NavDisplay.popTransitionSpec { (EnterTransition.None togetherWith ExitTransition.KeepUntilTransitionsFinished).apply { targetContentZIndex = -1f } } +
+    NavDisplay.predictivePopTransitionSpec { (EnterTransition.None togetherWith ExitTransition.KeepUntilTransitionsFinished).apply { targetContentZIndex = -1f } }
+
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun SignedIn(opening: MutableStateFlow<String?>, onSignOut: () -> Unit) {
@@ -85,13 +130,14 @@ fun SignedIn(opening: MutableStateFlow<String?>, onSignOut: () -> Unit) {
                             onMoreSkipped = feed::moreSkipped,
                             onOpen = { stack.add(VideoKey(it.videoId, it.title, it.channel.orEmpty())) },
                             still = sharedStill,
+                            card = sharedCard,
                             actions = {
                                 IconButton(onClick = { stack.add(ProfileKey) }) { Icon(Icons.Rounded.AccountCircle, contentDescription = "Your interests") }
                             },
                         )
                     }
                     entry<ProfileKey> { ProfileScreen(onBack = { stack.removeLastOrNull() }, onSignOut = onSignOut) }
-                    entry<VideoKey> { key -> VideoScreen(key, onBack = { stack.removeLastOrNull() }, still = sharedStill) }
+                    entry<VideoKey>(metadata = containerOnly) { key -> VideoScreen(key, onBack = { stack.removeLastOrNull() }, still = sharedStill, card = sharedCard) }
                 },
             )
         }

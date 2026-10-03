@@ -62,6 +62,7 @@ import dev.vidtheque.app.ui.NO_APP
 import dev.vidtheque.app.ui.ScoreDial
 import dev.vidtheque.app.ui.VideoKey
 import dev.vidtheque.app.ui.duration
+import dev.vidtheque.app.ui.feed.Lift
 import dev.vidtheque.app.ui.feed.Still
 import dev.vidtheque.app.ui.openLink
 import dev.vidtheque.app.ui.scoreColor
@@ -69,7 +70,7 @@ import dev.vidtheque.app.ui.scoreWord
 import kotlinx.coroutines.launch
 
 @Composable
-fun VideoScreen(key: VideoKey, onBack: () -> Unit, still: Still) {
+fun VideoScreen(key: VideoKey, onBack: () -> Unit, still: Still, card: Lift = { _, _ -> Modifier }) {
     val model = hiltViewModel<VideoViewModel, VideoViewModel.Factory>(creationCallback = { it.create(key.videoId) })
     val ui by model.ui.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -79,6 +80,7 @@ fun VideoScreen(key: VideoKey, onBack: () -> Unit, still: Still) {
         key = key,
         ui = ui,
         still = still,
+        container = card(key.videoId, MaterialTheme.shapes.extraLarge),
         snackbar = snackbar,
         onBack = onBack,
         onRetry = model::load,
@@ -107,6 +109,7 @@ fun VideoContent(
     ui: VideoUi,
     still: Still,
     snackbar: SnackbarHostState,
+    container: Modifier = Modifier,
     onBack: () -> Unit,
     onRetry: () -> Unit,
     onSend: (String) -> Unit,
@@ -117,6 +120,7 @@ fun VideoContent(
     val title = verdict?.video?.title ?: key.title
     val channel = verdict?.video?.channel ?: key.channel
     Scaffold(
+        modifier = container,
         topBar = {
             TopAppBar(
                 title = {},
