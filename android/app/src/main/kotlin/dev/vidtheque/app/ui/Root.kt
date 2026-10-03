@@ -33,6 +33,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
@@ -119,8 +120,10 @@ private fun lift(id: String, rest: Dp, away: Dp, enter: EnterTransition, exit: E
             exit = exit,
             boundsTransform = { _, _ -> tween(BOUNDS_MS, easing = FastOutSlowInEasing) },
             resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(ContentScale.FillWidth, Alignment.TopCenter),
-            clipInOverlayDuringTransition = OverlayClip(clip),
         )
+            // The corner clips the content inside the bounds, not the overlay: an overlay
+            // clip lagged the moving content and cut the page's top for a few frames (#145).
+            .clip(clip)
     }
 }
 
