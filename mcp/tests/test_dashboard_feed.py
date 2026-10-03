@@ -76,6 +76,10 @@ def _seed_verdicts(data: Path) -> None:
             ("eMlx5fFNoYc", 0, 30, [], 0),
             ("skipme00001", 1, 40, [], 0),
         ):
+            # The feed orders by publication; the older a verdict here, the older its video.
+            conn.execute(
+                "UPDATE videos SET published_at = ? WHERE id = ?", (now - age * 86_400, ids[source_id])
+            )
             conn.execute(
                 "INSERT INTO verdicts (video_id, score, reason, summary, moments,"
                 " profile_rev, model, explored, created_at, matches)"
@@ -166,6 +170,28 @@ def test_feed_pages_the_top_band_newest_first(client: TestClient) -> None:
         ("skipme00001", 1),
     ]
     assert client.get(f"{API}/feed?limit=999", headers=BEARER).json()["pagination"]["limit"] == 50
+
+
+def test_feed_orders_by_when_the_video_came_out_not_when_it_was_judged(
+    client: TestClient, tmp_path: Path
+) -> None:
+    # A backfill judges an old video today: it must not jump the newer one.
+    conn = sqlite3.connect(tmp_path / "data" / "vidtheque.db")
+    try:
+        ids = dict(conn.execute("SELECT source_id, id FROM videos"))
+        conn.execute("UPDATE videos SET published_at = 1700000000 WHERE id = ?", (ids["zduSFxRajkE"],))
+        conn.execute("UPDATE videos SET published_at = 1790000000 WHERE id = ?", (ids["kCc8FmEb1nY"],))
+        conn.execute("UPDATE verdicts SET created_at = ? WHERE video_id = ?", (int(time.time()), ids["zduSFxRajkE"]))
+        # Undated videos go last, whatever their verdict's age.
+        conn.execute("UPDATE videos SET published_at = NULL WHERE id = ?", (ids["eMlx5fFNoYc"],))
+        conn.execute("UPDATE videos SET published_at = 1600000000 WHERE id = ?", (ids["skipme00001"],))
+        conn.commit()
+    finally:
+        conn.close()
+    top = client.get(f"{API}/feed", headers=BEARER).json()["items"]
+    assert [r["video_id"] for r in top] == ["kCc8FmEb1nY", "zduSFxRajkE"]
+    skipped = client.get(f"{API}/feed?band=skipped", headers=BEARER).json()["items"]
+    assert [r["video_id"] for r in skipped] == ["skipme00001", "eMlx5fFNoYc"]
 
 
 def test_feed_stops_paging_at_the_offset_ceiling(client: TestClient, monkeypatch) -> None:
