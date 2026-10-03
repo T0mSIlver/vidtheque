@@ -50,7 +50,8 @@ export function proxy(request: NextRequest): NextResponse {
   // Mirrors next.config.ts headers(), which is the copy that reaches the wire
   // on a rendered document; this one covers the RSC payloads.
   const path = request.nextUrl.pathname;
-  if (path === "/dashboard" || path.startsWith("/dashboard/")) {
+  const owned = (root: string) => path === root || path.startsWith(`${root}/`);
+  if (owned("/dashboard") || owned("/feed")) {
     response.headers.set("Cache-Control", "no-store");
   }
   return response;
