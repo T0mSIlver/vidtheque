@@ -58,6 +58,7 @@ async def test_a_fresh_score_3_reaches_every_phone_once_and_forgets_a_dead_token
     assert sorted(t for t, _ in sender.sent) == ["dead:phone", "live:phone"]
     data = sender.sent[0][1]
     assert (data["score"], data["reason"], data["moment_why"]) == ("3", "evals ↑", "his eval setup")
+    assert data["moment_url"].startswith("https://youtu.be/kCc8FmEb1nY?t=")
     assert [r["token"] for r in await rows(assembled.db, "SELECT token FROM devices")] == ["live:phone"]
     assert (await assembled.db.read(lambda c: store.get(c, vid)))["notified_at"] is not None
 
