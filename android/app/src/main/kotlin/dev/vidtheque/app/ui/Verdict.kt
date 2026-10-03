@@ -65,3 +65,25 @@ fun duration(seconds: Double): String {
 
 /** YouTube serves stills for every public video; the server sends none. 4:3 with bars, so crop to 16:9. */
 fun thumbnail(videoId: String): String = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+
+/**
+ * A profile weight as a dial: the ring fills to |weight|, gold for more of this,
+ * the error tone for less. The sign prints in the middle, so colour is never alone.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun WeightDial(weight: Double, modifier: Modifier = Modifier, size: Dp = 52.dp) {
+    val tone = if (weight < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+    Box(modifier.size(size).clearAndSetSemantics { contentDescription = "Weight ${dev.vidtheque.app.data.signed(weight)}" }, contentAlignment = Alignment.Center) {
+        CircularWavyProgressIndicator(
+            progress = { kotlin.math.abs(weight).toFloat() },
+            modifier = Modifier.size(size),
+            color = tone,
+            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            waveSpeed = 0.dp,
+            amplitude = { if (it >= 1f) 0f else WavyProgressIndicatorDefaults.indicatorAmplitude(it) },
+        )
+        Text(dev.vidtheque.app.data.signed(weight), style = MaterialTheme.typography.labelMediumEmphasized, color = tone)
+    }
+}
+

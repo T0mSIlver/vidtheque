@@ -4,7 +4,7 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
@@ -25,6 +25,7 @@ import coil3.compose.AsyncImage
 import dev.vidtheque.app.ui.feed.FeedScreen
 import dev.vidtheque.app.ui.feed.FeedViewModel
 import dev.vidtheque.app.ui.feed.Still
+import dev.vidtheque.app.ui.profile.ProfileScreen
 import dev.vidtheque.app.ui.video.VideoScreen
 import kotlinx.serialization.Serializable
 import androidx.compose.ui.layout.ContentScale
@@ -35,6 +36,9 @@ data object FeedKey : NavKey
 /** [title] and [channel] let the screen draw at once while the verdict loads; a push carries only the id. */
 @Serializable
 data class VideoKey(val videoId: String, val title: String = "", val channel: String = "") : NavKey
+
+@Serializable
+data object ProfileKey : NavKey
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 private val LocalShared = staticCompositionLocalOf<SharedTransitionScope?> { null }
@@ -73,10 +77,11 @@ fun SignedIn(onSignOut: () -> Unit) {
                             onOpen = { stack.add(VideoKey(it.videoId, it.title, it.channel.orEmpty())) },
                             still = sharedStill,
                             actions = {
-                                IconButton(onClick = onSignOut) { Icon(Icons.AutoMirrored.Rounded.Logout, contentDescription = "Sign out") }
+                                IconButton(onClick = { stack.add(ProfileKey) }) { Icon(Icons.Rounded.AccountCircle, contentDescription = "Your interests") }
                             },
                         )
                     }
+                    entry<ProfileKey> { ProfileScreen(onBack = { stack.removeLastOrNull() }, onSignOut = onSignOut) }
                     entry<VideoKey> { key -> VideoScreen(key, onBack = { stack.removeLastOrNull() }, still = sharedStill) }
                 },
             )
