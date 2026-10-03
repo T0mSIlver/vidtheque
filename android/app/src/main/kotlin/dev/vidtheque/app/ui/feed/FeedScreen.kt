@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ExpandLess
@@ -80,10 +81,10 @@ fun FeedScreen(
     onOpen: (FeedItem) -> Unit,
     still: Still = plainStill,
     card: Lift = { _, _ -> Modifier },
+    list: LazyListState = rememberLazyListState(),
     actions: @Composable () -> Unit = {},
 ) {
     val bar = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    val list = rememberLazyListState()
     Scaffold(
         modifier = Modifier.nestedScroll(bar.nestedScrollConnection),
         containerColor = MaterialTheme.colorScheme.surface,
@@ -127,6 +128,24 @@ fun FeedScreen(
             }
         }
     }
+}
+
+/**
+ * Where [videoId]'s card sits in the list below, item by item as the LazyColumn
+ * lays them out (keep the two in step), or null when it is not listed.
+ */
+fun listIndex(ui: FeedUi, videoId: String): Int? {
+    var index = 0
+    if (ui.error != null) index++
+    if (ui.loaded && ui.top.items.isEmpty()) index++
+    ui.top.items.indexOfFirst { it.videoId == videoId }.let { if (it >= 0) return index + it }
+    index += ui.top.items.size
+    if (ui.top.loading) index++
+    if (ui.skippedCount > 0 && ui.top.nextOffset == null) {
+        index++
+        ui.skipped?.items?.indexOfFirst { it.videoId == videoId }?.let { if (it >= 0) return index + it }
+    }
+    return null
 }
 
 private fun worthLine(ui: FeedUi): String =

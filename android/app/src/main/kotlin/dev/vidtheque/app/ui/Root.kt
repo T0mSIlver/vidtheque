@@ -42,7 +42,10 @@ import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import androidx.navigation3.ui.NavDisplay
 import dev.vidtheque.app.ui.feed.FeedScreen
+import dev.vidtheque.app.data.FeedItem
 import dev.vidtheque.app.ui.feed.FeedViewModel
+import dev.vidtheque.app.ui.feed.listIndex
+import androidx.compose.foundation.lazy.rememberLazyListState
 import dev.vidtheque.app.ui.feed.Lift
 import dev.vidtheque.app.ui.feed.Still
 import dev.vidtheque.app.ui.profile.ProfileScreen
@@ -140,6 +143,11 @@ fun SignedIn(opening: MutableStateFlow<String?>, onSignOut: () -> Unit) {
         opening.value = null
         stack.add(VideoKey(id))
     }
+    // Above the entries, so the video pager swipes over the list the feed shows and
+    // the feed is scrolled to the video shown before a back gesture reveals it.
+    val feed: FeedViewModel = hiltViewModel()
+    val feedUi by feed.ui.collectAsStateWithLifecycle()
+    val list = rememberLazyListState()
     SharedTransitionLayout {
         CompositionLocalProvider(LocalShared provides this) {
             NavDisplay(
@@ -148,23 +156,42 @@ fun SignedIn(opening: MutableStateFlow<String?>, onSignOut: () -> Unit) {
                 sharedTransitionScope = this,
                 entryProvider = entryProvider {
                     entry<FeedKey> {
-                        val feed: FeedViewModel = hiltViewModel()
-                        val ui by feed.ui.collectAsStateWithLifecycle()
                         FeedScreen(
-                            ui = ui,
+                            ui = feedUi,
                             onRefresh = feed::refresh,
                             onMore = feed::more,
                             onToggleSkipped = feed::toggleSkipped,
                             onMoreSkipped = feed::moreSkipped,
                             onOpen = { stack.add(VideoKey(it.videoId, it.title, it.channel.orEmpty())) },
-                                                        card = sharedCard,
+                            card = sharedCard,
+                            list = list,
                             actions = {
                                 IconButton(onClick = { stack.add(ProfileKey) }) { Icon(Icons.Rounded.AccountCircle, contentDescription = "Your interests") }
                             },
                         )
                     }
                     entry<ProfileKey> { ProfileScreen(onBack = { stack.removeLastOrNull() }, onSignOut = onSignOut) }
-                    entry<VideoKey>(metadata = containerOnly) { key -> VideoScreen(key, onBack = { stack.removeLastOrNull() }, still = plainStill, card = sharedPage) }
+                    entry<VideoKey>(metadata = containerOnly) { key ->
+                        // The band the video was opened from, and how to page it further.
+                        val (pages, more) = when {
+                            feedUi.top.items.any { it.videoId == key.videoId } -> feedUi.top.items to feed::more
+                            feedUi.skipped?.items?.any { it.videoId == key.videoId } == true -> feedUi.skipped!!.items to feed::moreSkipped
+                            else -> emptyList<FeedItem>() to {}
+                        }
+                        VideoScreen(
+                            key,
+                            onBack = { stack.removeLastOrNull() },
+                            still = plainStill,
+                            card = sharedPage,
+                            pages = pages,
+                            onMore = more,
+                            onShown = { id ->
+                                // Only when the card is off screen, so a card in view keeps its place.
+                                val index = listIndex(feedUi, id) ?: return@VideoScreen
+                                if (list.layoutInfo.visibleItemsInfo.none { it.index == index }) list.requestScrollToItem(index)
+                            },
+                        )
+                    }
                 },
             )
         }

@@ -52,11 +52,6 @@ class VideoViewModel @AssistedInject constructor(
             try {
                 val verdict = api.verdict(videoId)
                 _ui.update { it.copy(verdict = verdict, feedback = if (it.saving) it.feedback else verdict.feedback) }
-                // `open` once per visit, when the verdict is on screen.
-                if (!opened) {
-                    opened = true
-                    quietly("open")
-                }
             } catch (e: ApiException) {
                 _ui.update { it.copy(error = e.message) }
             } catch (e: IOException) {
@@ -80,6 +75,13 @@ class VideoViewModel @AssistedInject constructor(
             val ok = withContext(NonCancellable) { runCatching { api.feedback(videoId, target) }.isSuccess }
             _ui.update { if (ok) it.copy(saving = false) else it.copy(feedback = now.feedback, saving = false, failed = true) }
         }
+    }
+
+    /** `open` once per visit, when this page has settled with its verdict on screen. */
+    fun shown() {
+        if (opened || _ui.value.verdict == null) return
+        opened = true
+        quietly("open")
     }
 
     fun watched(offsetS: Double) = quietly("watch", offsetS.toInt())
