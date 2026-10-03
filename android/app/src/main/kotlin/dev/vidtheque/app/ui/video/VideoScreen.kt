@@ -2,8 +2,6 @@ package dev.vidtheque.app.ui.video
 
 import android.content.ClipData
 import android.content.ClipboardManager
-import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -60,10 +58,12 @@ import dev.vidtheque.app.data.Moment
 import dev.vidtheque.app.data.Verdict
 import dev.vidtheque.app.data.claudeUri
 import dev.vidtheque.app.data.videoPrompt
+import dev.vidtheque.app.ui.NO_APP
 import dev.vidtheque.app.ui.ScoreDial
 import dev.vidtheque.app.ui.VideoKey
 import dev.vidtheque.app.ui.duration
 import dev.vidtheque.app.ui.feed.Still
+import dev.vidtheque.app.ui.openLink
 import dev.vidtheque.app.ui.scoreColor
 import dev.vidtheque.app.ui.scoreWord
 import kotlinx.coroutines.launch
@@ -85,7 +85,7 @@ fun VideoScreen(key: VideoKey, onBack: () -> Unit, still: Still) {
         onSend = model::send,
         onMoment = { moment ->
             model.watched(moment.offsetS)
-            context.open(Uri.parse(moment.url))
+            if (!context.openLink(Uri.parse(moment.url))) scope.launch { snackbar.showSnackbar(NO_APP) }
         },
         onAsk = { verdict ->
             // Whether the Claude app keeps `q` is unverified (companion.md §6): the
@@ -93,13 +93,11 @@ fun VideoScreen(key: VideoKey, onBack: () -> Unit, still: Still) {
             val prompt = videoPrompt(verdict.video)
             context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Ask Claude", prompt))
             model.askedClaude()
-            context.open(claudeUri(prompt))
-            scope.launch { snackbar.showSnackbar("Prompt copied. Paste it if Claude opens empty.") }
+            val opened = context.openLink(claudeUri(prompt))
+            scope.launch { snackbar.showSnackbar(if (opened) "Prompt copied. Paste it if Claude opens empty." else "Prompt copied. $NO_APP") }
         },
     )
 }
-
-private fun Context.open(uri: Uri) = startActivity(Intent(Intent.ACTION_VIEW, uri))
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
