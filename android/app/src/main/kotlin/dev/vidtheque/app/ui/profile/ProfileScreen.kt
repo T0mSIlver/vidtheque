@@ -151,14 +151,14 @@ fun ProfileContent(
                 item { Text("No interests yet, so every verdict is scored without them.", style = MaterialTheme.typography.bodyLarge) }
             }
             items(profile.entries.sortedByDescending { it.weight }, key = { "entry-${it.id}" }) { entry ->
-                Entry(entry, busy = entry.id in ui.busy) { onDrop(entry.id) }
+                Entry(entry, busy = ui.busy) { onDrop(entry.id) }
             }
             item { Text("History", style = MaterialTheme.typography.titleMediumEmphasized, modifier = Modifier.padding(top = 16.dp, start = 4.dp)) }
             if (ui.events.isEmpty()) item { Text("No change yet.", style = MaterialTheme.typography.bodyMedium) }
             items(ui.events, key = { "event-${it.id}" }) { event ->
-                HistoryRow(event, names, busy = event.id in ui.busy) { onRevert(event.id) }
+                HistoryRow(event, names, busy = ui.busy) { onRevert(event.id) }
             }
-            if (ui.nextBefore != null) item { OutlinedButton(onClick = onOlder) { Text("Older") } }
+            if (ui.nextBefore != null) item { OutlinedButton(onClick = onOlder, enabled = !ui.busy) { Text("Older") } }
         }
     }
 }

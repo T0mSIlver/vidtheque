@@ -26,7 +26,8 @@ const val PROFILE_PROMPT =
 
 /** `+0.9`, `−0.8`, `0.0`: a weight always prints its sign. */
 fun signed(weight: Double): String {
-    val fixed = "%.1f".format(kotlin.math.abs(weight))
+    // Locale.ROOT: a weight reads "+0.9" on every phone, as the web prints it.
+    val fixed = "%.1f".format(java.util.Locale.ROOT, kotlin.math.abs(weight))
     if (fixed == "0.0") return fixed
     return (if (weight < 0) "−" else "+") + fixed
 }

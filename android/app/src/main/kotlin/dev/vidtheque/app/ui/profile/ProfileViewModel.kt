@@ -20,7 +20,8 @@ data class ProfileUi(
     /** Every history page read so far; a write starts over from the first. */
     val events: List<ProfileEvent> = emptyList(),
     val nextBefore: Long? = null,
-    val busy: Set<Long> = emptySet(),
+    /** One request at a time: each write answers the whole profile, so two in flight could land out of order. */
+    val busy: Boolean = false,
     val error: String? = null,
 )
 
@@ -37,30 +38,30 @@ class ProfileViewModel @Inject constructor(private val api: Api) : ViewModel() {
 
     fun older() {
         val before = _ui.value.nextBefore ?: return
-        viewModelScope.launch {
-            guard {
-                val page = api.profile(before)
-                _ui.update { it.copy(events = it.events + page.history.events, nextBefore = page.history.nextBefore.takeIf { page.history.hasMore }) }
-            }
+        exclusive {
+            val page = api.profile(before)
+            _ui.update { it.copy(events = it.events + page.history.events, nextBefore = page.history.nextBefore.takeIf { page.history.hasMore }) }
         }
     }
 
-    fun drop(entryId: Long) = run(busy = entryId) { api.drop(entryId) }
+    fun drop(entryId: Long) = run { api.drop(entryId) }
 
-    fun revert(eventId: Long) = run(busy = eventId) { api.revert(eventId) }
+    fun revert(eventId: Long) = run { api.revert(eventId) }
 
     /** Every write answers the whole profile, so the screen redraws from the server's word. */
-    private fun run(busy: Long? = null, call: suspend () -> Profile) {
-        if (busy != null && busy in _ui.value.busy) return
-        _ui.update { it.copy(error = null, busy = it.busy + listOfNotNull(busy)) }
+    private fun run(call: suspend () -> Profile) = exclusive {
+        val profile = call()
+        _ui.update {
+            it.copy(profile = profile, events = profile.history.events, nextBefore = profile.history.nextBefore.takeIf { profile.history.hasMore })
+        }
+    }
+
+    private fun exclusive(block: suspend () -> Unit) {
+        if (_ui.value.busy) return
+        _ui.update { it.copy(error = null, busy = true) }
         viewModelScope.launch {
-            guard {
-                val profile = call()
-                _ui.update {
-                    it.copy(profile = profile, events = profile.history.events, nextBefore = profile.history.nextBefore.takeIf { profile.history.hasMore })
-                }
-            }
-            if (busy != null) _ui.update { it.copy(busy = it.busy - busy) }
+            guard(block)
+            _ui.update { it.copy(busy = false) }
         }
     }
 
