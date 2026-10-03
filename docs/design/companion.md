@@ -153,6 +153,17 @@ as outside your profile. This keeps the profile from narrowing into a bubble.
 
 Old videos get verdicts through a backfill command, not automatically.
 
+As built (0010): the job runs at `priority = 200`, behind every indexing job,
+so a verdict holds the queue for at most one model call. The transcript budget
+is 40,000 characters, whole cues from both ends. `mark_ready` queues a verdict
+when the video has none, or when a reindex removed a cue a stored moment cites;
+a re-embed that leaves the transcript alone costs no model call. Verdicts are on
+when the model is configured (§4), and `VIDTHEQUE_VERDICTS=0` turns them off.
+The backfill is `vidtheque-mcp verdicts backfill --limit N`, newest first; run
+again, it continues where the last batch stopped, and `--video ID` reruns one.
+The triage agent reads through `video-summary` as `client=triage` with signals
+off.
+
 ### 3.3 Proving it gets better
 
 Every verdict is kept with the profile revision that scored it, and the

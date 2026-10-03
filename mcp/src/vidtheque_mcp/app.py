@@ -49,6 +49,7 @@ from .http import export_routes, frames_routes, health_routes
 from .follows.scheduler import enqueue_due
 from .jobs.runner import Pipeline, PipelineRunner
 from .pipeline import PipelineSettings, WorkerAPI, build_pipeline, worker_client
+from .pipeline.runner import IndexingPipeline
 from .public import (
     PublicSettings,
     SqliteBudgetStore,
@@ -60,6 +61,7 @@ from .public.ask import OpenRouter
 from .public.runs import Runs
 from .server import build_mcp_server
 from .tools import Deps
+from .verdicts.stage import build_verdicts
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +197,15 @@ def assemble(
         signals=not public.enabled,
     )
 
+    # Verdicts (companion.md §3.2): a handler for the `verdict` job kind, and
+    # the indexing pipeline queues one after each video it marks ready. Never
+    # on a public deployment, which has no owner to triage for.
+    verdicts, llm_http = (None, None) if public.enabled else build_verdicts(deps)
+    if verdicts is not None:
+        runner.handlers["verdict"] = verdicts
+        if isinstance(runner.pipeline, IndexingPipeline):
+            runner.pipeline.queue_verdicts = True
+
     # Read-only public mode: the write tools are never handed to `add_tool`, so
     # they are absent from `tools/list` rather than present-and-refusing
     # (demo-site.md §1.1).
@@ -257,6 +268,8 @@ def assemble(
                 if ask_runs is not None:
                     await ask_runs.close()
                 await client.aclose()
+                if llm_http is not None:
+                    await llm_http.aclose()
                 if http is not None:
                     await http.aclose()
                 if status_http is not None and status_http is not http:
