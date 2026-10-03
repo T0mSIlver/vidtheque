@@ -2157,6 +2157,22 @@ def cue_text_totals(conn: sqlite3.Connection, video_id: int) -> dict[str, int]:
     return {"words": words, "chars": chars}
 
 
+def follow_titles(conn: sqlite3.Connection, job_ids: Sequence[str]) -> dict[str, str]:
+    """The followed channel's title for each `follow_check` job on a page."""
+    if not job_ids:
+        return {}
+    marks = ",".join("?" * len(job_ids))
+    rows = conn.execute(
+        f"""
+        SELECT j.public_id AS job_id, c.title
+        FROM jobs j JOIN collections c ON c.id = j.collection_id
+        WHERE j.kind = 'follow_check' AND j.public_id IN ({marks})
+        """,
+        tuple(job_ids),
+    ).fetchall()
+    return {str(row["job_id"]): str(row["title"]) for row in rows}
+
+
 def job_contents(
     conn: sqlite3.Connection, job_ids: Sequence[str]
 ) -> dict[str, sqlite3.Row]:

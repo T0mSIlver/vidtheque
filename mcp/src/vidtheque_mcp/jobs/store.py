@@ -647,6 +647,7 @@ def list_jobs(
     *,
     error_code: str | None = None,
     kind: str | None = None,
+    exclude_kind: str | None = None,
     degraded_only: bool = False,
     order: str = "newest",
 ) -> list[sqlite3.Row]:
@@ -673,6 +674,9 @@ def list_jobs(
     if kind:
         predicates.append("j.kind = ?")
         params.append(kind)
+    if exclude_kind:
+        predicates.append("j.kind <> ?")
+        params.append(exclude_kind)
     if degraded_only:
         predicates.append(
             "EXISTS (SELECT 1 FROM job_items i JOIN video_stages s "
@@ -928,17 +932,27 @@ def active_job_count(conn: sqlite3.Connection) -> int:
 JOB_STATES = ("queued", "running", "done", "failed", "cancelled")
 
 
-def job_state_counts(conn: sqlite3.Connection) -> dict[str, int]:
-    """Every job this instance has ever run, by state (dashboard.md §17).
+def job_state_counts(
+    conn: sqlite3.Connection, *, kind: str | None = None, exclude_kind: str | None = None
+) -> dict[str, int]:
+    """Every job this instance has ever run, by state (dashboard.md §24.2).
 
     One grouped count, not five statements, and deliberately not four
     conditional sums like :func:`job_health` beside it: that one answers "what
     is happening right now" and picks its columns for a sentence, while this is
-    the ledger's whole vocabulary. A state the schema grows later shows up here
+    the jobs view's whole vocabulary. A state the schema grows later shows up here
     the day it is added rather than waiting for somebody to remember this
     function — which is why the row's own word is the key.
     """
-    rows = conn.execute("SELECT state, COUNT(*) AS n FROM jobs GROUP BY state").fetchall()
+    # The jobs view's kind filter, so the counts describe the rows beside them.
+    where, params = "", []
+    if kind:
+        where, params = " WHERE kind = ?", [kind]
+    elif exclude_kind:
+        where, params = " WHERE kind <> ?", [exclude_kind]
+    rows = conn.execute(
+        f"SELECT state, COUNT(*) AS n FROM jobs{where} GROUP BY state", params
+    ).fetchall()
     counts = {state: 0 for state in JOB_STATES}
     for row in rows:
         counts[str(row["state"])] = int(row["n"])

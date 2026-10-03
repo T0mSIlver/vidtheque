@@ -447,8 +447,7 @@ def test_health_says_a_video_failed_and_leaves_the_count_to_corpus(
 
 
 def test_the_corpus_json_is_the_tally_the_page_prints(tmp_path: Path) -> None:
-    """Four videos split three ready and one indexing, three jobs split one
-    queued, one running and one failed."""
+    """Four videos split three ready and one indexing."""
     with make_client(tmp_path) as client:
         body = read(client, CORPUS)
 
@@ -460,13 +459,6 @@ def test_the_corpus_json_is_the_tally_the_page_prints(tmp_path: Path) -> None:
         "failed": 0,
         "stale": 0,
     }
-    # A video state and a job state are deliberately different numbers.
-    assert body["jobs_by_state"]["queued"] == 1
-    assert body["jobs_by_state"]["running"] == 1
-    assert body["jobs_by_state"]["failed"] == 1
-    assert body["jobs_by_state"]["done"] == 0
-    assert body["queue"]["active"] == 2
-    assert body["queue"]["failed_window_s"] == FAILED_WINDOW_S
     for key in ("chunks", "cues", "keyframes", "ocr_lines"):
         assert isinstance(body["corpus"][key], int), key
     # Seconds are the stored fact; the rollup's `hours` is a display rounding.
@@ -484,8 +476,8 @@ def test_the_corpus_json_is_the_tally_the_page_prints(tmp_path: Path) -> None:
     for row in body["channels"]["rows"]:
         assert set(row) == {"channel", "videos", "seconds"}
         assert isinstance(row["videos"], int) and isinstance(row["seconds"], float)
-    # Health's, and only Health's.
-    for gone in ("readiness", "gaps", "embed_backlog", "writes_allowed"):
+    # Health's and the jobs view's, not this page's.
+    for gone in ("readiness", "gaps", "embed_backlog", "writes_allowed", "jobs_by_state"):
         assert gone not in body, gone
 
 
@@ -619,7 +611,6 @@ def test_the_public_projection_drops_the_operators_box_from_both_reads(
         assert leaked not in raw, f"{leaked} is in the demo payload"
     # …and the corpus is all still counted.
     assert corpus["corpus"]["videos"] == 4
-    assert corpus["jobs_by_state"]["failed"] == 1
 
 
 def test_the_owner_sees_the_box_the_demo_does_not(tmp_path: Path) -> None:
@@ -1750,7 +1741,8 @@ def test_the_jobs_list_echoes_the_filters_it_actually_ran(tmp_path: Path) -> Non
 
     assert default["filters"] == {
         "state": "all",
-        "kind": "all",
+        # Every kind but follow checks, which their follow's page lists (§24.2).
+        "kind": "videos",
         "error_code": None,
         "degraded": False,
         "order": "newest",
@@ -1782,7 +1774,7 @@ def test_a_jobs_filter_that_fell_back_says_so_rather_than_going_quiet(
         )
 
     assert payload["filters"]["state"] == "all"
-    assert payload["filters"]["kind"] == "all"
+    assert payload["filters"]["kind"] == "videos"
     assert payload["filters"]["order"] == "newest"
     assert payload["filters"]["degraded"] is False
     notes = payload["notes"]
@@ -1932,16 +1924,15 @@ def test_the_job_detail_carries_the_panels_the_page_renders(tmp_path: Path) -> N
     assert isinstance(finished["degraded"][0]["video_id"], str)
     assert "503" in finished["degraded"][0]["error"]
 
-    # The item the stage table is about: running first, else the last to
-    # finish. A running job is on its running item.
-    assert running["focus"]["state"] == "running"
-    assert running["focus"]["stage"] == "stt"
-    stages = {row["stage"]: row for row in running["stages"]}
-    # All seven, in pipeline order, `absent` where no row exists yet.
-    assert len(running["stages"]) == len(stages) == 7
-    assert stages["fetch"]["state"] in {"done", "absent"}
-    assert any(row["state"] == "absent" for row in running["stages"])
-    assert set(running["stages"][0]) == {
+    # The item the stage table explains: the latest that failed or finished
+    # degraded (§24.2). A clean or running item's stages are its video page's.
+    assert finished["focus"]["seq"] == 0
+    stages = {row["stage"]: row for row in finished["stages"]}
+    # All seven, in pipeline order, `absent` where no row exists.
+    assert len(finished["stages"]) == len(stages) == 7
+    assert stages["ocr"]["state"] == "failed"
+    assert running["focus"] is None and running["stages"] == []
+    assert set(finished["stages"][0]) == {
         "stage",
         "state",
         "started_at",
@@ -1956,16 +1947,13 @@ def test_a_job_with_nothing_in_focus_sends_the_absence_rather_than_a_shell(
     """An item that never resolved to a video has no stages to show.
 
     `video_stages` is keyed on a video, so the deferred job — one item, never
-    fetched — has nothing to be in focus. `focus` is `null`, which is the field
-    the panel is keyed on: `stages` is still the seven pipeline rows and every
-    one of them is `absent`, because the stage list is the pipeline's shape and
-    not a claim about this job.
+    fetched — has nothing to be in focus: `focus` is `null` and `stages` empty.
     """
     with make_client(tmp_path) as client:
         payload = read(client, f"{ROOT}/api/jobs/job_deferred01")
 
     assert payload["focus"] is None
-    assert {row["state"] for row in payload["stages"]} == {"absent"}
+    assert payload["stages"] == []
     assert payload["counts"] == {"queued": 1}
     assert payload["error_counts"] == {}
     assert payload["degraded"] == []
@@ -1986,9 +1974,9 @@ def test_the_job_detail_projection_drops_the_operators_prose(tmp_path: Path) -> 
     assert finished["degraded"][0]["stage"] == "ocr"
     assert finished["degraded"][0]["error"] is None
     assert finished["error_counts"] == {"E_SOURCE": 1}
-    assert running["focus"]["source_url"] is None
-    assert running["focus"]["error_message"] is None
-    for row in running["stages"]:
+    assert finished["focus"]["source_url"] is None
+    assert finished["focus"]["error_message"] is None
+    for row in finished["stages"]:
         assert set(row) == {"stage", "state", "started_at", "finished_at", "took_s"}
     raw = json.dumps([finished, running])
     for leaked in (
