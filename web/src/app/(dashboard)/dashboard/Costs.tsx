@@ -39,100 +39,108 @@ function calls(window: CostWindow) {
 function Loaded({ data }: { data: Costs }) {
   const month = data.windows["30d"];
   return (
-    <Panel id="costs" title="Model cost" aside={<span className={ui.note}>list price, USD</span>}>
-      <dl className={`${ui.figures} ${ui.figuresTight}`}>
-        {WINDOWS.map(([key, label]) => (
-          <Figure label={label} key={key} notes={calls(data.windows[key])}>
-            {usd(data.windows[key].cost_micro_usd)}
+    <>
+      <Panel id="costs" title="Model cost" aside={<span className={ui.note}>list price, USD</span>}>
+        <dl className={`${ui.figures} ${ui.figuresTight}`}>
+          {WINDOWS.map(([key, label]) => (
+            <Figure label={label} key={key} notes={calls(data.windows[key])}>
+              {usd(data.windows[key].cost_micro_usd)}
+            </Figure>
+          ))}
+          <Figure
+            label="per verdict"
+            notes={[<>over {count(month.verdicts)} verdict(s) in 30 days</>]}
+          >
+            {usd(month.per_verdict_micro_usd)}
           </Figure>
-        ))}
-        <Figure
-          label="per verdict"
-          notes={[<>over {count(month.verdicts)} verdict(s) in 30 days</>]}
-        >
-          {usd(month.per_verdict_micro_usd)}
-        </Figure>
-      </dl>
+        </dl>
+      </Panel>
 
-      <div className={table.tablewrap}>
-        <table className={table.grid}>
-          <caption className={ui.srOnly}>Cost by purpose, last 30 days</caption>
-          <thead>
-            <tr>
-              <th scope="col">purpose, 30 days</th>
-              <th scope="col" className={table.num}>
-                calls
-              </th>
-              <th scope="col" className={table.num}>
-                tokens in / out
-              </th>
-              <th scope="col" className={table.num}>
-                cost
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.by_purpose.items.map((row) => (
-              <tr key={row.purpose}>
-                <th scope="row">
-                  <code>{row.purpose}</code>
-                </th>
-                <td className={table.num}>{count(row.calls)}</td>
-                <td className={table.num}>
-                  {count(row.prompt_tokens)} / {count(row.completion_tokens)}
-                </td>
-                <td className={table.num}>{usd(row.cost_micro_usd)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {data.top.items.length ? (
-        <div className={table.tablewrap}>
-          <table className={table.grid}>
-            <caption className={ui.srOnly}>The most expensive calls, last 30 days</caption>
-            <thead>
-              <tr>
-                <th scope="col">most expensive</th>
-                <th scope="col">video</th>
-                <th scope="col" className={table.num}>
-                  tokens in / out
-                </th>
-                <th scope="col" className={table.num}>
-                  cost
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.top.items.map((call, index) => (
-                <tr key={`${call.at}-${index}`}>
-                  <th scope="row">
-                    <time dateTime={iso(call.at)}>{at(call.at)}</time> <code>{call.purpose}</code>
-                    {call.outcome !== "ok" ? (
-                      <>
-                        {" "}
-                        <span className={ui.warn}>{call.outcome}</span>
-                      </>
-                    ) : null}
+      <div className={ui.split}>
+        <Panel id="cost-purpose" title="By purpose, 30 days">
+          <div className={table.tablewrap}>
+            <table className={table.grid}>
+              <thead>
+                <tr>
+                  <th scope="col">purpose</th>
+                  <th scope="col" className={table.num}>
+                    calls
                   </th>
-                  <td>
-                    {call.video_id ? (
-                      <DashLink href={`${ROOT}/videos/${encodeURIComponent(call.video_id)}`}>
-                        {call.title ?? call.video_id}
-                      </DashLink>
-                    ) : null}
-                  </td>
-                  <td className={table.num}>
-                    {count(call.prompt_tokens)} / {count(call.completion_tokens)}
-                  </td>
-                  <td className={table.num}>{usd(call.cost_micro_usd)}</td>
+                  <th scope="col" className={table.num}>
+                    tokens in / out
+                  </th>
+                  <th scope="col" className={table.num}>
+                    cost
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
-    </Panel>
+              </thead>
+              <tbody>
+                {data.by_purpose.items.map((row) => (
+                  <tr key={row.purpose}>
+                    <th scope="row">
+                      <code>{row.purpose}</code>
+                    </th>
+                    <td className={table.num}>{count(row.calls)}</td>
+                    <td className={table.num}>
+                      {count(row.prompt_tokens)} / {count(row.completion_tokens)}
+                    </td>
+                    <td className={`${table.num} ${ui.nowrap}`}>{usd(row.cost_micro_usd)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+
+        {data.top.items.length ? (
+          <Panel id="cost-top" title="Most expensive calls, 30 days">
+            <div className={table.tablewrap}>
+              <table className={table.grid}>
+                <thead>
+                  <tr>
+                    <th scope="col">call</th>
+                    <th scope="col">video</th>
+                    <th scope="col" className={table.num}>
+                      tokens in / out
+                    </th>
+                    <th scope="col" className={table.num}>
+                      cost
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.top.items.map((call, index) => (
+                    <tr key={`${call.at}-${index}`}>
+                      <th scope="row">
+                        <time dateTime={iso(call.at)}>{at(call.at)}</time>{" "}
+                        <code>{call.purpose}</code>
+                        {call.outcome !== "ok" ? (
+                          <>
+                            {" "}
+                            <span className={ui.warn}>{call.outcome}</span>
+                          </>
+                        ) : null}
+                      </th>
+                      <td>
+                        {call.video_id ? (
+                          <DashLink href={`${ROOT}/videos/${encodeURIComponent(call.video_id)}`}>
+                            {call.title ?? call.video_id}
+                          </DashLink>
+                        ) : null}
+                      </td>
+                      <td className={table.num}>
+                        <span className={ui.nowrap}>{count(call.prompt_tokens)} /</span>{" "}
+                        <span className={ui.nowrap}>{count(call.completion_tokens)}</span>
+                      </td>
+                      <td className={`${table.num} ${ui.nowrap}`}>{usd(call.cost_micro_usd)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+        ) : null}
+      </div>
+    </>
   );
 }
