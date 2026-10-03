@@ -20,7 +20,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dagger.hilt.android.AndroidEntryPoint
 import dev.vidtheque.app.auth.SessionState
 import dev.vidtheque.app.ui.RootViewModel
-import dev.vidtheque.app.ui.SignedInScreen
+import dev.vidtheque.app.ui.SignedIn
 import dev.vidtheque.app.ui.signin.SignInScreen
 import dev.vidtheque.app.ui.signin.SignInViewModel
 import dev.vidtheque.app.ui.theme.VidthequeTheme
@@ -47,7 +47,7 @@ class MainActivity : ComponentActivity() {
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                     when (state) {
                         SessionState.Loading -> Unit
-                        SessionState.SignedIn -> SignedInScreen(signIn.host, onSignOut = root::signOut)
+                        SessionState.SignedIn -> SignedIn(onSignOut = root::signOut)
                         SessionState.SignedOut -> SignInScreen(
                             host = signIn.host,
                             error = ui.error,
