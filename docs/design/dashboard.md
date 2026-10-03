@@ -3525,3 +3525,22 @@ row-facts read.
 degraded. A clean item's stages repeat its video page's provenance, which the
 items table links, so `focus` is `null` and `stages` is `[]` for any other job.
 
+### 24.3 Videos and one video
+
+**The videos table** keeps every column on a wide screen. Coverage prints each
+leg's word (`transcript`, `ocr`, `frames`, struck through when missing) instead
+of `t o f`, which needed the tooltip to read. On a phone (≤ 52rem) the filter
+band folds behind a toggle, since it filled the whole first screen, and a row
+is the title, channel, state and indexed date; the frame, dates, coverage, tags
+and actions are on the detail page the title links. Fifty rows used to make a
+16,800 px page.
+
+**One video's page** keeps every panel. On a phone the frame strip folds behind
+its count, and opens on its own when a frame is selected from the timeline or
+a link. The stage table it shared with one job's page now lives here alone
+(§24.2). Payloads are unchanged.
+
+`kit/Fold` is the toggle both use: `phone` folds only on a narrow viewport and
+leaves the content whole elsewhere by CSS, so the server render and the first
+paint agree.
+
