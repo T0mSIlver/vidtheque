@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ground">#FFF8F2</color>
+    <!-- Fixed dark in both modes: the cream v vanishes on the light ground. -->
+    <color name="launcher_ground">#110E08</color>
 </resources>
