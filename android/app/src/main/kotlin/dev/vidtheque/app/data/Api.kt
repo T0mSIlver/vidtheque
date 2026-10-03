@@ -165,9 +165,9 @@ class Api @Inject constructor(@Named("api") private val http: OkHttpClient, priv
 
     suspend fun verdict(videoId: String): Verdict = json.decodeFromString(get("$root/verdicts/$videoId"))
 
-    /** Every channel, no filter: the search the MCP tool runs, relevance first. */
+    /** Every channel, no filter: the search the MCP tool runs, relevance first. The server cuts each snippet around its match. */
     suspend fun search(query: String, offset: Int): SearchPage =
-        json.decodeFromString(get("$root/search?q=${URLEncoder.encode(query, "UTF-8")}&offset=$offset"))
+        json.decodeFromString(get("$root/search?q=${URLEncoder.encode(query, "UTF-8")}&offset=$offset&max_text_chars=300"))
 
     /** A query submitted on the search screen, as the tool logs one (companion.md §2.3). */
     suspend fun searched(query: String) {

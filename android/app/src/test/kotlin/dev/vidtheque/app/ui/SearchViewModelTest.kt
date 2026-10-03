@@ -97,7 +97,7 @@ class SearchViewModelTest {
         assertEquals(1, signals.size)
         assertTrue(signals[0].contains("\"kind\":\"mcp_search\"") && signals[0].contains("\"text\":\"kv cache\""))
         val searches = sent.filter { it.method == "GET" }.map { it.url.encodedQuery }
-        assertEquals(listOf("q=kv+cache&offset=0", "q=kv+cache&offset=2"), searches)
+        assertEquals(listOf("q=kv+cache&offset=0&max_text_chars=300", "q=kv+cache&offset=2&max_text_chars=300"), searches)
     }
 
     @Test
