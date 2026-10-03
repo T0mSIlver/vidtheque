@@ -22,6 +22,11 @@
 # Both are box-local by design (deploy/compose.local.example.yml is the
 # template). Everything else in $DEPLOY_DIR is disposable and overwritten here.
 #
+# Before it switches tags it takes an online backup of vidtheque.db and auth.db
+# into $VIDTHEQUE_DATA_DIR/backups/ (the box's data mount), checks it, and
+# keeps the last $KEEP. A failed backup stops the update with nothing changed;
+# `--no-backup` skips it, for a rollback away from a damaged database.
+#
 # The earliest tag this can deploy is the first release that carries
 # deploy/compose.release.example.yml AND deploy/Caddyfile — before either, the
 # fetch 404s, correctly. Deploying a pre-edge release is therefore a manual
@@ -31,11 +36,15 @@ set -euo pipefail
 
 DEPLOY_DIR=${VIDTHEQUE_DEPLOY_DIR:-/srv/vidtheque-deploy}
 RAW=https://raw.githubusercontent.com/T0mSIlver/vidtheque
+# Backups kept on the data mount. vidtheque.db was 1.2 GB on 2026-10-03.
+KEEP=3
 
 fail() { echo "update: FAILED — $1" >&2; exit 1; }
 
+BACKUP=1
+if [ "${1:-}" = --no-backup ]; then BACKUP=0; shift; fi
 TAG=${1:-}
-[ -n "$TAG" ] || fail "usage: vidtheque-update <version>   e.g. vidtheque-update 0.0.2"
+[ -n "$TAG" ] || fail "usage: vidtheque-update [--no-backup] <version>   e.g. vidtheque-update 0.0.2"
 TAG=${TAG#v}
 # This string is spliced into a URL and into .env, so it is validated rather
 # than trusted: exactly three dotted numbers, nothing else.
@@ -61,6 +70,72 @@ trap 'rm -rf "$TMP"' EXIT
 for f in docker-compose.yml compose.release.example.yml Caddyfile; do
   curl -fsS -m 30 "$RAW/v$TAG/deploy/$f" -o "$TMP/$f" || fail "fetch $RAW/v$TAG/deploy/$f"
 done
+
+cd "$DEPLOY_DIR"
+FILES=(-f docker-compose.yml -f compose.release.yml -f compose.local.yml)
+# --project-name adopts the running stack rather than starting a second one
+# beside it. The base file carries `name: vidtheque` too; saying it here means a
+# release that moved or renamed that key cannot orphan what is already up.
+DC=(docker compose --project-name vidtheque "${FILES[@]}")
+
+# The backup runs before anything is installed, so it goes through the release
+# that is live now: its compose files, its .env, its mcp image. The sqlite3
+# backup API copies a consistent snapshot while mcp keeps writing.
+SNAP=
+if [ "$BACKUP" = 1 ]; then
+  { [ -f docker-compose.yml ] && [ -f compose.release.yml ]; } || \
+    fail "no live compose files to back up through — first deploy? rerun with --no-backup"
+  if [ -n "$("${DC[@]}" ps --status running --quiet mcp 2>/dev/null)" ]; then
+    RUN=("${DC[@]}" exec -T mcp python -)
+  else
+    RUN=("${DC[@]}" run --rm --no-deps -T --entrypoint python mcp -)
+  fi
+  SNAP=$("${RUN[@]}" "${PREV:-unset}" "$KEEP" <<'PY'
+import os, shutil, sqlite3, sys, time
+from pathlib import Path
+
+data = Path(os.environ["VIDTHEQUE_DATA_DIR"])
+label, keep = sys.argv[1], int(sys.argv[2])
+names = [n for n in ("vidtheque.db", "auth.db") if (data / n).is_file()]
+if "vidtheque.db" not in names:
+    sys.exit(f"no vidtheque.db in {data}")
+# Room for the copies plus 1 GiB, so the backup cannot fill the live database's disk.
+need = sum((data / n).stat().st_size for n in names) + 2**30
+free = shutil.disk_usage(data).free
+if free < need:
+    sys.exit(f"{free >> 20} MiB free in {data}, need {need >> 20} MiB")
+
+root = data / "backups"
+root.mkdir(exist_ok=True)
+for stale in root.glob("*.partial"):
+    shutil.rmtree(stale)
+dest = root / f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{label}"
+work = dest.with_name(dest.name + ".partial")
+work.mkdir()
+try:
+    for n in names:
+        src = sqlite3.connect(data / n, timeout=60)
+        dst = sqlite3.connect(work / n)
+        src.backup(dst)
+        dst.close()
+        src.close()
+        check = sqlite3.connect(work / n)
+        result = check.execute("pragma quick_check").fetchall()
+        check.close()
+        if result != [("ok",)]:
+            raise RuntimeError(f"quick_check on the copy of {n}: {result[:3]}")
+except Exception as exc:
+    shutil.rmtree(work)
+    sys.exit(f"{type(exc).__name__}: {exc}")
+work.rename(dest)
+done = sorted(p for p in root.iterdir() if p.is_dir() and not p.name.endswith(".partial"))
+for old in done[:-keep]:
+    shutil.rmtree(old)
+print(dest)
+PY
+  ) || fail "backup of $DEPLOY_DIR's databases — nothing was changed"
+  echo "update: backup $SNAP (mcp's data dir), quick_check ok, last $KEEP kept"
+fi
 install -m 644 "$TMP/docker-compose.yml"           "$DEPLOY_DIR/docker-compose.yml"
 install -m 644 "$TMP/compose.release.example.yml"  "$DEPLOY_DIR/compose.release.yml"
 # The edge's rule, pinned to the same tag as the images it routes to. The
@@ -78,12 +153,20 @@ else
   printf '\n# Set by vidtheque-update. The GHCR tag, no leading v.\nIMAGE_TAG=%s\n' "$TAG" >> "$DEPLOY_DIR/.env"
 fi
 
-cd "$DEPLOY_DIR"
-FILES=(-f docker-compose.yml -f compose.release.yml -f compose.local.yml)
-# --project-name adopts the running stack rather than starting a second one
-# beside it. The base file carries `name: vidtheque` too; saying it here means a
-# release that moved or renamed that key cannot orphan what is already up.
-DC=(docker compose --project-name vidtheque "${FILES[@]}")
+# Code first is wrong when the release migrated the schema: the previous release
+# refuses a newer database, so the data goes back before the tag does. The -wal
+# and -shm files go too, or SQLite replays the newer log onto the old copy.
+rollback_hint() {
+  echo "rollback: vidtheque-update ${PREV:-<previous tag>}"
+  [ -n "$SNAP" ] || return 0
+  local dc="docker compose --project-name vidtheque ${FILES[*]}"
+  echo "  if that release will not start on this database, restore the backup first"
+  echo "  (anything indexed since the backup is lost):"
+  echo "    cd $DEPLOY_DIR"
+  echo "    $dc stop mcp"
+  echo "    $dc run --rm --no-deps --entrypoint sh mcp -c 'cd \$VIDTHEQUE_DATA_DIR && rm -f *.db-wal *.db-shm && cp -p backups/${SNAP##*/}/*.db .'"
+  echo "    vidtheque-update ${PREV:-<previous tag>}"
+}
 
 "${DC[@]}" pull  || fail "pull $TAG — is the tag published? tags carry no leading v"
 "${DC[@]}" up -d || fail "up -d $TAG"
@@ -105,7 +188,7 @@ sleep 8
 for url in "http://127.0.0.1:${EDGE_PORT:-8080}/healthz" "http://127.0.0.1:${WORKER_PORT:-8081}/healthz"; do
   curl -fsS -m 10 "$url" >/dev/null || {
     echo "update: healthz FAILED at $url — $TAG is up but not answering" >&2
-    echo "update: roll back with:  vidtheque-update ${PREV:-<the previous tag>}" >&2
+    rollback_hint >&2
     echo "update: logs:            docker compose --project-name vidtheque logs --tail 50" >&2
     exit 1
   }
@@ -116,7 +199,8 @@ echo "        edge    caddy (deploy/Caddyfile)                127.0.0.1:${EDGE_P
 echo "        web     ghcr.io/t0msilver/vidtheque-web:$TAG    (behind the edge)"
 echo "        mcp     ghcr.io/t0msilver/vidtheque-mcp:$TAG    (behind the edge)"
 echo "        worker  ghcr.io/t0msilver/vidtheque-worker:$TAG 127.0.0.1:${WORKER_PORT:-8081}"
-echo "        rollback: vidtheque-update ${PREV:-<previous tag>}"
+echo
+rollback_hint
 echo
 echo "HINT: the previous images are still on disk — that is what makes the"
 echo "      rollback above a restart instead of a ~28 GB pull. Reclaim the"

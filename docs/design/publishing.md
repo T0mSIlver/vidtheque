@@ -34,6 +34,14 @@ installs `install.md` §5a and §5b asked for by hand.
 the compose `tunnel` profile: it works, it holds the tunnel credential, and
 the cutover then changes one line of its ingress.
 
+*Amended 2026-10-03:* `vidtheque-update` backs up `vidtheque.db` and `auth.db`
+before it touches anything: the sqlite3 backup API through the live release's
+`mcp` container, `pragma quick_check` on each copy, into `backups/` in the data
+directory, keeping the last three. A failed backup stops the update with
+nothing changed. Its rollback hint restores the copy before the previous tag,
+because a previous release will not open a database a newer one migrated.
+`--no-backup` skips it, for rolling back away from a damaged database.
+
 **The deploy poller stays pull-based.** A GitHub deployment still names what
 the public box should run, and nothing connects inward to deploy. What the
 poller does with it changes: it reads the requested ref's `IMAGE_TAG`, fetches
