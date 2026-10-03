@@ -1,7 +1,10 @@
 # Console audit (2026-10-03)
 
 The input to `companion.md` §7: what each `/dashboard` page shows, what it
-repeats, and a proposed verdict per block. Tom picks; then one PR per page.
+repeats, and a proposed verdict per block.
+
+**Decided: Tom took every proposal as written (2026-10-03).** One PR per page
+follows.
 
 The rule applied: **every page answers one question a human has about the
 machine, and a number appears on exactly one page.** "What is new" goes to the
