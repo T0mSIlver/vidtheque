@@ -817,7 +817,8 @@ CREATE TABLE jobs (
   id               INTEGER PRIMARY KEY,
   public_id        TEXT    NOT NULL UNIQUE,       -- 'job_' || 12 hex
   kind             TEXT    NOT NULL
-                   CHECK (kind IN ('index','reindex','delete','export','follow_check')),
+                   CHECK (kind IN ('index','reindex','delete','export','follow_check',
+                                   'verdict')),
   state            TEXT    NOT NULL DEFAULT 'queued'
                    CHECK (state IN ('queued','running','done','failed','cancelled')),
   priority         INTEGER NOT NULL DEFAULT 100,  -- lower runs first; 'high' = 50
@@ -906,6 +907,13 @@ and "what has this follow queued" are plain indexed queries rather than a `LIKE`
 against `args_json`. It is nullable and NULL for every job that has nothing to do
 with a follow — which is every job that existed before 0006 — and
 `ON DELETE SET NULL` means an unfollow never takes a job's history with it.
+
+**`verdict` arrived in migration 0010** (companion.md §3.2), through the same
+rebuild, copied from 0006 but for the one word. A verdict job has one item, runs
+at `priority = 200` so every indexing job is claimed before it, and names its
+video in `args_json` (`{"video_id": …}`). Its item's `video_id` stays NULL:
+`job_items_one_inflight` exists to stop two jobs indexing one video, and a queued
+verdict must not refuse a reindex of the video it judges.
 
 **The state machine.**
 
@@ -1253,6 +1261,32 @@ first. A revert is itself an event.
 Signals are kept 180 days: `record_signal` deletes older rows on each insert
 (an indexed range delete that usually finds nothing), and boot runs the same
 sweep. A deleted video takes its signals with it.
+
+### 1.13 `verdicts`
+
+Added by 0010 (companion.md §3.1). One row per video, written by a `verdict`
+job after the video is indexed; a rerun replaces it.
+
+```sql
+CREATE TABLE verdicts (
+  video_id    INTEGER PRIMARY KEY REFERENCES videos(id) ON DELETE CASCADE,
+  score       INTEGER NOT NULL CHECK (score BETWEEN 0 AND 3),
+  reason      TEXT    NOT NULL,
+  summary     TEXT    NOT NULL,
+  moments     TEXT    NOT NULL DEFAULT '[]',  -- JSON [{cue_id, offset_s, why}], ≤ 3
+  profile_rev INTEGER NOT NULL,               -- profile_events id that scored it; 0 = empty profile
+  model       TEXT    NOT NULL,               -- '<backend>:<model>'
+  created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+  notified_at INTEGER                         -- kept across a rerun
+) STRICT;
+CREATE INDEX verdicts_recent ON verdicts(created_at DESC);
+```
+
+Every stored moment passed the receipt check: its `cue_id` is a `cues` row of
+this video and `offset_s` lies in `[start_s, end_s]` of that cue. A moment that
+fails is dropped, never moved to a nearby cue. A reindex rewrites `cues`, so
+`mark_ready` queues a new verdict when the stored one has a moment whose receipt
+no longer holds, and when the video has none yet.
 
 ---
 
