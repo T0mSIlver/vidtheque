@@ -61,7 +61,9 @@ OPS_SCHEMA: dict[str, Any] = {
                 "properties": {
                     "op": {"enum": ["add", "drop", "reweight"]},
                     "id": {"type": "integer"},
-                    "text": {"type": "string", "minLength": 1, "maxLength": store.MAX_TEXT_CHARS},
+                    # Looser than the store's cap: a long topic is refused as one op
+                    # by `store.apply`, not as an invalid answer that fails the night.
+                    "text": {"type": "string", "minLength": 1, "maxLength": 200},
                     "weight": {"type": "number", "minimum": -1, "maximum": 1},
                     "reason": {"type": "string", "minLength": 1, "maxLength": 300},
                 },

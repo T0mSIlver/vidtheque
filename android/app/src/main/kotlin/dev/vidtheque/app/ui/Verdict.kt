@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.vidtheque.app.data.Match
@@ -157,8 +158,8 @@ private fun MatchChip(match: Match) {
     ) {
         Row(Modifier.padding(start = 4.dp, end = 10.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
-            // Never cut: an entry is at most 32 characters, so two lines always hold it.
-            Text(match.text, style = MaterialTheme.typography.labelLarge, maxLines = 2)
+            // Two lines hold any entry under the 32-character cap; one written before it is cut there.
+            Text(match.text, style = MaterialTheme.typography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
 }
