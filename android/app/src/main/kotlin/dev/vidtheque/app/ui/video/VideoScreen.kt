@@ -3,6 +3,10 @@ package dev.vidtheque.app.ui.video
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.net.Uri
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.derivedStateOf
+import dev.vidtheque.app.data.FeedItem
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -96,8 +100,15 @@ import dev.vidtheque.app.ui.scoreWord
 import kotlinx.coroutines.launch
 
 @Composable
-fun VideoScreen(key: VideoKey, onBack: () -> Unit, still: Still, card: Lift = { _, _ -> Modifier }) {
-    val model = hiltViewModel<VideoViewModel, VideoViewModel.Factory>(creationCallback = { it.create(key.videoId) })
+fun VideoScreen(
+    key: VideoKey,
+    onBack: () -> Unit,
+    still: Still,
+    card: Lift = { _, _ -> Modifier },
+    pages: List<FeedItem> = emptyList(),
+    onMore: () -> Unit = {},
+    onShown: (String) -> Unit = {},
+) {
     // The still runs under the status bar, behind a dark scrim: light icons in both modes.
     val window = LocalActivity.current?.window
     val view = LocalView.current
@@ -107,7 +118,31 @@ fun VideoScreen(key: VideoKey, onBack: () -> Unit, still: Still, card: Lift = { 
         bars?.isAppearanceLightStatusBars = false
         onDispose { if (was != null) bars.isAppearanceLightStatusBars = was }
     }
+    val start = pages.indexOfFirst { it.videoId == key.videoId }
+    // Not in the feed's list (a notification opened it): this one video, no pager.
+    if (start < 0) {
+        VideoPage(key, settled = true, still = still, container = card(key.videoId, 0.dp), onBack = onBack)
+        return
+    }
+    // The feed's order, swiped like Gmail's messages. A swipe only moves: no signal
+    // but the `open` of the page it settles on. The container is the shown page's,
+    // so back shrinks it into that video's card, which onShown scrolls into view.
+    val pager = rememberPagerState(initialPage = start) { pages.size }
+    val shown = pages.getOrNull(pager.settledPage)?.videoId ?: key.videoId
+    LaunchedEffect(shown) { onShown(shown) }
+    val nearEnd by remember { derivedStateOf { pager.currentPage >= pager.pageCount - 3 } }
+    LaunchedEffect(nearEnd) { if (nearEnd) onMore() }
+    HorizontalPager(pager, modifier = card(shown, 0.dp), key = { pages[it].videoId }) { page ->
+        val item = pages[page]
+        VideoPage(VideoKey(item.videoId, item.title, item.channel.orEmpty()), settled = pager.settledPage == page, still = still, onBack = onBack)
+    }
+}
+
+@Composable
+private fun VideoPage(key: VideoKey, settled: Boolean, still: Still, onBack: () -> Unit, container: Modifier = Modifier) {
+    val model = hiltViewModel<VideoViewModel, VideoViewModel.Factory>(key = "video-${key.videoId}", creationCallback = { it.create(key.videoId) })
     val ui by model.ui.collectAsStateWithLifecycle()
+    LaunchedEffect(settled, ui.verdict != null) { if (settled) model.shown() }
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -127,7 +162,7 @@ fun VideoScreen(key: VideoKey, onBack: () -> Unit, still: Still, card: Lift = { 
         key = key,
         ui = ui,
         still = still,
-        container = card(key.videoId, 0.dp),
+        container = container,
         snackbar = snackbar,
         onBack = onBack,
         onRetry = model::load,

@@ -92,6 +92,21 @@ class VideoViewModelTest {
     }
 
     @Test
+    fun openIsSentOnceAndOnlyWhenThePageSettles() {
+        // A neighbour page in the pager loads its verdict without having been opened.
+        val model = model()
+        model.shown()
+        model.shown()
+        settle { false }
+        val opens = generateSequence { server.takeRequest(200, TimeUnit.MILLISECONDS) }
+            .filter { it.url.encodedPath.endsWith("/signals") }
+            .map { it.body!!.utf8() }
+            .toList()
+        assertEquals(1, opens.size)
+        assertTrue(opens[0].contains("\"open\""))
+    }
+
+    @Test
     fun aRefusedTapPutsTheStoredStateBack() {
         val model = model()
         refuse = true
