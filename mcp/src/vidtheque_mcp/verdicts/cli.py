@@ -68,7 +68,7 @@ async def _backfill(settings: Settings, limit: int, videos: list[str]) -> int:
         jobs, waiting = await db.write(lambda c: store.backfill(c, limit, ids))
     finally:
         await db.close()
-    print(f"queued {len(jobs)} verdict job(s); {waiting} video(s) still without one.")
+    print(f"queued {len(jobs)} verdict job(s); {waiting} more video(s) to queue.")
     if waiting:
         print("run the same command again to queue the next batch.")
     return 0
