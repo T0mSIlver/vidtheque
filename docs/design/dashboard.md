@@ -3579,3 +3579,99 @@ seconds (`2026-10-03T15:56:46Z`) beside every other clock's UTC minutes. Both
 print UTC minutes now; the `<time>` attribute keeps the full instant. The
 session payload is unchanged: the sign-in page still reads `auth_mode`.
 
+
+## 25. The feed's endpoints (2026-10-03)
+
+The JSON the web feed (#90) and the Android app (#91) read and write
+(companion.md §6). Code: `mcp/src/vidtheque_mcp/dashboard/feed.py`.
+
+### 25.1 Access
+
+Every route here is an owner route: it is registered with the write side, so a
+deployment with `VIDTHEQUE_PUBLIC_READONLY=1` or `VIDTHEQUE_AUTH=none` answers
+`404` for all of them (§2.3, the rule §18.6 applies to Following). Reads take
+the read gate's credentials (bearer, session, trusted peer) and answer
+`401 E_AUTH_REQUIRED` without one. Writes go through `require_write`, so a
+session write needs same-origin evidence (`403 E_BAD_ORIGIN` otherwise) and a
+bearer write does not (§3.3).
+
+The **actor** of a profile write is `app` when the credential is the bearer
+the app holds, and `owner` for a session or a trusted peer. A signal's
+`client` follows the same split: `app` or `web`.
+
+**JSON in, JSON out.** Unlike the form writes of §21, these routes read a JSON
+object with `Content-Type: application/json` (`400 E_BAD_PARAM` otherwise), at
+most 16 KiB (`413 E_TOO_LARGE`). No form posts here, a profile operation is
+nested, and a cross-site form cannot send that content type without a
+preflight. An unknown field is `400 E_BAD_PARAM`, never ignored. Refusals are
+the `{error, message, next}` envelope; every response is `no-store`.
+
+### 25.2 `GET /dashboard/api/feed`
+
+Verdicts, newest first (`order: "newest"`), one band per page.
+`band=top` (default) lists scores 2–3; `band=skipped` lists 0–1, the list
+behind "skipped (n)". `limit` 1–50 (default 20), `offset` 0–10,000; any other
+`band` or a non-integer is `400 E_BAD_PARAM`.
+
+```json
+{"band": "top", "order": "newest",
+ "items": [{"video_id": "kCc8FmEb1nY", "title": "…", "channel": "Andrej Karpathy",
+            "duration_s": 7000.0, "published_at": 1740000000,
+            "score": 3, "reason": "evals ↑", "judged_at": 1790000000}],
+ "pagination": {"limit": 20, "offset": 0, "has_more": true, "next_offset": 20},
+ "skipped": {"count": 12, "capped": false}}
+```
+
+`skipped.count` is the number of 0–1 verdicts, counted up to 1,000;
+`capped: true` means there are more.
+
+### 25.3 `GET /dashboard/api/verdicts/{video_id}`
+
+The video screen: `video` (the row fields above), `score`, `reason`,
+`summary`, `moments`, `moments_dropped`, `profile_rev` (the profile revision
+that scored it), `model` and `judged_at`. A moment is
+`{cue_id, offset_s, why, url}`, `url` being `https://youtu.be/<id>?t=<s>` with
+the tools' 2 s lead (`text.deeplink`). A moment whose cue a reindex removed is
+left out and counted in `moments_dropped` until the rerun replaces the verdict.
+`404 E_UNKNOWN_VIDEO` for a video not in the corpus, `404 E_NO_VERDICT` for
+one not judged yet.
+
+### 25.4 `POST /dashboard/api/signals`
+
+`{"kind", "video_id", "offset_s"}`, recorded through `record_signal`
+(companion.md §2.3). `kind` is one of `open`, `watch`, `ask_claude`,
+`thumb_up`, `thumb_down`, `mute`, `dismiss`; the MCP kinds are refused.
+`offset_s` (seconds, 0–172,800) is required for `watch` and refused for every
+other kind. Answers `{"recorded": true, "signal_id", "kind", "video_id"}`;
+`404 E_UNKNOWN_VIDEO` records nothing.
+
+### 25.5 `GET|POST /dashboard/api/profile`, `POST /dashboard/api/profile/revert`
+
+`GET` answers `revision`, `max_entries` (40), `entries`
+(`{id, text, weight, source, created_at, evidence}`, `evidence` being the
+reason on the entry's `add` event) and one page of `history`, newest first:
+`{events, limit, has_more, next_before}`, where an event is
+`{id, at, actor, op, entry_id, before, after, reason}`. `limit` 1–100
+(default 20); pass `before=<next_before>` for the next page.
+
+`POST` takes `{"add": [{"text", "weight"}], "drop": [id], "reweight":
+[{"id", "weight"}], "reason"}`, at least one operation, at most 40 items per
+list (`413 E_TOO_LARGE`). It is one batch through `profile/store.apply`, with
+its guards: `404 E_UNKNOWN_ENTRY`, `409 E_PROFILE_GUARD` past 40 live entries,
+`400 E_BAD_PARAM` for a weight outside [-1, 1] or an empty text. A refused batch writes nothing. The answer is the `GET`
+payload plus `applied: {events, duplicates}`.
+
+`revert` takes exactly one of `{"event_id"}` (undo that event) or
+`{"revision"}` (undo every later event, newest first), and answers the `GET`
+payload plus `reverted: {events}`, the ids of the revert events it wrote.
+`404 E_UNKNOWN_EVENT` for an event not on this profile.
+
+### 25.6 `POST|DELETE /dashboard/api/devices`
+
+`{"token"}`, the FCM registration token (`[A-Za-z0-9_:-]`, 1–4,096 chars;
+`400 E_BAD_PARAM` otherwise), into the `devices` table (index-schema §1.14).
+`POST` registers it or refreshes its `last_seen`, keeps the 20 devices seen
+most recently, and answers `{"registered": true, "devices", "evicted"}`.
+`DELETE` answers `{"removed": true|false}`, so a second delete is not an error.
+The token is never echoed back. It is the only `DELETE` on this surface, and
+it is in `WRITE_ROUTES` like the rest.

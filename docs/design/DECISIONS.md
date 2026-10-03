@@ -402,6 +402,12 @@ poll cannot say what a cancel decided.
 The contract is `docs/design/dashboard.md` §21; what the React client sends and
 receives is `docs/design/frontend-migration.md` §9.
 
+Amended 2026-10-03 for the companion: the feed's writes under
+`/dashboard/api/*` (companion.md §6, dashboard.md §25) read JSON bodies and
+answer JSON only. Each is one route, so the objection to a second route per
+write does not arise; their callers are the Android app and `fetch`, and a
+profile operation is nested, which a form body cannot carry.
+
 ## The Python dashboard HTML is gone, decided by Tom, 2026-09-06
 
 Every `GET /dashboard*` page is served by the Next.js app, so the Python HTML
