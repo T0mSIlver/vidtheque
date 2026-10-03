@@ -2200,7 +2200,7 @@ configuration (§1 non-goal 4).
   whether that backend is loaded or cold. An unset worker URL says
   `unconfigured`; a timeout, transport failure, non-2xx response or malformed
   status says `unavailable`. None of those failures prevents the overview from
-  rendering. `last health check` is the UTC second at which this observation
+  rendering. `last health check` is the UTC minute at which this observation (*minute since 2026-10-03*, §24.6)
   completed, not a stored heartbeat.
 - The §2.4 projection applies per field. It keeps **MCP ready** and **database
   ready** because successfully reading the page already reveals both; keeps the
@@ -3575,7 +3575,7 @@ instead of three wrapped rows and a foot that took about 240 px before the
 page title.
 
 **One clock format.** The Corpus head and the readiness strip printed ISO UTC
-seconds (`2026-10-03T15:56:46Z`) beside every other clock's local minutes. Both
-print local minutes now; the `<time>` attribute keeps the full instant. The
+seconds (`2026-10-03T15:56:46Z`) beside every other clock's UTC minutes. Both
+print UTC minutes now; the `<time>` attribute keeps the full instant. The
 session payload is unchanged: the sign-in page still reads `auth_mode`.
 

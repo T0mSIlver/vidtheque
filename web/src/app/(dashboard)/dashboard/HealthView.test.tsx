@@ -35,7 +35,7 @@ describe("the health page", () => {
 
       expect(await screen.findByText("indexing")).toBeInTheDocument();
       expect(screen.getByText("2025-06-15 15:06")).toBeInTheDocument();
-      // The health check reads in local minutes like every other clock
+      // The health check reads in UTC minutes like every other clock
       // (§24.6); the attribute keeps the instant.
       expect(screen.getByText("2026-09-05 16:34")).toHaveAttribute(
         "datetime",

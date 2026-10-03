@@ -35,7 +35,7 @@ export function CorpusView() {
     return <ReadFailure error={corpus.error} onRetry={corpus.reload} />;
   }
 
-  // Local minutes like every other clock here (§24.6); the attribute keeps
+  // UTC minutes like every other clock here (§24.6); the attribute keeps
   // the instant.
   const counted = data ? iso(data.counted_at) : undefined;
   return (
