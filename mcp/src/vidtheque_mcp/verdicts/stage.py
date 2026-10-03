@@ -173,7 +173,7 @@ def build_verdicts(deps: Deps) -> tuple["VerdictStage | None", httpx.AsyncClient
         return None, None
     # Only `api` talks HTTP; the CLI backends never touch the client.
     http = httpx.AsyncClient() if settings.backend == "api" else None
-    model = build_model(settings, http)  # type: ignore[arg-type]
+    model = build_model(settings, http, deps.db)  # type: ignore[arg-type]
     assert model is not None
     # Push rides on the verdict (companion.md §6): no key, no notifier.
     from ..push.notify import PushSettings, build_notifier
@@ -219,7 +219,7 @@ class VerdictStage:
             )
 
         inputs = await self._inputs(video_id, str(row["public_id"]))
-        answer = await self._ask(inputs.prompt(with_negatives=True))
+        answer = await self._ask(inputs.prompt(with_negatives=True), video_id)
         explored = False
         if (
             int(answer["score"]) <= 1
@@ -228,7 +228,11 @@ class VerdictStage:
         ):
             try:
                 rescored = await self.model.complete(
-                    inputs.prompt(with_negatives=False), system=SYSTEM, schema=VERDICT_SCHEMA
+                    inputs.prompt(with_negatives=False),
+                    system=SYSTEM,
+                    schema=VERDICT_SCHEMA,
+                    purpose="verdict_explore",
+                    video_id=video_id,
                 )
             except LLMUnavailable as exc:
                 # The first verdict is valid; a failed rescore only skips the exploration.
@@ -284,9 +288,11 @@ class VerdictStage:
                 if reached:
                     await ctx.log(f"pushed to {reached} phone(s)")
 
-    async def _ask(self, prompt: str) -> dict[str, Any]:
+    async def _ask(self, prompt: str, video_id: int) -> dict[str, Any]:
         try:
-            return await self.model.complete(prompt, system=SYSTEM, schema=VERDICT_SCHEMA)
+            return await self.model.complete(
+                prompt, system=SYSTEM, schema=VERDICT_SCHEMA, purpose="verdict", video_id=video_id
+            )
         except LLMUnavailable as exc:
             raise _as_failure(exc) from None
 

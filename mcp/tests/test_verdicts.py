@@ -36,9 +36,11 @@ class FakeModel:
         self.answers = list(answers) if answers is not None else None
         self.answer = answer
         self.prompts: list[str] = []
+        self.labels: list[dict[str, Any]] = []
 
-    async def complete(self, prompt: str, *, system=None, schema=None) -> Any:
+    async def complete(self, prompt: str, *, system=None, schema=None, **labels) -> Any:
         self.prompts.append(prompt)
+        self.labels.append(labels)
         answer = self.answers.pop(0) if self.answers is not None else self.answer
         if isinstance(answer, Exception):
             raise answer
@@ -283,7 +285,10 @@ async def test_about_one_low_verdict_in_ten_is_rescored_without_the_negative_ent
     assert (row["score"], row["explored"]) == (stored, explored)
     assert len(model.prompts) == (2 if second is not None else 1)
     assert "-0.8  Launch hype" in model.prompts[0]
+    # The call log tells the first verdict from its rescore.
+    assert model.labels[0] == {"purpose": "verdict", "video_id": vid}
     if second is not None:
+        assert model.labels[1] == {"purpose": "verdict_explore", "video_id": vid}
         assert "Launch hype" not in model.prompts[1]
         assert "+0.9  Evals" in model.prompts[1]
 

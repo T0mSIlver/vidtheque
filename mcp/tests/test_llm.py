@@ -22,7 +22,17 @@ import pytest
 
 from vidtheque_mcp import llm
 from vidtheque_mcp.config import ConfigError
-from vidtheque_mcp.llm import APIModel, ChatClient, CLIModel, LLMSettings, LLMUnavailable
+from vidtheque_mcp.db import migrations
+from vidtheque_mcp.db.connection import open_write_connection
+from vidtheque_mcp.llm import (
+    APIModel,
+    ChatClient,
+    CLIModel,
+    LLMSettings,
+    LLMUnavailable,
+    Meter,
+    Price,
+)
 
 VERDICT = {
     "type": "object",
@@ -326,17 +336,144 @@ def test_backend_defaults_to_api_and_needs_a_url_and_a_model(
         monkeypatch.delenv(name, raising=False)
     client = httpx.AsyncClient()
     assert LLMSettings.from_env().backend == "api"
-    assert llm.build_model(LLMSettings.from_env(), client) is None
+    assert llm.build_model(LLMSettings.from_env(), client, None) is None
 
     monkeypatch.setenv("VIDTHEQUE_LLM_BASE_URL", "http://127.0.0.1:8080/v1")
     monkeypatch.setenv("VIDTHEQUE_LLM_MODEL", "qwen")
-    assert isinstance(llm.build_model(LLMSettings.from_env(), client), APIModel)
+    assert isinstance(llm.build_model(LLMSettings.from_env(), client, None), APIModel)
 
     monkeypatch.setenv("VIDTHEQUE_LLM_BACKEND", "Codex")
-    assert isinstance(llm.build_model(LLMSettings.from_env(), client), CLIModel)
+    assert isinstance(llm.build_model(LLMSettings.from_env(), client, None), CLIModel)
 
 
 def test_an_unknown_backend_fails_at_boot(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("VIDTHEQUE_LLM_BACKEND", "claude")
     with pytest.raises(ConfigError):
         LLMSettings.from_env()
+
+
+# ---------------------------------------------------------------- the call log
+
+GLM = Price(input=1.4, cached_input=0.14, output=4.4)
+
+
+class LogDB:
+    """A migrated database behind the one method the meter uses."""
+
+    def __init__(self, path: Path, *, broken: bool = False) -> None:
+        self.conn = open_write_connection(path)
+        migrations.migrate(self.conn)
+        self.broken = broken
+
+    async def write(self, fn: Any) -> Any:
+        if self.broken:
+            raise OSError("disk full")
+        result = fn(self.conn)
+        self.conn.commit()
+        return result
+
+    def rows(self) -> list[dict[str, Any]]:
+        return [dict(r) for r in self.conn.execute("SELECT * FROM llm_calls ORDER BY id")]
+
+
+@pytest.fixture
+def log_db(tmp_path: Path) -> LogDB:
+    db = LogDB(tmp_path / "v.db")
+    yield db
+    db.conn.close()
+
+
+def _metered(model: Any, db: Any, price: Price | None = GLM, backend: str = "api") -> Any:
+    model.meter = Meter(db, backend, "zai-glm-5-3", price)
+    return model
+
+
+# What Mistral answered for zai-glm-5-3 on 2026-10-03, with bigger numbers.
+MISTRAL_USAGE = {
+    "prompt_tokens": 1000,
+    "completion_tokens": 200,
+    "total_tokens": 1200,
+    "prompt_tokens_details": {"cached_tokens": 400},
+}
+
+
+async def test_every_completion_is_logged_and_priced_at_write_time(log_db: LogDB) -> None:
+    answer = {**_completion('{"watch": true, "why": "x"}'), "usage": MISTRAL_USAGE}
+    model = _metered(_api(answer, []), log_db)
+
+    await model.complete("t", schema=VERDICT, purpose="verdict")
+    await model.complete("t", schema=VERDICT)
+
+    first, second = log_db.rows()
+    assert first["purpose"] == "verdict" and second["purpose"] == "unknown"
+    assert (first["prompt_tokens"], first["completion_tokens"]) == (1000, 200)
+    assert (first["cached_tokens"], first["reasoning_tokens"]) == (400, None)
+    assert (first["backend"], first["model"], first["outcome"]) == ("api", "zai-glm-5-3", "ok")
+    # 600 uncached × 1.4 + 400 cached × 0.14 + 200 out × 4.4, in micro-USD.
+    assert first["cost_micro_usd"] == 840 + 56 + 880
+
+
+async def test_an_answer_that_fails_its_schema_still_costs(log_db: LogDB) -> None:
+    answer = {**_completion('{"watch": "yes"}'), "usage": MISTRAL_USAGE}
+    with pytest.raises(LLMUnavailable):
+        await _metered(_api(answer, []), log_db).complete("t", schema=VERDICT)
+    [row] = log_db.rows()
+    assert row["outcome"] == "invalid_output" and row["cost_micro_usd"] == 1776
+
+
+async def test_unknown_cost_is_null_never_zero(log_db: LogDB) -> None:
+    # No usage on a refusal; usage but no price for the model.
+    with pytest.raises(LLMUnavailable):
+        await _metered(_api({}, [], status=503), log_db).complete("t")
+    await _metered(_api(_completion("ok"), []), log_db, price=None).complete("t")
+
+    refused, unpriced = log_db.rows()
+    assert refused["outcome"] == "upstream_unavailable"
+    assert refused["prompt_tokens"] is None and refused["cost_micro_usd"] is None
+    assert unpriced["prompt_tokens"] == 10 and unpriced["cost_micro_usd"] is None
+
+
+async def test_the_cli_backends_report_what_they_can(
+    tmp_path: Path, fake_log: Path, log_db: LogDB
+) -> None:
+    claude = _claude(
+        tmp_path,
+        _claude_result(
+            result="worth it",
+            total_cost_usd=0.0123,
+            usage={"input_tokens": 3, "cache_creation_input_tokens": 100,
+                   "cache_read_input_tokens": 900, "output_tokens": 50},
+        ),
+    )
+    await _metered(claude, log_db, price=None, backend="claude-code").complete("t")
+    body = "open(sys.argv[sys.argv.index('-o') + 1], 'w').write('fine')\n"
+    codex = CLIModel("codex", None, 10, binary=_fake_bin(tmp_path, body))
+    await _metered(codex, log_db, price=None, backend="codex").complete("t")
+
+    by_claude, by_codex = log_db.rows()
+    assert (by_claude["prompt_tokens"], by_claude["cached_tokens"]) == (1003, 900)
+    assert by_claude["cost_micro_usd"] == 12_300  # claude's own figure
+    assert by_codex["prompt_tokens"] is None and by_codex["cost_micro_usd"] is None
+
+
+async def test_a_failed_log_write_never_fails_the_call(tmp_path: Path) -> None:
+    model = _metered(_api(_completion("ok"), []), LogDB(tmp_path / "v.db", broken=True))
+    assert await model.complete("t") == "ok"
+
+
+def test_the_price_comes_from_the_env_then_the_table(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("VIDTHEQUE_LLM_MODEL", "zai-glm-5-3")
+    monkeypatch.delenv("VIDTHEQUE_LLM_PRICE", raising=False)
+    assert llm.price_for(LLMSettings.from_env()) == GLM
+
+    monkeypatch.setenv("VIDTHEQUE_LLM_PRICE", "input=2,output=6")
+    assert llm.price_for(LLMSettings.from_env()) == Price(input=2, output=6)
+
+    monkeypatch.setenv("VIDTHEQUE_LLM_PRICE", "in=2,out=6")
+    with pytest.raises(ConfigError):
+        LLMSettings.from_env()
+
+    # A subscription has no list price unless the owner sets one.
+    monkeypatch.delenv("VIDTHEQUE_LLM_PRICE")
+    monkeypatch.setenv("VIDTHEQUE_LLM_BACKEND", "codex")
+    assert llm.price_for(LLMSettings.from_env()) is None

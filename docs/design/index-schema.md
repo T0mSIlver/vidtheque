@@ -1343,6 +1343,36 @@ committed in the same transaction that set `done`. `failed` and a `running`
 row an hour old are retried that day, up to 3 attempts; `done` and `idle` are
 final for the day.
 
+### 1.16 `llm_calls`
+
+Added by 0015 (companion.md §4.1). One row per model completion, written by
+the shared client whatever the outcome; `GET /dashboard/api/costs` reads it.
+
+```sql
+CREATE TABLE llm_calls (
+  id                INTEGER PRIMARY KEY,
+  owner_id          INTEGER NOT NULL DEFAULT 1 REFERENCES owners(id),
+  at                INTEGER NOT NULL,                -- unix seconds, when the call started
+  purpose           TEXT    NOT NULL,                -- verdict, verdict_explore, nightly_update, unknown
+  video_id          INTEGER REFERENCES videos(id) ON DELETE SET NULL,
+  backend           TEXT    NOT NULL,                -- api, claude-code, codex
+  model             TEXT,
+  prompt_tokens     INTEGER,                         -- includes cached_tokens
+  completion_tokens INTEGER,                         -- includes reasoning_tokens
+  cached_tokens     INTEGER,
+  reasoning_tokens  INTEGER,
+  latency_ms        INTEGER NOT NULL,
+  outcome           TEXT    NOT NULL,
+  cost_micro_usd    INTEGER
+) STRICT;
+CREATE INDEX llm_calls_by_at ON llm_calls(owner_id, at);
+```
+
+Token counts are the backend's own, NULL when it reported none.
+`cost_micro_usd` is fixed at write time from the price then configured, so a
+price change never rewrites history, and NULL means unknown, never free.
+`video_id` is set NULL when its video is deleted: the call was still paid for.
+
 ---
 
 ## 2. FTS5
