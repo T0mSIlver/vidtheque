@@ -73,6 +73,8 @@ data class Verdict(
     val reason: String = "",
     val explored: Boolean = false,
     val matches: List<Match> = emptyList(),
+    /** The stored thumb or mute: `up`, `down`, `muted` or `none` (dashboard.md §25.4). */
+    val feedback: String = "none",
     val summary: String = "",
     val moments: List<Moment> = emptyList(),
     @SerialName("moments_dropped") val momentsDropped: Int = 0,
@@ -152,6 +154,14 @@ class Api @Inject constructor(@Named("api") private val http: OkHttpClient, priv
 
     suspend fun forgetDevice(token: String) {
         send(Request.Builder().url("$root/devices").delete(buildJsonObject { put("token", token) }.toString().toRequestBody(JSON)).build())
+    }
+
+    /** Sets the video's one thumb-or-mute state; `none` takes it back. */
+    suspend fun feedback(videoId: String, state: String) {
+        post("$root/feedback", buildJsonObject {
+            put("video_id", videoId)
+            put("state", state)
+        })
     }
 
     /** Fire and forget from the caller's point of view: a lost signal costs one data point. */

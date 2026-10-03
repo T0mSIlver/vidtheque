@@ -35,10 +35,8 @@ import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.PlainTooltip
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
@@ -51,6 +49,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -87,13 +87,17 @@ fun VideoScreen(key: VideoKey, onBack: () -> Unit, still: Still, card: Lift = { 
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    // The undo window, on screen: Undo takes the signal back before it is sent.
-    val waiting = ui.latest?.takeIf { ui.sent[it] == Sent.Waiting } ?: ui.sent.entries.lastOrNull { it.value == Sent.Waiting }?.key
-    LaunchedEffect(waiting) {
-        val kind = waiting ?: return@LaunchedEffect
-        val said = SIGNALS.first { it.kind == kind }.done
-        val result = snackbar.showSnackbar("$said. Noted for tonight's profile update.", actionLabel = "Undo", duration = SnackbarDuration.Indefinite)
-        if (result == SnackbarResult.ActionPerformed) model.undo(kind)
+    // What a tap did, once the server has it; a second tap takes it back.
+    var said by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(said, ui.saving) {
+        val state = said ?: return@LaunchedEffect
+        if (ui.saving) return@LaunchedEffect
+        // Cleared only after the bar: clearing the key first would cancel this effect.
+        if (!ui.failed) {
+            val signal = SIGNALS.firstOrNull { it.state == state }
+            snackbar.showSnackbar(signal?.let { "${it.done}. Tap it again to take it back." } ?: "Taken back.")
+        }
+        said = null
     }
     VideoContent(
         key = key,
@@ -103,9 +107,9 @@ fun VideoScreen(key: VideoKey, onBack: () -> Unit, still: Still, card: Lift = { 
         snackbar = snackbar,
         onBack = onBack,
         onRetry = model::load,
-        onSignal = { kind ->
-            if (ui.sent[kind] == Sent.Done) scope.launch { snackbar.showSnackbar("Already sent. A sent signal can't be taken back.") }
-            else model.toggle(kind)
+        onSignal = { state ->
+            said = if (ui.feedback == state) "none" else state
+            model.tap(state)
         },
         onMoment = { moment ->
             model.watched(moment.offsetS)
@@ -171,7 +175,7 @@ fun VideoContent(
                 }
                 Spacer(Modifier.height(112.dp))
             }
-            if (verdict != null) Actions(verdict, ui.sent, onSignal, onAsk, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp))
+            if (verdict != null) Actions(verdict, ui.feedback, ui.saving, ui.failed, onSignal, onAsk, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp))
         }
     }
 }
@@ -215,23 +219,23 @@ private fun Loaded(verdict: Verdict, onMoment: (Moment) -> Unit) {
     }
 }
 
-/** One feedback button: its signal kind (companion.md §2.3), its label, and what the snackbar says once tapped. */
-private class Signal(val kind: String, val icon: ImageVector, val label: String, val done: String)
+/** One feedback button: the state it sets (companion.md §2.3), its label, and what the snackbar says once set. */
+private class Signal(val state: String, val icon: ImageVector, val label: String, val done: String)
 
 // `mute` reads "Less like this": a bell said "notifications", which it never touched.
 private val SIGNALS = listOf(
-    Signal("thumb_up", Icons.Rounded.ThumbUp, "Liked it", "Liked"),
-    Signal("thumb_down", Icons.Rounded.ThumbDown, "Didn't like it", "Disliked"),
-    Signal("mute", Icons.Rounded.Block, "Less like this", "Less like this"),
+    Signal("up", Icons.Rounded.ThumbUp, "Liked it", "Liked"),
+    Signal("down", Icons.Rounded.ThumbDown, "Didn't like it", "Disliked"),
+    Signal("muted", Icons.Rounded.Block, "Less like this", "Less like this"),
 )
 
-/** Thumbs, "less like this" and Ask Claude, in reach of a thumb; a long press names each. */
+/** Thumbs, "less like this" and Ask Claude, in reach of a thumb; a long press names each, and the one set shows filled. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun Actions(verdict: Verdict, sent: Map<String, Sent>, onSignal: (String) -> Unit, onAsk: (Verdict) -> Unit, modifier: Modifier) {
+private fun Actions(verdict: Verdict, feedback: String, saving: Boolean, failed: Boolean, onSignal: (String) -> Unit, onAsk: (Verdict) -> Unit, modifier: Modifier) {
     val haptics = LocalHapticFeedback.current
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (sent.values.any { it == Sent.Failed }) {
+        if (failed) {
             Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.errorContainer) {
                 Text("Not recorded. Tap again to retry.", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
             }
@@ -244,12 +248,12 @@ private fun Actions(verdict: Verdict, sent: Map<String, Sent>, onSignal: (String
                     state = rememberTooltipState(),
                 ) {
                     FilledIconToggleButton(
-                        checked = sent[signal.kind].let { it == Sent.Waiting || it == Sent.Sending || it == Sent.Done },
+                        checked = feedback == signal.state,
                         onCheckedChange = {
                             haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                            onSignal(signal.kind)
+                            onSignal(signal.state)
                         },
-                        enabled = sent[signal.kind] != Sent.Sending,
+                        enabled = !saving,
                     ) { Icon(signal.icon, contentDescription = signal.label) }
                 }
             }
