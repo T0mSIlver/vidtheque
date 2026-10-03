@@ -1,0 +1,66 @@
+/* The feed's search page (dashboard.md §25.9): the feed's rows, with the
+   matching moment under each video. */
+
+.form {
+  display: flex;
+  flex-direction: column;
+}
+
+.bar {
+  display: flex;
+  gap: var(--s2);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0 var(--s3);
+  font-size: 16px; /* 16px or iOS zooms the page on focus */
+  color: var(--fg);
+  background: var(--console);
+  border: 1px solid var(--seam2);
+}
+
+.input::placeholder {
+  color: var(--fg3);
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--gold-44);
+  outline-offset: 1px;
+}
+
+.hit {
+  padding-top: var(--s3);
+}
+
+.video {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--fg);
+}
+
+.video:hover span:last-child {
+  text-decoration: underline;
+  text-decoration-color: var(--gold-44);
+  text-underline-offset: 3px;
+}
+
+.snippet {
+  font-size: 15px;
+  color: var(--fg-over);
+  overflow-wrap: anywhere;
+}
+
+.visual {
+  color: var(--fg2);
+}
+
+.where {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--fg2);
+}

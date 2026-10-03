@@ -4,9 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { FeedFailure, Outside, Score } from "@/components/feed/parts";
 import styles from "@/components/feed/feed.module.css";
 import { Title } from "@/components/dashboard/kit/ui";
-import { dashboard } from "@/lib/dashboard/client";
+import { z } from "zod";
+import { dashboard, DashboardError, echoOf } from "@/lib/dashboard/client";
 import { useResource } from "@/lib/dashboard/resource";
-import type { FeedbackState, Moment, Verdict } from "@/lib/dashboard/schemas";
+import { FeedVideo, type FeedbackState, type Moment, type Verdict } from "@/lib/dashboard/schemas";
 import { clock, day } from "@/lib/format";
 import { claudeUrl, videoPrompt } from "@/lib/feed/words";
 
@@ -17,7 +18,12 @@ export function VideoView({ videoId }: { videoId: string }) {
   const verdict = useResource<Verdict>(`verdict:${videoId}`, (signal) =>
     dashboard.verdict(videoId, signal),
   );
-  const loaded = verdict.data !== undefined;
+  // Search opens videos no verdict has scored yet; the refusal names the video (§25.3).
+  const unjudged =
+    verdict.error instanceof DashboardError && verdict.error.code === "E_NO_VERDICT"
+      ? (echoOf(verdict.error, NoVerdict)?.video ?? null)
+      : null;
+  const loaded = verdict.data !== undefined || unjudged !== null;
 
   // `open` once per visit, when the verdict is on screen.
   const opened = useRef<string | null>(null);
@@ -27,11 +33,47 @@ export function VideoView({ videoId }: { videoId: string }) {
     void dashboard.signal("open", videoId).catch(() => {});
   }, [loaded, videoId]);
 
+  if (unjudged) return <Unjudged video={unjudged} />;
   if (!verdict.data) {
     if (verdict.error) return <FeedFailure error={verdict.error} onRetry={verdict.reload} />;
     return <div className={styles.pending} aria-busy="true" />;
   }
   return <Loaded verdict={verdict.data} />;
+}
+
+const NoVerdict = z.object({ video: FeedVideo });
+
+function Unjudged({ video }: { video: FeedVideo }) {
+  const id = video.video_id;
+  return (
+    <>
+      <Title>{video.title || id}</Title>
+      <article className={styles.video}>
+        <header className={styles.videoHead}>
+          {video.channel ? <p className={styles.channel}>{video.channel}</p> : null}
+          <h1 className={styles.videoTitle}>{video.title || id}</h1>
+          <p className={styles.meta}>
+            <span className={styles.duration}>
+              {clock(video.duration_s)}
+              {video.published_at ? ` · ${day(video.published_at)}` : ""}
+            </span>
+          </p>
+          <a
+            className={styles.play}
+            href={`https://youtu.be/${encodeURIComponent(id)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => void dashboard.signal("watch", id, 0).catch(() => {})}
+          >
+            <span aria-hidden="true">▶</span> Play from the start
+          </a>
+        </header>
+        <p className={styles.quiet}>
+          No verdict yet: this video has not been scored against your profile.
+        </p>
+      </article>
+    </>
+  );
 }
 
 function Loaded({ verdict }: { verdict: Verdict }) {

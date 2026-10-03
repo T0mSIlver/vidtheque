@@ -79,8 +79,9 @@ export type SignalKind = z.infer<typeof SignalKind>;
 export const SignalRecorded = z.object({
   recorded: z.boolean(),
   signal_id: count(),
-  kind: SignalKind,
-  video_id: z.string(),
+  // `mcp_search` is the search page's query, which names no video (§25.4).
+  kind: z.union([SignalKind, z.literal("mcp_search")]),
+  video_id: z.string().nullable(),
 });
 export type SignalRecorded = z.infer<typeof SignalRecorded>;
 

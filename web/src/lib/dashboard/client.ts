@@ -281,6 +281,12 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
           : { kind, video_id: videoId, offset_s: offsetS };
       return postJson(`${ROOT}/api/signals`, body, SignalRecorded, { keepalive: true });
     },
+    /** A query run on the feed's search page, the tool's own kind (§25.4). */
+    searched(text: string) {
+      return postJson(`${ROOT}/api/signals`, { kind: "mcp_search", text }, SignalRecorded, {
+        keepalive: true,
+      });
+    },
     /** Set the video's thumb or mute; `none` takes it back. */
     feedback(videoId: string, state: FeedbackState) {
       return postJson(`${ROOT}/api/feedback`, { video_id: videoId, state }, FeedbackStored, {

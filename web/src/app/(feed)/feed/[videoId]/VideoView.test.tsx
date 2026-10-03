@@ -105,4 +105,24 @@ describe("VideoView", () => {
     expect(await screen.findByText('Video "kCc8FmEb1nY" has no verdict yet.')).toBeInTheDocument();
     expect(screen.getByText("E_NO_VERDICT")).toBeInTheDocument();
   });
+
+  it("draws a video no verdict has scored, from the refusal's echo", async () => {
+    const view = await mount({
+      status: 404,
+      body: {
+        error: "E_NO_VERDICT",
+        message: 'Video "kCc8FmEb1nY" has no verdict yet.',
+        next: "check again once its job is done.",
+        video: { ...VERDICT.video, published_at: 1674000000 },
+      },
+    });
+    expect(await screen.findByRole("heading", { name: VERDICT.video.title })).toBeInTheDocument();
+    expect(screen.getByText(/2023-01-18/)).toBeInTheDocument();
+    expect(screen.getByText(/No verdict yet/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Play from the start/ })).toHaveAttribute(
+      "href",
+      "https://youtu.be/kCc8FmEb1nY",
+    );
+    await waitFor(() => expect(signals(view)).toEqual([{ kind: "open", video_id: "kCc8FmEb1nY" }]));
+  });
 });

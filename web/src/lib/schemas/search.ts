@@ -49,6 +49,8 @@ export const Hit = z.object({
   // Both null when the hit has no frame: the page falls back to a text card.
   thumb: httpUrl().nullable(),
   thumb_large: httpUrl().nullable(),
+  // The video's publication, for the feed's search page (dashboard.md §25.9).
+  published_at: z.number().int().nullable().optional(),
 });
 export type Hit = z.infer<typeof Hit>;
 

@@ -9,7 +9,7 @@ import { useResource } from "@/lib/dashboard/resource";
 import type { Session } from "@/lib/dashboard/schemas";
 import styles from "./feed.module.css";
 
-// The feed's chassis: one narrow column, the wordmark and two destinations.
+// The feed's chassis: one narrow column, the wordmark and three destinations.
 // It reads the console's session (companion.md §5), once per document.
 
 const readSession = (signal: AbortSignal) => dashboard.session(signal);
@@ -18,6 +18,7 @@ export function FeedShell({ children }: { children: ReactNode }) {
   const session = useResource<Session>("session", readSession);
   const path = usePathname();
   const onProfile = path === `${FEED}/profile`;
+  const onSearch = path === `${FEED}/search`;
 
   return (
     <SessionScope value={session}>
@@ -33,6 +34,13 @@ export function FeedShell({ children }: { children: ReactNode }) {
               aria-current={path === FEED ? "page" : undefined}
             >
               Feed
+            </Link>
+            <Link
+              className={styles.navlink}
+              href={`${FEED}/search`}
+              aria-current={onSearch ? "page" : undefined}
+            >
+              Search
             </Link>
             <Link
               className={styles.navlink}
