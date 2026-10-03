@@ -66,7 +66,15 @@ VERDICT_SCHEMA: dict[str, Any] = {
 
 SYSTEM = """You triage videos for one person, against their interest profile.
 Answer with one JSON object and nothing else:
-- score: 0 skip, 1 the summary is enough, 2 watch the moments, 3 watch it whole.
+- score, against this person's profile, not the video's general quality:
+  0 skip: off-profile, or on a topic they want less of.
+  1 the summary is enough: on-topic but ordinary. This is the default; most
+    videos on their topics score 1.
+  2 watch the moments: at least one moment is clearly worth their time, given
+    the profile — something they would regret missing, not merely relevant.
+    Name it in moments; a 2 with no such moment is a 1.
+  3 watch it whole: rare; the whole video is that strong for them.
+  When torn between two scores, give the lower.
 - reason: one line naming the profile entries it matched or hit, e.g. "evals ↑, launch hype ↓".
 - summary: one paragraph on what the video says.
 - moments: up to three, each {cue_id, offset_s, why}. cue_id is a number from the

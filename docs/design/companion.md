@@ -134,7 +134,11 @@ One per video, written after indexing. Table
 `verdicts(video_id, score, reason, summary, moments, profile_rev, model, created_at, notified_at)`.
 
 - **score 0–3**, each tied to an action: 0 skip, 1 the summary is enough,
-  2 watch the moments, 3 watch it whole.
+  2 watch the moments, 3 watch it whole. 1 is the default for an on-topic but
+  ordinary video; a 2 means at least one moment is clearly worth this owner's
+  time given the profile. The first backfill (100 videos, 2026-10-03) scored
+  65 of them 2, which is too many for triage, so the prompt says so and breaks
+  ties downward.
 - **reason**: one line naming the profile entries it matched or hit
   ("evals ↑, launch hype ↓").
 - **summary**: one paragraph.
