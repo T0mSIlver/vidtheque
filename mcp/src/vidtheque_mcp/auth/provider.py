@@ -31,12 +31,14 @@ from mcp.server.auth.provider import (
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
 from ..config import OFFLINE_SCOPE, READ_SCOPE, WRITE_SCOPE, Settings
+from . import android
 from .cimd import (
     CIMDError,
     CIMDFetcher,
     LoopbackRedirectClient,
     looks_like_cimd,
     matches_registered_redirect,
+    synthesize,
 )
 from .store import AuthStore
 from .tokens import TokenIssuer, hash_refresh_token
@@ -70,6 +72,8 @@ class VidthequeOAuthProvider(OAuthAuthorizationServerProvider[AuthorizationCode,
         Nothing is persisted for a CIMD client. A non-URL client_id falls
         through to the DCR table.
         """
+        if android.enabled(self.settings) and client_id == android.client_id(self.settings):
+            return synthesize(client_id, android.client_document(self.settings))
         if looks_like_cimd(client_id):
             try:
                 return await self.cimd.get(client_id)

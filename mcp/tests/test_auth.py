@@ -529,3 +529,53 @@ def test_loopback_redirects_accept_any_port_at_authorize(corpus: Path) -> None:
         wrong_path = authorize("http://localhost:51965/elsewhere")
         assert wrong_path.status_code == 400
         assert "not registered" in wrong_path.text
+
+
+# ------------------------------------------------------------- android app
+
+APP_PRINT = ":".join(["AB"] * 32)
+
+
+def test_android_fingerprints_are_checked_at_boot() -> None:
+    from vidtheque_mcp.auth.android import parse_fingerprints
+
+    assert parse_fingerprints(f" {APP_PRINT.lower()} ,") == (APP_PRINT,)
+    with pytest.raises(ConfigError, match="not a SHA-256"):
+        parse_fingerprints("AB:CD")
+
+
+def test_android_documents_exist_only_with_a_signing_key(corpus: Path) -> None:
+    paths = ("/auth/android/client.json", "/.well-known/assetlinks.json", "/auth/android/callback")
+    with client(make_settings(corpus, auth_mode="oauth", password="pw")) as c:
+        assert [c.get(p).status_code for p in paths] == [404, 404, 404]
+
+    settings = make_settings(corpus, auth_mode="oauth", password="pw", android_cert_sha256=(APP_PRINT,))
+    with client(settings) as c:
+        links = c.get("/.well-known/assetlinks.json").json()
+        assert links[0]["target"]["package_name"] == "dev.vidtheque.app"
+        assert links[0]["target"]["sha256_cert_fingerprints"] == [APP_PRINT]
+        assert c.get("/auth/android/client.json").json()["client_id"] == (
+            "http://localhost:8080/auth/android/client.json"
+        )
+
+
+def test_android_app_reaches_the_login_page_without_fetching_itself(corpus: Path) -> None:
+    """The app's client_id is answered in-process: a fetch of our own public
+    URL would leave through the tunnel, and in a test it would hit nothing."""
+    settings = make_settings(corpus, auth_mode="oauth", password="pw", android_cert_sha256=(APP_PRINT,))
+    with client(settings) as c:
+        resp = c.get(
+            "/authorize",
+            params={
+                "client_id": "http://localhost:8080/auth/android/client.json",
+                "redirect_uri": "http://localhost:8080/auth/android/callback",
+                "response_type": "code",
+                "code_challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+                "code_challenge_method": "S256",
+                "scope": "vidtheque:read vidtheque:write offline_access",
+                "state": "s",
+            },
+            follow_redirects=False,
+        )
+        assert resp.status_code in (302, 307), resp.text
+        assert "/auth/login" in resp.headers["location"]
