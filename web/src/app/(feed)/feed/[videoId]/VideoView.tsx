@@ -65,7 +65,9 @@ function Loaded({ verdict }: { verdict: Verdict }) {
         </section>
       </article>
 
-      <Actions verdict={verdict} />
+      {/* Keyed on the stored state, so a fresher verdict (another device, another tab)
+          resets the buttons instead of a toggle flipping the wrong way. */}
+      <Actions key={verdict.feedback} verdict={verdict} />
     </>
   );
 }
