@@ -105,9 +105,10 @@ matches: the profile entries this video hits, by their [id], strongest first,
 reason: one plain sentence, never more than 15 words, saying why this score
   for this person. No arrows, no lists of entries, no weights.
 
-summary: never more than 60 words, in two or three sentences. Count them;
-  if the draft is longer, drop the least important point rather than
-  compressing every sentence. A digest, not a description: names of people,
+summary: never more than 60 words: two sentences of at most 30 words each.
+  Count the words of each sentence before answering. If the draft is longer,
+  drop the least important point rather than compressing every sentence; a
+  third sentence is never allowed. A digest, not a description: names of people,
   tools, models, papers, companies; numbers (benchmarks, sizes, costs,
   latencies); the specific claims and techniques. Lead with the part that
   matters given the profile, in second person where it helps ("the eval
