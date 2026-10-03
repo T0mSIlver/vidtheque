@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { FeedFailure, Outside, Score } from "@/components/feed/parts";
+import { FeedFailure, Matches, Outside, Score } from "@/components/feed/parts";
 import styles from "@/components/feed/feed.module.css";
 import { Title } from "@/components/dashboard/kit/ui";
 import { z } from "zod";
@@ -95,6 +95,7 @@ function Loaded({ verdict }: { verdict: Verdict }) {
             </span>
           </p>
           {verdict.reason ? <p className={styles.reason}>{verdict.reason}</p> : null}
+          <Matches matches={verdict.matches} />
           {/* From the start, like a moment at 0: the same link shape and the same signal. */}
           <a
             className={styles.play}

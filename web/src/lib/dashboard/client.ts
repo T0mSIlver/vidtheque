@@ -8,6 +8,7 @@ import {
   Costs,
   CuePage,
   Feed,
+  FeedFacets,
   FollowCreated,
   FollowDeleted,
   FollowDetail,
@@ -263,9 +264,13 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
     costs(signal?: AbortSignal) {
       return get(`${ROOT}/api/costs`, Costs, { signal });
     },
-    /** One band of verdicts, newest first (§25.2). */
+    /** One band of verdicts, filtered and sorted by `query` (§25.2). */
     feed(query: URLSearchParams, signal?: AbortSignal) {
       return get(`${ROOT}/api/feed${suffix(query)}`, Feed, { signal });
+    },
+    /** The channels and profile entries the feed's filters offer (§25.2). */
+    feedFacets(query: URLSearchParams, signal?: AbortSignal) {
+      return get(`${ROOT}/api/feed/facets${suffix(query)}`, FeedFacets, { signal });
     },
     verdict(videoId: string, signal?: AbortSignal) {
       return get(`${ROOT}/api/verdicts/${encodeURIComponent(videoId)}`, Verdict, { signal });

@@ -572,3 +572,50 @@
   composes: t-question from global;
   overflow-wrap: anywhere;
 }
+
+/* ------------------------------------------------------------ matches */
+
+/* The verdict's profile matches (#144): the app's green and red chips, in the
+   dashboard's tone tokens, grass for more of this and red for less. */
+.matches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+  margin-top: var(--s1);
+  list-style: none;
+}
+
+.match {
+  composes: t-label from global;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  padding: 1px var(--s2) 1px 2px;
+  border: 1px solid;
+  overflow-wrap: anywhere;
+}
+
+.match[data-direction="up"] {
+  color: var(--tone-ok);
+  border-color: var(--tone-ok-line);
+  background: var(--tone-ok-bg);
+}
+
+.match[data-direction="down"] {
+  color: var(--tone-bad);
+  border-color: var(--tone-bad-line);
+  background: var(--tone-bad-bg);
+}
+
+.chevrons {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
