@@ -27,7 +27,8 @@ class ScreenshotTest {
     @Test
     fun signIn() {
         compose.setContent {
-            VidthequeTheme {
+            // Dark, as the reference was recorded; the theme follows the system since #130.
+            VidthequeTheme(darkTheme = true) {
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                     SignInScreen(host = "private.vidtheque.dev", error = null, busy = false, onSignIn = {})
                 }
