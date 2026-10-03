@@ -1,0 +1,9 @@
+appId: dev.vidtheque.app
+name: launch
+---
+- launchApp:
+    clearState: true
+- startRecording: launch
+- assertVisible: "Sign in"
+- takeScreenshot: maestro-out/sign-in
+- stopRecording
