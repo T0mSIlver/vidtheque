@@ -1441,8 +1441,7 @@ def corpus_rollup(conn: sqlite3.Connection) -> sqlite3.Row:
 
 # The ledger's own row (dashboard.md §17). Everything `_CORPUS_SQL` does not
 # carry and a page of counts needs: the four states behind its one
-# `videos_pending`, the two rollups the overview only ever prints as *lists*,
-# and the embedding unit — which is named on the video page, counted nowhere,
+# `videos_pending`, and the embedding unit — which is named on the video page, counted nowhere,
 # and is the number an operator wants when a re-embed is running.
 #
 # One statement of scalar subqueries, the same shape as `_CORPUS_SQL` and for
@@ -1459,10 +1458,7 @@ SELECT (SELECT COUNT(*) FROM videos WHERE index_state = 'pending')  AS videos_pe
        (SELECT COUNT(*) FROM videos WHERE index_state = 'indexing') AS videos_indexing,
        (SELECT COUNT(*) FROM videos WHERE index_state = 'failed')   AS videos_failed,
        (SELECT COUNT(*) FROM videos WHERE index_state = 'stale')    AS videos_stale,
-       (SELECT COUNT(*) FROM chunks)                                AS chunks,
-       (SELECT COUNT(*) FROM tags)                                  AS tags,
-       (SELECT COUNT(DISTINCT COALESCE(channel_name, '(unknown)'))
-          FROM videos)                                              AS channels
+       (SELECT COUNT(*) FROM chunks)                                AS chunks
 """
 
 

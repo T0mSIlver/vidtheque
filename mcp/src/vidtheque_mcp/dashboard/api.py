@@ -7,7 +7,7 @@ three handlers that were the scripts' poll targets — the jobs list, one job's
 war story and the cue pager — moved here rather than being deleted, because
 the React pages read all three.
 
-Additive reads, and they add no query and no policy: `overview`, `ledger`,
+Additive reads, and they add no query and no policy: `health`, `corpus`,
 `library`, `library/{video_id}`, `following` and `following/{slug}` are
 `read_models`' assemblers — the same reads the Jinja pages make, in the same
 order, under the same projection and the same server-side clamps — shaped into
@@ -43,7 +43,7 @@ Three rules this module keeps, all of them settled:
 * **Nothing is cacheable.** `no-store` on all three, exactly as the pages have
   always answered, because they describe state that changes under the reader.
 
-`overview` and `ledger` sit behind the route group's read gate, like the pages
+`health` and `corpus` sit behind the route group's read gate, like the pages
 and like `/dashboard/api/*`. `session` deliberately does **not**: a signed-out
 browser has to be able to ask what this deployment expects of it, and the 401
 page has been telling an anonymous caller the auth mode and the sign-in hint
@@ -73,24 +73,26 @@ from ..text import clamp
 from .access import peer_trusted, sign_in_hint, write_side_enabled
 from .read_models import (
     BUDGET_WINDOW_S,
+    CHANNEL_CAP,
     CHECK_CAP,
     CUE_PAGE,
     CUE_PAGE_MAX,
     FAILED_WINDOW_S,
     FRAME_PAGE,
     FRAME_PAGE_MAX,
-    GAPS_FAILED_CAP,
     HELD_BAND_CAP,
     INDEX_JOB_CAP,
     NEAR_MISS_S,
     OCR_LINE_CAP,
     POLL_MS,
     SHOT_CAP,
+    TAG_CAP,
     VIDEO_HISTORY_CAP,
-    LedgerReads,
-    OverviewReads,
+    CorpusReads,
+    HealthReads,
     VideosReads,
     clamp_note,
+    corpus_reads,
     coverage_flags,
     declared_models,
     drift_reason,
@@ -98,11 +100,10 @@ from .read_models import (
     follow_row_json,
     follow_row_json_with_error,
     following_reads,
+    health_reads,
     job_detail_reads,
     jobs_reads,
-    ledger_reads,
     near_miss,
-    overview_reads,
     pipeline_readiness,
     redacted,
     video_detail_reads,
@@ -186,27 +187,23 @@ def _readiness(readiness: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-# ------------------------------------------------------------------- overview
+# --------------------------------------------------------------------- health
 
 
-async def overview(request: Request) -> Response:
-    """`GET /dashboard/api/overview` — what the corpus holds, and what it is doing.
+async def health(request: Request) -> Response:
+    """`GET /dashboard/api/health` — is the machine working right now?
 
-    The overview page's own reads (`read_models.overview_reads`), typed. The
-    lists are the page's lists and carry its caps: `CHANNEL_CAP` channels,
-    `TAG_CAP` tags, `RECENT_CAP` arrivals, all applied in the assembler and none
-    of them reachable from the query string — this endpoint takes no parameters
-    at all, so there is nothing to clamp and nothing a caller can widen.
+    The Health page's reads (`read_models.health_reads`), typed: readiness, the
+    models, the queue and the gaps. No parameters, so nothing to clamp.
 
-    The worker probe runs concurrently with the database reads, the way the
-    page runs it: a down worker costs at most the remainder of
-    `WORKER_STATUS_TIMEOUT_S`, and an unwind must not orphan a task holding an
-    open HTTP request.
+    The worker probe runs concurrently with the database reads: a down worker
+    costs at most the remainder of `WORKER_STATUS_TIMEOUT_S`, and an unwind
+    must not orphan a task holding an open HTTP request.
     """
     redact = redacted(request)
     task = asyncio.create_task(pipeline_readiness(request, redact=redact))
     try:
-        data: OverviewReads = await overview_reads(request, task, redact=redact)
+        data: HealthReads = await health_reads(request, task)
     finally:
         if not task.done():
             task.cancel()
@@ -214,85 +211,26 @@ async def overview(request: Request) -> Response:
         return _refusal(data.error)
 
     corpus = data.corpus or {}
-    rollup = data.rollup
     gaps = corpus.get("gaps") or {}
     backlog = corpus.get("embed_backlog") or {}
     health = data.health or {}
     payload: dict[str, Any] = {
         "counted_at": int(time.time()),
         "redacted": redact,
-        # Whether this instance may write at all — `/api/session`'s field, the
-        # same boolean off the same `Database`, and it rides here for the
-        # reason §19 gives below: the Indexing statepair and the drift banner
-        # are on this payload's own page, and a rendering that waits on a
-        # second request to learn a deployment fact is a rendering that flips
-        # under the reader. Not redacted, because `/api/session` publishes it
-        # to an anonymous browser already; the *reason* stays behind
-        # `drift_reason`, which is the sentence about the operator's box.
+        # `/api/session`'s field, on this payload because the Indexing state and
+        # the drift banner paint with this page (§19). Not redacted: the session
+        # publishes it to an anonymous browser already; the reason stays behind
+        # `drift_reason`.
         "writes_allowed": bool(request.app.state.assembled.db.writes_allowed),
-        "corpus": {
-            "videos": int(corpus.get("videos") or 0),
-            "queryable_videos": int(corpus.get("queryable_videos") or 0),
-            # Ready **only**, and it is not `queryable_videos` minus something:
-            # `stale` answers a query and is not ready, so the two numbers are
-            # different questions and the band that says "N ready" means this
-            # one. It is `corpus_rollup`'s own column, the same field the
-            # ledger's `videos_by_state.ready` is read from.
-            "videos_ready": int(rollup["videos_ready"] or 0),
-            # The store's own words as keys, so a state the schema grows later
-            # arrives here the day it is added.
-            "videos_by_index_state": {
-                str(state): int(n)
-                for state, n in (corpus.get("videos_by_index_state") or {}).items()
-            },
-            # `data_status` verbatim from `corpus-summary`, never re-derived
-            # (index-schema §4.5).
-            "data_status": str(corpus.get("data_status") or ""),
-            "cues": int(rollup["cues"] or 0),
-            "keyframes": int(rollup["keyframes"] or 0),
-            "ocr_lines": int(rollup["ocr_lines"] or 0),
-            # Seconds only. `corpus_rollup` also carries `hours`, and its own
-            # comment calls that a display rounding - deriving seconds back out
-            # of the 0.1-rounded figure once reported a 149 s corpus as 0
-            # (research/e2e-smoke-2026-08-08.md 4.6). Sending both would put
-            # that rounding on the wire for React to render.
-            "duration_s": float(rollup["duration_s"] or 0.0),
-            "published": {
-                "oldest": _epoch(rollup["oldest_published"]),
-                "newest": _epoch(rollup["newest_published"]),
-            },
-            "last_indexed": _epoch(rollup["last_indexed"]),
-        },
-        "channels": [
-            {
-                "channel": str(row.get("channel") or ""),
-                "videos": int(row.get("videos") or 0),
-                "seconds": float(row.get("seconds") or 0.0),
-            }
-            for row in corpus.get("channels") or []
-        ],
-        # A list, not the tool's object: a tag is a string a client must not
-        # have to trust as a JSON key, and the order here is the rollup's
-        # (most-used first), which an object would leave to the reader.
-        "tags": [
-            {"tag": str(tag), "videos": int(n)}
-            for tag, n in (corpus.get("tags") or {}).items()
-        ],
+        # Verbatim from `corpus-summary`, never re-derived (index-schema §4.5).
+        "data_status": str(corpus.get("data_status") or ""),
+        "last_indexed": _epoch(data.last_indexed),
         "gaps": {
             "transcript_no_ocr": int(gaps.get("transcript_no_ocr") or 0),
             "indexing": int(gaps.get("indexing") or 0),
-            # A *count* of failed videos. The rows behind it carry
-            # `video_stages.error`, which is the pipeline's prose about the
-            # operator's box, and they reach no surface from here.
-            "failed": int(gaps.get("failed") or 0),
-            # …and the count is the length of a list `queries.gaps` probes
-            # with `LIMIT 5`, so at the ceiling it means "five or more". The
-            # cap travels as a number and the reading of it as a boolean: a
-            # client renders `5+` off the pair, and a `5` hard-coded in a
-            # template is how a cap gets reported as an exact count the day
-            # the `LIMIT` changes.
-            "failed_cap": GAPS_FAILED_CAP,
-            "failed_capped": int(gaps.get("failed") or 0) >= GAPS_FAILED_CAP,
+            # Whether, not how many: the count is the Corpus page's, and the
+            # rows behind it carry `video_stages.error`, which reaches no surface.
+            "has_failed": bool(gaps.get("failed")),
         },
         "embed_backlog": {
             "text": int(backlog.get("text") or 0),
@@ -300,58 +238,40 @@ async def overview(request: Request) -> Response:
         },
         "jobs": {
             "active": int(health.get("active") or 0),
-            "running": int(health.get("running") or 0),
             "deferred": int(health.get("deferred") or 0),
             "failed_recent": int(health.get("failed_recent") or 0),
             # The window the count was taken over, so the client's sentence and
             # the query behind it cannot disagree.
             "failed_window_s": FAILED_WINDOW_S,
         },
-        "recent": [
-            {
-                "video_id": str(row["video_id"]),
-                "title": str(row["title"]),
-                "channel": str(row["channel"]),
-                "duration_s": _seconds(row["duration_s"]),
-                "indexed_at": _epoch(row["indexed_at"]),
-                "thumb": row["thumb"],
-            }
-            for row in data.recent or []
-        ],
-        # The vector state and the worker probe, exactly as the page's panel
-        # gets them: `vectors.reason` and the whole worker block are already
-        # `None` in the projection, because `pipeline_readiness` never asked.
+        # `vectors.reason` and the whole worker block are already `None` in the
+        # projection, because `pipeline_readiness` never asked.
         "readiness": _readiness(data.readiness),
-        # Dropped by the projection, both of them, by not being read (§2.4).
+        # Dropped by the projection by not being read (§2.4).
         "declared_models": None if redact else declared_models(
             request.app.state.assembled.db.config
         ),
-        "storage": None
-        if data.storage is None
-        else {
-            "keyframe_bytes": int(data.storage["keyframes"]),
-            "database_bytes": int(data.storage["database"]),
-        },
     }
     return _json(payload)
 
 
-# --------------------------------------------------------------------- ledger
+# --------------------------------------------------------------------- corpus
 
 
-async def ledger(request: Request) -> Response:
-    """`GET /dashboard/api/ledger` — every key number this instance can count.
+def _capped(rows: list[Any], cap: int, row: Any) -> dict[str, Any]:
+    """A rollup read one past its cap, as the rows and `has_more`."""
+    return {"rows": [row(r) for r in rows[:cap]], "has_more": len(rows) > cap}
 
-    The ledger page's reads (`read_models.ledger_reads`), typed: a fixed number
-    of whole-table and index counts, no per-video work, and no parameters.
+
+async def corpus(request: Request) -> Response:
+    """`GET /dashboard/api/corpus` — what is in it.
+
+    The Corpus page's reads (`read_models.corpus_reads`), typed: a fixed number
+    of whole-table and index counts plus two capped rollups, no per-video work,
+    and no parameters.
     """
     redact = redacted(request)
-    task = asyncio.create_task(pipeline_readiness(request, redact=redact))
-    try:
-        data: LedgerReads = await ledger_reads(request, task, redact=redact)
-    finally:
-        if not task.done():
-            task.cancel()
+    data: CorpusReads = await corpus_reads(request, redact=redact)
     rollup = data.rollup
     row = data.ledger
     health = data.health
@@ -360,33 +280,23 @@ async def ledger(request: Request) -> Response:
         # no sample behind any of them, so the payload carries one clock.
         "counted_at": int(time.time()),
         "redacted": redact,
-        # The overview's field, same name and same source (§19): the ledger
-        # draws the same drift banner, and one fact must not have two
-        # spellings across two payloads that answer for one deployment.
-        "writes_allowed": bool(request.app.state.assembled.db.writes_allowed),
         "corpus": {
             # ready + the four not-ready states, which add up to this by
             # construction (`_CORPUS_SQL`'s `<> 'ready'`).
             "videos": int(rollup["videos_ready"]) + int(rollup["videos_pending"]),
-            # Seconds only, for the reason the overview gives above.
+            # Seconds only. `corpus_rollup` also carries `hours`, a display
+            # rounding: deriving seconds back out of it once reported a 149 s
+            # corpus as 0 (research/e2e-smoke-2026-08-08.md 4.6).
             "duration_s": float(rollup["duration_s"] or 0.0),
             "cues": int(rollup["cues"] or 0),
             "keyframes": int(rollup["keyframes"] or 0),
             "ocr_lines": int(rollup["ocr_lines"] or 0),
             "chunks": int(row["chunks"] or 0),
-            "tags": int(row["tags"] or 0),
-            "channels": int(row["channels"] or 0),
-            # The band under the video count prints "published <oldest> –
-            # <newest>", and this payload had no field for it — the same
-            # `corpus_rollup` the counts above come from was already carrying
-            # both stamps. Same name and same shape as the overview's, because
-            # a client reading both must not have to learn two spellings of one
-            # fact; `null` on both halves when the corpus is empty.
+            # `null` on both halves when the corpus is empty.
             "published": {
                 "oldest": _epoch(rollup["oldest_published"]),
                 "newest": _epoch(rollup["newest_published"]),
             },
-            "last_indexed": _epoch(rollup["last_indexed"]),
         },
         "videos_by_state": {
             "ready": int(rollup["videos_ready"] or 0),
@@ -395,6 +305,22 @@ async def ledger(request: Request) -> Response:
             "failed": int(row["videos_failed"] or 0),
             "stale": int(row["videos_stale"] or 0),
         },
+        "channels": _capped(
+            data.channels,
+            CHANNEL_CAP,
+            lambda r: {
+                "channel": str(r["channel"]),
+                "videos": int(r["n"]),
+                "seconds": float(r["seconds"] or 0.0),
+            },
+        ),
+        # Rows, not an object keyed by tag: a tag is a string a client must not
+        # have to trust as a JSON key, and the order is the rollup's.
+        "tags": _capped(
+            data.tags,
+            TAG_CAP,
+            lambda r: {"tag": str(r["full"]), "videos": int(r["n"])},
+        ),
         "jobs_by_state": {
             str(state): int(n) for state, n in data.jobs_by_state.items()
         },
@@ -405,15 +331,6 @@ async def ledger(request: Request) -> Response:
             "failed_recent": int(health["failed_recent"]),
             "failed_window_s": FAILED_WINDOW_S,
         },
-        "embed_backlog": {
-            "text": int(data.backlog["text"]),
-            "frame": int(data.backlog["frame"]),
-        },
-        # One figure out of `gaps()`, the same one the page takes: the rest of
-        # that read is either counted more precisely above or is the failed-stage
-        # rows, whose `error` text belongs to nobody but the operator.
-        "gaps": {"transcript_no_ocr": int(data.gaps["transcript_no_ocr"])},
-        "readiness": _readiness(data.readiness),
         "storage": None
         if data.storage is None
         else {
@@ -651,7 +568,7 @@ async def video(request: Request) -> Response:
             "ocr_frames": int(counts["ocr_frames"] or 0),
             "ocr_lines": int(counts["ocr_lines"] or 0),
             # This video's own keyframe bytes, which is corpus: the figure the
-            # projection drops is the *disk*, on the overview and the ledger.
+            # projection drops is the *disk*, on the Corpus page.
             "jpeg_bytes": int(counts["jpeg_bytes"] or 0),
         },
         # `whisperx | yt_manual | yt_auto` → how many cues came in that way.

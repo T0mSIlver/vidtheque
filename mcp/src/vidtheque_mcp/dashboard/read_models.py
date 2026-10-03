@@ -10,14 +10,15 @@ operator's disk, the declared model ids and the drift reason by **not reading
 them**, and that decision has to live in one place or it lives in neither.
 
 What is here: the width set every frame URL on this surface comes from, the
-projection predicate, the bounded worker probe, and the assemblers — the
-overview, the ledger, the videos table, the video detail, the jobs table, one
+projection predicate, the bounded worker probe, and the assemblers — Health,
+Corpus, the videos table, the video detail, the jobs table, one
 job's war story and the two following reads. Nothing here formats a value for a
 human; that is the browser's, which is the rule the front-end migration settled
 — **typed values on the wire, formatting at the edge**, and policy text
 (refusals, the clamp notes, the redaction itself) still Python's.
 
-Moved out of `views.py` unchanged over 2026-09-05: the overview and the ledger,
+Moved out of `views.py` unchanged over 2026-09-05: the overview and the ledger
+(split into Health and Corpus on 2026-10-03, dashboard.md §24),
 the videos table and the detail page (dashboard.md §20), the two following
 reads (§22), and the jobs table with one job's war story (§5.4). `views.py`
 imported them back under their old private names until it was deleted with the
@@ -54,7 +55,7 @@ from ..errors import ToolError
 from ..follows import rules as follow_rules
 from ..follows import store as follows_store
 from ..jobs import store as jobs_store
-from ..public.api import OWNER_CLAMPS, _cover_frames, thumb_url
+from ..public.api import OWNER_CLAMPS, thumb_url
 from ..text import clamp, iso_day, split_csv
 from ..timeparse import parse_corpus_time
 from ..tools import library
@@ -71,10 +72,9 @@ STRIP_WIDTH = 192
 DETAIL_WIDTH = 512
 LIGHTBOX_WIDTH = 1280
 
-# The overview's list bounds (§5.1). Server-side, like every other list here.
+# The Corpus page's list bounds (§24.1). Server-side, like every other list here.
 CHANNEL_CAP = 12
 TAG_CAP = 24
-RECENT_CAP = 8
 
 # The detail page's bounds (§5.3), and the JSON's: `?frames=100000` is clamped
 # on both. The three that are not page sizes bound the *expensive* paths
@@ -95,19 +95,11 @@ OCR_LINE_CAP = 600
 # in can never disagree.
 FAILED_WINDOW_S = 86_400
 
-# How deep `queries.gaps` probes for failed videos — its `LIMIT 5`, named here
-# because `corpus-summary` reports the *length* of that list and a reader of the
-# count alone cannot tell five from five hundred. The Jinja overview printed
-# `5+` off a literal 5 in the template; the payload carries the ceiling instead,
-# so the client's `+` and the SQL behind it cannot disagree. A change to that
-# `LIMIT` has to change this line with it.
-GAPS_FAILED_CAP = 5
-
 # A health panel must never become the slowest dependency of the page that
 # reports it. `/status` is deliberately lock-free on the worker; this is the
 # corresponding client-side wall-clock bound. The response cap is defensive —
 # the shipped worker returns a few kilobytes — and stops a mispointed URL from
-# turning an overview request into an unbounded JSON parse.
+# turning a Health request into an unbounded JSON parse.
 WORKER_STATUS_TIMEOUT_S = 1.0
 WORKER_STATUS_MAX_BYTES = 64 * 1024
 WORKER_BACKEND_CAP = 12
@@ -145,10 +137,9 @@ def redacted(request: Request) -> bool:
       `jobs.args_json` carries whatever was submitted, and error text, because
       yt-dlp's failure strings carry cookiefile paths, player clients and the
       operator's politeness settings;
-    * the **corpus overview** and the **ledger** keep the corpus — counts,
-      channels, tags, coverage, arrivals — and drop the operator's box: the
-      declared model ids and their dimensions, the drift reason, the byte
-      totals, and the `VIDTHEQUE_AUTH` line.
+    * **Health** and **Corpus** keep the corpus — counts, channels, tags,
+      coverage — and drop the operator's box: the declared model ids and their
+      dimensions, the drift reason, the worker probe and the byte totals.
 
     The videos table and the video detail page are **not** redacted: §2.4 gives
     them to the demo whole, and everything on them is corpus, not deployment.
@@ -334,40 +325,38 @@ async def pipeline_readiness(request: Request, *, redact: bool) -> dict[str, Any
     return _stamped(readiness)
 
 
-# ------------------------------------------------------------------- overview
+# --------------------------------------------------------------------- health
 
 
 @dataclass(frozen=True)
-class OverviewReads:
-    """Everything the corpus overview is made of, before anyone renders it.
+class HealthReads:
+    """Whether the machine is working right now (§24.1), before anyone renders it.
 
     ``error`` is `corpus-summary`'s own refusal when it has one; every other
     field is unset in that case and the caller answers with the refusal.
-    ``storage`` is ``None`` in the projection because the reads behind it were
-    never taken, not because a template declined to print them.
     """
 
     error: dict[str, Any] | None = None
     corpus: dict[str, Any] | None = None
-    rollup: sqlite3.Row | None = None
-    recent: list[dict[str, Any]] | None = None
+    last_indexed: Any = None
     health: dict[str, int] | None = None
-    storage: dict[str, int] | None = None
     readiness: dict[str, Any] | None = None
 
 
-async def overview_reads(
-    request: Request, readiness_task: asyncio.Task[dict[str, Any]], *, redact: bool
-) -> OverviewReads:
-    """The overview's reads, in the order and the bounds they have always had."""
+async def health_reads(
+    request: Request, readiness_task: asyncio.Task[dict[str, Any]]
+) -> HealthReads:
     assembled = request.app.state.assembled
     deps: Deps = assembled.deps
     db = assembled.db
 
+    # The tool, for `data_status`, the gaps and the backlog: the word is
+    # derived in one place (index-schema §4.5), and re-deriving it here is how
+    # two surfaces start disagreeing. No lists: those are the Corpus page's.
     summary = await library.corpus_summary(
         deps,
-        max_channels=CHANNEL_CAP,
-        max_tags=TAG_CAP,
+        include_channels=False,
+        include_tags=False,
         include_recent=False,
         include_guidance=False,
     )
@@ -375,25 +364,63 @@ async def overview_reads(
     if error is not None:  # pragma: no cover - corpus_summary has no error path
         # The readiness task is the caller's to cancel: a refusal does not wait
         # a second for a health probe nobody will render.
-        return OverviewReads(error=error)
-    payload = summary.structured_content or {}
-
-    # `corpus_summary` builds its rollup for the lines it prints; this reads it
-    # again for the three fields the payload does not carry (OCR lines, the
-    # published span, the last-indexed clock). One flat statement, twice, is
-    # the price of not re-deriving `data_status` here — §4.5 is not negotiable.
+        return HealthReads(error=error)
     rollup = await db.read(queries.corpus_rollup)
-    pool = await db.read(lambda c: queries.resolve_videos(c, queries.CorpusFilter()))
-    recent = await db.read(lambda c: queries.recent_indexed(c, pool, RECENT_CAP))
-    # The queue, in one row (§5.1). Read in both modes: what the machine is
-    # doing is corpus-shaped, not operator-shaped, and the jobs view the
-    # numbers link into is already part of the demo projection (§10.4).
+    # Read in both modes: what the machine is doing is corpus-shaped, not
+    # operator-shaped, and the jobs view the numbers link into is already part
+    # of the demo projection (§10.4).
+    health = await db.read(
+        lambda c: jobs_store.job_health(c, int(time.time()) - FAILED_WINDOW_S)
+    )
+    return HealthReads(
+        corpus=summary.structured_content or {},
+        last_indexed=rollup["last_indexed"],
+        health=health,
+        readiness=await readiness_task,
+    )
+
+
+# --------------------------------------------------------------------- corpus
+
+
+@dataclass(frozen=True)
+class CorpusReads:
+    """What is in the corpus, in one bounded pass (§24.1).
+
+    Every figure is a whole-table or index count, and the two lists are capped
+    rollups — nothing here walks a video, a job or a keyframe, which is what
+    makes the read count a constant.
+    """
+
+    rollup: sqlite3.Row
+    ledger: sqlite3.Row
+    channels: list[sqlite3.Row]
+    tags: list[sqlite3.Row]
+    jobs_by_state: dict[str, int]
+    health: dict[str, int]
+    storage: dict[str, int] | None
+
+
+async def corpus_reads(request: Request, *, redact: bool) -> CorpusReads:
+    assembled = request.app.state.assembled
+    db = assembled.db
+
+    rollup = await db.read(queries.corpus_rollup)
+    ledger = await db.read(queries.corpus_ledger)
+    # Every state, like the band above the lists: a channel whose only video
+    # is mid-pipeline is still in the corpus.
+    every = queries.CorpusFilter(index_states=queries.INDEX_STATES)
+    pool = await db.read(lambda c: queries.resolve_videos(c, every))
+    # One past the cap, so the payload says `has_more` instead of a total.
+    channels = await db.read(lambda c: queries.channel_rollup(c, pool, CHANNEL_CAP + 1))
+    tags = await db.read(lambda c: queries.tag_rollup(c, pool, TAG_CAP + 1))
+    jobs_by_state = await db.read(jobs_store.job_state_counts)
     health = await db.read(
         lambda c: jobs_store.job_health(c, int(time.time()) - FAILED_WINDOW_S)
     )
     # The one read the projection skips rather than redacts: a byte total of
-    # the operator's disk is not a fact about the corpus, and not asking for it
-    # is cheaper and more honest than asking and then not printing it.
+    # the operator's disk is not a fact about the corpus, and not asking is
+    # cheaper and more honest than asking and not printing (§2.4).
     storage = (
         None
         if redact
@@ -404,94 +431,14 @@ async def overview_reads(
             "database": file_size(assembled.settings.db_path),
         }
     )
-
-    covers = await db.read(
-        lambda c: _cover_frames(c, [str(r["public_id"]) for r in recent])
-    )
-    recent_rows = [
-        {
-            "video_id": str(row["public_id"]),
-            "title": str(row["title"]),
-            "channel": row["channel_name"] or "",
-            "duration_s": row["duration_s"],
-            "indexed_at": row["indexed_at"],
-            "thumb": thumb(deps, covers.get(str(row["public_id"])), STRIP_WIDTH),
-        }
-        for row in recent
-    ]
-    return OverviewReads(
-        corpus=payload,
-        rollup=rollup,
-        recent=recent_rows,
-        health=health,
-        storage=storage,
-        readiness=await readiness_task,
-    )
-
-
-# --------------------------------------------------------------------- ledger
-
-
-@dataclass(frozen=True)
-class LedgerReads:
-    """Every key number this instance can count, in one bounded pass (§17).
-
-    Every figure is a whole-table or index count — nothing here walks a video,
-    a job or a keyframe, which is what makes the read count a constant.
-    """
-
-    rollup: sqlite3.Row
-    ledger: sqlite3.Row
-    gaps: dict[str, Any]
-    backlog: dict[str, int]
-    jobs_by_state: dict[str, int]
-    health: dict[str, int]
-    storage: dict[str, int] | None
-    readiness: dict[str, Any]
-
-
-async def ledger_reads(
-    request: Request, readiness_task: asyncio.Task[dict[str, Any]], *, redact: bool
-) -> LedgerReads:
-    assembled = request.app.state.assembled
-    db = assembled.db
-
-    rollup = await db.read(queries.corpus_rollup)
-    ledger = await db.read(queries.corpus_ledger)
-    # `gaps` for one of its five numbers, and that is deliberate: the
-    # "transcript but no on-screen text" set is the one figure here that is a
-    # judgement about coverage rather than a column, and a second copy of that
-    # SQL is how the overview and this page start disagreeing about what a gap
-    # is. The other four terms it computes are cheap counts this page reads
-    # more precisely elsewhere — and its `failed` rows carry `video_stages.error`,
-    # which is the pipeline's prose about the operator's box and reaches
-    # neither surface from here.
-    gaps = await db.read(queries.gaps)
-    backlog = await db.read(queries.embed_backlog)
-    jobs_by_state = await db.read(jobs_store.job_state_counts)
-    health = await db.read(
-        lambda c: jobs_store.job_health(c, int(time.time()) - FAILED_WINDOW_S)
-    )
-    # The same read the overview skips rather than redacts, for the same reason:
-    # a byte total of the operator's disk is not a fact about the corpus, and
-    # not asking is cheaper and more honest than asking and not printing (§2.4).
-    storage = (
-        None
-        if redact
-        else {
-            "keyframes": await db.read(queries.keyframe_bytes_total),
-            "database": file_size(assembled.settings.db_path),
-        }
-    )
-    return LedgerReads(
+    return CorpusReads(
         rollup=rollup,
         ledger=ledger,
-        gaps=gaps,
-        backlog=backlog,
+        channels=channels,
+        tags=tags,
         jobs_by_state=jobs_by_state,
         health=health,
         storage=storage,
-        readiness=await readiness_task,
     )
 
 

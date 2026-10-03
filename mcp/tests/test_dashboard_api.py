@@ -1,4 +1,4 @@
-"""`/dashboard/api/{overview,ledger,session}` — the first JSON slice for the
+"""`/dashboard/api/{health,corpus,session}` — the first JSON slice for the
 React dashboard (`docs/design/frontend-migration.md`).
 
 Three additive reads over the assemblers the Jinja pages already use, so what
@@ -34,12 +34,10 @@ from vidtheque_mcp.dashboard.read_models import (
     FAILED_WINDOW_S,
     FOLLOW_PAGE,
     FOLLOW_PAGE_MAX,
-    GAPS_FAILED_CAP,
     HELD_BAND_CAP,
     INDEX_JOB_CAP,
     NEAR_MISS_S,
     OCR_LINE_CAP,
-    RECENT_CAP,
     SEEN_PAGE_MAX,
     TAG_CAP,
 )
@@ -65,8 +63,8 @@ from .test_dashboard_following import make_client as follow_client
 from .test_dashboard_following import owner_client as follow_owner
 from .test_dashboard_following import sign_in
 
-OVERVIEW = f"{ROOT}/api/overview"
-LEDGER = f"{ROOT}/api/ledger"
+HEALTH = f"{ROOT}/api/health"
+CORPUS = f"{ROOT}/api/corpus"
 SESSION = f"{ROOT}/api/session"
 # The videos table and the video detail page (§20). `library`, not `videos`:
 # `/dashboard/api/videos` is the facade's listing at this prefix and stays it.
@@ -125,7 +123,7 @@ def test_the_two_corpus_reads_sit_behind_the_pages_own_gate(tmp_path: Path) -> N
     """A JSON route that skips the credential check is the hole the pages were
     guarded against — and the refusal is the typed envelope, not a page."""
     with owner_client(tmp_path) as client:
-        for path in (OVERVIEW, LEDGER):
+        for path in (HEALTH, CORPUS):
             refused = client.get(path)
             assert refused.status_code == 401, path
             body = refused.json()
@@ -140,7 +138,7 @@ def test_the_json_401_is_not_cacheable(tmp_path: Path) -> None:
     """A refused read of the owner surface is still a read of it — a shared
     cache holding the 401 would go on answering it after the caller signs in."""
     with owner_client(tmp_path) as client:
-        refused = client.get(OVERVIEW)
+        refused = client.get(HEALTH)
         assert refused.status_code == 401
         assert refused.headers["cache-control"] == "no-store"
 
@@ -156,11 +154,11 @@ def test_a_session_cookie_reads_the_json_and_a_stale_one_does_not(
         store.save_session("dead", "owner", int(time.time()) - 1)
 
         client.cookies.set(SESSION_COOKIE, "live")
-        assert client.get(OVERVIEW).status_code == 200
+        assert client.get(HEALTH).status_code == 200
         client.cookies.set(SESSION_COOKIE, "dead")
-        assert client.get(OVERVIEW).status_code == 401
+        assert client.get(HEALTH).status_code == 401
         client.cookies.set(SESSION_COOKIE, "never-existed")
-        assert client.get(LEDGER).status_code == 401
+        assert client.get(CORPUS).status_code == 401
 
 
 def test_the_three_routes_are_get_only_and_go_when_the_group_does(
@@ -170,14 +168,14 @@ def test_the_three_routes_are_get_only_and_go_when_the_group_does(
         registered = {
             str(route.path): set(route.methods or ())
             for route in client.app.routes
-            if str(getattr(route, "path", "")) in (OVERVIEW, LEDGER, SESSION)
+            if str(getattr(route, "path", "")) in (HEALTH, CORPUS, SESSION)
         }
-        assert set(registered) == {OVERVIEW, LEDGER, SESSION}
+        assert set(registered) == {HEALTH, CORPUS, SESSION}
         for path, methods in registered.items():
             assert methods <= {"GET", "HEAD"}, path
 
     with make_client(tmp_path, dashboard=DashboardSettings(enabled=False)) as off:
-        for path in (OVERVIEW, LEDGER, SESSION):
+        for path in (HEALTH, CORPUS, SESSION):
             assert off.get(path).status_code == 404, path
 
 
@@ -386,166 +384,73 @@ def test_the_session_reason_is_policy_text_and_not_a_rendering(
 # --------------------------------------------------------------- typed values
 
 
-def test_the_overview_json_is_typed_values_and_no_display_strings(
+def test_the_health_json_is_typed_values_and_no_display_strings(
     tmp_path: Path,
 ) -> None:
     """Tom, 2026-09-05: typed on the wire, formatted in React. Counts are ints,
     clocks are epoch seconds, and nothing here says "4m 12s"."""
     with make_client(tmp_path) as client:
-        body = read(client, OVERVIEW)
+        body = read(client, HEALTH)
 
-    corpus = body["corpus"]
-    assert corpus["videos"] == 4  # three ready, one half-indexed
-    for key in ("videos", "queryable_videos", "cues", "keyframes", "ocr_lines"):
-        assert isinstance(corpus[key], int), key
-    assert isinstance(corpus["duration_s"], float)
-    # Seconds are the stored fact and the rollup's `hours` is its own 0.1
-    # rounding of them (`queries._CORPUS_SQL`). A display rounding on the wire
-    # is the split leaking back the other way, so it is not sent.
-    assert "hours" not in corpus
-    assert corpus["videos_by_index_state"]["ready"] == 3
-    assert corpus["videos_by_index_state"]["indexing"] == 1
     # `data_status` verbatim from `corpus-summary`, never re-derived here.
-    assert corpus["data_status"] in ("ok", "partial", "degraded", "indexing", "empty")
-    # Two time axes, and both of them are seconds — never a rendered day.
-    for stamp in (corpus["published"]["oldest"], corpus["published"]["newest"]):
-        assert isinstance(stamp, int)
-    assert corpus["last_indexed"] is None or isinstance(corpus["last_indexed"], int)
-
+    assert body["data_status"] in ("ok", "partial", "degraded", "indexing", "empty")
+    assert isinstance(body["last_indexed"], int)
     # The queue, with the window its count was taken over.
     assert body["jobs"] == {
         "active": 2,
-        "running": 1,
         "deferred": 1,
         "failed_recent": 1,
         "failed_window_s": FAILED_WINDOW_S,
     }
+    assert body["gaps"] == {"transcript_no_ocr": 1, "indexing": 1, "has_failed": False}
+    assert set(body["embed_backlog"]) == {"text", "frame"}
     assert body["counted_at"] <= int(time.time())
     assert body["redacted"] is False
-    # Every clock in the payload, including the readiness observation's. The
-    # page renders that one as ISO-8601 because a `<time datetime=…>` attribute
-    # wants it; the JSON must not, or the one field React does not format is
-    # the one Python already did.
     assert isinstance(body["readiness"]["checked_at"], int)
-    assert "checked_at_s" not in body["readiness"]
-
-    # Tags are a list of pairs, not an object keyed by corpus strings.
-    assert isinstance(body["tags"], list)
-    for row in body["tags"]:
-        assert set(row) == {"tag", "videos"} and isinstance(row["videos"], int)
-    for row in body["channels"]:
-        assert set(row) == {"channel", "videos", "seconds"}
-        assert isinstance(row["videos"], int) and isinstance(row["seconds"], float)
-
-    for row in body["recent"]:
-        assert set(row) == {
-            "video_id",
-            "title",
-            "channel",
-            "duration_s",
-            "indexed_at",
-            "thumb",
-        }
-        assert row["indexed_at"] is None or isinstance(row["indexed_at"], int)
-        # A frame URL a browser resolves against the page it is reading, not
-        # against PUBLIC_URL (dashboard.md §8).
-        assert row["thumb"] is None or row["thumb"].startswith("/frames/")
-
-    # The owner's half: present, and both figures are byte counts.
-    assert isinstance(body["storage"]["keyframe_bytes"], int)
-    assert isinstance(body["storage"]["database_bytes"], int)
     assert body["declared_models"], "the owner sees what the corpus was built with"
+    # A number appears on one page (dashboard.md §24): what is in the corpus
+    # is the Corpus page's payload, and what is new is the feed's.
+    for gone in ("corpus", "channels", "tags", "recent", "storage"):
+        assert gone not in body, gone
 
 
-def test_the_overview_counts_ready_apart_from_what_can_answer(
+def test_health_says_a_video_failed_and_leaves_the_count_to_corpus(
     tmp_path: Path,
 ) -> None:
-    """"N ready" and "N queryable" are two numbers, and `stale` is the gap.
-
-    The Jinja band read `corpus_rollup.videos_ready`; the payload carried only
-    `queryable_videos`, which is `ready` **plus** `stale`, so a React page
-    saying "N ready" off it counts a stale video as ready and the "not ready"
-    beside it goes short by the same one. Both are on the payload now, and this
-    seeds the one state that tells them apart.
-    """
+    """A whether, not a how-many: the count is Corpus's `videos_by_state`, and
+    the failed rows carry `video_stages.error` — yt-dlp talking about the
+    operator's box — which reaches neither payload."""
     with make_client(tmp_path) as client:
-        body = read(client, OVERVIEW)
-        assert body["corpus"]["videos_ready"] == 3
-        assert body["corpus"]["queryable_videos"] == 3
-
         conn = open_write_connection(client.app.state.assembled.db.path)
         try:
             conn.execute("BEGIN IMMEDIATE")
             conn.execute(
-                f"UPDATE videos SET index_state='stale' WHERE source_id='{FIRST}'"
+                "INSERT INTO videos (owner_id, source_id, url, title, "
+                "channel_name, published_at, duration_s, index_state) VALUES "
+                "(1, 'failed00000', 'https://youtu.be/failed00000', 'Failed', "
+                "'Channel', 1740000000, 600, 'failed')"
+            )
+            conn.execute(
+                "INSERT INTO video_stages (video_id, stage, state, started_at, "
+                "finished_at, error) VALUES (last_insert_rowid(), 'fetch', "
+                "'failed', 100, 200, 'ERROR: [youtube] Sign in to confirm you are not a bot.')"
             )
             conn.execute("COMMIT")
         finally:
             conn.close()
-        stale = read(client, OVERVIEW)
+        health = read(client, HEALTH)
+        corpus = read(client, CORPUS)
 
-    # One video moved out of `ready` and stayed answerable, which is exactly
-    # the case the two fields disagree on.
-    assert stale["corpus"]["videos_ready"] == 2
-    assert stale["corpus"]["queryable_videos"] == 3
-    assert stale["corpus"]["videos"] == 4
-    assert isinstance(stale["corpus"]["videos_ready"], int)
+    assert health["gaps"]["has_failed"] is True
+    assert corpus["videos_by_state"]["failed"] == 1
+    assert "Sign in to confirm" not in json.dumps([health, corpus])
 
 
-def test_the_overview_says_when_the_failed_count_is_a_ceiling(
-    tmp_path: Path,
-) -> None:
-    """`queries.gaps` probes the failed rows with `LIMIT 5` and reports the
-    length of that list, so five means "five or more".
-
-    The Jinja page printed `5+` off a literal 5 in the template. The payload
-    carries the ceiling and the reading of it, so the client's `+` comes from
-    the same number the SQL used and a change to that `LIMIT` cannot leave a
-    page quietly reporting a cap as an exact count.
-    """
+def test_the_corpus_json_is_the_tally_the_page_prints(tmp_path: Path) -> None:
+    """Four videos split three ready and one indexing, three jobs split one
+    queued, one running and one failed."""
     with make_client(tmp_path) as client:
-        empty = read(client, OVERVIEW)
-        assert empty["gaps"]["failed"] == 0
-        assert empty["gaps"]["failed_cap"] == GAPS_FAILED_CAP
-        assert empty["gaps"]["failed_capped"] is False
-
-        conn = open_write_connection(client.app.state.assembled.db.path)
-        try:
-            conn.execute("BEGIN IMMEDIATE")
-            for n in range(GAPS_FAILED_CAP + 1):
-                conn.execute(
-                    "INSERT INTO videos (owner_id, source_id, url, title, "
-                    "channel_name, published_at, duration_s, index_state) VALUES "
-                    "(1, ?, ?, ?, 'Channel', 1740000000, 600, 'failed')",
-                    (f"failed{n:05d}", f"https://youtu.be/failed{n:05d}", f"Failed {n}"),
-                )
-                conn.execute(
-                    "INSERT INTO video_stages (video_id, stage, state, started_at, "
-                    "finished_at, error) VALUES "
-                    "(last_insert_rowid(), 'fetch', 'failed', 100, ?, ?)",
-                    (200 + n, "ERROR: [youtube] Sign in to confirm you are not a bot."),
-                )
-            conn.execute("COMMIT")
-        finally:
-            conn.close()
-        capped = read(client, OVERVIEW)
-
-    # Six failed videos, and the probe stops at five: the count is the cap and
-    # the payload says which.
-    assert capped["gaps"]["failed"] == GAPS_FAILED_CAP
-    assert capped["gaps"]["failed_capped"] is True
-    assert capped["gaps"]["failed_cap"] == GAPS_FAILED_CAP
-    # And still a count: the rows behind it carry `video_stages.error`, which
-    # reaches no surface from here on any deployment.
-    assert "Sign in to confirm" not in json.dumps(capped)
-
-
-def test_the_ledger_json_is_the_tally_the_page_prints(tmp_path: Path) -> None:
-    """The same numbers as `/dashboard/ledger`, which is the point of sharing
-    the assembler: four videos split three ready and one indexing, three jobs
-    split one queued, one running and one failed."""
-    with make_client(tmp_path) as client:
-        body = read(client, LEDGER)
+        body = read(client, CORPUS)
 
     assert body["corpus"]["videos"] == 4
     assert body["videos_by_state"] == {
@@ -562,88 +467,61 @@ def test_the_ledger_json_is_the_tally_the_page_prints(tmp_path: Path) -> None:
     assert body["jobs_by_state"]["done"] == 0
     assert body["queue"]["active"] == 2
     assert body["queue"]["failed_window_s"] == FAILED_WINDOW_S
-    for key in ("chunks", "tags", "channels", "cues", "keyframes", "ocr_lines"):
+    for key in ("chunks", "cues", "keyframes", "ocr_lines"):
         assert isinstance(body["corpus"][key], int), key
-    assert set(body["embed_backlog"]) == {"text", "frame"}
+    # Seconds are the stored fact; the rollup's `hours` is a display rounding.
+    assert isinstance(body["corpus"]["duration_s"], float)
+    assert "hours" not in body["corpus"]
+    span = body["corpus"]["published"]
+    assert isinstance(span["oldest"], int) and span["oldest"] <= span["newest"]
+
+    # Lists of pairs, not objects keyed by corpus strings.
+    assert body["tags"]["has_more"] is False
+    for row in body["tags"]["rows"]:
+        assert set(row) == {"tag", "videos"} and isinstance(row["videos"], int)
+    assert body["channels"]["has_more"] is False
+    assert len(body["channels"]["rows"]) == 4
+    for row in body["channels"]["rows"]:
+        assert set(row) == {"channel", "videos", "seconds"}
+        assert isinstance(row["videos"], int) and isinstance(row["seconds"], float)
+    # Health's, and only Health's.
+    for gone in ("readiness", "gaps", "embed_backlog", "writes_allowed"):
+        assert gone not in body, gone
 
 
-def test_the_ledger_carries_the_published_span_the_band_prints(
-    tmp_path: Path,
-) -> None:
-    """The band under the video count reads "published <oldest> – <newest>",
-    and the payload had no field for it (2026-09-05).
-
-    Same name and same shape as the overview's, off the same `corpus_rollup`
-    the counts above come from — one more read is not what this cost, and a
-    client reading both payloads must not have to learn two spellings of one
-    fact.
-    """
+def test_the_corpus_lists_say_has_more_past_their_cap(tmp_path: Path) -> None:
+    """One past the cap is read, so a long tail is `has_more`, not a total."""
     with make_client(tmp_path) as client:
-        ledger = read(client, LEDGER)
-        overview = read(client, OVERVIEW)
+        conn = open_write_connection(client.app.state.assembled.db.path)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            for n in range(CHANNEL_CAP):
+                conn.execute(
+                    "INSERT INTO videos (owner_id, source_id, url, title, "
+                    "channel_name, published_at, duration_s, index_state) VALUES "
+                    "(1, ?, ?, 'T', ?, 1740000000, 600, 'ready')",
+                    (f"chan{n:07d}", f"https://youtu.be/chan{n:07d}", f"Channel {n}"),
+                )
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+        body = read(client, f"{CORPUS}?limit=100000")
 
-    span = ledger["corpus"]["published"]
-    assert set(span) == {"oldest", "newest"}
-    assert isinstance(span["oldest"], int) and isinstance(span["newest"], int)
-    assert span["oldest"] <= span["newest"]
-    # Epoch seconds, never the `day` filter's string the template renders.
-    assert span == overview["corpus"]["published"]
+    assert len(body["channels"]["rows"]) == CHANNEL_CAP
+    assert body["channels"]["has_more"] is True
+    assert len(body["tags"]["rows"]) <= TAG_CAP
 
 
 def test_neither_payload_carries_a_rendered_clock(tmp_path: Path) -> None:
-    """The rule with the one field that nearly broke it.
-
-    Tom, 2026-09-05: typed on the wire, React formats. The assemblers still
-    stamp the readiness observation with `iso_z` beside its epoch, because the
-    Jinja pages wanted a `<time datetime=…>` attribute — so a payload that
-    forwarded an assembler's dict wholesale would ship a rendered day under a
-    rule that says it must not. Nothing here prints "4m 12s" or "3 hours ago"
-    either.
+    """Tom, 2026-09-05: typed on the wire, React formats. The assemblers still
+    stamp the readiness observation with `iso_z` beside its epoch, so a payload
+    that forwarded an assembler's dict wholesale would ship a rendered day.
     """
     with owner_client(tmp_path) as client:
-        for path in (OVERVIEW, LEDGER):
+        for path in (HEALTH, CORPUS):
             raw = json.dumps(read(client, path, headers=BEARER))
             assert not ISO_STAMP.search(raw), f"a rendered date reached {path}"
             assert not SPOKEN_DURATION.search(raw), f"a rendered duration reached {path}"
-
-
-def test_the_ledger_takes_one_figure_out_of_gaps_and_not_its_prose(
-    tmp_path: Path,
-) -> None:
-    """`queries.gaps` also returns the failed *rows*, and `video_stages.error`
-    is the pipeline talking about the operator's box — yt-dlp output, worker
-    URLs, cookiefile paths. It reaches neither surface from here, on the owner's
-    instance as much as on the demo."""
-    with make_client(tmp_path) as owner:
-        body = read(owner, LEDGER)
-        raw = json.dumps(body)
-    assert set(body["gaps"]) == {"transcript_no_ocr"}
-    assert isinstance(body["gaps"]["transcript_no_ocr"], int)
-    for prose in (
-        "worker returned 503",
-        "Sign in to confirm you are not a bot",
-        "cookiefile",
-        "Half-indexed",
-    ):
-        assert prose not in raw, f"{prose} leaked into the ledger JSON"
-
-
-def test_the_reads_take_no_parameters_and_stay_inside_the_pages_caps(
-    tmp_path: Path,
-) -> None:
-    """Neither endpoint reads the query string, so there is nothing to clamp —
-    and the lists are still the page's lists, bounded server-side."""
-    with make_client(tmp_path) as client:
-        plain = read(client, OVERVIEW)
-        asked = read(client, f"{OVERVIEW}?limit=100000&offset=999999&max_tags=500")
-        assert plain["corpus"] == asked["corpus"]
-        assert len(asked["channels"]) <= CHANNEL_CAP
-        assert len(asked["tags"]) <= TAG_CAP
-        assert len(asked["recent"]) <= RECENT_CAP
-
-        ledger_plain = read(client, LEDGER)
-        ledger_asked = read(client, f"{LEDGER}?limit=100000")
-        assert ledger_plain["videos_by_state"] == ledger_asked["videos_by_state"]
 
 
 def test_the_worker_probe_is_the_pages_and_carries_only_its_three_fields(
@@ -667,7 +545,7 @@ def test_the_worker_probe_is_the_pages_and_carries_only_its_three_fields(
         )
 
     with owner_client(tmp_path, worker_handler=worker) as client:
-        response = client.get(OVERVIEW, headers=BEARER)
+        response = client.get(HEALTH, headers=BEARER)
         assert response.status_code == 200
         body = response.json()
 
@@ -689,9 +567,9 @@ def test_an_unreachable_worker_degrades_rather_than_failing_the_payload(
 ) -> None:
     """The default handler in these fixtures refuses the connection."""
     with owner_client(tmp_path) as client:
-        body = read(client, OVERVIEW, headers=BEARER)
+        body = read(client, HEALTH, headers=BEARER)
     assert body["readiness"]["worker"]["state"] == "unavailable"
-    assert body["corpus"]["videos"] == 4  # the corpus half arrived anyway
+    assert body["jobs"]["active"] == 2  # the database half arrived anyway
 
 
 # ------------------------------------------------------------- the projection
@@ -715,34 +593,33 @@ def test_the_public_projection_drops_the_operators_box_from_both_reads(
     with make_client(tmp_path, public=DEMO, worker_handler=worker) as demo:
         demo.app.state.assembled.db.vectors.disable(PRIVATE_REASON)
         try:
-            overview = read(demo, OVERVIEW)
-            ledger = read(demo, LEDGER)
+            health = read(demo, HEALTH)
+            corpus = read(demo, CORPUS)
         finally:
             demo.app.state.assembled.db.vectors.enabled = True
             demo.app.state.assembled.db.vectors.reason = None
 
     assert not called, "the projection made an operator-only probe"
-    for body in (overview, ledger):
-        assert body["redacted"] is True
-        assert body["storage"] is None
-        assert body["readiness"]["worker"] is None
-        # The *state* is the visitor's business — search answers differently
-        # without the vector legs — and the reason is not.
-        assert body["readiness"]["vectors"]["enabled"] is False
-        assert body["readiness"]["vectors"]["reason"] is None
-        raw = json.dumps(body)
-        for leaked in (
-            PRIVATE_REASON,
-            "private/model-id",
-            "Qwen/Qwen3-VL-Embedding-2B",
-            "vidtheque.db",
-            str(tmp_path),
-        ):
-            assert leaked not in raw, f"{leaked} is in the demo payload"
-    assert overview["declared_models"] is None
+    assert health["redacted"] is corpus["redacted"] is True
+    assert health["readiness"]["worker"] is None
+    # The *state* is the visitor's business — search answers differently
+    # without the vector legs — and the reason is not.
+    assert health["readiness"]["vectors"]["enabled"] is False
+    assert health["readiness"]["vectors"]["reason"] is None
+    assert health["declared_models"] is None
+    assert corpus["storage"] is None
+    raw = json.dumps([health, corpus])
+    for leaked in (
+        PRIVATE_REASON,
+        "private/model-id",
+        "Qwen/Qwen3-VL-Embedding-2B",
+        "vidtheque.db",
+        str(tmp_path),
+    ):
+        assert leaked not in raw, f"{leaked} is in the demo payload"
     # …and the corpus is all still counted.
-    assert overview["corpus"]["videos"] == 4
-    assert ledger["jobs_by_state"]["failed"] == 1
+    assert corpus["corpus"]["videos"] == 4
+    assert corpus["jobs_by_state"]["failed"] == 1
 
 
 def test_the_owner_sees_the_box_the_demo_does_not(tmp_path: Path) -> None:
@@ -751,53 +628,43 @@ def test_the_owner_sees_the_box_the_demo_does_not(tmp_path: Path) -> None:
     with owner_client(tmp_path) as client:
         client.app.state.assembled.db.vectors.disable(PRIVATE_REASON)
         try:
-            body = read(client, OVERVIEW, headers=BEARER)
+            health = read(client, HEALTH, headers=BEARER)
         finally:
             client.app.state.assembled.db.vectors.enabled = True
             client.app.state.assembled.db.vectors.reason = None
+        corpus = read(client, CORPUS, headers=BEARER)
 
-    assert body["redacted"] is False
-    assert body["readiness"]["vectors"]["reason"] == PRIVATE_REASON
+    assert health["redacted"] is False
+    assert health["readiness"]["vectors"]["reason"] == PRIVATE_REASON
     assert any(
-        row["value"] == "Qwen/Qwen3-VL-Embedding-2B" for row in body["declared_models"]
+        row["value"] == "Qwen/Qwen3-VL-Embedding-2B" for row in health["declared_models"]
     )
-    assert body["storage"]["database_bytes"] > 0
+    assert corpus["storage"]["database_bytes"] > 0
     # Even here, a byte total is a number and never a path.
-    assert str(tmp_path) not in json.dumps(body)
+    assert str(tmp_path) not in json.dumps([health, corpus])
 
 
-def test_both_corpus_reads_say_whether_this_instance_may_write(
-    tmp_path: Path,
-) -> None:
-    """§19, 2026-09-06: `writes_allowed` on the overview and the ledger.
-
-    The Indexing statepair and the drift banner are on these two pages, and
-    they were reading the flag out of the page context. A React rendering that
-    has to wait on `/api/session` to learn it is a rendering that flips under
-    the reader — so the fact travels on the payload that draws it, under the
-    session's own name and off the same `Database`.
-    """
+def test_health_says_whether_this_instance_may_write(tmp_path: Path) -> None:
+    """§19, 2026-09-06: the Indexing statepair and the drift banner are on the
+    Health page, so the flag travels on its payload under the session's name
+    and off the same `Database` rather than waiting on `/api/session`."""
     with owner_client(tmp_path) as client:
-        allowed = (read(client, OVERVIEW, headers=BEARER),
-                   read(client, LEDGER, headers=BEARER))
+        allowed = read(client, HEALTH, headers=BEARER)
         client.app.state.assembled.db.writes_allowed = False
         try:
-            refused = (read(client, OVERVIEW, headers=BEARER),
-                       read(client, LEDGER, headers=BEARER))
+            refused = read(client, HEALTH, headers=BEARER)
         finally:
             client.app.state.assembled.db.writes_allowed = True
 
-    for body in allowed:
-        assert body["writes_allowed"] is True
-    for body in refused:
-        assert body["writes_allowed"] is False
+    assert allowed["writes_allowed"] is True
+    assert refused["writes_allowed"] is False
 
 
 def test_the_write_flag_is_a_deployment_fact_and_not_a_redacted_one(
     tmp_path: Path,
 ) -> None:
     """It is kept out of nothing, because `/api/session` publishes it to an
-    anonymous browser already — and that is the field these two must match.
+    anonymous browser already — and that is the field Health must match.
 
     What stays behind the projection is the *reason*: `drift_reason` names a
     config key and a table's declared width, which is the operator's box.
@@ -807,20 +674,18 @@ def test_the_write_flag_is_a_deployment_fact_and_not_a_redacted_one(
         demo.app.state.assembled.db.vectors.disable(PRIVATE_REASON)
         try:
             session = read(demo, SESSION)
-            overview = read(demo, OVERVIEW)
-            ledger = read(demo, LEDGER)
+            health = read(demo, HEALTH)
         finally:
             demo.app.state.assembled.db.writes_allowed = True
             demo.app.state.assembled.db.vectors.enabled = True
             demo.app.state.assembled.db.vectors.reason = None
 
-    # Anonymous, redacted, and told the same thing three times.
-    assert session["signed_in"] is False and overview["redacted"] is True
+    assert session["signed_in"] is False and health["redacted"] is True
     assert session["writes_allowed"] is False
-    assert overview["writes_allowed"] == ledger["writes_allowed"] is False
+    assert health["writes_allowed"] is False
     # The flag, never the sentence behind it.
     assert session["writes_refused_reason"] is None
-    assert PRIVATE_REASON not in json.dumps([overview, ledger])
+    assert PRIVATE_REASON not in json.dumps(health)
 
 
 # ----------------------------------------------------- the videos table (§20)
@@ -1298,7 +1163,7 @@ def test_the_detail_projection_drops_the_operators_prose_and_its_models(
 
 
 def test_neither_video_payload_carries_a_rendered_clock(tmp_path: Path) -> None:
-    """The same rule as the overview and the ledger, on the two payloads whose
+    """The same rule as Health and Corpus, on the two payloads whose
     source fields are rendered strings to begin with.
 
     `list-videos` writes `published` as an `iso_day` string and `duration` as a
@@ -1425,7 +1290,7 @@ def test_the_following_json_is_absent_where_its_whole_surface_is(
             assert demo.get(path, headers=BEARER).status_code == 404, path
 
     with follow_client(tmp_path) as anonymous:  # auth=none
-        assert anonymous.get(OVERVIEW).status_code == 200
+        assert anonymous.get(HEALTH).status_code == 200
         for path in (FOLLOWING, FOLLOW):
             assert anonymous.get(path).status_code == 404, path
 
@@ -2261,9 +2126,9 @@ def test_no_read_on_this_surface_issues_a_query_per_row(tmp_path: Path) -> None:
         assert jobs_one == jobs_many <= 4, f"{jobs_one} for 1 job, {jobs_many} for 100"
         assert _count_reads(client, JOB) <= 8
 
-        # The ledger is a page of aggregates, so its cost is a constant: every
+        # Corpus is a page of aggregates, so its cost is a constant: every
         # figure is a whole-table or index count and none is a probe per video.
-        assert _count_reads(client, LEDGER) <= 8
+        assert _count_reads(client, CORPUS) <= 8
 
 
 DENSE_SLIDE_LINES = 30

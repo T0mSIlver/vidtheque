@@ -43,10 +43,10 @@ from .conftest import A_VISITOR, FakeEmbeddings, rpc, rpc_headers, seed
 # strings and both are attacker-controlled in exactly the same way.
 HOSTILE = '<script>alert(document.cookie)</script> <img src=x onerror=alert(1)>'
 
-# What a read of this surface is, now that none of them is a page. `OVERVIEW`
+# What a read of this surface is, now that none of them is a page. `HEALTH`
 # is the one behind the gate that takes no parameter, so it stands in wherever
 # a test used to ask for `/dashboard` itself.
-OVERVIEW = f"{ROOT}/api/overview"
+HEALTH = f"{ROOT}/api/health"
 LIBRARY = f"{ROOT}/api/library"
 
 
@@ -327,7 +327,7 @@ def test_none_mode_serves_the_read_only_subset(client: TestClient) -> None:
     credential to check* — an unauthenticated instance behind a tunnel with a
     live "index this URL" button is remote-yt-dlp-as-a-service (§3.2 rule 3).
     """
-    for path in (OVERVIEW, LIBRARY, f"{LIBRARY}/kCc8FmEb1nY"):
+    for path in (HEALTH, LIBRARY, f"{LIBRARY}/kCc8FmEb1nY"):
         assert client.get(path).status_code == 200
     registered = {str(getattr(r, "path", "")) for r in client.app.routes}
     assert not (registered & set(WRITE_ROUTES))
@@ -338,7 +338,7 @@ def test_token_mode_refuses_every_read_on_the_prefix(tmp_path: Path) -> None:
     rendered sign-in page and a script with the envelope; there is no page, so
     it is the envelope on both (§21, 2026-09-06)."""
     with make_client(tmp_path, auth_mode="token", token="s3cret") as client:
-        for path in (OVERVIEW, f"{ROOT}/api/videos"):
+        for path in (HEALTH, f"{ROOT}/api/videos"):
             denied = client.get(path, headers={"Accept": "text/html"})
             assert denied.status_code == 401, path
             assert denied.json()["error"] == "E_AUTH_REQUIRED"
@@ -350,10 +350,10 @@ def test_token_mode_refuses_every_read_on_the_prefix(tmp_path: Path) -> None:
 def test_token_mode_accepts_the_bearer(tmp_path: Path) -> None:
     with make_client(tmp_path, auth_mode="token", token="s3cret") as client:
         headers = {"Authorization": "Bearer s3cret"}
-        assert client.get(OVERVIEW, headers=headers).status_code == 200
+        assert client.get(HEALTH, headers=headers).status_code == 200
         assert client.get(f"{ROOT}/api/videos", headers=headers).status_code == 200
         wrong = {"Authorization": "Bearer wrong"}
-        assert client.get(OVERVIEW, headers=wrong).status_code == 401
+        assert client.get(HEALTH, headers=wrong).status_code == 401
 
 
 def test_token_mode_accepts_the_existing_session_cookie(tmp_path: Path) -> None:
@@ -372,13 +372,13 @@ def test_token_mode_accepts_the_existing_session_cookie(tmp_path: Path) -> None:
         store = client.app.state.assembled.auth.store
         assert store is not None  # phase 3: `token` mode carries the session store
         client.cookies.set(SESSION_COOKIE, "anything")
-        assert client.get(OVERVIEW).status_code == 401
+        assert client.get(HEALTH).status_code == 401
 
         store.save_session("sid-1", "owner", int(time.time()) + 600)
         client.cookies.set(SESSION_COOKIE, "sid-1")
-        assert client.get(OVERVIEW).status_code == 200
+        assert client.get(HEALTH).status_code == 200
         client.cookies.set(SESSION_COOKIE, "sid-nope")
-        assert client.get(OVERVIEW).status_code == 401
+        assert client.get(HEALTH).status_code == 401
 
 
 def test_an_expired_session_is_not_a_credential(tmp_path: Path) -> None:
@@ -393,9 +393,9 @@ def test_an_expired_session_is_not_a_credential(tmp_path: Path) -> None:
         store.save_session("fresh", "owner", int(time.time()) + 600)
         store.save_session("stale", "owner", int(time.time()) - 1)
         client.cookies.set(SESSION_COOKIE, "fresh")
-        assert client.get(OVERVIEW).status_code == 200
+        assert client.get(HEALTH).status_code == 200
         client.cookies.set(SESSION_COOKIE, "stale")
-        assert client.get(OVERVIEW).status_code == 401
+        assert client.get(HEALTH).status_code == 401
 
 
 def test_no_dashboard_route_is_state_changing(client: TestClient) -> None:
@@ -463,7 +463,7 @@ async def test_the_write_guard_refuses_before_it_is_ever_wired(tmp_path: Path) -
 
 def test_the_route_group_can_be_turned_off(tmp_path: Path) -> None:
     with make_client(tmp_path, dashboard=DashboardSettings(enabled=False)) as client:
-        for path in (OVERVIEW, LIBRARY, f"{ROOT}/api/videos", f"{ROOT}/"):
+        for path in (HEALTH, LIBRARY, f"{ROOT}/api/videos", f"{ROOT}/"):
             assert client.get(path).status_code == 404
 
 
@@ -501,7 +501,7 @@ def test_pipeline_readiness_reads_worker_status_over_bounded_http(
         )
 
     with owner_client(tmp_path, worker_handler=worker) as client:
-        body = client.get(OVERVIEW, headers=BEARER).json()
+        body = client.get(HEALTH, headers=BEARER).json()
 
     # One request, to one path, inside a wall-clock budget the read cannot
     # exceed however slow the worker is.
@@ -527,7 +527,7 @@ def test_pipeline_readiness_degrades_without_delaying_or_breaking_the_read(
         raise httpx.ReadTimeout("late", request=request)
 
     with owner_client(tmp_path, worker_handler=timed_out) as client:
-        worker = client.get(OVERVIEW, headers=BEARER).json()["readiness"]["worker"]
+        worker = client.get(HEALTH, headers=BEARER).json()["readiness"]["worker"]
         # The rest of the surface is unaffected by a worker that never answers.
         assert client.get(LIBRARY, headers=BEARER).status_code == 200
     assert worker["state"] == "unavailable"
@@ -536,7 +536,7 @@ def test_pipeline_readiness_degrades_without_delaying_or_breaking_the_read(
     assert worker["detail"] == "The worker did not answer its status check."
 
     with owner_client(tmp_path, worker_url="") as client:
-        worker = client.get(OVERVIEW, headers=BEARER).json()["readiness"]["worker"]
+        worker = client.get(HEALTH, headers=BEARER).json()["readiness"]["worker"]
     assert worker["state"] == "unconfigured"
     assert "No worker URL is configured" in worker["detail"]
 
@@ -699,7 +699,7 @@ def test_the_trailing_slash_redirects_rather_than_404ing(client: TestClient) -> 
 
 def test_nothing_on_this_surface_is_cacheable(client: TestClient) -> None:
     """Every response describes state that changes under the reader."""
-    for path in (OVERVIEW, LIBRARY, f"{LIBRARY}/kCc8FmEb1nY", f"{ROOT}/api/jobs"):
+    for path in (HEALTH, LIBRARY, f"{LIBRARY}/kCc8FmEb1nY", f"{ROOT}/api/jobs"):
         assert client.get(path).headers["cache-control"] == "no-store", path
 
 
@@ -762,7 +762,7 @@ def test_the_dashboard_package_renders_no_html_at_all() -> None:
 def test_the_dashboard_bucket_is_installed_in_every_mode(tmp_path: Path) -> None:
     """dashboard.md §2.5.3: the limiter loses its mode conditional."""
     with make_client(tmp_path, dashboard=DashboardSettings(rate_per_min=2)) as client:
-        assert client.get(OVERVIEW).status_code == 200
+        assert client.get(HEALTH).status_code == 200
         assert client.get(LIBRARY).status_code == 200
         refused = client.get(f"{ROOT}/api/videos")
         assert refused.status_code == 429
@@ -774,7 +774,7 @@ def test_a_private_deployment_still_serves_frames_unbucketed(tmp_path: Path) -> 
     """One detail read asks for ~48 frames; a 120/min bucket would refuse the
     second page load, and the owner is not that bucket's threat model."""
     with make_client(tmp_path, dashboard=DashboardSettings(rate_per_min=1)) as client:
-        assert client.get(OVERVIEW).status_code == 200
+        assert client.get(HEALTH).status_code == 200
         for _ in range(4):
             assert client.get("/frames/kCc8FmEb1nY-00000.jpg?w=192&q=70").status_code == 200
 
@@ -896,7 +896,7 @@ def test_the_write_side_is_absent_in_none_mode_not_merely_refused(
         for path in WRITE_POSTS:
             assert client.post(path).status_code == 404, path
         # And every read is still open, which is the other half of the rule.
-        assert client.get(OVERVIEW).status_code == 200
+        assert client.get(HEALTH).status_code == 200
 
 
 def test_a_refusal_never_points_at_a_page_that_is_not_registered(
@@ -911,13 +911,13 @@ def test_a_refusal_never_points_at_a_page_that_is_not_registered(
     still not registered here, so the hint is still the thing that has to know.
     """
     with owner_client(tmp_path) as private:
-        for path in (OVERVIEW, f"{ROOT}/api/videos"):
+        for path in (HEALTH, f"{ROOT}/api/videos"):
             refused = private.get(path)
             assert refused.status_code == 401, path
             assert f"{ROOT}/login" in refused.json()["next"], path
 
     with owner_client(tmp_path, readonly=True) as demo:
-        for path in (OVERVIEW, f"{ROOT}/api/videos"):
+        for path in (HEALTH, f"{ROOT}/api/videos"):
             refused = demo.get(path)
             assert refused.status_code == 401, path
             assert "login" not in refused.json()["next"], path
@@ -1174,7 +1174,7 @@ def test_a_trusted_peer_reads_the_surface_it_may_write_to(tmp_path: Path) -> Non
     )
     with inside:
         # No credential presented: the peer is the credential.
-        assert inside.get(OVERVIEW).status_code == 200
+        assert inside.get(HEALTH).status_code == 200
         assert inside.get(f"{ROOT}/api/videos").status_code == 200
 
     outside = TestClient(
@@ -1182,7 +1182,7 @@ def test_a_trusted_peer_reads_the_surface_it_may_write_to(tmp_path: Path) -> Non
     )
     with outside:
         forged = {"CF-Connecting-IP": "10.9.9.9", "X-Forwarded-For": "10.9.9.9"}
-        assert outside.get(OVERVIEW, headers=forged).status_code == 401
+        assert outside.get(HEALTH, headers=forged).status_code == 401
         assert outside.get(f"{ROOT}/api/videos", headers=forged).status_code == 401
 
 
@@ -1283,7 +1283,7 @@ def test_signing_out_drops_the_row_not_just_the_cookie(tmp_path: Path) -> None:
 
         # Replaying it by hand does not get back in.
         client.cookies.set(SESSION_COOKIE, sid)
-        assert client.get(OVERVIEW).status_code == 401
+        assert client.get(HEALTH).status_code == 401
 
 
 def test_an_expired_browser_session_is_refused_in_one_shape(tmp_path: Path) -> None:
@@ -1474,8 +1474,8 @@ OPERATOR_STRINGS = (
 )
 
 READ_ROUTES = (
-    f"{ROOT}/api/overview",
-    f"{ROOT}/api/ledger",
+    f"{ROOT}/api/health",
+    f"{ROOT}/api/corpus",
     f"{ROOT}/api/search?q=cache",
     f"{ROOT}/api/library",
     f"{ROOT}/api/library/kCc8FmEb1nY",
@@ -1528,7 +1528,7 @@ def test_the_demo_dashboard_is_charged_to_the_limiter_like_the_private_one(
     with make_client(
         tmp_path, public=DEMO, dashboard=DashboardSettings(rate_per_min=2)
     ) as demo:
-        assert demo.get(OVERVIEW).status_code == 200
+        assert demo.get(HEALTH).status_code == 200
         assert demo.get(LIBRARY).status_code == 200
         refused = demo.get(f"{ROOT}/api/jobs")
         assert refused.status_code == 429
@@ -1542,7 +1542,7 @@ def test_the_projection_still_goes_through_the_byte_capped_frame_cache(
 ) -> None:
     """§6.4: three fixed widths, never base64, on the public surface too."""
     with make_client(tmp_path, public=DEMO) as demo:
-        for path in (OVERVIEW, LIBRARY, f"{LIBRARY}/kCc8FmEb1nY"):
+        for path in (HEALTH, LIBRARY, f"{LIBRARY}/kCc8FmEb1nY"):
             raw = json.dumps(demo.get(path).json())
             assert "base64" not in raw and "data:image" not in raw
             for width in set(re.findall(r"/frames/[\w.-]+\.jpg\?w=(\d+)", raw)):
@@ -1556,7 +1556,7 @@ def test_the_queue_read_is_one_query_and_the_projection_keeps_it(
     tmp_path: Path,
 ) -> None:
     """It is a corpus-shaped fact, so it survives the demo (§2.4) — and it is
-    one grouped statement, because the overview is the one read that answers
+    one grouped statement, because Health is the one read that answers
     with flat aggregates and four counts must not be four round trips."""
     from vidtheque_mcp.db.connection import open_read_connection
     from vidtheque_mcp.jobs import store as jobs_store
@@ -1575,9 +1575,8 @@ def test_the_queue_read_is_one_query_and_the_projection_keeps_it(
         conn.close()
 
     with make_client(tmp_path, public=DEMO) as demo:
-        assert demo.get(OVERVIEW).json()["jobs"] == {
+        assert demo.get(HEALTH).json()["jobs"] == {
             "active": 2,
-            "running": 1,
             "deferred": 1,
             "failed_recent": 1,
             "failed_window_s": 86_400,
@@ -1611,7 +1610,7 @@ def test_the_welcome_page_gains_its_link_into_the_browsable_corpus(
         tmp_path, public=DEMO, dashboard=DashboardSettings(enabled=False)
     ) as off:
         assert off.get("/api/meta").json()["browse"] is None
-        assert off.get(OVERVIEW).status_code == 404
+        assert off.get(HEALTH).status_code == 404
 
 
 def test_the_browse_target_is_the_route_groups_own_root(tmp_path: Path) -> None:
