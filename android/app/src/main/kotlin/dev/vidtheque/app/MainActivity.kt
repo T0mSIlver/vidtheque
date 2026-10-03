@@ -70,6 +70,8 @@ class MainActivity : ComponentActivity() {
     // A browser without Auth Tab returns through the verified App Link instead.
     private fun handleCallback(intent: Intent) {
         val uri = intent.data ?: return
-        if (intent.action == Intent.ACTION_VIEW && uri.path == "/auth/android/callback") signIn.onRedirect(uri)
+        if (intent.action == Intent.ACTION_VIEW && uri.scheme == "https" && uri.host == signIn.host && uri.path == "/auth/android/callback") {
+            signIn.onRedirect(uri)
+        }
     }
 }
