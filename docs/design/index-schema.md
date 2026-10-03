@@ -1290,6 +1290,27 @@ fails is dropped, never moved to a nearby cue. A reindex rewrites `cues`, so
 `mark_ready` queues a new verdict when the stored one has a moment whose receipt
 no longer holds, and when the video has none yet.
 
+### 1.14 `devices`
+
+Added by 0012 (companion.md §6). Additive: one new table. A row is one phone
+the push may reach: the Firebase Cloud Messaging token the Android app sends to
+`POST /dashboard/api/devices` (dashboard.md §25.6).
+
+```sql
+CREATE TABLE devices (
+  id         INTEGER PRIMARY KEY,
+  owner_id   INTEGER NOT NULL DEFAULT 1 REFERENCES owners(id),
+  token      TEXT    NOT NULL UNIQUE CHECK (length(token) BETWEEN 1 AND 4096),
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  last_seen  INTEGER NOT NULL DEFAULT (unixepoch())
+) STRICT;
+CREATE INDEX devices_by_owner ON devices(owner_id, last_seen DESC);
+```
+
+Registering a token again refreshes `last_seen`. An owner keeps at most 20
+devices; a registration past that removes the one seen longest ago, so tokens
+from reinstalled apps age out without a cleanup job.
+
 ---
 
 ## 2. FTS5
