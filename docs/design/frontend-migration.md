@@ -902,10 +902,13 @@ Four things worth knowing before writing the pages:
   §6a's: an unrecognised `state`, `kind`, `order` or `degraded` names the value
   that answered, and a clamped `limit`/`offset` names both numbers. It is
   policy text; render it, do not compose it.
-- **`focus` is nullable and it is the key to the stage panel.** A job whose
-  items never resolved to a video has nothing in focus, and `stages` is then
-  the seven pipeline rows with every state `absent` — the pipeline's shape, not
-  a claim about the job. Render the panel on `focus`, not on `stages.length`.
+- **`focus` is nullable and it is the key to the stage panel.** It is the
+  latest item that failed or finished degraded and has a video; any other job
+  has nothing in focus and `stages` is `[]` (*amended 2026-10-03*,
+  dashboard.md §24.2). Render the panel on `focus`.
+- **`by_state`** (*added 2026-10-03*) counts every job under the listing's
+  `kind`, by `jobs.state`, whatever the `state` filter. `kind` defaults to
+  `videos`, every kind but `follow_check`; `all` is all.
 
 **The React list reads `filters` and `notes` back, 2026-09-05.** It had been
 reading its own URL for both — a `state=nonsense` that fell back to `all` was
