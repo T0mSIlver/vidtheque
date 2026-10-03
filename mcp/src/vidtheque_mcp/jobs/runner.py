@@ -194,6 +194,9 @@ class PipelineRunner:
         # hook exists so this module does not import a feature — it claims
         # jobs and drives items, and it should keep meaning only that.
         self.before_claim: Callable[[], Awaitable[None]] | None = None
+        # A job kind with work of its own, run in place of `pipeline` for that
+        # kind. `verdict` is the only one (companion.md §3.2).
+        self.handlers: dict[str, Pipeline] = {}
         # What this process is holding. A blocked event loop is alive, not
         # crashed: its own jobs are never candidates for its own sweep.
         self._active: set[int] = set()
@@ -337,7 +340,7 @@ class PipelineRunner:
                 kind=kind,
             )
             try:
-                await self.pipeline.run_item(ctx)
+                await self.handlers.get(kind, self.pipeline).run_item(ctx)
             except ItemFailed as failure:
                 if await self._fail_item(item, failure):
                     return  # deferred: the job is queued again, not now

@@ -60,6 +60,7 @@ from typing import Any, Awaitable, Callable, Sequence
 from ..db import Database
 from ..editions import context_bias_for_tags
 from ..jobs.runner import ItemCancelled, ItemContext, ItemFailed, ItemSkipped
+from ..verdicts import store as verdicts_store
 from . import store
 from .captions import CueDraft, cues_from_json3, cues_from_verbose_json, cues_from_vtt
 from .chunking import build_chunks
@@ -212,6 +213,8 @@ class IndexingPipeline:
         self.source = source
         self.worker = worker
         self._sleep = asyncio.sleep
+        # Set by `app.assemble` when verdicts are on.
+        self.queue_verdicts = False
         self._last_fetch_at: float | None = None
 
     # ------------------------------------------------------------------ entry
@@ -230,6 +233,10 @@ class IndexingPipeline:
                 self.db, self.source, daily_budget_s=self.settings.follow_daily_hours * 3600.0
             ).run(ctx)
             return
+        if ctx.kind == "verdict":
+            # Reached only when no verdict handler is installed: queued while
+            # verdicts were on, claimed after they were turned off.
+            raise ItemSkipped("verdicts are off on this server.", "E_VERDICTS_OFF")
         args = await self.db.read(lambda c: store.job_args(c, ctx.job_id))
         run = ItemRun(ctx=ctx, args=args)
         self.layout.ensure()
@@ -1221,6 +1228,7 @@ class IndexingPipeline:
 
         if essential_ok:
             await self.db.write(lambda c: store.mark_ready(c, video_id))
+            await self._queue_verdict(run)
         else:
             await self.db.write(lambda c: store.mark_failed(c, video_id))
 
@@ -1232,6 +1240,16 @@ class IndexingPipeline:
                 "completed with failed stages: " + ", ".join(sorted(set(run.failed_stages))),
                 "warn",
             )
+
+    async def _queue_verdict(self, run: ItemRun) -> None:
+        """A verdict is its own job (companion.md §3.2): queuing one never fails the index."""
+        if not self.queue_verdicts:
+            return
+        video_id = run.video_id
+        try:
+            await self.db.write(lambda c: verdicts_store.queue_after_ready(c, video_id))
+        except Exception:
+            logger.warning("could not queue a verdict for video %s", video_id, exc_info=True)
 
     async def _settle_video(self, run: ItemRun, state: str) -> None:
         if not run.video_id:
