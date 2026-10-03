@@ -1,5 +1,16 @@
 package dev.vidtheque.app.ui
 
+import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.core.animateDp
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.remember
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
+import dev.vidtheque.app.ui.feed.plainStill
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
@@ -30,7 +41,6 @@ import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import androidx.navigation3.ui.NavDisplay
-import coil3.compose.AsyncImage
 import dev.vidtheque.app.ui.feed.FeedScreen
 import dev.vidtheque.app.ui.feed.FeedViewModel
 import dev.vidtheque.app.ui.feed.Lift
@@ -55,47 +65,41 @@ data object ProfileKey : NavKey
 @OptIn(ExperimentalSharedTransitionApi::class)
 private val LocalShared = staticCompositionLocalOf<SharedTransitionScope?> { null }
 
-/** The still as a shared element: it lifts from the feed row into the video screen. */
-@OptIn(ExperimentalSharedTransitionApi::class)
-val sharedStill: Still = { id, modifier ->
-    val shared = LocalShared.current
-    val scope = LocalNavAnimatedContentScope.current
-    val lifted = if (shared == null) modifier else with(shared) {
-        modifier.sharedElement(rememberSharedContentState("still-$id"), animatedVisibilityScope = scope)
-    }
-    AsyncImage(model = thumbnail(id), contentDescription = null, contentScale = ContentScale.Crop, modifier = lifted)
-}
-
 /**
  * A feed card and the video page it opens are one container (Material's container
  * transform): the page grows out of the card, and a back gesture shrinks it into
- * the card with the gesture's progress. Scaled, not remeasured, so the text keeps
- * its layout while it shrinks. A tween, not a spring: a seek maps the gesture's
- * progress onto time, and a spring would cover most of the way in the first few
- * percent.
+ * the card with the gesture's progress. Everything, the still included, is inside
+ * the container and scaled with it, not remeasured, so nothing is left behind
+ * outside its bounds; the page puts its still at its top edge, where the card has
+ * it, so the two land on each other. The corner goes from the card's radius to the
+ * page's square one with the bounds. A tween, not a spring: a seek maps the
+ * gesture's progress onto time, and a spring would cover most of the way in the
+ * first few percent.
  *
  * The fades differ by direction. Opening, the card's text leaves at once and the
- * page's arrives while the container grows: a card text that stayed slid up under
- * the still, then left an empty frame. Going back, the page stays opaque until the
- * last third so it follows the finger, then the card's text fades in.
+ * page's arrives while the container grows. Going back, the page stays opaque
+ * until the last third so it follows the finger, then the card's text fades in.
  */
-@OptIn(ExperimentalSharedTransitionApi::class)
-val sharedCard: Lift = { id, shape ->
-    lift(id, shape, enter = fadeIn(tween(FADE_MS, delayMillis = BOUNDS_MS - FADE_MS)), exit = fadeOut(tween(LEAVE_MS)))
+val sharedCard: Lift = { id, corner ->
+    lift(id, rest = corner, away = 0.dp, enter = fadeIn(tween(FADE_MS, delayMillis = BOUNDS_MS - FADE_MS)), exit = fadeOut(tween(LEAVE_MS)))
 }
 
-/** The page's side of [sharedCard]. */
-@OptIn(ExperimentalSharedTransitionApi::class)
-val sharedPage: Lift = { id, shape ->
-    lift(id, shape, enter = fadeIn(tween(ARRIVE_MS, delayMillis = LEAVE_MS / 2)), exit = fadeOut(tween(FADE_MS, delayMillis = BOUNDS_MS - 2 * FADE_MS)))
+/** The page's side of [sharedCard]: square at rest, the hero card's radius at the far end. */
+val sharedPage: Lift = { id, corner ->
+    lift(id, rest = corner, away = 28.dp, enter = fadeIn(tween(ARRIVE_MS, delayMillis = LEAVE_MS / 2)), exit = fadeOut(tween(FADE_MS, delayMillis = BOUNDS_MS - 2 * FADE_MS)))
 }
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-private fun lift(id: String, shape: Shape, enter: EnterTransition, exit: ExitTransition): Modifier {
+private fun lift(id: String, rest: Dp, away: Dp, enter: EnterTransition, exit: ExitTransition): Modifier {
     val shared = LocalShared.current
     val scope = LocalNavAnimatedContentScope.current
-    return if (shared == null) Modifier else with(shared) {
+    if (shared == null) return Modifier
+    val corner = scope.transition.animateDp(transitionSpec = { tween(BOUNDS_MS, easing = FastOutSlowInEasing) }, label = "corner") {
+        if (it == EnterExitState.Visible) rest else away
+    }
+    val clip = remember(corner) { RoundedClip { corner.value } }
+    return with(shared) {
         Modifier.sharedBounds(
             rememberSharedContentState("card-$id"),
             animatedVisibilityScope = scope,
@@ -103,9 +107,15 @@ private fun lift(id: String, shape: Shape, enter: EnterTransition, exit: ExitTra
             exit = exit,
             boundsTransform = { _, _ -> tween(BOUNDS_MS, easing = FastOutSlowInEasing) },
             resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(ContentScale.FillWidth, Alignment.TopCenter),
-            clipInOverlayDuringTransition = OverlayClip(shape),
+            clipInOverlayDuringTransition = OverlayClip(clip),
         )
     }
+}
+
+/** A rounded rectangle whose radius is read when it is drawn, so it follows an animation. */
+private class RoundedClip(private val radius: () -> Dp) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline =
+        RoundedCornerShape(radius()).createOutline(size, layoutDirection, density)
 }
 
 private const val BOUNDS_MS = 450
@@ -147,15 +157,14 @@ fun SignedIn(opening: MutableStateFlow<String?>, onSignOut: () -> Unit) {
                             onToggleSkipped = feed::toggleSkipped,
                             onMoreSkipped = feed::moreSkipped,
                             onOpen = { stack.add(VideoKey(it.videoId, it.title, it.channel.orEmpty())) },
-                            still = sharedStill,
-                            card = sharedCard,
+                                                        card = sharedCard,
                             actions = {
                                 IconButton(onClick = { stack.add(ProfileKey) }) { Icon(Icons.Rounded.AccountCircle, contentDescription = "Your interests") }
                             },
                         )
                     }
                     entry<ProfileKey> { ProfileScreen(onBack = { stack.removeLastOrNull() }, onSignOut = onSignOut) }
-                    entry<VideoKey>(metadata = containerOnly) { key -> VideoScreen(key, onBack = { stack.removeLastOrNull() }, still = sharedStill, card = sharedPage) }
+                    entry<VideoKey>(metadata = containerOnly) { key -> VideoScreen(key, onBack = { stack.removeLastOrNull() }, still = plainStill, card = sharedPage) }
                 },
             )
         }
