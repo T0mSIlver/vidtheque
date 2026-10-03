@@ -956,7 +956,10 @@ def test_the_write_routes_are_declared_and_post_only(tmp_path: Path) -> None:
         writing = {str(r.path) for r in routes if set(r.methods or ()) - {"GET", "HEAD"}}
         assert writing == set(WRITE_ROUTES)
         for route in routes:
-            extra = set(route.methods or ()) - {"GET", "HEAD", "POST"}
+            allowed = {"GET", "HEAD", "POST"}
+            if route.path == f"{ROOT}/api/devices":  # unregistering a push token (§25.6)
+                allowed.add("DELETE")
+            extra = set(route.methods or ()) - allowed
             assert not extra, f"{route.path} answers {extra}"
 
 

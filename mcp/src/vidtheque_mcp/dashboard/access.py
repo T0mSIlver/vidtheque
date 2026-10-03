@@ -78,10 +78,11 @@ __all__ = [
     "write_side_enabled",
 ]
 
-# One list, declared once (§2.5.4). Every path here is POST-only, every one is
-# behind `require_write`, and a test asserts both — plus that this list is
-# exactly the set of non-GET routes the group registers, so a tenth write route
-# that forgets to declare itself fails the suite rather than shipping unguarded.
+# One list, declared once (§2.5.4). Every path here is POST-only but
+# `api/devices`, which also takes DELETE (§25.6); every one is behind
+# `require_write`, and a test asserts both — plus that this list is exactly the
+# set of non-GET routes the group registers, so a write route that forgets to
+# declare itself fails the suite rather than shipping unguarded.
 WRITE_ROUTES: tuple[str, ...] = (
     f"{ROOT}/login",
     f"{ROOT}/logout",
@@ -96,6 +97,10 @@ WRITE_ROUTES: tuple[str, ...] = (
     f"{ROOT}/following/{{slug}}/rules",
     f"{ROOT}/following/{{slug}}/delete",
     f"{ROOT}/following/{{slug}}/queue",
+    f"{ROOT}/api/signals",
+    f"{ROOT}/api/profile",
+    f"{ROOT}/api/profile/revert",
+    f"{ROOT}/api/devices",
 )
 
 
