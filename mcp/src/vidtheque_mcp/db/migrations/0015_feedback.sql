@@ -4,8 +4,8 @@
 -- Additive: one new table, nothing else touched. `state` is what the owner
 -- thinks of the video now ('none' once taken back); `seen` is the state the
 -- last nightly update read, so a night reads only `state != seen` and a tap
--- taken back before then nets to nothing. A row is deleted once both are
--- 'none'. The `signals` rows these taps also write stay as the event log.
+-- taken back before then nets to nothing. A night deletes the rows it leaves
+-- with both 'none'. The `signals` rows these taps also write stay as the event log.
 
 CREATE TABLE feedback (
   owner_id INTEGER NOT NULL DEFAULT 1 REFERENCES owners(id),

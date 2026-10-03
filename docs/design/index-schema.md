@@ -1394,7 +1394,8 @@ CREATE TABLE feedback (
 
 Every write goes through `profile/feedback.py`. Setting a state also writes
 its event to `signals` (`thumb_up`, `thumb_down`, `mute`); taking it back
-writes none. A row is deleted once `state` and `seen` are both `none`. Taps
+writes none. A nightly update deletes the rows it leaves with `state` and
+`seen` both `none`; a take-back never deletes, so a night still marks the row it read. Taps
 from before 0015 stay events only; nothing is backfilled.
 
 ## 2. FTS5

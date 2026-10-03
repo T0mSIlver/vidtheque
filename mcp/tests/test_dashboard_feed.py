@@ -247,12 +247,12 @@ def test_feedback_is_a_state_the_verdict_shows_and_a_second_call_takes_back(
         assert done.status_code == 200, done.text
         assert done.json() == {"video_id": "kCc8FmEb1nY", "state": state}
         assert shown() == state
-    # Each set is an event; taking back writes none, and a row never read is gone.
+    # Each set is an event; taking back writes none.
     assert _rows(tmp_path, "SELECT kind, client FROM signals ORDER BY id") == [
         ("thumb_up", "app"),
         ("mute", "app"),
     ]
-    assert _rows(tmp_path, "SELECT COUNT(*) FROM feedback") == [(0,)]
+    assert _rows(tmp_path, "SELECT state, seen FROM feedback") == [("none", "none")]
 
 
 def test_a_thumb_through_signals_sets_the_state_too(client: TestClient) -> None:

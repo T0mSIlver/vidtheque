@@ -297,3 +297,22 @@ async def test_a_night_reads_each_state_once_and_then_its_taking_back(assembled:
     third = FakeModel()
     assert (await nightly(assembled, third, Clock(DAY + timedelta(days=2))).run_once()).state == "idle"
     assert await assembled.db.read(lambda c: c.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]) == 0
+
+
+async def test_a_first_tap_taken_back_while_the_model_answers_is_read_the_next_night(
+    assembled: Assembled,
+) -> None:
+    vid, title = await video(assembled)
+    await tap(assembled, vid, "up", DAY - timedelta(hours=2))
+
+    class TakesBack(FakeModel):
+        async def complete(self, prompt: str, *, system=None, schema=None) -> Any:
+            await tap(assembled, vid, "none", DAY - timedelta(minutes=1))
+            return await super().complete(prompt, system=system, schema=schema)
+
+    first = TakesBack(ops())
+    assert (await nightly(assembled, first).run_once()).state == "done"
+    assert f'thumb_up\t"{title}"' in first.prompts[0]
+    second = FakeModel(ops())
+    assert (await nightly(assembled, second, Clock(DAY + timedelta(days=1))).run_once()).state == "done"
+    assert f'took back thumb_up\t"{title}"' in second.prompts[0]

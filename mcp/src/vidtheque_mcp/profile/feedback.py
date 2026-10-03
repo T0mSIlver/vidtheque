@@ -46,10 +46,6 @@ def set_state(
         " ON CONFLICT (owner_id, video_id) DO UPDATE SET state = excluded.state, at = excluded.at",
         (owner_id, row_video, state, at),
     )
-    conn.execute(
-        "DELETE FROM feedback WHERE owner_id = ? AND video_id = ? AND state = 'none' AND seen = 'none'",
-        (owner_id, row_video),
-    )
     if state == "none":
         return 0
     signal_id = signals.record_signal(
@@ -82,7 +78,9 @@ def mark_read(conn: sqlite3.Connection, read: list[tuple[int, str]], owner_id: i
     """After a night: each (video row id, state it read) becomes `seen`.
 
     The state the night read, not the current one, so a tap made while the
-    model was answering is still unread tomorrow.
+    model was answering is still unread tomorrow. Rows are only deleted here,
+    never by a take-back, or a first tap taken back during that window would
+    lose the row the night must mark.
     """
     conn.executemany(
         "UPDATE feedback SET seen = ? WHERE owner_id = ? AND video_id = ?",
