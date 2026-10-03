@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { Readiness as ReadinessPayload } from "@/lib/dashboard/schemas";
-import { DASH, iso } from "@/lib/format";
+import { at, DASH, iso } from "@/lib/format";
 import { Panel, StatePair, ui } from "./ui";
 
 /**
@@ -22,7 +22,8 @@ export function Readiness({
   drift?: boolean;
   children?: ReactNode;
 }) {
-  // The whole stamp, seconds and all: it is the instant of a probe.
+  // Local minutes like every other clock here (§24.6); the attribute keeps
+  // the instant.
   const checked = iso(readiness.checked_at);
   const worker = readiness.worker;
   return (
@@ -32,7 +33,8 @@ export function Readiness({
       drift={drift}
       aside={
         <p className={ui.clock}>
-          last health check <time dateTime={checked}>{checked ?? DASH}</time>
+          last health check{" "}
+          <time dateTime={checked}>{checked ? at(readiness.checked_at) : DASH}</time>
         </p>
       }
     >
