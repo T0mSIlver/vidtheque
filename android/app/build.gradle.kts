@@ -39,9 +39,12 @@ android {
 
     buildTypes {
         debug {
+            // A static bearer for a local stack on VIDTHEQUE_AUTH=token; never in a release.
+            buildConfigField("String", "DEV_TOKEN", "\"${providers.gradleProperty("vidtheque.devToken").getOrElse("")}\"")
             if (System.getenv("VIDTHEQUE_KEYSTORE") != null) signingConfig = signingConfigs.getByName("ci")
         }
         release {
+            buildConfigField("String", "DEV_TOKEN", "\"\"")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -67,6 +70,7 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
+    implementation(libs.compose.icons)
     implementation(libs.activity.compose)
     implementation(libs.core.splashscreen)
     implementation(libs.hilt.android)
@@ -78,6 +82,11 @@ dependencies {
     implementation(libs.lifecycle.viewmodel.compose)
     implementation(libs.okhttp)
     implementation(libs.serialization.json)
+    implementation(libs.navigation3.runtime)
+    implementation(libs.navigation3.ui)
+    implementation(libs.lifecycle.viewmodel.navigation3)
+    implementation(libs.coil.compose)
+    implementation(libs.coil.okhttp)
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)
 

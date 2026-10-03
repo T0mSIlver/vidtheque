@@ -25,6 +25,7 @@ data class PendingSignIn(val verifier: String, val state: String, val url: Strin
 @Singleton
 class Session @Inject constructor(
     private val oauth: OAuthClient,
+    private val instance: Instance,
     private val store: TokenStore,
     private val clock: Clock,
     scope: CoroutineScope,
@@ -39,7 +40,9 @@ class Session @Inject constructor(
     init {
         scope.launch {
             // An unreadable store (corrupt file, I/O error) is a signed-out session, not a hung splash.
+            // A debug build pointed at a local token-mode stack starts signed in.
             tokens = runCatching { store.load() }.getOrNull()
+                ?: instance.devToken.takeIf { it.isNotEmpty() }?.let { Tokens(it, null, Long.MAX_VALUE) }
             _state.value = if (tokens != null) SessionState.SignedIn else SessionState.SignedOut
         }
     }
