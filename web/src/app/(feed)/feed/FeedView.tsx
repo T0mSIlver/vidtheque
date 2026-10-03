@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FeedFailure, Matches, Outside, Score } from "@/components/feed/parts";
 import styles from "@/components/feed/feed.module.css";
 import { dashboard, FEED } from "@/lib/dashboard/client";
@@ -114,6 +114,8 @@ function Controls({ filters }: { filters: URLSearchParams }) {
   const channel = filters.get("channel") ?? "";
   const entry = filters.get("entry") ?? "";
   const channels = facets?.channels ?? [];
+  // The server matches a channel in any ASCII case; the select shows the facet's own spelling.
+  const listed = channels.find((c) => c.name.toLowerCase() === channel.toLowerCase())?.name;
   const entries = facets?.entries ?? [];
 
   return (
@@ -130,14 +132,12 @@ function Controls({ filters }: { filters: URLSearchParams }) {
         <select
           className={styles.select}
           aria-label="Channel"
-          value={channel}
+          value={listed ?? channel}
           onChange={(event) => set("channel", event.target.value || null)}
         >
           <option value="">All channels</option>
           {/* A channel from the URL that the facets do not list still shows. */}
-          {channel && !channels.some((c) => c.name.toLowerCase() === channel.toLowerCase()) ? (
-            <option value={channel}>{channel}</option>
-          ) : null}
+          {channel && !listed ? <option value={channel}>{channel}</option> : null}
           {channels.map((c) => (
             <option key={c.name} value={c.name}>
               {c.name} ({count(c.count)})
@@ -194,10 +194,16 @@ function EntryChip({
   pressed: boolean;
   onPress: () => void;
 }) {
+  const chip = useRef<HTMLButtonElement>(null);
+  // A chip pressed from the URL can sit past the row's edge, "Other" last of all.
+  useEffect(() => {
+    if (pressed) chip.current?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [pressed]);
   return (
     <li>
       <button
-        className={styles.entry}
+        ref={chip}
+        className={styles.entryChip}
         type="button"
         data-direction={direction}
         aria-pressed={pressed}

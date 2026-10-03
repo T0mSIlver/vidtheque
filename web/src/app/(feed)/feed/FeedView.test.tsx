@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { FeedShell } from "@/components/feed/FeedShell";
@@ -105,8 +105,14 @@ describe("FeedView", () => {
   });
 
   it("keeps a narrowed feed's filters from the URL and says when nothing matches", async () => {
-    await mount({ "/dashboard/api/feed": { body: { ...TOP, items: [] } } }, "channel=GPU+MODE");
+    await mount(
+      { "/dashboard/api/feed": { body: { ...TOP, items: [] } } },
+      "channel=andrej+karpathy",
+    );
     expect(await screen.findByText("Nothing here matches.")).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Channel" })).toHaveValue("GPU MODE");
+    // Any ASCII case narrows on the server; the select shows the facet's spelling.
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Channel" })).toHaveValue("Andrej Karpathy"),
+    );
   });
 });
