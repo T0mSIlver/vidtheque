@@ -72,19 +72,35 @@ val sharedStill: Still = { id, modifier ->
  * the card with the gesture's progress. Scaled, not remeasured, so the text keeps
  * its layout while it shrinks. A tween, not a spring: a seek maps the gesture's
  * progress onto time, and a spring would cover most of the way in the first few
- * percent. Each side stays opaque until the last third, then the two fade
- * through, so the page never shows its text over the card's.
+ * percent.
+ *
+ * The fades differ by direction. Opening, the card's text leaves at once and the
+ * page's arrives while the container grows: a card text that stayed slid up under
+ * the still, then left an empty frame. Going back, the page stays opaque until the
+ * last third so it follows the finger, then the card's text fades in.
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 val sharedCard: Lift = { id, shape ->
+    lift(id, shape, enter = fadeIn(tween(FADE_MS, delayMillis = BOUNDS_MS - FADE_MS)), exit = fadeOut(tween(LEAVE_MS)))
+}
+
+/** The page's side of [sharedCard]. */
+@OptIn(ExperimentalSharedTransitionApi::class)
+val sharedPage: Lift = { id, shape ->
+    lift(id, shape, enter = fadeIn(tween(ARRIVE_MS, delayMillis = LEAVE_MS / 2)), exit = fadeOut(tween(FADE_MS, delayMillis = BOUNDS_MS - 2 * FADE_MS)))
+}
+
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+private fun lift(id: String, shape: Shape, enter: EnterTransition, exit: ExitTransition): Modifier {
     val shared = LocalShared.current
     val scope = LocalNavAnimatedContentScope.current
-    if (shared == null) Modifier else with(shared) {
+    return if (shared == null) Modifier else with(shared) {
         Modifier.sharedBounds(
             rememberSharedContentState("card-$id"),
             animatedVisibilityScope = scope,
-            enter = fadeIn(tween(FADE_MS, delayMillis = BOUNDS_MS - FADE_MS)),
-            exit = fadeOut(tween(FADE_MS, delayMillis = BOUNDS_MS - 2 * FADE_MS)),
+            enter = enter,
+            exit = exit,
             boundsTransform = { _, _ -> tween(BOUNDS_MS, easing = FastOutSlowInEasing) },
             resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(ContentScale.FillWidth, Alignment.TopCenter),
             clipInOverlayDuringTransition = OverlayClip(shape),
@@ -94,6 +110,8 @@ val sharedCard: Lift = { id, shape ->
 
 private const val BOUNDS_MS = 450
 private const val FADE_MS = 120
+private const val LEAVE_MS = 90
+private const val ARRIVE_MS = 200
 
 // The container transform is the whole motion: the feed stays put underneath, whole,
 // instead of fading in over the page (Navigation 3's default pop).
@@ -137,7 +155,7 @@ fun SignedIn(opening: MutableStateFlow<String?>, onSignOut: () -> Unit) {
                         )
                     }
                     entry<ProfileKey> { ProfileScreen(onBack = { stack.removeLastOrNull() }, onSignOut = onSignOut) }
-                    entry<VideoKey>(metadata = containerOnly) { key -> VideoScreen(key, onBack = { stack.removeLastOrNull() }, still = sharedStill, card = sharedCard) }
+                    entry<VideoKey>(metadata = containerOnly) { key -> VideoScreen(key, onBack = { stack.removeLastOrNull() }, still = sharedStill, card = sharedPage) }
                 },
             )
         }
