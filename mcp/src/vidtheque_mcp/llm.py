@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 import signal
@@ -258,8 +259,8 @@ def parse_price(raw: str) -> Price:
             raise ConfigError(
                 f"VIDTHEQUE_LLM_PRICE: {key} is not a number, got {value!r}"
             ) from None
-        if values[key] < 0:
-            raise ConfigError(f"VIDTHEQUE_LLM_PRICE: {key} is negative")
+        if not math.isfinite(values[key]) or values[key] < 0:
+            raise ConfigError(f"VIDTHEQUE_LLM_PRICE: {key} must be a finite, non-negative number")
     if "input" not in values or "output" not in values:
         raise ConfigError("VIDTHEQUE_LLM_PRICE needs at least input=… and output=…")
     return Price(values["input"], values["output"], values.get("cached_input"))
@@ -305,22 +306,23 @@ class Meter:
         outcome: str,
     ) -> None:
         usage = usage or Usage()
-        row = (
-            at,
-            purpose,
-            video_id,
-            self._backend,
-            self._model,
-            usage.prompt,
-            usage.completion,
-            usage.cached,
-            usage.reasoning,
-            latency_ms,
-            outcome,
-            self.cost(usage),
-        )
 
         def write(c: Any) -> None:
+            # The cost is computed here, inside the guard: pricing never fails the call.
+            row = (
+                at,
+                purpose,
+                video_id,
+                self._backend,
+                self._model,
+                usage.prompt,
+                usage.completion,
+                usage.cached,
+                usage.reasoning,
+                latency_ms,
+                outcome,
+                self.cost(usage),
+            )
             # The video may have been deleted while the model ran.
             vid = row[2]
             if vid is not None:

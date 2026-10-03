@@ -469,9 +469,11 @@ def test_the_price_comes_from_the_env_then_the_table(monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("VIDTHEQUE_LLM_PRICE", "input=2,output=6")
     assert llm.price_for(LLMSettings.from_env()) == Price(input=2, output=6)
 
-    monkeypatch.setenv("VIDTHEQUE_LLM_PRICE", "in=2,out=6")
-    with pytest.raises(ConfigError):
-        LLMSettings.from_env()
+    # A typo or a NaN fails at boot, not on every call.
+    for bad in ("in=2,out=6", "input=nan,output=1", "input=inf,output=1"):
+        monkeypatch.setenv("VIDTHEQUE_LLM_PRICE", bad)
+        with pytest.raises(ConfigError):
+            LLMSettings.from_env()
 
     # A subscription has no list price unless the owner sets one.
     monkeypatch.delenv("VIDTHEQUE_LLM_PRICE")
