@@ -397,7 +397,7 @@ done
 # The projection is the same one, and it redacts by OMISSION: the operator's
 # reads are not taken, so there is no field to un-hide (frontend-migration §7).
 curl -s 127.0.0.1:8100/dashboard/api/jobs | grep -ciE 'youtube\.com|youtu\.be/|cookiefile|player_client|/home/'  # 0
-curl -s 127.0.0.1:8100/dashboard/api/overview | grep -ciE 'Qwen/|declared_models|auth_mode'                      # 0
+curl -s 127.0.0.1:8100/dashboard/api/health | grep -ciE 'Qwen/|auth_mode'                                       # 0
 curl -s 127.0.0.1:8100/dashboard/api/session | jq '{readonly, write_side, policy}'
 # expect readonly true, write_side false, policy "public" — the three facts the
 # rail's "read-only demo" sentence used to be the only witness to.

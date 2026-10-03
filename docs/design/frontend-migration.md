@@ -220,7 +220,7 @@ What each side owns, once a page is ported:
 | Path | Served by | Today |
 | --- | --- | --- |
 | `GET /dashboard` | **Next** | *landed 2026-09-05* |
-| `GET /dashboard/ledger` | **Next** | *landed 2026-09-05* |
+| `GET /dashboard/corpus` | **Next** | *landed 2026-09-05 as `/dashboard/ledger`, renamed 2026-10-03; the old path redirects* |
 | `GET /dashboard/videos`, `GET /dashboard/videos/{id}` | **Next** | *landed 2026-09-05* |
 | `GET /dashboard/search` | **Next** | *landed 2026-09-05* |
 | `GET /dashboard/jobs`, `GET /dashboard/jobs/{id}` | **Next** | *landed 2026-09-05* |
@@ -366,7 +366,7 @@ one proxy, and it must not be read as the production arrangement.
 
 A third list joined those two with these pages, and it is the one a component
 asks: `web/src/components/dashboard/ported.ts` holds the ported page paths — `ROOT`,
-`ROOT/ledger`, `ROOT/videos`, plus the same one-segment pattern for the detail
+`ROOT/corpus`, `ROOT/videos`, plus the same one-segment pattern for the detail
 — behind `isPorted(href)`, which every link into this surface asks so a page
 this app serves is reached with `Link` and a page Python still renders stays a
 plain anchor. Porting a page adds its path here, names it in the matcher, and
@@ -392,8 +392,8 @@ policy change, and no import from `worker/`.
 
 | Route | Gate | Contract |
 | --- | --- | --- |
-| `/dashboard/api/overview` | read gate | §4 |
-| `/dashboard/api/ledger` | read gate | §5 |
+| `/dashboard/api/health` | read gate | §4 |
+| `/dashboard/api/corpus` | read gate | §5 |
 | `/dashboard/api/session` | **none** | §6 |
 | `/dashboard/api/library` | read gate | §6a, dashboard.md §20 |
 | `/dashboard/api/library/{video_id}` | read gate | §6a, dashboard.md §20 |
@@ -406,7 +406,7 @@ routes, and `views.py` now calls the assemblers instead of holding them.
 `mcp/tests/test_dashboard_api.py` (new) covers the slice.
 
 `read_models.py` holds what the pages and the JSON must not answer twice:
-`overview_reads`, `ledger_reads`, `videos_reads`, `video_detail_reads`,
+`health_reads`, `corpus_reads`, `videos_reads`, `video_detail_reads`,
 `pipeline_readiness`, `redacted`, `declared_models`, `video_header`,
 `stage_rows`, `shot_rows`, `frame_cards`, `coverage_pills`/`coverage_flags`,
 `video_facts`, `date_filters`, `file_size`, `tool_error`, `thumb`,
@@ -446,7 +446,7 @@ follow identically rather than by two functions agreeing.
   listing's rows. The one exception is a video's keyframe strip, whose next
   page replaces a panel rather than a listing: the strip on screen stays,
   dimmed and `aria-busy`, until it lands (dashboard.md §5.3).
-- **Parameters.** `overview` and `ledger` read no query string at all, so there
+- **Parameters.** `health` and `corpus` read no query string at all, so there
   is nothing to clamp; their bounds are the constants in §4. The two `library`
   routes take the pages' parameters under the pages' clamps, and say in `notes`
   when a bound moved — §6a.
@@ -525,35 +525,23 @@ start a `?t=` deeplink takes, a value and not a rendering. A payload that still
 carries the three strings parses either way, because Zod strips what the object
 does not name. Nothing else on either page moved.
 
-## 4. `GET /dashboard/api/overview`
+## 4. `GET /dashboard/api/health`
 
-The corpus overview page's reads (`views.overview`), typed.
+The Health page's reads (`read_models.health_reads`), typed. Replaced
+`/dashboard/api/overview` on 2026-10-03 (dashboard.md §24.1).
 
 ```jsonc
 {
   "counted_at": 1757030400,          // int, epoch seconds
   "redacted": false,                 // bool: is this the public projection
   "writes_allowed": true,            // db.writes_allowed, the session's own flag
-  "corpus": {
-    "videos": 4, "queryable_videos": 3,
-    "videos_ready": 3,               // ready only; queryable is ready + stale
-    "videos_by_index_state": {"ready": 3, "indexing": 1},  // present states only
-    "data_status": "ok",             // verbatim from corpus-summary
-    "cues": 0, "keyframes": 0, "ocr_lines": 0,
-    "duration_s": 13500.0,
-    "published": {"oldest": 1740000000, "newest": 1740000000},  // int|null
-    "last_indexed": 1740000000       // int|null
-  },
-  "channels": [{"channel": "…", "videos": 3, "seconds": 8100.0}],  // ≤ 12
-  "tags":     [{"tag": "topic:attention", "videos": 2}],           // ≤ 24
-  "gaps":     {"transcript_no_ocr": 0, "indexing": 1, "failed": 0,
-               "failed_cap": 5, "failed_capped": false},  // failed is a probe
+  "data_status": "ok",               // verbatim from corpus-summary
+  "last_indexed": 1740000000,        // int|null
+  "gaps": {"transcript_no_ocr": 0, "indexing": 1,
+           "has_failed": false},     // whether; the count is /corpus's
   "embed_backlog": {"text": 0, "frame": 0},
-  "jobs": {"active": 2, "running": 1, "deferred": 1,
+  "jobs": {"active": 2, "deferred": 1,
            "failed_recent": 1, "failed_window_s": 86400},
-  "recent": [{"video_id": "…", "title": "…", "channel": "…",
-              "duration_s": 5400.0, "indexed_at": 1740000000,
-              "thumb": "/frames/….jpg?w=192&q=70"}],               // ≤ 8
   "readiness": {"mcp": "ready", "database": "ready",
                 "vectors": {"enabled": true, "reason": null},
                 "worker": {"state": "ready|unavailable|unconfigured",
@@ -561,69 +549,55 @@ The corpus overview page's reads (`views.overview`), typed.
                            "models": [{"task": "stt", "model": "…",
                                        "loaded": true}]},           // ≤ 12
                 "checked_at": 1757030400},                          // int, epoch
-  "declared_models": [{"label": "…", "key": "…", "value": "…", "dim": "…"}],
-  "storage": {"keyframe_bytes": 0, "database_bytes": 0}
+  "declared_models": [{"label": "…", "key": "…", "value": "…", "dim": "…"}]
 }
 ```
 
-*Amended 2026-09-06: four fields, all additive over reads already taken.*
-`corpus.videos_ready` is the band's "N ready" — `corpus_rollup`'s own column,
-`ready` and nothing else, where `queryable_videos` is ready **plus stale**, so a
-page saying "N ready" off that one counts a stale video as ready and its "not
-ready" goes short by the same one. `gaps.failed_cap` and `gaps.failed_capped`
-say that `gaps.failed` is a probe: `queries.gaps` looks for failed videos with
-`LIMIT 5`, so `failed: 5` means "five or more", and the ceiling
-(`read_models.GAPS_FAILED_CAP`) and the reading of it ride beside the count so
-the client's `+` and the SQL behind it cannot disagree. `writes_allowed` is
-`/dashboard/api/session`'s field (§6) on this payload as well, because the two
-things drawn from it — the Indexing state in the readiness strip and the drift
-banner's second half — are on this page: a rendering that waits on a second
-request for a deployment fact is one that flips under the reader. Not redacted,
-because the session publishes it to an anonymous browser already; the *reason*
-stays there. All four are `dashboard.md` §19's.
+`writes_allowed` is `/dashboard/api/session`'s field (§6) on this payload as
+well, because the Indexing state and the drift banner are on this page: a
+rendering that waits on a second request for a deployment fact flips under the
+reader. Not redacted, because the session publishes it to an anonymous browser
+already; the *reason* stays there. `gaps.has_failed` is a boolean because the
+failed-video count is the Corpus page's (`videos_by_state.failed`); the rows
+behind it carry `video_stages.error`, the pipeline's prose about the operator's
+box, and reach no surface.
 
-Caps, from `read_models`: `CHANNEL_CAP=12`, `TAG_CAP=24`, `RECENT_CAP=8`,
-`FAILED_WINDOW_S=86_400`, `WORKER_BACKEND_CAP=12`; the worker probe is bounded
-by `WORKER_STATUS_TIMEOUT_S=1.0` wall-clock and `WORKER_STATUS_MAX_BYTES=64 kB`
-and runs concurrently with the database reads. `gaps.failed` is a **count** —
-the rows behind it carry `video_stages.error`, the pipeline's prose about the
-operator's box, and reach no surface from here.
+Bounds, from `read_models`: `FAILED_WINDOW_S=86_400`, `WORKER_BACKEND_CAP=12`;
+the worker probe is bounded by `WORKER_STATUS_TIMEOUT_S=1.0` wall-clock and
+`WORKER_STATUS_MAX_BYTES=64 kB` and runs concurrently with the database reads.
 
-## 5. `GET /dashboard/api/ledger`
+## 5. `GET /dashboard/api/corpus`
 
-The ledger page's reads: a fixed number of whole-table and index counts, no
-per-video work.
+The Corpus page's reads (`read_models.corpus_reads`): a fixed number of
+whole-table and index counts plus two capped rollups, no per-video work.
+Replaced `/dashboard/api/ledger` on 2026-10-03 (dashboard.md §24.1).
 
 ```jsonc
 {
   "counted_at": 1757030400, "redacted": false,
-  "writes_allowed": true,                       // as §4, and for the same page furniture
   "corpus": {"videos": 4, "duration_s": 13500.0,
-             "cues": 0, "keyframes": 0, "ocr_lines": 0,
-             "chunks": 0, "tags": 0, "channels": 2,
-             "published": {"oldest": 1740000000, "newest": 1740000000},  // int|null
-             "last_indexed": 1740000000},
+             "cues": 0, "keyframes": 0, "ocr_lines": 0, "chunks": 0,
+             "published": {"oldest": 1740000000, "newest": 1740000000}},  // int|null
   "videos_by_state": {"ready": 3, "pending": 0, "indexing": 1,
                       "failed": 0, "stale": 0},   // sums to corpus.videos
+  "channels": {"rows": [{"channel": "…", "videos": 3, "seconds": 8100.0}],
+               "has_more": false},                // ≤ 12 rows
+  "tags": {"rows": [{"tag": "topic:attention", "videos": 2}],
+           "has_more": false},                    // ≤ 24 rows
   "jobs_by_state": {"queued": 1, "running": 1, "done": 0,
                     "failed": 1, "cancelled": 0},
   "queue": {"active": 2, "running": 1, "deferred": 1,
             "failed_recent": 1, "failed_window_s": 86400},
-  "embed_backlog": {"text": 0, "frame": 0},
-  "gaps": {"transcript_no_ocr": 0},
-  "readiness": { … as above … },
   "storage": {"keyframe_bytes": 0, "database_bytes": 0}
 }
 ```
 
-*Added 2026-09-05 (Tom): `corpus.published`.* The ledger band prints
-"published *oldest* – *newest*" under the video count and this payload had no
-field for it, so a React ledger could only drop the line. It is the **same
-name and the same shape** as the overview's (§4) — epoch seconds, `null` on
-both halves when the corpus is empty — because one fact with two spellings is
-how two pages start disagreeing about the corpus. It costs no read: the
-assembler's `corpus_rollup` was already carrying `oldest_published` and
-`newest_published` for the counts beside it.
+`corpus.published` is epoch seconds, `null` on both halves when the corpus is
+empty. The two rollups cover every `index_state`, like `corpus.videos`, and are
+read one row past their cap (`CHANNEL_CAP=12`, `TAG_CAP=24`) so `has_more`
+replaces a total. Tags are rows rather than an object: a tag is a string a
+client must not have to trust as a JSON key, and the order is the rollup's,
+most-used first.
 
 ## 6. `GET /dashboard/api/session`
 
@@ -952,7 +926,7 @@ endpoints:
 | `storage` | `null` — the byte totals are not read |
 | `readiness.worker` | `null` — the probe is not made at all |
 | `readiness.vectors.reason` | `null`; `enabled` stays, because search answers differently without the vector legs |
-| everything else | unchanged — counts, channels, tags, gaps, queue, arrivals are corpus, not deployment |
+| everything else | unchanged — counts, channels, tags, gaps and the queue are corpus, not deployment |
 
 On the two `library` routes: the table is **not** redacted at all (§2.4 gives
 the demo the browsable corpus whole), and the detail drops exactly two fields

@@ -593,6 +593,9 @@ and every bound named here is unchanged and still Python's; the markup is not.
 
 ### 5.1 `GET /dashboard` — corpus overview
 
+*Superseded 2026-10-03: `/dashboard` is the Health page and the counts moved to
+Corpus (§24.1).*
+
 **Reads.** `tools/library.corpus_summary` (`tools/library.py:200`), which is
 already `queries.corpus_rollup` (`:1140`) + `coverage` (`:1144`) +
 `channel_rollup` (`:1158`) + `tag_rollup` (`:1181`) + `recent_indexed` (`:1198`)
@@ -2315,6 +2318,9 @@ it does not issue a count and does not claim an exact total.
 
 ## 17. The ledger (2026-08-13)
 
+*Superseded 2026-10-03: the ledger is the Corpus page at `/dashboard/corpus`,
+and its readiness and backlogs moved to Health (§24.1).*
+
 Tom: *"I'd like a page that centralizes all the key numbers, currently they're
 scattered over the overview and other pages."* `GET /dashboard/ledger`, rail
 item **Ledger**, directly under Overview. The name is DESIGN.md's own — the
@@ -3447,3 +3453,51 @@ rendering, and the rendering is `web/`'s. `test_dashboard.py` keeps one
 assertion in their place — that this package contains no HTML, no CSS, no
 JavaScript and no `jinja2` import — and DESIGN.md's migration notes name the
 two tests that went.
+
+## 24. The console cuts (2026-10-03)
+
+Tom took every proposal in `console-audit.md` as written (issue #93). The rule
+is `companion.md` §7's: **every page answers one question a human has about the
+machine, and a number appears on exactly one page.** Each subsection below
+supersedes the page's earlier section where the two disagree.
+
+### 24.1 Health and Corpus
+
+`/dashboard` is **Health**: is the machine working right now?
+`/dashboard/ledger` became **Corpus** at `/dashboard/corpus`: what is in it?
+The old path answers `308` to the new one (`web/next.config.ts`). The rail
+reads Health, Corpus, Search, Videos, Jobs.
+
+**Health shows** `data_status` and the last-indexed clock in the head, the
+drift notice, the readiness strip with the declared and served models, the
+queue (queued or running, how many wait on a backoff, failed in the last 24 h)
+and what is missing: transcripts without on-screen text, videos mid-pipeline,
+the two embedding backlogs (from the ledger), and, when any video failed, a
+link to Corpus's videos by state instead of a second count. It reads
+`corpus_summary` without its lists, `corpus_rollup` for the clock,
+`job_health` and the §15 readiness observation.
+
+**Corpus shows** the band (videos, runtime, cues with their chunk count,
+keyframes, on-screen lines, the published span), videos by state, jobs by
+state, the channels (`CHANNEL_CAP=12`) and tags (`TAG_CAP=24`) as lists, and
+the two byte totals. Each list is read one past its cap and says `has_more`
+rather than a total. The rollups run over every `index_state`, like the band,
+so a channel whose only video is mid-pipeline is listed. The read count stays a
+constant, and a test pins it.
+
+**Cut.** "Recently indexed" leaves the console for the feed (#90, not built
+yet; accepted). Health loses the band, the channels, the tags and the storage
+panel; Corpus loses readiness, the gaps, the "indexed" stamp in its head and the
+bare channel and tag counts. On the wire, `/dashboard/api/overview` and
+`/dashboard/api/ledger` are replaced by `/dashboard/api/health` and
+`/dashboard/api/corpus` (frontend-migration.md §4, §5), and every field with no
+reader left went with its tests: `queryable_videos`, `videos_ready`,
+`videos_by_index_state`, `recent` with `RECENT_CAP`, the failed-video count
+with `failed_cap`, `failed_capped` and `GAPS_FAILED_CAP` (Health sends
+`has_failed`), `jobs.running` on Health, and the `tags` and `channels` columns
+of `queries.corpus_ledger`.
+
+**The projection** is unchanged in kind: Health drops the declared models, the
+worker probe, the drift reason and the Indexing state; Corpus drops the byte
+totals. Both keep every count.
+
