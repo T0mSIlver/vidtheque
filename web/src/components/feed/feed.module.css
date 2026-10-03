@@ -359,10 +359,6 @@
   background: var(--gold-12);
 }
 
-.signal[data-failed] {
-  border-color: var(--tone-bad-line);
-}
-
 .copy {
   composes: t-label from global;
   white-space: nowrap;
