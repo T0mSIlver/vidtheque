@@ -205,8 +205,8 @@ one succeeds and reports no change.
 
 
 PROFILE = """
-Read or edit the user's interest profile: short plain-word entries, each with a
-weight from -1 (less of this) to 1 (more of this). It steers which new videos
+Read or edit the user's interest profile: topics of 2-4 words (split compound
+ones), each weighted -1 (less of this) to 1 (more of this). It steers which new videos
 reach the user.
 
 USE WHEN: the user tells you what they care about or are tired of, asks you to

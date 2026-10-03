@@ -3693,7 +3693,8 @@ reason on the entry's `add` event) and one page of `history`, newest first:
 [{"id", "weight"}], "reason"}`, at least one operation, at most 40 items per
 list (`413 E_TOO_LARGE`). It is one batch through `profile/store.apply`, with
 its guards: `404 E_UNKNOWN_ENTRY`, `409 E_PROFILE_GUARD` past 40 live entries,
-`400 E_BAD_PARAM` for a weight outside [-1, 1] or an empty text. A refused batch writes nothing. The answer is the `GET`
+`400 E_BAD_PARAM` for a weight outside [-1, 1], an empty text, or a text past
+32 characters or 5 words (companion.md §2.1). A refused batch writes nothing. The answer is the `GET`
 payload plus `applied: {events, duplicates}`.
 
 `revert` takes exactly one of `{"event_id"}` (undo that event) or
