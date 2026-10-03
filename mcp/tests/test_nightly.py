@@ -28,9 +28,11 @@ class FakeModel:
     def __init__(self, *answers: Any) -> None:
         self.answers = list(answers)
         self.prompts: list[str] = []
+        self.labels: list[dict[str, Any]] = []
 
-    async def complete(self, prompt: str, *, system=None, schema=None) -> Any:
+    async def complete(self, prompt: str, *, system=None, schema=None, **labels) -> Any:
         self.prompts.append(prompt)
+        self.labels.append(labels)
         answer = self.answers.pop(0)
         if isinstance(answer, Exception):
             raise answer

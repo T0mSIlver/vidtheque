@@ -180,7 +180,9 @@ class Nightly:
             await self.db.write(lambda c: _finish(c, claim.run_id, "idle", at, n_signals=0))
             return Outcome("idle")
         try:
-            answer = await self.model.complete(prompt, system=SYSTEM, schema=OPS_SCHEMA)
+            answer = await self.model.complete(
+                prompt, system=SYSTEM, schema=OPS_SCHEMA, purpose="nightly_update"
+            )
         except LLMUnavailable as exc:
             await self.db.write(
                 lambda c: _finish(c, claim.run_id, "failed", at, n_signals=n_signals, error=exc.reason)
@@ -412,7 +414,7 @@ def build_nightly(db: Any) -> tuple[Nightly | None, httpx.AsyncClient | None]:
     if not is_configured(settings):
         return None, None
     http = httpx.AsyncClient() if settings.backend == "api" else None
-    model = build_model(settings, http)  # type: ignore[arg-type]
+    model = build_model(settings, http, db)  # type: ignore[arg-type]
     assert model is not None
     label = f"{settings.backend}:{settings.model or 'default'}"
     return Nightly(db, model, label, hour=nightly.hour), http

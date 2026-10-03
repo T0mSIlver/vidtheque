@@ -248,6 +248,40 @@ Tom's instance runs `api`: a verdict reads a whole transcript, and the
 weekly Claude limit is the budget that runs out first. All new vars land in
 `deploy/.env.example` with the code that reads them.
 
+### 4.1 What the calls cost
+
+*Added 2026-10-03 (Tom: "track every API call").* The client records every
+completion in `llm_calls` (index-schema §1.16), whatever its outcome:
+purpose (`verdict`, `verdict_explore` for the exploration rescore,
+`nightly_update`, `unknown` for a caller that names none), the video, backend,
+model, the token counts the backend reported, latency, outcome and cost.
+`build_model` takes the database, so no caller can build a model whose calls
+go unrecorded.
+
+- **Tokens** come from the `usage` object. Mistral's API answers
+  `{prompt_tokens, completion_tokens, total_tokens, prompt_tokens_details:
+  {cached_tokens}}` for zai-glm-5-3 (checked with a real call, 2026-10-03);
+  its thinking is counted in `completion_tokens`, with no separate figure, so
+  `reasoning_tokens` stays NULL there. `claude -p` reports Anthropic's usage and
+  its own `total_cost_usd`, which is recorded as the cost. `codex exec`
+  reports nothing.
+- **Cost** is micro-USD, fixed when the row is written: uncached prompt
+  tokens at the input price, cached ones at the cached-input price, completion
+  tokens at the output price. The prices are `config.LLM_PRICES`, overridden
+  by `VIDTHEQUE_LLM_PRICE`. zai-glm-5-3 lists at $1.40 per million input
+  tokens, $0.14 cached, $4.40 output
+  ([model card](https://docs.mistral.ai/models/zai-glm-5-3), checked
+  2026-10-03; mistral.ai/pricing does not list it). Unknown is NULL, never 0:
+  a refusal with no `usage`, a model with no price, a cancelled call.
+- **It is list price.** Tom's private box runs on a Vibe monthly plan, so the
+  number is what the calls would cost pay-as-you-go, not what was billed.
+- The public demo's ask (`public/ask.py`, OpenRouter, its own key and daily
+  budget) is not recorded: it does not go through `build_model`, and the
+  public box has no owner routes to show it.
+
+The console's Health page and the app's profile screen show it, from
+`GET /dashboard/api/costs` (dashboard.md §25.8).
+
 ## 5. Reach: the private instance on the internet
 
 The OAuth authorization server is already built (`mcp/auth/`,

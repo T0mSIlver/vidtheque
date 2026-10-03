@@ -6,6 +6,9 @@ prompt into text, or into a JSON object validated against a schema. The
 backend is the owner's choice (``VIDTHEQUE_LLM_BACKEND``). The demo keeps its own key, URL and budget
 (``public/ask.py``'s ``OpenRouter``); nothing in this module reads the demo's
 settings.
+
+Every completion is recorded in `llm_calls` (companion.md §4.1): the backend
+answers with its `usage`, and :class:`Meter` prices it and writes the row.
 """
 
 from __future__ import annotations
@@ -25,18 +28,39 @@ from typing import Any, Protocol
 import httpx2 as httpx
 import jsonschema
 
-from .config import ConfigError, _env, _float_env
+from .config import LLM_PRICES, ConfigError, _env, _float_env
 
 logger = logging.getLogger(__name__)
 
 
-class LLMUnavailable(Exception):
-    """The model cannot serve this request. Carries a reason, never a body."""
+@dataclass(frozen=True)
+class Usage:
+    """What one completion consumed, as the backend reported it; None is unknown.
 
-    def __init__(self, reason: str, retry_after_s: int = 60) -> None:
+    `prompt` includes `cached`, and `completion` includes `reasoning`, as in
+    the OpenAI-compatible `usage` object. `cost_micro_usd` is a cost the
+    backend reported itself (claude's `total_cost_usd`); otherwise the price
+    table supplies it.
+    """
+
+    prompt: int | None = None
+    completion: int | None = None
+    cached: int | None = None
+    reasoning: int | None = None
+    cost_micro_usd: int | None = None
+
+
+class LLMUnavailable(Exception):
+    """The model cannot serve this request. Carries a reason, never a body.
+
+    `usage` is set when the model did answer, but not with what was asked.
+    """
+
+    def __init__(self, reason: str, retry_after_s: int = 60, usage: Usage | None = None) -> None:
         super().__init__(reason)
         self.reason = reason
         self.retry_after_s = retry_after_s
+        self.usage = usage
 
 
 @dataclass
@@ -174,14 +198,225 @@ class ChatClient:
 
 class Model(Protocol):
     async def complete(
-        self, prompt: str, *, system: str | None = None, schema: dict[str, Any] | None = None
+        self,
+        prompt: str,
+        *,
+        system: str | None = None,
+        schema: dict[str, Any] | None = None,
+        purpose: str = "unknown",
+        video_id: int | None = None,
     ) -> Any:
         """Text, or with ``schema`` a JSON object that validates against it.
 
         Raises :class:`LLMUnavailable`; ``invalid_output`` when the model
-        answered something that is not the object asked for.
+        answered something that is not the object asked for. ``purpose`` and
+        ``video_id`` (the videos row id) label the call's `llm_calls` row.
         """
         ...
+
+
+# ---------------------------------------------------------------------------
+# Prices and the call log
+
+
+@dataclass(frozen=True)
+class Price:
+    """List prices in USD per million tokens, which is micro-USD per token."""
+
+    input: float
+    output: float
+    cached_input: float | None = None
+
+    def cost_micro_usd(self, usage: Usage) -> int | None:
+        if usage.prompt is None or usage.completion is None:
+            return None
+        cached = min(usage.cached or 0, usage.prompt)
+        cached_rate = self.input if self.cached_input is None else self.cached_input
+        return round(
+            (usage.prompt - cached) * self.input
+            + cached * cached_rate
+            + usage.completion * self.output
+        )
+
+
+_PRICE_FIELDS = ("input", "cached_input", "output")
+
+
+def parse_price(raw: str) -> Price:
+    """`input=1.4,cached_input=0.14,output=4.4`; `cached_input` is optional."""
+    values: dict[str, float] = {}
+    for part in raw.split(","):
+        key, sep, value = part.partition("=")
+        key = key.strip()
+        if not sep or key not in _PRICE_FIELDS or key in values:
+            raise ConfigError(
+                f"VIDTHEQUE_LLM_PRICE must read input=…,cached_input=…,output=…, got {raw!r}"
+            )
+        try:
+            values[key] = float(value)
+        except ValueError:
+            raise ConfigError(
+                f"VIDTHEQUE_LLM_PRICE: {key} is not a number, got {value!r}"
+            ) from None
+        if values[key] < 0:
+            raise ConfigError(f"VIDTHEQUE_LLM_PRICE: {key} is negative")
+    if "input" not in values or "output" not in values:
+        raise ConfigError("VIDTHEQUE_LLM_PRICE needs at least input=… and output=…")
+    return Price(values["input"], values["output"], values.get("cached_input"))
+
+
+def price_for(settings: "LLMSettings") -> Price | None:
+    """The configured model's price: the env override, else the table, else None.
+
+    The CLI backends run on the owner's subscription; they get no table price.
+    """
+    if settings.price is not None:
+        return settings.price
+    if settings.backend != "api" or not settings.model:
+        return None
+    row = LLM_PRICES.get(settings.model)
+    return Price(**row) if row is not None else None
+
+
+class Meter:
+    """Writes one `llm_calls` row per completion. A failed write never fails the call."""
+
+    def __init__(self, db: Any, backend: str, model: str | None, price: Price | None) -> None:
+        self._db = db
+        self._backend = backend
+        self._model = model
+        self._price = price
+        # Rows written after a cancellation, kept so the loop does not drop them.
+        self._pending: set[asyncio.Task[None]] = set()
+
+    def cost(self, usage: Usage) -> int | None:
+        if usage.cost_micro_usd is not None:
+            return usage.cost_micro_usd
+        return self._price.cost_micro_usd(usage) if self._price is not None else None
+
+    async def record(
+        self,
+        *,
+        at: int,
+        purpose: str,
+        video_id: int | None,
+        usage: Usage | None,
+        latency_ms: int,
+        outcome: str,
+    ) -> None:
+        usage = usage or Usage()
+        row = (
+            at,
+            purpose,
+            video_id,
+            self._backend,
+            self._model,
+            usage.prompt,
+            usage.completion,
+            usage.cached,
+            usage.reasoning,
+            latency_ms,
+            outcome,
+            self.cost(usage),
+        )
+
+        def write(c: Any) -> None:
+            # The video may have been deleted while the model ran.
+            vid = row[2]
+            if vid is not None:
+                exists = c.execute("SELECT 1 FROM videos WHERE id = ?", (vid,)).fetchone()
+                vid = vid if exists else None
+            c.execute(
+                "INSERT INTO llm_calls (at, purpose, video_id, backend, model, prompt_tokens,"
+                " completion_tokens, cached_tokens, reasoning_tokens, latency_ms, outcome,"
+                " cost_micro_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (*row[:2], vid, *row[3:]),
+            )
+
+        try:
+            await self._db.write(write)
+        except Exception as exc:  # noqa: BLE001 - the log must never cost the answer
+            logger.warning("llm: the call log write failed: %s", type(exc).__name__)
+
+    def record_later(self, **fields: Any) -> None:
+        """Record from a cancelled call, which can no longer await."""
+        task = asyncio.get_running_loop().create_task(self.record(**fields))
+        self._pending.add(task)
+        task.add_done_callback(self._pending.discard)
+
+
+class _Metered:
+    """`complete` for every backend: time the call, then record it."""
+
+    meter: Meter | None = None
+
+    async def complete(
+        self,
+        prompt: str,
+        *,
+        system: str | None = None,
+        schema: dict[str, Any] | None = None,
+        purpose: str = "unknown",
+        video_id: int | None = None,
+    ) -> Any:
+        at, started = int(time.time()), time.monotonic()
+        usage: Usage | None = None
+        outcome = "ok"
+        try:
+            answer, usage = await self._complete(prompt, system, schema)
+            return answer
+        except LLMUnavailable as exc:
+            usage, outcome = exc.usage, exc.reason
+            raise
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
+        finally:
+            if self.meter is not None:
+                fields = dict(
+                    at=at,
+                    purpose=purpose,
+                    video_id=video_id,
+                    usage=usage,
+                    latency_ms=round((time.monotonic() - started) * 1000),
+                    outcome=outcome,
+                )
+                if outcome == "cancelled":
+                    self.meter.record_later(**fields)
+                else:
+                    await self.meter.record(**fields)
+
+    async def _complete(
+        self, prompt: str, system: str | None, schema: dict[str, Any] | None
+    ) -> tuple[Any, Usage]:
+        raise NotImplementedError
+
+
+def _int(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def api_usage(payload: Any) -> Usage | None:
+    """The OpenAI-compatible `usage` object, as Mistral and OpenRouter send it."""
+    usage = payload.get("usage") if isinstance(payload, dict) else None
+    if not isinstance(usage, dict):
+        return None
+    prompt_details = usage.get("prompt_tokens_details")
+    completion_details = usage.get("completion_tokens_details")
+    return Usage(
+        prompt=_int(usage.get("prompt_tokens")),
+        completion=_int(usage.get("completion_tokens")),
+        cached=(
+            _int(prompt_details.get("cached_tokens"))
+            if isinstance(prompt_details, dict)
+            else None
+        ),
+        reasoning=(
+            _int(completion_details.get("reasoning_tokens"))
+            if isinstance(completion_details, dict)
+            else None
+        ),
+    )
 
 
 _FENCE = re.compile(r"^```[a-zA-Z]*\s*\n(.*)\n```\s*$", re.DOTALL)
@@ -217,7 +452,7 @@ def validated(value: Any, schema: dict[str, Any]) -> dict[str, Any]:
 # Backend `api`: any OpenAI-compatible endpoint
 
 
-class APIModel:
+class APIModel(_Metered):
     def __init__(
         self, chat: ChatClient, model: str, timeout_s: float, reasoning_effort: str | None = None
     ) -> None:
@@ -226,9 +461,9 @@ class APIModel:
         self._timeout_s = timeout_s
         self._reasoning_effort = reasoning_effort
 
-    async def complete(
-        self, prompt: str, *, system: str | None = None, schema: dict[str, Any] | None = None
-    ) -> Any:
+    async def _complete(
+        self, prompt: str, system: str | None, schema: dict[str, Any] | None
+    ) -> tuple[Any, Usage]:
         messages = [{"role": "system", "content": system}] if system else []
         messages.append({"role": "user", "content": prompt})
         body: dict[str, Any] = {"model": self._model, "messages": messages}
@@ -242,6 +477,7 @@ class APIModel:
                 "json_schema": {"name": "answer", "schema": schema},
             }
         payload = await self._chat.chat(body, time.monotonic() + self._timeout_s)
+        usage = api_usage(payload) or Usage()
         try:
             text = payload["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError):
@@ -252,8 +488,19 @@ class APIModel:
             text = "".join(t for t in parts if isinstance(t, str)) or None
         if not isinstance(text, str):
             logger.warning("llm: upstream answered without message content")
-            raise LLMUnavailable("upstream_unavailable")
-        return text if schema is None else parse_json(text, schema)
+            raise LLMUnavailable("upstream_unavailable", usage=usage)
+        return _answer(text, schema, usage), usage
+
+
+def _answer(text: str, schema: dict[str, Any] | None, usage: Usage) -> Any:
+    """The text, or the object parsed from it; a refusal carries what it cost."""
+    if schema is None:
+        return text
+    try:
+        return parse_json(text, schema)
+    except LLMUnavailable as exc:
+        exc.usage = usage
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +514,7 @@ OUTPUT_CAP_BYTES = 1 << 20
 _BINARIES = {"claude-code": "claude", "codex": "codex"}
 
 
-class CLIModel:
+class CLIModel(_Metered):
     def __init__(
         self,
         backend: str,
@@ -281,9 +528,9 @@ class CLIModel:
         self._model = model
         self._timeout_s = timeout_s
 
-    async def complete(
-        self, prompt: str, *, system: str | None = None, schema: dict[str, Any] | None = None
-    ) -> Any:
+    async def _complete(
+        self, prompt: str, system: str | None, schema: dict[str, Any] | None
+    ) -> tuple[Any, Usage]:
         with tempfile.TemporaryDirectory(prefix="vidtheque-llm-") as tmp:
             if self._backend == "claude-code":
                 return await self._claude(Path(tmp), prompt, system, schema)
@@ -291,7 +538,7 @@ class CLIModel:
 
     async def _claude(
         self, tmp: Path, prompt: str, system: str | None, schema: dict[str, Any] | None
-    ) -> Any:
+    ) -> tuple[Any, Usage]:
         argv = [self._binary, "-p", "--output-format", "json", "--no-session-persistence"]
         argv += ["--strict-mcp-config"]
         if self._model:
@@ -307,20 +554,25 @@ class CLIModel:
         except ValueError:
             logger.warning("llm: claude printed something other than its JSON result")
             raise LLMUnavailable("upstream_unavailable") from None
+        usage = claude_usage(result)
         if not isinstance(result, dict) or result.get("is_error"):
             logger.warning("llm: claude reported an error")
-            raise LLMUnavailable("upstream_unavailable")
+            raise LLMUnavailable("upstream_unavailable", usage=usage)
         if schema is not None and result.get("structured_output") is not None:
-            return validated(result["structured_output"], schema)
+            try:
+                return validated(result["structured_output"], schema), usage
+            except LLMUnavailable as exc:
+                exc.usage = usage
+                raise
         text = result.get("result")
         if not isinstance(text, str):
             logger.warning("llm: claude's result has no text")
-            raise LLMUnavailable("upstream_unavailable")
-        return text if schema is None else parse_json(text, schema)
+            raise LLMUnavailable("upstream_unavailable", usage=usage)
+        return _answer(text, schema, usage), usage
 
     async def _codex(
         self, tmp: Path, prompt: str, system: str | None, schema: dict[str, Any] | None
-    ) -> Any:
+    ) -> tuple[Any, Usage]:
         last = tmp / "last-message.txt"
         argv = [self._binary, "exec", "--sandbox", "read-only", "--skip-git-repo-check"]
         argv += ["--ephemeral", "--color", "never", "-C", str(tmp), "-o", str(last)]
@@ -344,7 +596,31 @@ class CLIModel:
             logger.warning("llm: codex's answer is over %d bytes", OUTPUT_CAP_BYTES)
             raise LLMUnavailable("invalid_output")
         decoded = answer.decode(errors="replace")
-        return decoded if schema is None else parse_json(decoded, schema)
+        # `codex exec -o` reports no usage: tokens and cost stay unknown.
+        return _answer(decoded, schema, Usage()), Usage()
+
+
+def claude_usage(result: Any) -> Usage:
+    """claude's JSON result: Anthropic's `usage` and its own `total_cost_usd`."""
+    if not isinstance(result, dict):
+        return Usage()
+    usage = result.get("usage")
+    usage = usage if isinstance(usage, dict) else {}
+    parts = [
+        _int(usage.get(k))
+        for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+    ]
+    cost = result.get("total_cost_usd")
+    return Usage(
+        prompt=sum(p for p in parts if p is not None) if parts[0] is not None else None,
+        completion=_int(usage.get("output_tokens")),
+        cached=parts[2],
+        cost_micro_usd=(
+            round(cost * 1_000_000)
+            if isinstance(cost, (int, float)) and not isinstance(cost, bool) and cost >= 0
+            else None
+        ),
+    )
 
 
 async def _run(argv: list[str], stdin: bytes, cwd: Path, timeout_s: float) -> bytes:
@@ -428,6 +704,7 @@ class LLMSettings:
     model: str | None = None
     timeout_s: float = 300.0
     reasoning_effort: str | None = None
+    price: Price | None = None  # VIDTHEQUE_LLM_PRICE, over the table in config.LLM_PRICES
 
     @classmethod
     def from_env(cls) -> "LLMSettings":
@@ -443,6 +720,7 @@ class LLMSettings:
             model=_env("VIDTHEQUE_LLM_MODEL"),
             timeout_s=_float_env("VIDTHEQUE_LLM_TIMEOUT_S", 300.0),
             reasoning_effort=_env("VIDTHEQUE_LLM_REASONING_EFFORT"),
+            price=parse_price(raw) if (raw := _env("VIDTHEQUE_LLM_PRICE")) else None,
         )
 
 
@@ -451,13 +729,21 @@ def is_configured(settings: LLMSettings) -> bool:
     return settings.backend != "api" or bool(settings.base_url and settings.model)
 
 
-def build_model(settings: LLMSettings, client: httpx.AsyncClient) -> Model | None:
-    """The configured backend, or None when `api` lacks a URL or a model."""
+def build_model(settings: LLMSettings, client: httpx.AsyncClient, db: Any) -> Model | None:
+    """The configured backend, or None when `api` lacks a URL or a model.
+
+    `db` takes every call's `llm_calls` row; it is required so that no caller
+    can build a model whose calls go unrecorded.
+    """
     if not is_configured(settings):
         return None
+    model: APIModel | CLIModel
     if settings.backend == "api":
         chat = ChatClient(
             client, settings.base_url, settings.api_key, request_cap_s=settings.timeout_s
         )
-        return APIModel(chat, settings.model, settings.timeout_s, settings.reasoning_effort)
-    return CLIModel(settings.backend, settings.model, settings.timeout_s)
+        model = APIModel(chat, settings.model, settings.timeout_s, settings.reasoning_effort)
+    else:
+        model = CLIModel(settings.backend, settings.model, settings.timeout_s)
+    model.meter = Meter(db, settings.backend, settings.model, price_for(settings))
+    return model

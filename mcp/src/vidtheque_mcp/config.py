@@ -24,6 +24,15 @@ WRITE_SCOPE = "vidtheque:write"
 OFFLINE_SCOPE = "offline_access"
 
 
+# List prices for the companion model, USD per million tokens, keyed by the
+# `api` model id; VIDTHEQUE_LLM_PRICE overrides them (companion.md §4.1).
+# zai-glm-5-3: https://docs.mistral.ai/models/zai-glm-5-3, checked 2026-10-03.
+LLM_PRICES: dict[str, dict[str, float]] = {
+    "zai-glm-5-3": {"input": 1.4, "cached_input": 0.14, "output": 4.4},
+    "zai-glm-5": {"input": 1.4, "cached_input": 0.14, "output": 4.4},
+}
+
+
 class ConfigError(RuntimeError):
     """A configuration mistake that must fail at boot, not at request time."""
 
