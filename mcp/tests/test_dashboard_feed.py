@@ -240,6 +240,15 @@ def test_verdict_refusals(client: TestClient, video_id: str, code: str) -> None:
     assert refused.json()["error"] == code
 
 
+def test_a_video_with_no_verdict_is_still_named(client: TestClient) -> None:
+    """A search hit can open a video no verdict scored yet; the page still draws it."""
+    body = client.get(f"{API}/verdicts/noverdict01", headers=BEARER).json()
+    assert body["video"] == {
+        "video_id": "noverdict01", "title": "plain", "channel": None,
+        "duration_s": 60.0, "published_at": None,
+    }
+
+
 # -------------------------------------------------------------------- signals
 
 
@@ -258,6 +267,20 @@ def test_signals_record_with_the_callers_client(client: TestClient, tmp_path: Pa
     assert _rows(tmp_path, "SELECT kind, offset_s, client FROM signals ORDER BY id") == [
         ("watch", 842.5, "app"),
         ("thumb_up", None, "web"),
+    ]
+
+
+def test_a_search_from_the_feed_is_an_mcp_search_signal(client: TestClient, tmp_path: Path) -> None:
+    """Same kind as the tool's (companion.md §2.3); `client` says it came from the feed."""
+    done = client.post(f"{API}/signals", json={"kind": "mcp_search", "text": " eval harness "}, headers=BEARER)
+    assert done.status_code == 200, done.text
+    assert done.json()["kind"] == "mcp_search" and done.json()["video_id"] is None
+    sign_in(client)
+    web = client.post(f"{API}/signals", json={"kind": "mcp_search", "text": "x" * 600}, headers=SAME_ORIGIN)
+    assert web.status_code == 200, web.text
+    assert _rows(tmp_path, "SELECT kind, video_id, text, client FROM signals ORDER BY id") == [
+        ("mcp_search", None, "eval harness", "app"),
+        ("mcp_search", None, "x" * 500, "web"),
     ]
 
 
@@ -313,6 +336,10 @@ def test_feedback_refuses_a_malformed_body(
         ({"kind": "watch", "video_id": "kCc8FmEb1nY", "offset_s": True}, 400),
         ({"kind": "watch", "video_id": "kCc8FmEb1nY", "offset_s": 10**400}, 400),
         ({"kind": "mcp_search", "video_id": "kCc8FmEb1nY"}, 400),
+        ({"kind": "mcp_search", "text": "evals", "video_id": "kCc8FmEb1nY"}, 400),
+        ({"kind": "mcp_search", "text": "evals", "offset_s": 3}, 400),
+        ({"kind": "mcp_search", "text": "  "}, 400),
+        ({"kind": "mcp_read", "video_id": "kCc8FmEb1nY"}, 400),
         ({"kind": "open"}, 400),
         ({"kind": "open", "video_id": "kCc8FmEb1nY", "text": "x"}, 400),
         ({"kind": "open", "video_id": "nope0000000"}, 404),

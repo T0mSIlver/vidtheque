@@ -3661,13 +3661,19 @@ that scored it), `model` and `judged_at`. A moment is
 the tools' 2 s lead (`text.deeplink`). A moment whose cue a reindex removed is
 left out and counted in `moments_dropped` until the rerun replaces the verdict.
 `404 E_UNKNOWN_VIDEO` for a video not in the corpus, `404 E_NO_VERDICT` for
-one not judged yet.
+one not judged yet. *Amended 2026-10-04 (#127):* `E_NO_VERDICT` carries
+`video`, the row fields, beside the envelope, so a page opened from search
+draws the video it has no verdict for.
 
 ### 25.4 `POST /dashboard/api/signals`, `POST /dashboard/api/feedback`
 
 `{"kind", "video_id", "offset_s"}`, recorded through `record_signal`
 (companion.md §2.3). `kind` is one of `open`, `watch`, `ask_claude`,
-`thumb_up`, `thumb_down`, `mute`, `dismiss`; the MCP kinds are refused.
+`thumb_up`, `thumb_down`, `mute`, `dismiss`; `mcp_read` is refused.
+*Amended 2026-10-04 (#127):* `{"kind": "mcp_search", "text"}` records a query
+run on the search page (§25.9). `text` is required and non-blank, trimmed and
+kept to 500 characters; `video_id` and `offset_s` are refused with it, and
+`text` is refused with every other kind. It answers `video_id: null`.
 `offset_s` (seconds, 0–172,800) is required for `watch` and refused for every
 other kind. Answers `{"recorded": true, "signal_id", "kind", "video_id"}`;
 `404 E_UNKNOWN_VIDEO` records nothing. *Amended 2026-10-03 (0016):* `thumb_up`,
@@ -3751,3 +3757,25 @@ that answered; `per_verdict_micro_usd` divides the cost of every `verdict` and
 20 purposes, most expensive first; `top` is the 10 most expensive priced calls,
 `video_id` and `title` `null` when the call had no video or it was deleted.
 No parameters; every query reads at most the last 31 days.
+
+### 25.9 The search page (2026-10-04, #127)
+
+`/feed/search` on the web and the app's search screen run the search the MCP
+`search` tool runs (companion.md §6). They read `GET /dashboard/api/search`,
+the facade's handler under the caller's clamp (§14.2), with `q` and `offset`
+only: every content channel (`content_type=all`) and no filter, so nothing on
+the page narrows what the tool would answer. Hits keep the tool's
+relevance-first order; the page pages on `pagination.has_more`, at
+`pagination.offset + pagination.limit`, and prints `notes` as the server sent
+them. An empty page says `data_status` when it is set.
+
+Each hit adds one field for this page, `published_at` (the video's, unix
+seconds or `null`), read once for the page's videos. A row is the hit's
+channel, title and date, then the moment: `clock(match_start)` and the
+snippet, or *visual match, no text hit* when `text` is `null` (§14.2). The
+moment opens the hit's `link` under §14's `youtu.be`/numeric-`t` rule and
+sends `watch` at `match_start`; the title opens the video screen, which draws
+a video with no verdict from `E_NO_VERDICT`'s `video` (§25.3).
+
+A query submitted from the page sends one `mcp_search` signal (§25.4).
+Paging, a reload or a shared `?q=` link sends none.

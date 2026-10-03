@@ -48,6 +48,8 @@ HISTORY_PAGE_MAX = 100
 
 MAX_BODY_BYTES = 16_384
 APP_KINDS = ("open", "watch", "ask_claude", "thumb_up", "thumb_down", "mute", "dismiss")
+# The feed's search page logs its queries as the tool does (companion.md §2.3).
+SEARCH_KIND = "mcp_search"
 VIDEO_ID_CHARS = 64
 # Two days: past any video's length, so a moment's offset is never refused.
 OFFSET_S_MAX = 172_800.0
@@ -61,26 +63,32 @@ ID_MAX = 2**63 - 1
 
 
 class _Refused(Exception):
-    def __init__(self, code: str, message: str, next_hint: str) -> None:
+    def __init__(
+        self, code: str, message: str, next_hint: str, echo: dict[str, Any] | None = None
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.next_hint = next_hint
+        # What the route resolved, beside the envelope (`E_NO_VERDICT`'s video).
+        self.echo = echo or {}
 
 
 def _json(payload: dict[str, Any]) -> JSONResponse:
     return JSONResponse(payload, headers=NO_STORE)
 
 
-def _refusal(code: str, message: str, next_hint: str) -> JSONResponse:
+def _refusal(
+    code: str, message: str, next_hint: str, echo: dict[str, Any] | None = None
+) -> JSONResponse:
     return JSONResponse(
-        {"error": code, "message": message, "next": next_hint},
+        {"error": code, "message": message, "next": next_hint, **(echo or {})},
         status_code=HTTP_STATUS.get(code, 500),
         headers=NO_STORE,
     )
 
 
 def _from(exc: _Refused | profile_store.ProfileRefused) -> JSONResponse:
-    return _refusal(exc.code, str(exc), exc.next_hint)
+    return _refusal(exc.code, str(exc), exc.next_hint, getattr(exc, "echo", None))
 
 
 async def _actor(request: Request) -> str:
@@ -281,6 +289,8 @@ async def verdict(request: Request) -> Response:
                 "E_NO_VERDICT",
                 f'Video "{video_id}" has no verdict yet.',
                 "a verdict is written after the video is indexed; check again once its job is done.",
+                # So a page opened from search can still draw the video.
+                {"video": _video_json(video)},
             )
         # A reindex can break a stored receipt before the rerun lands; show
         # only the moments whose cue still holds the offset.
@@ -327,14 +337,18 @@ async def signal(request: Request) -> Response:
         return refusal
     try:
         body = await _body(request)
-        _only(body, ("kind", "video_id", "offset_s"))
+        _only(body, ("kind", "video_id", "offset_s", "text"))
         kind = body.get("kind")
+        if kind == SEARCH_KIND:
+            return await _search_signal(request, body)
         if kind not in APP_KINDS:
             raise _Refused(
                 "E_BAD_PARAM",
                 f"kind={kind!r} is not a feed signal.",
-                f"use one of {', '.join(APP_KINDS)}.",
+                f"use one of {', '.join((*APP_KINDS, SEARCH_KIND))}.",
             )
+        if body.get("text") is not None:
+            raise _Refused("E_BAD_PARAM", "only mcp_search takes text.", f"drop text for {kind}.")
         video_id = body.get("video_id")
         if not isinstance(video_id, str) or not 0 < len(video_id) <= VIDEO_ID_CHARS:
             raise _Refused("E_BAD_PARAM", "video_id is required.", "pass the video_id the feed listed.")
@@ -350,7 +364,7 @@ async def signal(request: Request) -> Response:
     except _Refused as refused:
         return _from(refused)
 
-    client = "app" if await _actor(request) == "app" else "web"
+    client = await _client(request)
 
     def write(conn: sqlite3.Connection) -> int | None:
         # A thumb or mute sent here sets the video's state, as `feedback` does.
@@ -366,6 +380,27 @@ async def signal(request: Request) -> Response:
     if signal_id is None:
         return _from(_unknown_video(video_id))
     return _json({"recorded": True, "signal_id": signal_id, "kind": kind, "video_id": video_id})
+
+
+async def _search_signal(request: Request, body: dict[str, Any]) -> Response:
+    """A query run on the feed's search page: the same kind, and strength, as the tool's."""
+    text = body.get("text")
+    if not isinstance(text, str) or not text.strip():
+        raise _Refused("E_BAD_PARAM", "mcp_search needs text.", "pass the query you searched for.")
+    for field in ("video_id", "offset_s"):
+        if body.get(field) is not None:
+            raise _Refused("E_BAD_PARAM", f"mcp_search takes no {field}.", f"drop {field}.")
+    client = await _client(request)
+    signal_id = await request.app.state.assembled.db.write(
+        lambda c: signals_store.record_signal(
+            c, SEARCH_KIND, text=text, client=client, owner_id=OWNER_ID
+        )
+    )
+    return _json({"recorded": True, "signal_id": signal_id, "kind": SEARCH_KIND, "video_id": None})
+
+
+async def _client(request: Request) -> str:
+    return "app" if await _actor(request) == "app" else "web"
 
 
 async def feedback(request: Request) -> Response:
@@ -389,7 +424,7 @@ async def feedback(request: Request) -> Response:
     except _Refused as refused:
         return _from(refused)
 
-    client = "app" if await _actor(request) == "app" else "web"
+    client = await _client(request)
     done = await request.app.state.assembled.db.write(
         lambda conn: feedback_store.set_state(conn, video_id, state, client=client, owner_id=OWNER_ID)
     )

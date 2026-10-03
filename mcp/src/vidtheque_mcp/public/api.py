@@ -232,7 +232,7 @@ def _int_param(request: Request, name: str, low: int, high: int, default: int) -
 
 
 def _decorate_hit(
-    deps: Deps, hit: dict[str, Any], shown: str | None = None
+    deps: Deps, hit: dict[str, Any], shown: str | None = None, published_at: int | None = None
 ) -> dict[str, Any]:
     """The fields the facade adds. `shown` is the keyframe on screen at a spoken hit."""
     row = dict(hit)
@@ -245,6 +245,7 @@ def _decorate_hit(
     # width of its own (which is the point: the clamp is the server's).
     row["thumb_large"] = thumb_url(deps, frame, LIGHTBOX_WIDTH)
     row["text"] = humanize.snippet(hit.get("text"), hit.get("source"))
+    row["published_at"] = published_at
     return row
 
 
@@ -288,6 +289,19 @@ def _frames_on_screen(
         for r in rows
         if r["ord"] is not None
     }
+
+
+def _published(conn: sqlite3.Connection, hits: list[dict[str, Any]]) -> dict[str, int | None]:
+    """Each hit's video's `published_at`, one read for the page (the search clamp bounds it)."""
+    ids = sorted({str(hit["video_id"]) for hit in hits if hit.get("video_id")})
+    if not ids:
+        return {}
+    rows = conn.execute(
+        "SELECT public_id, published_at FROM videos"
+        " WHERE public_id IN (SELECT value FROM json_each(?))",
+        (json.dumps(ids),),
+    ).fetchall()
+    return {str(r["public_id"]): r["published_at"] for r in rows}
 
 
 # ------------------------------------------------------------------ endpoints
@@ -357,13 +371,16 @@ async def search_payload(
 
     payload = result.structured_content or {}
     hits = list(payload.get("results", []))
-    shown = await deps.db.read(lambda c: _frames_on_screen(c, hits))
+    shown, published = await deps.db.read(
+        lambda c: (_frames_on_screen(c, hits), _published(c, hits))
+    )
     return (
         {
             "query": params.get("q") or "",
             "content_type": content_type,
             "results": [
-                _decorate_hit(deps, hit, shown.get(index)) for index, hit in enumerate(hits)
+                _decorate_hit(deps, hit, shown.get(index), published.get(str(hit.get("video_id"))))
+                for index, hit in enumerate(hits)
             ],
             "pagination": payload.get("pagination", {}),
             "leg_counts": payload.get("leg_counts", {}),

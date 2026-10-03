@@ -86,6 +86,7 @@ SEARCH_HIT_KEYS = {
     "frame_id",
     "link",
     "match_start",
+    "published_at",
     "source",
     "text",
     "thumb",
@@ -727,6 +728,8 @@ def test_the_facade_search_hit_still_carries_every_field_the_page_reads(
     for hit in payload["results"]:
         missing = SEARCH_HIT_KEYS - set(hit)
         assert not missing, f"the search page reads these and the facade dropped them: {missing}"
+    # The feed's search page dates each hit by its video's publication.
+    assert all(isinstance(hit["published_at"], int) for hit in payload["results"])
 
 
 def test_the_table_and_the_facade_are_two_contracts_and_two_paths(
