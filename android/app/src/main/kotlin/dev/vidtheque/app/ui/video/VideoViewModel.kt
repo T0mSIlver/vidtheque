@@ -31,6 +31,8 @@ data class VideoUi(
     val verdict: Verdict? = null,
     val error: String? = null,
     val sent: Map<String, Sent> = emptyMap(),
+    /** The kind tapped last, so the Undo bar follows the newest tap. */
+    val latest: String? = null,
 )
 
 /** Every tap here is a signal the nightly update reads (companion.md §2.3). */
@@ -85,6 +87,7 @@ class VideoViewModel @AssistedInject constructor(
             null, Sent.Failed -> {
                 OPPOSITE[kind]?.let { if (_ui.value.sent[it] == Sent.Waiting) undo(it) }
                 mark(kind, Sent.Waiting)
+                _ui.update { it.copy(latest = kind) }
                 // Atomic: a coroutine cancelled before it starts skips its finally, and
                 // that would lose a tap made just before leaving.
                 waiting[kind] = viewModelScope.launch(start = CoroutineStart.ATOMIC) {

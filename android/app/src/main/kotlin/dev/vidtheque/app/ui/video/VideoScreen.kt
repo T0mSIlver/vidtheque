@@ -88,7 +88,7 @@ fun VideoScreen(key: VideoKey, onBack: () -> Unit, still: Still, card: Lift = { 
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     // The undo window, on screen: Undo takes the signal back before it is sent.
-    val waiting = ui.sent.entries.firstOrNull { it.value == Sent.Waiting }?.key
+    val waiting = ui.latest?.takeIf { ui.sent[it] == Sent.Waiting } ?: ui.sent.entries.lastOrNull { it.value == Sent.Waiting }?.key
     LaunchedEffect(waiting) {
         val kind = waiting ?: return@LaunchedEffect
         val said = SIGNALS.first { it.kind == kind }.done
