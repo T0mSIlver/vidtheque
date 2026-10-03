@@ -1,18 +1,13 @@
 package dev.vidtheque.app.ui
 
-import androidx.lifecycle.viewModelScope
 import dev.vidtheque.app.auth.Instance
 import dev.vidtheque.app.data.Api
-import dev.vidtheque.app.ui.video.Sent
-import dev.vidtheque.app.ui.video.UNDO_MS
 import dev.vidtheque.app.ui.video.VideoViewModel
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
-import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.setMain
@@ -23,27 +18,33 @@ import mockwebserver3.RecordedRequest
 import okhttp3.OkHttpClient
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-// The server cannot take a signal back, so the undo window is the app's alone: these
-// pin that an undone tap never reaches the server and a pending one survives leaving.
+// A thumb or mute is a state the server stores (companion.md §2.3): these pin that
+// the screen starts from it, a second tap sends `none`, and a refusal puts it back.
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 class VideoViewModelTest {
     private val server = MockWebServer()
     private val main = StandardTestDispatcher()
     private val test = TestScope(main)
+    private var refuse = false
 
     @Before
     fun setUp() {
         Dispatchers.setMain(main)
         server.dispatcher = object : Dispatcher() {
-            override fun dispatch(request: RecordedRequest) =
-                if (request.method == "POST") MockResponse(body = """{"recorded":true}""") else MockResponse(code = 404, body = """{"error":"E_NO_VERDICT","message":"Not judged yet."}""")
+            override fun dispatch(request: RecordedRequest) = when {
+                request.url.encodedPath.endsWith("/feedback") && refuse -> MockResponse(code = 500)
+                request.method == "POST" -> MockResponse(body = "{}")
+                else -> MockResponse(
+                    body = """{"video":{"video_id":"vid","title":"t"},"score":2,"feedback":"muted"}""",
+                )
+            }
         }
         server.start()
     }
@@ -54,41 +55,49 @@ class VideoViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun model() = VideoViewModel(Api(OkHttpClient(), Instance(server.url("/").toString().trimEnd('/'))), "vid").also {
+    /** Runs the main dispatcher until [done] holds; the HTTP calls finish on OkHttp's threads. */
+    private fun settle(done: () -> Boolean) {
+        val until = System.currentTimeMillis() + 5_000
+        while (!done() && System.currentTimeMillis() < until) {
+            test.runCurrent()
+            Thread.sleep(10)
+        }
         test.runCurrent()
-        server.takeRequest(5, TimeUnit.SECONDS) // the verdict GET
     }
 
-    private fun signal(): String? = server.takeRequest(2, TimeUnit.SECONDS)?.body?.utf8()
+    private fun model() = VideoViewModel(Api(OkHttpClient(), Instance(server.url("/").toString().trimEnd('/'))), "vid").also { m ->
+        settle { m.ui.value.verdict != null }
+    }
+
+    /** The bodies POSTed to /feedback, in order, skipping the screen's `open` signal. */
+    private fun sent(): List<String> = generateSequence { server.takeRequest(200, TimeUnit.MILLISECONDS) }
+        .filter { it.url.encodedPath.endsWith("/feedback") }
+        .map { it.body!!.utf8() }
+        .toList()
 
     @Test
-    fun aTapUndoneInTheWindowSendsNothing() {
+    fun theScreenShowsTheStoredStateAndASecondTapTakesItBack() {
         val model = model()
-        model.toggle("mute")
-        test.advanceTimeBy(UNDO_MS / 2)
-        model.toggle("mute")
-        test.advanceTimeBy(UNDO_MS * 2)
-        test.runCurrent()
-        assertNull(signal())
-        assertNull(model.ui.value.sent["mute"])
+        assertEquals("muted", model.ui.value.feedback)
+        model.tap("muted")
+        settle { !model.ui.value.saving }
+        assertEquals("none", model.ui.value.feedback)
+        model.tap("up")
+        settle { !model.ui.value.saving }
+        assertEquals("up", model.ui.value.feedback)
+        val bodies = sent()
+        assertEquals(2, bodies.size)
+        assertTrue(bodies[0].contains("\"state\":\"none\""))
+        assertTrue(bodies[1].contains("\"state\":\"up\""))
     }
 
     @Test
-    fun aTapIsSentOnceTheWindowCloses() {
+    fun aRefusedTapPutsTheStoredStateBack() {
         val model = model()
-        model.toggle("thumb_up")
-        assertEquals(Sent.Waiting, model.ui.value.sent["thumb_up"])
-        test.advanceTimeBy(UNDO_MS + 1)
-        test.runCurrent()
-        assertEquals(true, signal()?.contains("\"thumb_up\""))
-    }
-
-    @Test
-    fun leavingTheScreenSendsAWaitingTap() {
-        val model = model()
-        model.toggle("thumb_down")
-        model.viewModelScope.cancel()
-        test.runCurrent()
-        assertEquals(true, signal()?.contains("\"thumb_down\""))
+        refuse = true
+        model.tap("down")
+        settle { !model.ui.value.saving }
+        assertEquals("muted", model.ui.value.feedback)
+        assertTrue(model.ui.value.failed)
     }
 }
