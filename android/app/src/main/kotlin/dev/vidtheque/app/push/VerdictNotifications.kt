@@ -10,7 +10,7 @@ import android.net.Uri
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.graphics.drawable.toBitmap
-import coil3.ImageLoader
+import coil3.SingletonImageLoader
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.request.allowHardware
@@ -75,7 +75,7 @@ object VerdictNotifications {
 
     /** The video's still beside the text; a slow fetch leaves it out rather than holding the push. */
     private suspend fun still(context: Context, videoId: String): Bitmap? = withTimeoutOrNull(8_000) {
-        val result = ImageLoader(context).execute(ImageRequest.Builder(context).data(thumbnail(videoId)).allowHardware(false).build())
+        val result = SingletonImageLoader.get(context).execute(ImageRequest.Builder(context).data(thumbnail(videoId)).allowHardware(false).build())
         (result as? SuccessResult)?.image?.toBitmap()
     }
 }

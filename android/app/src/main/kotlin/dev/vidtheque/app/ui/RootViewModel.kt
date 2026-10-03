@@ -6,6 +6,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.vidtheque.app.auth.Session
 import dev.vidtheque.app.push.Push
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 @HiltViewModel
@@ -18,7 +19,8 @@ class RootViewModel @Inject constructor(private val session: Session, private va
     fun signOut() {
         // Forget this phone first: the call needs the session it is about to end.
         viewModelScope.launch {
-            runCatching { push.disable() }
+            // Bounded: an unreachable instance must not hold the sign-out.
+            withTimeoutOrNull(5_000) { runCatching { push.disable() } }
             session.signOut()
         }
     }
