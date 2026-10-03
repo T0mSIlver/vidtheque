@@ -43,6 +43,7 @@ class FeedViewModel @Inject constructor(private val api: Api) : ViewModel() {
     val ui: StateFlow<FeedUi> = _ui.asStateFlow()
     private var paging: Job? = null
     private var typing: Job? = null
+    private var faceting: Job? = null
 
     init {
         refresh()
@@ -50,6 +51,8 @@ class FeedViewModel @Inject constructor(private val api: Api) : ViewModel() {
 
     fun refresh() {
         paging?.cancel()
+        // A pending search would only read the same page again.
+        typing?.cancel()
         _ui.update { it.copy(refreshing = true, error = null) }
         val filters = _ui.value.filters
         paging = viewModelScope.launch {
@@ -68,7 +71,8 @@ class FeedViewModel @Inject constructor(private val api: Api) : ViewModel() {
             _ui.update { it.copy(refreshing = false) }
         }
         // What the filters offer does not depend on them, so it is read beside the page.
-        viewModelScope.launch {
+        faceting?.cancel()
+        faceting = viewModelScope.launch {
             try {
                 val facets = api.facets()
                 _ui.update { it.copy(facets = facets) }
@@ -108,6 +112,7 @@ class FeedViewModel @Inject constructor(private val api: Api) : ViewModel() {
     fun clear() {
         paging?.cancel()
         typing?.cancel()
+        faceting?.cancel()
         _ui.value = FeedUi()
     }
 
