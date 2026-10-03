@@ -396,8 +396,6 @@ class CorpusReads:
     ledger: sqlite3.Row
     channels: list[sqlite3.Row]
     tags: list[sqlite3.Row]
-    jobs_by_state: dict[str, int]
-    health: dict[str, int]
     storage: dict[str, int] | None
 
 
@@ -414,10 +412,6 @@ async def corpus_reads(request: Request, *, redact: bool) -> CorpusReads:
     # One past the cap, so the payload says `has_more` instead of a total.
     channels = await db.read(lambda c: queries.channel_rollup(c, pool, CHANNEL_CAP + 1))
     tags = await db.read(lambda c: queries.tag_rollup(c, pool, TAG_CAP + 1))
-    jobs_by_state = await db.read(jobs_store.job_state_counts)
-    health = await db.read(
-        lambda c: jobs_store.job_health(c, int(time.time()) - FAILED_WINDOW_S)
-    )
     # The one read the projection skips rather than redacts: a byte total of
     # the operator's disk is not a fact about the corpus, and not asking is
     # cheaper and more honest than asking and not printing (§2.4).
@@ -436,8 +430,6 @@ async def corpus_reads(request: Request, *, redact: bool) -> CorpusReads:
         ledger=ledger,
         channels=channels,
         tags=tags,
-        jobs_by_state=jobs_by_state,
-        health=health,
         storage=storage,
     )
 
@@ -1194,7 +1186,11 @@ JOB_STATES = ("all", "active", "failed", "done")
 # `follow_check` is a `jobs.kind` since migration 0006, so it is a filter here
 # the day it is a kind: a job the queue can hold and this view cannot select
 # for is a job an operator triages by reading past it.
-JOB_KINDS = ("all", "index", "reindex", "delete", "follow_check")
+JOB_KINDS = ("videos", "all", "index", "reindex", "delete", "follow_check")
+# The default: every kind but `follow_check`, whose rows would fill the first
+# screen and are listed on each follow's own page (dashboard.md §24.2). `all`
+# still means all.
+JOB_KIND_DEFAULT = "videos"
 JOB_ORDERS = ("newest", "priority", "wall_clock")
 
 # 2 s while anything is `queued|running`, stopped when nothing is (§5.4). Not
@@ -1330,7 +1326,9 @@ def job_event(row: sqlite3.Row, *, redact: bool = False) -> dict[str, Any]:
     }
 
 
-def job_contents(card: dict[str, Any], row: sqlite3.Row | None) -> dict[str, Any]:
+def job_contents(
+    card: dict[str, Any], row: sqlite3.Row | None, follow: str | None = None
+) -> dict[str, Any]:
     """The line that says what a job holds, from its own items.
 
     A jobs table whose rows print only `job_uid` is a list of opaque handles
@@ -1348,6 +1346,11 @@ def job_contents(card: dict[str, Any], row: sqlite3.Row | None) -> dict[str, Any
     so with the count it does have rather than borrowing the id as a name.
     """
     n_items = int(card["n_items"])
+    # A check's one item is a channel URL that never resolves to a video, so
+    # "none fetched yet" would be wrong for a finished one (§24.2).
+    if card["kind"] == "follow_check" and follow:
+        verb = "checked" if card["state"] == "done" else "check of"
+        return {"title": None, "more": 0, "channel": None, "note": f"{verb} {follow}"}
     if row is None or not row["first_title"]:
         return {
             "title": None,
@@ -1391,6 +1394,7 @@ class JobsReads:
     has_more: bool = False
     now: int = 0
     live: bool = False
+    by_state: dict[str, int] = field(default_factory=dict)
 
 
 async def jobs_reads(request: Request) -> JobsReads:
@@ -1412,7 +1416,7 @@ async def jobs_reads(request: Request) -> JobsReads:
     params = request.query_params
 
     state = _choice(params.get("state"), JOB_STATES, "all")
-    kind = _choice(params.get("kind"), JOB_KINDS, "all")
+    kind = _choice(params.get("kind"), JOB_KINDS, JOB_KIND_DEFAULT)
     order = _choice(params.get("order"), JOB_ORDERS, "newest")
     raw_code = str(params.get("error_code") or "").strip()
     error_code = raw_code[:ERROR_CODE_CHARS]
@@ -1455,7 +1459,7 @@ async def jobs_reads(request: Request) -> JobsReads:
         )
 
     redact = redacted(request)
-    cards, has_more, now = await job_page(
+    cards, has_more, now, by_state = await job_page(
         db,
         state,
         limit,
@@ -1485,6 +1489,7 @@ async def jobs_reads(request: Request) -> JobsReads:
         has_more=has_more,
         now=now,
         live=any(card["live"] for card in cards),
+        by_state=by_state,
     )
 
 
@@ -1495,49 +1500,65 @@ async def job_page(
     offset: int,
     redact: bool,
     error_code: str = "",
-    kind: str = "all",
+    kind: str = JOB_KIND_DEFAULT,
     degraded_only: bool = False,
     order: str = "newest",
-) -> tuple[list[dict[str, Any]], bool, int]:
+) -> tuple[list[dict[str, Any]], bool, int, dict[str, int]]:
     """Two reads for the whole page, whatever the row count (§6.3).
 
     The second is grouped over the ids the first returned — never a probe per
     row, which is the shape `test_the_jobs_pages_do_not_fan_out_per_row`
     measures.
     """
-    rows = await db.read(
-        lambda c: jobs_store.list_jobs(
+    only = None if kind in ("all", "videos") else kind
+    exclude = "follow_check" if kind == "videos" else None
+
+    def listing(c: sqlite3.Connection) -> tuple[list[sqlite3.Row], dict[str, int]]:
+        # The counts by state under the same kind, in the listing's connection:
+        # the tick stays on two reads (§5.4).
+        rows = jobs_store.list_jobs(
             c,
             state,
             limit + 1,
             offset,
             error_code=error_code or None,
-            kind=None if kind == "all" else kind,
+            kind=only,
+            exclude_kind=exclude,
             degraded_only=degraded_only,
             order=order,
         )
-    )
+        return rows, jobs_store.job_state_counts(c, kind=only, exclude_kind=exclude)
+
+    rows, by_state = await db.read(listing)
     has_more = len(rows) > limit
     rows = rows[:limit]
     internal = [int(row["id"]) for row in rows]
     public = [str(row["public_id"]) for row in rows]
 
-    def row_facts(c: sqlite3.Connection) -> tuple[dict[int, int], dict[str, sqlite3.Row]]:
-        # Two grouped statements about one set of ids, in one connection. The
+    def row_facts(
+        c: sqlite3.Connection,
+    ) -> tuple[dict[int, int], dict[str, sqlite3.Row], dict[str, str]]:
+        # Grouped statements about one set of ids, in one connection. The
         # alternative — a read each — costs the tick a checkout for a fact that
         # is answered off the same rows.
-        return jobs_store.degraded_counts(c, internal), queries.job_contents(c, public)
+        return (
+            jobs_store.degraded_counts(c, internal),
+            queries.job_contents(c, public),
+            queries.follow_titles(c, public),
+        )
 
-    degraded, contents = await db.read(row_facts)
+    degraded, contents, follows = await db.read(row_facts)
     now = int(time.time())
     cards = []
     for row in rows:
         card = job_card(
             row, now, degraded=degraded.get(int(row["id"]), 0), redact=redact
         )
-        card["contents"] = job_contents(card, contents.get(card["job_id"]))
+        card["contents"] = job_contents(
+            card, contents.get(card["job_id"]), follows.get(card["job_id"])
+        )
         cards.append(card)
-    return cards, has_more, now
+    return cards, has_more, now, by_state
 
 
 async def job_detail_reads(db: Any, job_id: str, redact: bool) -> dict[str, Any] | None:
@@ -1570,15 +1591,18 @@ async def job_detail_reads(db: Any, job_id: str, redact: bool) -> dict[str, Any]
     )
 
     items = [job_item(item, now, redact=redact) for item in item_rows]
-    # The item the stage table is about. It has to have a video: `video_stages`
-    # is keyed on one, and an item that never resolved to a video (a bad URL, a
-    # bot-check on the fetch) has no stages to show — seven `absent` rows under
-    # a heading with no name is a panel pretending to have an answer.
-    resolved = [i for i in item_rows if i["video_id"] is not None]
-    focus = next((i for i in resolved if str(i["state"]) == "running"), None)
-    if focus is None:
-        finished = [i for i in resolved if i["finished_at"] is not None]
-        focus = max(finished, key=lambda i: int(i["finished_at"])) if finished else None
+    # The item the stage table explains: the latest that failed or finished
+    # degraded (§24.2). A clean item's stages are its video page's. It has to
+    # have a video: `video_stages` is keyed on one, and an item that never
+    # resolved (a bad URL, a bot-check on the fetch) has no stages to show.
+    degraded_seqs = {int(entry["seq"]) for entry in degraded_rows}
+    troubled = [
+        i
+        for i in item_rows
+        if i["video_id"] is not None
+        and (str(i["state"]) == "failed" or int(i["seq"]) in degraded_seqs)
+    ]
+    focus = max(troubled, key=lambda i: int(i["finished_at"] or 0)) if troubled else None
     stages: dict[str, sqlite3.Row] = {}
     if focus is not None:
         video_id = int(focus["video_id"])
@@ -1604,7 +1628,7 @@ async def job_detail_reads(db: Any, job_id: str, redact: bool) -> dict[str, Any]
         "degraded": degraded,
         "events": [job_event(event, redact=redact) for event in events],
         "focus": None if focus is None else job_item(focus, now, redact=redact),
-        "stages": focus_stages(stages),
+        "stages": focus_stages(stages) if focus is not None else [],
         # The projection this war story was assembled under. The page gated
         # "message not published" on it; a payload without it leaves a client
         # unable to tell a job that failed silently from one whose message this
