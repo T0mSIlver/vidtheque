@@ -3,7 +3,6 @@ name: android
 on:
   push:
     branches: [main]
-    tags: ["android-v*"]
     paths:
       - "android/**"
       - ".github/workflows/android.yml"
@@ -57,24 +56,19 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: screenshot-diffs
-          path: android/app/build/outputs/roborazzi/
+          if-no-files-found: ignore
+          path: |
+            android/app/screenshots/*_compare.png
+            android/app/build/outputs/roborazzi/
 
       - uses: actions/upload-artifact@v7
         with:
           name: vidtheque-apk
           path: android/app/build/outputs/apk/release/*.apk
 
-      - name: Attach the APK to the release
-        if: startsWith(github.ref, 'refs/tags/android-v')
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          cp app/build/outputs/apk/release/app-release.apk "vidtheque-${GITHUB_REF_NAME#android-v}.apk"
-          gh release create "$GITHUB_REF_NAME" --title "Android ${GITHUB_REF_NAME#android-v}" --notes "" \
-            "vidtheque-${GITHUB_REF_NAME#android-v}.apk" || gh release upload "$GITHUB_REF_NAME" --clobber "vidtheque-${GITHUB_REF_NAME#android-v}.apk"
 
-  # The hosted runners have KVM, this repo's dev box does not: the real-device
-  # check runs here. Maestro drives the APK the build job signed.
+  # Hosted runners have KVM, so every PR gets a real-device check: Maestro
+  # drives the APK the build job signed.
   emulator:
     name: emulator flows
     needs: build
