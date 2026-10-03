@@ -3645,6 +3645,40 @@ with `has_more: true`: the band's tail past the ceiling is not paged.
 reached 2 only once rescored without the negative entries (companion.md
 §3.2), which the feed shows as outside your profile.
 
+*Amended 2026-10-04 (#146, #128):* four optional parameters narrow and sort
+the band, and the payload echoes them (`null` when absent):
+
+- `q` — a plain substring of the title or the channel name, not semantic
+  search (that is #127). Case folds for ASCII letters only (SQLite `LIKE`);
+  `%` and `_` match themselves. Cut to 100 characters; empty means no filter.
+- `channel` — one channel, its whole name, any ASCII case.
+- `entry` — a profile entry id: the verdicts whose `matches` name it, retired
+  or not. `entry=other` is the verdicts that match no *live* entry: scored
+  before 0014, or only on entries retired since. A non-integer is
+  `400 E_BAD_PARAM`.
+- `order` — `newest` (default) or `oldest`. Undated videos come last in both;
+  `video_id` breaks ties the same way, so offset pages stay stable.
+
+`skipped.count` counts under the same `q`, `channel` and `entry`, so
+"skipped (n)" answers the search too. A substring cannot use an index, so the
+filters scan the owner's verdicts (one per judged video); no migration.
+
+`GET /dashboard/api/feed/facets?band=top|skipped` lists what the filters offer
+for the band:
+
+```json
+{"band": "top",
+ "channels": [{"name": "Andrej Karpathy", "count": 4}],
+ "entries": [{"entry_id": 15, "text": "Evals and benchmarks", "direction": "up", "count": 9}],
+ "other": 57, "capped": false}
+```
+
+`channels` are the 100 busiest, most verdicts first. `entries` are the live
+entries at least one verdict matched, most verdicts first; a retired entry is
+left out, because the profile has moved on and its verdicts fall under
+`other`. Counts cover the band's 5,000 newest verdicts; `capped: true` means
+the band holds more.
+
 `matches` are the profile entries the verdict hit, at most four, strongest
 first (companion.md §3.1): `direction` is `up` for an entry of positive weight
 and `down` for a negative one, `strength` 2 central to the video and 1 coming

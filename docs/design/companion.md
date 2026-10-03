@@ -348,6 +348,10 @@ Two surfaces, each answering one question. Nothing appears on both.
   Three screens and nothing else:
   - **Feed**: verdicts, newest first, scores 2–3 on top, 0–1 collapsed into
     "skipped (n)". A row is the channel, title, score, reason and duration.
+    *Amended 2026-10-04 (#146, #128):* a search on title and channel, a
+    channel filter, a profile-entry filter and newest/oldest order narrow it
+    (dashboard.md §25.2). Plain text, not semantic search, which is its own
+    page (#127).
   - **Video**: summary, moments (each a `youtu.be/ID?t=` link), thumbs up and
     down, mute, **Ask Claude**.
   - **Profile**: entries, history with revert, **Ask Claude to build my
@@ -395,7 +399,7 @@ unregistered is deleted from `devices`.
 
 **Endpoints**: under the existing owner-only `/dashboard/api/*`, behind the
 existing credential order (bearer or session) and write guard, so no new
-prefix and no new guard: `feed`, `verdicts/{video_id}`, `signals` (POST),
+prefix and no new guard: `feed`, `feed/facets`, `verdicts/{video_id}`, `signals` (POST),
 `feedback` (POST, 0016), `profile` (GET, POST ops, POST revert), `devices` (POST, DELETE).
 `dashboard.md` gets their contract.
 

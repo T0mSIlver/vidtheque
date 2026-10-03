@@ -208,6 +208,7 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
             # The feed's endpoints (§25). Owner routes, so they live and die
             # with the write side: a read-only projection has no feed.
             Route(f"{ROOT}/api/feed", guarded(feed.feed), methods=["GET"]),
+            Route(f"{ROOT}/api/feed/facets", guarded(feed.feed_facets), methods=["GET"]),
             Route(
                 f"{ROOT}/api/verdicts/{{video_id}}",
                 guarded(feed.verdict),

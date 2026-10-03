@@ -1,6 +1,6 @@
 """The feed's endpoints — companion.md §6, contract in dashboard.md §25.
 
-`feed`, `verdicts/{video_id}`, `signals`, `feedback`, `profile`,
+`feed`, `feed/facets`, `verdicts/{video_id}`, `signals`, `feedback`, `profile`,
 `profile/revert` and `devices`, for the web feed (#90) and the Android app (#91). They are owner
 routes: registered with the write side, so a read-only projection and
 `VIDTHEQUE_AUTH=none` 404 them, reads behind the read gate and writes behind
@@ -42,6 +42,22 @@ SKIPPED_COUNT_CAP = 1000
 TITLE_CHARS = 200
 # `top` is what the feed shows; `skipped` is the list behind "skipped (n)".
 BANDS = {"top": (2, 3), "skipped": (0, 1)}
+# Undated videos come last in either order; the id keeps offset pages stable.
+ORDERS = {
+    "newest": "v.published_at IS NULL, v.published_at DESC, d.video_id DESC",
+    "oldest": "v.published_at IS NULL, v.published_at ASC, d.video_id ASC",
+}
+QUERY_CHARS = 100
+# `entry=other`: verdicts that hit no live entry, scored before 0014 or on retired entries only.
+OTHER = "other"
+_LIVE_MATCH = (
+    "SELECT 1 FROM json_each(d.matches) m JOIN profile_entries e"
+    " ON e.id = json_extract(m.value, '$.entry_id')"
+    f" WHERE e.owner_id = {OWNER_ID} AND e.retired_at IS NULL"
+)
+# Facets count over the band's newest verdicts only, and list the busiest channels.
+FACET_SCAN = 5000
+FACET_CHANNELS = 100
 
 HISTORY_PAGE = 20
 HISTORY_PAGE_MAX = 100
@@ -209,36 +225,76 @@ def _video_json(row: sqlite3.Row) -> dict[str, Any]:
 # --------------------------------------------------------------------- feed
 
 
+def _band(request: Request) -> str:
+    band = request.query_params.get("band", "top")
+    if band not in BANDS:
+        raise _Refused("E_BAD_PARAM", f"band={band!r} is not a feed band.", "use band=top or band=skipped.")
+    return band
+
+
+def _text_param(request: Request, name: str) -> str | None:
+    return request.query_params.get(name, "").strip()[:QUERY_CHARS] or None
+
+
+def _filters(request: Request) -> tuple[list[str], list[Any], dict[str, Any]]:
+    """The feed's WHERE terms and binds for `q`, `channel` and `entry`, and the filters as echoed."""
+    where = ["v.owner_id = ?"]
+    binds: list[Any] = [OWNER_ID]
+    q = _text_param(request, "q")
+    if q is not None:
+        # A plain substring of the title or the channel name; LIKE folds ASCII case only.
+        pattern = "%" + re.sub(r"([\\%_])", r"\\\1", q) + "%"
+        where.append("(v.title LIKE ? ESCAPE '\\' OR v.channel_name LIKE ? ESCAPE '\\')")
+        binds += [pattern, pattern]
+    channel = _text_param(request, "channel")
+    if channel is not None:
+        where.append("v.channel_lc = lower(?)")
+        binds.append(channel)
+    raw = request.query_params.get("entry")
+    entry: int | str | None = None
+    if raw == OTHER:
+        entry = OTHER
+        where.append(f"NOT EXISTS ({_LIVE_MATCH})")
+    elif raw is not None:
+        if _INTEGER.fullmatch(raw.strip()) is None or not 0 <= int(raw) <= ID_MAX:
+            raise _Refused("E_BAD_PARAM", f"entry={raw!r} is not an entry id.", "pass entry=<id> or entry=other.")
+        entry = int(raw)
+        where.append("EXISTS (SELECT 1 FROM json_each(d.matches) m WHERE json_extract(m.value, '$.entry_id') = ?)")
+        binds.append(entry)
+    return where, binds, {"q": q, "channel": channel, "entry": entry}
+
+
 async def feed(request: Request) -> Response:
-    """`GET /dashboard/api/feed` — verdicts on the newest videos first, one score band per page."""
+    """`GET /dashboard/api/feed` — verdicts by publication date, one score band per page,
+    narrowed by text, channel or profile entry."""
     try:
-        band = request.query_params.get("band", "top")
-        if band not in BANDS:
-            raise _Refused("E_BAD_PARAM", f"band={band!r} is not a feed band.", "use band=top or band=skipped.")
+        band = _band(request)
+        where, binds, echoed = _filters(request)
+        order = request.query_params.get("order", "newest")
+        if order not in ORDERS:
+            raise _Refused("E_BAD_PARAM", f"order={order!r} is not a feed order.", "use order=newest or order=oldest.")
         limit = _int_param(request, "limit", 1, FEED_PAGE_MAX, FEED_PAGE)
         offset = _int_param(request, "offset", 0, OFFSET_MAX, 0)
     except _Refused as refused:
         return _from(refused)
     low, high = BANDS[band]
+    matched = " AND ".join(where)
 
     def read(conn: sqlite3.Connection) -> tuple[list[sqlite3.Row], list[Any], int]:
         rows = list(
             conn.execute(
                 "SELECT v.public_id, v.title, v.channel_name, v.duration_s, v.published_at,"
                 " d.score, d.reason, d.explored, d.matches, d.created_at FROM verdicts d"
-                " JOIN videos v ON v.id = d.video_id"
-                " WHERE v.owner_id = ? AND d.score BETWEEN ? AND ?"
-                # By when the video came out, not when it was judged: a backfill
-                # judges old videos today. Undated videos last; the id keeps pages stable.
-                " ORDER BY v.published_at IS NULL, v.published_at DESC, d.video_id DESC"
-                " LIMIT ? OFFSET ?",
-                (OWNER_ID, low, high, limit + 1, offset),
+                f" JOIN videos v ON v.id = d.video_id WHERE {matched} AND d.score BETWEEN ? AND ?"
+                f" ORDER BY {ORDERS[order]} LIMIT ? OFFSET ?",
+                (*binds, low, high, limit + 1, offset),
             )
         )
+        # "skipped (n)" counts under the same filters, so it answers the search too.
         skipped = conn.execute(
             "SELECT COUNT(*) FROM (SELECT 1 FROM verdicts d JOIN videos v ON v.id = d.video_id"
-            " WHERE v.owner_id = ? AND d.score <= 1 LIMIT ?)",
-            (OWNER_ID, SKIPPED_COUNT_CAP + 1),
+            f" WHERE {matched} AND d.score <= 1 LIMIT ?)",
+            (*binds, SKIPPED_COUNT_CAP + 1),
         ).fetchone()[0]
         return rows, verdicts_store.matches_json(conn, rows[:limit]), int(skipped)
 
@@ -249,7 +305,8 @@ async def feed(request: Request) -> Response:
     return _json(
         {
             "band": band,
-            "order": "newest",
+            "order": order,
+            **echoed,
             "items": [
                 {
                     **_video_json(row),
@@ -273,6 +330,55 @@ async def feed(request: Request) -> Response:
             },
         }
     )
+
+
+async def feed_facets(request: Request) -> Response:
+    """`GET /dashboard/api/feed/facets` — the channels and live profile entries the
+    feed's filters offer for one band, with how many verdicts each holds."""
+    try:
+        band = _band(request)
+    except _Refused as refused:
+        return _from(refused)
+    low, high = BANDS[band]
+    # The band's newest verdicts only: the count is bounded whatever the corpus.
+    scan = (
+        "WITH d AS (SELECT d.video_id, d.matches, v.channel_name, v.owner_id FROM verdicts d"
+        " JOIN videos v ON v.id = d.video_id WHERE v.owner_id = ? AND d.score BETWEEN ? AND ?"
+        " ORDER BY v.published_at IS NULL, v.published_at DESC, d.video_id DESC LIMIT ?) "
+    )
+    scan_binds = (OWNER_ID, low, high, FACET_SCAN + 1)
+
+    def read(conn: sqlite3.Connection) -> dict[str, Any]:
+        scanned = conn.execute(scan + "SELECT COUNT(*) FROM d", scan_binds).fetchone()[0]
+        channels = conn.execute(
+            scan + "SELECT channel_name, COUNT(*) AS n FROM d WHERE channel_name IS NOT NULL"
+            " GROUP BY lower(channel_name) ORDER BY n DESC, lower(channel_name) LIMIT ?",
+            (*scan_binds, FACET_CHANNELS),
+        ).fetchall()
+        entries = conn.execute(
+            scan + "SELECT e.id, e.text, e.weight, COUNT(DISTINCT d.video_id) AS n FROM d"
+            " JOIN json_each(d.matches) m"
+            " JOIN profile_entries e ON e.id = json_extract(m.value, '$.entry_id')"
+            " WHERE e.owner_id = d.owner_id AND e.retired_at IS NULL"
+            " GROUP BY e.id ORDER BY n DESC, abs(e.weight) DESC, e.id",
+            scan_binds,
+        ).fetchall()
+        other = conn.execute(
+            scan + f"SELECT COUNT(*) FROM d WHERE NOT EXISTS ({_LIVE_MATCH})",
+            scan_binds,
+        ).fetchone()[0]
+        return {
+            "band": band,
+            "channels": [{"name": r[0], "count": int(r[1])} for r in channels],
+            "entries": [
+                {"entry_id": int(r[0]), "text": r[1], "direction": "up" if r[2] > 0 else "down", "count": int(r[3])}
+                for r in entries
+            ],
+            "other": int(other),
+            "capped": scanned > FACET_SCAN,
+        }
+
+    return _json(await request.app.state.assembled.db.read(read))
 
 
 async def verdict(request: Request) -> Response:
