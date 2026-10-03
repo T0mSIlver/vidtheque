@@ -11,6 +11,7 @@ import { FrameOverlay, type Shot } from "@/components/dashboard/FrameOverlay";
 import controls from "@/components/dashboard/kit/controls.module.css";
 import { FilterBand } from "@/components/dashboard/kit/FilterBand";
 import { notice, ReadFailure, RefusalNotice } from "@/components/dashboard/kit/notice";
+import { Fold } from "@/components/dashboard/kit/Fold";
 import { Notes, Pager } from "@/components/dashboard/kit/table";
 import { Body, DashLink, PageHead, Sep, ui, Unbroken } from "@/components/dashboard/kit/ui";
 import { Moment, momentKey } from "./Moment";
@@ -220,21 +221,25 @@ function Results({
         Results
       </h2>
 
-      {/* The counts are three units, not summands (tool-surface.md §9.2). */}
+      {/* The counts are three units, not summands (tool-surface.md §9.2). Folded
+          by default: owner inspection (§14), and on a phone the rows pushed
+          the results below the fold (§24.4). */}
       {legs.length ? (
-        <dl className={styles.legline} aria-label="Search legs">
-          {legs.map((leg) => (
-            <div className={`${styles.leg} ${leg.sub ? styles.legSub : ""}`} key={leg.key}>
-              <dt className={styles.legLabel}>
-                {leg.label} <span className={styles.legKey}>{leg.key}</span>
-              </dt>
-              <dd className={styles.legCount}>
-                {leg.count}
-                {leg.unit ? <span className={styles.legUnit}> {leg.unit}</span> : null}
-              </dd>
-            </div>
-          ))}
-        </dl>
+        <Fold label={`the ${legs.length} search legs`}>
+          <dl className={styles.legline} aria-label="Search legs">
+            {legs.map((leg) => (
+              <div className={`${styles.leg} ${leg.sub ? styles.legSub : ""}`} key={leg.key}>
+                <dt className={styles.legLabel}>
+                  {leg.label} <span className={styles.legKey}>{leg.key}</span>
+                </dt>
+                <dd className={styles.legCount}>
+                  {leg.count}
+                  {leg.unit ? <span className={styles.legUnit}> {leg.unit}</span> : null}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </Fold>
       ) : null}
 
       <Notes notes={page.notes} className={styles.notes} label="Search notes" />
