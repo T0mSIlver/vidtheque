@@ -10,13 +10,15 @@ import dev.vidtheque.app.data.Api
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 @AndroidEntryPoint
 class VerdictMessagingService : FirebaseMessagingService() {
     @Inject lateinit var push: Push
 
-    // FCM calls this on its own worker thread with time to finish; blocking here is the contract.
+    // FCM runs these on its own executor, off the main thread (EnhancedIntentService),
+    // and expects the work done before they return.
     override fun onMessageReceived(message: RemoteMessage) {
         runBlocking { VerdictNotifications.show(this@VerdictMessagingService, message.data) }
     }
@@ -37,7 +39,8 @@ class DismissReceiver : BroadcastReceiver() {
         val pending = goAsync()
         scope.launch {
             try {
-                runCatching { api.signal("dismiss", videoId) }
+                // A broadcast gets about 10 s; a lost dismiss costs one data point.
+                withTimeoutOrNull(8_000) { runCatching { api.signal("dismiss", videoId) } }
             } finally {
                 pending.finish()
             }
