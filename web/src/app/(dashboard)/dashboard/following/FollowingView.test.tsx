@@ -199,13 +199,12 @@ describe("the follows table", () => {
   // The head strip was a server-rendered line: it did not appear a beat after
   // the title, and it did not vanish when something below it went wrong. The em
   // dash is this surface's own word for a number nobody has.
-  it("keeps the follows fact on the head strip when the read does not land", async () => {
-    await mount({
-      list: { status: 500, body: { error: "E_INTERNAL", message: "the instance fell over." } },
-    });
-    await screen.findByText(/the instance fell over/);
+  // The count is the band's first figure; the head repeated it (§24.5).
+  it("keeps the follow count off the head", async () => {
+    await mount();
+    await loaded();
     const head = screen.getAllByRole("heading", { name: "Following" })[0].closest("div");
-    expect(head).toHaveTextContent("follows —");
+    expect(head).toHaveTextContent(/^Following$/);
   });
 
   // `views._follow_row`'s own fallback: a follow made from a URL with nothing

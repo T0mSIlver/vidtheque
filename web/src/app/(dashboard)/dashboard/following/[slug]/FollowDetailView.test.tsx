@@ -210,6 +210,28 @@ describe("one follow's page", () => {
       );
     });
 
+    // The decision counts stay out; the rows, whose reasons repeat, fold
+    // behind them on page one and open on any later page (§24.5).
+    it("folds the rows behind the counts on the first page only", async () => {
+      const first = await mount();
+      await screen.findByRole("heading", { name: "What it passed over" });
+      expect(screen.getByRole("button", { name: /^Show the \d+ candidates$/ })).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+      first.unmount();
+
+      await mount({
+        detail: {
+          body: { ...FOLLOW_DETAIL, pagination: { limit: 25, offset: 25, has_more: true } },
+        },
+        search: "offset=25",
+      });
+      expect(
+        await screen.findByRole("button", { name: /^Hide the \d+ candidates$/ }),
+      ).toHaveAttribute("aria-expanded", "true");
+    });
+
     it("renders the clamp the server moved", async () => {
       await mount({
         detail: { body: { ...FOLLOW_DETAIL, notes: ["limit=100000 → 100"] } },
