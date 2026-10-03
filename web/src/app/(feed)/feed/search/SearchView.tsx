@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { receiptOf } from "@/app/(dashboard)/dashboard/search/parts";
 import { FeedFailure } from "@/components/feed/parts";
 import feed from "@/components/feed/feed.module.css";
@@ -73,14 +73,30 @@ export function SearchView() {
 
 function Results({ q }: { q: string }) {
   const [offsets, setOffsets] = useState([0]);
+  // The tool repeats a query's notes on every page; they print once, above the hits.
+  const [notes, setNotes] = useState<string[]>([]);
+  const onNotes = useCallback(
+    (more: string[]) =>
+      setNotes((now) => {
+        const fresh = more.filter((note) => !now.includes(note));
+        return fresh.length ? [...now, ...fresh] : now;
+      }),
+    [],
+  );
   return (
     <ol className={feed.rows} aria-label="Results">
+      {notes.map((note) => (
+        <li key={note} className={feed.rowNote}>
+          {note}
+        </li>
+      ))}
       {offsets.map((offset, index) => (
         <ResultPage
           key={offset}
           q={q}
           offset={offset}
           first={index === 0}
+          onNotes={onNotes}
           onMore={index === offsets.length - 1 ? (next) => setOffsets([...offsets, next]) : null}
         />
       ))}
@@ -88,23 +104,30 @@ function Results({ q }: { q: string }) {
   );
 }
 
+const readPage = (q: string, offset: number) => (signal: AbortSignal) =>
+  dashboard.search(
+    new URLSearchParams({ q, offset: String(offset), max_text_chars: TEXT_CHARS }),
+    signal,
+  );
+
 function ResultPage({
   q,
   offset,
   first,
+  onNotes,
   onMore,
 }: {
   q: string;
   offset: number;
   first: boolean;
+  onNotes: (notes: string[]) => void;
   onMore: ((next: number) => void) | null;
 }) {
-  const page = useResource<SearchResponse>(`feed-search:${offset}:${q}`, (signal) =>
-    dashboard.search(
-      new URLSearchParams({ q, offset: String(offset), max_text_chars: TEXT_CHARS }),
-      signal,
-    ),
-  );
+  const page = useResource<SearchResponse>(`feed-search:${offset}:${q}`, readPage(q, offset));
+  const notes = page.data?.notes;
+  useEffect(() => {
+    if (notes) onNotes(notes);
+  }, [notes, onNotes]);
   if (!page.data) {
     if (page.error) {
       return (
@@ -115,17 +138,15 @@ function ResultPage({
     }
     return <li className={feed.pending} aria-busy="true" />;
   }
-  const { results, notes, pagination, data_status } = page.data;
+  const { results, pagination, data_status } = page.data;
   return (
     <>
-      {notes.map((note) => (
-        <li key={note} className={feed.rowNote}>
-          {note}
-        </li>
-      ))}
       {first && results.length === 0 ? (
         <li className={feed.rowNote}>
-          {data_status ? "Nothing is indexed yet." : "Nothing matched. Try other words."}
+          {/* Set on every empty page; only `empty` means nothing is indexed. */}
+          {data_status === "empty"
+            ? "Nothing is indexed yet."
+            : "Nothing matched. Try other words."}
         </li>
       ) : null}
       {results.map((hit, index) => (

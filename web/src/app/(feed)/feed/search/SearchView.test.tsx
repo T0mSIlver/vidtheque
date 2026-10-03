@@ -4,7 +4,11 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { FeedShell } from "@/components/feed/FeedShell";
 import { mountDashboard, type Route } from "@/test/dashboard/harness";
-import { NO_MATCH_SEARCH, OWNER_SEARCH } from "@/test/dashboard/search-fixtures";
+import {
+  EMPTY_CORPUS_SEARCH,
+  NO_MATCH_SEARCH,
+  OWNER_SEARCH,
+} from "@/test/dashboard/search-fixtures";
 import { SearchView } from "./SearchView";
 
 vi.mock("next/navigation", async () => (await import("@/test/next")).navigationModule);
@@ -92,11 +96,40 @@ describe("feed SearchView", () => {
     expect(signals(view)).toEqual([]);
   });
 
-  it("says nothing is indexed apart from nothing matched, and prints the notes", async () => {
+  it("says nothing is indexed only for an empty corpus, and prints the notes", async () => {
     await mount("?q=zzzz", { body: NO_MATCH_SEARCH });
-    expect(await screen.findByText("Nothing is indexed yet.")).toBeInTheDocument();
+    expect(await screen.findByText("Nothing matched. Try other words.")).toBeInTheDocument();
     expect(
       screen.getByText(/semantic \(nearest-neighbour\) legs were not queried/),
     ).toBeInTheDocument();
+  });
+
+  it("says nothing is indexed on an empty corpus", async () => {
+    await mount("?q=zzzz", { body: EMPTY_CORPUS_SEARCH });
+    expect(await screen.findByText("Nothing is indexed yet.")).toBeInTheDocument();
+  });
+
+  it("prints a note the tool repeats on every page once", async () => {
+    const noted = { ...DATED, notes: ["one note"] };
+    const view = await mount("?q=cache", [
+      {
+        body: {
+          ...noted,
+          results: DATED.results.slice(0, 2),
+          pagination: { limit: 2, offset: 0, has_more: true },
+        },
+      },
+      {
+        body: {
+          ...noted,
+          results: DATED.results.slice(2),
+          pagination: { limit: 2, offset: 2, has_more: false },
+        },
+      },
+    ]);
+    await userEvent.click(await screen.findByRole("button", { name: "More" }));
+    await waitFor(() => expect(asked(view)).toHaveLength(2));
+    await screen.findAllByText(/kv cache size/);
+    expect(screen.getAllByText("one note")).toHaveLength(1);
   });
 });
