@@ -218,10 +218,13 @@ def validated(value: Any, schema: dict[str, Any]) -> dict[str, Any]:
 
 
 class APIModel:
-    def __init__(self, chat: ChatClient, model: str, timeout_s: float) -> None:
+    def __init__(
+        self, chat: ChatClient, model: str, timeout_s: float, reasoning_effort: str | None = None
+    ) -> None:
         self._chat = chat
         self._model = model
         self._timeout_s = timeout_s
+        self._reasoning_effort = reasoning_effort
 
     async def complete(
         self, prompt: str, *, system: str | None = None, schema: dict[str, Any] | None = None
@@ -229,6 +232,8 @@ class APIModel:
         messages = [{"role": "system", "content": system}] if system else []
         messages.append({"role": "user", "content": prompt})
         body: dict[str, Any] = {"model": self._model, "messages": messages}
+        if self._reasoning_effort:
+            body["reasoning_effort"] = self._reasoning_effort
         if schema is not None:
             # Not `strict`: OpenAI's strict mode rejects schemas without
             # `additionalProperties: false`, and the answer is validated here anyway.
@@ -241,6 +246,10 @@ class APIModel:
             text = payload["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError):
             text = None
+        if isinstance(text, list):
+            # Reasoning models on Mistral's API answer in chunks; the thinking is not the answer.
+            parts = [c.get("text") for c in text if isinstance(c, dict) and c.get("type") == "text"]
+            text = "".join(t for t in parts if isinstance(t, str)) or None
         if not isinstance(text, str):
             logger.warning("llm: upstream answered without message content")
             raise LLMUnavailable("upstream_unavailable")
@@ -418,6 +427,7 @@ class LLMSettings:
     api_key: str | None = None
     model: str | None = None
     timeout_s: float = 300.0
+    reasoning_effort: str | None = None
 
     @classmethod
     def from_env(cls) -> "LLMSettings":
@@ -432,6 +442,7 @@ class LLMSettings:
             api_key=_env("VIDTHEQUE_LLM_API_KEY"),
             model=_env("VIDTHEQUE_LLM_MODEL"),
             timeout_s=_float_env("VIDTHEQUE_LLM_TIMEOUT_S", 300.0),
+            reasoning_effort=_env("VIDTHEQUE_LLM_REASONING_EFFORT"),
         )
 
 
@@ -443,5 +454,5 @@ def build_model(settings: LLMSettings, client: httpx.AsyncClient) -> Model | Non
         chat = ChatClient(
             client, settings.base_url, settings.api_key, request_cap_s=settings.timeout_s
         )
-        return APIModel(chat, settings.model, settings.timeout_s)
+        return APIModel(chat, settings.model, settings.timeout_s, settings.reasoning_effort)
     return CLIModel(settings.backend, settings.model, settings.timeout_s)

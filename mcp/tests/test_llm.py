@@ -234,14 +234,16 @@ async def test_codex_prose_where_json_was_asked_is_invalid(
 # ---------------------------------------------------------------- api
 
 
-def _api(answer: Any, seen: list[dict[str, Any]], status: int = 200) -> APIModel:
+def _api(
+    answer: Any, seen: list[dict[str, Any]], status: int = 200, effort: str | None = None
+) -> APIModel:
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append({"url": str(request.url), "auth": request.headers.get("authorization"),
                      "body": json.loads(request.content)})
         return httpx.Response(status, json=answer)
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    return APIModel(ChatClient(client, "http://llm.test/v1/", "k-1"), "mistral-small", 30)
+    return APIModel(ChatClient(client, "http://llm.test/v1/", "k-1"), "mistral-small", 30, effort)
 
 
 def _completion(content: str | None) -> dict[str, Any]:
@@ -270,6 +272,7 @@ async def test_api_text_answer(tmp_path: Path) -> None:
         {"role": "user", "content": "the transcript"},
     ]
     assert "response_format" not in seen[0]["body"]
+    assert "reasoning_effort" not in seen[0]["body"]
 
 
 async def test_api_structured_answer_asks_for_the_schema() -> None:
@@ -281,6 +284,19 @@ async def test_api_structured_answer_asks_for_the_schema() -> None:
     assert fmt["type"] == "json_schema"
     assert fmt["json_schema"]["schema"] == VERDICT
 
+
+
+async def test_api_reasoning_model_sends_the_effort_and_skips_the_thinking() -> None:
+    seen: list[dict[str, Any]] = []
+    answer = _completion(None)
+    answer["choices"][0]["message"]["content"] = [
+        {"type": "thinking", "thinking": [{"type": "text", "text": "{\"watch\": true}"}]},
+        {"type": "text", "text": '{"watch": false, "why": "rehash"}'},
+    ]
+    model = _api(answer, seen, effort="high")
+
+    assert await model.complete("t", schema=VERDICT) == {"watch": False, "why": "rehash"}
+    assert seen[0]["body"]["reasoning_effort"] == "high"
 
 @pytest.mark.parametrize(
     ("answer", "status", "reason"),
