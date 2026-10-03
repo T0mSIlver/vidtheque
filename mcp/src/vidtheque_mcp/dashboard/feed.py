@@ -202,7 +202,7 @@ def _video_json(row: sqlite3.Row) -> dict[str, Any]:
 
 
 async def feed(request: Request) -> Response:
-    """`GET /dashboard/api/feed` — verdicts newest first, one score band per page."""
+    """`GET /dashboard/api/feed` — verdicts on the newest videos first, one score band per page."""
     try:
         band = request.query_params.get("band", "top")
         if band not in BANDS:
@@ -220,7 +220,10 @@ async def feed(request: Request) -> Response:
                 " d.score, d.reason, d.explored, d.matches, d.created_at FROM verdicts d"
                 " JOIN videos v ON v.id = d.video_id"
                 " WHERE v.owner_id = ? AND d.score BETWEEN ? AND ?"
-                " ORDER BY d.created_at DESC, d.video_id DESC LIMIT ? OFFSET ?",
+                # By when the video came out, not when it was judged: a backfill
+                # judges old videos today. Undated videos last; the id keeps pages stable.
+                " ORDER BY v.published_at IS NULL, v.published_at DESC, d.video_id DESC"
+                " LIMIT ? OFFSET ?",
                 (OWNER_ID, low, high, limit + 1, offset),
             )
         )

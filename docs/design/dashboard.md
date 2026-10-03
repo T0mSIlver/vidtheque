@@ -3614,7 +3614,11 @@ the `{error, message, next}` envelope; every response is `no-store`.
 
 ### 25.2 `GET /dashboard/api/feed`
 
-Verdicts, newest first (`order: "newest"`), one band per page.
+Verdicts, newest first (`order: "newest"`), one band per page. *Amended
+2026-10-03:* newest means the video's `published_at`, not when the verdict was
+written: a backfill judges old videos today, and sorting by `judged_at` put them
+on top. Videos with no `published_at` come last; `video_id` breaks ties, so
+offset pages stay stable.
 `band=top` (default) lists scores 2–3; `band=skipped` lists 0–1, the list
 behind "skipped (n)". `limit` 1–50 (default 20), `offset` 0–10,000; any other
 `band` or a non-integer is `400 E_BAD_PARAM`.
