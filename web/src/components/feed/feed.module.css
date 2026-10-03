@@ -6,11 +6,14 @@
   --col: 40rem; /* 640px — a reading column, also on a desktop */
   --tap: 2.75rem; /* 44px — the smallest thing a thumb is asked to hit */
 
+  display: flex;
+  flex-direction: column;
   min-height: 100dvh;
   background: var(--pitch);
 }
 
 .top {
+  width: 100%;
   position: sticky;
   top: 0;
   z-index: 2;
@@ -58,6 +61,8 @@
 }
 
 .main {
+  flex: 1;
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: var(--s8);
@@ -225,7 +230,7 @@
 
 .videoHead {
   position: relative;
-  padding: var(--s4) 0 0 var(--s4);
+  padding-top: var(--s4);
 }
 
 /* The corner tick: the one ornament, once on the page. */
@@ -307,12 +312,15 @@
   text-underline-offset: 3px;
 }
 
-/* The actions sit where a thumb is: the column's foot, over the page. */
+/* The actions sit where a thumb is: the screen's foot on a short page, pinned
+   over a long one. */
 .bar {
   position: sticky;
   bottom: 0;
+  margin-top: auto;
   z-index: 2;
-  margin: 0 calc(-1 * var(--s4)) calc(-1 * var(--s12));
+  margin-inline: calc(-1 * var(--s4));
+  margin-bottom: calc(-1 * var(--s12) - env(safe-area-inset-bottom));
   padding: var(--s2) var(--s4) calc(var(--s2) + env(safe-area-inset-bottom));
   background: var(--plate);
   border-top: 1px solid var(--seam2);
@@ -357,6 +365,7 @@
 
 .copy {
   composes: t-label from global;
+  white-space: nowrap;
   min-height: var(--tap);
   margin-left: auto;
   padding: 0 var(--s2);
@@ -520,7 +529,9 @@
 
 .event {
   display: grid;
-  gap: 2px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--s3);
   padding: var(--s3) 0;
 }
 
@@ -539,20 +550,6 @@
 .change {
   composes: t-machine-sm from global;
   color: var(--fg2);
-}
-
-.when {
-  composes: t-machine-sm from global;
-  margin-left: auto;
-  color: var(--fg2);
-}
-
-.eventFoot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--s3);
-  margin-top: var(--s1);
 }
 
 /* ------------------------------------------------------------ failure */

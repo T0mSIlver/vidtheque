@@ -25,8 +25,12 @@ export function FeedView() {
 
   return (
     <>
-      <h1 className={styles.label}>To watch</h1>
-      <Band band="top" />
+      <section aria-labelledby="to-watch">
+        <h1 className={styles.label} id="to-watch">
+          To watch
+        </h1>
+        <Band band="top" />
+      </section>
 
       {skipped && skipped.count > 0 ? (
         <section className={styles.skipped} aria-labelledby="skipped">
