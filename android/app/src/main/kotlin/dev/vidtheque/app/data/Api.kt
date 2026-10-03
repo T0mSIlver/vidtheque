@@ -25,15 +25,24 @@ import okhttp3.Response
 
 // The shapes of dashboard.md §25, read as the server writes them.
 
+/**
+ * A profile entry the verdict matched: `up` an entry you want more of, `down` one you
+ * want less of; strength 1 the video touches it, 2 it is central. At most 4, strongest first.
+ */
+@Serializable
+data class Match(@SerialName("entry_id") val entryId: Long, val text: String, val direction: String, val strength: Int = 1)
+
 @Serializable
 data class FeedItem(
     @SerialName("video_id") val videoId: String,
     val title: String,
     val channel: String? = null,
     @SerialName("duration_s") val durationS: Double = 0.0,
+    @SerialName("published_at") val publishedAt: Long? = null,
     val score: Int,
     val reason: String = "",
     val explored: Boolean = false,
+    val matches: List<Match> = emptyList(),
 )
 
 @Serializable
@@ -63,6 +72,7 @@ data class Verdict(
     val score: Int,
     val reason: String = "",
     val explored: Boolean = false,
+    val matches: List<Match> = emptyList(),
     val summary: String = "",
     val moments: List<Moment> = emptyList(),
     @SerialName("moments_dropped") val momentsDropped: Int = 0,
@@ -74,6 +84,7 @@ data class ProfileEntry(
     val text: String,
     val weight: Double,
     val source: String,
+    @SerialName("created_at") val createdAt: Long? = null,
     val evidence: String? = null,
 )
 

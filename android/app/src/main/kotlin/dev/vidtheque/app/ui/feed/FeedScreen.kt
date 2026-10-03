@@ -45,7 +45,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import dev.vidtheque.app.data.FeedItem
+import dev.vidtheque.app.ui.Matches
 import dev.vidtheque.app.ui.ScoreDial
+import dev.vidtheque.app.ui.dated
 import dev.vidtheque.app.ui.duration
 import dev.vidtheque.app.ui.scoreColor
 import dev.vidtheque.app.ui.scoreWord
@@ -134,7 +136,7 @@ private fun Hero(item: FeedItem, still: Still, card: Lift, onClick: () -> Unit) 
         }
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(item.title, style = MaterialTheme.typography.titleLargeEmphasized, color = MaterialTheme.colorScheme.onSurface, maxLines = 3, overflow = TextOverflow.Ellipsis)
-            Text("${item.channel.orEmpty()} · ${duration(item.durationS)}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(listOfNotNull(item.channel, item.publishedAt?.let { dated(it) }, duration(item.durationS)).joinToString(" · "), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Reason(item, Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp), lines = 3)
     }
@@ -152,7 +154,7 @@ private fun Row(item: FeedItem, still: Still, card: Lift, onClick: () -> Unit) {
         Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             still(item.videoId, Modifier.width(128.dp).aspectRatio(16f / 9f).clip(MaterialTheme.shapes.medium))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(item.channel.orEmpty(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                Text(listOfNotNull(item.channel, item.publishedAt?.let { dated(it) }).joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Verdict(item.score, onImage = false, Modifier.weight(1f))
@@ -183,8 +185,9 @@ private fun Verdict(score: Int, onImage: Boolean, modifier: Modifier = Modifier)
 
 @Composable
 private fun Reason(item: FeedItem, modifier: Modifier, lines: Int) {
-    if (item.reason.isEmpty() && !item.explored) return
+    if (item.reason.isEmpty() && !item.explored && item.matches.isEmpty()) return
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (item.matches.isNotEmpty()) Matches(item.matches, maxLines = lines - 1)
         if (item.reason.isNotEmpty()) Text(item.reason, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = lines, overflow = TextOverflow.Ellipsis)
         if (item.explored) {
             Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.tertiaryContainer) {
