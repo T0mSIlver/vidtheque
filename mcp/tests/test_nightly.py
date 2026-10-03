@@ -306,9 +306,9 @@ async def test_a_first_tap_taken_back_while_the_model_answers_is_read_the_next_n
     await tap(assembled, vid, "up", DAY - timedelta(hours=2))
 
     class TakesBack(FakeModel):
-        async def complete(self, prompt: str, *, system=None, schema=None) -> Any:
+        async def complete(self, prompt: str, **options: Any) -> Any:
             await tap(assembled, vid, "none", DAY - timedelta(minutes=1))
-            return await super().complete(prompt, system=system, schema=schema)
+            return await super().complete(prompt, **options)
 
     first = TakesBack(ops())
     assert (await nightly(assembled, first).run_once()).state == "done"

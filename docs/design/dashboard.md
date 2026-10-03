@@ -3666,7 +3666,7 @@ one not judged yet.
 `thumb_up`, `thumb_down`, `mute`, `dismiss`; the MCP kinds are refused.
 `offset_s` (seconds, 0–172,800) is required for `watch` and refused for every
 other kind. Answers `{"recorded": true, "signal_id", "kind", "video_id"}`;
-`404 E_UNKNOWN_VIDEO` records nothing. *Amended 2026-10-03 (0015):* `thumb_up`,
+`404 E_UNKNOWN_VIDEO` records nothing. *Amended 2026-10-03 (0016):* `thumb_up`,
 `thumb_down` and `mute` here also set the video's feedback state, as below.
 
 `POST /dashboard/api/feedback` takes `{"video_id", "state"}`, `state` one of

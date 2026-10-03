@@ -1,4 +1,4 @@
--- vidtheque migration 0015 — thumbs and "less like this" as a state per video
+-- vidtheque migration 0016 — thumbs and "less like this" as a state per video
 -- (companion.md §2.3).
 --
 -- Additive: one new table, nothing else touched. `state` is what the owner
