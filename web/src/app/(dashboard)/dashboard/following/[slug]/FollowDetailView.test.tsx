@@ -215,7 +215,7 @@ describe("one follow's page", () => {
     it("folds the rows behind the counts on the first page only", async () => {
       const first = await mount();
       await screen.findByRole("heading", { name: "What it passed over" });
-      expect(screen.getByRole("button", { name: /^Show the \d+ candidates$/ })).toHaveAttribute(
+      expect(screen.getByRole("button", { name: /^Show the \d+ on this page$/ })).toHaveAttribute(
         "aria-expanded",
         "false",
       );
@@ -228,7 +228,7 @@ describe("one follow's page", () => {
         search: "offset=25",
       });
       expect(
-        await screen.findByRole("button", { name: /^Hide the \d+ candidates$/ }),
+        await screen.findByRole("button", { name: /^Hide the \d+ on this page$/ }),
       ).toHaveAttribute("aria-expanded", "true");
     });
 

@@ -3559,7 +3559,7 @@ first figure, right under it.
 
 **One follow's page** keeps every panel. "What it passed over" shows its
 decision counts and the near-miss line, and folds the rows behind
-`kit/Fold` ("Show the *N* candidates"). Every `skipped_horizon` row repeated
+`kit/Fold` ("Show the *N* on this page"). Every `skipped_horizon` row repeated
 the same reason and date, and 25 of them took about 2,800 px. On a page past
 the first the rows are open, since paging is reading them. Payloads are
 unchanged.
