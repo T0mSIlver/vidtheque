@@ -572,7 +572,8 @@ def test_0011_keeps_every_verdict_and_reads_them_as_not_explored(
     )
     held = [tuple(r) for r in fresh.execute("SELECT * FROM verdicts")]
     assert migrations.migrate(fresh)[0] == 11
-    assert [tuple(r)[:-1] for r in fresh.execute("SELECT * FROM verdicts")] == held
+    # Later additive columns come after the nine 0010 wrote.
+    assert [tuple(r)[:9] for r in fresh.execute("SELECT * FROM verdicts")] == held
     assert fresh.execute("SELECT explored FROM verdicts").fetchone()[0] == 0
     with pytest.raises(sqlite3.IntegrityError):
         fresh.execute("UPDATE verdicts SET explored = 2")
@@ -595,9 +596,14 @@ def test_0012_leaves_a_populated_corpus_untouched(fresh: sqlite3.Connection, tmp
     )
     fresh.execute("INSERT INTO signals (kind, video_id) VALUES ('open', ?)", (vid,))
     tables = ("videos", "cues", "verdicts", "signals")
+    # The columns as they were: a later additive migration may append more.
+    columns = {t: [r[1] for r in fresh.execute(f"PRAGMA table_info({t})")] for t in tables}
 
     def snapshot() -> dict[str, list[tuple]]:
-        return {t: [tuple(r) for r in fresh.execute(f"SELECT * FROM {t} ORDER BY 1")] for t in tables}
+        return {
+            t: [tuple(r) for r in fresh.execute(f"SELECT {', '.join(columns[t])} FROM {t} ORDER BY 1")]
+            for t in tables
+        }
 
     held = snapshot()
     assert migrations.migrate(fresh)[0] == 12
@@ -635,3 +641,22 @@ def test_0013_adds_the_nightly_runs_and_leaves_the_profile_as_it_was(
             "INSERT INTO nightly_runs (day, state, started_at, since_at, until_at)"
             " VALUES ('2026-10-03', 'running', 2, 0, 2)"
         )
+
+
+def test_0014_keeps_every_verdict_and_reads_them_with_no_matches(
+    fresh: sqlite3.Connection, tmp_path: Path
+) -> None:
+    _migrate_up_to(fresh, 13, tmp_path / "staged")
+    vid = fresh.execute(
+        "INSERT INTO videos (source_id, url, title, duration_s, index_state)"
+        " VALUES ('kCc8FmEb1nY', 'https://youtu.be/kCc8FmEb1nY', 'GPT from scratch', 7000, 'ready')"
+    ).lastrowid
+    fresh.execute(
+        "INSERT INTO verdicts (video_id, score, reason, summary, profile_rev, model, explored)"
+        " VALUES (?, 2, 'r', 's', 4, 'm', 1)",
+        (vid,),
+    )
+    held = [tuple(r) for r in fresh.execute("SELECT * FROM verdicts")]
+    assert migrations.migrate(fresh)[0] == 14
+    assert [tuple(r)[:-1] for r in fresh.execute("SELECT * FROM verdicts")] == held
+    assert fresh.execute("SELECT matches FROM verdicts").fetchone()[0] == "[]"

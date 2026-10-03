@@ -212,11 +212,11 @@ async def feed(request: Request) -> Response:
         return _from(refused)
     low, high = BANDS[band]
 
-    def read(conn: sqlite3.Connection) -> tuple[list[sqlite3.Row], int]:
+    def read(conn: sqlite3.Connection) -> tuple[list[sqlite3.Row], list[Any], int]:
         rows = list(
             conn.execute(
                 "SELECT v.public_id, v.title, v.channel_name, v.duration_s, v.published_at,"
-                " d.score, d.reason, d.explored, d.created_at FROM verdicts d"
+                " d.score, d.reason, d.explored, d.matches, d.created_at FROM verdicts d"
                 " JOIN videos v ON v.id = d.video_id"
                 " WHERE v.owner_id = ? AND d.score BETWEEN ? AND ?"
                 " ORDER BY d.created_at DESC, d.video_id DESC LIMIT ? OFFSET ?",
@@ -228,9 +228,9 @@ async def feed(request: Request) -> Response:
             " WHERE v.owner_id = ? AND d.score <= 1 LIMIT ?)",
             (OWNER_ID, SKIPPED_COUNT_CAP + 1),
         ).fetchone()[0]
-        return rows, int(skipped)
+        return rows, verdicts_store.matches_json(conn, rows[:limit]), int(skipped)
 
-    rows, skipped = await request.app.state.assembled.db.read(read)
+    rows, matches, skipped = await request.app.state.assembled.db.read(read)
     has_more = len(rows) > limit
     # Past the offset ceiling a next page would be clamped back onto this one.
     next_offset = offset + limit if has_more and offset + limit <= OFFSET_MAX else None
@@ -244,9 +244,10 @@ async def feed(request: Request) -> Response:
                     "score": int(row["score"]),
                     "reason": row["reason"],
                     "explored": bool(row["explored"]),
+                    "matches": row_matches,
                     "judged_at": int(row["created_at"]),
                 }
-                for row in rows[:limit]
+                for row, row_matches in zip(rows[:limit], matches)
             ],
             "pagination": {
                 "limit": limit,
@@ -287,6 +288,7 @@ async def verdict(request: Request) -> Response:
             "score": int(row["score"]),
             "reason": row["reason"],
             "explored": bool(row["explored"]),
+            "matches": verdicts_store.matches_json(conn, [row])[0],
             "summary": row["summary"],
             "moments": [
                 {
