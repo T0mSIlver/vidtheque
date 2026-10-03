@@ -113,7 +113,7 @@ def _rows(tmp_path: Path, sql: str) -> list[tuple]:
 # --------------------------------------------------------------------- access
 
 
-GETS = (f"{API}/feed", f"{API}/verdicts/kCc8FmEb1nY", f"{API}/profile")
+GETS = (f"{API}/feed", f"{API}/verdicts/kCc8FmEb1nY", f"{API}/profile", f"{API}/costs")
 WRITES = (
     ("POST", f"{API}/signals"),
     ("POST", f"{API}/profile"),
