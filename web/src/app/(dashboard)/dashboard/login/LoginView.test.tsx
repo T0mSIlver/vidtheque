@@ -230,6 +230,7 @@ describe("the sign-in page", () => {
       // where that is — the same reading `_safe_next` takes.
       expect(safeNext("/dashboard/jobs?state=active")).toBe("/dashboard/jobs?state=active");
       expect(safeNext("/dashboard")).toBe("/dashboard");
+      expect(safeNext("/feed/kCc8FmEb1nY")).toBe("/feed/kCc8FmEb1nY");
       expect(safeNext("/dashboard/videos/a/../b#t")).toBe("/dashboard/videos/b#t");
       for (const away of [
         "https://evil.example/x",
@@ -242,6 +243,8 @@ describe("the sign-in page", () => {
         "/dashboard/%2e%2e/admin",
         "/dashboard.evil",
         "/dashboardx",
+        "/feedback",
+        "/feed/../admin",
         "dashboard/jobs",
         "/videos",
         "javascript:alert(1)",

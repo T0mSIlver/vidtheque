@@ -65,6 +65,10 @@ const nextConfig: NextConfig = {
         headers: [{ key: "Cache-Control", value: "no-store" }],
       },
       {
+        source: "/feed/:path*",
+        headers: [{ key: "Cache-Control", value: "no-store" }],
+      },
+      {
         // Stills are added or removed, never edited under their own name.
         source: "/landing/:path*",
         headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],

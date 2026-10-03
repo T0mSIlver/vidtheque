@@ -4,7 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, type FormEvent } from "react";
 import { Pill } from "@/components/ui/Pill";
 import { RetryIn } from "@/components/ui/RetryIn";
-import { dashboard, DashboardError, navigation, ROOT } from "@/lib/dashboard/client";
+import { dashboard, DashboardError, FEED, navigation, ROOT } from "@/lib/dashboard/client";
 import { DASH } from "@/lib/format";
 import controls from "@/components/dashboard/kit/controls.module.css";
 import { Absent, ReadFailure } from "@/components/dashboard/kit/notice";
@@ -70,8 +70,11 @@ export function LoginView() {
 
 const ORIGIN = "http://dashboard.invalid";
 
+/** The owner pages a sign-in returns to: the console and the feed (§25.7). */
+const RETURNS = [ROOT, FEED];
+
 /**
- * A path under `/dashboard` this page may send a browser to, or the overview.
+ * A path under `/dashboard` or `/feed` this page may send a browser to, or the overview.
  * The page that mints the session cookie is the worst place for an open
  * redirect, so `next` is judged after the browser's own normalisation.
  */
@@ -84,7 +87,8 @@ export function safeNext(raw: string | null | undefined): string {
     return ROOT;
   }
   if (url.origin !== ORIGIN) return ROOT;
-  if (url.pathname !== ROOT && !url.pathname.startsWith(`${ROOT}/`)) return ROOT;
+  const inside = (root: string) => url.pathname === root || url.pathname.startsWith(`${root}/`);
+  if (!RETURNS.some(inside)) return ROOT;
   return url.pathname + url.search + url.hash;
 }
 
