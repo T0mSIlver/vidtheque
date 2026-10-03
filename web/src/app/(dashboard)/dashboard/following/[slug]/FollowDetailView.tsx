@@ -8,6 +8,7 @@ import { pick } from "@/lib/dashboard/query";
 import { useResource } from "@/lib/dashboard/resource";
 import type { FollowDetail, FollowJob, SeenRow } from "@/lib/dashboard/schemas";
 import { at, count, DASH, day, duration, iso } from "@/lib/format";
+import { Fold } from "@/components/dashboard/kit/Fold";
 import { notice, ReadFailure, Refusal } from "@/components/dashboard/kit/notice";
 import { Crumbs, Notes, Pager, table, TableCount } from "@/components/dashboard/kit/table";
 import {
@@ -282,8 +283,10 @@ function PassedOver({
       <Decisions counts={data.counts} />
       <Notes notes={data.notes} />
 
+      {/* The counts above say what it decided; the rows, whose reasons repeat,
+          wait for a click, and stay open on a page past the first (§24.5). */}
       {data.seen.length ? (
-        <>
+        <Fold label={`the ${count(data.seen.length)} candidates`} open={offset > 0}>
           <TableCount shown={data.seen.length} hasMore={has_more} />
 
           <div className={table.tablewrap}>
@@ -331,7 +334,7 @@ function PassedOver({
             <em>Index anyway</em> queues that one video with this follow&rsquo;s own channels and
             tags, and expands nothing. The rule is unchanged — overruling it once is not editing it.
           </p>
-        </>
+        </Fold>
       ) : (
         <p className={ui.emptyNote}>
           Nothing has been passed over. Every candidate a check has seen was accepted, or no check

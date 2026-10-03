@@ -6,18 +6,10 @@ import { dashboard, DashboardError, ROOT } from "@/lib/dashboard/client";
 import { pick } from "@/lib/dashboard/query";
 import { useResource } from "@/lib/dashboard/resource";
 import type { FollowListRow, Following } from "@/lib/dashboard/schemas";
-import { at, count, DASH, duration, iso } from "@/lib/format";
+import { at, count, duration, iso } from "@/lib/format";
 import { Absent, Notice, ReadFailure } from "@/components/dashboard/kit/notice";
 import { Notes, Pager, table, TableCount } from "@/components/dashboard/kit/table";
-import {
-  DashLink,
-  Fact,
-  Figure,
-  PageHead,
-  Pending,
-  ui,
-  Unbroken,
-} from "@/components/dashboard/kit/ui";
+import { DashLink, Figure, PageHead, Pending, ui } from "@/components/dashboard/kit/ui";
 import { useSessionResource } from "@/components/dashboard/session";
 import { AddForm } from "./AddForm";
 import styles from "./following.module.css";
@@ -48,11 +40,8 @@ export function FollowingView() {
 
   return (
     <>
-      <PageHead title="Following">
-        <Unbroken>
-          <Fact label="follows" value={data ? count(data.totals.follows) : DASH} />
-        </Unbroken>
-      </PageHead>
+      {/* The count is the band's first figure, right under it (§24.5). */}
+      <PageHead title="Following" />
 
       {data ? (
         <Loaded data={data} onMade={following.reload} />
