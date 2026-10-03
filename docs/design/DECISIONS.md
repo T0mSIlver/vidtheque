@@ -6,6 +6,24 @@ and `research/pipeline-tooling-research.md`. Where a design doc disagrees with
 this file, this file wins; fold changes back into the docs as implementation
 touches them.
 
+## vidtheque gets a companion: verdicts, a profile, a feed and an Android app, decided by Tom, 2026-10-03
+
+vidtheque grows a triage agent of its own, the first-party consumer of the
+corpus: each new video from a followed channel gets a verdict scored against
+an interest profile, a high score becomes a push notification, and a feed on
+the web and in a native Android app shows the verdicts with an Ask Claude
+button. Positioning is unchanged: the agent still watched it.
+
+Tom's calls: the profile learns from the searches agents run over MCP and
+from what he does in the app, and the nightly update applies automatically
+with a revertible history; agents edit the profile by operation, never by
+rewrite; the app is native (Kotlin, Compose); the private instance goes on
+the internet behind the existing OAuth server; a subscription backend (the
+unmodified `claude -p` or `codex exec`) sits beside the API-key one. The
+weekly brief and talking points over time come after v1.
+
+The contract is `docs/design/companion.md`.
+
 ## The demo's remaining budgets, decided by Tom, 2026-09-20
 
 Tom's position, reviewing what still bounds an ask three days before AI

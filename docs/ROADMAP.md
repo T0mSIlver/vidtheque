@@ -13,6 +13,22 @@ and anything marked **[Tom]** is a decision before it is a ticket.
 
 ## Open
 
+### 2026-10-03: the companion — verdicts, a profile, a feed and an Android app
+
+Contract: `docs/design/companion.md`, in its §9 order. None of it is built.
+The issues in the
+[Companion v1 milestone](https://github.com/T0mSIlver/vidtheque/milestone/1)
+carry the detail; this list is their order.
+
+1. Reach: #82.
+2. Foundations, in parallel: #83 model client, #84 profile and its tool,
+   #85 signals.
+3. Verdicts: #86, then #87 novelty and exploration, then #88 nightly update.
+4. Feed on the web: #89 endpoints, then #90 screens.
+5. Android: #91 app, then #92 push.
+6. Console: #93 audit, then one PR per page.
+7. Measure: #94, once a month of verdicts exists.
+
 ### 2026-09-18: publishing — one deployment shape, generations, light releases
 
 Contract: `docs/design/publishing.md`, in its §5 order. None of it is built.
