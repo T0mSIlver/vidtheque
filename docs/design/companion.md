@@ -288,12 +288,22 @@ no logic the server does not have. Built by hosted GitHub Actions and
 installed from GitHub releases as an APK. Play Store is a later decision.
 
 **Push**: the app registers its FCM token (`devices(id, token, created_at,
-last_seen)`). When a verdict meets the threshold (default 2,
+last_seen)`). When a verdict meets the threshold (default 3,
 `VIDTHEQUE_NOTIFY_MIN_SCORE`), the server sends one notification: channel,
 score, and the reason with the best moment ("Theo · 3 · his eval setup,
 14:02–22:40"). Below the threshold, nothing is sent. Firebase is free; its
 service-account key is `VIDTHEQUE_FCM_CREDENTIALS`, and with it unset no push
-is sent.
+is sent. *Amended 2026-10-03 (Tom):* the default is 3, not 2. The first
+backfill scored 83 of 100 videos 2 or more, so 2 would ping on almost
+everything.
+
+As built (#92, `push/`): the verdict stage pushes right after it stores the
+verdict, and a failed push never fails the verdict. A verdict pushes once
+(`notified_at`), and only when its video was published in the last 3 days, so
+the backfill, which judges old videos through the same stage, stays silent.
+The message is FCM HTTP v1, data only (video id, title, channel, score,
+reason, best moment), and the app draws the notification. A token FCM calls
+unregistered is deleted from `devices`.
 
 **Endpoints**: under the existing owner-only `/dashboard/api/*`, behind the
 existing credential order (bearer or session) and write guard, so no new
