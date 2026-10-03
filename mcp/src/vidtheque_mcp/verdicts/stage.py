@@ -142,7 +142,10 @@ class VerdictStage:
             for m in answer["moments"]
         ]
 
-        def write(c: sqlite3.Connection) -> list[store.Moment]:
+        def write(c: sqlite3.Connection) -> list[store.Moment] | None:
+            # The model call is long; the video may have been deleted meanwhile.
+            if c.execute("SELECT 1 FROM videos WHERE id = ?", (video_id,)).fetchone() is None:
+                return None
             kept, dropped = store.check_receipts(c, video_id, moments)
             store.save(
                 c,
@@ -157,6 +160,8 @@ class VerdictStage:
             return dropped
 
         dropped = await db.write(write)
+        if dropped is None:
+            raise ItemSkipped("the video was deleted while it was judged.", "E_UNKNOWN_VIDEO")
         if dropped:
             await ctx.log(
                 f"dropped {len(dropped)} moment(s) that failed the receipt check: "
