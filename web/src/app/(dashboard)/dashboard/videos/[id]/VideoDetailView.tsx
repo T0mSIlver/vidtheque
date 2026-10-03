@@ -162,6 +162,7 @@ function Loaded({
 
       <Frames
         frames={frames}
+        kept={data.counts.keyframes_kept}
         search={search}
         selected={selected}
         videoId={video.video_id}

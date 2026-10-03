@@ -9,6 +9,7 @@ import { count, day, hms } from "@/lib/format";
 import controls from "@/components/dashboard/kit/controls.module.css";
 import { Notice, ReadFailure, RefusalNotice } from "@/components/dashboard/kit/notice";
 import { Notes, Pager, table, TableCount } from "@/components/dashboard/kit/table";
+import { Fold } from "@/components/dashboard/kit/Fold";
 import { Body, DashLink, PageHead, Sep, ui } from "@/components/dashboard/kit/ui";
 import { useWriteSide } from "@/components/dashboard/kit/write";
 import { Filters, Narrowing } from "./Filters";
@@ -28,10 +29,12 @@ const SORTED: Record<string, [string, "ascending" | "descending"]> = {
   indexed_at: ["indexed", "descending"],
 };
 
+// Each leg's word on the chip, and its sentence behind it (§24.3: three bare
+// letters needed the tooltip to read).
 const COVERAGE: [keyof LibraryRow["coverage"], string, string][] = [
-  ["transcript", "t", "transcript"],
-  ["ocr", "o", "on-screen text"],
-  ["frames", "f", "frame embeddings"],
+  ["transcript", "transcript", "transcript"],
+  ["ocr", "ocr", "on-screen text"],
+  ["frames", "frames", "frame embeddings"],
 ];
 
 export function VideosView() {
@@ -52,7 +55,12 @@ export function VideosView() {
         <Narrowing band={band} />
       </PageHead>
 
-      {gated ? null : <Filters band={band} />}
+      {/* On a phone the band was the whole first screen (§24.3). */}
+      {gated ? null : (
+        <Fold phone label="the filters">
+          <Filters band={band} />
+        </Fold>
+      )}
 
       {!data && told ? (
         <RefusalNotice error={error} variant="notice" id="filter-refused" />
@@ -173,7 +181,7 @@ function Row({ row, actions }: { row: LibraryRow; actions: boolean }) {
   const href = `${ROOT}/videos/${encodeURIComponent(row.video_id)}`;
   return (
     <tr>
-      <td className={styles.colShot} data-label="Frame">
+      <td className={`${styles.colShot} ${styles.wide}`} data-label="Frame">
         {row.thumb ? (
           // A signed `/frames/…` URL already sized; the optimizer would cache it
           // past its signature.
@@ -197,22 +205,24 @@ function Row({ row, actions }: { row: LibraryRow; actions: boolean }) {
         </DashLink>
         <span className={ui.rowMeta}>
           {row.channel}
-          <Sep /> <code>{row.video_id}</code>
+          <span className={styles.wide}>
+            <Sep /> <code>{row.video_id}</code>
+          </span>
         </span>
       </th>
-      <td data-label="Published">
+      <td className={styles.wide} data-label="Published">
         <time className={ui.nowrap}>{day(row.published_at)}</time>
       </td>
       {/* A runtime is a clock, the same string the detail page prints. */}
-      <td className={table.num} data-label="Duration">
+      <td className={`${table.num} ${styles.wide}`} data-label="Duration">
         {hms(row.duration_s)}
       </td>
       <td className={styles.colState} data-label="State">
         <Pill state={row.index_state} />
       </td>
-      <td data-label="Coverage">
+      <td className={styles.wide} data-label="Coverage">
         <span className={styles.coverage}>
-          {COVERAGE.map(([key, letter, label]) => {
+          {COVERAGE.map(([key, word, label]) => {
             const present = row.coverage[key];
             return (
               <span
@@ -220,14 +230,14 @@ function Row({ row, actions }: { row: LibraryRow; actions: boolean }) {
                 className={`${styles.cov} ${present ? styles.covOn : styles.covOff}`}
                 title={present ? label : `${label} — missing`}
               >
-                <span aria-hidden="true">{letter}</span>
+                <span aria-hidden="true">{word}</span>
                 <span className={ui.srOnly}>{`${label}: ${present ? "present" : "missing"}`}</span>
               </span>
             );
           })}
         </span>
       </td>
-      <td data-label="Tags">
+      <td className={styles.wide} data-label="Tags">
         {row.tags.length ? (
           <span className={styles.taglist}>
             {row.tags.map((tag) => (
@@ -249,7 +259,7 @@ function Row({ row, actions }: { row: LibraryRow; actions: boolean }) {
       </td>
       {/* Tagging needs two text fields, so it lives on the detail page. */}
       {actions ? (
-        <td className={styles.colActions} data-label="Actions">
+        <td className={`${styles.colActions} ${styles.wide}`} data-label="Actions">
           <ReindexControl videoId={row.video_id} label="Re-index" />
           <DashLink className={controls.ghostlink} href={`${href}#manage`}>
             Tag

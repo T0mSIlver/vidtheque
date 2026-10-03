@@ -1,0 +1,29 @@
+/* `Fold`: content behind a toggle, everywhere or on a phone only. */
+
+.fold,
+.phone {
+  min-width: 0;
+}
+
+.toggle {
+  margin-bottom: var(--s3);
+}
+
+.fold:not([data-open]) > .body {
+  display: none;
+}
+
+/* Wide enough to read it whole, so no toggle at all. */
+.phone > .toggle {
+  display: none;
+}
+
+@media (max-width: 52rem) {
+  .phone > .toggle {
+    display: inline-flex;
+  }
+
+  .phone:not([data-open]) > .body {
+    display: none;
+  }
+}
