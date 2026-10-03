@@ -3477,6 +3477,12 @@ link to Corpus's videos by state instead of a second count. It reads
 `corpus_summary` without its lists, `corpus_rollup` for the clock,
 `job_health` and the §15 readiness observation.
 
+*Added 2026-10-03.* Below them, **Model cost** (§25.8, its own read): the
+list-price cost of today, 7 days, 30 days and this month with each window's
+call count, the cost per verdict over 30 days, cost by purpose and the ten most
+expensive calls. The panel is absent where the route is (no write side) and
+where no model was called in 30 days.
+
 **Corpus shows** the band (videos, runtime, cues with their chunk count,
 keyframes, on-screen lines, the published span), videos by state, jobs by
 state, the channels (`CHANNEL_CAP=12`) and tags (`TAG_CAP=24`) as lists, and
