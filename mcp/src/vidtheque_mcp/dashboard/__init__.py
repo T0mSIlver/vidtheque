@@ -33,7 +33,7 @@ from starlette.responses import JSONResponse, RedirectResponse, Response
 from starlette.routing import Route
 
 from ..public.api import api_routes
-from . import api, feed, writes
+from . import api, costs, feed, writes
 from .access import (
     WRITE_ROUTES,
     credential,
@@ -218,6 +218,7 @@ def dashboard_routes(*, write_side: bool = False) -> list[Route]:
             Route(f"{ROOT}/api/profile", feed.profile_ops, methods=["POST"]),
             Route(f"{ROOT}/api/profile/revert", feed.profile_revert, methods=["POST"]),
             Route(f"{ROOT}/api/devices", feed.devices, methods=["POST", "DELETE"]),
+            Route(f"{ROOT}/api/costs", guarded(costs.costs), methods=["GET"]),
         ]
         if write_side
         else []

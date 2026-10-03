@@ -3698,3 +3698,36 @@ it is in `WRITE_ROUTES` like the rest.
 console's chassis, phone-first (companion.md §6). They read the routes above
 with the console's session, so a sign-in from them returns there: `_safe_next`
 accepts `/feed` and its subpaths beside `/dashboard`, judged the same way.
+
+### 25.8 `GET /dashboard/api/costs`
+
+What the model calls cost (companion.md §4.1), for the console's Health page
+and the app's profile screen. Code: `dashboard/costs.py`. An owner route like
+the rest of §25: `404` without a write side, `401` without a credential.
+
+```json
+{"currency": "USD", "pricing": "list",
+ "windows": {"today": {"since": 1791928800, "calls": 14, "unpriced_calls": 0,
+                       "cost_micro_usd": 51230, "verdicts": 12,
+                       "per_verdict_micro_usd": 4100},
+             "month": {…}, "7d": {…}, "30d": {…}},
+ "by_purpose": {"window": "30d",
+                "items": [{"purpose": "verdict", "calls": 310, "unpriced_calls": 0,
+                           "cost_micro_usd": 1270400, "prompt_tokens": 2950000,
+                           "completion_tokens": 410000}]},
+ "top": {"window": "30d",
+         "items": [{"at": 1791930000, "purpose": "verdict", "video_id": "kCc8FmEb1nY",
+                    "title": "…", "model": "zai-glm-5-3", "prompt_tokens": 11800,
+                    "cached_tokens": 0, "completion_tokens": 2100, "latency_ms": 41000,
+                    "outcome": "ok", "cost_micro_usd": 25760}]}}
+```
+
+Costs are integer micro-USD at list price, so `51230` is $0.05123. `today`
+and `month` start at the box's local midnight and the 1st of the month; `7d`
+and `30d` are rolling. A sum over calls with no known cost is `null`, never 0,
+and `unpriced_calls` counts them. `verdicts` is the number of `verdict` calls
+that answered; `per_verdict_micro_usd` divides the cost of every `verdict` and
+`verdict_explore` call, failed ones included, by it. `by_purpose` holds at most
+20 purposes, most expensive first; `top` is the 10 most expensive priced calls,
+`video_id` and `title` `null` when the call had no video or it was deleted.
+No parameters; every query reads at most the last 31 days.
