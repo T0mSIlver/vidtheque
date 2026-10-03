@@ -341,37 +341,44 @@ describe("the jobs table", () => {
     expect(screen.getByLabelText("Rows")).toHaveValue(100);
   });
 
-  it("names what the listing ran with, filters and order alike", async () => {
-    await mount({
-      body: {
-        ...OWNER_JOBS,
-        filters: {
-          state: "failed",
-          kind: "index",
-          error_code: "E_SOURCE",
-          degraded: true,
-          order: "priority",
-        },
-      },
-    });
-    await screen.findByText(fullText(/^3 shown\./));
-
-    const head = screen.getByRole("heading", { name: "Jobs" }).closest("div") as HTMLElement;
-    expect(head).toHaveTextContent("state failed");
-    expect(head).toHaveTextContent("kind index");
-    expect(head).toHaveTextContent("error code E_SOURCE");
-    expect(head).toHaveTextContent("degraded only");
-    expect(head).toHaveTextContent("order priority");
-  });
-
-  it("prints state and order even when neither narrows anything", async () => {
+  // The filter band right under it says the same, so the head says nothing.
+  it("keeps the head to its title", async () => {
     await mount({ body: OWNER_JOBS });
     await screen.findByText(fullText(/^3 shown\./));
 
     const head = screen.getByRole("heading", { name: "Jobs" }).closest("div") as HTMLElement;
-    expect(head).toHaveTextContent("state all");
-    expect(head).toHaveTextContent("order newest");
-    expect(head).not.toHaveTextContent("kind all");
+    expect(head).toHaveTextContent(/^Jobs$/);
+  });
+
+  // The counts moved here from the ledger (§24.2): beside the filter they
+  // open. Queued and running both open `active`; cancelled has no filter.
+  it("counts the jobs by state, without inventing a filter for cancelled", async () => {
+    await mount({ body: OWNER_JOBS });
+    await screen.findByText(fullText(/^3 shown\./));
+
+    const counts = screen.getByRole("region", { name: "Jobs by state" });
+    const figure = (label: string) =>
+      [...counts.querySelectorAll("div")].find(
+        (div) => div.querySelector("dt")?.textContent === label,
+      );
+    expect(figure("queued")?.querySelector("a")).toHaveAttribute(
+      "href",
+      "/dashboard/jobs?state=active",
+    );
+    expect(figure("done")).toHaveTextContent("1");
+    expect(figure("cancelled")?.querySelector("a")).toBeNull();
+    expect(figure("cancelled")).toHaveTextContent("0");
+  });
+
+  it("keeps a narrowed kind on the counts' links", async () => {
+    await mount({ body: { ...OWNER_JOBS, filters: { ...OWNER_JOBS.filters, kind: "all" } } });
+    await screen.findByText(fullText(/^3 shown\./));
+
+    const counts = screen.getByRole("region", { name: "Jobs by state" });
+    expect(counts.querySelector("a")).toHaveAttribute(
+      "href",
+      "/dashboard/jobs?state=active&kind=all",
+    );
   });
 
   it("seeds the band from the filters the listing resolved", async () => {
@@ -429,11 +436,11 @@ describe("the jobs table", () => {
 
     expect(screen.getByRole("link", { name: /Newer/ })).toHaveAttribute(
       "href",
-      "/dashboard/jobs?state=all&kind=all&error_code=&degraded=0&order=newest&limit=25&offset=0",
+      "/dashboard/jobs?state=all&kind=videos&error_code=&degraded=0&order=newest&limit=25&offset=0",
     );
     expect(screen.getByRole("link", { name: /Older 25/ })).toHaveAttribute(
       "href",
-      "/dashboard/jobs?state=all&kind=all&error_code=&degraded=0&order=newest&limit=25&offset=50",
+      "/dashboard/jobs?state=all&kind=videos&error_code=&degraded=0&order=newest&limit=25&offset=50",
     );
   });
 

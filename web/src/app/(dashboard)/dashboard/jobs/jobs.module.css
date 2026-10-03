@@ -377,3 +377,8 @@
     flex: 0 0 auto;
   }
 }
+
+/* The counts by state, one row under the filter band they open. */
+.byState {
+  margin: var(--s4) 0 var(--s5);
+}

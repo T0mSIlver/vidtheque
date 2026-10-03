@@ -103,6 +103,14 @@ export const Jobs = z.object({
     order: z.string(),
   }),
   notes: z.array(z.string()),
+  /** Every job under the listing's kind, by state, whatever the state filter. */
+  by_state: z.object({
+    queued: count(),
+    running: count(),
+    done: count(),
+    failed: count(),
+    cancelled: count(),
+  }),
 });
 export type Jobs = z.infer<typeof Jobs>;
 

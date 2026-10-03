@@ -3,40 +3,22 @@
 import { ROOT } from "@/lib/dashboard/client";
 import { withQuery } from "@/lib/dashboard/query";
 import type { Jobs } from "@/lib/dashboard/schemas";
-import { DASH } from "@/lib/format";
 import controls from "@/components/dashboard/kit/controls.module.css";
 import { FilterBand } from "@/components/dashboard/kit/FilterBand";
 import { DashLink } from "@/components/dashboard/kit/ui";
 
-// The jobs band: its pickers and the head's facts, both read off what the
-// listing ran with.
+// The jobs band: its pickers, read off what the listing ran with.
 
 export const FILTERS = ["state", "kind", "error_code", "order", "degraded", "limit"] as const;
 
 // The pickers' words (`views._JOB_STATES` and friends): options, not bounds.
 const STATES = ["all", "active", "failed", "done"];
-const KINDS = ["all", "index", "reindex", "delete", "follow_check"];
+// `videos` is every kind but `follow_check` (dashboard.md §24.2).
+const KINDS = ["videos", "all", "index", "reindex", "delete", "follow_check"];
 const ORDERS = ["newest", "priority", "wall_clock"];
 
 /** Values the API would use anyway, left off a link. */
-export const DEFAULTS: Record<string, string> = { state: "all", kind: "all", order: "newest" };
-
-/** `state` and `order` always (the table is read in an order); the rest only
- *  when they narrow. Dashes until the listing answers. */
-export function factsOf(filters?: Jobs["filters"]): [string, string][] {
-  if (!filters) {
-    return [
-      ["state", DASH],
-      ["order", DASH],
-    ];
-  }
-  const facts: [string, string][] = [["state", filters.state]];
-  if (filters.kind !== DEFAULTS.kind) facts.push(["kind", filters.kind]);
-  if (filters.error_code) facts.push(["error code", filters.error_code]);
-  if (filters.degraded) facts.push(["degraded", "only"]);
-  facts.push(["order", filters.order]);
-  return facts;
-}
+export const DEFAULTS: Record<string, string> = { state: "all", kind: "videos", order: "newest" };
 
 /** The band, seeded from what the listing ran with (the URL until it answers). */
 export function Filters({ params, data }: { params: URLSearchParams; data?: Jobs }) {
@@ -44,7 +26,7 @@ export function Filters({ params, data }: { params: URLSearchParams; data?: Jobs
   const filters = data?.filters;
   const values = {
     state: filters?.state ?? asked("state", "all"),
-    kind: filters?.kind ?? asked("kind", "all"),
+    kind: filters?.kind ?? asked("kind", DEFAULTS.kind),
     order: filters?.order ?? asked("order", "newest"),
     error_code: filters ? (filters.error_code ?? "") : asked("error_code"),
     degraded: filters ? filters.degraded : asked("degraded") === "1",

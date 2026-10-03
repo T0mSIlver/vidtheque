@@ -10,7 +10,6 @@ import {
   DashLink,
   Fact,
   Figure,
-  GapLine,
   PageHead,
   Panel,
   Pending,
@@ -25,16 +24,8 @@ import {
 
 const read = (signal: AbortSignal) => dashboard.corpus(signal);
 
-// The five `index_state` words, and the jobs view's filters: `queued` and
-// `running` both link to `active`; `cancelled` has no filter (§4.5).
+// The five `index_state` words, each a filter on the videos table.
 const VIDEO_STATES = ["ready", "pending", "indexing", "failed", "stale"] as const;
-const JOB_STATES = [
-  { state: "queued", filter: "active" },
-  { state: "running", filter: "active" },
-  { state: "done", filter: "done" },
-  { state: "failed", filter: "failed" },
-  { state: "cancelled", filter: null },
-] as const;
 
 export function CorpusView() {
   const corpus = useResource("corpus", read);
@@ -60,8 +51,7 @@ export function CorpusView() {
 }
 
 function Loaded({ data }: { data: Corpus }) {
-  const { corpus, queue } = data;
-  const failedWindowHours = Math.round(queue.failed_window_s / 3600);
+  const { corpus } = data;
 
   return (
     <>
@@ -103,27 +93,15 @@ function Loaded({ data }: { data: Corpus }) {
           </dl>
         </Panel>
 
-        <Panel id="queue" title="Jobs by state">
-          <dl className={`${ui.figures} ${ui.figuresTight}`}>
-            {JOB_STATES.map(({ state, filter }) => (
-              <Figure label={state} key={state}>
-                {filter ? (
-                  <CountLink href={`${ROOT}/jobs?state=${filter}`} n={data.jobs_by_state[state]} />
-                ) : (
-                  count(data.jobs_by_state[state])
-                )}
-              </Figure>
-            ))}
-          </dl>
-          <ul className={ui.gaplist}>
-            <GapLine href={`${ROOT}/jobs?state=active`} n={queue.deferred}>
-              of the queued jobs are waiting on a backoff
-            </GapLine>
-            <GapLine href={`${ROOT}/jobs?state=failed`} n={queue.failed_recent}>
-              job(s) failed in the last {failedWindowHours} hours
-            </GapLine>
-          </ul>
-        </Panel>
+        {/* §2.4: the projection does not take the byte read at all. */}
+        {data.storage ? (
+          <Panel id="storage" title="Storage">
+            <dl className={`${ui.figures} ${ui.figuresTight}`}>
+              <Figure label="keyframe JPEGs">{bytes(data.storage.keyframe_bytes)}</Figure>
+              <Figure label="index file">{bytes(data.storage.database_bytes)}</Figure>
+            </dl>
+          </Panel>
+        ) : null}
       </div>
 
       <div className={ui.split}>
@@ -182,16 +160,6 @@ function Loaded({ data }: { data: Corpus }) {
           ) : null}
         </Panel>
       </div>
-
-      {/* §2.4: the projection does not take the byte read at all. */}
-      {data.storage ? (
-        <Panel id="storage" title="Storage">
-          <dl className={`${ui.figures} ${ui.figuresTight}`}>
-            <Figure label="keyframe JPEGs">{bytes(data.storage.keyframe_bytes)}</Figure>
-            <Figure label="index file">{bytes(data.storage.database_bytes)}</Figure>
-          </dl>
-        </Panel>
-      ) : null}
     </>
   );
 }
