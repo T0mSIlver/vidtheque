@@ -5,3 +5,4 @@ export * from "./jobs";
 export * from "./library";
 export * from "./search";
 export * from "./session";
+export * from "./feed";

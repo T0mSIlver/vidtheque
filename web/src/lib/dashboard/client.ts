@@ -6,6 +6,7 @@ import {
   CancelOutcome,
   Corpus,
   CuePage,
+  Feed,
   FollowCreated,
   FollowDeleted,
   FollowDetail,
@@ -18,17 +19,26 @@ import {
   Jobs,
   Library,
   PartialRefusal,
+  Profile,
+  ProfileApplied,
+  ProfileReverted,
+  type ProfileOps,
   ReindexOutcome,
   RetryOutcome,
   SearchResponse,
   Session,
+  SignalRecorded,
+  type SignalKind,
   SignedIn,
   TagsOutcome,
+  Verdict,
   VideoDetail,
 } from "./schemas";
 
 /** `/dashboard`, this surface's root on both servers. */
 export const ROOT = "/dashboard";
+/** The phone feed's pages, a Next route outside the console (dashboard.md §25.7). */
+export const FEED = "/feed";
 
 export class DashboardError extends Error {
   readonly status: number;
@@ -174,6 +184,34 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
     return parsed.data;
   }
 
+  /**
+   * A JSON write (§25.1). `keepalive` lets a signal outlive the page when the
+   * tap that sent it also navigates away (a moment's YouTube link).
+   */
+  async function postJson<T>(
+    path: string,
+    body: unknown,
+    schema: ZodType<T>,
+    opts: { keepalive?: boolean } = {},
+  ): Promise<T> {
+    const res = await doFetch(path, {
+      method: "POST",
+      headers: { accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify(body),
+      credentials: "same-origin",
+      cache: "no-store",
+      keepalive: opts.keepalive,
+    });
+    if (!res.ok) {
+      const error = await toError(res);
+      if (error.status === 401) void toSignIn();
+      throw error;
+    }
+    const parsed = schema.safeParse(await res.json());
+    if (!parsed.success) throw new DashboardShapeError(path, parsed.error);
+    return parsed.data;
+  }
+
   // Queries are the page's URL filtered to the parameters each read takes and
   // sent as typed: every clamp is Python's.
   return {
@@ -217,6 +255,31 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
     follow(slug: string, query: URLSearchParams, signal?: AbortSignal) {
       const path = `${ROOT}/api/following/${encodeURIComponent(slug)}`;
       return get(`${path}${suffix(query)}`, FollowDetail, { signal });
+    },
+    /** One band of verdicts, newest first (§25.2). */
+    feed(query: URLSearchParams, signal?: AbortSignal) {
+      return get(`${ROOT}/api/feed${suffix(query)}`, Feed, { signal });
+    },
+    verdict(videoId: string, signal?: AbortSignal) {
+      return get(`${ROOT}/api/verdicts/${encodeURIComponent(videoId)}`, Verdict, { signal });
+    },
+    profile(query: URLSearchParams, signal?: AbortSignal) {
+      return get(`${ROOT}/api/profile${suffix(query)}`, Profile, { signal });
+    },
+    /** `offset_s` only with `watch` (§25.4). */
+    signal(kind: SignalKind, videoId: string, offsetS?: number) {
+      const body =
+        offsetS === undefined
+          ? { kind, video_id: videoId }
+          : { kind, video_id: videoId, offset_s: offsetS };
+      return postJson(`${ROOT}/api/signals`, body, SignalRecorded, { keepalive: true });
+    },
+    profileOps(ops: ProfileOps) {
+      return postJson(`${ROOT}/api/profile`, ops, ProfileApplied);
+    },
+    /** Undo one event, or roll back to a revision. */
+    profileRevert(target: { event_id: number } | { revision: number }) {
+      return postJson(`${ROOT}/api/profile/revert`, target, ProfileReverted);
     },
     /** Outside the read gate: a signed-out browser may ask. */
     session(signal?: AbortSignal) {
