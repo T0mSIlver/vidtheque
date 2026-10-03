@@ -16,6 +16,8 @@ import styles from "./search.module.css";
 // (dashboard.md §25.9). The query is the URL; a submitted one is a signal.
 
 const QUERY_CHARS = 512;
+// A phone row, not a reading pane: the server cuts the snippet around the match.
+const TEXT_CHARS = "300";
 
 export function SearchView() {
   const params = useSearchParams();
@@ -98,7 +100,10 @@ function ResultPage({
   onMore: ((next: number) => void) | null;
 }) {
   const page = useResource<SearchResponse>(`feed-search:${offset}:${q}`, (signal) =>
-    dashboard.search(new URLSearchParams({ q, offset: String(offset) }), signal),
+    dashboard.search(
+      new URLSearchParams({ q, offset: String(offset), max_text_chars: TEXT_CHARS }),
+      signal,
+    ),
   );
   if (!page.data) {
     if (page.error) {

@@ -3762,9 +3762,10 @@ No parameters; every query reads at most the last 31 days.
 
 `/feed/search` on the web and the app's search screen run the search the MCP
 `search` tool runs (companion.md §6). They read `GET /dashboard/api/search`,
-the facade's handler under the caller's clamp (§14.2), with `q` and `offset`
-only: every content channel (`content_type=all`) and no filter, so nothing on
-the page narrows what the tool would answer. Hits keep the tool's
+the facade's handler under the caller's clamp (§14.2), with `q`, `offset` and
+`max_text_chars=300` only: every content channel (`content_type=all`) and no
+filter, so nothing on the page narrows what the tool would answer. The 300
+is a phone row's length; the tool cuts each snippet around its match. Hits keep the tool's
 relevance-first order; the page pages on `pagination.has_more`, at
 `pagination.offset + pagination.limit`, and prints `notes` as the server sent
 them. An empty page says `data_status` when it is set.

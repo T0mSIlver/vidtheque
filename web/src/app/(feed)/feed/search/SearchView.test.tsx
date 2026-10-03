@@ -48,7 +48,7 @@ describe("feed SearchView", () => {
     await waitFor(() => expect(signals(view)).toEqual([{ kind: "mcp_search", text: "kv cache" }]));
     expect(view.push).toHaveBeenCalledWith("/feed/search?q=kv+cache");
     await screen.findAllByRole("link", { name: /Let's build GPT/ });
-    expect(asked(view)).toEqual(["?q=kv+cache&offset=0"]);
+    expect(asked(view)).toEqual(["?q=kv+cache&offset=0&max_text_chars=300"]);
   });
 
   it("shows the video, channel, date and the moment, and links each", async () => {
@@ -80,7 +80,12 @@ describe("feed SearchView", () => {
     };
     const view = await mount("?q=cache", [{ body: first }, { body: second }]);
     await userEvent.click(await screen.findByRole("button", { name: "More" }));
-    await waitFor(() => expect(asked(view)).toEqual(["?q=cache&offset=0", "?q=cache&offset=2"]));
+    await waitFor(() =>
+      expect(asked(view)).toEqual([
+        "?q=cache&offset=0&max_text_chars=300",
+        "?q=cache&offset=2&max_text_chars=300",
+      ]),
+    );
     const results = screen.getByRole("list", { name: "Results" });
     await waitFor(() => expect(within(results).getAllByRole("listitem")).toHaveLength(5));
     expect(screen.queryByRole("button", { name: "More" })).toBeNull();
