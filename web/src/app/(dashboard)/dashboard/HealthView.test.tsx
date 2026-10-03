@@ -11,13 +11,80 @@ vi.mock("next/navigation", async () => (await import("@/test/next")).navigationM
 // Two payloads, not one: every state that differs is asserted for the owner's
 // instance and for the projection, which drops the box.
 
-function mount(health: Answer, session: unknown = OWNER_SESSION, path = "/dashboard") {
+function mount(
+  health: Answer,
+  session: unknown = OWNER_SESSION,
+  path = "/dashboard",
+  costs?: Answer,
+) {
   return mountDashboard(<HealthView />, {
     path,
     session,
-    routes: { "/dashboard/api/health": health },
+    routes: {
+      "/dashboard/api/health": health,
+      ...(costs ? { "/dashboard/api/costs": costs } : {}),
+    },
   });
 }
+
+const costWindow = (calls: number, cost: number | null, unpriced = 0) => ({
+  since: 1_790_000_000,
+  calls,
+  unpriced_calls: unpriced,
+  cost_micro_usd: cost,
+  verdicts: calls,
+  per_verdict_micro_usd: calls && cost !== null ? Math.round(cost / calls) : null,
+});
+
+const COSTS = {
+  currency: "USD",
+  pricing: "list",
+  windows: {
+    today: costWindow(4, 16_400),
+    month: costWindow(40, 1_640_000, 2),
+    "7d": costWindow(20, 82_000),
+    "30d": costWindow(40, 1_640_000, 2),
+  },
+  by_purpose: {
+    window: "30d",
+    items: [
+      {
+        purpose: "verdict",
+        calls: 38,
+        unpriced_calls: 2,
+        cost_micro_usd: 1_600_000,
+        prompt_tokens: 410_000,
+        completion_tokens: 52_000,
+      },
+      {
+        purpose: "nightly_update",
+        calls: 2,
+        unpriced_calls: 0,
+        cost_micro_usd: 40_000,
+        prompt_tokens: 9_000,
+        completion_tokens: 2_000,
+      },
+    ],
+  },
+  top: {
+    window: "30d",
+    items: [
+      {
+        at: 1_790_000_000,
+        purpose: "verdict",
+        video_id: "kCc8FmEb1nY",
+        title: "Deep dive",
+        model: "zai-glm-5-3",
+        prompt_tokens: 11_800,
+        cached_tokens: 0,
+        completion_tokens: 2_100,
+        latency_ms: 41_000,
+        outcome: "invalid_output",
+        cost_micro_usd: 25_760,
+      },
+    ],
+  },
+};
 
 describe("the health page", () => {
   describe("on the owner's instance", () => {
@@ -114,6 +181,31 @@ describe("the health page", () => {
       // `overview.html`'s `notice notice-bad` did.
       const band = screen.getByRole("region", { name: "The corpus and the worker disagree" });
       expect(band).toHaveAttribute("data-tone", "bad");
+    });
+  });
+
+  describe("the model's cost", () => {
+    it("prints each window, the cost per verdict and the most expensive calls", async () => {
+      await mount({ body: OWNER_HEALTH }, OWNER_SESSION, "/dashboard", { body: COSTS });
+
+      expect(await screen.findByRole("heading", { name: "Model cost" })).toBeInTheDocument();
+      expect(screen.getByText("$0.0164")).toBeInTheDocument();
+      // Two calls had no price: said, never summed as free.
+      expect(screen.getAllByText("2 with no known cost")).toHaveLength(2);
+      expect(screen.getByText("$0.0410")).toBeInTheDocument();
+      expect(screen.getByText("nightly_update")).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Deep dive" })).toHaveAttribute(
+        "href",
+        "/dashboard/videos/kCc8FmEb1nY",
+      );
+      expect(screen.getByText("invalid_output")).toBeInTheDocument();
+    });
+
+    it("is no panel where nothing was called or the route is absent", async () => {
+      const idle = { ...COSTS, windows: { ...COSTS.windows, "30d": costWindow(0, null) } };
+      await mount({ body: OWNER_HEALTH }, OWNER_SESSION, "/dashboard", { body: idle });
+      expect(await screen.findByText("The queue")).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "Model cost" })).not.toBeInTheDocument();
     });
   });
 

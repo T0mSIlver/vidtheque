@@ -11,6 +11,7 @@ import {
   hours,
   iso,
   receiptParts,
+  usd,
 } from "./index";
 
 // These are the Jinja filters the dashboard read out of Python until the JSON
@@ -118,5 +119,14 @@ describe("the receipt's own strings", () => {
     expect(receiptParts("not a url")).toBeNull();
     expect(receiptParts("javascript:alert(1)")).toBeNull();
     expect(receiptParts("data:text/html,<b>")).toBeNull();
+  });
+});
+
+describe("usd", () => {
+  it("keeps a fraction of a cent readable, and unknown is the dash, not $0", () => {
+    expect(usd(4_100)).toBe("$0.0041");
+    expect(usd(12_400_000)).toBe("$12.40");
+    expect(usd(0)).toBe("$0.0000");
+    expect(usd(null)).toBe(DASH);
   });
 });
