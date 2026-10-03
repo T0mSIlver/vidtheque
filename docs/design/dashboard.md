@@ -3552,3 +3552,15 @@ It is owner inspection (§14), and its eight rows pushed the results below the
 first screen on a phone. The notes beside it (a leg that was skipped, a worker
 that did not answer) stay open, because they change how the results read.
 
+### 24.5 Following and one follow
+
+**The following list** drops the follow count from its head: it is the band's
+first figure, right under it.
+
+**One follow's page** keeps every panel. "What it passed over" shows its
+decision counts and the near-miss line, and folds the rows behind
+`kit/Fold` ("Show the *N* candidates"). Every `skipped_horizon` row repeated
+the same reason and date, and 25 of them took about 2,800 px. On a page past
+the first the rows are open, since paging is reading them. Payloads are
+unchanged.
+
