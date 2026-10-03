@@ -266,7 +266,8 @@ def test_searches_and_reads_are_logged_as_signals(make_client, tmp_path: Path) -
         call_tool(client, "video-summary", {"video_id": VIDEO})
         call_tool(client, "get-segment-context", {"video_id": VIDEO, "t": "1:05"})
         call_tool(client, "get-transcript", {"video_id": VIDEO, "t_start": 30})
-        # Not signals: a call that failed, and a tool outside the list.
+        # Not signals: calls that failed, and a tool outside the list.
+        assert call_tool(client, "search", {"q": "kv cache", "order": "bogus"})["isError"] is True
         call_tool(client, "video-summary", {"video_id": "nope"})
         call_tool(client, "list-videos", {})
     assert signal_rows(tmp_path) == [
