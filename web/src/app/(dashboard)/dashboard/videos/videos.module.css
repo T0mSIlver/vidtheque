@@ -64,7 +64,7 @@
   white-space: nowrap;
 }
 
-/* The tool's own lowercase `t/o/f`, with the word behind each for a reader. */
+/* One word per pipeline leg, struck through when it is missing. */
 .coverage {
   display: inline-flex;
   gap: 2px;
@@ -75,8 +75,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.25rem;
   height: 1.25rem;
+  padding: 0 var(--s1);
   letter-spacing: 0;
   text-transform: none;
   border: 1px solid var(--seam);
@@ -207,5 +207,11 @@
 
   .videos tbody td.colShot::before {
     content: none;
+  }
+
+  /* A phone row is title, channel, state and indexed date; the rest is on the
+     detail page it links (§24.3). */
+  .videos .wide {
+    display: none;
   }
 }
