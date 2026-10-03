@@ -117,6 +117,14 @@ reads kinds, not clients, and a new kind would mean rebuilding the `signals`
 table for its `CHECK`. The page sends it once per query submitted; paging and
 reloads send nothing. The console's search page sends none: it is inspection.
 
+*Amended 2026-10-04 (#149):* a `search` that returns an error is not logged.
+An agent that gets one fixes its arguments and searches again, so logging both
+would count one query twice. Every session that reaches the instance through
+the owner's connector counts as the owner: a coding agent reading the corpus
+for a task logs `mcp_search` and `mcp_read` like any other client, under its
+OAuth client id. A client that can set headers sends `X-Vidtheque-Signals: off`
+when its reads say nothing about what the owner is working on.
+
 The MCP signals are logged in the tool layer (`tools/base.py`), for every
 client, owner-scoped. A client can opt out per session with a header
 (`X-Vidtheque-Signals: off`). The triage agent's own calls are never signals.
