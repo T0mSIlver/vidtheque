@@ -6,7 +6,7 @@ import styles from "@/components/feed/feed.module.css";
 import { Title } from "@/components/dashboard/kit/ui";
 import { dashboard } from "@/lib/dashboard/client";
 import { useResource } from "@/lib/dashboard/resource";
-import type { Moment, SignalKind, Verdict } from "@/lib/dashboard/schemas";
+import type { FeedbackState, Moment, Verdict } from "@/lib/dashboard/schemas";
 import { clock, day } from "@/lib/format";
 import { claudeUrl, videoPrompt } from "@/lib/feed/words";
 
@@ -115,21 +115,30 @@ function Moments({
   );
 }
 
-type Sent = Partial<Record<SignalKind, "sending" | "done" | "failed">>;
-
-/** Thumbs, mute and Ask Claude, in reach of a thumb at the bottom. */
+/**
+ * Thumbs, "less like this" and Ask Claude, in reach of a thumb at the bottom.
+ * The thumbs and mute are one stored state (companion.md §2.3): a tap sets it,
+ * a tap on the one already set takes it back, and a refusal puts it back.
+ */
 function Actions({ verdict }: { verdict: Verdict }) {
   const id = verdict.video.video_id;
-  const [sent, setSent] = useState<Sent>({});
+  const [feedback, setFeedback] = useState<FeedbackState>(verdict.feedback);
+  const [saving, setSaving] = useState<"sending" | "failed" | undefined>();
   const [copied, setCopied] = useState(false);
   const prompt = videoPrompt(verdict.video);
 
-  function send(kind: SignalKind) {
-    if (sent[kind] === "sending" || sent[kind] === "done") return;
-    setSent((s) => ({ ...s, [kind]: "sending" }));
-    dashboard.signal(kind, id).then(
-      () => setSent((s) => ({ ...s, [kind]: "done" })),
-      () => setSent((s) => ({ ...s, [kind]: "failed" })),
+  function set(state: FeedbackState) {
+    if (saving === "sending") return;
+    const before = feedback;
+    const target = feedback === state ? "none" : state;
+    setFeedback(target);
+    setSaving("sending");
+    dashboard.feedback(id, target).then(
+      () => setSaving(undefined),
+      () => {
+        setFeedback(before);
+        setSaving("failed");
+      },
     );
   }
 
@@ -142,19 +151,20 @@ function Actions({ verdict }: { verdict: Verdict }) {
     }
   }
 
-  const failed = Object.values(sent).includes("failed");
+  const busy = saving === "sending";
   return (
     <div className={styles.bar}>
       <div className={styles.barInner}>
-        <Signal kind="thumb_up" label="Thumbs up" glyph="▲" state={sent.thumb_up} onSend={send} />
+        <Signal state="up" label="Thumbs up" glyph="▲" now={feedback} busy={busy} onSet={set} />
+        <Signal state="down" label="Thumbs down" glyph="▼" now={feedback} busy={busy} onSet={set} />
         <Signal
-          kind="thumb_down"
-          label="Thumbs down"
-          glyph="▼"
-          state={sent.thumb_down}
-          onSend={send}
+          state="muted"
+          label="Less like this"
+          glyph="Less"
+          now={feedback}
+          busy={busy}
+          onSet={set}
         />
-        <Signal kind="mute" label="Mute" glyph="Mute" state={sent.mute} onSend={send} />
         <button
           className={styles.copy}
           type="button"
@@ -173,9 +183,9 @@ function Actions({ verdict }: { verdict: Verdict }) {
           Ask Claude
         </a>
       </div>
-      {failed ? (
+      {saving === "failed" ? (
         <p className={styles.barNote} role="status">
-          Not recorded. Tap again to retry.
+          Not saved. Tap again to retry.
         </p>
       ) : null}
     </div>
@@ -183,27 +193,28 @@ function Actions({ verdict }: { verdict: Verdict }) {
 }
 
 function Signal({
-  kind,
+  state,
   label,
   glyph,
-  state,
-  onSend,
+  now,
+  busy,
+  onSet,
 }: {
-  kind: SignalKind;
+  state: FeedbackState;
   label: string;
   glyph: string;
-  state: Sent[SignalKind];
-  onSend: (kind: SignalKind) => void;
+  now: FeedbackState;
+  busy: boolean;
+  onSet: (state: FeedbackState) => void;
 }) {
   return (
     <button
       className={styles.signal}
       type="button"
       aria-label={label}
-      aria-pressed={state === "done"}
-      aria-busy={state === "sending"}
-      data-failed={state === "failed" || undefined}
-      onClick={() => onSend(kind)}
+      aria-pressed={now === state}
+      aria-busy={busy}
+      onClick={() => onSet(state)}
     >
       {glyph}
     </button>

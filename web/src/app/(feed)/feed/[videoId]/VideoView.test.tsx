@@ -24,6 +24,7 @@ function mount(verdict: Route = { body: VERDICT }) {
       routes: {
         "/dashboard/api/verdicts/kCc8FmEb1nY": verdict,
         "POST /dashboard/api/signals": { body: RECORDED },
+        "POST /dashboard/api/feedback": { body: { video_id: "kCc8FmEb1nY", state: "up" } },
       },
     },
   );
@@ -64,15 +65,22 @@ describe("VideoView", () => {
     );
   });
 
-  it("presses a thumb once it is recorded", async () => {
-    const view = await mount();
-    const up = await screen.findByRole("button", { name: "Thumbs up" });
+  it("shows the stored thumb or mute, and a second tap takes it back", async () => {
+    const view = await mount({ body: { ...VERDICT, feedback: "muted" } });
+    const less = await screen.findByRole("button", { name: "Less like this" });
+    expect(less).toHaveAttribute("aria-pressed", "true");
+    const up = screen.getByRole("button", { name: "Thumbs up" });
     await userEvent.click(up);
     await waitFor(() => expect(up).toHaveAttribute("aria-pressed", "true"));
+    expect(less).toHaveAttribute("aria-pressed", "false");
+    await waitFor(() => expect(up).not.toHaveAttribute("aria-busy", "true"));
     await userEvent.click(up);
-    expect(signals(view).filter((s) => (s as { kind: string }).kind === "thumb_up")).toHaveLength(
-      1,
-    );
+    await waitFor(() => expect(up).toHaveAttribute("aria-pressed", "false"));
+    const sent = view.calls("/dashboard/api/feedback", "POST").map((request) => request.json);
+    expect(sent).toEqual([
+      { video_id: "kCc8FmEb1nY", state: "up" },
+      { video_id: "kCc8FmEb1nY", state: "none" },
+    ]);
   });
 
   it("says a video has no verdict yet in the API's words", async () => {

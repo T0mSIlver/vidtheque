@@ -29,6 +29,8 @@ import {
   SearchResponse,
   Session,
   SignalRecorded,
+  FeedbackStored,
+  type FeedbackState,
   type SignalKind,
   SignedIn,
   TagsOutcome,
@@ -278,6 +280,12 @@ export function createDashboardClient(config: DashboardClientConfig = {}) {
           ? { kind, video_id: videoId }
           : { kind, video_id: videoId, offset_s: offsetS };
       return postJson(`${ROOT}/api/signals`, body, SignalRecorded, { keepalive: true });
+    },
+    /** Set the video's thumb or mute; `none` takes it back. */
+    feedback(videoId: string, state: FeedbackState) {
+      return postJson(`${ROOT}/api/feedback`, { video_id: videoId, state }, FeedbackStored, {
+        keepalive: true,
+      });
     },
     profileOps(ops: ProfileOps) {
       return postJson(`${ROOT}/api/profile`, ops, ProfileApplied);

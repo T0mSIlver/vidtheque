@@ -46,11 +46,16 @@ export const Moment = z.object({
 });
 export type Moment = z.infer<typeof Moment>;
 
+/** A video's one thumb-or-mute state; `none` once taken back (§25.4). */
+export const FeedbackState = z.enum(["none", "up", "down", "muted"]);
+export type FeedbackState = z.infer<typeof FeedbackState>;
+
 export const Verdict = z.object({
   video: FeedVideo,
   score: count(),
   reason: z.string(),
   explored: z.boolean().optional().default(false),
+  feedback: FeedbackState.optional().default("none"),
   summary: z.string(),
   moments: z.array(Moment),
   moments_dropped: count(),
@@ -78,6 +83,9 @@ export const SignalRecorded = z.object({
   video_id: z.string(),
 });
 export type SignalRecorded = z.infer<typeof SignalRecorded>;
+
+export const FeedbackStored = z.object({ video_id: z.string(), state: FeedbackState });
+export type FeedbackStored = z.infer<typeof FeedbackStored>;
 
 export const ProfileEntry = z.object({
   id: count(),
