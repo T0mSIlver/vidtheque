@@ -3564,3 +3564,18 @@ the same reason and date, and 25 of them took about 2,800 px. On a page past
 the first the rows are open, since paging is reading them. Payloads are
 unchanged.
 
+### 24.6 The rail and the chrome
+
+The rail reads Health, Corpus, Search, Videos, Jobs, then Add videos and
+Following (§24.1). Its foot loses `auth=token`, an operator detail with
+nothing to act on; it keeps "indexing refused" and "no write side", which come
+with a fix, and Sign out. On a phone (≤ 52rem) the wordmark and Sign out share
+one line and the sections run in one horizontally scrolling line under them,
+instead of three wrapped rows and a foot that took about 240 px before the
+page title.
+
+**One clock format.** The Corpus head and the readiness strip printed ISO UTC
+seconds (`2026-10-03T15:56:46Z`) beside every other clock's local minutes. Both
+print local minutes now; the `<time>` attribute keeps the full instant. The
+session payload is unchanged: the sign-in page still reads `auth_mode`.
+
