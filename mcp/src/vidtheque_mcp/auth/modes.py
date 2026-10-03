@@ -27,6 +27,7 @@ from pydantic import AnyHttpUrl
 from starlette.routing import Route
 
 from ..config import OFFLINE_SCOPE, READ_SCOPE, WRITE_SCOPE, Settings
+from .android import android_routes
 from .cimd import CIMDFetcher
 from .login import login_routes
 from .metadata import metadata_routes
@@ -176,7 +177,12 @@ def build_auth(settings: Settings) -> AuthBundle:
         mode="oauth",
         token_verifier=JWTTokenVerifier(provider),
         auth_settings=auth_settings,
-        routes=[*metadata_routes(settings), *login_routes(settings, provider), *sdk_routes],
+        routes=[
+            *metadata_routes(settings),
+            *android_routes(settings),
+            *login_routes(settings, provider),
+            *sdk_routes,
+        ],
         frame_signer=signer,
         store=store,
         provider=provider,

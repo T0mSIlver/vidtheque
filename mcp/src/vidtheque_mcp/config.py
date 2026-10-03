@@ -128,6 +128,8 @@ class Settings:
     access_token_ttl_s: int = 3_600
     refresh_token_ttl_s: int = 30 * 86_400
     login_session_ttl_s: int = 12 * 3_600
+    # The Android app's signing keys (companion.md §5); empty means no app client.
+    android_cert_sha256: tuple[str, ...] = ()
 
     # Token discipline (tool-surface §3.3, §3.4).
     response_max_chars: int = 60_000
@@ -259,6 +261,7 @@ class Settings:
             auth_mode=mode,
             static_token=_env("VIDTHEQUE_TOKEN"),
             password=_env("VIDTHEQUE_PASSWORD"),
+            android_cert_sha256=_android_fingerprints(_env("VIDTHEQUE_ANDROID_CERT_SHA256")),
             secret=_env("VIDTHEQUE_SECRET", "") or "",
             public_hostnames=hostnames,
             frame_url_ttl_s=_int_env("VIDTHEQUE_FRAME_URL_TTL", 86_400),
@@ -381,3 +384,9 @@ class Settings:
             path.chmod(0o600)
         self._resolved["secret"] = value
         return value
+
+
+def _android_fingerprints(raw: str | None) -> tuple[str, ...]:
+    from .auth.android import parse_fingerprints  # auth/ imports this module
+
+    return parse_fingerprints(raw)
