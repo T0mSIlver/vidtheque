@@ -1078,6 +1078,9 @@ Archivo arrived with lab v4 (commit `1251269`).
    end in `web/` is a separate deployable and carries a byte-identical copy at
    `web/src/fonts/`, loaded through `next/font/local`;
    `mcp/tests/test_web_assets.py` fails the suite the day the two differ.
+   *Amended 2026-10-03:* the Android app (`android/`) cannot read woff2 and
+   carries TTF decompressions of the same two files in
+   `android/app/src/main/res/font/`; regenerate them from this directory.
 2. **Nothing in `mcp/` routes these files.** The public `/static/` asset route
    left with the welcome page (2026-09-05) and the dashboard's `fonts/` alias
    left with its own pages (2026-09-06), so the directory is a record rather
