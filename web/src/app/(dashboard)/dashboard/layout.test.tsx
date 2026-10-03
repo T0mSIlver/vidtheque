@@ -100,11 +100,13 @@ describe("the dashboard chassis", () => {
   });
 
   describe("what the deployment is allowed to do", () => {
-    it("names the auth mode and the write side on an owner's instance", async () => {
+    // `auth=` was an operator detail with nothing to act on (§24.6).
+    it("shows the write side on an owner's instance, and no auth line", async () => {
       await mount();
 
-      expect(await screen.findByText("auth=token")).toBeInTheDocument();
-      expect(screen.getByText("Manage")).toBeInTheDocument();
+      expect(await screen.findByText("Manage")).toBeInTheDocument();
+      expect(await screen.findByRole("button", { name: "Sign out" })).toBeInTheDocument();
+      expect(screen.queryByText(/auth=/)).not.toBeInTheDocument();
       expect(screen.queryByText("no write side")).not.toBeInTheDocument();
       expect(screen.queryByText(/read-only demo/)).not.toBeInTheDocument();
     });
@@ -197,7 +199,7 @@ describe("the dashboard chassis", () => {
 
       // The rail's Health link, and the refusal's.
       expect(screen.getAllByRole("link", { name: "Health" })).toHaveLength(2);
-      expect(await screen.findByText("auth=token")).toBeInTheDocument();
+      expect(await screen.findByRole("button", { name: "Sign out" })).toBeInTheDocument();
       expect(
         screen.getByRole("heading", { name: "Cannot read properties of null" }),
       ).toBeInTheDocument();

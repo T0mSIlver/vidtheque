@@ -318,3 +318,60 @@
     padding-inline: var(--s4);
   }
 }
+
+/* 832px, the phone: the wordmark and Sign out on one line, the sections one
+   scrolling line under them. Three wrapped rows and a foot under them took
+   240px before the page title (§24.6). */
+@media (max-width: 52rem) {
+  .rail {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "brand foot"
+      "nav nav";
+    padding-bottom: 0;
+  }
+
+  .brand {
+    grid-area: brand;
+    padding: var(--s3) 0;
+  }
+
+  .foot {
+    grid-area: foot;
+    justify-content: flex-end;
+    padding: 0;
+    border-top: 0;
+  }
+
+  .footPending {
+    min-height: var(--row);
+  }
+
+  /* `.why` is a sentence; it gets the rail's width rather than a corner. */
+  .why {
+    flex-basis: 100%;
+    text-align: right;
+  }
+
+  .nav {
+    grid-area: nav;
+    display: flex;
+    gap: 0 var(--s2);
+    margin: 0 calc(-1 * var(--s4));
+    padding: 0 var(--s4);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .nav > * {
+    flex: none;
+  }
+
+  .navlist {
+    flex-wrap: nowrap;
+  }
+
+  .navlink {
+    white-space: nowrap;
+  }
+}

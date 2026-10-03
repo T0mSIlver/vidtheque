@@ -3,7 +3,7 @@
 import { dashboard, ROOT } from "@/lib/dashboard/client";
 import { useResource } from "@/lib/dashboard/resource";
 import type { Corpus } from "@/lib/dashboard/schemas";
-import { bytes, count, hours, iso } from "@/lib/format";
+import { at, bytes, count, hours, iso } from "@/lib/format";
 import { ReadFailure } from "@/components/dashboard/kit/notice";
 import {
   CountLink,
@@ -35,14 +35,21 @@ export function CorpusView() {
     return <ReadFailure error={corpus.error} onRetry={corpus.reload} />;
   }
 
-  // The instant of the reading, so it keeps its seconds.
+  // Local minutes like every other clock here (§24.6); the attribute keeps
+  // the instant.
   const counted = data ? iso(data.counted_at) : undefined;
   return (
     <>
       <PageHead title="Corpus">
         <Fact
           label="counted"
-          value={counted ? <time dateTime={counted}>{counted}</time> : <Slot ch={20} />}
+          value={
+            counted && data ? (
+              <time dateTime={counted}>{at(data.counted_at)}</time>
+            ) : (
+              <Slot ch={16} />
+            )
+          }
         />
       </PageHead>
       {data ? <Loaded data={data} /> : <Pending />}

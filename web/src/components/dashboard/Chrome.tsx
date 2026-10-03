@@ -136,9 +136,8 @@ function NavList({ items, path }: { items: Item[]; path: string | null }) {
   );
 }
 
-/** What the deployment allows, in the rail's foot. The projection says only
- *  that nothing writes: `auth=` and "indexing refused" are the operator's
- *  console (§2.4). */
+/** What the deployment refuses, in the rail's foot: only what the operator
+ *  can act on (§24.6). The projection says only that nothing writes (§2.4). */
 function Deployment({ session }: { session: Session }) {
   if (session.readonly) {
     return (
@@ -147,10 +146,10 @@ function Deployment({ session }: { session: Session }) {
       </p>
     );
   }
+  if (session.writes_allowed && session.write_side) return null;
   return (
     <>
       <p className={styles.deployment}>
-        <span title="VIDTHEQUE_AUTH">auth={session.auth_mode}</span>
         {session.writes_allowed ? null : <span className={styles.refused}>indexing refused</span>}
         {session.write_side ? null : <span>no write side</span>}
       </p>

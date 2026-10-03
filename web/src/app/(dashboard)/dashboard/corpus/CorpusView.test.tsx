@@ -33,9 +33,9 @@ describe("the corpus page", () => {
     expect(screen.getByText("videos").closest("div")).toHaveTextContent(
       "published 2023-01-17–2025-02-19",
     );
-    // One reading, stamped once, to the second: it is the instant of a
-    // reading and not a date in the corpus.
-    const stamp = screen.getByText("2026-09-05T16:34:40Z");
+    // One reading, stamped once, in local minutes like every other clock
+    // (§24.6); the attribute keeps the instant.
+    const stamp = screen.getByText("2026-09-05 16:34");
     expect(stamp.tagName).toBe("TIME");
     expect(stamp).toHaveAttribute("datetime", "2026-09-05T16:34:40Z");
   });
