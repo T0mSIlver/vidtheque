@@ -5,6 +5,7 @@ The model is a fake that answers what each test hands it; nothing calls a real o
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import time
 from pathlib import Path
@@ -18,7 +19,15 @@ from vidtheque_mcp.jobs import store as jobs_store
 from vidtheque_mcp.llm import LLMUnavailable
 from vidtheque_mcp.profile import store as profile_store
 from vidtheque_mcp.verdicts import store
-from vidtheque_mcp.verdicts.stage import VerdictStage, build_verdicts, middle_lines
+from vidtheque_mcp.verdicts.stage import (
+    REASON_WORDS,
+    SUMMARY_WORDS,
+    WHY_WORDS,
+    VerdictStage,
+    build_verdicts,
+    clip_words,
+    middle_lines,
+)
 
 from .pipeline_fakes import VIDEO_URL
 from .test_pipeline_e2e import harness
@@ -51,7 +60,13 @@ class FixedRoll:
 
 
 def verdict(*moments: dict, score: int = 2) -> dict:
-    return {"score": score, "reason": "evals ↑", "summary": "A talk.", "moments": list(moments)}
+    return {
+        "score": score,
+        "reason": "On evals.",
+        "summary": "A talk.",
+        "moments": list(moments),
+        "matches": [],
+    }
 
 
 async def rows(db, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
@@ -130,6 +145,67 @@ async def test_a_rerun_replaces_the_verdict_and_keeps_notified_at(assembled: Ass
     await run_verdict(assembled, vid, FakeModel(verdict(score=3)))
     row = await db.read(lambda c: store.get(c, vid))
     assert (row["score"], row["notified_at"]) == (3, 123)
+
+
+async def test_matches_keep_only_live_entries_and_take_their_direction_from_the_weight(
+    assembled: Assembled,
+) -> None:
+    db = assembled.db
+    vid = await video_id(db, "kCc8FmEb1nY")
+    await db.write(
+        lambda c: profile_store.apply(
+            c,
+            profile_store.Ops(add=[("Evals", 0.9), ("Launch hype", -0.7), ("Rust", 0.0)]),
+            actor="owner",
+        )
+    )
+    ids = {r["text"]: int(r["id"]) for r in await db.read(profile_store.entries)}
+    answer = verdict(score=1)
+    answer["matches"] = [
+        {"entry_id": ids["Launch hype"], "strength": 1},
+        {"entry_id": 999_999, "strength": 2},  # not an entry
+        {"entry_id": ids["Rust"], "strength": 2},  # weight 0 points nowhere
+        {"entry_id": ids["Evals"], "strength": 2},
+        {"entry_id": ids["Evals"], "strength": 1},  # once per entry
+    ]
+    model = FakeModel(answer)
+
+    await run_verdict(assembled, vid, model)
+
+    row = await db.read(lambda c: store.get(c, vid))
+    assert json.loads(row["matches"]) == [
+        {"entry_id": ids["Evals"], "direction": "up", "strength": 2},
+        {"entry_id": ids["Launch hype"], "direction": "down", "strength": 1},
+    ]
+    assert f"[{ids['Evals']}] +0.9  Evals" in model.prompts[0]
+
+
+async def test_long_answers_are_clipped_whatever_the_prompt_asked(assembled: Assembled) -> None:
+    db = assembled.db
+    vid = await video_id(db, "kCc8FmEb1nY")
+    cue = (await rows(db, "SELECT id, start_s FROM cues WHERE video_id = ? ORDER BY seq", (vid,)))[0]
+    answer = verdict({"cue_id": cue["id"], "offset_s": float(cue["start_s"]), "why": "word " * 40})
+    answer["summary"] = "One claim here. " * 30
+    answer["reason"] = "because " * 40
+    await run_verdict(assembled, vid, FakeModel(answer))
+    row = await db.read(lambda c: store.get(c, vid))
+    assert len(row["summary"].split()) <= SUMMARY_WORDS and row["summary"].endswith(".")
+    assert len(row["reason"].split()) <= REASON_WORDS and row["reason"].endswith("…")
+    [moment] = store.moments_of(row)
+    assert len(moment.why.split()) <= WHY_WORDS
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("Short and whole.", "Short and whole."),
+        ("One two three. Four five six seven", "One two three."),
+        ("One. Two three four five six", "One. Two three four…"),
+        ("one two three, four five", "one two three, four…"),
+    ],
+)
+def test_clip_words_prefers_a_sentence_end(text: str, expected: str) -> None:
+    assert clip_words(text, 4) == expected
 
 
 # ------------------------------------------------------------------ novelty

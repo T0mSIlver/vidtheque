@@ -131,7 +131,7 @@ hour apart. A day with no signals is `idle` and calls no model.
 ### 3.1 What it is
 
 One per video, written after indexing. Table
-`verdicts(video_id, score, reason, summary, moments, profile_rev, model, created_at, notified_at)`.
+`verdicts(video_id, score, reason, summary, moments, matches, profile_rev, model, created_at, notified_at)`.
 
 - **score 0–3**, each tied to an action: 0 skip, 1 the summary is enough,
   2 watch the moments, 3 watch it whole. 1 is the default for an on-topic but
@@ -139,10 +139,15 @@ One per video, written after indexing. Table
   time given the profile. The first backfill (100 videos, 2026-10-03) scored
   65 of them 2, which is too many for triage, so the prompt says so and breaks
   ties downward.
-- **reason**: one line naming the profile entries it matched or hit
-  ("evals ↑, launch hype ↓").
-- **summary**: one paragraph.
-- **moments**: up to three, each `{cue_id, offset_s, why}`.
+- **reason**: one plain sentence on why this score, no arrows.
+- **matches**: the profile entries it hit, at most four, strongest first, each
+  `{entry_id, direction, strength}`. `direction` is `up` or `down`, from the
+  entry's weight sign; `strength` 2 means the entry is central to the video,
+  1 that it comes up. The apps show them as chips, green up, red down.
+- **summary**: a digest of at most about 60 words: names, numbers, claims and
+  techniques, led by what matters given the profile.
+- **moments**: up to three, each `{cue_id, offset_s, why}`, `why` at most
+  about 12 words.
 
 **Receipts, always:** every moment is checked against `cues` before the
 verdict is stored. A moment whose cue does not exist, or whose offset is not
@@ -193,6 +198,17 @@ corpus. Exploration rolls only for a verdict scored 0–1 by a profile that has
 negative entries, since without them the rescore is the same prompt. A rescore
 of 2 or more replaces the verdict with `explored = 1`; a lower one leaves the
 first verdict and costs the one extra call. The roll is injected, so tests pick it.
+
+As built (0014), the digest: Tom's first read of the 0010 verdicts (2026-10-03)
+found the summaries long and generic, and the reason, a comma-separated run of
+entries with arrows, hard to skim. The prompt now carries the writing rules
+(no "the speaker discusses", no hedging, no closing sentence, concrete nouns)
+and word targets; the stage clips whatever comes back to 70 words for the
+summary, 14 for a moment's `why` and 20 for the reason, at a sentence end when
+one keeps at least half. The profile goes into the prompt with its entry ids;
+the model names matches by id and strength only. An id that is not a live
+entry, or an entry of weight 0, is dropped, and the stage sets `direction`.
+Verdicts written before 0014 have no matches until rescored.
 
 ### 3.3 Proving it gets better
 
