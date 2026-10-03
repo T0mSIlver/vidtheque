@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -39,9 +40,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import dev.vidtheque.app.data.FeedItem
@@ -56,8 +57,13 @@ import dev.vidtheque.app.ui.thumbnail
 /** How a still is drawn, so the caller can make it a shared element with the video screen. */
 typealias Still = @Composable (videoId: String, modifier: Modifier) -> Unit
 
-/** The modifier that makes a card one container with the page it opens (see Root). */
-typealias Lift = @Composable (videoId: String, shape: Shape) -> Modifier
+/** The modifier that makes a card one container with the page it opens (see Root); [corner] is this side's radius at rest. */
+typealias Lift = @Composable (videoId: String, corner: Dp) -> Modifier
+
+// Material's extra-large and large shapes, as numbers: the container transform
+// interpolates the corner from the card's to the page's square one.
+private val HERO_CORNER = 28.dp
+private val ROW_CORNER = 16.dp
 
 val plainStill: Still = { id, modifier ->
     AsyncImage(model = thumbnail(id), contentDescription = null, contentScale = ContentScale.Crop, modifier = modifier)
@@ -128,8 +134,7 @@ private fun worthLine(ui: FeedUi): String =
 
 @Composable
 private fun Hero(item: FeedItem, still: Still, card: Lift, onClick: () -> Unit) {
-    val shape = MaterialTheme.shapes.extraLarge
-    Card(onClick = onClick, shape = shape, modifier = Modifier.fillMaxWidth().then(card(item.videoId, shape))) {
+    Card(onClick = onClick, shape = RoundedCornerShape(HERO_CORNER), modifier = Modifier.fillMaxWidth().then(card(item.videoId, HERO_CORNER))) {
         Box {
             still(item.videoId, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
             Verdict(item.score, onImage = true, Modifier.align(Alignment.BottomStart).padding(12.dp))
@@ -144,12 +149,11 @@ private fun Hero(item: FeedItem, still: Still, card: Lift, onClick: () -> Unit) 
 
 @Composable
 private fun Row(item: FeedItem, still: Still, card: Lift, onClick: () -> Unit) {
-    val shape = MaterialTheme.shapes.large
     Card(
         onClick = onClick,
-        shape = shape,
+        shape = RoundedCornerShape(ROW_CORNER),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        modifier = Modifier.fillMaxWidth().then(card(item.videoId, shape)),
+        modifier = Modifier.fillMaxWidth().then(card(item.videoId, ROW_CORNER)),
     ) {
         Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             still(item.videoId, Modifier.width(128.dp).aspectRatio(16f / 9f).clip(MaterialTheme.shapes.medium))

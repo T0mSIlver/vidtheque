@@ -3,6 +3,24 @@ package dev.vidtheque.app.ui.video
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.net.Uri
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material3.MaterialShapes
+import androidx.compose.material3.toShape
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.activity.compose.LocalActivity
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,7 +51,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -44,8 +61,6 @@ import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -83,6 +98,15 @@ import kotlinx.coroutines.launch
 @Composable
 fun VideoScreen(key: VideoKey, onBack: () -> Unit, still: Still, card: Lift = { _, _ -> Modifier }) {
     val model = hiltViewModel<VideoViewModel, VideoViewModel.Factory>(creationCallback = { it.create(key.videoId) })
+    // The still runs under the status bar, behind a dark scrim: light icons in both modes.
+    val window = LocalActivity.current?.window
+    val view = LocalView.current
+    DisposableEffect(window) {
+        val bars = window?.let { WindowCompat.getInsetsController(it, view) }
+        val was = bars?.isAppearanceLightStatusBars
+        bars?.isAppearanceLightStatusBars = false
+        onDispose { if (was != null) bars.isAppearanceLightStatusBars = was }
+    }
     val ui by model.ui.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
@@ -103,13 +127,18 @@ fun VideoScreen(key: VideoKey, onBack: () -> Unit, still: Still, card: Lift = { 
         key = key,
         ui = ui,
         still = still,
-        container = card(key.videoId, MaterialTheme.shapes.extraLarge),
+        container = card(key.videoId, 0.dp),
         snackbar = snackbar,
         onBack = onBack,
         onRetry = model::load,
         onSignal = { state ->
             said = if (ui.feedback == state) "none" else state
             model.tap(state)
+        },
+        onPlay = {
+            // From the start, like a moment at 0: the same link shape and the same signal.
+            model.watched(0.0)
+            if (!context.openLink(Uri.parse("https://youtu.be/${key.videoId}"))) scope.launch { snackbar.showSnackbar(NO_APP) }
         },
         onMoment = { moment ->
             model.watched(moment.offsetS)
@@ -139,29 +168,32 @@ fun VideoContent(
     onBack: () -> Unit,
     onRetry: () -> Unit,
     onSignal: (String) -> Unit,
+    onPlay: () -> Unit = {},
     onMoment: (Moment) -> Unit,
     onAsk: (Verdict) -> Unit,
 ) {
     val verdict = ui.verdict
     val title = verdict?.video?.title ?: key.title
     val channel = verdict?.video?.channel ?: key.channel
-    Scaffold(
-        modifier = container,
-        topBar = {
-            TopAppBar(
-                title = {},
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbar, Modifier.padding(bottom = 88.dp)) },
-    ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+    // A Surface, not a background: it also sets the content colour the text reads.
+    Surface(container.fillMaxSize(), color = MaterialTheme.colorScheme.surface) { Box {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            // Edge to edge at the very top, as the still sits at the top of a feed card:
+            // the container transform then lands the one on the other (Root, sharedCard).
+            Box(
+                Modifier.clickable(onClickLabel = "Play from the start", role = Role.Button, onClick = onPlay)
+                    .semantics { contentDescription = "Play on YouTube from the start" },
+                contentAlignment = Alignment.Center,
             ) {
-                still(key.videoId, Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(MaterialTheme.shapes.extraLarge))
+                still(key.videoId, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+                // So the status bar and the back button read over any still.
+                Box(Modifier.matchParentSize().background(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.55f), 0.4f to Color.Transparent)))
+                // Play, in one of Expressive's shapes: the still opens the video from the start.
+                Surface(shape = MaterialShapes.Cookie9Sided.toShape(), color = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(72.dp)) {
+                    Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(40.dp)) }
+                }
+            }
+            Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 val byline = listOfNotNull(channel.ifEmpty { null }, verdict?.video?.publishedAt?.let { dated(it) }).joinToString(" · ")
                 if (byline.isNotEmpty()) Text(byline, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (title.isNotEmpty()) Text(title, style = MaterialTheme.typography.headlineSmallEmphasized)
@@ -175,9 +207,15 @@ fun VideoContent(
                 }
                 Spacer(Modifier.height(112.dp))
             }
-            if (verdict != null) Actions(verdict, ui.feedback, ui.saving, ui.failed, onSignal, onAsk, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp))
         }
-    }
+        FilledIconButton(
+            onClick = onBack,
+            colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color.Black.copy(alpha = 0.45f), contentColor = Color.White),
+            modifier = Modifier.statusBarsPadding().padding(8.dp),
+        ) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
+        if (verdict != null) Actions(verdict, ui.feedback, ui.saving, ui.failed, onSignal, onAsk, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp))
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 88.dp))
+    } }
 }
 
 @Composable
