@@ -1,9 +1,10 @@
-"""`vidtheque-mcp` — serve the ASGI app with uvicorn."""
+"""`vidtheque-mcp` — serve the ASGI app with uvicorn; `vidtheque-mcp verdicts …` for the backfill."""
 
 from __future__ import annotations
 
 import logging
 import os
+import sys
 
 import uvicorn
 
@@ -13,6 +14,10 @@ from .config import ConfigError, Settings
 
 def main() -> int:
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "info").upper())
+    if sys.argv[1:2] == ["verdicts"]:
+        from .verdicts.cli import main as verdicts_main
+
+        return verdicts_main(sys.argv[2:])
     try:
         settings = Settings.from_env()
     except ConfigError as exc:
