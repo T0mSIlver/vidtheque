@@ -38,7 +38,8 @@ class Session @Inject constructor(
 
     init {
         scope.launch {
-            tokens = store.load()
+            // An unreadable store (corrupt file, I/O error) is a signed-out session, not a hung splash.
+            tokens = runCatching { store.load() }.getOrNull()
             _state.value = if (tokens != null) SessionState.SignedIn else SessionState.SignedOut
         }
     }
@@ -51,11 +52,12 @@ class Session @Inject constructor(
 
     /** The redirect came back: check it belongs to [pending], then trade the code. */
     suspend fun complete(redirect: Uri, pending: PendingSignIn) {
-        redirect.getQueryParameter("error")?.let {
-            throw OAuthException(it, redirect.getQueryParameter("error_description") ?: "The server refused the sign-in ($it).")
-        }
+        // State first: until it matches, nothing else on the URL is the server's to trust.
         if (redirect.getQueryParameter("state") != pending.state) {
             throw OAuthException("state_mismatch", "This sign-in answer belongs to another attempt. Sign in again.")
+        }
+        redirect.getQueryParameter("error")?.let {
+            throw OAuthException(it, redirect.getQueryParameter("error_description") ?: "The server refused the sign-in ($it).")
         }
         val meta = metadata()
         // RFC 9207: the server names itself on the redirect; a different name is a mix-up.

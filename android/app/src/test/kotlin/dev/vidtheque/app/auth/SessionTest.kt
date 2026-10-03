@@ -106,6 +106,8 @@ class SessionTest {
         val pending = session.begin()
         val stale = Uri.parse("${fake.base}/auth/android/callback?code=c1&state=other")
         assertEquals("state_mismatch", assertThrows(OAuthException::class.java) { kotlinx.coroutines.runBlocking { session.complete(stale, pending) } }.error)
+        val spoof = Uri.parse("${fake.base}/auth/android/callback?state=other&error=x&error_description=Call+this+number")
+        assertEquals("state_mismatch", assertThrows(OAuthException::class.java) { kotlinx.coroutines.runBlocking { session.complete(spoof, pending) } }.error)
         assertEquals("invalid_issuer", assertThrows(OAuthException::class.java) { kotlinx.coroutines.runBlocking { session.complete(redirect(pending, "&iss=https%3A%2F%2Fevil.example"), pending) } }.error)
         assert(fake.forms.isEmpty())
     }
