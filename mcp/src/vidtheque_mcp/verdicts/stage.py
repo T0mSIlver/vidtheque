@@ -104,20 +104,21 @@ matches: the profile entries this video hits, by their [id], strongest first,
   Include negative entries the video hits; they count against it. Use only ids
   from the profile. No entry fits: [].
 
-reason: one plain sentence, at most 15 words, saying why this score for this
+reason: one plain sentence, at most 15 words (cut off past 20), saying why this score for this
   person. No arrows, no lists of entries, no weights.
 
-summary: at most 60 words. A digest, not a description. Pack it with what the
-  video actually says: names of people, tools, models, papers, companies;
-  numbers (benchmarks, sizes, costs, latencies); the specific claims and
-  techniques. Lead with the part that matters given the profile, in second
-  person where it helps ("the eval harness at 31:00 is the part you'd reuse").
-  Say what is new to this person, or that nothing is.
+summary: two or three sentences, 40 to 60 words. Words past 60 are cut off
+  before the person sees them, so pick what matters and drop the rest. A
+  digest, not a description: names of people, tools, models, papers,
+  companies; numbers (benchmarks, sizes, costs, latencies); the specific
+  claims and techniques. Lead with the part that matters given the profile, in
+  second person where it helps ("the eval harness at 31:00 is the part you'd
+  reuse"). Skip what the title already says.
 
 moments: up to three, each {cue_id, offset_s, why}. cue_id is a number from the
   transcript's [cue …] markers, and offset_s lies inside that cue's start–end.
   Use only cues you were shown; give fewer moments rather than guessing.
-  why: at most 12 words, the concrete thing said there ("Kimi K2 beats GLM on
+  why: at most 12 words (cut off past 14), the concrete thing said there ("Kimi K2 beats GLM on
   tau-bench by 9 points"), not a label ("interesting discussion of evals").
 
 Writing rules for reason, summary and why:
