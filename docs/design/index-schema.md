@@ -1375,9 +1375,9 @@ price change never rewrites history, and NULL means unknown, never free.
 
 ---
 
-### 1.16 `feedback`
+### 1.17 `feedback`
 
-Added by 0015 (companion.md §2.3). Thumbs and "less like this" as one state per
+Added by 0016 (companion.md §2.3). Thumbs and "less like this" as one state per
 video, so a second tap takes one back and the app shows what is stored.
 
 ```sql
@@ -1396,7 +1396,7 @@ Every write goes through `profile/feedback.py`. Setting a state also writes
 its event to `signals` (`thumb_up`, `thumb_down`, `mute`); taking it back
 writes none. A nightly update deletes the rows it leaves with `state` and
 `seen` both `none`; a take-back never deletes, so a night still marks the row it read. Taps
-from before 0015 stay events only; nothing is backfilled.
+from before 0016 stay events only; nothing is backfilled.
 
 ## 2. FTS5
 
