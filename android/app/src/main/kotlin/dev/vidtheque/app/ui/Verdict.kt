@@ -60,7 +60,7 @@ fun duration(seconds: Double): String {
     val h = s / 3600
     val m = (s % 3600) / 60
     val r = s % 60
-    return if (h > 0) "%d:%02d:%02d".format(h, m, r) else "%d:%02d".format(m, r)
+    return if (h > 0) "%d:%02d:%02d".format(java.util.Locale.ROOT, h, m, r) else "%d:%02d".format(java.util.Locale.ROOT, m, r)
 }
 
 /** YouTube serves stills for every public video; the server sends none. 4:3 with bars, so crop to 16:9. */
