@@ -176,6 +176,10 @@ fun SignedIn(opening: MutableStateFlow<String?>, onSignOut: () -> Unit) {
                             onToggleSkipped = feed::toggleSkipped,
                             onMoreSkipped = feed::moreSkipped,
                             onOpen = { stack.add(VideoKey(it.videoId, it.title, it.channel.orEmpty())) },
+                            onSearch = feed::search,
+                            onChannel = feed::channel,
+                            onEntry = feed::entry,
+                            onOldest = feed::oldest,
                             card = sharedCard,
                             list = list,
                             actions = {

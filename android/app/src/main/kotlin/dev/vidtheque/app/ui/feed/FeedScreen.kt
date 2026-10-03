@@ -9,20 +9,40 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowDropDown
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SwapVert
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.SearchBar
+import androidx.compose.material3.SearchBarDefaults
+import androidx.compose.material3.rememberSearchBarState
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
@@ -36,7 +56,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,6 +70,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import dev.vidtheque.app.data.FeedItem
+import dev.vidtheque.app.ui.theme.LocalTones
 import dev.vidtheque.app.ui.Matches
 import dev.vidtheque.app.ui.ScoreDial
 import dev.vidtheque.app.ui.dated
@@ -79,6 +103,10 @@ fun FeedScreen(
     onToggleSkipped: () -> Unit,
     onMoreSkipped: () -> Unit,
     onOpen: (FeedItem) -> Unit,
+    onSearch: (String) -> Unit = {},
+    onChannel: (String?) -> Unit = {},
+    onEntry: (String?) -> Unit = {},
+    onOldest: (Boolean) -> Unit = {},
     still: Still = plainStill,
     card: Lift = { _, _ -> Modifier },
     list: LazyListState = rememberLazyListState(),
@@ -92,7 +120,10 @@ fun FeedScreen(
             LargeFlexibleTopAppBar(
                 title = { Text("Feed") },
                 subtitle = if (ui.loaded) ({ Text(worthLine(ui)) }) else null,
-                actions = { actions() },
+                actions = {
+                    SortMenu(ui.filters.oldest, onOldest)
+                    actions()
+                },
                 scrollBehavior = bar,
             )
         },
@@ -110,9 +141,15 @@ fun FeedScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
+                if (ui.loaded) item(key = "controls") { Controls(ui, onSearch, onChannel, onEntry) }
                 ui.error?.let { message -> item { Notice(message, "Try again", onRefresh) } }
                 if (ui.loaded && ui.top.items.isEmpty()) {
-                    item { Notice("Nothing to watch yet. New videos from the channels you follow land here once they are judged.") }
+                    item {
+                        Notice(
+                            if (ui.filters.narrowed) "Nothing here matches."
+                            else "Nothing to watch yet. New videos from the channels you follow land here once they are judged.",
+                        )
+                    }
                 }
                 itemsIndexed(ui.top.items, key = { _, it -> "top-${it.videoId}" }) { index, item ->
                     if (index == 0) Hero(item, still, card) { onOpen(item) } else Row(item, still, card) { onOpen(item) }
@@ -136,6 +173,7 @@ fun FeedScreen(
  */
 fun listIndex(ui: FeedUi, videoId: String): Int? {
     var index = 0
+    if (ui.loaded) index++ // the controls
     if (ui.error != null) index++
     if (ui.loaded && ui.top.items.isEmpty()) index++
     ui.top.items.indexOfFirst { it.videoId == videoId }.let { if (it >= 0) return index + it }
@@ -148,8 +186,114 @@ fun listIndex(ui: FeedUi, videoId: String): Int? {
     return null
 }
 
-private fun worthLine(ui: FeedUi): String =
-    if (ui.top.items.isEmpty()) "Nothing new" else "Newest first"
+private fun worthLine(ui: FeedUi): String = when {
+    ui.top.items.isEmpty() && !ui.filters.narrowed -> "Nothing new"
+    ui.filters.oldest -> "Oldest first"
+    else -> "Newest first"
+}
+
+/** Newest or oldest first, from the app bar. */
+@Composable
+private fun SortMenu(oldest: Boolean, onOldest: (Boolean) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) { Icon(Icons.Rounded.SwapVert, contentDescription = "Order") }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            listOf(false to "Newest first", true to "Oldest first").forEach { (value, label) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = { open = false; onOldest(value) },
+                    trailingIcon = { if (value == oldest) Icon(Icons.Rounded.Check, contentDescription = null) },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The search box over titles and channels, then one sideways row of chips: the
+ * channel, each live profile entry with its count, and "Other" for verdicts that
+ * match none of them (#128). One row, so the feed starts a line lower, not a screen.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun Controls(ui: FeedUi, onSearch: (String) -> Unit, onChannel: (String?) -> Unit, onEntry: (String?) -> Unit) {
+    val text = rememberTextFieldState(ui.filters.q)
+    LaunchedEffect(text) { snapshotFlow { text.text.toString() }.collect(onSearch) }
+    val facets = ui.facets
+    val bar = rememberSearchBarState()
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SearchBar(
+            state = bar,
+            inputField = {
+                SearchBarDefaults.InputField(
+                    textFieldState = text,
+                    searchBarState = bar,
+                    onSearch = onSearch,
+                    placeholder = { Text("Search titles and channels") },
+                    leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                    trailingIcon = if (text.text.isNotEmpty()) ({
+                        IconButton(onClick = { text.edit { replace(0, length, "") } }) { Icon(Icons.Rounded.Close, contentDescription = "Clear the search") }
+                    }) else null,
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            item(key = "channel") { ChannelChip(ui, onChannel) }
+            items(facets?.entries.orEmpty(), key = { "entry-${it.entryId}" }) { entry ->
+                val id = entry.entryId.toString()
+                val tones = LocalTones.current
+                val up = entry.direction == "up"
+                FilterChip(
+                    selected = ui.filters.entry == id,
+                    onClick = { onEntry(if (ui.filters.entry == id) null else id) },
+                    label = { Text("${entry.text}  ${entry.count}", maxLines = 1) },
+                    leadingIcon = {
+                        Icon(
+                            if (up) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                            contentDescription = if (up) "more of" else "less of",
+                            tint = if (up) tones.onUp else tones.onDown,
+                            modifier = Modifier.size(FilterChipDefaults.IconSize),
+                        )
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = if (up) tones.up else tones.down,
+                        selectedLabelColor = if (up) tones.onUp else tones.onDown,
+                    ),
+                )
+            }
+            if ((facets?.other ?: 0) > 0) item(key = "other") {
+                FilterChip(
+                    selected = ui.filters.entry == "other",
+                    onClick = { onEntry(if (ui.filters.entry == "other") null else "other") },
+                    label = { Text("Other  ${facets?.other}") },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChannelChip(ui: FeedUi, onChannel: (String?) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val channel = ui.filters.channel
+    Box {
+        FilterChip(
+            selected = channel != null,
+            onClick = { if (channel != null) onChannel(null) else open = true },
+            label = { Text(channel ?: "Channel", maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 180.dp)) },
+            trailingIcon = {
+                Icon(if (channel != null) Icons.Rounded.Close else Icons.Rounded.ArrowDropDown, contentDescription = if (channel != null) "Any channel" else null, modifier = Modifier.size(FilterChipDefaults.IconSize))
+            },
+        )
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            ui.facets?.channels.orEmpty().forEach { c ->
+                DropdownMenuItem(text = { Text("${c.name}  ${c.count}") }, onClick = { open = false; onChannel(c.name) })
+            }
+        }
+    }
+}
 
 @Composable
 private fun Hero(item: FeedItem, still: Still, card: Lift, onClick: () -> Unit) {

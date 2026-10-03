@@ -18,6 +18,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -54,6 +55,24 @@ data class Skipped(val count: Int, val capped: Boolean)
 
 @Serializable
 data class FeedPage(val items: List<FeedItem>, val pagination: Pagination, val skipped: Skipped)
+
+/**
+ * What narrows the feed (dashboard.md §25.2): [q] a substring of the title or channel,
+ * [channel] one channel whole, [entry] a profile entry id or `other`, [oldest] the order.
+ */
+data class FeedFilters(val q: String = "", val channel: String? = null, val entry: String? = null, val oldest: Boolean = false) {
+    val narrowed get() = q.isNotBlank() || channel != null || entry != null
+}
+
+@Serializable
+data class ChannelFacet(val name: String, val count: Int)
+
+@Serializable
+data class EntryFacet(@SerialName("entry_id") val entryId: Long, val text: String, val direction: String, val count: Int)
+
+/** The channels and live profile entries the feed's filters offer, with their counts. */
+@Serializable
+data class FeedFacets(val channels: List<ChannelFacet> = emptyList(), val entries: List<EntryFacet> = emptyList(), val other: Int = 0)
 
 @Serializable
 data class VideoRow(
@@ -161,7 +180,19 @@ class Api @Inject constructor(@Named("api") private val http: OkHttpClient, priv
     private val json = Json { ignoreUnknownKeys = true }
     private val root get() = "${instance.base}/dashboard/api"
 
-    suspend fun feed(band: String, offset: Int): FeedPage = json.decodeFromString(get("$root/feed?band=$band&offset=$offset&limit=20"))
+    suspend fun feed(band: String, offset: Int, filters: FeedFilters = FeedFilters()): FeedPage {
+        val url = "$root/feed".toHttpUrl().newBuilder()
+            .addQueryParameter("band", band)
+            .addQueryParameter("offset", "$offset")
+            .addQueryParameter("limit", "20")
+        filters.q.trim().takeIf { it.isNotEmpty() }?.let { url.addQueryParameter("q", it) }
+        filters.channel?.let { url.addQueryParameter("channel", it) }
+        filters.entry?.let { url.addQueryParameter("entry", it) }
+        if (filters.oldest) url.addQueryParameter("order", "oldest")
+        return json.decodeFromString(get(url.build().toString()))
+    }
+
+    suspend fun facets(): FeedFacets = json.decodeFromString(get("$root/feed/facets?band=top"))
 
     suspend fun verdict(videoId: String): Verdict = json.decodeFromString(get("$root/verdicts/$videoId"))
 
