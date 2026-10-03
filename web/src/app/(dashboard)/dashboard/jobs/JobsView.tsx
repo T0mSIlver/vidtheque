@@ -5,15 +5,23 @@ import { dashboard, ROOT } from "@/lib/dashboard/client";
 import { pick } from "@/lib/dashboard/query";
 import { isRateLimited, useResource } from "@/lib/dashboard/resource";
 import type { JobCard, Jobs } from "@/lib/dashboard/schemas";
-import { at, DASH } from "@/lib/format";
+import { at, count, DASH } from "@/lib/format";
 import { notice, Notice, ReadFailure } from "@/components/dashboard/kit/notice";
 import { Notes, Pager, table, TableCount } from "@/components/dashboard/kit/table";
-import { Body, DashLink, Facts, PageHead, Sep, ui } from "@/components/dashboard/kit/ui";
+import {
+  Body,
+  CountLink,
+  DashLink,
+  Figure,
+  PageHead,
+  Sep,
+  ui,
+} from "@/components/dashboard/kit/ui";
 import { refusalOf, useWriteSide } from "@/components/dashboard/kit/write";
 import { usePatchedRows } from "@/components/dashboard/polling";
 import { useSession } from "@/components/dashboard/session";
 import { CancelControl } from "./CancelControl";
-import { DEFAULTS, factsOf, FILTERS, Filters } from "./Filters";
+import { DEFAULTS, FILTERS, Filters } from "./Filters";
 import styles from "./jobs.module.css";
 import { countsOf, jobHeadline, JobStates, livePoll, Progress, WallClock } from "./parts";
 
@@ -22,6 +30,16 @@ import { countsOf, jobHeadline, JobStates, livePoll, Progress, WallClock } from 
 // listing ran with rather than what was typed.
 
 const PAGE_KEYS = [...FILTERS, "offset"];
+
+// The five `jobs.state` words and the state filter each opens: `queued` and
+// `running` both open `active`; `cancelled` has no filter (§4.5).
+const JOB_STATES = [
+  { state: "queued", filter: "active" },
+  { state: "running", filter: "active" },
+  { state: "done", filter: "done" },
+  { state: "failed", filter: "failed" },
+  { state: "cancelled", filter: null },
+] as const;
 
 export function JobsView() {
   const params = useSearchParams();
@@ -34,16 +52,10 @@ export function JobsView() {
 
   return (
     <>
-      <PageHead title="Jobs">
-        <Facts
-          facts={[
-            ...factsOf(data?.filters),
-            ["refresh", data ? `${Math.round(data.poll_ms / 1000)}s` : DASH],
-          ]}
-        />
-      </PageHead>
+      <PageHead title="Jobs" />
 
       <Filters params={params} data={data} />
+      {data ? <ByState data={data} /> : null}
 
       {!data && jobs.error !== undefined ? (
         <ReadFailure error={jobs.error} onRetry={jobs.reload} />
@@ -229,6 +241,31 @@ function Row({
         </td>
       ) : null}
     </tr>
+  );
+}
+
+/** Every job under this kind, by state: each count is the state filter's door. */
+function ByState({ data }: { data: Jobs }) {
+  const kind = data.filters.kind;
+  const href = (state: string) =>
+    `${ROOT}/jobs?${new URLSearchParams(kind === DEFAULTS.kind ? { state } : { state, kind })}`;
+  return (
+    <section aria-labelledby="by-state">
+      <h2 className={ui.srOnly} id="by-state">
+        Jobs by state
+      </h2>
+      <dl className={`${ui.figures} ${ui.figuresTight} ${styles.byState}`}>
+        {JOB_STATES.map(({ state, filter }) => (
+          <Figure label={state} key={state}>
+            {filter ? (
+              <CountLink href={href(filter)} n={data.by_state[state]} />
+            ) : (
+              count(data.by_state[state])
+            )}
+          </Figure>
+        ))}
+      </dl>
+    </section>
   );
 }
 

@@ -81,22 +81,6 @@ describe("the corpus page", () => {
     );
   });
 
-  // The jobs view filters on `all|active|failed|done` and this page does not
-  // invent a sixth vocabulary: queued and running both link to `active`, and
-  // cancelled — which has no filter of its own — is a figure and not a link.
-  it("counts the jobs by state, without inventing a filter for cancelled", async () => {
-    await mount({ body: OWNER_CORPUS });
-
-    expect(await screen.findByText("Jobs by state")).toBeInTheDocument();
-    const queued = screen.getByText("queued").closest("div");
-    expect(queued?.querySelector("a")).toHaveAttribute("href", "/dashboard/jobs?state=active");
-    const cancelled = screen.getByText("cancelled").closest("div");
-    expect(cancelled?.querySelector("a")).toBeNull();
-    expect(cancelled).toHaveTextContent("0");
-    expect(screen.getByText("of the queued jobs are waiting on a backoff")).toBeInTheDocument();
-    expect(screen.getByText(/job\(s\) failed in the last 24 hours/)).toBeInTheDocument();
-  });
-
   it("lists the channels and tags, and what it costs on disk", async () => {
     await mount({ body: OWNER_CORPUS });
 
@@ -110,6 +94,7 @@ describe("the corpus page", () => {
     // Health's, and only Health's (§24).
     expect(screen.queryByText("Pipeline readiness")).not.toBeInTheDocument();
     expect(screen.queryByText("What is missing")).not.toBeInTheDocument();
+    expect(screen.queryByText("Jobs by state")).not.toBeInTheDocument();
     expect(screen.queryByText(/has_more|The largest/)).not.toBeInTheDocument();
   });
 

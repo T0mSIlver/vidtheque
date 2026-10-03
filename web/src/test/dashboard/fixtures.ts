@@ -109,8 +109,6 @@ export const OWNER_CORPUS = {
     ],
     has_more: false,
   },
-  jobs_by_state: { queued: 1, running: 1, done: 0, failed: 1, cancelled: 0 },
-  queue: { active: 2, running: 1, deferred: 1, failed_recent: 1, failed_window_s: 86400 },
   storage: { keyframe_bytes: 4306, database_bytes: 4653056 },
 };
 
