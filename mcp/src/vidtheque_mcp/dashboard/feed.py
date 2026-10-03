@@ -54,6 +54,9 @@ OFFSET_S_MAX = 172_800.0
 DEVICES_MAX = 20
 # FCM registration tokens are URL-safe base64 with a `:` separator.
 _TOKEN = re.compile(r"[A-Za-z0-9_:\-]{1,4096}")
+_INTEGER = re.compile(r"-?[0-9]{1,18}")
+# SQLite's INTEGER ceiling; a larger id would overflow the bind.
+ID_MAX = 2**63 - 1
 
 
 class _Refused(Exception):
@@ -86,7 +89,7 @@ async def _actor(request: Request) -> str:
 
 def _int_param(request: Request, name: str, low: int, high: int, default: int) -> int:
     raw = request.query_params.get(name)
-    if raw is not None and not raw.strip().lstrip("-").isdigit():
+    if raw is not None and _INTEGER.fullmatch(raw.strip()) is None:
         raise _Refused("E_BAD_PARAM", f"{name}={raw!r} is not an integer.", f"pass {name} as a whole number.")
     return clamp(int(raw) if raw is not None else None, low, high, default)
 
@@ -135,7 +138,7 @@ def _number(value: Any, name: str) -> float:
 
 
 def _whole(value: Any, name: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= ID_MAX:
         raise _Refused("E_BAD_PARAM", f"{name} must be a non-negative integer.", f"pass {name} as a whole number.")
     return value
 
@@ -226,6 +229,8 @@ async def feed(request: Request) -> Response:
 
     rows, skipped = await request.app.state.assembled.db.read(read)
     has_more = len(rows) > limit
+    # Past the offset ceiling a next page would be clamped back onto this one.
+    next_offset = offset + limit if has_more and offset + limit <= OFFSET_MAX else None
     return _json(
         {
             "band": band,
@@ -243,7 +248,7 @@ async def feed(request: Request) -> Response:
                 "limit": limit,
                 "offset": offset,
                 "has_more": has_more,
-                "next_offset": offset + limit if has_more else None,
+                "next_offset": next_offset,
             },
             "skipped": {
                 "count": min(skipped, SKIPPED_COUNT_CAP),

@@ -144,7 +144,15 @@ def test_feed_pages_the_top_band_newest_first(client: TestClient) -> None:
     assert client.get(f"{API}/feed?limit=999", headers=BEARER).json()["pagination"]["limit"] == 50
 
 
-@pytest.mark.parametrize("query", ["band=all", "limit=ten"])
+def test_feed_stops_paging_at_the_offset_ceiling(client: TestClient, monkeypatch) -> None:
+    from vidtheque_mcp.dashboard import feed
+
+    monkeypatch.setattr(feed, "OFFSET_MAX", 0)
+    page = client.get(f"{API}/feed?limit=1", headers=BEARER).json()["pagination"]
+    assert page["has_more"] is True and page["next_offset"] is None
+
+
+@pytest.mark.parametrize("query", ["band=all", "limit=ten", "limit=--5", "limit=²", "offset=1e3"])
 def test_feed_refuses_a_bad_parameter(client: TestClient, query: str) -> None:
     refused = client.get(f"{API}/feed?{query}", headers=BEARER)
     assert refused.status_code == 400
@@ -299,6 +307,7 @@ def test_profile_ops_refuse_a_malformed_body(
         ({"event_id": 1, "revision": 0}, 400, "E_BAD_PARAM"),
         ({"revision": -1}, 400, "E_BAD_PARAM"),
         ({"event_id": "1"}, 400, "E_BAD_PARAM"),
+        ({"event_id": 10**21}, 400, "E_BAD_PARAM"),
         ({"event_id": 77}, 404, "E_UNKNOWN_EVENT"),
     ],
 )
