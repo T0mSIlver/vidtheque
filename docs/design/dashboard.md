@@ -3501,3 +3501,27 @@ of `queries.corpus_ledger`.
 worker probe, the drift reason and the Indexing state; Corpus drops the byte
 totals. Both keep every count.
 
+### 24.2 Jobs and one job
+
+**The jobs table** loses its head facts (state, order, refresh), which restated
+the filter band under them, and gains the five counts by `jobs.state` that the
+ledger had, beside the filter each opens: `queued` and `running` open
+`state=active`, `cancelled` is a figure. They count every job under the
+listing's kind, whatever the state filter, and are read in the listing's own
+connection, so the tick stays on two reads (§5.4). Corpus no longer carries
+them, nor the backoff and 24-hour lines, which are Health's.
+
+**`follow_check` is hidden by default.** The kind filter gains `videos`, every
+kind but `follow_check`, and it is the default; `all` still means all. Three
+follows checking four times a day filled the first screen, and each follow's
+page lists its own checks (§18.4). A check's row names what it checked
+("checked *follow title*", "check of *follow title*" until it finishes)
+instead of "1 item(s), none fetched yet": its one item is a channel URL that
+never becomes a video. `jobs_store.list_jobs` and `job_state_counts` take an
+`exclude_kind` for it, and `queries.follow_titles` reads the titles in the
+row-facts read.
+
+**One job's stage table** is for the latest item that failed or finished
+degraded. A clean item's stages repeat its video page's provenance, which the
+items table links, so `focus` is `null` and `stages` is `[]` for any other job.
+
