@@ -132,6 +132,9 @@ def _only(body: dict[str, Any], allowed: tuple[str, ...]) -> None:
 
 
 def _number(value: Any, name: str) -> float:
+    # An int past ±ID_MAX would overflow float(); no weight or offset is that large.
+    if isinstance(value, int) and not isinstance(value, bool) and abs(value) > ID_MAX:
+        raise _Refused("E_BAD_PARAM", f"{name} is out of range.", f"pass {name} as a JSON number.")
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         raise _Refused("E_BAD_PARAM", f"{name} must be a number.", f"pass {name} as a JSON number.")
     return float(value)
