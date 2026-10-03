@@ -58,9 +58,11 @@ import dev.vidtheque.app.data.Moment
 import dev.vidtheque.app.data.Verdict
 import dev.vidtheque.app.data.claudeUri
 import dev.vidtheque.app.data.videoPrompt
+import dev.vidtheque.app.ui.Matches
 import dev.vidtheque.app.ui.NO_APP
 import dev.vidtheque.app.ui.ScoreDial
 import dev.vidtheque.app.ui.VideoKey
+import dev.vidtheque.app.ui.dated
 import dev.vidtheque.app.ui.duration
 import dev.vidtheque.app.ui.feed.Lift
 import dev.vidtheque.app.ui.feed.Still
@@ -136,7 +138,8 @@ fun VideoContent(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 still(key.videoId, Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(MaterialTheme.shapes.extraLarge))
-                if (channel.isNotEmpty()) Text(channel, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val byline = listOfNotNull(channel.ifEmpty { null }, verdict?.video?.publishedAt?.let { dated(it) }).joinToString(" · ")
+                if (byline.isNotEmpty()) Text(byline, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (title.isNotEmpty()) Text(title, style = MaterialTheme.typography.headlineSmallEmphasized)
                 when {
                     verdict != null -> Loaded(verdict, onMoment)
@@ -167,6 +170,7 @@ private fun Loaded(verdict: Verdict, onMoment: (Moment) -> Unit) {
             Text("Outside your profile", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onTertiaryContainer, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
         }
     }
+    if (verdict.matches.isNotEmpty()) Matches(verdict.matches)
     if (verdict.reason.isNotEmpty()) Text(verdict.reason, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Text(verdict.summary, style = MaterialTheme.typography.bodyLarge)
     Text("Moments", style = MaterialTheme.typography.titleMediumEmphasized, modifier = Modifier.padding(top = 8.dp))
