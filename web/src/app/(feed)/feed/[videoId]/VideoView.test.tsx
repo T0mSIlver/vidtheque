@@ -52,6 +52,16 @@ describe("VideoView", () => {
     );
   });
 
+  it("plays from the start with a watch at 0", async () => {
+    const view = await mount();
+    const play = await screen.findByRole("link", { name: /Play from the start/ });
+    expect(play).toHaveAttribute("href", "https://youtu.be/kCc8FmEb1nY");
+    await userEvent.click(play);
+    await waitFor(() =>
+      expect(signals(view)).toContainEqual({ kind: "watch", video_id: "kCc8FmEb1nY", offset_s: 0 }),
+    );
+  });
+
   it("asks Claude about this video by id, title and channel", async () => {
     const view = await mount();
     const ask = await screen.findByRole("link", { name: "Ask Claude" });

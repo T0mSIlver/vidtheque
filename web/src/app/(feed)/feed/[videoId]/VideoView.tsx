@@ -53,6 +53,16 @@ function Loaded({ verdict }: { verdict: Verdict }) {
             </span>
           </p>
           {verdict.reason ? <p className={styles.reason}>{verdict.reason}</p> : null}
+          {/* From the start, like a moment at 0: the same link shape and the same signal. */}
+          <a
+            className={styles.play}
+            href={`https://youtu.be/${encodeURIComponent(id)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => void dashboard.signal("watch", id, 0).catch(() => {})}
+          >
+            <span aria-hidden="true">▶</span> Play from the start
+          </a>
         </header>
 
         <p className={styles.summary}>{verdict.summary}</p>
