@@ -129,7 +129,7 @@ export const FINISHED_JOB = {
 /** Nothing was asked for, so nothing fell back and nothing moved. */
 const NO_FILTERS = {
   state: "all",
-  kind: "all",
+  kind: "videos",
   error_code: null,
   degraded: false,
   order: "newest",
@@ -144,6 +144,7 @@ export const OWNER_JOBS = {
   pagination: { limit: 25, offset: 0, has_more: false },
   filters: NO_FILTERS,
   notes: [],
+  by_state: { queued: 1, running: 1, done: 1, failed: 0, cancelled: 0 },
 };
 
 /** Nothing is live: the page reads once and stops. */

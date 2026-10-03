@@ -60,20 +60,6 @@ export const Corpus = z.object({
   }),
   channels: capped(z.object({ channel: z.string(), videos: count(), seconds: seconds() })),
   tags: capped(z.object({ tag: z.string(), videos: count() })),
-  jobs_by_state: z.object({
-    queued: count(),
-    running: count(),
-    done: count(),
-    failed: count(),
-    cancelled: count(),
-  }),
-  queue: z.object({
-    active: count(),
-    running: count(),
-    deferred: count(),
-    failed_recent: count(),
-    failed_window_s: count(),
-  }),
   storage: Storage.nullable(),
 });
 export type Corpus = z.infer<typeof Corpus>;
