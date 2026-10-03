@@ -52,6 +52,7 @@ import dev.vidtheque.app.ui.profile.ProfileScreen
 import dev.vidtheque.app.ui.video.VideoScreen
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.Serializable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.layout.ContentScale
 
@@ -148,6 +149,10 @@ fun SignedIn(opening: MutableStateFlow<String?>, onSignOut: () -> Unit) {
     val feed: FeedViewModel = hiltViewModel()
     val feedUi by feed.ui.collectAsStateWithLifecycle()
     val list = rememberLazyListState()
+    // Held above the screens, the feed would outlive a sign-out: empty it then, and
+    // load it again on the next sign-in.
+    DisposableEffect(feed) { onDispose { feed.clear() } }
+    LaunchedEffect(feed) { if (!feed.ui.value.loaded && !feed.ui.value.refreshing) feed.refresh() }
     SharedTransitionLayout {
         CompositionLocalProvider(LocalShared provides this) {
             NavDisplay(
@@ -172,6 +177,8 @@ fun SignedIn(opening: MutableStateFlow<String?>, onSignOut: () -> Unit) {
                     }
                     entry<ProfileKey> { ProfileScreen(onBack = { stack.removeLastOrNull() }, onSignOut = onSignOut) }
                     entry<VideoKey>(metadata = containerOnly) { key ->
+                        // Where the feed stood when the video opened, before any scroll asked below.
+                        val home = remember(key) { list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset }
                         // The band the video was opened from, and how to page it further.
                         val (pages, more) = when {
                             feedUi.top.items.any { it.videoId == key.videoId } -> feedUi.top.items to feed::more
@@ -186,9 +193,13 @@ fun SignedIn(opening: MutableStateFlow<String?>, onSignOut: () -> Unit) {
                             pages = pages,
                             onMore = more,
                             onShown = { id ->
-                                // Only when the card is off screen, so a card in view keeps its place.
+                                // Only when the card is off screen, so a card in view keeps its place. The
+                                // feed is not laid out meanwhile, so its visible items are those it had when
+                                // the video opened, and a card among them asks for that position back,
+                                // replacing a scroll an earlier swipe asked for.
                                 val index = listIndex(feedUi, id) ?: return@VideoScreen
                                 if (list.layoutInfo.visibleItemsInfo.none { it.index == index }) list.requestScrollToItem(index)
+                                else list.requestScrollToItem(home.first, home.second)
                             },
                         )
                     }
